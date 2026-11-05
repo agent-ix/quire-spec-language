@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Quantity integer power, `e ^ n`, from source text to its evaluated value
 //! (FR-091 "Integer power spelling", FR-093 "Integer power", FR-093-AC-58,
-//! TC-1334; QSpec TC-187 U12, U13, U21).
+//! TC-1336; QSpec TC-187 U12, U13, U21).
 
 use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
@@ -13,6 +13,7 @@ use quire_exact::{
     Undefined,
 };
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
+use quire_semantic_value::location::Location;
 
 use super::quantity_literals::{package_with, truth, UNLIMITED};
 
@@ -41,17 +42,30 @@ fn refusal(functions: &str) -> CheckRefusal {
     refusals.remove(0)
 }
 
-fn ill_typed(functions: &str) -> IllTypedCause {
-    match refusal(functions).cause {
+/// The refusal's cause when it is `ill_typed`, with the child path it was
+/// issued at from the root of its function body (`Equal` is the root, so `[0]`
+/// is the left operand and `[0, 0]` its own operand).
+fn ill_typed(functions: &str, path: &[usize]) -> IllTypedCause {
+    let refusal = refusal(functions);
+    assert_at(&refusal, path);
+    match refusal.cause {
         CheckCause::IllTyped(cause) => cause,
         other => panic!("an ill_typed refusal, not {other:?}"),
     }
 }
 
-/// FR-093-AC-58 w1 to w6 (TC-1334; QSpec TC-187 U12 and U21): the square, a
+fn assert_at(refusal: &CheckRefusal, path: &[usize]) {
+    assert_eq!(
+        refusal.location,
+        Location::at(refusal.location.origin.clone(), path),
+        "{refusal:?}"
+    );
+}
+
+/// FR-093-AC-58 w1 to w6 (TC-1336; QSpec TC-187 U12 and U21): the square, a
 /// conversion of a square, the zeroth power of a nonzero and a zero base, the
 /// unit-changing first power, and a negative power of a literal base.
-#[trace("FR-093-AC-58", "TC-1334", "QSpec-TC-187")]
+#[trace("FR-093-AC-58", "TC-1336", "QSpec-TC-187")]
 #[test]
 fn an_integer_power_evaluates_to_the_repeated_product_in_its_compound_unit() {
     let package = package_with(&units_and(
@@ -77,10 +91,10 @@ fn an_integer_power_evaluates_to_the_repeated_product_in_its_compound_unit() {
     assert!(!truth(&package, "w1_wrong"));
 }
 
-/// FR-093-AC-58 w8 (TC-1334; QSpec TC-187 U13): an exponent above `u64::MAX`
+/// FR-093-AC-58 w8 (TC-1336; QSpec TC-187 U13): an exponent above `u64::MAX`
 /// is an exact integer; the package checks, and a call under U13's budget is
 /// `incomplete` at the first rational charge before the power is computed.
-#[trace("FR-093-AC-58", "TC-1334", "QSpec-TC-187")]
+#[trace("FR-093-AC-58", "TC-1336", "QSpec-TC-187")]
 #[test]
 fn an_exponent_above_u64_max_checks_and_is_incomplete_before_it_is_computed() {
     let package = package_with(&units_and(
@@ -126,19 +140,31 @@ fn an_exponent_above_u64_max_checks_and_is_incomplete_before_it_is_computed() {
 /// FR-093-AC-58 r1 and r2 under `CheckMode::Linked`, and the literal bases
 /// that discharge the obligation: a negative exponent over anything but a
 /// nonzero quantity literal is `unproved-nonzero` at the power.
-#[trace("FR-093-AC-58", "TC-1334", "FR-495-AC-3")]
+#[trace("FR-093-AC-58", "TC-1336", "FR-495-AC-3")]
 #[test]
 fn a_negative_exponent_over_a_base_not_proved_nonzero_refuses() {
-    for functions in [
-        "function r1 using v(d: Quantity<m>): Boolean pure { d ^ -1 = d ^ -1 }",
-        "function r2 using v(): Boolean pure { 0 m ^ -1 = 0 m ^ -1 }",
-        "function r1b using v(): Boolean pure { let d = 2 m in d ^ -1 = d ^ -1 }",
+    for (functions, path) in [
+        (
+            "function r1 using v(d: Quantity<m>): Boolean pure { d ^ -1 = d ^ -1 }",
+            &[0][..],
+        ),
+        (
+            "function r2 using v(): Boolean pure { 0 m ^ -1 = 0 m ^ -1 }",
+            &[0][..],
+        ),
+        (
+            "function r1b using v(): Boolean pure { let d = 2 m in d ^ -1 = d ^ -1 }",
+            &[1, 0][..],
+        ),
     ] {
         let refusal = refusal(functions);
         assert!(
             matches!(refusal.cause, CheckCause::Unproved(Obligation::Nonzero)),
             "{functions}: {refusal:?}"
         );
+        // At the first `^`: the left operand of the comparison, under the
+        // `let` body in `r1b`.
+        assert_at(&refusal, path);
     }
     // A zero or positive exponent carries no obligation, whatever the base.
     package_with(&units_and(
@@ -153,7 +179,7 @@ fn a_negative_exponent_over_a_base_not_proved_nonzero_refuses() {
 /// checker records no nonzero obligation, and the first power of a zero base
 /// under a negative exponent is `Undefined::DivisionByZero` after one
 /// `unit.identity-read`; with no budget for that read it is `incomplete`.
-#[trace("FR-093-AC-58", "TC-1334", "FR-495-AC-3", "QSpec-TC-187")]
+#[trace("FR-093-AC-58", "TC-1336", "FR-495-AC-3", "QSpec-TC-187")]
 #[test]
 fn kernel_mode_evaluates_a_zero_base_under_a_negative_exponent_to_division_by_zero() {
     let functions = units_and("function r2 using v(): Boolean pure { 0 m ^ -1 = 0 m ^ -1 }\n");
@@ -246,38 +272,53 @@ fn r2_body(functions: &str) -> qsl_forms::Expression {
         .expect("the r2 function")
 }
 
-/// FR-093-AC-58 r3 to r5 (TC-1334): an affine base is
+/// FR-093-AC-58 r3 to r5 (TC-1336): an affine base is
 /// `ill_typed`/`operator-ineligible` at the power; a non-quantity base and a
 /// carried quantity base are `type-mismatch`, the first at the operand and
 /// the second at the power.
-#[trace("FR-093-AC-58", "TC-1334")]
+#[trace("FR-093-AC-58", "TC-1336")]
 #[test]
 fn a_power_over_an_affine_non_quantity_or_carried_operand_refuses() {
     assert_eq!(
-        ill_typed("function r3 using v(t: Quantity<degC>): Boolean pure { t ^ 2 = t ^ 2 }"),
+        ill_typed(
+            "function r3 using v(t: Quantity<degC>): Boolean pure { t ^ 2 = t ^ 2 }",
+            &[0]
+        ),
         IllTypedCause::OperatorIneligible
     );
     assert_eq!(
-        ill_typed("function r3b using v(): Boolean pure { 5 degC ^ 2 = 5 degC ^ 2 }"),
+        ill_typed(
+            "function r3b using v(): Boolean pure { 5 degC ^ 2 = 5 degC ^ 2 }",
+            &[0]
+        ),
         IllTypedCause::OperatorIneligible
     );
     assert_eq!(
-        ill_typed("function r4 using v(i: Int[0, 9]): Boolean pure { i ^ 2 = i }"),
+        ill_typed(
+            "function r4 using v(i: Int[0, 9]): Boolean pure { i ^ 2 = i }",
+            &[0, 0]
+        ),
         IllTypedCause::TypeMismatch
     );
     assert_eq!(
-        ill_typed("function r5 using v(c: Quantity<m, Int[0, 9]>): Boolean pure { c ^ 2 = c ^ 2 }"),
+        ill_typed(
+            "function r5 using v(c: Quantity<m, Int[0, 9]>): Boolean pure { c ^ 2 = c ^ 2 }",
+            &[0]
+        ),
         IllTypedCause::TypeMismatch
     );
     assert_eq!(
-        ill_typed("function r6 using v(): Boolean pure { true ^ 2 = true }"),
+        ill_typed(
+            "function r6 using v(): Boolean pure { true ^ 2 = true }",
+            &[0, 0]
+        ),
         IllTypedCause::TypeMismatch
     );
 }
 
 /// FR-091-OQ-15: an exponent literal outside `i128` refuses
 /// `IntegerOutsideI128`; the largest and smallest `i128` are admitted.
-#[trace("FR-093-AC-58", "TC-1334", "FR-091-OQ-15")]
+#[trace("FR-093-AC-58", "TC-1336", "FR-091-OQ-15")]
 #[test]
 fn an_exponent_outside_i128_refuses_and_the_i128_extremes_check() {
     let refusal = refusal(
@@ -287,6 +328,7 @@ fn an_exponent_outside_i128_refuses_and_the_i128_extremes_check() {
         matches!(refusal.cause, CheckCause::IntegerOutsideI128(_)),
         "{refusal:?}"
     );
+    assert_at(&refusal, &[0]);
     package_with(&units_and(
         "function top using v(): Boolean pure { 1 m ^ 170141183460469231731687303715884105727 = 1 m ^ 170141183460469231731687303715884105727 }\n\
          function bottom using v(): Boolean pure { 1 m ^ -170141183460469231731687303715884105728 = 1 m ^ -170141183460469231731687303715884105728 }\n",

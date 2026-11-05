@@ -1563,11 +1563,11 @@ fn a_decimal_constructor_builds_one_decimal_value_as_written() {
     }
 }
 
-/// FR-091-OQ-15, TC-1334: `e ^ n` maps to one `Power` node over its base with
+/// FR-091-OQ-15, TC-1336: `e ^ n` maps to one `Power` node over its base with
 /// the exponent exactly as written; the power binds tighter than the prefix
 /// `-` and than `*`, a quantity literal is its base, and the exponent keeps
 /// any magnitude.
-#[trace("FR-093-AC-58", "TC-1334")]
+#[trace("FR-093-AC-58", "TC-1336", "FR-091-AC-3")]
 #[test]
 fn an_integer_power_maps_to_one_power_node_with_the_exponent_as_written() {
     let cases = [
@@ -1596,7 +1596,7 @@ fn an_integer_power_maps_to_one_power_node_with_the_exponent_as_written() {
 /// FR-091-OQ-15, FR-093-AC-58: `^` takes one signed integer literal. A name,
 /// a parenthesized expression, a constructor and a second `^` each refuse
 /// `invalid_syntax` at the first token that is not part of the power.
-#[trace("FR-093-AC-58", "TC-1334")]
+#[trace("FR-093-AC-58", "TC-1336")]
 #[test]
 fn a_power_exponent_other_than_one_signed_integer_literal_refuses_at_that_token() {
     for (written, offending) in [
@@ -1610,6 +1610,7 @@ fn a_power_exponent_other_than_one_signed_integer_literal_refuses_at_that_token(
         assert!(!parsed.is_admissible(), "{written}");
         let diagnostic = &parsed.diagnostics()[0];
         assert_eq!(diagnostic.code, Code::InvalidSyntax, "{written}");
+        assert_eq!(diagnostic.cause.as_str(), "unexpected-token", "{written}");
         let at = diagnostic.byte_span().expect("located").start;
         let caret = text.find('^').expect("a power");
         let expected = caret + text[caret..].find(offending).expect("in the unit");

@@ -1,5 +1,5 @@
 ---
-id: TC-1334
+id: TC-1336
 title: "A quantity integer power lowers to quantity.pow"
 type: TC
 relationships:
@@ -8,7 +8,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-091
     type: verifies
 ---
-# TC-1334: A quantity integer power lowers to quantity.pow
+# TC-1336: A quantity integer power lowers to quantity.pow
 
 ## Description
 
@@ -34,7 +34,7 @@ operand and a non-literal exponent are refused. Scope: FR-093-AC-58 and the
 5. Parse `d ^ k`, `d ^ (2)`, `d ^ 2 ^ 3` and `d ^ rational(1, 2)`, and map
    `2 m ^ 2` and `-1 m ^ 2` through S2.
 
-Tag the test `#[trace("FR-093-AC-58", "TC-1334")]`; step 5's mapping also
+Tag the test `#[trace("FR-093-AC-58", "TC-1336")]`; step 5's mapping also
 carries `FR-091-AC-3`. The expected outcomes of U12, U13 and U21 are QSpec
 TC-187's, referenced by row ID.
 

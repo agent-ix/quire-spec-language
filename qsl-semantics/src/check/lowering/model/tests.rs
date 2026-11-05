@@ -1242,11 +1242,11 @@ mod quantities {
         assert_ne!(keys[2], node_key(METRE));
     }
 
-    /// FR-093-AC-58 (TC-1334; QSpec TC-187 QP-01): `a ^ 2` lowers to one
+    /// FR-093-AC-58 (TC-1336; QSpec TC-187 QP-01): `a ^ 2` lowers to one
     /// binary `quire.op.quantity.pow` node over `[ref(a), ref(N)]`, `N` the
     /// `Integer` literal `2`, typed by the one compound-unit node `a * a` is
     /// typed by, with no law, mode, member or leaves.
-    #[trace("FR-093-AC-58", "TC-1334", "QSpec-TC-187")]
+    #[trace("FR-093-AC-58", "TC-1336", "QSpec-TC-187")]
     #[test]
     fn an_integer_power_lowers_to_one_binary_pow_node_typed_like_the_product() {
         let checked = check_declarations(PackageDeclarations {
