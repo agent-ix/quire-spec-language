@@ -320,10 +320,10 @@ pub use outcome::{
 };
 pub use probability_certificate::{
     check_claim_exact_reachability, digital_probability_product_key, DigitalClockKey,
-    DigitalDeadlineKey, DigitalTail, ExactProbabilityCertificate, ExactProbabilityCertificateCheck,
-    ExactProbabilityGraphError, ExactProbabilityValue, ProbabilityBoundSide,
-    ProbabilityCertificateLocus, ProbabilityCertificateRejection, ProbabilityCertificateRule,
-    ProbabilityObjective, ProbabilityProductKey,
+    DigitalDeadlineKey, DigitalProductKeyInput, DigitalTail, ExactProbabilityCertificate,
+    ExactProbabilityCertificateCheck, ExactProbabilityGraphError, ExactProbabilityValue,
+    ProbabilityBoundSide, ProbabilityCertificateLocus, ProbabilityCertificateRejection,
+    ProbabilityCertificateRule, ProbabilityObjective, ProbabilityProductKey,
 };
 pub use product_action::{
     FreeDelayActionRow, FreeDelayRow, FreeDelaysRace, FreeRacer, GivenRacer, NotMixedRace,

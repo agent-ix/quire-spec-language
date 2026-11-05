@@ -74,6 +74,31 @@ pub struct DigitalDeadlineKey {
     pub elapsed: u64,
 }
 
+/// The checked semantic components used to encode one digital ProductKey.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DigitalProductKeyInput {
+    /// The checked claim's `over` binding, or `None` when there is no binding.
+    pub binding: Option<Value>,
+    /// The complete non-clock simulation-state form.
+    pub discrete: Value,
+    /// FR-196's closed time-unit form.
+    pub unit: Value,
+    /// The positive canonical digital scale.
+    pub scale: u64,
+    /// Every admitted clock with its checked identity and cap.
+    pub clocks: Vec<DigitalClockKey>,
+    /// The timed deadline clock, when the checked claim has a deadline.
+    pub deadline: Option<DigitalDeadlineKey>,
+    /// TS-5 tail control for the state.
+    pub tail: DigitalTail,
+    /// The checked claim's monitor state, or `None` when it has no monitor.
+    pub monitor: Option<Value>,
+    /// The checked claim's exact measure accumulator, if present.
+    pub accumulator: Option<Value>,
+    /// The actual pending draw control, if present.
+    pub pending: Option<Value>,
+}
+
 /// Encode the FR-196 canonical ProductKey for one admitted digital state.
 ///
 /// `discrete` is the complete non-clock simulation-state form and `unit` is
@@ -87,17 +112,20 @@ pub struct DigitalDeadlineKey {
 /// subject and claim. This routine owns only their canonical representation;
 /// contextual admission and derivation remain the caller's responsibility.
 pub fn digital_probability_product_key(
-    binding: Option<Value>,
-    discrete: Value,
-    unit: Value,
-    scale: u64,
-    clocks: Vec<DigitalClockKey>,
-    deadline: Option<DigitalDeadlineKey>,
-    tail: DigitalTail,
-    monitor: Option<Value>,
-    accumulator: Option<Value>,
-    pending: Option<Value>,
+    input: DigitalProductKeyInput,
 ) -> Result<ProbabilityProductKey, ExactProbabilityGraphError> {
+    let DigitalProductKeyInput {
+        binding,
+        discrete,
+        unit,
+        scale,
+        clocks,
+        deadline,
+        tail,
+        monitor,
+        accumulator,
+        pending,
+    } = input;
     if scale == 0 {
         return Err(ExactProbabilityGraphError::InvalidDigitalKey);
     }
@@ -890,12 +918,12 @@ mod tests {
     #[trace("FR-196-AC-6")]
     #[test]
     fn digital_product_key_encodes_the_complete_timed_model_and_orders_clocks() {
-        let key = digital_probability_product_key(
-            None,
-            json!(["state", {"z": 1, "a": true}]),
-            json!(["unit", "second"]),
-            10,
-            vec![
+        let key = digital_probability_product_key(DigitalProductKeyInput {
+            binding: None,
+            discrete: json!(["state", {"z": 1, "a": true}]),
+            unit: json!(["unit", "second"]),
+            scale: 10,
+            clocks: vec![
                 DigitalClockKey {
                     identity: json!(["Type", "zeta", ["u", "object-z"]]),
                     value: 1,
@@ -907,15 +935,15 @@ mod tests {
                     cap: 3,
                 },
             ],
-            Some(DigitalDeadlineKey {
+            deadline: Some(DigitalDeadlineKey {
                 limit: 4,
                 elapsed: 1,
             }),
-            DigitalTail::IdleDelayed,
-            None,
-            None,
-            None,
-        )
+            tail: DigitalTail::IdleDelayed,
+            monitor: None,
+            accumulator: None,
+            pending: None,
+        })
         .expect("the complete timed key is representable");
         assert_eq!(
             key.as_bytes(),
@@ -932,18 +960,18 @@ mod tests {
             cap: 1,
         };
         let key = |scale, clocks, deadline| {
-            digital_probability_product_key(
-                None,
-                json!([]),
-                json!(["unit", "second"]),
+            digital_probability_product_key(DigitalProductKeyInput {
+                binding: None,
+                discrete: json!([]),
+                unit: json!(["unit", "second"]),
                 scale,
                 clocks,
                 deadline,
-                DigitalTail::Running,
-                None,
-                None,
-                None,
-            )
+                tail: DigitalTail::Running,
+                monitor: None,
+                accumulator: None,
+                pending: None,
+            })
         };
         assert_eq!(
             key(0, vec![], None),
