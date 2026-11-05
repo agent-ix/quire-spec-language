@@ -8,6 +8,7 @@ use num_integer::Integer as _;
 use num_traits::Zero as _;
 use quire_exact::{Integer, Rational};
 
+use super::rows::Evaluation;
 use super::{
     ExactProbLimits, MonitorVerdict, ProbEdge, ProbProduct, ProbStateId, ProductAction, ProductKind,
 };
@@ -46,7 +47,9 @@ pub enum FhResult {
     Exact {
         /// Values in product discovery order.
         values: Vec<Rational>,
-        /// The selected action-group index for each state, when it has a choice.
+        /// The selected action-group index for each state, when it has a
+        /// choice, then the row choice selected at each row of each
+        /// `FreeDelays` state (FR-204; [`super::free_delays_choice`]).
         policy: Vec<Option<usize>>,
     },
     /// Outward-rounded values after the exact rational budget was exceeded.
@@ -57,7 +60,9 @@ pub enum FhResult {
         upper: Vec<Dyadic>,
         /// The precision used.
         precision_bits: u32,
-        /// The selected action-group index for each state, when it has a choice.
+        /// The selected action-group index for each state, when it has a
+        /// choice, then the row choice selected at each row of each
+        /// `FreeDelays` state (FR-204; [`super::free_delays_choice`]).
         policy: Vec<Option<usize>>,
     },
     /// The initial value still straddles the threshold at maximum precision.
@@ -137,6 +142,10 @@ pub fn decide_bounded_event(
 /// be doubled; exact values are returned regardless of which side they fall on.
 /// Product edge order is the canonical tie-break order for the witness policy.
 ///
+/// A `FreeDelays` state is decided by FR-204's row-factored operator: the
+/// values are the product's states', and the policy's entries after them
+/// select each row's choice ([`super::free_delays_choice`]).
+///
 /// # Errors
 /// Returns [`FhError`] for malformed or cyclic products, or inconsistent
 /// precision limits.
@@ -155,6 +164,44 @@ pub fn backward_induction(
     {
         return Err(FhError::InvalidPrecision);
     }
+    let evaluation = Evaluation::of(product).map_err(|_| FhError::InvalidProbability)?;
+    let terminal = evaluation.extend(terminal).ok_or(FhError::InvalidState)?;
+    let result = induction(
+        &evaluation.product,
+        &terminal,
+        objective,
+        threshold,
+        max_rational_bits,
+        (precision_bits, max_precision_bits),
+    )?;
+    Ok(match result {
+        FhResult::Exact { values, policy } => FhResult::Exact {
+            values: evaluation.restrict(values),
+            policy,
+        },
+        FhResult::Bounds {
+            lower,
+            upper,
+            precision_bits,
+            policy,
+        } => FhResult::Bounds {
+            lower: evaluation.restrict(lower),
+            upper: evaluation.restrict(upper),
+            precision_bits,
+            policy,
+        },
+        budget @ FhResult::PrecisionBudget { .. } => budget,
+    })
+}
+
+fn induction(
+    product: &ProbProduct,
+    terminal: &[Option<Rational>],
+    objective: FhObjective,
+    threshold: &Rational,
+    max_rational_bits: u64,
+    (precision_bits, max_precision_bits): (u32, u32),
+) -> Result<FhResult, FhError> {
     let order = topological_order(product)?;
     let exact = exact_pass(product, terminal, objective, &order, max_rational_bits)?;
     if let Some(exact) = exact {
@@ -433,6 +480,7 @@ fn action_equal(left: &ProductAction, right: &ProductAction) -> bool {
                 delay: right_delay,
             },
         ) => left == right && left_delay == right_delay,
+        (ProductAction::FreeDelays(left), ProductAction::FreeDelays(right)) => left == right,
         _ => false,
     }
 }

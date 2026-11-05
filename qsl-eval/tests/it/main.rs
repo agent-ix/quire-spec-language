@@ -50,6 +50,7 @@ mod model_simulation;
 mod named_population;
 mod native_literals;
 mod native_scalar_equality;
+mod one_occurrence;
 mod property_automata;
 mod protocol_delivery_interval;
 mod protocol_reference;

@@ -700,7 +700,14 @@ fn preimage_bytes_bind_before_the_work_budget() {
 #[trace("FR-093-AC-3", "TC-415")]
 #[test]
 fn value_family_rows_carry_their_member_mode_laws_and_leaves() {
-    for row in rows() {
+    assert_rows(rows());
+}
+
+/// Each row lowers to one node with the row's operator, form, identity,
+/// member, mode, laws, leaves and argument count, whose `result_type` is its
+/// semantic type.
+fn assert_rows(rows: Vec<Row>) {
+    for row in rows {
         let name = row.package.functions[0].name.clone();
         let graph = row
             .package
@@ -721,6 +728,73 @@ fn value_family_rows_carry_their_member_mode_laws_and_leaves() {
         );
         assert_eq!(node["body"]["result_type"], node["semantic_type"], "{name}");
     }
+}
+
+/// TC-1335 step 1 (FR-093-AC-59): `dropFirst` lowers to the one-occurrence
+/// identity of its operand's kind with no law, mode, member or leaf, and
+/// `removeOne` to `remove_one` with the leaves `contains` lists, each over
+/// its operands and typed by the node of the derived type.
+#[trace("FR-093-AC-59", "TC-1335", "FR-091-AC-3")]
+#[test]
+fn one_occurrence_forms_lower_to_their_fr_322_identities() {
+    let collection_op = ("collection", "collection");
+    let ints = |kind, maximum: &str| collection_form(kind, int_form(0, 9), maximum);
+    let one_row = |name: &str,
+                   parameters: &[(&str, TypeForm)],
+                   result: TypeForm,
+                   body: Expression,
+                   identity: &'static str,
+                   leaves: Json,
+                   arity: usize| {
+        row(
+            function(name, parameters, result, None, body),
+            identity,
+            collection_op,
+            (Json::Null, Json::Null, json!([]), leaves),
+            arity,
+        )
+    };
+    assert_rows(vec![
+        one_row(
+            "f1",
+            &[("s", ints(CollectionKind::Sequence, "9"))],
+            ints(CollectionKind::Sequence, "8"),
+            Expression::drop_first(name_expr("s")),
+            "quire.op.collection.sequence.drop_first",
+            json!([]),
+            1,
+        ),
+        one_row(
+            "f2",
+            &[("o", ints(CollectionKind::OrderedSet, "5"))],
+            ints(CollectionKind::OrderedSet, "4"),
+            Expression::drop_first(name_expr("o")),
+            "quire.op.collection.ordered_set.drop_first",
+            json!([]),
+            1,
+        ),
+        one_row(
+            "g1",
+            &[("s", ints(CollectionKind::Sequence, "9"))],
+            ints(CollectionKind::Sequence, "9"),
+            Expression::remove_one(name_expr("s"), integer_expr(3)),
+            "quire.op.collection.remove_one",
+            json!([]),
+            2,
+        ),
+        one_row(
+            "g2",
+            &[
+                ("t", collection_form(CollectionKind::Bag, text_form(), "9")),
+                ("x", text_form()),
+            ],
+            collection_form(CollectionKind::Bag, text_form(), "9"),
+            Expression::remove_one(name_expr("t"), name_expr("x")),
+            "quire.op.collection.remove_one",
+            json!([nfc_leaf(&[])]),
+            2,
+        ),
+    ]);
 }
 
 /// FR-093 `Tuple` row: `Pair(x, y)` is a `value`/`tuple_value` node typed
