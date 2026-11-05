@@ -799,6 +799,35 @@ fn conversion_into_a_float_lowers_to_the_owned_ieee_operation() {
     }
 }
 
+/// F32: unary negation lowers to the width-specific IEEE operation with the
+/// admitted profile law and no rounding mode, regardless of operand mode.
+#[trace("QSpec-TC-193", "FR-397-AC-21", "FR-397-AC-27")]
+#[test]
+fn ieee_negation_lowers_to_the_owned_operation_without_a_rounding_mode() {
+    for (width, ty) in [
+        ("float32", "Float32[nearest-even]"),
+        ("float32", "Float32[toward-zero]"),
+        ("float32", "Float32[exact]"),
+        ("float64", "Float64[nearest-even]"),
+        ("float64", "Float64[exact]"),
+    ] {
+        let text = format!("{HEADER}function negate using v(a: {ty}): {ty} pure {{ -a }}");
+        let wire = wire(&text);
+        let node = operation(&wire, &format!("quire.op.ieee.{width}.negate"));
+        assert_ieee_law(&wire, node);
+        assert_eq!(node["body"]["operator"], "unary", "{text}");
+        assert_eq!(node["body"]["operation"]["mode"], Value::Null, "{text}");
+    }
+
+    refusal(
+        &format!(
+            "{HEADER}function negate using v(a: Float64[nearest-even]): Float64[toward-zero] pure {{ -a }}"
+        ),
+        Code::IllTyped,
+        "type-mismatch",
+    );
+}
+
 /// FR-397-AC-18: a quantity converts to no float, and a same-width conversion
 /// to another mode types as the target, so `+` takes the target's mode.
 #[trace("TC-1091", "FR-397-AC-18")]

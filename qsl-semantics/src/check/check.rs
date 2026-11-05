@@ -3848,8 +3848,8 @@ impl<'a> Typer<'a> {
         ))
     }
 
-    /// Unary `-` over its typed operand: integers, rationals and decimals.
-    /// FR-148 and FR-142 define no negation of an IEEE value or a quantity.
+    /// Unary `-` over its typed operand: integers, rationals, decimals and
+    /// IEEE values.
     fn negate(
         &mut self,
         operand: Node,
@@ -3887,7 +3887,17 @@ impl<'a> Typer<'a> {
                     ValueType::Decimal(target),
                 )
             }
-            ValueType::Float(_) | ValueType::Quantity(_) | ValueType::BoundedQuantity(_) => {
+            ValueType::Float(float) => {
+                if self.scope.ieee_profile.is_none() {
+                    return Err(refuse(location, CheckCause::IeeeProfileNotAdmitted));
+                }
+                let float = *float;
+                (
+                    NodeKind::Negate(self.push(operand)),
+                    ValueType::Float(float),
+                )
+            }
+            ValueType::Quantity(_) | ValueType::BoundedQuantity(_) => {
                 return Err(ineligible(location))
             }
             ValueType::Boolean
