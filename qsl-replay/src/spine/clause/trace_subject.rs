@@ -689,7 +689,7 @@ mod tests {
     use qsl_semantics::model::intake::PackageInput;
     use quire_exact::FieldValue;
 
-    #[path = "../../../../qsl-semantics/tests/support/receiver_frames.rs"]
+    #[path = "../../../../../../qsl-semantics/tests/support/receiver_frames.rs"]
     mod model_fixture;
 
     const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
