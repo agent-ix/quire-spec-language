@@ -6,7 +6,7 @@
 use ix_trace_rs::trace;
 use qsl_semantics::check::{
     AssemblyCause, AssemblyError, DimensionEquivalence, EquivalenceClasses, EquivalenceFault,
-    EquivalenceRetained, PackageDeclarations, TopologyFault,
+    EquivalenceRetained, PackageDeclarations, TopologyFault, TopologyRetained,
 };
 use serde_json::{json, Value};
 
@@ -460,8 +460,11 @@ fn dimension_equivalences_are_decided_by_fr_142_steps() {
             &error.cause,
             AssemblyCause::UnitGraphTopology {
                 fault: TopologyFault::ZeroScale,
-                declarations,
-            } if declarations == &["z".to_owned()]
+                retained,
+            } if retained == &[
+                TopologyRetained::Unit { name: "z".to_owned(), key: None },
+                TopologyRetained::Scale(quire_exact::Rational::from_integer(quire_exact::Integer::zero())),
+            ]
         )),
         "{errors:?}"
     );
@@ -735,27 +738,142 @@ fn two_units_writing_one_spelling_resolve_each_through_its_own_bindings() {
     );
 }
 
+/// FR-091-AC-50/55: package-qualified dimensions type source units, package
+/// units resolve as targets, and imported-node turns retain local defects.
+#[trace("TC-483", "FR-091-AC-50", "FR-091-AC-55")]
 #[test]
-fn scratch_probe() {
+fn package_units_and_dimensions_resolve_in_source_unit_graphs() {
+    use qsl_semantics::check::AssemblyCause as Cause;
+
     let packages = [(
         "M",
         "acme/rpc",
         with_quantities(
             time_package("acme/rpc", false, &[("s", None, "1")]),
-            &[("Rate", &[])],
+            &[("Rate", &[]), ("Empty", &[])],
             &[("us", "Rate", None, "1")],
         ),
     )];
-    for body in [
-        "unit tick : M::Rate = rational(1, 2) * M::us;",
-        "unit tick : M::Rate = rational(1, 2) * M::us;\nunit tock : M::Rate = rational(3, 1) * tick;\nfunction k1 using v(d: Quantity<tick>): Boolean pure { convert<Quantity<M::us>>(d) = 1 M::us }",
-        "unit bad : M::Rate = rational(1, 2) * s;",
-        "unit r2 : M::Rate = rational(1, 1);",
-        "unit z : M::Rate = rational(0, 1) * M::us;",
-        "unit g : M::Rate = rational(1, 2) * M::ghost;",
+    let body = "unit tick : M::Rate = rational(1, 2) * M::us;\n\
+                unit tock : M::Rate = rational(3, 1) * tick;";
+    let (text, assembled) = assemble_selected_as(("agent-ix", "example"), &packages, body);
+    let assembled = assembled.expect("package dimensions and units resolve for local unit forms");
+    let unit_key = |name: &str| {
+        assembled
+            .nominal_spans
+            .iter()
+            .find_map(|(key, span)| (text[span.start..span.end] == *name).then(|| key.clone()))
+            .unwrap_or_else(|| panic!("unit {name} has a retained declaration span"))
+    };
+    let tick = assembled.units.unit(unit_key("tick")).expect("tick");
+    assert_eq!(tick.canonical().scale().to_string(), "1/2");
+    let tock = assembled.units.unit(unit_key("tock")).expect("tock");
+    assert_eq!(tock.canonical().scale().to_string(), "3/2");
+
+    let (_, assembled) = assemble_selected_as(
+        ("agent-ix", "example"),
+        &packages,
         "unit tick : M::Time = rational(1, 2) * M::s;",
-    ] {
-        let (_, r) = assemble_selected_as(("agent-ix", "example"), &packages, body);
-        eprintln!("{body}\n => {:?}", r.map(|_| ()).map_err(|e| e.errors));
-    }
+    );
+    assembled.expect("a package unit can target another package unit");
+
+    let refusal = |body: &str| {
+        let (_, assembled) = assemble_selected_as(("agent-ix", "example"), &packages, body);
+        assembled
+            .expect_err("this package-unit form is refused")
+            .errors
+    };
+    let errors = refusal("unit bad : M::Rate = rational(1, 2) * s;");
+    let [error] = errors.as_slice() else {
+        panic!("row 3 refuses one error: {errors:?}")
+    };
+    assert!(matches!(
+        &error.cause,
+        Cause::UnitGraphTopology {
+            fault: TopologyFault::CrossDimensionTarget,
+            retained,
+        } if matches!(retained.as_slice(), [
+            TopologyRetained::Unit { name: unit, .. },
+            TopologyRetained::TargetName(target),
+            TopologyRetained::Dimension { name: package_dimension, key: Some(_) },
+            TopologyRetained::Dimension { name: source_dimension, key: None },
+        ] if unit == "bad" && target == "s"
+            && package_dimension == "ix://acme/rpc/dimension/Rate"
+            && source_dimension == "Time")
+    ));
+
+    let errors = refusal("unit shifted : M::Empty = rational(2, 1);");
+    let [error] = errors.as_slice() else {
+        panic!("row 5 refuses one error: {errors:?}")
+    };
+    assert!(matches!(
+        &error.cause,
+        Cause::UnitGraphTopology {
+            fault: TopologyFault::NonIdentityRoot,
+            retained,
+        } if matches!(retained.as_slice(), [
+            TopologyRetained::Unit { name, key: None },
+            TopologyRetained::Scale(scale),
+            TopologyRetained::Offset(offset),
+        ] if name == "shifted"
+            && scale == &exact(2, 1)
+            && offset.is_zero())
+    ));
+
+    let errors = refusal("unit r2 : M::Rate = rational(1, 1);");
+    let [error] = errors.as_slice() else {
+        panic!("row 4 refuses one error: {errors:?}")
+    };
+    assert!(matches!(
+        &error.cause,
+        Cause::UnitGraphTopology {
+            fault: TopologyFault::TwoRoots,
+            retained,
+        } if matches!(retained.as_slice(), [
+            TopologyRetained::Dimension { name: dimension, key: Some(_) },
+            TopologyRetained::Unit { name: package_root, key: Some(_) },
+            TopologyRetained::Unit { name: local_root, key: None },
+        ] if dimension == "ix://acme/rpc/dimension/Rate"
+            && package_root == "ix://acme/rpc/unit/us"
+            && local_root == "r2")
+    ));
+
+    let errors = refusal("unit z : M::Rate = rational(0, 1) * M::us;");
+    let [error] = errors.as_slice() else {
+        panic!("row 1 refuses one error: {errors:?}")
+    };
+    assert!(matches!(
+        &error.cause,
+        Cause::UnitGraphTopology {
+            fault: TopologyFault::ZeroScale,
+            retained,
+        } if matches!(retained.as_slice(), [
+            TopologyRetained::Unit { name, .. },
+            TopologyRetained::Scale(scale),
+        ] if name == "z" && scale.is_zero())
+    ));
+
+    let errors = refusal("unit g : M::Rate = rational(1, 2) * M::ghost;");
+    let [error] = errors.as_slice() else {
+        panic!("row 2 refuses one error: {errors:?}")
+    };
+    assert!(matches!(
+        &error.cause,
+        Cause::UnitGraphTopology {
+            fault: TopologyFault::UnknownTarget,
+            retained,
+        } if matches!(retained.as_slice(), [
+            TopologyRetained::Unit { name, .. },
+            TopologyRetained::TargetName(target),
+        ] if name == "g" && target == "M::ghost")
+    ));
+
+    let errors = refusal("unit tick : Rate = rational(1, 2) * M::us;");
+    let [error] = errors.as_slice() else {
+        panic!("unqualified package dimension refuses one error: {errors:?}")
+    };
+    assert!(matches!(
+        &error.cause,
+        Cause::UnresolvedQuantityName { name } if name == "Rate"
+    ));
 }

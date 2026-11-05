@@ -241,6 +241,7 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::DuplicateEnumMember { .. }
         | AssemblyCause::DuplicateQuantityName { .. }
         | AssemblyCause::UnresolvedQuantityName { .. }
+        | AssemblyCause::UnresolvedDimensionTerm { .. }
         | AssemblyCause::UnanchoredBaseDimension { .. }
         | AssemblyCause::UnresolvedModelQuantityType { .. }
         | AssemblyCause::QuantityCycle { .. }

@@ -11,7 +11,7 @@ use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::{SourceIdentity, Span};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, Integer,
-    IntegerInterval, Presence, RoundingMode, ValueType,
+    IntegerInterval, Presence, Rational, RoundingMode, ValueType,
 };
 
 use super::{
@@ -2755,14 +2755,23 @@ fn name_and_number_errors_are_reported_and_the_topology_does_not_run() {
          unit b : Length = rational(2, 1) * c;\n\
          unit c : Length = rational(1, 2) * b;",
     );
-    let edge = |a: &str, b: &str| (a.to_owned(), b.to_owned());
     let [only] = found.as_slice() else {
         panic!("one first defect, not {found:?}")
     };
     assert_eq!(
         only.cause,
-        AssemblyCause::QuantityCycle {
-            edges: vec![edge("b", "c"), edge("c", "b")]
+        AssemblyCause::UnitGraphTopology {
+            fault: super::TopologyFault::TargetCycle,
+            retained: vec![
+                super::TopologyRetained::Edge {
+                    from: "b".to_owned(),
+                    to: "c".to_owned(),
+                },
+                super::TopologyRetained::Edge {
+                    from: "c".to_owned(),
+                    to: "b".to_owned(),
+                },
+            ],
         }
     );
     assert_eq!(
@@ -2771,34 +2780,75 @@ fn name_and_number_errors_are_reported_and_the_topology_does_not_run() {
     );
 }
 
-#[trace("FR-091-AC-35", "TC-483")]
+#[trace("FR-091-AC-35", "FR-091-AC-71", "TC-483")]
 #[test]
 fn each_unit_graph_topology_error_refuses_alone() {
     use super::TopologyFault as Fault;
-    for (source, fault, declarations, code) in [
+    use super::TopologyRetained as Keep;
+    for (source, fault, retained, code) in [
         (
             "dimension L; unit r : L = rational(1, 1); unit z : L = rational(0, 1) * r;",
             Fault::ZeroScale,
-            vec!["z"],
+            vec![
+                Keep::Unit {
+                    name: "z".into(),
+                    key: None,
+                },
+                Keep::Scale(Rational::from_integer(Integer::zero())),
+            ],
             "invalid_package/invalid-value",
         ),
         (
             "dimension L; unit r : L = rational(2, 1);",
             Fault::NonIdentityRoot,
-            vec!["r"],
+            vec![
+                Keep::Unit {
+                    name: "r".into(),
+                    key: None,
+                },
+                Keep::Scale(Rational::from_integer(Integer::from(2_i64))),
+                Keep::Offset(Rational::from_integer(Integer::zero())),
+            ],
             "invalid_package/invalid-value",
         ),
         (
             "dimension L; dimension T; unit r : L = rational(1, 1); \
              unit s : T = rational(1, 1) * r;",
             Fault::CrossDimensionTarget,
-            vec!["s", "r"],
+            vec![
+                Keep::Unit {
+                    name: "s".into(),
+                    key: None,
+                },
+                Keep::TargetName("r".into()),
+                Keep::Dimension {
+                    name: "T".into(),
+                    key: None,
+                },
+                Keep::Dimension {
+                    name: "L".into(),
+                    key: None,
+                },
+            ],
             "invalid_package/incompatible-definition",
         ),
         (
             "dimension L; unit r : L = rational(1, 1); unit q : L = rational(1, 1);",
             Fault::TwoRoots,
-            vec!["L", "r", "q"],
+            vec![
+                Keep::Dimension {
+                    name: "L".into(),
+                    key: None,
+                },
+                Keep::Unit {
+                    name: "r".into(),
+                    key: None,
+                },
+                Keep::Unit {
+                    name: "q".into(),
+                    key: None,
+                },
+            ],
             "invalid_package/conflicting-definition",
         ),
     ] {
@@ -2808,10 +2858,7 @@ fn each_unit_graph_topology_error_refuses_alone() {
         };
         assert_eq!(
             error.cause,
-            AssemblyCause::UnitGraphTopology {
-                fault,
-                declarations: declarations.into_iter().map(str::to_owned).collect(),
-            },
+            AssemblyCause::UnitGraphTopology { fault, retained },
             "{source}"
         );
         assert_eq!(error.cause.catalog_code().to_string(), code, "{source}");
@@ -2823,8 +2870,15 @@ fn each_unit_graph_topology_error_refuses_alone() {
     };
     assert_eq!(
         error.cause,
-        AssemblyCause::UnresolvedQuantityName {
-            name: "ghost".to_owned()
+        AssemblyCause::UnitGraphTopology {
+            fault: Fault::UnknownTarget,
+            retained: vec![
+                Keep::Unit {
+                    name: "u".into(),
+                    key: None
+                },
+                Keep::TargetName("ghost".into()),
+            ],
         }
     );
     assert_eq!(
@@ -2853,6 +2907,7 @@ fn first_defect(source: &str) -> (String, String) {
 fn the_first_defect_is_the_earliest_row_unit_and_node() {
     let found = first_defect;
     let pair = |code: &str, at: &str| (code.to_owned(), at.to_owned());
+    let edge = |from: &str, to: &str| (from.to_owned(), to.to_owned());
     // U11h: row 1 before row 2 within one unit.
     assert_eq!(
         found(
@@ -2895,7 +2950,6 @@ fn the_first_defect_is_the_earliest_row_unit_and_node() {
     );
     let (_, found) =
         errors("dimension A = B; dimension B = A; dimension L; unit l : L = rational(2, 1);");
-    let edge = |a: &str, b: &str| (a.to_owned(), b.to_owned());
     assert_eq!(
         found.first().map(|error| &error.cause),
         Some(&AssemblyCause::QuantityCycle {
@@ -2906,7 +2960,13 @@ fn the_first_defect_is_the_earliest_row_unit_and_node() {
 
 /// FR-091-AC-47 and QSpec FR-142-AC-15 (TC-187 U11b, U11f, U11l): the cycle
 /// is retained from its least unit by source position.
-#[trace("FR-091-AC-47", "TC-483", "QSpec-TC-187", "QSpec-FR-142-AC-15")]
+#[trace(
+    "FR-091-AC-47",
+    "FR-091-AC-71",
+    "TC-483",
+    "QSpec-TC-187",
+    "QSpec-FR-142-AC-15"
+)]
 #[test]
 fn a_unit_cycle_is_retained_from_its_least_unit_by_source_position() {
     let edge = |a: &str, b: &str| (a.to_owned(), b.to_owned());
@@ -2932,7 +2992,13 @@ fn a_unit_cycle_is_retained_from_its_least_unit_by_source_position() {
         };
         assert_eq!(
             error.cause,
-            AssemblyCause::QuantityCycle { edges: expected },
+            AssemblyCause::UnitGraphTopology {
+                fault: super::TopologyFault::TargetCycle,
+                retained: expected
+                    .into_iter()
+                    .map(|(from, to)| super::TopologyRetained::Edge { from, to })
+                    .collect(),
+            },
             "{source}"
         );
     }
@@ -2959,7 +3025,20 @@ fn u11j_two_roots_refuse_before_a_self_cycle() {
         error.cause,
         AssemblyCause::UnitGraphTopology {
             fault: super::TopologyFault::TwoRoots,
-            declarations: vec!["L".to_owned(), "m".to_owned(), "m_alt".to_owned()],
+            retained: vec![
+                super::TopologyRetained::Dimension {
+                    name: "L".into(),
+                    key: None
+                },
+                super::TopologyRetained::Unit {
+                    name: "m".into(),
+                    key: None
+                },
+                super::TopologyRetained::Unit {
+                    name: "m_alt".into(),
+                    key: None
+                },
+            ],
         }
     );
     assert_eq!(&text[error.span.start..error.span.end], "m_alt");
@@ -2976,11 +3055,20 @@ fn u11m_the_base_dimension_rule_runs_at_the_base_dimensions_own_turn() {
     let [error] = found.as_slice() else {
         panic!("one error, not {found:?}")
     };
-    let edge = |a: &str, b: &str| (a.to_owned(), b.to_owned());
     assert_eq!(
         error.cause,
-        AssemblyCause::QuantityCycle {
-            edges: vec![edge("a", "b"), edge("b", "a")]
+        AssemblyCause::UnitGraphTopology {
+            fault: super::TopologyFault::TargetCycle,
+            retained: vec![
+                super::TopologyRetained::Edge {
+                    from: "a".to_owned(),
+                    to: "b".to_owned(),
+                },
+                super::TopologyRetained::Edge {
+                    from: "b".to_owned(),
+                    to: "a".to_owned(),
+                },
+            ],
         }
     );
     assert_eq!(
@@ -3008,9 +3096,8 @@ fn u11m_the_base_dimension_rule_runs_at_the_base_dimensions_own_turn() {
 
 /// QSpec FR-142-AC-17, TC-187 U11n, U11o, U11p, U11w: a dimension's own terms
 /// are checked at its turn before its units, an unknown term before a
-/// cycle. The unknown term's owner and the term are not carried by the cause
-/// yet, so the refusal is asserted by its code and its location at the term.
-#[trace("QSpec-TC-187", "QSpec-FR-142-AC-17")]
+/// cycle. An unknown term retains its owning dimension and the term spelling.
+#[trace("FR-091-AC-71", "QSpec-TC-187", "QSpec-FR-142-AC-17")]
 #[test]
 fn step_minus_one_checks_a_dimensions_own_terms_before_its_units() {
     let edge = |a: &str, b: &str| (a.to_owned(), b.to_owned());
@@ -3045,8 +3132,9 @@ fn step_minus_one_checks_a_dimensions_own_terms_before_its_units() {
     };
     assert_eq!(
         error.cause,
-        AssemblyCause::UnresolvedQuantityName {
-            name: "K".to_owned()
+        AssemblyCause::UnresolvedDimensionTerm {
+            dimension: "D".to_owned(),
+            term: "K".to_owned(),
         }
     );
     assert_eq!(
@@ -3061,8 +3149,9 @@ fn step_minus_one_checks_a_dimensions_own_terms_before_its_units() {
     };
     assert_eq!(
         error.cause,
-        AssemblyCause::UnresolvedQuantityName {
-            name: "K".to_owned()
+        AssemblyCause::UnresolvedDimensionTerm {
+            dimension: "A".to_owned(),
+            term: "K".to_owned(),
         }
     );
     assert_eq!(&text[error.span.start..error.span.end], "K");
@@ -3083,8 +3172,9 @@ fn a_dimension_reaching_a_defect_runs_its_own_unit_rows_first() {
     };
     assert_eq!(
         error.cause,
-        AssemblyCause::UnresolvedQuantityName {
-            name: "K".to_owned()
+        AssemblyCause::UnresolvedDimensionTerm {
+            dimension: "D".to_owned(),
+            term: "K".to_owned(),
         }
     );
     assert_eq!(&text[error.span.start..error.span.end], "K");
@@ -3131,8 +3221,9 @@ fn a_dimension_without_a_map_anchors_no_base_dimension_obligation() {
     };
     assert_eq!(
         error.cause,
-        AssemblyCause::UnresolvedQuantityName {
-            name: "K".to_owned()
+        AssemblyCause::UnresolvedDimensionTerm {
+            dimension: "D".to_owned(),
+            term: "K".to_owned(),
         }
     );
     assert_eq!(&text[error.span.start..error.span.end], "K");
@@ -3183,7 +3274,6 @@ fn u11q_the_first_document_takes_the_first_turn_whatever_its_offsets() {
         };
         (error.cause.catalog_code().to_string(), error.cause.clone())
     };
-    let edge = |a: &str, b: &str| (a.to_owned(), b.to_owned());
     assert_eq!(
         run(("1", &time), ("2", &length)).0,
         "invalid_package/invalid-value".to_owned()
@@ -3192,8 +3282,12 @@ fn u11q_the_first_document_takes_the_first_turn_whatever_its_offsets() {
         run(("2", &length), ("1", &time)),
         (
             "invalid_package/definition-cycle".to_owned(),
-            AssemblyCause::QuantityCycle {
-                edges: vec![edge("u_self", "u_self")]
+            AssemblyCause::UnitGraphTopology {
+                fault: super::TopologyFault::TargetCycle,
+                retained: vec![super::TopologyRetained::Edge {
+                    from: "u_self".to_owned(),
+                    to: "u_self".to_owned(),
+                }],
             }
         )
     );
@@ -3724,7 +3818,7 @@ fn the_dimension_and_unit_causes_have_their_catalog_codes() {
         (
             AssemblyCause::UnitGraphTopology {
                 fault: TopologyFault::TwoRoots,
-                declarations: Vec::new(),
+                retained: Vec::new(),
             },
             "invalid_package/conflicting-definition",
         ),

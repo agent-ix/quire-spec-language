@@ -209,6 +209,8 @@ impl Default for AssemblyLimits {
 /// declarations").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TopologyFault {
+    /// A unit target names no local or imported unit (row 2).
+    UnknownTarget,
     /// A unit whose scale is zero.
     ZeroScale,
     /// A targetless unit whose scale is not one or whose offset is not
@@ -218,6 +220,41 @@ pub enum TopologyFault {
     CrossDimensionTarget,
     /// A dimension whose units have two targetless roots.
     TwoRoots,
+    /// A unit target chain is cyclic (row 6).
+    TargetCycle,
+}
+
+/// One typed value retained by a unit-graph refusal (FR-091 "Topology error
+/// fields").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TopologyRetained {
+    /// A declared unit, with its nominal node key when it is already fixed.
+    Unit {
+        /// The unit's declared name or fixed model identity.
+        name: String,
+        /// Its structural node key when the node is already fixed.
+        key: Option<NodeKey>,
+    },
+    /// A declared dimension, with its nominal node key when it is already fixed.
+    Dimension {
+        /// The dimension's declared name or fixed model identity.
+        name: String,
+        /// Its structural node key when the node is already fixed.
+        key: Option<NodeKey>,
+    },
+    /// A target name exactly as written.
+    TargetName(String),
+    /// A unit's reduced scale.
+    Scale(quire_exact::Rational),
+    /// A unit's reduced offset.
+    Offset(quire_exact::Rational),
+    /// A retained cycle edge, in the order required by FR-142.
+    Edge {
+        /// The declaring unit.
+        from: String,
+        /// The target unit.
+        to: String,
+    },
 }
 
 /// Why the assembler refused one part of a unit (FR-091 "The assembler
@@ -325,6 +362,13 @@ pub enum AssemblyCause {
         /// The name as written.
         name: String,
     },
+    /// A dimension term names no local or imported dimension.
+    UnresolvedDimensionTerm {
+        /// The dimension that owns the term.
+        dimension: String,
+        /// The term name as written.
+        term: String,
+    },
     /// A model member's `typeRef` names no unit in the compiling unit.
     UnresolvedModelQuantityType {
         /// The unit name as written.
@@ -334,8 +378,7 @@ pub enum AssemblyCause {
         /// The typed member path, such as `Operation.params[0].typeRef`.
         member_path: String,
     },
-    /// A dimension reaches itself through derived dimensions, or a unit's
-    /// target chain reaches that unit again.
+    /// A dimension reaches itself through derived dimensions.
     QuantityCycle {
         /// The cycle's dependency edges, `(declaration, declaration it
         /// names)`.
@@ -367,12 +410,12 @@ pub enum AssemblyCause {
         /// it.
         unit: String,
     },
-    /// A unit-graph topology error, naming the declarations it concerns.
+    /// A unit-graph topology error, retaining the typed values it concerns.
     UnitGraphTopology {
         /// Which check refused.
         fault: TopologyFault,
-        /// The declarations concerned.
-        declarations: Vec<String>,
+        /// The typed values retained by this refusal.
+        retained: Vec<TopologyRetained>,
     },
     /// An enum names one case more than once.
     DuplicateEnumMember {
@@ -560,9 +603,9 @@ impl AssemblyCause {
             | Self::AmbiguousTerminal { .. }
             | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => Code::AmbiguousDeclaration,
-            Self::UnresolvedQuantityName { .. } | Self::UnanchoredBaseDimension { .. } => {
-                Code::MissingDeclaration
-            }
+            Self::UnresolvedQuantityName { .. }
+            | Self::UnresolvedDimensionTerm { .. }
+            | Self::UnanchoredBaseDimension { .. } => Code::MissingDeclaration,
             Self::UnresolvedModelQuantityType { .. } => Code::MissingDeclaration,
             Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
                 Code::ConflictingDeclaration
@@ -570,7 +613,10 @@ impl AssemblyCause {
             Self::QuantityCycle { .. } | Self::DimensionEquivalence { .. } => Code::InvalidPackage,
             Self::ZeroDenominator => Code::UndefinedExpression,
             Self::DecimalScaleLimit(_) => Code::StageLimitExceeded,
-            Self::UnitGraphTopology { .. } => Code::InvalidPackage,
+            Self::UnitGraphTopology { fault, .. } => match fault {
+                TopologyFault::UnknownTarget => Code::MissingDeclaration,
+                _ => Code::InvalidPackage,
+            },
             Self::IllFormedBounds(_)
             | Self::ImportedTypeName { .. }
             | Self::OverNotObjectType { .. } => Code::IllTyped,
@@ -649,9 +695,9 @@ impl AssemblyCause {
             | Self::AmbiguousTerminal { .. }
             | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => "ambiguous-name",
-            Self::UnresolvedQuantityName { .. } | Self::UnanchoredBaseDimension { .. } => {
-                "missing-name"
-            }
+            Self::UnresolvedQuantityName { .. }
+            | Self::UnresolvedDimensionTerm { .. }
+            | Self::UnanchoredBaseDimension { .. } => "missing-name",
             Self::UnresolvedModelQuantityType { .. } => "missing-name",
             Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
                 "duplicate-declaration"
@@ -666,9 +712,11 @@ impl AssemblyCause {
             Self::DecimalScaleLimit(limit) => limit.kind().catalog_cause(),
             // QSpec FR-142 rows 1, 5, 3 and 4.
             Self::UnitGraphTopology { fault, .. } => match fault {
+                TopologyFault::UnknownTarget => "missing-name",
                 TopologyFault::ZeroScale | TopologyFault::NonIdentityRoot => "invalid-value",
                 TopologyFault::CrossDimensionTarget => "incompatible-definition",
                 TopologyFault::TwoRoots => "conflicting-definition",
+                TopologyFault::TargetCycle => "definition-cycle",
             },
             Self::IllFormedBounds(_) | Self::OverNotObjectType { .. } => "type-mismatch",
             Self::ImportedTypeName { .. } => "operator-ineligible",

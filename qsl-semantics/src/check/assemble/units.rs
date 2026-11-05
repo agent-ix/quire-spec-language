@@ -14,10 +14,11 @@ use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::{Setting, Span};
 use quire_exact::{Integer, NodeKey, Rational};
 
-use super::{AssemblyCause, AssemblyError, AssemblyLimits, TopologyFault};
+use super::{AssemblyCause, AssemblyError, AssemblyLimits, TopologyFault, TopologyRetained};
 use crate::check::lowering::AdmittedModel;
 use crate::check::lowering::{quantity_origin, strongly_connected, QuantityKind};
 use crate::check::node_key::SourceOwner;
+use crate::check::time_units::{package_unit_scale, rational, scalar_type_key};
 use crate::model::domain_package::PackageDimensionRecord;
 use crate::value::semantic_node::{ModelSubject, NodeOwner, NominalRefusal, OwnerSelection};
 use crate::value::unit::{admit_unit_graph, DimensionPreimage, UnitPreimage};
@@ -149,6 +150,13 @@ enum BaseRef {
     Imported(NodeKey),
 }
 
+/// A unit's dimension, whether declared in this source or imported by alias.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum DimensionRef {
+    Local(usize),
+    Imported(NodeKey),
+}
+
 /// The base-dimension exponents of every dimension, indexed as `dimensions`,
 /// once no cycle remains: a base dimension is itself with exponent one, a
 /// derived dimension is its terms' maps, multiplied by their exponents
@@ -217,6 +225,8 @@ pub(super) struct ImportedDimension {
     pub(super) map: BTreeMap<NodeKey, Integer>,
     /// Whether its package declares a unit of it.
     pub(super) has_unit: bool,
+    /// Root units admitted with this dimension, in package declaration order.
+    pub(super) roots: Vec<ImportedUnit>,
     /// Its model selection's span, where a refusal of it is located.
     pub(super) selection: Span,
     /// The package dimensions its terms name, by `Alias::Name`.
@@ -225,12 +235,30 @@ pub(super) struct ImportedDimension {
     pub(super) order: usize,
 }
 
+/// A unit node admitted with a selected domain package.
+#[derive(Clone, Debug)]
+pub(super) struct ImportedUnit {
+    /// The structural node key.
+    pub(super) key: NodeKey,
+    /// The unit's FCD identity.
+    pub(super) identity: String,
+    /// The dimension node this unit belongs to.
+    pub(super) dimension: NodeKey,
+    /// The composed scale to the canonical root.
+    pub(super) root_scale: Rational,
+    /// The composed offset to the canonical root.
+    pub(super) root_offset: Rational,
+}
+
 /// The dimensions of the unit's admitted domain packages, by `Alias::Name`,
 /// and each package base dimension's preimage by its key.
 #[derive(Default)]
 pub(super) struct Imported {
     pub(super) dimensions: BTreeMap<String, ImportedDimension>,
-    bases: BTreeMap<NodeKey, DimensionPreimage>,
+    /// Imported unit nodes, by `Alias::name`.
+    pub(super) units: BTreeMap<String, ImportedUnit>,
+    dimensions_by_key: BTreeMap<NodeKey, DimensionPreimage>,
+    unit_nodes: Vec<(UnitPreimage, NodeKey)>,
     owners: Vec<NodeOwner>,
 }
 
@@ -241,16 +269,18 @@ impl Imported {
         let mut imported = Self::default();
         for (model, selection) in models {
             let Some(alias) = model.alias() else { continue };
+            let mut dimension_keys = BTreeMap::new();
             for dimension in &model.dimensions {
                 let Some((key, map, preimage)) =
                     package_dimension(model, dimension, &mut Vec::new())
                 else {
                     continue;
                 };
-                if dimension.base {
-                    imported.owners.push(preimage.owner().clone());
-                    imported.bases.insert(key.clone(), preimage);
-                }
+                imported
+                    .dimensions_by_key
+                    .insert(key.clone(), preimage.clone());
+                imported.owners.push(preimage.owner().clone());
+                dimension_keys.insert(dimension.key.clone(), key.clone());
                 imported.dimensions.insert(
                     format!("{alias}::{}", dimension.name),
                     ImportedDimension {
@@ -261,6 +291,7 @@ impl Imported {
                             .units
                             .iter()
                             .any(|unit| unit.dimension == dimension.key),
+                        roots: Vec::new(),
                         selection: *selection,
                         terms: dimension
                             .terms
@@ -271,6 +302,79 @@ impl Imported {
                             })
                             .collect(),
                         order: imported.dimensions.len(),
+                    },
+                );
+            }
+            for unit in &model.units {
+                let Some(dimension) = dimension_keys.get(&unit.dimension).cloned() else {
+                    continue;
+                };
+                let Some(_model_key) = scalar_type_key(&unit.key, "unit") else {
+                    continue;
+                };
+                let Some(scale) = rational(&unit.scale) else {
+                    continue;
+                };
+                let Some(offset) = rational(&unit.offset) else {
+                    continue;
+                };
+                let target = unit
+                    .target
+                    .as_ref()
+                    .and_then(|target| scalar_type_key(target, "unit"));
+                let node_owner = NodeOwner::Model(ModelSubject {
+                    identity: model.selection().identity.clone(),
+                    node: unit.key.node.clone(),
+                });
+                let Ok(preimage) = UnitPreimage::new(
+                    node_owner.clone(),
+                    vec![unit.name.clone()],
+                    dimension.clone(),
+                    target.clone(),
+                    &scale,
+                    &offset,
+                ) else {
+                    continue;
+                };
+                let Some(key) = preimage.key().ok() else {
+                    continue;
+                };
+                let Some((root_scale, root_offset)) = package_unit_scale(unit, &model.units) else {
+                    continue;
+                };
+                if unit.target.is_none() {
+                    for imported_dimension in imported
+                        .dimensions
+                        .values_mut()
+                        .filter(|d| d.identity == unit.dimension.node)
+                    {
+                        if !imported_dimension.roots.iter().any(|root| root.key == key) {
+                            imported_dimension.roots.push(ImportedUnit {
+                                key: key.clone(),
+                                identity: unit.key.node.clone(),
+                                dimension: dimension.clone(),
+                                root_scale: root_scale.clone(),
+                                root_offset: root_offset.clone(),
+                            });
+                        }
+                    }
+                }
+                imported.owners.push(node_owner);
+                if !imported
+                    .unit_nodes
+                    .iter()
+                    .any(|(_, existing)| existing == &key)
+                {
+                    imported.unit_nodes.push((preimage, key.clone()));
+                }
+                imported.units.insert(
+                    format!("{alias}::{}", unit.name),
+                    ImportedUnit {
+                        key,
+                        identity: unit.key.node.clone(),
+                        dimension,
+                        root_scale,
+                        root_offset,
                     },
                 );
             }
@@ -430,8 +534,9 @@ struct Walk<'a> {
     dimension_edges: &'a [Vec<usize>],
     /// Whether a dimension has a term naming no dimension.
     unknown_term: &'a [bool],
-    unit_dimension: &'a [usize],
+    unit_dimension: &'a [DimensionRef],
     unit_edges: &'a [Vec<usize>],
+    package_targets: &'a [Option<ImportedUnit>],
     /// Whether a unit's target names no unit.
     unknown_target: &'a [bool],
     scales: &'a [Rational],
@@ -441,14 +546,13 @@ struct Walk<'a> {
 }
 
 impl Walk<'_> {
-    fn topology(&self, fault: TopologyFault, declarations: Vec<&str>, span: Span) -> AssemblyError {
-        error(
-            AssemblyCause::UnitGraphTopology {
-                fault,
-                declarations: declarations.into_iter().map(str::to_owned).collect(),
-            },
-            span,
-        )
+    fn topology(
+        &self,
+        fault: TopologyFault,
+        retained: Vec<TopologyRetained>,
+        span: Span,
+    ) -> AssemblyError {
+        error(AssemblyCause::UnitGraphTopology { fault, retained }, span)
     }
 
     /// FR-142's turn list: a local dimension takes its turn at its own
@@ -525,9 +629,13 @@ impl Walk<'_> {
                     turns.push(Turn::Local(*index));
                 }
                 Declaration::Unit(index) => {
-                    let mut roots = vec![Turn::Local(self.unit_dimension[*index])];
+                    let mut roots = self.dimension_turns(&self.unit_dimension[*index]);
                     if let Some(&target) = self.unit_edges[*index].first() {
-                        roots.push(Turn::Local(self.unit_dimension[target]));
+                        roots.extend(self.dimension_turns(&self.unit_dimension[target]));
+                    } else if let Some(target) = &self.package_targets[*index] {
+                        roots.extend(
+                            self.dimension_turns(&DimensionRef::Imported(target.dimension.clone())),
+                        );
                     }
                     mention(roots, &mut turns);
                 }
@@ -558,6 +666,41 @@ impl Walk<'_> {
                 .dimensions
                 .contains_key(name)
                 .then(|| Turn::Imported(name.to_owned())),
+        }
+    }
+
+    fn dimension_turns(&self, dimension: &DimensionRef) -> Vec<Turn> {
+        match dimension {
+            DimensionRef::Local(index) => vec![Turn::Local(*index)],
+            DimensionRef::Imported(key) => self
+                .imported
+                .dimensions
+                .iter()
+                .find(|(_, dimension)| &dimension.key == key)
+                .map(|(name, _)| vec![Turn::Imported(name.clone())])
+                .unwrap_or_default(),
+        }
+    }
+
+    fn retained_dimension(&self, dimension: &DimensionRef) -> TopologyRetained {
+        match dimension {
+            DimensionRef::Local(index) => TopologyRetained::Dimension {
+                name: self.dimension_names[*index].to_owned(),
+                key: None,
+            },
+            DimensionRef::Imported(key) => self
+                .imported
+                .dimensions
+                .values()
+                .find(|dimension| &dimension.key == key)
+                .map(|dimension| TopologyRetained::Dimension {
+                    name: dimension.identity.clone(),
+                    key: Some(key.clone()),
+                })
+                .unwrap_or_else(|| TopologyRetained::Dimension {
+                    name: key.to_string(),
+                    key: Some(key.clone()),
+                }),
         }
     }
 
@@ -620,26 +763,168 @@ impl Walk<'_> {
     /// The first local unit, in source order, whose dimension has a normalized
     /// map carrying `base`.
     fn carrier(&self, base: &BaseRef, context: &Context<'_>) -> Option<usize> {
-        (0..self.units.len()).find(|&unit| {
-            let dimension = self.unit_dimension[unit];
-            !context.mapless[dimension] && self.maps[dimension].contains_key(base)
+        (0..self.units.len()).find(|&unit| match &self.unit_dimension[unit] {
+            DimensionRef::Local(dimension) => {
+                !context.mapless[*dimension] && self.maps[*dimension].contains_key(base)
+            }
+            DimensionRef::Imported(key) => self
+                .imported
+                .dimensions
+                .values()
+                .find(|dimension| &dimension.key == key)
+                .is_some_and(|dimension| match base {
+                    BaseRef::Imported(base) => dimension.map.contains_key(base),
+                    BaseRef::Source(_) => false,
+                }),
         })
     }
 
     fn imported_turn(&self, name: &str, context: &Context<'_>) -> Option<AssemblyError> {
         let dimension = self.imported.dimensions.get(name)?;
+        let local: Vec<usize> = (0..self.units.len())
+            .filter(|&unit| {
+                self.unit_dimension[unit] == DimensionRef::Imported(dimension.key.clone())
+            })
+            .collect();
         let base = dimension.map.len() == 1 && dimension.map.contains_key(&dimension.key);
-        if !base || dimension.has_unit {
-            return None;
+        if base && !dimension.has_unit && local.is_empty() {
+            let unit = self.carrier(&BaseRef::Imported(dimension.key.clone()), context)?;
+            return Some(error(
+                AssemblyCause::UnanchoredBaseDimension {
+                    dimension: dimension.identity.clone(),
+                    unit: self.unit_names[unit].to_owned(),
+                },
+                dimension.selection,
+            ));
         }
-        let unit = self.carrier(&BaseRef::Imported(dimension.key.clone()), context)?;
-        Some(error(
-            AssemblyCause::UnanchoredBaseDimension {
-                dimension: dimension.identity.clone(),
-                unit: self.unit_names[unit].to_owned(),
-            },
-            dimension.selection,
-        ))
+        for &unit in &local {
+            if self.scales[unit].is_zero() {
+                return Some(self.topology(
+                    TopologyFault::ZeroScale,
+                    vec![
+                        TopologyRetained::Unit {
+                            name: self.unit_names[unit].to_owned(),
+                            key: None,
+                        },
+                        TopologyRetained::Scale(self.scales[unit].clone()),
+                    ],
+                    self.unit_spans[unit],
+                ));
+            }
+            if self.unknown_target[unit] {
+                let target = self.units[unit].target.as_ref()?;
+                return Some(self.topology(
+                    TopologyFault::UnknownTarget,
+                    vec![
+                        TopologyRetained::Unit {
+                            name: self.unit_names[unit].to_owned(),
+                            key: None,
+                        },
+                        TopologyRetained::TargetName(target.name.clone()),
+                    ],
+                    target.span,
+                ));
+            }
+            let target_dimension = self.unit_edges[unit]
+                .first()
+                .map(|target| self.unit_dimension[*target].clone())
+                .or_else(|| {
+                    self.package_targets[unit]
+                        .as_ref()
+                        .map(|target| DimensionRef::Imported(target.dimension.clone()))
+                });
+            if let Some(target_dimension) = target_dimension {
+                if target_dimension != DimensionRef::Imported(dimension.key.clone()) {
+                    let target_name = self.units[unit].target.as_ref().map_or_else(
+                        || self.unit_names[unit].to_owned(),
+                        |target| target.name.clone(),
+                    );
+                    return Some(self.topology(
+                        TopologyFault::CrossDimensionTarget,
+                        vec![
+                            TopologyRetained::Unit {
+                                name: self.unit_names[unit].to_owned(),
+                                key: None,
+                            },
+                            TopologyRetained::TargetName(target_name),
+                            TopologyRetained::Dimension {
+                                name: dimension.identity.clone(),
+                                key: Some(dimension.key.clone()),
+                            },
+                            self.retained_dimension(&target_dimension),
+                        ],
+                        self.unit_spans[unit],
+                    ));
+                }
+            }
+        }
+        let mut roots: Vec<TopologyRetained> = dimension
+            .roots
+            .iter()
+            .map(|root| TopologyRetained::Unit {
+                name: root.identity.clone(),
+                key: Some(root.key.clone()),
+            })
+            .collect();
+        let local_roots: Vec<usize> = local
+            .iter()
+            .copied()
+            .filter(|&unit| {
+                self.units[unit].target.is_none() && self.package_targets[unit].is_none()
+            })
+            .collect();
+        roots.extend(local_roots.iter().map(|root| TopologyRetained::Unit {
+            name: self.unit_names[*root].to_owned(),
+            key: None,
+        }));
+        if roots.len() > 1 {
+            let second = local_roots
+                .first()
+                .copied()
+                .or_else(|| local.first().copied())?;
+            let mut retained = vec![TopologyRetained::Dimension {
+                name: dimension.identity.clone(),
+                key: Some(dimension.key.clone()),
+            }];
+            retained.extend(roots);
+            return Some(self.topology(TopologyFault::TwoRoots, retained, self.unit_spans[second]));
+        }
+        if dimension.roots.is_empty() {
+            if let Some(&root) = local_roots.first() {
+                let one = Rational::from_integer(Integer::one());
+                if self.scales[root] != one || !self.offsets[root].is_zero() {
+                    return Some(self.topology(
+                        TopologyFault::NonIdentityRoot,
+                        vec![
+                            TopologyRetained::Unit {
+                                name: self.unit_names[root].to_owned(),
+                                key: None,
+                            },
+                            TopologyRetained::Scale(self.scales[root].clone()),
+                            TopologyRetained::Offset(self.offsets[root].clone()),
+                        ],
+                        self.unit_spans[root],
+                    ));
+                }
+            }
+        }
+        let least = local
+            .iter()
+            .copied()
+            .find(|&unit| context.unit_cyclic[unit])?;
+        let mut retained = Vec::new();
+        let mut at = least;
+        while let Some(&target) = self.unit_edges[at].first() {
+            retained.push(TopologyRetained::Edge {
+                from: self.unit_names[at].to_owned(),
+                to: self.unit_names[target].to_owned(),
+            });
+            at = target;
+            if at == least {
+                break;
+            }
+        }
+        Some(self.topology(TopologyFault::TargetCycle, retained, self.unit_spans[least]))
     }
 
     fn local_turn(&self, index: usize, context: &Context<'_>) -> Option<AssemblyError> {
@@ -648,8 +933,9 @@ impl Walk<'_> {
         for term in &form.terms {
             if self.named(&term.name.name).is_none() {
                 return Some(error(
-                    AssemblyCause::UnresolvedQuantityName {
-                        name: term.name.name.clone(),
+                    AssemblyCause::UnresolvedDimensionTerm {
+                        dimension: self.dimension_names[index].to_owned(),
+                        term: term.name.name.clone(),
                     },
                     term.name.span,
                 ));
@@ -664,7 +950,7 @@ impl Walk<'_> {
             ));
         }
         let local: Vec<usize> = (0..self.units.len())
-            .filter(|&unit| self.unit_dimension[unit] == index)
+            .filter(|&unit| self.unit_dimension[unit] == DimensionRef::Local(index))
             .collect();
         // Step (0): a base dimension no unit anchors.
         if form.terms.is_empty() && local.is_empty() {
@@ -682,24 +968,65 @@ impl Walk<'_> {
             if self.scales[unit].is_zero() {
                 return Some(self.topology(
                     TopologyFault::ZeroScale,
-                    vec![self.unit_names[unit]],
+                    vec![
+                        TopologyRetained::Unit {
+                            name: self.unit_names[unit].to_owned(),
+                            key: None,
+                        },
+                        TopologyRetained::Scale(self.scales[unit].clone()),
+                    ],
                     self.unit_spans[unit],
                 ));
             }
             if self.unknown_target[unit] {
                 let target = self.units[unit].target.as_ref()?;
-                return Some(error(
-                    AssemblyCause::UnresolvedQuantityName {
-                        name: target.name.clone(),
-                    },
+                return Some(self.topology(
+                    TopologyFault::UnknownTarget,
+                    vec![
+                        TopologyRetained::Unit {
+                            name: self.unit_names[unit].to_owned(),
+                            key: None,
+                        },
+                        TopologyRetained::TargetName(target.name.clone()),
+                    ],
                     target.span,
                 ));
             }
             if let Some(&target) = self.unit_edges[unit].first() {
-                if self.unit_dimension[target] != index {
+                if self.unit_dimension[target] != DimensionRef::Local(index) {
                     return Some(self.topology(
                         TopologyFault::CrossDimensionTarget,
-                        vec![self.unit_names[unit], self.unit_names[target]],
+                        vec![
+                            TopologyRetained::Unit {
+                                name: self.unit_names[unit].to_owned(),
+                                key: None,
+                            },
+                            TopologyRetained::TargetName(self.unit_names[target].to_owned()),
+                            self.retained_dimension(&self.unit_dimension[unit]),
+                            self.retained_dimension(&self.unit_dimension[target]),
+                        ],
+                        self.unit_spans[unit],
+                    ));
+                }
+            } else if let Some(target) = &self.package_targets[unit] {
+                let target_dimension = DimensionRef::Imported(target.dimension.clone());
+                if self.unit_dimension[unit] != target_dimension {
+                    return Some(self.topology(
+                        TopologyFault::CrossDimensionTarget,
+                        vec![
+                            TopologyRetained::Unit {
+                                name: self.unit_names[unit].to_owned(),
+                                key: None,
+                            },
+                            TopologyRetained::TargetName(
+                                self.units[unit].target.as_ref().map_or_else(
+                                    || target.identity.clone(),
+                                    |name| name.name.clone(),
+                                ),
+                            ),
+                            self.retained_dimension(&self.unit_dimension[unit]),
+                            self.retained_dimension(&target_dimension),
+                        ],
                         self.unit_spans[unit],
                     ));
                 }
@@ -709,7 +1036,9 @@ impl Walk<'_> {
         let roots: Vec<usize> = local
             .iter()
             .copied()
-            .filter(|&unit| self.units[unit].target.is_none())
+            .filter(|&unit| {
+                self.units[unit].target.is_none() && self.package_targets[unit].is_none()
+            })
             .collect();
         match roots.as_slice() {
             [] => {}
@@ -718,17 +1047,30 @@ impl Walk<'_> {
                 if self.scales[*root] != one || !self.offsets[*root].is_zero() {
                     return Some(self.topology(
                         TopologyFault::NonIdentityRoot,
-                        vec![self.unit_names[*root]],
+                        vec![
+                            TopologyRetained::Unit {
+                                name: self.unit_names[*root].to_owned(),
+                                key: None,
+                            },
+                            TopologyRetained::Scale(self.scales[*root].clone()),
+                            TopologyRetained::Offset(self.offsets[*root].clone()),
+                        ],
                         self.unit_spans[*root],
                     ));
                 }
             }
             [_, second, ..] => {
-                let mut names = vec![self.dimension_names[index]];
-                names.extend(roots.iter().map(|root| self.unit_names[*root]));
+                let mut retained = vec![TopologyRetained::Dimension {
+                    name: self.dimension_names[index].to_owned(),
+                    key: None,
+                }];
+                retained.extend(roots.iter().map(|root| TopologyRetained::Unit {
+                    name: self.unit_names[*root].to_owned(),
+                    key: None,
+                }));
                 return Some(self.topology(
                     TopologyFault::TwoRoots,
-                    names,
+                    retained,
                     self.unit_spans[*second],
                 ));
             }
@@ -741,17 +1083,20 @@ impl Walk<'_> {
         let mut edges = Vec::new();
         let mut at = least;
         while let Some(&target) = self.unit_edges[at].first() {
-            edges.push((
-                self.unit_names[at].to_owned(),
-                self.unit_names[target].to_owned(),
-            ));
+            edges.push(TopologyRetained::Edge {
+                from: self.unit_names[at].to_owned(),
+                to: self.unit_names[target].to_owned(),
+            });
             at = target;
             if at == least {
                 break;
             }
         }
         Some(error(
-            AssemblyCause::QuantityCycle { edges },
+            AssemblyCause::UnitGraphTopology {
+                fault: TopologyFault::TargetCycle,
+                retained: edges,
+            },
             self.unit_spans[least],
         ))
     }
@@ -860,18 +1205,33 @@ pub(super) fn assemble(
         }
     }
     let mut unit_dimension = Vec::with_capacity(units.len());
+    let mut unit_dimension_indices = Vec::with_capacity(units.len());
     let mut unit_edges = vec![Vec::new(); units.len()];
+    let mut package_targets = vec![None; units.len()];
     let mut unknown_target = vec![false; units.len()];
     for (index, form) in units.iter().enumerate() {
-        let dimension = dimension_index.get(form.dimension.name.as_str()).copied();
+        let dimension = match dimension_index.get(form.dimension.name.as_str()).copied() {
+            Some(index) => Some(DimensionRef::Local(index)),
+            None => imported
+                .dimensions
+                .get(&form.dimension.name)
+                .map(|dimension| DimensionRef::Imported(dimension.key.clone())),
+        };
         if dimension.is_none() {
             errors.push(unresolved(&form.dimension.name, form.dimension.span));
         }
-        unit_dimension.push(dimension);
+        unit_dimension_indices.push(match &dimension {
+            Some(DimensionRef::Local(index)) => Some(*index),
+            Some(DimensionRef::Imported(_)) | None => None,
+        });
+        unit_dimension.push(dimension.unwrap_or(DimensionRef::Local(0)));
         if let Some(target) = &form.target {
             match unit_index.get(target.name.as_str()) {
                 Some(&named) => unit_edges[index].push(named),
-                None => unknown_target[index] = true,
+                None => match imported.units.get(&target.name) {
+                    Some(package_unit) => package_targets[index] = Some(package_unit.clone()),
+                    None => unknown_target[index] = true,
+                },
             }
         }
     }
@@ -895,7 +1255,7 @@ pub(super) fn assemble(
     let fixed = provisional(
         dimensions,
         units,
-        &unit_dimension,
+        &unit_dimension_indices,
         &unit_edges,
         &unknown_target,
         &scales,
@@ -913,7 +1273,7 @@ pub(super) fn assemble(
     }
     let scales: Vec<Rational> = scales.into_iter().flatten().collect();
     let offsets: Vec<Rational> = offsets.into_iter().flatten().collect();
-    let unit_dimension: Vec<usize> = unit_dimension.into_iter().flatten().collect();
+    let unit_dimension: Vec<DimensionRef> = unit_dimension;
 
     // Unit-graph topology (FR-091-AC-35): FR-142's turn list, the first
     // defect of the first node that has one, and no other.
@@ -954,6 +1314,7 @@ pub(super) fn assemble(
         unknown_term: &unknown_term,
         unit_dimension: &unit_dimension,
         unit_edges: &unit_edges,
+        package_targets: &package_targets,
         unknown_target: &unknown_target,
         scales: &scales,
         offsets: &offsets,
@@ -967,8 +1328,6 @@ pub(super) fn assemble(
             provisional: fixed,
         });
     }
-    let unit_dimension: Vec<Option<usize>> = unit_dimension.into_iter().map(Some).collect();
-
     // Keys: each base dimension, then each derived one, then each unit
     // after its target.
     let first_span = dimension_spans
@@ -1025,19 +1384,26 @@ pub(super) fn assemble(
     let mut unit_nodes = Vec::with_capacity(units.len());
     for component in strongly_connected(&unit_edges) {
         for index in component {
-            let dimension = unit_dimension[index]
-                .and_then(|dimension| dimension_keys[dimension].clone())
-                .ok_or_else(|| {
-                    fault(
-                        InvalidSemanticGraph {
-                            cause: SemanticGraphCause::UnknownDimension,
-                        }
-                        .into(),
-                    )
-                })?;
+            let dimension = match &unit_dimension[index] {
+                DimensionRef::Local(dimension) => dimension_keys[*dimension].clone(),
+                DimensionRef::Imported(dimension) => Some(dimension.clone()),
+            }
+            .ok_or_else(|| {
+                fault(
+                    InvalidSemanticGraph {
+                        cause: SemanticGraphCause::UnknownDimension,
+                    }
+                    .into(),
+                )
+            })?;
             let target = unit_edges[index]
                 .first()
-                .and_then(|target| unit_keys[*target].clone());
+                .and_then(|target| unit_keys[*target].clone())
+                .or_else(|| {
+                    package_targets[index]
+                        .as_ref()
+                        .map(|target| target.key.clone())
+                });
             let node_owner = owners
                 .get(&units[index].name.name)
                 .unwrap_or(owner)
@@ -1072,10 +1438,17 @@ pub(super) fn assemble(
                         offset: to.scale.mul(&offsets[index]).add(&to.offset),
                     }
                 }
-                None => ComposedUnit {
-                    dimension: dimension.clone(),
-                    scale: scales[index].clone(),
-                    offset: offsets[index].clone(),
+                None => match &package_targets[index] {
+                    Some(to) => ComposedUnit {
+                        dimension: dimension.clone(),
+                        scale: to.root_scale.mul(&scales[index]),
+                        offset: to.root_scale.mul(&offsets[index]).add(&to.root_offset),
+                    },
+                    None => ComposedUnit {
+                        dimension: dimension.clone(),
+                        scale: scales[index].clone(),
+                        offset: offsets[index].clone(),
+                    },
                 },
             });
             unit_nodes.push((preimage, key));
@@ -1083,19 +1456,29 @@ pub(super) fn assemble(
     }
     // The imported base dimensions a derived dimension names join the graph
     // as admitted nodes.
-    let named_bases: BTreeSet<NodeKey> = maps
+    let named_dimensions: BTreeSet<NodeKey> = maps
         .iter()
         .flat_map(BTreeMap::keys)
         .filter_map(|base| match base {
             BaseRef::Imported(key) => Some(key.clone()),
             BaseRef::Source(_) => None,
         })
+        .chain(
+            unit_dimension
+                .iter()
+                .filter_map(|dimension| match dimension {
+                    DimensionRef::Imported(key) => Some(key.clone()),
+                    DimensionRef::Local(_) => None,
+                }),
+        )
+        .chain(imported.dimensions_by_key.keys().cloned())
         .collect();
-    for key in named_bases {
-        if let Some(preimage) = imported.bases.get(&key) {
+    for key in named_dimensions {
+        if let Some(preimage) = imported.dimensions_by_key.get(&key) {
             dimension_nodes.push((preimage.clone(), key));
         }
     }
+    unit_nodes.extend(imported.unit_nodes.iter().cloned());
     let owners = OwnerSelection::new(
         node_owners
             .into_iter()
