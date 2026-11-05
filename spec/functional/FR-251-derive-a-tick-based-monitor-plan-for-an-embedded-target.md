@@ -127,6 +127,23 @@ performs and SHALL NOT write a row anew, so a consumer authenticates the
 selected generated closure against the rows of the acquisition and never
 invents them or acquires the unit a second time.
 
+The plan's subject names the clause it monitors by the clause's checked node
+identity and its claim occurrence. The selection route is the `Emission`'s
+temporal binding rows: `declaration(subject.clause_node(),
+subject.occurrence().origin().ordinal())` returns the emitted declaration. The
+lookup is re-keyed with the retained rows through every rename the writer
+performs or may perform. The `Emission` that carries the plan-root bytes SHALL
+select, through that route, the clause node and claim occurrence the emitted
+package holds: the declaration identity its temporal binding rows
+return for the subject's clause node and claim ordinal equals the plan root's
+`clause` binding, and equals the `declaration` of the package's
+`temporal_clause_names` and `temporal_bindings` rows for that ordinal, after
+every rename the writer performs. A subject whose clause node and claim
+ordinal the emitted package does not hold selects nothing; it never selects
+another occurrence of the clause or another clause. A unit with several
+temporal clauses, or a clause with several claim occurrences, selects each
+subject's own occurrence.
+
 The retained closure SHALL include the clock binding's counter, exact unit
 scale and width, so `ClockBindingKey` requires no ambient lookup at build or
 execution. The plan's uncertainty and maximum gap remain available to every
@@ -502,6 +519,7 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-40 | Under AC-2's premises (`once[0 ms, 10 ms] holds(p)`, capacity 22, `b` 10000 ticks, `u` 0), 23 events at ticks 0 to 22 with `p` false at ticks 0 to 21 and true at the lost 23rd event settle the affected obligations `Incomplete(LimitReached{limit: event_buffer, value: 22, setting: monitor.max_event_rate})` and raise `history_start` to `22 + 1 + 0` = 23; `once[0 ms, 10 ms] holds(p)` read at tick 5000 is `indeterminate`, not `false`, at tick 10022 (`now - b` is 22) is still `indeterminate`, and at tick 10023 (`now - b` is 23) decides from the entries then in the window. For `historically[0 ms, 10 ms] holds(p)` with `p` true at ticks 0 to 21 and false at the lost event, the read at tick 5000 and at tick 10022 is `indeterminate`, not `true`. With `u` 2 ticks the lost event at tick 22 raises `history_start` to 22 + 1 + 4 = 27 and the first deciding tick is 10027. | Test (TC-706) |
 | FR-251-AC-41 | For `once`, `historically`, `since` and `triggered` without an upper bound, the differential of AC-7 compares the monitor with the `HistoryCutoff` evaluator of "Unbounded past operators" (every atom before the baseline `indeterminate`) and requires equal verdicts; it also evaluates the same trace under QSpec's infinite-trace evaluator and requires that every definite monitor verdict equals that evaluator's verdict, and an `indeterminate` monitor verdict is not compared. | Test (TC-1081) |
 | FR-251-AC-42 | The `Emission` returned with a plan-root package holds, non-empty wherever the acquisition had rows, the selected model declaration rows, selected model field rows, source-unit rows, model enum and source enum declaration and member rows, source union rows, source record rows, tuple declaration rows, operation-member rows, equality producer rows, equality fact rows, temporal binding rows and omitted nodes of that acquisition. Every node id in each of them (anchor, structural node, record node, declaration node, union payload node, record member type node, checked node, source-map entry node, fact nodes, omitted node and the node an omission cause names, temporal binding declaration) equals the plan-root package's id for the node, so a node the writer renames is named by its renamed id in every row and a row naming no renamed node is unchanged; no row is written anew. The selected model declaration and field rows equal the unit's acquisition rows, and IR's selected exact identity join accepts them against the package read back. | Test (TC-1081) |
+| FR-251-AC-43 | For a plan root written over a unit with two temporal clauses, each subject's clause node and claim ordinal select, through the returned `Emission`'s temporal binding rows, the declaration the plan root's `clause` binding names and the declaration of the package's `temporal_clause_names` row of that ordinal, read back through the strict reader; when the writer renames the clause node's id, the selection returns the renamed id and not the base package's id; a subject whose clause node or claim ordinal the package does not hold selects nothing, and a subject's selection never returns the other clause's declaration. | Test (TC-1081) |
 
 ## Dependencies
 

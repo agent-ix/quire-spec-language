@@ -59,6 +59,7 @@ mod operation_effects;
 mod option_value;
 mod owner_model;
 mod owners;
+mod plan_subject_selection;
 mod population_bound;
 mod population_reference;
 mod probabilistic;
