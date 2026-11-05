@@ -34,11 +34,22 @@ use qsl_eval::simulation::model::same_rewards;
 use quire_exact::{Identifier, Integer, Rational, Value};
 
 use super::finite_horizon::rational_fits;
-use super::rows::{free_delays_choice, free_delays_distribution, scheduler_distribution};
+use super::rows::{
+    free_delays_choice, free_delays_distribution, scheduler_distribution, DistributionFault,
+};
 use super::unbounded::same_action;
 use super::{
     ExactProbLimits, ProbProduct, ProbStateId, ProductAction, ProductKind, SchedulerChoice,
 };
+
+/// The largest randomized whole-action entry this analyzer materializes.
+/// Product transition limits can be much larger and do not bound the memory
+/// cost of cloning every row into every whole action.
+const MAX_WITNESS_ENTRY_ALTERNATIVES: usize = 1_024;
+
+/// Bound cumulative row copies while preflighting one randomized whole-action
+/// entry.
+const MAX_WITNESS_ENTRY_ROW_COPIES: usize = 16_384;
 
 /// Which choices a witness scheduler resolves (FR-202, FR-204 "Evidence").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -96,6 +107,12 @@ pub enum WitnessError {
     /// The policy selects no action at a state the paths reach.
     #[error("the policy selects no action at state {state}")]
     NoChoice {
+        /// The state's discovery index.
+        state: usize,
+    },
+    /// A randomized entry exceeds the configured or analyzer-owned resource bound.
+    #[error("the randomized entry at state {state} exceeds its resource bound")]
+    TooManyAlternatives {
         /// The state's discovery index.
         state: usize,
     },
@@ -168,33 +185,62 @@ impl EntryChoice {
 }
 
 /// The entry a randomized `policy` takes at `state`; the one choice of a
-/// DTMC state. `None` when the state has no edges, the policy selects none,
-/// or a distribution does not sum to 1.
+/// DTMC state. Alternatives are in canonical choice order, each with a
+/// positive probability, and are bounded by both `limits`' `max_transitions`
+/// and the analyzer's witness-entry resource limit.
+///
+/// # Errors
+///
+/// [`WitnessError::NoChoice`] when the state has no edges, the policy selects
+/// none, or a distribution repeats a choice, gives a choice no positive
+/// probability, names a choice the state lacks, or does not sum to 1;
+/// [`WitnessError::TooManyAlternatives`] past either resource limit.
 pub fn entry_choice(
     product: &ProbProduct,
     state: ProbStateId,
     policy: &[Option<SchedulerChoice>],
     limits: &ExactProbLimits,
-) -> Option<EntryChoice> {
-    let first = product.outgoing(state).first()?;
+) -> Result<EntryChoice, WitnessError> {
+    let index = state.index();
+    let no_choice = WitnessError::NoChoice { state: index };
+    let max_alternatives = limits.model.limits.max_transitions;
+    let first = product.outgoing(state).first().ok_or(no_choice)?;
     let alternatives: Vec<(ProductAction, Rational)> =
         if matches!(first.choice, ProductAction::FreeDelays(_)) {
-            free_delays_distribution(product, state, policy, limits)?
+            free_delays_distribution(
+                product,
+                state,
+                policy,
+                max_alternatives.min(MAX_WITNESS_ENTRY_ALTERNATIVES),
+                MAX_WITNESS_ENTRY_ROW_COPIES,
+            )
+            .map_err(|fault| match fault {
+                DistributionFault::NoChoice => no_choice,
+                DistributionFault::TooMany => WitnessError::TooManyAlternatives { state: index },
+            })?
         } else if product.kind == ProductKind::Dtmc {
             vec![(first.choice.clone(), rational(1))]
         } else {
             let choices = choices_at(product, state);
-            let selected = scheduler_distribution(policy.get(state.index())?.as_ref()?)?;
+            let selected = policy
+                .get(index)
+                .and_then(Option::as_ref)
+                .and_then(scheduler_distribution)
+                .ok_or(no_choice)?;
+            if selected.len() > max_alternatives {
+                return Err(WitnessError::TooManyAlternatives { state: index });
+            }
             let mut alternatives = Vec::with_capacity(selected.len());
-            for (index, probability) in selected {
-                alternatives.push(((*choices.get(index)?).clone(), probability));
+            for (choice, probability) in selected {
+                let action = choices.get(choice).ok_or(no_choice)?;
+                alternatives.push(((*action).clone(), probability));
             }
             alternatives
         };
-    match alternatives.as_slice() {
-        [(action, _)] => Some(EntryChoice::Action(action.clone())),
-        _ => Some(EntryChoice::Randomized(alternatives)),
-    }
+    Ok(match alternatives.as_slice() {
+        [(action, _)] => EntryChoice::Action(action.clone()),
+        _ => EntryChoice::Randomized(alternatives),
+    })
 }
 
 /// The witness scheduler of a randomized `policy` (FR-202, FR-204
@@ -229,8 +275,7 @@ pub fn witness_scheduler(
             continue;
         }
         let index = state.index();
-        let entry = entry_choice(product, state, policy, limits)
-            .ok_or(WitnessError::NoChoice { state: index })?;
+        let entry = entry_choice(product, state, policy, limits)?;
         for action in entry.actions() {
             let steps = action_steps(product, state, action)
                 .ok_or(WitnessError::MalformedAction { state: index })?;
