@@ -804,10 +804,10 @@ mod tests {
            always[0,0] (count where holds(c.level > 9) over past[0,0] min_count 0 >= 1)\n\
          }\n\
          temporal BoundedFalse using t over (c: Counter) clock \"model-steps\" on origin {\n\
-           always[0,2] (count where holds(c.level > 9) over past[0,0] min_count 0 >= 1 and holds(c.level > 0))\n\
+           always[0,2] ((count where holds(c.level > 9) over past[0,0] min_count 0 >= 1) and holds(c.level > 0))\n\
          }\n\
          temporal ComposedHeld using t over (c: Counter) clock \"model-steps\" on origin {\n\
-           always[0,2] (count where holds(c.level = 0) over past[0,0] min_count 0 >= 1 and holds(c.level > 0))\n\
+           always[0,2] ((count where holds(c.level = 0) over past[0,0] min_count 0 >= 1) and holds(c.level > 0))\n\
          }\n\
          temporal Plain using t over (c: Counter) clock \"model-steps\" on origin {\n\
            always[0,0] holds(c.level > 0)\n\
