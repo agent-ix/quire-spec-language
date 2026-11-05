@@ -837,13 +837,13 @@ fn row_mass(product: &ProbProduct, row: &FreeDelayRow, to: ProbStateId) -> Ratio
         .fold(ratio(0, 1), |sum, edge| sum.add(&edge.probability))
 }
 
-/// FR-202-AC-8 and FR-204-AC-10 (TC-637, TC-642 step 6): `Detour`'s maximum
+/// FR-204-AC-10 (TC-637, TC-642 step 6): `Detour`'s maximum
 /// witness entry is the `FreeDelays` action given `[1]` to `B` delay 2 and
 /// given `[3]` to `B` delay 1, and its path set is `A` at 1 ms (`1/2`) then
 /// `B` at 1 ms followed by `G` (`1/4`): `3/4 > 7/10`. The first step's merged
 /// `1/2` comes from row `[1]` alone and the `B` step's `1/2` from row `[3]`.
 /// One path alone does not pass the bound.
-#[trace("TC-637", "FR-202-AC-8")]
+#[trace("TC-637")]
 #[trace("TC-642", "FR-204-AC-10")]
 #[test]
 fn detour_maximum_witness_is_a_two_path_set_of_merged_steps() {
@@ -918,13 +918,38 @@ fn detour_maximum_witness_is_a_two_path_set_of_merged_steps() {
     assert_eq!(row_mass(&built, &rows[1], b_wins.to), ratio(1, 2));
 
     assert!(produce(1).is_none(), "`1/2` alone does not pass `7/10`");
+
+    // A path probability wider than `max_rational_bits` is unproducible.
+    let narrow = ExactProbLimits {
+        max_rational_bits: 1,
+        ..ExactProbLimits::default()
+    };
+    let produce_with = |limits: &ExactProbLimits| {
+        produce_witness(
+            &built,
+            &policy,
+            WitnessScope::Workload,
+            start,
+            &accepted(&built),
+            &ratio(7, 10),
+            limits,
+        )
+        .expect("the policy induces a chain")
+    };
+    assert!(produce_with(&narrow).is_none(), "`1/2` needs two bits");
+    // Frontier pushes count against `max_transitions`: the two expansions
+    // fit in 2, the four pushes do not.
+    let mut few = ExactProbLimits::default();
+    few.model.limits.max_transitions = 2;
+    assert!(produce_with(&few).is_none());
+    assert!(produce_with(&ExactProbLimits::default()).is_some());
 }
 
-/// FR-202-AC-8 (TC-637): the `Detour` witness action's canonical body admits
+/// TC-637: the `Detour` witness action's canonical body admits
 /// at the race state (`A` drawing 1 or 3, `B` in `[1, 3]`); with its rows
 /// swapped, with the row given `[3]` removed, with `B` delay 4, or as
 /// `WorkloadResolve{B, 1}` it refuses `invalid_runtime_input`/`invalid-value`.
-#[trace("TC-637", "FR-202-AC-8")]
+#[trace("TC-637")]
 #[test]
 fn detour_witness_body_admits_and_its_variants_refuse() {
     let world = detour(&claim(

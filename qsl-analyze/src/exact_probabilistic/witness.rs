@@ -27,6 +27,7 @@ use std::rc::Rc;
 use qsl_eval::simulation::model::same_rewards;
 use quire_exact::{Identifier, Integer, Rational, Value};
 
+use super::finite_horizon::rational_fits;
 use super::rows::free_delays_choice;
 use super::unbounded::same_action;
 use super::{ExactProbLimits, ProbProduct, ProbStateId, ProductAction, ProductKind};
@@ -191,9 +192,11 @@ pub fn action_steps(
     Some(steps)
 }
 
-/// One step of a partial path, linked to the steps before it.
+/// One step of a partial path: which step of its source state's induced
+/// steps it took, linked to the steps before it.
 struct Link {
-    step: ProducedStep,
+    from: ProbStateId,
+    index: usize,
     parent: Option<Rc<Link>>,
 }
 
@@ -206,11 +209,15 @@ struct Partial {
 }
 
 impl Partial {
-    fn steps(&self) -> Vec<ProducedStep> {
+    /// The path's steps, cloned from the induced chain; only accepted paths
+    /// pay for this.
+    fn steps(&self, induced: &Induced) -> Vec<ProducedStep> {
         let mut steps = Vec::new();
         let mut link = self.last.as_deref();
         while let Some(current) = link {
-            steps.push(current.step.clone());
+            if let Some((_, taken)) = induced.get(&current.from) {
+                steps.extend(taken.get(current.index).cloned());
+            }
             link = current.parent.as_deref();
         }
         steps.reverse();
@@ -273,23 +280,27 @@ fn induce(
 }
 
 /// The states of the induced chain from which an accepting state is
-/// reachable.
+/// reachable: one reverse breadth-first search from the accepting states.
 fn reaching(induced: &Induced, accepting: &[bool]) -> BTreeSet<ProbStateId> {
+    let mut predecessors: BTreeMap<ProbStateId, Vec<ProbStateId>> = BTreeMap::new();
+    let mut queue = VecDeque::new();
     let mut reaching: BTreeSet<ProbStateId> = BTreeSet::new();
-    loop {
-        let before = reaching.len();
-        for (state, (_, steps)) in induced {
-            if steps.iter().any(|step| {
-                accepting.get(step.to.index()).copied().unwrap_or(false)
-                    || reaching.contains(&step.to)
-            }) {
-                reaching.insert(*state);
+    for (state, (_, steps)) in induced {
+        for step in steps {
+            predecessors.entry(step.to).or_default().push(*state);
+            if accepting.get(step.to.index()).copied().unwrap_or(false) && reaching.insert(*state) {
+                queue.push_back(*state);
             }
         }
-        if reaching.len() == before {
-            return reaching;
+    }
+    while let Some(state) = queue.pop_front() {
+        for predecessor in predecessors.get(&state).into_iter().flatten() {
+            if reaching.insert(*predecessor) {
+                queue.push_back(*predecessor);
+            }
         }
     }
+    reaching
 }
 
 /// Produce FR-202's path-set witness on the chain `policy` induces from
@@ -299,7 +310,8 @@ fn reaching(induced: &Induced, accepting: &[bool]) -> BTreeSet<ProbStateId> {
 /// from which no accepting state is reachable is not extended.
 ///
 /// `Ok(None)` when no such path set exists within `limits.max_witness_paths`
-/// paths and `max_transitions` expansions: the claim then needs subsystem
+/// paths, `max_transitions` expansions and frontier pushes, and
+/// `max_rational_bits` per path probability: the claim then needs subsystem
 /// evidence instead.
 ///
 /// # Errors
@@ -329,6 +341,7 @@ pub fn produce_witness(
     }]);
     let mut sequence = 0_u64;
     let mut expansions = 0_usize;
+    let mut pushes = 1_usize;
     let mut paths: Vec<ProducedPath> = Vec::new();
     let mut sum = rational(0);
     while let Some(partial) = frontier.pop() {
@@ -338,7 +351,7 @@ pub fn produce_witness(
             }
             sum = sum.add(&partial.probability);
             paths.push(ProducedPath {
-                steps: partial.steps(),
+                steps: partial.steps(&induced),
                 probability: partial.probability,
             });
             if sum > *past {
@@ -356,17 +369,26 @@ pub fn produce_witness(
         if expansions > limits.model.limits.max_transitions {
             return Ok(None);
         }
-        for step in steps {
+        for (index, step) in steps.iter().enumerate() {
             if !accepts(step.to) && !reaching.contains(&step.to) {
                 continue;
             }
+            pushes += 1;
+            if pushes > limits.model.limits.max_transitions {
+                return Ok(None);
+            }
+            let probability = partial.probability.mul(&step.probability);
+            if !rational_fits(&probability, limits.max_rational_bits) {
+                return Ok(None);
+            }
             sequence += 1;
             frontier.push(Partial {
-                probability: partial.probability.mul(&step.probability),
+                probability,
                 sequence,
                 state: step.to,
                 last: Some(Rc::new(Link {
-                    step: step.clone(),
+                    from: partial.state,
+                    index,
                     parent: partial.last.clone(),
                 })),
             });

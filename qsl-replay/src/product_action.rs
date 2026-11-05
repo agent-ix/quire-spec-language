@@ -81,6 +81,7 @@ impl Schedule {
     ///
     /// [`ActionBodyError::Schedule`] when the identity has no canonical
     /// transition identity in `system`.
+    #[ix_trace_rs::string_edge]
     pub fn of(
         system: &ModelSystem<'_>,
         identity: &ScheduledIdentity,
@@ -127,10 +128,11 @@ impl Schedule {
             return Err(ActionBodyRefusal::Shape);
         };
         let items: Vec<NodeRef<'_>> = items.collect();
-        let [_, receiver, arguments] = items.as_slice() else {
+        let [operation, receiver, arguments] = items.as_slice() else {
             return Err(ActionBodyRefusal::Shape);
         };
-        if !matches!(receiver.node(), Node::Object(_))
+        if !matches!(operation.node(), Node::Object(_))
+            || !matches!(receiver.node(), Node::Object(_))
             || !matches!(arguments.node(), Node::Array(_))
         {
             return Err(ActionBodyRefusal::Shape);
@@ -247,6 +249,7 @@ impl ActionBody {
     /// unknown tag or a missing, extra or mistyped member, a noncanonical
     /// delay, or a row whose `given` or `free` pairs are not in strictly
     /// ascending schedule order.
+    #[ix_trace_rs::string_edge]
     pub fn parse(bytes: &[u8]) -> Result<Self, ActionBodyRefusal> {
         let document = read_document(bytes).ok_or(ActionBodyRefusal::NotCanonical)?;
         if to_vec(&document.root(), LIMITS).map_err(|_| ActionBodyRefusal::NotCanonical)? != bytes {
@@ -305,6 +308,7 @@ fn array(node: NodeRef<'_>) -> Result<Vec<NodeRef<'_>>, ActionBodyRefusal> {
 }
 
 /// A canonical unsigned decimal string: no sign, no leading zero.
+#[ix_trace_rs::string_edge]
 fn decimal(node: NodeRef<'_>) -> Result<u64, ActionBodyRefusal> {
     let Node::String(text) = node.node() else {
         return Err(ActionBodyRefusal::Shape);
@@ -336,6 +340,7 @@ fn pairs(node: NodeRef<'_>) -> Result<Vec<(Schedule, u64)>, ActionBodyRefusal> {
 }
 
 /// A `post-state` member: a product-key array under its version tag.
+#[ix_trace_rs::string_edge]
 fn product_key(node: NodeRef<'_>) -> Result<ProbabilityProductKey, ActionBodyRefusal> {
     let items = array(node)?;
     let tagged = matches!(
@@ -724,6 +729,10 @@ mod tests {
         );
         assert_eq!(
             refused(r#"["identity",[{"op":"A"},null,[]]]"#),
+            ActionBodyRefusal::Shape
+        );
+        assert_eq!(
+            refused(r#"["identity",["A",{"o":"1"},[]]]"#),
             ActionBodyRefusal::Shape
         );
         assert_eq!(
