@@ -1925,26 +1925,87 @@ fn the_unit_on_amount_and_total_is_refused_where_the_spine_stops() {
 
 /// FR-517-AC-14: the `recover` condition of `Full` compares the receipt sum
 /// with the captured target; that of `Partial` requires a positive sum below
-/// it.
+/// it. The written package is admitted by the reader, and its `sum` nodes
+/// bind the source's `receipt` name inside the `recover` slots.
 #[trace("FR-517-AC-14", "TC-1312")]
 #[test]
-#[ignore = "gated on IR-1311 (the Contract IR reader): a `sum` binder bound inside `recover` is refused `BinderScope` (QSL emits it since QSL-1555)"]
 fn the_recover_conditions_compare_the_receipt_sum_with_the_target() {
-    let unit = std::fs::read_to_string(format!("{DIR}/unit-event-position.native")).unwrap();
-    let recover = |name: &str| {
-        let from = unit.find(&format!("recover (recovered{name}")).unwrap();
-        unit[from..].split("};").next().unwrap().to_owned()
+    let (_holder, out) = written("event_position", Corpus::None, &Double::default());
+    let files = tree(&out);
+    let held = evidence(&request("event_position", Corpus::None)).unwrap();
+    admitted(&files["checked-package.json"], &held);
+    let wire: Value = serde_json::from_slice(&files["checked-package.json"]).unwrap();
+    let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+
+    // The expression `value` denotes, with each reference followed to its node.
+    fn render(nodes: &[Value], value: &Value) -> String {
+        match value["term"].as_str().unwrap() {
+            "reference" => {
+                let node = nodes
+                    .iter()
+                    .find(|node| node["node_id"] == value["target"])
+                    .expect("a reference names a node of the package");
+                if node["semantic_form"] == "parameter" {
+                    node["body"]["members"][0]["value"]["value"]
+                        .as_str()
+                        .unwrap()
+                        .to_owned()
+                } else {
+                    render(nodes, &node["body"])
+                }
+            }
+            "application" => {
+                let identity = value["operation"]["identity"].as_str().unwrap();
+                let arguments: Vec<String> = value["arguments"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|argument| render(nodes, argument))
+                    .collect();
+                let operation = identity.strip_prefix("quire.op.").unwrap_or(identity);
+                format!("{operation}({})", arguments.join(", "))
+            }
+            "binding" => format!(
+                "{}={}",
+                value["name"].as_str().unwrap(),
+                render(nodes, &value["value"])
+            ),
+            "literal" => value["value"].as_str().unwrap().to_owned(),
+            other => panic!("unexpected term {other}"),
+        }
+    }
+    let predicate = |name: &str| {
+        let template = nodes
+            .iter()
+            .find(|node| {
+                node["semantic_form"] == "compensation"
+                    && node["declaration"]["qualified_name"][2] == name
+            })
+            .unwrap_or_else(|| panic!("the template {name}"));
+        let recovery = template["body"]["arguments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|argument| argument["name"] == "recovery")
+            .unwrap();
+        render(nodes, &recovery["value"]["members"][1]["value"])
     };
-    let full = recover("Full");
-    assert!(
-        full.contains("sum<M::Total>(") && full.contains("= targetFull"),
-        "{full}"
+    let sum =
+        |binder: &str| format!("collection.sum.integer(record.project({binder}), receipt=receipt)");
+    assert_eq!(
+        predicate("Full"),
+        format!(
+            "boolean.and(integer.eq({}, targetFull), boolean.not(activatedFull))",
+            sum("recoveredFull")
+        )
     );
-    let partial = recover("Partial");
-    assert!(
-        partial.contains("sum<M::Total>(")
-            && partial.contains("> 0")
-            && partial.contains("< targetPartial"),
-        "{partial}"
+    assert_eq!(
+        predicate("Partial"),
+        format!(
+            "boolean.and(boolean.and(integer.gt({}, 0), integer.lt({}, targetPartial)), \
+             boolean.not(activatedPartial))",
+            sum("recoveredPartial"),
+            sum("recoveredPartial")
+        )
     );
 }
