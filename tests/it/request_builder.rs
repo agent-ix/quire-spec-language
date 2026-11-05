@@ -13,7 +13,6 @@ use qsl_package::CheckedPackage;
 use qsl_route::request::{
     items_from_requirements, ExtentClassification, RequestWriter, RequirementItem,
 };
-use qsl_route::routing::{route, Disposition};
 use qsl_route::{BackendDescriptor, Candidate, CandidateOutcome, Mode, ProviderOrigin, Registry};
 use qsl_semantics::check::{
     ApplicationTerm, BodyTerm, Capability, CheckedGraph, LeafTerm, MemberTerm, PackageDeclarations,
@@ -391,20 +390,11 @@ fn tc_984_items_preserve_occurrence_path_conditions() {
     assert_eq!(item.conversion_context(), None);
 }
 
-/// FR-495-AC-7 (TC-1284 step 6; QSpec FR-147-AC-3 and AC-8): request writing
-/// keeps integer-division operand domains mathematical and unbounded, even
-/// when a finite backend is registered and a finite bound is available.
-/// The known `requires-bound` disposition routes no target with either
-/// registry. Negotiation and qualification verdicts belong to their provider
-/// and qualification lanes; this test covers QSL's request construction and
-/// routing boundary.
-#[trace(
-    "TC-1284",
-    "FR-495-AC-7",
-    "QSpec-TC-192",
-    "QSpec-FR-147-AC-3",
-    "QSpec-FR-147-AC-8"
-)]
+/// Request construction keeps integer-division operand domains mathematical
+/// and unbounded, even when a finite backend is registered and a finite bound
+/// is available.
+/// This test covers request construction only; settlement and qualification
+/// occur downstream.
 #[test]
 fn request_items_keep_integer_division_domains_unbounded() {
     use qsl_semantics::value::{admit_integer_division, DefinitionRole};
@@ -503,13 +493,6 @@ fn request_items_keep_integer_division_domains_unbounded() {
                 );
                 assert_eq!(item.kind(), Capability::ValueValidity);
                 assert!(candidates(item).contains(&kani), "{operator}");
-                // The settlement `negotiate_*` makes for a bounded-only
-                // candidate over an unbounded extent is a fixture here.
-                assert_eq!(
-                    route(&[Disposition::RequiresBound]),
-                    vec![None],
-                    "{operator}: requires-bound routes no target"
-                );
             }
         }
     }
