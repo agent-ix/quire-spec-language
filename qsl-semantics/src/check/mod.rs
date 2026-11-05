@@ -212,7 +212,7 @@ use qsl_foundation::source::node_table::{
     scoped, standalone, DebugTable, DebugWith, Maybe, NodeKeyDebug, NodeList, NodeMap,
     NodeValueMap, Seq, ValueMap, With,
 };
-use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 use quire_exact::{Cancel, ValueType};
 use std::fmt;
 
@@ -855,6 +855,9 @@ pub struct CheckedGraph {
     /// Unit-level state-clause refusals retained by the protocol continuation
     /// path so independent protocols can still be emitted.
     unit_refusals: Vec<CheckRefusal>,
+    /// The source region of the first of `unit_refusals`, once a caller has
+    /// resolved it ([`CheckedGraph::with_unit_refusals`]).
+    unit_refusal_region: Option<SourceRegion>,
     /// Checked protocol classes retained for importing refinements (FR-147).
     protocol_classes: BTreeMap<String, refinement::ImportedProtocolClasses>,
     /// FR-390: emitted protocol node keys mapped back to their one S3
@@ -995,6 +998,7 @@ impl DebugWith for CheckedGraph {
             protocol_order,
             protocol_refusals,
             unit_refusals,
+            unit_refusal_region,
             protocol_classes,
             protocol_node_keys,
             temporal_clauses,
@@ -1101,6 +1105,7 @@ impl DebugWith for CheckedGraph {
             .field("protocol_order", protocol_order)
             .field("protocol_refusals", protocol_refusals)
             .field("unit_refusals", unit_refusals)
+            .field("unit_refusal_region", unit_refusal_region)
             .field(
                 "protocol_classes",
                 &ValueMap(protocol_classes.iter(), table),
@@ -6950,6 +6955,7 @@ impl PackageDeclarations {
                 .collect(),
             protocol_refusals: std::mem::take(protocol_check_refusals),
             unit_refusals,
+            unit_refusal_region: None,
             protocol_node_keys: lowered_protocol_members
                 .into_iter()
                 .map(|(name, members)| {
@@ -8101,6 +8107,28 @@ impl CheckedGraph {
     /// primary refusals.
     pub fn unit_refusals(&self) -> &[CheckRefusal] {
         &self.unit_refusals
+    }
+
+    /// The source region of the first unit-level refusal, when the caller
+    /// resolved it.
+    pub fn unit_refusal_region(&self) -> Option<&SourceRegion> {
+        self.unit_refusal_region.as_ref()
+    }
+
+    /// This graph with `refusals` as its unit-level refusals, the first one
+    /// located at `region`: the protocol continuation check returns a refused
+    /// state clause here instead of failing, and the caller reports it as it
+    /// reports a primary refusal (a call whose dispatch family did not link,
+    /// FR-302).
+    #[must_use]
+    pub fn with_unit_refusals(
+        mut self,
+        refusals: Vec<CheckRefusal>,
+        region: Option<SourceRegion>,
+    ) -> Self {
+        self.unit_refusals = refusals;
+        self.unit_refusal_region = region;
+        self
     }
 
     /// FR-383: protocol names in declaration order, including refused ones.

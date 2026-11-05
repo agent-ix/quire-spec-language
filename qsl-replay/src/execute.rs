@@ -786,8 +786,6 @@ pub enum DependencySelectionsCause {
 /// #   sources: vec![(
 /// #       "a".to_owned(),
 /// #       "u".to_owned(),
-/// #       "git".to_owned(),
-/// #       "1".to_owned(),
 /// #   )],
 /// #   dependencies: Vec::new(),
 /// #   source: ReplaySource::Input(vec![CanonicalAssignment {
@@ -848,8 +846,6 @@ pub enum DependencySelectionsCause {
 /// #   sources: vec![(
 /// #       "a".to_owned(),
 /// #       "u".to_owned(),
-/// #       "git".to_owned(),
-/// #       "1".to_owned(),
 /// #   )],
 /// #   dependencies: Vec::new(),
 /// #   source: ReplaySource::Input(vec![CanonicalAssignment {
