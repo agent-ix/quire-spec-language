@@ -150,13 +150,20 @@ fn a_fairness_constraint_under_a_bounded_profile_is_refused_only_as_not_emitted(
     let body = "always [0, 3] holds(c.versionNumber @ a = c.versionNumber @ b)";
     let declarations = format!("{PREDICATE}\n{RELATION}\n{}", hyper(fairness, body));
     let (text, checked) = produce(EVENT, &declarations);
+    // The outcome is an error: it holds no CheckedUnit, so no graph and no
+    // type report.
+    assert!(
+        matches!(checked, Err(StageFailure::Refused(_))),
+        "a refusal carries no unit"
+    );
     let found = causes(checked.expect_err("the unit is refused"));
     let [CheckCause::Temporal(cause)] = found.as_slice() else {
         panic!("only a temporal refusal: {found:?}");
     };
-    let TemporalCause::NotEmitted { span, .. } = &**cause else {
+    let TemporalCause::NotEmitted { name, span } = &**cause else {
         panic!("not emitted, got {cause:?}");
     };
+    assert_eq!(name, "NonInterference", "the cause names the clause");
     assert_eq!(
         &text[span.start..span.end],
         "fair weak Config::ConfigVersion::attemptUpdate;"
