@@ -25,6 +25,93 @@ use quire_exact::Identifier;
 
 const OPERATIONS: &[&str] = &["noop"];
 
+/// The clauses `D0` to `D13` of the differential tests, over `clock`: the
+/// atoms `U` (undefined where `c.value` is 2), `R` (refused where it is 1 or
+/// more) and `F` (false where it is not 0), in conjunctions, scans, `on each`
+/// activations, a refused `when` guard and a refused capture.
+macro_rules! differential_clauses {
+    ($clock:literal) => {
+        concat!(
+            "type Zero = Int[0, 0];\n",
+            "function ints using v(xs: Sequence<Integer>[0, 3]): Sequence<Integer>[0, 3] \
+             pure { xs }\n",
+            "temporal D0 using t over (c: Counters::Counter) clock ",
+            $clock,
+            " on origin \
+             { always[0,2] (holds(3 mod (2 - c.value) >= 0) and \
+             holds(count<Zero>(m in ints(sequence[c.value]): m > 0) = 0)) }\n",
+            "temporal D1 using t over (c: Counters::Counter) clock ",
+            $clock,
+            " on origin \
+             { always[0,2] (holds(count<Zero>(m in ints(sequence[c.value]): m > 0) = 0) and \
+             holds(3 mod (2 - c.value) >= 0)) }\n",
+            "temporal D2 using t over (c: Counters::Counter) clock ",
+            $clock,
+            " on origin \
+             { always[0,2] (holds(c.value = 0) and \
+             holds(count<Zero>(m in ints(sequence[c.value]): m > 0) = 0)) }\n",
+            "temporal D3 using t over (c: Counters::Counter) clock ",
+            $clock,
+            " on origin \
+             { always[0,2] holds(count<Zero>(m in ints(sequence[c.value]): m > 0) = 0) }\n",
+            "temporal D4 using t over (c: Counters::Counter) clock ",
+            $clock,
+            " \
+             on each (q: Counters::Counter) \
+             { once[0,2] holds(count<Zero>(m in ints(sequence[c.value]): m > 0) = 0) }\n",
+            "temporal D5 using t over (c: Counters::Counter) clock ",
+            $clock,
+            " on origin \
+             { eventually[0,2] (holds(3 mod (2 - c.value) >= 0) and \
+             holds(count<Zero>(m in ints(sequence[c.value]): m > 0) = 0)) }\n",
+            "temporal D6 using t over (c: Counters::Counter) clock ",
+            $clock,
+            " on origin \
+             { eventually[0,2] holds(count<Zero>(m in ints(sequence[c.value]): m > 0) = 0) }\n",
+            "temporal D7 using t over (c: Counters::Counter) clock ",
+            $clock,
+            " \
+             on each (q: Counters::Counter) \
+             { always[0,0] (holds(3 mod (2 - c.value) >= 0) and \
+             holds(count<Zero>(m in ints(sequence[c.value]): m > 0) = 0)) }\n",
+            "temporal D8 using t over (c: Counters::Counter) clock ",
+            $clock,
+            " \
+             on each (q: Counters::Counter) \
+             { once[0,2] (holds(c.value = 0) and \
+             holds(count<Zero>(m in ints(sequence[c.value]): m > 0) = 0)) }\n",
+            "temporal D9 using t over (c: Counters::Counter) clock ",
+            $clock,
+            " \
+             on each (q: Counters::Counter) \
+             { once[0,2] (holds(3 mod (2 - c.value) >= 0) and \
+             holds(count<Zero>(m in ints(sequence[c.value]): m > 0) = 0)) }\n",
+            "temporal D10 using t over (c: Counters::Counter) clock ",
+            $clock,
+            " \
+             on each (q: Counters::Counter) \
+             when (count<Zero>(m in ints(sequence[q.value]): m > 0) = 0) \
+             { always[0,0] holds(c.value >= 0) }\n",
+            "temporal D11 using t over (c: Counters::Counter) clock ",
+            $clock,
+            " \
+             on each (q: Counters::Counter) \
+             { capture z: Zero = count<Zero>(m in ints(sequence[q.value]): m > 0); \
+             always[0,0] holds(c.value >= 0) }\n",
+            "temporal D12 using t over (c: Counters::Counter) clock ",
+            $clock,
+            " on origin \
+             { always[0,2] (holds(c.value = 0) and holds(3 mod (2 - c.value) >= 0)) }\n",
+            "temporal D13 using t over (c: Counters::Counter) clock ",
+            $clock,
+            " \
+             on each (q: Counters::Counter) \
+             { once[0,2] (holds(count<Zero>(m in ints(sequence[c.value]): m > 0) = 0) and \
+             holds(3 mod (2 - c.value) >= 0)) }\n",
+        )
+    };
+}
+
 enum ObservedReplayExpectation {
     Formula,
     Undefined(qsl_eval::temporal::UndefinedCause),
@@ -69,6 +156,10 @@ enum Unit {
     /// (FR-501 "an atom that evaluates Undefined or a condition that
     /// refuses is returned as FR-327 states").
     TimestampedRefusing,
+    /// `D0` to `D13` under event-position false-extension.
+    DifferentialEvent,
+    /// `D0` to `D13` under the finite-window profile.
+    DifferentialWindow,
     /// `Window` under the finite-window profile, `on origin`, reading an
     /// atom undefined where `c.value` is 2 and refused where it is 1.
     TimestampedUndefinedThenRefused,
@@ -138,7 +229,11 @@ impl Unit {
             | Self::TimestampedLaterAlways => {
                 "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
             }
+            Self::DifferentialEvent => {
+                "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
+            }
             Self::TimestampedEach
+            | Self::DifferentialWindow
             | Self::TimestampedRefusing
             | Self::TimestampedUndefinedThenRefused => {
                 "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
@@ -218,6 +313,8 @@ impl Unit {
                 "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
                  on origin { always[2,3] holds(c.value > 0) }\n"
             }
+            Self::DifferentialEvent => differential_clauses!("\"model-steps\""),
+            Self::DifferentialWindow => differential_clauses!("\"ms\""),
             Self::TimestampedUndefinedThenRefused => concat!(
                 "type Zero = Int[0, 0];\n",
                 "function ints using v(xs: Sequence<Integer>[0, 3]): Sequence<Integer>[0, 3] \
@@ -396,11 +493,22 @@ fn timestamped_with(
     watermark: u64,
     complete_through: Option<u64>,
 ) -> ClauseRunRequest {
+    timestamped_named(unit, "Window", stamps, values, watermark, complete_through)
+}
+
+fn timestamped_named(
+    unit: Unit,
+    name: &str,
+    stamps: &[u64],
+    values: &[i64],
+    watermark: u64,
+    complete_through: Option<u64>,
+) -> ClauseRunRequest {
     assert_eq!(stamps.len(), values.len());
     request(
         unit,
         |labels| ClauseRunSelection::Temporal {
-            name: "Window".to_owned(),
+            name: name.to_owned(),
             trace: TraceInput::Timestamped {
                 observations: labels
                     .iter()
@@ -3552,6 +3660,7 @@ fn timestamped_progress_is_admitted_into_the_ledger() {
 }
 
 mod checked_route_owner;
+mod differential;
 mod progressed;
 mod refused;
 mod wire;
