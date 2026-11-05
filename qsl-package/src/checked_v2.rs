@@ -11,16 +11,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use quire_contract_model::{
-    read_checked_package, CheckedOccurrenceRole, CheckedPackageDispatchResult,
+    CHECKED_PACKAGE_V2, CheckedOccurrenceRole, CheckedPackageDispatchResult,
     CheckedPackageEvidence, CheckedPackageIncomplete, CheckedPackageLimit,
     CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCode, CheckedPackageV2,
-    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CHECKED_PACKAGE_V2,
+    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, read_checked_package,
 };
 
 use qsl_foundation::diagnostic::{
     Code, JsonPointer, LimitExceeded, Locus, RefusalRecord, StageFailure, Staged,
 };
-use qsl_foundation::source::node_table::{scoped, DebugTable, DebugWith, With};
+use qsl_foundation::source::node_table::{DebugTable, DebugWith, With, scoped};
 use qsl_foundation::source::provenance::{
     InvalidProvenance, OccurrenceKey, PackageSourceMap, RawSourceRef, SourceRegion,
 };
@@ -30,7 +30,7 @@ use qsl_semantics::library::{ImportView, LibraryName, LibraryPackage, LibraryRef
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, InternalFault};
 
 use crate::checked::CheckedPackage;
-use crate::emit::{emit_checked, Emission, EmitRefusal};
+use crate::emit::{Emission, EmitRefusal, emit_checked};
 use quire_exact::{NodeKey, Origin, Role};
 
 mod clause_root;
@@ -43,18 +43,18 @@ mod terminal;
 pub(crate) mod tests;
 mod timed_model;
 
-pub use clause_root::{clause_roots, resolve_clause_root, ClauseRoot, ClauseRootUnresolved};
-pub use hybrid::{read_hybrids, HybridRead, HybridReadError, ReadHybridClaim, ReadHybridModel};
-pub use hyper_root::{hyper_roots, resolve_hyper_root, HyperRoot, HyperRootUnresolved};
+pub use clause_root::{ClauseRoot, ClauseRootUnresolved, clause_roots, resolve_clause_root};
+pub use hybrid::{HybridRead, HybridReadError, ReadHybridClaim, ReadHybridModel, read_hybrids};
+pub use hyper_root::{HyperRoot, HyperRootUnresolved, hyper_roots, resolve_hyper_root};
 pub use schedulability_root::{
-    resolve_schedulability_root, schedulability_roots, SchedulabilityRoot,
+    SchedulabilityRoot, resolve_schedulability_root, schedulability_roots,
 };
 pub use state_graph_root::{
-    resolve_state_graph_root, state_graph_roots, StateGraphKind, StateGraphRoot,
+    StateGraphKind, StateGraphRoot, resolve_state_graph_root, state_graph_roots,
 };
 pub use terminal::{
-    read_terminal, read_terminals, resolve_terminals, PackageTerminal, PackageTerminalDeclaration,
-    ReadTerminal, ReadTerminalDeclaration, TerminalResolveRefusal,
+    PackageTerminal, PackageTerminalDeclaration, ReadTerminal, ReadTerminalDeclaration,
+    TerminalResolveRefusal, read_terminal, read_terminals, resolve_terminals,
 };
 pub use timed_model::{
     CheckedClockConstraint, CheckedClockGuard, CheckedClockPlace, CheckedClockReset,
@@ -703,7 +703,7 @@ pub(crate) fn read_checked_package_v2(
             let timed_models = match CheckedTimedModel::from_admitted(&package) {
                 Ok(models) => models,
                 Err(invariant) => {
-                    return refused(V2ReadRefusal::Fault(InternalFault::new("I2", invariant)))
+                    return refused(V2ReadRefusal::Fault(InternalFault::new("I2", invariant)));
                 }
             };
             let graph = match wire_graph(&package) {
@@ -712,7 +712,7 @@ pub(crate) fn read_checked_package_v2(
                     return refused(V2ReadRefusal::Fault(InternalFault::new(
                         "I2",
                         "admitted-node-ids-rebuild-structural-keys",
-                    )))
+                    )));
                 }
             };
             let mut exports = Vec::new();
@@ -1000,10 +1000,9 @@ impl AdmittedPackageRead<'_> {
     }
 
     /// Create the evaluation view over this successful I2 read. Every
-    /// protocol slot of the package is projected here, once (FR-390): a slot
-    /// walk whose applications and `protocol_locations` rows do not pair
-    /// refuses the whole view, and a slot with an unsupported form keeps its
-    /// unsupported expression form refuses the package-wide view.
+    /// protocol slot of the package is projected here, once (FR-390). A slot
+    /// walk whose applications and `protocol_locations` rows do not pair, or
+    /// whose expression has no projection, refuses the whole view.
     pub fn evaluation_view(
         &self,
     ) -> Result<
@@ -1011,7 +1010,7 @@ impl AdmittedPackageRead<'_> {
         crate::evaluation_view::ViewFailure,
     > {
         use crate::evaluation_view::ViewFailure;
-        use crate::reader_protocol_projection::{project_package, PackageRefusal};
+        use crate::reader_protocol_projection::{PackageRefusal, project_package};
         let source_nodes: BTreeSet<_> = self
             .source
             .graph()

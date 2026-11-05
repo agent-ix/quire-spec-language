@@ -15,8 +15,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_semantics::check::wire_id::WireGraph;
 use quire_checked::node::{
-    Arithmetic, CaseArm, CheckedLiteral, Connective, ConnectiveOrigin, NodeKind, OrderedKind,
-    RecordField, RecordSlot,
+    Arithmetic, CaseArm, CheckedLiteral, Connective, ConnectiveOrigin, IntegerDivisionOperator,
+    NodeKind, OrderedKind, RecordField, RecordSlot,
 };
 use quire_contract_model::{
     CheckedNodeId, CheckedPackageV2, CheckedProtocolLocation, CheckedProtocolSemanticLocation,
@@ -1411,6 +1411,45 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 };
                 Ok((NodeKind::Negate(*operand), children))
             }
+            Some("quire.op.integer.div" | "quire.op.integer.rem" | "quire.op.integer.mod") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [left, right] = children.as_slice() else {
+                    return Err(fault("reader-integer-division-has-two-operands").into());
+                };
+                let operator = match identity {
+                    Some("quire.op.integer.div") => IntegerDivisionOperator::Div,
+                    Some("quire.op.integer.rem") => IntegerDivisionOperator::Rem,
+                    Some("quire.op.integer.mod") => IntegerDivisionOperator::Mod,
+                    _ => return Err(fault("reader-integer-division-identity-is-catalogued").into()),
+                };
+                let selection = if operator == IntegerDivisionOperator::Mod {
+                    None
+                } else {
+                    let references = operation
+                        .law_definitions()
+                        .map_err(|_| fault("reader-integer-division-law-is-admitted"))?;
+                    let definitions = references
+                        .iter()
+                        .map(|reference| qsl_semantics::value::DefinitionReference {
+                            authority: reference.authority.to_string(),
+                            identity: reference.identity.to_string(),
+                        })
+                        .collect::<Vec<_>>();
+                    Some(
+                        qsl_semantics::value::admit_integer_division(&definitions, None)
+                            .map_err(|_| fault("reader-integer-division-law-is-admitted"))?,
+                    )
+                };
+                Ok((
+                    NodeKind::IntegerDivision {
+                        operator,
+                        selection,
+                        left: *left,
+                        right: *right,
+                    },
+                    children,
+                ))
+            }
             Some("quire.op.integer.add" | "quire.op.integer.sub" | "quire.op.integer.mul") => {
                 let children = self.project_arguments(id, Some(arguments), context, locals)?;
                 let [left, right] = children.as_slice() else {
@@ -1448,7 +1487,8 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let ValueType::Rational(domain) = self.value_type(id)? else {
                     return Err(fault("reader-rational-arithmetic-has-rational-result").into());
                 };
-                let operator = arithmetic_operator(identity)
+                let operator = identity
+                    .and_then(arithmetic_operator)
                     .ok_or_else(|| fault("reader-rational-arithmetic-is-catalogued"))?;
                 Ok((
                     NodeKind::Rational {
@@ -1473,7 +1513,8 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let ValueType::Decimal(target) = self.value_type(id)? else {
                     return Err(fault("reader-decimal-arithmetic-has-decimal-result").into());
                 };
-                let operator = arithmetic_operator(identity)
+                let operator = identity
+                    .and_then(arithmetic_operator)
                     .ok_or_else(|| fault("reader-decimal-arithmetic-is-catalogued"))?;
                 Ok((
                     NodeKind::Decimal {
@@ -2168,8 +2209,9 @@ fn order_of(identity: &str) -> Option<(OrderedKind, OrderingOperator)> {
     Some((kind, operator))
 }
 
-fn arithmetic_operator(identity: Option<&str>) -> Option<ArithmeticOperator> {
-    match identity?.rsplit('.').next()? {
+#[ix_trace_rs::string_edge]
+fn arithmetic_operator(identity: &str) -> Option<ArithmeticOperator> {
+    match identity.rsplit('.').next()? {
         "add" => Some(ArithmeticOperator::Add),
         "sub" => Some(ArithmeticOperator::Subtract),
         "mul" => Some(ArithmeticOperator::Multiply),
