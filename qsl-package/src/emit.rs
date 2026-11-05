@@ -2444,8 +2444,14 @@ fn equality_producer_emission_rows_excluding(
                     application: application.clone(),
                 });
             };
-            let mut occurrences = graph.occurrences().filter(|(node, _, location)| {
-                node == application && *location == expression_location
+            // A Boolean function body can also carry claim and declaration
+            // occurrences at this same node and source location. Equality
+            // producer identity belongs to its expression occurrence only.
+            let expression_role = Role::new("expression");
+            let mut occurrences = graph.occurrences().filter(|(node, origin, location)| {
+                node == application
+                    && origin.role() == &expression_role
+                    && *location == expression_location
             });
             let Some((node, origin, _)) = occurrences.next() else {
                 return Err(EmitRefusal::MissingEqualityIdentityContext {
