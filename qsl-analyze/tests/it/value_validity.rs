@@ -1587,3 +1587,106 @@ fn a_reported_candidate_outside_the_domain_is_replay_parity_not_a_failure() {
         assert!(record.value_check.is_none());
     }
 }
+
+// ---- the mathematical-integer division obligation (QSpec TC-192 DIV-14) ----
+
+/// The one `value-validity` requirement record `function` owns at an
+/// integer `div`.
+fn only_scalar_key(package: &CheckedPackage, function: &str) -> OccurrenceKey {
+    let keys: Vec<OccurrenceKey> = package
+        .graph()
+        .requirements()
+        .iter()
+        .filter(|(_, record)| {
+            record.requirements().kind() == Capability::ValueValidity
+                && record.owner() == Some(function)
+        })
+        .map(|(key, _)| key.clone())
+        .filter(|key| format!("{:?}", key.node()).contains("quire.op.integer.div"))
+        .collect();
+    assert_eq!(keys.len(), 1, "{function}: {keys:?}");
+    keys.into_iter().next().expect("one record")
+}
+
+/// The QSL half of FR-495-AC-5 for QSpec TC-192 DIV-14: a counterexample an
+/// unbounded SMT backend reports over mathematical `Integer` parameters
+/// replays through the complete-V1 executor to the violation, at its own
+/// integers (never narrowed to an `Int[..]`). The provider's `proved` and
+/// `refuted` verdicts and the cross-check warning are the provider's and
+/// are not asserted here.
+#[trace("TC-1284", "FR-495-AC-5")]
+#[test]
+fn a_mathematical_integer_division_counterexample_replays_to_the_violation() {
+    // The mutated divisor domain: nothing excludes b = 0.
+    let violated =
+        package_of("function q using v(a: Integer, b: Integer): Integer pure { a div b }");
+    let key = only_scalar_key(&violated, "q");
+    let target = ValueTarget::select(&violated, "q", &key).unwrap();
+    assert!(target
+        .parameters()
+        .iter()
+        .all(|p| matches!(p.domain(), ParameterDomain::Unbounded)));
+    let at = [integer(1_i128 << 100), integer(0)];
+    assert!(target.admits(&at), "an Integer counterexample is admitted");
+    let Verdict::Violated(found) = target.evaluate(&at, &Cancel::new()).unwrap() else {
+        panic!("a / 0 is undefined")
+    };
+    let undefined = found.undefined.as_ref().expect("undefined, not false");
+    assert_eq!(undefined.locus, key, "the violation is at the div itself");
+    assert_eq!(undefined.reason, NATIVE_ZERO_DIVISOR_CAUSE);
+    let reproduced = target
+        .replay(&at, &found, &Cancel::new())
+        .unwrap()
+        .expect("the counterexample replays");
+    assert_eq!(format!("{:?}", reproduced.assignment()), format!("{at:?}"));
+    // Refusal controls: a defined assignment, the wrong violation and an
+    // assignment of the wrong type reproduce nothing.
+    let defined = [integer(7), integer(2)];
+    assert_eq!(
+        target.evaluate(&defined, &Cancel::new()).unwrap(),
+        Verdict::Holds
+    );
+    assert!(target
+        .replay(&defined, &found, &Cancel::new())
+        .unwrap()
+        .is_none());
+    let claimed_false = Violation { undefined: None };
+    assert!(target
+        .replay(&at, &claimed_false, &Cancel::new())
+        .unwrap()
+        .is_none());
+    assert!(!target.admits(&[Value::Boolean(true), integer(0)]));
+
+    // The holding obligation: the guard keeps the divisor nonzero, so no
+    // assignment, the zero divisor included, violates it.
+    let holding = package_of(
+        "function q using v(a: Integer, b: Integer): Integer pure \
+         { if b != 0 then a div b else 0 }",
+    );
+    let key = only_scalar_key(&holding, "q");
+    let target = ValueTarget::select(&holding, "q", &key).unwrap();
+    for at in [
+        [integer(7), integer(2)],
+        [integer(7), integer(0)],
+        [integer(-7), integer(-3)],
+    ] {
+        let verdict = target.evaluate(&at, &Cancel::new()).unwrap();
+        assert!(
+            matches!(verdict, Verdict::Holds | Verdict::NotDecisive),
+            "{at:?}: {verdict:?}"
+        );
+    }
+    assert!(target
+        .replay(&[integer(7), integer(0)], &found, &Cancel::new())
+        .unwrap()
+        .is_none());
+
+    // With only the bounded arm in the lock the obligation is never settled
+    // `proved` or `refuted`.
+    let record = run(&violated, &key, "q", None);
+    let Settlement::Disposed(disposed) = &record.settlement else {
+        panic!("a disposition, not {:?}", record.settlement)
+    };
+    assert_eq!(disposed.kind, DispositionKind::Unsupported);
+    assert!(record.terminal().is_none(), "no proved or refuted verdict");
+}
