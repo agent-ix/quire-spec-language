@@ -18,9 +18,10 @@ use ix_trace_rs::trace;
 use qsl_analyze::exact_probabilistic::{
     action_steps, build_product, decide_bounded_event, decide_fair_expected_reward,
     decide_fair_reachability, decide_reachability, free_delays_choice, produce_witness,
-    ActionChoice, ExactProbLimits, ExtRational, FhResult, FreeDelayRow, MonitorVerdict, ProbBuild,
-    ProbProduct, ProbStateId, ProductAction, ProductKind, ProductRefusal, ProductRequest,
-    SchedulerChoice, UnboundedObjective, WitnessScope,
+    witness_scheduler, ActionChoice, EntryChoice, ExactProbLimits, ExtRational, FhResult,
+    FreeDelayRow, MonitorVerdict, ProbBuild, ProbProduct, ProbStateId, ProductAction, ProductKind,
+    ProductRefusal, ProductRequest, SchedulerChoice, UnboundedObjective, WitnessError,
+    WitnessScope,
 };
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::ScheduledIdentity;
@@ -1212,4 +1213,131 @@ fn free_delays_bodies_are_in_numeric_row_order_and_malformed_ones_refuse() {
     let mut late = body;
     late[0].free[0].1 = 3;
     refuses(&race, late, ActionBodyRefusal::FreeOutsideWindow { row: 0 });
+}
+
+/// `Detour`'s maximum policy over the `Max` claim.
+fn detour_maximum(world: &World) -> (ProbProduct, Vec<Option<usize>>) {
+    let built = build(world, "Max");
+    let FhResult::Exact { policy, .. } = decide_bounded_event(
+        &built,
+        &Bound::AtMost(ratio(7, 10)),
+        &ExactProbLimits::default(),
+    )
+    .expect("the digital product is acyclic") else {
+        panic!("exact values");
+    };
+    (built, policy)
+}
+
+fn detour_max_claim() -> World {
+    detour(&claim(
+        "Max",
+        "under All",
+        "<= 0.7",
+        "eventually[0 ms, 2 ms] holds(c.late)",
+    ))
+}
+
+/// FR-204 "Evidence" (TC-642): the witness scheduler has an entry at every
+/// digital evidence and continuation state, not only at the states the
+/// emitted paths leave. Under every scheduler `Detour`'s maximum scheduler
+/// also names the `L` branch of `Half`, which no accepted path passes.
+#[trace("TC-642", "FR-204")]
+#[test]
+fn witness_entries_cover_continuation_states_beside_the_paths() {
+    let world = detour_max_claim();
+    let (built, policy) = detour_maximum(&world);
+    let start = built.initial[0].2;
+    let witness = produce_witness(
+        &built,
+        &policy,
+        WitnessScope::EveryScheduler,
+        start,
+        &accepted(&built),
+        &ratio(7, 10),
+        &ExactProbLimits::default(),
+    )
+    .expect("the policy induces a chain")
+    .expect("two paths pass the bound");
+    let mut left = vec![start];
+    for path in &witness.paths {
+        left.extend(path.steps.iter().rev().skip(1).map(|step| step.to));
+        if let Some(first) = path.steps.first() {
+            left.push(first.to);
+        }
+    }
+    let entered: Vec<ProbStateId> = witness.entries.iter().map(|(state, _)| *state).collect();
+    assert!(
+        left.iter()
+            .all(|state| *state == start || entered.contains(state))
+            || entered.contains(&start)
+    );
+    assert!(
+        entered.iter().any(|state| !left.contains(state)),
+        "a continuation state without an emitted path has an entry: {entered:?}"
+    );
+    assert!(entered.windows(2).all(|pair| pair[0] < pair[1]));
+}
+
+/// FR-204-AC-10 with a randomized entry: the policy randomizes row `[1]`
+/// between `B` delay 1 and 2 with `1/2` each and takes `B` delay 1 on row
+/// `[3]`; the witness scheduler's entry at the race state is the exact
+/// randomization over the two whole actions, and a distribution that does not
+/// sum to 1 yields no entry.
+#[trace("TC-642", "FR-204-AC-10")]
+#[test]
+fn randomized_rows_give_an_exact_randomized_entry() {
+    let world = detour_max_claim();
+    let (built, _) = detour_maximum(&world);
+    let start = built.initial[0].2;
+    let take = |index: usize| SchedulerChoice::Deterministic(ActionChoice(index));
+    let mut policy: Vec<Option<SchedulerChoice>> = vec![Some(take(0)); built.states.len()];
+    let half = ratio(1, 2);
+    policy.push(Some(SchedulerChoice::Randomized(vec![
+        (ActionChoice(0), half.clone()),
+        (ActionChoice(1), half.clone()),
+    ])));
+    policy.push(Some(take(0)));
+    let entries = witness_scheduler(
+        &built,
+        &policy,
+        WitnessScope::Workload,
+        start,
+        &accepted(&built),
+    )
+    .expect("the policy gives an entry at each reached state");
+    let [(state, EntryChoice::Randomized(alternatives))] = entries.as_slice() else {
+        panic!("one randomized entry at the race state: {entries:?}");
+    };
+    assert_eq!(*state, start);
+    let [(first, p), (second, q)] = alternatives.as_slice() else {
+        panic!("two whole actions: {alternatives:?}");
+    };
+    assert_eq!((p, q), (&half, &half));
+    assert_eq!(
+        action_rows(&world, first),
+        [row(&[("A", 1)], &[("B", 1)]), row(&[("A", 3)], &[("B", 1)])]
+    );
+    assert_eq!(
+        action_rows(&world, second),
+        [row(&[("A", 1)], &[("B", 2)]), row(&[("A", 3)], &[("B", 1)])]
+    );
+
+    let last = policy.len() - 2;
+    policy[last] = Some(SchedulerChoice::Randomized(vec![(
+        ActionChoice(0),
+        ratio(1, 3),
+    )]));
+    assert_eq!(
+        witness_scheduler(
+            &built,
+            &policy,
+            WitnessScope::Workload,
+            start,
+            &accepted(&built)
+        ),
+        Err(WitnessError::NoChoice {
+            state: start.index()
+        })
+    );
 }

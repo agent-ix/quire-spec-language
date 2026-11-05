@@ -17,6 +17,12 @@
 //! row-choice edge, so the merged probability is the sum of the matching
 //! edges of the action's row choices.
 //!
+//! A witness scheduler has an entry at every state the induced chain reaches
+//! from the initial state before it accepts (FR-204 "Evidence": every
+//! digital evidence and continuation state), not only at the states the
+//! emitted paths leave. [`witness_scheduler`] reads a randomized policy the
+//! same way and names an exact-rational randomized entry ([`EntryChoice`]).
+//!
 //! Entries are keyed by product state; the canonical FR-202 scheduler keys
 //! each by its complete canonical product key, which the checker encodes.
 
@@ -28,9 +34,11 @@ use qsl_eval::simulation::model::same_rewards;
 use quire_exact::{Identifier, Integer, Rational, Value};
 
 use super::finite_horizon::rational_fits;
-use super::rows::free_delays_choice;
+use super::rows::{free_delays_choice, free_delays_distribution, scheduler_distribution};
 use super::unbounded::same_action;
-use super::{ExactProbLimits, ProbProduct, ProbStateId, ProductAction, ProductKind};
+use super::{
+    ExactProbLimits, ProbProduct, ProbStateId, ProductAction, ProductKind, SchedulerChoice,
+};
 
 /// Which choices a witness scheduler resolves (FR-202, FR-204 "Evidence").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -72,8 +80,8 @@ pub struct ProducedPath {
 /// path set.
 #[derive(Clone, Debug)]
 pub struct ProducedWitness {
-    /// The action at each state a path leaves that the scope resolves, in
-    /// state order.
+    /// The action at each state the policy's chain reaches before accepting
+    /// that the scope resolves, in state order.
     pub entries: Vec<(ProbStateId, ProductAction)>,
     /// The paths, most probable first; their sum exceeds the bound.
     pub paths: Vec<ProducedPath>,
@@ -116,8 +124,15 @@ pub fn policy_action(
     if product.kind == ProductKind::Dtmc {
         return Some(first.choice.clone());
     }
+    choices_at(product, state)
+        .get((*policy.get(state.index())?)?)
+        .map(|choice| (*choice).clone())
+}
+
+/// The distinct choices of `state` in edge order.
+fn choices_at(product: &ProbProduct, state: ProbStateId) -> Vec<&ProductAction> {
     let mut choices: Vec<&ProductAction> = Vec::new();
-    for edge in edges {
+    for edge in product.outgoing(state) {
         if !choices
             .iter()
             .any(|choice| same_action(choice, &edge.choice))
@@ -126,8 +141,110 @@ pub fn policy_action(
         }
     }
     choices
-        .get((*policy.get(state.index())?)?)
-        .map(|choice| (*choice).clone())
+}
+
+/// One entry of a witness scheduler (FR-202, FR-204 "Evidence").
+#[derive(Clone, Debug, PartialEq)]
+pub enum EntryChoice {
+    /// One action.
+    Action(ProductAction),
+    /// An exact-rational randomization over actions, each with positive
+    /// probability; the probabilities sum to 1. At a `FreeDelays` state the
+    /// alternatives are whole actions and their measure is the product of
+    /// the rows' distributions.
+    Randomized(Vec<(ProductAction, Rational)>),
+}
+
+impl EntryChoice {
+    /// The actions the entry can take.
+    fn actions(&self) -> Vec<&ProductAction> {
+        match self {
+            Self::Action(action) => vec![action],
+            Self::Randomized(alternatives) => {
+                alternatives.iter().map(|(action, _)| action).collect()
+            }
+        }
+    }
+}
+
+/// The entry a randomized `policy` takes at `state`; the one choice of a
+/// DTMC state. `None` when the state has no edges, the policy selects none,
+/// or a distribution does not sum to 1.
+pub fn entry_choice(
+    product: &ProbProduct,
+    state: ProbStateId,
+    policy: &[Option<SchedulerChoice>],
+) -> Option<EntryChoice> {
+    let first = product.outgoing(state).first()?;
+    let alternatives: Vec<(ProductAction, Rational)> =
+        if matches!(first.choice, ProductAction::FreeDelays(_)) {
+            free_delays_distribution(product, state, policy)?
+        } else if product.kind == ProductKind::Dtmc {
+            vec![(first.choice.clone(), rational(1))]
+        } else {
+            let choices = choices_at(product, state);
+            let selected = scheduler_distribution(policy.get(state.index())?.as_ref()?)?;
+            let mut alternatives = Vec::with_capacity(selected.len());
+            for (index, probability) in selected {
+                alternatives.push(((*choices.get(index)?).clone(), probability));
+            }
+            alternatives
+        };
+    match alternatives.as_slice() {
+        [(action, _)] => Some(EntryChoice::Action(action.clone())),
+        _ => Some(EntryChoice::Randomized(alternatives)),
+    }
+}
+
+/// The witness scheduler of a randomized `policy` (FR-202, FR-204
+/// "Evidence"): the entry `scope` resolves at every state reachable from
+/// `initial` through the support of the entries, up to the `accepting`
+/// states, in state order. Evidence and continuation states alike carry an
+/// entry, whether or not an emitted path leaves them.
+///
+/// # Errors
+///
+/// [`WitnessError`] when the inputs do not fit the product, or the policy
+/// selects no well-formed entry at a reached state.
+pub fn witness_scheduler(
+    product: &ProbProduct,
+    policy: &[Option<SchedulerChoice>],
+    scope: WitnessScope,
+    initial: ProbStateId,
+    accepting: &[bool],
+) -> Result<Vec<(ProbStateId, EntryChoice)>, WitnessError> {
+    if accepting.len() != product.states.len() || initial.index() >= product.states.len() {
+        return Err(WitnessError::InvalidState);
+    }
+    let mut scheduler: BTreeMap<ProbStateId, EntryChoice> = BTreeMap::new();
+    let mut queue = VecDeque::from([initial]);
+    while let Some(state) = queue.pop_front() {
+        let accepts = accepting
+            .get(state.index())
+            .copied()
+            .ok_or(WitnessError::InvalidState)?;
+        if accepts || scheduler.contains_key(&state) || product.outgoing(state).is_empty() {
+            continue;
+        }
+        let index = state.index();
+        let entry =
+            entry_choice(product, state, policy).ok_or(WitnessError::NoChoice { state: index })?;
+        for action in entry.actions() {
+            let steps = action_steps(product, state, action)
+                .ok_or(WitnessError::MalformedAction { state: index })?;
+            queue.extend(steps.iter().map(|step| step.to));
+        }
+        scheduler.insert(state, entry);
+    }
+    Ok(scheduler
+        .into_iter()
+        .filter(|(_, entry)| {
+            entry
+                .actions()
+                .into_iter()
+                .all(|action| resolves(scope, action))
+        })
+        .collect())
 }
 
 /// The steps `action` takes from `state`, with positive probability: a
@@ -356,7 +473,7 @@ pub fn produce_witness(
             });
             if sum > *past {
                 return Ok(Some(ProducedWitness {
-                    entries: entries(initial, &paths, &induced, scope),
+                    entries: entries(&induced, scope),
                     paths,
                 }));
             }
@@ -397,25 +514,15 @@ pub fn produce_witness(
     Ok(None)
 }
 
-/// The scope's entries on the states the paths leave.
-fn entries(
-    initial: ProbStateId,
-    paths: &[ProducedPath],
-    induced: &Induced,
-    scope: WitnessScope,
-) -> Vec<(ProbStateId, ProductAction)> {
-    let mut left: BTreeMap<ProbStateId, ProductAction> = BTreeMap::new();
-    for path in paths {
-        let sources = std::iter::once(initial).chain(path.steps.iter().map(|step| step.to));
-        for (source, _) in sources.zip(&path.steps) {
-            if let Some((action, _)) = induced.get(&source) {
-                if resolves(scope, action) {
-                    left.insert(source, action.clone());
-                }
-            }
-        }
-    }
-    left.into_iter().collect()
+/// The scope's entries on every state the induced chain reaches before it
+/// accepts: the evidence states the paths leave and the continuation states
+/// beside them.
+fn entries(induced: &Induced, scope: WitnessScope) -> Vec<(ProbStateId, ProductAction)> {
+    induced
+        .iter()
+        .filter(|(_, (action, _))| resolves(scope, action))
+        .map(|(state, (action, _))| (*state, action.clone()))
+        .collect()
 }
 
 /// Whether `scope`'s witness scheduler names `action`'s choice.

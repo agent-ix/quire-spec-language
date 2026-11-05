@@ -55,8 +55,8 @@ pub use unbounded::{
     UnboundedOutcome, UnboundedResult,
 };
 pub use witness::{
-    action_steps, policy_action, produce_witness, ProducedPath, ProducedStep, ProducedWitness,
-    WitnessError, WitnessScope,
+    action_steps, entry_choice, policy_action, produce_witness, witness_scheduler, EntryChoice,
+    ProducedPath, ProducedStep, ProducedWitness, WitnessError, WitnessScope,
 };
 
 use qsl_eval::automaton::{AutomatonError, StateId};

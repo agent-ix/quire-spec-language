@@ -22,7 +22,9 @@ use std::borrow::Cow;
 
 use quire_exact::Rational;
 
-use super::{FreeDelayRow, ProbEdge, ProbProduct, ProbStateId, ProductAction};
+use super::{
+    ActionChoice, FreeDelayRow, ProbEdge, ProbProduct, ProbStateId, ProductAction, SchedulerChoice,
+};
 
 /// The product's `FreeDelays` edges do not form rows: a row-choice edge
 /// beside another kind of choice, a body without exactly one row, a repeated
@@ -240,6 +242,19 @@ impl<'p> Evaluation<'p> {
     }
 }
 
+/// The index of the first evaluation node of the `FreeDelays` state `state`'s
+/// rows, and the rows; `None` when `state` is not a `FreeDelays` state.
+fn rows_at(product: &ProbProduct, state: ProbStateId) -> Option<(usize, Vec<Row<'_>>)> {
+    let mut node = product.states.len();
+    for earlier in product.ids().take_while(|earlier| *earlier < state) {
+        node += rows_of(product.outgoing(earlier))
+            .ok()?
+            .map_or(0, |rows| rows.len());
+    }
+    let rows = rows_of(product.outgoing(state)).ok()??;
+    Some((node, rows))
+}
+
 /// The whole `FreeDelays` action a policy takes at `state` (FR-204, FR-202):
 /// for each row in order, the row choice the policy selects at the row's
 /// evaluation node. `policy` is an evaluator's policy, whose entries after the
@@ -251,13 +266,7 @@ pub fn free_delays_choice(
     state: ProbStateId,
     policy: &[Option<usize>],
 ) -> Option<ProductAction> {
-    let mut node = product.states.len();
-    for earlier in product.ids().take_while(|earlier| *earlier < state) {
-        node += rows_of(product.outgoing(earlier))
-            .ok()?
-            .map_or(0, |rows| rows.len());
-    }
-    let rows = rows_of(product.outgoing(state)).ok()??;
+    let (node, rows) = rows_at(product, state)?;
     let mut chosen = Vec::with_capacity(rows.len());
     for (offset, row) in rows.iter().enumerate() {
         let index = (*policy.get(node + offset)?)?;
@@ -265,4 +274,63 @@ pub fn free_delays_choice(
         chosen.push((*body).clone());
     }
     Some(ProductAction::FreeDelays(chosen))
+}
+
+/// The exact randomized `FreeDelays` action a randomized policy takes at
+/// `state` (FR-204 "Evidence": randomized exact-rational entries): each
+/// row's [`SchedulerChoice`] is a distribution over the row's choices, and
+/// the entry is the product measure over the whole actions, so every row has
+/// the distribution the policy gives it. Alternatives of probability 0 are
+/// omitted. `None` when `state` is not a `FreeDelays` state, the policy does
+/// not select a choice for every row, or a distribution does not sum to 1.
+pub(super) fn free_delays_distribution(
+    product: &ProbProduct,
+    state: ProbStateId,
+    policy: &[Option<SchedulerChoice>],
+) -> Option<Vec<(ProductAction, Rational)>> {
+    let (node, rows) = rows_at(product, state)?;
+    let one = Rational::from_integer(quire_exact::Integer::from(1_i64));
+    let mut actions: Vec<(Vec<FreeDelayRow>, Rational)> = vec![(Vec::new(), one)];
+    for (offset, row) in rows.iter().enumerate() {
+        let choice = policy.get(node + offset)?.as_ref()?;
+        let weighted = scheduler_distribution(choice)?;
+        let mut next = Vec::with_capacity(actions.len() * weighted.len());
+        for (chosen, mass) in &actions {
+            for (index, weight) in &weighted {
+                let (body, _) = row.get(*index)?;
+                let mut extended = chosen.clone();
+                extended.push((*body).clone());
+                next.push((extended, mass.mul(weight)));
+            }
+        }
+        actions = next;
+    }
+    Some(
+        actions
+            .into_iter()
+            .map(|(rows, mass)| (ProductAction::FreeDelays(rows), mass))
+            .collect(),
+    )
+}
+
+/// The positive-probability alternatives of a scheduler choice, by action
+/// index; `None` when the probabilities do not sum to 1.
+pub(super) fn scheduler_distribution(choice: &SchedulerChoice) -> Option<Vec<(usize, Rational)>> {
+    let weighted: Vec<(usize, Rational)> = match choice {
+        SchedulerChoice::Deterministic(ActionChoice(index)) => {
+            vec![(
+                *index,
+                Rational::from_integer(quire_exact::Integer::from(1_i64)),
+            )]
+        }
+        SchedulerChoice::Randomized(alternatives) => alternatives
+            .iter()
+            .filter(|(_, probability)| *probability > zero())
+            .map(|(ActionChoice(index), probability)| (*index, probability.clone()))
+            .collect(),
+    };
+    let total = weighted
+        .iter()
+        .fold(zero(), |sum, (_, probability)| sum.add(probability));
+    (total == Rational::from_integer(quire_exact::Integer::from(1_i64))).then_some(weighted)
 }
