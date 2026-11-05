@@ -1621,6 +1621,7 @@ fn a_mathematical_integer_division_counterexample_replays_to_the_violation() {
     let violated =
         package_of("function q using v(a: Integer, b: Integer): Integer pure { a div b }");
     let key = only_scalar_key(&violated, "q");
+    let key_of_violated = key.clone();
     let target = ValueTarget::select(&violated, "q", &key).unwrap();
     assert!(target
         .parameters()
@@ -1680,6 +1681,35 @@ fn a_mathematical_integer_division_counterexample_replays_to_the_violation() {
         .replay(&[integer(7), integer(0)], &found, &Cancel::new())
         .unwrap()
         .is_none());
+
+    // Item level, the bounded arm owns no unbounded item (FR-495-AC-7, QSpec
+    // FR-147-AC-3): a reported candidate, the counterexample included, settles
+    // `unsupported`/`unbounded-extent` before any replay, never `refuted`, and
+    // the Integer parameters are not narrowed to search or replay them. The
+    // replay of a provider's counterexample is the executor call above.
+    let reported = |candidate: Vec<Value>| {
+        run_in(
+            &Engines::qsl().unwrap(),
+            &violated,
+            &key_of_violated,
+            "q",
+            Ask {
+                max_cases: None,
+                reported: Some(candidate),
+            },
+        )
+    };
+    for candidate in [at.to_vec(), vec![integer(7), integer(2)]] {
+        let record = reported(candidate.clone());
+        let Settlement::Disposed(disposed) = &record.settlement else {
+            panic!("{candidate:?}: a disposition, not {:?}", record.settlement)
+        };
+        assert_eq!(disposed.kind, DispositionKind::Unsupported, "{candidate:?}");
+        assert!(
+            record.value_check.is_none(),
+            "{candidate:?}: nothing replayed"
+        );
+    }
 
     // With only the bounded arm in the lock the obligation is never settled
     // `proved` or `refuted`.
