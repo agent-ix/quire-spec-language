@@ -541,28 +541,19 @@ fn operation_of(node: &FormulaNode) -> Option<(&'static str, Option<IntervalKey>
                     TemporalUpper::Open => None,
                 },
             },
-            CheckedInterval::Timed(timed) => {
-                // Closed ends and integral bounds count ticks, as the work
-                // counters read them (`ClauseWork`), and are the integer
-                // interval the package lists.
-                match timed.closed_integral_bounds() {
-                    Some((lower, upper)) => IntervalKey::Steps {
-                        lower,
-                        upper: Some(upper),
-                    },
-                    None => IntervalKey::Timed {
-                        lower: (
-                            timed.lower().numerator().to_string(),
-                            timed.lower().denominator().to_string(),
-                        ),
-                        upper: Some((
-                            timed.upper().numerator().to_string(),
-                            timed.upper().denominator().to_string(),
-                        )),
-                        closed: (timed.lower_closed(), timed.upper_closed()),
-                    },
-                }
-            }
+            // A finite-window clause holds only step intervals (FR-326): a
+            // timed interval is the timed profile's, in its rational form.
+            CheckedInterval::Timed(timed) => IntervalKey::Timed {
+                lower: (
+                    timed.lower().numerator().to_string(),
+                    timed.lower().denominator().to_string(),
+                ),
+                upper: Some((
+                    timed.upper().numerator().to_string(),
+                    timed.upper().denominator().to_string(),
+                )),
+                closed: (timed.lower_closed(), timed.upper_closed()),
+            },
         })
     };
     Some(match node {

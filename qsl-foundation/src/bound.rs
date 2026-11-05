@@ -530,24 +530,6 @@ impl TimedInterval {
         self.upper_closed
     }
 
-    /// The integral closed bounds of a tick interval (the finite-window
-    /// profile's `[a, b]`), or `None` when an end is open, a bound is not an
-    /// integer or a bound exceeds `u64`. The one predicate every consumer of a
-    /// tick interval shares, so the lowering and the wire route cannot differ.
-    pub fn closed_integral_bounds(&self) -> Option<(u64, u64)> {
-        if !self.lower_closed
-            || !self.upper_closed
-            || !self.lower.is_integer()
-            || !self.upper.is_integer()
-        {
-            return None;
-        }
-        Some((
-            self.lower.numerator().to_u64()?,
-            self.upper.numerator().to_u64()?,
-        ))
-    }
-
     /// Whether the interval is punctual: `lower = upper`, both ends closed
     /// (ADR-026 DF-2).
     pub fn is_punctual(&self) -> bool {
@@ -627,51 +609,6 @@ mod tests {
     /// from `[a, b]` (zero width included); an open end, a rational bound or a
     /// bound above `u64::MAX` is no tick interval.
     #[trace("TC-1295", "FR-501")]
-    #[test]
-    fn closed_integral_bounds_accept_only_closed_integral_u64_intervals() {
-        use std::str::FromStr;
-
-        use quire_exact::{Integer, Rational};
-
-        let whole = |value: i64| Rational::from_integer(Integer::from(value));
-        let interval = |lower, lower_closed, upper, upper_closed| {
-            TimedInterval::new(lower, lower_closed, upper, upper_closed).expect("a valid interval")
-        };
-        assert_eq!(
-            interval(whole(0), true, whole(5), true).closed_integral_bounds(),
-            Some((0, 5))
-        );
-        assert_eq!(
-            interval(whole(0), true, whole(0), true).closed_integral_bounds(),
-            Some((0, 0))
-        );
-        assert_eq!(
-            interval(whole(0), false, whole(5), true).closed_integral_bounds(),
-            None,
-            "open lower end"
-        );
-        assert_eq!(
-            interval(whole(0), true, whole(5), false).closed_integral_bounds(),
-            None,
-            "open upper end"
-        );
-        let half =
-            Rational::new(Integer::from(1_i64), Integer::from(2_i64)).expect("a denominator");
-        assert_eq!(
-            interval(half, true, whole(5), true).closed_integral_bounds(),
-            None,
-            "rational endpoint"
-        );
-        let above = Rational::from_integer(
-            Integer::from_str("18446744073709551616").expect("u64::MAX + 1 parses"),
-        );
-        assert_eq!(
-            interval(whole(0), true, above, true).closed_integral_bounds(),
-            None,
-            "endpoint above u64::MAX"
-        );
-    }
-
     /// FR-097-AC-9: a proof bound exists only with the kind its variant
     /// pairs with; `None` is for a `Variants` bound alone.
     #[trace("TC-436", "FR-097-AC-9")]

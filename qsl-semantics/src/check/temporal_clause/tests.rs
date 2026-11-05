@@ -905,24 +905,90 @@ fn a_holds_condition_is_typed_over_the_over_parameter() {
     assert_eq!(refusal.cause, CheckCause::NonBooleanRoot, "{refusal:?}");
 }
 
-/// FR-393 leaves a timed interval's meaning to S3 (FR-233, FR-234). Until
-/// that check lands, a clause with one refuses `unsupported_construct`/
-/// `not-yet-implemented` at the interval under every profile, rather than
-/// checking it as a step interval or dropping it.
-#[trace("TC-1078")]
+/// FR-233 and FR-326: a timed interval (FR-393) where the clause counts
+/// steps, here under `model-steps` with infinite-trace and event-position,
+/// refuses `ill_typed`/`type-mismatch` at the interval, rather than being
+/// checked as a step interval or dropped.
+#[trace("TC-1078", "TC-688", "FR-233-AC-2")]
 #[test]
-fn a_timed_interval_refuses_not_yet_implemented_at_the_interval() {
+fn a_timed_interval_under_a_step_count_refuses_type_mismatch_at_the_interval() {
     let formula = "eventually[0 ms, 3 ms) holds(c.level = 3)";
     for profile in [INFINITE, EVENT] {
         let (text, cause) = refused(&[profile], formula);
         assert_eq!(
             cause,
-            TemporalCause::TimedIntervalNotChecked {
+            TemporalCause::TimedIntervalUnderStepCount {
                 span: first(&text, "[0 ms, 3 ms)"),
             },
             "{profile}"
         );
-        assert_eq!(cause.code(), Code::UnsupportedConstruct);
-        assert_eq!(cause.tag(), "not-yet-implemented");
+        assert_eq!(cause.code(), Code::IllTyped);
+        assert_eq!(cause.tag(), "type-mismatch");
     }
+}
+
+/// FR-326-AC-6: under the finite-window profile `eventually[0,5] holds(p)`
+/// checks with the step interval `[0,5]`, held as integral closed ticks;
+/// each well-formed timed interval, the unit-bearing, rational, open-ended
+/// and `[3 ms, *]` forms, refuses `ill_typed`/`type-mismatch` at the
+/// interval's span; a step interval `[3,*]` refuses `unsupported_construct`/
+/// `expression-form`; the aggregate window `count over past[0 ms, 300 ms]
+/// min_count 1 >= 1` is a duration and checks.
+#[trace("TC-836", "FR-326-AC-6")]
+#[test]
+fn the_finite_window_profile_admits_only_integral_closed_tick_intervals() {
+    let (_, clause) = checked(&[TIMESTAMPED], "eventually[0,5] holds(c.level = 3)");
+    let intervals: Vec<_> = clause
+        .operators()
+        .iter()
+        .filter_map(|operator| operator.interval.clone())
+        .collect();
+    assert_eq!(
+        intervals,
+        [CheckedInterval::Steps(
+            TemporalInterval::new(0, TemporalUpper::Finite(5)).expect("an ordered interval")
+        )]
+    );
+    assert_eq!(clause.horizon(), Some(5));
+
+    for interval in [
+        "[0 ms, 5 ms]",
+        "[0 ms, 5 ms)",
+        "[0.5 ms, 5 ms]",
+        "(1 ms, 5 ms]",
+        "[3 ms, *]",
+    ] {
+        let (text, cause) = refused(
+            &[TIMESTAMPED],
+            &format!("eventually{interval} holds(c.level = 3)"),
+        );
+        assert_eq!(
+            cause,
+            TemporalCause::TimedIntervalUnderStepCount {
+                span: first(&text, interval),
+            },
+            "{interval}"
+        );
+        assert_eq!(
+            (cause.code(), cause.tag()),
+            (Code::IllTyped, "type-mismatch"),
+            "{interval}"
+        );
+    }
+
+    let (text, cause) = refused(&[TIMESTAMPED], "eventually[3,*] holds(c.level = 3)");
+    assert_eq!(
+        cause,
+        TemporalCause::OpenInterval {
+            span: first(&text, "[3,*]"),
+        }
+    );
+    assert_eq!(
+        (cause.code(), cause.tag()),
+        (Code::UnsupportedConstruct, "expression-form")
+    );
+
+    package_admits(&timestamped_source(
+        "count over past[0 ms, 300 ms] min_count 1 >= 1",
+    ));
 }

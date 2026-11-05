@@ -1629,7 +1629,10 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     format!("{message}: `temporal {name}` checks but is not emitted yet")
                 }
                 TemporalCause::TimedIntervalNotChecked { .. } => {
-                    format!("{message}: a timed interval is not checked yet")
+                    format!("{message}: a timed interval in a hyper clause is not checked yet")
+                }
+                TemporalCause::TimedIntervalUnderStepCount { .. } => {
+                    format!("{message}: a timed interval where the clause counts steps or ticks")
                 }
                 TemporalCause::ProtocolFairnessNotEmitted { constraint, .. } => format!(
                     "{message}: the fairness constraint names a target of protocol `{}`, \
