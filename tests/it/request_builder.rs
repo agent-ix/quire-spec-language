@@ -468,14 +468,11 @@ fn request_items_keep_integer_division_domains_unbounded() {
                 .expect("one registration");
             let mut with_smt = Registry::new();
             with_smt.register(descriptor).expect("one registration");
-            with_smt
-                .register(backend(
-                    "cvc5",
-                    (Capability::ValueValidity, Mode::Unbounded),
-                ))
-                .expect("the SMT registration");
+            let smt = backend("cvc5", (Capability::ValueValidity, Mode::Unbounded));
+            let cvc5 = smt.candidate().clone();
+            with_smt.register(smt).expect("the SMT registration");
 
-            for registry in [&with_smt, &bounded_alone] {
+            for (registry, smt_registered) in [(&with_smt, true), (&bounded_alone, false)] {
                 let items = items_from_requirements(graph.requirements(), registry, None);
                 let division: Vec<_> = items
                     .iter()
@@ -493,6 +490,13 @@ fn request_items_keep_integer_division_domains_unbounded() {
                 );
                 assert_eq!(item.kind(), Capability::ValueValidity);
                 assert!(candidates(item).contains(&kani), "{operator}");
+                // The registered Unbounded provider is a candidate of the
+                // item exactly when it is registered.
+                assert_eq!(
+                    candidates(item).contains(&cvc5),
+                    smt_registered,
+                    "{operator}: cvc5 candidate with smt_registered={smt_registered}"
+                );
             }
         }
     }
