@@ -79,6 +79,27 @@ that is not emitted has no row. A collection type is structural and has no
 declaration row. Each list holds its rows in ascending order of their node
 keys; the order carries no other meaning.
 
+### Source union identity rows
+
+For each source union declaration node it emits, the `Emission` SHALL carry
+one IR `SelectedSourceUnionRow`. The row holds the node's emitted structural
+id, its source owner's authority and identity, its qualified declaration
+segments, the union's type handle (the key every `ValueType::Composite` of it
+carries) and its settled key (the node key every sealed member names). It
+holds one member entry per declared member, in declaration order. Each entry
+holds the sealed `UnionMember` the check minted for that member, the emitted
+ids of the member's payload type nodes in position order, and the payload
+`ValueType`s in the same order. The payload ids are the targets of the
+references in the union node's member binding. `check` produces these rows
+from the checked type environment's sealed declaration and the lowered union
+node, never from package bytes, decoded nodes or display names, and never
+rebuilds a sealed member or a payload type. A model-owned type carries no
+union row. A union node that is not emitted has no row. A union whose
+member, payload type or payload node cannot be joined to an emitted node is a
+writer fault, not a row with a missing entry. A bare union declaration key
+is not a union row. Rows are written in ascending order of their union
+nodes' keys; the order carries no other meaning.
+
 ### Type nodes
 
 `check` SHALL build the type node of each checked `ValueType` as follows.
@@ -179,6 +200,7 @@ missing profile selections retain FR-383 and FR-218's refusals.
 | FR-092-AC-17 | Repeating a reference to one protocol adds an occurrence and source-map row without changing the carrier id, body or dependencies. Changing its bound target changes the target operand in its FR-322 structural path and gives a distinct id. Removing the second occurrence leaves the carrier id unchanged. | Test (TC-1021) |
 | FR-092-AC-18 | A unit that declares `protocol Fill` made only of FR-383's emitted constructs (static and replicated roles, channels and queues, `sequence`/`branch`/`case` controls, binders, captures, an `each` guard with no declaration read, a finish with no declaration read, and scheduling) emits one `protocol`/`protocol_clause` node. Its body is a `quire.op.protocol.control` application with the selected `protocol_profile` law, the `protocol` `profile_operator` member and FR-383's thirteen clause arguments; it has Boolean semantic type and one `declaration` occurrence at the declaration's region. The IR V2 reader admits it, and a reference to `Fill` resolves to its structural id. If no profile is selected, QSpec FR-322-AC-22 admits no `protocol_control` application: QSL emits no protocol node and no refusal for the declaration, while a reference to it refuses `missing_declaration`/`missing-selection` (FR-218-AC-8). An FR-383 construct not yet emitted refuses `unsupported_construct`/`not-yet-implemented` at that construct, names it and the ticket that writes it, and writes no clause node. | Test (TC-1021) |
 | FR-092-AC-19 | Emitting a unit that declares `enum Status { READY, DONE }` and reads `Status::READY` gives one `SelectedEnumDeclarationRow` and two `SelectedEnumMemberRow`s. Each row's structural id names an emitted `scalar_type`/`enum` or `value`/`enum_value` node; its source authority and identity equal that node's source owner; its qualified declaration is `["Status"]`; its key is the node's key; each member row names the declaration's emitted id and its own case. A unit with a model variant type and no source enum has no source enum row. | Test (TC-1021) |
+| FR-092-AC-20 | Emitting a unit that declares `union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }` and constructs `Shape::Rect(2, 3)` gives one `SelectedSourceUnionRow`. Its structural id names the emitted `composite_type`/`union` node; its source authority and identity equal that node's source owner; its qualified declaration is `["Shape"]`; its type handle is the checked declaration's key and its settled key is the key of the node it names. Its members are `Empty`, `Circle` and `Rect` in declaration order, each the sealed `UnionMember` the check minted, with payload types `[]`, `[Integer]` and `[Integer, Integer]` and payload node ids equal to the references in the union node's member bindings. For a recursive union the payload node of an optional self-reference is the emitted `option` node naming the union node. IR's `with_source_union_rows` accepts the row against the package read back and `project_exact_type` of the union node returns `Composite` of the type handle, while the same node with no row refuses `UnavailableIdentityWitness` and a row that misorders its members or drops a payload node refuses `MismatchedIdentityWitness`. A unit with no source union, and a unit with a model variant type, has no union row, and every emitted union node has exactly one row. | Test (TC-1021) |
 
 ## Dependencies
 

@@ -318,6 +318,43 @@ impl SemanticNode {
         leaf.reference_target()?.admitted().cloned()
     }
 
+    /// QSpec FR-440 "Union type node": a union type node's members in
+    /// declared order, each as its name and the payload type nodes its
+    /// `Group` of references names in position order. `None` for every node
+    /// that is not a `composite_type`/`union` node.
+    pub fn union_member_payload_nodes(&self) -> Option<Vec<(&str, Vec<NodeKey>)>> {
+        if self.content.node_tag != NodeTag::CompositeType || self.content.semantic_form != "union"
+        {
+            return None;
+        }
+        let BodyTerm::Aggregate(AggregateTerm { members }) = &self.content.body else {
+            return None;
+        };
+        members
+            .iter()
+            .map(|member| {
+                let MemberTerm::Binding(Binding {
+                    name,
+                    value: BindingValue::Group(payload),
+                }) = member
+                else {
+                    return None;
+                };
+                let nodes = payload
+                    .members
+                    .iter()
+                    .map(|position| match position {
+                        GroupMember::Leaf(LeafTerm::Reference { target }) => {
+                            target.admitted().cloned()
+                        }
+                        GroupMember::Leaf(_) | GroupMember::Binding(_) => None,
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                Some((name.as_str(), nodes))
+            })
+            .collect()
+    }
+
     /// FR-092 "Function nodes": a function node's parameter nodes, in
     /// declared parameter order, read from its `parameters` binding. `None`
     /// for every node that is not a function node. The replay executor

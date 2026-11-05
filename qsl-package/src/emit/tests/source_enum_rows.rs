@@ -12,7 +12,10 @@ pub(super) const STATUS: &str = "enum Status { READY, DONE }\n\
     function ready using v(s: Status): Boolean pure { s = Status::READY }\n";
 
 /// The emitted wire node whose id is `id`.
-fn node_with_id<'w>(wire: &'w Value, id: &quire_contract_model::CheckedNodeId) -> &'w Value {
+pub(super) fn node_with_id<'w>(
+    wire: &'w Value,
+    id: &quire_contract_model::CheckedNodeId,
+) -> &'w Value {
     let id = serde_json::to_value(id).expect("a node id serializes");
     nodes(wire)
         .iter()
