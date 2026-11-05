@@ -55,4 +55,6 @@ Tag the tests `#[trace("TC-524", "FR-337-AC-n")]`.
   `missing_declaration`/`missing-name`; `ill_typed`/`operator-ineligible`;
   each at FR-370's locus.
 - Step 5: `temporal_interval` `{lower: "0", upper: "5"}`; an internal fault and
-  no node; `invalid_package`/`operation-member-mismatch` for each reader input.
+  no node; `invalid_package`/`operation-member-mismatch` for each reader input,
+  the `timed_interval` member at the application's `/body/operation/member`
+  and the `upper: null` interval at the application's `/body` (FR-370-AC-3).

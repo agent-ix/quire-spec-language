@@ -1226,6 +1226,57 @@ fn the_i2_read_refuses_each_fr370_defect_at_its_locus() {
     );
 }
 
+/// FR-337-AC-24 (TC-524), the I2 reader half: a clause node selecting the
+/// finite-window profile whose interval member is mutated is refused
+/// `invalid_package`/`operation-member-mismatch` (FR-370-AC-3). An open
+/// `temporal_interval` with `upper: null` is refused at the application's
+/// `/body`; a `timed_interval` member, a member kind the node does not admit
+/// there, is refused at `/body/operation/member`.
+#[trace("TC-524", "FR-337-AC-24")]
+#[test]
+fn the_i2_reader_refuses_a_finite_window_interval_it_does_not_admit() {
+    use quire_contract_model::CheckedPackageRefusalCause as Cause;
+    let compiled = compile(&unit(
+        "quire.temporal.timestamped-event.finite-window/v1",
+        &declared("Bounded", "eventually[0,5] holds(c.versionNumber = 2)"),
+    ));
+    let root = formula_root(&compiled.wire, clause_node(&compiled.wire));
+    let root_key = root["node_id"].clone();
+    let timed = json!({
+        "kind": "timed_interval",
+        "interval": {
+            "lower": {"numerator": "0", "denominator": "1"},
+            "upper": {"numerator": "5", "denominator": "1"},
+            "lower_end": "open",
+            "upper_end": "closed",
+        },
+    });
+    let open_upper = json!({
+        "kind": "temporal_interval",
+        "interval": {"lower": "0", "upper": null},
+    });
+    for (member, suffix) in [(open_upper, "/body"), (timed, "/body/operation/member")] {
+        let envelope = edited(&compiled, &root_key, |node| {
+            node["body"]["operation"]["member"] = member.clone();
+        });
+        let refusal = ir_refusal(&compiled, &envelope);
+        assert_eq!(
+            (refusal.code, refusal.cause),
+            (
+                CheckedPackageRefusalCode::InvalidPackage,
+                Some(Cause::OperationMemberMismatch)
+            ),
+            "{member}: {refusal:?}"
+        );
+        let root_at = position(&envelope, &root_key);
+        assert_eq!(
+            path(&refusal),
+            format!("/semantic_graph/nodes/{root_at}{suffix}"),
+            "{member}"
+        );
+    }
+}
+
 /// FR-337-AC-5 (TC-1079 steps 1 and 2): for ADR-018 §6's `ReachesTwo` the
 /// I2 lookup returns the triple `[node, "claim", ordinal]`, `node` the
 /// emitted clause node, and the `over` node `c`'s parameter node; the
