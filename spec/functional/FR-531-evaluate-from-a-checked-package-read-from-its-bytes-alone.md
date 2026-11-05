@@ -355,11 +355,14 @@ text is UTF-8 as written.
   "min_scale", "max_scale", "rounding" }`, `{ "kind": "integer", "lower", "upper",
   "rounding" }` or `{ "kind": "rational", "numerator": <interval>, "denominator":
   <interval> }`, with the members and spellings of `decimal`, `int` and `rational`
-  above. For example a `map` of `bounded_quantity` values is `{ "kind": "map",
-  "values": { "kind": "bounded_quantity", "unit": { "kind": "declared", "node":
-  "E" }, "min": null, "max": { "magnitude": { "numerator": "5", "denominator": "1" },
-  "unit": { "kind": "declared", "node": "E" } } }, "bound": { "minimum": "0",
-  "maximum": "4" } }`, members in the order shown.
+  above. For example a `map` of `bounded_quantity` values over the unit node `["U"]` of package
+  `p`, with `min` null, is, as a JSON value with members in the order shown (the
+  bound members are JSON integers, the magnitude components canonical decimal
+  strings): `{ "kind": "map", "values": { "kind": "bounded_quantity", "unit": {
+  "kind": "declared", "node": { "package": "p", "path": ["U"], "ordinal": 0 } },
+  "min": null, "max": { "magnitude": { "numerator": "5", "denominator": "1" },
+  "unit": { "kind": "declared", "node": { "package": "p", "path": ["U"], "ordinal":
+  0 } } } }, "bound": { "minimum": 0, "maximum": 4 } }`.
   An *interval* is `{ "lower": <text>, "upper": <text> }` and `lower`, `upper` of
   `int` and `decimal` are canonical decimal integer strings; `rounding` is one of
   `exact`, `toward_zero`, `toward_positive`, `toward_negative`, `nearest_even`,
@@ -641,7 +644,7 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-15 | `ReadEqualityRows::read` over a file that is not JSON, one with an unknown or repeated member, one with an unknown fact tag, one with another `format`, one with a row whose node id string the package does not hold and one whose application is not an equality application returns `Malformed`, `Malformed`, `Malformed`, `Format`, `Unjoined` and `Unjoined` respectively, naming the member, the tag, the format string or the first row, and returns no rows. | Test (TC-1331) |
 | FR-531-AC-16 | A slot call on TC-1070 fixture E's `Refund` retry relation refuses `MissingEqualityWitness` over a supply with `equality: None`, `ForeignEqualityWitness` with rows of another package and `UnknownEqualityWitness` with rows of the package from which the row of the retry relation's application is removed, each as `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, `CallAdmissionLocus::Package` and the meter untouched; `Refund`'s `trigger.guard`, whose walk holds no equality application, over the same supply evaluates. | Test (TC-1331) |
 | FR-531-AC-17 | The encoding of the rows of "The equality file" vector equals the vector's bytes exactly; `ReadEqualityRows::read` over those bytes and a package that holds the node `["E"]` and `["U"]` returns rows equal to the input rows; for a row of every fact tag, every value-type tag, every owner kind and a compound unit id in a fact row, writing then reading returns equal rows and a second write is byte-identical; a checked rational whose numerator is spelled `+1`, `01` or `-0`, or whose denominator is `0` or `-2`, returns `Malformed`; a compound unit id in a `source_units` row returns `Malformed`. | Test (TC-1331) |
-| FR-531-AC-18 | For a row whose fact value type is each of a `carried_quantity` over a decimal carrier, over an integer carrier and over a rational carrier, a `bounded_quantity` with both bounds and with `min` and `max` null, and a `map` with a bound and without one (including the example of "Value encodings"), `ReadEqualityRows::to_bytes` followed by `ReadEqualityRows::read` returns equal rows, a second write is byte-identical, and the bytes of the example equal the example text; a `bounded_quantity` whose bound is in another unit than `unit`, and a `carried_quantity` carrier tagged other than `decimal`, `integer` or `rational`, return `Malformed`. | Test (TC-1331) |
+| FR-531-AC-18 | For a row whose fact value type is each of a `carried_quantity` over a decimal carrier, over an integer carrier and over a rational carrier, a `bounded_quantity` with both bounds and with `min` and `max` null, and a `map` with a bound and without one (including the example of "Value encodings"), `ReadEqualityRows::to_bytes` followed by `ReadEqualityRows::read` returns equal rows, a second write is byte-identical, and the value-type subtree the writer emits for the example, parsed as JSON, equals the example's JSON value with its members in the stated order (members compared in order, not as a set); a `bounded_quantity` whose bound is in another unit than `unit`, and a `carried_quantity` carrier tagged other than `decimal`, `integer` or `rational`, return `Malformed`. | Test (TC-1331) |
 
 ## Dependencies
 
