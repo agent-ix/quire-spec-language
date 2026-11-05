@@ -169,7 +169,21 @@ impl ClauseFormula {
             .collect();
         Self {
             shapes: formula.nodes().iter().map(shape).collect(),
-            plan: Plan::new(formula),
+            // A finite-window or package run reads an atom as a `holds`
+            // valuation; an aggregate atom has no valuation to read until the
+            // request carries its samples (FR-516), so the plan is refused.
+            plan: if formula
+                .nodes()
+                .iter()
+                .any(|node| matches!(node, FormulaNode::Aggregate { .. }))
+            {
+                Err(InternalFault::new(
+                    "temporal.facts",
+                    "aggregate-atom-needs-samples",
+                ))
+            } else {
+                Plan::new(formula)
+            },
             ids,
             atom_of,
             root: formula.root().index(),
@@ -509,7 +523,10 @@ fn plan_node(entry: &FormulaNodeUse<'_>, operands: &[usize]) -> Result<Node, Int
         FormulaOperation::Release => binary(Base::Until, true),
         FormulaOperation::Since => binary(Base::Since, false),
         FormulaOperation::Triggered => binary(Base::Since, true),
-        FormulaOperation::Aggregate => Ok(Node::Atom),
+        // The package route carries no aggregate samples yet (FR-516
+        // "Window aggregate atoms"): reading the atom as a `holds` valuation
+        // would give a truth FR-194 does not.
+        FormulaOperation::Aggregate => Err(fault("aggregate-atom-needs-samples")),
     }
 }
 

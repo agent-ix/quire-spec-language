@@ -283,3 +283,37 @@ fn bindings_that_are_not_the_packages_are_refused() {
         Err(PackageMismatch::Bindings)
     ));
 }
+
+/// FR-516 "Window aggregate atoms": the package subject view does not yet read
+/// an aggregate node's argument, so a package route over a clause with an
+/// aggregate atom is refused `clause-root-unresolved` with an empty charge log
+/// and is never read from the `holds` valuation map: a request that supplies
+/// `Valuation::True` at every atom, which would answer a truth for `min_count
+/// 5` over three positions, gets the refusal.
+#[trace("TC-1311")]
+#[test]
+fn a_clause_with_an_aggregate_atom_is_unresolved_until_the_view_reads_it() {
+    let clauses = "record Sample { level: Int[0, 9]; }\n\
+        temporal Plain using t over (c: Config::ConfigVersion) clock \"model-steps\" \
+        on origin { eventually[0,1] holds(c.versionNumber <= 1) }\n\
+        temporal Window using t over (e: Sample) clock \"model-steps\" \
+        on origin { always[0,2] (count over past[0,1] min_count 5 >= 1) }";
+    let built = event_clauses(clauses, &[("Plain", "plain"), ("Window", "window")]);
+    let read = built.read(&built.emission);
+    let package = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
+    let ids = clause_ids(&package);
+    assert_eq!(ids.len(), 2);
+    let (readable, refused): (Vec<_>, Vec<_>) =
+        ids.iter().partition(|id| package.subject(id, None).is_ok());
+    let ([plain], [window]) = (&readable[..], &refused[..]) else {
+        panic!("one clause reads and one is refused");
+    };
+    let asked = request(&package, plain, None, 3);
+    let mut meter = unlimited();
+    let result = package.evaluate_temporal_evidence(window, &asked, &mut meter);
+    assert_eq!(
+        cause(&result.expect_err("an aggregate atom has no valuation")),
+        "clause-root-unresolved"
+    );
+    assert!(meter.admitted_charges().is_empty());
+}

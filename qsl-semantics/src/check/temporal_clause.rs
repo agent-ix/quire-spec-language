@@ -300,7 +300,7 @@ pub enum AggregateKind {
 
 impl AggregateKind {
     /// The kind's FR-337 wire spelling.
-    pub const fn spelling(&self) -> &'static str {
+    pub(crate) const fn spelling(&self) -> &'static str {
         match self {
             Self::Count => "count",
             Self::Sum => "sum",
@@ -337,10 +337,10 @@ pub struct DurationWindow {
     /// The farthest age `b`.
     pub upper: Rational,
     /// The node of the time unit both bounds are expressed in.
-    pub unit: NodeKey,
+    pub(crate) unit: NodeKey,
     /// The unit's nominal dimension and unit nodes, its dependency closure:
     /// a model-owned unit's nodes are written by the emitter.
-    pub nominal_nodes: Vec<TimeNominalNode>,
+    pub(crate) nominal_nodes: Vec<TimeNominalNode>,
 }
 
 /// The checked term of one window aggregate atom, beside its typed value,
