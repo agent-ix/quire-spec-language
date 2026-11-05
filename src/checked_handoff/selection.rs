@@ -269,11 +269,17 @@ fn split_revision(identity: &str) -> (&str, &str) {
     identity.rsplit_once('/').unwrap_or((identity, ""))
 }
 
+/// Whether `format` spells the selection sidecar format this reader admits.
+#[ix_trace_rs::string_edge]
+fn is_selection_format(format: &str) -> bool {
+    format == SELECTION_FORMAT
+}
+
 impl Selection {
     /// Parse a sidecar.
     pub fn read(bytes: &[u8]) -> Result<Self, SelectionReadError> {
         let selection: Self = serde_json::from_slice(bytes)?;
-        if selection.format != SELECTION_FORMAT {
+        if !is_selection_format(&selection.format) {
             return Err(SelectionReadError::Format(selection.format));
         }
         Ok(selection)

@@ -29,8 +29,97 @@ use crate::checked_v2::{resolve_clause_root, role_spelling, wire_graph};
 /// owned ids, so the per-visit cost is not reduced here.
 pub(super) const FORMULA_VISITS: u64 = CheckedPackageReadLimits::bounded().work;
 
-/// The operation identity of a `holds` atom.
-pub(super) const HOLDS: &str = "quire.op.temporal.holds";
+/// The temporal operation a checked formula node applies (FR-337). A package
+/// spells it as an operation identity; [`FormulaOperation::of`] is the one
+/// conversion of that spelling, so no other code compares it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FormulaOperation {
+    /// `quire.op.temporal.true`.
+    True,
+    /// `quire.op.temporal.false`.
+    False,
+    /// `quire.op.temporal.holds`: an atom.
+    Holds,
+    /// `quire.op.temporal.aggregate`: a window aggregate atom.
+    Aggregate,
+    /// `quire.op.temporal.not`.
+    Not,
+    /// `quire.op.temporal.and`.
+    And,
+    /// `quire.op.temporal.or`.
+    Or,
+    /// `quire.op.temporal.implies`.
+    Implies,
+    /// `quire.op.temporal.eventually`.
+    Eventually,
+    /// `quire.op.temporal.always`.
+    Always,
+    /// `quire.op.temporal.once`.
+    Once,
+    /// `quire.op.temporal.historically`.
+    Historically,
+    /// `quire.op.temporal.until`.
+    Until,
+    /// `quire.op.temporal.release`.
+    Release,
+    /// `quire.op.temporal.since`.
+    Since,
+    /// `quire.op.temporal.triggered`.
+    Triggered,
+}
+
+impl FormulaOperation {
+    /// The operation an identity names, `None` for an identity that is no
+    /// temporal operation.
+    #[ix_trace_rs::string_edge]
+    pub fn of(identity: &str) -> Option<Self> {
+        match identity {
+            "quire.op.temporal.true" => Some(Self::True),
+            "quire.op.temporal.false" => Some(Self::False),
+            "quire.op.temporal.holds" => Some(Self::Holds),
+            "quire.op.temporal.aggregate" => Some(Self::Aggregate),
+            "quire.op.temporal.not" => Some(Self::Not),
+            "quire.op.temporal.and" => Some(Self::And),
+            "quire.op.temporal.or" => Some(Self::Or),
+            "quire.op.temporal.implies" => Some(Self::Implies),
+            "quire.op.temporal.eventually" => Some(Self::Eventually),
+            "quire.op.temporal.always" => Some(Self::Always),
+            "quire.op.temporal.once" => Some(Self::Once),
+            "quire.op.temporal.historically" => Some(Self::Historically),
+            "quire.op.temporal.until" => Some(Self::Until),
+            "quire.op.temporal.release" => Some(Self::Release),
+            "quire.op.temporal.since" => Some(Self::Since),
+            "quire.op.temporal.triggered" => Some(Self::Triggered),
+            _ => None,
+        }
+    }
+
+    /// Whether this operation is an atom of a formula.
+    pub fn is_atom(self) -> bool {
+        matches!(self, Self::Holds | Self::Aggregate)
+    }
+
+    /// The direction of a bounded temporal operator; `None` for `holds`, the
+    /// connectives and the constants.
+    pub fn direction(self) -> Option<OperatorDirection> {
+        match self {
+            Self::Eventually | Self::Always | Self::Until | Self::Release => {
+                Some(OperatorDirection::Future)
+            }
+            Self::Once | Self::Historically | Self::Since | Self::Triggered => {
+                Some(OperatorDirection::Past)
+            }
+            Self::True
+            | Self::False
+            | Self::Holds
+            | Self::Aggregate
+            | Self::Not
+            | Self::And
+            | Self::Or
+            | Self::Implies => None,
+        }
+    }
+}
 
 /// One declaration of a clause node: FR-337's identity triple.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -95,21 +184,16 @@ pub struct FormulaNodeUse<'p> {
 }
 
 impl FormulaNodeUse<'_> {
+    /// The temporal operation of the node, `None` for an identity that is no
+    /// temporal operation.
+    pub fn kind(&self) -> Option<FormulaOperation> {
+        FormulaOperation::of(self.operation)
+    }
+
     /// The direction of the node when it is a bounded temporal operator;
     /// `None` for `holds`, the connectives and the constants.
-    #[ix_trace_rs::string_edge]
     pub fn direction(&self) -> Option<OperatorDirection> {
-        match self.operation {
-            "quire.op.temporal.eventually"
-            | "quire.op.temporal.always"
-            | "quire.op.temporal.until"
-            | "quire.op.temporal.release" => Some(OperatorDirection::Future),
-            "quire.op.temporal.once"
-            | "quire.op.temporal.historically"
-            | "quire.op.temporal.since"
-            | "quire.op.temporal.triggered" => Some(OperatorDirection::Past),
-            _ => None,
-        }
+        self.kind().and_then(FormulaOperation::direction)
     }
 }
 
@@ -644,7 +728,7 @@ fn formula_reads<'p>(
             operands: Vec::new(),
         });
         let arguments = graph.arguments(at).ok_or(ViewRefusal::UnresolvedClause)?;
-        if operation == HOLDS {
+        if FormulaOperation::of(operation) == Some(FormulaOperation::Holds) {
             let [operand] = arguments else {
                 return Err(ViewRefusal::UnresolvedClause);
             };
@@ -670,4 +754,31 @@ pub fn activation_relation(package: &CheckedPackageV2) -> Vec<(CheckedNodeId, Ch
         .into_iter()
         .map(|row| (row.clause, row.required_temporal))
         .collect()
+}
+
+#[cfg(test)]
+mod formula_operation_tests {
+    use super::*;
+
+    #[test]
+    fn identities_decode_to_operations_with_their_direction() {
+        assert_eq!(
+            FormulaOperation::of("quire.op.temporal.holds"),
+            Some(FormulaOperation::Holds)
+        );
+        assert!(FormulaOperation::Holds.is_atom());
+        assert!(FormulaOperation::Aggregate.is_atom());
+        assert!(!FormulaOperation::And.is_atom());
+        assert_eq!(
+            FormulaOperation::of("quire.op.temporal.until").and_then(FormulaOperation::direction),
+            Some(OperatorDirection::Future)
+        );
+        assert_eq!(
+            FormulaOperation::of("quire.op.temporal.triggered")
+                .and_then(FormulaOperation::direction),
+            Some(OperatorDirection::Past)
+        );
+        assert_eq!(FormulaOperation::And.direction(), None);
+        assert_eq!(FormulaOperation::of("quire.op.integer.add"), None);
+    }
 }

@@ -67,6 +67,48 @@ use quire_canonical::Node;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Integer, IntegerInterval, Presence, RationalDomain, TextProfile, TextType};
 
+/// The declared-unit name an `ix://quire/unit/<name>` reference names, `None`
+/// for a reference of any other form.
+#[ix_trace_rs::string_edge]
+fn declared_unit_name(reference: &str) -> Option<&str> {
+    reference.strip_prefix("ix://quire/unit/")
+}
+
+/// The kinds of checked node the exact-identity intake joins rows to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DeclarationNodeKind {
+    RecordValueType,
+    ObjectType,
+    Union,
+    DeclaredUnit,
+}
+
+impl DeclarationNodeKind {
+    /// The kind a checked node's `node_tag` and `semantic_form` name, `None`
+    /// for any other node.
+    #[ix_trace_rs::string_edge]
+    fn of(node: &quire_contract_model::CheckedSemanticNodeV2) -> Option<Self> {
+        match (node.node_tag.as_ref(), node.semantic_form.as_ref()) {
+            ("model", "record_value_type") => Some(Self::RecordValueType),
+            ("model", "object_type") => Some(Self::ObjectType),
+            ("composite_type", "union") => Some(Self::Union),
+            ("scalar_type", "unit") => Some(Self::DeclaredUnit),
+            _ => None,
+        }
+    }
+
+    /// The kind of node a declaration row of `form` joins to.
+    fn of_form(form: quire_contract_model::SelectedExactDeclarationForm) -> Self {
+        use quire_contract_model::SelectedExactDeclarationForm as Form;
+        match form {
+            Form::RecordValueType => Self::RecordValueType,
+            Form::ObjectType => Self::ObjectType,
+            Form::Union => Self::Union,
+            Form::DeclaredUnit => Self::DeclaredUnit,
+        }
+    }
+}
+
 /// Join the selected-model stage's producer rows to the declaration forms
 /// admitted in `package`. Rows for declarations not present in this package
 /// graph are outside the emitted projection and do not enter the witness.
@@ -78,8 +120,6 @@ pub fn selected_exact_identities_from_rows(
     quire_contract_model::SelectedExactIdentities,
     quire_contract_model::ExactTypeProjectionError,
 > {
-    use quire_contract_model::SelectedExactDeclarationForm;
-
     quire_contract_model::SelectedExactIdentities::from_stage_rows(
         package,
         declaration_rows
@@ -87,24 +127,8 @@ pub fn selected_exact_identities_from_rows(
             .filter(|row| {
                 package.graph().nodes.iter().any(|node| {
                     node.node_id == row.structural_node
-                        && match row.form {
-                            SelectedExactDeclarationForm::RecordValueType => {
-                                node.node_tag.as_ref() == "model"
-                                    && node.semantic_form.as_ref() == "record_value_type"
-                            }
-                            SelectedExactDeclarationForm::ObjectType => {
-                                node.node_tag.as_ref() == "model"
-                                    && node.semantic_form.as_ref() == "object_type"
-                            }
-                            SelectedExactDeclarationForm::Union => {
-                                node.node_tag.as_ref() == "composite_type"
-                                    && node.semantic_form.as_ref() == "union"
-                            }
-                            SelectedExactDeclarationForm::DeclaredUnit => {
-                                node.node_tag.as_ref() == "scalar_type"
-                                    && node.semantic_form.as_ref() == "unit"
-                            }
-                        }
+                        && DeclarationNodeKind::of(node)
+                            == Some(DeclarationNodeKind::of_form(row.form))
                 })
             })
             .cloned(),
@@ -113,8 +137,8 @@ pub fn selected_exact_identities_from_rows(
             .filter(|row| {
                 package.graph().nodes.iter().any(|node| {
                     node.node_id == row.record_node
-                        && node.node_tag.as_ref() == "model"
-                        && node.semantic_form.as_ref() == "record_value_type"
+                        && DeclarationNodeKind::of(node)
+                            == Some(DeclarationNodeKind::RecordValueType)
                 })
             })
             .cloned(),
@@ -1472,6 +1496,7 @@ fn clock_variant_payload_refusal(
 
 /// The semantic-IR schema reports a missing required Option `inner` at the
 /// enclosing type pointer. FR-154-AC-41 owns the more precise member path.
+#[ix_trace_rs::string_edge]
 fn missing_option_inner_schema_refusal(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
@@ -1512,6 +1537,7 @@ fn missing_option_inner_schema_refusal(
 
 /// QSpec locates duplicate Option<Option<T>> spelling on the field itself,
 /// with the field's own `Field.presence` path.
+#[ix_trace_rs::string_edge]
 fn option_presence_refusal(
     document: &PackageDocument,
     located: &agent_ix_semantic_ir::diag::Located,
@@ -4843,7 +4869,7 @@ fn check_rational_member_constraints(
         };
         if type_value.get("scalar").and_then(Value::as_str) == Some("rational") {
             if let Some(unit) = type_value.get("unit").and_then(Value::as_str) {
-                if let Some(name) = unit.strip_prefix("ix://quire/unit/") {
+                if let Some(name) = declared_unit_name(unit) {
                     if !units.contains(name) {
                         let at = format!("$.types[{type_position}]");
                         if let Ok(path) =

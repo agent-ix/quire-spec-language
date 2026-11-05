@@ -91,7 +91,7 @@ engine limits and the typed inspection operation's limit have their own table
 | `s1.input_bytes` | S1 | input bytes | `qsl_cst::Limits` source bytes | 1048576 bytes |
 | `s1.tokens` | S1 | token count | `qsl_cst::Limits` tokens | 100000 tokens |
 | `s1.nodes` | S1 | node count | `qsl_cst::Limits` nodes | 50000 nodes |
-| `s1.work_units` | S1 | work budget | `qsl_cst::Limits` parser work | 256 units per significant token, plus 256 |
+| `s1.work_units` | S1 | work budget | `qsl_cst::Limits` parser work | 288 units per significant token, plus 288 |
 | `s3.nodes` | S3 | node count | `CheckingLimits` nodes | 100000 units |
 | `s3.input_bytes` | S3 | input bytes | `CheckingLimits` declaration preimage bytes | 16777216 bytes |
 | `s3.work_units` | S3 | work budget | `CheckingLimits` work budget | 16777216 units |
