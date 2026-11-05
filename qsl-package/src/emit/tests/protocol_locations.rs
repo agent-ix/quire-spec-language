@@ -934,38 +934,62 @@ fn reader_refuses_a_slot_whose_origin_has_no_row() {
     );
 }
 
-/// Interim behavior (QSL-1666): a slot whose admitted root has no projection
-/// yet (E-C's conditional) keeps a typed `MissingOperationProjection` at its
-/// node, not a runtime fault, and the package's other slots stay projected.
-/// FR-390 makes this refusal package-wide (AC-41, AC-51) and AC-17 is the
-/// distinct `MissingTypeRepresentation` refusal, so no criterion is claimed
-/// until QSL-1666 projects the remaining kinds.
+/// FR-390-AC-42: conditional slot roots have the canonical reader kind.
+#[trace("TC-1070", "FR-390-AC-42")]
 #[test]
-fn an_unprojected_slot_root_is_a_typed_refusal_at_its_node() {
+fn the_reader_projects_a_conditional_slot_root() {
     reader_view_over(
         &e_c_with_let(false),
         |_| {},
-        |slots| {
-            let slots = slots.expect("the view is created");
-            let Some(crate::ReaderSlot::Unsupported(view)) = slots.slot_named(&composed("Branch"))
+        |result| {
+            let slots = result.expect("the admitted conditional is projected");
+            let Some(crate::ReaderSlot::Projected(projection)) =
+                slots.slot_named(&composed("Branch"))
             else {
-                panic!("the conditional root is a typed refusal");
+                panic!("the conditional root is projected");
             };
-            assert_eq!(
-                view.catalog(),
-                ("unknown_required_feature", "unsupported-feature")
-            );
-            assert_eq!(
-                view.reason(),
-                &crate::UnsupportedReason::MissingOperationProjection {
-                    operation: "quire.op.control.if".to_owned()
-                }
-            );
-            assert_eq!(view.locus().location(), None);
             assert!(matches!(
-                slots.slot_named(&composed("Tried")),
-                Some(crate::ReaderSlot::Projected(_))
+                projection.kind(projection.root()),
+                Some(quire_checked::node::NodeKind::If { .. })
             ));
+        },
+    );
+}
+
+/// Nested let binders occupy distinct reader frame slots (FR-390-AC-42).
+#[trace("TC-1070", "FR-390-AC-42")]
+#[test]
+fn the_reader_projects_nested_let_binders_into_distinct_slots() {
+    let source = e_c_with_let(true).replace(
+        "let c = lm.count in c + c >= 1",
+        "let c = lm.count in let d = c in d + d >= 1",
+    );
+    reader_view_over(
+        &source,
+        |_| {},
+        |result| {
+            let slots = result.expect("the admitted nested lets are projected");
+            let Some(crate::ReaderSlot::Projected(projection)) =
+                slots.slot_named(&composed("Bound"))
+            else {
+                panic!("the nested let root is projected");
+            };
+            let Some(quire_checked::node::NodeKind::Let {
+                slot: outer_slot,
+                body: inner,
+                ..
+            }) = projection.kind(projection.root())
+            else {
+                panic!("the outer let is the projected root");
+            };
+            let Some(quire_checked::node::NodeKind::Let {
+                slot: inner_slot, ..
+            }) = projection.kind(*inner)
+            else {
+                panic!("the inner let is projected in the outer body");
+            };
+            assert_eq!(*inner_slot, *outer_slot + 1);
+            assert_eq!(projection.frame_slots(), *inner_slot + 1);
         },
     );
 }

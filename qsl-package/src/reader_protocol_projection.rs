@@ -15,12 +15,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_semantics::check::wire_id::WireGraph;
 use quire_checked::node::{
-    Arithmetic, CaseArm, CheckedLiteral, Connective, ConnectiveOrigin, NodeKind, OrderedKind,
-    RecordField, RecordSlot,
+    Arithmetic, CaseArm, CheckedLiteral, Connective, ConnectiveOrigin, IntegerDivisionOperator,
+    NodeKind, OrderedKind, RecordField, RecordSlot, Visit,
 };
 use quire_contract_model::{
     CheckedNodeId, CheckedPackageV2, CheckedProtocolLocation, CheckedProtocolSemanticLocation,
-    CheckedSemanticNodeV2, CheckedTerm,
+    CheckedSemanticNodeV2, CheckedTerm, OperationModeKind,
 };
 use quire_exact::{
     admit_text, ArithmeticOperator, Meter, NodeKey, OrderingOperator, ScalarLimits, TextPayload,
@@ -423,15 +423,19 @@ pub(crate) fn project_package(
                 ReaderSlot::Projected(projection)
             }
             Err(BuildError::Unsupported { reason, node }) => {
-                ReaderSlot::Unsupported(UnsupportedView {
+                let unsupported = UnsupportedView {
                     package: package.to_owned(),
                     locus: ViewLocus::node(index.key(&node).map_err(PackageRefusal::Fault)?),
                     reason,
-                })
+                };
+                refusal = first_refusal(refusal, Some(unsupported.clone()));
+                ReaderSlot::Unsupported(unsupported)
             }
-            Err(BuildError::Fault(fault)) => ReaderSlot::Fault(fault),
+            Err(BuildError::Fault(fault)) => return Err(PackageRefusal::Fault(fault)),
             Err(BuildError::Equality(_)) => {
-                ReaderSlot::Fault(self::fault("source-route-equality-has-producer-rows"))
+                return Err(PackageRefusal::Fault(self::fault(
+                    "source-route-equality-has-producer-rows",
+                )));
             }
         };
         slots.insert((request.root, request.origin), slot);
@@ -1122,6 +1126,55 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let (kind, children) = self.union_value(node, members, context, locals)?;
                 (kind, children, None)
             }
+            CheckedTerm::Aggregate { members }
+                if has_form(node, WireTag::Value, WireForm::TupleValue) =>
+            {
+                let value_type = self.value_type(id)?;
+                let ValueType::Composite(declaration) = &value_type else {
+                    return Err(fault("reader-tuple-value-has-declared-type").into());
+                };
+                let children = members
+                    .iter()
+                    .map(|member| self.project_argument(id, member, context, locals))
+                    .collect::<Result<Vec<_>, _>>()?;
+                (
+                    NodeKind::Tuple {
+                        declaration: declaration.clone(),
+                        arguments: children.clone(),
+                    },
+                    children,
+                    None,
+                )
+            }
+            CheckedTerm::Aggregate { members }
+                if has_form(node, WireTag::Value, WireForm::OptionValue) =>
+            {
+                let [member] = members.as_slice() else {
+                    return Err(fault("reader-option-value-has-one-member").into());
+                };
+                let child = self.project_argument(id, member, context, locals)?;
+                (NodeKind::OptionSome(child), vec![child], None)
+            }
+            CheckedTerm::Aggregate { members }
+                if has_form(node, WireTag::Value, WireForm::CollectionValue) =>
+            {
+                let value_type = self.value_type(id)?;
+                let ValueType::Collection(collection_type) = &value_type else {
+                    return Err(fault("reader-collection-value-has-collection-type").into());
+                };
+                let children = members
+                    .iter()
+                    .map(|member| self.project_argument(id, member, context, locals))
+                    .collect::<Result<Vec<_>, _>>()?;
+                (
+                    NodeKind::Collection {
+                        collection_type: (**collection_type).clone(),
+                        elements: children.clone(),
+                    },
+                    children,
+                    None,
+                )
+            }
             CheckedTerm::Aggregate { members } => {
                 let (kind, children) = self.record_value(id, members, context, locals)?;
                 (kind, children, None)
@@ -1144,8 +1197,11 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 // FR-383 assumption A1: a `case` (like a `let` or a
                 // conditional) is no term and has no row; every other
                 // application of the slot's own walk has one.
-                let term = (context == Context::Root && identity != Some("quire.op.control.case"))
-                    .then(|| id.clone());
+                let has_location_row = !matches!(
+                    identity,
+                    Some("quire.op.control.let" | "quire.op.control.if" | "quire.op.control.case")
+                );
+                let term = (context == Context::Root && has_location_row).then(|| id.clone());
                 (kind, children, term)
             }
             _ => {
@@ -1252,6 +1308,9 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         Ok((NodeKind::Record { declaration, slots }, children))
     }
 
+    /// `#[string_edge]`: operation names are the admitted wire's fixed
+    /// discriminator vocabulary, not source text selected at runtime.
+    #[ix_trace_rs::string_edge]
     fn project_application(
         &mut self,
         id: &CheckedNodeId,
@@ -1262,6 +1321,19 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
     ) -> Result<(NodeKind<usize, CheckedLiteral>, Vec<usize>), BuildError> {
         let identity = operation.identity();
         match identity {
+            Some("quire.op.control.let") => {
+                let [CheckedTerm::Binding { name, value }, body] = arguments else {
+                    return Err(fault("reader-let-has-binding-and-body").into());
+                };
+                let binder = self.binder_node(name.as_ref(), body, locals)?;
+                let slot = self.next_slot(context, locals);
+                let value = self.project_argument(id, value, context, locals)?;
+                let mut body_locals = locals.clone();
+                body_locals.insert(binder, slot);
+                let body = self.project_argument(id, body, context, &body_locals)?;
+                self.grow_frame(context, slot.saturating_add(1));
+                Ok((NodeKind::Let { slot, value, body }, vec![value, body]))
+            }
             Some("quire.op.function.call") => {
                 let callee = arguments
                     .first()
@@ -1303,6 +1375,66 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 };
                 Ok((NodeKind::Not(*operand), children))
             }
+            Some("quire.op.control.if") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [condition, then, otherwise] = children.as_slice() else {
+                    return Err(fault("reader-conditional-has-three-operands").into());
+                };
+                Ok((
+                    NodeKind::If {
+                        condition: *condition,
+                        then: *then,
+                        otherwise: *otherwise,
+                    },
+                    children,
+                ))
+            }
+            Some("quire.op.integer.negate") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-integer-negation-has-one-operand").into());
+                };
+                Ok((NodeKind::Negate(*operand), children))
+            }
+            Some("quire.op.integer.div" | "quire.op.integer.rem" | "quire.op.integer.mod") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [left, right] = children.as_slice() else {
+                    return Err(fault("reader-integer-division-has-two-operands").into());
+                };
+                let operator = match identity {
+                    Some("quire.op.integer.div") => IntegerDivisionOperator::Div,
+                    Some("quire.op.integer.rem") => IntegerDivisionOperator::Rem,
+                    Some("quire.op.integer.mod") => IntegerDivisionOperator::Mod,
+                    _ => return Err(fault("reader-integer-division-identity-is-catalogued").into()),
+                };
+                let selection = if operator == IntegerDivisionOperator::Mod {
+                    None
+                } else {
+                    let references = operation
+                        .law_definitions()
+                        .map_err(|_| fault("reader-integer-division-law-is-admitted"))?;
+                    let definitions = references
+                        .iter()
+                        .map(|reference| qsl_semantics::value::DefinitionReference {
+                            authority: reference.authority.to_string(),
+                            identity: reference.identity.to_string(),
+                        })
+                        .collect::<Vec<_>>();
+                    Some(
+                        qsl_semantics::value::admit_integer_division(&definitions, None)
+                            .map_err(|_| fault("reader-integer-division-law-is-admitted"))?,
+                    )
+                };
+                Ok((
+                    NodeKind::IntegerDivision {
+                        operator,
+                        selection,
+                        left: *left,
+                        right: *right,
+                    },
+                    children,
+                ))
+            }
             Some("quire.op.integer.add" | "quire.op.integer.sub" | "quire.op.integer.mul") => {
                 let children = self.project_arguments(id, Some(arguments), context, locals)?;
                 let [left, right] = children.as_slice() else {
@@ -1314,6 +1446,254 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                     _ => Arithmetic::Multiply,
                 };
                 Ok((NodeKind::Arithmetic(operator, *left, *right), children))
+            }
+            Some("quire.op.rational.div") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [left, right] = children.as_slice() else {
+                    return Err(fault("reader-rational-division-has-two-operands").into());
+                };
+                let value_type = self.value_type(id)?;
+                let ValueType::Rational(domain) = &value_type else {
+                    return Err(fault("reader-rational-division-has-rational-result").into());
+                };
+                Ok((
+                    NodeKind::Divide {
+                        left: *left,
+                        right: *right,
+                        domain: domain.clone(),
+                    },
+                    children,
+                ))
+            }
+            Some("quire.op.rational.add" | "quire.op.rational.sub" | "quire.op.rational.mul") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [left, right] = children.as_slice() else {
+                    return Err(fault("reader-rational-arithmetic-has-two-operands").into());
+                };
+                let value_type = self.value_type(id)?;
+                let ValueType::Rational(domain) = &value_type else {
+                    return Err(fault("reader-rational-arithmetic-has-rational-result").into());
+                };
+                let operator = identity
+                    .and_then(arithmetic_operator)
+                    .ok_or_else(|| fault("reader-rational-arithmetic-is-catalogued"))?;
+                Ok((
+                    NodeKind::Rational {
+                        operator,
+                        left: *left,
+                        right: *right,
+                        domain: domain.clone(),
+                    },
+                    children,
+                ))
+            }
+            Some(
+                "quire.op.decimal.add"
+                | "quire.op.decimal.sub"
+                | "quire.op.decimal.mul"
+                | "quire.op.decimal.div",
+            ) => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [left, right] = children.as_slice() else {
+                    return Err(fault("reader-decimal-arithmetic-has-two-operands").into());
+                };
+                let value_type = self.value_type(id)?;
+                let ValueType::Decimal(target) = &value_type else {
+                    return Err(fault("reader-decimal-arithmetic-has-decimal-result").into());
+                };
+                let operator = identity
+                    .and_then(arithmetic_operator)
+                    .ok_or_else(|| fault("reader-decimal-arithmetic-is-catalogued"))?;
+                Ok((
+                    NodeKind::Decimal {
+                        operator,
+                        left: *left,
+                        right: *right,
+                        target: target.clone(),
+                    },
+                    children,
+                ))
+            }
+            Some("quire.op.rational.negate") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-rational-negation-has-one-operand").into());
+                };
+                let value_type = self.value_type(id)?;
+                let ValueType::Rational(domain) = &value_type else {
+                    return Err(fault("reader-rational-negation-has-rational-result").into());
+                };
+                Ok((NodeKind::RationalNegate(*operand, domain.clone()), children))
+            }
+            Some("quire.op.decimal.negate") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-decimal-negation-has-one-operand").into());
+                };
+                let value_type = self.value_type(id)?;
+                let ValueType::Decimal(target) = &value_type else {
+                    return Err(fault("reader-decimal-negation-has-decimal-result").into());
+                };
+                Ok((NodeKind::DecimalNegate(*operand, target.clone()), children))
+            }
+            Some("quire.op.option.present") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-presence-test-has-one-operand").into());
+                };
+                Ok((NodeKind::Present(*operand), children))
+            }
+            Some("quire.op.option.value") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-option-value-has-one-operand").into());
+                };
+                Ok((NodeKind::Value(*operand), children))
+            }
+            Some("quire.op.collection.size") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-collection-size-has-one-operand").into());
+                };
+                Ok((NodeKind::Size(*operand), children))
+            }
+            Some("quire.op.collection.contains") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [collection, item] = children.as_slice() else {
+                    return Err(fault("reader-collection-containment-has-two-operands").into());
+                };
+                Ok((NodeKind::Contains(*collection, *item), children))
+            }
+            Some(
+                "quire.op.collection.map"
+                | "quire.op.collection.filter"
+                | "quire.op.collection.forall"
+                | "quire.op.collection.exists"
+                | "quire.op.collection.count"
+                | "quire.op.collection.sum.integer",
+            ) => {
+                let [source_term, CheckedTerm::Binding { name, value }] = arguments else {
+                    return Err(fault("reader-collection-query-has-source-and-binder").into());
+                };
+                let binder = self.binder_node(name.as_ref(), value, locals)?;
+                let slot = self.next_slot(context, locals);
+                let source = self.project_argument(id, source_term, context, locals)?;
+                let mut body_locals = locals.clone();
+                body_locals.insert(binder, slot);
+                let body = self.project_argument(id, value, context, &body_locals)?;
+                self.grow_frame(context, slot.saturating_add(1));
+                let visit = match identity {
+                    Some("quire.op.collection.map") => Visit::Map,
+                    Some("quire.op.collection.filter") => Visit::Filter,
+                    Some("quire.op.collection.forall") => Visit::Forall,
+                    Some("quire.op.collection.exists") => Visit::Exists,
+                    Some("quire.op.collection.count") => Visit::Count,
+                    Some("quire.op.collection.sum.integer") => Visit::Sum,
+                    _ => return Err(fault("reader-collection-query-identity-is-catalogued").into()),
+                };
+                Ok((
+                    NodeKind::Query {
+                        visit,
+                        slot,
+                        source,
+                        body,
+                    },
+                    vec![source, body],
+                ))
+            }
+            Some("quire.op.collection.convert") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-collection-conversion-has-one-operand").into());
+                };
+                let value_type = self.value_type(id)?;
+                let ValueType::Collection(target) = &value_type else {
+                    return Err(fault("reader-collection-conversion-has-collection-result").into());
+                };
+                Ok((
+                    NodeKind::ConvertCollection {
+                        target: (**target).clone(),
+                        operand: *operand,
+                    },
+                    children,
+                ))
+            }
+            Some("quire.op.collection.flatten") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-collection-flatten-has-one-operand").into());
+                };
+                Ok((NodeKind::Flatten(*operand), children))
+            }
+            Some(
+                "quire.op.collection.sequence.drop_first"
+                | "quire.op.collection.ordered_set.drop_first",
+            ) => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [source] = children.as_slice() else {
+                    return Err(fault("reader-drop-first-has-one-source").into());
+                };
+                Ok((NodeKind::DropFirst(*source), children))
+            }
+            Some("quire.op.collection.remove_one") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [collection, item] = children.as_slice() else {
+                    return Err(fault("reader-remove-one-has-collection-and-item").into());
+                };
+                Ok((NodeKind::RemoveOne(*collection, *item), children))
+            }
+            Some("quire.op.model.all_instances") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [population] = children.as_slice() else {
+                    return Err(fault("reader-all-instances-has-one-population").into());
+                };
+                Ok((
+                    NodeKind::AllInstances {
+                        population: *population,
+                    },
+                    children,
+                ))
+            }
+            Some("quire.op.model.lookup") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [population, reference] = children.as_slice() else {
+                    return Err(fault("reader-lookup-has-population-and-reference").into());
+                };
+                let mode = operation
+                    .mode()
+                    .map_err(|_| fault("reader-lookup-absence-mode-is-admitted"))?
+                    .filter(|mode| mode.kind == OperationModeKind::Absence)
+                    .ok_or_else(|| fault("reader-lookup-has-absence-mode"))?;
+                let absence = match mode.value {
+                    "undefined" => quire_semantic_value::absence::AbsenceMode::Undefined,
+                    "empty" => quire_semantic_value::absence::AbsenceMode::Empty,
+                    "refused" => quire_semantic_value::absence::AbsenceMode::Refused,
+                    _ => return Err(fault("reader-lookup-absence-mode-is-catalogued").into()),
+                };
+                Ok((
+                    NodeKind::Lookup {
+                        population: *population,
+                        reference: *reference,
+                        absence,
+                    },
+                    children,
+                ))
+            }
+            Some("quire.op.numeric.convert") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-numeric-conversion-has-one-operand").into());
+                };
+                let operand_id = arguments
+                    .first()
+                    .and_then(reference_target)
+                    .ok_or_else(|| fault("reader-numeric-conversion-has-checked-operand"))?;
+                let source = self.value_type(operand_id)?;
+                let target = self.value_type(id)?;
+                Ok((
+                    NodeKind::ConvertScalar(EqualityOperand::converted(source, target), *operand),
+                    children,
+                ))
             }
             Some(
                 "quire.op.quantity.add"
@@ -1587,6 +1967,97 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         }
     }
 
+    fn next_slot(&self, context: Context, locals: &BTreeMap<CheckedNodeId, usize>) -> usize {
+        let first_free = match context {
+            Context::Root => self.root_slots,
+            Context::Function(function) => self
+                .functions
+                .get(function)
+                .map_or(0, |function| function.slots),
+        };
+        let after_active_locals = locals
+            .values()
+            .copied()
+            .max()
+            .map_or(0, |slot| slot.saturating_add(1));
+        first_free.max(after_active_locals)
+    }
+
+    /// `#[string_edge]`: node tags and semantic forms are admitted wire
+    /// discriminators used to recover the binder selected by the checker.
+    #[ix_trace_rs::string_edge]
+    fn binder_node(
+        &self,
+        name: &str,
+        body: &CheckedTerm,
+        locals: &BTreeMap<CheckedNodeId, usize>,
+    ) -> Result<CheckedNodeId, BuildError> {
+        let next_level = locals
+            .keys()
+            .filter_map(|id| self.index.node(id))
+            .filter_map(parameter_level)
+            .max()
+            .map_or(0, |level| level.saturating_add(1));
+        let referenced = self.referenced_parameters(body);
+        let candidates = self
+            .index
+            .nodes
+            .values()
+            .filter(|node| {
+                node.node_tag.as_ref() == "value" && node.semantic_form.as_ref() == "parameter"
+            })
+            .filter(|node| !locals.contains_key(&node.node_id))
+            .filter(|node| parameter_name(&node.body) == Some(name))
+            .filter(|node| parameter_level(node).is_some_and(|level| level == next_level))
+            .map(|node| &node.node_id)
+            .collect::<Vec<_>>();
+        candidates
+            .iter()
+            .find(|candidate| referenced.contains(*candidate))
+            .or_else(|| candidates.first())
+            .map(|candidate| (*candidate).clone())
+            .ok_or_else(|| fault("reader-expression-binder-is-admitted").into())
+    }
+
+    fn referenced_parameters(&self, term: &CheckedTerm) -> BTreeSet<CheckedNodeId> {
+        /// `#[string_edge]`: the node tag and semantic form identify admitted
+        /// parameter nodes; they do not gate behavior on arbitrary input text.
+        #[ix_trace_rs::string_edge]
+        fn collect(
+            index: &WireIndex<'_>,
+            term: &CheckedTerm,
+            seen: &mut BTreeSet<CheckedNodeId>,
+            parameters: &mut BTreeSet<CheckedNodeId>,
+        ) {
+            match term {
+                CheckedTerm::Reference { target } => {
+                    let Some(node) = index.node(target) else {
+                        return;
+                    };
+                    if node.node_tag.as_ref() == "value"
+                        && node.semantic_form.as_ref() == "parameter"
+                    {
+                        parameters.insert(target.clone());
+                    } else if seen.insert(target.clone()) {
+                        collect(index, &node.body, seen, parameters);
+                    }
+                }
+                CheckedTerm::Application { arguments, .. }
+                | CheckedTerm::Aggregate { members: arguments } => {
+                    for argument in arguments {
+                        collect(index, argument, seen, parameters);
+                    }
+                }
+                CheckedTerm::Binding { value, .. } => collect(index, value, seen, parameters),
+                _ => {}
+            }
+        }
+
+        let mut parameters = BTreeSet::new();
+        collect(self.index, term, &mut BTreeSet::new(), &mut parameters);
+        parameters
+    }
+
     /// `record.project`: a field of a record value, or an attribute of a
     /// model object read through `model.deref` (FR-107's charged read).
     fn projection(
@@ -1685,37 +2156,56 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 return Err(fault("reader-record-field-exact-type-matches-operand").into());
             }
         }
-        // Presence is the admitted record's, never the source package's: IR's
-        // record view where it projects the record, else the admitted record
-        // declaration's own member, whose type is an option exactly when the
-        // field is optional (IR's own convention for a record member).
-        let from_view = [operand_id, field_declaration]
-            .into_iter()
-            .find_map(|node| {
-                let projection = self
+        // Selected model records retain field presence independently from
+        // member-type projection, so nested option and collection types do not
+        // require projecting the record's complete Exact type.
+        let selected_presence = selected_record
+            .map(|record| {
+                let record_id = self
+                    .index
+                    .ids
+                    .get(record)
+                    .ok_or_else(|| fault("reader-selected-record-has-admitted-node"))?;
+                let fields = self
                     .admitted()
-                    .project_exact_type(node, &self.index.identities, self.index.work_limit)
-                    .ok()?;
-                let view = projection.record_view()?;
-                if view.record_key() != &record_key {
-                    return None;
-                }
-                view.fields()
-                    .iter()
-                    .find(|field| field.name() == field_name.as_ref())
-                    .map(|field| field.presence())
-            });
-        let presence = match from_view {
+                    .model_record_fields(record_id)
+                    .map_err(|_| fault("reader-selected-record-fields-are-admitted"))?;
+                let field = fields
+                    .field(field_name.as_ref())
+                    .ok_or_else(|| fault("reader-selected-record-field-is-admitted"))?;
+                Ok::<_, InternalFault>(if field.optional() {
+                    quire_exact::Presence::Optional
+                } else {
+                    quire_exact::Presence::Required
+                })
+            })
+            .transpose()?;
+        let presence = match selected_presence {
             Some(presence) => presence,
-            None => match self.declared_member_presence(&record_key, field_name.as_ref())? {
-                Some(presence) => presence,
-                // A model record whose fields IR's complete-or-refuse record
-                // view cannot project yet (an option or collection member)
-                // and whose wire declaration carries no members: the
-                // package's type scope, joined by the exact record key, is
-                // the only remaining carrier of presence.
-                None => self.source_member_presence(id, &record_key, field_name.as_ref())?,
-            },
+            None => {
+                let from_view = [operand_id, field_declaration]
+                    .into_iter()
+                    .find_map(|node| {
+                        let projection = self
+                            .admitted()
+                            .project_exact_type(node, &self.index.identities, self.index.work_limit)
+                            .ok()?;
+                        let view = projection.record_view()?;
+                        if view.record_key() != &record_key {
+                            return None;
+                        }
+                        view.fields()
+                            .iter()
+                            .find(|field| field.name() == field_name.as_ref())
+                            .map(|field| field.presence())
+                    });
+                from_view
+                    .or(self.declared_member_presence(&record_key, field_name.as_ref())?)
+                    .ok_or_else(|| BuildError::Unsupported {
+                        reason: UnsupportedReason::MissingTypeRepresentation,
+                        node: id.clone(),
+                    })?
+            }
         };
         let optional = presence == quire_exact::Presence::Optional;
         let child = self.project_argument(id, operand_term, context, locals)?;
@@ -1773,36 +2263,6 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 quire_exact::Presence::Required
             },
         ))
-    }
-
-    /// The presence of record member `field` in the package's type scope,
-    /// which only the source route holds: the bytes route refuses the
-    /// record's type, as FR-533 "Types the bytes cannot project" states.
-    fn source_member_presence(
-        &self,
-        id: &CheckedNodeId,
-        record: &NodeKey,
-        field: &str,
-    ) -> Result<quire_exact::Presence, BuildError> {
-        let ProjectionSource::Source { graph, .. } = &self.index.source else {
-            return Err(BuildError::Unsupported {
-                reason: UnsupportedReason::MissingTypeRepresentation,
-                node: id.clone(),
-            });
-        };
-        match graph
-            .scope()
-            .types()
-            .composite(record.clone())
-            .map(|record| record.shape())
-        {
-            Some(quire_semantic_value::declaration::CompositeShape::Record(fields)) => fields
-                .iter()
-                .find(|declared| declared.name() == field)
-                .map(|declared| declared.presence())
-                .ok_or_else(|| fault("reader-record-field-member-is-admitted").into()),
-            _ => Err(fault("reader-record-field-view-is-admitted").into()),
-        }
     }
 
     fn project_argument(
@@ -1934,6 +2394,17 @@ fn order_of(identity: &str) -> Option<(OrderedKind, OrderingOperator)> {
     Some((kind, operator))
 }
 
+#[ix_trace_rs::string_edge]
+fn arithmetic_operator(identity: &str) -> Option<ArithmeticOperator> {
+    match identity.rsplit('.').next()? {
+        "add" => Some(ArithmeticOperator::Add),
+        "sub" => Some(ArithmeticOperator::Subtract),
+        "mul" => Some(ArithmeticOperator::Multiply),
+        "div" => Some(ArithmeticOperator::Divide),
+        _ => None,
+    }
+}
+
 /// The selected exact type of admitted node `id`, joining declared and
 /// structural identities where IR's projection leaves the join to QSL.
 pub(crate) fn node_value_type(
@@ -2044,6 +2515,44 @@ pub(crate) fn node_value_type(
             Err(TypeError::Unsupported)
         }
     }
+}
+
+/// `#[string_edge]`: `name` is an admitted binding key in the parameter wire
+/// form.
+#[ix_trace_rs::string_edge]
+fn parameter_name(term: &CheckedTerm) -> Option<&str> {
+    let CheckedTerm::Aggregate { members } = term else {
+        return None;
+    };
+    members.iter().find_map(|member| {
+        let CheckedTerm::Binding { name, value } = member else {
+            return None;
+        };
+        (name.as_ref() == "name").then(|| match value.literal_read()?.value {
+            quire_contract_model::CheckedLiteralValue::Text(name) => Some(name),
+            _ => None,
+        })?
+    })
+}
+
+/// `#[string_edge]`: `level` is an admitted binding key in the parameter wire
+/// form.
+#[ix_trace_rs::string_edge]
+fn parameter_level(node: &CheckedSemanticNodeV2) -> Option<usize> {
+    let CheckedTerm::Aggregate { members } = &node.body else {
+        return None;
+    };
+    members.iter().find_map(|member| {
+        let CheckedTerm::Binding { name, value } = member else {
+            return None;
+        };
+        (name.as_ref() == "level").then(|| match value.literal_read()?.value {
+            quire_contract_model::CheckedLiteralValue::Integer(level) => {
+                level.to_string().parse::<usize>().ok()
+            }
+            _ => None,
+        })?
+    })
 }
 
 fn reference_target(term: &CheckedTerm) -> Option<&CheckedNodeId> {

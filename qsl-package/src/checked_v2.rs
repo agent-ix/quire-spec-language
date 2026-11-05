@@ -703,7 +703,7 @@ pub(crate) fn read_checked_package_v2(
             let timed_models = match CheckedTimedModel::from_admitted(&package) {
                 Ok(models) => models,
                 Err(invariant) => {
-                    return refused(V2ReadRefusal::Fault(InternalFault::new("I2", invariant)))
+                    return refused(V2ReadRefusal::Fault(InternalFault::new("I2", invariant)));
                 }
             };
             let graph = match wire_graph(&package) {
@@ -712,7 +712,7 @@ pub(crate) fn read_checked_package_v2(
                     return refused(V2ReadRefusal::Fault(InternalFault::new(
                         "I2",
                         "admitted-node-ids-rebuild-structural-keys",
-                    )))
+                    )));
                 }
             };
             let mut exports = Vec::new();
@@ -1000,13 +1000,9 @@ impl AdmittedPackageRead<'_> {
     }
 
     /// Create the evaluation view over this successful I2 read. Every
-    /// protocol slot of the package is projected here, once (FR-390): a slot
-    /// walk whose applications and `protocol_locations` rows do not pair
-    /// refuses the whole view, and a slot with an unsupported form keeps its
-    /// typed refusal for its own evaluation. Holding that refusal per slot
-    /// deviates from FR-390's package-wide refusal and is interim: QSL-1666
-    /// projects the remaining FR-400 kinds and then makes the refusal
-    /// package-wide.
+    /// protocol slot of the package is projected here, once (FR-390). A slot
+    /// walk whose applications and `protocol_locations` rows do not pair, or
+    /// whose expression has no projection, refuses the whole view.
     pub fn evaluation_view(
         &self,
     ) -> Result<
