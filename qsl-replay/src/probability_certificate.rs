@@ -13,7 +13,7 @@ use qsl_eval::simulation::TransitionSystem;
 use qsl_semantics::check::{
     CheckedProbabilisticClaim, ProbForm, ProbScheduler, ReachTarget, StatePredicate,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::identity::ObligationIdentity;
 
@@ -147,15 +147,10 @@ pub fn digital_probability_product_key(
             tail.tag()
         ]
     ]);
-    let model_bytes = canonical_json(&model)?;
-    let encoded_model = base64::Engine::encode(
-        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
-        model_bytes,
-    );
     let product = json!([
         "quire.probability-product-key/v1",
         binding,
-        encoded_model,
+        model,
         monitor,
         accumulator,
         pending
@@ -725,7 +720,6 @@ fn rational(value: i64) -> Rational {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::Engine;
     use ix_trace_rs::trace;
 
     fn key(value: u8) -> ProbabilityProductKey {
@@ -923,24 +917,9 @@ mod tests {
             None,
         )
         .expect("the complete timed key is representable");
-        let outer: Value = serde_json::from_slice(key.as_bytes()).expect("the key is JSON");
-        let model_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .decode(outer[2].as_str().expect("the model key is base64url"))
-            .expect("the model key decodes");
         assert_eq!(
-            model_bytes,
-            br#"["quire.simulation.state-key/v1",["digital",["state",{"a":true,"z":1}],["unit","second"],"10",[[["Type","alpha",["u","object-a"]],"0","3"],[["Type","zeta",["u","object-z"]],"1","3"]],["deadline","4","1"],"idle-delayed"]]"#
-        );
-        assert_eq!(
-            outer,
-            json!([
-                "quire.probability-product-key/v1",
-                null,
-                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(model_bytes),
-                null,
-                null,
-                null
-            ])
+            key.as_bytes(),
+            br#"["quire.probability-product-key/v1",null,["quire.simulation.state-key/v1",["digital",["state",{"a":true,"z":1}],["unit","second"],"10",[[["Type","alpha",["u","object-a"]],"0","3"],[["Type","zeta",["u","object-z"]],"1","3"]],["deadline","4","1"],"idle-delayed"]],null,null,null]"#
         );
     }
 
