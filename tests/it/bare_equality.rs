@@ -489,3 +489,57 @@ fn an_equality_witness_refusal_is_reported_before_a_node_refusal() {
     let empty = ReadEqualityRows::read(&empty_file(), &package).expect("empty rows read");
     assert_eq!(relation(Some(&empty)), Err("equality Unknown".to_owned()));
 }
+
+/// Fixture E with a function whose body holds `==` called from `Refund`'s
+/// trigger guard.
+fn source_with_called_equality() -> String {
+    tc1070::SOURCE
+        .replace(
+            "profile S = \"quire.state.graph/v1\";",
+            "profile S = \"quire.state.graph/v1\";\nprofile v = \"quire.value.complete/v1\";",
+        )
+        .replace(
+            "model M = \"test/orders\";",
+            "model M = \"test/orders\";\nfunction isOne using v(x: Int[0, 9]): Boolean pure { x = 1 }",
+        )
+        .replace(
+            "when { not trigger.ready and target >= 0 } {\n      capture activated",
+            "when { not trigger.ready and target >= 0 and isOne(3) } {\n      capture activated",
+        )
+}
+
+/// FR-531 "Refusals" (selection level): an equality application inside a
+/// function the slot calls is part of the slot's walk. `trigger.guard` then
+/// refuses without the rows (`Missing`) and selects with them, while the
+/// `Partial` guard, which calls no such function, needs none. Closing the
+/// witness check over the dependency closure (which stops at functions)
+/// would not refuse the first case.
+#[trace("TC-1331")]
+#[test]
+fn an_equality_inside_a_called_function_is_part_of_the_slots_walk() {
+    let source = source_with_called_equality();
+    assert_ne!(source, tc1070::SOURCE);
+    let (_holder, request, files) = handoff(&source);
+    let package = read(&request, &files["checked-package.json"]);
+    let identities = ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
+    let rows = ReadEqualityRows::read(&files["equality.json"], &package).expect("rows");
+    let guard = |name: &str, equality: Option<&ReadEqualityRows>| {
+        select(
+            &package,
+            &identities,
+            equality,
+            node_key(&package, "Refunds", name),
+            "trigger.guard",
+            None,
+        )
+        .map(|_| ())
+    };
+    assert!(matches!(
+        guard("Refund", None),
+        Err(BareSelectionFailure::Equality(
+            EqualityWitnessRefusal::Missing
+        ))
+    ));
+    guard("Refund", Some(&rows)).expect("selects with the rows");
+    guard("Partial", None).expect("a guard that calls no such function needs no rows");
+}

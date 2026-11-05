@@ -18,10 +18,10 @@ use quire_contract_model::{
     SelectedEqualityFactRow, SelectedSourceUnitRow,
 };
 use quire_exact::{
-    CardinalityBound, CollectionKind, CollectionType, DecimalType, EffectiveId, EnumShape,
-    FloatType, IeeeWidth, Integer, IntegerInterval, Location, NodeKey, Origin,
-    OriginalDeclarationKey, RationalDomain, RoundingMode, TextProfile, TextType, UnitId, ValueType,
-    VariantId,
+    BoundedQuantityType, CardinalityBound, CarriedQuantityType, CollectionKind, CollectionType,
+    DecimalType, EffectiveId, EnumShape, FloatType, IeeeWidth, Integer, IntegerInterval, Location,
+    MapType, NodeKey, Origin, OriginalDeclarationKey, Quantity, QuantityCarrier, Rational,
+    RationalDomain, RoundingMode, TextProfile, TextType, UnitId, ValueType, VariantId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -253,6 +253,7 @@ impl Json {
 
     /// A tagged object `{ "kind": tag, ... }`: the table row for its tag and
     /// the members that row names.
+    #[ix_trace_rs::string_edge]
     fn tagged<'j, 't>(
         &'j self,
         table: &'t [(&'t str, &'t [&'t str])],
@@ -353,6 +354,8 @@ fn unit_id(joins: &Joins, unit: &UnitId, compound: bool) -> Result<Json, Bad> {
     }
 }
 
+#[ix_trace_rs::string_edge]
+
 fn unit_from(joins: &Joins, json: &Json, compound: bool) -> Result<UnitId, Bad> {
     let (tag, members) = json.tagged(&[("declared", &["node"]), ("compound", &["terms"])])?;
     if tag == "declared" {
@@ -371,6 +374,8 @@ fn unit_from(joins: &Joins, json: &Json, compound: bool) -> Result<UnitId, Bad> 
         .collect::<Result<Vec<_>, Bad>>()?;
     Ok(UnitId::compound(terms))
 }
+
+#[ix_trace_rs::string_edge]
 
 fn canonical_integer(spelling: &str) -> bool {
     let digits = spelling.strip_prefix('-').unwrap_or(spelling);
@@ -400,6 +405,8 @@ fn rational(value: &CheckedRational) -> Result<Json, Bad> {
     rational_from(&json)?;
     Ok(json)
 }
+
+#[ix_trace_rs::string_edge]
 
 fn rational_from(json: &Json) -> Result<CheckedRational, Bad> {
     let parts = json.members(&["numerator", "denominator"])?;
@@ -621,12 +628,139 @@ fn value_type(joins: &Joins, value: &ValueType) -> Result<Json, Bad> {
             ("kind", text("population")),
             ("maximum", maximum.map_or(Json::Null, Json::Int)),
         ])),
-        // The file's value-type vocabulary is closed (FR-531 "The equality
-        // file"); an equality fact is never checked over these.
-        ValueType::CarriedQuantity(_) | ValueType::Map(_) | ValueType::BoundedQuantity(_) => {
-            malformed("a value type outside the file's vocabulary")
+        ValueType::CarriedQuantity(carried) => Ok(object(vec![
+            ("kind", text("carried_quantity")),
+            ("unit", unit_id(joins, carried.unit(), true)?),
+            ("carrier", carrier(carried.carrier())?),
+        ])),
+        ValueType::BoundedQuantity(bounded) => Ok(object(vec![
+            ("kind", text("bounded_quantity")),
+            ("unit", unit_id(joins, bounded.unit(), true)?),
+            ("min", bound_quantity(joins, bounded.min())?),
+            ("max", bound_quantity(joins, bounded.max())?),
+        ])),
+        ValueType::Map(map) => Ok(object(vec![
+            ("kind", text("map")),
+            ("values", value_type(joins, map.values())?),
+            ("bound", cardinality(map.bound())),
+        ])),
+    }
+}
+
+fn cardinality(bound: Option<CardinalityBound>) -> Json {
+    bound.map_or(Json::Null, |bound| {
+        object(vec![
+            ("minimum", Json::Int(bound.minimum())),
+            ("maximum", Json::Int(bound.maximum())),
+        ])
+    })
+}
+
+fn cardinality_from(json: &Json) -> Result<Option<CardinalityBound>, Bad> {
+    match json {
+        Json::Null => Ok(None),
+        other => {
+            let parts = other.members(&["minimum", "maximum"])?;
+            CardinalityBound::new(parts[0].int()?, parts[1].int()?)
+                .map(Some)
+                .or_else(|_| malformed("an empty bound"))
         }
     }
+}
+
+fn carrier(value: &QuantityCarrier) -> Result<Json, Bad> {
+    Ok(match value {
+        QuantityCarrier::Decimal(decimal) => object(vec![
+            ("kind", text("decimal")),
+            ("lower", text(decimal.lower().to_string())),
+            ("upper", text(decimal.upper().to_string())),
+            ("min_scale", Json::Int(decimal.min_scale().into())),
+            ("max_scale", Json::Int(decimal.max_scale().into())),
+            ("rounding", spelled(&ROUNDINGS, decimal.rounding())?),
+        ]),
+        QuantityCarrier::Integer { domain, rounding } => object(vec![
+            ("kind", text("integer")),
+            ("lower", text(domain.lower().to_string())),
+            ("upper", text(domain.upper().to_string())),
+            ("rounding", spelled(&ROUNDINGS, *rounding)?),
+        ]),
+        QuantityCarrier::Rational(domain) => object(vec![
+            ("kind", text("rational")),
+            ("numerator", interval(domain.numerator())),
+            ("denominator", interval(domain.denominator())),
+        ]),
+    })
+}
+
+const CARRIERS: &[(&str, &[&str])] = &[
+    (
+        "decimal",
+        &["lower", "upper", "min_scale", "max_scale", "rounding"],
+    ),
+    ("integer", &["lower", "upper", "rounding"]),
+    ("rational", &["numerator", "denominator"]),
+];
+
+#[ix_trace_rs::string_edge]
+
+fn carrier_from(json: &Json) -> Result<QuantityCarrier, Bad> {
+    let (tag, m) = json.tagged(CARRIERS)?;
+    let scale =
+        |json: &Json| u64::from(u32::try_from(json.int().unwrap_or(u64::MAX)).unwrap_or(u32::MAX));
+    Ok(match tag {
+        "decimal" => QuantityCarrier::Decimal(
+            DecimalType::new(
+                integer(m[0])?,
+                integer(m[1])?,
+                scale(m[2]),
+                scale(m[3]),
+                unspelled(&ROUNDINGS, m[4])?,
+            )
+            .or_else(|_| malformed("a decimal carrier"))?,
+        ),
+        "integer" => QuantityCarrier::Integer {
+            domain: IntegerInterval::new(integer(m[0])?, integer(m[1])?)
+                .or_else(|_| malformed("an empty interval"))?,
+            rounding: unspelled(&ROUNDINGS, m[2])?,
+        },
+        _ => QuantityCarrier::Rational(
+            RationalDomain::new(interval_from(m[0])?, interval_from(m[1])?)
+                .or_else(|_| malformed("a rational carrier"))?,
+        ),
+    })
+}
+
+fn bound_quantity(joins: &Joins, value: Option<&Quantity>) -> Result<Json, Bad> {
+    let Some(quantity) = value else {
+        return Ok(Json::Null);
+    };
+    Ok(object(vec![
+        (
+            "magnitude",
+            rational(&CheckedRational {
+                numerator: quantity.magnitude().numerator().to_string().into(),
+                denominator: quantity.magnitude().denominator().to_string().into(),
+            })?,
+        ),
+        ("unit", unit_id(joins, quantity.unit(), true)?),
+    ]))
+}
+
+fn bound_quantity_from(joins: &Joins, json: &Json) -> Result<Option<Quantity>, Bad> {
+    if matches!(json, Json::Null) {
+        return Ok(None);
+    }
+    let parts = json.members(&["magnitude", "unit"])?;
+    let magnitude = rational_from(parts[0])?;
+    let magnitude = Rational::new(
+        integer(&text(&*magnitude.numerator))?,
+        integer(&text(&*magnitude.denominator))?,
+    )
+    .or_else(|_| malformed("a zero denominator"))?;
+    Ok(Some(Quantity::new(
+        magnitude,
+        unit_from(joins, parts[1], true)?,
+    )))
 }
 
 const VALUE_TYPES: &[(&str, &[&str])] = &[
@@ -650,7 +784,12 @@ const VALUE_TYPES: &[(&str, &[&str])] = &[
     ("collection", &["collection", "element", "bound"]),
     ("reference", &["effective"]),
     ("population", &["maximum"]),
+    ("carried_quantity", &["unit", "carrier"]),
+    ("bounded_quantity", &["unit", "min", "max"]),
+    ("map", &["values", "bound"]),
 ];
+
+#[ix_trace_rs::string_edge]
 
 fn value_type_from(joins: &Joins, json: &Json) -> Result<ValueType, Bad> {
     let (tag, m) = json.tagged(VALUE_TYPES)?;
@@ -722,6 +861,24 @@ fn value_type_from(joins: &Joins, json: &Json) -> Result<ValueType, Bad> {
             ))
         }
         "reference" => ValueType::Reference(effective_from(m[0])?),
+        "carried_quantity" => ValueType::CarriedQuantity(
+            CarriedQuantityType::new(unit_from(joins, m[0], true)?, carrier_from(m[1])?).into(),
+        ),
+        "bounded_quantity" => {
+            let unit = unit_from(joins, m[0], true)?;
+            ValueType::BoundedQuantity(
+                BoundedQuantityType::new(
+                    unit,
+                    bound_quantity_from(joins, m[1])?,
+                    bound_quantity_from(joins, m[2])?,
+                )
+                .or_else(|_| malformed("a bound in another unit"))?
+                .into(),
+            )
+        }
+        "map" => ValueType::Map(
+            MapType::new(value_type_from(joins, m[0])?, cardinality_from(m[1])?).into(),
+        ),
         _ => ValueType::Population(match m[0] {
             Json::Null => None,
             other => Some(other.int()?),
@@ -897,6 +1054,8 @@ const FACTS: &[(&str, &[&str])] = &[
         ],
     ),
 ];
+
+#[ix_trace_rs::string_edge]
 
 fn fact_from(joins: &Joins, json: &Json) -> Result<EqualityFactWitness, Bad> {
     use EqualityFactWitness as F;
@@ -1199,6 +1358,8 @@ impl ReadEqualityRows {
         })?;
         Self::decode(equality_json, package.name(), &joins)
     }
+
+    #[ix_trace_rs::string_edge]
 
     fn decode(
         equality_json: &[u8],
@@ -1687,6 +1848,110 @@ mod tests {
         rows.source_units[0].unit_id = UnitId::declared(keys["U"].clone());
         assert!(matches!(
             rows.encode(&partial),
+            Err(EqualityFileRefusal::Malformed { .. })
+        ));
+    }
+
+    /// FR-531-AC-18: the carried-quantity, bounded-quantity and map value
+    /// types round trip, the example's subtree equals the spec's JSON with its
+    /// members in order, and a bound in another unit or an unknown carrier tag
+    /// is `Malformed`.
+    #[trace("FR-531-AC-18", "TC-1331")]
+    #[test]
+    fn quantity_and_map_value_types_encode_as_the_spec_states() {
+        let (joins, keys) = joins();
+        let unit = UnitId::declared(keys["U"].clone());
+        let quantity = |n: i64, u: &UnitId| {
+            Quantity::new(
+                Rational::new(Integer::from(n), Integer::from(1_i64)).unwrap(),
+                u.clone(),
+            )
+        };
+        let bounded = |min: Option<Quantity>, max: Option<Quantity>| {
+            ValueType::BoundedQuantity(
+                BoundedQuantityType::new(unit.clone(), min, max)
+                    .unwrap()
+                    .into(),
+            )
+        };
+        let int =
+            |lo: i64, hi: i64| IntegerInterval::new(Integer::from(lo), Integer::from(hi)).unwrap();
+        let carried = |carrier| {
+            ValueType::CarriedQuantity(CarriedQuantityType::new(unit.clone(), carrier).into())
+        };
+        let example = ValueType::Map(
+            MapType::new(
+                bounded(None, Some(quantity(5, &unit))),
+                CardinalityBound::new(0, 4).ok(),
+            )
+            .into(),
+        );
+        let types = vec![
+            carried(QuantityCarrier::Decimal(
+                DecimalType::new(
+                    Integer::from(0_i64),
+                    Integer::from(9_i64),
+                    0,
+                    2,
+                    RoundingMode::TowardZero,
+                )
+                .unwrap(),
+            )),
+            carried(QuantityCarrier::Integer {
+                domain: int(-3, 3),
+                rounding: RoundingMode::NearestAway,
+            }),
+            carried(QuantityCarrier::Rational(
+                RationalDomain::new(int(-1, 1), int(1, 4)).unwrap(),
+            )),
+            bounded(Some(quantity(-2, &unit)), Some(quantity(5, &unit))),
+            bounded(None, None),
+            ValueType::Map(MapType::new(ValueType::String, None).into()),
+            example.clone(),
+        ];
+        let mut rows = vector_rows(&keys);
+        rows.facts = types
+            .into_iter()
+            .map(|ty| {
+                fact_row(
+                    &keys,
+                    Some(ty),
+                    EqualityFactWitness::OperandType {
+                        position: 0,
+                        role: EqualityOperandTypeRole::Source,
+                    },
+                )
+            })
+            .collect();
+        let bytes = rows.encode(&joins).unwrap();
+        assert_eq!(ReadEqualityRows::decode(&bytes, "p", &joins).unwrap(), rows);
+        assert_eq!(rows.encode(&joins).unwrap(), bytes);
+        let expected: Json = serde_json::from_str(
+            r#"{ "kind": "map", "values": { "kind": "bounded_quantity", "unit": {
+              "kind": "declared", "node": { "package": "p", "path": ["U"], "ordinal": 0 } },
+              "min": null, "max": { "magnitude": { "numerator": "5", "denominator": "1" },
+              "unit": { "kind": "declared", "node": { "package": "p", "path": ["U"], "ordinal": 0 } } } },
+              "bound": { "minimum": 0, "maximum": 4 } }"#,
+        )
+        .unwrap();
+        assert_eq!(value_type(&joins, &example).unwrap(), expected);
+        // A bound in another unit, and a carrier tagged other than the three.
+        let text = String::from_utf8(bytes).unwrap();
+        let wrong: Json = serde_json::from_str(
+            r#"{ "kind": "bounded_quantity", "unit": { "kind": "declared",
+              "node": { "package": "p", "path": ["U"], "ordinal": 0 } }, "min": null,
+              "max": { "magnitude": { "numerator": "5", "denominator": "1" },
+              "unit": { "kind": "declared", "node": { "package": "p", "path": ["V"], "ordinal": 0 } } } }"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            value_type_from(&joins, &wrong),
+            Err(Bad::Malformed(_))
+        ));
+        let float = text.replace("\"kind\": \"integer\"", "\"kind\": \"float\"");
+        assert_ne!(float, text);
+        assert!(matches!(
+            ReadEqualityRows::decode(float.as_bytes(), "p", &joins),
             Err(EqualityFileRefusal::Malformed { .. })
         ));
     }

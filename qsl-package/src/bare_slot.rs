@@ -343,6 +343,7 @@ struct Resolved<'p> {
 /// The slots of one control that a span-named origin may be shared by, in the
 /// rank order of FR-533 rule 4: `visible`, `cases.guard`, then the `related`
 /// ends by record (`from[0]`, `to[0]`, `from[1]`, ...).
+#[ix_trace_rs::string_edge]
 fn tied_order<'n>(
     node: &'n Node,
     op: ControlOperation,
@@ -390,6 +391,7 @@ impl<'p> BarePackage<'p> {
     /// # Errors
     ///
     /// [`BareSelectionFailure`].
+    #[ix_trace_rs::string_edge]
     pub fn select_protocol_slot(
         &self,
         descriptor: &ProtocolSlotDescriptor,
