@@ -23,7 +23,8 @@ use std::borrow::Cow;
 use quire_exact::Rational;
 
 use super::{
-    ActionChoice, FreeDelayRow, ProbEdge, ProbProduct, ProbStateId, ProductAction, SchedulerChoice,
+    ActionChoice, ExactProbLimits, FreeDelayRow, ProbEdge, ProbProduct, ProbStateId, ProductAction,
+    SchedulerChoice,
 };
 
 /// The product's `FreeDelays` edges do not form rows: a row-choice edge
@@ -282,11 +283,13 @@ pub fn free_delays_choice(
 /// the entry is the product measure over the whole actions, so every row has
 /// the distribution the policy gives it. Alternatives of probability 0 are
 /// omitted. `None` when `state` is not a `FreeDelays` state, the policy does
-/// not select a choice for every row, or a distribution does not sum to 1.
+/// not select a choice for every row, a distribution does not sum to 1, or
+/// the Cartesian product exceeds `limits.model.limits.max_transitions`.
 pub(super) fn free_delays_distribution(
     product: &ProbProduct,
     state: ProbStateId,
     policy: &[Option<SchedulerChoice>],
+    limits: &ExactProbLimits,
 ) -> Option<Vec<(ProductAction, Rational)>> {
     let (node, rows) = rows_at(product, state)?;
     let one = Rational::from_integer(quire_exact::Integer::from(1_i64));
@@ -294,7 +297,12 @@ pub(super) fn free_delays_distribution(
     for (offset, row) in rows.iter().enumerate() {
         let choice = policy.get(node + offset)?.as_ref()?;
         let weighted = scheduler_distribution(choice)?;
-        let mut next = Vec::with_capacity(actions.len() * weighted.len());
+        let product_len = actions.len().checked_mul(weighted.len())?;
+        if product_len > limits.model.limits.max_transitions {
+            return None;
+        }
+        let mut next = Vec::new();
+        next.try_reserve_exact(product_len).ok()?;
         for (chosen, mass) in &actions {
             for (index, weight) in &weighted {
                 let (body, _) = row.get(*index)?;
@@ -323,11 +331,24 @@ pub(super) fn scheduler_distribution(choice: &SchedulerChoice) -> Option<Vec<(us
                 Rational::from_integer(quire_exact::Integer::from(1_i64)),
             )]
         }
-        SchedulerChoice::Randomized(alternatives) => alternatives
-            .iter()
-            .filter(|(_, probability)| *probability > zero())
-            .map(|(ActionChoice(index), probability)| (*index, probability.clone()))
-            .collect(),
+        SchedulerChoice::Randomized(alternatives) => {
+            let mut indices = std::collections::BTreeSet::new();
+            if alternatives
+                .iter()
+                .any(|(ActionChoice(index), probability)| {
+                    probability < &zero() || !indices.insert(*index)
+                })
+            {
+                return None;
+            }
+            let mut weighted: Vec<(usize, Rational)> = alternatives
+                .iter()
+                .filter(|(_, probability)| *probability > zero())
+                .map(|(ActionChoice(index), probability)| (*index, probability.clone()))
+                .collect();
+            weighted.sort_by_key(|(index, _)| *index);
+            weighted
+        }
     };
     let total = weighted
         .iter()

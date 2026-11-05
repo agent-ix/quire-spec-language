@@ -24,7 +24,7 @@ use qsl_analyze::exact_probabilistic::{
     WitnessScope,
 };
 use qsl_eval::model_subject::ModelSubject;
-use qsl_eval::simulation::model::ScheduledIdentity;
+use qsl_eval::simulation::{model::ScheduledIdentity, Limits};
 use qsl_replay::{
     FreeDelayActionRow, FreeDelaysRace, FreeRacer, GivenRacer,
     ProductAction as ReplayProductAction, ProductActionRefusal, Schedule,
@@ -1322,12 +1322,10 @@ fn witness_entries_cover_continuation_states_beside_the_paths() {
     assert!(entered.windows(2).all(|pair| pair[0] < pair[1]));
 }
 
-/// FR-204-AC-10 with a randomized entry: the policy randomizes row `[1]`
-/// between `B` delay 1 and 2 with `1/2` each and takes `B` delay 1 on row
-/// `[3]`; the witness scheduler's entry at the race state is the exact
-/// randomization over the two whole actions, and a distribution that does not
-/// sum to 1 yields no entry.
-#[trace("TC-642", "FR-204-AC-10")]
+/// FR-204 with a randomized entry: both rows randomize between `B` delay 1
+/// and 2 with `1/2` each. The witness scheduler emits the four whole actions
+/// in canonical choice order with their exact product probabilities.
+#[trace("TC-642", "FR-204")]
 #[test]
 fn randomized_rows_give_an_exact_randomized_entry() {
     let world = detour_max_claim();
@@ -1336,52 +1334,103 @@ fn randomized_rows_give_an_exact_randomized_entry() {
     let take = |index: usize| SchedulerChoice::Deterministic(ActionChoice(index));
     let mut policy: Vec<Option<SchedulerChoice>> = vec![Some(take(0)); built.states.len()];
     let half = ratio(1, 2);
-    policy.push(Some(SchedulerChoice::Randomized(vec![
-        (ActionChoice(0), half.clone()),
-        (ActionChoice(1), half.clone()),
-    ])));
-    policy.push(Some(take(0)));
+    let reversed = || {
+        SchedulerChoice::Randomized(vec![
+            (ActionChoice(1), half.clone()),
+            (ActionChoice(0), half.clone()),
+        ])
+    };
+    policy.push(Some(reversed()));
+    policy.push(Some(reversed()));
     let entries = witness_scheduler(
         &built,
         &policy,
         WitnessScope::Workload,
         start,
         &accepted(&built),
+        &ExactProbLimits::default(),
     )
     .expect("the policy gives an entry at each reached state");
-    let [(state, EntryChoice::Randomized(alternatives)), (continuation, EntryChoice::Action(delay))] =
-        entries.as_slice()
+    let (_, EntryChoice::Randomized(alternatives)) = entries
+        .iter()
+        .find(|(state, _)| *state == start)
+        .expect("randomized entry at the race state")
     else {
-        panic!("a randomized entry at the race state, then a continuation: {entries:?}");
+        panic!("randomized entry at the race state: {entries:?}");
     };
-    assert!(*continuation > *state);
-    assert!(matches!(delay, ProductAction::UnitDelay));
-    assert_eq!(*state, start);
-    let [(first, p), (second, q)] = alternatives.as_slice() else {
-        panic!("two whole actions: {alternatives:?}");
+    let [(first, p), (second, q), (third, r), (fourth, s)] = alternatives.as_slice() else {
+        panic!("four whole actions: {alternatives:?}");
     };
-    assert_eq!((p, q), (&half, &half));
+    let quarter = ratio(1, 4);
+    assert_eq!((p, q, r, s), (&quarter, &quarter, &quarter, &quarter));
     assert_eq!(
         action_rows(&world, first),
         [row(&[("A", 1)], &[("B", 1)]), row(&[("A", 3)], &[("B", 1)])]
     );
     assert_eq!(
         action_rows(&world, second),
+        [row(&[("A", 1)], &[("B", 1)]), row(&[("A", 3)], &[("B", 2)])]
+    );
+    assert_eq!(
+        action_rows(&world, third),
         [row(&[("A", 1)], &[("B", 2)]), row(&[("A", 3)], &[("B", 1)])]
+    );
+    assert_eq!(
+        action_rows(&world, fourth),
+        [row(&[("A", 1)], &[("B", 2)]), row(&[("A", 3)], &[("B", 2)])]
     );
 
     let last = policy.len() - 2;
-    policy[last] = Some(SchedulerChoice::Randomized(vec![(
-        ActionChoice(0),
-        ratio(1, 3),
-    )]));
+    policy[last] = Some(SchedulerChoice::Randomized(vec![
+        (ActionChoice(0), ratio(1, 1)),
+        (ActionChoice(1), ratio(-1, 2)),
+    ]));
     assert!(matches!(
         witness_scheduler(
             &built,
             &policy,
             WitnessScope::Workload,
             start,
-            &accepted(&built)
+            &accepted(&built),
+            &ExactProbLimits::default()
+        ),
+        Err(WitnessError::NoChoice { state }) if state == start.index()
+    ));
+    policy[last] = Some(SchedulerChoice::Randomized(vec![
+        (ActionChoice(0), half.clone()),
+        (ActionChoice(0), half.clone()),
+    ]));
+    assert!(matches!(
+        witness_scheduler(
+            &built,
+            &policy,
+            WitnessScope::Workload,
+            start,
+            &accepted(&built),
+            &ExactProbLimits::default()
+        ),
+        Err(WitnessError::NoChoice { state }) if state == start.index()
+    ));
+
+    policy[last] = Some(reversed());
+    let bounded = ExactProbLimits {
+        model: qsl_replay::ModelCheckLimits {
+            limits: Limits {
+                max_transitions: 3,
+                ..Limits::default()
+            },
+            ..ExactProbLimits::default().model
+        },
+        ..ExactProbLimits::default()
+    };
+    assert!(matches!(
+        witness_scheduler(
+            &built,
+            &policy,
+            WitnessScope::Workload,
+            start,
+            &accepted(&built),
+            &bounded
         ),
         Err(WitnessError::NoChoice { state }) if state == start.index()
     ));

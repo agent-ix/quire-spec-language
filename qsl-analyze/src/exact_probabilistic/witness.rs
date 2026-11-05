@@ -174,11 +174,12 @@ pub fn entry_choice(
     product: &ProbProduct,
     state: ProbStateId,
     policy: &[Option<SchedulerChoice>],
+    limits: &ExactProbLimits,
 ) -> Option<EntryChoice> {
     let first = product.outgoing(state).first()?;
     let alternatives: Vec<(ProductAction, Rational)> =
         if matches!(first.choice, ProductAction::FreeDelays(_)) {
-            free_delays_distribution(product, state, policy)?
+            free_delays_distribution(product, state, policy, limits)?
         } else if product.kind == ProductKind::Dtmc {
             vec![(first.choice.clone(), rational(1))]
         } else {
@@ -212,6 +213,7 @@ pub fn witness_scheduler(
     scope: WitnessScope,
     initial: ProbStateId,
     accepting: &[bool],
+    limits: &ExactProbLimits,
 ) -> Result<Vec<(ProbStateId, EntryChoice)>, WitnessError> {
     if accepting.len() != product.states.len() || initial.index() >= product.states.len() {
         return Err(WitnessError::InvalidState);
@@ -227,8 +229,8 @@ pub fn witness_scheduler(
             continue;
         }
         let index = state.index();
-        let entry =
-            entry_choice(product, state, policy).ok_or(WitnessError::NoChoice { state: index })?;
+        let entry = entry_choice(product, state, policy, limits)
+            .ok_or(WitnessError::NoChoice { state: index })?;
         for action in entry.actions() {
             let steps = action_steps(product, state, action)
                 .ok_or(WitnessError::MalformedAction { state: index })?;
