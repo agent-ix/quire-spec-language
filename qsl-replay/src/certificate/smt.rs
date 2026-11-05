@@ -381,15 +381,6 @@ fn check(
 
 /// The number of step rows of the refinement `request` names.
 fn step_rows(request: &RefinementCertificateRequest<'_>) -> Result<u64, Halt> {
-    request
-        .package
-        .graph()
-        .refinements()
-        .iter()
-        .find_map(|refinement| {
-            let emission = refinement.v2_emission().ok()?;
-            (emission.identity == request.refinement).then_some(refinement.steps().len())
-        })
-        .and_then(|rows| u64::try_from(rows).ok())
+    crate::refinement_query::refinement_step_rows(request.package, &request.refinement)
         .ok_or_else(|| fault("the request names a refinement of its package"))
 }
