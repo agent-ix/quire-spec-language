@@ -350,7 +350,9 @@ fn a_skippable_nested_repeat_gives_no_progress() {
 
 /// An `await` anchored at a later control closes a cycle (QSpec FR-464-AC-9
 /// as FR-218 states it), and the `repeat` back edge is not one.
-#[trace("TC-663")]
+/// FR-218-AC-35 states this cycle and repeat-back-edge pair as its last
+/// sentence.
+#[trace("TC-663", "FR-218-AC-35")]
 #[test]
 fn an_await_after_a_later_control_is_a_cycle() {
     let source = flow(
@@ -403,8 +405,10 @@ fn awaiting(members: &str, within: &str, matched: &str) -> String {
 /// form; an inverted or open `within` refuses `ill_typed`/`type-mismatch`
 /// at the interval; a unit selecting no temporal profile refuses
 /// `missing_declaration`/`missing-selection` at the `await`, and
-/// `MissingProfile` at the undeclared alias the `await` names.
-#[trace("TC-663")]
+/// `MissingProfile` at the undeclared alias the `await` names. The `receive`
+/// and `effect` matches FR-218-AC-35 also states are in
+/// `an_await_matches_a_receive_and_an_effect_as_it_matches_an_event`.
+#[trace("TC-663", "FR-218-AC-35")]
 #[test]
 fn an_await_matches_an_event_in_a_closed_window_under_a_temporal_profile() {
     let event = "event Seen by R as (seen: Boolean) { true };";
@@ -449,7 +453,11 @@ fn an_await_matches_an_event_in_a_closed_window_under_a_temporal_profile() {
             "{expected_form}"
         );
         let ProtocolAnchorCause::AwaitedForm {
-            node, event, form, ..
+            node,
+            event,
+            form,
+            profile,
+            ..
         } = &cause
         else {
             panic!("an awaited-form refusal, got {cause:?}");
@@ -458,6 +466,7 @@ fn an_await_matches_an_event_in_a_closed_window_under_a_temporal_profile() {
             (node.as_str(), event.as_str(), *form),
             ("Wait", expected_event, expected_form)
         );
+        assert_eq!(profile.as_deref(), Some("quire.protocol.finite-global/v1"));
         assert_eq!(located(&text, &cause), "Wait");
     }
 
@@ -526,7 +535,49 @@ fn an_await_matches_an_event_in_a_closed_window_under_a_temporal_profile() {
         missing_alias,
         ProtocolAnchorCause::MissingProfile { alias, .. } if alias == "e"
     ));
+    assert_eq!(
+        (missing_alias.code().as_str(), missing_alias.tag()),
+        ("missing_declaration", "missing-name")
+    );
     assert_eq!(located(&text, missing_alias), "e");
+}
+
+/// FR-218-AC-35: the same `await Wait after Start` with `within [2,5]`
+/// checks and records the same `Wait` (clock `wall`, window 2 to 5, the
+/// selected temporal profile) when it matches a `receive` over a channel
+/// of a `send`, and when it matches an `effect` of an `attempt`.
+#[trace("TC-663", "FR-218-AC-35")]
+#[test]
+fn an_await_matches_a_receive_and_an_effect_as_it_matches_an_event() {
+    let received = flow(
+        &channel("ch", "Boolean"),
+        &format!(
+            "sequence Main {{ {} send Out via ch as (sent: Boolean) {{ true }}; \
+             await Wait after Start using e clock \"wall\" within [2,5] \
+             match receive Got via ch of Out as (got: Boolean) {{ true }}; \
+             then sequence Then {{ }} timeout sequence Late {{ }} }}",
+            attempt("Start")
+        ),
+    );
+    let applied = awaiting(
+        "",
+        "[2,5]",
+        "effect Applied of Start as (applied: Boolean) { true };",
+    );
+    for source in [received, applied] {
+        let graph = checks(&source);
+        let protocol = graph.protocol("Flow").expect("the checked protocol");
+        assert_eq!(
+            protocol.awaits,
+            [CheckedAwait {
+                node: node(&source, "Wait", ProtocolNodeKind::Await),
+                clock: "wall".to_owned(),
+                within: CheckedDeadline { lower: 2, upper: 5 },
+                profile: Some(crate::check::TemporalProfile::EventPositionFalseExtension),
+            }],
+            "{source}"
+        );
+    }
 }
 
 /// FR-218-AC-11: a `send` via a name that is no channel refuses
