@@ -687,6 +687,123 @@ fn the_plan_root_retains_the_acquisitions_witness_rows() {
     .expect("IR joins the retained exact rows to the plan-root package");
 }
 
+fn ir_source_record_rows(root: &PlanRoot) -> Vec<quire_contract_model::SelectedSourceRecordRow> {
+    root.emission
+        .selected_source_record_rows()
+        .iter()
+        .map(|row| quire_contract_model::SelectedSourceRecordRow {
+            structural_node: row.structural_node.clone(),
+            source_authority: row.source_authority.clone(),
+            source_identity: row.source_identity.clone(),
+            qualified_declaration: row.qualified_declaration.clone(),
+            record_key: row.record_key.clone(),
+            members: row
+                .members
+                .iter()
+                .map(
+                    |member| quire_contract_model::SelectedSourceRecordMemberRow {
+                        original_member_identity: member.original_member_identity.clone(),
+                        admitted_name: member.admitted_name.clone(),
+                        presence: member.presence,
+                        type_node: member.type_node.clone(),
+                        value_type: member.value_type.clone(),
+                    },
+                )
+                .collect(),
+        })
+        .collect()
+}
+
+/// FR-251-AC-44 / TC-1081 step 28: the retained source record rows name each
+/// member by the binding the plan-root package holds after the writer's field
+/// renames (`origin_tick` as `origin`, `amount` as `value`), keep the declared
+/// field name, and the strict reader's source-record join accepts them; a row
+/// that keeps the base name is refused.
+#[trace("TC-1081", "FR-251-AC-44")]
+#[test]
+fn retained_source_record_rows_name_the_final_bindings_and_the_ir_join_accepts_them() {
+    use quire_contract_model::{ExactTypeProjectionErrorCode, SelectedExactIdentities};
+
+    let root = root_of(&authored(ROOT_SHAPES[0]), "C", &target()).expect("the plan root");
+    let package = admitted(&root);
+    let rows = ir_source_record_rows(&root);
+    let named = |record: &str| -> Vec<(String, String)> {
+        let row = rows
+            .iter()
+            .find(|row| row.qualified_declaration.last().map(AsRef::as_ref) == Some(record))
+            .unwrap_or_else(|| panic!("a row for {record}"));
+        row.members
+            .iter()
+            .map(|m| {
+                (
+                    m.original_member_identity.to_string(),
+                    m.admitted_name.to_string(),
+                )
+            })
+            .collect()
+    };
+    let pairs = |names: &[(&str, &str)]| -> Vec<(String, String)> {
+        names
+            .iter()
+            .map(|(a, b)| ((*a).into(), (*b).into()))
+            .collect()
+    };
+    assert_eq!(
+        named("Instance"),
+        pairs(&[
+            ("subject", "subject"),
+            ("subformula", "subformula"),
+            ("origin_tick", "origin")
+        ])
+    );
+    assert_eq!(
+        named("Activation"),
+        pairs(&[
+            ("subformula", "subformula"),
+            ("origin_tick", "origin"),
+            ("status", "status")
+        ])
+    );
+    assert_eq!(
+        named("LimitReached"),
+        pairs(&[
+            ("limit", "limit"),
+            ("amount", "value"),
+            ("setting", "setting")
+        ])
+    );
+
+    let joined = SelectedExactIdentities::empty()
+        .with_source_record_rows(&package, rows.clone(), 10_000_000)
+        .expect("IR joins the retained source record rows");
+    assert_eq!(joined.source_record_rows().count(), rows.len());
+    for row in &rows {
+        let projected = package
+            .project_exact_type(&row.structural_node, &joined, 10_000_000)
+            .expect("the record projects");
+        assert_eq!(projected.source_record_view(), Some(row));
+    }
+
+    // The base name is refused: each renamed member, one at a time.
+    for (record, member) in [("Activation", 1), ("Instance", 2), ("LimitReached", 1)] {
+        let mut stale = rows.clone();
+        let row = stale
+            .iter_mut()
+            .find(|row| row.qualified_declaration.last().map(AsRef::as_ref) == Some(record))
+            .unwrap();
+        let original = row.members[member].original_member_identity.clone();
+        assert_ne!(original, row.members[member].admitted_name);
+        row.members[member].admitted_name = original;
+        let error = SelectedExactIdentities::empty()
+            .with_source_record_rows(&package, stale, 10_000_000)
+            .expect_err("a base name is not the final binding name");
+        assert_eq!(
+            error.code,
+            ExactTypeProjectionErrorCode::MismatchedIdentityWitness
+        );
+    }
+}
+
 /// FR-251-AC-43 / TC-1081 step 27: the plan's subject (clause node and claim
 /// occurrence) selects, through the returned emission's temporal binding
 /// rows, the clause declaration and claim occurrence the plan-root package
