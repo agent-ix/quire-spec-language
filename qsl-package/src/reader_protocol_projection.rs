@@ -1129,7 +1129,8 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             CheckedTerm::Aggregate { members }
                 if has_form(node, WireTag::Value, WireForm::TupleValue) =>
             {
-                let ValueType::Composite(declaration) = self.value_type(id)? else {
+                let value_type = self.value_type(id)?;
+                let ValueType::Composite(declaration) = &value_type else {
                     return Err(fault("reader-tuple-value-has-declared-type").into());
                 };
                 let children = members
@@ -1138,7 +1139,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                     .collect::<Result<Vec<_>, _>>()?;
                 (
                     NodeKind::Tuple {
-                        declaration,
+                        declaration: declaration.clone(),
                         arguments: children.clone(),
                     },
                     children,
@@ -1157,7 +1158,8 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             CheckedTerm::Aggregate { members }
                 if has_form(node, WireTag::Value, WireForm::CollectionValue) =>
             {
-                let ValueType::Collection(collection_type) = self.value_type(id)? else {
+                let value_type = self.value_type(id)?;
+                let ValueType::Collection(collection_type) = &value_type else {
                     return Err(fault("reader-collection-value-has-collection-type").into());
                 };
                 let children = members
@@ -1166,7 +1168,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                     .collect::<Result<Vec<_>, _>>()?;
                 (
                     NodeKind::Collection {
-                        collection_type: (*collection_type).clone(),
+                        collection_type: (**collection_type).clone(),
                         elements: children.clone(),
                     },
                     children,
@@ -1467,14 +1469,15 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let [left, right] = children.as_slice() else {
                     return Err(fault("reader-rational-division-has-two-operands").into());
                 };
-                let ValueType::Rational(domain) = self.value_type(id)? else {
+                let value_type = self.value_type(id)?;
+                let ValueType::Rational(domain) = &value_type else {
                     return Err(fault("reader-rational-division-has-rational-result").into());
                 };
                 Ok((
                     NodeKind::Divide {
                         left: *left,
                         right: *right,
-                        domain,
+                        domain: domain.clone(),
                     },
                     children,
                 ))
@@ -1484,7 +1487,8 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let [left, right] = children.as_slice() else {
                     return Err(fault("reader-rational-arithmetic-has-two-operands").into());
                 };
-                let ValueType::Rational(domain) = self.value_type(id)? else {
+                let value_type = self.value_type(id)?;
+                let ValueType::Rational(domain) = &value_type else {
                     return Err(fault("reader-rational-arithmetic-has-rational-result").into());
                 };
                 let operator = identity
@@ -1495,7 +1499,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                         operator,
                         left: *left,
                         right: *right,
-                        domain,
+                        domain: domain.clone(),
                     },
                     children,
                 ))
@@ -1510,7 +1514,8 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let [left, right] = children.as_slice() else {
                     return Err(fault("reader-decimal-arithmetic-has-two-operands").into());
                 };
-                let ValueType::Decimal(target) = self.value_type(id)? else {
+                let value_type = self.value_type(id)?;
+                let ValueType::Decimal(target) = &value_type else {
                     return Err(fault("reader-decimal-arithmetic-has-decimal-result").into());
                 };
                 let operator = identity
@@ -1521,7 +1526,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                         operator,
                         left: *left,
                         right: *right,
-                        target,
+                        target: target.clone(),
                     },
                     children,
                 ))
@@ -1531,20 +1536,22 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let [operand] = children.as_slice() else {
                     return Err(fault("reader-rational-negation-has-one-operand").into());
                 };
-                let ValueType::Rational(domain) = self.value_type(id)? else {
+                let value_type = self.value_type(id)?;
+                let ValueType::Rational(domain) = &value_type else {
                     return Err(fault("reader-rational-negation-has-rational-result").into());
                 };
-                Ok((NodeKind::RationalNegate(*operand, domain), children))
+                Ok((NodeKind::RationalNegate(*operand, domain.clone()), children))
             }
             Some("quire.op.decimal.negate") => {
                 let children = self.project_arguments(id, Some(arguments), context, locals)?;
                 let [operand] = children.as_slice() else {
                     return Err(fault("reader-decimal-negation-has-one-operand").into());
                 };
-                let ValueType::Decimal(target) = self.value_type(id)? else {
+                let value_type = self.value_type(id)?;
+                let ValueType::Decimal(target) = &value_type else {
                     return Err(fault("reader-decimal-negation-has-decimal-result").into());
                 };
-                Ok((NodeKind::DecimalNegate(*operand, target), children))
+                Ok((NodeKind::DecimalNegate(*operand, target.clone()), children))
             }
             Some("quire.op.option.present") => {
                 let children = self.project_arguments(id, Some(arguments), context, locals)?;
