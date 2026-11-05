@@ -141,6 +141,9 @@ fn node_family(graph: &CheckedGraph, claim: &OccurrenceKey) -> Option<Declaratio
 }
 
 /// Whether `claim` names a Boolean expression node.
+/// The semantic graph exposes the scalar type form as a wire word; this
+/// comparison recognizes its canonical Boolean spelling at that boundary.
+#[ix_trace_rs::string_edge]
 fn boolean_expression(graph: &CheckedGraph, claim: &OccurrenceKey) -> bool {
     let Some(expression) = graph.semantic_graph().node(claim.node().clone()) else {
         return false;
