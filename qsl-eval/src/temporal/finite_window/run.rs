@@ -65,7 +65,21 @@ enum Stop {
     /// An `on each` guard that cannot be established at a position.
     GuardUnresolved(TemporalPosition),
     Undefined(UndefinedEvaluation),
+    /// A `holds` condition, an `on each` guard or a capture was refused at
+    /// this position (FR-327 "Refused condition").
+    ConditionRefused(TemporalPosition, Option<usize>),
     Refused(TemporalRefusal),
+}
+
+impl Stop {
+    /// The stop of a letter that failed at `at`: its refusal is the refused
+    /// condition at `at`.
+    fn at(stop: LetterStop, at: TemporalPosition, class: Option<usize>) -> Self {
+        match stop {
+            LetterStop::Refused => Self::ConditionRefused(at, class),
+            other => other.into(),
+        }
+    }
 }
 
 impl From<Incomplete> for Stop {
@@ -89,11 +103,11 @@ impl From<LetterStop> for Stop {
                 Self::Refused(TemporalRefusal::Fault(fault("window-aggregate-not-read")))
             }
             LetterStop::Fault(internal) => Self::Refused(TemporalRefusal::Fault(internal)),
-            // The finite-window profile keeps a refused condition as the
-            // fault its letter's stop records.
-            LetterStop::Refused => {
-                Self::Refused(TemporalRefusal::Fault(fault("window-condition-refused")))
-            }
+            // Every read of a letter goes through `Stop::at`, which knows
+            // the position the refusal is returned at.
+            LetterStop::Refused => Self::Refused(TemporalRefusal::Fault(fault(
+                "refused-condition-has-its-position",
+            ))),
         }
     }
 }
@@ -258,6 +272,33 @@ fn run_window<'a, L: TemporalLetters>(
         Err(Stop::Incomplete(incomplete)) => Tail::Incomplete(incomplete),
         Err(Stop::GuardUnresolved(at)) => Tail::GuardUnresolved(at),
         Err(Stop::Undefined(undefined)) => Tail::Undefined(undefined),
+        // In evaluation order: an atom undefined at an earlier position, or
+        // an activation that ended false before the refused condition, is
+        // returned instead of it.
+        Err(Stop::ConditionRefused(at, atom)) => {
+            let refused = usize::try_from(at.index()).unwrap_or(usize::MAX);
+            // An atom undefined earlier in position order, or earlier in
+            // clause-node order at the same position, precedes the refusal;
+            // a refused guard or capture precedes every atom at its position.
+            if let Some(((position, _), cause)) =
+                run.undefined.iter().find(|((position, other), _)| {
+                    *position < refused
+                        || (*position == refused && atom.is_some_and(|refused| *other < refused))
+                })
+            {
+                Tail::Undefined(UndefinedEvaluation {
+                    at: position_of(*position).map_err(TemporalRefusal::Fault)?,
+                    cause: cause.clone(),
+                })
+            } else if done
+                .iter()
+                .any(|activation| activation.result == Ending::False)
+            {
+                Tail::Done
+            } else {
+                return Err(TemporalRefusal::ConditionRefused { at });
+            }
+        }
         Err(Stop::Refused(refusal)) => return Err(refusal),
     };
     run.settle(done, tail).map_err(TemporalRefusal::Fault)
@@ -358,7 +399,11 @@ impl<L: TemporalLetters> Run<'_, L> {
         for anchor in anchors {
             let at = position_of(anchor)?;
             if guarded {
-                match self.letters.activation(at, &mut *self.meter)? {
+                match self
+                    .letters
+                    .activation(at, &mut *self.meter)
+                    .map_err(|stop| Stop::at(stop, at, None))?
+                {
                     AtomReading::True => {}
                     AtomReading::False => continue,
                     // A guard that cannot be established is an incomplete
@@ -372,22 +417,46 @@ impl<L: TemporalLetters> Run<'_, L> {
                 CaptureSite::Activations => true,
             };
             if captured {
-                if let CaptureReading::Undefined { cause, .. } =
-                    self.letters.captures(at, &mut *self.meter)?
+                if let CaptureReading::Undefined { cause, .. } = self
+                    .letters
+                    .captures(at, &mut *self.meter)
+                    .map_err(|stop| Stop::at(stop, at, None))?
                 {
                     return Err(Stop::Undefined(UndefinedEvaluation { at, cause }));
                 }
             }
             let closure = self.demand(anchor)?;
-            if let Some((&(position, _), cause)) = self.undefined.iter().find(|(key, _)| {
+            let undefined = self.undefined.iter().find(|(key, _)| {
                 closure
                     .iter()
                     .any(|(node, at)| *at == key.0 && self.class(*node) == key.1)
-            }) {
-                return Err(Stop::Undefined(UndefinedEvaluation {
+            });
+            if let Some((&(position, _), cause)) = undefined {
+                let undefined = UndefinedEvaluation {
                     at: position_of(position)?,
                     cause: cause.clone(),
-                }));
+                };
+                // An activation that is false whatever the undefined atoms
+                // read is returned instead of them (FR-327 "Undefined
+                // evaluation"): the claim fails at the first refuting
+                // position.
+                // The letter at an undefined atom's position has no value,
+                // and none after it is read (ADR-018 UE-1): only a position
+                // before it can refute the activation.
+                let saved = self.cells.clone();
+                for (key, cell) in &mut self.cells {
+                    if key.0 >= position {
+                        *cell = Cell::Missing;
+                    }
+                }
+                let finished = self.classify(anchor, closure);
+                self.cells = saved;
+                let finished = finished?;
+                if finished.result != Ending::False {
+                    return Err(Stop::Undefined(undefined));
+                }
+                done.push(finished);
+                continue;
             }
             done.push(self.classify(anchor, closure)?);
         }
@@ -445,6 +514,40 @@ impl<L: TemporalLetters> Run<'_, L> {
         Ok(closure)
     }
 
+    /// Read the valuation of the atom class `class` at the admitted position
+    /// `member`, unless it was read.
+    fn read_cell(&mut self, member: usize, class: usize) -> Result<(), Stop> {
+        if self.cells.contains_key(&(member, class)) {
+            return Ok(());
+        }
+        let id = self
+            .clause
+            .formula()
+            .node_id(class)
+            .ok_or_else(|| fault("atom-has-node-id"))?;
+        let at = position_of(member)?;
+        match self
+            .letters
+            .valuation(id, at, &mut *self.meter)
+            .map_err(|stop| Stop::at(stop, at, Some(class)))?
+        {
+            Valuation::True => {
+                self.cells.insert((member, class), Cell::True);
+            }
+            Valuation::False => {
+                self.cells.insert((member, class), Cell::False);
+            }
+            Valuation::Missing => {
+                self.cells.insert((member, class), Cell::Missing);
+            }
+            Valuation::Undefined(cause) => {
+                self.cells.insert((member, class), Cell::Missing);
+                self.undefined.insert((member, class), cause);
+            }
+        }
+        Ok(())
+    }
+
     /// Read the atom `node` at `position`. Observations that share a stamp
     /// are readings of one instant, so every position of the stamp is read:
     /// when two of them give differing valuations of the atom, it is
@@ -458,11 +561,6 @@ impl<L: TemporalLetters> Run<'_, L> {
             WindowUnit::Lookup
         })?;
         let class = self.class(node);
-        let id = self
-            .clause
-            .formula()
-            .node_id(class)
-            .ok_or_else(|| fault("atom-has-node-id"))?;
         let stamp = self.stamp(position)?;
         let mut group = Vec::new();
         for (index, candidate) in self.stamps.iter().enumerate() {
@@ -470,25 +568,19 @@ impl<L: TemporalLetters> Run<'_, L> {
                 group.push(index);
             }
         }
+        // The letter at a position is the value of every atom there, read in
+        // clause-node order (ADR-018 UE-1): the atoms before `class` are read
+        // first, so an undefined one is known when `class` is refused.
+        let mut classes: Vec<usize> = (0..self.plan.nodes.len())
+            .filter(|index| matches!(self.plan.nodes.get(*index), Some(Node::Atom)))
+            .map(|index| self.class(index))
+            .filter(|other| *other <= class)
+            .collect();
+        classes.sort_unstable();
+        classes.dedup();
         for member in &group {
-            if self.cells.contains_key(&(*member, class)) {
-                continue;
-            }
-            let at = position_of(*member)?;
-            match self.letters.valuation(id, at, &mut *self.meter)? {
-                Valuation::True => {
-                    self.cells.insert((*member, class), Cell::True);
-                }
-                Valuation::False => {
-                    self.cells.insert((*member, class), Cell::False);
-                }
-                Valuation::Missing => {
-                    self.cells.insert((*member, class), Cell::Missing);
-                }
-                Valuation::Undefined(cause) => {
-                    self.cells.insert((*member, class), Cell::Missing);
-                    self.undefined.insert((*member, class), cause);
-                }
+            for other in &classes {
+                self.read_cell(*member, *other)?;
             }
         }
         let held = |cell: Option<&Cell>, want: Cell| cell == Some(&want);

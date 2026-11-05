@@ -1408,6 +1408,18 @@ pub struct CallableFunction<'a> {
     pub result: &'a ValueType,
 }
 
+impl CallableFunction<'_> {
+    /// ADR-015 D-5: whether every parameter and result type is the same
+    /// type in every package, so an importing package may call this function.
+    pub fn is_importable(&self) -> bool {
+        self.parameters
+            .iter()
+            .map(|(_, parameter)| parameter)
+            .chain([self.result])
+            .all(family::is_package_independent)
+    }
+}
+
 /// A family `check`'s stage limit as a checking refusal's cause (L6): `CheckingLimitKind::try_from(Setting)` is the named reverse of
 /// `CheckingLimitKind::setting`, and a setting no checking limit has is a
 /// fault in the family, not in the input.

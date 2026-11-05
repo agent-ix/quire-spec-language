@@ -74,6 +74,26 @@ FR-109's `ClauseRunRequest`, with the selection
 - `over`: `{"reference": {"population": ..., "key": ...}}`, resolved in the
   observation at position 0, when the clause has an `over` parameter.
 
+### Trace-subject route
+
+The sibling `run_trace_subject_clause` entry SHALL accept the unit source,
+the selected temporal clause name, a declared record trace subject and a
+non-empty finite sequence of that subject's record samples in trace-position
+order. Each sample SHALL conform to the declared record type and supplies the
+value of the clause's subject parameter at that position. This route takes no
+model population, object reference, or `over` object. It is separate from
+`run_clause`: the existing `ClauseRunRequest`, its `Temporal` selection, and
+its model-population admission rules remain unchanged.
+
+The route SHALL accept the event-position false-extension profile and a
+closed finite trace. A sample's zero-based index is its temporal position.
+The route SHALL refuse an empty sequence, a sample that does not conform to
+the declared record type, or a clause whose declared subject does not match
+the supplied subject, before evaluating the formula. A missing clause SHALL
+be reported at stage `select`. It SHALL reject a temporal clause with no
+trace subject and SHALL not turn a model object into a trace subject.
+Timestamped and lasso traces are outside this route's contract.
+
 ## Outputs
 
 FR-109's `ClauseRunReport`: the disposition, the compiled `package_id` and
@@ -176,6 +196,29 @@ position (FR-327); `decisive.position` may be later or earlier than it.
   `violation`, an undefined evaluation included, exits with the violation
   exit, 10.
 
+### Trace-subject route behavior
+
+- `run_trace_subject_clause` SHALL compile the unit with FR-109's compile
+  rules, select the named temporal clause, check the supplied subject type
+  against the clause declaration, and evaluate the closed finite sequence
+  exactly once through the FR-327 TemporalTrace evaluator. It SHALL evaluate
+  each aggregate atom from the supplied record sample at each represented
+  position, using FR-194's window semantics and limits. It SHALL use the same
+  `ClauseRunReport` disposition and usage contract as `run_clause`.
+- A missing clause SHALL report stage `select` and
+  `missing_declaration`/`missing-name`. An empty sequence, a subject-type
+  mismatch or an unsupported profile/trace shape SHALL report stage `admit`
+  and `invalid_runtime_input`/`invalid-value`; a sample with a value that
+  does not conform to the declared record type SHALL report stage `admit`,
+  category `refusal`, and `invalid_runtime_input`/`invalid-value`. No formula
+  evaluation occurs after any such refusal.
+- The route SHALL map `InsufficientData{where, atom, count, min_count}` to
+  category `undefined` and exit 10, preserving all four fields in the report;
+  it SHALL write no `truth` and no counterexample. For a `Completed(false)`
+  result decided by a window aggregate, the report SHALL include FR-330's
+  `decisive` record naming that aggregate atom's occurrence and sample
+  position. These outcomes SHALL be reachable from source by this route.
+
 ### The decisive atom
 
 - At a visited position `i`, the **eligible positions** of an operator with
@@ -207,7 +250,8 @@ position (FR-327); `decisive.position` may be later or earlier than it.
     of its future counterpart over its eligible positions, taking the nearest
     eligible position first. The decisive position may therefore be earlier than
     the activation's.
-  - a window aggregate atom (FR-194): the atom, at the position it is read.
+  - a window aggregate atom (FR-194): the atom, at the position it is read
+    (over a trace subject, through the trace-subject spine route above).
 - If the descent reaches a position before the first position of the trace, or,
   under a false-extension profile, a position after the last position (where
   every atom reads false and no observation exists), the clause SHALL have no
@@ -232,7 +276,7 @@ position (FR-327); `decisive.position` may be later or earlier than it.
 | FR-330-AC-5 | From source, FR-327-AC-5's first clause, `always[0,2] holds(3 mod (2 - c.value) >= 0)` in the `Counter` unit, which compiles, over the `Finite` snapshots with `c.value` 0, 1, 2 reports `violation`, exit 10, position 2 and cause `UndefinedEvaluation` with `division-by-zero`. | Test (TC-847) |
 | FR-330-AC-6 | From source, a clause `Fair` (`always eventually holds(c.value = 2)` under `fair weak inc`) over `Lasso` with an empty prefix and loop 0, 1, 2 reports stage `evaluate`, `unsupported`, exit 21, cause `unsupported_projection`/`missing-fairness-premise` naming `fair weak whole inc`. | Test (TC-848) |
 | FR-330-AC-7 | From source, the `Counter` clause `always[0,1] holds(InUnit(c.value))` under event-position false-extension with `function InUnit using v(x: Int[0, 1]): Boolean pure { x >= 0 }`, whose `holds` condition completes for `c.value` 0 and, for `c.value` 2, refuses the `Coerce` of 2 into `Int[0, 1]` with kernel `integer_out_of_domain`/`outside-domain` and `expected` naming `Int[0, 1]` (FR-096-AC-8, TC-428), over `Finite` snapshots with `c.value` 0, 2 reports stage `evaluate`, `refusal`, exit 20, position 1, and an `outcome` `refused` with that code, cause, `expected` field and the condition's locus; it reports no `truth`, no `internal_fault` and no `UndefinedEvaluation`. | Test (TC-1160) |
-| FR-330-AC-8 | From source, FR-327-AC-7's `always[0,2] A` `on origin` written over the model `Counters::Counter` (`c: Counters::Counter`) is refused at stage `compile`, category `unsupported`, `unsupported_construct`/`expression-form`, exit 21, with one refusal at the `count` term: FR-194 admits a window aggregate only over a trace subject, so no snapshot is admitted and no report holds a position, `count` or `min_count`. The same clause over the non-model subject of FR-327-AC-7 returns its `InsufficientData` outcome (FR-327-AC-7). | Test (TC-847) |
+| FR-330-AC-8 | From source, FR-327-AC-7's `always[0,2] A` `on origin` written over the model `Counters::Counter` (`c: Counters::Counter`) is refused at stage `compile`, category `unsupported`, `unsupported_construct`/`expression-form`, exit 21, with one refusal at the `count` term: FR-194 admits a window aggregate only over a trace subject, so no snapshot is admitted and no report holds a position, `count` or `min_count`. The same clause over the non-model subject is run by `run_trace_subject_clause` and returns its `InsufficientData` outcome as specified by AC-17. | Test (TC-847) |
 | FR-330-AC-9 | From source, a clause under the finite-window profile run over `TraceInput::Timestamped` reports the outcomes of FR-501-AC-11 and never `unsupported_profile` or `ProfileNotEvaluated`; the same clause over `Finite` reports stage `admit`, `invalid_runtime_input`/`invalid-value`, and `Bounded` (event-position) over `Timestamped` reports the same. A `ledger` holding binding B at watermark 100 and a second request under B with watermark 60 reports stage `evaluate`, category `refusal`, `contradicted_dimension` `Watermark`. | Test (TC-1295, TC-1296) |
 | FR-330-AC-10 | From source, an event-position clause and a fixed-sample clause run over `TraceInput::Progressed` report the outcomes of FR-504-AC-1 and AC-2, and return the updated `ledger`; a `Progressed` request for an infinite-trace clause, or over a `Lasso`, reports stage `admit`, `invalid_runtime_input`/`invalid-value`. | Test (TC-1299) |
 | FR-330-AC-11 | From source, a `Timestamped` request whose `binding` asserts another clock name reports stage `admit`, `invalid_runtime_input`/`invalid-value` with `mismatched_dimension` `Clock`, a `Progressed` request whose `binding` asserts another profile reports `Profile`, and a `Timestamped` request with no `binding` reports stage `admit`, `invalid_runtime_input`/`invalid-value`. | Test (TC-1317) |
@@ -241,6 +285,7 @@ position (FR-327); `decisive.position` may be later or earlier than it.
 | FR-330-AC-14 | Over `Lasso` with prefix `c.value` 0 and loop 1, 2, `always holds(c.value <= 1)` is violated at position 0 with a `decisive` of `position` 2. Over `Progressed` carrying `c.value` 0, 1, 2 under event-position false-extension, `always[0,2] holds(c.value <= 1)` `on origin` reports a violation at position 0 and a `decisive` of `position` 2; over `Timestamped` FR-501-AC-1's trace, `always[0,5] holds(p)` reports a violation at position 0 and no `decisive`. | Test (TC-840) |
 | FR-330-AC-15 | Over the closed `Counter` trace `c.value` 0, 1, 2 under event-position false-extension, `always[0,3] holds(c.value <= 2)` `on origin` is violated at position 0 and carries no `decisive`, because it is false only at position 3, past the last position; `holds(c.value = 1) until[1,2] holds(c.value = 3)` `on origin` is violated at position 0 with a `decisive` of `position` 2 (the left operand is not required at the anchor, and is false at position 2 where the right operand is also false). | Test (TC-840) |
 | FR-330-AC-16 | Over `Model` whose initial state and steps reconstruct `c.value` 0, then the loop states 1, 2, `always holds(c.value <= 1)` is violated at position 0 with a `decisive` of `position` 2, the atom evaluated over the reconstructed state of position 2. | Test (TC-840) |
+| FR-330-AC-17 | From source, `run_trace_subject_clause` on FR-327-AC-7's non-model subject `c: Counter` and its `level` samples 0, 1, 2 runs `always[0,2] A` `on origin` and reports category `undefined`, exit 10, `InsufficientData{where: 2, atom: A, count: 0, min_count: 1}`, with no `truth` or counterexample; running `always[0,0] B` `on origin`, where `B` is `count where holds(c.level > 9) over past[0,0] min_count 0 >= 1`, reports `violation` at position 0 with a `decisive` naming `B`'s aggregate occurrence at position 0. An empty sample sequence, a sample whose record does not conform to `Counter`, a clause declared over another record type, and a model-subject clause without aggregate terms each refuse before formula evaluation; the existing `run_clause` request and model-population behavior are unchanged. | Test |
 
 ## Dependencies
 

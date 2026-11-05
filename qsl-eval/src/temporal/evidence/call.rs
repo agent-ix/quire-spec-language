@@ -1396,6 +1396,11 @@ fn evaluate(
             }
             return match refused {
                 TemporalRefusal::Fault(internal) => Err(CallFailure::Fault(internal)),
+                // The evidence letters read no S6a condition, so none can
+                // be refused.
+                TemporalRefusal::ConditionRefused { .. } => Err(CallFailure::Fault(
+                    InternalFault::new("temporal.evidence", "evidence-letters-refuse-no-condition"),
+                )),
                 // A refusal of the evaluation itself (for example two
                 // positions of one stamp with no usable order) is a result
                 // of a call that ran, not a refusal before any charge.
@@ -1632,7 +1637,6 @@ fn refusal_kind(refused: &TemporalRefusal) -> (&'static str, Vec<(String, String
             ("not-finite-window-profile", profile(of))
         }
         TemporalRefusal::UnorderedTie { position: at } => ("unordered-tie", position(at)),
-        TemporalRefusal::ConditionRefused { at } => ("condition-refused", position(at)),
         TemporalRefusal::NotTimedProfile { profile: of } => ("not-timed-profile", profile(of)),
         TemporalRefusal::NonPositiveLoopDelay => ("non-positive-loop-delay", Vec::new()),
         TemporalRefusal::LoopReentersBeforeLastStamp => {
@@ -1665,7 +1669,9 @@ fn refusal_kind(refused: &TemporalRefusal) -> (&'static str, Vec<(String, String
                 .to_owned(),
             ),
         ),
-        TemporalRefusal::Fault(_) => ("fault", Vec::new()),
+        TemporalRefusal::Fault(_) | TemporalRefusal::ConditionRefused { .. } => {
+            ("fault", Vec::new())
+        }
     }
 }
 

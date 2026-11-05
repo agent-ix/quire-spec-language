@@ -807,6 +807,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
             decisive_information(run, node, trace, &environments, reference, &disposition);
         let mut finished = report(disposition, usage, authenticated_temporal_selection.clone());
         finished.finite_window = window.report;
+        finished.refused_at = window.refused_at;
         finished.counterexample = counterexample;
         finished.decisive = decisive;
         if accepted {
@@ -839,6 +840,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
             decisive_information(run, node, trace, &environments, reference, &disposition);
         let mut finished = report(disposition, usage, authenticated_temporal_selection.clone());
         finished.finite_window = window.report;
+        finished.refused_at = window.refused_at;
         finished.counterexample = counterexample;
         finished.decisive = decisive;
         if accepted {
@@ -854,22 +856,12 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         reference,
         &mut meter,
     );
-    let mut refused_at = None;
-    let disposition = match (observed.stopped, observed.result) {
-        // A condition's refusal is reported as FR-109 reports a state
-        // clause's (`convert_outcome`); a failed call as `check_clause` does.
-        (Some(HoldsStop::Refused { at, evaluation }), _) => {
-            refused_at = Some(at.index());
-            refused_disposition(evaluation, run.package.graph(), run.sources)
-        }
-        (Some(HoldsStop::Failed(failure)), _) => match *convert_call_failure(failure) {
-            RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
-            other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
-        },
-        (None, Ok(outcome)) => ClauseDisposition::Temporal(verdict(outcome)),
-        (None, Err(TemporalRefusal::Fault(fault))) => ClauseDisposition::EvaluateFault(fault),
-        (None, Err(refusal)) => ClauseDisposition::TemporalRefusal(trace_refusal(refusal)),
-    };
+    let (disposition, refused_at) = observed_disposition(
+        observed.stopped,
+        observed.result,
+        run.package.graph(),
+        run.sources,
+    );
     let (disposition, counterexample) =
         with_counterexample(node, trace, disposition, observed.undefined);
     let accepted = !matches!(
@@ -890,6 +882,39 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         report.ledger = accepted_ledger.or_else(|| ledger.cloned());
     }
     report
+}
+
+/// The disposition of an observed run that `stopped` at a condition or
+/// returned `result`, and the position of the refused condition it stopped
+/// at. A condition's refusal is reported as FR-109 reports a state clause's
+/// (`convert_outcome`); a failed call as `check_clause` does.
+pub(super) fn observed_disposition(
+    stopped: Option<HoldsStop>,
+    result: Result<qsl_eval::temporal::TemporalOutcome, TemporalRefusal>,
+    graph: &CheckedGraph,
+    sources: &[Source],
+) -> (ClauseDisposition, Option<u64>) {
+    match (stopped, result) {
+        (Some(HoldsStop::Refused { at, evaluation }), _) => (
+            refused_disposition(evaluation, graph, sources),
+            Some(at.index()),
+        ),
+        (Some(HoldsStop::Failed(failure)), _) => (
+            match *convert_call_failure(failure) {
+                RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
+                other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
+            },
+            None,
+        ),
+        (None, Ok(outcome)) => (ClauseDisposition::Temporal(verdict(outcome)), None),
+        (None, Err(TemporalRefusal::Fault(fault))) => {
+            (ClauseDisposition::EvaluateFault(fault), None)
+        }
+        (None, Err(refusal)) => (
+            ClauseDisposition::TemporalRefusal(trace_refusal(refusal)),
+            None,
+        ),
+    }
 }
 
 /// The disposition of a refused `holds` condition's S6a `evaluation`, as
@@ -1048,9 +1073,14 @@ fn run_window(
     );
     let undefined = observed.undefined;
     match (observed.stopped, observed.result) {
-        (Some(HoldsStop::Refused { evaluation, .. }), _) => WindowRun::stopped(
-            refused_disposition(evaluation, run.package.graph(), run.sources),
-        ),
+        (Some(HoldsStop::Refused { at, evaluation }), _) => WindowRun {
+            refused_at: Some(at.index()),
+            ..WindowRun::stopped(refused_disposition(
+                evaluation,
+                run.package.graph(),
+                run.sources,
+            ))
+        },
         (Some(HoldsStop::Failed(failure)), _) => {
             let disposition = match *convert_call_failure(failure) {
                 RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
@@ -1085,6 +1115,7 @@ fn run_window(
                     (basis, support, premises, identity),
                 )),
                 undefined,
+                refused_at: None,
             }
         }
         (None, Err(TemporalRefusal::Fault(internal))) => {
@@ -1106,6 +1137,8 @@ struct WindowRun {
     report: Option<FiniteWindowReport>,
     /// The first undefined reading.
     undefined: Option<FirstUndefined>,
+    /// The position of the refused condition the run stopped at.
+    refused_at: Option<u64>,
 }
 
 impl WindowRun {
@@ -1116,6 +1149,7 @@ impl WindowRun {
             visits: 0,
             report: None,
             undefined: None,
+            refused_at: None,
         }
     }
 }

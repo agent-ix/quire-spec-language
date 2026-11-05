@@ -11,8 +11,9 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::{
-    evaluate, evaluate_at, unrolling, AtomReading, LetterStop, PositionRefusal, TemporalLetters,
-    TemporalOutcome, TemporalPosition, TemporalRefusal, TemporalTrace, UndefinedCause, Unrolling,
+    evaluate, evaluate_at, unrolling, AtomReading, CaptureReading, InsufficientData, LetterStop,
+    PositionRefusal, TemporalLetters, TemporalOutcome, TemporalPosition, TemporalRefusal,
+    TemporalTrace, UndefinedCause, Unrolling,
 };
 use qsl_foundation::diagnostic::StageFailure;
 use qsl_foundation::SourceIdentity;
@@ -180,6 +181,21 @@ struct Letters<'a> {
     uncounted_loop_edge: bool,
     /// The positions whose `holds` condition the S6a evaluation refuses.
     refused: Vec<u64>,
+    /// The readings forced on the `holds` atom of the given source text at
+    /// the given position, for a clause of several atoms.
+    forced: Vec<(u64, &'static str, Forced)>,
+    /// The positions whose `on each` `when` guard is refused.
+    refused_guards: Vec<u64>,
+    /// The positions whose capture initializer is refused.
+    refused_captures: Vec<u64>,
+}
+
+/// What a test forces an atom to read.
+#[derive(Clone, Copy)]
+enum Forced {
+    Refused,
+    Undefined,
+    ShortOfData,
 }
 
 impl<'a> Letters<'a> {
@@ -191,6 +207,9 @@ impl<'a> Letters<'a> {
             uncounted: Vec::new(),
             uncounted_loop_edge: false,
             refused: Vec::new(),
+            forced: Vec::new(),
+            refused_guards: Vec::new(),
+            refused_captures: Vec::new(),
         }
     }
 
@@ -253,22 +272,52 @@ impl TemporalLetters for Letters<'_> {
         else {
             panic!("the letter reads only holds atoms");
         };
+        let text = &self.fixture.text[span.start..span.end];
+        if let Some((_, _, forced)) = self
+            .forced
+            .iter()
+            .find(|(at, atom, _)| *at == position.index() && *atom == text)
+        {
+            return match forced {
+                Forced::Refused => Err(LetterStop::Refused),
+                Forced::Undefined => Ok(AtomReading::Undefined(UndefinedCause::Kernel(
+                    Undefined::DivisionByZero,
+                ))),
+                Forced::ShortOfData => Ok(AtomReading::Undefined(
+                    UndefinedCause::InsufficientData(InsufficientData {
+                        count: 0,
+                        min_count: 1,
+                    }),
+                )),
+            };
+        }
         let observation = *self
             .observations
             .get(usize::try_from(position.index()).expect("a small position"))
             .expect("the position is represented");
-        Ok(Self::reading(
-            &self.fixture.text[span.start..span.end],
-            observation,
-        ))
+        Ok(Self::reading(text, observation))
     }
 
     fn activation(
         &mut self,
-        _position: TemporalPosition,
+        position: TemporalPosition,
         _meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
-        panic!("these clauses have no `when` condition");
+        if self.refused_guards.contains(&position.index()) {
+            return Err(LetterStop::Refused);
+        }
+        Ok(AtomReading::True)
+    }
+
+    fn captures(
+        &mut self,
+        position: TemporalPosition,
+        _meter: &mut Meter,
+    ) -> Result<CaptureReading, LetterStop> {
+        if self.refused_captures.contains(&position.index()) {
+            return Err(LetterStop::Refused);
+        }
+        Ok(CaptureReading::Fixed)
     }
 
     fn counts_step(&self, position: TemporalPosition) -> bool {
@@ -1600,4 +1649,114 @@ fn a_refused_condition_stops_an_infinite_trace_prefix_and_lasso() {
     // A false atom at position 0 decides the prefix before the refusal.
     let (result, _) = run_refusing(&fx, finite(3), counters(&[6, 1, 2]), &[1]);
     assert_eq!(result, Ok(violated(0)));
+}
+
+/// [`run_refusing`] with `forced` readings on atoms.
+fn run_forced(
+    fixture: &Fixture,
+    observations: Vec<Observation>,
+    forced: &[(u64, &'static str, Forced)],
+) -> Result<TemporalOutcome, TemporalRefusal> {
+    let mut letters = Letters::new(fixture, observations);
+    letters.forced = forced.to_vec();
+    let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+    evaluate(&fixture.clause, finite(3), &mut letters, &mut meter)
+}
+
+const LOW: &str = "holds(c.level <= 5)";
+const HIGH: &str = "holds(c.level >= 0)";
+
+/// FR-327 "Undefined evaluation", "Refused condition": an atom short of data
+/// beside a refused condition at one position never decides the result, in
+/// either clause-node order, and an earlier position short of data does not
+/// hide a later refusal: "an earlier atom short of data SHALL NOT be
+/// returned".
+#[trace("TC-1160", "FR-327-AC-6")]
+#[test]
+fn a_refused_condition_is_returned_over_an_atom_short_of_data_in_either_node_order() {
+    let fx = counter(EVENT, &format!("always[0,2] ({LOW} and {HIGH})"));
+    let cases = [
+        [(1, LOW, Forced::ShortOfData), (1, HIGH, Forced::Refused)],
+        [(1, LOW, Forced::Refused), (1, HIGH, Forced::ShortOfData)],
+        [(0, LOW, Forced::ShortOfData), (1, HIGH, Forced::Refused)],
+    ];
+    for forced in cases {
+        assert_eq!(
+            run_forced(&fx, counters(&[0, 0, 0]), &forced),
+            refused_at(1)
+        );
+    }
+    // Without the refusal the short atom is the result, so the refusal above
+    // is what it lost to.
+    let result = run_forced(&fx, counters(&[0, 0, 0]), &[(1, LOW, Forced::ShortOfData)]);
+    assert!(
+        matches!(&result, Ok(TemporalOutcome::InsufficientData(found))
+            if found.at == TemporalPosition::new(1)),
+        "{result:?}"
+    );
+}
+
+/// FR-327 "Undefined evaluation": at one position an atom undefined earlier
+/// in clause-node order decides over a refused atom after it, and a refused
+/// atom earlier in clause-node order stops the position before an undefined
+/// atom after it is read.
+#[trace("TC-1160", "FR-327-AC-6")]
+#[test]
+fn an_undefined_atom_before_a_refused_atom_at_one_position_is_returned() {
+    let fx = counter(EVENT, &format!("always[0,2] ({LOW} and {HIGH})"));
+    let result = run_forced(
+        &fx,
+        counters(&[0, 0, 0]),
+        &[(1, LOW, Forced::Undefined), (1, HIGH, Forced::Refused)],
+    );
+    assert_eq!(result, Ok(undefined_at(1, Undefined::DivisionByZero)));
+    let result = run_forced(
+        &fx,
+        counters(&[0, 0, 0]),
+        &[(1, LOW, Forced::Refused), (1, HIGH, Forced::Undefined)],
+    );
+    assert_eq!(result, refused_at(1));
+}
+
+/// FR-327 "Refused condition": the refusal of an `on each` `when` guard
+/// stops the run at its position as a refused condition; an activation
+/// before it that evaluates false is returned instead.
+#[trace("TC-1160", "FR-327-AC-6")]
+#[test]
+fn a_refused_when_guard_is_a_refused_condition_at_its_position() {
+    let fx = fixture(
+        EVENT,
+        "c: Counter",
+        "on each (q: Counter) when (true)",
+        "always[0,0] holds(c.level <= 1)",
+    );
+    let run = |values: &[i64]| {
+        let mut letters = Letters::new(&fx, counters(values));
+        letters.refused_guards = vec![1];
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        evaluate(&fx.clause, finite(3), &mut letters, &mut meter)
+    };
+    assert_eq!(run(&[0, 0, 0]), refused_at(1));
+    assert_eq!(run(&[2, 0, 0]), Ok(violated(0)));
+}
+
+/// FR-327 "Refused condition": the refusal of a capture initializer at an
+/// activation is a refused condition at that position.
+#[trace("TC-1160", "FR-327-AC-6")]
+#[test]
+fn a_refused_capture_is_a_refused_condition_at_its_position() {
+    let fx = fixture(
+        EVENT,
+        "c: Counter",
+        "on each (q: Counter)",
+        "capture amount: Int[0, 9] = q.level; always[0,0] holds(c.level <= 1)",
+    );
+    let run = |values: &[i64]| {
+        let mut letters = Letters::new(&fx, counters(values));
+        letters.refused_captures = vec![1];
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        evaluate(&fx.clause, finite(3), &mut letters, &mut meter)
+    };
+    assert_eq!(run(&[0, 0, 0]), refused_at(1));
+    assert_eq!(run(&[2, 0, 0]), Ok(violated(0)));
 }
