@@ -32,16 +32,16 @@
 //! outside that agreement: only its own extent is asserted.
 
 use quire_contract_model::{
-    read_checked_package, CheckedNodeId, CheckedNodeTag, CheckedPackageDispatchResult,
-    CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageV2, CompleteLoweringProfileV2,
-    CompleteLoweringRecordV2,
+    CheckedNodeId, CheckedNodeTag, CheckedPackageDispatchResult, CheckedPackageEvidence,
+    CheckedPackageReadLimits, CheckedPackageV2, CompleteLoweringProfileV2,
+    CompleteLoweringRecordV2, read_checked_package,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
 use qsl_semantics::check::PackageDeclarations;
-use qsl_semantics::family::{classify_extent, ClaimExtent};
+use qsl_semantics::family::{ClaimExtent, classify_extent};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, Integer, IntegerInterval, NodeKey,
     PathSegment, Presence, ValueType,
@@ -53,7 +53,7 @@ use quire_semantic_value::declaration::{
 
 use super::tests::source_metre_units;
 use super::tests::{nodes, source, whole_unit, wire};
-use super::{emit_checked, emit_package, CheckedPackage, Emission, OmittedNode};
+use super::{CheckedPackage, Emission, OmittedNode, emit_checked, emit_package};
 
 const LIMIT: u64 = 1_000;
 
@@ -413,7 +413,7 @@ fn velocity_units() -> (
     std::collections::BTreeMap<&'static str, NodeKey>,
 ) {
     use qsl_semantics::value::{
-        admit_unit_graph, DimensionPreimage, NodeOwner, OwnerSelection, UnitPreimage,
+        DimensionPreimage, NodeOwner, OwnerSelection, UnitPreimage, admit_unit_graph,
     };
     let owner = json!({"kind": "source", "authority": "a", "identity": "u", "package_name": "pkg"});
     let mut keys = std::collections::BTreeMap::new();
@@ -542,7 +542,7 @@ fn a_non_root_unit_and_a_derived_dimension_are_emitted_and_read_by_ir() {
 #[trace("TC-440", "FR-097-AC-6")]
 #[test]
 fn tc_440_quantity_extent_agrees_with_ir_requires_bound() {
-    let (types, measure, wire, package, _) = emitted_measure();
+    let (types, measure, wire, package, metre) = emitted_measure();
     let (ir_id, wire_id) = declared(&wire, "Measure");
     let checked_type = ValueType::Composite(measure.key());
     let extent = classify_extent(&[(wire_id, &checked_type)], &types, LIMIT).unwrap();
@@ -552,6 +552,50 @@ fn tc_440_quantity_extent_agrees_with_ir_requires_bound() {
     {
         panic!("{disagreement}");
     }
+    let CompleteLoweringRecordV2::RequiresBound { unbounded_type, .. } = lowering else {
+        panic!("the bare unit position requires a bound: {lowering:?}");
+    };
+    let quire_exact::UnitId::Declared(metre_key) = metre else {
+        panic!("the fixture metre is a declared unit");
+    };
+    assert_eq!(
+        node_by_id(&wire, &unbounded_type),
+        wire_node(&wire, &metre_key),
+        "RequiresBound names the bare unit's exact structural id"
+    );
+}
+
+/// A compound unit is also an unbounded magnitude position. IR's refusal
+/// must name the `compound_unit` node itself, not one of its root units.
+#[trace("TC-440", "FR-097-AC-6")]
+#[test]
+fn tc_440_compound_quantity_requires_a_bound_at_its_structural_id() {
+    let (units, metre) = source_metre_units();
+    let quire_exact::UnitId::Declared(metre_key) = metre else {
+        panic!("the fixture metre is a declared unit");
+    };
+    let compound = quire_exact::UnitId::compound(vec![(metre_key, Integer::from(2_i64))]);
+    let area = record(11, "Area", vec![("value", ValueType::Quantity(compound))]);
+    let types = TypeEnvironment::new([area], [])
+        .expect("FR-143 admits Area")
+        .with_units(units);
+    let (wire, package, omitted) = emit_and_read(types);
+    assert!(omitted.is_empty(), "{omitted:?}");
+    let (ir_id, _) = declared(&wire, "Area");
+    let lowering = ir_lowering(&package, &ir_id);
+    let CompleteLoweringRecordV2::RequiresBound { unbounded_type, .. } = lowering else {
+        panic!("the bare compound unit position requires a bound: {lowering:?}");
+    };
+    let compound_nodes: Vec<_> = nodes(&wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "compound_unit")
+        .collect();
+    assert_eq!(compound_nodes.len(), 1, "the fixture has one compound unit");
+    assert_eq!(
+        serde_json::to_value(&unbounded_type).expect("the refusal id serializes"),
+        compound_nodes[0]["node_id"],
+        "RequiresBound names the compound unit's exact structural id"
+    );
 }
 
 /// Whether QSL's `extent` and IR's `lowering` of `name` agree, given QSL's
