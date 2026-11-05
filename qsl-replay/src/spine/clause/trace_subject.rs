@@ -213,11 +213,8 @@ pub fn run_trace_subject_clause(
             report.disposition,
             ClauseDisposition::Temporal(super::TemporalVerdict::Violated { .. })
         ) {
-            let ordinal = u64::try_from(atom).unwrap_or(u64::MAX);
-            let occurrence = OccurrenceKey::new(
-                node.identity(),
-                Origin::new(Role::new("expression"), ordinal),
-            );
+            let occurrence =
+                OccurrenceKey::new(node.identity(), Origin::new(Role::new("expression"), atom));
             report.decisive = Some(crate::TemporalDecisive::aggregate(
                 occurrence,
                 letters.decisive_position.unwrap_or(0),
