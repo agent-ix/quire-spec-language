@@ -3478,6 +3478,7 @@ fn x04_compound_results_feed_further_quantity_operations() {
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-8")]
 #[trace("QSpec-TC-193", "QSpec-FR-148-AC-6")]
 #[trace("QSpec-TC-194", "QSpec-FR-149-AC-13")]
+#[trace("TC-1091", "FR-397-AC-14")]
 #[test]
 fn x05_ieee_arithmetic_records_flags_and_float_ordering_composes() {
     let package = expression_package(TypeEnvironment::default(), true);
@@ -3582,10 +3583,30 @@ fn x05_ieee_arithmetic_records_flags_and_float_ordering_composes() {
         cause(&package, &operation(BinaryOperator::Less, "f", "h")),
         ill(IllTypedCause::TypeMismatch)
     );
-    assert_eq!(
-        cause(&package, &negation("f")),
-        ill(IllTypedCause::OperatorIneligible)
+    // FR-397-AC-14: an admitted IEEE profile makes unary negation valid;
+    // it flips the sign bit without recording a loss.
+    let negate_float = negation("f");
+    assert!(check_in(
+        &package,
+        &parameters,
+        &negate_float,
+        None,
+        CheckMode::Kernel,
+    )
+    .is_ok());
+    let (negated, negated_losses, _) = run_in_losses(
+        &package,
+        &parameters,
+        &negate_float,
+        None,
+        arguments(one, three),
+        UNLIMITED,
     );
+    completed_as(
+        &negated,
+        &Value::Float(IeeeValue::binary64(0xbff0_0000_0000_0000)),
+    );
+    assert!(negated_losses.is_empty());
     assert_eq!(
         cause(&package, &operation(BinaryOperator::Add, "f", "h")),
         ill(IllTypedCause::TypeMismatch)
