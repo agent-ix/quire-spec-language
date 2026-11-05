@@ -864,6 +864,10 @@ pub(crate) struct DecisiveWire {
     #[serde(skip_serializing_if = "Option::is_none")]
     index: Option<u64>,
     value_path: PathWire,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    aggregate: Option<OccurrenceWire>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    position: Option<u64>,
 }
 
 impl DecisiveWire {
@@ -873,6 +877,8 @@ impl DecisiveWire {
             element: encode_element(&decisive.element)?,
             index: decisive.index,
             value_path: PathWire::of(&decisive.value_path),
+            aggregate: decisive.aggregate.as_ref().map(OccurrenceWire::of),
+            position: decisive.position,
         })
     }
 }

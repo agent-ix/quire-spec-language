@@ -1166,12 +1166,35 @@ pub struct TemporalClauseNode {
     /// Each `holds` atom's checked condition and its slot count, by the
     /// atom's formula node index.
     conditions: BTreeMap<usize, (CheckedBody, usize)>,
+    /// Each aggregate atom's checked expressions and slot counts.
+    aggregates: BTreeMap<usize, CheckedAggregateConditions>,
     /// An `on each ... when (g)` activation's checked guard and its slot
     /// count.
     guard: Option<(CheckedBody, usize)>,
     /// Each capture's checked initializer and its slot count, in source
     /// order.
     captures: Vec<(CheckedBody, usize)>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct CheckedAggregateConditions {
+    value: Option<(CheckedBody, usize)>,
+    filter: Option<(CheckedBody, usize)>,
+    predicate: Option<(CheckedBody, usize)>,
+    threshold: (CheckedBody, usize),
+}
+
+/// Borrowed checked expressions of one temporal aggregate.
+#[derive(Clone, Copy)]
+pub struct CheckedAggregateConditionsRef<'a> {
+    /// Numeric value expression, when the aggregate has one.
+    pub value: Option<(CheckedNode<'a>, usize)>,
+    /// Optional window filter.
+    pub filter: Option<(CheckedNode<'a>, usize)>,
+    /// Fraction predicate, when applicable.
+    pub predicate: Option<(CheckedNode<'a>, usize)>,
+    /// Comparison threshold expression.
+    pub threshold: (CheckedNode<'a>, usize),
 }
 
 impl DebugWith for TemporalClauseNode {
@@ -1182,6 +1205,7 @@ impl DebugWith for TemporalClauseNode {
             claim,
             over,
             conditions,
+            aggregates,
             guard,
             captures,
         } = self;
@@ -1191,6 +1215,7 @@ impl DebugWith for TemporalClauseNode {
             .field("claim", &claim)
             .field("over", &NodeKeyDebug(over, table))
             .field("conditions", &conditions)
+            .field("aggregates", &aggregates)
             .field("guard", &guard)
             .field("captures", &captures)
             .finish()
@@ -1244,6 +1269,29 @@ impl TemporalClauseNode {
         self.conditions
             .get(&atom.index())
             .map(|(body, slots)| (body.root(), *slots))
+    }
+
+    /// The aggregate atom's typed expressions and their evaluation slots.
+    pub fn aggregate_conditions(
+        &self,
+        atom: FormulaNodeId,
+    ) -> Option<CheckedAggregateConditionsRef<'_>> {
+        let aggregate = self.aggregates.get(&atom.index())?;
+        Some(CheckedAggregateConditionsRef {
+            value: aggregate
+                .value
+                .as_ref()
+                .map(|(body, slots)| (body.root(), *slots)),
+            filter: aggregate
+                .filter
+                .as_ref()
+                .map(|(body, slots)| (body.root(), *slots)),
+            predicate: aggregate
+                .predicate
+                .as_ref()
+                .map(|(body, slots)| (body.root(), *slots)),
+            threshold: (aggregate.threshold.0.root(), aggregate.threshold.1),
+        })
     }
 
     /// The checked Boolean guard of an `on each ... when (g)` activation and
@@ -6382,6 +6430,30 @@ impl PackageDeclarations {
                         .holds
                         .into_iter()
                         .map(|(atom, condition)| (atom, (condition.body, condition.slots)))
+                        .collect(),
+                    aggregates: conditions
+                        .aggregates
+                        .into_iter()
+                        .map(|(atom, aggregate)| {
+                            (
+                                atom,
+                                CheckedAggregateConditions {
+                                    value: aggregate
+                                        .value
+                                        .map(|condition| (condition.body, condition.slots)),
+                                    filter: aggregate
+                                        .filter
+                                        .map(|condition| (condition.body, condition.slots)),
+                                    predicate: aggregate
+                                        .predicate
+                                        .map(|condition| (condition.body, condition.slots)),
+                                    threshold: (
+                                        aggregate.threshold.body,
+                                        aggregate.threshold.slots,
+                                    ),
+                                },
+                            )
+                        })
                         .collect(),
                 })
             })

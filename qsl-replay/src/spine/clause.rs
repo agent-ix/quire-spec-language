@@ -30,6 +30,7 @@ use quire_semantic_value::catalog::InternalFault;
 
 mod progress;
 mod temporal;
+mod trace_subject;
 pub use progress::{
     ContradictedDimension, LedgerBinding, ObservedPosition, ProgressAssertion, ProgressClosure,
     ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressLedgerEntry,
@@ -42,6 +43,7 @@ pub use temporal::{
     TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey, TimestampedWindow,
     TraceBinding, TraceInput,
 };
+pub use trace_subject::{run_trace_subject_clause, TraceSubjectClauseRequest};
 
 use super::call::{convert_call_failure, convert_outcome, select};
 pub use super::call::{CallOutcome, CallValue, RunRefusal};
@@ -603,6 +605,8 @@ pub enum TemporalUndefinedCause {
     /// A window aggregate held fewer values than its `min_count` (ADR-024
     /// WA-4).
     InsufficientData {
+        /// The aggregate atom's zero-based formula occurrence.
+        atom: usize,
         /// The values the window held.
         count: u64,
         /// The term's `min_count`.

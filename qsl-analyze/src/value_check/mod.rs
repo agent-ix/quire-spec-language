@@ -165,7 +165,7 @@ fn reproduce(
 
 /// Confirm a candidate violation an external source reports: `refuted` only
 /// when the evaluator violates the goal at it, `replay-parity` otherwise.
-fn confirm_reported(
+pub(crate) fn confirm_reported(
     target: &ValueTarget<'_>,
     reported: &[Value],
     cancel: &Cancel,
@@ -433,7 +433,7 @@ pub(crate) enum ValueReport {
     Unsupported(ClaimForm, ValueCheckUnsupported),
 }
 
-fn invalid_input() -> Refusal {
+pub(crate) fn invalid_input() -> Refusal {
     Refusal::Declined(
         ProofRefusalCause::InvalidInput,
         DeclineCode::Qsl(qsl_foundation::Code::InvalidRuntimeInput),
@@ -441,7 +441,7 @@ fn invalid_input() -> Refusal {
     )
 }
 
-fn incomplete_input() -> Refusal {
+pub(crate) fn incomplete_input() -> Refusal {
     Refusal::Declined(
         ProofRefusalCause::IncompleteInput,
         DeclineCode::Qsl(qsl_foundation::Code::MissingDeclaration),

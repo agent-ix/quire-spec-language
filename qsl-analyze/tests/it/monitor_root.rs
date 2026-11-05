@@ -803,3 +803,50 @@ fn retained_source_record_rows_name_the_final_bindings_and_the_ir_join_accepts_t
         );
     }
 }
+
+/// FR-251-AC-43 / TC-1081 step 27: the plan's subject (clause node and claim
+/// occurrence) selects, through the returned emission's temporal binding
+/// rows, the clause declaration and claim occurrence the plan-root package
+/// holds, as the strict reader admits it: the declaration the plan root's
+/// `clause` member names and the declaration of that occurrence's name row.
+#[trace("TC-1081", "FR-251-AC-43")]
+#[test]
+fn the_subject_occurrence_selects_the_emitted_clause_claim_after_the_writer_rekey() {
+    let second = "temporal D using t over (c: M::ConfigVersion) clock \"model-time\" on origin { eventually[0 ms, 3 ms] holds(c.versionNumber = 3) }";
+    let unit = unit_source(ROOT_SHAPES[0], second, true, "on origin");
+    let mut selected = Vec::new();
+    for clause in ["C", "D"] {
+        let root = root_of(&unit, clause, &target()).expect(clause);
+        let subject = root.plan.subject();
+        let ordinal = subject.occurrence().origin().ordinal();
+        let declaration = root
+            .emission
+            .temporal_binding_rows()
+            .declaration(subject.clause_node(), ordinal)
+            .expect("the subject selects an emitted declaration")
+            .clone();
+        let package = admitted(&root);
+        assert_eq!(package.monitor_plans().len(), 1);
+        let plan = package.monitor_plans().next().unwrap();
+        assert_eq!(plan.clause(), &declaration, "the root binds the selection");
+        let names = package.temporal_clause_names().expect("name rows");
+        let row = names
+            .iter()
+            .find(|row| row.declaration == declaration && row.occurrence == ordinal)
+            .expect("the selected occurrence has a name row");
+        assert_eq!(row.name.as_ref(), subject.clause_name());
+        assert_eq!(row.name.as_ref(), clause);
+        assert!(
+            root.emission
+                .temporal_binding_rows()
+                .declaration(subject.clause_node(), ordinal + 1)
+                .is_none(),
+            "an occurrence the package does not hold selects nothing"
+        );
+        selected.push(declaration);
+    }
+    assert_ne!(
+        selected[0], selected[1],
+        "each subject selects its own clause"
+    );
+}

@@ -682,6 +682,7 @@ fn insufficient_data_window_limit_and_family_undefined_rows_round_trip() {
         TemporalVerdict::Undefined {
             at: 0,
             cause: crate::spine::TemporalUndefinedCause::InsufficientData {
+                atom: 0,
                 count: 1,
                 min_count: 5,
             },
@@ -709,6 +710,12 @@ fn insufficient_data_window_limit_and_family_undefined_rows_round_trip() {
             member,
         );
     }
+    refuses(
+        &edited(&insufficient, |value| {
+            value["disposition"]["temporal"]["atom"] = json!(0);
+        }),
+        "atom",
+    );
 
     // A wire vector: a clause run has no window-limit input.
     let window = round_trips(&with_disposition(ClauseDisposition::Temporal(

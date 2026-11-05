@@ -22,6 +22,9 @@ use qsl_analyze::analyze::{
     analyze_items, value_item, AnalyzeItem, AnalyzeRecord, DispositionKind, Engine, Engines,
     Settlement,
 };
+use qsl_analyze::external_provider::{
+    provider_item, ExternalProvider, ProviderRequest, ProviderVerdict,
+};
 use qsl_analyze::value_check::{manifest, ValueRequest};
 use qsl_foundation::RequestIndex;
 use qsl_package::CheckedPackage;
@@ -1719,4 +1722,343 @@ fn a_mathematical_integer_division_counterexample_replays_to_the_violation() {
     };
     assert_eq!(disposed.kind, DispositionKind::Unsupported);
     assert!(record.terminal().is_none(), "no proved or refuted verdict");
+}
+
+// ---- the external provider arm (FR-281 "External provider arm") ----
+//
+// Every provider below is a deterministic test double that returns a fixed
+// verdict. It exercises QSL's arm; it is not a cvc5 or Z3 run, so none of
+// these tests carries QSpec FR-147-AC-7, FR-147-AC-8 or TC-266, and none
+// stands in for the DIV-14 cross-check.
+
+/// A provider that reports `verdict` and counts its calls.
+#[derive(Debug)]
+struct Fake {
+    verdict: ProviderVerdict,
+    calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl ExternalProvider for Fake {
+    fn check(&self, _request: &ProviderRequest<'_, '_>, _cancel: &Cancel) -> ProviderVerdict {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.verdict.clone()
+    }
+}
+
+const SMT: &str = "qsl.test-smt";
+
+fn smt_descriptor(mode: Mode) -> qsl_route::BackendDescriptor {
+    smt_descriptor_of(mode, qsl_route::ProviderOrigin::Linked, None)
+}
+
+fn smt_descriptor_of(
+    mode: Mode,
+    origin: qsl_route::ProviderOrigin,
+    max_cases: Option<u64>,
+) -> qsl_route::BackendDescriptor {
+    let members = qsl_route::ManifestMembers {
+        domains: Some(&[qsl_foundation::bound::DomainKind::Integer.to_wire()]),
+        fairness_kinds: None,
+        evidence_kinds: None,
+        memory_models: None,
+        reductions: None,
+    };
+    let advertised = [(
+        Some(Capability::ValueValidity.to_wire()),
+        Some(mode.to_wire()),
+    )];
+    let candidate = qsl_route::Candidate::new(qsl_foundation::BackendId::new(SMT));
+    match max_cases {
+        None => qsl_route::descriptor_from_manifest(candidate, origin, advertised, members),
+        Some(count) => qsl_route::descriptor_from_manifest_with_max_cases(
+            candidate,
+            origin,
+            advertised,
+            members,
+            qsl_route::MaxCasesMember::Count(count),
+        ),
+    }
+    .expect("a well-formed descriptor")
+}
+
+fn fake(verdict: ProviderVerdict) -> (Fake, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let fake = Fake {
+        verdict,
+        calls: calls.clone(),
+    };
+    (fake, calls)
+}
+
+/// The arm's engines with the provider registered beside it.
+fn engines_with_provider(
+    verdict: ProviderVerdict,
+) -> (Engines, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    engines_under(verdict, smt_descriptor(Mode::Unbounded))
+}
+
+fn engines_under(
+    verdict: ProviderVerdict,
+    descriptor: qsl_route::BackendDescriptor,
+) -> (Engines, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    let (provider, calls) = fake(verdict);
+    let mut engines = Engines::qsl().unwrap();
+    engines
+        .with(Engine::external(descriptor, Box::new(provider)).unwrap())
+        .unwrap();
+    (engines, calls)
+}
+
+fn provider_run(engines: &Engines, package: &CheckedPackage, key: &OccurrenceKey) -> AnalyzeRecord {
+    let target = ValueTarget::select(package, "q", key);
+    analyze_items(
+        engines,
+        vec![provider_item(
+            index(),
+            package,
+            key,
+            &qsl_foundation::BackendId::new(SMT),
+            target,
+        )],
+        &guarded(),
+    )
+    .remove(0)
+}
+
+const UNGUARDED: &str = "function q using v(a: Integer, b: Integer): Integer pure { a div b }";
+const GUARDED: &str =
+    "function q using v(a: Integer, b: Integer): Integer pure { if b != 0 then a div b else 0 }";
+
+/// FR-281-AC-14: a provider's `refuted` counterexample is replayed at its own
+/// integers and settles `refuted` carrying it; a `proved` verdict settles
+/// `proved`, `inductive` at depth 0, `uncertified`.
+#[trace("FR-281-AC-14", "TC-1337")]
+#[test]
+fn a_provider_counterexample_that_replays_settles_refuted_and_a_proof_settles_proved() {
+    let package = package_of(UNGUARDED);
+    let key = only_scalar_key(&package, "q");
+    let at = vec![integer(1_i128 << 100), integer(0)];
+    let (engines, calls) = engines_with_provider(ProviderVerdict::Refuted {
+        counterexample: at.clone(),
+    });
+    let record = provider_run(&engines, &package, &key);
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let terminal = record.terminal().expect("a terminal record");
+    assert_eq!(terminal.value(), &TerminalValue::Refuted);
+    assert_eq!(terminal.backend().map(|b| b.as_str()), Some(SMT));
+    let kept = record.value_check.as_ref().expect("the counterexample");
+    assert_eq!(
+        format!("{:?}", kept.reproduced.assignment()),
+        format!("{at:?}"),
+        "the integers are not narrowed"
+    );
+    assert_eq!(kept.claim, key);
+
+    let package = package_of(GUARDED);
+    let key = only_scalar_key(&package, "q");
+    let (engines, _) = engines_with_provider(ProviderVerdict::Proved);
+    let record = provider_run(&engines, &package, &key);
+    let terminal = record.terminal().expect("a terminal record");
+    assert_eq!(terminal.backend().map(|b| b.as_str()), Some(SMT));
+    assert_eq!(
+        terminal.value(),
+        &TerminalValue::Proved {
+            basis: ProofBasis::Inductive { depth: 0 },
+            certification: Certification::Uncertified,
+        }
+    );
+    assert!(record.value_check.is_none());
+}
+
+/// FR-281-AC-15: a counterexample the replay does not reproduce, or that is no
+/// assignment of the parameters, is never `refuted`; `unknown` is
+/// `inconclusive` `solver-inconclusive`.
+#[trace("FR-281-AC-15", "TC-1337")]
+#[test]
+fn a_provider_counterexample_that_does_not_replay_is_not_refuted() {
+    let package = package_of(UNGUARDED);
+    let key = only_scalar_key(&package, "q");
+    for counterexample in [
+        vec![integer(7), integer(2)],
+        vec![integer(0)],
+        vec![Value::Boolean(true), integer(0)],
+    ] {
+        let (engines, calls) = engines_with_provider(ProviderVerdict::Refuted {
+            counterexample: counterexample.clone(),
+        });
+        let record = provider_run(&engines, &package, &key);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(
+            matches!(
+                terminal(&record),
+                TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+            ),
+            "{counterexample:?}: {:?}",
+            record.settlement
+        );
+        assert!(record.value_check.is_none(), "{counterexample:?}");
+    }
+    let (engines, _) = engines_with_provider(ProviderVerdict::Unknown);
+    let record = provider_run(&engines, &package, &key);
+    assert!(matches!(
+        terminal(&record),
+        TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive { .. })
+    ));
+    assert!(record.value_check.is_none());
+}
+
+/// FR-281-AC-16: the bounded arm's item over an unbounded `Integer` claim
+/// settles the same with a provider registered as without one, and the
+/// provider is not called (the FND-002 control for FR-495-AC-7).
+#[trace("FR-281-AC-16", "TC-1337")]
+#[test]
+fn registering_a_provider_leaves_the_bounded_arms_unbounded_item_requires_bound() {
+    let package = package_of(UNGUARDED);
+    let key = only_scalar_key(&package, "q");
+    let (with_provider, calls) = engines_with_provider(ProviderVerdict::Proved);
+    let settled = |engines: &Engines| {
+        let record = run_in(engines, &package, &key, "q", Ask::search());
+        let Settlement::Disposed(disposed) = &record.settlement else {
+            panic!("a disposition, not {:?}", record.settlement)
+        };
+        assert!(record.value_check.is_none());
+        disposed.clone()
+    };
+    let beside = settled(&with_provider);
+    let alone = settled(&Engines::qsl().unwrap());
+    assert_eq!(beside, alone);
+    assert_eq!(beside.kind, DispositionKind::Unsupported);
+    assert_eq!(
+        beside.backend.as_ref().map(|b| b.as_str()),
+        Some(manifest::BACKEND_ID)
+    );
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+/// FR-281-AC-17: a provider is accepted only under a descriptor advertising
+/// `value-validity` in the `unbounded` mode.
+#[trace("FR-281-AC-17", "TC-1337")]
+#[test]
+fn a_provider_is_refused_under_a_bounded_only_descriptor() {
+    let (provider, calls) = fake(ProviderVerdict::Proved);
+    let refusal = Engine::external(smt_descriptor(Mode::Bounded), Box::new(provider))
+        .expect_err("bounded only");
+    assert_eq!(refusal.backend.as_str(), SMT);
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let (provider, _) = fake(ProviderVerdict::Proved);
+    let engine = Engine::external(smt_descriptor(Mode::Unbounded), Box::new(provider)).unwrap();
+    assert_eq!(engine.id().as_str(), SMT);
+}
+
+/// FR-281-AC-18: a first-party provider's proof is `uncertified`, a plugin's
+/// `trusted` (QSpec FR-331, FR-354).
+#[trace("FR-281-AC-18", "TC-1337")]
+#[test]
+fn a_provider_proof_is_uncertified_first_party_and_trusted_as_a_plugin() {
+    use qsl_route::ProviderOrigin;
+    let package = package_of(GUARDED);
+    let key = only_scalar_key(&package, "q");
+    for (origin, certification) in [
+        (ProviderOrigin::Linked, Certification::Uncertified),
+        (ProviderOrigin::Process, Certification::Trusted),
+    ] {
+        let (engines, _) = engines_under(
+            ProviderVerdict::Proved,
+            smt_descriptor_of(Mode::Unbounded, origin, None),
+        );
+        let record = provider_run(&engines, &package, &key);
+        assert_eq!(
+            terminal(&record),
+            &TerminalValue::Proved {
+                basis: ProofBasis::Inductive { depth: 0 },
+                certification,
+            },
+            "{origin:?}"
+        );
+    }
+}
+
+/// A provider that cancels the run during its check, then reports `verdict`.
+#[derive(Debug)]
+struct Cancelling(ProviderVerdict);
+
+impl ExternalProvider for Cancelling {
+    fn check(&self, _request: &ProviderRequest<'_, '_>, cancel: &Cancel) -> ProviderVerdict {
+        cancel.cancel(quire_exact::CancelCause::Deadline);
+        self.0.clone()
+    }
+}
+
+/// FR-281-AC-19: a replay that exhausts the case budget, and a cancelled
+/// run, settle `incomplete`, never `refuted`.
+#[trace("FR-281-AC-19", "TC-1337")]
+#[test]
+fn a_provider_item_stopped_by_the_case_budget_or_cancellation_is_incomplete() {
+    let package = package_of(UNGUARDED);
+    let key = only_scalar_key(&package, "q");
+    let at = vec![integer(1_i128 << 100), integer(0)];
+    let refuted = ProviderVerdict::Refuted {
+        counterexample: at.clone(),
+    };
+
+    let (engines, _) = engines_under(
+        refuted.clone(),
+        smt_descriptor_of(Mode::Unbounded, qsl_route::ProviderOrigin::Linked, Some(1)),
+    );
+    let record = provider_run(&engines, &package, &key);
+    assert!(
+        matches!(
+            terminal(&record),
+            TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                limit: ModelCheckLimit::ValueCheckMaxCases,
+                ..
+            })
+        ),
+        "{:?}",
+        record.settlement
+    );
+    assert!(record.value_check.is_none());
+
+    let (engines, calls) = engines_with_provider(refuted.clone());
+    let cancel = Cancel::new();
+    cancel.cancel(quire_exact::CancelCause::Deadline);
+    let target = ValueTarget::select(&package, "q", &key);
+    let record = analyze_items(
+        &engines,
+        vec![provider_item(
+            index(),
+            &package,
+            &key,
+            &qsl_foundation::BackendId::new(SMT),
+            target,
+        )],
+        &cancel,
+    )
+    .remove(0);
+    assert!(matches!(
+        terminal(&record),
+        TerminalValue::Incomplete(IncompleteCause::Cancelled { .. })
+    ));
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+    let mut engines = Engines::qsl().unwrap();
+    engines
+        .with(
+            Engine::external(
+                smt_descriptor(Mode::Unbounded),
+                Box::new(Cancelling(refuted)),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let record = provider_run(&engines, &package, &key);
+    assert!(
+        matches!(
+            terminal(&record),
+            TerminalValue::Incomplete(IncompleteCause::Cancelled { .. })
+        ),
+        "{:?}",
+        record.settlement
+    );
+    assert!(record.value_check.is_none());
 }
