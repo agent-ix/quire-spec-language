@@ -376,8 +376,45 @@ pub(crate) struct Compiled {
     /// The checked unit the package was emitted from.
     #[cfg(feature = "checked-handoff")]
     pub(crate) checked: CheckedUnit,
+    /// `qsl_replay::source_inventory::qsl_inventory` over the check outcome
+    /// with the formal identity of the source path (FR-517).
+    #[cfg(feature = "checked-handoff")]
+    pub(crate) inventory:
+        Result<quire_contract_model::source_obligation::SourceInventoryOutcome, String>,
     /// The emitted package and the evidence its reader needs.
     pub(crate) emitted: EmittedUnit,
+}
+
+/// The formal identity of the unit at `path` (FR-517 "The inventory file"):
+/// the file name with every character outside the `SourceDocumentId`
+/// alphabet replaced by `_`, prefixed with `u` unless it starts with an ASCII
+/// letter; revision 1.
+#[cfg(feature = "checked-handoff")]
+fn formal_identity(path: &Path) -> Result<quire_contract_model::SourceIdentity, String> {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let mut document: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if !document.starts_with(|c: char| c.is_ascii_alphabetic()) {
+        document.insert(0, 'u');
+    }
+    let document = quire_contract_model::SourceDocumentId::new(document)
+        .map_err(|refused| format!("{refused:?}"))?;
+    let revision =
+        quire_contract_model::SourceRevision::new(1).map_err(|refused| format!("{refused:?}"))?;
+    Ok(quire_contract_model::SourceIdentity::new(
+        document, revision,
+    ))
 }
 
 /// The refusal a failed stage becomes.
@@ -447,18 +484,23 @@ pub(crate) fn compile(request: &Request) -> Result<Compiled, Error> {
     let admitted = spine::select(&parsed, &packages, limits.model, &cancel)
         .map_err(refusal)?
         .into_value();
-    let checked = spine::check_with_temporal_selections_and_execution_points(
-        &parsed,
-        package.as_str().to_owned(),
-        &points,
-        &clause_clock_selections(&parsed, &request.temporal_selections),
-        &admitted,
-        &dependencies,
-        limits,
-        &cancel,
-    )
-    .map_err(refusal)?
-    .into_value();
+    let outcome: Result<_, spine::FrontEndFailure> =
+        spine::check_with_temporal_selections_and_execution_points(
+            &parsed,
+            package.as_str().to_owned(),
+            &points,
+            &clause_clock_selections(&parsed, &request.temporal_selections),
+            &admitted,
+            &dependencies,
+            limits,
+            &cancel,
+        );
+    #[cfg(feature = "checked-handoff")]
+    let inventory = formal_identity(&request.source).and_then(|formal| {
+        qsl_replay::source_inventory::qsl_inventory(Some(&parsed), &outcome, &formal)
+            .map_err(|refused| refused.to_string())
+    });
+    let checked = outcome.map_err(refusal)?.into_value();
     let selections = clock_selections(&checked, &request.temporal_selections)?;
     let emitted = spine::package_with_temporal_selections(
         &checked,
@@ -477,6 +519,8 @@ pub(crate) fn compile(request: &Request) -> Result<Compiled, Error> {
         libraries,
         #[cfg(feature = "checked-handoff")]
         checked,
+        #[cfg(feature = "checked-handoff")]
+        inventory,
         emitted,
     })
 }

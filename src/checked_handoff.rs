@@ -41,6 +41,7 @@
 //! ```
 
 mod corpus;
+mod inventory;
 mod selection;
 mod tree;
 
@@ -54,10 +55,14 @@ use quire_contract_model::{
 use crate::emit_checked_v2::{self, Compiled};
 
 pub use corpus::{Expected, ReaderRefusal, Stage};
+pub use inventory::{Inventory, InventoryReadError, InventoryRow, InventorySource};
 pub use selection::{Selection, SelectionAxis, SelectionReadError, SelectionRefusal};
 
 /// The format of `selection.json`.
 pub const SELECTION_FORMAT: &str = "quire.checked-handoff.selection/1";
+
+/// The format of `inventory.json`.
+pub const INVENTORY_FORMAT: &str = "quire.checked-handoff.inventory/1";
 
 /// The format of `mutations/manifest.json`.
 pub const MUTATIONS_FORMAT: &str = "quire.checked-handoff.mutations/1";
@@ -289,6 +294,7 @@ pub fn write_with(
     files.insert("checked-package.json", bytes.clone())?;
     insert_inputs(&mut files, &compiled)?;
     files.insert("selection.json", selection.to_bytes()?)?;
+    files.insert("inventory.json", inventory_file(&compiled, &bytes)?)?;
     files.insert("identities.json", identity_file(&compiled, &package)?)?;
     files.insert(
         "equality.json",
@@ -301,6 +307,18 @@ pub fn write_with(
         }
     }
     tree::publish(directory, &files, environment)
+}
+
+/// `inventory.json` (FR-517 "The inventory file"): `qsl_inventory` over the
+/// in-process unit, joined to the wire node ids of the emitted `bytes`.
+fn inventory_file(compiled: &Compiled, bytes: &[u8]) -> Result<Vec<u8>, Error> {
+    let outcome = compiled
+        .inventory
+        .as_ref()
+        .map_err(|what| Error::Unnameable {
+            what: format!("inventory: {what}"),
+        })?;
+    Inventory::derive(outcome, bytes)?.to_bytes()
 }
 
 /// `identities.json` (FR-531 "The identity file"): the selected model identity
