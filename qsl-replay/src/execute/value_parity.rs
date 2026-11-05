@@ -234,7 +234,7 @@ fn settle(
     )?;
     let compiled = recompile(&request, &limits)?;
     let package = compiled.checked.package();
-    let call = select(&compiled, function, Claim::ValueParity)?;
+    let call = select(compiled.own(), function, Claim::ValueParity)?;
     check_identity(&request, package, &call, function)?;
     let joined = arguments(&call, request.source(), request.obligation_identity(), None)?;
     let limits = request.accounting_limits();
@@ -246,7 +246,7 @@ fn settle(
         &joined,
         &limits,
         &mut run,
-        &compiled.reference_model(),
+        &compiled.reference_model(package),
     ) {
         Ok(converted) => converted,
         Err(Stopped::Refusal(refusal)) => return Err(*refusal),

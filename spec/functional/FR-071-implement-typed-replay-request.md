@@ -209,9 +209,19 @@ key or request `over` member on that arm.
   byte-provision entry.
 - The request decoder SHALL refuse an observed-counterexample arm on a
   function or frame target.
-- The replay target SHALL hold typed names only (`QualifiedName`,
-  `Identifier`); the request's public constructors and decoders SHALL NOT
-  accept a bare `&str` or `String` in any replay target position.
+- A `function` replay target SHALL carry an optional `function_owner`, the
+  `LibraryName` of the direct import that declares the function, beside the
+  function's `QualifiedName`. Absent, the target names a function of the
+  unit; present, it names a function of that library (FR-098, FR-121). The
+  owner is part of the target, never inferred from the name or the
+  dependencies. A `function_owner` on a request with no `function` member
+  SHALL be refused at decode as `invalid_runtime_input`/`unknown-member` at
+  `/replay/function_owner`, before the byte-provision rule, and the target
+  round-trips with its owner.
+- The replay target SHALL hold typed names only
+  (`QualifiedName`, `Identifier`, `LibraryName`); the request's public
+  constructors and decoders SHALL NOT accept a bare `&str` or `String` in any
+  replay target position.
 - A request whose source is `ModelGraph` SHALL carry no generic replay
   target. The decoder SHALL accept that absence for `ModelGraph` and no other
   source, and SHALL refuse target members, arguments, occurrence key or

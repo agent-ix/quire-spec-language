@@ -347,7 +347,7 @@ fn admit(prepared: &Prepared, operands: &[WitnessValue; 2]) -> Result<Admission,
             std::slice::from_ref(witness),
             &limits,
             &mut run,
-            &prepared.compiled.reference_model(),
+            &prepared.compiled.reference_model(package),
         ) {
             Ok(converted) => converted,
             Err(Stopped::Refusal(refusal)) => match *refusal {

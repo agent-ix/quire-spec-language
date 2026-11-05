@@ -17,7 +17,8 @@ request's byte provision, selects and calls the
 function, settles the verdict, and refuses each ADR-013 O-26 case with a
 typed variant and no partial result.
 
-Scope: FR-098-AC-1 to FR-098-AC-7, FR-098-AC-22 to FR-098-AC-27, FR-100-AC-20
+Scope: FR-098-AC-1 to FR-098-AC-7, FR-098-AC-22 to FR-098-AC-27,
+FR-098-AC-32 and FR-098-AC-33, FR-100-AC-20
 for the call depth S6a reports, and FR-001-AC-6 for the recompile's source
 labels.
 
@@ -83,6 +84,13 @@ occurrence key unless a step names another occurrence.
     `location` and `frame_depth`; then replay `d` at its
     `10 mod (n - 1)` record's occurrence with `n` = 0, 1, 2 and 3.
 
+12. Over step 7's library, with `both` and `pick` (over a record `R`) added
+    and the unit's own `big` (`x < 2`) added, replay `{owner test/units, big}`
+    with `x` = 3 and 7, `{owner test/units, both}` with (1, 5) and (5, 1), and
+    the unit's `big` without an owner with `x` = 1. Replay owners `test/absent`
+    and, from a unit importing only a library `test/wrap` that imports `test/units`, `test/units`, and
+    `{owner test/units, nope}` and `{owner test/units, pick}`.
+
 Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 
 ## Expected Results
@@ -129,6 +137,12 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   removed entry refuses `Recompile` carrying
   `missing_import`/`missing-selection` at the import; the second source
   refuses `SourceCount(2)`. None yields a verdict.
+- Step 12: the library `big` is `x > 5`, so `x` = 3 is `false` and 7 is
+  `true`; `both` is `a < b`, `true` for (1, 5) and `false` for (5, 1); the
+  unit's own `big` without an owner is `x < 2`, `true` for 1. The absent and
+  the not-directly-imported owners refuse `UnknownOwner`; `nope` refuses
+  `UnknownFunction` paired with `test/units`; `pick` refuses `NotImportable`;
+  none yields a verdict.
 - Step 8: the first replay recompiles; the second refuses
   `Recompile` carrying `invalid_model_binding`/`malformed-declaration`
   located at `/package/refinement_internals`; the `zz` spelling refuses

@@ -1117,6 +1117,9 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
                 TargetSelectionRefusal::Conflicting { members } => {
                     WitnessRefusal::ConflictingTarget { members }
                 }
+                TargetSelectionRefusal::OwnerWithoutFunction => {
+                    WitnessRefusal::MissingMember("function")
+                }
             })?;
         let profile_selections = packet
             .profile_selections
@@ -1454,6 +1457,7 @@ mod envelope_tests {
         let mut with_frame = full_packet(0);
         with_frame.replay_target = ReplayTargetMembers {
             function: Some(function.clone()),
+            function_owner: None,
             frame_operation: Some(frame_operation()),
             state_clause: None,
         };
@@ -1466,6 +1470,7 @@ mod envelope_tests {
         let mut with_clause = full_packet(0);
         with_clause.replay_target = ReplayTargetMembers {
             function: Some(function),
+            function_owner: None,
             frame_operation: None,
             state_clause: Some(clause_name()),
         };

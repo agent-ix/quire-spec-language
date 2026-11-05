@@ -5,7 +5,11 @@
 //! name is refused at construction.
 
 use ix_trace_rs::trace;
-use qsl_eval::temporal::evidence::{ClauseFormula, ClauseWork, EvidencePackage, PackageMismatch};
+use qsl_eval::temporal::evidence::{
+    ClauseFormula, ClauseWork, EvidencePackage, NonValueKind, PackageMismatch, Truth,
+};
+use qsl_eval::temporal::AggregateSample;
+use qsl_package::CheckedNodeId;
 use serde_json::Value;
 
 use super::temporal_package_route::{
@@ -284,36 +288,68 @@ fn bindings_that_are_not_the_packages_are_refused() {
     ));
 }
 
-/// FR-516 "Window aggregate atoms": the package subject view does not yet read
-/// an aggregate node's argument, so a package route over a clause with an
-/// aggregate atom is refused `clause-root-unresolved` with an empty charge log
-/// and is never read from the `holds` valuation map: a request that supplies
-/// `Valuation::True` at every atom, which would answer a truth for `min_count
-/// 5` over three positions, gets the refusal.
-#[trace("TC-1311")]
+/// FR-516-AC-47 (its `count` part only; `sum`, `min` and `max` are covered in
+/// `qsl-eval`) and FR-516-AC-49 (TC-1311): the package subject
+/// view reads an aggregate atom, so both clauses of the package are readable
+/// and the aggregate atom is valued from the request's `aggregate_samples`,
+/// never from the `holds` valuation map. `count over past[0,1]` of `Counted`
+/// samples is 1 at position 0 and 2 afterwards: `min_count 1` makes the atom
+/// true at every position (`truth = True`); `min_count 5` is starved, so the
+/// result has no truth and a `Missing` `insufficient-data` non-value (count 1,
+/// min_count 5) at position 0, although the request also supplies
+/// `Valuation::True` at atom 0, which must not answer for it.
+#[trace("FR-516-AC-47", "FR-516-AC-49", "TC-1311")]
 #[test]
-fn a_clause_with_an_aggregate_atom_is_unresolved_until_the_view_reads_it() {
+fn a_clause_with_an_aggregate_atom_is_read_from_its_samples() {
     let clauses = "record Sample { level: Int[0, 9]; }\n\
-        temporal Plain using t over (c: Config::ConfigVersion) clock \"model-steps\" \
-        on origin { eventually[0,1] holds(c.versionNumber <= 1) }\n\
-        temporal Window using t over (e: Sample) clock \"model-steps\" \
+        temporal Fed using t over (e: Sample) clock \"model-steps\" \
+        on origin { always[0,2] (count over past[0,1] min_count 1 >= 1) }\n\
+        temporal Starved using t over (e: Sample) clock \"model-steps\" \
         on origin { always[0,2] (count over past[0,1] min_count 5 >= 1) }";
-    let built = event_clauses(clauses, &[("Plain", "plain"), ("Window", "window")]);
+    let built = event_clauses(clauses, &[("Fed", "fed"), ("Starved", "starved")]);
     let read = built.read(&built.emission);
     let package = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
     let ids = clause_ids(&package);
     assert_eq!(ids.len(), 2);
-    let (readable, refused): (Vec<_>, Vec<_>) =
-        ids.iter().partition(|id| package.subject(id, None).is_ok());
-    let ([plain], [window]) = (&readable[..], &refused[..]) else {
-        panic!("one clause reads and one is refused");
-    };
-    let asked = request(&package, plain, None, 3);
-    let mut meter = unlimited();
-    let result = package.evaluate_temporal_evidence(window, &asked, &mut meter);
-    assert_eq!(
-        cause(&result.expect_err("an aggregate atom has no valuation")),
-        "clause-root-unresolved"
+    assert!(
+        ids.iter().all(|id| package.subject(id, None).is_ok()),
+        "the view reads both aggregate clauses"
     );
-    assert!(meter.admitted_charges().is_empty());
+    let named = |wanted: &str| {
+        let row = package
+            .rows()
+            .names()
+            .iter()
+            .find(|row| &*row.name == wanted)
+            .expect("the named clause");
+        row.declaration.clone()
+    };
+    let call = |id: &CheckedNodeId| {
+        let mut asked = request(&package, id, None, 3);
+        for position in &mut asked.positions {
+            position
+                .aggregate_samples
+                .insert(0, AggregateSample::Counted);
+        }
+        let mut meter = unlimited();
+        package
+            .evaluate_temporal_evidence(id, &asked, &mut meter)
+            .expect("an aggregate clause evaluates from its samples")
+    };
+    assert_eq!(call(&named("Fed")).truth, Some(Truth::True));
+    let starved = call(&named("Starved"));
+    assert_eq!(starved.truth, None);
+    let non_value = starved
+        .non_value
+        .expect("the starved window is a non-value");
+    assert_eq!(non_value.kind, NonValueKind::Missing);
+    assert_eq!(non_value.code, "insufficient-data");
+    assert_eq!(non_value.dimension.as_deref(), Some("valuation:0@0"));
+    assert_eq!(
+        non_value.detail,
+        [
+            ("count".to_owned(), "1".to_owned()),
+            ("min_count".to_owned(), "5".to_owned())
+        ]
+    );
 }
