@@ -20,3 +20,9 @@ The scoped IDs, links and changed test vectors are coherent, and all four change
 | ID | Severity | Summary | Refs | Escape Cause |
 | --- | --- | --- | --- | --- |
 | FND-001 | medium | FR-093-AC-34 says every quantity divisor that is not itself a nonzero literal is unproved, contradicting FR-093-AC-37's accepted direct and nested negations of nonzero literals. Clarify that the refusal in this AC is for its parameter divisor (`e`), or qualify the rule to include negation chains rooted in nonzero literals. | spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md:1038 | wrong-requirement |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | AC-34 now identifies `e` as a quantity parameter, matching the refusal case and preserving AC-37's negated-literal acceptance. |

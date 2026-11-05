@@ -20,3 +20,9 @@ The new accepted and refused cases link to concrete test vectors in TC-1285 and 
 | ID | Severity | Summary | Refs | Escape Cause |
 | --- | --- | --- | --- | --- |
 | FND-001 | medium | FR-093-AC-34 states that any quantity divisor not itself a nonzero literal is unproved, while FR-093-AC-37 admits a divisor formed by negating a nonzero literal. The AC-34 example is specifically a parameter divisor; scope its explanation to that case or restate the complete proof rule. | spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md:1038 | wrong-requirement |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | AC-34 now identifies `e` as a quantity parameter, matching the refusal case and preserving AC-37's negated-literal acceptance. |
