@@ -3899,6 +3899,7 @@ fn the_undefined_label_is_written_only_for_the_undefined_category() {
     let insufficient = synthetic(ClauseDisposition::Temporal(TemporalVerdict::Undefined {
         at: 3,
         cause: crate::spine::TemporalUndefinedCause::InsufficientData {
+            atom: 0,
             count: 1,
             min_count: 2,
         },
@@ -3990,6 +3991,7 @@ fn violated_undefined_and_insufficient_data_items_carry_their_record_members() {
     let insufficient = synthetic_report(ClauseDisposition::Temporal(TemporalVerdict::Undefined {
         at: 0,
         cause: crate::spine::TemporalUndefinedCause::InsufficientData {
+            atom: 0,
             count: 1,
             min_count: 2,
         },

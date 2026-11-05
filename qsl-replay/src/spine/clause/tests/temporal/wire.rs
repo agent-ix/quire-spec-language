@@ -4,12 +4,12 @@
 //! `native-run-result/2` with its `disposition.temporal` row and read back
 //! by the strict reader; each edit the ACs list refuses naming the member.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::*;
 use crate::spine::{
-    read_native_run_result, write_clause_run_result, IndeterminateReasonRead, NativeRunResult,
-    TemporalIndeterminateReason, TemporalRecord,
+    IndeterminateReasonRead, NativeRunResult, TemporalIndeterminateReason, TemporalRecord,
+    read_native_run_result, write_clause_run_result,
 };
 
 fn document(report: &ClauseRunReport) -> Value {
@@ -682,6 +682,7 @@ fn insufficient_data_window_limit_and_family_undefined_rows_round_trip() {
         TemporalVerdict::Undefined {
             at: 0,
             cause: crate::spine::TemporalUndefinedCause::InsufficientData {
+                atom: 0,
                 count: 1,
                 min_count: 5,
             },
@@ -709,6 +710,12 @@ fn insufficient_data_window_limit_and_family_undefined_rows_round_trip() {
             member,
         );
     }
+    refuses(
+        &edited(&insufficient, |value| {
+            value["disposition"]["temporal"]["atom"] = json!(0);
+        }),
+        "atom",
+    );
 
     // A wire vector: a clause run has no window-limit input.
     let window = round_trips(&with_disposition(ClauseDisposition::Temporal(

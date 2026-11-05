@@ -506,7 +506,10 @@ pub(super) fn verdict_wire(
         ),
         TemporalVerdict::Undefined {
             at,
-            cause: TemporalUndefinedCause::InsufficientData { count, min_count },
+            cause:
+                TemporalUndefinedCause::InsufficientData {
+                    count, min_count, ..
+                },
         } => (
             TemporalWire::InsufficientData {
                 position: *at,
@@ -943,6 +946,7 @@ impl TemporalRecord {
             } => TemporalVerdict::Undefined {
                 at: *position,
                 cause: TemporalUndefinedCause::InsufficientData {
+                    atom: 0,
                     count: *count,
                     min_count: *min_count,
                 },
@@ -983,7 +987,7 @@ impl TemporalRecord {
                 })
             }
             Self::Incomplete {} | Self::ProgressContradicted { .. } | Self::TraceRefused { .. } => {
-                return None
+                return None;
             }
         })
     }
