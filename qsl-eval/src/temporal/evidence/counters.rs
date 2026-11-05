@@ -221,6 +221,26 @@ impl<'m> CallMeter<'m> {
         Ok(())
     }
 
+    /// Admit a visit against an evaluator-owned meter, committing counters
+    /// only after that meter admits the same unit.
+    pub(super) fn visit_with_meter(
+        &mut self,
+        visit: Visit,
+        meter: &mut Meter,
+    ) -> Result<(), EvidenceStop> {
+        let next = self
+            .admit(visit.spends().iter().map(|counter| (*counter, 1)))
+            .map_err(EvidenceStop::Limit)?;
+        meter
+            .charge(Charge::new(ChargePoint::TemporalVisit))
+            .map_err(|incomplete| EvidenceStop::Meter {
+                incomplete,
+                instance: self.instance.clone(),
+            })?;
+        self.usage = next;
+        Ok(())
+    }
+
     /// Admit a visit's counters when the evaluator already charged the
     /// shared meter for this same unit of work.
     pub(super) fn visit_counters(&mut self, visit: Visit) -> Result<(), LimitReached> {

@@ -705,7 +705,7 @@ impl AggregateAtom {
         let mut callbacks = AggregateEvaluationCallbacks {
             retained: &mut retained,
             visit,
-            charge_meter: true,
+            charge_meter: false,
         };
         self.evaluate_observed_with_visits(
             trace,

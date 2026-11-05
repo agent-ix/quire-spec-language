@@ -59,11 +59,10 @@ pub trait WindowCharge {
     /// performed.
     fn charge(&mut self, unit: WindowUnit) -> Result<(), Incomplete>;
 
-    /// Charge one aggregate window read. Evidence callers charge the
-    /// per-call counters here while the aggregate itself charges the meter.
-    fn aggregate_window_visit(&mut self) -> Result<(), Incomplete> {
-        self.charge(WindowUnit::Lookup)
-    }
+    /// Charge one aggregate window read against both the call's counters and
+    /// this evaluation's meter. Implementations must leave the counters
+    /// unchanged when the meter refuses the visit.
+    fn aggregate_window_visit(&mut self, meter: &mut Meter) -> Result<(), Incomplete>;
 }
 
 /// Why a run stopped before it finished every activation.
@@ -548,8 +547,10 @@ impl<L: TemporalLetters> Run<'_, L> {
         let mut aggregate_visit = || {
             if let Some(units) = units.as_deref_mut() {
                 units
-                    .aggregate_window_visit()
+                    .aggregate_window_visit(meter)
                     .map_err(LetterStop::Incomplete)?;
+            } else {
+                meter.charge(Charge::new(VISIT))?;
             }
             *visits = visits.saturating_add(1);
             Ok(())

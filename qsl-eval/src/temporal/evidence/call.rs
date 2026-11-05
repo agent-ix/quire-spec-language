@@ -887,7 +887,7 @@ fn halted(limit: &LimitReached) -> Incomplete {
     }
 }
 
-/// Charges the evaluator's units on the call's counters before the meter.
+/// Charges the evaluator's units on the call's counters and evaluator meter.
 struct UnitCharger<'c, 'm> {
     call: &'c mut CallMeter<'m>,
     stop: Option<EvidenceStop>,
@@ -916,12 +916,15 @@ impl WindowCharge for UnitCharger<'_, '_> {
         }
     }
 
-    fn aggregate_window_visit(&mut self) -> Result<(), Incomplete> {
-        match self.call.visit_counters(Visit::Lookup) {
+    fn aggregate_window_visit(&mut self, meter: &mut Meter) -> Result<(), Incomplete> {
+        match self.call.visit_with_meter(Visit::Lookup, meter) {
             Ok(()) => Ok(()),
-            Err(limit) => {
-                let incomplete = halted(&limit);
-                self.stop = Some(EvidenceStop::Limit(limit));
+            Err(stop) => {
+                let incomplete = match &stop {
+                    EvidenceStop::Limit(limit) => halted(limit),
+                    EvidenceStop::Meter { incomplete, .. } => incomplete.clone(),
+                };
+                self.stop = Some(stop);
                 Err(incomplete)
             }
         }

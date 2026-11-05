@@ -9,7 +9,7 @@ use qsl_package::{
     emit_checked_with_temporal_selections, read_evaluation_emission, CheckedPackage,
     ClockConfiguration, TemporalClockSelection, V2ReadLimits,
 };
-use qsl_semantics::check::{PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
+use qsl_semantics::check::{PackageDeclarations, ScalarLimits, SCALAR_LIMITS_UNLIMITED};
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::{package_input, SelectedModels};
 use quire_exact::{Integer, Meter, Rational, Undefined};
@@ -251,6 +251,35 @@ fn checked_package_aggregate_uses_samples_and_charges_window_reads() {
                 [2, 3, 2]
             );
             assert_eq!(limit.setting, "monitor.max_window_values");
+        },
+    );
+}
+
+/// FR-523-AC-9: a denied aggregate-window visit leaves its counters at the
+/// successful prefix, including the evaluator's valuation and visit totals.
+#[trace("FR-523-AC-9", "FR-516-AC-50")]
+#[test]
+fn denied_aggregate_window_visit_keeps_counters_at_the_successful_prefix() {
+    with_routes(
+        "always[0,3] (sum of e over past[0,2] <= 15)",
+        |routes, clause, env| {
+            let mut meter = Meter::new(ScalarLimits {
+                work_units: 5,
+                ..SCALAR_LIMITS_UNLIMITED
+            });
+            let result = routes
+                .from_read
+                .evaluate_temporal_evidence(clause, &asked(env, &values(&[3, 4, 5, 6])), &mut meter)
+                .expect("a denied window visit is an incomplete result");
+
+            assert_eq!(result.truth, None);
+            assert!(matches!(
+                result.incomplete,
+                Some(EvidenceIncomplete::Meter { .. })
+            ));
+            assert_eq!(result.usage.get(EvidenceCounter::Valuations), 9);
+            assert_eq!(result.usage.get(EvidenceCounter::EvaluationSteps), 15);
+            assert_eq!(result.usage.get(EvidenceCounter::Visited), 15);
         },
     );
 }
