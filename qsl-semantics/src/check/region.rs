@@ -112,6 +112,15 @@ struct DeclaredSpans<'a> {
     synthesized: &'a BTreeMap<usize, Span>,
 }
 
+/// The declaration name of a `dimension <name>` or `unit <name>` type
+/// declaration origin, `None` for any other origin name.
+#[ix_trace_rs::string_edge]
+fn nominal_declaration_name(origin: &str) -> Option<&str> {
+    origin
+        .strip_prefix("dimension ")
+        .or_else(|| origin.strip_prefix("unit "))
+}
+
 /// The region `location` names, given each function's and each state
 /// clause's form spans by declaration index.
 fn resolve<'s>(
@@ -168,8 +177,7 @@ fn resolve<'s>(
         Origin::TypeDeclaration { name } => source_owners
             .get(name)
             .or_else(|| {
-                name.strip_prefix("dimension ")
-                    .or_else(|| name.strip_prefix("unit "))
+                nominal_declaration_name(name)
                     .and_then(|declaration| source_owners.get(declaration))
             })
             .unwrap_or(document.source),

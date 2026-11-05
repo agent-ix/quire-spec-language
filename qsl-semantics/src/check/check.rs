@@ -2386,6 +2386,12 @@ enum AliasStep<'e> {
     OrElse(ExprRef<'e>, Option<usize>),
 }
 
+/// Whether a call's callee names the `Text` constructor.
+#[ix_trace_rs::string_edge]
+fn is_text_constructor(callee: &str) -> bool {
+    callee == "Text"
+}
+
 /// Whether an expression takes its type from its context.
 fn contextual(expression: ExprRef<'_>) -> bool {
     match expression.node() {
@@ -2396,7 +2402,7 @@ fn contextual(expression: ExprRef<'_>) -> bool {
         | ExprNode::DecimalValue { .. }
         | ExprNode::Collection { .. }
         | ExprNode::Absent => true,
-        ExprNode::Call { name, .. } if name.name == "Text" => true,
+        ExprNode::Call { name, .. } if is_text_constructor(&name.name) => true,
         ExprNode::Negate(operand) => matches!(
             expression.at(*operand).node(),
             ExprNode::Integer(_) | ExprNode::DecimalValue { .. }

@@ -27,6 +27,7 @@ use crate::protocol_view::{
 use crate::reader_protocol_projection::{
     node_value_type, BareWalker, TypeError, TypeReader, UnsupportedView, WalkFailure,
 };
+use crate::wire_form::{has_tag, WireTag};
 
 type Node = CheckedSemanticNodeV2;
 
@@ -179,6 +180,7 @@ fn names(node: &Node) -> Vec<&str> {
 /// The term a slot's member names and the site it is located under. The
 /// site names come from `qsl_semantics::check::protocol_site`, the one
 /// registry the emitter writes them with.
+#[ix_trace_rs::string_edge]
 fn slot_term<'n>(
     node: &'n Node,
     op: ControlOperation,
@@ -425,7 +427,7 @@ impl<'p> BarePackage<'p> {
             .and_then(|id| nodes.get(id))
             .copied()
             .ok_or_else(|| SlotSelectionFailure::MissingNode(descriptor.node().clone()))?;
-        if &*node.node_tag != "protocol" {
+        if !has_tag(node, WireTag::Protocol) {
             return Err(SlotSelectionFailure::MalformedNode(descriptor.node().clone()).into());
         }
         // A protocol node outside the member table (a queue, a reference

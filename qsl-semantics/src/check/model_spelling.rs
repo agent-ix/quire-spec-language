@@ -38,6 +38,13 @@ pub(crate) struct ModelName {
 /// One selected package's type names, by member `T` of `M::T`.
 pub(crate) type PackageNames = BTreeMap<String, ModelName>;
 
+/// The member name of `name` under the qualifier `first`, `None` for a name
+/// not of the form `first::T`.
+#[ix_trace_rs::string_edge]
+fn member_of_qualifier<'n>(name: &'n str, first: &str) -> Option<&'n str> {
+    name.strip_prefix(first)?.strip_prefix("::")
+}
+
 /// A package's projected type names, each under its first alias `first`, as
 /// that package's names by member. A name not of the form `first::T` is not
 /// the package's.
@@ -47,10 +54,7 @@ pub(crate) fn package_names<'n>(
 ) -> PackageNames {
     let mut names = PackageNames::new();
     for (name, found) in declared {
-        let Some(member) = name
-            .strip_prefix(first)
-            .and_then(|rest| rest.strip_prefix("::"))
-        else {
+        let Some(member) = member_of_qualifier(name, first) else {
             continue;
         };
         let entry = names.entry(member.to_owned()).or_default();
