@@ -35,3 +35,22 @@ Spec judgements. FR-533-AC-13: the AC cannot be built as written. A `choice` ove
 ## Verdict
 
 Mergeable as a B2a increment, with FND-001 and FND-002 fixed in this PR or carried by B2b with tickets (the tests are cheap: a package copy with the equality rows removed plus a Node-locus refusal gives AC-67; the tag overclaims are a one-line edit). No high finding. FR-533-AC-13 and the value-type vocabulary are spec changes for the spec lane, not code defects. FR-533-AC-15/16 evaluation halves and the Package locus remain B2b as disclosed.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | The widened witness check (`reached`, through called functions) is unexercised: restricting `check_equality` back to the dependency closure leaves every test green, because TC-1070 has no equality application inside a called function. The code reads right; the discriminating vector is spec S8 #2344. | qsl-package/src/bare_slot.rs:634-655 |
+
+## Dispositions
+
+Round 1, head 55483adf2 trial-merged with origin/main. Gates: fmt, check --all-targets --all-features, clippy x3, arch-lint, qsl-package lib, qsl-eval protocol_slots, root bare_package/checked_handoff/bare_equality: green. Mutations: `check_equality` removed fails bare_equality; writer `rational_from` check removed fails the equality_file lib test; closure restored in place of `reached` fails nothing (FND-007).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Selection-level tests for FR-390-AC-65 (triple naming) and FR-390-AC-67 (equality refusal reported before a genuine MissingTypeRepresentation Node refusal; Missing/Foreign/Unknown). The Package-locus half of AC-66/67 stays with B2b (CallAdmissionLocus::Package). |
+| FND-002 | fixed | FR-531-AC-14/16 and FR-533-AC-15/16 tags removed from the selection-level tests. |
+| FND-003 | accepted-no-change | The missing-candidate test now asserts the locus key equals the application and rows/index 0/0, and no slot is returned; related interleave and repeat-guard rank stay covered by the ordering unit test only (no compiled fixture holds them; coder-disclosed). |
+| FND-004 | fixed | `check_equality` now takes `reached(nodes, root)`, every node reachable by reference from the root including through called functions, still before node refusals; read as correct, no test discriminates it (FND-007). Quadratic `admitted_equality` and the second emission are unchanged and accepted as low cost. |
+| FND-005 | fixed | `rational()` returns Result and refuses what the reader refuses; the lib test asserts write and read refusal for +1, 01, -0, denominator 0 and -2; removing the check fails it. |
+| FND-006 | accepted-no-change | Fixture E writes no selected source-unit row, so FR-517-AC-21's non-empty source_units is unmet (spec adjustment is the lead's) and asserted empty; the FR-517-AC-21 tag stays on a test with that half unmet. FR-517-AC-22 stays encoder-level. |
