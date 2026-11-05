@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use qsl_semantics::check::wire_id::WireGraph;
 use quire_checked::node::{
     Arithmetic, CaseArm, CheckedLiteral, Connective, ConnectiveOrigin, IntegerDivisionOperator,
-    NodeKind, OrderedKind, RecordField, RecordSlot,
+    NodeKind, OrderedKind, RecordField, RecordSlot, Visit,
 };
 use quire_contract_model::{
     CheckedNodeId, CheckedPackageV2, CheckedProtocolLocation, CheckedProtocolSemanticLocation,
@@ -1322,28 +1322,8 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let [CheckedTerm::Binding { name, value }, body] = arguments else {
                     return Err(fault("reader-let-has-binding-and-body").into());
                 };
-                let binder = self
-                    .index
-                    .nodes
-                    .values()
-                    .find(|node| {
-                        node.node_tag.as_ref() == "value"
-                            && node.semantic_form.as_ref() == "parameter"
-                            && node
-                                .declaration
-                                .as_ref()
-                                .and_then(|declaration| declaration.qualified_name.last())
-                                .is_some_and(|declared| declared.as_ref() == name.as_ref())
-                    })
-                    .map(|node| node.node_id.clone())
-                    .ok_or_else(|| fault("reader-let-binder-is-admitted"))?;
-                let slot = match context {
-                    Context::Root => self.root_slots,
-                    Context::Function(function) => self
-                        .functions
-                        .get(function)
-                        .map_or(0, |function| function.slots),
-                };
+                let binder = self.binder_node(name.as_ref())?;
+                let slot = self.next_slot(context);
                 let value = self.project_argument(id, value, context, locals)?;
                 let mut body_locals = locals.clone();
                 body_locals.insert(binder, slot);
@@ -1580,6 +1560,84 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                     return Err(fault("reader-collection-containment-has-two-operands").into());
                 };
                 Ok((NodeKind::Contains(*collection, *item), children))
+            }
+            Some(
+                "quire.op.collection.map"
+                | "quire.op.collection.filter"
+                | "quire.op.collection.forall"
+                | "quire.op.collection.exists"
+                | "quire.op.collection.count"
+                | "quire.op.collection.sum.integer",
+            ) => {
+                let [source_term, CheckedTerm::Binding { name, value }] = arguments else {
+                    return Err(fault("reader-collection-query-has-source-and-binder").into());
+                };
+                let binder = self.binder_node(name.as_ref())?;
+                let slot = self.next_slot(context);
+                let source = self.project_argument(id, source_term, context, locals)?;
+                let mut body_locals = locals.clone();
+                body_locals.insert(binder, slot);
+                let body = self.project_argument(id, value, context, &body_locals)?;
+                self.grow_frame(context, slot.saturating_add(1));
+                let visit = match identity {
+                    Some("quire.op.collection.map") => Visit::Map,
+                    Some("quire.op.collection.filter") => Visit::Filter,
+                    Some("quire.op.collection.forall") => Visit::Forall,
+                    Some("quire.op.collection.exists") => Visit::Exists,
+                    Some("quire.op.collection.count") => Visit::Count,
+                    Some("quire.op.collection.sum.integer") => Visit::Sum,
+                    _ => return Err(fault("reader-collection-query-identity-is-catalogued").into()),
+                };
+                Ok((
+                    NodeKind::Query {
+                        visit,
+                        slot,
+                        source,
+                        body,
+                    },
+                    vec![source, body],
+                ))
+            }
+            Some("quire.op.collection.convert") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-collection-conversion-has-one-operand").into());
+                };
+                let value_type = self.value_type(id)?;
+                let ValueType::Collection(target) = &value_type else {
+                    return Err(fault("reader-collection-conversion-has-collection-result").into());
+                };
+                Ok((
+                    NodeKind::ConvertCollection {
+                        target: (**target).clone(),
+                        operand: *operand,
+                    },
+                    children,
+                ))
+            }
+            Some("quire.op.collection.flatten") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [operand] = children.as_slice() else {
+                    return Err(fault("reader-collection-flatten-has-one-operand").into());
+                };
+                Ok((NodeKind::Flatten(*operand), children))
+            }
+            Some(
+                "quire.op.collection.sequence.drop_first"
+                | "quire.op.collection.ordered_set.drop_first",
+            ) => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [source] = children.as_slice() else {
+                    return Err(fault("reader-drop-first-has-one-source").into());
+                };
+                Ok((NodeKind::DropFirst(*source), children))
+            }
+            Some("quire.op.collection.remove_one") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [collection, item] = children.as_slice() else {
+                    return Err(fault("reader-remove-one-has-collection-and-item").into());
+                };
+                Ok((NodeKind::RemoveOne(*collection, *item), children))
             }
             Some("quire.op.model.all_instances") => {
                 let children = self.project_arguments(id, Some(arguments), context, locals)?;
@@ -1904,6 +1962,33 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 }
             }
         }
+    }
+
+    fn next_slot(&self, context: Context) -> usize {
+        match context {
+            Context::Root => self.root_slots,
+            Context::Function(function) => self
+                .functions
+                .get(function)
+                .map_or(0, |function| function.slots),
+        }
+    }
+
+    fn binder_node(&self, name: &str) -> Result<CheckedNodeId, BuildError> {
+        self.index
+            .nodes
+            .values()
+            .find(|node| {
+                node.node_tag.as_ref() == "value"
+                    && node.semantic_form.as_ref() == "parameter"
+                    && node
+                        .declaration
+                        .as_ref()
+                        .and_then(|declaration| declaration.qualified_name.last())
+                        .is_some_and(|declared| declared.as_ref() == name)
+            })
+            .map(|node| node.node_id.clone())
+            .ok_or_else(|| fault("reader-expression-binder-is-admitted").into())
     }
 
     /// `record.project`: a field of a record value, or an attribute of a
