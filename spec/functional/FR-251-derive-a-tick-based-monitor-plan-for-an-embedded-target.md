@@ -128,9 +128,13 @@ selected generated closure against the rows of the acquisition and never
 invents them or acquires the unit a second time.
 
 The plan's subject names the clause it monitors by the clause's checked node
-identity and its claim occurrence. The `Emission` that carries the plan-root
-bytes SHALL select, from that pair, the clause node and claim occurrence the
-emitted package holds: the declaration identity its temporal binding rows
+identity and its claim occurrence. The selection route is the `Emission`'s
+temporal binding rows: `declaration(subject.clause_node(),
+subject.occurrence().origin().ordinal())` returns the emitted declaration. The
+lookup is re-keyed with the retained rows through every rename the writer
+performs or may perform. The `Emission` that carries the plan-root bytes SHALL
+select, through that route, the clause node and claim occurrence the emitted
+package holds: the declaration identity its temporal binding rows
 return for the subject's clause node and claim ordinal equals the plan root's
 `clause` binding, and equals the `declaration` of the package's
 `temporal_clause_names` and `temporal_bindings` rows for that ordinal, after

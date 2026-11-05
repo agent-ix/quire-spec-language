@@ -995,6 +995,10 @@ pub(super) fn carry_rows(
         } = row;
         rekey.id(declaration);
     }
+    // The declaration lookup is re-keyed with the rows, for every rename the
+    // writer performs or may perform. Today's renames name record value
+    // nodes and the entry functions, never a clause declaration, so this is
+    // an invariant of the carry and not a path the current writer reaches.
     for (_, _, declaration) in &mut temporal.declarations {
         rekey.id(declaration);
     }

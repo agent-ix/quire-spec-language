@@ -179,6 +179,20 @@ fn a_subject_the_package_does_not_hold_selects_nothing() {
     assert!(selected(&fixture.rooted, &(other, ordinal + 1, name)).is_none());
 }
 
+/// FR-251-AC-43: a clause node the emitted package does not hold selects
+/// nothing at any ordinal, including an ordinal another clause holds.
+#[trace("TC-1081", "FR-251-AC-43")]
+#[test]
+fn a_clause_node_the_package_does_not_hold_selects_nothing() {
+    let fixture = rooted(0);
+    let held = &fixture.subjects[0];
+    assert!(selected(&fixture.rooted, held).is_some());
+    let absent = fixture_type_key("Absent");
+    for ordinal in [held.1, held.1 + 1] {
+        assert!(selected(&fixture.rooted, &(absent.clone(), ordinal, held.2.clone())).is_none());
+    }
+}
+
 fn row(declaration: &CheckedNodeId, occurrence: u64) -> TemporalBinding {
     TemporalBinding {
         declaration: declaration.clone(),
