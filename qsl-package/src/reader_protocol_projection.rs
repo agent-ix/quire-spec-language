@@ -2113,12 +2113,12 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             Some(presence) => presence,
             None => match self.declared_member_presence(&record_key, field_name.as_ref())? {
                 Some(presence) => presence,
-                // A model record whose fields IR's complete-or-refuse record
-                // view cannot project yet (an option or collection member)
-                // and whose wire declaration carries no members: the
-                // package's type scope, joined by the exact record key, is
-                // the only remaining carrier of presence.
-                None => self.source_member_presence(id, &record_key, field_name.as_ref())?,
+                None => {
+                    return Err(BuildError::Unsupported {
+                        reason: UnsupportedReason::MissingTypeRepresentation,
+                        node: id.clone(),
+                    });
+                }
             },
         };
         let optional = presence == quire_exact::Presence::Optional;
@@ -2177,36 +2177,6 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 quire_exact::Presence::Required
             },
         ))
-    }
-
-    /// The presence of record member `field` in the package's type scope,
-    /// which only the source route holds: the bytes route refuses the
-    /// record's type, as FR-533 "Types the bytes cannot project" states.
-    fn source_member_presence(
-        &self,
-        id: &CheckedNodeId,
-        record: &NodeKey,
-        field: &str,
-    ) -> Result<quire_exact::Presence, BuildError> {
-        let ProjectionSource::Source { graph, .. } = &self.index.source else {
-            return Err(BuildError::Unsupported {
-                reason: UnsupportedReason::MissingTypeRepresentation,
-                node: id.clone(),
-            });
-        };
-        match graph
-            .scope()
-            .types()
-            .composite(record.clone())
-            .map(|record| record.shape())
-        {
-            Some(quire_semantic_value::declaration::CompositeShape::Record(fields)) => fields
-                .iter()
-                .find(|declared| declared.name() == field)
-                .map(|declared| declared.presence())
-                .ok_or_else(|| fault("reader-record-field-member-is-admitted").into()),
-            _ => Err(fault("reader-record-field-view-is-admitted").into()),
-        }
     }
 
     fn project_argument(
