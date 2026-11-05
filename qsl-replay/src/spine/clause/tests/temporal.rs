@@ -64,6 +64,14 @@ enum Unit {
     TimestampedLaterAlways,
     /// Timestamped finite-window `on each` property.
     TimestampedEach,
+    /// `Window` under the finite-window profile, `on each`, whose atom is
+    /// false where `c.value` is 0 and refused where it is 1 or more
+    /// (FR-501 "an atom that evaluates Undefined or a condition that
+    /// refuses is returned as FR-327 states").
+    TimestampedRefusing,
+    /// `Window` under the finite-window profile, `on origin`, reading an
+    /// atom undefined where `c.value` is 2 and refused where it is 1.
+    TimestampedUndefinedThenRefused,
     /// Timestamped finite-window `[0,5]` universal.
     TimestampedAlwaysFive,
     /// Timestamped finite-window past operator.
@@ -130,7 +138,9 @@ impl Unit {
             | Self::TimestampedLaterAlways => {
                 "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
             }
-            Self::TimestampedEach => {
+            Self::TimestampedEach
+            | Self::TimestampedRefusing
+            | Self::TimestampedUndefinedThenRefused => {
                 "profile t = \"quire.temporal.timestamped-event.finite-window/v1\";\n"
             }
             Self::TimestampedAlwaysFive | Self::TimestampedOnce => {
@@ -208,6 +218,22 @@ impl Unit {
                 "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
                  on origin { always[2,3] holds(c.value > 0) }\n"
             }
+            Self::TimestampedUndefinedThenRefused => concat!(
+                "type Zero = Int[0, 0];\n",
+                "function ints using v(xs: Sequence<Integer>[0, 3]): Sequence<Integer>[0, 3] \
+                 pure { xs }\n",
+                "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
+                 on origin { always[0,10] holds(3 mod (2 - c.value) >= 0 and \
+                 count<Zero>(m in ints(sequence[c.value mod 2]): m > 0) = 0) }\n",
+            ),
+            Self::TimestampedRefusing => concat!(
+                "type Zero = Int[0, 0];\n",
+                "function ints using v(xs: Sequence<Integer>[0, 3]): Sequence<Integer>[0, 3] \
+                 pure { xs }\n",
+                "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
+                 on each (q: Counters::Counter) { always[0,0] holds(c.value = 1 and \
+                 count<Zero>(m in ints(sequence[c.value]): m > 0) = 0) }\n",
+            ),
             Self::TimestampedEach => {
                 "temporal Window using t over (c: Counters::Counter) clock \"ms\" \
                  on each (q: Counters::Counter) { eventually[0,2] holds(c.value > 0) }\n"
@@ -273,6 +299,14 @@ impl Unit {
                  clock \"model-steps\" on origin \
                  { always[0,2] holds(c.value = 1 and \
                  count<Zero>(m in ints(sequence[c.value]): m > 0) = 0) }\n",
+                "temporal UndefinedThenRefused using t over (c: Counters::Counter) \
+                 clock \"model-steps\" on origin \
+                 { always[0,2] holds(3 mod (2 - c.value) >= 0 and \
+                 count<Zero>(m in ints(sequence[c.value mod 2]): m > 0) = 0) }\n",
+                "temporal UndefinedBesideRefused using t over (c: Counters::Counter) \
+                 clock \"model-steps\" on origin \
+                 { always[0,2] (holds(3 mod (2 - c.value) >= 0) and \
+                 holds(count<Zero>(m in ints(sequence[c.value]): m > 0) = 0)) }\n",
             ),
             Self::RefusingInfinite => concat!(
                 "type Zero = Int[0, 0];\n",

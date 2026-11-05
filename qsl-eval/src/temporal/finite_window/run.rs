@@ -65,7 +65,21 @@ enum Stop {
     /// An `on each` guard that cannot be established at a position.
     GuardUnresolved(TemporalPosition),
     Undefined(UndefinedEvaluation),
+    /// A `holds` condition, an `on each` guard or a capture was refused at
+    /// this position (FR-327 "Refused condition").
+    ConditionRefused(TemporalPosition),
     Refused(TemporalRefusal),
+}
+
+impl Stop {
+    /// The stop of a letter that failed at `at`: its refusal is the refused
+    /// condition at `at`.
+    fn at(stop: LetterStop, at: TemporalPosition) -> Self {
+        match stop {
+            LetterStop::Refused => Self::ConditionRefused(at),
+            other => other.into(),
+        }
+    }
 }
 
 impl From<Incomplete> for Stop {
@@ -89,11 +103,11 @@ impl From<LetterStop> for Stop {
                 Self::Refused(TemporalRefusal::Fault(fault("window-aggregate-not-read")))
             }
             LetterStop::Fault(internal) => Self::Refused(TemporalRefusal::Fault(internal)),
-            // The finite-window profile keeps a refused condition as the
-            // fault its letter's stop records.
-            LetterStop::Refused => {
-                Self::Refused(TemporalRefusal::Fault(fault("window-condition-refused")))
-            }
+            // Every read of a letter goes through `Stop::at`, which knows
+            // the position the refusal is returned at.
+            LetterStop::Refused => Self::Refused(TemporalRefusal::Fault(fault(
+                "refused-condition-has-its-position",
+            ))),
         }
     }
 }
@@ -258,6 +272,29 @@ fn run_window<'a, L: TemporalLetters>(
         Err(Stop::Incomplete(incomplete)) => Tail::Incomplete(incomplete),
         Err(Stop::GuardUnresolved(at)) => Tail::GuardUnresolved(at),
         Err(Stop::Undefined(undefined)) => Tail::Undefined(undefined),
+        // In evaluation order: an atom undefined at an earlier position, or
+        // an activation that ended false before the refused condition, is
+        // returned instead of it.
+        Err(Stop::ConditionRefused(at)) => {
+            let refused = usize::try_from(at.index()).unwrap_or(usize::MAX);
+            if let Some(((position, _), cause)) = run
+                .undefined
+                .iter()
+                .find(|((position, _), _)| *position < refused)
+            {
+                Tail::Undefined(UndefinedEvaluation {
+                    at: position_of(*position).map_err(TemporalRefusal::Fault)?,
+                    cause: cause.clone(),
+                })
+            } else if done
+                .iter()
+                .any(|activation| activation.result == Ending::False)
+            {
+                Tail::Done
+            } else {
+                return Err(TemporalRefusal::ConditionRefused { at });
+            }
+        }
         Err(Stop::Refused(refusal)) => return Err(refusal),
     };
     run.settle(done, tail).map_err(TemporalRefusal::Fault)
@@ -358,7 +395,11 @@ impl<L: TemporalLetters> Run<'_, L> {
         for anchor in anchors {
             let at = position_of(anchor)?;
             if guarded {
-                match self.letters.activation(at, &mut *self.meter)? {
+                match self
+                    .letters
+                    .activation(at, &mut *self.meter)
+                    .map_err(|stop| Stop::at(stop, at))?
+                {
                     AtomReading::True => {}
                     AtomReading::False => continue,
                     // A guard that cannot be established is an incomplete
@@ -372,8 +413,10 @@ impl<L: TemporalLetters> Run<'_, L> {
                 CaptureSite::Activations => true,
             };
             if captured {
-                if let CaptureReading::Undefined { cause, .. } =
-                    self.letters.captures(at, &mut *self.meter)?
+                if let CaptureReading::Undefined { cause, .. } = self
+                    .letters
+                    .captures(at, &mut *self.meter)
+                    .map_err(|stop| Stop::at(stop, at))?
                 {
                     return Err(Stop::Undefined(UndefinedEvaluation { at, cause }));
                 }
@@ -475,7 +518,11 @@ impl<L: TemporalLetters> Run<'_, L> {
                 continue;
             }
             let at = position_of(*member)?;
-            match self.letters.valuation(id, at, &mut *self.meter)? {
+            match self
+                .letters
+                .valuation(id, at, &mut *self.meter)
+                .map_err(|stop| Stop::at(stop, at))?
+            {
                 Valuation::True => {
                     self.cells.insert((*member, class), Cell::True);
                 }
