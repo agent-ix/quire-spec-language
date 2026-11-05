@@ -452,6 +452,9 @@ fn assert_pristine(meter: &Meter) {
 /// rows, are each `unknown_required_feature`/`unsupported-feature` at
 /// `CallAdmissionLocus::Package`, never `Node` or `Binder`; a missing node is
 /// `Node`, a missing member `Member`; each leaves the meter untouched.
+/// The in-process reader view's `UnsupportedView` half of FR-390-AC-66 is not
+/// asserted here; the `Package` locus of `UnsupportedView` is covered by the
+/// qsl-package order test and the remainder is open.
 #[trace("FR-533-AC-15", "FR-390-AC-66", "FR-531-AC-5", "TC-1333", "TC-1331")]
 #[test]
 fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
