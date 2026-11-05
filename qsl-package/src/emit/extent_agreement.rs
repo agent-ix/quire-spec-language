@@ -32,16 +32,16 @@
 //! outside that agreement: only its own extent is asserted.
 
 use quire_contract_model::{
-    CheckedNodeId, CheckedNodeTag, CheckedPackageDispatchResult, CheckedPackageEvidence,
-    CheckedPackageReadLimits, CheckedPackageV2, CompleteLoweringProfileV2,
-    CompleteLoweringRecordV2, read_checked_package,
+    read_checked_package, CheckedNodeId, CheckedNodeTag, CheckedPackageDispatchResult,
+    CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageV2, CompleteLoweringProfileV2,
+    CompleteLoweringRecordV2,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use ix_trace_rs::trace;
 use qsl_foundation::bound::DomainKind;
 use qsl_semantics::check::PackageDeclarations;
-use qsl_semantics::family::{ClaimExtent, classify_extent};
+use qsl_semantics::family::{classify_extent, ClaimExtent};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, Integer, IntegerInterval, NodeKey,
     PathSegment, Presence, ValueType,
@@ -53,7 +53,7 @@ use quire_semantic_value::declaration::{
 
 use super::tests::source_metre_units;
 use super::tests::{nodes, source, whole_unit, wire};
-use super::{CheckedPackage, Emission, OmittedNode, emit_checked, emit_package};
+use super::{emit_checked, emit_package, CheckedPackage, Emission, OmittedNode};
 
 const LIMIT: u64 = 1_000;
 
@@ -413,7 +413,7 @@ fn velocity_units() -> (
     std::collections::BTreeMap<&'static str, NodeKey>,
 ) {
     use qsl_semantics::value::{
-        DimensionPreimage, NodeOwner, OwnerSelection, UnitPreimage, admit_unit_graph,
+        admit_unit_graph, DimensionPreimage, NodeOwner, OwnerSelection, UnitPreimage,
     };
     let owner = json!({"kind": "source", "authority": "a", "identity": "u", "package_name": "pkg"});
     let mut keys = std::collections::BTreeMap::new();
@@ -571,7 +571,7 @@ fn tc_440_quantity_extent_agrees_with_ir_requires_bound() {
 #[test]
 fn tc_440_compound_quantity_requires_a_bound_at_its_structural_id() {
     use qsl_semantics::value::{
-        DimensionPreimage, NodeOwner, OwnerSelection, UnitPreimage, admit_unit_graph,
+        admit_unit_graph, DimensionPreimage, NodeOwner, OwnerSelection, UnitPreimage,
     };
     use quire_semantic_value::quantity::{QuantityUnit, UnitTable};
 
