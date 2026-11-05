@@ -181,7 +181,7 @@ fn a_recursive_record_row_names_type_nodes_in_its_own_recursion_group() {
 #[trace("FR-092-AC-21", "TC-1021")]
 #[test]
 fn rows_are_ascending_and_other_units_have_none() {
-    let (_, emission, wire) = emitted(RECORDS);
+    let (package, emission, wire) = emitted(RECORDS);
     let emitted_records: Vec<Value> = nodes(&wire)
         .iter()
         .filter(|node| node["semantic_form"] == "record")
@@ -194,6 +194,21 @@ fn rows_are_ascending_and_other_units_have_none() {
     rowed.sort_by_key(Value::to_string);
     want.sort_by_key(Value::to_string);
     assert_eq!(rowed, want, "one row per emitted record node");
+    let node_keys: Vec<&NodeKey> = rows
+        .iter()
+        .map(|row| {
+            package
+                .graph()
+                .semantic_graph()
+                .composite_node(&row.record_key)
+                .expect("a record node")
+        })
+        .collect();
+    assert_eq!(node_keys.len(), 2);
+    assert!(
+        node_keys.windows(2).all(|pair| pair[0] < pair[1]),
+        "rows are in ascending order of their record nodes' keys"
+    );
 
     let (package, tuple, _) = emitted("tuple Pair(Boolean, Boolean);\nunion U { A, B(Integer) }\n");
     assert_eq!(tuple.selected_source_record_rows(), []);
