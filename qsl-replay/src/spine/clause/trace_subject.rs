@@ -11,8 +11,8 @@ use qsl_eval::temporal::{
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::source_map::NativeLanguage;
 use qsl_semantics::check::{
-    CheckedAggregateConditionsRef, CheckedNode, FormulaNodeId, StatePredicate, TemporalClauseNode,
-    TemporalProfile,
+    CheckedAggregateConditionsRef, CheckedInterval, CheckedNode, FormulaNode, FormulaNodeId,
+    StatePredicate, TemporalClauseNode, TemporalProfile, UnaryTemporal,
 };
 use qsl_semantics::model::observation::{DocumentProvision, ObservationLimits, Provisions};
 use quire_eval::{FamilyOutcome, FamilyResult};
@@ -159,12 +159,8 @@ pub fn run_trace_subject_clause(
         _ => false,
     };
     let matches_subject = request.subject == node.clause().over().1;
-    let has_aggregate = !node.clause().aggregates().is_empty();
     let profile_supported = node.clause().profile() == TemporalProfile::EventPositionFalseExtension;
     if request.samples.is_empty() || !record_type || !matches_subject || !profile_supported {
-        return Ok(run.report(refuse("invalid-value", BTreeMap::new())));
-    }
-    if !has_aggregate {
         return Ok(run.report(refuse("invalid-value", BTreeMap::new())));
     }
     for sample in &request.samples {
@@ -189,8 +185,7 @@ pub fn run_trace_subject_clause(
         samples: &request.samples,
         trace: WindowTrace::positions(len),
         captures: Vec::new(),
-        decisive_atom: None,
-        decisive_position: None,
+        first_false_aggregate_positions: BTreeMap::new(),
         undefined_atom: None,
     };
     let result = qsl_eval::temporal::evaluate(
@@ -199,33 +194,74 @@ pub fn run_trace_subject_clause(
         &mut letters,
         &mut meter,
     );
-    let disposition = match result {
-        Ok(outcome) => ClauseDisposition::Temporal(map_outcome(outcome, letters.undefined_atom)),
-        Err(_) => ClauseDisposition::EvaluateFault(InternalFault::new(
-            "FR-330",
-            "trace-subject-temporal-evaluation",
-        )),
+    let (disposition, decisive) = match result {
+        Ok(outcome) => {
+            let decisive =
+                decisive_aggregate(node, &outcome, &letters.first_false_aggregate_positions);
+            (
+                ClauseDisposition::Temporal(map_outcome(outcome, letters.undefined_atom)),
+                decisive,
+            )
+        }
+        Err(_) => (
+            ClauseDisposition::EvaluateFault(InternalFault::new(
+                "FR-330",
+                "trace-subject-temporal-evaluation",
+            )),
+            None,
+        ),
     };
     let mut report = run.report(disposition);
     report.usage = ClauseRunUsage::from_meter(&meter, Default::default());
-    if let Some(atom) = letters.decisive_atom {
-        if matches!(
-            report.disposition,
-            ClauseDisposition::Temporal(super::TemporalVerdict::Violated { .. })
-        ) {
-            let occurrence =
-                OccurrenceKey::new(node.identity(), Origin::new(Role::new("expression"), atom));
-            report.decisive = Some(crate::TemporalDecisive::aggregate(
-                occurrence,
-                letters.decisive_position.unwrap_or(0),
-                qsl_eval::value::ObservationIdentity {
-                    authority: "trace-subject".to_owned(),
-                    identity: letters.decisive_position.unwrap_or(0).to_string(),
-                },
-            ));
-        }
+    if let Some((atom, position)) = decisive {
+        let atom = u64::try_from(atom).ok();
+        let Some(atom) = atom else {
+            return Ok(report);
+        };
+        let occurrence =
+            OccurrenceKey::new(node.identity(), Origin::new(Role::new("expression"), atom));
+        report.decisive = Some(crate::TemporalDecisive::aggregate(
+            occurrence,
+            position,
+            qsl_eval::value::ObservationIdentity {
+                authority: "trace-subject".to_owned(),
+                identity: position.to_string(),
+            },
+        ));
     }
     Ok(report)
+}
+
+fn decisive_aggregate(
+    node: &TemporalClauseNode,
+    outcome: &TemporalOutcome,
+    first_false_aggregate_positions: &BTreeMap<usize, u64>,
+) -> Option<(usize, u64)> {
+    let TemporalOutcome::Violated { at } = outcome else {
+        return None;
+    };
+    let formula = node.clause().formula();
+    let root = formula.nodes().get(formula.root().index())?;
+    let atom = match root {
+        FormulaNode::Aggregate { .. } => formula.root(),
+        FormulaNode::Unary {
+            operator: UnaryTemporal::Always,
+            interval: Some(CheckedInterval::Steps(interval)),
+            operand,
+        } if interval.lower() == 0
+            && interval.upper() == qsl_foundation::bound::TemporalUpper::Finite(0)
+            && matches!(
+                formula.nodes().get(operand.index()),
+                Some(FormulaNode::Aggregate { .. })
+            ) =>
+        {
+            *operand
+        }
+        _ => return None,
+    };
+    let position = at.index();
+    (first_false_aggregate_positions.get(&atom.index()) == Some(&position))
+        .then_some((atom.index(), position))
 }
 
 fn temporal_clock_selections(
@@ -356,8 +392,7 @@ struct TraceSubjectLetters<'a> {
     samples: &'a [Value],
     trace: WindowTrace,
     captures: Vec<Value>,
-    decisive_atom: Option<u64>,
-    decisive_position: Option<u64>,
+    first_false_aggregate_positions: BTreeMap<usize, u64>,
     undefined_atom: Option<usize>,
 }
 
@@ -472,9 +507,9 @@ impl TemporalLetters for TraceSubjectLetters<'_> {
                 self.undefined_atom = Some(atom.index());
             }
             if matches!(reading, AtomReading::False) {
-                self.decisive_atom =
-                    Some(u64::try_from(atom.index()).map_err(|_| fault("atom-index-fits-u64"))?);
-                self.decisive_position = Some(position.index());
+                self.first_false_aggregate_positions
+                    .entry(atom.index())
+                    .or_insert_with(|| position.index());
             }
             return Ok(reading);
         }
@@ -654,6 +689,9 @@ mod tests {
     use qsl_semantics::model::intake::PackageInput;
     use quire_exact::FieldValue;
 
+    #[path = "../../../../qsl-semantics/tests/support/receiver_frames.rs"]
+    mod model_fixture;
+
     const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile t = \"quire.temporal.event-position.false-extension/v1\";\n\
@@ -663,6 +701,9 @@ mod tests {
            always[0,2] (count where holds(c.level != 2) over past[0,0] min_count 1 >= 1)\n\
          }\n\
          temporal B using t over (c: Counter) clock \"model-steps\" on origin {\n\
+           always[0,0] (count where holds(c.level > 9) over past[0,0] min_count 0 >= 1)\n\
+         }\n\
+         temporal Each using t over (c: Counter) clock \"model-steps\" on each (q: Counter) {\n\
            always[0,0] (count where holds(c.level > 9) over past[0,0] min_count 0 >= 1)\n\
          }\n\
          temporal Plain using t over (c: Counter) clock \"model-steps\" on origin {\n\
@@ -737,6 +778,63 @@ mod tests {
         (composite("Counter"), composite("Other"))
     }
 
+    fn model_subject() -> (String, PackageInput, ValueType) {
+        let document = serde_json::to_vec(&model_fixture::document(&[], &[]))
+            .expect("model fixture serializes");
+        let packages =
+            PackageInput::package_input([document.as_slice()]).expect("model fixture is admitted");
+        let text = format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.value.complete/v1\";\n\
+             profile t = \"quire.temporal.event-position.false-extension/v1\";\n\
+             model Counters = {package:?};\n\
+             temporal ModelPlain using t over (c: Counters::Counter) clock \"model-steps\" \
+             on origin {{ always[0,0] holds(true) }}\n",
+            package = model_fixture::PACKAGE,
+        );
+        let identity = SourceIdentity::new("agent-ix", "trace-subject-model-test");
+        let limits = super::super::super::SpineLimits::default();
+        let cancel = Cancel::new();
+        let parsed = front_end::parse(
+            &front_end::ParseRequest {
+                source: &identity,
+                path: "trace-subject-model.native",
+                bytes: text.as_bytes(),
+            },
+            limits.source,
+            &cancel,
+        )
+        .expect("model source parses")
+        .into_value();
+        let models = front_end::select(&parsed, &packages, limits.model, &cancel)
+            .expect("model selected")
+            .into_value();
+        let checked = front_end::check_with_temporal_selections_and_execution_points(
+            &parsed,
+            "fixture".to_owned(),
+            &crate::spine::StateClauseExecutionPoints::new(),
+            &[],
+            &models,
+            &super::super::super::DependencyInput::default(),
+            limits,
+            &cancel,
+        )
+        .expect("the model-subject clause checks")
+        .into_value();
+        let subject = checked
+            .package()
+            .graph()
+            .temporal_clauses()
+            .iter()
+            .find(|node| node.clause().name() == "ModelPlain")
+            .expect("model clause exists")
+            .clause()
+            .over()
+            .1
+            .clone();
+        (text, packages, subject)
+    }
+
     fn request(name: &str, subject: ValueType, samples: Vec<Value>) -> TraceSubjectClauseRequest {
         TraceSubjectClauseRequest {
             source: source(if name == "Infinite" {
@@ -800,6 +898,21 @@ mod tests {
             .expect("aggregate false decides the clause");
         assert!(decisive.aggregate.is_some());
         assert_eq!(decisive.position, Some(0));
+
+        let each_samples = [0, 1, 2].map(|level| sample(key.clone(), level)).to_vec();
+        let each = run_trace_subject_clause(request("Each", counter.clone(), each_samples))
+            .expect("valid on-each input reports");
+        assert!(matches!(
+            each.disposition,
+            ClauseDisposition::Temporal(super::super::TemporalVerdict::Violated { at: 0 })
+        ));
+        assert_eq!(
+            each.decisive
+                .as_ref()
+                .and_then(|decisive| decisive.position),
+            Some(0),
+            "the later false aggregate must not replace the first failing activation"
+        );
     }
 
     #[ix_trace_rs::trace("TC-840", "FR-330-AC-17")]
@@ -820,7 +933,6 @@ mod tests {
             request("A", counter.clone(), Vec::new()),
             request("A", counter.clone(), vec![Value::Boolean(true)]),
             request("A", other, other_samples),
-            request("Plain", counter.clone(), valid.clone()),
             request("Infinite", counter.clone(), valid.clone()),
         ];
         for request in requests {
@@ -845,5 +957,46 @@ mod tests {
             missing.disposition,
             ClauseDisposition::MissingName { .. }
         ));
+    }
+
+    #[ix_trace_rs::trace("TC-840", "FR-330-AC-17")]
+    #[test]
+    fn trace_subject_evaluates_record_clauses_without_aggregates() {
+        let (counter, _) = checked_types();
+        let ValueType::Composite(key) = &counter else {
+            unreachable!("Counter is a record")
+        };
+        let samples = [1, 2, 3].map(|level| sample(key.clone(), level)).to_vec();
+        let report = run_trace_subject_clause(request("Plain", counter, samples))
+            .expect("valid record trace reports");
+        assert!(matches!(
+            report.disposition,
+            ClauseDisposition::Temporal(super::super::TemporalVerdict::Holds)
+        ));
+        assert!(report.decisive.is_none());
+    }
+
+    #[ix_trace_rs::trace("TC-840", "FR-330-AC-17")]
+    #[test]
+    fn trace_subject_refuses_model_subject_without_aggregate_as_non_record() {
+        let (text, packages, subject) = model_subject();
+        let request = TraceSubjectClauseRequest {
+            source: source(&text),
+            package_name: "fixture".to_owned(),
+            packages,
+            dependencies: super::super::super::DependencyInput::default(),
+            name: "ModelPlain".to_owned(),
+            subject,
+            samples: vec![Value::Null],
+            limits: super::super::super::SpineLimits::default(),
+            accounting: crate::spine::default_accounting(crate::spine::DEFAULT_WORK_UNITS),
+        };
+        let report = run_trace_subject_clause(request).expect("request reports");
+        assert_eq!(
+            report.disposition.stage(),
+            super::super::ClauseRunStage::Admit
+        );
+        assert_eq!(report.disposition.category().as_str(), "refusal");
+        assert_eq!(report.usage.evaluation_admissions, 0);
     }
 }

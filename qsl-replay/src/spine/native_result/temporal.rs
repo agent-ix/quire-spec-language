@@ -85,7 +85,6 @@ pub(super) enum TemporalWire {
     },
     InsufficientData {
         position: u64,
-        atom: usize,
         count: u64,
         min_count: u64,
     },
@@ -507,11 +506,13 @@ pub(super) fn verdict_wire(
         ),
         TemporalVerdict::Undefined {
             at,
-            cause: TemporalUndefinedCause::InsufficientData { atom, count, min_count },
+            cause:
+                TemporalUndefinedCause::InsufficientData {
+                    count, min_count, ..
+                },
         } => (
             TemporalWire::InsufficientData {
                 position: *at,
-                atom: *atom,
                 count: *count,
                 min_count: *min_count,
             },
@@ -662,8 +663,6 @@ pub enum TemporalRecord {
     InsufficientData {
         /// The activation position.
         position: u64,
-        /// The aggregate atom's zero-based formula occurrence.
-        atom: usize,
         /// The values the window held.
         count: u64,
         /// The term's `min_count`.
@@ -942,13 +941,12 @@ impl TemporalRecord {
             },
             Self::InsufficientData {
                 position,
-                atom,
                 count,
                 min_count,
             } => TemporalVerdict::Undefined {
                 at: *position,
                 cause: TemporalUndefinedCause::InsufficientData {
-                    atom: *atom,
+                    atom: 0,
                     count: *count,
                     min_count: *min_count,
                 },
@@ -989,7 +987,7 @@ impl TemporalRecord {
                 })
             }
             Self::Incomplete {} | Self::ProgressContradicted { .. } | Self::TraceRefused { .. } => {
-                return None
+                return None;
             }
         })
     }
