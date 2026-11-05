@@ -75,7 +75,7 @@ route.
 | Read | From the package | Retired source read |
 | --- | --- | --- |
 | slot selection (node, member, index) and its refusals | the admitted `protocol` node's body members (FR-464) | `protocol_selection::select` over the source package |
-| binders: node key, level, name, `ValueType` | the admitted binder nodes and the kernel `ValueType` projected from them (FR-390 "Typed projection admission") | the source frame of the checked body |
+| binders: node key, level, name, `ValueType` | the admitted binder nodes the slot reads, less the binders its expression introduces itself (`let`, collection query, `case` arm; FR-390 rule 3), and the kernel `ValueType` projected from them (FR-390 "Typed projection admission") | the source frame of the checked body |
 | the expression evaluated | the admitted term, read as FR-400 `NodeRead` through `TermHandle` | the source `CheckedBody` |
 | the read location of a binder and of each visit | the `Location` of the admitted node and the `protocol_locations` rows (FR-390) | the source package's occurrence list |
 | the observation's model selection and type environment | the package's `model_root` nodes and the caller's domain package documents | `graph().model_selections()` and `graph().scope().types()` |
@@ -262,7 +262,7 @@ Contract IR's selected-record projection carries a record's members whether they
 plain, Optional, Collection members (kind and cardinality bound intact) or
 Collections of Options and Options of Collections, so the bare route reads each
 member's type and presence from the package and evaluates slots over such records as
-the in-process route does. A shape Contract IR cannot carry keeps the refusal, and Contract IR's criteria give
+the in-process route does. A node that reads a Collection member has the Collection as its type: the bare route reads its cardinality bound from the bounds node, its kind and element from the collection type node, and types the element as Contract IR types a node of that element type, so a query over the member evaluates as the in-process route does. A shape Contract IR cannot carry keeps the refusal, and Contract IR's criteria give
 no positive case for an optional member typed by an Option or for an Option nested in
 an Option through aliases; such a shape is an unmet dependency, not a scope reduction
 (FR-390).
@@ -301,6 +301,7 @@ FR-520-AC-11 states.
 | FR-533-AC-16 | The bare route, given the identity rows and the equality rows read from the handoff directory, with no `Emission` and no `CheckedPackage` in the test crate, evaluates to the in-process route's value and charge log: the integer equality of `Refund`'s retry relation and recovery predicate in TC-1070 fixture E; the String, UUID and Timestamp equality slot of the fixture TC-1289 defines; and the quantity equality slot of the fixture TC-1290 defines. Over a bare package whose equality rows are omitted each of those slots refuses `MissingEqualityWitness`, while `Refund`'s `trigger.guard` (no `==` or `!=` application) evaluates. | Test (TC-1333) |
 | FR-533-AC-17 | An inspection of the bare route finds no function that derives an equality application row, equality fact row or source-unit row from a node, a name or a source, that reads `Emission::equality_producer_identity_rows`, `equality_fact_witness_rows` or `selected_source_unit_rows`, or that selects a span-named origin by its name text other than by the rule of "Slot naming on the bytes route". | Inspection (TC-1333) |
 | FR-533-AC-18 | The equality witness of a slot call is decided over the equality applications the slot's walk reaches, that is the applications of the slot walk (FR-383) and, at each call in it, those of the called function's body walked the same way, transitively; a function body is the one place a valid package's dependency closure and the walk differ. In a unit compiled from source in which `trigger.guard` of a copy of fixture E calls a function whose body holds an `==` application, over a supply whose equality rows are omitted, `trigger.guard` refuses `MissingEqualityWitness` at `CallAdmissionLocus::Package` with the meter untouched, and over the rows the unit's handoff writes it evaluates to the in-process route's value and charge log; a slot of the same unit that calls no function holding `==` evaluates with the rows omitted. | Test (TC-1333) |
+| FR-533-AC-19 | The bare route evaluates **R**'s recovery predicates, whose `sum` comprehension reads the Collection member `receipts` of the record `Recovery`: `Full` (`sum(receipt in recovered.receipts: receipt) = target and not activated`) is true for receipts [2,3], target 5, not activated, and false for target 6, for activated, and holds for no receipts and target 0; `Partial` (`0 < sum(...) and sum(...) < target`) is true for receipts [1,2] and [4] with target 5, false for no receipts and for [5]. A `recovered` supply that is no `Recovery` record and a supply that omits `target` refuse as `CallFailure::Admission`. | Test (TC-1333) |
 
 ## Dependencies
 
