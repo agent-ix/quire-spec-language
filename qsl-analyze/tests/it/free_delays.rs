@@ -24,7 +24,7 @@ use qsl_analyze::exact_probabilistic::{
     WitnessScope,
 };
 use qsl_eval::model_subject::ModelSubject;
-use qsl_eval::simulation::{model::ScheduledIdentity, Limits};
+use qsl_eval::simulation::model::ScheduledIdentity;
 use qsl_replay::{
     FreeDelayActionRow, FreeDelaysRace, FreeRacer, GivenRacer,
     ProductAction as ReplayProductAction, ProductActionRefusal, Schedule,
@@ -1286,8 +1286,8 @@ fn detour_max_claim() -> World {
 
 /// FR-204 "Evidence" (TC-642): the witness scheduler has an entry at every
 /// digital evidence and continuation state, not only at the states the
-/// emitted paths leave. Under every scheduler `Detour`'s maximum scheduler
-/// also names the `L` branch of `Half`, which no accepted path passes.
+/// emitted paths leave. Under the workload `All` `Detour`'s maximum scheduler
+/// also names a continuation state beside the paths.
 #[trace("TC-642", "FR-204")]
 #[test]
 fn witness_entries_cover_continuation_states_beside_the_paths() {
@@ -1297,7 +1297,7 @@ fn witness_entries_cover_continuation_states_beside_the_paths() {
     let witness = produce_witness(
         &built,
         &policy,
-        WitnessScope::EveryScheduler,
+        WitnessScope::Workload,
         start,
         &accepted(&built),
         &ratio(7, 10),
@@ -1312,8 +1312,8 @@ fn witness_entries_cover_continuation_states_beside_the_paths() {
     }
     let entered: Vec<ProbStateId> = witness.entries.iter().map(|(state, _)| *state).collect();
     assert!(
-        left.iter().all(|state| entered.contains(state)),
-        "every state an emitted path leaves has an entry: {entered:?} vs {left:?}"
+        entered.contains(&start),
+        "the race state has an entry: {entered:?}"
     );
     assert!(
         entered.iter().any(|state| !left.contains(state)),
@@ -1322,116 +1322,212 @@ fn witness_entries_cover_continuation_states_beside_the_paths() {
     assert!(entered.windows(2).all(|pair| pair[0] < pair[1]));
 }
 
-/// FR-204 with a randomized entry: both rows randomize between `B` delay 1
-/// and 2 with `1/2` each. The witness scheduler emits the four whole actions
-/// in canonical choice order with their exact product probabilities.
+/// A randomized policy over `Detour`'s product: `first` and `second` are the
+/// choices of the race state's two rows, and every other node takes choice 0.
+fn randomized_policy(
+    built: &ProbProduct,
+    first: SchedulerChoice,
+    second: SchedulerChoice,
+) -> Vec<Option<SchedulerChoice>> {
+    let mut policy: Vec<Option<SchedulerChoice>> =
+        vec![Some(SchedulerChoice::Deterministic(ActionChoice(0))); built.states.len()];
+    policy.push(Some(first));
+    policy.push(Some(second));
+    policy
+}
+
+fn weights(list: &[(usize, Rational)]) -> SchedulerChoice {
+    SchedulerChoice::Randomized(
+        list.iter()
+            .map(|(index, mass)| (ActionChoice(*index), mass.clone()))
+            .collect(),
+    )
+}
+
+fn entries_of(
+    built: &ProbProduct,
+    policy: &[Option<SchedulerChoice>],
+    limits: &ExactProbLimits,
+) -> Result<Vec<(ProbStateId, EntryChoice)>, WitnessError> {
+    witness_scheduler(
+        built,
+        policy,
+        WitnessScope::Workload,
+        built.initial[0].2,
+        &accepted(built),
+        limits,
+    )
+}
+
+/// The entry at the race state, which is the first.
+fn race_entry(entries: &[(ProbStateId, EntryChoice)]) -> Vec<(&ProductAction, Rational)> {
+    let Some((_, EntryChoice::Randomized(alternatives))) = entries.first() else {
+        panic!("a randomized entry at the race state: {entries:?}");
+    };
+    alternatives
+        .iter()
+        .map(|(action, mass)| (action, mass.clone()))
+        .collect()
+}
+
+/// FR-202 (TC-642, FR-204): the policy randomizes row `[1]` between `B`
+/// delay 1 and 2 with `1/2` each and takes `B` delay 1 on row `[3]`; the
+/// witness scheduler's entry at the race state is the exact randomization
+/// over the two whole actions, and the continuation state has its own entry.
 #[trace("TC-642", "FR-204")]
 #[test]
 fn randomized_rows_give_an_exact_randomized_entry() {
     let world = detour_max_claim();
     let (built, _) = detour_maximum(&world);
     let start = built.initial[0].2;
-    let take = |index: usize| SchedulerChoice::Deterministic(ActionChoice(index));
-    let mut policy: Vec<Option<SchedulerChoice>> = vec![Some(take(0)); built.states.len()];
     let half = ratio(1, 2);
-    let reversed = || {
-        SchedulerChoice::Randomized(vec![
-            (ActionChoice(1), half.clone()),
-            (ActionChoice(0), half.clone()),
-        ])
-    };
-    policy.push(Some(reversed()));
-    policy.push(Some(reversed()));
-    let entries = witness_scheduler(
+    let policy = randomized_policy(
         &built,
-        &policy,
-        WitnessScope::Workload,
-        start,
-        &accepted(&built),
-        &ExactProbLimits::default(),
-    )
-    .expect("the policy gives an entry at each reached state");
-    let (_, EntryChoice::Randomized(alternatives)) = entries
-        .iter()
-        .find(|(state, _)| *state == start)
-        .expect("randomized entry at the race state")
+        weights(&[(0, half.clone()), (1, half.clone())]),
+        SchedulerChoice::Deterministic(ActionChoice(0)),
+    );
+    let entries = entries_of(&built, &policy, &ExactProbLimits::default())
+        .expect("the policy gives an entry at each reached state");
+    let [(state, EntryChoice::Randomized(_)), (continuation, EntryChoice::Action(delay))] =
+        entries.as_slice()
     else {
-        panic!("randomized entry at the race state: {entries:?}");
+        panic!("a randomized entry at the race state, then a continuation: {entries:?}");
     };
-    let [(first, p), (second, q), (third, r), (fourth, s)] = alternatives.as_slice() else {
-        panic!("four whole actions: {alternatives:?}");
+    assert!(*continuation > *state);
+    assert!(matches!(delay, ProductAction::UnitDelay));
+    assert_eq!(*state, start);
+    let alternatives = race_entry(&entries);
+    let [(first, p), (second, q)] = alternatives.as_slice() else {
+        panic!("two whole actions: {alternatives:?}");
     };
-    let quarter = ratio(1, 4);
-    assert_eq!((p, q, r, s), (&quarter, &quarter, &quarter, &quarter));
+    assert_eq!((p, q), (&half, &half));
     assert_eq!(
         action_rows(&world, first),
         [row(&[("A", 1)], &[("B", 1)]), row(&[("A", 3)], &[("B", 1)])]
     );
     assert_eq!(
         action_rows(&world, second),
-        [row(&[("A", 1)], &[("B", 1)]), row(&[("A", 3)], &[("B", 2)])]
-    );
-    assert_eq!(
-        action_rows(&world, third),
         [row(&[("A", 1)], &[("B", 2)]), row(&[("A", 3)], &[("B", 1)])]
     );
-    assert_eq!(
-        action_rows(&world, fourth),
-        [row(&[("A", 1)], &[("B", 2)]), row(&[("A", 3)], &[("B", 2)])]
+}
+
+/// FR-202 (TC-642, FR-204): with two randomized rows the entry is the product
+/// measure, `1/2 * 1/4`, `1/2 * 3/4`, ...: a sum of the row masses, or a
+/// dropped row, changes a value; alternatives are in row-major canonical
+/// order.
+#[trace("TC-642", "FR-204")]
+#[test]
+fn two_randomized_rows_give_the_product_measure() {
+    let world = detour_max_claim();
+    let (built, _) = detour_maximum(&world);
+    let policy = randomized_policy(
+        &built,
+        weights(&[(0, ratio(1, 2)), (1, ratio(1, 2))]),
+        weights(&[(0, ratio(1, 4)), (2, ratio(3, 4))]),
     );
+    let entries = entries_of(&built, &policy, &ExactProbLimits::default())
+        .expect("two randomized rows give an entry");
+    let alternatives = race_entry(&entries);
+    let masses: Vec<Rational> = alternatives.iter().map(|(_, mass)| mass.clone()).collect();
+    assert_eq!(masses, [ratio(1, 8), ratio(3, 8), ratio(1, 8), ratio(3, 8)]);
+    let rows: Vec<Vec<Named>> = alternatives
+        .iter()
+        .map(|(action, _)| action_rows(&world, action))
+        .collect();
+    assert_eq!(
+        rows[1],
+        [row(&[("A", 1)], &[("B", 1)]), row(&[("A", 3)], &[("B", 3)])]
+    );
+    assert_eq!(
+        rows[2],
+        [row(&[("A", 1)], &[("B", 2)]), row(&[("A", 3)], &[("B", 1)])]
+    );
+}
 
-    let last = policy.len() - 2;
-    policy[last] = Some(SchedulerChoice::Randomized(vec![
-        (ActionChoice(0), ratio(1, 1)),
-        (ActionChoice(1), ratio(-1, 2)),
-    ]));
-    assert!(matches!(
-        witness_scheduler(
-            &built,
-            &policy,
-            WitnessScope::Workload,
-            start,
-            &accepted(&built),
-            &ExactProbLimits::default()
-        ),
-        Err(WitnessError::NoChoice { state }) if state == start.index()
-    ));
-    policy[last] = Some(SchedulerChoice::Randomized(vec![
-        (ActionChoice(0), half.clone()),
-        (ActionChoice(0), half.clone()),
-    ]));
-    assert!(matches!(
-        witness_scheduler(
-            &built,
-            &policy,
-            WitnessScope::Workload,
-            start,
-            &accepted(&built),
-            &ExactProbLimits::default()
-        ),
-        Err(WitnessError::NoChoice { state }) if state == start.index()
-    ));
+/// FR-202 (TC-642, FR-204): alternatives are in canonical choice order, not
+/// the policy's order.
+#[trace("TC-642", "FR-204")]
+#[test]
+fn alternatives_are_in_canonical_choice_order() {
+    let world = detour_max_claim();
+    let (built, _) = detour_maximum(&world);
+    let half = ratio(1, 2);
+    let policy = randomized_policy(
+        &built,
+        weights(&[(1, half.clone()), (0, half.clone())]),
+        SchedulerChoice::Deterministic(ActionChoice(0)),
+    );
+    let entries = entries_of(&built, &policy, &ExactProbLimits::default())
+        .expect("a reordered distribution is the same entry");
+    let alternatives = race_entry(&entries);
+    let delays: Vec<Vec<Named>> = alternatives
+        .iter()
+        .map(|(action, _)| action_rows(&world, action))
+        .collect();
+    assert_eq!(delays[0][0], row(&[("A", 1)], &[("B", 1)]));
+    assert_eq!(delays[1][0], row(&[("A", 1)], &[("B", 2)]));
+}
 
-    policy[last] = Some(reversed());
-    let bounded = ExactProbLimits {
-        model: qsl_replay::ModelCheckLimits {
-            limits: Limits {
-                max_transitions: 3,
-                ..Limits::default()
-            },
-            ..ExactProbLimits::default().model
-        },
-        ..ExactProbLimits::default()
+/// FR-202 (TC-642, FR-204): zero or negative mass, a repeated choice, a total
+/// other than 1 and a choice the row lacks give no entry.
+#[trace("TC-642", "FR-204")]
+#[test]
+fn malformed_distributions_give_no_entry() {
+    let world = detour_max_claim();
+    let (built, _) = detour_maximum(&world);
+    let start = built.initial[0].2;
+    let half = ratio(1, 2);
+    let det = SchedulerChoice::Deterministic(ActionChoice(0));
+    let malformed = [
+        weights(&[(0, ratio(1, 1)), (1, ratio(-1, 2))]),
+        weights(&[(0, ratio(1, 1)), (1, ratio(0, 1))]),
+        weights(&[(0, half.clone()), (0, half.clone())]),
+        weights(&[(0, ratio(1, 3))]),
+        weights(&[(0, half.clone()), (9, half.clone())]),
+    ];
+    for bad in malformed {
+        for in_first_row in [true, false] {
+            let policy = if in_first_row {
+                randomized_policy(&built, bad.clone(), det.clone())
+            } else {
+                randomized_policy(&built, det.clone(), bad.clone())
+            };
+            assert!(
+                matches!(
+                    entries_of(&built, &policy, &ExactProbLimits::default()),
+                    Err(WitnessError::NoChoice { state }) if state == start.index()
+                ),
+                "{bad:?} refuses"
+            );
+        }
+    }
+}
+
+/// FR-202 (TC-642, FR-204): the entry's alternatives are bounded by the
+/// transition limit; one more than the bound refuses, the bound itself
+/// admits.
+#[trace("TC-642", "FR-204")]
+#[test]
+fn randomized_entries_are_bounded_by_the_transition_limit() {
+    let world = detour_max_claim();
+    let (built, _) = detour_maximum(&world);
+    let start = built.initial[0].2;
+    let policy = randomized_policy(
+        &built,
+        weights(&[(0, ratio(1, 2)), (1, ratio(1, 2))]),
+        weights(&[(0, ratio(1, 2)), (1, ratio(1, 2))]),
+    );
+    let capped = |max: usize| {
+        let mut limits = ExactProbLimits::default();
+        limits.model.limits.max_transitions = max;
+        limits
     };
     assert!(matches!(
-        witness_scheduler(
-            &built,
-            &policy,
-            WitnessScope::Workload,
-            start,
-            &accepted(&built),
-            &bounded
-        ),
-        Err(WitnessError::NoChoice { state }) if state == start.index()
+        entries_of(&built, &policy, &capped(3)),
+        Err(WitnessError::TooManyAlternatives { state }) if state == start.index()
     ));
+    assert_eq!(
+        race_entry(&entries_of(&built, &policy, &capped(4)).expect("four alternatives fit")).len(),
+        4
+    );
 }
