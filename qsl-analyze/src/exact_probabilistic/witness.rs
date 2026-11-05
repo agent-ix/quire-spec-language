@@ -144,7 +144,7 @@ fn choices_at(product: &ProbProduct, state: ProbStateId) -> Vec<&ProductAction> 
 }
 
 /// One entry of a witness scheduler (FR-202, FR-204 "Evidence").
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum EntryChoice {
     /// One action.
     Action(ProductAction),

@@ -881,11 +881,23 @@ fn detour_maximum_witness_is_a_two_path_set_of_merged_steps() {
     };
     let witness = produce(2).expect("two paths pass the bound");
     let expected = [row(&[("A", 1)], &[("B", 2)]), row(&[("A", 3)], &[("B", 1)])];
-    let [(entry_state, entry)] = witness.entries.as_slice() else {
-        panic!("one entry, at the race state: {:?}", witness.entries);
+    // FR-204 "Evidence": the race state's entry, and the entry of the
+    // continuation state the chain also reaches (a unit delay no emitted path
+    // leaves).
+    let [(entry_state, entry), (continuation, delay)] = witness.entries.as_slice() else {
+        panic!(
+            "the race state and one continuation state: {:?}",
+            witness.entries
+        );
     };
     assert_eq!(*entry_state, start);
     assert_eq!(action_rows(&world, entry), expected);
+    assert!(matches!(delay, ProductAction::UnitDelay));
+    assert!(witness.paths.iter().all(|path| path
+        .steps
+        .iter()
+        .take(path.steps.len() - 1)
+        .all(|step| step.to != *continuation)));
 
     let probabilities: Vec<Rational> = witness
         .paths
@@ -1259,18 +1271,15 @@ fn witness_entries_cover_continuation_states_beside_the_paths() {
     )
     .expect("the policy induces a chain")
     .expect("two paths pass the bound");
-    let mut left = vec![start];
+    let mut left: Vec<ProbStateId> = Vec::new();
     for path in &witness.paths {
-        left.extend(path.steps.iter().rev().skip(1).map(|step| step.to));
-        if let Some(first) = path.steps.first() {
-            left.push(first.to);
-        }
+        let sources = std::iter::once(start).chain(path.steps.iter().map(|step| step.to));
+        left.extend(sources.take(path.steps.len()));
     }
     let entered: Vec<ProbStateId> = witness.entries.iter().map(|(state, _)| *state).collect();
     assert!(
-        left.iter()
-            .all(|state| *state == start || entered.contains(state))
-            || entered.contains(&start)
+        left.iter().all(|state| entered.contains(state)),
+        "every state an emitted path leaves has an entry: {entered:?} vs {left:?}"
     );
     assert!(
         entered.iter().any(|state| !left.contains(state)),
@@ -1306,9 +1315,13 @@ fn randomized_rows_give_an_exact_randomized_entry() {
         &accepted(&built),
     )
     .expect("the policy gives an entry at each reached state");
-    let [(state, EntryChoice::Randomized(alternatives))] = entries.as_slice() else {
-        panic!("one randomized entry at the race state: {entries:?}");
+    let [(state, EntryChoice::Randomized(alternatives)), (continuation, EntryChoice::Action(delay))] =
+        entries.as_slice()
+    else {
+        panic!("a randomized entry at the race state, then a continuation: {entries:?}");
     };
+    assert!(*continuation > *state);
+    assert!(matches!(delay, ProductAction::UnitDelay));
     assert_eq!(*state, start);
     let [(first, p), (second, q)] = alternatives.as_slice() else {
         panic!("two whole actions: {alternatives:?}");
@@ -1328,7 +1341,7 @@ fn randomized_rows_give_an_exact_randomized_entry() {
         ActionChoice(0),
         ratio(1, 3),
     )]));
-    assert_eq!(
+    assert!(matches!(
         witness_scheduler(
             &built,
             &policy,
@@ -1336,8 +1349,6 @@ fn randomized_rows_give_an_exact_randomized_entry() {
             start,
             &accepted(&built)
         ),
-        Err(WitnessError::NoChoice {
-            state: start.index()
-        })
-    );
+        Err(WitnessError::NoChoice { state }) if state == start.index()
+    ));
 }
