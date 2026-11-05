@@ -20,7 +20,7 @@ use quire_checked::node::{
 };
 use quire_contract_model::{
     CheckedNodeId, CheckedPackageV2, CheckedProtocolLocation, CheckedProtocolSemanticLocation,
-    CheckedSemanticNodeV2, CheckedTerm,
+    CheckedSemanticNodeV2, CheckedTerm, OperationModeKind,
 };
 use quire_exact::{
     ArithmeticOperator, Meter, NodeKey, OrderingOperator, ScalarLimits, TextPayload, Timestamp,
@@ -1580,6 +1580,43 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                     return Err(fault("reader-collection-containment-has-two-operands").into());
                 };
                 Ok((NodeKind::Contains(*collection, *item), children))
+            }
+            Some("quire.op.model.all_instances") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [population] = children.as_slice() else {
+                    return Err(fault("reader-all-instances-has-one-population").into());
+                };
+                Ok((
+                    NodeKind::AllInstances {
+                        population: *population,
+                    },
+                    children,
+                ))
+            }
+            Some("quire.op.model.lookup") => {
+                let children = self.project_arguments(id, Some(arguments), context, locals)?;
+                let [population, reference] = children.as_slice() else {
+                    return Err(fault("reader-lookup-has-population-and-reference").into());
+                };
+                let mode = operation
+                    .mode()
+                    .map_err(|_| fault("reader-lookup-absence-mode-is-admitted"))?
+                    .filter(|mode| mode.kind == OperationModeKind::Absence)
+                    .ok_or_else(|| fault("reader-lookup-has-absence-mode"))?;
+                let absence = match mode.value {
+                    "undefined" => quire_semantic_value::absence::AbsenceMode::Undefined,
+                    "empty" => quire_semantic_value::absence::AbsenceMode::Empty,
+                    "refused" => quire_semantic_value::absence::AbsenceMode::Refused,
+                    _ => return Err(fault("reader-lookup-absence-mode-is-catalogued").into()),
+                };
+                Ok((
+                    NodeKind::Lookup {
+                        population: *population,
+                        reference: *reference,
+                        absence,
+                    },
+                    children,
+                ))
             }
             Some("quire.op.numeric.convert") => {
                 let children = self.project_arguments(id, Some(arguments), context, locals)?;
