@@ -689,8 +689,11 @@ pub fn protocol_domains(
         .obligations
         .compensations
         .iter()
-        .zip(&keys.compensations)
-        .map(|(template, node)| (node.clone(), template.attempt_type.clone()));
+        .enumerate()
+        .filter_map(|(index, template)| {
+            let node = keys.compensations.get(&index)?;
+            Some((node.clone(), template.attempt_type.clone()))
+        });
     binders.chain(attempts).collect()
 }
 
@@ -704,10 +707,11 @@ fn check_attempt_types(
     graph: &CheckedGraph,
 ) -> Result<(), NotSimulated> {
     let mut domains = BTreeMap::new();
-    let nodes = graph
-        .protocol_node_keys(&protocol.name)
-        .map_or(&[][..], |keys| keys.compensations.as_slice());
-    for (template, node) in protocol.obligations.compensations.iter().zip(nodes) {
+    let keys = graph.protocol_node_keys(&protocol.name);
+    for (index, template) in protocol.obligations.compensations.iter().enumerate() {
+        let Some(node) = keys.and_then(|keys| keys.compensations.get(&index)) else {
+            continue;
+        };
         if model.enumerates(&template.attempt_type) {
             continue;
         }

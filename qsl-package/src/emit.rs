@@ -4024,7 +4024,7 @@ pub fn emit_checked_with_protocol_results_and_temporal_selections_and_cancel(
             .values()
             .chain(keys.channels.values())
             .chain(keys.roles.values())
-            .chain(keys.compensations.iter())
+            .chain(keys.compensations.values())
             .chain(keys.terminal.iter())
         {
             owned_ids.push(node_id(&ids, key));

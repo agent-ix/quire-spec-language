@@ -164,13 +164,13 @@ fn slot(
     let checked = package.graph().protocol(protocol).unwrap();
     let node = if owner == protocol {
         keys.clause.clone().unwrap()
-    } else if let Some(position) = checked
+    } else if let Some(index) = checked
         .obligations
         .compensations
         .iter()
         .position(|template| template.name == owner)
     {
-        keys.compensations[position].clone()
+        keys.compensations[&index].clone()
     } else if let Some((id, name)) = &checked.finish {
         if name == owner {
             keys.nodes[id].clone()

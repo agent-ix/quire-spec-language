@@ -1160,3 +1160,91 @@ fn a_let_bound_value_keeps_the_binder_it_derives_from() {
     );
     assert_eq!(amounts(&charges.total()), used);
 }
+
+/// The emitted compensation node whose `forward_binder` is the parameter the
+/// template declared under `forward`: the template's identity read from the
+/// graph itself, never from a position in any list.
+fn template_node(package: &CheckedPackage, forward: &str) -> NodeKey {
+    use qsl_semantics::check::{BindingValue, BodyTerm, LeafTerm, MemberTerm};
+    let keys = package.graph().protocol_node_keys("Refunds").unwrap();
+    let binder = binder(package, "Refunds", forward);
+    let mut owners = keys.compensations.values().filter(|key| {
+        let node = package
+            .graph()
+            .semantic_graph()
+            .node((*key).clone())
+            .unwrap();
+        let BodyTerm::Application(application) = node.body() else {
+            return false;
+        };
+        application.arguments.iter().any(|argument| match argument {
+            MemberTerm::Binding(binding) if binding.name == "forward_binder" => matches!(
+                &binding.value,
+                BindingValue::Leaf(LeafTerm::Reference { target })
+                    if target.admitted() == Some(&binder)
+            ),
+            _ => false,
+        })
+    });
+    let owner = owners.next().expect("one template declares this forward");
+    assert!(owners.next().is_none(), "exactly one template owns it");
+    owner.clone()
+}
+
+/// QSL-1705: a compensation node selects its own template's slots even when
+/// the declaration order differs from the node-key order. `Refund` is
+/// declared first and `Partial` second; each node found by graph identity
+/// evaluates only its own template's binders.
+#[test]
+#[trace("FR-390-AC-1", "TC-1315")]
+fn each_compensation_node_selects_its_own_template_slots() {
+    let package = fixture();
+    let checked = package.graph().protocol("Refunds").unwrap();
+    let declared: Vec<&str> = checked
+        .obligations
+        .compensations
+        .iter()
+        .map(|template| template.name.as_str())
+        .collect();
+    assert_eq!(declared, ["Refund", "Partial"], "source declaration order");
+    let refund = template_node(&package, "forward");
+    let partial = template_node(&package, "partialForward");
+    assert_ne!(refund, partial);
+    assert!(
+        partial < refund,
+        "the fixture's node-key order differs from its declaration order"
+    );
+    let evaluate = |node: &NodeKey, values: Vec<(&str, Value)>| {
+        boolean(
+            package
+                .evaluate_protocol_slot(
+                    &ProtocolSlot {
+                        node: node.clone(),
+                        member: "recovery.predicate".to_owned(),
+                        index: None,
+                    },
+                    &supply(&package, "Refunds", values, None),
+                    &mut Meter::new(UNLIMITED),
+                )
+                .expect("a template's own slot admits its own binders"),
+        )
+    };
+    let partial_values = |target| {
+        vec![
+            ("partialRecovered", receipt(&package, 10)),
+            ("partialTarget", int(target)),
+            ("partialActivated", Value::Boolean(false)),
+        ]
+    };
+    assert!(evaluate(&partial, partial_values(10)), "Partial recovers");
+    assert!(!evaluate(&partial, partial_values(11)), "Partial target 11");
+    let refund_values = |target| {
+        vec![
+            ("recovered", receipt(&package, 10)),
+            ("target", int(target)),
+            ("activated", Value::Boolean(false)),
+        ]
+    };
+    assert!(evaluate(&refund, refund_values(10)), "Refund recovers");
+    assert!(!evaluate(&refund, refund_values(11)), "Refund target 11");
+}

@@ -1024,7 +1024,7 @@ impl Lowering<'_> {
             },
         )?;
         let roles: Vec<NodeKey> = sorted(roles_by_name.iter().map(|(_, key)| key.clone()));
-        let compensations = self.compensation_nodes(
+        let compensation_keys = self.compensation_nodes(
             protocol,
             &compensate,
             &roles_by_name,
@@ -1048,7 +1048,7 @@ impl Lowering<'_> {
             trigger.clone(),
             boolean.clone(),
         )?;
-        let compensation_keys = compensations.clone();
+        let compensations = sorted(compensation_keys.values().cloned());
         let terminal_key = terminal.clone();
         let finish_node = protocol.checked.finish.as_ref().ok_or_else(unchecked)?.0;
         let mut nodes = run.nodes;
@@ -1387,9 +1387,9 @@ impl Lowering<'_> {
         boolean: NodeKey,
         anchors: &[CompensationNodes],
         built: &BTreeMap<usize, NodeKey>,
-    ) -> Result<Vec<NodeKey>, CheckRefusal> {
+    ) -> Result<BTreeMap<usize, NodeKey>, CheckRefusal> {
         let count = protocol.checked.obligations.compensations.len();
-        let mut keys = Vec::with_capacity(count);
+        let mut keys = BTreeMap::new();
         for index in 0..count {
             let key = match built.get(&index) {
                 Some(key) => key.clone(),
@@ -1404,9 +1404,9 @@ impl Lowering<'_> {
                     index,
                 )?,
             };
-            keys.push(key);
+            keys.insert(index, key);
         }
-        Ok(sorted(keys))
+        Ok(keys)
     }
 
     /// The node of the compensation template at `index`.
@@ -2424,7 +2424,7 @@ pub(crate) struct ProtocolMembers {
     pub(crate) nodes: BTreeMap<ProtocolNodeId, NodeRef>,
     pub(crate) channels: BTreeMap<String, NodeKey>,
     pub(crate) roles: BTreeMap<String, NodeKey>,
-    pub(crate) compensations: Vec<NodeKey>,
+    pub(crate) compensations: BTreeMap<usize, NodeKey>,
     pub(crate) terminal: Option<NodeKey>,
     pub(crate) binders: Vec<super::super::protocol_clause::CheckedProtocolBinderKey>,
     pub(crate) expressions: Vec<super::super::protocol_clause::CheckedProtocolExpressionBindings>,
@@ -2459,7 +2459,7 @@ pub(crate) struct AdmittedProtocolMembers {
     pub(crate) nodes: BTreeMap<ProtocolNodeId, NodeKey>,
     pub(crate) channels: BTreeMap<String, NodeKey>,
     pub(crate) roles: BTreeMap<String, NodeKey>,
-    pub(crate) compensations: Vec<NodeKey>,
+    pub(crate) compensations: BTreeMap<usize, NodeKey>,
     pub(crate) terminal: Option<NodeKey>,
     pub(crate) binders: Vec<super::super::protocol_clause::CheckedProtocolBinderKey>,
     pub(crate) expressions: Vec<super::super::protocol_clause::CheckedProtocolExpressionBindings>,

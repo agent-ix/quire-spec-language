@@ -311,6 +311,9 @@ pub(crate) fn unit_text_with(profiles: &str, body: &str) -> String {
     };
     let model_profile = if time_units.is_empty() {
         "profile v = \"quire.value.complete/v1\";\n"
+    } else if profiles.contains("quire.temporal.timed/v1") {
+        // A timed clause needs the temporal facet on the model's time source.
+        "profile v = \"quire.temporal.complete/v1\";\n"
     } else {
         "profile v = \"quire.model.complete/v1\";\n"
     };
@@ -369,7 +372,39 @@ pub(crate) fn package_with(profiles: &str, body: &str) -> CheckedPackage {
 
 /// [`package_with`] with a distinct package identity.
 pub(crate) fn package_with_name(package_name: &str, profiles: &str, body: &str) -> CheckedPackage {
-    let document = document();
+    package_over(document(), package_name, profiles, body)
+}
+
+/// [`document`] without its `Idle` object type and `idles` population, so
+/// `Cell` is the model's one object type: a `time` declaration needs the
+/// model to have exactly one.
+pub(crate) fn single_object_document() -> Vec<u8> {
+    fn strip(value: &mut Json, removed: &[String]) {
+        match value {
+            Json::Array(items) => {
+                items.retain(|item| {
+                    item.get("identity")
+                        .and_then(Json::as_str)
+                        .is_none_or(|identity| !removed.iter().any(|name| name == identity))
+                });
+                items.iter_mut().for_each(|item| strip(item, removed));
+            }
+            Json::Object(members) => members.values_mut().for_each(|item| strip(item, removed)),
+            _ => {}
+        }
+    }
+    let mut value: Json = serde_json::from_slice(&document()).expect("the document is JSON");
+    strip(&mut value, &[ident("Idle"), ident("idles")]);
+    serde_json::to_vec(&value).expect("the document serializes")
+}
+
+/// [`package_with_name`] over the model `document`.
+pub(crate) fn package_over(
+    document: Vec<u8>,
+    package_name: &str,
+    profiles: &str,
+    body: &str,
+) -> CheckedPackage {
     let text = unit_text_with(profiles, body);
     let packages = package_input([document.as_slice()]).unwrap();
     let parsed = qsl_cst::parse(

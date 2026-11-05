@@ -376,7 +376,7 @@ impl Selection {
             let keys = graph.protocol_node_keys(&protocol.name);
             for (index, template) in protocol.obligations.compensations.iter().enumerate() {
                 let key = keys
-                    .and_then(|keys| keys.compensations.get(index))
+                    .and_then(|keys| keys.compensations.get(&index))
                     .ok_or_else(|| Error::Unnameable {
                         what: format!("compensation node of {}", template.name),
                     })?;

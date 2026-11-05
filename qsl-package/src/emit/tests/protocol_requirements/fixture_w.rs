@@ -1189,7 +1189,7 @@ pub(in crate::emit::tests) fn tc134_selections(
             ) {
                 continue;
             }
-            let Some(key) = keys.compensations.get(index) else {
+            let Some(key) = keys.compensations.get(&index) else {
                 continue;
             };
             selections.push((crate::emit::tests::node_id(key), template.span));

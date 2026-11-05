@@ -555,7 +555,7 @@ mod import_view_debug_tests {
                     },
                     CheckedProtocolNodeKeys {
                         clause: Some(key.clone()),
-                        compensations: vec![key.clone()],
+                        compensations: BTreeMap::from([(0, key.clone())]),
                         terminal: Some(key),
                         ..Default::default()
                     },
@@ -570,7 +570,7 @@ mod import_view_debug_tests {
                 assert!(text.contains("operation: #0"), "{text}");
                 assert!(text.contains("function: #0"), "{text}");
                 assert!(text.contains("clause: Some(#0)"), "{text}");
-                assert!(text.contains("compensations: [#0]"), "{text}");
+                assert!(text.contains("compensations: [(0, #0)]"), "{text}");
                 assert!(text.contains("terminal: Some(#0)"), "{text}");
             })
             .unwrap()
