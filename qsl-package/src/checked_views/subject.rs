@@ -12,8 +12,8 @@ use quire_contract_model::{
 };
 use quire_exact::{Origin, Role};
 
-use super::graph::Graph;
 use super::ViewRefusal;
+use super::graph::Graph;
 use crate::checked_v2::{resolve_clause_root, role_spelling, wire_graph};
 
 /// The most formula applications one view expands: the reader's own
@@ -302,7 +302,18 @@ impl<'p> TemporalSubjectView<'p> {
         let [occurrence] = self.occurrences.as_slice() else {
             return None;
         };
-        if occurrence.role != CheckedOccurrenceRole::Claim {
+        self.name_of(occurrence)
+    }
+
+    /// The declared temporal-clause name for this exact occurrence. The
+    /// declaration, claim role and producer-assigned ordinal all participate
+    /// in the lookup; an occurrence from another node or an absent ordinal
+    /// has no name.
+    pub fn name_of(&self, occurrence: &ClauseOccurrence) -> Option<&str> {
+        if occurrence.node != *self.declaration
+            || occurrence.role != CheckedOccurrenceRole::Claim
+            || !self.occurrences.contains(occurrence)
+        {
             return None;
         }
         self.package

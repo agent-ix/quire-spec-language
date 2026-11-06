@@ -11,11 +11,11 @@ use quire_contract_model::{
 
 use super::protocol_graph::{flow_over, model};
 use super::reachability::lower_with;
-use super::temporal_clause::{admit, compile, unit, EVENT, INFINITE};
+use super::temporal_clause::{EVENT, INFINITE, admit, compile, unit};
 use super::*;
 use crate::checked_views::{
-    checked_predicate, temporal_subject, Activation, CheckedPredicateView, ClauseOccurrence,
-    PredicateKind, PredicateSelection, ViewRefusal,
+    Activation, CheckedPredicateView, ClauseOccurrence, PredicateKind, PredicateSelection,
+    ViewRefusal, checked_predicate, temporal_subject,
 };
 
 const FIXED: &str = "quire.temporal.fixed-sample.false-extension/v1";
@@ -201,11 +201,13 @@ fn each_clause_of_the_package_reads_its_node_facts() {
         assert_eq!(*view.over(), referenced(argument(wire, &id, 0)));
         assert_eq!(*view.over(), parameter(wire, "c"));
         assert_eq!(view.profile().definition.identity.as_ref(), profile);
-        assert!(package
-            .lock()
-            .profile_selections
-            .iter()
-            .any(|row| row == view.profile()));
+        assert!(
+            package
+                .lock()
+                .profile_selections
+                .iter()
+                .any(|row| row == view.profile())
+        );
         let row = package
             .temporal_bindings()
             .expect("a configured clause carries a binding")
@@ -587,10 +589,12 @@ fn a_boolean_term_below_a_holds_operand_is_a_clause_leaf() {
             .filter(|entry| entry.node_id == formula_root)
             .flat_map(|entry| entry.regions.iter())
             .collect();
-        assert!(package
-            .source_map()
-            .iter()
-            .any(|entry| entry.node_id == part && view.source_span() == entry));
+        assert!(
+            package
+                .source_map()
+                .iter()
+                .any(|entry| entry.node_id == part && view.source_span() == entry)
+        );
         assert!(!view.source_span().regions.is_empty());
         for region in &view.source_span().regions {
             assert!(
@@ -880,6 +884,70 @@ fn equal_clauses_share_a_node_and_an_interval_or_comment_decides_identity() {
     assert_ne!(
         leaf_span(&plain, &plain_id, &a.predicate_leaves()[0]),
         leaf_span(&with_comment, &commented_id, &b.predicate_leaves()[0])
+    );
+}
+
+/// FR-515-AC-14 (TC-1310): a shared declaration resolves its name only by
+/// occurrence identity; a missing ordinal does not borrow either sibling's
+/// name, while a unique declaration and its predicate view retain theirs.
+#[trace("FR-515-AC-14", "TC-1310")]
+#[test]
+fn temporal_clause_names_are_selected_by_declaration_and_occurrence() {
+    let body = "eventually[0,1] holds(c.versionNumber = 2)";
+    let twins = format!(
+        "{}\n{}",
+        clause("Alpha", "e", "on origin", body),
+        clause("Beta", "e", "on origin", body)
+    );
+    let shared = admit(&compile(&unit_of(&[("e", EVENT)], &twins)));
+    let [shared_id] = clause_ids(&shared).try_into().expect("one shared node");
+    let shared_view = temporal_subject(&shared, &shared_id).expect("shared clause view");
+    let [alpha, beta] = shared_view.occurrences() else {
+        panic!("two claim occurrences: {:?}", shared_view.occurrences());
+    };
+    let names = shared
+        .temporal_clause_names()
+        .expect("the emitted name rows");
+    assert_eq!(shared_view.name(), None);
+    for (occurrence, expected) in [(alpha, "Alpha"), (beta, "Beta")] {
+        let row_name = names
+            .iter()
+            .find(|row| row.declaration == shared_id && row.occurrence == occurrence.ordinal)
+            .map(|row| row.name.as_ref());
+        assert_eq!(row_name, Some(expected));
+        assert_eq!(shared_view.name_of(occurrence), row_name);
+    }
+    let absent = ClauseOccurrence {
+        node: shared_id.clone(),
+        role: CheckedOccurrenceRole::Claim,
+        ordinal: 7,
+    };
+    assert_eq!(shared_view.name_of(&absent), None);
+
+    let gamma = admit(&compile(&unit_of(
+        &[("e", EVENT)],
+        &clause("Gamma", "e", "on origin", body),
+    )));
+    let [gamma_id] = clause_ids(&gamma).try_into().expect("one Gamma clause");
+    let gamma_view = temporal_subject(&gamma, &gamma_id).expect("Gamma view");
+    assert_eq!(gamma_view.name(), Some("Gamma"));
+    assert_eq!(
+        gamma_view.name_of(&gamma_view.occurrences()[0]),
+        Some("Gamma")
+    );
+    let leaf = gamma_view.predicate_leaves()[0].clone();
+    let predicate = checked_predicate(
+        &gamma,
+        &PredicateSelection {
+            clause: gamma_id,
+            leaf,
+        },
+    )
+    .expect("Gamma predicate view");
+    assert_eq!(predicate.name(), Some("Gamma"));
+    assert_eq!(
+        predicate.name_of(&gamma_view.occurrences()[0]),
+        Some("Gamma")
     );
 }
 

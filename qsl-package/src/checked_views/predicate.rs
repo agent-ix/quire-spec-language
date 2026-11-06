@@ -7,9 +7,11 @@ use quire_contract_model::{
     ValueForm,
 };
 
-use super::graph::Graph;
-use super::subject::{subject_in, Activation, TemporalSubjectView, FORMULA_VISITS};
 use super::ViewRefusal;
+use super::graph::Graph;
+use super::subject::{
+    Activation, ClauseOccurrence, FORMULA_VISITS, TemporalSubjectView, subject_in,
+};
 
 /// Which clause leaf a [`PredicateSelection`] names.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -104,6 +106,11 @@ impl<'p> CheckedPredicateView<'p> {
     /// named occurrence.
     pub fn name(&self) -> Option<&str> {
         self.subject.name()
+    }
+
+    /// The declared name for this predicate's exact clause occurrence.
+    pub fn name_of(&self, occurrence: &ClauseOccurrence) -> Option<&str> {
+        self.subject.name_of(occurrence)
     }
 
     /// The Boolean leaf.
