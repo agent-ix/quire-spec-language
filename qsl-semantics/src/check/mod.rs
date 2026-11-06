@@ -5801,6 +5801,12 @@ impl PackageDeclarations {
                 Err(refusal) => refusals.push(refusal),
             }
         }
+        // FR-094: selected model type references root their named units even
+        // when no expression reaches a unit-typed member.
+        if let Err(refusal) = lowering.model_type_unit_nodes(&check::declared_unit_ids(&self.units))
+        {
+            refusals.push(refusal);
+        }
         // FR-092 rule 1: every admitted enum's declaration and member nodes,
         // which enum types and enum literals name by key.
         for enum_binding in scope.enums() {

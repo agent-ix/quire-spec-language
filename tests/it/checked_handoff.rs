@@ -2254,30 +2254,13 @@ fn write_unit(body: &str) -> Result<(), Error> {
 
 /// FR-517-AC-16 (QSL-1558): the refusals that keep the unit `U` off R's
 /// `Amount` and `Total`. A unit-typed operation parameter compared with a
-/// unit literal is written and admitted; a unit that no expression of the
-/// unit reaches is not emitted, though the selected model's types name it,
-/// so Contract IR's reader refuses the model `typeRef` that reaches it (R's
-/// library and its fixed-sample and timestamped-event units read no
-/// unit-typed member); the model alias is not a source type name; and `sum`
+/// unit literal is written and admitted; the model alias is not a source type name; and `sum`
 /// refuses a quantity summand.
 #[trace("FR-517-AC-16", "TC-1312")]
 #[test]
 fn the_unit_on_amount_and_total_is_refused_where_the_spine_stops() {
     write_unit("pre BeforeApply using v on M::Workflow::apply { amount >= 1 U }")
         .expect("a unit-typed parameter against a unit literal is written");
-
-    let error =
-        write_unit("invariant Ready using v on M::Workflow at current { self.ready }").unwrap_err();
-    let Error::ReaderRefused(refusal) = &error else {
-        panic!("the reader refuses a unit no expression reaches: {error:?}");
-    };
-    assert_eq!(refusal.code, CheckedPackageRefusalCode::MissingDeclaration);
-    assert_eq!(refusal.cause, Some(CheckedPackageRefusalCause::MissingName));
-    // `Recovery.receipts`, typed `Amount`, the first `typeRef` to reach `U`.
-    assert_eq!(
-        refusal.document_pointer,
-        JsonPointer::parse("/types/7/fields/0/typeRef")
-    );
 
     let error = write_unit(
         "invariant Bounded using v on M::Workflow at current {\n    \
@@ -2304,6 +2287,64 @@ fn the_unit_on_amount_and_total_is_refused_where_the_spine_stops() {
             && detail.contains("IllTyped(TypeMismatch)"),
         "{detail}"
     );
+}
+
+/// Model type references root U without an expression reading a quantity.
+/// Its target and dimension retain their declared identities, while a source
+/// unit that neither an expression nor a model type names remains absent.
+#[trace("TC-1312", "FR-517-AC-18")]
+#[test]
+fn a_unit_named_only_by_model_types_is_written_with_its_nominal_closure() {
+    for derived in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let request = unit_request(
+            dir.path(),
+            "unit Unused : Money = rational(7, 1);\n\
+             invariant Ready using v on M::Workflow at current { self.ready }",
+        );
+        if derived {
+            let source = std::fs::read_to_string(&request.emit.source).unwrap();
+            std::fs::write(
+                &request.emit.source,
+                source.replace(
+                    "unit U : Money = rational(1, 1);",
+                    "unit Base : Money = rational(1, 1);\n\
+                     unit U : Money = rational(2, 1) * Base;",
+                ),
+            )
+            .unwrap();
+        }
+        let out = dir.path().join("handoff");
+        write(&request, &out).expect("the writer's IR read-back admits the model's typeRef");
+        let wire: Value = serde_json::from_slice(&tree(&out)["checked-package.json"]).unwrap();
+        let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+        let declared = |name: &str| {
+            nodes
+                .iter()
+                .find(|node| node["declaration"]["qualified_name"] == serde_json::json!([name]))
+        };
+        let unit = declared("U").expect("the model-named unit is emitted");
+        let dimension = declared("Money").expect("the unit's dimension is emitted");
+        assert_eq!(unit["semantic_form"], "unit");
+        assert_eq!(dimension["semantic_form"], "dimension");
+        assert_eq!(unit["semantic_type"], dimension["node_id"]);
+        assert_eq!(unit["owner"]["kind"], "source");
+        assert!(declared("Unused").is_none());
+        let mut dependencies = vec![dimension["node_id"].clone()];
+        if derived {
+            let base = declared("Base").expect("the target-unit closure is emitted");
+            dependencies.push(base["node_id"].clone());
+            assert_eq!(base["semantic_type"], dimension["node_id"]);
+        }
+        let actual = unit["dependencies"].as_array().unwrap();
+        assert_eq!(actual.len(), dependencies.len());
+        for dependency in dependencies {
+            assert!(
+                actual.contains(&dependency),
+                "missing dependency {dependency}"
+            );
+        }
+    }
 }
 
 /// FR-517-AC-14: the `recover` condition of `Full` compares the receipt sum
