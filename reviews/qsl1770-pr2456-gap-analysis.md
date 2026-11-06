@@ -66,3 +66,13 @@ Scope records:
 ## Round 1 scope verification
 
 Reviewed acc0cf0eae8be6de2c0f29d17fee3ae67985f55d: foundation owns one documented public structural formatter and replay consumes it without changing behavior. No new scoped traceability, reverse-ownership or stub gap. No matrix recomputation for confined consolidation. Verdict remains CONDITIONAL for previously recorded matrix timeout and pending paired-lock execution; full QSL-1770 integration remains open.
+
+## Integration review round 2
+
+Reviewed frozen edbd95d0b99033358a10cd3d11d6c839f04856ba. The owner-authorized one lock refresh supersedes the previous no-lock rule for this bump only: Cargo.lock changes only quire-exact 7e06eba7910e31146fd1b95ef56065cffb818363 to b58ac8f322611a7f68b7abb814df72ea2b9132f6, matching fresh origin/main. IR remains 54d46605a131c69dc1bc8664163315ad4f3f3f2f, already current; no artificial lock churn.
+
+Examined qsl-replay/src/scalar.rs:618-638: BoundedQuantityOutOfDomain joins the existing domain-refusal arm as ScalarOutcome::OutOfRange. This is the typed semantic classification of an inclusive result-domain violation; it neither turns the refusal into a completed value nor catches checked invariants. Existing invariant/fault handling remains separate. No new findings, including lows; FND-001 remains fixed.
+
+Observed actual logs: /tmp/qsl1770-foundation-focused.log reports the real focused bounded-refusal test passed (1 passed); /tmp/qsl1770-replay-check.log reports qsl-replay lib check finished successfully; /tmp/qsl1770-workspace-check.log now reports workspace dev check finished successfully in 22.97s. Reviewer did not rerun tests or any aggregate gate.
+
+Current scoped verdict: PASS for this partial compile fix, subject to lead's final gate. This asserts only the reviewed changed source, lock compatibility and scoped behavior; it is not whole-repository assurance or acceptance of full QSL-1770. Earlier bounded matrix timeout is retained as an unavailable global measurement; no recomputation or global coverage claim. Strict URI expected rendering and bounded conversion integration remain open in full QSL-1737/QSL-1770.
