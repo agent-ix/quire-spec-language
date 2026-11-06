@@ -67,6 +67,7 @@ behind the Cargo feature `checked-handoff` and adding no dependency:
   take them (`temporal_selections` is a new optional member of the request and
   also selects a `compensate` template by its template name);
 - `corpus`: `None` or `Standard` (FR-518).
+- `native_join`: the finite work and logical-storage ceilings of the identity file's native joins (FR-531 "The native join budget"). The writer has no default for it; one budget of it serves the write, and a denied charge returns `Error::NativeJoinExhausted` with Contract IR's refusal and writes no directory.
 
 The `emit_checked_v2` command line carries `temporal_selections` as
 `--clock-selections <json-file>`: a JSON object from the exact authored name of
