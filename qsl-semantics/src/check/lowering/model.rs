@@ -2566,6 +2566,96 @@ impl<'a> Lowering<'a> {
         }
     }
 
+    /// FR-094: model type references root their declared units independently
+    /// of expression reachability. Aliases and container declarations remain
+    /// in the admitted record table, so each direct reference is inspected once.
+    pub(in crate::check) fn model_type_unit_nodes(
+        &mut self,
+        units: &BTreeMap<String, UnitId>,
+    ) -> Result<(), CheckRefusal> {
+        use crate::model::domain_package::{ScalarValueDomain, ValueTypeRef};
+
+        for model in self.models {
+            let location =
+                type_declaration(model.alias.as_deref().unwrap_or(&model.selection.identity));
+            for (key, record) in &model.records {
+                let mut references = Vec::new();
+                let scalar_unit = match record {
+                    DomainPackageRecord::FieldMember(field) => {
+                        references.push(&field.value_type);
+                        None
+                    }
+                    DomainPackageRecord::TuplePosition(position) => {
+                        references.push(&position.value_type);
+                        None
+                    }
+                    DomainPackageRecord::Variant(variant) => {
+                        references.extend(variant.payload_type.as_ref());
+                        None
+                    }
+                    DomainPackageRecord::SequenceType(sequence) => {
+                        references.push(&sequence.items);
+                        None
+                    }
+                    DomainPackageRecord::OptionType(option) => {
+                        references.push(&option.inner);
+                        None
+                    }
+                    DomainPackageRecord::MapType(map) => {
+                        references.push(&map.values);
+                        None
+                    }
+                    DomainPackageRecord::AliasType(alias) => {
+                        references.push(&alias.target);
+                        None
+                    }
+                    DomainPackageRecord::OperationMember(operation) => {
+                        references.extend(operation.parameters.iter().map(|p| &p.value_type));
+                        references.extend(operation.result.iter().map(|r| &r.value_type));
+                        None
+                    }
+                    DomainPackageRecord::ScalarType(scalar) => match &scalar.domain {
+                        ScalarValueDomain::Rational { unit, .. } => unit.as_deref(),
+                        ScalarValueDomain::Integer { .. }
+                        | ScalarValueDomain::Text(_)
+                        | ScalarValueDomain::Native(_) => None,
+                    },
+                    DomainPackageRecord::Enum(_)
+                    | DomainPackageRecord::ObjectType(_)
+                    | DomainPackageRecord::RecordValueType(_)
+                    | DomainPackageRecord::TupleValueType(_)
+                    | DomainPackageRecord::EventType(_)
+                    | DomainPackageRecord::StateMachine(_)
+                    | DomainPackageRecord::Process(_)
+                    | DomainPackageRecord::Clause(_)
+                    | DomainPackageRecord::Namespace(_)
+                    | DomainPackageRecord::PersistenceInterface(_)
+                    | DomainPackageRecord::ValueBound(_)
+                    | DomainPackageRecord::Component(_)
+                    | DomainPackageRecord::Endpoint(_)
+                    | DomainPackageRecord::Relationship(_)
+                    | DomainPackageRecord::Allocation(_)
+                    | DomainPackageRecord::Population(_) => None,
+                };
+                let names = references
+                    .into_iter()
+                    .filter_map(|reference| match reference {
+                        ValueTypeRef::Unit(name) => Some(name.as_str()),
+                        ValueTypeRef::Clock
+                        | ValueTypeRef::Native(_)
+                        | ValueTypeRef::Package(_) => None,
+                    });
+                for name in names.chain(scalar_unit) {
+                    let unit = units.get(name).ok_or_else(|| {
+                        fault(&location, KeyFault::UnknownDeclaration(key.clone()))
+                    })?;
+                    self.quantity_type(unit.clone(), &location)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// A `Quantity<u, C>` type node with its exact carrier and rounding
     /// identity (QSpec FR-322-AC-301).
     pub(super) fn carried_quantity_type(

@@ -295,6 +295,15 @@ not through a graph reference; the v2 spelling of that link is QC-25.
 
 ### Quantity type nodes
 
+Units named by a selected model's type declarations SHALL be roots of the
+checked graph even when no checked expression names them. This includes a
+unit named by an alias, a collection, option or map element, a field, tuple
+position, variant payload, operation signature or Rational scalar. The root
+uses the admitted unit identity and the ordinary unit-node walk below, so its
+dimension, base dimensions and target-unit closure retain their existing
+identity, owner, scale, offset and declaration occurrences. Unused source
+units that no selected model type names do not become roots by this rule.
+
 `check` SHALL build the type node of a `Quantity(UnitId)` by the `UnitId`'s
 domain:
 

@@ -313,15 +313,13 @@ The unit `U` on `Amount` and `Total` is not portable yet. In the model it is
 an alias of `ix://quire/unit/U` whose `min` and `max` name the alias (QSpec
 FR-154 "Unit bounds"; FR-230-AC-26), and each source declares
 `dimension Money;` and `unit U : Money = rational(1, 1);`. Unit-typed members
-check against unit literals (`amount >= 1 U` in `BeforeApply`), but **R**
-refuses at three points, each of which FR-517-AC-18 to AC-20 states as the capability the spine must have:
+check against unit literals (`amount >= 1 U` in `BeforeApply`). A measurement
+unit that only the selected model's types name is emitted with
+its dimension and target closure (FR-094); the library and fixed-sample and
+timestamped-event units no longer need an expression that reads a unit-typed member.
+**R** still refuses at two points, which FR-517-AC-19 and AC-20 state as the
+capabilities the spine must have:
 
-- A measurement unit that no expression of the compiled source reaches is not
-  emitted, although the selected model's types name it, so Contract IR's reader refuses the first
-  model `typeRef` that reaches it, `Recovery.receipts` of type `Amount`:
-  `missing_declaration`/`missing-name` at `/types/7/fields/0/typeRef`. **R**'s
-  library and its fixed-sample and timestamped-event units read no unit-typed
-  member.
 - A model alias has no node and is not a source type name (FR-230), so
   `sum<M::Total>` and `capture targetFull: M::Total` refuse
   `UnresolvedTypeName` at assembly.
@@ -362,7 +360,7 @@ the three directories. The packages hold:
 | FR-517-AC-13 | With the spine supporting FR-517-AC-18 to AC-20, **R**'s model declares `Amount` and `Total` as aliases of the unit `ix://quire/unit/U`, the emitted package types them as carried quantities over the node of the declared unit `U`. | Test (TC-1312) |
 | FR-517-AC-14 | With a `sum` query binder admitted inside `recover`, the `recover` condition of `Full` is that the receipt sum equals the captured target, and that of `Partial` is that the receipt sum is positive and below the captured target. | Test (TC-1312) |
 | FR-517-AC-15 | `emit_checked_v2` run with `--clock-selections` naming a file that holds the clock configuration of each temporal clause and compensation template of an **R** package emits the bytes `emit_checked_v2::emit` returns for the equal `Request`; an empty object, a repeated name, an unknown `kind`, a member the configuration does not define and a member it requires that is missing are each a refusal naming the file that writes no bytes, and a name matching no clause or template is the `UnknownClause` refusal that writes no bytes. | Test (TC-1312) |
-| FR-517-AC-16 | Over **R**'s model with `Amount` and `Total` as aliases of `ix://quire/unit/U`, a source whose `pre` compares the `Amount` parameter with `1 U` is written and admitted. Three refusals are the current behavior of the spine, each of which holds until the spine delivers the capability of the named criterion and ends when it does: a source that reads no unit-typed member is refused by the reader with `missing_declaration`/`missing-name` at `/types/7/fields/0/typeRef` (until FR-517-AC-18); `sum<M::Total>` refuses `UnresolvedTypeName` for `M::Total` (until FR-517-AC-19); and `sum<Cash>` over the receipts, with `type Cash = Quantity<U>;`, refuses `IllTyped(TypeMismatch)` at its state clause (until FR-517-AC-20). The change that delivers one of those criteria deletes the matching refusal from this criterion and from TC-1312 row 16 in the same change. | Test (TC-1312) |
+| FR-517-AC-16 | Over **R**'s model with `Amount` and `Total` as aliases of `ix://quire/unit/U`, a source whose `pre` compares the `Amount` parameter with `1 U` is written and admitted. Two refusals remain the current behavior of the spine, each of which holds until the spine delivers the capability of the named criterion and ends when it does: `sum<M::Total>` refuses `UnresolvedTypeName` for `M::Total` (until FR-517-AC-19); and `sum<Cash>` over the receipts, with `type Cash = Quantity<U>;`, refuses `IllTyped(TypeMismatch)` at its state clause (until FR-517-AC-20). The change that delivers one of those criteria deletes the matching refusal from this criterion and from TC-1312 row 16 in the same change. | Test (TC-1312) |
 | FR-517-AC-17 | `Inventory::read` over the bytes `write` produced for **R** returns rows equal to those of the in-process outcome, and over each refusal vector of "The inventory file" returns the stated `InventoryReadError` and no value; two reads of equal bytes return equal results. | Test (TC-1312) |
 | FR-517-AC-18 | A measurement unit that the selected model's types name is part of the emitted package even when no expression of the compiled source reaches it: the package holds its `dimension` and `unit` nodes, and Contract IR's reader admits a package whose model `typeRef` names it. Over **R**'s model with `Amount` and `Total` as aliases of `ix://quire/unit/U`, a source that reads no unit-typed member is written and admitted. | Test (TC-1312) |
 | FR-517-AC-19 | A model alias is a source type name: over **R**'s model, `sum<M::Total>` and `capture targetFull: M::Total` resolve to the alias's unit-bearing bounded type, with its bounds, and neither refuses `UnresolvedTypeName`. | Test (TC-1312) |
@@ -372,6 +370,6 @@ the three directories. The packages hold:
 
 ## Dependencies
 
-- **Upstream:** the inventory writer (FR-517-AC-11, AC-17) runs the replay spine over the unit and calls `qsl_inventory` over it (FR-514). FR-517-AC-12 needs no spine change: FR-505 admits a Rational value type without a unit, and the criterion fixes only what **R**'s model declares and the source reaches. FR-517-AC-13 is gated on the three spine capabilities of FR-517-AC-18 to AC-20 (the unit a model type names is emitted, a model alias is a source type name, `sum` over a quantity), which are the refusals FR-517-AC-16 pins today; they are unmet and are not narrowed away. FR-517-AC-14 holds: the reader admits a binder that a protocol slot introduces itself, such as the `sum` query binder inside `recover`. FR-042-AC-10 and AC-15 (retired), FR-337, FR-383, FR-480,
+- **Upstream:** the inventory writer (FR-517-AC-11, AC-17) runs the replay spine over the unit and calls `qsl_inventory` over it (FR-514). FR-517-AC-12 needs no spine change: FR-505 admits a Rational value type without a unit, and the criterion fixes only what **R**'s model declares and the source reaches. FR-517-AC-13 is gated on the three spine capabilities of FR-517-AC-18 to AC-20 (the unit a model type names is emitted, a model alias is a source type name, `sum` over a quantity), of which the latter two remain the refusals FR-517-AC-16 pins today; model-named unit emission is delivered, while alias resolution and quantity sums remain unmet and are not narrowed away. FR-517-AC-14 holds: the reader admits a binder that a protocol slot introduces itself, such as the `sum` query binder inside `recover`. FR-042-AC-10 and AC-15 (retired), FR-337, FR-383, FR-480,
   FR-505, FR-514, FR-515, `emit_checked_v2`, `qsl_package::emit_checked_with_temporal_selections`.
 - **Downstream:** quire-protocol IT-001 (QSL-1549).
