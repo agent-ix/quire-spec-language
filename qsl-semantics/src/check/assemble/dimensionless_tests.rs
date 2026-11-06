@@ -8,7 +8,13 @@ use qsl_foundation::SourceIdentity;
 
 /// A derived `L / L` dimension keeps its derived identity when its normalized
 /// map is empty, while the base dimension remains non-dimensionless.
-#[trace("FR-091-AC-35", "FR-091-AC-45", "QSpec-TC-187", "QSL-1738-AC-1")]
+#[trace(
+    "FR-091-AC-35",
+    "FR-091-AC-45",
+    "QSpec-TC-187",
+    "FR-091-AC-73",
+    "TC-1339"
+)]
 #[test]
 fn source_assembly_keeps_empty_derived_dimension_dimensionless() {
     let source = concat!(

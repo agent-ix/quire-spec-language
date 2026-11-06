@@ -63,6 +63,7 @@ mod composed_type_pipeline;
 mod composed_types;
 mod config_version_spine;
 mod deep_sources;
+mod dimension_node_v2;
 mod dispatch_emission;
 mod domain_protocol_emission;
 mod emit_checked_v2;

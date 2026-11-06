@@ -1242,6 +1242,104 @@ mod quantities {
         assert_ne!(keys[2], node_key(METRE));
     }
 
+    /// FR-094-AC-14 (TC-1339): a derived dimension with no terms lowers to a
+    /// `dimension` node whose payload is derived, beside a base dimension
+    /// whose payload is base, and a derived dimension with a term stays
+    /// derived.
+    #[trace("FR-094-AC-14", "TC-1339")]
+    #[test]
+    fn an_empty_derived_dimension_lowers_to_a_derived_dimension_node() {
+        let derived = |terms: Vec<(NodeKey, Integer)>| {
+            DimensionPreimage::new_derived(
+                owner(),
+                vec!["Example".to_owned(), "Derived".to_owned()],
+                terms,
+            )
+            .expect("a derived dimension")
+        };
+        let empty = derived(Vec::new());
+        let empty_key = empty.key().expect("the dimension keys");
+        let squared = DimensionPreimage::new_derived(
+            owner(),
+            vec!["Example".to_owned(), "Squared".to_owned()],
+            vec![(node_key(LENGTH), Integer::from(2_i64))],
+        )
+        .expect("a derived dimension");
+        let squared_key = squared.key().expect("the dimension keys");
+        let unit_of = |name: &str, dimension: &DimensionPreimage| {
+            let preimage = UnitPreimage::new(
+                owner(),
+                vec!["Example".to_owned(), name.to_owned()],
+                dimension.key().expect("the dimension keys"),
+                None,
+                &quire_exact::Rational::from_integer(Integer::from(1_i64)),
+                &quire_exact::Rational::from_integer(Integer::from(0_i64)),
+            )
+            .expect("a root unit");
+            let key = preimage.key().expect("the unit keys");
+            (preimage, key)
+        };
+        let (one, one_key) = unit_of("one", &empty);
+        let (area, area_key) = unit_of("area", &squared);
+        let graph = admit_unit_graph(
+            [
+                (dimension("Length"), node_key(LENGTH)),
+                (empty, empty_key.clone()),
+                (squared, squared_key.clone()),
+            ],
+            [
+                (unit("metre", LENGTH), node_key(METRE)),
+                (one, one_key.clone()),
+                (area, area_key.clone()),
+            ],
+            &OwnerSelection::new([owner()]),
+        )
+        .expect("the unit nodes admit");
+        let checked = check_declarations(PackageDeclarations {
+            types: TypeEnvironment::default().with_units(UnitTable::declared(&graph)),
+            aliases: vec![
+                ("Length".to_owned(), quantity(METRE)),
+                (
+                    "One".to_owned(),
+                    ValueType::Quantity(UnitId::declared(one_key)),
+                ),
+                (
+                    "Area".to_owned(),
+                    ValueType::Quantity(UnitId::declared(area_key)),
+                ),
+            ],
+            functions: vec![function(
+                "q",
+                &[
+                    ("a", named("Length")),
+                    ("b", named("One")),
+                    ("c", named("Area")),
+                ],
+                builtin(BuiltinType::Boolean),
+                Expression::boolean(true),
+            )],
+            ..PackageDeclarations::new(
+                fixture_source(),
+                "fixture",
+                qsl_foundation::IdentityLimits::default(),
+            )
+        });
+        let lowered = checked.semantic_graph();
+        let payload = |key: &NodeKey| match lowered
+            .node(key.clone())
+            .expect("the dimension node is lowered")
+            .nominal_payload()
+        {
+            Some(NominalPayload::Dimension(dimension)) => {
+                (dimension.is_base(), dimension.terms().len())
+            }
+            other => panic!("a dimension payload, not {other:?}"),
+        };
+        assert_eq!(payload(&node_key(LENGTH)), (true, 0));
+        assert_eq!(payload(&empty_key), (false, 0));
+        assert_eq!(payload(&squared_key), (false, 1));
+    }
+
     /// FR-093-AC-58 (TC-1336; QSpec TC-187 QP-01): `a ^ 2` lowers to one
     /// binary `quire.op.quantity.pow` node over `[ref(a), ref(N)]`, `N` the
     /// `Integer` literal `2`, typed by the one compound-unit node `a * a` is

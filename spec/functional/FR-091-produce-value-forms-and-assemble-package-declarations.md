@@ -668,7 +668,13 @@ With no error, the assembler builds each normalized declaration, owner and
    stated for the first id (reciprocal when source order descends). A pair
    written in either order or with another unit spelling of the same ratio
    has one key and one normalized body. An equivalence rewrites no
-   dimension: its terms and declaration key remain unchanged.
+   dimension: its terms and declaration key remain unchanged. A dimension
+   is base or derived by its declaration, not by its normalized map: a
+   derived dimension whose terms cancel, such as `dimension N = L / L;`,
+   has an empty normalized map and stays derived, with its own
+   declaration-based key, and is not a base dimension. The preimage carries
+   that base flag through `UnitGraph::admit`, into `UnitTable::declared` and
+   to replay's `AdmittedDimension::is_base`.
 4. **Unit content.** A unit's normalized content has its
    dimension's key as `dimension_node_id`, its target's key as
    `target_unit_node_id` (`null` when no target is written), the reduced
@@ -694,8 +700,8 @@ fault, carried with the span of the first dimension or unit form.
 
 The assembler stops at the admitted `UnitGraph`, which keeps each
 dimension's and unit's normalized semantic content; `UnitTable::declared` carries them
-to lowering, which builds the `quire.dimension-node/v1` and
-`quire.unit-node/v1` nodes a quantity type names (FR-094).
+to lowering, which builds the `quire.dimension-node` and
+`quire.unit-node/v1` nodes (a dimension node keeps its base flag, FR-094) a quantity type names (FR-094).
 
 **Dimension and unit source cases.** The required `package_name` is held
 constant; the source owner is `{kind: "source", authority: "a", identity: "u"}`.
@@ -1234,6 +1240,7 @@ every checker of the language.
 | FR-091-AC-70 | `Text("é")` and `Text("\u00e9")` at one `Text[..]` slot check to values that hold the same payload bytes `c3 a9` and compare equal to each other and to the runtime payload bytes `c3 a9`, whichever side the literal is on (QSpec FR-141, TC-186 T06b); each carries its own quoted spelling, `"é"` and `"\u00e9"`, as source-literal provenance, and two literals written with one spelling carry equal provenance, under a scalar profile and a normalizing one and for the escapes `\u000a` and `\n`, `\/` and `/`, and a surrogate pair and the raw scalar. `Expression::String` holds the quoted spelling beside the decoded text, and two spellings of one text build equal forms (equality is the decoded text's), lower to one literal node and are one data literal where a guard deduplicates its literals. | Test (TC-1052, QSpec TC-186) |
 | FR-091-AC-71 | Topology error fields (QSL-1601; QSpec FR-142-AC-15 to AC-17, TC-187 U06, U11a to U11f, U11n, U11o, U11p, U11w, U11x and U11z3). Each refusal of FR-091-AC-35, AC-46 and AC-47 carries the fields of the "Topology error fields" table as values: row 1's `z` with its scale `0`; row 2's `u` with the target name `ghost`; row 3's `s`, its target `r` and the dimension nodes `T` (of `s`) and `L` (of `r`); row 4's `L` with `r` and `q` in source order; row 5's root `r` with scale `2` and offset `0`; and row 6's edges `y -> x`, `x -> y`. `dimension L; dimension D = L * K; unit m : L = rational(1, 1);` refuses `missing_declaration`/`missing-name` at `D` carrying the owning dimension `D` and the term `K` (U11p); `dimension A = B * K; dimension B = A;` refuses the same carrying `A` and `K`, before the cycle (U11w); `dimension L; unit m : L = rational(1, 1); dimension E = D; dimension D = L * K;` refuses at `D` carrying `D` and `K`, not at `E`, and the same unit with `unit e : E = rational(0, 1);` added refuses row 1, `invalid_package`/`invalid-value`, at `e` carrying scale `0`, because `E`'s turn comes first and its unit rows run (U11x); `dimension A = B; dimension B = A ^ 2; unit a : A = rational(1, 1);` refuses `invalid_package`/`definition-cycle` at `A` carrying the edges `A -> B`, `B -> A` (U11n); `dimension L; dimension D = D * L; unit m : L = rational(1, 1);` refuses `definition-cycle` at `D` carrying `D -> D` (U11o); `dimension E = A; unit e : E = rational(0, 1); dimension A = B; dimension B = A;` refuses row 1 at `e` carrying scale `0`, and without `unit e` refuses `definition-cycle` at `A` carrying `A -> B`, `B -> A` (U11z3). The base-dimension refusals of FR-091-AC-55 (U11y, U11z1) carry `L`'s FCD identity and `m2`. | Test (TC-483) |
 | FR-091-AC-72 | Package dimension and package unit forms (QSL-1602; QSpec FR-142-AC-18, AC-19, AC-20). With `model M = "acme/rpc"`, where `acme/rpc` declares base dimension `Rate` with root unit `us`, and a unit of compilation declaring `dimension Time; unit s : Time = rational(1, 1);`: `unit tick : M::Rate = rational(1, 2) * M::us;` resolves its `:` name to the package dimension `Rate` (FCD identity `ix://acme/rpc/dimension/Rate`) and its target to the package unit `us`, is checked at `M::Rate`'s turn with `us` as an admitted member, and admits `tick` with scale `1/2` to `us`; `function k1 using v(d: Quantity<tick>): Boolean pure { convert<Quantity<M::us>>(d) = 1 M::us }` checks and is `true` for `d` = `2 tick`, and `unit tock : M::Rate = rational(3, 1) * tick;` chains through `tick` to `us` with composed scale `3/2`. Each of the following refused units is assembled in its own unit of compilation beside the base declarations above (`model M`, `dimension Time;`, `unit s`), without `tick` or `tock`, and reports its one refusal: `unit bad : M::Rate = rational(1, 2) * s;` refuses row 3, `invalid_package`/`incompatible-definition`, carrying `bad`, `s`, the dimension node `M::Rate` and the source `Time`; `unit r2 : M::Rate = rational(1, 1);` refuses row 4 at `M::Rate` carrying `us` and `r2`; `unit z : M::Rate = rational(0, 1) * M::us;` refuses row 1 at `z` carrying scale `0`; and `unit g : M::Rate = rational(1, 2) * M::ghost;` refuses row 2 carrying `g` and the target name `M::ghost`. | Test (TC-483) |
+| FR-091-AC-73 | Base versus derived dimension identity (QSL-1738). With `dimension L; dimension N = L / L; unit m : L = rational(1, 1); unit one : N = rational(1, 1);`, the assembler admits both units; `N` is a derived dimension with an empty normalized map, so `one`'s dimension is dimensionless and `m`'s is not, `N`'s preimage is not base (`DimensionPreimage::is_base` is false) and `L`'s is, the two keys differ, and lowering and replay keep `N` derived and `L` base (FR-094-AC-14). `DimensionPreimage::from_json` reads `quire.dimension-node/v2` with `base` false and empty terms as derived, reads `quire.dimension-node/v1` with empty terms as base, and refuses as `NonCanonicalPreimage` a `v1` document that carries `base`, a `v2` document without `base`, and a base dimension with terms. | Test (TC-1339) |
 
 ## Dependencies
 
