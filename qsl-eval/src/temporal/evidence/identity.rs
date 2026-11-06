@@ -174,10 +174,17 @@ pub struct ResultIdentity(Box<[u8]>);
 
 impl ResultIdentity {
     /// Read the input-only identity from a strictly ordered result identity
-    /// encoding. Unknown, repeated, out-of-order or truncated members refuse.
-    pub fn input_identity_from_bytes(mut bytes: &[u8]) -> Option<InputIdentity> {
+    /// encoding. Missing, unknown, repeated, out-of-order or truncated members
+    /// refuse. Member payloads are validated against the request by
+    /// [`super::matches_result_identity`].
+    pub fn input_identity_from_bytes(bytes: &[u8]) -> Option<InputIdentity> {
+        Self::read_encoding(bytes).map(|(input, _)| input)
+    }
+
+    pub(super) fn read_encoding(mut bytes: &[u8]) -> Option<(InputIdentity, u64)> {
         let mut input = Vec::new();
         let mut previous = 0;
+        let mut meter_ceiling = None;
         while let Some((&tag, rest)) = bytes.split_first() {
             let member = match tag {
                 1 => IdentityMember::Clause,
@@ -199,7 +206,7 @@ impl ResultIdentity {
                 17 => IdentityMember::Occurrence,
                 _ => return None,
             };
-            if tag <= previous {
+            if tag != previous + 1 {
                 return None;
             }
             previous = tag;
@@ -207,12 +214,18 @@ impl ResultIdentity {
                 usize::try_from(u64::from_be_bytes(rest.get(..8)?.try_into().ok()?)).ok()?;
             let end = 9_usize.checked_add(length)?;
             let encoded = bytes.get(..end)?;
+            if member == IdentityMember::MeterCeiling {
+                meter_ceiling = Some(u64::from_be_bytes(encoded.get(9..)?.try_into().ok()?));
+            }
             if member.is_input() {
                 input.extend_from_slice(encoded);
             }
             bytes = bytes.get(end..)?;
         }
-        (previous == 17).then(|| InputIdentity(input.into_boxed_slice()))
+        if previous != IdentityMember::Occurrence.tag() {
+            return None;
+        }
+        Some((InputIdentity(input.into_boxed_slice()), meter_ceiling?))
     }
 
     /// The identity's bytes, the encoding of its members.

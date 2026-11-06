@@ -433,6 +433,18 @@ impl Report {
         {
             return Err(ReportRefusal::InvalidPredecessor);
         }
+        let request = native_request(subject, observation)?;
+        let bare = BarePackage::new(subject.package);
+        let package = qsl_eval::temporal::evidence::EvidencePackage::from_package(&bare)
+            .map_err(|_| ReportRefusal::UnknownTag)?;
+        let checked = package
+            .subject(&subject.occurrence.node, request.occurrence.as_ref())
+            .map_err(|_| ReportRefusal::UnknownTag)?;
+        if !qsl_eval::temporal::evidence::matches_result_identity(&checked, &request, &identity)
+            .map_err(|_| ReportRefusal::UnknownTag)?
+        {
+            return Err(ReportRefusal::UnknownTag);
+        }
         Ok(Self {
             checked: subject.checked.clone(),
             binding: subject.binding.clone(),
@@ -546,19 +558,31 @@ pub fn evaluate_v2(
     observation: &ObservationRef,
     meter: &mut Meter,
 ) -> Result<Report, NativeReportError> {
+    let request = native_request(subject, observation)?;
+    let view = temporal_subject(subject.package, &subject.occurrence.node)
+        .map_err(|_| ReportRefusal::BindingMismatch(BindingDimension::Clause))?;
+    let predecessor = subject.predecessor()?.map(<[u8]>::to_vec);
+    let bare = BarePackage::new(subject.package);
+    let package = qsl_eval::temporal::evidence::EvidencePackage::from_package(&bare)?;
+    let operands = qsl_eval::temporal::evidence::native_atom_operands(&view);
+    let result = package.evaluate_temporal_evidence(&subject.occurrence.node, &request, meter)?;
+    report_from_result(subject, observation, predecessor, &operands, result)
+}
+
+fn native_request(
+    subject: &CheckedSubject<'_>,
+    observation: &ObservationRef,
+) -> Result<EvidenceRequest, ReportRefusal> {
     let view = temporal_subject(subject.package, &subject.occurrence.node)
         .map_err(|_| ReportRefusal::BindingMismatch(BindingDimension::Clause))?;
     for row in subject.evidence.rows() {
         if row.revision != observation.revision {
-            return Err(ReportRefusal::BindingMismatch(BindingDimension::Revision).into());
+            return Err(ReportRefusal::BindingMismatch(BindingDimension::Revision));
         }
         if subject.request.anchor.as_deref() != Some(row.anchor.as_str()) {
-            return Err(ReportRefusal::SupportNotInTrace.into());
+            return Err(ReportRefusal::SupportNotInTrace);
         }
     }
-    let predecessor = subject.predecessor()?.map(<[u8]>::to_vec);
-    let bare = BarePackage::new(subject.package);
-    let package = qsl_eval::temporal::evidence::EvidencePackage::from_package(&bare)?;
     let mut request = subject.request.clone();
     let mut native = Writer::new();
     native.field(1, observation.reference.as_bytes());
@@ -605,7 +629,16 @@ pub fn evaluate_v2(
             input.valuations.insert(atom, valuation);
         }
     }
-    let result = package.evaluate_temporal_evidence(&subject.occurrence.node, &request, meter)?;
+    Ok(request)
+}
+
+fn report_from_result(
+    subject: &CheckedSubject<'_>,
+    observation: &ObservationRef,
+    predecessor: Option<Vec<u8>>,
+    operands: &[Option<CheckedNodeId>],
+    result: EvidenceResult,
+) -> Result<Report, NativeReportError> {
     let outcome = outcome_of(&result);
     let mut support = Vec::new();
     for used in &result.support {

@@ -258,6 +258,43 @@ pub fn evaluate_temporal_evidence(
     Ok(conclude(&facts, outcome, meter))
 }
 
+/// Check an encoded result identity against its checked subject and request,
+/// using the same member encoder as evaluation without evaluating any positions.
+/// The work ceiling is read from the identity because it belongs to the original
+/// evaluation's meter, rather than to the reader.
+///
+/// # Errors
+/// Returns the subject-selection or binding refusal when the supplied authority
+/// cannot be resolved. Malformed or mismatched identity bytes return `false`.
+pub fn matches_result_identity(
+    subject: &EvidenceSubject<'_>,
+    request: &EvidenceRequest,
+    bytes: &[u8],
+) -> Result<bool, CallFailure> {
+    let Some((_, meter_ceiling)) = ResultIdentity::read_encoding(bytes) else {
+        return Ok(false);
+    };
+    let resolved = resolve(subject, request)?;
+    let authenticated = request
+        .binding
+        .authenticate(&resolved.selection)
+        .map_err(|_| refusal("binding-mismatch", "binding", &[]))?;
+    let obligation = ObligationKey::new(
+        resolved.selection.declaration.package.clone(),
+        resolved.occurrence_key.clone(),
+        resolved.occurrence,
+    );
+    let identity = identity_of(
+        &resolved,
+        request,
+        &authenticated,
+        &obligation,
+        meter_ceiling,
+    )
+    .map_err(|_| fault("identity-members-encode"))?;
+    Ok(identity.result_identity().as_bytes() == bytes)
+}
+
 fn admit<'a>(
     subject: &'a ResolvedSubject<'a>,
     request: &'a EvidenceRequest,
@@ -301,8 +338,14 @@ fn admit<'a>(
         ProgressAdmission::Ledger(ledger) => (ledger, None),
         ProgressAdmission::Limit(limit) => (request.progress_ledger.clone(), Some(limit)),
     };
-    let identity = identity_of(subject, request, &authenticated, &obligation, meter)
-        .map_err(|_| fault("identity-members-encode"))?;
+    let identity = identity_of(
+        subject,
+        request,
+        &authenticated,
+        &obligation,
+        meter.limits().work_units,
+    )
+    .map_err(|_| fault("identity-members-encode"))?;
     let (result_identity, input_identity) = (identity.result_identity(), identity.input_identity());
     let lineage = admit_relation(request, &obligation, &input_identity)?;
     match subject.facts.activation() {
@@ -734,7 +777,7 @@ fn identity_of(
     request: &EvidenceRequest,
     authenticated: &AuthenticatedBinding,
     obligation: &ObligationKey,
-    meter: &Meter,
+    meter_ceiling: u64,
 ) -> Result<IdentityBuilder, super::identity::MemberFault> {
     let cover = match request.cover {
         ClockCover::Exact => MemberEncoder::new().u64(0).finish(),
@@ -757,7 +800,7 @@ fn identity_of(
         .clause(subject.selection.declaration)?
         .authenticated(authenticated)?
         .ceilings(&request.limits)
-        .meter_ceiling(meter.limits().work_units)
+        .meter_ceiling(meter_ceiling)
         .member(IdentityMember::Cover, cover)
         .member(IdentityMember::Trace, encode_trace(subject, request))
         .member(IdentityMember::Progress, encode_progress(request))

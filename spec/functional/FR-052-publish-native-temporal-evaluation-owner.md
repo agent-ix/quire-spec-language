@@ -105,6 +105,13 @@ temporal evidence engine; the retired artifact evaluator is named
 `evaluate_artifact_v2`. This native report contract is distinct from FR-516's
 quire-protocol request/result types.
 
+The reader SHALL require every result-identity member in canonical order and
+compare its bytes with the evidence owner's encoding of the supplied checked
+subject, observation and evaluation request, retaining the encoded original
+meter ceiling. An incomplete or request-mismatched identity refuses
+`UnknownTag`; it cannot establish changed-input predecessor authority. This
+check encodes identity members without evaluating temporal positions.
+
 FR-043 owns temporal meaning; FR-044 owns activation and captures. The retired
 M-6d request/result API criteria remain historical and do not retire these
 behaviors.

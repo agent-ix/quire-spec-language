@@ -115,7 +115,7 @@ fn with_inputs(
     );
 }
 
-#[trace("FR-052-AC-15", "FR-052-AC-16", "FR-052-AC-17")]
+#[trace("TC-144", "FR-052-AC-15", "FR-052-AC-16", "FR-052-AC-17")]
 #[test]
 fn native_report_owns_truth_and_preserves_duplicate_support_and_roundtrip() {
     with_subject(|subject, observation, rows| {
@@ -158,7 +158,7 @@ fn native_report_owns_truth_and_preserves_duplicate_support_and_roundtrip() {
     });
 }
 
-#[trace("FR-052-AC-18")]
+#[trace("TC-144", "FR-052-AC-18")]
 #[test]
 fn every_truncated_prefix_and_extra_byte_is_refused() {
     with_subject(|subject, observation, _| {
@@ -199,7 +199,7 @@ fn every_truncated_prefix_and_extra_byte_is_refused() {
     });
 }
 
-#[trace("FR-052-AC-18")]
+#[trace("TC-144", "FR-052-AC-18")]
 #[test]
 fn opaque_observation_and_revision_binding_are_independent() {
     with_subject(|subject, observation, _| {
@@ -245,7 +245,7 @@ fn fields(bytes: &[u8], base: usize) -> Vec<(usize, usize, usize)> {
     result
 }
 
-#[trace("FR-052-AC-18")]
+#[trace("TC-144", "FR-052-AC-18")]
 #[test]
 fn binding_outcome_member_order_and_support_mutations_are_typed_refusals() {
     with_subject(|subject, observation, _| {
@@ -316,7 +316,7 @@ fn binding_outcome_member_order_and_support_mutations_are_typed_refusals() {
     });
 }
 
-#[trace("FR-052-AC-15", "FR-052-AC-16")]
+#[trace("TC-144", "FR-052-AC-15", "FR-052-AC-16")]
 #[test]
 fn opposite_and_missing_valuations_are_computed_from_admitted_rows() {
     for (value, missing, expected) in [(false, false, Some(Truth::False)), (true, true, None)] {
@@ -348,7 +348,7 @@ fn opposite_and_missing_valuations_are_computed_from_admitted_rows() {
     }
 }
 
-#[trace("FR-052-AC-12", "FR-052-AC-17", "FR-052-AC-18")]
+#[trace("TC-144", "FR-052-AC-12", "FR-052-AC-17", "FR-052-AC-18")]
 #[test]
 fn correction_keeps_direct_predecessor_immutable_and_rejects_stale_or_foreign_identity() {
     use qsl_eval::temporal::evidence::{ObligationKey, Relation};
@@ -457,7 +457,7 @@ fn correction_keeps_direct_predecessor_immutable_and_rejects_stale_or_foreign_id
     );
 }
 
-#[trace("FR-052-AC-12", "FR-052-AC-18")]
+#[trace("TC-144", "FR-052-AC-12", "FR-052-AC-18")]
 #[test]
 fn reader_rejects_a_correction_self_edge_and_original_with_invented_predecessor() {
     use qsl_eval::temporal::evidence::{ObligationKey, Relation};
@@ -549,12 +549,65 @@ fn reader_rejects_a_correction_self_edge_and_original_with_invented_predecessor(
                 Err(ReportRefusal::InvalidPredecessor)
             );
 
+            // The same evidence cannot acquire correction authority by
+            // replacing its identity with either an incomplete encoding or
+            // the valid canonical identity of another observation.
+            let original_bytes = original.to_owner_bytes();
+            let original_spans = fields(&original_bytes, 0);
+            let mut unchanged_correction = original_bytes[..original_spans[9].0].to_vec();
+            unchanged_correction.extend_from_slice(&bytes[spans[9].0..]);
+            for forged in [
+                vec![17, 0, 0, 0, 0, 0, 0, 0, 0],
+                revised.result_identity().to_vec(),
+            ] {
+                let forged = replace_identity(&unchanged_correction, &forged);
+                assert_eq!(
+                    Report::from_owner_bytes(&forged, &revised_subject, observation),
+                    Err(ReportRefusal::UnknownTag),
+                    "an invented changed-input identity must not authorize unchanged evidence"
+                );
+            }
+
+            let identity = original.result_identity();
+            let first_length =
+                usize::try_from(u64::from_be_bytes(identity[1..9].try_into().unwrap())).unwrap();
+            let missing_clause = identity[9 + first_length..].to_vec();
+            let mut empty_clause = vec![1, 0, 0, 0, 0, 0, 0, 0, 0];
+            empty_clause.extend_from_slice(&missing_clause);
+            // Empty, missing and truncated members all refuse on the actual
+            // public owner reader, even for an original with no lineage.
+            for malformed in [
+                vec![17, 0, 0, 0, 0, 0, 0, 0, 0],
+                missing_clause,
+                empty_clause,
+                identity[..identity.len() - 1].to_vec(),
+            ] {
+                assert_eq!(
+                    Report::from_owner_bytes(
+                        &replace_identity(&original_bytes, &malformed),
+                        &subject,
+                        observation,
+                    ),
+                    Err(ReportRefusal::UnknownTag)
+                );
+            }
+
             assert_eq!(
                 Report::from_owner_bytes(&bytes, &subject, &revised_observation),
                 Err(ReportRefusal::InvalidPredecessor)
             );
         },
     );
+}
+
+fn replace_identity(bytes: &[u8], identity: &[u8]) -> Vec<u8> {
+    let spans = fields(bytes, 0);
+    let mut replaced = bytes[..spans[9].0].to_vec();
+    replaced.push(10);
+    replaced.extend_from_slice(&u64::try_from(identity.len()).unwrap().to_le_bytes());
+    replaced.extend_from_slice(identity);
+    replaced.extend_from_slice(&bytes[spans[9].2..]);
+    replaced
 }
 
 fn refuse_cross_binding_predecessor(
@@ -705,7 +758,7 @@ fn refuse_cross_binding_predecessor(
     assert_eq!(original.to_owner_bytes(), unchanged);
 }
 
-#[trace("FR-052-AC-12", "FR-052-AC-15")]
+#[trace("TC-144", "FR-052-AC-12", "FR-052-AC-15")]
 #[test]
 fn another_clause_and_another_occurrence_cannot_borrow_predecessor_authority() {
     let (package, _) = super::checked_views::recipe_package("event_position");
@@ -747,7 +800,7 @@ fn another_clause_and_another_occurrence_cannot_borrow_predecessor_authority() {
     refuse_cross_binding_predecessor(package, &view.occurrences()[0], &view.occurrences()[1]);
 }
 
-#[trace("FR-052-AC-15", "FR-052-AC-17")]
+#[trace("TC-144", "FR-052-AC-15", "FR-052-AC-17")]
 #[test]
 fn native_report_two_build_bytes() {
     with_inputs(

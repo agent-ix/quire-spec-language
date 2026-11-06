@@ -9,8 +9,8 @@ relationships:
 
 ## Description
 
-Verify FR-052-AC-9 to FR-052-AC-14 on the Layer-4 checked-package route, which
-has two entry points, and each row is verified on the one that carries its
+Verify FR-052-AC-9 to FR-052-AC-18 on the Layer-4 checked-package routes. Each
+row is verified on the entry point that carries its
 input:
 
 - the clause route, `qsl_replay::spine::run_clause` (FR-330) with a
@@ -20,10 +20,14 @@ input:
   `evaluate_temporal_evidence` and `activate`, over a package compiled through S1
   to S4 and its FR-449 activation map, for rows 2, 3, 4g and 9. Trigger identity,
   the activation map, capture removal and the correction relation (FR-524,
-  FR-526) exist only there; `run_clause` has no trigger or relation input.
+  FR-526) exist only there; `run_clause` has no trigger or relation input;
+- the native owner report route, `temporal::evaluate_v2` and
+  `Report::from_owner_bytes`, over a `CheckedSubject` holding an admitted
+  duplicate-preserving valuation relation, for rows 10 to 13.
 
-The test is a behavior test over those routes and does not call the retired native
-request/result API or `src/temporal`.
+The tests exercise those routes and do not call the retired artifact
+request/result API. The native report controls in `tests/it/native_owner_report.rs`
+call `src/temporal`'s checked-package report API.
 
 Catches a route that returns a leaf valuation as the formula result, accepts
 caller-supplied truth, turns a missing fact into false, closed or complete,
@@ -70,6 +74,10 @@ Row 9's first step keeps the correspondence unchanged and changes only the evide
 | 7 | `Window` over **A** | `Completed(true)` (the position stamped 5 is eligible for `[0,5]` and `level = 2` there); the profile is not refused (FR-052-AC-14) |
 | 8 | progress ledger for the `Window` binding: W 100 then W 60; `Complete {through 100}` then `Complete {through 60}`; the same progress under a foreign package, then a foreign clause | the contradictions refuse as FR-502-AC-1 and AC-2; the foreign progress settles nothing (FR-052-AC-13) |
 | 9 | evidence route: with a ledger holding row 1's result `r1`, a `Superseding(r1)` request with changed evidence; then, once that result `r2` is held, `Superseding(r1)` again; then a `Superseding(r1)` for another clause of the package; then a `Superseding(r1)` whose trigger identity is another trigger's, with no ledger entry under that request's own trigger identity; then a `Superseding(r2)` with `r2`'s evidence unchanged; then a `Superseding(r1)` with no ledger | `lineage` 1, relation `Superseding` naming `r1`'s `result_identity`, and `r1` unchanged (FR-526-AC-2, AC-3); then `Err(CallFailure::Admission)` with cause `predecessor-not-latest`; then `predecessor-unknown`; then `predecessor-unknown` (the identity-mismatched predecessor of FR-052-AC-12, FR-053-AC-9: the ledger holds no entry under the request's own trigger identity); then `unchanged-input`; then `no-ledger`; each refusal with an empty charge log, the held results unchanged (FR-052-AC-12) |
+| 10 | native report route: a checked origin-activated `always` clause with three identical admitted true valuation rows at position 0 and one at position 1; then false rows and a missing required position | Report subject and opaque observation/revision equal the supplied authorities; true and false inputs produce the corresponding truths; missing evidence has no truth; support retains positions `[0,0,0,1]` and all four original rows, including duplicates (FR-052-AC-15/16) |
+| 11 | round-trip the native report through owner bytes, repeat evaluation and encoding, and compare independently compiled test binaries | Equal reports and byte-identical owner output, including support and predecessor (FR-052-AC-17) |
+| 12 | mutate native owner framing, version, enumeration, member order, binding or support; replace its identity by a lone empty occurrence member, omit or empty a required identity member, truncate a member, or borrow the well-framed canonical identity of another observation | Named typed refusals, no report; malformed or request-mismatched identity refuses `UnknownTag`; no invented identity grants changed-input correction authority (FR-052-AC-18) |
+| 13 | native report correction naming its exact direct predecessor with changed evidence/observation; then stale, self, cross-clause, cross-occurrence, original-with-predecessor and unchanged-input controls, including unchanged input with fabricated or foreign canonical identity | Valid correction preserves the predecessor bytes and names its identity; invalid lineage refuses `InvalidPredecessor`, malformed or foreign identity refuses `UnknownTag`, and no previous report changes (FR-052-AC-12) |
 
 
 ## Expected Results
@@ -83,3 +91,5 @@ Row 9's first step keeps the correspondence unchanged and changes only the evide
 - Test code carries the tags FR-052-AC-9 to AC-14, FR-501-AC-19 (row 5) and TC-144.
   The clause-route rows are tagged in `checked_route_owner`; the rows 2, 3, 4g and
   9 in `qsl-eval/tests/it`.
+- Native report rows 10 to 13 carry paired TC-144 and FR-052-AC-12/15/16/17/18
+  tags in `tests/it/native_owner_report.rs` for the criteria they assert.
