@@ -89,9 +89,10 @@ impl BarePackage<'_> {
             let Some(view) = projection.record_view() else {
                 continue;
             };
-            let fields = view
-                .fields()
-                .iter()
+            let mut ordered_fields: Vec<_> = view.fields().iter().collect();
+            ordered_fields.sort_by(|left, right| left.ir_identity().cmp(right.ir_identity()));
+            let fields = ordered_fields
+                .into_iter()
                 .map(|field| {
                     FieldDeclaration::new(
                         field.name(),
