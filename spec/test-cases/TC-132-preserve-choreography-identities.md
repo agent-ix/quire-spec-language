@@ -18,8 +18,8 @@ Compile the reusable OrderFlow template against an admitted domain package
 ([FR-056](../functional/FR-056-admit-domain-package-model-declarations.md)),
 selecting one external payment component plus shipment, channel and relationship
 declarations. Read the
-artifact through the public parser-free reader and use the admitted-package
-occurrence-schema projection to inspect each static role slot, original node
+package through the I2 reader and use FR-384's occurrence-schema derivation
+(`protocol_occurrence_schemas_from_read`, equal to the in-process derivation) to inspect each static role slot, original node
 handle, source locus, endpoint, payload, workflow-instance binding and
 outer-to-inner repeat ordinal domain. Do not place concrete O1/O2 instances or
 ordinal values in the artifact.
@@ -31,7 +31,9 @@ endpoint, sender, receiver, role slot or authored node handle at a time. At the
 downstream fixture boundary bind O1 and O2 to the same permitted payment
 component and verify that their supplied workflow/node occurrence keys differ.
 For a node nested under repeats, require exactly one caller-supplied ordinal in
-each returned domain; refuse a missing, surplus or out-of-range ordinal.
+each returned domain; refuse a missing, surplus or out-of-range ordinal. The
+retained owner of the occurrence-key schema, the key binder and its refusals is
+FR-384, verified by TC-1064 (rows 13 to 16); FR-048-AC-1 is traced through both.
 
 ## Expected Results
 

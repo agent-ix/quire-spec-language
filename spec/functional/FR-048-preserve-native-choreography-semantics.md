@@ -12,6 +12,7 @@ relationships:
   - { target: ix://agent-ix/quire-spec-language/FR-044, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-045, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/FR-050, type: depends_on }
+  - { target: ix://agent-ix/quire-spec-language/FR-384, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-049, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-050, type: depends_on }
   - { target: ix://agent-ix/quire-specification/FR-051, type: depends_on }
@@ -91,13 +92,16 @@ are consumed only through the version-exact parser-free Rust readers owned by
 
 The compiler SHALL retain the static protocol declaration, authored role slots,
 participant/component/endpoint selections, relationship declarations and every
-authored node handle. Its admitted-package occurrence-schema projection SHALL
-return the protocol declaration, workflow-instance binding requirement, each
+authored node handle. Its occurrence schema, owned by
+[FR-384](FR-384-derive-the-protocol-occurrence-schema-and-runtime-binding-requirements.md)
+and derived from a checked package in process or read through the I2 reader,
+SHALL return the protocol declaration, workflow-instance binding requirement, each
 authored node, the node's role slot when that node is role-owned, and every
 outer-to-inner enclosing repeat ordinal domain. It SHALL NOT emit future O1/O2
 workflow instances or concrete ordinals. Those concrete identities and ordinal
-values are supplied later, and the retained schema prevents two instances from
-collapsing when they share a provider, model, local name or transport value.
+values are supplied later, through FR-384's key binder, which validates them
+against the schema; the retained schema prevents two instances from collapsing
+when they share a provider, model, local name or transport value.
 
 The compiler SHALL retain channel sender/receiver roles, payload type,
 delivery bounds, ordering rule and each authored send/receive occurrence without
@@ -197,7 +201,7 @@ resource incompleteness and emits no static subject.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-048-AC-1 | One reusable template retains its static role/relationship requirements and exposes the full runtime occurrence-key schema from an admitted `/1` or `/2` package without changing wire bytes. Later O1/O2 bindings sharing one external payment provider therefore require distinct workflow and node-occurrence identities plus one concrete ordinal for every returned repeat domain, without the compiler fabricating any instance or ordinal. | Test (TC-132) |
+| FR-048-AC-1 | One reusable template retains its static role/relationship requirements and exposes the full runtime occurrence-key schema from a checked package, in process or read through the I2 reader, without changing the package bytes. Later O1/O2 bindings sharing one external payment provider therefore require distinct workflow and node-occurrence identities plus one concrete ordinal for every returned repeat domain, without the compiler fabricating any instance or ordinal. The schema, the key binder and their refusals are FR-384's (FR-384-AC-1 to AC-3 and AC-11 to AC-14), exercised by TC-1064; TC-132 names that retained owner. | Test (TC-132) |
 | FR-048-AC-2 | Channels preserve exact endpoint roles, payloads, order/delivery bounds and separate send, receive, delivery, attempt and effect identities; concrete fan-out remains a consumer binding. | Test (TC-132) |
 | FR-048-AC-3 | Sequence, choice, parallel, join, await, repeat, exhaustion, check, event and commit nodes retain their authored topology and exact typed control edges. | Test (TC-133) |
 | FR-048-AC-4 | Observed choice/repeat guards admit only causally visible eligible atoms; same spelling, wrong owner, branch-local or success-only values refuse without disappearing in unused operands. | Test (TC-133) |

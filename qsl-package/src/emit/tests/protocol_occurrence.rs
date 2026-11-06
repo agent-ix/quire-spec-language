@@ -9,8 +9,8 @@ use super::reachability::{lower_with, Lowered};
 use super::*;
 use crate::{
     protocol_occurrence_schemas_from_read, ControlEntry, ControlOperator, ControlOwner,
-    ProtocolOccurrence, RepeatDimension, RoleLifetime, RoleReplication, RuntimeBindingRequirement,
-    SubjectKind,
+    OccurrenceKeyError, ProtocolOccurrence, RepeatDimension, RoleLifetime, RoleReplication,
+    RuntimeBindingRequirement, SubjectKind, WorkflowInstanceIdentity,
 };
 use quire_exact::Integer;
 
@@ -277,15 +277,21 @@ fn w_repeat_dimensions_are_an_iteration_and_an_exhaustion() {
     }
 }
 
-#[trace("FR-384-AC-2", "TC-1064")]
-#[test]
-fn nested_repeats_zero_and_missing_maximums_and_branches_outside_a_repeat() {
-    // A repeat inside a repeat: two dimensions, outer first.
+/// W with a `repeat` inside its `Poll` repeat.
+fn nested_repeats() -> String {
     let nested = W.replace(
         "      attempt Polled by Fulfillment on M::Shipment::poll contracts []\n        as (polled: M::ShipmentResult) { true };\n      exhausted check Limit using v { true };",
         "      sequence Cycle {\n        attempt Probe by Fulfillment on M::Shipment::poll contracts []\n          as (probe: M::ShipmentResult) { true };\n        repeat Inner by Fulfillment visible (eastRes.ok) max 2 while { eastRes.ok }\n          attempt Polled by Fulfillment on M::Shipment::poll contracts []\n            as (polled: M::ShipmentResult) { true };\n          exhausted check InnerLimit using v { true };\n      }\n      exhausted check Limit using v { true };",
     );
     assert_ne!(nested, W);
+    nested
+}
+
+#[trace("FR-384-AC-2", "TC-1064")]
+#[test]
+fn nested_repeats_zero_and_missing_maximums_and_branches_outside_a_repeat() {
+    // A repeat inside a repeat: two dimensions, outer first.
+    let nested = nested_repeats();
     let occurrence = only(derive(PROFILES_W, &nested, document()));
     let poll = control(&occurrence, "Poll").key.clone();
     let inner = control(&occurrence, "Inner").key.clone();
@@ -686,4 +692,297 @@ fn a_full_and_a_partial_template_give_two_entries_and_two_requirement_sets() {
             entry.path
         );
     }
+}
+
+fn workflow(name: &str) -> WorkflowInstanceIdentity<'_> {
+    WorkflowInstanceIdentity::new(name).expect("a bounded workflow identity")
+}
+
+/// FR-384-AC-11 (FR-048-AC-1): two workflows that share one protocol, and so
+/// one provider, bind distinct keys for the same control and ordinals.
+#[trace("FR-384-AC-11", "FR-048-AC-1", "TC-1064", "TC-132")]
+#[test]
+fn two_workflows_sharing_a_provider_bind_distinct_keys_that_return_their_values() {
+    let occurrence = w();
+    let polled = control(&occurrence, "Polled");
+    let (key, owner) = (&polled.key, &polled.owner);
+    assert_eq!(owner_name(&occurrence, polled), Some("Fulfillment"));
+    let first = [int(0)];
+    let o1 = occurrence
+        .schema
+        .bind(workflow("O1"), key, owner, &first)
+        .expect("O1 binds");
+    let o2 = occurrence
+        .schema
+        .bind(workflow("O2"), key, owner, &first)
+        .expect("O2 binds");
+    assert_ne!(o1, o2, "only the workflow identity differs");
+    assert_eq!(o1.workflow().as_str(), "O1");
+    assert_eq!(o2.workflow().as_str(), "O2");
+    for bound in [&o1, &o2] {
+        assert_eq!(bound.protocol(), &occurrence.schema.workflow);
+        assert_eq!(bound.control(), key);
+        assert_eq!(bound.owner(), owner);
+        assert_eq!(bound.repeat_ordinals(), first);
+    }
+    let third = [int(2)];
+    let later = occurrence
+        .schema
+        .bind(workflow("O1"), key, owner, &third)
+        .expect("ordinal 2 is inside [0, 3)");
+    assert_ne!(o1, later, "only the ordinal differs");
+    assert_eq!(later.repeat_ordinals(), third);
+    // The schema itself still holds none of the supplied values.
+    assert_eq!(occurrence, w());
+}
+
+/// FR-384-AC-11 (FR-048-AC-1): each dimension admits exactly its domain.
+#[trace("FR-384-AC-11", "FR-048-AC-1", "TC-1064", "TC-132")]
+#[test]
+fn each_repeat_dimension_admits_exactly_its_domain() {
+    let refused =
+        |dimension: usize, value: Integer| OccurrenceKeyError::RepeatOrdinal { dimension, value };
+    let bind = |occurrence: &ProtocolOccurrence, name: &str, ordinals: &[Integer]| {
+        let entry = control(occurrence, name);
+        occurrence
+            .schema
+            .bind(workflow("O1"), &entry.key, &entry.owner, ordinals)
+            .map(|bound| bound.repeat_ordinals().to_vec())
+    };
+
+    // Two nested iteration dimensions, outer [0, 3) and inner [0, 2).
+    let nested = only(derive(PROFILES_W, &nested_repeats(), document()));
+    assert_eq!(
+        bind(&nested, "Polled", &[int(2), int(1)]),
+        Ok(vec![int(2), int(1)])
+    );
+    assert_eq!(
+        bind(&nested, "Polled", &[int(3), int(1)]),
+        Err(refused(0, int(3)))
+    );
+    assert_eq!(
+        bind(&nested, "Polled", &[int(2), int(2)]),
+        Err(refused(1, int(2)))
+    );
+    assert_eq!(
+        bind(&nested, "Polled", &[int(-1), int(0)]),
+        Err(refused(0, int(-1)))
+    );
+    // An iteration then an exhaustion dimension.
+    assert_eq!(
+        bind(&nested, "InnerLimit", &[int(1), int(2)]),
+        Ok(vec![int(1), int(2)])
+    );
+    assert_eq!(
+        bind(&nested, "InnerLimit", &[int(1), int(1)]),
+        Err(refused(1, int(1)))
+    );
+    assert_eq!(
+        bind(&nested, "InnerLimit", &[int(1), int(3)]),
+        Err(refused(1, int(3)))
+    );
+
+    // The exhaustion arm admits exactly the maximum, 3.
+    let w = w();
+    assert_eq!(bind(&w, "Limit", &[int(3)]), Ok(vec![int(3)]));
+    assert_eq!(bind(&w, "Limit", &[int(2)]), Err(refused(0, int(2))));
+    assert_eq!(bind(&w, "Limit", &[int(4)]), Err(refused(0, int(4))));
+
+    // `max 0` is an empty domain: not even ordinal 0 is inside it.
+    let empty = only(derive(PROFILES_W, &W.replace("max 3", "max 0"), document()));
+    assert_eq!(bind(&empty, "Polled", &[int(0)]), Err(refused(0, int(0))));
+
+    // No maximum: every non-negative integer, beyond 64 bits too, and no
+    // negative one.
+    let unbounded = only(derive(
+        PROFILES_W,
+        &W.replace(" max 3", "")
+            .replace("      exhausted check Limit using v { true };\n", ""),
+        document(),
+    ));
+    let huge = Integer::from(i128::from(i64::MAX) * 4);
+    assert_eq!(bind(&unbounded, "Polled", &[int(0)]), Ok(vec![int(0)]));
+    assert_eq!(bind(&unbounded, "Polled", &[huge.clone()]), Ok(vec![huge]));
+    assert_eq!(
+        bind(&unbounded, "Polled", &[int(-1)]),
+        Err(refused(0, int(-1)))
+    );
+}
+
+/// FR-384-AC-13 (FR-048-AC-1): each way a key can be wrong has its own
+/// typed refusal, and a refused call yields no key.
+#[trace("FR-384-AC-13", "FR-048-AC-1", "TC-1064", "TC-132")]
+#[test]
+fn a_key_with_a_wrong_control_owner_or_ordinal_count_is_refused_by_name() {
+    let occurrence = w();
+    let schema = &occurrence.schema;
+    let polled = control(&occurrence, "Polled");
+    let requested = control(&occurrence, "Requested");
+    let main = control(&occurrence, "Main");
+    assert_eq!(main.owner, ControlOwner::Structural);
+    let one = [int(1)];
+
+    // UnknownNode: a key the schema holds no entry for.
+    let absent = quire_exact::NodeKey::new(
+        "acme/orders",
+        vec![quire_exact::PathSegment::Text("Nowhere".to_owned())],
+        0,
+    )
+    .expect("a structural key");
+    assert_eq!(
+        schema.bind(workflow("O1"), &absent, &ControlOwner::Structural, &[]),
+        Err(OccurrenceKeyError::UnknownNode { node: absent })
+    );
+    // The protocol clause is no control entry either.
+    assert_eq!(
+        schema.bind(
+            workflow("O1"),
+            &schema.workflow,
+            &ControlOwner::Structural,
+            &[]
+        ),
+        Err(OccurrenceKeyError::UnknownNode {
+            node: schema.workflow.clone(),
+        })
+    );
+
+    // WrongRole: a swapped role, and structural and role owners exchanged.
+    let payments = control(&occurrence, "Received").owner.clone();
+    assert_ne!(payments, requested.owner);
+    assert_eq!(
+        schema.bind(workflow("O1"), &requested.key, &payments, &[]),
+        Err(OccurrenceKeyError::WrongRole {
+            expected: requested.owner.clone(),
+            actual: payments.clone(),
+        })
+    );
+    assert_eq!(
+        schema.bind(
+            workflow("O1"),
+            &requested.key,
+            &ControlOwner::Structural,
+            &[]
+        ),
+        Err(OccurrenceKeyError::WrongRole {
+            expected: requested.owner.clone(),
+            actual: ControlOwner::Structural,
+        })
+    );
+    assert_eq!(
+        schema.bind(workflow("O1"), &main.key, &requested.owner, &[]),
+        Err(OccurrenceKeyError::WrongRole {
+            expected: ControlOwner::Structural,
+            actual: requested.owner.clone(),
+        })
+    );
+
+    // RepeatCount: missing, surplus, and an ordinal for an entry with none.
+    for ordinals in [&[][..], &[int(0), int(0)][..]] {
+        assert_eq!(
+            schema.bind(workflow("O1"), &polled.key, &polled.owner, ordinals),
+            Err(OccurrenceKeyError::RepeatCount {
+                expected: 1,
+                actual: ordinals.len(),
+            })
+        );
+    }
+    assert_eq!(
+        schema.bind(workflow("O1"), &requested.key, &requested.owner, &one),
+        Err(OccurrenceKeyError::RepeatCount {
+            expected: 0,
+            actual: 1,
+        })
+    );
+    // The exact counts bind.
+    assert!(schema
+        .bind(workflow("O1"), &requested.key, &requested.owner, &[])
+        .is_ok());
+    assert!(schema
+        .bind(workflow("O1"), &polled.key, &polled.owner, &one)
+        .is_ok());
+}
+
+/// FR-384-AC-13: a control of another protocol is unknown to this schema,
+/// though it shares its name, role name and model with one of this schema.
+#[trace("FR-384-AC-13", "FR-048-AC-1", "TC-1064", "TC-132")]
+#[test]
+fn another_protocols_same_named_control_is_an_unknown_node() {
+    let protocol = |name: &str| {
+        format!(
+            "protocol {name} using p over (input: M::Order) on origin {{\n\
+             role Payer on M::Order;\n\
+             run sequence Main {{ check Charge using v {{ true }}; }}\n\
+             finish End as (outcome: Boolean) {{ true }};\n}}\n"
+        )
+    };
+    let occurrences = derive(
+        PROFILES,
+        &format!("{}{}", protocol("A"), protocol("B")),
+        model(),
+    );
+    let [a, b] = occurrences.as_slice() else {
+        panic!("two protocols")
+    };
+    let (charge_a, charge_b) = (control(a, "Charge"), control(b, "Charge"));
+    assert_eq!(charge_a.owner, ControlOwner::Structural);
+    assert_eq!(charge_b.owner, ControlOwner::Structural);
+    assert_ne!(charge_a.key, charge_b.key);
+    assert!(a
+        .schema
+        .bind(workflow("O1"), &charge_a.key, &charge_a.owner, &[])
+        .is_ok());
+    assert_eq!(
+        a.schema
+            .bind(workflow("O1"), &charge_b.key, &charge_b.owner, &[]),
+        Err(OccurrenceKeyError::UnknownNode {
+            node: charge_b.key.clone(),
+        })
+    );
+    // The key names the protocol it was bound against.
+    let key = b
+        .schema
+        .bind(workflow("O1"), &charge_b.key, &charge_b.owner, &[])
+        .expect("B binds its own control");
+    assert_eq!(key.protocol(), &b.schema.workflow);
+    assert_ne!(key.protocol(), &a.schema.workflow);
+}
+
+/// FR-384-AC-14 (FR-048-AC-1): a schema exists for a protocol clause only,
+/// and holds one entry for each role, control and compensation node read.
+#[trace("FR-384-AC-14", "FR-048-AC-1", "TC-1064", "TC-132")]
+#[test]
+fn a_schema_exists_for_a_protocol_clause_only_with_one_entry_for_each_node() {
+    let lowered = lower_with(document(), PROFILES_W, W);
+    let occurrence = only(parity(&lowered));
+    let nodes = lowered.wire["semantic_graph"]["nodes"].as_array().unwrap();
+    let count = |form: &str| {
+        nodes
+            .iter()
+            .filter(|node| node["semantic_form"] == form)
+            .count()
+    };
+    assert!(
+        count("object_type") > 0,
+        "W's package holds model type nodes"
+    );
+    assert_eq!(count("protocol_clause"), 1);
+    assert_eq!(count("role"), occurrence.schema.roles.len());
+    assert_eq!(count("control"), occurrence.schema.controls.len());
+    assert_eq!(count("compensation"), occurrence.schema.compensations.len());
+    assert_eq!(
+        (
+            occurrence.schema.roles.len(),
+            occurrence.schema.controls.len(),
+            occurrence.schema.compensations.len()
+        ),
+        (3, 15, 1)
+    );
+    // The one schema is keyed by the protocol clause, which is none of the
+    // role, control or compensation entries.
+    let schema = &occurrence.schema;
+    assert!(schema.roles.iter().all(|role| role.key != schema.workflow));
+    assert!(schema
+        .controls
+        .iter()
+        .all(|control| control.key != schema.workflow));
 }
