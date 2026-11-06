@@ -15,7 +15,8 @@ use quire_contract_model::{
 };
 use quire_spec_language::checked_handoff::{
     evidence, write, write_with, CheckedHandoffRequest, Corpus, Environment, Error, ErrorCode,
-    RealEnvironment, Selection, SelectionAxis, SelectionRefusal,
+    Inventory, InventoryReadError, InventoryRow, RealEnvironment, Selection, SelectionAxis,
+    SelectionRefusal,
 };
 use quire_spec_language::emit_checked_v2::{self, ClockSelection, Request};
 use serde_json::Value;
@@ -213,12 +214,12 @@ pub(super) fn admitted(bytes: &[u8], evidence: &CheckedPackageEvidence) -> Box<C
 
 const SOURCE_LABEL: &str = "sources/source:examples/checked-handoff/unit-event-position.native";
 
-/// FR-517-AC-1, the paths the writer writes today: everything in the Outputs
-/// table except `inventory.json`, and no `mutations/` for a `None` corpus. The
-/// package bytes are those `emit_checked_v2::emit` returns.
+/// FR-517-AC-1: every path of the Outputs table, `inventory.json` included, and
+/// no `mutations/` for a `None` corpus. The package bytes are those
+/// `emit_checked_v2::emit` returns.
 #[trace("FR-517-AC-1", "FR-042-AC-15", "FR-048-AC-10", "TC-1312", "TC-135")]
 #[test]
-fn the_directory_holds_the_outputs_table_except_the_inventory() {
+fn the_directory_holds_the_outputs_table() {
     let (_holder, out) = written("event_position", Corpus::None, &Double::default());
     let files = tree(&out);
     let paths: Vec<&str> = files.keys().map(String::as_str).collect();
@@ -228,6 +229,7 @@ fn the_directory_holds_the_outputs_table_except_the_inventory() {
             "checked-package.json",
             "equality.json",
             "identities.json",
+            "inventory.json",
             "models/0.json",
             "selection.json",
             "sources/library:examples/checked-handoff/library.native",
@@ -249,26 +251,370 @@ fn the_directory_holds_the_outputs_table_except_the_inventory() {
     );
 }
 
-/// FR-517-AC-11: the paths of the Outputs table with `inventory.json`
-/// included (`qsl_replay::qsl_inventory` over the unit with the selected
-/// formal identity, FR-514).
+/// The wire node id strings of the package's nodes.
+fn package_node_ids(package: &[u8]) -> Vec<Value> {
+    let wire: Value = serde_json::from_slice(package).unwrap();
+    wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|node| node["node_id"].clone())
+        .collect()
+}
+
+/// FR-517-AC-11: R's directory holds `inventory.json` in the format
+/// `quire.checked-handoff.inventory/1` with the formal identity the file name
+/// selects, non-empty rows, `observed_count` equal to their number, every
+/// requirement row naming a node of `checked-package.json`, the requirement
+/// records before the pending obligations; two writes give equal files.
 #[trace("FR-517-AC-11", "TC-1312")]
 #[test]
-#[ignore = "open: QSL-1689 (the writer): `write` does not yet run the replay spine over the unit nor write inventory.json in the format quire.checked-handoff.inventory/1 (FR-517-AC-11; reader AC-17)"]
-fn each_directory_holds_the_inventory_with_the_outputs_table() {
+fn each_directory_holds_the_inventory_of_its_unit() {
     let (_holder, out) = written("event_position", Corpus::None, &Double::default());
-    let paths: Vec<String> = tree(&out).into_keys().collect();
+    let files = tree(&out);
+    let bytes = &files["inventory.json"];
+    assert_eq!(bytes.last(), Some(&b'\n'));
+    let file: Value = serde_json::from_slice(bytes).unwrap();
+    assert_eq!(file["format"], "quire.checked-handoff.inventory/1");
+    assert_eq!(file["owner"], "qsl");
     assert_eq!(
-        paths,
+        file["scope"],
+        "qsl_checked_requirements_and_pending_obligations"
+    );
+    assert_eq!(
+        file["source"],
+        serde_json::json!({"document": "unit-event-position.native", "revision": 1})
+    );
+    assert_eq!(file["completeness"], "complete");
+    let rows = file["rows"].as_array().unwrap();
+    assert!(!rows.is_empty());
+    assert_eq!(file["observed_count"], rows.len());
+    let nodes = package_node_ids(&files["checked-package.json"]);
+    let mut seen_obligation = false;
+    let mut records = 0;
+    for row in rows {
+        match row["kind"].as_str().unwrap() {
+            "requirement_record" => {
+                assert!(!seen_obligation, "records come before obligations");
+                records += 1;
+                assert!(nodes.contains(&row["node"]), "{row}");
+                assert!(!row["role"].as_str().unwrap().is_empty());
+            }
+            "pending_obligation" => {
+                seen_obligation = true;
+                assert_eq!(row["unit"], 0);
+                assert!(row["start"].as_u64().unwrap() < row["end"].as_u64().unwrap());
+            }
+            other => panic!("row kind {other}"),
+        }
+    }
+    assert!(records > 0);
+    let (_again, second) = written("event_position", Corpus::None, &Double::default());
+    assert_eq!(tree(&second)["inventory.json"], *bytes);
+}
+
+/// The unit of the inventory vector of FR-517: `qsl_inventory` over it returns
+/// two requirement records and two pending obligations.
+const VECTOR_UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
+    profile v = \"quire.value.complete/v1\";\n\
+    function f using v(x: Int[0, 9], p: Boolean): Integer pure { if p then x + 1 else x + 1 }\n";
+
+/// The directory written for the vector unit, and the wire node id strings of
+/// its two requirement records.
+fn vector_directory() -> (tempfile::TempDir, BTreeMap<String, Vec<u8>>) {
+    vector_directory_named("unit.native")
+}
+
+/// [`vector_directory`] with the unit in a file called `name`.
+fn vector_directory_named(name: &str) -> (tempfile::TempDir, BTreeMap<String, Vec<u8>>) {
+    unit_directory(name, VECTOR_UNIT)
+}
+
+/// The handoff directory written for the unit `text` in a file called `name`.
+fn unit_directory(name: &str, text: &str) -> (tempfile::TempDir, BTreeMap<String, Vec<u8>>) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join(name);
+    std::fs::write(&source, text).unwrap();
+    let request = CheckedHandoffRequest {
+        emit: Request {
+            source,
+            package_name: "vector".into(),
+            models: Vec::new(),
+            libraries: Vec::new(),
+            execution_points: None,
+            temporal_selections: Vec::new(),
+            out: None,
+        },
+        corpus: Corpus::None,
+    };
+    let out = dir.path().join("handoff");
+    write(&request, &out).expect("the vector handoff is written");
+    let files = tree(&out);
+    (dir, files)
+}
+
+/// The bytes of the vector, `n0` and `n1` the node id texts.
+fn vector_bytes(n0: &str, n1: &str) -> String {
+    format!(
+        r#"{{
+  "format": "quire.checked-handoff.inventory/1",
+  "owner": "qsl",
+  "scope": "qsl_checked_requirements_and_pending_obligations",
+  "source": {{
+    "document": "unit.native",
+    "revision": 1
+  }},
+  "completeness": "complete",
+  "observed_count": 4,
+  "rows": [
+    {{
+      "kind": "requirement_record",
+      "node": {n0},
+      "role": "expression",
+      "ordinal": 0
+    }},
+    {{
+      "kind": "requirement_record",
+      "node": {n1},
+      "role": "expression",
+      "ordinal": 1
+    }},
+    {{
+      "kind": "pending_obligation",
+      "declaration": 0,
+      "unit": 0,
+      "start": 150,
+      "end": 155,
+      "capability_kind": "value-validity"
+    }},
+    {{
+      "kind": "pending_obligation",
+      "declaration": 0,
+      "unit": 0,
+      "start": 161,
+      "end": 166,
+      "capability_kind": "value-validity"
+    }}
+  ]
+}}
+"#
+    )
+}
+
+/// FR-517-AC-11: the bytes of the vector unit are exactly the encoding the
+/// section states, with `unit.native` as the formal identity.
+#[trace("FR-517-AC-11", "TC-1312")]
+#[test]
+fn the_vector_unit_writes_the_stated_bytes() {
+    let (_dir, files) = vector_directory();
+    let file: Value = serde_json::from_slice(&files["inventory.json"]).unwrap();
+    let text = String::from_utf8(files["inventory.json"].clone()).unwrap();
+    // The node member's own bytes, as the file spells them at row depth.
+    let spelled = |from: usize| {
+        let start = text[from..].find("\"node\": ").unwrap() + from + "\"node\": ".len();
+        let end = start + text[start..].find(",\n      \"role\"").unwrap();
+        (text[start..end].to_owned(), end)
+    };
+    let (n0, after) = spelled(0);
+    let (n1, _) = spelled(after);
+    assert_eq!(text, vector_bytes(&n0, &n1));
+    let nodes = package_node_ids(&files["checked-package.json"]);
+    assert!(nodes.contains(&file["rows"][0]["node"]));
+    assert!(nodes.contains(&file["rows"][1]["node"]));
+    // Both records are occurrences of the one guarded node (ordinals 0 and 1).
+    assert_eq!(file["rows"][0]["node"], file["rows"][1]["node"]);
+    assert_eq!(file["rows"][0]["ordinal"], 0);
+    assert_eq!(file["rows"][1]["ordinal"], 1);
+}
+
+/// FR-517-AC-11: each requirement row names the node of its own occurrence. In
+/// a unit whose two guarded branches are different expressions the records sit
+/// on different nodes, and the package's source map gives each node's region:
+/// the region of row k is the span of the k-th pending obligation, so rows
+/// carrying each other's node ids fail.
+#[trace("FR-517-AC-11", "TC-1312")]
+#[test]
+fn each_requirement_row_names_the_node_of_its_occurrence() {
+    let text = VECTOR_UNIT.replace("else x + 1", "else x + 2");
+    assert_ne!(text, VECTOR_UNIT);
+    let (_dir, files) = unit_directory("unit.native", &text);
+    let file: Value = serde_json::from_slice(&files["inventory.json"]).unwrap();
+    let package: Value = serde_json::from_slice(&files["checked-package.json"]).unwrap();
+    let rows = file["rows"].as_array().unwrap();
+    let records: Vec<&Value> = rows
+        .iter()
+        .filter(|row| row["kind"] == "requirement_record")
+        .collect();
+    let obligations: Vec<&Value> = rows
+        .iter()
+        .filter(|row| row["kind"] == "pending_obligation")
+        .collect();
+    assert_eq!((records.len(), obligations.len()), (2, 2));
+    assert_ne!(records[0]["node"], records[1]["node"]);
+    for (record, obligation) in records.iter().zip(&obligations) {
+        let entry = package["source_map"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| {
+                entry["node_id"] == record["node"]
+                    && entry["role"] == record["role"]
+                    && entry["ordinal"] == record["ordinal"]
+            })
+            .unwrap_or_else(|| panic!("no source-map entry for {record}"));
+        let spans: Vec<(u64, u64)> = entry["regions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|region| {
+                (
+                    region["start"].as_u64().unwrap(),
+                    region["end"].as_u64().unwrap(),
+                )
+            })
+            .collect();
+        assert!(
+            spans.contains(&(
+                obligation["start"].as_u64().unwrap(),
+                obligation["end"].as_u64().unwrap()
+            )),
+            "{record} has regions {spans:?}, not the span of {obligation}"
+        );
+    }
+}
+
+/// FR-517-AC-11: the formal identity is the file name with each character
+/// outside the document alphabet replaced by `_`, prefixed with `u` when it
+/// does not start with an ASCII letter; the revision is 1.
+#[trace("FR-517-AC-11", "TC-1312")]
+#[test]
+fn the_formal_identity_sanitizes_the_file_name() {
+    for (name, document) in [
+        ("9 odd:unit.native", "u9_odd_unit.native"),
+        ("_a b.native", "u_a_b.native"),
+        ("Plain-1.v2.native", "Plain-1.v2.native"),
+    ] {
+        let (_dir, files) = vector_directory_named(name);
+        let inventory = Inventory::read(&files["inventory.json"]).unwrap();
+        assert_eq!(inventory.source().document, document, "{name}");
+        assert_eq!(inventory.source().revision, 1);
+    }
+}
+
+/// FR-517-AC-17: `Inventory::read` over the bytes `write` produced returns
+/// the file's rows, and two reads of equal bytes are equal.
+#[trace("FR-517-AC-17", "TC-1312")]
+#[test]
+fn the_reader_returns_the_rows_the_writer_wrote() {
+    let (_dir, files) = vector_directory();
+    let bytes = &files["inventory.json"];
+    let file: Value = serde_json::from_slice(bytes).unwrap();
+    let inventory = Inventory::read(bytes).unwrap();
+    assert_eq!(inventory, Inventory::read(bytes).unwrap());
+    assert_eq!(inventory.source().document, "unit.native");
+    assert_eq!(inventory.source().revision, 1);
+    let node = |at: usize| serde_json::from_value(file["rows"][at]["node"].clone()).unwrap();
+    let pending = |start, end| InventoryRow::PendingObligation {
+        declaration: 0,
+        unit: 0,
+        start,
+        end,
+        capability_kind: "value-validity".into(),
+    };
+    assert_eq!(
+        inventory.rows(),
         [
-            "checked-package.json",
-            "inventory.json",
-            "models/0.json",
-            "selection.json",
-            "sources/library:examples/checked-handoff/library.native",
-            SOURCE_LABEL,
+            InventoryRow::RequirementRecord {
+                node: node(0),
+                role: "expression".into(),
+                ordinal: 0,
+            },
+            InventoryRow::RequirementRecord {
+                node: node(1),
+                role: "expression".into(),
+                ordinal: 1,
+            },
+            pending(150, 155),
+            pending(161, 166),
         ]
     );
+}
+
+/// FR-517-AC-17: each refusal vector of the section gets its stated error and
+/// no value.
+#[trace("FR-517-AC-17", "TC-1312")]
+#[test]
+fn the_reader_refuses_each_vector() {
+    let (_dir, files) = vector_directory();
+    let text = String::from_utf8(files["inventory.json"].clone()).unwrap();
+    let refused = |text: &str| Inventory::read(text.as_bytes()).unwrap_err();
+    let swap = |from: &str, to: &str| {
+        assert!(text.contains(from), "{from}");
+        text.replacen(from, to, 1)
+    };
+    assert!(matches!(
+        refused(&swap("\"observed_count\": 4", "\"observed_count\": 3")),
+        InventoryReadError::Malformed(_)
+    ));
+    match refused(&swap("inventory/1", "inventory/2")) {
+        InventoryReadError::Format(format) => {
+            assert_eq!(format, "quire.checked-handoff.inventory/2")
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(matches!(
+        refused(&swap("\"requirement_record\"", "\"criterion\"")),
+        InventoryReadError::Malformed(_)
+    ));
+    assert!(matches!(
+        refused(&swap("\"complete\"", "\"incomplete\"")),
+        InventoryReadError::Malformed(_)
+    ));
+    assert!(matches!(
+        refused(&swap("\"start\": 150", "\"start\": 10.0")),
+        InventoryReadError::Malformed(_)
+    ));
+    assert!(matches!(
+        refused(&swap(
+            "\"owner\": \"qsl\",",
+            "\"owner\": \"qsl\", \"owner\": \"qsl\","
+        )),
+        InventoryReadError::Malformed(_)
+    ));
+    assert!(matches!(refused(""), InventoryReadError::Malformed(_)));
+    // The format decides before the shape: a /2 file of another shape is `Format`.
+    match refused(r#"{"format": "quire.checked-handoff.inventory/2", "rows": 7}"#) {
+        InventoryReadError::Format(format) => {
+            assert_eq!(format, "quire.checked-handoff.inventory/2")
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(matches!(
+        refused(r#"{"rows": []}"#),
+        InventoryReadError::Malformed(_)
+    ));
+    // A repeated or foreign row member, and a row missing a member of its kind.
+    assert!(matches!(
+        refused(&swap(
+            "\"role\": \"expression\",",
+            "\"role\": \"expression\", \"role\": \"expression\","
+        )),
+        InventoryReadError::Malformed(_)
+    ));
+    assert!(matches!(
+        refused(&swap(
+            "\"role\": \"expression\",",
+            "\"role\": \"expression\", \"extra\": 1,"
+        )),
+        InventoryReadError::Malformed(_)
+    ));
+    assert!(matches!(
+        refused(&swap(
+            "\"capability_kind\": \"value-validity\"",
+            "\"start\": 1"
+        )),
+        InventoryReadError::Malformed(_)
+    ));
 }
 
 /// FR-517-AC-2: the package read with evidence from the written files is
@@ -535,8 +881,9 @@ fn the_signed_64_extrema_are_package_values_within_their_declared_bounds() {
 
 /// FR-517-AC-12: `Exact` carries the extreme rationals
 /// `9223372036854775807/9223372036854775806` and
-/// `-9223372036854775808/9223372036854775807`. The spine admits no bounded
-/// Rational value type yet (FR-505, QSL-1522), so R has none.
+/// `-9223372036854775808/9223372036854775807`. The spine admits a unitless
+/// Rational value type (FR-505, QSL-1522 Done); R's model and sources do not
+/// declare `Ratio` or `Exact` yet, which QSL-1693 adds.
 #[trace("FR-517-AC-12", "TC-1312")]
 #[test]
 #[ignore = "open: QSL-1693 (R fixture): FR-505 admits a unitless Rational, but R's model and sources declare no Ratio or Exact at all"]
@@ -1422,7 +1769,8 @@ fn files_and_cases_correspond_one_to_one() {
         .lines()
         .filter(|line| line.starts_with("pub const"))
         .collect();
-    assert_eq!(constants.len(), 3, "{constants:?}");
+    // The three format strings and the read limits; no case or identity constant.
+    assert_eq!(constants.len(), 4, "{constants:?}");
     assert!(constants
         .iter()
         .all(|line| !line.contains("CASE") && !line.contains("IDENT")));

@@ -391,14 +391,13 @@ per position.
   new counter exists: the thirteen stay thirteen, and an exhausted counter stops the
   call as FR-523 states.
 
-QSL's emitter writes the aggregate node (FR-337 "Aggregate formula emission") and
-QSpec FR-370 catalogues `quire.op.temporal.aggregate` (QSL-1644) and the Contract IR
-reader QSL locks reads and admits it. The package subject view does not yet read the node's
-argument and the request carries no `aggregate_samples`, so until they do a package
-route over a clause with an aggregate atom is refused `clause-root-unresolved` with an
-empty charge log, and a run over the facts of such a clause is refused before any atom
-is read: the atom is never read as a `holds` valuation. The evaluation behavior above and its criteria are specified now and are gated on
-the dependencies in "Dependencies".
+QSL's emitter writes the aggregate node (FR-337 "Aggregate formula emission"),
+QSpec FR-370 catalogues `quire.op.temporal.aggregate` and the Contract IR reader QSL
+locks reads and admits it. The package subject view reads the node's argument and the
+request carries `aggregate_samples`, so a package route over a clause with an
+aggregate atom evaluates it from those samples as above and never reads the atom as a
+`holds` valuation. The agreement of every route for an aggregate clause needs the
+in-process route to emit the clause ("Dependencies").
 
 ## Acceptance Criteria
 
@@ -463,7 +462,7 @@ the dependencies in "Dependencies".
   does not replace. FR-522 supplies `binding`, `authenticated` and the
   `result_identity` rule, FR-523 the thirteen counters, FR-524 the activation
   states and faults, FR-526 the relation checks.
-- **Window aggregates (gates FR-516-AC-47 to AC-50 and FR-532-AC-11):** QSL's emission of an aggregate clause as a `quire.op.temporal.aggregate` node (QSL-1643), and QSL-1644 (QSpec FR-370's catalog entry and wire bindings for the node, merged; Contract IR admits it); the package subject view's reading of the node's argument and the request's `aggregate_samples`; QSpec FR-414 and FR-194 (the window, `min_count`, quantile, undefined and charge rules), FR-337-AC-15 (the emitted aggregate argument), FR-255 (`monitor.max_window_values`). FR-194 evaluation needs, beyond the per-position sample stream above, nothing from the observation: the window, `min_count`, comparison and converted threshold come from the package, and the value expression and filter are evaluated by the observation owner.
+- **Window aggregates (FR-516-AC-47 to AC-50 and FR-532-AC-11):** QSL's emission of an aggregate clause as a `quire.op.temporal.aggregate` node, QSpec FR-370's catalog entry and wire bindings for the node (Contract IR admits it), the package subject view's reading of the node's argument and the request's `aggregate_samples` (all delivered), and the in-process route's emission of an aggregate clause (for the all-route agreement); QSpec FR-414 and FR-194 (the window, `min_count`, quantile, undefined and charge rules), FR-337-AC-15 (the emitted aggregate argument), FR-255 (`monitor.max_window_values`). FR-194 evaluation needs, beyond the per-position sample stream above, nothing from the observation: the window, `min_count`, comparison and converted threshold come from the package, and the value expression and filter are evaluated by the observation owner.
 - **Delivery:** FR-516-AC-18, AC-29, AC-30, AC-45 and AC-46 are delivered by QSL-1608 (see FR-515 Dependencies).
 - **Downstream:** quire-protocol `src/assessment.rs`, `src/conformance/kernel.rs`,
   `tests/it002_observation_temporal.rs` (QSL-1549).
