@@ -2304,7 +2304,26 @@ fn model_alias_names_resolve_for_captures_and_quantity_sums() {
     .unwrap();
     let out = dir.path().join("handoff");
     write(&request, &out).expect("the model-alias capture checks and the real IR reader admits it");
-    let wire: Value = serde_json::from_slice(&tree(&out)["checked-package.json"]).unwrap();
+    let files = tree(&out);
+    let written_model: Value = serde_json::from_slice(&files["models/0.json"]).unwrap();
+    for (name, lower, upper) in [("Amount", "1", "20"), ("Total", "0", "100")] {
+        let alias = declared_type(&written_model, name);
+        assert_eq!(alias["target"], "ix://quire/unit/U");
+        let bounds: Vec<_> = alias["constraints"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|constraint| {
+                assert_eq!(constraint["appliesTo"], alias["identity"]);
+                (
+                    constraint["keyword"].as_str().unwrap(),
+                    constraint["operands"]["value"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(bounds, [("min", lower), ("max", upper)]);
+    }
+    let wire: Value = serde_json::from_slice(&files["checked-package.json"]).unwrap();
     let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
     let unit = nodes
         .iter()
