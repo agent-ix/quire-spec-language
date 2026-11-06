@@ -530,7 +530,7 @@ to `x`'s node.
 | `Query{visit: Filter}` | `collection` | `quire.op.collection.filter` | | `[ref(c), binding{name: x, value: ref(body)}]` |
 | `Query{visit: Forall}`, `Query{visit: Exists}` | `quantify` | `quire.op.collection.forall`, `.exists` | | `[ref(c), binding{name: x, value: ref(body)}]` |
 | `Query{visit: Count}` (`count<N>`) | `collection` | `quire.op.collection.count` | member `type_argument` of `T(node)` | `[ref(c), binding{name: x, value: ref(predicate)}]` |
-| `Query{visit: Sum}` (`sum<N>`) | `collection` | `quire.op.collection.sum.integer` | member `type_argument` of `T(node)` | `[ref(c), binding{name: x, value: ref(summand)}]` |
+| `Query{visit: Sum}` (`sum<N>`) | `collection` | `quire.op.collection.sum.<family>` for the numeric family of `N`: `integer` for `Integer` and `Int[..]`, `rational`, `decimal`, `float32`, `float64`, `quantity` for `Quantity<u>` | member `type_argument` of `T(node)`; mode `rounding` = `N`'s mode for `decimal`, `float32` and `float64` and `exact` for `quantity`, no mode otherwise; law `ieee_profile` for `float32` and `float64` | `[ref(c), binding{name: x, value: ref(summand)}]` |
 | `Flatten` whose operand is not a `Query{visit: Map}` (`flatten(c)`) | `collection` | `quire.op.collection.flatten` | leaves `result_inner` | `[ref(c)]` |
 | `Flatten` over a `Query{visit: Map}` (`flatMap(x in c: e)`, and `flatten(map(x in c: e))`) | `collection` | `quire.op.collection.flat_map`; no node is built for the inner map | leaves `result_inner` | `[ref(c), binding{name: x, value: ref(e)}]` |
 | `Fold{identity: Some(i)}` (`fold<A>`) | `collection` | `quire.op.collection.fold` | member `type_argument` of `T(node)` | `[ref(c), binding{name: acc, value: aggregate{binding{name: x, value: ref(step)}}}, ref(i)]` |

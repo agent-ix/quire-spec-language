@@ -33,6 +33,7 @@ use quire_semantic_value::declaration::{
 use quire_semantic_value::location::{Location, Origin};
 
 use crate::equality_file::{EqualityWitnessRefusal, ReadEqualityRows};
+use crate::introduced_binders::is_sum_identity;
 use crate::wire_form::{has_form, split_tag_form, OperationSuffix, WireForm, WireTag};
 
 /// One projected protocol slot: owned evaluator nodes, the admitted function
@@ -1569,14 +1570,17 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 };
                 Ok((NodeKind::Contains(*collection, *item), children))
             }
-            Some(
-                "quire.op.collection.map"
-                | "quire.op.collection.filter"
-                | "quire.op.collection.forall"
-                | "quire.op.collection.exists"
-                | "quire.op.collection.count"
-                | "quire.op.collection.sum.integer",
-            ) => {
+            Some(query)
+                if is_sum_identity(query)
+                    || matches!(
+                        query,
+                        "quire.op.collection.map"
+                            | "quire.op.collection.filter"
+                            | "quire.op.collection.forall"
+                            | "quire.op.collection.exists"
+                            | "quire.op.collection.count"
+                    ) =>
+            {
                 let [source_term, CheckedTerm::Binding { name, value }] = arguments else {
                     return Err(fault("reader-collection-query-has-source-and-binder").into());
                 };
@@ -1593,7 +1597,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                     Some("quire.op.collection.forall") => Visit::Forall,
                     Some("quire.op.collection.exists") => Visit::Exists,
                     Some("quire.op.collection.count") => Visit::Count,
-                    Some("quire.op.collection.sum.integer") => Visit::Sum,
+                    Some(sum) if is_sum_identity(sum) => Visit::Sum,
                     _ => return Err(fault("reader-collection-query-identity-is-catalogued").into()),
                 };
                 Ok((
