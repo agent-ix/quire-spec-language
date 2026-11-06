@@ -14,9 +14,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use quire_contract_model::{
-    CheckedNodeId, CheckedPackageV2, ExactTypeProjectionError, NativeJoinBudget,
-    SelectedExactDeclarationForm, SelectedExactDeclarationRow, SelectedExactFieldRow,
-    SelectedExactIdentities, SelectedExactIdentity, SelectedSourceRecordRow,
+    CheckedNodeId, CheckedPackageV2, ExactTypeProjection, ExactTypeProjectionError,
+    NativeJoinBudget, SelectedExactDeclarationForm, SelectedExactDeclarationRow,
+    SelectedExactFieldRow, SelectedExactIdentities, SelectedExactIdentity, SelectedSourceRecordRow,
 };
 use quire_exact::{EffectiveId, MemberId, MemberOwner, NodeKey, OriginalDeclarationKey, UnitId};
 use serde::{Deserialize, Serialize};
@@ -63,6 +63,7 @@ pub struct BarePackage<'p> {
     /// foreign or unknown witness is refused by the stage that reads the
     /// identities, not when the supply is attached (FR-390).
     joined: Option<Result<SelectedExactIdentities, IdentityWitnessRefusal>>,
+    projections: BTreeMap<CheckedNodeId, Result<ExactTypeProjection, ExactTypeProjectionError>>,
 }
 
 /// What a protocol-slot call reads beside the package (FR-531).
@@ -82,6 +83,7 @@ impl<'p> BarePackage<'p> {
             package,
             supply: None,
             joined: None,
+            projections: BTreeMap::new(),
         }
     }
 
@@ -107,7 +109,28 @@ impl<'p> BarePackage<'p> {
             Err(IdentityJoinFailure::Exhausted(denial)) => return Err(*denial),
         };
         self.supply = Some(supply);
+        if let Some(Ok(identities)) = &self.joined {
+            for node in &self.package.graph().nodes {
+                let projection = self
+                    .package
+                    .project_exact_type(&node.node_id, identities, budget);
+                if let Err(denial) = &projection {
+                    if qsl_semantics::model::intake::is_native_budget_denial(denial) {
+                        return Err(denial.clone());
+                    }
+                }
+                self.projections.insert(node.node_id.clone(), projection);
+            }
+        }
         Ok(self)
+    }
+
+    /// Owner-projected Exact types retained under the supply entry's native budget.
+    /// Unsupported types retain their original owner refusal for the reading stage.
+    pub fn exact_type_projections(
+        &self,
+    ) -> &BTreeMap<CheckedNodeId, Result<ExactTypeProjection, ExactTypeProjectionError>> {
+        &self.projections
     }
 
     /// The supply with the identities it joined, or the witness refusal

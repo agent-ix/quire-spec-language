@@ -1662,7 +1662,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#54d46605a131c69dc1bc8664163315ad4f3f3f2f"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#429c8f507d3edcb96e144d10af22046ed160ebc1"
 dependencies = [
  "ix-trace-rs",
  "jsonschema 0.17.1",

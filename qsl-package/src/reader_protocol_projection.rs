@@ -384,6 +384,7 @@ pub struct MissingLocation {
 pub(crate) enum PackageRefusal {
     Unsupported(UnsupportedView),
     Fault(InternalFault),
+    Exhausted(Box<quire_contract_model::ExactTypeProjectionError>),
 }
 
 /// One slot to project: its root, origin name and binders in local-slot order.
@@ -403,12 +404,24 @@ pub(crate) fn project_package(
     requests: Vec<SlotRequest>,
     work_limit: u64,
     identities: quire_contract_model::SelectedExactIdentities,
+    budget: &mut quire_contract_model::NativeJoinBudget,
 ) -> Result<ReaderProtocolSlots, PackageRefusal> {
+    let mut projections = BTreeMap::new();
+    for node in &admitted.graph().nodes {
+        let projection = admitted.project_exact_type(&node.node_id, &identities, budget);
+        if let Err(denial) = &projection {
+            if qsl_semantics::model::intake::is_native_budget_denial(denial) {
+                return Err(PackageRefusal::Exhausted(Box::new(denial.clone())));
+            }
+        }
+        projections.insert(node.node_id.clone(), projection);
+    }
     let index = WireIndex::new(
         ProjectionSource::Source { emission },
         std::borrow::Cow::Owned(identities),
         admitted,
         work_limit,
+        std::borrow::Cow::Owned(projections),
     )
     .map_err(PackageRefusal::Fault)?;
     let rows = OriginRows::new(admitted);
@@ -514,8 +527,17 @@ fn unsupported_operation(node: &CheckedNodeId, operation: impl Into<String>) -> 
 }
 
 /// The admitted package's nodes indexed by id and key, built once per view.
+type ExactProjections = BTreeMap<
+    CheckedNodeId,
+    Result<
+        quire_contract_model::ExactTypeProjection,
+        quire_contract_model::ExactTypeProjectionError,
+    >,
+>;
+
 struct WireIndex<'wire> {
     source: ProjectionSource<'wire>,
+    projections: std::borrow::Cow<'wire, ExactProjections>,
     admitted: &'wire CheckedPackageV2,
     nodes: BTreeMap<&'wire CheckedNodeId, &'wire CheckedSemanticNodeV2>,
     ids: BTreeMap<NodeKey, &'wire CheckedNodeId>,
@@ -544,6 +566,7 @@ impl<'wire> WireIndex<'wire> {
         identities: std::borrow::Cow<'wire, quire_contract_model::SelectedExactIdentities>,
         admitted: &'wire CheckedPackageV2,
         work_limit: u64,
+        projections: std::borrow::Cow<'wire, ExactProjections>,
     ) -> Result<Self, InternalFault> {
         let graph = crate::checked_v2::wire_graph(admitted)
             .map_err(|_| fault("reader-protocol-graph-has-structural-keys"))?;
@@ -558,6 +581,7 @@ impl<'wire> WireIndex<'wire> {
         }
         Ok(Self {
             source,
+            projections,
             admitted,
             nodes,
             ids,
@@ -636,7 +660,7 @@ impl<'wire> WireIndex<'wire> {
             identities: &self.identities,
             nodes: &self.nodes,
             graph: &self.graph,
-            work_limit: self.work_limit,
+            projections: &self.projections,
         }
     }
 
@@ -831,6 +855,7 @@ impl<'wire> BareWalker<'wire> {
         identities: &'wire quire_contract_model::SelectedExactIdentities,
         equality: Option<&'wire ReadEqualityRows>,
         work_limit: u64,
+        projections: &'wire ExactProjections,
     ) -> Result<Self, InternalFault> {
         Ok(Self {
             index: WireIndex::new(
@@ -838,6 +863,7 @@ impl<'wire> BareWalker<'wire> {
                 std::borrow::Cow::Borrowed(identities),
                 admitted,
                 work_limit,
+                std::borrow::Cow::Borrowed(projections),
             )?,
         })
     }
@@ -917,6 +943,9 @@ impl<'wire> BareWalker<'wire> {
             Ok(Some(view)) => Err(WalkFailure::Unsupported(view)),
             Err(PackageRefusal::Unsupported(view)) => Err(WalkFailure::Unsupported(view)),
             Err(PackageRefusal::Fault(fault)) => Err(WalkFailure::Fault(fault)),
+            Err(PackageRefusal::Exhausted(_)) => Err(WalkFailure::Fault(fault(
+                "location-pairing-does-not-project-types",
+            ))),
         }
     }
 
@@ -2111,10 +2140,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let from_view = [operand_id, field_declaration]
                     .into_iter()
                     .find_map(|node| {
-                        let projection = self
-                            .admitted()
-                            .project_exact_type(node, &self.index.identities, self.index.work_limit)
-                            .ok()?;
+                        let projection = self.index.projections.get(node)?.as_ref().ok()?;
                         let view = projection.record_view()?;
                         if view.record_key() != &record_key {
                             return None;
@@ -2248,14 +2274,17 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             .ok_or_else(|| fault("reader-inline-literal-is-typed"))?;
         let value =
             literal_value(literal.value, literal.type_id, self.index).ok_or_else(unsupported)?;
-        let value_type = match self.admitted().project_exact_type(
-            literal.type_id,
-            &self.index.identities,
-            self.index.work_limit,
-        ) {
+        let value_type = match self
+            .index
+            .projections
+            .get(literal.type_id)
+            .ok_or_else(unsupported)?
+            .as_ref()
+        {
             Ok(projection) => projection.value_type().clone(),
             Err(error)
-                if split_tag_form(&error.form) == Some((WireTag::ScalarType, WireForm::Text)) =>
+                if error.form.as_deref().and_then(split_tag_form)
+                    == Some((WireTag::ScalarType, WireForm::Text)) =>
             {
                 ValueType::String
             }
@@ -2286,7 +2315,7 @@ pub(crate) struct TypeReader<'a> {
     pub(crate) identities: &'a quire_contract_model::SelectedExactIdentities,
     pub(crate) nodes: &'a BTreeMap<&'a CheckedNodeId, &'a CheckedSemanticNodeV2>,
     pub(crate) graph: &'a WireGraph,
-    pub(crate) work_limit: u64,
+    pub(crate) projections: &'a ExactProjections,
 }
 
 impl TypeReader<'_> {
@@ -2339,8 +2368,10 @@ pub(crate) fn node_value_type(
     use quire_contract_model::ExactTypeProjectionErrorCode as Code;
     use quire_contract_model::SelectedExactIdentity as Identity;
     let error = match index
-        .admitted
-        .project_exact_type(id, index.identities, index.work_limit)
+        .projections
+        .get(id)
+        .ok_or(TypeError::Unsupported)?
+        .as_ref()
     {
         Ok(projection) => return Ok(projection.value_type().clone()),
         Err(error) => error,
@@ -2348,7 +2379,7 @@ pub(crate) fn node_value_type(
     if matches!(
         error.code,
         Code::UnsupportedExactType | Code::UnavailableIdentityWitness
-    ) && is_collection_bounds(&error.form)
+    ) && error.form.as_deref().is_some_and(is_collection_bounds)
     {
         return collection_node_type(index, id);
     }
@@ -2372,7 +2403,7 @@ pub(crate) fn node_value_type(
             .filter(|node| has_form(node, tag, form))
             .and_then(|_| index.graph.key(declaration).ok())
     };
-    match split_tag_form(&error.form) {
+    match error.form.as_deref().and_then(split_tag_form) {
         Some((WireTag::ScalarType, WireForm::Text)) if unresolved => {
             index
                 .node(at.ok_or_else(|| fault("reader-string-type-node-is-admitted"))?)
@@ -2433,7 +2464,8 @@ pub(crate) fn node_value_type(
                 }
             }
             if unresolved
-                && split_tag_form(&error.form) == Some((WireTag::ScalarType, WireForm::Dimension))
+                && error.form.as_deref().and_then(split_tag_form)
+                    == Some((WireTag::ScalarType, WireForm::Dimension))
             {
                 let unit = match selected(semantic_type) {
                     Some(Identity::DeclaredUnit(unit)) => Some(unit.clone()),
@@ -2623,7 +2655,6 @@ fn literal_value(
     index: &WireIndex<'_>,
 ) -> Option<Value> {
     use quire_contract_model::CheckedLiteralValue as Literal;
-    let (admitted, identities, work_limit) = (index.admitted, &index.identities, index.work_limit);
     Some(match value {
         Literal::Boolean(value) => Value::Boolean(value),
         Literal::Integer(value) => Value::Integer(value.to_string().parse().ok()?),
@@ -2651,7 +2682,7 @@ fn literal_value(
             if has_form(checked_type, WireTag::ScalarType, WireForm::Text) {
                 return Some(Value::String(value.into()));
             }
-            let type_projection = admitted.project_exact_type(type_id, identities, work_limit);
+            let type_projection = index.projections.get(type_id)?.as_ref();
             let projection = type_projection.ok()?;
             let ValueType::Text(text_type) = projection.value_type() else {
                 return None;
@@ -2680,8 +2711,7 @@ fn literal_value(
 }
 
 fn project_literal_type(type_id: &CheckedNodeId, index: &WireIndex<'_>) -> Option<ValueType> {
-    let (admitted, identities, work_limit) = (index.admitted, &index.identities, index.work_limit);
-    match admitted.project_exact_type(type_id, identities, work_limit) {
+    match index.projections.get(type_id)?.as_ref() {
         Ok(projection) => Some(projection.value_type().clone()),
         Err(error) => {
             if !matches!(
@@ -2689,7 +2719,7 @@ fn project_literal_type(type_id: &CheckedNodeId, index: &WireIndex<'_>) -> Optio
                 quire_contract_model::ExactTypeProjectionErrorCode::UnsupportedExactType
                     | quire_contract_model::ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
             ) || !matches!(
-                split_tag_form(&error.form),
+                error.form.as_deref().and_then(split_tag_form),
                 Some((WireTag::ScalarType, WireForm::Unit | WireForm::Dimension))
             )
             {
@@ -2700,7 +2730,8 @@ fn project_literal_type(type_id: &CheckedNodeId, index: &WireIndex<'_>) -> Optio
             if !has_form(unit_node, WireTag::ScalarType, WireForm::Unit) {
                 return None;
             }
-            let unit = identities
+            let unit = index
+                .identities
                 .declaration_rows()
                 .find(|row| row.structural_node == *declaration)
                 .and_then(|row| match &row.exact_identity {
