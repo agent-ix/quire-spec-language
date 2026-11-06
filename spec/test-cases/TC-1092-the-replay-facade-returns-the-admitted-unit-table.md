@@ -12,7 +12,7 @@ relationships:
 
 Verify `qsl_replay::compile_admitted`'s context lists the admitted dimensions
 and declared units, finds them by wire node id, returns each unit's kernel id
-and conversion data, and refuses as typed. Scope: FR-398-AC-1 to FR-398-AC-7.
+and conversion data, and refuses as typed. Scope: FR-398-AC-1 to FR-398-AC-8.
 
 ## Test Procedure
 
@@ -41,11 +41,22 @@ and conversion data, and refuses as typed. Scope: FR-398-AC-1 to FR-398-AC-7.
 
 ## Expected Results
 
+The producer-origin identity controls additionally compile the same deterministic
+family of distinct root units over derived dimensions sharing one base map.
+Short package names permit exact dimensionless handoff. A long explicit package
+name increases the actual structural terms' encoding past QSV's fixed 16 MiB
+handoff boundary, returning `Identity(InputBytes)` with no retained result.
+The source generates declarations; it never supplies a constructed node key.
+For the cross-arm control, power one of an admitted declared root yields
+`Compound([(root, 1)])`, unequal to `Declared(root)` despite their shared root
+component. This is the structural control of QSV FR-124-AC-5 and QSL
+FR-088-AC-12, rather than a raw-byte identity comparison.
+
 1. Both are found; the environment admits the `m` quantity at
    `Quantity<m>` and not at `Quantity<km>`; the conversion completes with the
    exact value 5/1000 in `km`.
 2. Equal tables; each parameter is `ValueType::Quantity` of the admitted id,
-   in the declared-unit domain over the node id's bytes; three distinct ids; `m` and `km` convert to each other,
+   in the declared-unit domain over the structural node id; three distinct ids; `m` and `km` convert to each other,
    neither to `s`; the same entries each time.
 3. `Unknown`; `WrongKind` for each; `Foreign` naming the library's
    `package_id` both times, with every own unit still found.

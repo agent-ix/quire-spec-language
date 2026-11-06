@@ -69,8 +69,7 @@ or builds a key.
 
 - The kernel id of a unit is the key of the unit table the package's checked
   type environment holds: the table the checker resolved `Quantity<u>`
-  against. It is `UnitId::declared` of the unit node's key: the same 32 bytes
-  as the node id, wrapped in the declared-unit domain
+  against. It is `UnitId::declared` of the unit node's structural key, carried in the declared-unit domain
   (`UnitDomain::Declared`). The two are different types, `UnitId` and
   `NodeKey`, so the node id cannot stand in for the kernel id in
   `ValueType::Quantity` or a `Quantity`. A lookup takes the node id; the entry
@@ -103,9 +102,9 @@ or builds a key.
   looked up as an enum is `Unknown`, as every non-enum id is. The record, tuple and union
   lookup of FR-396 refuses a unit or dimension id `WrongKind`, as every
   other node of the package. To tell `WrongKind` from `Unknown` the context
-  keeps the id of every node of this package's checked graph and of every
-  declared unit and dimension: its size grows with the graph, one 32-byte id
-  per node.
+  keeps the structural id of every node of this package's checked graph and
+  of every declared unit and dimension: its size grows with the graph and
+  the components of its ids.
 - A package cannot name a dependency's unit in source (`Quantity<d.kg>` does
   not parse; `Quantity<d::kg>` and `Quantity<kg>` are unresolved type names),
   so `Foreign` fires only for an id read from the dependency's own emitted
@@ -122,19 +121,26 @@ or builds a key.
   (`AdmittedDimension::terms`), each a listed dimension; a base dimension has
   none.
 - A quantity argument of a replay witness names the unit by the admitted
-  `UnitId`'s bytes; a witness in the id of another unit refuses (AC-5).
+  structural `UnitId`; a witness in the id of another unit refuses (AC-5).
+- The context SHALL retain admitted declared-unit identities componentwise,
+  including the explicit package name, without imposing a declaration-key
+  encoding limit. [FR-259](FR-259-encode-identities-and-read-json-through-quire-canonical-at-any-depth.md)
+  distinguishes structural keys from bounded data encodings. A downstream
+  QSV compound identity encoding has its own limit and typed refusal, even
+  when every root node came from this context.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-398-AC-1 | A consumer that names only the `qsl_replay` root and the kernel (`quire-exact`, `quire-semantic-value`), compiling a unit that declares `dimension Length;`, `unit m : Length = rational(1, 1);` and `unit km : Length = rational(1000, 1) * m;` through `compile_admitted`, finds both units through `unit_declaration`, and from what the context returns builds `ValueType::Quantity` of each, a quantity of `m` that a type environment over `unit_table` admits at `Quantity<m>` and refuses at `Quantity<km>`, and the exact conversion of that quantity to `km`, without decoding or constructing a node key or a unit id. | Test (TC-1092) |
-| FR-398-AC-2 | Over a unit declaring two dimensions and three units (two of one dimension) and a function whose parameters are `Quantity<m>`, `Quantity<km>` and `Quantity<s>`, the context's tables equal, per unit and dimension, the spine's own checked package read independently of the unit table: the node id and name of each `unit` and `dimension` semantic node, and the `UnitId` the checked function signature carries for each `Quantity<u>` parameter, which carries the declared-unit domain and the node id's bytes. A derived dimension lists its base parts and exponents; a chain km to mm converts exactly (2 km is 2,000,000 mm), an offset unit with its offset (0 C is 5463/20 K) and units of unlike dimension do not convert. The unit ids differ; each unit names its dimension's node id; `m` and `km` convert to each other and neither converts to `s`; `unit_table` holds every admitted unit by its id; and a repeated lookup and a recompile return the same entries. | Test (TC-1092) |
+| FR-398-AC-2 | Over a unit declaring two dimensions and three units (two of one dimension) and a function whose parameters are `Quantity<m>`, `Quantity<km>` and `Quantity<s>`, the context's tables equal, per unit and dimension, the spine's own checked package read independently of the unit table: the node id and name of each `unit` and `dimension` semantic node, and the `UnitId` the checked function signature carries for each `Quantity<u>` parameter, which carries the declared-unit domain and the node id's structural components. A derived dimension lists its base parts and exponents; a chain km to mm converts exactly (2 km is 2,000,000 mm), an offset unit with its offset (0 C is 5463/20 K) and units of unlike dimension do not convert. The unit ids differ; each unit names its dimension's node id; `m` and `km` convert to each other and neither converts to `s`; `unit_table` holds every admitted unit by its id; and a repeated lookup and a recompile return the same entries. | Test (TC-1092) |
 | FR-398-AC-3 | `unit_declaration` and `dimension_declaration` refuse `Unknown` for an id no package admitted; `WrongKind` for the unit's dimension, enum and record (unit lookup), for a unit (dimension lookup) and, for an unused declared unit, to the record, tuple, union and dimension lookups, which still find it by `unit_declaration` (the enum lookups say `Unknown`), with a dimension no unit names unlisted; and `Foreign` naming the library's `package_id` for a library unit and dimension imported directly or through an intermediate library, while every own unit is found. `composite_declaration` refuses a unit id `WrongKind`. | Test (TC-1092) |
 | FR-398-AC-4 | FR-394-AC-1 to FR-394-AC-5 and FR-396-AC-1 to FR-396-AC-9 still hold. | Test (TC-1089, TC-1090) |
 | FR-398-AC-5 | A replay witness whose quantity names the admitted `UnitId` of `m` replays on both arms at a `Quantity<m>` parameter, and one naming the admitted id of `km` refuses. | Test (TC-1092) |
 | FR-398-AC-6 | Over a unit declaring `dimension Time;`, `dimension Period;`, `unit s : Time = rational(1, 1);`, `unit sec : Period = rational(1, 1);` and `dimension Period ~ Time by 1 sec = 1 s;`, the context's `dimension_equivalences` holds one entry equal to the spine's checked `dimension_equivalence` node (its id, its two dimension ids and its `root_scale` `1/1`); `s` and `sec` convert to each other through `converts_to` and `convert_quantity` (3 `s` is 3 `sec`), and without the equivalence `converts_to` answers false and the conversion refuses. With `dimension Period ~ Time by 1 sec = 2 s;` the entry's `root_scale` is the ratio for the dimension listed first and 3 `s` converts to `rational(3, 2)` `sec`, and with `by 1 sec = 1 s` and `by 1 sec = 2 s` in two compilations the two entries differ in `root_scale` and node id. | Test (TC-1092) |
 | FR-398-AC-7 | The equivalence node's id looked up through `unit_declaration` and through `dimension_declaration` refuses `WrongKind`, and the id of a dimension looked up as an equivalence is absent from `dimension_equivalences`. | Test (TC-1092) |
+| FR-398-AC-8 | A source family declaring distinct derived dimensions over one base dimension and one root unit per derived dimension yields distinct admitted root keys with the caller's explicit package name. The context's retained nominal facts reconstruct the same QSV unit topology without creating a node key. Equal positive and negative root terms give a dimensionless target. With sufficiently long admitted package names, QSV's exact conversion completes but its `identified_quantity` handoff refuses `Identity(InputBytes)` at the fixed 16 MiB owner limit, yielding neither quantity nor identified unit and leaving `UnitScope` unchanged. A short-name control completes the handoff; a direct identity encoder control under a smaller explicit limit is separate evidence, not a substitute for the handoff. | Test |
 
 ## Dependencies
 
