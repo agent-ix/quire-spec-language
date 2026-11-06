@@ -506,7 +506,16 @@ impl<'p> EvidencePackage<'p> {
         let instance_bound =
             bound_atom_indices(graph, &reads).ok_or_else(|| unreadable("atom-count"))?;
         let captures: Vec<(Box<str>, quire_exact::ValueType)> = view
-            .capture_value_types(&self.projections)
+            .captures()
+            .iter()
+            .map(|initializer| {
+                self.projections
+                    .get(initializer)?
+                    .as_ref()
+                    .ok()
+                    .map(|projected| projected.value_type().clone())
+            })
+            .collect::<Option<Vec<_>>>()
             .ok_or_else(|| unreadable("capture-type"))?
             .into_iter()
             .zip(view.capture_names())

@@ -460,26 +460,37 @@ impl<'p> TemporalSubjectView<'p> {
 
     /// The declared value type of each capture, in source order, projected
     /// from the typed result type of its initializer term as FR-390
-    /// projects a binder type (FR-532 `captures`). `None` when a type has no
-    /// kernel representation in the owner projections retained by the package
-    /// admission entry. This read does not create or reset a native budget.
+    /// projects a binder type (FR-532 `captures`). The actual checked package
+    /// is the projection authority; caller-created maps cannot supply types.
+    /// All captures charge the same caller-owned native `budget`.
+    ///
+    /// # Errors
+    ///
+    /// The original owner projection refusal, including a denied native charge.
+    /// A map containing owner results from another package is not an input:
+    ///
+    /// ```compile_fail,E0308
+    /// fn foreign_results(
+    ///     view: &qsl_package::checked_views::TemporalSubjectView<'_>,
+    ///     foreign: &std::collections::BTreeMap<
+    ///         quire_contract_model::CheckedNodeId,
+    ///         Result<quire_contract_model::ExactTypeProjection,
+    ///             quire_contract_model::ExactTypeProjectionError>>,
+    ///     budget: &mut quire_contract_model::NativeJoinBudget,
+    /// ) {
+    ///     let _ = view.capture_value_types(foreign, budget);
+    /// }
+    /// ```
     pub fn capture_value_types(
         &self,
-        projections: &std::collections::BTreeMap<
-            CheckedNodeId,
-            Result<
-                quire_contract_model::ExactTypeProjection,
-                quire_contract_model::ExactTypeProjectionError,
-            >,
-        >,
-    ) -> Option<Vec<quire_exact::ValueType>> {
+        identities: &quire_contract_model::SelectedExactIdentities,
+        budget: &mut quire_contract_model::NativeJoinBudget,
+    ) -> Result<Vec<quire_exact::ValueType>, quire_contract_model::ExactTypeProjectionError> {
         self.captures
             .iter()
             .map(|initializer| {
-                projections
-                    .get(initializer)?
-                    .as_ref()
-                    .ok()
+                self.package
+                    .project_exact_type(initializer, identities, budget)
                     .map(|projected| projected.value_type().clone())
             })
             .collect()
