@@ -194,10 +194,7 @@ fn a_timed_clause_over_a_model_without_a_time_source_refuses() {
         panic!("a model-time refusal: {refusal:?}");
     };
     assert_eq!(model.as_str(), "Config");
-    assert_eq!(
-        &source[span.start as usize..span.end as usize],
-        "\"model-time\""
-    );
+    assert_eq!(&source[span.start..span.end], "\"model-time\"");
 }
 
 /// FR-337-AC-27 (QSpec FR-322-AC-386): a clock selection supplied for a
