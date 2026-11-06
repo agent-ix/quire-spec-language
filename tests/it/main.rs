@@ -87,6 +87,8 @@ mod bare_recovery_binder;
 #[cfg(feature = "checked-handoff")]
 mod checked_handoff;
 #[cfg(feature = "checked-handoff")]
+mod model_type_unit_roots;
+#[cfg(feature = "checked-handoff")]
 mod checked_views;
 mod fairness_item_path;
 #[cfg(feature = "handoff-writer")]
