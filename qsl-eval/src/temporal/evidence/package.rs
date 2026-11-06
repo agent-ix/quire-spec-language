@@ -762,3 +762,28 @@ mod tests {
         }
     }
 }
+
+/// The checked `holds` operand for each native atom index. Aggregate atoms
+/// have no Boolean operand. Shared atoms keep their one evaluator index.
+pub fn native_atom_operands(view: &TemporalSubjectView<'_>) -> Vec<Option<CheckedNodeId>> {
+    let graph = view.formula_graph();
+    let numbers = atom_numbers(graph);
+    let mut operands = Vec::new();
+    let mut leaves = view.predicate_leaves().iter();
+    for (entry, number) in graph.iter().zip(numbers) {
+        let operand = if entry.kind() == Some(FormulaOperation::Holds) {
+            leaves.next().cloned()
+        } else {
+            None
+        };
+        if let Some(number) = number.and_then(|number| usize::try_from(number).ok()) {
+            if operands.len() <= number {
+                operands.resize(number + 1, None);
+            }
+            if operand.is_some() {
+                operands[number] = operand;
+            }
+        }
+    }
+    operands
+}

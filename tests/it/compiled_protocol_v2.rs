@@ -2721,8 +2721,12 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
         ] {
             let at = declaration(admitted, name);
             let supplied = trace_input(clock, profile, &parameters);
-            let report =
-                temporal::evaluate_v2(admitted, at, &supplied, temporal::Limits::default());
+            let report = temporal::evaluate_artifact_v2(
+                admitted,
+                at,
+                &supplied,
+                temporal::Limits::default(),
+            );
             assert!(report.result().is_ok(), "{name} reaches evaluation");
             // FR-050-AC-6: the authenticated clock identity is retained in the
             // result, so a version-2 report is not mistakable for a version-1 one.
@@ -3511,8 +3515,12 @@ fn l5_refuses_each_parameter_axis_before_temporal_evaluation() {
             .unwrap();
         let assert_pre_position_refusal =
             |at: usize, supplied: &temporal::Trace, dimension: temporal::Dimension| {
-                let report =
-                    temporal::evaluate_v2(&admitted, at, supplied, temporal::Limits::default());
+                let report = temporal::evaluate_artifact_v2(
+                    &admitted,
+                    at,
+                    supplied,
+                    temporal::Limits::default(),
+                );
                 assert!(matches!(
                     report.result(),
                     Err(temporal::Error::Refused(temporal::Refusal::Binding {
