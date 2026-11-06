@@ -848,14 +848,26 @@ fn bounded_quantity_emission_round_trips_with_exact_bounds_and_dependencies() {
         .iter_mut()
         .find(|node| node["semantic_form"] == "bounded_quantity")
         .expect("bounded node");
-    bad_node["body"]["members"][1]["value"]["value"] = json!("2/2");
+    bad_node["body"]["members"][1]["value"]["value"] = json!("2/4");
     let bytes = serde_json::to_vec(&bad).expect("wire JSON");
-    let evidence = CheckedPackageEvidence::new();
-    assert!(
-        !matches!(
-            read_checked_package(&bytes, CheckedPackageReadLimits::bounded(), &evidence),
-            CheckedPackageDispatchResult::AdmittedV2(_)
-        ),
-        "noncanonical endpoint must refuse"
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"]
+        .as_array()
+        .expect("features")
+    {
+        evidence.support_feature(feature.as_str().expect("feature word"));
+    }
+    let CheckedPackageDispatchResult::Refused(refusal) =
+        read_checked_package(&bytes, CheckedPackageReadLimits::bounded(), &evidence)
+    else {
+        panic!("noncanonical endpoint must refuse");
+    };
+    assert_eq!(
+        refusal.code,
+        quire_contract_model::CheckedPackageRefusalCode::InvalidPackage
+    );
+    assert_eq!(
+        refusal.cause,
+        Some(quire_contract_model::CheckedPackageRefusalCause::InvalidDerivedShape)
     );
 }

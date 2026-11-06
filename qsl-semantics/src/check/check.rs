@@ -3836,7 +3836,10 @@ impl<'a> Typer<'a> {
                 )
             }
             (l, r, _)
-                if uncarried_quantity_unit(l).is_some() && uncarried_quantity_unit(r).is_some() =>
+                if matches!((l, r), (ValueType::Quantity(_), ValueType::Quantity(_)))
+                    || operator == ArithmeticOperator::Add
+                        && uncarried_quantity_unit(l).is_some()
+                        && uncarried_quantity_unit(r).is_some() =>
             {
                 let operation = match operator {
                     ArithmeticOperator::Add => UnitOperation::Add,
@@ -4758,11 +4761,10 @@ impl<'a> Typer<'a> {
                 ))
             }
             (
-                ValueType::Quantity(_)
-                | ValueType::BoundedQuantity(_)
-                | ValueType::CarriedQuantity(_),
                 ValueType::Quantity(_) | ValueType::CarriedQuantity(_),
-            ) => {
+                ValueType::Quantity(_) | ValueType::CarriedQuantity(_),
+            )
+            | (ValueType::BoundedQuantity(_), ValueType::Quantity(_)) => {
                 let Some(source_unit) = quantity_unit(&operand.value_type) else {
                     return Err(mismatch(location));
                 };
