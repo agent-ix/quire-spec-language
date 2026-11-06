@@ -59,12 +59,14 @@ fn with_routes<R>(
     let selection = graph
         .temporal_clauses()
         .iter()
-        .map(|clause| TemporalClockSelection {
-            source: graph.source().clone(),
-            declaration_span: clause.clause().span(),
-            clock: ClockConfiguration::EventPosition {
-                sequence_authority: "order-events".into(),
-            },
+        .map(|clause| {
+            TemporalClockSelection::new(
+                graph.source().clone(),
+                clause.clause().span(),
+                ClockConfiguration::EventPosition {
+                    sequence_authority: "order-events".into(),
+                },
+            )
         })
         .collect::<Vec<_>>();
     let package = CheckedPackage::link(graph);

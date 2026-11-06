@@ -70,12 +70,14 @@ fn emitted_text(unit: &str) -> Result<(Emission, Value, Read), Vec<CheckRefusal>
         .iter()
         .flat_map(|protocol| &protocol.obligations.compensations)
         .filter(|template| template.temporal_profile.is_some())
-        .map(|template| crate::emit::TemporalClockSelection {
-            source: graph.source().clone(),
-            declaration_span: template.span,
-            clock: quire_contract_model::ClockConfiguration::EventPosition {
-                sequence_authority: "compensation-events".into(),
-            },
+        .map(|template| {
+            crate::emit::TemporalClockSelection::new(
+                graph.source().clone(),
+                template.span,
+                quire_contract_model::ClockConfiguration::EventPosition {
+                    sequence_authority: "compensation-events".into(),
+                },
+            )
         })
         .collect::<Vec<_>>();
     let emission = crate::emit::emit_checked_with_temporal_selections(

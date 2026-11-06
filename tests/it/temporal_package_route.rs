@@ -110,11 +110,7 @@ fn selections(
                         .map(|template| template.span)
                 })
                 .expect("a clause or template of that name");
-            TemporalClockSelection {
-                source: unit.source().reference().clone(),
-                declaration_span: span,
-                clock: clock.clone(),
-            }
+            TemporalClockSelection::new(unit.source().reference().clone(), span, clock.clone())
         })
         .collect()
 }
@@ -916,12 +912,14 @@ pub(super) fn same_named_clauses() -> Built {
         .temporal_clauses()
         .iter()
         .enumerate()
-        .map(|(index, node)| TemporalClockSelection {
-            source: unit.source().reference().clone(),
-            declaration_span: node.clause().span(),
-            clock: ClockConfiguration::EventPosition {
-                sequence_authority: format!("authority-{index}").into(),
-            },
+        .map(|(index, node)| {
+            TemporalClockSelection::new(
+                unit.source().reference().clone(),
+                node.clause().span(),
+                ClockConfiguration::EventPosition {
+                    sequence_authority: format!("authority-{index}").into(),
+                },
+            )
         })
         .collect();
     let emission = qsl_package::emit_checked_with_temporal_selections(unit.package(), &selections)

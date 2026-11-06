@@ -335,6 +335,30 @@ pub struct TemporalClockSelection {
     pub declaration_span: qsl_foundation::Span,
     /// The independently selected typed clock configuration.
     pub clock: quire_contract_model::ClockConfiguration,
+    /// The selected temporal definition identity. Emission requires it to
+    /// equal the declaration's `temporal_profile` law, which the lock's
+    /// `profile_selections` row names (QSpec FR-322 "Temporal clock
+    /// bindings"); the wire carries no second copy.
+    pub definition: quire_contract_model::CheckedArtifactRef,
+}
+
+impl TemporalClockSelection {
+    /// The selection of `clock` for the declaration at `declaration_span`,
+    /// naming the temporal definition `clock`'s alternative selects
+    /// (QSpec FR-322 "Temporal clock bindings": the selected definition
+    /// determines exactly the `clock.kind`).
+    pub fn new(
+        source: qsl_foundation::source::provenance::RawSourceRef,
+        declaration_span: qsl_foundation::Span,
+        clock: quire_contract_model::ClockConfiguration,
+    ) -> Self {
+        Self {
+            definition: profile_definition(clock_profile(&clock)),
+            source,
+            declaration_span,
+            clock,
+        }
+    }
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -6847,26 +6871,56 @@ fn union_member_rows(
         .collect()
 }
 
-fn temporal_clock_matches_profile(
-    profile: qsl_semantics::check::TemporalProfile,
+/// The temporal profile `clock`'s alternative configures.
+fn clock_profile(
     clock: &quire_contract_model::ClockConfiguration,
-) -> bool {
+) -> qsl_semantics::check::TemporalProfile {
     use qsl_semantics::check::TemporalProfile;
     use quire_contract_model::ClockConfiguration;
 
-    matches!(
-        (profile, clock),
-        (
-            TemporalProfile::EventPositionFalseExtension,
-            ClockConfiguration::EventPosition { .. }
-        ) | (
-            TemporalProfile::FixedSampleFalseExtension,
-            ClockConfiguration::FixedSample { .. }
-        ) | (
-            TemporalProfile::TimestampedEventFiniteWindow,
-            ClockConfiguration::TimestampedEvent { .. }
-        )
-    )
+    match clock {
+        ClockConfiguration::EventPosition { .. } => TemporalProfile::EventPositionFalseExtension,
+        ClockConfiguration::FixedSample { .. } => TemporalProfile::FixedSampleFalseExtension,
+        ClockConfiguration::TimestampedEvent { .. } => {
+            TemporalProfile::TimestampedEventFiniteWindow
+        }
+    }
+}
+
+/// The definition a lock's `profile_selections` row names for `profile`.
+fn profile_definition(
+    profile: qsl_semantics::check::TemporalProfile,
+) -> quire_contract_model::CheckedArtifactRef {
+    quire_contract_model::CheckedArtifactRef {
+        authority: "agent-ix".into(),
+        identity: profile.identity().into(),
+    }
+}
+
+/// Refuses a selection whose clock alternative is not the declaration's
+/// profile's, or whose selected definition identity is not the one the
+/// declaration's `temporal_profile` law names.
+fn check_selected_definition(
+    source_ref: &RawSourceRef,
+    span: qsl_foundation::Span,
+    profile: qsl_semantics::check::TemporalProfile,
+    selection: &TemporalClockSelection,
+) -> Result<(), EmitRefusal> {
+    if clock_profile(&selection.clock) != profile {
+        return Err(EmitRefusal::TemporalClockProfileMismatch {
+            source_ref: source_ref.clone(),
+            span,
+            profile: profile.identity(),
+        });
+    }
+    if selection.definition != profile_definition(profile) {
+        return Err(EmitRefusal::InvalidTemporalClockValue {
+            source_ref: source_ref.clone(),
+            span,
+            field: "definition",
+        });
+    }
+    Ok(())
 }
 
 /// The wrapper node a hyper clause's `body` member references.
@@ -7122,7 +7176,7 @@ fn temporal_binding_rows(
             selection.declaration_span.start,
             selection.declaration_span.end,
         );
-        if selected.insert(key, &selection.clock).is_some() {
+        if selected.insert(key, selection).is_some() {
             return Err(EmitRefusal::DuplicateTemporalClockSelection {
                 source_ref: selection.source.clone(),
                 span: selection.declaration_span,
@@ -7184,17 +7238,12 @@ fn temporal_binding_rows(
         let source = region.source().clone();
         let span = clause.span();
         let key = (source.clone(), span.start, span.end);
-        let Some(clock) = selected.remove(&key) else {
+        let Some(selection) = selected.remove(&key) else {
             missing.push((source, span));
             continue;
         };
-        if !temporal_clock_matches_profile(profile, clock) {
-            return Err(EmitRefusal::TemporalClockProfileMismatch {
-                source_ref: source.clone(),
-                span,
-                profile: profile.identity(),
-            });
-        }
+        check_selected_definition(&source, span, profile, selection)?;
+        let clock = &selection.clock;
         validate_temporal_clock(&source, span, clause.clock(), clock)?;
         // QSpec FR-370 "Window aggregate atom": a `duration` window's bounds
         // are quantities of the clause's clock unit, the `scalar_type`/`unit`
@@ -7259,17 +7308,12 @@ fn temporal_binding_rows(
         let source = region.source().clone();
         let span = hyper.span();
         let key = (source.clone(), span.start, span.end);
-        let Some(clock) = selected.remove(&key) else {
+        let Some(selection) = selected.remove(&key) else {
             missing.push((source, span));
             continue;
         };
-        if !temporal_clock_matches_profile(profile, clock) {
-            return Err(EmitRefusal::TemporalClockProfileMismatch {
-                source_ref: source.clone(),
-                span,
-                profile: profile.identity(),
-            });
-        }
+        check_selected_definition(&source, span, profile, selection)?;
+        let clock = &selection.clock;
         let clock_name = graph
             .semantic_graph()
             .node(wrapper.clone())
@@ -7339,17 +7383,12 @@ fn temporal_binding_rows(
             };
             let span = template.span;
             let key = (source.clone(), span.start, span.end);
-            let Some(clock) = selected.remove(&key) else {
+            let Some(selection) = selected.remove(&key) else {
                 missing.push((source.clone(), span));
                 continue;
             };
-            if !temporal_clock_matches_profile(profile, clock) {
-                return Err(EmitRefusal::TemporalClockProfileMismatch {
-                    source_ref: source.clone(),
-                    span,
-                    profile: profile.identity(),
-                });
-            }
+            check_selected_definition(&source, span, profile, selection)?;
+            let clock = &selection.clock;
             validate_temporal_clock(&source, span, template.clock.as_str(), clock)?;
             for node in nodes.iter().filter(|node| node.node_id == declaration) {
                 for ordinal in node
