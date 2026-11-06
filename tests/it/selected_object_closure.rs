@@ -4,8 +4,8 @@
 use ix_trace_rs::trace;
 use qsl_package::ReadIdentityRows;
 use quire_contract_model::{
-    CheckedNodeOwner, CheckedPackageV2, ExactTypeProjectionErrorCode, SelectedExactIdentities,
-    SelectedExactIdentity, SelectedTypeDeclarations,
+    CheckedNodeOwner, CheckedOccurrenceRole, CheckedPackageV2, ExactTypeProjectionErrorCode,
+    SelectedExactIdentities, SelectedExactIdentity, SelectedTypeDeclarations,
 };
 use quire_exact::{Presence, ValueType};
 use quire_spec_language::checked_handoff::{evidence, write, CheckedHandoffRequest, Corpus};
@@ -22,10 +22,14 @@ struct Fixture {
 }
 
 fn fixture(document: &Value) -> Fixture {
+    fixture_with_source(document, tc1070::SOURCE)
+}
+
+fn fixture_with_source(document: &Value, source_text: &str) -> Fixture {
     let directory = tempfile::tempdir().expect("fixture directory");
     let source = directory.path().join("unit.native");
     let model = directory.path().join("model.json");
-    std::fs::write(&source, tc1070::SOURCE).expect("genuine protocol source");
+    std::fs::write(&source, source_text).expect("genuine protocol source");
     std::fs::write(&model, serde_json::to_vec(document).expect("model bytes"))
         .expect("genuine model document");
     let request = CheckedHandoffRequest {
@@ -112,7 +116,10 @@ fn selected_object_closure_projects_standard_e_and_unused_ep_objects() {
         );
         let graph_node = extended
             .package
-            .node(&rows[0].structural_node)
+            .graph()
+            .nodes
+            .iter()
+            .find(|node| node.node_id == rows[0].structural_node)
             .expect("real node");
         assert_eq!(
             graph_node.owner,
@@ -123,6 +130,31 @@ fn selected_object_closure_projects_standard_e_and_unused_ep_objects() {
         );
         assert_eq!(graph_node.semantic_form.as_ref(), "object_type");
         assert!(graph_node.declaration.is_none());
+        let model_start = tc1070::SOURCE.find("model M =").expect("model declaration") as u64;
+        let model_end = model_start
+            + tc1070::SOURCE[model_start as usize..]
+                .find(';')
+                .expect("model declaration end") as u64
+            + 1;
+        let generated_at_alias: Vec<_> = extended
+            .package
+            .source_map()
+            .iter()
+            .filter(|entry| {
+                entry.node_id == graph_node.node_id
+                    && entry.role == CheckedOccurrenceRole::Generated
+                    && entry.regions.iter().any(|region| {
+                        region.start >= model_start
+                            && region.start < region.end
+                            && region.end <= model_end
+                    })
+            })
+            .collect();
+        assert_eq!(
+            generated_at_alias.len(),
+            1,
+            "{name} is located at its selecting alias"
+        );
         assert_eq!(object.fields(), object.declared_fields());
         assert!(object.supertypes().is_empty());
     }
@@ -145,6 +177,30 @@ fn selected_object_closure_projects_standard_e_and_unused_ep_objects() {
         &ValueType::Reference(other.effective_id().clone())
     );
     assert_eq!(other.fields()[1].presence(), Presence::Optional);
+}
+
+#[trace("TC-417", "FR-094-AC-14")]
+#[test]
+fn selected_object_closure_roots_a_package_selected_by_two_aliases_once() {
+    let source = tc1070::SOURCE.replace(
+        "model M = \"test/orders\";",
+        "model M = \"test/orders\";\nmodel Again = \"test/orders\";",
+    );
+    let fixture = fixture_with_source(&tc1070::document_ep(), &source);
+    let projection = project(&fixture);
+    assert_eq!(projection.objects().len(), 3);
+    for object in projection.objects() {
+        assert_eq!(
+            fixture
+                .rows
+                .declarations()
+                .iter()
+                .filter(|row| { row.original_identity.as_ref() == object.original_identity() })
+                .count(),
+            1,
+            "duplicate aliases retain one original object declaration"
+        );
+    }
 }
 
 #[trace("TC-417", "FR-094-AC-14")]
