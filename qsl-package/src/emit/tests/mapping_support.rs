@@ -394,8 +394,11 @@ fn the_closure_changes_only_the_future_rows_target() {
         (FIXED, NONE, true),
     ];
     for (profile, body, closure_selects) in rows {
-        let complete = classify(profile, body, Closure::Complete);
-        let open = classify(profile, body, Closure::Open);
+        let package = package_of(profile, body);
+        let [id] = clauses(&package).try_into().expect("one clause");
+        let view = temporal_subject(&package, &id).expect("the clause reads");
+        let complete = mapping_support(&view, Closure::Complete).expect("classifies");
+        let open = mapping_support(&view, Closure::Open).expect("classifies");
         if !closure_selects {
             assert_eq!(complete, open, "{profile} {body}");
             continue;
@@ -446,7 +449,7 @@ fn lock_row(package: &CheckedPackageV2, profile: &str) -> quire_contract_model::
 /// FR-527-AC-13 (TC-1322 row 13): every result's `selection` holds the
 /// package identity, the clause and the definition identity and artifact equal
 /// to the values read from the lock row, supported or not. The selection has
-/// exactly those three private fields, so it holds no clock parameter map.
+/// no clock parameter map.
 #[trace("FR-527-AC-13", "TC-1322")]
 #[test]
 fn every_result_retains_the_selection_of_the_lock_row() {
@@ -595,6 +598,47 @@ fn classifying_a_clause_twice_gives_equal_results() {
         mapping_support(&again, Closure::Open).expect("classifies"),
         first
     );
+}
+
+/// An independently admitted equal package does not receive the original
+/// classification's admission authority, for supported or unsupported results.
+#[trace("TC-1322", "FR-527-AC-26")]
+#[test]
+fn equal_package_contents_do_not_share_classification_authority() {
+    for (profile, body) in [
+        (EVENT, FUTURE),
+        (INFINITE, "always holds(c.versionNumber = 1)"),
+    ] {
+        let compiled = compile(&unit(profile, &declared("Due", body)));
+        let first = admit(&compiled);
+        let second = admit(&compiled);
+        assert_eq!(*first, *second, "the original producer bytes are equal");
+        let [id] = clauses(&first).try_into().expect("one clause");
+        let first_view = temporal_subject(&first, &id).expect("first subject");
+        let second_view = temporal_subject(&second, &id).expect("second subject");
+        assert!(!first_view.belongs_to(&second));
+        let first_classification =
+            mapping_support(&first_view, Closure::Complete).expect("first classification");
+        let second_classification =
+            mapping_support(&second_view, Closure::Complete).expect("second classification");
+        assert_eq!(first_classification.support, second_classification.support);
+        assert_eq!(
+            first_classification.retained,
+            second_classification.retained
+        );
+        assert_eq!(
+            first_classification.selection().package(),
+            second_classification.selection().package()
+        );
+        assert_eq!(
+            first_classification.selection().definition_artifact(),
+            second_classification.selection().definition_artifact()
+        );
+        assert_ne!(
+            first_classification, second_classification,
+            "independent strict reads must issue distinct classification authority"
+        );
+    }
 }
 
 /// FR-527-AC-18 (TC-1322 row 18): a unit selecting a temporal profile outside
