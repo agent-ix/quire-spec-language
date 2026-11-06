@@ -16,6 +16,7 @@ mod tc235_k2;
 mod absent_literal;
 mod accounting_boundaries;
 mod aggregate_samples;
+mod application_observation;
 mod automaton_kernels;
 mod automaton_key;
 mod automaton_key_bounded;

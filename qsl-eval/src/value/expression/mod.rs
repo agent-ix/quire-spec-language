@@ -44,7 +44,6 @@ use quire_semantic_value::admission::AdmissionRecord;
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::TypeEnvironment;
-use quire_semantic_value::location::Location;
 use quire_semantic_value::supplied_stop::{
     SuppliedCause, SuppliedFailure, SuppliedLimits, SuppliedPhase, SuppliedRun, SuppliedStop,
 };
@@ -1544,7 +1543,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
                     losses: Vec::new(),
                 });
             }
-            capture.drain(meter, state.body.location());
+            capture.drain(meter, Some(state.body.location()));
             if options.function_case_limit == 0 {
                 function_case_limit_reached = true;
                 return Ok(Evaluation {
@@ -1557,7 +1556,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
                             charge_point: quire_exact::ChargePoint::FunctionCall,
                         },
                     )),
-                    location: state.body.location().cloned(),
+                    location: Some(state.body.location().clone()),
                     losses: Vec::new(),
                 });
             }
