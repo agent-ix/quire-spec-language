@@ -321,3 +321,33 @@ fn deep_brackets_parse_under_raised_ceilings_with_the_limits_recorded() {
         assert_admitted_under(outcome, limits);
     });
 }
+
+/// FR-521 row 11 (TC-1316): `s1.input_bytes` is the successor of the legacy
+/// `source_bytes` dimension. A zero allowance refuses any non-empty source,
+/// naming the bound; the source's own length admits (exact) and one byte short
+/// refuses (see `a_caller_raised_source_byte_ceiling_admits_past_the_default`).
+#[trace("TC-1316", "FR-521-AC-5")]
+#[test]
+fn a_zero_source_byte_allowance_refuses_a_non_empty_source() {
+    let text = "// x\n";
+    let refusal = qsl_cst::parse(
+        identity("bytes-zero"),
+        "limits.native",
+        text.as_bytes(),
+        Limits {
+            source_bytes: 0,
+            ..Limits::default()
+        },
+    )
+    .unwrap_err();
+    assert_eq!(refusal.code, CompleteCode::StageLimitExceeded);
+    assert_eq!(
+        refusal.limit(),
+        Some(SyntaxLimit::SourceBytes { bound: 0 })
+    );
+    let exact = Limits {
+        source_bytes: text.len(),
+        ..Limits::default()
+    };
+    assert!(parse("bytes-exact", text, exact).is_ok());
+}
