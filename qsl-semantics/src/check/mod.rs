@@ -4681,6 +4681,11 @@ impl PackageDeclarations {
         if let Err(refusal) = lowering.relationship_nodes(&relationship_locations) {
             refusals.push(refusal);
         }
+        // Native selected-document projection needs object declarations even
+        // when only an unused population or another model member names them.
+        if let Err(refusal) = lowering.selected_object_nodes(&relationship_locations) {
+            refusals.push(refusal);
+        }
         // FR-092/FR-093: the functions and the protocols are lowered in
         // dependency order, each node's callees and referenced protocols
         // keyed before it.

@@ -100,6 +100,22 @@ as its wire `owner` member (FR-093).
 
 ### Model declaration nodes
 
+For every source-selected model alias, `check` SHALL root every admitted ordinary
+object-type declaration in the selected domain document, including an object
+named only by another model member or an unused population. An object selected
+through several aliases SHALL be rooted once, at the first selecting alias's
+declaration location, using the existing model node, original declaration key,
+effective type identity and model correspondence. The root SHALL have a generated
+occurrence at that location. No source expression or frame need reach the object.
+This does not root systems-interface objects as ordinary object types.
+
+The emitted selected declaration rows SHALL retain those original effective
+identities and final model node references in the existing identity handoff
+families. Native selected-type projection reads complete fields, supertypes and
+operations from the admitted model document; this rule introduces no object-field
+identity row or second handoff format. Missing or foreign declaration witnesses
+SHALL retain the native typed refusal rather than a source fallback.
+
 `check` SHALL build the node of a domain package declaration as follows:
 
 | Declaration record | `node_tag` / `semantic_form` | `semantic_type` | Body |
@@ -443,7 +459,7 @@ QSpec's `unit-metre` and `unit-second` nominal nodes.
 | FR-094-AC-11 | With FR-093-AC-36's units, the quotient `a / 3 ms` over `a: Quantity<m>` has one `scalar_type`/`compound_unit` node, with no `declaration` and no `owner`, whose body is an `aggregate` of two terms in ascending root-unit node-key order: `unit` the `m` node with `exponent` the integer literal `1`, and `unit` the `s` node with `exponent` the integer literal `-1`. The quotient `d / 3 ms` over `d: Quantity<ms>` has a `compound_unit` node whose body is `aggregate{[]}`, and `d / 3 s` and `d / rational(-3, 1) ms` have that same node, and `a / rational(-3, 1) ms` has the node of `a / 3 ms`. Neither node is the `m` unit node, and the node of `a / 3 ms` is the node of `a / 0.5 s`. | Test (TC-419) |
 | FR-094-AC-12 | **Withdrawn.** The fixed QSpec vector key and `nominal_identity_preimage` oracle for the dimension-equivalence node was superseded by QSpec FR-322 structural node identity; the node's non-identity behavior is retained in FR-094-AC-13. | Withdrawn |
 | FR-094-AC-13 | With a unit declaring `model R = "acme/rpc" …` and `model F = "acme/flow" …`, each package declaring base dimension `Time` and a root unit of it (`s`; flow's `ms` is `1/1000` of its root), and `dimension R::Time ~ F::Time by 1 R::s = 1000 F::ms;`, the checked graph holds one `scalar_type`/`dimension_equivalence` node with no `declaration`, self-typed, relating the two package `Time` nodes in ascending node-key order with `root_scale` `1/1`, whose `dependencies` are exactly those two nodes and whose one occurrence has role `anchor` and ordinal 0; `dimension F::Time ~ R::Time by 1000 F::ms = 1 R::s;` in its place gives the same node; with `acme/clock` as a third package (root `ms`), `dimension R::Time ~ G::Time by 1 R::s = 1000 G::ms;` gives the node with `root_scale` `1000/1` and `dimension G::Time ~ R::Time by 1000 G::ms = 1 R::s;` the same node; a second declaration `dimension R::Time ~ Time by 1 R::s = 1 s;` over a source `Time` gives a second node with ordinal 1; the package `Time` nodes are the nodes they are with no equivalence; the equivalence node is emitted though no quantity type names either dimension; and IR's checked-package/v2 reader admits the package and derives the classes the declarations give, refusing `invalid_semantic_graph` the same package with a `root_scale` of `0/1`, `-1/1`, `2000/2` or none, or with the ratios of its base pairs not multiplying to one. | Test (TC-419) |
-
+| FR-094-AC-14 | With TC-1070's standard E and E-P documents selected, the normal handoff emits each ordinary object declaration exactly once with its original effective identity, model owner, correspondence and a generated occurrence at the selecting alias. E-P includes Node, Other and Elsewhere even though Elsewhere is used only by an unused population. Strict read and the public native selected-type projection succeed for both documents, preserving their complete record/object facts. Omitting or foreigning a real object declaration witness returns a typed native refusal without a partial projection. The identities file uses the required existing handoff version and no additional format. | Test (TC-417) |
 | FR-094-AC-15 | A selected model names source unit `U` in exactly one otherwise unused type position: a field, tuple position, sequence item, option inner type, alias target, operation parameter, operation result or Rational scalar unit. For each position independently, with no expression naming `U`, check and handoff emit its source-owned unit node, its dimension and its target-unit dependency closure; the unit is typed by its dimension and has exactly the declared nominal dependencies. An unrelated declared unit is omitted. The normal checked-package/v2 reader admits each emitted package. Separately, synthetic contract fixtures normalized through the production normalizer independently cover a Variant payload and a Map value naming a unit: lowering emits that unit and exactly its nominal closure. This defensive record-arm coverage does not claim public admission of those forms; unit variant payloads remain refused under FR-056-AC-25, and the current Map original-provenance intake refusal remains outside this criterion. The Rational fixture declares its unit in the model namespace as required by TypeDefinition.unit. | Test (TC-419) |
 
 A check with two admitted versions of one domain package

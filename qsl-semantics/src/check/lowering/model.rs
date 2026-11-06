@@ -2408,6 +2408,35 @@ impl<'a> Lowering<'a> {
         Ok(())
     }
 
+    /// Root every ordinary object in a source-selected domain document.
+    pub(crate) fn selected_object_nodes(
+        &mut self,
+        locations: &BTreeMap<String, Location>,
+    ) -> Result<(), CheckRefusal> {
+        let mut rooted = BTreeSet::new();
+        let mut declarations = Vec::new();
+        for model in self.models {
+            let Some(location) = model.alias.as_ref().and_then(|alias| locations.get(alias)) else {
+                continue;
+            };
+            for (declaration, _) in model.object_types() {
+                let ordinary = matches!(
+                    model.records.get(declaration),
+                    Some(DomainPackageRecord::ObjectType(object))
+                        if object.interface_features.is_none()
+                );
+                if ordinary && rooted.insert(declaration) {
+                    declarations.push((declaration.clone(), location.clone()));
+                }
+            }
+        }
+        for (declaration, location) in declarations {
+            let key = self.model_node(&declaration, &location)?;
+            self.record(key, OccurrenceRole::Generated, location);
+        }
+        Ok(())
+    }
+
     /// The model node of the object type `T` a `Reference<T>` names.
     pub(super) fn object_node(
         &mut self,
