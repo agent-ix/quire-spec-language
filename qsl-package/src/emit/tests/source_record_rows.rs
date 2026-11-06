@@ -260,7 +260,7 @@ fn ir_admits_the_row_nodes_as_record_declarations_and_their_type_nodes() {
     }
 }
 
-#[trace("TC-1331", "FR-531-AC-19", "FR-517-AC-23")]
+#[trace("TC-1312", "TC-1331", "FR-531-AC-19", "FR-517-AC-23")]
 #[test]
 fn required_identity_handoff_preserves_original_record_keys_and_native_views() {
     let (_, emission, wire) = emitted(RECORDS);
@@ -491,7 +491,7 @@ fn required_identity_handoff_refuses_deep_original_keys_without_stack_growth() {
     );
 }
 
-#[trace("TC-1331", "FR-531-AC-21", "FR-517-AC-23")]
+#[trace("TC-1312", "TC-1331", "FR-531-AC-21", "FR-517-AC-23")]
 #[test]
 fn required_identity_handoff_refuses_missing_or_foreign_final_root_catalogs() {
     let (emission, _, read) = super::child_composite::emit_unit(super::child_composite::UNIT);
