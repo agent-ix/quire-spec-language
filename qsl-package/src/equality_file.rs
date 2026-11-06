@@ -1753,7 +1753,8 @@ mod tests {
                 CarriedQuantityType::new(
                     unit.clone(),
                     QuantityCarrier::Decimal(
-                        DecimalType::new(0.into(), 20.into(), 0, 2, RoundingMode::Exact).unwrap(),
+                        DecimalType::new(0_i64.into(), 20_i64.into(), 0, 2, RoundingMode::Exact)
+                            .unwrap(),
                     ),
                 )
                 .into(),
@@ -1762,11 +1763,11 @@ mod tests {
                 BoundedQuantityType::new(
                     unit.clone(),
                     Some(Quantity::new(
-                        Rational::new(0.into(), 1.into()).unwrap(),
+                        Rational::new(0_i64.into(), 1_i64.into()).unwrap(),
                         unit.clone(),
                     )),
                     Some(Quantity::new(
-                        Rational::new(5.into(), 1.into()).unwrap(),
+                        Rational::new(5_i64.into(), 1_i64.into()).unwrap(),
                         unit,
                     )),
                 )
