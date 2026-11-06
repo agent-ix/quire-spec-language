@@ -4,8 +4,9 @@
 use ix_trace_rs::trace;
 use qsl_package::ReadIdentityRows;
 use quire_contract_model::{
-    CheckedNodeOwner, CheckedOccurrenceRole, CheckedPackageV2, ExactTypeProjectionErrorCode,
-    SelectedExactIdentities, SelectedExactIdentity, SelectedTypeDeclarations,
+    CheckedNodeOwner, CheckedOccurrenceRole, CheckedOperationEffect, CheckedOperationEffectOrigin,
+    CheckedPackageV2, ExactTypeProjectionErrorCode, SelectedExactIdentities, SelectedExactIdentity,
+    SelectedTypeDeclarations,
 };
 use quire_exact::{Presence, ValueType};
 use quire_spec_language::checked_handoff::{evidence, write, CheckedHandoffRequest, Corpus};
@@ -96,6 +97,26 @@ fn selected_object_closure_projects_standard_e_and_unused_ep_objects() {
     );
     assert_eq!(node(&ep).operations()[0].name(), "step");
     assert!(node(&ep).operations()[0].result().is_some());
+    let step = &node(&ep).operations()[0];
+    assert_eq!(step.identity(), tc1070::model::id("Node/step"));
+    assert!(step.parameters().is_empty());
+    assert_eq!(
+        step.effect(),
+        &CheckedOperationEffect {
+            modifies: Vec::new(),
+            creates: Vec::new(),
+            deletes: Vec::new(),
+            deletes_scoped: Vec::new(),
+        }
+    );
+    assert_eq!(
+        step.provenance().origin,
+        CheckedOperationEffectOrigin::ModelDocumentOperationFrame
+    );
+    assert_eq!(
+        step.provenance().member.as_ref(),
+        tc1070::model::id("Node/step")
+    );
     for name in ["Node", "Other", "Elsewhere"] {
         let original = tc1070::model::id(name);
         let object = ep
@@ -173,6 +194,14 @@ fn selected_object_closure_projects_standard_e_and_unused_ep_objects() {
     );
     assert_eq!(other.fields()[0].value_type(), &ValueType::Boolean);
     assert_eq!(
+        other.fields()[0].original_identity(),
+        tc1070::model::id("Other/marker")
+    );
+    assert_eq!(
+        other.fields()[1].original_identity(),
+        tc1070::model::id("Other/next")
+    );
+    assert_eq!(
         other.fields()[1].value_type(),
         &ValueType::Reference(other.effective_id().clone())
     );
@@ -189,6 +218,9 @@ fn selected_object_closure_roots_a_package_selected_by_two_aliases_once() {
     let fixture = fixture_with_source(&tc1070::document_ep(), &source);
     let projection = project(&fixture);
     assert_eq!(projection.objects().len(), 3);
+    let first_start = u64::try_from(source.find("model M =").unwrap()).unwrap();
+    let second_start = u64::try_from(source.find("model Again =").unwrap()).unwrap();
+    let second_end = second_start + u64::try_from("model Again = \"test/orders\";".len()).unwrap();
     for object in projection.objects() {
         assert_eq!(
             fixture
@@ -199,6 +231,36 @@ fn selected_object_closure_roots_a_package_selected_by_two_aliases_once() {
                 .count(),
             1,
             "duplicate aliases retain one original object declaration"
+        );
+        let row = fixture
+            .rows
+            .declarations()
+            .iter()
+            .find(|row| row.original_identity.as_ref() == object.original_identity())
+            .unwrap();
+        let generated: Vec<_> = fixture
+            .package
+            .source_map()
+            .iter()
+            .filter(|entry| {
+                entry.node_id == row.structural_node
+                    && entry.role == CheckedOccurrenceRole::Generated
+            })
+            .flat_map(|entry| entry.regions.iter())
+            .collect();
+        assert_eq!(
+            generated
+                .iter()
+                .filter(|region| { region.start >= first_start && region.end < second_start })
+                .count(),
+            1,
+            "the first selecting alias owns the root occurrence"
+        );
+        assert!(
+            generated
+                .iter()
+                .all(|region| { region.start < second_start || region.end > second_end }),
+            "the duplicate alias adds no root occurrence"
         );
     }
 }
