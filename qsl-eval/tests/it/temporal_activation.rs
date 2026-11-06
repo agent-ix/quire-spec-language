@@ -237,6 +237,7 @@ pub(crate) fn position(index: u64, values: &[(u64, Valuation)]) -> EvidencePosit
 
 pub(crate) fn request(env: &Env, positions: Vec<EvidencePosition>) -> EvidenceRequest {
     EvidenceRequest {
+        native_valuations: Vec::new(),
         trigger: None,
         correspondence: EvidenceRef::named("corr"),
         positions,

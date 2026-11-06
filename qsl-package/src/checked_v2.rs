@@ -152,7 +152,7 @@ pub struct V2ReadLimits {
     /// The logical-storage ceiling the native identity joins of one pass
     /// share (FR-358): owned containers, rows, keys, handles and copied
     /// bytes, not allocator bytes and not [`Self::artifact_bytes`]. It is
-    /// required; no setting spelling names it yet.
+    /// required and raised by `i2.native_join_storage`.
     pub storage: u64,
 }
 
@@ -169,6 +169,30 @@ pub struct NativeJoinLimits {
 }
 
 impl NativeJoinLimits {
+    /// Map an exhausted native join using this pass's original ceilings and
+    /// the budget's first unpaid charge.
+    /// Returns `None` for a non-budget error or a budget without a recorded
+    /// unpaid charge. `native` and `budget` must come from the same pass.
+    pub fn refusal(
+        self,
+        native: Box<quire_contract_model::ExactTypeProjectionError>,
+        budget: &quire_contract_model::NativeJoinBudget,
+    ) -> Option<crate::NativeJoinLimitError> {
+        let setting = qsl_semantics::model::intake::native_budget_setting(&native)?;
+        let unpaid = budget.first_unpaid()?;
+        let (bound, consumed) = match unpaid.kind {
+            quire_contract_model::NativeJoinChargeKind::Work => (self.work, budget.consumed().work),
+            quire_contract_model::NativeJoinChargeKind::Storage => {
+                (self.storage, budget.consumed().storage)
+            }
+        };
+        let actual = u128::from(consumed).saturating_add(unpaid.amount);
+        Some(crate::NativeJoinLimitError {
+            native,
+            limit: qsl_foundation::diagnostic::LimitExceeded::new(setting, bound, actual),
+        })
+    }
+
     /// Limits of `work` steps and `storage` units.
     #[must_use]
     pub const fn new(work: u64, storage: u64) -> Self {
@@ -1114,14 +1138,22 @@ impl AdmittedPackageRead<'_> {
                 crate::IdentityFileRefusal::Native(native)
                     if qsl_semantics::model::intake::is_native_budget_denial(&native) =>
                 {
-                    ViewFailure::Exhausted(native)
+                    match limits.native_join_limits().refusal(native, &budget) {
+                        Some(denial) => ViewFailure::Exhausted(Box::new(denial)),
+                        None => fault(),
+                    }
                 }
                 _ => fault(),
             })?;
         let identities = rows
             .selected(&self.read.admitted, &mut budget)
             .map_err(|refusal| match refusal {
-                crate::IdentityJoinFailure::Exhausted(denial) => ViewFailure::Exhausted(denial),
+                crate::IdentityJoinFailure::Exhausted(denial) => {
+                    match limits.native_join_limits().refusal(denial, &budget) {
+                        Some(denial) => ViewFailure::Exhausted(Box::new(denial)),
+                        None => fault(),
+                    }
+                }
                 crate::IdentityJoinFailure::Witness(_) => fault(),
             })?;
         let slots = project_package(

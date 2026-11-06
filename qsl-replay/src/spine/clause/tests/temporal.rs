@@ -3035,6 +3035,187 @@ fn strict_readback_temporal_run_retains_authenticated_selection() {
     );
 }
 
+/// `unit`'s `Sample` clause over a progressed trace asserting `binding`.
+fn progressed_sample(unit: Unit, binding: crate::spine::TraceBinding) -> ClauseRunRequest {
+    let mut request = finite(unit, "Sample", &[0, 1, 0]);
+    let ClauseRunSelection::Temporal { trace, .. } = &mut request.selection else {
+        panic!("a temporal selection");
+    };
+    let TraceInput::Finite(documents) = trace.clone() else {
+        panic!("a finite source trace");
+    };
+    *trace = TraceInput::Progressed {
+        trace: documents,
+        progress: crate::spine::ProgressAssertion {
+            watermark: 100,
+            completeness: crate::spine::ProgressCompleteness::Complete { through: 100 },
+            scope: crate::spine::ProgressClosure::Open,
+            execution: crate::spine::ProgressClosure::Open,
+        },
+        lower_boundary: crate::spine::ProgressLowerBoundary::AuthoritativeOrigin,
+        binding,
+    };
+    request
+}
+
+/// FR-050-AC-6, FR-522-AC-3 (TC-138, TC-150): a progressed run of an
+/// event-position or fixed-sample clause strictly reads its emitted package
+/// and retains the exact authenticated profile, clock name and typed clock row;
+/// each differing dimension of the asserted binding is refused at stage `admit`
+/// naming that dimension, the asserted and the expected value, before any
+/// position is visited and with no selection retained; a fresh run of the
+/// same request retains the same selection.
+#[trace("TC-138", "TC-150", "FR-050-AC-6")]
+#[trace("TC-1317", "FR-522-AC-3")]
+#[test]
+fn progressed_binding_dimensions_are_each_authenticated_and_retained() {
+    use qsl_package::{ClockConfiguration as Clock, ClockExactNumber as Number};
+
+    let integer = |decimal: &str| Number::Integer {
+        decimal: decimal.into(),
+    };
+    let refused_fields = |request: ClauseRunRequest| {
+        let refused = report(request);
+        assert_eq!(refused.disposition.stage(), ClauseRunStage::Admit);
+        assert!(refused.authenticated_temporal_selection.is_none());
+        assert_eq!(refused.usage.temporal_visits, 0);
+        let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = refused.disposition
+        else {
+            panic!("expected an admission refusal");
+        };
+        assert_eq!(record.catalog.code(), "invalid_runtime_input");
+        assert_eq!(record.catalog.cause(), "invalid-value");
+        record.fields
+    };
+    let field = |fields: &BTreeMap<&'static str, String>, name: &str| {
+        fields.get(name).cloned().unwrap_or_default()
+    };
+
+    // Event-position.
+    let event = || progressed_binding(Unit::EventEventually);
+    let retained = report(progressed_sample(Unit::EventEventually, event()))
+        .authenticated_temporal_selection
+        .expect("the matching event-position binding is retained");
+    assert_eq!(
+        retained.profile.identity.as_ref(),
+        "quire.temporal.event-position.false-extension/v1"
+    );
+    assert_eq!(retained.clock_name.as_ref(), "model-steps");
+    assert_eq!(
+        retained.clock,
+        Clock::EventPosition {
+            sequence_authority: "counter-event-sequence".into()
+        }
+    );
+    let authority = refused_fields(progressed_sample(Unit::EventEventually, {
+        let mut binding = event();
+        binding.parameters = Clock::EventPosition {
+            sequence_authority: "other-sequence".into(),
+        };
+        binding
+    }));
+    assert_eq!(
+        field(&authority, "mismatched_dimension"),
+        "SequenceAuthority"
+    );
+    assert_eq!(field(&authority, "asserted"), "other-sequence");
+    assert_eq!(field(&authority, "expected"), "counter-event-sequence");
+    let name = refused_fields(progressed_sample(Unit::EventEventually, {
+        let mut binding = event();
+        binding.clock_name = "other-clock".to_owned();
+        binding
+    }));
+    assert_eq!(field(&name, "mismatched_dimension"), "Clock");
+    assert_eq!(field(&name, "asserted"), "other-clock");
+    assert_eq!(field(&name, "expected"), "model-steps");
+    let profile = refused_fields(progressed_sample(Unit::EventEventually, {
+        let mut binding = event();
+        binding.profile = "quire.temporal.fixed-sample.false-extension/v1".to_owned();
+        binding
+    }));
+    assert_eq!(field(&profile, "mismatched_dimension"), "Profile");
+    assert_eq!(
+        field(&profile, "asserted"),
+        "quire.temporal.fixed-sample.false-extension/v1"
+    );
+
+    // Fixed-sample.
+    let fixed = || progressed_binding(Unit::FixedEventually);
+    let retained = report(progressed_sample(Unit::FixedEventually, fixed()))
+        .authenticated_temporal_selection
+        .expect("the matching fixed-sample binding is retained");
+    assert_eq!(retained.clock_name.as_ref(), "samples");
+    assert_eq!(
+        retained.clock,
+        Clock::FixedSample {
+            epoch: integer("0"),
+            period: integer("1"),
+            unit: "sample".into(),
+        }
+    );
+    for (changed, dimension, asserted, expected) in [
+        (
+            Clock::FixedSample {
+                epoch: integer("5"),
+                period: integer("1"),
+                unit: "sample".into(),
+            },
+            "Epoch",
+            None,
+            None,
+        ),
+        (
+            Clock::FixedSample {
+                epoch: integer("0"),
+                period: integer("2"),
+                unit: "sample".into(),
+            },
+            "SamplePeriod",
+            None,
+            None,
+        ),
+        (
+            Clock::FixedSample {
+                epoch: integer("0"),
+                period: integer("1"),
+                unit: "tick".into(),
+            },
+            "ClockUnit",
+            Some("tick"),
+            Some("sample"),
+        ),
+        (
+            Clock::EventPosition {
+                sequence_authority: "samples".into(),
+            },
+            "ClockParameters",
+            Some("event_position"),
+            Some("fixed_sample"),
+        ),
+    ] {
+        let fields = refused_fields(progressed_sample(Unit::FixedEventually, {
+            let mut binding = fixed();
+            binding.parameters = changed;
+            binding
+        }));
+        assert_eq!(field(&fields, "mismatched_dimension"), dimension);
+        assert!(!field(&fields, "asserted").is_empty(), "{dimension}");
+        assert!(!field(&fields, "expected").is_empty(), "{dimension}");
+        if let Some(asserted) = asserted {
+            assert_eq!(field(&fields, "asserted"), asserted);
+        }
+        if let Some(expected) = expected {
+            assert_eq!(field(&fields, "expected"), expected);
+        }
+    }
+
+    // A fresh run of the same request authenticates the same selection.
+    let again = report(progressed_sample(Unit::FixedEventually, fixed()))
+        .authenticated_temporal_selection
+        .expect("a fresh retry retains its selection");
+    assert_eq!(again, retained);
+}
+
 /// `request` with its `Window` clause body replaced by `body`.
 fn with_clause_body(mut request: ClauseRunRequest, body: &str) -> ClauseRunRequest {
     let bytes = program_source_bytes(&mut request);

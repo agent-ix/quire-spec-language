@@ -372,7 +372,7 @@ impl From<Refusal> for Error {
 
 /// Effective limits and successful work accompany either outcome.
 #[derive(Clone, Debug)]
-pub struct Report {
+pub struct ArtifactReport {
     pub(super) result: Result<Vec<Obligation>, Error>,
     pub(super) limits: super::budget::Limits,
     pub(super) usage: Usage,
@@ -382,7 +382,7 @@ pub struct Report {
     pub(super) settled_siblings: Vec<Obligation>,
 }
 
-impl Report {
+impl ArtifactReport {
     /// The assessed obligations, or the single bounded outcome that stopped the
     /// evaluation. A stop is never rendered as a Boolean.
     pub fn result(&self) -> Result<&[Obligation], &Error> {

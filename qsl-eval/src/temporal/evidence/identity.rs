@@ -173,6 +173,61 @@ impl MemberEncoder {
 pub struct ResultIdentity(Box<[u8]>);
 
 impl ResultIdentity {
+    /// Read the input-only identity from a strictly ordered result identity
+    /// encoding. Missing, unknown, repeated, out-of-order or truncated members
+    /// refuse. Member payloads are validated against the request by
+    /// [`super::matches_result_identity`].
+    pub fn input_identity_from_bytes(bytes: &[u8]) -> Option<InputIdentity> {
+        Self::read_encoding(bytes).map(|(input, _)| input)
+    }
+
+    pub(super) fn read_encoding(mut bytes: &[u8]) -> Option<(InputIdentity, u64)> {
+        let mut input = Vec::new();
+        let mut previous = 0;
+        let mut meter_ceiling = None;
+        while let Some((&tag, rest)) = bytes.split_first() {
+            let member = match tag {
+                1 => IdentityMember::Clause,
+                2 => IdentityMember::Authenticated,
+                3 => IdentityMember::Cover,
+                4 => IdentityMember::Trace,
+                5 => IdentityMember::Progress,
+                6 => IdentityMember::Ceilings,
+                7 => IdentityMember::MeterCeiling,
+                8 => IdentityMember::Trigger,
+                9 => IdentityMember::RetainedInstances,
+                10 => IdentityMember::ProgressLedger,
+                11 => IdentityMember::Relation,
+                12 => IdentityMember::Deliveries,
+                13 => IdentityMember::Origins,
+                14 => IdentityMember::Anchor,
+                15 => IdentityMember::Evicted,
+                16 => IdentityMember::Correspondence,
+                17 => IdentityMember::Occurrence,
+                _ => return None,
+            };
+            if tag != previous + 1 {
+                return None;
+            }
+            previous = tag;
+            let length =
+                usize::try_from(u64::from_be_bytes(rest.get(..8)?.try_into().ok()?)).ok()?;
+            let end = 9_usize.checked_add(length)?;
+            let encoded = bytes.get(..end)?;
+            if member == IdentityMember::MeterCeiling {
+                meter_ceiling = Some(u64::from_be_bytes(encoded.get(9..)?.try_into().ok()?));
+            }
+            if member.is_input() {
+                input.extend_from_slice(encoded);
+            }
+            bytes = bytes.get(end..)?;
+        }
+        if previous != IdentityMember::Occurrence.tag() {
+            return None;
+        }
+        Some((InputIdentity(input.into_boxed_slice()), meter_ceiling?))
+    }
+
     /// The identity's bytes, the encoding of its members.
     pub fn as_bytes(&self) -> &[u8] {
         &self.0

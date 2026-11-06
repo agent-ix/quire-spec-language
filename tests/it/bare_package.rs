@@ -1577,7 +1577,7 @@ fn two_joins_on_one_budget_are_charged_cumulatively() {
 
 /// FR-531-AC-24 (TC-1331): the view, the evidence constructors and the handoff
 /// writer refuse a native budget one short with their own typed denial.
-#[trace("FR-531-AC-24", "TC-1331")]
+#[trace("TC-1331", "FR-531-AC-24")]
 #[test]
 fn the_view_the_constructors_and_the_writer_refuse_a_budget_one_short() {
     use qsl_eval::temporal::evidence::PackageMismatch;
@@ -1612,55 +1612,87 @@ fn the_view_the_constructors_and_the_writer_refuse_a_budget_one_short() {
         .try_read_under(&built.emission, limits(view_need.work, view_need.storage))
         .expect("the reader admits");
     assert!(exact.evaluation_view().is_ok());
-    let short = built
-        .try_read_under(
-            &built.emission,
-            limits(view_need.work, view_need.storage - 1),
-        )
-        .expect("the reader admits");
-    match short.evaluation_view() {
-        Err(qsl_package::ViewFailure::Exhausted(denial)) => {
-            assert_eq!(denial.code, Code::ExhaustedStorage);
-            assert_eq!(
-                qsl_semantics::model::intake::native_budget_setting(&denial)
-                    .map(|setting| setting.name()),
-                Some("i2.native_join_storage")
-            );
+    for (work, storage, code) in [
+        (view_need.work - 1, view_need.storage, Code::ExhaustedWork),
+        (
+            view_need.work,
+            view_need.storage - 1,
+            Code::ExhaustedStorage,
+        ),
+    ] {
+        let short = built
+            .try_read_under(&built.emission, limits(work, storage))
+            .expect("the reader admits before native view admission");
+        match short.evaluation_view() {
+            Err(qsl_package::ViewFailure::Exhausted(denial)) => {
+                use quire_semantic_value::catalog::CatalogCoded;
+                assert_eq!(denial.native.code, code);
+                let (bound, setting) = if code == Code::ExhaustedWork {
+                    (work, "i2.work_units")
+                } else {
+                    (storage, "i2.native_join_storage")
+                };
+                assert_eq!(denial.limit.setting().name(), setting);
+                assert_eq!(denial.limit.configured_bound(), bound);
+                assert!(denial.limit.actual() > u128::from(bound));
+                assert_eq!(denial.limit.catalog_code().code(), "stage_limit_exceeded");
+                assert!(denial.to_string().contains(setting));
+            }
+            other => panic!("expected the {code:?} denial, got {:?}", other.err()),
         }
-        other => panic!("expected the storage denial, got {:?}", other.err()),
     }
 
     // The evidence constructors that hold a source.
-    let mut enough = NativeJoinBudget::new(need.work, need.storage);
-    EvidencePackage::from_read(&ample, &mut enough).expect("exact budget admits");
-    let mut one_short = NativeJoinBudget::new(need.work, need.storage - 1);
-    match EvidencePackage::from_read(&ample, &mut one_short) {
-        Err(PackageMismatch::Exhausted(denial)) => assert_eq!(denial.code, Code::ExhaustedStorage),
-        other => panic!("expected the storage denial, got {:?}", other.err()),
-    }
-    let mut no_work = NativeJoinBudget::new(need.work - 1, need.storage);
-    match EvidencePackage::from_emission(&built.emission, &ample, &mut no_work) {
-        Err(PackageMismatch::Exhausted(denial)) => assert_eq!(denial.code, Code::ExhaustedWork),
-        other => panic!("expected the work denial, got {:?}", other.err()),
+    for from_emission in [false, true] {
+        let construct = |budget: &mut NativeJoinBudget| {
+            if from_emission {
+                EvidencePackage::from_emission(&built.emission, &ample, budget)
+            } else {
+                EvidencePackage::from_read(&ample, budget)
+            }
+        };
+        let mut enough = NativeJoinBudget::new(need.work, need.storage);
+        construct(&mut enough).expect("exact work and storage admit");
+        assert_eq!(enough.consumed(), need);
+        for (work, storage, code) in [
+            (need.work - 1, need.storage, Code::ExhaustedWork),
+            (need.work, need.storage - 1, Code::ExhaustedStorage),
+        ] {
+            let mut one_short = NativeJoinBudget::new(work, storage);
+            match construct(&mut one_short) {
+                Err(PackageMismatch::Exhausted(denial)) => assert_eq!(denial.code, code),
+                other => panic!("expected the {code:?} denial, got {:?}", other.err()),
+            }
+            assert!(one_short.first_unpaid().is_some());
+        }
     }
 }
 
 /// FR-531-AC-24 (writer half, TC-1331): a handoff request whose native join
 /// limits cannot pay for the identity join is refused with the typed denial
 /// and writes no directory; the fixture limits write it.
-#[trace("FR-531-AC-24", "TC-1331")]
+#[trace("TC-1331", "FR-531-AC-24")]
 #[test]
 fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join() {
     use quire_contract_model::ExactTypeProjectionErrorCode as Code;
     use quire_spec_language::checked_handoff::{Error, ErrorCode};
     let scratch = tempfile::tempdir().expect("tempdir");
+    let built = recipe("event_position");
+    let read = built.read(&built.emission);
+    let mut measure = quire_contract_model::NativeJoinBudget::new(1 << 30, 1 << 30);
+    built
+        .emission
+        .identity_rows(read.admitted(), &mut measure)
+        .expect("measure the same final emission join the writer performs");
+    let need = measure.consumed();
+    assert!(need.work > 0 && need.storage > 0);
     for (limits, code) in [
         (
-            qsl_package::NativeJoinLimits::new(0, 1 << 24),
+            qsl_package::NativeJoinLimits::new(need.work - 1, need.storage),
             Code::ExhaustedWork,
         ),
         (
-            qsl_package::NativeJoinLimits::new(1 << 24, 0),
+            qsl_package::NativeJoinLimits::new(need.work, need.storage - 1),
             Code::ExhaustedStorage,
         ),
     ] {
@@ -1673,22 +1705,31 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
                 let Error::NativeJoinExhausted(denial) = error else {
                     unreachable!()
                 };
-                assert_eq!(denial.code, code);
+                assert_eq!(denial.native.code, code);
                 assert_eq!(
-                    qsl_semantics::model::intake::native_budget_setting(&denial)
-                        .map(|setting| setting.name()),
-                    Some(if code == Code::ExhaustedWork {
+                    denial.limit.setting().name(),
+                    if code == Code::ExhaustedWork {
                         "i2.work_units"
                     } else {
                         "i2.native_join_storage"
-                    })
+                    }
                 );
+                let bound = if code == Code::ExhaustedWork {
+                    limits.work
+                } else {
+                    limits.storage
+                };
+                assert_eq!(denial.limit.configured_bound(), bound);
+                assert!(denial.limit.actual() > u128::from(bound));
+                assert!(denial.to_string().contains(denial.limit.setting().name()));
             }
             other => panic!("expected the native denial, got {other:?}"),
         }
         assert!(!target.exists(), "a refused write leaves no directory");
     }
     let target = scratch.path().join("written");
-    write(&request("event_position", Corpus::None), &target).expect("the fixture limits write");
+    let mut exact = request("event_position", Corpus::None);
+    exact.native_join = qsl_package::NativeJoinLimits::new(need.work, need.storage);
+    write(&exact, &target).expect("exact work and storage write the directory");
     assert!(target.join("identities.json").exists());
 }
