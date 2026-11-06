@@ -55,9 +55,7 @@ conformance vectors from its checkout; no QSpec fixture is copied here.
     controls through QSL checking, lowering and evaluation. Inspect operation
     identities and result types; keep the TC-440 bare-unit exact-id controls.
 12. Read emitted bounded packages with the native IR reader and mutate their
-    endpoints/path as QSpec BQ-05/BQ-06 require. Until IR-1345 implements the
-    native form, these round-trip tests are explicitly ignored with IR-1345
-    in the reason; steps 10 and 11's QSL-side unit tests remain enabled.
+    endpoints/path as QSpec BQ-05/BQ-06 require.
 
 ## Expected Results
 
@@ -75,9 +73,7 @@ that order, the decimal carrier repeats its equal scale text, the reader admits
 the package and refuses the truncated path (FR-092-AC-27).
 
 Steps 10–12 satisfy FR-092-AC-30 and FR-093-AC-61, using QSpec's published
-bounded-quantity vectors as the authority. Native admission is pending while
-the IR-1345 tests are ignored; QSL-side passing evidence does not claim that
-downstream reader acceptance has been delivered.
+bounded-quantity vectors as the authority.
 
 ## Implementation status
 
@@ -85,11 +81,8 @@ The enabled QSL-side tests use the public typed declaration API for bounded
 aliases and function forms, a genuinely source-assembled nominal unit graph,
 and the production checker, lowering and evaluator with real quantity
 arguments. They do not claim a source grammar for bounded quantity types.
-Type-key, addition, comparison and conversion-from-bounded checks are
-enabled. Conversion **into** a bounded quantity remains a typed
-refusal: the shared evaluator currently reads its target as an ordinary
-quantity, and its `rational_out_of_domain` payload describes a
-numerator/denominator domain rather than a magnitude interval. No interval
-is erased and no carrier is fabricated to report this refusal. The bounded
-result conversion assertions of FR-093-AC-61 remain pending that shared
-contract; this slice does not claim the full criterion satisfied.
+Type-key, addition, comparison and conversion into and out of a bounded
+quantity are enabled. Conversion into a bounded quantity checks the exact
+converted magnitude against both inclusive endpoints and refuses with
+quire-exact's `BoundedQuantityOutOfDomain`, carrying the target unit and
+interval (QSpec FR-322-AC-384, BQ-09).

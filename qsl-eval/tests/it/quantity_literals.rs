@@ -555,6 +555,12 @@ fn bounded_package() -> (CheckedPackage, quire_exact::UnitId, quire_exact::UnitI
                     ),
                 ),
                 function(
+                    "to_bounded",
+                    vec![("a".into(), named("Centimetres"))],
+                    named("Bounded"),
+                    Expression::convert(named("Bounded"), Expression::name("a")),
+                ),
+                function(
                     "to_cm",
                     vec![("a".into(), named("Bounded"))],
                     named("Centimetres"),
@@ -566,6 +572,46 @@ fn bounded_package() -> (CheckedPackage, quire_exact::UnitId, quire_exact::UnitI
     .expect("typed bounded quantity functions check");
     let (metre, centimetre) = held_units.expect("assembled units retained");
     (package, metre, centimetre)
+}
+
+#[trace("TC-413", "FR-093-AC-61")]
+#[test]
+fn conversion_to_a_bounded_result_checks_both_inclusive_endpoints() {
+    use quire_exact::{Integer, Quantity, Rational, Refusal};
+    let (package, _, centimetre) = bounded_package();
+    let call = |centimetres: i64| {
+        package
+            .call(
+                &QualifiedName::unqualified("to_bounded").expect("function name"),
+                vec![Value::Quantity(Quantity::new(
+                    Rational::from_integer(Integer::from(centimetres)),
+                    centimetre.clone(),
+                ))],
+                &ObjectEnvironment::default(),
+                &mut Meter::new(UNLIMITED),
+            )
+            .expect("bounded conversion runs")
+            .outcome
+    };
+    for (centimetres, metres) in [(0_i64, "0/1"), (150, "3/2"), (200, "2/1")] {
+        match call(centimetres) {
+            FamilyOutcome::Evaluated(Outcome::Completed(Value::Quantity(value))) => {
+                assert_eq!(value.magnitude().to_string(), metres);
+            }
+            other => panic!("{centimetres} cm is inside [0, 2] m, got {other:?}"),
+        }
+    }
+    for centimetres in [201_i64, -1] {
+        match call(centimetres) {
+            FamilyOutcome::Evaluated(Outcome::Refused(Refusal::BoundedQuantityOutOfDomain {
+                target,
+            })) => {
+                assert_eq!(target.min().to_string(), "0/1");
+                assert_eq!(target.max().to_string(), "2/1");
+            }
+            other => panic!("{centimetres} cm is outside [0, 2] m, got {other:?}"),
+        }
+    }
 }
 
 #[trace("TC-413", "FR-093-AC-61")]

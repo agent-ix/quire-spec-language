@@ -2780,10 +2780,6 @@ impl<'a> Lowering<'a> {
             ValueType::BoundedQuantity(bounded) => self
                 .bounded_quantity_type(bounded, location)
                 .map(NodeRef::from),
-            ValueType::Map(_) => Err(refuse(
-                location,
-                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
-            )),
             ValueType::Reference(target) => self
                 .reference_type(target.clone(), location)
                 .map(NodeRef::from),

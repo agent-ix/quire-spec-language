@@ -4764,7 +4764,11 @@ impl<'a> Typer<'a> {
                 ValueType::Quantity(_) | ValueType::CarriedQuantity(_),
                 ValueType::Quantity(_) | ValueType::CarriedQuantity(_),
             )
-            | (ValueType::BoundedQuantity(_), ValueType::Quantity(_)) => {
+            | (
+                ValueType::BoundedQuantity(_),
+                ValueType::Quantity(_) | ValueType::BoundedQuantity(_),
+            )
+            | (ValueType::Quantity(_), ValueType::BoundedQuantity(_)) => {
                 let Some(source_unit) = quantity_unit(&operand.value_type) else {
                     return Err(mismatch(location));
                 };
