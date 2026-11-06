@@ -1307,6 +1307,18 @@ fn finish(
     })
 }
 
+/// The node a `binding` term named `name` references, or `None` for any other
+/// term.
+fn binding_reference<'t>(term: &'t CheckedTerm, name: &str) -> Option<&'t CheckedNodeId> {
+    let CheckedTerm::Binding { name: found, value } = term else {
+        return None;
+    };
+    match (found.as_ref() == name, value.as_ref()) {
+        (true, CheckedTerm::Reference { target }) => Some(target),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1351,17 +1363,5 @@ mod tests {
             declared(&twice, "State", "missing"),
             Err(EmitRefusal::MonitorPlanAmbiguous { name }) if name == "State"
         ));
-    }
-}
-
-/// The node a `binding` term named `name` references, or `None` for any other
-/// term.
-fn binding_reference<'t>(term: &'t CheckedTerm, name: &str) -> Option<&'t CheckedNodeId> {
-    let CheckedTerm::Binding { name: found, value } = term else {
-        return None;
-    };
-    match (found.as_ref() == name, value.as_ref()) {
-        (true, CheckedTerm::Reference { target }) => Some(target),
-        _ => None,
     }
 }

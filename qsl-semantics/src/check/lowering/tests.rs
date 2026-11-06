@@ -1257,21 +1257,20 @@ fn a_map_type_lowers_to_a_key_then_value_composite_node() {
 /// panic. No QSL criterion governs this defensive refusal.
 #[test]
 fn a_bounded_quantity_has_no_type_node() {
-    for value_type in [bounded_metre()] {
-        let refusal = with_lowering(|lowering| {
-            lowering
-                .type_node(&value_type, &generated_location())
-                .expect_err("no type node")
-        });
-        assert!(
-            matches!(
-                refusal.cause,
-                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
-            ),
-            "{:?}",
-            refusal.cause
-        );
-    }
+    let value_type = bounded_metre();
+    let refusal = with_lowering(|lowering| {
+        lowering
+            .type_node(&value_type, &generated_location())
+            .expect_err("no type node")
+    });
+    assert!(
+        matches!(
+            refusal.cause,
+            CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+        ),
+        "{:?}",
+        refusal.cause
+    );
 }
 
 /// A map has no equality (QSpec FR-149 states none): `OperatorIneligible`.
