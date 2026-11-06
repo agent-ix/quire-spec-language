@@ -162,7 +162,7 @@ fn fixture(bound: u64) -> Fixture {
 
 fn system<'a>(fixture: &'a Fixture) -> ProtocolSystem<'a, Sc> {
     let population = quire_checked::key::DeclarationKey {
-        package: tc1070::model::BUSINESS.to_owned(),
+        package: tc1070::model::PACKAGE.to_owned(),
         node: tc1070::model::id("nodes"),
     };
     let request = ModelSimulationRequest {
