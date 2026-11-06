@@ -11,7 +11,9 @@
 //! connectives `not`, `and`, `or` and `implies` carry no direction.
 
 use qsl_semantics::check::TemporalProfile;
-use quire_contract_model::{CheckedArtifactRef, CheckedNodeId, CheckedSelection};
+use quire_contract_model::{
+    AdmissionBinding, CheckedArtifactRef, CheckedNodeId, CheckedPackageV2, CheckedSelection,
+};
 
 use super::subject::{Activation, OperatorDirection, TemporalSubjectView};
 
@@ -116,16 +118,21 @@ pub struct Retained {
 
 /// The definition selection the package authenticates for one clause.
 ///
-/// It names the package, the clause and the lock's `profile_selections` row
+/// It retains the owner's admitted-package binding and names the package,
+/// the clause and the lock's `profile_selections` row
 /// the clause's `temporal_profile` law selects. It carries no clock
 /// parameters: classification takes no trace, so it authenticates no
 /// parameter map. Only the classifier constructs one; its fields are private:
 ///
 /// ```compile_fail,E0451
 /// use qsl_package::checked_views::AuthenticatedSelection;
-/// fn forge(clause: quire_contract_model::CheckedNodeId) -> AuthenticatedSelection {
+/// fn forge(
+///     package: &quire_contract_model::CheckedPackageV2,
+///     clause: quire_contract_model::CheckedNodeId,
+/// ) -> AuthenticatedSelection {
 ///     AuthenticatedSelection {
 ///         package: "forged".into(),
+///         admission: package.admission_binding(),
 ///         clause,
 ///         definition: quire_contract_model::CheckedArtifactRef {
 ///             authority: "a".into(),
@@ -146,6 +153,7 @@ pub struct Retained {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthenticatedSelection {
     package: Box<str>,
+    admission: AdmissionBinding,
     clause: CheckedNodeId,
     definition: CheckedArtifactRef,
 }
@@ -154,6 +162,17 @@ impl AuthenticatedSelection {
     /// The identity (name) of the package the selection was read from.
     pub fn package(&self) -> &str {
         &self.package
+    }
+
+    /// The opaque binding issued by the selected package's original admission.
+    pub fn admission_binding(&self) -> &AdmissionBinding {
+        &self.admission
+    }
+
+    /// Whether `package` retains the owner admission selected by this value.
+    /// A clone retains that admission; an independent read of equal bytes does not.
+    pub fn belongs_to(&self, package: &CheckedPackageV2) -> bool {
+        package.retains(&self.admission)
     }
 
     /// The clause node the selection is for.
@@ -176,8 +195,8 @@ impl AuthenticatedSelection {
 /// selection the package authenticates for the clause.
 ///
 /// `support` and `retained` are plain data. `selection` is sealed, so a
-/// consumer that needs the disposition bound to it re-classifies from the
-/// package the selection names.
+/// consumer first checks the owner's admission binding with [`Self::belongs_to`]
+/// and re-classifies from that package before trusting the complete disposition.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Classification {
     /// The disposition read from the reviewed support table.
@@ -192,6 +211,11 @@ impl Classification {
     /// every result, supported or not.
     pub fn selection(&self) -> &AuthenticatedSelection {
         &self.selection
+    }
+
+    /// Whether `package` retains the owner admission of this classification.
+    pub fn belongs_to(&self, package: &CheckedPackageV2) -> bool {
+        self.selection.belongs_to(package)
     }
 }
 
@@ -253,6 +277,7 @@ pub fn mapping_support(
         },
         selection: AuthenticatedSelection {
             package: subject.package().name().into(),
+            admission: subject.admission_binding(),
             clause: subject.declaration().clone(),
             definition: subject.profile().definition.clone(),
         },

@@ -3543,3 +3543,6 @@ mod tests {
         );
     }
 }
+
+mod population_document;
+pub use population_document::admitted_population_document;

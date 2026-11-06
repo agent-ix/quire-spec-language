@@ -211,8 +211,9 @@ impl FormulaNodeUse<'_> {
 /// The temporal clause `declaration` of one admitted checked package.
 ///
 /// The view borrows the package, is built only by [`temporal_subject`] and
-/// evaluates nothing. It carries no digest, document bytes or identity label:
-/// the package binding is its lifetime and [`Self::belongs_to`].
+/// evaluates nothing. It carries no digest, document bytes or identity label.
+/// Its borrow-location check is [`Self::belongs_to`]; [`Self::admission_binding`]
+/// forwards the owner's capability for consumers that retain admission authority.
 ///
 /// A view cannot be built outside this module:
 ///
@@ -499,6 +500,12 @@ impl<'p> TemporalSubjectView<'p> {
     /// Whether `package` is the package this view was read from.
     pub fn belongs_to(&self, package: &CheckedPackageV2) -> bool {
         std::ptr::eq(self.package, package)
+    }
+
+    /// The opaque owner capability of the package from which this view was read.
+    /// Cloning the capability preserves admission identity, without copying the package.
+    pub fn admission_binding(&self) -> quire_contract_model::AdmissionBinding {
+        self.package.admission_binding()
     }
 }
 

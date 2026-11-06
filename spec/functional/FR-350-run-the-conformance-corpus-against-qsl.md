@@ -102,8 +102,14 @@ The runner SHALL read the selected QSpec corpus and the files named by each
 vector's `input.files` without rewriting its vectors, `expected`
 dispositions, `results` or `coverage`. Expected dispositions come from the
 corpus's independent oracle; the runner SHALL NOT replace them with results
-calculated by QSL. A syntactically valid file path that is not readable is
-that vector's `tool-failure`, not a corpus preflight refusal.
+calculated by QSL. Corpus preflight, expected-result comparison, reporting
+and release SHALL retain deeply nested oracle values without native stack
+recursion. A schema-valid oracle that differs from the operation result is
+`failed`, including when the oracle has thousands of nested containers;
+its depth never changes a mismatch into a process abort. Duplicate decoded
+object names remain a preflight refusal. A syntactically valid file path
+that is not readable is that vector's `tool-failure`, not a corpus preflight
+refusal.
 
 The runner SHALL resolve `--limit` operands through the existing
 [FR-255 settings operation](FR-255-name-the-setting-that-raises-a-reached-limit.md).
@@ -120,15 +126,37 @@ AC-8). QSL SHALL consume the input adapters applicable to its public
 operations under that contract and invoke only the corresponding QSL public
 operations: `compile` (FR-027), `format` (FR-003), `run` (FR-100) and
 `replay` (FR-071/FR-098). QSL adds no product request wire or corpus-owned
-encoding. Existing model and object-context admission (FR-084, FR-089,
+encoding. Textual operation, disposition, argument, domain and witness tags
+are read at the declared shared string-edge intake boundaries. Witness tags
+and record-slot tags are decoded once into transient typed traversal state;
+collection state uses the native collection kind. Those grammar tags carry
+no semantic values or identities. Native owner constructors and the witness
+codec remain responsible for semantic admission. Existing model and object-context admission (FR-084, FR-089,
 FR-106), supplied-value limits (FR-277), replay result semantics (FR-072),
 and all other owning admission and refusal rules remain authoritative.
+
+The compiler adapter supplies every `model` file to the public compiler's
+domain-package input. It never substitutes an empty model input for the
+documents the vector names. Each operation starts with fresh effective limits;
+signature lookup and object admission use those same limits. When adapting
+NodeId values requires checked-package emission, that emission receives the
+same caller's `emit.output_bytes` bound; the adapter never substitutes a fresh
+package limit. The runner's
+library entry retains the returned bytes of each passed vector separately
+from the FR-352 report, so callers can compare operation bytes without
+reconstructing them from the qualification verdict. Population binding admission
+retains the original snapshot member order and every reference-valued field
+needed by native subsetting checks. Both sides of a subset relation retain
+their original field identities even when an inherited or redefining slot
+supplies their values; optional, empty and collection values keep their
+admitted meanings. All population arguments share the caller's one binding
+admission meter.
 ### The replay-request adapter
 
 The runner reads a `replay-request` file with its own decoder in `xtask`,
 because QSL has no byte reader for a replay request (FR-071's wire is an
 in-process shape, and the corpus encoding is corpus-owned, not a product wire).
-The decoder is test-support: it produces a `ReplayRequestWire` and decides
+The decoder produces a `ReplayRequestWire` and decides
 nothing about the request. A document that does not match the closed schema is
 a defect of the corpus, so it is a per-vector `tool-failure`; a request that
 matches the schema and that QSL refuses is a QSL result and is settled as one.
@@ -140,7 +168,8 @@ The published `$defs.ReplayRequest` (the conformance-corpus `schema.json`) has
 14 required properties and is authoritative for the corpus encoding. Its
 `package` is the whole checked-package v2 document (`$ref
 urn:quire:checked-package:v2`), and its `dependencies` is a separate top-level
-array of `DependencyEntry` objects `{identity, sources}` with no other member.
+array of `DependencyEntry` objects with `identity`, `sources` and optional
+`refinement_internals`.
 The adapter reads the request from those members and FR-071 stays unchanged:
 
 - the package's name, `package.name`, is the proved package's name in the
@@ -163,6 +192,26 @@ followed. A dependency entry is `{identity, sources}` (FR-071): it has no
 recompile identifies the dependency package by identity (FR-098). QSpec
 FR-323's `package_id` member of a dependency entry is the QSpec owner's
 prose conflict, reported there.
+An obligation's nullable `model` retains the public owner's exact optional
+identity: `null` becomes `None`, and a string becomes that exact model identity.
+No model identity is synthesized for a function obligation. A nonempty
+`refinement_internals` member in the package lock or a dependency cannot be
+represented by FR-071's current request carrier. That input remains
+`unsupported` and unqualified even if its oracle anticipates that report;
+its refinements are never silently dropped.
+
+The replay-result owner serializes function results without re-evaluation,
+retaining the settled arm, category, optional value, disagreement, witness
+record, source regions, named evaluator charges, evaluated limit and complete
+pre-call stop context. A function Witness result retains an explicit
+`record: null`, because the native function-call settlement has no decisive
+occurrence (ADR-031 SW-7); qualification never invents a separating record.
+Each supplied stop preserves its original phase,
+parameter, event, locus, consumed prefix and typed native cause. Qualification
+compares that result envelope and separately retains the public operation's
+returned bytes. Native inconclusive results keep their category; only an
+actual limit or cancellation is classified as incomplete.
+
 The decoder refuses, as the consumer of QSpec FR-336-AC-8, a
 `bytes_path` that is absent, not listed as `kind: bytes` in the vector, absolute
 or parent-traversing, and a `stage_limits` key that names no FR-255 setting,
@@ -263,6 +312,7 @@ consumer type. A class with no such vector contributes none.
 | FR-350-AC-16 | A `replay-request` file whose `package` is the checked-package document named `orders` with `contract_version` `quire.checked-package/v2`, whose `lock.sources` holds the one `{authority, identity}` entry `("repo", "orders.qsl")`, and whose `dependencies` holds `{identity: "lib/money", sources: [("repo", "money.qsl")]}`, decodes to a request with package name `orders`, that one source and one dependency entry with `identity` `lib/money` and its one source, and no version member; the same file with `package` removed, with `package` set to the string `"orders"`, with `contract_version` set to `quire.checked-package/v1`, and with the dependency entry holding an extra `checked_package` member is each a `tool-failure` with cause `corpus-decode` and pointer `/package`, `/package`, `/package/contract_version` and `/dependencies/0` respectively. | Test (TC-1325) |
 | FR-350-AC-17 | A `byte_provision` row whose `bytes_path` is `missing.bin` (absent from the vector directory), `unlisted.bin` (present but not listed as `kind: bytes`), `/etc/hostname` (absolute) or `../x.bin` (parent-traversing) is a `tool-failure` with cause `corpus-decode` and pointer `/byte_provision/0/bytes_path`, and no request is constructed; a listed `kind: bytes` path is read as raw bytes. | Test (TC-1325) |
 | FR-350-AC-18 | A `stage_limits` map holding the key `depth` (no FR-255 setting of that name) is a `tool-failure` with cause `corpus-decode` and pointer `/stage_limits/depth`; the key `s1.input_bytes` with the value `"1024"` decodes to the entry `("s1.input_bytes", 1024)`. | Test (TC-1325) |
+| FR-350-AC-19 | A compile vector whose source selects its supplied `model` document passes and retains the public compiler's exact output bytes; removing that model gives the compiler's typed refusal rather than an adapter success. The runner exposes passed operation bytes separately from the FR-352 JSON report. | Test (TC-875) |
 
 ## Dependencies
 
