@@ -6592,7 +6592,6 @@ fn tuple_position_rows(
         .collect()
 }
 
-
 /// FR-092 "Model enum shape rows": one row per emitted model-owned enum
 /// declaration, holding the checker's `EnumShape` and each case's variant,
 /// joined to the final declaration and case node ids, cases in the shape's

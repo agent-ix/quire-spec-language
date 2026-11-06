@@ -2369,7 +2369,11 @@ pub(crate) fn node_value_type(
         Ok(projection) => return Ok(projection.value_type().clone()),
         Err(error) => error,
     };
-    if error.code == Code::UnsupportedExactType && is_collection_bounds(&error.form) {
+    if matches!(
+        error.code,
+        Code::UnsupportedExactType | Code::UnavailableIdentityWitness
+    ) && is_collection_bounds(&error.form)
+    {
         return collection_node_type(index, id);
     }
     let unresolved = matches!(
