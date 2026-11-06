@@ -22,7 +22,11 @@ use quire_semantic_value::checking::CheckingLimits;
 use serde_json::json;
 
 #[path = "../../../qsl-semantics/tests/support/tc1070.rs"]
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    clippy::duplicate_mod,
+    reason = "shared TC-1070 fixture constructors are used by sibling integration tests"
+)]
 mod tc1070;
 
 const METER: ScalarLimits = ScalarLimits {
