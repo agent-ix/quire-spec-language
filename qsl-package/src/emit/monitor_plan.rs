@@ -10,7 +10,7 @@
 //! them with the plan's premises. Nothing is read back here: the node form
 //! is read by IR-721.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use quire_contract_model::CheckedNodePathSegment as Segment;
 use quire_contract_model::{CheckedSemanticNodeV2, CheckedTerm};
@@ -731,7 +731,6 @@ pub(super) struct RetainedRows {
     pub(super) selected_source_union_rows: Vec<quire_contract_model::SelectedSourceUnionRow>,
     pub(super) selected_source_record_rows: Vec<super::SelectedSourceRecordRow>,
     pub(super) selected_source_tuple_rows: Vec<quire_contract_model::SelectedSourceTupleRow>,
-    pub(super) selected_source_enum_shape_rows: Vec<super::SelectedSourceEnumShapeRow>,
     pub(super) selected_source_collection_rows: Vec<super::SelectedSourceCollectionRow>,
     pub(super) selected_exact_declaration_rows:
         Vec<quire_contract_model::SelectedExactDeclarationRow>,
@@ -956,25 +955,6 @@ pub(super) fn carry_rows(
             rekey.id(type_node);
         }
     }
-    let mut source_enum_shapes = retained.selected_source_enum_shape_rows.clone();
-    for row in &mut source_enum_shapes {
-        let super::SelectedSourceEnumShapeRow {
-            structural_node,
-            declaration_key: _,
-            shape: _,
-            cases,
-        } = row;
-        rekey.id(structural_node);
-        for case in cases {
-            let super::SelectedSourceEnumShapeCaseRow {
-                case: _,
-                structural_node,
-                member_key: _,
-                variant: _,
-            } = case;
-            rekey.id(structural_node);
-        }
-    }
     let mut source_collections = retained.selected_source_collection_rows.clone();
     for row in &mut source_collections {
         let super::SelectedSourceCollectionRow {
@@ -1088,7 +1068,6 @@ pub(super) fn carry_rows(
         selected_source_union_rows: source_unions,
         selected_source_record_rows: source_records,
         selected_source_tuple_rows: source_tuples,
-        selected_source_enum_shape_rows: source_enum_shapes,
         selected_source_collection_rows: source_collections,
         selected_exact_declaration_rows: exact_declarations,
         selected_exact_field_rows: exact_fields,
@@ -1144,10 +1123,11 @@ pub(super) fn follow_final_positions(
     rows: &mut [quire_contract_model::SelectedSourceTupleRow],
     nodes: &[CheckedSemanticNodeV2],
 ) -> Result<(), EmitRefusal> {
+    let by_id: BTreeMap<&CheckedNodeId, &CheckedSemanticNodeV2> =
+        nodes.iter().map(|node| (&node.node_id, node)).collect();
     for row in rows {
-        let node = nodes
-            .iter()
-            .find(|node| node.node_id == row.structural_node)
+        let node = by_id
+            .get(&row.structural_node)
             .ok_or_else(|| invariant("a source tuple row names a node of the package"))?;
         let CheckedTerm::Aggregate { members } = &node.body else {
             return Err(invariant("a source tuple node's body is an aggregate"));
@@ -1180,10 +1160,12 @@ pub(super) fn follow_final_collections(
     rows: &mut [super::SelectedSourceCollectionRow],
     nodes: &[CheckedSemanticNodeV2],
 ) -> Result<(), EmitRefusal> {
+    let by_id: BTreeMap<&CheckedNodeId, &CheckedSemanticNodeV2> =
+        nodes.iter().map(|node| (&node.node_id, node)).collect();
     let find = |id: &CheckedNodeId| {
-        nodes
-            .iter()
-            .find(|node| &node.node_id == id)
+        by_id
+            .get(id)
+            .copied()
             .ok_or_else(|| invariant("a collection row names a node of the package"))
     };
     for row in rows {
@@ -1275,7 +1257,6 @@ fn finish(
         selected_source_union_rows: rows.selected_source_union_rows,
         selected_source_record_rows: rows.selected_source_record_rows,
         selected_source_tuple_rows: rows.selected_source_tuple_rows,
-        selected_source_enum_shape_rows: rows.selected_source_enum_shape_rows,
         selected_source_collection_rows: rows.selected_source_collection_rows,
         selected_exact_declaration_rows: rows.selected_exact_declaration_rows,
         selected_exact_field_rows: rows.selected_exact_field_rows,
