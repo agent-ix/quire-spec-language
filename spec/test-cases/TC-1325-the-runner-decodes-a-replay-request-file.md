@@ -41,6 +41,12 @@ A nonempty refinement input that
 FR-071 cannot represent stays unsupported even when its expected result is
 copied from that unsupported report.
 
+The typed traversal control retains present, absent and null record slots,
+all four native collection kinds and their element order. It checks that a
+tuple/union declaration is read before its children while a record declaration
+is read after its children. Structural codec fixtures assert encoding only;
+they do not assert admission of a checked declaration or qualify a corpus row.
+
 Tag each test with its AC ids and `TC-1325`.
 
 ## Expected Results

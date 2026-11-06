@@ -126,7 +126,12 @@ AC-8). QSL SHALL consume the input adapters applicable to its public
 operations under that contract and invoke only the corresponding QSL public
 operations: `compile` (FR-027), `format` (FR-003), `run` (FR-100) and
 `replay` (FR-071/FR-098). QSL adds no product request wire or corpus-owned
-encoding. Existing model and object-context admission (FR-084, FR-089,
+encoding. Textual operation, disposition, argument, domain and witness tags
+are read at the declared shared string-edge intake boundaries. Witness tags
+and record-slot tags are decoded once into transient typed traversal state;
+collection state uses the native collection kind. Those grammar tags carry
+no semantic values or identities. Native owner constructors and the witness
+codec remain responsible for semantic admission. Existing model and object-context admission (FR-084, FR-089,
 FR-106), supplied-value limits (FR-277), replay result semantics (FR-072),
 and all other owning admission and refusal rules remain authoritative.
 

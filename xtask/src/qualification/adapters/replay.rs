@@ -730,7 +730,7 @@ fn witness_json(
                         for (field, slot) in array(&value["fields"], pointer)?.iter().zip(slots) {
                             let converted = match slot {
                                 SlotForm::Present => next(&mut children)?,
-                                SlotForm::Absent => json!({"type":"absent"}),
+                                SlotForm::Absent => Value::Null,
                                 SlotForm::Null => json!({"type":"null"}),
                             };
                             fields.push(DeepValue::new(wire_object([
