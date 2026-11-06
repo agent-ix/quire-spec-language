@@ -322,13 +322,16 @@ Model aliases are source type names: `M::Total` resolves to its admitted
 unit-bearing type. Its model `min`/`max` constraints retain their original
 alias authority as member bounds (FR-230), without widening them or bounding
 unrelated values of `U`. `capture targetFull: M::Total` therefore checks.
-**R** still refuses at the quantity-sum boundary of FR-517-AC-20:
-
-- `sum<N>` checks an integer summand only (FR-093's `Query{visit: Sum}` row
-  lowers to `quire.op.collection.sum.integer`), so the `Healthy` invariant's
-  receipt sum over `Quantity<U>` refuses `IllTyped(TypeMismatch)` at the
-  clause, where QSpec FR-145 and FR-322 define `quire.op.collection.sum` per
-  numeric family, the quantity family included.
+`sum<N>` checks a summand of the numeric family of `N` (FR-517-AC-20): an
+integer total takes any integer summand, a rational total any rational, and a
+decimal, float or quantity total a summand of that very decimal type, float
+type or unit (a bounded quantity of the unit is a quantity of it). It lowers
+to the family's `quire.op.collection.sum.<family>` identity (FR-093) and
+evaluates by the family's addition under the value-accounting collection sum
+schedule: a total outside `N`'s domain is FR-145's located undefined outcome,
+and the empty sum is the family's zero, which `N` must admit. So **R**'s
+`Healthy` invariant sums its receipts over `Quantity<U>` without the earlier
+`IllTyped(TypeMismatch)`.
 
 **R** is three packages, one per clock kind, because the emitter admits one
 temporal profile selection per unit and the checker refuses a unit that selects
@@ -361,10 +364,10 @@ the three directories. The packages hold:
 | FR-517-AC-13 | With the spine supporting FR-517-AC-18 to AC-20, **R**'s model declares `Amount` and `Total` as aliases of the unit `ix://quire/unit/U`, the emitted package types them as carried quantities over the node of the declared unit `U`. | Test (TC-1312) |
 | FR-517-AC-14 | With a `sum` query binder admitted inside `recover`, the `recover` condition of `Full` is that the receipt sum equals the captured target, and that of `Partial` is that the receipt sum is positive and below the captured target. | Test (TC-1312) |
 | FR-517-AC-15 | `emit_checked_v2` run with `--clock-selections` naming a file that holds the clock configuration of each temporal clause and compensation template of an **R** package emits the bytes `emit_checked_v2::emit` returns for the equal `Request`; an empty object, a repeated name, an unknown `kind`, a member the configuration does not define and a member it requires that is missing are each a refusal naming the file that writes no bytes, and a name matching no clause or template is the `UnknownClause` refusal that writes no bytes. | Test (TC-1312) |
-| FR-517-AC-16 | Over **R**'s model with `Amount` and `Total` as aliases of `ix://quire/unit/U`, a source whose `pre` compares the `Amount` parameter with `1 U` is written and admitted. Until FR-517-AC-20 is delivered, `sum<Cash>` over the receipts, with `type Cash = Quantity<U>;`, refuses `IllTyped(TypeMismatch)` at its state clause. The change that delivers that criterion deletes this refusal from this criterion and from TC-1312 row 16 in the same change. | Test (TC-1312) |
+| FR-517-AC-16 | Over **R**'s model with `Amount` and `Total` as aliases of `ix://quire/unit/U`, a source whose `pre` compares the `Amount` parameter with `1 U` is written and admitted. `sum<Cash>` over the receipts, with `type Cash = Quantity<U>;`, is written and admitted (FR-517-AC-20). | Test (TC-1312) |
 | FR-517-AC-17 | `Inventory::read` over the bytes `write` produced for **R** returns rows equal to those of the in-process outcome, and over each refusal vector of "The inventory file" returns the stated `InventoryReadError` and no value; two reads of equal bytes return equal results. | Test (TC-1312) |
 | FR-517-AC-18 | A measurement unit that the selected model's types name is part of the emitted package even when no expression of the compiled source reaches it: the package holds its `dimension` and `unit` nodes, and Contract IR's reader admits a package whose model `typeRef` names it. Over **R**'s model with `Amount` and `Total` as aliases of `ix://quire/unit/U`, a source that reads no unit-typed member is written and admitted. | Test (TC-1312) |
-| FR-517-AC-19 | A model alias is a source type name: over **R**'s model, `sum<M::Total>` and `capture targetFull: M::Total` resolve to the alias's unit-bearing type, and neither refuses `UnresolvedTypeName`. The capture checks; until AC-20 is delivered, the sum retains its quantity-sum `IllTyped(TypeMismatch)` boundary after name resolution. The alias's original `min`/`max` bounds remain selected-model member constraints and enforce the same endpoint values as before, without widening them or imposing them on other aliases of `U`. | Test (TC-1312) |
+| FR-517-AC-19 | A model alias is a source type name: over **R**'s model, `sum<M::Total>` and `capture targetFull: M::Total` resolve to the alias's unit-bearing type, and neither refuses `UnresolvedTypeName`. The capture checks, and the sum checks as a quantity sum (FR-517-AC-20). The alias's original `min`/`max` bounds remain selected-model member constraints and enforce the same endpoint values as before, without widening them or imposing them on other aliases of `U`. | Test (TC-1312) |
 | FR-517-AC-20 | `sum<N>` checks a summand of any numeric family QSpec FR-145 and FR-322 give a `quire.op.collection.sum` identity for, the carried-quantity family included, and lowers to that family's identity; over **R**, the `Healthy` invariant's receipt sum over `Quantity<U>` checks and evaluates to the sum of the receipts' magnitudes in `U`. | Test (TC-1312) |
 | FR-517-AC-21 | The handoff directory written for TC-1070 fixture E contains `equality.json`, whose bytes equal the encoding FR-531 states of the rows of the in-process unit, with the three row lists non-empty (the unit holds integer `=` applications) and each row's node members naming nodes of `checked-package.json`; the directory written for the unit of the inventory vector (`unit.native`, which holds no `==` or `!=` application) contains `equality.json` with the three lists empty; two writes of equal requests give byte-identical files. | Test (TC-1312) |
 | FR-517-AC-22 | A writer given a unit whose equality rows name a node the package does not hold returns `Error::Unnameable` and writes nothing, as for `inventory.json`; the written file holds no source text, no digest and no member the encoding of FR-531 does not list. | Test (TC-1312) |
@@ -372,6 +375,6 @@ the three directories. The packages hold:
 
 ## Dependencies
 
-- **Upstream:** the inventory writer (FR-517-AC-11, AC-17) runs the replay spine over the unit and calls `qsl_inventory` over it (FR-514). FR-517-AC-12 needs no spine change: FR-505 admits a Rational value type without a unit, and the criterion fixes only what **R**'s model declares and the source reaches. FR-517-AC-13 is gated on the three spine capabilities of FR-517-AC-18 to AC-20 (the unit a model type names is emitted, a model alias is a source type name, `sum` over a quantity); the quantity-sum refusal remains in FR-517-AC-16. Model-named unit emission and alias name resolution are delivered, while quantity sums remain unmet and are not narrowed away. FR-517-AC-14 holds: the reader admits a binder that a protocol slot introduces itself, such as the `sum` query binder inside `recover`. FR-042-AC-10 and AC-15 (retired), FR-337, FR-383, FR-480,
+- **Upstream:** the inventory writer (FR-517-AC-11, AC-17) runs the replay spine over the unit and calls `qsl_inventory` over it (FR-514). FR-517-AC-12 needs no spine change: FR-505 admits a Rational value type without a unit, and the criterion fixes only what **R**'s model declares and the source reaches. FR-517-AC-13 is gated on the three spine capabilities of FR-517-AC-18 to AC-20 (the unit a model type names is emitted, a model alias is a source type name, `sum` over a quantity), all delivered. FR-517-AC-14 holds: the reader admits a binder that a protocol slot introduces itself, such as the `sum` query binder inside `recover`. FR-042-AC-10 and AC-15 (retired), FR-337, FR-383, FR-480,
   FR-505, FR-514, FR-515, `emit_checked_v2`, `qsl_package::emit_checked_with_temporal_selections`.
 - **Downstream:** quire-protocol IT-001 (QSL-1549).
