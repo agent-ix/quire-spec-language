@@ -1423,14 +1423,11 @@ fn frame_snapshot_bytes(
     value.to_string().into_bytes()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn frame_invocation_bytes(
     label: &qsl_semantics::model::observation::DocumentRef,
     pre_ref: &qsl_semantics::model::observation::DocumentRef,
     post_ref: &qsl_semantics::model::observation::DocumentRef,
-    self_key: &str,
-    created: &[&str],
-    deleted: &[&str],
+    input: FrameClauseInput<'_>,
 ) -> Vec<u8> {
     let population = "ix://example/config-version/config_history";
     let object_ref = |key: &str| json!({"population": population, "key": key});
@@ -1440,7 +1437,7 @@ fn frame_invocation_bytes(
         "model": frame_model_header(),
         "context": "ix://example/config-version/ConfigVersion",
         "operation": "attemptUpdate",
-        "self": {"population": population, "key": self_key},
+        "self": {"population": population, "key": input.self_key},
         "pre": {
             "identity": frame_identity_json(pre_ref),
         },
@@ -1449,10 +1446,38 @@ fn frame_invocation_bytes(
         },
         "parameters": {},
         "result": {"boolean": true},
-        "created": created.iter().map(|key| object_ref(key)).collect::<Vec<_>>(),
-        "deleted": deleted.iter().map(|key| object_ref(key)).collect::<Vec<_>>(),
+        "created": input.created.iter().map(|key| object_ref(key)).collect::<Vec<_>>(),
+        "deleted": input.deleted.iter().map(|key| object_ref(key)).collect::<Vec<_>>(),
     });
     value.to_string().into_bytes()
+}
+
+#[derive(Clone, Copy)]
+struct FrameClauseInput<'a> {
+    clause_name: &'a str,
+    pre_objects: &'a [(&'a str, i64, Option<&'a str>)],
+    post_objects: &'a [(&'a str, i64, Option<&'a str>)],
+    self_key: &'a str,
+    created: &'a [&'a str],
+    deleted: &'a [&'a str],
+}
+
+fn frame_clause_input<'a>(
+    clause_name: &'a str,
+    pre_objects: &'a [(&'a str, i64, Option<&'a str>)],
+    post_objects: &'a [(&'a str, i64, Option<&'a str>)],
+    self_key: &'a str,
+    created: &'a [&'a str],
+    deleted: &'a [&'a str],
+) -> FrameClauseInput<'a> {
+    FrameClauseInput {
+        clause_name,
+        pre_objects,
+        post_objects,
+        self_key,
+        created,
+        deleted,
+    }
 }
 
 /// Runs `clause_name` (`AttemptUpdatePre`/`AttemptUpdatePost`) over an
@@ -1470,82 +1495,50 @@ fn run_frame_clause(
     qsl_semantics::model::observation::AdmissionFailure,
 > {
     run_frame_clause_editing(
-        clause_name,
-        pre_objects,
-        post_objects,
-        self_key,
-        created,
-        deleted,
+        frame_clause_input(
+            clause_name,
+            pre_objects,
+            post_objects,
+            self_key,
+            created,
+            deleted,
+        ),
         |bytes| bytes,
     )
 }
 
 /// [`run_frame_clause`], with the invocation's bytes passed through
 /// `edit_invocation` before they are digested and provisioned.
-#[allow(clippy::too_many_arguments)]
 fn run_frame_clause_editing(
-    clause_name: &str,
-    pre_objects: &[(&str, i64, Option<&str>)],
-    post_objects: &[(&str, i64, Option<&str>)],
-    self_key: &str,
-    created: &[&str],
-    deleted: &[&str],
+    input: FrameClauseInput<'_>,
     edit_invocation: impl FnOnce(Vec<u8>) -> Vec<u8>,
 ) -> Result<
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
     run_frame_clause_limited(
-        clause_name,
-        pre_objects,
-        post_objects,
-        self_key,
-        created,
-        deleted,
+        input,
         edit_invocation,
         qsl_semantics::model::observation::ObservationLimits::default(),
     )
 }
 
 /// [`run_frame_clause_editing`] under the given `limits`.
-#[allow(clippy::too_many_arguments)]
 fn run_frame_clause_limited(
-    clause_name: &str,
-    pre_objects: &[(&str, i64, Option<&str>)],
-    post_objects: &[(&str, i64, Option<&str>)],
-    self_key: &str,
-    created: &[&str],
-    deleted: &[&str],
+    input: FrameClauseInput<'_>,
     edit_invocation: impl FnOnce(Vec<u8>) -> Vec<u8>,
     limits: qsl_semantics::model::observation::ObservationLimits,
 ) -> Result<
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
-    run_frame_clause_with(
-        clause_name,
-        pre_objects,
-        post_objects,
-        self_key,
-        created,
-        deleted,
-        edit_invocation,
-        |bytes| bytes,
-        |bytes| bytes,
-        limits,
-    )
+    run_frame_clause_with(input, edit_invocation, |bytes| bytes, |bytes| bytes, limits)
 }
 
 /// [`run_frame_clause_limited`], with the pre and post snapshots' bytes
 /// passed through `edit_pre` and `edit_post` before they are digested.
-#[allow(clippy::too_many_arguments)]
 fn run_frame_clause_with(
-    clause_name: &str,
-    pre_objects: &[(&str, i64, Option<&str>)],
-    post_objects: &[(&str, i64, Option<&str>)],
-    self_key: &str,
-    created: &[&str],
-    deleted: &[&str],
+    input: FrameClauseInput<'_>,
     edit_invocation: impl FnOnce(Vec<u8>) -> Vec<u8>,
     edit_pre: impl FnOnce(Vec<u8>) -> Vec<u8>,
     edit_post: impl FnOnce(Vec<u8>) -> Vec<u8>,
@@ -1556,12 +1549,7 @@ fn run_frame_clause_with(
 > {
     run_frame_clause_labeled(
         ("pre-snap", "post-snap"),
-        clause_name,
-        pre_objects,
-        post_objects,
-        self_key,
-        created,
-        deleted,
+        input,
         edit_invocation,
         edit_pre,
         edit_post,
@@ -1571,15 +1559,9 @@ fn run_frame_clause_with(
 
 /// [`run_frame_clause_with`], with the pre and post snapshots admitted under
 /// the document references whose identity labels are `labels`.
-#[allow(clippy::too_many_arguments)]
 fn run_frame_clause_labeled(
     labels: (&str, &str),
-    clause_name: &str,
-    pre_objects: &[(&str, i64, Option<&str>)],
-    post_objects: &[(&str, i64, Option<&str>)],
-    self_key: &str,
-    created: &[&str],
-    deleted: &[&str],
+    input: FrameClauseInput<'_>,
     edit_invocation: impl FnOnce(Vec<u8>) -> Vec<u8>,
     edit_pre: impl FnOnce(Vec<u8>) -> Vec<u8>,
     edit_post: impl FnOnce(Vec<u8>) -> Vec<u8>,
@@ -1596,23 +1578,18 @@ fn run_frame_clause_labeled(
     let graph = declarations
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("check refused: {refusals:?}"));
-    let clause = graph.state_clause(clause_name).expect("clause is declared");
+    let clause = graph
+        .state_clause(input.clause_name)
+        .expect("clause is declared");
 
     let pre = frame_label(labels.0);
-    let pre_bytes = edit_pre(frame_snapshot_bytes(&pre, "pre", pre_objects));
+    let pre_bytes = edit_pre(frame_snapshot_bytes(&pre, "pre", input.pre_objects));
     let pre = qsl_semantics::model::observation::DocumentRef { ..pre };
     let post = frame_label(labels.1);
-    let post_bytes = edit_post(frame_snapshot_bytes(&post, "post", post_objects));
+    let post_bytes = edit_post(frame_snapshot_bytes(&post, "post", input.post_objects));
     let post = qsl_semantics::model::observation::DocumentRef { ..post };
     let invocation = frame_label("invocation");
-    let invocation_bytes = edit_invocation(frame_invocation_bytes(
-        &invocation,
-        &pre,
-        &post,
-        self_key,
-        created,
-        deleted,
-    ));
+    let invocation_bytes = edit_invocation(frame_invocation_bytes(&invocation, &pre, &post, input));
     let invocation = qsl_semantics::model::observation::DocumentRef { ..invocation };
 
     let mut snapshots = BTreeMap::new();
@@ -1625,7 +1602,7 @@ fn run_frame_clause_labeled(
         invocations: &invocations,
     };
     let selection = qsl_semantics::model::observation::ClauseSelection {
-        name: clause_name.to_owned(),
+        name: input.clause_name.to_owned(),
         input: qsl_semantics::model::observation::ClauseSelectionInput::Invocation { invocation },
     };
     // The model -> check edge must stay empty (FR-074-AC-3): the caller
@@ -1712,16 +1689,13 @@ fn an_invocation_naming_the_wrong_observation_roles_refuses_wrong_observation() 
         object.insert("post".to_owned(), pre_ref);
         value.to_string().into_bytes()
     };
-    let swapped =
-        run_frame_clause_editing("AttemptUpdatePost", &pre, &post, "child", &[], &[], swap);
+    let swapped = run_frame_clause_editing(
+        frame_clause_input("AttemptUpdatePost", &pre, &post, "child", &[], &[]),
+        swap,
+    );
     assert_frame_refused(swapped, "wrong_snapshot", "wrong-observation", None);
     let doubled = run_frame_clause_editing(
-        "AttemptUpdatePost",
-        &pre,
-        &post,
-        "child",
-        &[],
-        &[],
+        frame_clause_input("AttemptUpdatePost", &pre, &post, "child", &[], &[]),
         post_as_pre,
     );
     assert_frame_refused(doubled, "wrong_snapshot", "wrong-observation", None);
@@ -1750,12 +1724,14 @@ fn run_bound_frame_clause(
     qsl_semantics::model::observation::AdmissionFailure,
 > {
     run_frame_clause_with(
-        clause_name,
-        &[("child", 2, None)],
-        &[("child", 3, None)],
-        "child",
-        &[],
-        &[],
+        frame_clause_input(
+            clause_name,
+            &[("child", 2, None)],
+            &[("child", 3, None)],
+            "child",
+            &[],
+            &[],
+        ),
         |bytes| bytes,
         edit_pre,
         edit_post,
@@ -2930,44 +2906,51 @@ fn run_tc465_with_clauses(
     qsl_semantics::model::observation::AdmissionFailure,
 > {
     run_tc465_with_clauses_under(
-        document,
-        clauses,
-        clause_name,
-        selection,
-        snapshots,
-        invocations,
+        Tc465ClauseInput {
+            document,
+            clauses,
+            clause_name,
+            selection,
+            snapshots,
+            invocations,
+        },
         limits,
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
 }
 
-/// [`run_tc465_with_clauses`] under the model normalization limits
-/// `model_limits`, which also bound observation admission's conformance
-/// walks.
-#[allow(clippy::too_many_arguments)]
-fn run_tc465_with_clauses_under(
-    document: &[u8],
-    clauses: &str,
-    clause_name: &str,
+struct Tc465ClauseInput<'a> {
+    document: &'a [u8],
+    clauses: &'a str,
+    clause_name: &'a str,
     selection: qsl_semantics::model::observation::ClauseSelectionInput,
     snapshots: qsl_semantics::model::observation::DocumentProvision,
     invocations: qsl_semantics::model::observation::DocumentProvision,
+}
+
+/// [`run_tc465_with_clauses`] under the model normalization limits
+/// `model_limits`, which also bound observation admission's conformance
+/// walks.
+fn run_tc465_with_clauses_under(
+    input: Tc465ClauseInput<'_>,
     limits: qsl_semantics::model::observation::ObservationLimits,
     model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits,
 ) -> Result<
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
-    let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
-    let declarations = admit_and_assemble_with_body(document, clauses)
+    let packages = qsl_semantics::model::intake::package_input([input.document]).unwrap();
+    let declarations = admit_and_assemble_with_body(input.document, input.clauses)
         .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));
     let graph = declarations
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("check refused: {refusals:?}"));
-    let clause = graph.state_clause(clause_name).expect("clause is declared");
+    let clause = graph
+        .state_clause(input.clause_name)
+        .expect("clause is declared");
     let provisions = qsl_semantics::model::observation::Provisions {
-        snapshots: &snapshots,
-        invocations: &invocations,
+        snapshots: &input.snapshots,
+        invocations: &input.invocations,
     };
     let clause_facts = qsl_semantics::model::observation::ClauseFacts {
         identity: clause.identity(),
@@ -2983,8 +2966,8 @@ fn run_tc465_with_clauses_under(
         named_populations: clause.named_reads(),
     };
     let selection = qsl_semantics::model::observation::ClauseSelection {
-        name: clause_name.to_owned(),
-        input: selection,
+        name: input.clause_name.to_owned(),
+        input: input.selection,
     };
     // Admission runs on a 512 KiB stack: reading a document never uses the
     // host stack in proportion to its depth (FR-261).
@@ -3198,14 +3181,16 @@ fn run_tc465_invocation_under(
 > {
     let documents = tc465_invocation_documents(mutate_pre, mutate_post, mutate_invocation);
     run_tc465_with_clauses_under(
-        document,
-        TC465_CLAUSES,
-        "VersionUnchanged",
-        qsl_semantics::model::observation::ClauseSelectionInput::Invocation {
-            invocation: documents.invocation,
+        Tc465ClauseInput {
+            document,
+            clauses: TC465_CLAUSES,
+            clause_name: "VersionUnchanged",
+            selection: qsl_semantics::model::observation::ClauseSelectionInput::Invocation {
+                invocation: documents.invocation,
+            },
+            snapshots: documents.snapshots,
+            invocations: documents.invocations,
         },
-        documents.snapshots,
-        documents.invocations,
         limits,
         model_limits,
     )
@@ -3975,12 +3960,14 @@ fn pre_and_post_snapshots_admitted_under_two_reference_pairs_keep_each_identity(
     let admit = |labels: (&str, &str)| {
         run_frame_clause_labeled(
             labels,
-            "AttemptUpdatePost",
-            &pre_objects,
-            &post_objects,
-            "root",
-            &[],
-            &[],
+            frame_clause_input(
+                "AttemptUpdatePost",
+                &pre_objects,
+                &post_objects,
+                "root",
+                &[],
+                &[],
+            ),
             |bytes| bytes,
             |bytes| bytes,
             |bytes| bytes,
@@ -4622,22 +4609,24 @@ fn a_deep_hierarchy_is_judged_by_the_callers_ancestor_steps_not_a_fixed_ceiling(
         let mut snapshots = BTreeMap::new();
         snapshots.insert(selected.clone(), bytes);
         run_tc465_with_clauses_under(
-            &document,
-            TC465_CLAUSES,
-            "ParentOrder",
-            qsl_semantics::model::observation::ClauseSelectionInput::Current {
-                snapshot: selected,
-                anchor: qsl_semantics::model::observation::SelectedAnchor {
-                    kind: qsl_semantics::model::observation::AnchorKind::Handler,
-                    name: "validate".to_owned(),
+            Tc465ClauseInput {
+                document: &document,
+                clauses: TC465_CLAUSES,
+                clause_name: "ParentOrder",
+                selection: qsl_semantics::model::observation::ClauseSelectionInput::Current {
+                    snapshot: selected,
+                    anchor: qsl_semantics::model::observation::SelectedAnchor {
+                        kind: qsl_semantics::model::observation::AnchorKind::Handler,
+                        name: "validate".to_owned(),
+                    },
+                    self_object: Some(qsl_semantics::model::observation::SelectedObject {
+                        population: "ix://example/config-version/config_history".to_owned(),
+                        key: "child".to_owned(),
+                    }),
                 },
-                self_object: Some(qsl_semantics::model::observation::SelectedObject {
-                    population: "ix://example/config-version/config_history".to_owned(),
-                    key: "child".to_owned(),
-                }),
+                snapshots,
+                invocations: BTreeMap::new(),
             },
-            snapshots,
-            BTreeMap::new(),
             qsl_semantics::model::observation::ObservationLimits::default(),
             model_limits,
         )
@@ -5150,11 +5139,14 @@ fn run_precondition_with_member(
 > {
     let pre = [("root", 1, None)];
     let post = [("root", 2, None)];
-    run_frame_clause_editing("AttemptUpdatePre", &pre, &post, "root", &[], &[], |bytes| {
-        let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        value[member] = json!("@raw@");
-        value.to_string().replace("\"@raw@\"", raw).into_bytes()
-    })
+    run_frame_clause_editing(
+        frame_clause_input("AttemptUpdatePre", &pre, &post, "root", &[], &[]),
+        |bytes| {
+            let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            value[member] = json!("@raw@");
+            value.to_string().replace("\"@raw@\"", raw).into_bytes()
+        },
+    )
 }
 
 /// FR-106-AC-11: a precondition reads no further than check 1.3 into an
@@ -5311,12 +5303,14 @@ fn run_wrapping_debit(
     qsl_semantics::model::observation::AdmissionFailure,
 > {
     run_frame_clause_limited(
-        "AttemptUpdatePost",
-        &[("root", 1, None), ("child", 0, Some("root"))],
-        &[("root", 1, None), ("child", -1, Some("root"))],
-        "child",
-        &[],
-        &[],
+        frame_clause_input(
+            "AttemptUpdatePost",
+            &[("root", 1, None), ("child", 0, Some("root"))],
+            &[("root", 1, None), ("child", -1, Some("root"))],
+            "child",
+            &[],
+            &[],
+        ),
         |bytes| bytes,
         limits,
     )
@@ -5366,12 +5360,14 @@ fn the_default_limits_refuse_an_out_of_range_post_state_value() {
 #[test]
 fn an_out_of_range_pre_state_value_refuses_under_witnessing() {
     let result = run_frame_clause_limited(
-        "AttemptUpdatePost",
-        &[("root", 1, None), ("child", 1001, Some("root"))],
-        &[("root", 1, None), ("child", 2, Some("root"))],
-        "child",
-        &[],
-        &[],
+        frame_clause_input(
+            "AttemptUpdatePost",
+            &[("root", 1, None), ("child", 1001, Some("root"))],
+            &[("root", 1, None), ("child", 2, Some("root"))],
+            "child",
+            &[],
+            &[],
+        ),
         |bytes| bytes,
         witness_limits(),
     );
