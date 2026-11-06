@@ -95,3 +95,32 @@ For FND-002, express each new binding as `#[trace("TC-1333", "FR-533-AC-20")]`; 
 ## Validation evidence
 
 `quire validate` accepted this explicit scratch artifact. Targeted specification validation accepted all five changed documents: 5/5 grammar-clean; zero grammar findings. Execution evidence remains pending; no tests or build gates were run by the reviewer.
+
+## Disposition pass 1 scope
+
+Static re-review of frozen 0915ab2f15f26587f51678405d311bcdab72988f. Main rebase documentation outside QSL-1767 is context only. No source edits, builds, tests, global matrix, Kani or new audit were performed.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Static re-review of 0915ab2f15f26587f51678405d311bcdab72988f: blocked composite declarations propagate through native term references and semantic-type reverse edges; only retained record/union candidates reach TypeEnvironment. The selected projected arena is checked with shared TypeEnvironment::check_type before evaluation. Authentic unsupported tuple-payload regressions assert both noninterference and typed no-charge refusal. Post-fix compile/runtime/clippy evidence remains pending. |
+| FND-002 | fixed | Existing legacy tag restored; new FR-533-AC-20 bindings each use the two-ID TC-first attribute. |
+
+### Current assessment
+
+**CONDITIONAL** — both original findings are statically fixed; no new defect found. Post-fix execution evidence is pending.
+
+The candidate set consists only of existing record projections with native record views and authentic joined source-union rows. Unrepresented composite/model-record/tuple/object declarations and projected Composite handles lacking a candidate seed the blocked set. Native reference and semantic-type reverse edges propagate blocking transitively. Each ID enters the pending set once; cycles terminate. A represented recursive strongly connected set with no missing dependency remains admitted. Aliases/containers follow their admitted native references and projected original handles, with no display-name or structural-key fallback. No tuple rows, type interpreter or identity reconstruction is added. Shared TypeEnvironment remains the final declaration validator.
+
+The selected projection checks every node in its arena, including reachable function bodies, using shared nested-type membership. Unused unsupported unions are omitted from the world; selected use of an omitted union becomes MissingTypeRepresentation before evaluation charges. Tests explicitly compare genuine emitter member identities and payload types, so omitting an authored unsupported union cannot make the regression vacuous. Only new trace bindings were required to use TC-first pairs; the pre-existing legacy tag is preserved.
+
+Observed evidence: /tmp/qsl1767-payload-red.log records the two intended pre-fix failures (global closure fault and non-Admission selected failure), with a third existing control passing. The lead reports earlier-head baseline recovery/bare/unit passes. No post-fix compile, green regression run or clippy receipt exists; these are not claimed here.
+
+## Final evidence and narrow integration disposition
+
+Final narrow integration review at 851f257ba19750040e04e2cd2f1c4d846a057c6d: PASS. The added source-record branch consumes native source_record_view, preserving record_key and producer member order, original_member_identity, value_type and presence. record_member_rows pairs these fields from the actual original declaration; this restores source-record membership without names-derived identity, new transport, relaxed type checks or a weakened fixture. Model record_view and source_record_view are distinct native projection families, and both pass through the same closed-composite filter. No new finding was identified.
+
+Observed final logs: recovery 17 passed; bare_package 26 passed; source_union_rows 8 passed; source_record_rows 10 passed — 61 tests, zero failures. Both original high-defect regressions are explicitly green in final-recovery.log; the earlier intended-red log demonstrates both fail on the original bug. Package and root clippy logs finish successfully; the lead reports -D warnings and exit 0. fmt log is empty and the lead reports exit 0. The lead reports eleven changed docs validated with exit 0; the validation log contains module-discovery advisory diagnostics. /tmp/qsl1767-focused.log records all four passing test totals. Logs are /tmp/qsl1767-final-{recovery,bare-package,union-carrier,record-carrier,package-clippy,root-clippy,fmt,spec-validation}.log. No reviewer builds or tests were run. The final combined gate has not run and is not approved by this review.
+
+Both original code-review findings remain fixed; their original text and round-1 dispositions are preserved. No new findings or dispositions are required for already-fixed items. Code review current verdict: **PASS** within the reviewed feature and narrow source-record integration. Gap-analysis retains **CONDITIONAL** solely for the previously unavailable computed matrix; no new global matrix or audit was requested or run. Other four spec methods remain **PASS**.
