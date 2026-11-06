@@ -28,7 +28,8 @@ use quire_semantic_value::unit::{
     CompoundUnitCause, DimensionNode, InvalidCompoundUnit, NominalDeclaration, UnitGraph, UnitNode,
 };
 
-const DIMENSION_VERSION: &str = "quire.dimension-node/v1";
+const DIMENSION_VERSION_V1: &str = "quire.dimension-node/v1";
+const DIMENSION_VERSION_V2: &str = "quire.dimension-node/v2";
 const UNIT_VERSION: &str = "quire.unit-node/v1";
 const COMPOUND_UNIT_VERSION: &str = "quire.value.compound-unit/v1";
 
@@ -47,6 +48,7 @@ struct DimensionDocument {
     version: String,
     owner: NodeOwner,
     qualified_declaration: Vec<String>,
+    base: Option<bool>,
     terms: Vec<DimensionTermDocument>,
 }
 
@@ -60,12 +62,14 @@ fn read_terms<'a>(
         .collect()
 }
 
-/// A `quire.dimension-node/v1` preimage that satisfies the preimage schema.
-/// Empty terms declare a base dimension.
+/// A dimension preimage that satisfies its versioned input schema. In v1,
+/// empty terms declare a base dimension. In v2, `base` keeps an empty derived
+/// dimension distinct from a base dimension.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DimensionPreimage {
     owner: NodeOwner,
     qualified_declaration: Vec<String>,
+    base: bool,
     terms: Vec<(NodeKey, Integer)>,
 }
 
@@ -73,44 +77,78 @@ impl DimensionPreimage {
     /// Read a preimage object; any schema violation is non-canonical.
     #[ix_trace_rs::string_edge]
     pub fn from_json(value: serde_json::Value) -> Result<Self, InvalidSemanticGraph> {
-        let non_canonical = refuse(SemanticGraphCause::NonCanonicalPreimage);
+        let non_canonical = || refuse(SemanticGraphCause::NonCanonicalPreimage);
+        let has_base_field = value
+            .as_object()
+            .is_some_and(|document| document.contains_key("base"));
         let document: DimensionDocument =
-            serde_json::from_value(value).map_err(|_| non_canonical)?;
+            serde_json::from_value(value).map_err(|_| non_canonical())?;
         let terms = read_terms(
             document
                 .terms
                 .iter()
                 .map(|term| (&term.dimension_node_id, term.exponent.as_str())),
         )
-        .filter(|_| {
-            document.version == DIMENSION_VERSION
-                && document.owner.is_well_formed()
-                && is_qualified_name(&document.qualified_declaration)
-        })
-        .ok_or(non_canonical)?;
+        .ok_or_else(non_canonical)?;
+        let base = match document.version.as_str() {
+            DIMENSION_VERSION_V1 if !has_base_field => terms.is_empty(),
+            DIMENSION_VERSION_V2 => document.base.ok_or_else(non_canonical)?,
+            _ => return Err(non_canonical()),
+        };
+        if (base && !terms.is_empty())
+            || !document.owner.is_well_formed()
+            || !is_qualified_name(&document.qualified_declaration)
+        {
+            return Err(non_canonical());
+        }
         Ok(Self {
             owner: document.owner,
             qualified_declaration: document.qualified_declaration,
+            base,
             terms,
         })
     }
 
-    /// Build a preimage from its parts, applying the schema checks
-    /// [`Self::from_json`] applies (`NonCanonicalPreimage`). `terms` name
-    /// base dimensions by node key, in the order the caller keys them:
-    /// ascending by key (checked at [`admit_unit_graph`]). Empty terms
-    /// declare a base dimension.
+    /// Build a preimage, treating empty terms as a base dimension. `terms`
+    /// name base dimensions by node key in ascending order, checked at
+    /// [`admit_unit_graph`]. Use [`Self::new_derived`] when an empty normalized
+    /// map belongs to a derived dimension.
     pub fn new(
         owner: NodeOwner,
         qualified_declaration: Vec<String>,
         terms: Vec<(NodeKey, Integer)>,
     ) -> Result<Self, InvalidSemanticGraph> {
-        if !owner.is_well_formed() || !is_qualified_name(&qualified_declaration) {
+        let base = terms.is_empty();
+        Self::new_with_base(owner, qualified_declaration, terms, base)
+    }
+
+    /// Build a derived-dimension preimage, including one with an empty
+    /// normalized map. `terms` name base dimensions by node key in ascending
+    /// order, checked at [`admit_unit_graph`].
+    pub fn new_derived(
+        owner: NodeOwner,
+        qualified_declaration: Vec<String>,
+        terms: Vec<(NodeKey, Integer)>,
+    ) -> Result<Self, InvalidSemanticGraph> {
+        Self::new_with_base(owner, qualified_declaration, terms, false)
+    }
+
+    fn new_with_base(
+        owner: NodeOwner,
+        qualified_declaration: Vec<String>,
+        terms: Vec<(NodeKey, Integer)>,
+        base: bool,
+    ) -> Result<Self, InvalidSemanticGraph> {
+        if (base && !terms.is_empty())
+            || !owner.is_well_formed()
+            || !is_qualified_name(&qualified_declaration)
+        {
             return Err(refuse(SemanticGraphCause::NonCanonicalPreimage));
         }
         Ok(Self {
             owner,
             qualified_declaration,
+            base,
             terms,
         })
     }
@@ -132,7 +170,7 @@ impl DimensionPreimage {
 
     /// Whether this declares a base dimension.
     pub fn is_base(&self) -> bool {
-        self.terms.is_empty()
+        self.base
     }
 }
 
@@ -412,8 +450,12 @@ pub fn admit_unit_graph(
     let mut keys = BTreeSet::new();
     let mut admitted_dimensions = BTreeMap::new();
     for (preimage, key) in dimensions {
-        let node = DimensionNode::checked(preimage.terms.clone(), preimage.nominal_declaration())
-            .map_err(refuse)?;
+        let node = if preimage.is_base() {
+            DimensionNode::checked(preimage.terms.clone(), preimage.nominal_declaration())
+        } else {
+            DimensionNode::checked_derived(preimage.terms.clone(), preimage.nominal_declaration())
+        }
+        .map_err(refuse)?;
         if preimage.key().ok().as_ref() != Some(&key) {
             return Err(refuse(SemanticGraphCause::StaleKey).into());
         }

@@ -2652,13 +2652,17 @@ impl<'a> Lowering<'a> {
                         NominalPayload::Unit(payload),
                     )
                 }
-                NominalUnitForm::Dimension { terms } => {
+                NominalUnitForm::Dimension { base, terms } => {
                     pending.extend(terms.iter().map(|(base, _)| base.clone()));
                     (
                         QuantityKind::Dimension,
                         "dimension",
                         None,
-                        NominalPayload::Dimension(DimensionPayload::new(terms)),
+                        NominalPayload::Dimension(if base {
+                            DimensionPayload::new(terms)
+                        } else {
+                            DimensionPayload::new_derived(terms)
+                        }),
                     )
                 }
             };

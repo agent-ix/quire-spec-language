@@ -440,9 +440,14 @@ pub(crate) fn package_dimension(
     visiting.pop();
     map.retain(|_, exponent| !exponent.is_zero());
     let terms: Vec<(NodeKey, Integer)> = map.clone().into_iter().collect();
-    let preimage = DimensionPreimage::new(owner, vec![dimension.name.clone()], terms).ok()?;
+    let preimage = if dimension.base {
+        DimensionPreimage::new(owner, vec![dimension.name.clone()], terms)
+    } else {
+        DimensionPreimage::new_derived(owner, vec![dimension.name.clone()], terms)
+    }
+    .ok()?;
     let key = preimage.key().ok()?;
-    if dimension.terms.is_empty() {
+    if dimension.base {
         map.insert(key.clone(), Integer::one());
     }
     Some((key, map, preimage))
@@ -1399,8 +1404,12 @@ pub(super) fn assemble(
                 .get(&form.name.name)
                 .unwrap_or(owner)
                 .node_owner(package_name);
-            let preimage = DimensionPreimage::new(node_owner, vec![form.name.name.clone()], terms)
-                .map_err(|refusal| fault(refusal.into()))?;
+            let preimage = if derived {
+                DimensionPreimage::new_derived(node_owner, vec![form.name.name.clone()], terms)
+            } else {
+                DimensionPreimage::new(node_owner, vec![form.name.name.clone()], terms)
+            }
+            .map_err(|refusal| fault(refusal.into()))?;
             let key = preimage
                 .key()
                 .map_err(|refusal| fault(super::nominal_key_refusal(refusal)))?;

@@ -4316,6 +4316,10 @@ impl<'a> Lowering<'a> {
                     Operands::Two(left, right),
                 )
             }
+            NodeKind::QuantityNegate(operand) => (
+                Keyed::Application(Operator::Unary, plain("quire.op.quantity.negate")),
+                Operands::One(operand),
+            ),
             NodeKind::QuantityPower(base, exponent) => (
                 Keyed::Application(Operator::Binary, plain("quire.op.quantity.pow")),
                 Operands::Two(base, exponent),
@@ -5455,8 +5459,9 @@ impl<'a> Lowering<'a> {
                         let Some(nominal) = self.units.nominal_node(&key) else {
                             return Err(fault(&location, KeyFault::UnheldNominal(key)));
                         };
-                        let quire_semantic_value::unit::NominalUnitForm::Dimension { terms } =
-                            &nominal.form
+                        let quire_semantic_value::unit::NominalUnitForm::Dimension {
+                            terms, ..
+                        } = &nominal.form
                         else {
                             return Err(fault(&location, KeyFault::UnheldNominal(key)));
                         };
@@ -5537,8 +5542,9 @@ impl<'a> Lowering<'a> {
                         let Some(nominal) = self.units.nominal_node(&key) else {
                             return Err(fault(&location, KeyFault::UnheldNominal(key)));
                         };
-                        let quire_semantic_value::unit::NominalUnitForm::Dimension { terms } =
-                            &nominal.form
+                        let quire_semantic_value::unit::NominalUnitForm::Dimension {
+                            terms, ..
+                        } = &nominal.form
                         else {
                             return Err(fault(&location, KeyFault::UnheldNominal(key)));
                         };

@@ -63,6 +63,14 @@ actual target. `check` SHALL preserve the exact owner and source-map region
 of each declaration even when moving it between units does not change its
 package and declaration path.
 
+For source dimensions, the checked nominal payload SHALL preserve the
+explicit base-versus-derived discriminator independently of normalized
+terms. A base dimension and a derived dimension whose terms cancel to empty
+remain distinct declared nodes. The v2 dimension preimage and replay
+admission SHALL preserve their respective `base` values; replay MUST NOT
+infer that a dimension is base solely because its terms are empty. The v1
+preimage's empty-means-base rule remains version-specific.
+
 ### Source enum identity rows
 
 For each source enum declaration node it emits, the `Emission` SHALL carry
@@ -289,6 +297,7 @@ missing profile selections retain FR-383 and FR-218's refusals.
 | FR-092-AC-22 | Emitting a unit that declares `tuple Pair(Integer, Boolean);` and `tuple Triple(Pair, Option<Integer>, Boolean);` gives one `SelectedSourceTupleRow` per tuple. `Triple`'s row names the emitted `composite_type`/`tuple` node; its source authority and identity equal that node's source owner; its qualified declaration is `["Triple"]`; its type handle is the checked declaration's key. Its positions have ordinals 0, 1 and 2 with checked types `Composite(Pair)`, `Option<Integer>` and `Boolean`, and type node ids equal to the node's references in order; position 0's type node is `Pair`'s row node. IR's `with_source_tuple_rows` accepts the rows against the package read back and `project_exact_type` of the tuple node returns `Composite` of the type handle with the complete view, while the same node with no row refuses `UnavailableIdentityWitness` and a row that permutes, drops or adds a position, renumbers an ordinal or re-points a type node refuses `MismatchedIdentityWitness`. A position list that disagrees with the declaration in count, a type node that is not emitted, and an emitted source tuple node that no declared tuple joins to are writer faults; a position the writer re-pointed is named by its final type node. A unit with no source tuple has no tuple row, and every emitted source tuple node has exactly one row. | Test (TC-1021) |
 | FR-092-AC-23 | Emitting a unit that declares `enum Status { READY, DONE }` and `ordered enum Level { LOW, MID, HIGH }` gives one `SelectedSourceEnumShapeRow` per enum. `Status`'s shape is unordered with its variants in case-name byte order `DONE`, `READY`; `Level`'s is ordered with `LOW`, `MID`, `HIGH`. Each row's shape equals the admitted binding's shape, each case's variant is the shape's variant at that rank, the declaration id equals the declaration row's id and each case's node id equals the matching member row's id. A shape with a variant reordered or removed, or with the other ordered flag, is not equal to the row's shape. A case whose member node is not emitted is a writer fault. `AdmittedEnum` exposes the same shape and each case's variant. Collection types have no source row. | Test (TC-1021) |
 | FR-092-AC-24 | Emitting a unit that declares `record R { xs: Sequence<Integer>[0, 3]; s: Set<Boolean>; }` gives one `SelectedSourceCollectionRow` per collection type node. The bounded sequence's row names its emitted `collection_bounds` node, typed by its emitted `sequence` composite node, which references the `integer` element node the row names, with the checked `Sequence<Integer>[0, 3]`; the set's row has equal structural and base nodes, a `set` composite and a `boolean` element. `R`'s source record row binds each field to its collection row's node. A value type that is not a collection, a base that does not reference exactly the row's element and an unemitted node are writer faults; a re-pointed element or a bound typed by another node than its collection is followed or refused from the final nodes. A unit with no collection has none. | Test (TC-1021) |
+| FR-092-AC-25 | With `dimension L; dimension N = L / L; unit m : L = rational(1, 1); unit one : N = rational(1, 1);`, checked and replay-admitted dimension nodes remain distinct: `L` has `base=true` and empty base terms, while `N` has `base=false` and empty derived terms. Their checked payloads and v2 preimages preserve those values; replay reports `L.is_base()` true and `N.is_base()` false. The units reference their respective dimensions and only `one` is dimensionless. | Test (TC-483) |
 
 ## Dependencies
 

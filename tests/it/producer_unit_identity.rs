@@ -67,13 +67,17 @@ fn graph(compiled: &AdmittedCompilation) -> UnitGraph {
         let nominal = table
             .nominal_node(dimension.node())
             .expect("retained dimension");
-        let NominalUnitForm::Dimension { terms } = &nominal.form else {
+        let NominalUnitForm::Dimension { base, terms } = &nominal.form else {
             panic!("a dimension has its admitted nominal form")
         };
         dimensions.insert(
             nominal.key.clone(),
-            DimensionNode::checked(terms.clone(), nominal.declaration.clone())
-                .expect("the producer checked the dimension"),
+            if *base {
+                DimensionNode::checked(terms.clone(), nominal.declaration.clone())
+            } else {
+                DimensionNode::checked_derived(terms.clone(), nominal.declaration.clone())
+            }
+            .expect("the producer checked the dimension"),
         );
     }
     for unit in context.units() {

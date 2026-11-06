@@ -552,6 +552,58 @@ fn stale_keys_and_foreign_owners_refuse_admission() {
     );
 }
 
+/// The v2 dimension preimage keeps an empty derived map distinct from a base
+/// dimension, while v1 retains its empty-means-base interpretation.
+#[trace("QSpec-TC-187")]
+#[test]
+fn dimension_node_v2_admits_an_empty_derived_dimension() {
+    let mut nodes = Nodes::default();
+    let length = nodes.dimension(base_dimension("example-model", "Length"));
+    let length_unit = nodes.unit(root_json("metre", length));
+    let derived = nodes.dimension(json!({
+        "version": "quire.dimension-node/v2",
+        "owner": owner_json("example-model"),
+        "qualified_declaration": ["Example", "Dimensionless"],
+        "base": false,
+        "terms": [],
+    }));
+    let dimensionless_unit = nodes.unit(root_json("one", derived));
+
+    let graph = nodes.admit().expect("v1 base and v2 derived nodes admit");
+    assert!(!graph
+        .unit(length_unit)
+        .unwrap()
+        .dimension()
+        .is_dimensionless());
+    assert!(graph
+        .unit(dimensionless_unit)
+        .unwrap()
+        .dimension()
+        .is_dimensionless());
+}
+
+#[trace("QSpec-TC-187")]
+#[test]
+fn dimension_node_versioned_base_field_is_canonical() {
+    let mut legacy_with_base = base_dimension("example-model", "Length");
+    legacy_with_base["base"] = Value::Null;
+    assert_eq!(
+        DimensionPreimage::from_json(legacy_with_base)
+            .unwrap_err()
+            .cause,
+        SemanticGraphCause::NonCanonicalPreimage
+    );
+
+    let mut v2_without_base = base_dimension("example-model", "Length");
+    v2_without_base["version"] = json!("quire.dimension-node/v2");
+    assert_eq!(
+        DimensionPreimage::from_json(v2_without_base)
+            .unwrap_err()
+            .cause,
+        SemanticGraphCause::NonCanonicalPreimage
+    );
+}
+
 // ---- compound-unit fixtures ---------------------------------------------------
 
 /// A compound-unit preimage over `terms`, sorted by key as the canonical form
