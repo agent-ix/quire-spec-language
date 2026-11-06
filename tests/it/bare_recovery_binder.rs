@@ -46,16 +46,24 @@ const FULL_RECOVER: &str = "sum<M::Total>(receipt in recoveredFull.receipts: rec
 
 /// R with the `Full` recover condition replaced by `condition`.
 fn recipe_with(condition: Option<&str>) -> Recipe {
+    recipe_with_declarations(condition, "")
+}
+
+fn recipe_with_declarations(condition: Option<&str>, declarations: &str) -> Recipe {
     let holder = tempfile::tempdir().expect("directory");
     let mut request = integer_request(holder.path());
-    if let Some(condition) = condition {
+    if condition.is_some() || !declarations.is_empty() {
         let text = std::fs::read_to_string(&request.emit.source).expect("R's unit");
         assert!(
             text.contains(FULL_RECOVER),
             "the recipe text is as expected"
         );
         let unit = holder.path().join("unit.native");
-        let text = text.replace(FULL_RECOVER, condition);
+        let text = text.replace(FULL_RECOVER, condition.unwrap_or(FULL_RECOVER));
+        let text = text.replace(
+            "model M = \"agent-ix/checked-handoff\";",
+            &format!("model M = \"agent-ix/checked-handoff\";\n{declarations}"),
+        );
         std::fs::write(&unit, text).expect("variant");
         request.emit.source = unit;
     }
@@ -590,17 +598,73 @@ fn map_binder_is_no_source() {
 /// A genuine case arm binds its payload inside the recover condition. The
 /// handoff admits, the arm binder is no caller source, and the source and
 /// bytes routes return the authored Boolean values and equal charge logs.
-#[trace("FR-390-AC-68", "FR-533-AC-20", "TC-1071", "TC-1333")]
+#[trace("FR-390-AC-68", "TC-1071", "TC-1333")]
+#[trace("TC-1333", "FR-533-AC-20")]
 #[test]
 fn a_case_arm_binder_in_a_recover_condition_is_admitted_and_evaluates() {
     assert_eq!(
-        assert_case_arm_union(false),
-        assert_case_arm_union(true),
+        assert_case_arm_union("", None),
+        assert_case_arm_union("union Unrelated { Other, Payload(Boolean) }", None),
         "an unselected union does not change the slot's ordered charges"
     );
 }
 
-fn assert_case_arm_union(unrelated: bool) -> Vec<Vec<quire_exact::AdmittedCharge>> {
+#[trace("TC-1333", "FR-533-AC-20")]
+#[test]
+fn an_unrepresented_union_payload_does_not_poison_an_unrelated_slot() {
+    assert_eq!(
+        assert_case_arm_union("", None),
+        assert_case_arm_union(
+            "tuple Pair(Boolean, Boolean);\nunion Unrelated { Other, Payload(Pair) }",
+            Some("Unrelated"),
+        ),
+        "an unselected union with an unrepresented payload leaves values and ordered charges unchanged"
+    );
+}
+
+#[trace("TC-1333", "FR-533-AC-20")]
+#[test]
+fn a_selected_union_with_an_unrepresented_payload_refuses_before_charging() {
+    let recipe = recipe_with_declarations(
+        Some("case Unrelated::Other { Other: true; Payload(p): true; }"),
+        "tuple Pair(Boolean, Boolean);\nunion Unrelated { Other, Payload(Pair) }",
+    );
+    let bare = recipe.bare();
+    let slot = ProtocolSlot {
+        node: recipe.compensation("Full"),
+        member: "recovery.predicate".to_owned(),
+        index: None,
+    };
+    let mut meter = Meter::new(UNLIMITED);
+    let failure = bare
+        .evaluate_protocol_slot(
+            &slot,
+            &ProtocolSupply {
+                binders: Vec::new(),
+                observation: None,
+            },
+            &mut meter,
+        )
+        .expect_err(
+            "the selected union requires its payload's representation even for a nullary variant",
+        );
+    let quire_eval::CallFailure::Admission(failure) = failure else {
+        panic!("the missing projection refuses during admission")
+    };
+    let quire_eval::CallAdmissionFailure::Refused(record) = *failure else {
+        panic!("the missing projection produces a typed refusal")
+    };
+    assert_eq!(
+        record.record.fields.get("reason").map(String::as_str),
+        Some("missing-type-representation")
+    );
+    assert!(meter.admitted_charges().is_empty());
+}
+
+fn assert_case_arm_union(
+    unrelated: &str,
+    omitted_union: Option<&str>,
+) -> Vec<Vec<quire_exact::AdmittedCharge>> {
     use qsl_foundation::SourceIdentity;
     use qsl_replay::spine::{self, DependencyInput, ParseRequest, SpineLimits, SuppliedLibrary};
 
@@ -609,15 +673,11 @@ fn assert_case_arm_union(unrelated: bool) -> Vec<Vec<quire_exact::AdmittedCharge
     let text = std::fs::read_to_string(&request.emit.source).expect("R's unit");
     let unit = holder.path().join("unit.native");
     let condition = "let total = (case Shape::Circle(sum<M::Total>(receipt in recoveredFull.receipts: receipt)) { Empty: targetFull; Circle(r): r; }) in total <= targetFull and total >= targetFull and not activatedFull";
-    let declarations = if unrelated {
-        "model M = \"agent-ix/checked-handoff\";\nunion Shape { Empty, Circle(M::Total) }\nunion Unrelated { Other, Payload(Boolean) }"
-    } else {
-        "model M = \"agent-ix/checked-handoff\";\nunion Shape { Empty, Circle(M::Total) }"
-    };
+    let declarations = format!("model M = \"agent-ix/checked-handoff\";\nunion Shape {{ Empty, Circle(M::Total) }}\n{unrelated}");
     std::fs::write(
         &unit,
         text.replace(FULL_RECOVER, condition)
-            .replace("model M = \"agent-ix/checked-handoff\";", declarations),
+            .replace("model M = \"agent-ix/checked-handoff\";", &declarations),
     )
     .expect("variant");
     request.emit.source = unit;
@@ -711,6 +771,13 @@ fn assert_case_arm_union(unrelated: bool) -> Vec<Vec<quire_exact::AdmittedCharge
             declaration.shape(),
             quire_semantic_value::declaration::CompositeShape::Union(_)
         ) {
+            if Some(declaration.name()) == omitted_union {
+                assert!(
+                    world.types().composite(declaration.key()).is_none(),
+                    "the unsupported union is absent from the closed environment"
+                );
+                continue;
+            }
             assert_eq!(
                 world.types().composite(declaration.key().clone()),
                 Some(declaration),
