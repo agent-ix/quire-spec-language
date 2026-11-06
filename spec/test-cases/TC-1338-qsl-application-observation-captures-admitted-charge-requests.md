@@ -16,7 +16,7 @@ evaluation. The expected charge trace is fixed by the test fixture and the
 evaluator's actual charge calls; it does not read `Meter`'s optional
 diagnostic log.
 
-Scope: FR-090-AC-23, FR-090-AC-24, FR-090-AC-25.
+Scope: FR-090-AC-23, FR-090-AC-24, FR-090-AC-25, FR-090-AC-26.
 
 ## Test Procedure
 
@@ -42,7 +42,7 @@ Scope: FR-090-AC-23, FR-090-AC-24, FR-090-AC-25.
    than 4096 admitted events using explicit sufficient capacities.
 
 Tag tests with pairs such as `#[trace("TC-1338", "FR-090-AC-23")]`, using
-AC-24 and AC-25 for bounded capture and ownership respectively.
+AC-24 for bounded capture, AC-25 for displaced ownership and AC-26 for cleanup.
 
 ## Expected Results
 

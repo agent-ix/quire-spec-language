@@ -648,9 +648,22 @@ undefined cause type.
 | FR-090-AC-20 | The production IEEE-to-rational caller uses `ieee_to_exact(&RationalDomain, Meter) -> Outcome<IeeeExact>` directly. The evaluator contains no outer construction-error arm or `ieee-conversion-rejected` producer row, and the producer inventory retains verification obligations for every remaining producer. | Inspection |
 | FR-090-AC-22 | When an admitted state predicate reads an attribute through a reference to an object absent from the current state, S6a returns `Err(InternalFault)` with stage `S6a`, invariant `attribute-slot-unresolved` and category `Category::InternalFailure`; the public call or evaluate seam preserves it as `CallFailure::Fault`. The evaluator does not panic or manufacture a kernel/family result. | Test (TC-917) |
 | FR-090-AC-23 | Given one checked function-body evaluation, `ApplicationObservation` exposes an `outcome` and ordered `losses` equal to that evaluation, along with its ten final Meter counter totals. Its charge ledger contains the fixture's expected requests admitted by `Meter::charge`, in call order, with each point and every requested counter amount. A completed evaluation and a typed refusal retain their full expected ledger; an incomplete evaluation retains its admitted prefix and omits the known refused request. The fixture's expected requests are the ledger oracle; the test does not read the Meter's optional diagnostic log. The observation adds no outcome or accounting semantics. | Test (TC-1338) |
+| FR-090-AC-24 | Given explicit whole-call event and size-request capacities, an observing call that exceeds either capacity returns a typed admitted-prefix ledger with explicitly partial interval amounts; its evaluation and final global meter totals match an adequately sized capture of the same call. | Test |
+| FR-090-AC-25 | Given an unread caller capture, the observing report returns that capture intact as displaced evidence, including when it was truncated or the observing call fails. | Test |
+| FR-090-AC-26 | After any observing-call return, event capture is disabled until the caller explicitly enables a new capture. | Test |
 
-| FR-090-AC-24 | The observing call SHALL return one owned report on success and failure, preserving the actual evaluation or call failure, completed applications, import availability and function-case accounting. With explicit event and size-request capacities, its ledger SHALL return a typed truncation containing the admitted prefix when either whole-call capacity is exceeded. Denied boundaries count toward capacities but have no ledger row; an overflowing event is omitted whole. Truncation SHALL NOT change evaluation or final meter totals. Complete ledgers retain ordered duplicate size requests, exact work/result amounts and optional reservations from opaque kernel operations as well as QSL operations. | Test |
-| FR-090-AC-25 | Before any observing-call charge, the call SHALL detach and return any caller-owned unread capture intact, including its typed truncation, and enable the explicitly requested capacities. Every normal return, including call failure, SHALL leave capture disabled. A caller wishing to capture subsequent operations SHALL explicitly enable a new capture. Ordinary calls SHALL NOT enable event capture. The report SHALL distinguish final global meter totals from interval amounts over its retained admitted ledger; amounts from a truncated prefix SHALL NOT be described as a complete evaluation interval. | Test |
+The observing API SHALL return one owned report containing the actual evaluation
+or call failure, completed applications, import availability and function-case
+accounting. Capture SHALL start before the call's first meter charge. Every
+boundary, including denial, SHALL count against the explicit whole-call event
+and size-entry capacities. An overflowing event SHALL be omitted whole. Denied
+boundaries SHALL have no admitted ledger row. Complete ledgers SHALL retain the
+canonical exact payload: ordered duplicate size requests, exact work/result
+amounts and optional reservations, including those of opaque kernel operations.
+The observer SHALL detach unread caller capture before enabling its requested
+capacities. Ordinary calls SHALL NOT enable event capture. Final global totals
+SHALL remain distinct from ledger interval amounts: a complete ledger owns the
+complete interval; a typed truncated ledger exposes only admitted-prefix amounts.
 
 ## Dependencies
 

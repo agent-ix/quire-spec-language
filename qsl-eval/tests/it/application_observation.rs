@@ -38,6 +38,10 @@ fn options() -> ApplicationObservationOptions {
 }
 
 fn package(source: &str) -> CheckedPackage {
+    package_with(source, |_| {})
+}
+
+fn package_with(source: &str, configure: impl FnOnce(&mut PackageDeclarations)) -> CheckedPackage {
     let source = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n{source}");
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("a", "u"),
@@ -59,6 +63,7 @@ fn package(source: &str) -> CheckedPackage {
     declarations.ieee_profile = Some(
         admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).expect("IEEE profile"),
     );
+    configure(&mut declarations);
     CheckedPackage::link(
         declarations
             .check(
@@ -283,6 +288,7 @@ fn separate_whole_call_caps_return_typed_prefix_without_affecting_evaluation() {
 }
 
 #[trace("TC-1338", "FR-090-AC-25")]
+#[trace("TC-1338", "FR-090-AC-26")]
 #[test]
 fn displaced_capture_is_intact_and_all_return_paths_leave_capture_disabled() {
     let package = sum_package();
@@ -400,7 +406,7 @@ fn equality_plan_keeps_actual_increment_and_distinct_reservations() {
 #[trace("TC-1338", "FR-090-AC-23")]
 #[test]
 fn opaque_ieee_conversion_retains_losses_and_typed_refusal() {
-    let arguments = || vec![Value::Ieee(IeeeValue::binary64(0x47ef_ffff_f000_0000))];
+    let arguments = || vec![Value::Float(IeeeValue::binary64(0x47ef_ffff_f000_0000))];
     for mode in ["toward-zero", "exact"] {
         let package = package(&format!("function f using v(a: Float64[nearest-even]): Float32[{mode}] pure {{ convert<Float32[{mode}]>(a) }}"));
         let mut meter = Meter::new(UNLIMITED);
@@ -440,7 +446,7 @@ fn opaque_ieee_conversion_retains_losses_and_typed_refusal() {
             .collect();
         assert_eq!(points.first(), Some(&ChargePoint::FunctionCall));
         assert!(points.contains(&ChargePoint::IeeeOperands));
-        assert!(points.contains(&ChargePoint::IeeeRounding));
+        assert!(points.contains(&ChargePoint::IeeeRound));
         assert_totals(&report, &meter);
     }
 }
@@ -471,4 +477,147 @@ fn capture_has_no_diagnostic_4096_event_ceiling() {
     for kind in LimitKind::ALL {
         assert_eq!(ledger.interval_amounts().amount(kind), meter.consumed(kind));
     }
+}
+
+#[trace("TC-1338", "FR-090-AC-24")]
+#[test]
+fn nested_calls_preserve_completed_values_counts_and_whole_call_capacity() {
+    let package = package("function double using v(x: Integer): Integer pure { x + x }\nfunction f using v(x: Integer): Integer pure { 100 + double(x) }");
+    for function_case_limit in [0, 1, 2] {
+        let mut meter = Meter::new(UNLIMITED);
+        let report = observe(
+            &package,
+            "f",
+            vec![int(3)],
+            &mut meter,
+            ApplicationObservationOptions {
+                function_case_limit,
+                ..options()
+            },
+        );
+        assert!(!report.unavailable_imported_call);
+        assert_eq!(report.function_case_limit_reached, function_case_limit < 2);
+        assert_eq!(report.function_evaluations, function_case_limit);
+        if function_case_limit == 2 {
+            assert!(
+                matches!(report.outcome(), Some(FamilyOutcome::Evaluated(Outcome::Completed(value))) if value == &int(106))
+            );
+            assert_eq!(
+                report
+                    .observed
+                    .iter()
+                    .map(|(_, value)| value.clone())
+                    .collect::<Vec<_>>(),
+                [int(6), int(6), int(106)]
+            );
+        } else {
+            assert!(matches!(
+                report.outcome(),
+                Some(FamilyOutcome::Evaluated(Outcome::Incomplete(_)))
+            ));
+            assert!(report.observed.is_empty());
+        }
+        let ledger = report
+            .ledger
+            .as_ref()
+            .expect("complete ledger despite case limit");
+        for kind in LimitKind::ALL {
+            assert_eq!(ledger.interval_amounts().amount(kind), meter.consumed(kind));
+        }
+    }
+    let mut meter = Meter::new(UNLIMITED);
+    let report = observe(
+        &package,
+        "f",
+        vec![int(3)],
+        &mut meter,
+        ApplicationObservationOptions {
+            max_events: 3,
+            ..options()
+        },
+    );
+    let partial = report
+        .ledger
+        .as_ref()
+        .expect_err("nested steps share one capacity");
+    assert_eq!(partial.admitted_prefix().len(), 3);
+    assert!(
+        matches!(report.outcome(), Some(FamilyOutcome::Evaluated(Outcome::Completed(value))) if value == &int(106))
+    );
+}
+
+#[trace("TC-1338", "FR-090-AC-23")]
+#[test]
+fn family_refusal_is_owned_without_projecting_its_cause() {
+    use quire_eval::FamilyResult;
+    use quire_exact::{ObjectId, ObjectReference, Presence, ValueType};
+    use quire_semantic_value::declaration::{
+        FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+    };
+
+    let object_type = crate::support::ids::effective_id(b"observation-object");
+    let package = package_with(
+        "function f using v(a: Obj): Integer pure { a.n }",
+        |declarations| {
+            declarations.types = TypeEnvironment::new(
+                [],
+                [ObjectTypeDeclaration::new(
+                    object_type.clone(),
+                    "Obj",
+                    vec![FieldDeclaration::new(
+                        "n",
+                        ValueType::Integer,
+                        Presence::Required,
+                    )],
+                )],
+            )
+            .expect("object type");
+            declarations.models = vec![crate::support::model::object_model(
+                "observation",
+                "M::Obj",
+                object_type.clone(),
+            )];
+        },
+    );
+    let reference = ObjectReference::new(
+        crate::support::ids::universe_id(b"observation-universe"),
+        object_type,
+        ObjectId::new("missing").expect("object id"),
+    );
+    let objects = ObjectEnvironment::default().with_unresolved_references();
+    let mut meter = Meter::new(UNLIMITED);
+    let report = package.call_observing_applications(
+        &QualifiedName::unqualified("f").expect("name"),
+        vec![Value::Reference(reference)],
+        &objects,
+        &mut meter,
+        options(),
+    );
+    let Some(FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(cause))) = report.outcome()
+    else {
+        panic!("family refusal: {:?}", report.evaluation);
+    };
+    assert_eq!(cause.catalog_code().cause(), "reference-unresolved");
+    let ledger = report.ledger.as_ref().expect("full family-refusal ledger");
+    assert_eq!(
+        ledger
+            .entries()
+            .iter()
+            .map(|entry| entry.request.clone())
+            .collect::<Vec<_>>(),
+        [
+            request(ChargePoint::FunctionCall, &[], 0),
+            request(
+                ChargePoint::ModelNavigate,
+                &[(LimitKind::ValueOccurrences, 1)],
+                0
+            )
+        ]
+    );
+    assert!(report.observed.is_empty());
+    assert_totals(&report, &meter);
+    assert!(matches!(
+        report.into_evaluation().expect("actual result").outcome,
+        FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))
+    ));
 }
