@@ -2800,7 +2800,7 @@ fn emit_model_unit(unit: &str, evidence_identity: Option<&str>) -> (Emission, Va
 /// package by identity alone, with no version, while the emitted model nodes are keyed by the
 /// content-only `ModelOwner`, which carries no version. QSL's I2 read, given the package
 /// as domain package evidence, returns Verified exporting `keep` and `held`.
-#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]
+#[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9", "FR-094-AC-14")]
 #[test]
 fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     let unit = spine_model_without(&[FIELD_ACCESS, CONFORMING_EQUALITY]);
@@ -2861,9 +2861,16 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
                 .expect("a structural model key")
         })
         .collect();
+    // FR-094's Model declaration nodes rule roots each ordinary object type
+    // in the selected document. The fixture contains Gadget, Rock and Widget;
+    // Rock is required even though no source expression names it.
     assert_eq!(
         emitted,
-        BTreeSet::from([model_key("Gadget"), model_key("Widget")])
+        BTreeSet::from([
+            model_key("Gadget"),
+            model_key("Rock"),
+            model_key("Widget")
+        ])
     );
     // QSpec FR-322-AC-132/134/136: exactly one `model_root` for the one row,
     // last in graph order with its `generated` source-map entry last, keyed by
