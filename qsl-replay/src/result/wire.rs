@@ -39,12 +39,16 @@ use crate::hybrid_replay::{
 use crate::identity::TracePosition;
 use quire_semantic_value::catalog::Category;
 
+mod replay;
 mod value;
 use value::{decode_element, encode_element, reference_of, validate_element_shape, Keys};
 
 /// Why a [`DisagreementCause`] did not encode or read.
 #[derive(Debug, thiserror::Error)]
 pub enum CauseCodecError {
+    /// A replay result belongs to another public entry's result contract.
+    #[error("the {0} result uses its owning replay result codec")]
+    UnsupportedReplayArm(&'static str),
     /// The document is not a cause this reader admits: malformed JSON, an
     /// unknown or missing member, an unknown tag, or a `null` member.
     #[error("the cause document does not read: {0}")]
