@@ -78,6 +78,7 @@ fn a_correction_derives_truth_from_its_own_evidence_and_leaves_the_corrected_res
         decision_closure: _,
         surrounding_progress: _,
         surrounding_closure: _,
+        native_valuations: _,
         execution: _,
         completeness: _,
         authoritative_origin: _,
