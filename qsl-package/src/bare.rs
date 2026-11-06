@@ -628,7 +628,10 @@ impl ReadIdentityRows {
             .map(|(index, row)| {
                 let row = row.row()?;
                 if package
-                    .node(&row.model_root)
+                    .graph()
+                    .nodes
+                    .iter()
+                    .find(|node| node.node_id == row.model_root)
                     .is_none_or(|node| !is_model_root(node))
                 {
                     return Err(IdentityFileRefusal::Unjoined {

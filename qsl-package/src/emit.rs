@@ -5098,17 +5098,12 @@ fn timed_body_operands(
     Ok(())
 }
 
-/// QSpec FR-322 `model_root`, FR-322-AC-132 and AC-134: for each selected
-/// domain package, in `CheckedGraph::model_selections` order, one self-typed `model` node
-/// keyed by the selection's identity alone, appended after every
-/// other node, with one `generated` source-map entry appended after every
-/// other entry. The selection records no selecting occurrence, so the entry's
-/// region is the first byte of the checked unit (QSpec: the entry is a
-/// producer assertion no reader verifies, and the published regions are
-/// one-byte placeholders).
+/// Retain every selected population from checking, bound to this emission's
+/// final model-root references. Missing normalized member authority refuses
+/// emission rather than dropping part of a population.
 fn selected_population_catalogs(
     graph: &qsl_semantics::check::CheckedGraph,
-    emitted: &BTreeMap<NodeKey, CheckedNodeId>,
+    emitted: &std::collections::HashMap<NodeKey, CheckedNodeId>,
 ) -> Result<Vec<crate::SelectedPopulationCatalog>, EmitRefusal> {
     graph
         .model_roots()
@@ -5159,6 +5154,9 @@ fn selected_population_catalogs(
         .collect()
 }
 
+/// QSpec FR-322 `model_root`, FR-322-AC-132 and AC-134: append one self-typed
+/// root and generated source-map entry per selected domain package, in
+/// selection order. The placeholder region is the checked unit's first byte.
 fn append_model_roots<'a>(
     ids: &StructuralIds,
     roots: impl Iterator<

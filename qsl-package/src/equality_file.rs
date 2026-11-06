@@ -1725,8 +1725,24 @@ mod tests {
     #[test]
     fn original_value_types_round_trip_without_a_graph_key_substitution() {
         let (_, mut keys) = joins();
-        keys.insert("U", NodeKey::new("original-owner", vec![quire_exact::PathSegment::Text("unit".into())], 17).unwrap());
-        keys.insert("V", NodeKey::new("original-owner", vec![quire_exact::PathSegment::Text("record".into())], 23).unwrap());
+        keys.insert(
+            "U",
+            NodeKey::new(
+                "original-owner",
+                vec![quire_exact::PathSegment::Text("unit".into())],
+                17,
+            )
+            .unwrap(),
+        );
+        keys.insert(
+            "V",
+            NodeKey::new(
+                "original-owner",
+                vec![quire_exact::PathSegment::Text("record".into())],
+                23,
+            )
+            .unwrap(),
+        );
         for wanted in every_value_type(&keys) {
             let wire = OriginalValueType::of(&wanted).expect("the Exact type encodes");
             let bytes = serde_json::to_vec(&wire).unwrap();
@@ -1734,9 +1750,16 @@ mod tests {
             assert_eq!(read.value().unwrap(), wanted);
             assert_eq!(serde_json::to_vec(&read).unwrap(), bytes);
         }
-        let wire = serde_json::to_value(OriginalValueType::of(&ValueType::Composite(keys["V"].clone())).unwrap()).unwrap();
-        assert_eq!(wire["node"], qsl_foundation::node_wire::node_key_to_json(&keys["V"]).unwrap());
-        let mut bad = wire; bad["node"]["extra"] = json!(true);
+        let wire = serde_json::to_value(
+            OriginalValueType::of(&ValueType::Composite(keys["V"].clone())).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            wire["node"],
+            qsl_foundation::node_wire::node_key_to_json(&keys["V"]).unwrap()
+        );
+        let mut bad = wire;
+        bad["node"]["extra"] = json!(true);
         let decoded: OriginalValueType = serde_json::from_value(bad).unwrap();
         assert!(decoded.value().is_err());
     }

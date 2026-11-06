@@ -38,7 +38,7 @@ Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-21. **R** is the pa
 
 | 18 | 19 | a genuine final source-record emission, including renamed members and nested opaque types | required `/2` rows round-trip unchanged; native IR record join and `source_record_view` equal the producer row |
 | 19 | 20 | old format; missing required arrays; repeated/unknown members; malformed opaque key; stale/foreign/missing/conflicting record rows | typed refusal, no partial identity result and no structural-key success fallback |
-| 20 | 21 | multiple selected roots, unused populations, alias-normalized population member types, changed snapshots | complete ordered original catalog round-trips unchanged, effective TYPE owners are absent |
+| 20 | 21 | multiple selected roots, unused populations, normalized effective population member types, no snapshot input | complete ordered original catalog round-trips unchanged, effective TYPE owners are absent |
 
 Tag the test `#[trace("TC-1331", "FR-531-AC-1", ..., "FR-531-AC-21")]`.
 
