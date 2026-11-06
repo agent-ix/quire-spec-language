@@ -850,3 +850,47 @@ fn the_subject_occurrence_selects_the_emitted_clause_claim_after_the_writer_reke
         "each subject selects its own clause"
     );
 }
+
+/// FR-092-AC-22 / TC-1021 step 12: the tuple rows a plan-root emission
+/// retains follow the writer's rekey, and the strict reader's source-tuple
+/// join accepts them; a row that permutes its positions is refused.
+#[trace("TC-1021", "FR-092-AC-22")]
+#[test]
+fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them() {
+    use quire_contract_model::{ExactTypeProjectionErrorCode, SelectedExactIdentities};
+
+    let extra = "tuple Pair(Integer, Boolean);\n\
+        tuple Triple(Pair, Option<Integer>, Boolean);\n\
+        function hold using v(t: Triple): Boolean pure { true }";
+    let unit = unit_source(ROOT_SHAPES[0], extra, true, "on origin");
+    let root = root_of(&unit, "C", &target()).expect("the plan root");
+    let package = admitted(&root);
+    let rows = root.emission.selected_source_tuple_rows().to_vec();
+    let declared = |name: &str| {
+        rows.iter()
+            .any(|row| row.qualified_declaration.last().map(AsRef::as_ref) == Some(name))
+    };
+    assert!(declared("Pair") && declared("Triple"), "{rows:?}");
+    let joined = SelectedExactIdentities::empty()
+        .with_source_tuple_rows(&package, rows.clone(), 10_000_000)
+        .expect("IR joins the retained source tuple rows");
+    for row in &rows {
+        let projected = package
+            .project_exact_type(&row.structural_node, &joined, 10_000_000)
+            .expect("the tuple projects");
+        assert_eq!(projected.source_tuple_view(), Some(row));
+    }
+    let triple = rows
+        .iter()
+        .find(|row| row.qualified_declaration.last().map(AsRef::as_ref) == Some("Triple"))
+        .expect("Triple's row");
+    let mut permuted = triple.clone();
+    permuted.positions.swap(0, 2);
+    let error = SelectedExactIdentities::empty()
+        .with_source_tuple_rows(&package, [permuted], 10_000_000)
+        .expect_err("permuted positions are refused");
+    assert_eq!(
+        error.code,
+        ExactTypeProjectionErrorCode::MismatchedIdentityWitness
+    );
+}

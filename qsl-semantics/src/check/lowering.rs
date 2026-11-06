@@ -328,6 +328,26 @@ impl SemanticNode {
             .collect()
     }
 
+    /// QSpec FR-440 "Tuple type node": a tuple type node's positions in
+    /// declared order, each as the node its bare reference names. `None` for
+    /// every node whose body is not that shape: a record's members are
+    /// bindings and a union's are groups, so neither reads as a tuple.
+    pub fn tuple_position_nodes(&self) -> Option<Vec<NodeKey>> {
+        if self.content.node_tag != NodeTag::CompositeType {
+            return None;
+        }
+        let BodyTerm::Aggregate(AggregateTerm { members }) = &self.content.body else {
+            return None;
+        };
+        members
+            .iter()
+            .map(|member| match member {
+                MemberTerm::Leaf(leaf) => leaf.reference_target()?.admitted().cloned(),
+                MemberTerm::Binding(_) | MemberTerm::Group(_) => None,
+            })
+            .collect()
+    }
+
     /// FR-092 "Function nodes": a function node's body expression node, read
     /// from its `body` binding. `None` for every node that is not a function
     /// node and for a function node whose body is not a keyed reference.
