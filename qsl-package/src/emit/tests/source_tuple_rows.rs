@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-092-AC-22 and FR-092-AC-23: an emitted source-owned tuple carries one
-//! IR `SelectedSourceTupleRow` whose positions are in declaration order with
-//! the final type node and checked type of each, and an emitted source enum
-//! carries one `SelectedSourceEnumShapeRow` holding the checked variant shape
-//! joined to the final declaration and case nodes. IR joins the tuple rows
-//! and refuses a row that permutes, drops, adds or re-points a position.
+//! FR-092-AC-22 to AC-24: an emitted source-owned tuple carries one IR
+//! `SelectedSourceTupleRow` with its ordered positions, an emitted source enum
+//! carries the checked shape and per-case variants in IR's enum rows, and a
+//! collection type node is paired with the checker's collection type. IR joins
+//! the tuple and enum rows and refuses rows that disagree.
 
 use quire_contract_model::{
     ExactTypeProjectionErrorCode, SelectedExactIdentities, SelectedSourceTupleRow,
