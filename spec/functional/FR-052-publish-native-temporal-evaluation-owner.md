@@ -97,8 +97,13 @@ same predecessor rule as AC-12. QSL's rule applies only to a correction relation
 carried by this native route; it grants no authority over an IR bridge join's
 predecessor or supersession lineage, which Contract IR owns.
 
-This native report contract is distinct from FR-516's quire-protocol
-request/result types.
+The native `CheckedSubject` binds an actual checked-package occurrence, its
+admitted valuation relation and the evaluation request. The strict reader uses
+that relation as its support authority and the request ledger as its direct
+predecessor authority. The native evaluator invokes the existing checked-package
+temporal evidence engine; the retired artifact evaluator is named
+`evaluate_artifact_v2`. This native report contract is distinct from FR-516's
+quire-protocol request/result types.
 
 FR-043 owns temporal meaning; FR-044 owns activation and captures. The retired
 M-6d request/result API criteria remain historical and do not retire these
