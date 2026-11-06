@@ -28,7 +28,7 @@ use quire_exact::{
 };
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{
-    CheckedEquality, EqualityOperand, EqualityOperator, FieldRef,
+    CheckedEquality, EqualityOperand, EqualityOperator, FieldRef, TypeEnvironment,
 };
 use quire_semantic_value::location::{Location, Origin};
 
@@ -48,6 +48,14 @@ pub struct ReaderProtocolProjection {
 }
 
 impl ReaderProtocolProjection {
+    /// Admission against the bare world's closed declarations uses the same
+    /// nested-type membership check as the source environment.
+    pub(crate) fn has_unrepresented_types(&self, types: &TypeEnvironment) -> bool {
+        self.nodes
+            .iter()
+            .any(|node| types.check_type(&node.value_type).is_err())
+    }
+
     /// Index of the selected root node.
     pub fn root(&self) -> usize {
         self.root

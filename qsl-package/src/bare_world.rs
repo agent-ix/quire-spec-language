@@ -10,7 +10,12 @@
 //! profile is the lock's selection of the profile law. Source unions retain
 //! the original producer's sealed members and positional payload types.
 
-use quire_contract_model::SelectedExactIdentity;
+use std::collections::{BTreeMap, BTreeSet};
+
+use quire_contract_model::{
+    CheckedNodeId, CheckedNodeKind, CompositeTypeForm, ModelForm, SelectedExactIdentity,
+};
+use quire_exact::ValueType;
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment, UnionMemberDeclaration,
@@ -51,6 +56,59 @@ fn fault(invariant: &'static str) -> BareSelectionFailure {
     BareSelectionFailure::from(crate::protocol_selection::SlotSelectionFailure::Fault(
         InternalFault::new("FR-533", invariant),
     ))
+}
+
+/// Keep the candidates whose native dependency closure can be represented.
+/// Native references carry the topology; no Exact type is reconstructed from
+/// a name or walked by a second type interpreter.
+fn closed_composites(
+    package: &BarePackage<'_>,
+    candidates: Vec<(&CheckedNodeId, CompositeDeclaration)>,
+) -> Vec<CompositeDeclaration> {
+    let represented_nodes: BTreeSet<_> = candidates.iter().map(|(node, _)| *node).collect();
+    let represented_handles: BTreeSet<_> = candidates
+        .iter()
+        .map(|(_, declaration)| declaration.key())
+        .collect();
+    let mut reverse: BTreeMap<&CheckedNodeId, Vec<&CheckedNodeId>> = BTreeMap::new();
+    let mut blocked = BTreeSet::new();
+    let mut pending = Vec::new();
+    for node in &package.package().graph().nodes {
+        let id = &node.node_id;
+        let requires_declaration = matches!(
+            package.package().node_kind(id),
+            Some(CheckedNodeKind::CompositeType(
+                CompositeTypeForm::Record | CompositeTypeForm::Tuple | CompositeTypeForm::Union
+            )) | Some(CheckedNodeKind::Model(
+                ModelForm::RecordValueType | ModelForm::TupleValueType | ModelForm::ObjectType
+            ))
+        );
+        let missing_handle = package.exact_type_projections().get(id)
+            .and_then(|projection| projection.as_ref().ok())
+            .is_some_and(|projection| matches!(projection.value_type(), ValueType::Composite(key) if !represented_handles.contains(key)));
+        if (requires_declaration && !represented_nodes.contains(id)) || missing_handle {
+            blocked.insert(id);
+            pending.push(id);
+        }
+        reverse.entry(&node.semantic_type).or_default().push(id);
+        if let Some(term) = package.package().term(id) {
+            for dependency in term.reference_targets() {
+                reverse.entry(dependency).or_default().push(id);
+            }
+        }
+    }
+    while let Some(missing) = pending.pop() {
+        for parent in reverse.get(missing).into_iter().flatten() {
+            if blocked.insert(*parent) {
+                pending.push(*parent);
+            }
+        }
+    }
+    candidates
+        .into_iter()
+        .filter(|(node, _)| !blocked.contains(node))
+        .map(|(_, declaration)| declaration)
+        .collect()
 }
 
 impl BarePackage<'_> {
@@ -95,10 +153,13 @@ impl BarePackage<'_> {
                     )
                 })
                 .collect();
-            composites.push(CompositeDeclaration::new(
-                view.record_key().clone(),
-                row.original_identity.as_ref(),
-                CompositeShape::Record(fields),
+            composites.push((
+                &row.structural_node,
+                CompositeDeclaration::new(
+                    view.record_key().clone(),
+                    row.original_identity.as_ref(),
+                    CompositeShape::Record(fields),
+                ),
             ));
         }
         for union in identities.source_union_rows() {
@@ -118,13 +179,16 @@ impl BarePackage<'_> {
                     )
                 })
                 .collect();
-            composites.push(CompositeDeclaration::new(
-                union.type_handle.clone(),
-                union.qualified_declaration.join("::"),
-                CompositeShape::Union(members),
+            composites.push((
+                &union.structural_node,
+                CompositeDeclaration::new(
+                    union.type_handle.clone(),
+                    union.qualified_declaration.join("::"),
+                    CompositeShape::Union(members),
+                ),
             ));
         }
-        let types = TypeEnvironment::new(composites, Vec::new())
+        let types = TypeEnvironment::new(closed_composites(self, composites), Vec::new())
             .map_err(|_| fault("bare-composites-are-a-closed-environment"))?;
         let ieee = qsl_semantics::value::DefinitionRole::IeeeProfile.identity();
         Ok(BareWorld {
