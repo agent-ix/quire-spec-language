@@ -30,6 +30,7 @@ use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, Category};
 
 mod protocol_corpus;
 mod protocol_mutation_manifest;
+mod read_limit_successors;
 
 fn node_ref(label: &str) -> Value {
     json!({"package": "pkg", "path": label.split("::").skip(1).collect::<Vec<_>>(), "ordinal": 0})
@@ -2460,6 +2461,8 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                         "exponent": if dimension_name == "Area" { "2" } else { "1" }
                     }]);
                     dimension["dependencies"] = json!([base_id]);
+                    // QSpec FR-322-AC-387: a dimension with terms is derived.
+                    dimension["body"]["base"] = json!(false);
                 }
                 let dimension_id = dimension["node_id"].clone();
                 dimension["semantic_type"] = dimension_id.clone();

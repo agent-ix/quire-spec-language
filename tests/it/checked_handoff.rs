@@ -918,20 +918,138 @@ fn the_signed_64_extrema_are_package_values_within_their_declared_bounds() {
 
 /// FR-517-AC-12: `Exact` carries the extreme rationals
 /// `9223372036854775807/9223372036854775806` and
-/// `-9223372036854775808/9223372036854775807`. The spine admits a unitless
-/// Rational value type (FR-505, QSL-1522 Done); R's model and sources do not
-/// declare `Ratio` or `Exact` yet, which QSL-1693 adds.
-#[trace("FR-517-AC-12", "TC-1312")]
+/// `-9223372036854775808/9223372036854775807` in each of R's three packages.
+/// Both unitless model types are reached, and the independent reader exposes
+/// each literal with its original bounded Rational type.
+#[trace("TC-1312", "FR-517-AC-12")]
 #[test]
-#[ignore = "open: QSL-1693 (R fixture): FR-505 admits a unitless Rational, but R's model and sources declare no Ratio or Exact at all"]
 fn the_extreme_rationals_are_package_values() {
-    let (_holder, out) = written("event_position", Corpus::None, &Double::default());
-    let text = String::from_utf8(tree(&out)["checked-package.json"].clone()).unwrap();
-    for rational in [
-        "9223372036854775807/9223372036854775806",
-        "-9223372036854775808/9223372036854775807",
-    ] {
-        assert!(text.contains(rational), "{rational}");
+    use quire_contract_model::{
+        BoundedDomainForm, CheckedLiteralValue, CheckedTerm, LiteralKind, ScalarTypeForm,
+    };
+
+    let ratio_bounds = [-1, 1, 1, 2];
+    let exact_bounds = [i64::MIN, i64::MAX, 1, i64::MAX];
+    for kind in KINDS {
+        let (_holder, out) = written(kind, Corpus::None, &Double::default());
+        let files = tree(&out);
+        let model: Value = serde_json::from_slice(&files["models/0.json"]).unwrap();
+        for (name, expected) in [("Ratio", ratio_bounds), ("Exact", exact_bounds)] {
+            let identity = format!("ix://agent-ix/checked-handoff/{name}");
+            let declaration = model["types"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|ty| ty["identity"] == identity)
+                .expect("the handoff's model declares the Rational type");
+            assert_eq!(declaration["scalar"], "rational", "{kind}: {name}");
+            assert!(declaration.get("unit").is_none(), "{kind}: {name}");
+            let constraints: BTreeMap<_, _> = declaration["constraints"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|constraint| {
+                    (
+                        constraint["keyword"].as_str().unwrap(),
+                        constraint["operands"]["value"].as_i64().unwrap_or_else(|| {
+                            constraint["operands"]["value"]
+                                .as_str()
+                                .expect("wide bounds use canonical decimal strings")
+                                .parse::<i64>()
+                                .expect("declared bound is an exact signed-64 integer")
+                        }),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                constraints,
+                BTreeMap::from([
+                    ("minNumerator", expected[0]),
+                    ("maxNumerator", expected[1]),
+                    ("minDenominator", expected[2]),
+                    ("maxDenominator", expected[3]),
+                ]),
+                "{kind}: {name}'s declared bounds are unchanged"
+            );
+        }
+
+        let held = evidence(&request(kind, Corpus::None)).unwrap();
+        let package = admitted(&files["checked-package.json"], &held);
+        let mut rational_literals = BTreeMap::new();
+        for node in &package.graph().nodes {
+            let Some(literal) = node.body.literal_read() else {
+                continue;
+            };
+            if literal.kind != LiteralKind::Rational {
+                continue;
+            }
+            let CheckedLiteralValue::Rational {
+                numerator,
+                denominator,
+            } = literal.value
+            else {
+                panic!("a Rational literal has an exact Rational value")
+            };
+            assert_eq!(literal.type_id, &node.semantic_type);
+            assert_eq!(
+                package.node_kind(literal.type_id),
+                Some(CheckedNodeKind::BoundedDomain(
+                    BoundedDomainForm::RationalRange
+                ))
+            );
+            let domain = package
+                .graph()
+                .nodes
+                .iter()
+                .find(|node| &node.node_id == literal.type_id)
+                .expect("the literal's bounded Rational type is in its package");
+            assert_eq!(
+                package.node_kind(&domain.semantic_type),
+                Some(CheckedNodeKind::ScalarType(ScalarTypeForm::Rational))
+            );
+            let CheckedTerm::Aggregate { members } = &domain.body else {
+                panic!("{kind}: the bounded Rational has an aggregate of bounds")
+            };
+            let names = [
+                "numerator_min",
+                "numerator_max",
+                "denominator_min",
+                "denominator_max",
+            ];
+            assert_eq!(members.len(), names.len());
+            let bounds: Vec<_> = members
+                .iter()
+                .zip(names)
+                .map(|(member, expected_name)| {
+                    let CheckedTerm::Binding { name, value } = member else {
+                        panic!("{kind}: each Rational bound is named")
+                    };
+                    assert_eq!(name.as_ref(), expected_name);
+                    let bound = value.literal_read().expect("the bound is a typed literal");
+                    assert_eq!(
+                        package.node_kind(bound.type_id),
+                        Some(CheckedNodeKind::ScalarType(ScalarTypeForm::Integer))
+                    );
+                    let CheckedLiteralValue::Integer(value) = bound.value else {
+                        panic!("{kind}: each Rational bound is an exact integer")
+                    };
+                    value.to_string()
+                })
+                .collect();
+            rational_literals.insert(format!("{numerator}/{denominator}"), bounds);
+        }
+        for (value, expected) in [
+            ("-1/2", ratio_bounds),
+            ("1/2", ratio_bounds),
+            ("9223372036854775807/9223372036854775806", exact_bounds),
+            ("-9223372036854775808/9223372036854775807", exact_bounds),
+        ] {
+            assert_eq!(
+                rational_literals.get(value),
+                Some(&expected.map(|bound| bound.to_string()).to_vec()),
+                "{kind}: {value} is emitted with the model's bounded type"
+            );
+        }
     }
 }
 

@@ -1489,7 +1489,7 @@ fn an_undeclared_key_or_handle_is_refused() {
 /// take no budget, limit or receipt parameter and return none. The explicit
 /// budget of `a_formula_whose_expansion_exceeds_the_budget_is_refused` is the
 /// test-only entry to the same walk the default bounds.
-#[trace("FR-515-AC-31")]
+#[trace("FR-515-AC-31", "FR-527-AC-25")]
 #[test]
 fn the_owner_reads_take_no_budget_and_return_no_receipt() {
     use crate::checked_views::{
@@ -1505,5 +1505,19 @@ fn the_owner_reads_take_no_budget_and_return_no_receipt() {
     let back: Result<ClauseOccurrence, ViewRefusal> = view.occurrence_of(handle.expect("declared"));
     assert_eq!(back, Ok(key));
     let support: Result<Classification, MappingRefusal> = mapping_support(&view, Closure::Complete);
-    assert!(support.is_ok());
+    let first = support.expect("the clause classifies");
+    // Same view, same classification on a second call: no receipt or spent
+    // budget changes the answer.
+    assert_eq!(mapping_support(&view, Closure::Complete), Ok(first));
+    // `MappingRefusal` holds no work-limit variant: this match is exhaustive
+    // over its only variant.
+    match MappingRefusal::NoProfileSelection {
+        MappingRefusal::NoProfileSelection => {}
+    }
+    // The work bound is the view's: one expansion past it refuses at view
+    // construction, not in `mapping_support`.
+    assert_eq!(
+        crate::checked_views::temporal_subject_within(&package, &id, 0).err(),
+        Some(ViewRefusal::FormulaTooLarge)
+    );
 }
