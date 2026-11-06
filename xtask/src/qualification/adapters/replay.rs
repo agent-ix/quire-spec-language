@@ -884,11 +884,11 @@ mod depth_tests {
         let WitnessValue::Record {
             declaration: actual,
             fields,
-        } = native
+        } = &native
         else {
             panic!("record form is retained")
         };
-        assert_eq!(actual, key);
+        assert_eq!(actual, &key);
         assert_eq!(
             fields
                 .iter()
