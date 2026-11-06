@@ -194,10 +194,18 @@ emitted element type node that composite references, and the checked type
 with its kind, element and cardinality bound. `check` reads the type from the
 collection being lowered, never from package bytes or node forms. A writer
 that re-points the element, or the bound's base, SHALL carry the final node
-in the row. A value type that is not a collection, a collection node that
-does not reference exactly the element, a bounded domain not typed by its
-collection node and a node that is not emitted are writer faults. A map has
-no type node, so it has no row. Rows are written in ascending order of their
+in the row. A value type that is not a collection or a map, a collection node
+that does not reference exactly the element, a bounded domain not typed by its
+collection node and a node that is not emitted are writer faults.
+
+A map is a collection of this kind. Its row holds the same fields, with the
+checked `ValueType::Map`, the emitted value type node as the element node and
+the emitted key type node as a further key node. A sequence, set, bag or
+ordered-set row has no key node. A map row whose base node does not reference
+exactly the key and then the value (the `key` and `value` bindings, in that
+order), or whose key node is absent, is a writer fault, as is a key node on a
+row whose type is not a map. A writer that re-points the key SHALL carry the
+final key node in the row. Rows are written in ascending order of their
 nodes' keys.
 
 ### Type nodes
@@ -215,6 +223,8 @@ identity-preimage spellings.
 | `Option<T>` | `composite_type` / `option` | itself | reference to `T` |
 | a collection `K<T>` | `composite_type` / collection form | itself | reference to `T` |
 | bounded collection `K<T>[min,max]` | `bounded_domain` / `collection_bounds` | `K<T>` | `min`, `max` bindings |
+| `Map<Text, V>` | `composite_type` / `map` | itself | `key` binding referencing the unbounded Text scalar node, then `value` binding referencing `V` (QSpec FR-322 "Derived type forms and forwarding") |
+| bounded map `Map<Text, V>[min,max]` | `bounded_domain` / `collection_bounds` | `Map<Text, V>` | `min`, `max` bindings |
 | `Quantity<u, C>` | `scalar_type` / `carried_quantity` | itself | `unit`, `carrier` and `rounding` bindings; its structural path is `[scalar_type, carried_quantity, U, C, "rounding", T, mode]` with `U` the unit node, `C` the carrier node, `T` the text type of the `rounding` literal and `mode` its rounding mode (QSpec FR-322 "Derived type forms and forwarding") |
 | declared record | `composite_type` / `record` | itself | fields in declaration order; an optional field has an `optional` group |
 | declared tuple | `composite_type` / `tuple` | itself | element references in position order |
@@ -309,6 +319,7 @@ missing profile selections retain FR-383 and FR-218's refusals.
 | FR-092-AC-25 | With `dimension L; dimension N = L / L; unit m : L = rational(1, 1); unit one : N = rational(1, 1);`, checked and replay-admitted dimension nodes remain distinct: `L` has `base=true` and empty base terms, while `N` has `base=false` and empty derived terms. Their checked payloads and v2 preimages preserve those values; replay reports `L.is_base()` true and `N.is_base()` false. The units reference their respective dimensions and only `one` is dimensionless. | Test (TC-483) |
 | FR-092-AC-26 | Emitting a unit that selects a domain model with a variant type of cases `Beta` and `Alpha` gives one `SelectedModelEnumShapeRow` for it. Its shape is unordered with the variants in case-name byte order `Alpha`, `Beta`, each case's variant is the shape's variant at that rank, the declaration id equals the model enum declaration row's id and each case's node id and original identity equal the matching member row's. A shape with a variant reordered, removed or added is not equal to the row's shape. A declaration whose case set differs from its shape, or a case whose variant is not at its rank, is a writer fault. | Test (TC-1021) |
 | FR-092-AC-27 | `Quantity<m, Decimal[-100, 100; 2, 2; exact]>`, `Quantity<m, Int[-2, 2]>` and `Quantity<m, Int[-2, 2; nearest-even]>` lower to `carried_quantity` nodes whose structural paths hold the unit node, the carrier node, `"rounding"`, the text type node and the mode in that order, and the `Decimal[-100, 100; 2, 2; exact]` carrier's `decimal_range` path repeats its equal `scale_min` and `scale_max` text, as QSpec's `dec_cents` vector does; a repeated operand node is written once. The checked-package reader admits each package, and a carried node whose path is truncated is refused `invalid_package`/`invalid-derived-shape`. | Test (TC-413) |
+| FR-092-AC-28 | `Map<Text, Boolean>`, `Map<Text, Int[0, 9]>` and `Map<Text, Boolean>[1, 4]` lower to self-typed `composite_type`/`map` nodes whose bodies are the `key` binding, a reference to the bare Text scalar node, then the `value` binding, a reference to the value type's node; the two `Map<Text, Boolean>` types are one node and the `Int[0, 9]` map is another, and the bounded map's `collection_bounds` domain is typed by the `Map<Text, Boolean>` node. Emitting a unit with `record R { m: Map<Text, Boolean>[1, 4]; n: Map<Text, Int[0, 9]>; }` gives one `SelectedSourceCollectionRow` per map whose checked type is the `ValueType::Map`, whose element node is the value node and whose key node is the Text node, and a sequence's row has no key node. A map row with no key node, a key node on a collection row, a base that does not reference the key then the value, and an unemitted key are writer faults; a re-pointed key or value is followed from the final nodes. | Test (TC-1021) |
 
 
 ## Dependencies

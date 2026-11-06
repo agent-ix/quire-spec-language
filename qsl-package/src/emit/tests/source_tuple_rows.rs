@@ -521,7 +521,7 @@ fn a_collection_row_that_disagrees_with_its_nodes_is_a_writer_fault() {
         join(collection, Some(vec![other]), &emitted_ids),
         Err(EmitRefusal::SourceMapInvariant)
     );
-    // A map is not a collection.
+    // A map row with no key node is not a collection row.
     let mut mixed = collection.clone();
     mixed.value_type = ValueType::map(quire_exact::MapType::new(ValueType::Boolean, None));
     assert_eq!(
@@ -569,5 +569,137 @@ fn a_collection_row_that_disagrees_with_its_nodes_is_a_writer_fault() {
     assert!(
         crate::emit::monitor_plan::follow_final_collections(&mut [bounded], &nodes).is_err(),
         "a bound over another node than the collection"
+    );
+}
+
+/// A `composite_type`/`map` body: the `key` binding, then the `value` binding.
+fn map_body(key: &CheckedNodeId, value: &CheckedNodeId) -> CheckedTerm {
+    serde_json::from_value(json!({
+        "term": "aggregate",
+        "members": [
+            {"term": "binding", "name": "key",
+             "value": {"term": "reference", "target": id_json(key)}},
+            {"term": "binding", "name": "value",
+             "value": {"term": "reference", "target": id_json(value)}},
+        ],
+    }))
+    .expect("a map body")
+}
+
+/// FR-092-AC-28: a map's row joins its key and value nodes, and every
+/// disagreement between the row, the checked type and the base node's operands
+/// is a writer fault.
+#[trace("FR-092-AC-28", "TC-1021")]
+#[test]
+fn a_map_row_pairs_the_key_and_value_nodes_and_refuses_disagreement() {
+    let (package, _, _) = emitted(COLLECTIONS);
+    let graph = package.graph().semantic_graph();
+    let emitted_ids: HashMap<NodeKey, CheckedNodeId> = graph
+        .nodes()
+        .map(|node| (node.key(), node_id(node.key())))
+        .collect();
+    let mut keys = graph.source_collections().map(|(_, c)| c.element.clone());
+    let (key, value) = (
+        keys.next().expect("a key node"),
+        keys.next().expect("a value node"),
+    );
+    let (structural, collection) = graph.source_collections().next().expect("a collection");
+    let map_type = ValueType::map(quire_exact::MapType::new(ValueType::Boolean, None));
+    let map = qsl_semantics::check::SourceCollection {
+        value_type: map_type.clone(),
+        base: collection.base.clone(),
+        element: value.clone(),
+        key: Some(key.clone()),
+    };
+    let structural = node_id(structural.clone());
+    let join = |c: &qsl_semantics::check::SourceCollection,
+                refs: Option<Vec<NodeKey>>,
+                ids: &HashMap<NodeKey, CheckedNodeId>| {
+        crate::emit::collection_row(&structural, c, refs, ids)
+    };
+    let both = Some(vec![key.clone(), value.clone()]);
+    let row = join(&map, both.clone(), &emitted_ids).expect("a map row");
+    assert_eq!(row.key_node, Some(node_id(key.clone())));
+    assert_eq!(row.element_node, node_id(value.clone()));
+    assert_eq!(row.value_type, map_type);
+
+    let fault = Err(EmitRefusal::SourceMapInvariant);
+    // The base names the value before the key, or only the value.
+    assert_eq!(
+        join(&map, Some(vec![value.clone(), key.clone()]), &emitted_ids),
+        fault
+    );
+    assert_eq!(join(&map, Some(vec![value.clone()]), &emitted_ids), fault);
+    // A map with no key node, and a collection with one.
+    let mut keyless = map.clone();
+    keyless.key = None;
+    assert_eq!(join(&keyless, both.clone(), &emitted_ids), fault);
+    assert_eq!(
+        join(&keyless, Some(vec![value.clone()]), &emitted_ids),
+        fault
+    );
+    let mut keyed = collection.clone();
+    keyed.key = Some(key.clone());
+    assert_eq!(
+        join(
+            &keyed,
+            Some(vec![key.clone(), collection.element.clone()]),
+            &emitted_ids
+        ),
+        fault
+    );
+    // A key that was not emitted.
+    let mut without = emitted_ids.clone();
+    without.remove(&key);
+    assert_eq!(join(&map, both, &without), fault);
+}
+
+/// FR-092-AC-28: the final nodes decide a map row's key and value, and a base
+/// that is not the `key` then `value` bindings is a writer fault.
+#[trace("FR-092-AC-28", "TC-1021")]
+#[test]
+fn a_map_row_follows_its_final_key_and_value_nodes() {
+    let (_, emission, _) = emitted(COLLECTIONS);
+    let bounded = emission
+        .selected_source_collection_rows()
+        .iter()
+        .find(|row| row.structural_node != row.base_node)
+        .expect("a bounded collection")
+        .clone();
+    let (key, value) = (
+        bounded.element_node.clone(),
+        bounded.structural_node.clone(),
+    );
+    let mut row = bounded.clone();
+    row.key_node = Some(bounded.base_node.clone());
+    let mut nodes = emission.wire_nodes.clone();
+    for node in &mut nodes {
+        if node.node_id == bounded.base_node {
+            node.body = map_body(&key, &value);
+        }
+    }
+    let mut followed = vec![row.clone()];
+    crate::emit::monitor_plan::follow_final_collections(&mut followed, &nodes)
+        .expect("a map base follows");
+    assert_eq!(followed[0].key_node, Some(key.clone()));
+    assert_eq!(followed[0].element_node, value);
+
+    // A map row over a collection-shaped base, and a collection row over a
+    // map-shaped base, are writer faults.
+    let mut unchanged = emission.wire_nodes.clone();
+    assert!(
+        crate::emit::monitor_plan::follow_final_collections(&mut [row.clone()], &unchanged)
+            .is_err()
+    );
+    for node in &mut unchanged {
+        if node.node_id == bounded.base_node {
+            node.body = map_body(&key, &value);
+        }
+    }
+    let mut collection_row = row;
+    collection_row.key_node = None;
+    assert!(
+        crate::emit::monitor_plan::follow_final_collections(&mut [collection_row], &unchanged)
+            .is_err()
     );
 }

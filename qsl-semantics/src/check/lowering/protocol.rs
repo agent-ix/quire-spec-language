@@ -425,6 +425,7 @@ fn bounded_carries(carries: &ValueType) -> bool {
         | ValueType::Float(_)
         | ValueType::Text(_) => true,
         ValueType::Collection(collection) => collection.bound().is_some(),
+        ValueType::Map(map) => map.bound().is_some(),
         ValueType::Boolean
         | ValueType::Integer
         | ValueType::String
@@ -437,7 +438,6 @@ fn bounded_carries(carries: &ValueType) -> bool {
         | ValueType::Quantity(_)
         | ValueType::BoundedQuantity(_)
         | ValueType::CarriedQuantity(_)
-        | ValueType::Map(_)
         | ValueType::Population(_) => false,
     }
 }
