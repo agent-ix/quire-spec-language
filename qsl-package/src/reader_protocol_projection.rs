@@ -2400,7 +2400,9 @@ pub(crate) fn node_value_type(
                 .ok_or_else(|| fault("reader-string-type-has-checked-form"))?;
             Ok(ValueType::String)
         }
-        Some((WireTag::CompositeType, WireForm::Record)) if unresolved => {
+        Some((WireTag::CompositeType, WireForm::Record))
+            if unresolved || error.code == Code::UnavailableIdentityWitness =>
+        {
             let declaration = at.ok_or_else(|| fault("reader-record-type-error-has-node"))?;
             let key = match selected(declaration) {
                 Some(Identity::Record(key)) => Some(key.clone()),
