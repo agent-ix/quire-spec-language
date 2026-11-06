@@ -17,7 +17,13 @@ pre BeforeApply using v on M::Workflow::apply { amount >= 1 }
 post AfterApply using v on M::Workflow::apply { result }
 
 temporal Due using t over (view: M::Workflow) clock "events" on origin {
-    always[0,30] holds(L::Ready(view.ready))
+    always[0,30] holds(
+        L::Ready(view.ready)
+        and L::RatioBounded(rational(-1, 2))
+        and L::RatioBounded(rational(1, 2))
+        and L::ExactBounded(rational(-9223372036854775808, 9223372036854775807))
+        and L::ExactBounded(rational(9223372036854775807, 9223372036854775806))
+    )
 }
 temporal DueLate using t over (view: M::Workflow) clock "events" on origin {
     always[0,60] holds(L::Ready(view.ready))

@@ -921,10 +921,12 @@ fn the_signed_64_extrema_are_package_values_within_their_declared_bounds() {
 /// `-9223372036854775808/9223372036854775807` in each of R's three packages.
 /// Both unitless model types are reached, and the independent reader exposes
 /// each literal with its original bounded Rational type.
-#[trace("FR-517-AC-12", "TC-1312")]
+#[trace("TC-1312", "FR-517-AC-12")]
 #[test]
 fn the_extreme_rationals_are_package_values() {
-    use quire_contract_model::{CheckedLiteralValue, LiteralKind, SelectedExactIdentities};
+    use quire_contract_model::{
+        BoundedDomainForm, CheckedLiteralValue, CheckedTerm, LiteralKind, ScalarTypeForm,
+    };
 
     let ratio_bounds = [-1, 1, 1, 2];
     let exact_bounds = [i64::MIN, i64::MAX, 1, i64::MAX];
@@ -989,21 +991,52 @@ fn the_extreme_rationals_are_package_values() {
                 panic!("a Rational literal has an exact Rational value")
             };
             assert_eq!(literal.type_id, &node.semantic_type);
-            let projected = package
-                .project_exact_type(literal.type_id, &SelectedExactIdentities::empty(), 256)
-                .expect("the reader projects the literal's bounded Rational type");
-            let quire_exact::ValueType::Rational(domain) = projected.value_type() else {
-                panic!("{kind}: the literal is a bounded Rational")
-            };
-            rational_literals.insert(
-                format!("{numerator}/{denominator}"),
-                [
-                    domain.numerator().lower().to_string(),
-                    domain.numerator().upper().to_string(),
-                    domain.denominator().lower().to_string(),
-                    domain.denominator().upper().to_string(),
-                ],
+            assert_eq!(
+                package.node_kind(literal.type_id),
+                Some(CheckedNodeKind::BoundedDomain(
+                    BoundedDomainForm::RationalRange
+                ))
             );
+            let domain = package
+                .graph()
+                .nodes
+                .iter()
+                .find(|node| &node.node_id == literal.type_id)
+                .expect("the literal's bounded Rational type is in its package");
+            assert_eq!(
+                package.node_kind(&domain.semantic_type),
+                Some(CheckedNodeKind::ScalarType(ScalarTypeForm::Rational))
+            );
+            let CheckedTerm::Aggregate { members } = &domain.body else {
+                panic!("{kind}: the bounded Rational has an aggregate of bounds")
+            };
+            let names = [
+                "numerator_min",
+                "numerator_max",
+                "denominator_min",
+                "denominator_max",
+            ];
+            assert_eq!(members.len(), names.len());
+            let bounds: Vec<_> = members
+                .iter()
+                .zip(names)
+                .map(|(member, expected_name)| {
+                    let CheckedTerm::Binding { name, value } = member else {
+                        panic!("{kind}: each Rational bound is named")
+                    };
+                    assert_eq!(name.as_ref(), expected_name);
+                    let bound = value.literal_read().expect("the bound is a typed literal");
+                    assert_eq!(
+                        package.node_kind(bound.type_id),
+                        Some(CheckedNodeKind::ScalarType(ScalarTypeForm::Integer))
+                    );
+                    let CheckedLiteralValue::Integer(value) = bound.value else {
+                        panic!("{kind}: each Rational bound is an exact integer")
+                    };
+                    value.to_string()
+                })
+                .collect();
+            rational_literals.insert(format!("{numerator}/{denominator}"), bounds);
         }
         for (value, expected) in [
             ("-1/2", ratio_bounds),
@@ -1013,7 +1046,7 @@ fn the_extreme_rationals_are_package_values() {
         ] {
             assert_eq!(
                 rational_literals.get(value),
-                Some(&expected.map(|bound| bound.to_string())),
+                Some(&expected.map(|bound| bound.to_string()).to_vec()),
                 "{kind}: {value} is emitted with the model's bounded type"
             );
         }
