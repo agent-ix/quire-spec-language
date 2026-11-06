@@ -162,6 +162,34 @@ impl BarePackage<'_> {
                 ),
             ));
         }
+        for row in identities.source_record_rows() {
+            let Some(Ok(projection)) = self.exact_type_projections().get(&row.structural_node)
+            else {
+                continue;
+            };
+            let Some(record) = projection.source_record_view() else {
+                continue;
+            };
+            let fields = record
+                .members
+                .iter()
+                .map(|member| {
+                    FieldDeclaration::new(
+                        member.original_member_identity.as_ref(),
+                        member.value_type.clone(),
+                        member.presence,
+                    )
+                })
+                .collect();
+            composites.push((
+                &row.structural_node,
+                CompositeDeclaration::new(
+                    record.record_key.clone(),
+                    record.qualified_declaration.join("::"),
+                    CompositeShape::Record(fields),
+                ),
+            ));
+        }
         for union in identities.source_union_rows() {
             if !matches!(
                 self.exact_type_projections().get(&union.structural_node),
