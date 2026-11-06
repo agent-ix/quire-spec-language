@@ -613,8 +613,8 @@ fn check_tc134(unit: &str) -> Result<(), Vec<qsl_semantics::check::CheckRefusal>
     "FR-449-AC-3",
     "FR-449-AC-4",
     "FR-449-AC-5",
+    "FR-054-AC-1",
     "FR-054-AC-2",
-    "FR-054-AC-3",
     "FR-054-AC-4",
     "FR-513-AC-11"
 )]
