@@ -1131,6 +1131,38 @@ struct ScopeIndex {
     units: BTreeMap<String, quire_exact::UnitId>,
 }
 
+/// Compound units a checked stage formed, each identified once when the
+/// stage was checked. Evaluation and later clause checking seed their unit
+/// scope from it without re-identifying or copying a table (FR-142).
+#[derive(Clone, Debug, Default)]
+pub struct FormedUnits(Vec<IdentifiedUnit>);
+
+impl FormedUnits {
+    /// Identify every unit of `table` once.
+    ///
+    /// # Errors
+    ///
+    /// As [`IdentifiedUnit::new`].
+    pub fn identify(
+        table: &UnitTable,
+    ) -> Result<Self, quire_semantic_value::semantic_node::IdentityRefusal> {
+        table
+            .ids()
+            .filter_map(|id| table.get(id))
+            .map(|unit| IdentifiedUnit::new(unit.clone()))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Self)
+    }
+
+    /// Record every unit in `scope`, which keeps the ones its package does
+    /// not already hold.
+    pub fn seed(&self, scope: &mut UnitScope<'_>) {
+        for unit in &self.0 {
+            scope.form(unit.clone());
+        }
+    }
+}
+
 /// The units `graph` declares by their declared name, read from `declared`,
 /// the table built over the same graph.
 fn unit_ids_by_name(
@@ -2737,6 +2769,12 @@ impl<'a> Typer<'a> {
     /// The name each slot was bound under, indexed by slot.
     pub(crate) fn slot_names(&self) -> &[String] {
         &self.slot_names
+    }
+
+    /// Seed this typing pass with the checked graph's retained compound
+    /// units so an externally supplied frame can name one as a value type.
+    pub(crate) fn include_formed_units(&mut self, formed: &FormedUnits) {
+        formed.seed(&mut self.units);
     }
 
     /// Every compound unit this pass formed (FR-094: kept until lowering

@@ -155,15 +155,18 @@ fn unsupported_projection(unsupported: &qsl_package::UnsupportedView) -> CallFai
     )))
 }
 
-/// FR-358: evaluate `node`, a closed subexpression of a checked function
-/// body (it reads no local), to its outcome under `meter`. `slots` is the
-/// function's evaluation slot count, so a `let` inside the subexpression
-/// finds its slot. The object environment is empty: a closed expression
-/// reads no object.
-pub fn evaluate_closed(
+/// FR-142 compound conversion evaluation: run a checked subtree in its
+/// original frame, with the checked stage's retained formed-unit table.
+/// `arguments` are the genuine values for the function's parameter slots;
+/// the checked frame's `slots` count preserves local-slot addressing.
+/// Callers admit bindings against the checked function before this evaluator
+/// entry, as they do for ordinary checked function evaluation.
+pub fn evaluate_closed_with_frame(
     package: &CheckedPackage,
     node: CheckedNode<'_>,
     slots: usize,
+    arguments: Vec<Value>,
+    formed_units: &qsl_semantics::check::FormedUnits,
     meter: &mut Meter,
 ) -> Result<Evaluation, InternalFault> {
     let objects = ObjectEnvironment::default();
@@ -174,7 +177,8 @@ pub fn evaluate_closed(
         meter,
         package.graph().dispatch_tables(),
     )
-    .run(node, slots, Vec::new())
+    .with_formed_units(formed_units)
+    .run(node, slots, arguments)
 }
 
 /// FR-187 (ADR-024 PM-5): evaluate the reward `reward` of `package` on

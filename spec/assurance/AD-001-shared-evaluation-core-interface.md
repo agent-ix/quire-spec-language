@@ -67,7 +67,7 @@ input crate. `CheckedPackage` is owned by `qsl-package`. The public evaluator
 trait `CheckedPackageEvaluation` and its `call` / `evaluate` implementation are
 in `qsl-eval/src/value/expression/mod.rs`; the implementation constructs an
 internal `Machine` over the checked graph, object environment, meter and
-dispatch tables. `evaluate_closed` is an additional internal-to-QSL entry
+dispatch tables. `evaluate_closed_with_frame` is an additional internal-to-QSL entry
 point. There is no host-function registration API in the current QSL
 evaluator. These source locations explain why the new leaf cannot simply
 depend on today's evaluator or checker crates.

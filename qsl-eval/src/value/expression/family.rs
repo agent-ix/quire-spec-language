@@ -245,6 +245,7 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
             meter,
             env.package.graph().dispatch_tables(),
         )
+        .with_formed_units(function.formed_units)
         .run(function.body, function.slots, arguments)?;
         env.location = evaluation.location;
         env.losses = evaluation.losses;

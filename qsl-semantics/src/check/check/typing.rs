@@ -779,6 +779,25 @@ impl<'a> Typer<'a> {
         Ok(std::mem::take(&mut self.body).finish(root))
     }
 
+    /// Type `expression` and append an explicit quantity conversion to the
+    /// caller-supplied checked target type. This is the programmatic route
+    /// for compound-unit targets that source `TypeForm` cannot name.
+    pub(crate) fn infer_conversion(
+        &mut self,
+        expression: &Expression,
+        target: &ValueType,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let source = self.run(Goal::Infer(expression.root(), None, location.clone()))?;
+        self.convert(target, source, location)
+    }
+
+    /// Finish the current body at `root` without consuming the typing state;
+    /// the caller still reads its slots and retained formed units.
+    pub(crate) fn finish_body(&mut self, root: Node) -> CheckedBody {
+        std::mem::take(&mut self.body).finish(root)
+    }
+
     /// Type `expression`, with `hint` as the expected type of a contextual
     /// literal.
     pub(crate) fn infer(

@@ -29,6 +29,7 @@ mod clause_read_paths;
 mod collection_algebra;
 mod collection_queries;
 mod composite_values;
+mod compound_conversion_frame;
 mod decimal_source_forms;
 mod dispatch_calls;
 mod duplicate_preserving_queries;

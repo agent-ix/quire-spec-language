@@ -8,7 +8,7 @@
 //! the checked body itself: a literal operand's value is the closed
 //! subexpression, evaluated.
 
-use qsl_eval::value::evaluate_closed;
+use qsl_eval::value::evaluate_closed_with_frame;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::CheckedNode;
 use quire_checked::node::NodeKind;
@@ -148,8 +148,15 @@ pub(super) fn locate(
             return Err(refused());
         }
         let mut meter = Meter::new(super::argument::UNLIMITED);
-        let evaluation = evaluate_closed(package, checked, state.slots, &mut meter)
-            .map_err(ReplayRefusal::Fault)?;
+        let evaluation = evaluate_closed_with_frame(
+            package,
+            checked,
+            state.slots,
+            Vec::new(),
+            state.formed_units,
+            &mut meter,
+        )
+        .map_err(ReplayRefusal::Fault)?;
         let FamilyOutcome::Evaluated(Outcome::Completed(value)) = evaluation.outcome else {
             return Err(fault("literal-operand-evaluates-to-a-value"));
         };

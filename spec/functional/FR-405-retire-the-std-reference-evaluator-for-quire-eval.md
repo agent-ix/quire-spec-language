@@ -145,7 +145,7 @@ This requirement places three constraints on that entry:
 The switch SHALL be one change. The change that routes the production
 evaluation paths to `quire-eval` also deletes the std reference evaluator.
 The production evaluation paths are `CheckedPackageEvaluation::call` and
-`evaluate`, `call_supplied`, `evaluate_closed`, the clause, clause-set,
+`evaluate`, `call_supplied`, `evaluate_closed_with_frame`, the clause, clause-set,
 frame, separation and value-invariant entries, and the simulation,
 automaton, hyper, temporal, fairness and model-subject engines. FR-403's
 separate `quire-eval` entry, which the differential runs use, is not a

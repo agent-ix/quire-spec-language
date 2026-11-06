@@ -28,7 +28,7 @@ use super::slot_admission;
 use node_source::NodeSource;
 use qsl_foundation::diagnostic::{kernel_refusal_record, Locus, RefusalRecord};
 use qsl_foundation::source::provenance::SourceRegion;
-use qsl_semantics::check::{CheckedGraph, DispatchTable, Operator, Scope, Slot};
+use qsl_semantics::check::{CheckedGraph, DispatchTable, FormedUnits, Operator, Scope, Slot};
 #[cfg(test)]
 use qsl_semantics::check::{CheckedNode, NodeId};
 use qsl_semantics::model::object_environment::{ObjectEnvironment, ObservedRead};
@@ -791,6 +791,13 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             dispatch_tables,
             EvaluationFamily::Value,
         )
+    }
+
+    /// Retain compound units formed by the checker for this exact checked
+    /// body. Evaluation may read those identities at conversion boundaries.
+    pub(crate) fn with_formed_units(mut self, formed: &FormedUnits) -> Self {
+        formed.seed(&mut self.units);
+        self
     }
 
     /// A value-family evaluator that records each completed application and

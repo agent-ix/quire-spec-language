@@ -194,6 +194,7 @@ pub use type_invariant::{
 use crate::model::domain_package::DomainPackageRef;
 use std::collections::{BTreeMap, BTreeSet};
 
+pub use check::FormedUnits;
 use check::{bind_parameters, NamedScope, Typer};
 // `Signature` is public only under `test-support`: the layer-5 evaluator's
 // tests build the resolved `Signature` `declarations_for` takes as
@@ -500,6 +501,9 @@ struct CheckedFunction {
     identity: quire_exact::NodeKey,
     body: CheckedBody,
     slots: usize,
+    /// Compound units the body's checked typing formed; evaluation needs
+    /// these identities to read compound conversion sources and targets.
+    formed_units: FormedUnits,
 }
 
 impl DebugWith for CheckedFunction {
@@ -508,11 +512,13 @@ impl DebugWith for CheckedFunction {
             identity,
             body,
             slots,
+            formed_units,
         } = self;
         f.debug_struct("CheckedFunction")
             .field("identity", &NodeKeyDebug(identity, table))
             .field("body", &body)
             .field("slots", &slots)
+            .field("formed_units", &formed_units)
             .finish()
     }
 }
@@ -606,6 +612,7 @@ fn function_state<'a>(
         name: &signature.name,
         body: function.body.root(),
         slots: function.slots,
+        formed_units: &function.formed_units,
     }
 }
 
@@ -717,6 +724,9 @@ pub struct CheckedGraph {
     /// structural node id the graph's nodes carry.
     package_name: String,
     scope: Scope,
+    /// Every compound unit retained from this check stage for later checked
+    /// subexpression evaluation and standalone clause checking.
+    evaluation_units: FormedUnits,
     functions: CheckedFunctions,
     dispatch_tables: Vec<DispatchTable>,
     /// FR-062-AC-2/FR-065-AC-3: the occurrence-keyed source map (identity,
@@ -961,6 +971,7 @@ impl DebugWith for CheckedGraph {
             function_sources,
             package_name,
             scope,
+            evaluation_units,
             functions,
             dispatch_tables,
             occurrences,
@@ -1032,6 +1043,7 @@ impl DebugWith for CheckedGraph {
             .field("function_sources", &function_sources)
             .field("package_name", &package_name)
             .field("scope", &With(scope, table))
+            .field("evaluation_units", &evaluation_units)
             .field("functions", &With(functions, table))
             .field("dispatch_tables", &dispatch_tables)
             .field("occurrences", &With(occurrences, table))
@@ -1365,6 +1377,8 @@ pub struct CheckedExpression {
     parameters: Vec<(String, ValueType)>,
     root: CheckedBody,
     slots: usize,
+    /// Compound units the expression's checked typing formed.
+    formed_units: FormedUnits,
     /// NFR-011: the ceilings this expression was checked under.
     effective_limits: CheckingLimits,
 }
@@ -1417,6 +1431,11 @@ impl CheckedExpression {
         self.slots
     }
 
+    /// Compound units formed while checking this expression.
+    pub fn formed_units(&self) -> &FormedUnits {
+        &self.formed_units
+    }
+
     /// NFR-011: the ceilings this expression was checked under. A
     /// standalone expression check applies the node ceiling only: it encodes no declaration preimage and charges no work, so the
     /// input-byte and work ceilings are recorded here as given but were not
@@ -1438,6 +1457,8 @@ pub struct FunctionState<'a> {
     pub body: CheckedNode<'a>,
     /// The evaluation slot count.
     pub slots: usize,
+    /// Compound units formed while checking this function's body.
+    pub formed_units: &'a FormedUnits,
 }
 
 /// One callable function's evaluation-visible identity and signature --
@@ -4581,8 +4602,8 @@ impl PackageDeclarations {
         // FR-094: the package's units and every compound unit typing formed,
         // kept until lowering has keyed each one's type node.
         let mut units = scope.types().units().clone();
-        for (_, body, _) in &mut drafts {
-            units.append(std::mem::take(&mut body.formed_units));
+        for (_, body, _) in &drafts {
+            units.append(body.formed_units.clone());
         }
         for clause in &mut typed_clauses {
             units.append(std::mem::take(&mut clause.formed_units));
@@ -4606,6 +4627,32 @@ impl PackageDeclarations {
             units.append(std::mem::take(&mut protocol.obligations.formed_units));
             units.append(std::mem::take(&mut protocol.slots.formed_units));
         }
+        let evaluation_units = match FormedUnits::identify(&units) {
+            Ok(formed) => formed,
+            Err(identity) => {
+                refusals.push(CheckRefusal {
+                    location: root(Origin::Expression),
+                    cause: CheckCause::Identity(identity),
+                });
+                FormedUnits::default()
+            }
+        };
+        let function_formed: Vec<FormedUnits> = drafts
+            .iter()
+            .zip(&locations)
+            .map(
+                |((_, body, _), location)| match FormedUnits::identify(&body.formed_units) {
+                    Ok(formed) => formed,
+                    Err(identity) => {
+                        refusals.push(CheckRefusal {
+                            location: location.clone(),
+                            cause: CheckCause::Identity(identity),
+                        });
+                        FormedUnits::default()
+                    }
+                },
+            )
+            .collect();
         let mut lowering = lowering::Lowering::new_with_source_owners(
             &scope,
             &owner,
@@ -6756,13 +6803,15 @@ impl PackageDeclarations {
             drafts
                 .into_iter()
                 .zip(identities)
-                .filter_map(|((signature, body, _), identity)| {
+                .zip(function_formed)
+                .filter_map(|(((signature, body, _), identity), formed_units)| {
                     Some((
                         signature,
                         CheckedFunction {
                             identity: identity?,
                             body: body.body,
                             slots: body.slots,
+                            formed_units,
                         },
                     ))
                 })
@@ -7008,6 +7057,7 @@ impl PackageDeclarations {
             function_sources: self.function_sources,
             package_name,
             scope,
+            evaluation_units,
             functions,
             dispatch_tables,
             occurrences,
@@ -7691,6 +7741,11 @@ fn population_domain_key(
     state_clause::population_key(&domain, node)
 }
 
+enum ClauseExpressionTarget<'a> {
+    Expected(Option<&'a ValueType>),
+    Conversion(&'a ValueType),
+}
+
 impl CheckedGraph {
     /// Every checked predicate call, operation-contract reference and
     /// temporal-obligation reference, in source order. Each row retains its
@@ -8015,6 +8070,51 @@ impl CheckedGraph {
         mode: CheckMode,
         limits: CheckingLimits,
     ) -> Result<CheckedExpression, CheckRefusal> {
+        self.check_clause_expression_inner(
+            parameters,
+            expression,
+            clause_kind,
+            mode,
+            limits,
+            ClauseExpressionTarget::Expected(expected),
+        )
+    }
+
+    /// Check a quantity expression and append an explicit conversion to
+    /// `target_unit`, including a compound unit retained by this checked
+    /// graph. Unlike source `convert<Quantity<U>>`, this programmatic entry
+    /// accepts a unit identity directly. The source expression and every
+    /// frame parameter are still checked normally; the target must be held
+    /// by this graph and dimension-compatible with the source.
+    pub fn check_quantity_conversion(
+        &self,
+        parameters: Vec<(String, ValueType)>,
+        expression: &Expression,
+        target_unit: quire_exact::UnitId,
+        clause_kind: ClauseKind,
+        mode: CheckMode,
+        limits: CheckingLimits,
+    ) -> Result<CheckedExpression, CheckRefusal> {
+        let target = ValueType::Quantity(target_unit);
+        self.check_clause_expression_inner(
+            parameters,
+            expression,
+            clause_kind,
+            mode,
+            limits,
+            ClauseExpressionTarget::Conversion(&target),
+        )
+    }
+
+    fn check_clause_expression_inner(
+        &self,
+        parameters: Vec<(String, ValueType)>,
+        expression: &Expression,
+        clause_kind: ClauseKind,
+        mode: CheckMode,
+        limits: CheckingLimits,
+        target: ClauseExpressionTarget<'_>,
+    ) -> Result<CheckedExpression, CheckRefusal> {
         let location = root(Origin::Expression);
         let mut nodes = 0_u64;
         let typer = Typer::new(
@@ -8039,13 +8139,20 @@ impl CheckedGraph {
             &mut scopes,
         );
         let mut typer = typer.with_context(cx.reborrow(&self.scope));
+        typer.include_formed_units(&self.evaluation_units);
         bind_parameters(&mut typer, &parameters, &location)?;
-        let root = match expected {
-            Some(expected) => {
-                typer.check_declared_type(expected, &location)?;
-                typer.check_as(expression, expected, &location)?
+        let root = match target {
+            ClauseExpressionTarget::Conversion(target) => {
+                let converted = typer.infer_conversion(expression, target, &location)?;
+                typer.finish_body(converted)
             }
-            None => typer.infer(expression, None, &location)?,
+            ClauseExpressionTarget::Expected(expected) => match expected {
+                Some(expected) => {
+                    typer.check_declared_type(expected, &location)?;
+                    typer.check_as(expression, expected, &location)?
+                }
+                None => typer.infer(expression, None, &location)?,
+            },
         };
         let slots = typer.slots();
         if mode == CheckMode::Linked {
@@ -8056,11 +8163,17 @@ impl CheckedGraph {
             )
             .check(root.root())?;
         }
+        let formed_units =
+            FormedUnits::identify(&typer.into_formed_units()).map_err(|identity| CheckRefusal {
+                location: location.clone(),
+                cause: CheckCause::Identity(identity),
+            })?;
         Ok(CheckedExpression {
             graph_identity: self.graph_identity.clone(),
             parameters,
             root,
             slots,
+            formed_units,
             effective_limits: limits,
         })
     }
