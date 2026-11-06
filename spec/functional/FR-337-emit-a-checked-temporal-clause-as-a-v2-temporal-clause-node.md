@@ -492,6 +492,19 @@ writes them from the checked graph at the same point as the nodes
   the profile does not determine, and writes no package. A clause whose
   profile selects no clock writes a name row and no binding, and a package
   with no binding omits `temporal_bindings`.
+- The emitter SHALL write no `temporal_bindings` row for a clause under
+  `quire.temporal.timed/v1` (QSpec FR-322 "Temporal clock bindings",
+  FR-322-AC-386): that profile selects none of the three clock
+  configurations and its `clock_name` is `model-time`. For a clause over a
+  model subject the model time binding and exact unit come from the
+  package's `timed_model` root and `time_source` that the emitter writes for
+  the model's `time` declaration (QSpec FR-415), which the reader joins to
+  the clause's subject; S3 refuses such a clause over a model with no `time`
+  declaration, so no package is written. A clock selection supplied for a
+  Timed clause is a selection no occurrence uses and the emitter refuses it
+  as in the paragraph above; the reader refuses a `temporal_bindings` row
+  supplied for a Timed clause `invalid_package`/`timed-node-reference` at
+  that row.
 - The emitter SHALL sort both arrays by (`declaration` NodeId, `occurrence`),
   so the order is a function of the checked graph and not of declaration
   order.
@@ -539,6 +552,10 @@ FR-488 and FR-447.
 | FR-337-AC-22 | The same declarations written in reversed source order emit `temporal_clause_names` and `temporal_bindings` arrays equal to those of the original order, each sorted by (`declaration` NodeId, `occurrence`); an emitter that writes rows in node or declaration order fails this. | Test (TC-1326) |
 | FR-337-AC-23 | For two structurally equal clauses with ordinals 0 and 1 under a clocked profile, `Emission` returns two `TemporalClauseRef` values whose `declaration` and `occurrence` equal the two `temporal_clause_names` rows read back from the emitted bytes, whose `clause` positions name the two declarations in the checked graph, and whose rows for `profile_selections` and `temporal_bindings` equal the lock's and the package's byte for byte; reordering the declarations changes `clause` and no `declaration`. | Test (TC-1326) |
 | FR-337-AC-24 | `eventually[0,5] holds(p)` under the finite-window profile emits `temporal_interval` `{lower: "0", upper: "5"}`; a checked clause of that profile whose interval is constructed as the timed interval `(0 ms, 5 ms]` (past the check) makes the emitter fail with an internal fault and writes no node; fed to the I2 reader, the emitted node with its interval replaced by a `timed_interval` member, and with `temporal_interval` `{lower: "0", upper: null}`, each refuse `invalid_package`/`operation-member-mismatch`. | Test (TC-524) |
+| FR-337-AC-25 | A clause under `quire.temporal.timed/v1` over a model with a `time` declaration emits with no clock selection and writes no `temporal_bindings` row, in the bytes or in `Emission`'s rows, while its name row is written; the package carries the `timed_model` root whose `model` is the clause subject's model and whose `source` is the `time_source` whose unit is the declared unit, and QSL's I2 read admits it. | Test (TC-1326) |
+| FR-337-AC-26 | A Timed clause over a model with no `time` declaration refuses at S3 (`ModelTimeOnUntimedModel`, located at the clause's `model-time` clock text) and no package is written. | Test (TC-1326) |
+| FR-337-AC-27 | A clock selection of any kind supplied for a Timed clause is refused as a surplus selection at the clause's span, `invalid_package`/`timed-node-reference`, and no package is written. | Test (TC-1326) |
+| FR-337-AC-28 | A `temporal_bindings` row supplied for a Timed clause in an otherwise emitted package refuses in the reader `invalid_package`/`timed-node-reference` at `/temporal_bindings/0`; the package without the row is admitted. | Test (TC-1326) |
 
 ### Aggregate formula emission
 
