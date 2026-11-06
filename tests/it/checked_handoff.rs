@@ -2299,7 +2299,7 @@ fn a_unit_named_only_by_model_types_is_written_with_its_nominal_closure() {
         let dir = tempfile::tempdir().unwrap();
         let request = unit_request(
             dir.path(),
-            "unit Unused : Money = rational(7, 1);\n\
+            "unit Unused : Money = rational(7, 1) * U;\n\
              invariant Ready using v on M::Workflow at current { self.ready }",
         );
         if derived {
