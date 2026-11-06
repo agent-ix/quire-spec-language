@@ -174,3 +174,39 @@ fn bounded_quantity_add_and_less_than_preserve_operand_types() {
         .key();
     assert_eq!(parameter(graph, "a", 0).semantic_type(), Some(bounded_key));
 }
+
+#[trace("TC-413", "FR-093-AC-61")]
+#[test]
+fn bounded_quantity_ordering_keeps_dimension_and_unit_refusals() {
+    let length = bounded(
+        UnitId::declared(node_key(METRE)),
+        Some(rational(0, 1)),
+        Some(rational(2, 1)),
+    );
+    let declarations = PackageDeclarations {
+        types: TypeEnvironment::default().with_units(units()),
+        aliases: vec![
+            ("Bounded".into(), length),
+            ("Time".into(), quantity(SECOND)),
+        ],
+        functions: vec![function(
+            "incompatible",
+            &[("a", named("Bounded")), ("b", named("Time"))],
+            builtin(BuiltinType::Boolean),
+            Expression::binary(BinaryOperator::Less, name("a"), name("b")),
+        )],
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
+    };
+    let refusals = declarations
+        .check(CheckingLimits::default())
+        .expect_err("distinct dimensions refuse");
+    assert!(
+        refusals.iter().any(|refusal| refusal.cause
+            == CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)),
+        "existing dimensional refusal: {refusals:?}"
+    );
+}
