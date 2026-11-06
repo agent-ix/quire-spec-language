@@ -8,7 +8,9 @@ use quire_contract_model::{
 };
 
 use super::graph::Graph;
-use super::subject::{subject_in, Activation, TemporalSubjectView, FORMULA_VISITS};
+use super::subject::{
+    subject_in, Activation, ClauseOccurrence, TemporalSubjectView, FORMULA_VISITS,
+};
 use super::ViewRefusal;
 
 /// Which clause leaf a [`PredicateSelection`] names.
@@ -98,6 +100,17 @@ impl<'p> CheckedPredicateView<'p> {
     /// The clause node.
     pub fn declaration(&self) -> &'p CheckedNodeId {
         self.subject.declaration()
+    }
+
+    /// The declared temporal-clause name when the clause has one uniquely
+    /// named occurrence.
+    pub fn name(&self) -> Option<&str> {
+        self.subject.name()
+    }
+
+    /// The declared name for this predicate's exact clause occurrence.
+    pub fn name_of(&self, occurrence: &ClauseOccurrence) -> Option<&str> {
+        self.subject.name_of(occurrence)
     }
 
     /// The Boolean leaf.

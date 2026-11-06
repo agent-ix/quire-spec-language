@@ -109,6 +109,9 @@ pub struct Retained {
     pub profile: CheckedSelection,
     /// The clause's activation.
     pub activation: Activation,
+    /// The unique temporal-clause name, when this declaration has one
+    /// uniquely named occurrence. Shared declarations retain no single name.
+    pub name: Option<Box<str>>,
 }
 
 /// The definition selection the package authenticates for one clause.
@@ -246,6 +249,7 @@ pub fn mapping_support(
             declaration: subject.declaration().clone(),
             profile: subject.profile().clone(),
             activation: subject.activation().clone(),
+            name: subject.name().map(Into::into),
         },
         selection: AuthenticatedSelection {
             package: subject.package().name().into(),

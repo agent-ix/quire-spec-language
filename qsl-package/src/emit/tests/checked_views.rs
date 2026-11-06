@@ -883,6 +883,92 @@ fn equal_clauses_share_a_node_and_an_interval_or_comment_decides_identity() {
     );
 }
 
+/// FR-515-AC-14 (TC-1310): a shared declaration resolves its name only by
+/// occurrence identity; a missing ordinal does not borrow either sibling's
+/// name, while a unique declaration and its predicate view retain theirs.
+#[trace("FR-515-AC-14", "TC-1310")]
+#[test]
+fn temporal_clause_names_are_selected_by_declaration_and_occurrence() {
+    let body = "eventually[0,1] holds(c.versionNumber = 2)";
+    let twins = format!(
+        "{}\n{}",
+        clause("Alpha", "e", "on origin", body),
+        clause("Beta", "e", "on origin", body)
+    );
+    let shared = admit(&compile(&unit_of(&[("e", EVENT)], &twins)));
+    let [shared_id] = clause_ids(&shared).try_into().expect("one shared node");
+    let shared_view = temporal_subject(&shared, &shared_id).expect("shared clause view");
+    let [alpha, beta] = shared_view.occurrences() else {
+        panic!("two claim occurrences: {:?}", shared_view.occurrences());
+    };
+    let names = shared
+        .temporal_clause_names()
+        .expect("the emitted name rows");
+    assert_eq!(shared_view.name(), None);
+    for (occurrence, expected) in [(alpha, "Alpha"), (beta, "Beta")] {
+        let row_name = names
+            .iter()
+            .find(|row| row.declaration == shared_id && row.occurrence == occurrence.ordinal)
+            .map(|row| row.name.as_ref());
+        assert_eq!(row_name, Some(expected));
+        assert_eq!(shared_view.name_of(occurrence), row_name);
+    }
+    let absent = ClauseOccurrence {
+        node: shared_id.clone(),
+        role: CheckedOccurrenceRole::Claim,
+        ordinal: 7,
+    };
+    assert_eq!(shared_view.name_of(&absent), None);
+
+    let gamma = admit(&compile(&unit_of(
+        &[("e", EVENT)],
+        &clause(
+            "Gamma",
+            "e",
+            "on each (q: Config::ConfigVersion) when (c.versionNumber >= 3)",
+            body,
+        ),
+    )));
+    let [gamma_id] = clause_ids(&gamma).try_into().expect("one Gamma clause");
+    let gamma_view = temporal_subject(&gamma, &gamma_id).expect("Gamma view");
+    assert_eq!(gamma_view.name(), Some("Gamma"));
+    assert_eq!(
+        gamma_view.name_of(&gamma_view.occurrences()[0]),
+        Some("Gamma")
+    );
+    let Activation::Each {
+        guard: Some(guard), ..
+    } = gamma_view.activation().clone()
+    else {
+        panic!("Gamma has a guarded activation");
+    };
+    let activation_guard = checked_predicate(
+        &gamma,
+        &PredicateSelection {
+            clause: gamma_id.clone(),
+            leaf: guard,
+        },
+    )
+    .expect("Gamma activation guard view");
+    assert_eq!(activation_guard.kind(), PredicateKind::ActivationGuard);
+    assert_eq!(activation_guard.name(), Some("Gamma"));
+
+    let leaf = gamma_view.predicate_leaves()[0].clone();
+    let predicate = checked_predicate(
+        &gamma,
+        &PredicateSelection {
+            clause: gamma_id,
+            leaf,
+        },
+    )
+    .expect("Gamma predicate view");
+    assert_eq!(predicate.name(), Some("Gamma"));
+    assert_eq!(
+        predicate.name_of(&gamma_view.occurrences()[0]),
+        Some("Gamma")
+    );
+}
+
 /// FR-515 "Determinism": the view read from the emitted bytes is the same on
 /// a second read of the same bytes.
 #[trace("FR-515-AC-1", "FR-515-AC-7", "TC-1310")]

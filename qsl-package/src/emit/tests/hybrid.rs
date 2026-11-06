@@ -40,8 +40,12 @@ pub(super) const FLOW: &str = "v' = -a; a' = 0; t' = 1;";
 
 /// `SlowEnough` under the profile alias `profile`, with `body`.
 pub(super) fn slow_enough(profile: &str, body: &str) -> String {
+    slow_enough_named("SlowEnough", profile, body)
+}
+
+pub(super) fn slow_enough_named(name: &str, profile: &str, body: &str) -> String {
     format!(
-        "temporal SlowEnough using {profile} over (h: Braking) clock \"model-time\" \
+        "temporal {name} using {profile} over (h: Braking) clock \"model-time\" \
          on origin {{ {body} }}\n"
     )
 }
