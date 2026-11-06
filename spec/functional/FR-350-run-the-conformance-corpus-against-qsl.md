@@ -123,6 +123,14 @@ operations: `compile` (FR-027), `format` (FR-003), `run` (FR-100) and
 encoding. Existing model and object-context admission (FR-084, FR-089,
 FR-106), supplied-value limits (FR-277), replay result semantics (FR-072),
 and all other owning admission and refusal rules remain authoritative.
+
+The compiler adapter supplies every `model` file to the public compiler's
+domain-package input. It never substitutes an empty model input for the
+documents the vector names. Each operation starts with fresh effective limits;
+signature lookup and object admission use those same limits. The runner's
+library entry retains the returned bytes of each passed vector separately
+from the FR-352 report, so callers can compare operation bytes without
+reconstructing them from the qualification verdict.
 ### The replay-request adapter
 
 The runner reads a `replay-request` file with its own decoder in `xtask`,
@@ -263,6 +271,7 @@ consumer type. A class with no such vector contributes none.
 | FR-350-AC-16 | A `replay-request` file whose `package` is the checked-package document named `orders` with `contract_version` `quire.checked-package/v2`, whose `lock.sources` holds the one `{authority, identity}` entry `("repo", "orders.qsl")`, and whose `dependencies` holds `{identity: "lib/money", sources: [("repo", "money.qsl")]}`, decodes to a request with package name `orders`, that one source and one dependency entry with `identity` `lib/money` and its one source, and no version member; the same file with `package` removed, with `package` set to the string `"orders"`, with `contract_version` set to `quire.checked-package/v1`, and with the dependency entry holding an extra `checked_package` member is each a `tool-failure` with cause `corpus-decode` and pointer `/package`, `/package`, `/package/contract_version` and `/dependencies/0` respectively. | Test (TC-1325) |
 | FR-350-AC-17 | A `byte_provision` row whose `bytes_path` is `missing.bin` (absent from the vector directory), `unlisted.bin` (present but not listed as `kind: bytes`), `/etc/hostname` (absolute) or `../x.bin` (parent-traversing) is a `tool-failure` with cause `corpus-decode` and pointer `/byte_provision/0/bytes_path`, and no request is constructed; a listed `kind: bytes` path is read as raw bytes. | Test (TC-1325) |
 | FR-350-AC-18 | A `stage_limits` map holding the key `depth` (no FR-255 setting of that name) is a `tool-failure` with cause `corpus-decode` and pointer `/stage_limits/depth`; the key `s1.input_bytes` with the value `"1024"` decodes to the entry `("s1.input_bytes", 1024)`. | Test (TC-1325) |
+| FR-350-AC-19 | A compile vector whose source selects its supplied `model` document passes and retains the public compiler's exact output bytes; removing that model gives the compiler's typed refusal rather than an adapter success. The runner exposes passed operation bytes separately from the FR-352 JSON report. | Test (TC-875) |
 
 ## Dependencies
 
