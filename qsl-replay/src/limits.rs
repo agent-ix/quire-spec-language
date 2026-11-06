@@ -470,6 +470,7 @@ mod tests {
         mapped.set_bound(Setting::I2Occurrences, 22);
         mapped.set_bound(Setting::I2Diagnostics, 23);
         mapped.set_bound(Setting::I2WorkUnits, 24);
+        mapped.set_bound(Setting::I2NativeJoinStorage, 43);
         mapped.set_bound(Setting::ExploreStates, 25);
         mapped.set_bound(Setting::ExploreTransitions, 26);
         mapped.set_bound(Setting::IdentityInputBytes, 27);
@@ -510,7 +511,8 @@ mod tests {
                     .with_edges(21)
                     .with_occurrences(22)
                     .with_diagnostics(23)
-                    .with_work(24),
+                    .with_work(24)
+                    .with_storage(43),
                 model: qsl_semantics::model::accounting::ModelNormalizationLimits {
                     intake: qsl_foundation::IntakeLimits::default().with_input_bytes(35),
                     ..SpineLimits::default().model

@@ -43,6 +43,8 @@ pub enum LimitKind {
     DiagnosticCount,
     /// Work budget: a stage's cumulative work units.
     WorkBudget,
+    /// Logical storage units owned during native identity joins.
+    LogicalStorage,
     /// Rational bits: the bit length of an exact rational's numerator or
     /// denominator.
     RationalBits,
@@ -55,7 +57,7 @@ pub enum LimitKind {
 
 impl LimitKind {
     /// Every kind a stage limit reports, in the catalog row's order.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::InputBytes,
         Self::TokenCount,
         Self::NodeCount,
@@ -63,6 +65,7 @@ impl LimitKind {
         Self::OccurrenceCount,
         Self::DiagnosticCount,
         Self::WorkBudget,
+        Self::LogicalStorage,
         Self::RationalBits,
     ];
 
@@ -77,6 +80,7 @@ impl LimitKind {
             Self::OccurrenceCount => "occurrence-count-exceeded",
             Self::DiagnosticCount => "diagnostic-count-exceeded",
             Self::WorkBudget => "work-budget-exceeded",
+            Self::LogicalStorage => "logical-storage-exceeded",
             Self::RationalBits => "rational-bits-exceeded",
             Self::TickCount => "tick-count-exceeded",
         }
@@ -93,6 +97,7 @@ impl LimitKind {
             Self::OccurrenceCount => "occurrence",
             Self::DiagnosticCount => "diagnostic",
             Self::WorkBudget => "work",
+            Self::LogicalStorage => "logical storage",
             Self::RationalBits => "rational bit",
             Self::TickCount => "tick",
         }

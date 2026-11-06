@@ -487,35 +487,27 @@ impl ReadIdentityRows {
         if self.package != package.name() {
             return Err(IdentityWitnessRefusal::Foreign.into());
         }
-        self.join(package)
-            .map_err(|refusal| {
-                if qsl_semantics::model::intake::is_native_budget_denial(&refusal) {
-                    IdentityJoinFailure::Exhausted(Box::new(refusal))
-                } else {
-                    IdentityWitnessRefusal::Unknown.into()
-                }
-            })
+        self.join(package).map_err(|refusal| {
+            if qsl_semantics::model::intake::is_native_budget_denial(&refusal) {
+                IdentityJoinFailure::Exhausted(Box::new(refusal))
+            } else {
+                IdentityWitnessRefusal::Unknown.into()
+            }
+        })
     }
 
     fn join(
         &self,
         package: &CheckedPackageV2,
         budget: &mut NativeJoinBudget,
-    ) -> Result<
-        SelectedExactIdentities,
-        ExactTypeProjectionError,
-    > {
+    ) -> Result<SelectedExactIdentities, ExactTypeProjectionError> {
         SelectedExactIdentities::from_stage_rows(
             package,
             self.declarations.iter().cloned(),
             self.fields.iter().cloned(),
             budget,
         )?
-        .with_source_record_rows(
-            package,
-            self.source_records.iter().cloned(),
-            budget,
-        )
+        .with_source_record_rows(package, self.source_records.iter().cloned(), budget)
     }
 
     /// The package the rows were produced for.

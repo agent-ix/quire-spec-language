@@ -689,10 +689,10 @@ follows.
   members from Contract IR's bounded reader limits. A read's view builds its
   budget once from the read's `work` and `storage`. The storage ceiling is a
   count of logical ownership units, never derived from `artifact_bytes`, and
-  names no `i2.*` setting: it is not settable through FR-255 until a setting
-  spelling is specified. An outer configuration (the compile entry's
-  `SpineLimits`, a request's `native_join` limits, a test fixture) states the
-  finite value; nothing below it supplies one.
+  is named `i2.native_join_storage` by FR-255. The compile entry's
+  `SpineLimits` supplies the published default of 16,777,216; a request's
+  `native_join` limits and a test fixture state their finite values explicitly.
+  Nothing below an entry supplies a budget.
 - **One join, then borrowing.** `with_supply` joins the supply once, moves the
   joined identities into the `BarePackage`, and every later selection, world,
   projection and temporal call borrows them. A `BarePackage` is therefore

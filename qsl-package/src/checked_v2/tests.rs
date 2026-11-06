@@ -3353,6 +3353,29 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
     assert_eq!(exceeded.locus(), None);
 }
 
+/// FR-255-AC-16 (TC-721): the native storage setting changes only the
+/// caller-owned identity-join storage ceiling.
+#[trace("FR-255-AC-16", "TC-721")]
+#[test]
+fn native_join_storage_setting_changes_only_storage() {
+    let mut limits = V2ReadLimits::bounded(11);
+    let bounds = qsl_foundation::SettingLimits::bounds(&limits);
+    let work = bounds
+        .iter()
+        .find(|(setting, _)| *setting == Setting::I2WorkUnits)
+        .expect("work setting is present")
+        .1;
+    assert!(bounds.contains(&(Setting::I2NativeJoinStorage, 11)));
+
+    assert!(qsl_foundation::SettingLimits::set_bound(
+        &mut limits,
+        Setting::I2NativeJoinStorage,
+        23
+    ));
+    assert_eq!(limits.storage, 23);
+    assert_eq!(limits.work, work);
+}
+
 /// The single `state`/`frame` node of a QSpec `checked-package/v2` fixture.
 /// Asserts there is exactly one, rather than silently taking the first of
 /// several.

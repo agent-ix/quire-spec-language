@@ -612,6 +612,7 @@ impl SettingLimits for V2ReadLimits {
             (Setting::I2Occurrences, self.occurrences),
             (Setting::I2Diagnostics, self.diagnostics),
             (Setting::I2WorkUnits, self.work),
+            (Setting::I2NativeJoinStorage, self.storage),
         ]
     }
 
@@ -625,6 +626,7 @@ impl SettingLimits for V2ReadLimits {
             Setting::I2Occurrences => self.occurrences = bound,
             Setting::I2Diagnostics => self.diagnostics = bound,
             Setting::I2WorkUnits => self.work = bound,
+            Setting::I2NativeJoinStorage => self.storage = bound,
             _ => return false,
         }
         true
