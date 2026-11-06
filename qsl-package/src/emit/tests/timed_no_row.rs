@@ -247,7 +247,6 @@ fn a_clock_selection_supplied_for_a_timed_clause_is_refused() {
 /// at that row, whichever configuration it carries; it admits the same
 /// package without the row.
 #[trace("TC-1326", "FR-337-AC-28", "FR-322-AC-386")]
-#[ignore = "waits on IR lock bump (IR-1361)"]
 #[test]
 fn the_reader_refuses_a_supplied_row_for_a_timed_clause_at_the_row() {
     let (emission, wire) = emitted(&unit(TIMED, SOURCE));
