@@ -81,6 +81,8 @@ mod bare_equality;
 #[cfg(feature = "checked-handoff")]
 mod bare_package;
 #[cfg(feature = "checked-handoff")]
+mod bare_recovery_binder;
+#[cfg(feature = "checked-handoff")]
 mod checked_handoff;
 #[cfg(feature = "checked-handoff")]
 mod checked_views;

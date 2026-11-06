@@ -59,6 +59,12 @@ fn a_consumer_looks_keys_up_through_the_crate_root() {
 
     let color = context.enums().next().expect("an enum");
     let declaration = color.key().clone();
+    // The checked shape is exposed with the case variants in its order.
+    assert!(!color.shape().is_ordered());
+    let shaped: Vec<_> = color.shape().variants().collect();
+    let cased: Vec<_> = color.cases().iter().map(|case| case.variant()).collect();
+    assert_eq!(shaped, cased);
+    assert_eq!(shaped.len(), 2);
     let blue = Identifier::new("BLUE").expect("an identifier");
     assert_eq!(
         context.enum_declaration(&declaration).map(|e| e.key()),

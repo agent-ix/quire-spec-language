@@ -34,6 +34,7 @@ Verify protocol-slot evaluation from a bare package and its equality with the so
 | 16 | 16 | fixture E's `Refund` retry relation and recovery predicate, the TC-1289 slot and the TC-1290 slot, with equality rows read from the handoff directory; the same slots with the file omitted; `Refund`'s `trigger.guard` with the file omitted | the in-process route's value and charge log; `MissingEqualityWitness`; evaluates |
 | 17 | 17 | search the bare route for derivation of equality rows, reads of the three `Emission` row accessors and name-text selection of an origin | none outside the stated rule |
 | 18 | 18 | a unit compiled from source in which `trigger.guard` of a copy of fixture E calls a function whose body holds `==`; equality rows omitted, then the rows its handoff writes; a slot that calls no such function, rows omitted | `trigger.guard` refuses `MissingEqualityWitness` at `Package`, meter untouched, then evaluates equal to the in-process route; the other slot evaluates |
+| 19 | 19 | **R**'s `Full` and `Partial` `recovery.predicate` over the bare route, with supplies that differ in receipts, target and activation; a `recovered` supply that is an integer; a supply without `target` | the values FR-533-AC-19 states; both malformed supplies refuse as `CallFailure::Admission` |
 
 Tag the test `#[trace("FR-533-AC-1", ..., "FR-533-AC-18", "TC-1333")]`; rows 1 and 2 also carry FR-390-AC-11 and FR-520-AC-9.
 

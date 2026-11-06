@@ -730,6 +730,9 @@ pub(super) struct RetainedRows {
     pub(super) selected_enum_member_rows: Vec<quire_contract_model::SelectedEnumMemberRow>,
     pub(super) selected_source_union_rows: Vec<quire_contract_model::SelectedSourceUnionRow>,
     pub(super) selected_source_record_rows: Vec<super::SelectedSourceRecordRow>,
+    pub(super) selected_source_tuple_rows: Vec<quire_contract_model::SelectedSourceTupleRow>,
+    pub(super) selected_source_enum_shape_rows: Vec<super::SelectedSourceEnumShapeRow>,
+    pub(super) selected_source_collection_rows: Vec<super::SelectedSourceCollectionRow>,
     pub(super) selected_exact_declaration_rows:
         Vec<quire_contract_model::SelectedExactDeclarationRow>,
     pub(super) selected_exact_field_rows: Vec<quire_contract_model::SelectedExactFieldRow>,
@@ -931,6 +934,57 @@ pub(super) fn carry_rows(
             rekey.id(type_node);
         }
     }
+    let mut source_tuples = retained.selected_source_tuple_rows.clone();
+    for row in &mut source_tuples {
+        let m::SelectedSourceTupleRow {
+            structural_node,
+            source_authority: _,
+            source_identity: _,
+            qualified_declaration: _,
+            type_handle: _,
+            positions,
+        } = row;
+        rekey.id(structural_node);
+        for position in positions {
+            let m::SelectedTuplePositionRow {
+                ordinal: _,
+                type_node,
+                value_type: _,
+            } = position;
+            rekey.id(type_node);
+        }
+    }
+    let mut source_enum_shapes = retained.selected_source_enum_shape_rows.clone();
+    for row in &mut source_enum_shapes {
+        let super::SelectedSourceEnumShapeRow {
+            structural_node,
+            declaration_key: _,
+            shape: _,
+            cases,
+        } = row;
+        rekey.id(structural_node);
+        for case in cases {
+            let super::SelectedSourceEnumShapeCaseRow {
+                case: _,
+                structural_node,
+                member_key: _,
+                variant: _,
+            } = case;
+            rekey.id(structural_node);
+        }
+    }
+    let mut source_collections = retained.selected_source_collection_rows.clone();
+    for row in &mut source_collections {
+        let super::SelectedSourceCollectionRow {
+            structural_node,
+            base_node,
+            element_node,
+            value_type: _,
+        } = row;
+        rekey.id(structural_node);
+        rekey.id(base_node);
+        rekey.id(element_node);
+    }
     let mut exact_declarations = retained.selected_exact_declaration_rows.clone();
     for row in &mut exact_declarations {
         let m::SelectedExactDeclarationRow {
@@ -1031,6 +1085,9 @@ pub(super) fn carry_rows(
         selected_enum_member_rows: source_enum_members,
         selected_source_union_rows: source_unions,
         selected_source_record_rows: source_records,
+        selected_source_tuple_rows: source_tuples,
+        selected_source_enum_shape_rows: source_enum_shapes,
+        selected_source_collection_rows: source_collections,
         selected_exact_declaration_rows: exact_declarations,
         selected_exact_field_rows: exact_fields,
         equality_producer_identity_rows: producers,
@@ -1070,6 +1127,76 @@ fn follow_final_bindings(
         }
         for (member, name) in row.members.iter_mut().zip(names) {
             member.admitted_name = name.into();
+        }
+    }
+    Ok(())
+}
+
+/// Sets every position's `type_node` of each source tuple row to the node the
+/// final tuple node references at that ordinal, so a position the writer
+/// re-pointed is named by its final node and not the one the base package
+/// gave it. Everything else in the row is left as carried. A row whose node
+/// is absent, or whose node's references disagree with its positions in
+/// count or form, is a writer fault.
+pub(super) fn follow_final_positions(
+    rows: &mut [quire_contract_model::SelectedSourceTupleRow],
+    nodes: &[CheckedSemanticNodeV2],
+) -> Result<(), EmitRefusal> {
+    for row in rows {
+        let node = nodes
+            .iter()
+            .find(|node| node.node_id == row.structural_node)
+            .ok_or_else(|| invariant("a source tuple row names a node of the package"))?;
+        let CheckedTerm::Aggregate { members } = &node.body else {
+            return Err(invariant("a source tuple node's body is an aggregate"));
+        };
+        let targets: Vec<&CheckedNodeId> = members
+            .iter()
+            .filter_map(|member| match member {
+                CheckedTerm::Reference { target } => Some(target),
+                _ => None,
+            })
+            .collect();
+        if targets.len() != row.positions.len() || targets.len() != members.len() {
+            return Err(invariant(
+                "a source tuple node references each row position",
+            ));
+        }
+        for (position, target) in row.positions.iter_mut().zip(targets) {
+            position.type_node = target.clone();
+        }
+    }
+    Ok(())
+}
+
+/// Sets each collection row's `element_node` to the node the final collection
+/// node references, and requires a bounded collection's domain node to be
+/// typed by that collection node, so a re-pointed element or bound is named
+/// by its final node. A row whose nodes are absent or malformed is a writer
+/// fault.
+pub(super) fn follow_final_collections(
+    rows: &mut [super::SelectedSourceCollectionRow],
+    nodes: &[CheckedSemanticNodeV2],
+) -> Result<(), EmitRefusal> {
+    let find = |id: &CheckedNodeId| {
+        nodes
+            .iter()
+            .find(|node| &node.node_id == id)
+            .ok_or_else(|| invariant("a collection row names a node of the package"))
+    };
+    for row in rows {
+        let base = find(&row.base_node)?;
+        let CheckedTerm::Aggregate { members } = &base.body else {
+            return Err(invariant("a collection node's body is an aggregate"));
+        };
+        let [CheckedTerm::Reference { target }] = members.as_slice() else {
+            return Err(invariant("a collection node references its element"));
+        };
+        row.element_node = target.clone();
+        if row.structural_node != row.base_node
+            && find(&row.structural_node)?.semantic_type != row.base_node
+        {
+            return Err(invariant("a bounded collection is typed by its collection"));
         }
     }
     Ok(())
@@ -1125,6 +1252,11 @@ fn finish(
     })?;
     let mut rows = carry_rows(retained, changes);
     follow_final_bindings(&mut rows.selected_source_record_rows, &semantic_graph.nodes)?;
+    follow_final_positions(&mut rows.selected_source_tuple_rows, &semantic_graph.nodes)?;
+    follow_final_collections(
+        &mut rows.selected_source_collection_rows,
+        &semantic_graph.nodes,
+    )?;
     Ok(Emission {
         package,
         omitted: rows.omitted,
@@ -1140,6 +1272,9 @@ fn finish(
         selected_enum_member_rows: rows.selected_enum_member_rows,
         selected_source_union_rows: rows.selected_source_union_rows,
         selected_source_record_rows: rows.selected_source_record_rows,
+        selected_source_tuple_rows: rows.selected_source_tuple_rows,
+        selected_source_enum_shape_rows: rows.selected_source_enum_shape_rows,
+        selected_source_collection_rows: rows.selected_source_collection_rows,
         selected_exact_declaration_rows: rows.selected_exact_declaration_rows,
         selected_exact_field_rows: rows.selected_exact_field_rows,
         equality_producer_identity_rows: rows.equality_producer_identity_rows,
