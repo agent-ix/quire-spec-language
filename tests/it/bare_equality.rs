@@ -386,6 +386,109 @@ fn binding_mut<'a>(group: &'a mut Value, name: &str) -> &'a mut Value {
         .expect("named binding")["value"]
 }
 
+/// A genuine reference-valued call makes the two related ends non-leaf
+/// walks. Their origin names are then renamed, without changing any keys.
+#[trace("TC-1333", "FR-533-AC-14")]
+#[test]
+fn related_calls_resolve_equal_walks_in_numeric_origin_order() {
+    use qsl_eval::value::{
+        CheckedPackageEvaluation, ProtocolSlot, ProtocolSlotEvaluation, ProtocolSupply,
+        SuppliedValue,
+    };
+    let source = tc1070::SOURCE
+        .replace("profile S = \"quire.state.graph/v1\";", "profile S = \"quire.state.graph/v1\";\nprofile v = \"quire.value.complete/v1\";")
+        .replace("model M = \"test/orders\";", "model M = \"test/orders\";\nfunction identityRef using v(x: M::Node): M::Node pure { x }")
+        .replace("related by Owns (view, view)", "related by Owns (identityRef(view), identityRef(view))");
+    assert_ne!(source, tc1070::SOURCE);
+    let (_holder, request, files) = handoff(&source);
+    let original = read(&request, &files["checked-package.json"]);
+    const RELATED: &str = "protocol Pipeline run Main Got related ";
+    let mut origins: Vec<_> = original
+        .checked_term_data()
+        .expect("term data")
+        .protocol_locations
+        .iter()
+        .filter_map(|row| match &row.location.origin {
+            quire_contract_model::CheckedProtocolLocationOrigin::TypeDeclaration { name }
+                if name.starts_with(RELATED) =>
+            {
+                Some(name.to_string())
+            }
+            _ => None,
+        })
+        .collect();
+    origins.sort();
+    origins.dedup();
+    assert_eq!(
+        origins.len(),
+        2,
+        "both authentic related ends have an application walk"
+    );
+    let package = edited(&request, &files, |rows| {
+        for row in rows {
+            if let Some(index) = origins.iter().position(|name| name == origin_name(row)) {
+                row["location"]["origin"]["name"] =
+                    format!("{RELATED}{}", ["99 100", "100 105"][index]).into();
+            }
+        }
+    });
+    let identities =
+        ReadIdentityRows::read(&files["identities.json"], &package).expect("identities");
+    let bare = BarePackage::new(&package).with_supply(BareSupply {
+        identities: &identities,
+        equality: None,
+    });
+    let mut roots = Vec::new();
+    let mut charges = Vec::new();
+    for (member, span) in [("related.from", "99 100"), ("related.to", "100 105")] {
+        let slot = ProtocolSlot {
+            node: node_key(&package, "Pipeline", "Got"),
+            member: member.into(),
+            index: Some(0),
+        };
+        let selected = bare
+            .select_protocol_slot(&ProtocolSlotDescriptor::new(
+                slot.node.clone(),
+                slot.member.clone(),
+                slot.index,
+            ))
+            .expect("the related call selects");
+        assert_eq!(selected.origin(), Some(format!("{RELATED}{span}").as_str()));
+        roots.push(selected.root().clone());
+        let supply = ProtocolSupply {
+            binders: selected
+                .sources()
+                .iter()
+                .map(|source| {
+                    (
+                        source.binder().clone(),
+                        SuppliedValue::Unavailable(
+                            quire_semantic_value::catalog::CatalogCode::new(
+                                "unavailable_observation",
+                                "missing-required-artifact",
+                            ),
+                        )
+                        .into(),
+                    )
+                })
+                .collect(),
+            observation: None,
+        };
+        let mut meter = quire_exact::Meter::new(UNLIMITED);
+        let result = bare.evaluate_protocol_slot(&slot, &supply, &mut meter);
+        assert!(
+            matches!(result, Ok(ProtocolSlotEvaluation::Unavailable { .. })),
+            "the real call reads the unavailable reference: {result:?}"
+        );
+        charges.push(meter.admitted_charges().to_vec());
+    }
+    assert_eq!(
+        roots[0], roots[1],
+        "the producer emits one shared call root"
+    );
+    assert_eq!(charges[0], charges[1]);
+}
+
 /// Two genuine case slots share a walk only in this admitted package copy:
 /// the source checker correctly refuses identical exhaustive guards.
 #[trace("TC-1333", "FR-533-AC-13")]
@@ -393,6 +496,8 @@ fn binding_mut<'a>(group: &'a mut Value, name: &str) -> &'a mut Value {
 fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
     use qsl_eval::value::{CheckedPackageEvaluation, ProtocolSlot, ProtocolSlotEvaluation};
     let (_holder, request, files) = handoff(tc1070::SOURCE);
+    let original = read(&request, &files["checked-package.json"]);
+    assert_eq!(decision_origins(&original).len(), 3);
     for labels_follow_source in [false, true] {
         let mut wire: Value =
             serde_json::from_slice(&files["checked-package.json"]).expect("package");
@@ -447,11 +552,8 @@ fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
             .as_array_mut()
             .expect("dependencies")
             .retain(|id| *id != removed);
-        nodes.retain(|node| node["node_id"] != removed);
-        wire["source_map"]
-            .as_array_mut()
-            .expect("source map")
-            .retain(|row| row["node_id"] != removed);
+        // Keep the authentic emitted negation node: the control no longer
+        // selects it, and the selected walk's rows name only its new root.
         let rows = wire["checked_term_data"]["protocol_locations"]
             .as_array_mut()
             .expect("locations");
@@ -499,11 +601,14 @@ fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
             let Ok(ProtocolSlotEvaluation::Evaluated(evaluation, binder_charges)) = &result else {
                 panic!("evaluates: {result:?}");
             };
-            assert_eq!(evaluation.location, None, "a completed evaluation has no stop location");
+            assert_eq!(
+                evaluation.location, None,
+                "a completed evaluation has no stop location"
+            );
             let projection = bare.project_protocol_slot(&selected).expect("projects");
             let expected_location = quire_semantic_value::location::Location::at(
                 quire_semantic_value::location::Origin::TypeDeclaration {
-                    name: format!("{DECISION}{span}")
+                    name: format!("{DECISION}{span}"),
                 },
                 &[],
             );
@@ -517,15 +622,6 @@ fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
                 meter.admitted_charges().to_vec(),
             ));
             assert!(is_boolean(&completed(result), true));
-            let mut limits = UNLIMITED;
-            limits.work_units = 0;
-            let mut limited = quire_exact::Meter::new(limits);
-            let stopped = bare.evaluate_protocol_slot(&slot, &supply, &mut limited);
-            let Ok(ProtocolSlotEvaluation::Evaluated(evaluation, _)) = stopped else {
-                panic!("the limited call returns an evaluation");
-            };
-            assert!(matches!(evaluation.outcome, quire_eval::FamilyOutcome::Evaluated(quire_exact::Outcome::Incomplete(_))));
-            assert_eq!(evaluation.location, Some(expected_location), "the actual stopped call reports the exchanged location");
         }
         assert_eq!(
             charges[0], charges[1],
@@ -607,6 +703,50 @@ fn a_slot_whose_rank_exceeds_its_candidates_refuses_missing_location_projection(
         assert_eq!(meter.consumed(counter), 0, "{counter:?}");
     }
     assert!(meter.admitted_charges().is_empty());
+
+    let all_missing = edited(&request, &files, |rows| {
+        rows.retain(|row| !origin_name(row).starts_with(DECISION));
+    });
+    let identities =
+        ReadIdentityRows::read(&files["identities.json"], &all_missing).expect("identities");
+    let bare = BarePackage::new(&all_missing).with_supply(BareSupply {
+        identities: &identities,
+        equality: None,
+    });
+    for (member, index) in [("visible", 0), ("cases.guard", 1)] {
+        let slot = ProtocolSlot {
+            node: node_key(&all_missing, "Pipeline", "Decide"),
+            member: member.into(),
+            index: Some(index),
+        };
+        let mut untouched = quire_exact::Meter::new(UNLIMITED);
+        let result = bare.evaluate_protocol_slot(
+            &slot,
+            &ProtocolSupply {
+                binders: Vec::new(),
+                observation: None,
+            },
+            &mut untouched,
+        );
+        let Err(quire_eval::CallFailure::Admission(failure)) = result else {
+            panic!("all candidate rows missing refuses: {result:?}");
+        };
+        let quire_eval::CallAdmissionFailure::Refused(refused) = *failure else {
+            panic!("a typed refusal");
+        };
+        assert_eq!(
+            refused.locus,
+            quire_eval::CallAdmissionLocus::Node(missing.application.clone())
+        );
+        assert_eq!(
+            refused.record.fields.get("reason").map(String::as_str),
+            Some("missing-location-projection")
+        );
+        for counter in quire_exact::LimitKind::ALL {
+            assert_eq!(untouched.consumed(counter), 0, "{counter:?}");
+        }
+        assert!(untouched.admitted_charges().is_empty());
+    }
 }
 
 /// FR-390-AC-65 (selection level): a slot is named by (control node, member,

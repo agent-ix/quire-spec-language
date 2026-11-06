@@ -354,7 +354,8 @@ fn document_bag() -> serde_json::Value {
     ));
     types.push(bag);
     types.push(json!({
-        "identity": model::id("MaybeTally"), "kind": "option", "inner": model::id("Tally")
+        "identity": model::id("MaybeTally"), "displayName": "MaybeTally", "kind": "option", "inner": model::id("Tally"),
+        "origin": model::origin("MaybeTally"), "roles": [], "constraints": [], "extensions": [], "unknownPolicy": "reject"
     }));
     doc
 }
