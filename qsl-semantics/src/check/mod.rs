@@ -1042,6 +1042,7 @@ impl DebugWith for CheckedGraph {
             .field("function_sources", &function_sources)
             .field("package_name", &package_name)
             .field("scope", &With(scope, table))
+            .field("evaluation_units", &evaluation_units)
             .field("functions", &With(functions, table))
             .field("dispatch_tables", &dispatch_tables)
             .field("occurrences", &With(occurrences, table))
