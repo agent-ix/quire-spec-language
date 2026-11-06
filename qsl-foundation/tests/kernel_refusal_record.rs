@@ -9,8 +9,8 @@ use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::{catalog_category, category_of, kernel_refusal_record, Locus};
 use quire_exact::{
     DecimalType, DivisionMember, IeeeFlag, IeeeWidth, InexactTarget, Integer, IntegerInterval,
-    Location, NodeKey, Origin, PathSegment, RationalDomain, Refusal, RoundingMode, TextProfile,
-    TextType,
+    Location, NodeKey, Origin, PathSegment, QuantityResultInterval, Rational, RationalDomain,
+    Refusal, RoundingMode, TextProfile, TextType, UnitId,
 };
 use quire_semantic_value::catalog::{CatalogCode, Category};
 
@@ -56,6 +56,41 @@ fn record(
 
 fn expected(value: &str) -> Vec<(&'static str, String)> {
     vec![("expected", value.to_owned())]
+}
+
+/// A bounded quantity retains exact endpoints and complete unit identity;
+/// only the expected target is exposed, at the caller's locus.
+#[trace("TC-428", "FR-096-AC-8")]
+#[test]
+fn a_bounded_quantity_refusal_renders_its_structural_target() {
+    for package in ["acme/rpc", "other/rpc"] {
+        let key = NodeKey::new(package, vec![PathSegment::Text("cm".into())], 0).expect("unit key");
+        let declared = UnitId::declared(key.clone());
+        let compound = UnitId::compound(vec![(key, int(2))]);
+        for (unit, spelling) in [
+            (declared, format!("{package}:[\"cm\",]:0")),
+            (compound, format!("{package}:[\"cm\",]:0^2")),
+        ] {
+            let refusal = Refusal::BoundedQuantityOutOfDomain {
+                target: Box::new(QuantityResultInterval::new(
+                    unit,
+                    Rational::new(int(2), int(2)).expect("minimum"),
+                    Rational::new(int(6), int(3)).expect("maximum"),
+                )),
+            };
+            assert_eq!(
+                record(&refusal, "rational_out_of_domain", "outside-domain"),
+                expected(&format!("Quantity<{spelling}>[1/1, 2/1]"))
+            );
+            let result_locus = Locus::Artifact {
+                pointer: "/result_type".parse().expect("result type pointer"),
+            };
+            let built = kernel_refusal_record(&refusal, Some(result_locus.clone()))
+                .expect("bounded quantity record");
+            assert_eq!(built.locus(), Some(&result_locus));
+            assert!(!built.fields().contains_key("actual"));
+        }
+    }
 }
 
 /// FR-096-AC-8: each domain refusal's `expected` field is its declared

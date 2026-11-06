@@ -19,7 +19,7 @@ fn bounded(unit: UnitId, min: Option<Rational>, max: Option<Rational>) -> ValueT
     ))
 }
 
-#[trace("TC-413", "FR-092-AC-29")]
+#[trace("TC-413", "FR-092-AC-30")]
 #[test]
 fn bounded_quantity_identity_retains_both_exact_endpoints_and_unit() {
     let centimetre = UnitPreimage::new(
@@ -132,7 +132,7 @@ fn bounded_quantity_identity_retains_both_exact_endpoints_and_unit() {
     );
 }
 
-#[trace("TC-413", "FR-092-AC-29")]
+#[trace("TC-413", "FR-092-AC-30")]
 #[test]
 fn bounded_quantity_missing_reversed_or_compound_endpoints_are_refused() {
     let metre = UnitId::declared(node_key(METRE));

@@ -799,7 +799,7 @@ fn tc_440_an_unbounded_application_record_requires_a_bound_in_ir() {
     );
 }
 
-#[trace("TC-413", "FR-092-AC-29")]
+#[trace("TC-413", "FR-092-AC-30")]
 #[test]
 #[ignore = "IR-1345: native bounded_quantity reader admission is pending"]
 fn bounded_quantity_emission_round_trips_with_exact_bounds_and_dependencies() {

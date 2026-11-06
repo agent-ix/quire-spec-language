@@ -135,6 +135,9 @@ pub enum Relation {
 /// ```
 #[derive(Clone, Debug)]
 pub struct EvidenceRequest {
+    /// Ordered native valuation relation identity, populated by the native owner.
+    /// Empty for calls outside that route; never interpreted as truth.
+    pub native_valuations: Vec<u8>,
     /// The instance the call assesses among the resolved ones.
     pub trigger: Option<SemanticTriggerIdentity>,
     /// The correspondence evidence.
@@ -269,6 +272,8 @@ pub struct NonValue {
 /// A fact reference inside a decision support.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SupportRef {
+    /// The ordinal of the position in the admitted request trace.
+    pub position: usize,
     /// The observation the fact was read from.
     pub observation: EvidenceRef,
     /// The atom's node index.

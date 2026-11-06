@@ -120,6 +120,8 @@ mod native_model_profiles;
 mod native_model_qualification;
 mod native_numeric_domain_emission;
 mod native_owned_attempt_progress;
+#[cfg(feature = "checked-handoff")]
+mod native_owner_report;
 mod native_payment_retry_emission;
 mod native_population_emission;
 mod native_protocol_emission;
@@ -150,3 +152,5 @@ mod text_enum_identity;
 mod unbounded_declarations;
 mod union_nodes;
 mod v2_refusal_code_bridge;
+#[cfg(feature = "checked-handoff")]
+mod valuation_evidence;

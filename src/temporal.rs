@@ -19,11 +19,19 @@ mod activation;
 mod budget;
 mod formula;
 mod mapping;
+mod owner;
+mod owner_codec;
 mod profile;
 mod progress;
 mod protocol;
 mod result;
 mod trace;
+mod valuation;
+pub use owner::{
+    evaluate_v2, CheckedSubject, NativeReportError, ObservationRef, Report, ReportOutcome,
+    ReportSubject, ReportSupport,
+};
+pub use owner_codec::{BindingDimension, ReportRefusal};
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -51,11 +59,15 @@ pub use protocol::{
     ProtocolRefusal, ProtocolSelection, SemanticTriggerIdentity,
 };
 pub use result::{
-    Activation, Assessment, Basis, Capture, Closure, Completeness, Dimension, Error, Execution,
-    Incomplete, Obligation, Premises, Refusal, Report, Subject, Support as DecisionSupport, Truth,
+    Activation, ArtifactReport, Assessment, Basis, Capture, Closure, Completeness, Dimension,
+    Error, Execution, Incomplete, Obligation, Premises, Refusal, Subject,
+    Support as DecisionSupport, Truth,
 };
 pub use trace::{
     CaptureInput, ClockBinding, Eviction, Evidence, OrderKey, Position, Trace, Trigger,
+};
+pub use valuation::{
+    MissingValuation, ValuationCause, ValuationEvidence, ValuationInstance, ValuationRow,
 };
 
 /// Evaluate one admitted temporal declaration against one caller-supplied trace.
@@ -69,7 +81,7 @@ pub fn evaluate(
     declaration: usize,
     trace: &Trace,
     limits: Limits,
-) -> Report {
+) -> ArtifactReport {
     let mut work = budget::Work::new(limits);
     let result = run(
         package.package(),
@@ -79,7 +91,7 @@ pub fn evaluate(
         trace.watermark,
         &mut work,
     );
-    Report {
+    ArtifactReport {
         result,
         limits: work.limits,
         usage: work.usage,
@@ -98,7 +110,7 @@ pub fn evaluate_checked(
     declaration: usize,
     trace: &Trace,
     limits: Limits,
-) -> Report {
+) -> ArtifactReport {
     let mut work = budget::Work::new(limits);
     let result = run_checked(
         package,
@@ -108,7 +120,7 @@ pub fn evaluate_checked(
         &mut work,
         None,
     );
-    Report {
+    ArtifactReport {
         result,
         limits: work.limits,
         usage: work.usage,
@@ -132,7 +144,7 @@ pub fn evaluate_checked_v2(
     declaration: usize,
     trace: &Trace,
     limits: Limits,
-) -> Report {
+) -> ArtifactReport {
     let mut work = budget::Work::checked_v2(limits);
     let mut authenticated = None;
     let result = authenticate_checked_v2(checked, admitted, declaration, trace, &mut work)
@@ -147,7 +159,7 @@ pub fn evaluate_checked_v2(
                 None,
             )
         });
-    Report {
+    ArtifactReport {
         result,
         limits: work.limits,
         usage: work.usage,
@@ -163,7 +175,7 @@ pub fn evaluate_checked_with_progress(
     trace: &Trace,
     limits: Limits,
     ledger: &mut Ledger,
-) -> Report {
+) -> ArtifactReport {
     let mut work = budget::Work::new(limits);
     let binding = package
         .graph()
@@ -197,7 +209,7 @@ pub fn evaluate_checked_with_progress(
         },
         Err(refusal) => Err(refusal.into()),
     };
-    Report {
+    ArtifactReport {
         result,
         limits: work.limits,
         usage: work.usage,
@@ -218,7 +230,7 @@ pub fn evaluate_checked_with_progress_v2(
     trace: &Trace,
     limits: Limits,
     ledger: &mut Ledger,
-) -> Report {
+) -> ArtifactReport {
     let mut work = budget::Work::checked_v2(limits);
     let mut authenticated = None;
     let result = authenticate_checked_v2(checked, admitted, declaration, trace, &mut work)
@@ -258,7 +270,7 @@ pub fn evaluate_checked_with_progress_v2(
                     )
                 })
         });
-    Report {
+    ArtifactReport {
         result,
         limits: work.limits,
         usage: work.usage,
@@ -316,7 +328,7 @@ pub fn evaluate_with_progress(
     trace: &Trace,
     limits: Limits,
     ledger: &mut Ledger,
-) -> Report {
+) -> ArtifactReport {
     let mut work = budget::Work::new(limits);
     let result = match ledger.record(Binding::of(declaration, trace), Progress::of(trace)) {
         Ok(retained) => run(
@@ -329,7 +341,7 @@ pub fn evaluate_with_progress(
         ),
         Err(refusal) => Err(refusal.into()),
     };
-    Report {
+    ArtifactReport {
         result,
         limits: work.limits,
         usage: work.usage,
@@ -420,12 +432,12 @@ pub fn mapping_support_checked(
 /// from an unauthenticated version-1 result without re-deriving it. A report
 /// refused by authentication itself retains none, because nothing was
 /// authenticated.
-pub fn evaluate_v2(
+pub fn evaluate_artifact_v2(
     package: &v2::AdmittedPackage,
     declaration: usize,
     trace: &Trace,
     limits: Limits,
-) -> Report {
+) -> ArtifactReport {
     let mut work = budget::Work::new(limits);
     let mut authenticated = None;
     let result = authenticate_v2(package, declaration, trace, &mut work).and_then(|binding| {
@@ -439,7 +451,7 @@ pub fn evaluate_v2(
             &mut work,
         )
     });
-    Report {
+    ArtifactReport {
         result,
         limits: work.limits,
         usage: work.usage,
@@ -455,7 +467,7 @@ pub fn evaluate_with_progress_v2(
     trace: &Trace,
     limits: Limits,
     ledger: &mut Ledger,
-) -> Report {
+) -> ArtifactReport {
     let mut work = budget::Work::new(limits);
     let mut authenticated = None;
     let result = authenticate_v2(package, declaration, trace, &mut work).and_then(|binding| {
@@ -474,7 +486,7 @@ pub fn evaluate_with_progress_v2(
                 )
             })
     });
-    Report {
+    ArtifactReport {
         result,
         limits: work.limits,
         usage: work.usage,

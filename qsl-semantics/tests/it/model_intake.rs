@@ -691,11 +691,7 @@ fn wire_field(identity: &str, name: &str, type_ref: &str) -> Value {
     })
 }
 
-/// FR-505-AC-1: a bounded Rational value type is admitted through Semantic IR
-/// validation and package reading, and its typed field retains that identity.
-#[trace("FR-505-AC-1", "TC-1300")]
-#[test]
-fn reads_a_bounded_rational_value_type_from_a_package_document() {
+fn rational_intake_document() -> Value {
     let package = "test/rational-value-type";
     let ratio = format!("ix://{package}/Ratio");
     let holder = format!("ix://{package}/Holder");
@@ -723,7 +719,7 @@ fn reads_a_bounded_rational_value_type_from_a_package_document() {
     })
     .collect::<Vec<_>>();
     let field = wire_field(&format!("{holder}/ratio"), "ratio", &ratio);
-    let document = wire_envelope(
+    wire_envelope(
         package,
         serde_json::json!([
             wire_construct(
@@ -751,7 +747,17 @@ fn reads_a_bounded_rational_value_type_from_a_package_document() {
                 serde_json::json!({"supertypes": [], "fields": [field], "operations": []}),
             ),
         ]),
-    );
+    )
+}
+
+/// FR-505-AC-1: a bounded Rational value type is admitted through Semantic IR
+/// validation and package reading, and its typed field retains that identity.
+#[trace("FR-505-AC-1", "TC-1300")]
+#[test]
+fn reads_a_bounded_rational_value_type_from_a_package_document() {
+    let package = "test/rational-value-type";
+    let ratio = format!("ix://{package}/Ratio");
+    let document = rational_intake_document();
     let parsed = parse_document(&serde_json::to_vec(&document).expect("serialize package"));
     let records = read_records(package, &parsed).expect("bounded Rational package reads");
     let scalar = records
@@ -792,6 +798,203 @@ fn reads_a_bounded_rational_value_type_from_a_package_document() {
                 scalar.key.clone()
             )
     )));
+}
+
+fn set_rational_bound(document: &mut Value, keyword: &str, value: Value) {
+    let constraints = document["types"][0]["constraints"].as_array_mut().unwrap();
+    let constraint = constraints
+        .iter_mut()
+        .find(|entry| entry["keyword"] == keyword)
+        .unwrap();
+    constraint["operands"]["value"] = value;
+}
+
+#[trace("TC-1300", "FR-505-AC-1")]
+#[test]
+fn rational_bounds_retain_safe_numbers_and_signed64_strings() {
+    for (minimum, maximum, lower, upper) in [
+        (
+            serde_json::json!(-9007199254740992_i64),
+            serde_json::json!(9007199254740992_i64),
+            -9007199254740992_i64,
+            9007199254740992_i64,
+        ),
+        (
+            serde_json::json!("-9223372036854775808"),
+            serde_json::json!("9223372036854775807"),
+            i64::MIN,
+            i64::MAX,
+        ),
+        (serde_json::json!("0"), serde_json::json!("7"), 0, 7),
+    ] {
+        let mut document = rational_intake_document();
+        set_rational_bound(&mut document, "minNumerator", minimum);
+        set_rational_bound(&mut document, "maxNumerator", maximum);
+        set_rational_bound(&mut document, "minDenominator", serde_json::json!("1"));
+        set_rational_bound(
+            &mut document,
+            "maxDenominator",
+            serde_json::json!("9223372036854775807"),
+        );
+        let parsed = parse_document(&serde_json::to_vec(&document).unwrap());
+        let records = read_records("test/rational-value-type", &parsed).unwrap();
+        let domain = records
+            .iter()
+            .find_map(|record| match record {
+                qsl_semantics::model::domain_package::DomainPackageRecord::ScalarType(scalar) => {
+                    match &scalar.domain {
+                        qsl_semantics::model::domain_package::ScalarValueDomain::Rational {
+                            domain: Some(domain),
+                            unit: None,
+                        } => Some(domain),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            })
+            .expect("retained unit-less Rational domain");
+        assert_eq!(
+            domain.numerator().lower(),
+            &quire_exact::Integer::from(lower)
+        );
+        assert_eq!(
+            domain.numerator().upper(),
+            &quire_exact::Integer::from(upper)
+        );
+        assert_eq!(
+            domain.denominator().upper(),
+            &quire_exact::Integer::from(i64::MAX)
+        );
+    }
+}
+
+#[trace("TC-1300", "FR-505-AC-3")]
+#[test]
+fn rational_bound_operands_refuse_noncanonical_strings_and_shapes() {
+    for value in [
+        serde_json::json!("-0"),
+        serde_json::json!("+1"),
+        serde_json::json!("01"),
+        serde_json::json!("-01"),
+        serde_json::json!(" 1"),
+        serde_json::json!("1 "),
+        serde_json::json!("−1"),
+        serde_json::json!("１"),
+        serde_json::json!("1.0"),
+        serde_json::json!("1e2"),
+        serde_json::json!("3/4"),
+        serde_json::json!("9223372036854775808"),
+        serde_json::json!("-9223372036854775809"),
+        serde_json::json!(1.5),
+        serde_json::json!(100.0),
+        serde_json::json!(null),
+    ] {
+        let mut document = rational_intake_document();
+        set_rational_bound(&mut document, "minNumerator", value.clone());
+        let parsed = parse_document(&serde_json::to_vec(&document).unwrap());
+        let refusals = read_records("test/rational-value-type", &parsed).unwrap_err();
+        assert!(
+            matches!(&refusals[0].cause,
+                qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. }
+                    if node == "ix://test/rational-value-type/Ratio/constraints/minNumerator" && member.to_string() == "TypeDefinition.constraints[1].operands"
+            ),
+            "{value}: {refusals:?}"
+        );
+    }
+    for operands in [
+        serde_json::json!({}),
+        serde_json::json!({"value": "1", "extra": 0}),
+    ] {
+        let mut document = rational_intake_document();
+        document["types"][0]["constraints"][1]["operands"] = operands;
+        let parsed = parse_document(&serde_json::to_vec(&document).unwrap());
+        let refusals = read_records("test/rational-value-type", &parsed).unwrap_err();
+        assert!(
+            matches!(&refusals[0].cause,
+                qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { member, .. }
+                    if member.to_string() == "TypeDefinition.constraints[1].operands"
+            ),
+            "{refusals:?}"
+        );
+    }
+}
+
+#[trace("TC-1300", "FR-505-AC-3")]
+#[test]
+fn unsafe_numeric_rational_bounds_refuse_before_operand_intake() {
+    for number in [
+        9007199254740993_i64,
+        9007199254740994_i64,
+        -9007199254740994_i64,
+    ] {
+        let mut document = rational_intake_document();
+        set_rational_bound(&mut document, "minNumerator", serde_json::json!(number));
+        let result = PackageDocument::parse(
+            &serde_json::to_vec(&document).unwrap(),
+            qsl_foundation::IntakeLimits::default(),
+        );
+        let refusal = match result {
+            Ok(_) => panic!("unsafe numeric bound admitted: {number}"),
+            Err(refusal) => refusal,
+        };
+        assert_eq!(refusal.code, Code::NoncanonicalWire);
+        assert!(
+            matches!(&refusal.cause,
+                qsl_semantics::model::refusal::ModelRefusalCause::NoncanonicalNumber {
+                    inexact: qsl_semantics::model::refusal::Inexact::Integer, document_pointer,
+                } if document_pointer.as_str() == "/types/0/constraints/1/operands/value"
+            ),
+            "{refusal:?}"
+        );
+    }
+}
+
+#[trace("TC-1300", "FR-505-AC-3")]
+#[test]
+fn rational_string_bounds_preserve_missing_operand_and_domain_refusal_order() {
+    use qsl_semantics::model::refusal::ModelRefusalCause;
+    // Missing keys precede malformed operands, even when the bad operand appears first.
+    let mut document = rational_intake_document();
+    set_rational_bound(&mut document, "maxDenominator", serde_json::json!("01"));
+    document["types"][0]["constraints"]
+        .as_array_mut()
+        .unwrap()
+        .remove(2);
+    let parsed = parse_document(&serde_json::to_vec(&document).unwrap());
+    let refusals = read_records("test/rational-value-type", &parsed).unwrap_err();
+    assert!(
+        matches!(&refusals[0].cause, ModelRefusalCause::IntakeMalformedDeclaration { member, .. }
+        if member.to_string() == "TypeDefinition.constraints"),
+        "{refusals:?}"
+    );
+    assert!(refusals[0].detail.contains("minDenominator"));
+    // Operand validation follows keyword order rather than constraint array order.
+    let mut document = rational_intake_document();
+    set_rational_bound(&mut document, "maxDenominator", serde_json::json!("01"));
+    set_rational_bound(&mut document, "maxNumerator", serde_json::json!("+1"));
+    let parsed = parse_document(&serde_json::to_vec(&document).unwrap());
+    let refusals = read_records("test/rational-value-type", &parsed).unwrap_err();
+    assert!(
+        matches!(&refusals[0].cause, ModelRefusalCause::IntakeMalformedDeclaration { member, .. }
+        if member.to_string() == "TypeDefinition.constraints[3].operands"),
+        "{refusals:?}"
+    );
+    for denominator in ["0", "-1"] {
+        let mut document = rational_intake_document();
+        set_rational_bound(
+            &mut document,
+            "minDenominator",
+            serde_json::json!(denominator),
+        );
+        document["types"][0]["unit"] = serde_json::json!("ix://quire/unit/absent");
+        let parsed = parse_document(&serde_json::to_vec(&document).unwrap());
+        let refusals = read_records("test/rational-value-type", &parsed).unwrap_err();
+        assert!(
+            matches!(&refusals[0].cause, ModelRefusalCause::UnsupportedDeclarationForm { member, .. }
+            if member.to_string() == "TypeDefinition.constraints"),
+            "{refusals:?}"
+        );
+    }
 }
 
 fn unit_intake_scale_document(package_identity: &str, count: usize) -> Vec<u8> {
