@@ -8,12 +8,13 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use qsl_foundation::diagnostic::Code;
-use qsl_foundation::SettingLimits;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value};
 
 use crate::error::{Error, Result};
 use crate::Outcome;
+
+mod adapters;
 
 const USAGE: &str = "usage: cargo xtask qualify --corpus <dir> [--capability <id>]... [--limit <setting>=<value>]... [--text]";
 const CORPUS_FILE: &str = "complete-v1.json";
@@ -263,6 +264,28 @@ struct Report {
 /// Run `cargo xtask qualify` after a full preflight. All corpus reads and
 /// QSL calls occur sequentially on this thread (FR-350-AC-7).
 pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
+    execute(workspace_root, operands).map(|execution| execution.outcome)
+}
+
+/// A qualification report and the exact public-operation bytes of its passed
+/// vectors. Operation bytes are deliberately separate from the FR-352 report.
+pub struct Execution {
+    /// The command's report and exit status.
+    pub outcome: Outcome,
+    /// Passed vector ids in bytewise order, paired with their operation bytes.
+    pub outputs: BTreeMap<String, Vec<u8>>,
+}
+
+/// Execute qualification, retaining successful operation bytes for callers
+/// that compare determinism. The CLI writes only the report.
+pub fn execute(workspace_root: &Path, operands: &[OsString]) -> Result<Execution> {
+    let qspec = qspec_dir(workspace_root)?;
+    execute_with_qspec(&qspec, operands)
+}
+
+/// Execute against an explicitly selected QSpec checkout, without changing
+/// process-global environment variables.
+pub fn execute_with_qspec(qspec: &Path, operands: &[OsString]) -> Result<Execution> {
     let args = parse_args(operands)?;
     let limits = qsl_replay::CallerLimits::from_operands(args.limits.iter().map(String::as_str))
         .map_err(|error| Error::QualificationRefusal(error.to_string()))?;
@@ -275,7 +298,6 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
             corpus_root.display()
         )));
     }
-    let qspec = qspec_dir(workspace_root)?;
     let schema_path = qspec.join(SCHEMA_FILE);
     let schema_bytes = fs::read(&schema_path).map_err(|error| {
         Error::QualificationRefusal(format!("{}: {error}", schema_path.display()))
@@ -286,6 +308,7 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
             schema_path.display()
         ))
     })?;
+    let adapters = adapters::Schemas::new(qspec, &schema)?;
     let schema = jsonschema::JSONSchema::options()
         .with_draft(jsonschema::Draft::Draft202012)
         .compile(&schema)
@@ -367,6 +390,7 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
         .collect::<Vec<_>>();
     let mut vector_reports = BTreeMap::<String, Vec<VectorReport>>::new();
     let mut vector_outcomes = BTreeMap::<String, Vec<(String, VectorOutcome)>>::new();
+    let mut outputs = BTreeMap::new();
     for vector in &corpus.vectors {
         if !scope_ids.iter().any(|id| id == &vector.capability_id)
             || !vector
@@ -377,7 +401,13 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
         {
             continue;
         }
-        let report = execute_vector(vector, &corpus_root, &limits);
+        let (report, bytes) =
+            execute_vector(vector, &corpus_root, &limits, &args.limits, &adapters);
+        if report.outcome == VectorOutcome::Passed {
+            if let Some(bytes) = bytes {
+                outputs.insert(vector.id.clone(), bytes);
+            }
+        }
         vector_outcomes
             .entry(vector.capability_id.clone())
             .or_default()
@@ -443,9 +473,12 @@ pub fn run(workspace_root: &Path, operands: &[OsString]) -> Result<Outcome> {
             Error::QualificationRefusal(format!("cannot encode report: {error}"))
         })? + "\n"
     };
-    Ok(Outcome {
-        stdout,
-        code: if qualified { 0 } else { 1 },
+    Ok(Execution {
+        outcome: Outcome {
+            stdout,
+            code: if qualified { 0 } else { 1 },
+        },
+        outputs,
     })
 }
 
@@ -558,15 +591,6 @@ fn validate_semantics(corpus: &Corpus) -> Result<()> {
                     vector.id, file.path
                 )));
             }
-            if !matches!(
-                file.kind,
-                InputKind::Source | InputKind::Model | InputKind::Input
-            ) {
-                return Err(Error::QualificationRefusal(format!(
-                    "vector {} has unsupported input kind {:?}",
-                    vector.id, file.kind
-                )));
-            }
         }
     }
     for vector in &corpus.vectors {
@@ -653,134 +677,69 @@ fn is_qsl_subject(subject: &Subject) -> bool {
     )
 }
 
-fn execute_vector(vector: &Vector, root: &Path, limits: &qsl_replay::CallerLimits) -> VectorReport {
-    let expected = vector.expected.clone();
-    let mut inputs = Vec::with_capacity(vector.input.files.len());
-    for input in &vector.input.files {
-        let path = root.join(&input.path);
-        let resolved = match fs::canonicalize(&path) {
-            Ok(resolved) if resolved.starts_with(root) => resolved,
-            Ok(_) => {
-                return vector_failure(
-                    vector,
-                    expected,
-                    VectorOutcome::ToolFailure,
-                    json!({"code":"input-io","message":"input resolves outside the corpus root","path":input.path}),
-                )
-            }
-            Err(error) => {
-                return vector_failure(
-                    vector,
-                    expected,
-                    VectorOutcome::ToolFailure,
-                    json!({"code":"input-io","message":error.to_string(),"path":input.path}),
-                )
-            }
-        };
-        let bytes = match fs::read(&resolved) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                return vector_failure(
-                    vector,
-                    expected,
-                    VectorOutcome::ToolFailure,
-                    json!({"code":"input-io","message":error.to_string(),"path":input.path}),
-                )
-            }
-        };
-        inputs.push((input, bytes));
-    }
-    let source = vector
-        .input
-        .files
-        .iter()
-        .find(|file| file.kind == InputKind::Source);
-    let Some(source) = source else {
-        return vector_failure(
-            vector,
-            expected,
-            VectorOutcome::ToolFailure,
-            json!({"code":"missing-input","message":"subject requires a source input"}),
-        );
-    };
-    let bytes = inputs
-        .iter()
-        .find(|(input, _)| input.path == source.path)
-        .map(|(_, bytes)| bytes.as_slice())
-        .expect("source input was read before execution");
-    let identity = qsl_foundation::SourceIdentity::new("agent-ix", &source.path);
-    let result = match (vector.subject.consumer_type, vector.subject.operation) {
-        (ConsumerType::Language, Operation::Compile) => {
-            let stage_limits = qsl_replay::StageLimits::from_iter(limits.spine.bounds());
-            match qsl_replay::compile_package(
-                qsl_replay::CompileUnit {
-                    source: identity,
-                    package_name: "qualification".to_owned(),
-                    path: &source.path,
-                    bytes,
-                },
-                std::iter::empty::<&[u8]>(),
-                &qsl_replay::DependencyInput::default(),
-                stage_limits,
-                limits.replay,
-            ) {
-                Ok(compiled) => {
-                    match serde_json::from_slice::<serde_json::Value>(compiled.bytes()) {
-                        Ok(package) => (package, None, None),
-                        Err(error) => (
-                            json!({"code": "invalid-package", "cause": error.to_string()}),
-                            None,
-                            None,
-                        ),
+fn execute_vector(
+    vector: &Vector,
+    root: &Path,
+    limits: &qsl_replay::CallerLimits,
+    overrides: &[String],
+    schemas: &adapters::Schemas,
+) -> (VectorReport, Option<Vec<u8>>) {
+    match adapters::execute(vector, root, limits, overrides, schemas) {
+        Ok(result) => {
+            let outcome = match result.partition {
+                adapters::Partition::Result => settle_vector(&vector.expected, &result.actual),
+                adapters::Partition::Unsupported => {
+                    if matches_expected(&vector.expected, &result.actual) {
+                        VectorOutcome::Passed
+                    } else {
+                        VectorOutcome::Unsupported
                     }
                 }
-                Err(refusal) => (
-                    json!({"code": refusal.code().as_str(), "cause": refusal.to_string()}),
-                    None,
-                    None,
-                ),
-            }
-        }
-        (ConsumerType::Tool, Operation::Format) => {
-            match qsl_cst::parse(identity, &source.path, bytes, limits.spine.source) {
-                Ok(parsed) => match qsl_cst::format::format_with_limits(&parsed, limits.format) {
-                    Ok(formatted) => (json!(formatted), Some(formatted), None),
-                    Err(refusal) => {
-                        let diagnostic = refusal.diagnostic();
-                        (
-                            json!({"code": diagnostic.code.as_str(), "cause": diagnostic.cause.as_str(), "message": diagnostic.message}),
-                            None,
-                            None,
-                        )
+                adapters::Partition::Incomplete => {
+                    if matches_expected(&vector.expected, &result.actual) {
+                        VectorOutcome::Passed
+                    } else {
+                        VectorOutcome::Incomplete
                     }
+                }
+                adapters::Partition::ToolFailure => VectorOutcome::ToolFailure,
+            };
+            (
+                VectorReport {
+                    id: vector.id.clone(),
+                    outcome,
+                    expected: vector.expected.clone(),
+                    actual: result.actual,
                 },
-                Err(diagnostic) => (
-                    json!({"code": diagnostic.code.as_str(), "cause": diagnostic.cause.as_str()}),
-                    None,
-                    None,
-                ),
-            }
-        }
-        _ => {
-            return vector_failure(
-                vector,
-                expected,
-                VectorOutcome::ToolFailure,
-                json!({"code":"qualification_adapter_unavailable","cause":"the corpus-v1 input kind needed by this operation is not yet admitted"}),
+                result.bytes,
             )
         }
-    };
-    let (actual, _output, fault) = result;
-    let outcome = if let Some(fault) = fault {
-        return vector_failure(vector, expected, VectorOutcome::ToolFailure, fault);
-    } else {
-        settle_vector(&expected, &actual)
-    };
-    VectorReport {
-        id: vector.id.clone(),
-        outcome,
-        expected,
-        actual,
+        Err(failure) => (
+            vector_failure(
+                vector,
+                vector.expected.clone(),
+                VectorOutcome::ToolFailure,
+                serde_json::to_value(failure).expect("adapter failures contain only JSON values"),
+            ),
+            None,
+        ),
+    }
+}
+
+fn matches_expected(expected: &Expected, actual: &Value) -> bool {
+    match expected {
+        Expected::Value { value } => value == actual,
+        Expected::Refusal {
+            code,
+            cause,
+            details,
+        } => {
+            actual.get("code").and_then(Value::as_str) == Some(code)
+                && actual.get("cause").and_then(Value::as_str) == Some(cause)
+                && details
+                    .iter()
+                    .all(|(name, expected)| actual.get(name) == Some(expected))
+        }
     }
 }
 
@@ -801,12 +760,7 @@ fn vector_failure(
 fn settle_vector(expected: &Expected, actual: &Value) -> VectorOutcome {
     match expected {
         Expected::Value { value } if value == actual => VectorOutcome::Passed,
-        Expected::Refusal { code, cause, .. }
-            if actual.get("code").and_then(Value::as_str) == Some(code)
-                && actual.get("cause").and_then(Value::as_str) == Some(cause) =>
-        {
-            VectorOutcome::Passed
-        }
+        Expected::Refusal { .. } if matches_expected(expected, actual) => VectorOutcome::Passed,
         _ if matches!(
             actual
                 .get("code")

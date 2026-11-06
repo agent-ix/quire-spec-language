@@ -685,7 +685,7 @@ impl WitnessValue {
     /// (FR-290 "Assignments"): the FR-070 decode of the value's RFC 8785
     /// encoding. The wire frame need not be written in canonical form, so
     /// the encoding is canonicalised here rather than compared.
-    pub(crate) fn from_wire_json(value: &serde_json::Value) -> Result<Self, EntryFault> {
+    pub fn from_wire_json(value: &serde_json::Value) -> Result<Self, EntryFault> {
         let written = serde_json::to_vec(value).map_err(|_| EntryFault::Json)?;
         let document = read(&written, u64::MAX).map_err(|_| EntryFault::Json)?;
         let canonical =
