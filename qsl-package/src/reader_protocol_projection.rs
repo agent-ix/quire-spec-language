@@ -1325,11 +1325,11 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let [CheckedTerm::Binding { name, value }, body] = arguments else {
                     return Err(fault("reader-let-has-binding-and-body").into());
                 };
-                let binder = self.binder_node(name.as_ref(), body, locals)?;
+                let binder = self.binder_node(name.as_ref(), body)?;
                 let slot = self.next_slot(context, locals);
                 let value = self.project_argument(id, value, context, locals)?;
                 let mut body_locals = locals.clone();
-                body_locals.insert(binder, slot);
+                body_locals.extend(binder.map(|binder| (binder, slot)));
                 let body = self.project_argument(id, body, context, &body_locals)?;
                 self.grow_frame(context, slot.saturating_add(1));
                 Ok((NodeKind::Let { slot, value, body }, vec![value, body]))
@@ -1575,11 +1575,11 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let [source_term, CheckedTerm::Binding { name, value }] = arguments else {
                     return Err(fault("reader-collection-query-has-source-and-binder").into());
                 };
-                let binder = self.binder_node(name.as_ref(), value, locals)?;
+                let binder = self.binder_node(name.as_ref(), value)?;
                 let slot = self.next_slot(context, locals);
                 let source = self.project_argument(id, source_term, context, locals)?;
                 let mut body_locals = locals.clone();
-                body_locals.insert(binder, slot);
+                body_locals.extend(binder.map(|binder| (binder, slot)));
                 let body = self.project_argument(id, value, context, &body_locals)?;
                 self.grow_frame(context, slot.saturating_add(1));
                 let visit = match identity {
@@ -1983,79 +1983,28 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         first_free.max(after_active_locals)
     }
 
-    /// `#[string_edge]`: node tags and semantic forms are admitted wire
-    /// discriminators used to recover the binder selected by the checker.
-    #[ix_trace_rs::string_edge]
+    /// The binder a `let` or a collection query introduces, recovered from
+    /// its scope: the one `value`/`parameter` node of `name` the scope reaches
+    /// outside every nested scope that rebinds `name` (FR-390 rule 3). A scope
+    /// that never reads its binder reaches none, and the binder then takes a
+    /// frame slot no node reads. Levels are slot-relative and play no part.
     fn binder_node(
         &self,
         name: &str,
-        body: &CheckedTerm,
-        locals: &BTreeMap<CheckedNodeId, usize>,
-    ) -> Result<CheckedNodeId, BuildError> {
-        let next_level = locals
-            .keys()
-            .filter_map(|id| self.index.node(id))
-            .filter_map(parameter_level)
-            .max()
-            .map_or(0, |level| level.saturating_add(1));
-        let referenced = self.referenced_parameters(body);
-        let candidates = self
-            .index
-            .nodes
-            .values()
-            .filter(|node| {
-                node.node_tag.as_ref() == "value" && node.semantic_form.as_ref() == "parameter"
-            })
-            .filter(|node| !locals.contains_key(&node.node_id))
-            .filter(|node| parameter_name(&node.body) == Some(name))
-            .filter(|node| parameter_level(node).is_some_and(|level| level == next_level))
-            .map(|node| &node.node_id)
-            .collect::<Vec<_>>();
-        candidates
-            .iter()
-            .find(|candidate| referenced.contains(*candidate))
-            .or_else(|| candidates.first())
-            .map(|candidate| (*candidate).clone())
-            .ok_or_else(|| fault("reader-expression-binder-is-admitted").into())
-    }
-
-    fn referenced_parameters(&self, term: &CheckedTerm) -> BTreeSet<CheckedNodeId> {
-        /// `#[string_edge]`: the node tag and semantic form identify admitted
-        /// parameter nodes; they do not gate behavior on arbitrary input text.
-        #[ix_trace_rs::string_edge]
-        fn collect(
-            index: &WireIndex<'_>,
-            term: &CheckedTerm,
-            seen: &mut BTreeSet<CheckedNodeId>,
-            parameters: &mut BTreeSet<CheckedNodeId>,
-        ) {
-            match term {
-                CheckedTerm::Reference { target } => {
-                    let Some(node) = index.node(target) else {
-                        return;
-                    };
-                    if node.node_tag.as_ref() == "value"
-                        && node.semantic_form.as_ref() == "parameter"
-                    {
-                        parameters.insert(target.clone());
-                    } else if seen.insert(target.clone()) {
-                        collect(index, &node.body, seen, parameters);
-                    }
-                }
-                CheckedTerm::Application { arguments, .. }
-                | CheckedTerm::Aggregate { members: arguments } => {
-                    for argument in arguments {
-                        collect(index, argument, seen, parameters);
-                    }
-                }
-                CheckedTerm::Binding { value, .. } => collect(index, value, seen, parameters),
-                _ => {}
+        scope: &CheckedTerm,
+    ) -> Result<Option<CheckedNodeId>, BuildError> {
+        let mut found = BTreeSet::new();
+        let lookup = |id: &CheckedNodeId| self.index.node(id);
+        crate::introduced_binders::reach_term(&lookup, scope, &mut |node| {
+            if parameter_name(&node.body) == Some(name) {
+                found.insert(node.node_id.clone());
             }
+        });
+        let mut found = found.into_iter();
+        match (found.next(), found.next()) {
+            (binder, None) => Ok(binder),
+            _ => Err(fault("reader-expression-binder-is-admitted").into()),
         }
-
-        let mut parameters = BTreeSet::new();
-        collect(self.index, term, &mut BTreeSet::new(), &mut parameters);
-        parameters
     }
 
     /// `record.project`: a field of a record value, or an attribute of a
@@ -2420,6 +2369,9 @@ pub(crate) fn node_value_type(
         Ok(projection) => return Ok(projection.value_type().clone()),
         Err(error) => error,
     };
+    if error.code == Code::UnsupportedExactType && is_collection_bounds(&error.form) {
+        return collection_node_type(index, id);
+    }
     let unresolved = matches!(
         error.code,
         Code::UnsupportedExactType | Code::UnresolvedSelectedDeclaration
@@ -2517,10 +2469,89 @@ pub(crate) fn node_value_type(
     }
 }
 
+/// `#[string_edge]`: `form` is the admitted `tag/form` wire word an IR type
+/// error names.
+#[ix_trace_rs::string_edge]
+fn is_collection_bounds(form: &str) -> bool {
+    form == "bounded_domain/collection_bounds"
+}
+
+/// The integer a `min` or `max` member of a bounds node holds.
+#[ix_trace_rs::string_edge]
+fn bound_member(body: &CheckedTerm, wanted: &str) -> Option<u64> {
+    let CheckedTerm::Aggregate { members } = body else {
+        return None;
+    };
+    members.iter().find_map(|member| {
+        let CheckedTerm::Binding { name, value } = member else {
+            return None;
+        };
+        (name.as_ref() == wanted).then(|| match value.literal_read()?.value {
+            quire_contract_model::CheckedLiteralValue::Integer(bound) => {
+                bound.to_string().parse::<u64>().ok()
+            }
+            _ => None,
+        })?
+    })
+}
+
+/// The exact type of a node whose semantic type is a cardinality-bounded
+/// collection. IR's projection reads a collection only as a record member, so
+/// the join is QSL's: the bounds node gives the cardinality, the collection
+/// type node the kind and its element, and the element is typed by a node of
+/// the package that has it as semantic type (IR's own projection of that node).
+#[ix_trace_rs::string_edge]
+fn collection_node_type(
+    index: &TypeReader<'_>,
+    id: &CheckedNodeId,
+) -> Result<ValueType, TypeError> {
+    let bounds = index
+        .node(id)
+        .and_then(|node| index.node(&node.semantic_type))
+        .ok_or_else(|| fault("reader-collection-bounds-node-is-admitted"))?;
+    let collection = index
+        .node(&bounds.semantic_type)
+        .filter(|node| node.node_tag.as_ref() == "composite_type")
+        .ok_or_else(|| fault("reader-collection-type-node-is-admitted"))?;
+    let kind = match collection.semantic_form.as_ref() {
+        "sequence" => quire_exact::CollectionKind::Sequence,
+        "set" => quire_exact::CollectionKind::Set,
+        "bag" => quire_exact::CollectionKind::Bag,
+        "ordered_set" => quire_exact::CollectionKind::OrderedSet,
+        _ => return Err(TypeError::Unsupported),
+    };
+    let (Some(minimum), Some(maximum)) = (
+        bound_member(&bounds.body, "min"),
+        bound_member(&bounds.body, "max"),
+    ) else {
+        return Err(fault("reader-collection-bounds-are-integers").into());
+    };
+    let bound = quire_exact::CardinalityBound::new(minimum, maximum)
+        .map_err(|_| fault("reader-collection-bounds-are-ordered"))?;
+    let element = match &collection.body {
+        CheckedTerm::Aggregate { members } => match members.as_slice() {
+            [CheckedTerm::Reference { target }] => target,
+            _ => return Err(fault("reader-collection-type-has-one-element").into()),
+        },
+        _ => return Err(fault("reader-collection-type-has-one-element").into()),
+    };
+    let witness = index
+        .nodes
+        .values()
+        .find(|node| node.semantic_type == *element && node.node_id != *id)
+        .ok_or(TypeError::Unsupported)?;
+    let element = node_value_type(index, &witness.node_id)?;
+    Ok(ValueType::collection(quire_exact::CollectionType::new(
+        kind,
+        element,
+        Some(bound),
+    )))
+}
+
 /// `#[string_edge]`: `name` is an admitted binding key in the parameter wire
 /// form.
 #[ix_trace_rs::string_edge]
-fn parameter_name(term: &CheckedTerm) -> Option<&str> {
+pub(crate) fn parameter_name(term: &CheckedTerm) -> Option<&str> {
     let CheckedTerm::Aggregate { members } = term else {
         return None;
     };
@@ -2530,26 +2561,6 @@ fn parameter_name(term: &CheckedTerm) -> Option<&str> {
         };
         (name.as_ref() == "name").then(|| match value.literal_read()?.value {
             quire_contract_model::CheckedLiteralValue::Text(name) => Some(name),
-            _ => None,
-        })?
-    })
-}
-
-/// `#[string_edge]`: `level` is an admitted binding key in the parameter wire
-/// form.
-#[ix_trace_rs::string_edge]
-fn parameter_level(node: &CheckedSemanticNodeV2) -> Option<usize> {
-    let CheckedTerm::Aggregate { members } = &node.body else {
-        return None;
-    };
-    members.iter().find_map(|member| {
-        let CheckedTerm::Binding { name, value } = member else {
-            return None;
-        };
-        (name.as_ref() == "level").then(|| match value.literal_read()?.value {
-            quire_contract_model::CheckedLiteralValue::Integer(level) => {
-                level.to_string().parse::<usize>().ok()
-            }
             _ => None,
         })?
     })

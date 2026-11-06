@@ -473,24 +473,20 @@ impl<'p> BarePackage<'p> {
                 let root = reference(term)
                     .ok_or_else(|| fault("selected-protocol-expression-has-a-keyed-root"))?;
                 // The binders: `value`/`parameter` nodes of the root's
-                // dependency closure, stopping at a binder and at a function
+                // dependency closure, stopping at a binder and at a function,
+                // less the binders the expression introduces itself
                 // (FR-390 rule 3).
                 let mut found: BTreeSet<&CheckedNodeId> = BTreeSet::new();
-                let mut seen: BTreeSet<&CheckedNodeId> = BTreeSet::new();
-                let mut pending = vec![root];
-                while let Some(id) = pending.pop() {
-                    if !seen.insert(id) {
-                        continue;
-                    }
-                    let Some(next) = nodes.get(id) else { continue };
-                    match (&*next.node_tag, &*next.semantic_form) {
-                        ("value", "parameter") => {
-                            found.insert(id);
-                        }
-                        ("expression", _) | ("value", _) => pending.extend(&next.dependencies),
-                        _ => {}
-                    }
-                }
+                let lookup = |id: &CheckedNodeId| nodes.get(id).copied();
+                crate::introduced_binders::reach_term(
+                    &lookup,
+                    &CheckedTerm::Reference {
+                        target: root.clone(),
+                    },
+                    &mut |parameter| {
+                        found.insert(&parameter.node_id);
+                    },
+                );
                 check_equality(package, supply.equality, &reached(&nodes, root))?;
                 let mut sources = Vec::with_capacity(found.len());
                 for id in found {
