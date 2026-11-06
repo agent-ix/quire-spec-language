@@ -103,8 +103,8 @@ impl ReadEqualityRows {
   caller cannot build a `BarePackage` from bytes, from a decoded graph or from a
   term; `BarePackage` has no other constructor.
 - `ReadIdentityRows` is the QSL-owned read-evidence wrapper of FR-390: the selected
-  model identity rows (IR's `SelectedExactDeclarationRow` and
-  `SelectedExactFieldRow`) paired with the package they were produced for. A
+  declaration/field identity rows, final source-record rows and original selected
+  population catalog paired with the package they were produced for. A
   consumer obtains it with `ReadIdentityRows::read(bytes, package)` from the
   `identities.json` of the handoff directory and the package (below), and by no
   other route. Only the protocol-slot call reads it (FR-533); the temporal
@@ -237,8 +237,11 @@ default, read a legacy variant or silently omit a row that cannot be represented
 The writer SHALL emit an empty `source_records` or `populations` array only when
 the corresponding admitted producer set is actually empty. The format reader
 does not certify whole-witness completeness from an empty array: a request for a
-record whose row was omitted reaches native Exact projection and retains its
-typed `UnavailableIdentityWitness`, without a structural-key success fallback.
+record whose row was omitted reaches native Exact projection and returns its
+typed `UnavailableIdentityWitness`. The public bare view maps that native failure
+to its existing `MissingTypeRepresentation` at the requested admitted node,
+without a structural-key success fallback; this carrier adds no public native
+diagnostic-payload variant.
 QSL-1762's selected object closure uses the same
 declaration/field families and population catalogs; it introduces no second
 handoff format change.
@@ -318,7 +321,11 @@ the package bytes, a display name or source text. `IdentityFileRefusal` is close
 `Malformed` (not JSON or not this shape, an unknown or repeated member),
 `Format` (another `format` string, naming it), `Unjoined` (a row whose
 `structural_node` the package does not hold, or whose form does not match its
-identity), naming the first row. A refusal returns no rows and charges nothing.
+identity), naming the first row, and `Native` (a typed IR row-join refusal,
+retaining its code and native structural locus). Thus tagging a record node as a
+declared unit is a native mismatched-witness refusal even when the tag and key
+encoding are individually well-shaped. A refusal returns no rows and charges no
+scalar evaluation meter.
 quire-protocol's admission input list (its FR-043) names this file beside
 `checked-package.json`.
 

@@ -286,6 +286,8 @@ fn required_identity_handoff_preserves_original_record_keys_and_native_views() {
         crate::ReadIdentityRows::read(&bytes, &package).expect("native joins accept the rows");
     assert_eq!(read, rows);
     assert_eq!(read.to_bytes(&package).unwrap(), bytes);
+    drop(rows);
+    drop(emission);
     let selected = read.selected(&package).expect("the native record witness");
     for row in read.source_records() {
         let projection = package
@@ -362,6 +364,17 @@ fn required_source_record_rows_refuse_missing_fields_and_stale_native_bindings()
         crate::ReadIdentityRows::read(&serde_json::to_vec(&stale).unwrap(), &package)
     else {
         panic!("a stale binding must refuse natively");
+    };
+    assert_eq!(
+        error.code,
+        quire_contract_model::ExactTypeProjectionErrorCode::MismatchedIdentityWitness
+    );
+    let mut foreign = good.clone();
+    foreign["source_records"][0]["source_identity"] = json!("another-selected-source");
+    let Err(crate::IdentityFileRefusal::Native(error)) =
+        crate::ReadIdentityRows::read(&serde_json::to_vec(&foreign).unwrap(), &package)
+    else {
+        panic!("a foreign source owner must refuse natively");
     };
     assert_eq!(
         error.code,
