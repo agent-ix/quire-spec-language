@@ -29,6 +29,10 @@ use qsl_foundation::{AccountingSetting, Setting, SettingName};
 use qsl_semantics::library::LibraryName;
 use quire_semantic_value::supplied_stop::SuppliedLimits;
 
+mod package;
+pub use package::{ReplayPackage, ReplayPackageAdmissionRefusal};
+use quire_contract_model::CheckedRefinementInternal;
+
 /// The `quire.value.accounting/v1` scalar environment a replay starts from
 /// (FR-071's "state environment"). Opaque to #231: only the executor (#243)
 /// interprets individual entries; this type only stores and round-trips
@@ -228,6 +232,7 @@ impl ByteProvision {
 pub struct DependencyEntry {
     identity: LibraryName,
     sources: Vec<DefinitionSourceRef>,
+    refinement_internals: Option<Vec<CheckedRefinementInternal>>,
 }
 
 impl DependencyEntry {
@@ -239,6 +244,10 @@ impl DependencyEntry {
     pub fn sources(&self) -> &[DefinitionSourceRef] {
         &self.sources
     }
+    /// The optional internal-step lists supplied for this dependency.
+    pub fn refinement_internals(&self) -> Option<&[CheckedRefinementInternal]> {
+        self.refinement_internals.as_deref()
+    }
 }
 
 /// A [`DependencyEntry`] in wire-packet shape: `identity`,
@@ -249,14 +258,18 @@ pub struct DependencyEntryWire {
     pub identity: String,
     /// The dependency's lock `sources`.
     pub sources: Vec<SourceRefWire>,
+    /// The dependency lock's internal-step lists; omission supplies no list.
+    pub refinement_internals: Option<Vec<CheckedRefinementInternal>>,
 }
 
 /// FR-071/ADR-013 O-26: the typed replay request. Every
 /// recompilation input is reachable only through [`ByteProvision::get`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplayRequest {
+    package: ReplayPackage,
     package_name: String,
     sources: Vec<DefinitionSourceRef>,
+    refinement_internals: Option<Vec<CheckedRefinementInternal>>,
     dependencies: Vec<DependencyEntry>,
     replay_target: Option<ReplayTarget>,
     over: Option<ReplayOverBinding>,
@@ -274,6 +287,15 @@ pub struct ReplayRequest {
 }
 
 impl ReplayRequest {
+    /// The complete raw package retained for native admission before evaluation.
+    pub fn package(&self) -> &ReplayPackage {
+        &self.package
+    }
+
+    /// The proved package lock's supplied internal-step lists.
+    pub fn refinement_internals(&self) -> Option<&[CheckedRefinementInternal]> {
+        self.refinement_internals.as_deref()
+    }
     /// The package manifest's top-level name this request replays.
     pub fn package_name(&self) -> &str {
         &self.package_name
@@ -385,16 +407,14 @@ impl ReplayRequestWire {
 /// The in-process shape [`ReplayRequest::decode`] reads: the FR-323
 /// members (`package`, `selection`, `state_environment`, `limits`,
 /// `replay`) plus the QC-1 byte provision. It is never read from bytes, so
-/// it carries no contract version or vocabulary member: the version check
-/// belongs to a byte reader, and none exists yet.
+/// its complete raw package retains its own contract version. Decoding this
+/// input descriptor does not grant native package authority.
 #[derive(Clone)]
 pub struct ReplayRequestWire {
-    /// The package manifest's top-level name.
-    pub package_name: String,
+    /// The complete raw checked-package document, admitted natively before replay.
+    pub package: ReplayPackage,
     /// The semantic profile selections; each must name a known profile.
     pub profile_selections: Vec<ProfileSelection>,
-    /// `(authority, identity)` per declared source reference.
-    pub sources: Vec<SourceRefWire>,
     /// The package reference's `dependencies`, one per entry of the proved
     /// package's `dependency_selections`.
     pub dependencies: Vec<DependencyEntryWire>,
@@ -445,6 +465,22 @@ const SEMANTIC_PROFILE_ROLE: &str = "replay.semantic_profile_selections";
 /// [`ReplayRequest::decode`]'s structured refusal.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ReplayRequestRefusal {
+    /// A field needed to construct the raw package input descriptor is absent
+    /// or has the wrong JSON shape. This is not whole-package admission.
+    #[error("invalid_package/{cause} at {pointer}: malformed replay package descriptor")]
+    PackageMember {
+        /// Request-relative RFC 6901 pointer of the descriptor member.
+        pointer: String,
+        /// The structural input condition.
+        cause: PackageMemberCause,
+    },
+    /// The schema permits this omission, but a typed source provision needs
+    /// an explicit authority; none is inferred from its identity or byte path.
+    #[error("invalid_runtime_input/missing-member at {pointer}: a replay byte provision needs an authority")]
+    MissingProvisionAuthority {
+        /// The provision-path row that could not supply a typed source owner.
+        pointer: String,
+    },
     /// A profile selection names a semantic profile outside the closed
     /// known set: catalog `unknown_profile`/`unsupported-selection`. It
     /// retains the supplied selection and the role it was supplied for, as
@@ -544,6 +580,17 @@ pub enum ReplayRequestRefusal {
     BoundExceeded(#[from] BoundExceeded),
 }
 
+/// A structural field condition in a raw replay package descriptor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum PackageMemberCause {
+    /// The required member is absent.
+    #[error("missing-member")]
+    Missing,
+    /// The member has the wrong JSON kind.
+    #[error("wrong-value-kind")]
+    WrongKind,
+}
+
 fn join_members(members: &[TargetMember]) -> String {
     members
         .iter()
@@ -600,6 +647,8 @@ impl ReplayRequestRefusal {
     /// The catalog code of this refusal.
     pub fn code(&self) -> Code {
         match self {
+            Self::PackageMember { .. } => Code::InvalidPackage,
+            Self::MissingProvisionAuthority { .. } => Code::InvalidRuntimeInput,
             Self::UnknownSemanticProfile { .. } => Code::UnknownProfile,
             Self::IncompleteByteProvision { .. } => Code::MissingImport,
             Self::EmptyDependencySelection { .. } | Self::EmptyBackendIdentity => {
@@ -622,6 +671,11 @@ impl ReplayRequestRefusal {
     /// rule 1); `None` for every other refusal, whose text names its own.
     pub fn cause(&self) -> Option<&'static str> {
         match self {
+            Self::PackageMember { cause, .. } => Some(match cause {
+                PackageMemberCause::Missing => "missing-member",
+                PackageMemberCause::WrongKind => "wrong-value-kind",
+            }),
+            Self::MissingProvisionAuthority { .. } => Some("missing-member"),
             Self::MissingReplayTarget | Self::MissingOccurrenceKey => Some("missing-member"),
             Self::ConflictingReplayTarget { .. } => Some("invalid-value"),
             Self::UnexpectedArguments { .. }
@@ -635,8 +689,9 @@ impl ReplayRequestRefusal {
 
     /// The RFC 6901 pointer of a replay-target refusal; `None` for every
     /// other refusal.
-    pub fn pointer(&self) -> Option<&'static str> {
+    pub fn pointer(&self) -> Option<&str> {
         match self {
+            Self::PackageMember { pointer, .. } | Self::MissingProvisionAuthority { pointer } => Some(pointer),
             Self::MissingReplayTarget => Some("/replay"),
             Self::MissingOccurrenceKey => Some("/replay/occurrence_key"),
             Self::ConflictingReplayTarget { members } => {
@@ -660,7 +715,7 @@ impl ReplayRequestRefusal {
 /// caller-declared number a request could understate to launder an
 /// oversized byte provision past the bound (B3).
 fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
-    wire.profile_selections
+    wire.package.bytes().len() + wire.profile_selections
         .iter()
         .map(|p| p.profile().len() + p.value().len())
         .sum::<usize>()
@@ -668,11 +723,6 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
             .stage_limits
             .keys()
             .map(|name| name.len() + std::mem::size_of::<u64>())
-            .sum::<usize>()
-        + wire
-            .sources
-            .iter()
-            .map(DefinitionSourceRef::wire_len)
             .sum::<usize>()
         + wire
             .dependencies
@@ -775,8 +825,8 @@ impl ReplayRequest {
 
         // Only past this point does decoding touch the package reference or
         // the byte provision.
-        let sources = wire
-            .sources
+        let package::Descriptor { name: package_name, sources, refinement_internals } = wire.package.descriptor()?;
+        let sources = sources
             .into_iter()
             .map(DefinitionSourceRef::from_wire)
             .collect::<Vec<_>>();
@@ -793,7 +843,7 @@ impl ReplayRequest {
                     .into_iter()
                     .map(DefinitionSourceRef::from_wire)
                     .collect::<Vec<_>>();
-                Ok::<_, ReplayRequestRefusal>(DependencyEntry { identity, sources })
+                Ok::<_, ReplayRequestRefusal>(DependencyEntry { identity, sources, refinement_internals: entry.refinement_internals })
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -830,8 +880,10 @@ impl ReplayRequest {
         }
 
         Ok(Self {
-            package_name: wire.package_name,
+            package: wire.package,
+            package_name,
             sources,
+            refinement_internals,
             dependencies,
             replay_target,
             over,
@@ -859,13 +911,8 @@ impl ReplayRequest {
             .map_or_else(RequestTargetWire::default, Into::into);
         replay_target.over = self.over.clone();
         ReplayRequestWire {
-            package_name: self.package_name.clone(),
+            package: self.package.clone(),
             profile_selections: self.profile_selections.clone(),
-            sources: self
-                .sources
-                .iter()
-                .map(DefinitionSourceRef::to_wire)
-                .collect(),
             dependencies: self
                 .dependencies
                 .iter()
@@ -876,6 +923,7 @@ impl ReplayRequest {
                         .iter()
                         .map(DefinitionSourceRef::to_wire)
                         .collect(),
+                    refinement_internals: entry.refinement_internals.clone(),
                 })
                 .collect(),
             replay_target,

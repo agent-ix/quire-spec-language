@@ -415,7 +415,8 @@ pub use qsl_semantics::model::accounting::ModelNormalizationLimits;
 pub use qsl_semantics::model::domain_package::DomainPackageRef;
 pub use quire_exact::{EmptyInterval, Incomplete, Integer, IntegerInterval};
 pub use request::{
-    ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest, ReplayRequestRefusal,
+    ByteProvision, DependencyEntry, DependencyEntryWire, PackageMemberCause, ReplayPackage,
+    ReplayPackageAdmissionRefusal, ReplayRequest, ReplayRequestRefusal,
     ReplayRequestWire, StageLimitNameRefusal, StageLimits, StateEnvironment,
 };
 pub use result::{
