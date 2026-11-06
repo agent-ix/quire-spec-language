@@ -1648,23 +1648,23 @@ fn the_view_the_constructors_and_the_writer_refuse_a_budget_one_short() {
     use quire_contract_model::{ExactTypeProjectionErrorCode as Code, NativeJoinBudget};
     let built = record_capture();
     let ample = built.read(&built.emission);
-    let graph = ample.source().graph();
-    let mut measure = NativeJoinBudget::new(1 << 30, 1 << 30);
-    graph
-        .selected_exact_identities(ample.admitted(), &mut measure)
-        .expect("an ample budget joins the source rows");
-    let need = measure.consumed();
-    assert!(need.storage > 0 && need.work > 0);
-
-    // The evaluation view joins the emission's rows and then the witness they
-    // make, both on the one budget the read's limits give it.
+    // The source view and supplied bare entry both join the final rows and
+    // retain their native Exact projections. Measure those real entry calls
+    // on one ledger, including the emission's preceding row-production join.
     let mut view_measure = NativeJoinBudget::new(1 << 30, 1 << 30);
-    built
+    let rows = built
         .emission
         .identity_rows(ample.admitted(), &mut view_measure)
-        .expect("the emission's rows join")
-        .selected(ample.admitted(), &mut view_measure)
-        .expect("the rows' witness joins");
+        .expect("the emission's rows join");
+    BarePackage::new(ample.admitted())
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: None,
+            },
+            &mut view_measure,
+        )
+        .expect("the witness and its native Exact projections are admitted");
     let view_need = view_measure.consumed();
     assert!(view_need.storage > 1);
     let limits = |work: u64, storage: u64| {
@@ -1715,6 +1715,10 @@ fn the_view_the_constructors_and_the_writer_refuse_a_budget_one_short() {
                 EvidencePackage::from_read(&ample, budget)
             }
         };
+        let mut measure = NativeJoinBudget::new(1 << 30, 1 << 30);
+        construct(&mut measure).expect("the complete constructor admits with ample limits");
+        let need = measure.consumed();
+        assert!(need.storage > 0 && need.work > 0);
         let mut enough = NativeJoinBudget::new(need.work, need.storage);
         construct(&mut enough).expect("exact work and storage admit");
         assert_eq!(enough.consumed(), need);
