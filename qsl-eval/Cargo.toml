@@ -66,6 +66,9 @@ quire-checked = { workspace = true, features = ["test-support"] }
 # `no_shipped_dependency_enables_test_support` refuses a normal or build
 # dependency that does.
 qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
+# `V2ReadLimits::fixture`, the explicit finite fixture limits (FR-358). Only this
+# dev-dependency enables `test-support`.
+qsl-package = { path = "../qsl-package", features = ["test-support"] }
 # The ordered charge log (`Meter::admitted_charges`) the
 # charge-sequence tests assert. A production meter keeps a count only; only
 # this dev-dependency enables `test-support`.

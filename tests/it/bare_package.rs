@@ -1422,20 +1422,16 @@ fn with_supply_is_admitted_at_the_measured_budget_and_refused_one_short() {
     assert!(admitted.identities().is_some());
 
     let mut short_work = NativeJoinBudget::new(need.work - 1, need.storage);
-    let denied = supply_on(&read, &rows, &mut short_work)
-        .err()
-        .expect("denied");
+    let denied = supply_on(&read, &rows, &mut short_work).expect_err("denied");
     assert_eq!(denied.code, Code::ExhaustedWork);
     assert_eq!(
         short_work.first_unpaid().map(|unpaid| unpaid.kind),
         Some(quire_contract_model::NativeJoinChargeKind::Work)
     );
-    assert!(short_work.consumed().work <= need.work - 1);
+    assert!(short_work.consumed().work < need.work);
 
     let mut short_storage = NativeJoinBudget::new(need.work, need.storage - 1);
-    let denied = supply_on(&read, &rows, &mut short_storage)
-        .err()
-        .expect("denied");
+    let denied = supply_on(&read, &rows, &mut short_storage).expect_err("denied");
     assert_eq!(denied.code, Code::ExhaustedStorage);
     assert_eq!(
         short_storage.first_unpaid().map(|unpaid| unpaid.kind),
@@ -1485,9 +1481,7 @@ fn witness_defects_stay_deferred_and_a_denial_is_not_an_unknown_witness() {
     let spent = ample.consumed();
     assert!(spent.work > 0);
     let mut starved = NativeJoinBudget::new(spent.work - 1, spent.storage);
-    let denied = supply_on(&read, &unknown, &mut starved)
-        .err()
-        .expect("denied");
+    let denied = supply_on(&read, &unknown, &mut starved).expect_err("denied");
     assert!(matches!(
         denied.code,
         Code::ExhaustedWork | Code::ExhaustedStorage
@@ -1517,7 +1511,7 @@ fn two_joins_on_one_budget_are_charged_cumulatively() {
     let mut budget = NativeJoinBudget::new(need.work, need.storage);
     let first = supply_on(&read, &rows, &mut budget).expect("the first join is paid for");
     assert_eq!(budget.consumed(), need);
-    let second = supply_on(&read, &rows, &mut budget).err().expect("denied");
+    let second = supply_on(&read, &rows, &mut budget).expect_err("denied");
     assert!(matches!(
         second.code,
         quire_contract_model::ExactTypeProjectionErrorCode::ExhaustedWork
