@@ -446,10 +446,14 @@ pub fn execute_with_qspec(qspec: &Path, operands: &[OsString]) -> Result<Executi
     if let Err(errors) = schema.validate(&value) {
         let reasons = errors
             .map(|error| {
-                format!(
-                    "{}: fails schema {}",
-                    error.instance_path, error.schema_path
-                )
+                let mut pointer = error.instance_path.to_string();
+                if let jsonschema::error::ValidationErrorKind::Required { property } = &error.kind {
+                    if let Some(property) = property.as_str() {
+                        pointer.push('/');
+                        pointer.push_str(&property.replace('~', "~0").replace('/', "~1"));
+                    }
+                }
+                format!("{}: fails schema {}", pointer, error.schema_path)
             })
             .collect::<Vec<_>>()
             .join("; ");
@@ -1011,7 +1015,18 @@ fn parse_unique_json(bytes: &[u8]) -> std::result::Result<Value, String> {
         ReadError::Malformed {
             kind: Malformed::DuplicateName,
             offset,
-        } => format!("duplicate object key at byte {offset}"),
+        } => {
+            // The owner reports the start of the later member's JSON
+            // string. Decode only that scalar to preserve its actual name,
+            // including escapes, without walking the untrusted tree again.
+            let name = bytes.get(offset..).and_then(|bytes| {
+                String::deserialize(&mut serde_json::Deserializer::from_slice(bytes)).ok()
+            });
+            match name {
+                Some(name) => format!("duplicate object key {name} at byte {offset}"),
+                None => format!("duplicate object key at byte {offset}"),
+            }
+        }
         other => other.to_string(),
     })?;
     enum Task<'a> {
@@ -1291,7 +1306,12 @@ mod tests {
     fn rejects_duplicate_object_members() {
         assert!(parse_unique_json(br#"{"a":1,"a":2}"#)
             .unwrap_err()
-            .contains("duplicate object key"));
+            .contains("duplicate object key a"));
+        assert!(
+            parse_unique_json(br#"{"contract_version":1,"contract\u005fversion":2}"#)
+                .unwrap_err()
+                .contains("duplicate object key contract_version")
+        );
     }
 
     #[trace("TC-1325", "FR-350-AC-11")]
@@ -1419,6 +1439,22 @@ mod tests {
                     let repeated = super::execute_with_qspec(&qspec, &arguments)
                         .expect("the repeated complete qualification remains admitted");
                     assert_eq!(execution.outcome.stdout, repeated.outcome.stdout);
+
+                    // An invalid disposition retains the same deep payload.
+                    // Schema diagnostics must identify the obligation's
+                    // location without recursively printing that payload.
+                    corpus.0["vectors"][0]["expected"]["disposition"] =
+                        serde_json::json!("not-a-disposition");
+                    std::fs::write(
+                        corpus_root.join("complete-v1.json"),
+                        json_bytes(&corpus).unwrap(),
+                    ).unwrap();
+                    let failure = match super::execute_with_qspec(&qspec, &arguments) {
+                        Err(failure) => failure,
+                        Ok(_) => panic!("an invalid deep oracle refuses before execution"),
+                    };
+                    assert!(matches!(failure, crate::error::Error::QualificationRefusal(_)));
+                    assert!(failure.to_string().contains("/vectors/0/expected"));
                 }
             })
             .expect("spawn the bounded-stack complete qualification control")
