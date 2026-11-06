@@ -127,9 +127,11 @@ pub(crate) fn read_v2(
 
 /// Every ceiling of one `read_checked_package_v2` call (see the module
 /// doc's "Ceilings" section). Each field is used exactly as the caller
-/// supplies it, above or below [`Self::default`]: an implementation ceiling
-/// is not a domain bound (NFR-001). There is no depth ceiling (FR-264). Each
-/// field is named by its `i2.*` setting (FR-255).
+/// supplies it: an implementation ceiling is not a domain bound (NFR-001).
+/// There is no depth ceiling (FR-264). Each field except [`Self::storage`] is
+/// named by its `i2.*` setting (FR-255). The type has no `Default`: the
+/// native-join storage ceiling is the caller's to state (FR-531, FR-358), so
+/// [`Self::bounded`] takes it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct V2ReadLimits {
     /// Offered bytes, checked here and handed to IR as its `bytes`
@@ -144,12 +146,48 @@ pub struct V2ReadLimits {
     pub occurrences: u64,
     /// IR's diagnostic-entry ceiling (`i2.diagnostics`).
     pub diagnostics: u64,
-    /// IR's semantic-term validation-visit ceiling (`i2.work_units`).
+    /// IR's semantic-term validation-visit ceiling (`i2.work_units`). The
+    /// native identity joins of one pass share this as their work ceiling.
     pub work: u64,
+    /// The logical-storage ceiling the native identity joins of one pass
+    /// share (FR-358): owned containers, rows, keys, handles and copied
+    /// bytes, not allocator bytes and not [`Self::artifact_bytes`]. It is
+    /// required; no setting spelling names it yet.
+    pub storage: u64,
 }
 
-impl Default for V2ReadLimits {
-    fn default() -> Self {
+/// The finite work and logical-storage ceilings of one pass of native
+/// identity joins (FR-358), for an outer entry that owns no reader limits.
+/// The type has no `Default`: every constructor states both ceilings.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeJoinLimits {
+    /// Native inspection and validation steps.
+    pub work: u64,
+    /// Logical ownership units: containers, rows, keys, handles and copied
+    /// bytes.
+    pub storage: u64,
+}
+
+impl NativeJoinLimits {
+    /// Limits of `work` steps and `storage` units.
+    #[must_use]
+    pub const fn new(work: u64, storage: u64) -> Self {
+        Self { work, storage }
+    }
+
+    /// A new budget of these limits for one pass. The pass entry calls this
+    /// once and threads the same budget through every join (FR-358).
+    #[must_use]
+    pub fn budget(self) -> quire_contract_model::NativeJoinBudget {
+        quire_contract_model::NativeJoinBudget::new(self.work, self.storage)
+    }
+}
+
+impl V2ReadLimits {
+    /// The reader's ceilings at IR's bounded reader limits and 16 MiB of
+    /// input, with the caller's native-join `storage` ceiling.
+    #[must_use]
+    pub fn bounded(storage: u64) -> Self {
         let ir = CheckedPackageReadLimits::bounded();
         Self {
             artifact_bytes: 16_777_216,
@@ -158,11 +196,41 @@ impl Default for V2ReadLimits {
             occurrences: ir.occurrences,
             diagnostics: ir.diagnostics,
             work: ir.work,
+            storage,
         }
     }
-}
 
-impl V2ReadLimits {
+    /// Explicit finite limits for a fixture: IR's bounded reader limits and a
+    /// native-join storage ceiling of 2^24 logical units. Public only under
+    /// `test-support` (and in this crate's tests); a production entry states
+    /// its own ceilings through [`Self::bounded`].
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn fixture() -> Self {
+        Self::bounded(1 << 24)
+    }
+
+    /// The native-join limits of a pass over a package read under these
+    /// limits: [`Self::work`] and [`Self::storage`] (FR-358).
+    #[must_use]
+    pub const fn native_join_limits(&self) -> NativeJoinLimits {
+        NativeJoinLimits::new(self.work, self.storage)
+    }
+
+    /// The one finite native-join budget of a pass over a package read under
+    /// these limits; every join of the pass charges the same value.
+    #[must_use]
+    pub fn native_join_budget(&self) -> quire_contract_model::NativeJoinBudget {
+        self.native_join_limits().budget()
+    }
+
+    /// These limits with the native-join storage ceiling set to `bound`.
+    #[must_use]
+    pub const fn with_storage(mut self, bound: u64) -> Self {
+        self.storage = bound;
+        self
+    }
+
     /// These limits with `i2.input_bytes` set to `bound`.
     #[must_use]
     pub const fn with_artifact_bytes(mut self, bound: usize) -> Self {
@@ -1024,13 +1092,29 @@ impl AdmittedPackageRead<'_> {
                 "reader-evaluation-view-retains-source-nodes",
             )));
         }
+        let limits = self.read.effective_limits;
+        let mut budget = limits.native_join_budget();
+        let identities = self
+            .source
+            .graph()
+            .selected_exact_identities(&self.read.admitted, &mut budget)
+            .map_err(|refusal| {
+                if qsl_semantics::model::intake::is_native_budget_denial(&refusal) {
+                    ViewFailure::Exhausted(Box::new(refusal))
+                } else {
+                    ViewFailure::Fault(InternalFault::new(
+                        "FR-390",
+                        "reader-selected-identities-are-admitted",
+                    ))
+                }
+            })?;
         let slots = project_package(
-            self.source.graph(),
             &self.read.admitted,
             &self.emission,
             self.emission.package.name(),
             self.slot_requests(),
-            self.read.effective_limits.work,
+            limits.work,
+            identities,
         )
         .map_err(|refusal| match refusal {
             PackageRefusal::Unsupported(view) => ViewFailure::Unsupported(Box::new(view)),

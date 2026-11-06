@@ -44,6 +44,7 @@ fn fixture_request(directory: &Path, source: &str) -> CheckedHandoffRequest {
             out: None,
         },
         corpus: Corpus::None,
+        native_join: qsl_package::V2ReadLimits::fixture().native_join_limits(),
     }
 }
 
@@ -97,10 +98,14 @@ fn select(
     index: Option<usize>,
 ) -> Result<qsl_package::BareSlot, BareSelectionFailure> {
     BarePackage::new(package)
-        .with_supply(BareSupply {
-            identities,
-            equality,
-        })
+        .with_supply(
+            BareSupply {
+                identities,
+                equality,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply")
         .select_protocol_slot(&ProtocolSlotDescriptor::new(node, member, index))
 }
 
@@ -434,10 +439,15 @@ fn related_calls_resolve_equal_walks_in_numeric_origin_order() {
     });
     let identities =
         ReadIdentityRows::read(&files["identities.json"], &package).expect("identities");
-    let bare = BarePackage::new(&package).with_supply(BareSupply {
-        identities: &identities,
-        equality: None,
-    });
+    let bare = BarePackage::new(&package)
+        .with_supply(
+            BareSupply {
+                identities: &identities,
+                equality: None,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let mut roots = Vec::new();
     let mut charges = Vec::new();
     for (member, span) in [("related.from", "99 100"), ("related.to", "100 105")] {
@@ -567,10 +577,15 @@ fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
         let package = read(&request, &serde_json::to_vec(&wire).expect("bytes"));
         let identities =
             ReadIdentityRows::read(&files["identities.json"], &package).expect("identities");
-        let bare = BarePackage::new(&package).with_supply(BareSupply {
-            identities: &identities,
-            equality: None,
-        });
+        let bare = BarePackage::new(&package)
+            .with_supply(
+                BareSupply {
+                    identities: &identities,
+                    equality: None,
+                },
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+            )
+            .expect("the fixture budget admits the supply");
         let world = bare.world().expect("world");
         let got = record(
             world.types(),
@@ -667,10 +682,15 @@ fn a_slot_whose_rank_exceeds_its_candidates_refuses_missing_location_projection(
     // admission or the first scalar charge.
     use qsl_eval::value::{CheckedPackageEvaluation, ProtocolSlot, ProtocolSupply};
     let identities = ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
-    let bare = BarePackage::new(&package).with_supply(BareSupply {
-        identities: &identities,
-        equality: None,
-    });
+    let bare = BarePackage::new(&package)
+        .with_supply(
+            BareSupply {
+                identities: &identities,
+                equality: None,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let slot = ProtocolSlot {
         node: node_key(&package, "Pipeline", "Decide"),
         member: "cases.guard".into(),
@@ -709,10 +729,15 @@ fn a_slot_whose_rank_exceeds_its_candidates_refuses_missing_location_projection(
     });
     let identities =
         ReadIdentityRows::read(&files["identities.json"], &all_missing).expect("identities");
-    let bare = BarePackage::new(&all_missing).with_supply(BareSupply {
-        identities: &identities,
-        equality: None,
-    });
+    let bare = BarePackage::new(&all_missing)
+        .with_supply(
+            BareSupply {
+                identities: &identities,
+                equality: None,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     for (member, index) in [("visible", 0), ("cases.guard", 1)] {
         let slot = ProtocolSlot {
             node: node_key(&all_missing, "Pipeline", "Decide"),
@@ -982,14 +1007,24 @@ fn the_retry_relation_evaluates_from_the_handoff_files_alone() {
     let package = read(&request, &files["checked-package.json"]);
     let identities = ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
     let rows = ReadEqualityRows::read(&files["equality.json"], &package).expect("rows");
-    let with_rows = BarePackage::new(&package).with_supply(BareSupply {
-        identities: &identities,
-        equality: Some(&rows),
-    });
-    let without_rows = BarePackage::new(&package).with_supply(BareSupply {
-        identities: &identities,
-        equality: None,
-    });
+    let with_rows = BarePackage::new(&package)
+        .with_supply(
+            BareSupply {
+                identities: &identities,
+                equality: Some(&rows),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
+    let without_rows = BarePackage::new(&package)
+        .with_supply(
+            BareSupply {
+                identities: &identities,
+                equality: None,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let world = with_rows.world().expect("the package declares its records");
     let types = world.types();
     let refund = node_key(&package, "Refunds", "Refund");
@@ -1119,10 +1154,14 @@ fn a_package_refusal_found_after_a_node_refusal_in_the_walk_is_reported_first() 
             .expect("fewer rows still read");
     let project = |equality: Option<&ReadEqualityRows>| {
         BarePackage::new(&package)
-            .with_supply(BareSupply {
-                identities: &identities,
-                equality,
-            })
+            .with_supply(
+                BareSupply {
+                    identities: &identities,
+                    equality,
+                },
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+            )
+            .expect("the fixture budget admits the supply")
             .project_protocol_slot(&slot)
             .map(|_| ())
             .map_err(|failure| match failure {

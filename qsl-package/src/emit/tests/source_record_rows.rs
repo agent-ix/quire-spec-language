@@ -276,7 +276,10 @@ fn required_identity_handoff_preserves_original_record_keys_and_native_views() {
         panic!("the genuine record package admits");
     };
     let rows = emission
-        .identity_rows(&package)
+        .identity_rows(
+            &package,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect("final producer rows");
     assert_eq!(rows.source_records().len(), 2);
     let bytes = rows
@@ -341,7 +344,12 @@ fn required_source_record_rows_refuse_missing_fields_and_stale_native_bindings()
     ) else {
         panic!("the genuine package admits");
     };
-    let rows = emission.identity_rows(&package).unwrap();
+    let rows = emission
+        .identity_rows(
+            &package,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
+        .unwrap();
     let bytes = rows.to_bytes(&package).unwrap();
     let good: Value = serde_json::from_slice(&bytes).unwrap();
     let mut missing = good.clone();
@@ -434,7 +442,12 @@ fn required_identity_handoff_refuses_deep_original_keys_without_stack_growth() {
     ) else {
         panic!("the genuine record package admits");
     };
-    let rows = emission.identity_rows(&package).unwrap();
+    let rows = emission
+        .identity_rows(
+            &package,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
+        .unwrap();
     let mut key = NodeKey::new(
         "deep-original",
         vec![quire_exact::PathSegment::Text("leaf".into())],

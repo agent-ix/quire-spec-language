@@ -164,7 +164,7 @@ fn read(bytes: &[u8]) -> Read {
     read_v2(
         bytes,
         identity("pkg"),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &CheckedPackageEvidence::new(),
     )
 }
@@ -295,7 +295,7 @@ fn refuses_when_selected_name_disagrees_with_wire() {
     let outcome = read_v2(
         &bytes,
         identity("other"),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &CheckedPackageEvidence::new(),
     );
     assert_eq!(
@@ -565,7 +565,7 @@ fn incomplete_when_bytes_exceed_the_ceiling() {
     let bytes = jcs(&valid_envelope(&lock));
     let limits = V2ReadLimits {
         artifact_bytes: bytes.len() - 1,
-        ..V2ReadLimits::default()
+        ..V2ReadLimits::fixture()
     };
     let outcome = read_v2(
         &bytes,
@@ -597,7 +597,7 @@ fn wire_of_at_least(min_bytes: usize) -> Vec<u8> {
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn a_caller_raised_artifact_bytes_ceiling_admits_a_valid_wire_past_the_default() {
-    let default_bytes = V2ReadLimits::default().artifact_bytes;
+    let default_bytes = V2ReadLimits::fixture().artifact_bytes;
     let bytes = wire_of_at_least(default_bytes + 1);
     let read_under = |limits: V2ReadLimits| {
         read_v2(
@@ -609,14 +609,14 @@ fn a_caller_raised_artifact_bytes_ceiling_admits_a_valid_wire_past_the_default()
     };
 
     assert_eq!(
-        read_under(V2ReadLimits::default()),
+        read_under(V2ReadLimits::fixture()),
         Read::Limit(input_bytes(default_bytes, bytes.len())),
         "the default ceiling must refuse an oversized read at the byte-length gate"
     );
 
     let raised = V2ReadLimits {
         artifact_bytes: bytes.len(),
-        ..V2ReadLimits::default()
+        ..V2ReadLimits::fixture()
     };
     match read_under(raised) {
         Read::Verified {
@@ -634,7 +634,7 @@ fn a_caller_raised_artifact_bytes_ceiling_admits_a_valid_wire_past_the_default()
 #[trace("TC-739", "FR-264-AC-4")]
 #[test]
 fn a_caller_raised_ir_node_ceiling_admits_past_the_ir_default() {
-    let default_nodes = V2ReadLimits::default().nodes;
+    let default_nodes = V2ReadLimits::fixture().nodes;
     let count = usize::try_from(default_nodes).unwrap() + 1;
     let labels: Vec<(String, String)> = (0..count)
         .map(|index| (format!("pkg::N{index}"), format!("N{index}")))
@@ -658,7 +658,7 @@ fn a_caller_raised_ir_node_ceiling_admits_past_the_ir_default() {
     // only IR's node ceiling is in play.
     let base = V2ReadLimits {
         artifact_bytes: bytes.len(),
-        ..V2ReadLimits::default()
+        ..V2ReadLimits::fixture()
     };
     match read_under(base) {
         Read::Limit(exceeded) => {
@@ -705,7 +705,7 @@ fn a_100000_node_v2_read_clones_compares_formats_and_drops_on_a_small_stack() {
         edges: 2 * NODES as u64,
         occurrences: 4 * NODES as u64,
         work: 1 << 40,
-        ..V2ReadLimits::default()
+        ..V2ReadLimits::fixture()
     };
     std::thread::Builder::new()
         .stack_size(512 * 1024)
@@ -735,8 +735,8 @@ fn a_100000_node_v2_read_clones_compares_formats_and_drops_on_a_small_stack() {
 #[test]
 fn reaching_a_caller_raised_artifact_bytes_ceiling_refuses_naming_the_kind_and_bound() {
     let raised = V2ReadLimits {
-        artifact_bytes: V2ReadLimits::default().artifact_bytes + 1_000,
-        ..V2ReadLimits::default()
+        artifact_bytes: V2ReadLimits::fixture().artifact_bytes + 1_000,
+        ..V2ReadLimits::fixture()
     };
     let oversized = vec![b'x'; raised.artifact_bytes + 1];
     let outcome = read_v2(
@@ -758,7 +758,7 @@ fn exact_selected_limits_admit_the_boundary() {
     let bytes = jcs(&valid_envelope(&lock));
     let limits = V2ReadLimits {
         artifact_bytes: bytes.len(),
-        ..V2ReadLimits::default()
+        ..V2ReadLimits::fixture()
     };
     let outcome = read_v2(
         &bytes,
@@ -785,7 +785,7 @@ fn a_wire_nested_100000_deep_reads_without_a_depth_outcome_on_a_small_stack() {
                 identity("pkg"),
                 V2ReadLimits {
                     artifact_bytes: bytes.len(),
-                    ..V2ReadLimits::default()
+                    ..V2ReadLimits::fixture()
                 },
                 &CheckedPackageEvidence::new(),
             );
@@ -1077,7 +1077,7 @@ fn supply_qspec_dependency_packages(evidence: &mut CheckedPackageEvidence, envel
         let admitted = read_checked_package_v2(
             &fixture_wire_bytes(&library),
             identity(identity_text),
-            V2ReadLimits::default(),
+            V2ReadLimits::fixture(),
             &inner,
         )
         .unwrap_or_else(|failure| panic!("dependency {identity_text} is admitted: {failure:?}"))
@@ -1129,7 +1129,7 @@ fn read_fixture_wire_holding(
     let outcome = read_v2(
         &fixture_wire_bytes(envelope),
         identity(&name),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     );
     (name, outcome)
@@ -1204,7 +1204,7 @@ fn admitted_fixture(
     let read = read_checked_package_v2(
         &fixture_wire_bytes(envelope),
         identity(envelope["name"].as_str().unwrap_or("pkg")),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     )
     .unwrap_or_else(|failure| panic!("the fixture is admitted: {failure:?}"));
@@ -3232,7 +3232,7 @@ fn a_refusal_at_a_value_is_located_at_its_pointer() {
 #[trace("TC-739", "FR-264-AC-4")]
 #[test]
 fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
-    let defaults = V2ReadLimits::default();
+    let defaults = V2ReadLimits::fixture();
     let lock = base_lock(vec![]);
     let base = valid_envelope(&lock);
     let (_, two_nodes) = envelope_declaring(&[("pkg::A", "A"), ("pkg::B", "B")]);

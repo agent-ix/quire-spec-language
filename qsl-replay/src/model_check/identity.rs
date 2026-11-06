@@ -117,7 +117,10 @@ fn read_back(
         library.clone(),
         domain_packages,
         &mut admitted,
-        V2ReadLimits::default(),
+        // The clause-root lookup reads nodes and performs no native identity
+        // join, so it asks for no native storage: a join attempted here is
+        // refused at once rather than allowed an invented allowance.
+        V2ReadLimits::bounded(0),
     )
     .map_err(|refusal| ClauseRootRefusal::Package(format!("{refusal:?}")))?;
     Ok((admitted, library))

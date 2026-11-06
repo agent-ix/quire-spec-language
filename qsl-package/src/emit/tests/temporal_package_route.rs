@@ -18,7 +18,7 @@ fn admit_bytes(bytes: &[u8], wire: &Value) -> Arc<CheckedPackageV2> {
     let read = crate::checked_v2::read_checked_package_v2(
         bytes,
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence(wire),
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure:?}"));

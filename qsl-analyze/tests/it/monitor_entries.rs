@@ -711,7 +711,13 @@ fn try_root_bytes_with(
         renamed_records: &["Instance", "Activation", "LimitReached"],
         renames: &qsl_analyze::monitor_entries::WIRE_FIELD_NAMES,
     };
-    let rooted = emit_monitor_plan_over(&emission, name, &evidence, &wire)?;
+    let rooted = emit_monitor_plan_over(
+        &emission,
+        name,
+        &evidence,
+        &wire,
+        qsl_package::V2ReadLimits::fixture(),
+    )?;
     Ok((rooted.package().bytes().to_vec(), rooted.evidence().clone()))
 }
 

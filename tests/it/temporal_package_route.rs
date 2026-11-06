@@ -71,7 +71,7 @@ impl Built {
             emission,
             LibraryName::new(emission.package().name()).expect("a library name"),
             &self.packages,
-            V2ReadLimits::default(),
+            V2ReadLimits::fixture(),
         )
     }
 }
@@ -309,8 +309,17 @@ fn both_routes_hold_the_emissions_rows_and_ids() {
     for kind in KINDS {
         let built = recipe(kind);
         let read = built.read(&built.emission);
-        let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
-        let back = EvidencePackage::from_read(&read).expect("the read-back package");
+        let emitted = EvidencePackage::from_emission(
+            &built.emission,
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the emission");
+        let back = EvidencePackage::from_read(
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the read-back package");
 
         let rows = built.emission.temporal_rows();
         assert_eq!(
@@ -384,8 +393,17 @@ fn both_routes_give_the_evaluator_the_same_formula() {
     for kind in KINDS {
         let built = recipe(kind);
         let read = built.read(&built.emission);
-        let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
-        let back = EvidencePackage::from_read(&read).expect("the read-back package");
+        let emitted = EvidencePackage::from_emission(
+            &built.emission,
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the emission");
+        let back = EvidencePackage::from_read(
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the read-back package");
         for clause in clause_ids(&emitted) {
             let left = emitted.subject(&clause, None).expect("the clause reads");
             let right = back.subject(&clause, None).expect("the clause reads");
@@ -411,7 +429,11 @@ fn both_routes_give_the_evaluator_the_same_formula() {
     // with one operand naming the holds entry has two nodes.
     let built = recipe("event_position");
     let read = built.read(&built.emission);
-    let back = EvidencePackage::from_read(&read).expect("the read-back package");
+    let back = EvidencePackage::from_read(
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("the read-back package");
     let due = clause_ids(&back)
         .into_iter()
         .find(|clause| {
@@ -460,8 +482,17 @@ fn the_call_gives_equal_results_over_both_routes_and_any_replaced_input_differs(
     for kind in KINDS {
         let built = recipe(kind);
         let read = built.read(&built.emission);
-        let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
-        let back = EvidencePackage::from_read(&read).expect("the read-back package");
+        let emitted = EvidencePackage::from_emission(
+            &built.emission,
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the emission");
+        let back = EvidencePackage::from_read(
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the read-back package");
         for clause in clause_ids(&emitted) {
             let subject = emitted.subject(&clause, None).expect("the clause reads");
             if !matches!(subject.facts.name(), "Due" | "DueSample" | "DueTimestamp") {
@@ -529,8 +560,17 @@ fn each_clause_pairs_with_its_own_clock_row() {
         &[("First", "first-authority"), ("Second", "second-authority")],
     );
     let read = built.read(&built.emission);
-    let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
-    let back = EvidencePackage::from_read(&read).expect("the read-back package");
+    let emitted = EvidencePackage::from_emission(
+        &built.emission,
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("the emission");
+    let back = EvidencePackage::from_read(
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("the read-back package");
     let ids = clause_ids(&emitted);
     assert_eq!(ids.len(), 2, "two nodes");
     for package in [&emitted, &back] {
@@ -674,7 +714,11 @@ fn authority_of(row: &qsl_package::TemporalBinding) -> String {
 fn twins_pair_their_rows_by_key_over_the_read_back_route() {
     let built = twins();
     let read = built.read(&built.emission);
-    let back = EvidencePackage::from_read(&read).expect("the read-back package");
+    let back = EvidencePackage::from_read(
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("the read-back package");
     let [node] = clause_ids(&back).try_into().expect("one shared node");
 
     let view = back.temporal_subject(&node).expect("the twins read");
@@ -757,7 +801,11 @@ fn twins_pair_their_rows_by_key_over_the_read_back_route() {
         &[("Only", "only-authority")],
     );
     let read = single.read(&single.emission);
-    let package = EvidencePackage::from_read(&read).expect("the read-back package");
+    let package = EvidencePackage::from_read(
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("the read-back package");
     let [clause] = clause_ids(&package).try_into().expect("one clause");
     let mut asked = request(&package, &clause, None, 3);
     asked.occurrence = None;
@@ -783,8 +831,17 @@ fn instance_bound_atoms_are_derived_and_equal_over_both_routes() {
     };
     let atom_indices = |built: &Built| {
         let read = built.read(&built.emission);
-        let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
-        let back = EvidencePackage::from_read(&read).expect("the read-back package");
+        let emitted = EvidencePackage::from_emission(
+            &built.emission,
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the emission");
+        let back = EvidencePackage::from_read(
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the read-back package");
         let [clause] = clause_ids(&emitted).try_into().expect("one clause");
         let left = emitted.subject(&clause, None).expect("reads");
         let right = back.subject(&clause, None).expect("reads");
@@ -957,7 +1014,11 @@ fn twins_pair_their_rows_by_key_over_the_bytes_only_route() {
         &[("Only", "only-authority")],
     );
     let read = single.read(&single.emission);
-    let package = EvidencePackage::from_read(&read).expect("the read-back package");
+    let package = EvidencePackage::from_read(
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("the read-back package");
     let [clause] = clause_ids(&package).try_into().expect("one clause");
     let mut asked = request(&package, &clause, None, 3);
     asked.occurrence = None;
@@ -975,7 +1036,12 @@ fn each_clause_pairs_with_its_own_clock_row_over_the_bytes_only_route() {
         &[("First", "first-authority"), ("Second", "second-authority")],
     );
     let read = built.read(&built.emission);
-    let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
+    let emitted = EvidencePackage::from_emission(
+        &built.emission,
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("the emission");
     let bare = qsl_package::BarePackage::new(read.admitted());
     let back = EvidencePackage::from_package(&bare).expect("the bare package");
     let ids = clause_ids(&emitted);

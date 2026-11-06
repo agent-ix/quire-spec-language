@@ -77,8 +77,17 @@ fn the_bare_route_gives_the_results_and_charges_of_the_two_source_routes() {
     for kind in KINDS {
         let built = recipe(kind);
         let read = built.read(&built.emission);
-        let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("emission");
-        let back = EvidencePackage::from_read(&read).expect("read");
+        let emitted = EvidencePackage::from_emission(
+            &built.emission,
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("emission");
+        let back = EvidencePackage::from_read(
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("read");
         let bare = BarePackage::new(read.admitted());
         let bytes = EvidencePackage::from_package(&bare).expect("bare");
         assert_eq!(emitted.rows(), bytes.rows());
@@ -154,7 +163,12 @@ fn the_bare_route_gives_the_results_and_charges_of_the_two_source_routes() {
 fn the_progress_binding_names_the_package_and_no_source_label() {
     let built = recipe("event_position");
     let read = built.read(&built.emission);
-    let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("emission");
+    let emitted = EvidencePackage::from_emission(
+        &built.emission,
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("emission");
     let bare = BarePackage::new(read.admitted());
     let bytes = EvidencePackage::from_package(&bare).expect("bare");
     for clause in clause_ids(&bytes) {
@@ -183,8 +197,17 @@ fn a_shared_holds_node_is_one_atom_on_every_route() {
     );
     let usage = |built: &super::temporal_package_route::Built| {
         let read = built.read(&built.emission);
-        let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("emission");
-        let back = EvidencePackage::from_read(&read).expect("read");
+        let emitted = EvidencePackage::from_emission(
+            &built.emission,
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("emission");
+        let back = EvidencePackage::from_read(
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("read");
         let bare = BarePackage::new(read.admitted());
         let bytes = EvidencePackage::from_package(&bare).expect("bare");
         let [clause] = clause_ids(&bytes).try_into().expect("one clause");
@@ -851,8 +874,17 @@ fn record_capture() -> super::temporal_package_route::Built {
 fn a_record_typed_capture_projects_with_the_source_identities() {
     let built = record_capture();
     let read = built.read(&built.emission);
-    let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("emission");
-    let back = EvidencePackage::from_read(&read).expect("read");
+    let emitted = EvidencePackage::from_emission(
+        &built.emission,
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("emission");
+    let back = EvidencePackage::from_read(
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("read");
     let [clause] = clause_ids(&emitted).try_into().expect("one clause");
     let source = read
         .source()
@@ -943,13 +975,21 @@ fn the_supplied_identity_rows_project_a_record_typed_capture_on_the_bare_route()
     let read = built.read(&built.emission);
     let rows = built
         .emission
-        .identity_rows(read.admitted())
+        .identity_rows(
+            read.admitted(),
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
         .expect("final identity rows");
-    let graph = read.source().graph();
-    let bare = BarePackage::new(read.admitted()).with_supply(qsl_package::BareSupply {
-        identities: &rows,
-        equality: None,
-    });
+    let mut budget = qsl_package::V2ReadLimits::fixture().native_join_budget();
+    let bare = BarePackage::new(read.admitted())
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: None,
+            },
+            &mut budget,
+        )
+        .expect("the fixture budget admits the supply");
     let package = EvidencePackage::from_package(&bare).expect("bare");
     let [clause] = clause_ids(&package).try_into().expect("one clause");
     let subject = package
@@ -1106,7 +1146,11 @@ fn bytes_that_differ_from_the_source_drive_the_bare_result() {
     assert!(run(&package, &clause, &own).0.is_ok());
     // The route that holds the genuine emission refuses the construction.
     assert!(matches!(
-        EvidencePackage::from_emission(&built.emission, &read),
+        EvidencePackage::from_emission(
+            &built.emission,
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+        ),
         Err(qsl_eval::temporal::evidence::PackageMismatch::Bindings)
     ));
 
@@ -1126,8 +1170,17 @@ fn bytes_that_differ_from_the_source_drive_the_bare_result() {
         "the replaced interval changes the work the call charges"
     );
     for source_route in [
-        EvidencePackage::from_read(&read).expect("read"),
-        EvidencePackage::from_emission(&longer, &read).expect("emission"),
+        EvidencePackage::from_read(
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("read"),
+        EvidencePackage::from_emission(
+            &longer,
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("emission"),
     ] {
         let mut meter = super::temporal_package_route::unlimited();
         let refused = source_route.evaluate_temporal_evidence(&clause, &asked, &mut meter);
@@ -1212,8 +1265,17 @@ fn every_temporal_operator_gives_the_same_result_over_the_three_routes() {
             &[("Due", "authority")],
         );
         let read = built.read(&built.emission);
-        let emitted = EvidencePackage::from_emission(&built.emission, &read).expect("emission");
-        let back = EvidencePackage::from_read(&read).expect("read");
+        let emitted = EvidencePackage::from_emission(
+            &built.emission,
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("emission");
+        let back = EvidencePackage::from_read(
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("read");
         let bare = BarePackage::new(read.admitted());
         let bytes = EvidencePackage::from_package(&bare).expect("bare");
         let [clause] = clause_ids(&bytes).try_into().expect("one clause");

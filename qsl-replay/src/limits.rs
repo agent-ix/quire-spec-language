@@ -504,7 +504,7 @@ mod tests {
                     identity: qsl_foundation::IdentityLimits::default().with_input_bytes(27),
                     ..qsl_semantics::check::AssemblyLimits::default()
                 },
-                imports: qsl_package::V2ReadLimits::default()
+                imports: qsl_package::V2ReadLimits::fixture()
                     .with_artifact_bytes(19)
                     .with_nodes(20)
                     .with_edges(21)

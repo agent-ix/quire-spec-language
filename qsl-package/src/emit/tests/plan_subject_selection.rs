@@ -97,6 +97,7 @@ fn rooted(selected: usize) -> Rooted {
         qsl_semantics::library::LibraryName::new(base.package().name()).unwrap(),
         &evidence,
         &wire_plan,
+        crate::V2ReadLimits::fixture(),
     )
     .expect("the plan root is written");
     Rooted {

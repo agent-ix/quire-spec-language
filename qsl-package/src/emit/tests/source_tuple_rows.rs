@@ -126,7 +126,7 @@ fn ir_joins_the_emitted_tuple_rows_and_refuses_a_misdescribed_position_list() {
         .with_source_tuple_rows(
             &admitted,
             emission.selected_source_tuple_rows().to_vec(),
-            10_000,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
         )
         .expect("IR joins the emitted tuple rows");
     let projected = admitted
@@ -162,7 +162,11 @@ fn ir_joins_the_emitted_tuple_rows_and_refuses_a_misdescribed_position_list() {
     renumbered.positions[1].ordinal = 2;
     for bad in [misordered, short, extra, wrong_node, renumbered] {
         let refusal = SelectedExactIdentities::empty()
-            .with_source_tuple_rows(&admitted, [bad], 10_000)
+            .with_source_tuple_rows(
+                &admitted,
+                [bad],
+                &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+            )
             .expect_err("a row that disagrees with the admitted tuple is refused");
         assert_eq!(
             refusal.code,
@@ -312,7 +316,11 @@ fn a_source_enum_carries_its_checked_shape_and_ir_joins_it() {
         }
 
         let joined = SelectedExactIdentities::empty()
-            .with_source_enum_rows(&admitted, rows.clone(), 10_000)
+            .with_source_enum_rows(
+                &admitted,
+                rows.clone(),
+                &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+            )
             .expect("IR joins the emitted enum rows");
         let projected = admitted
             .project_exact_type(&row.declaration.structural_node, &joined, 10_000)
@@ -348,7 +356,11 @@ fn ir_refuses_an_enum_row_with_a_reordered_or_missing_variant_or_flipped_flag() 
         quire_exact::EnumShape::new(true, level.declaration.shape.variants().take(2).cloned());
     for bad in [reordered, missing, swapped_variants, flipped, short_shape] {
         SelectedExactIdentities::empty()
-            .with_source_enum_rows(&admitted, [bad], 10_000)
+            .with_source_enum_rows(
+                &admitted,
+                [bad],
+                &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+            )
             .expect_err("a row that disagrees with the admitted enum is refused");
     }
     let refusal = admitted

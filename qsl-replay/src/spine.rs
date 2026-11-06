@@ -2260,8 +2260,11 @@ impl ImportRefusal {
 
 /// The stage limits one spine compile runs under: S1's, I1's, S3's and the
 /// import read's own limits types, each defaulting to that stage's published default. S2
-/// and the v2 emitter take none: S1's limits bound what S2 builds.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+/// and the v2 emitter take none: S1's limits bound what S2 builds. The import
+/// read's native-join storage ceiling has no stage default: [`Default`]
+/// states [`IMPORT_NATIVE_JOIN_STORAGE`] for the compile entry that owns this
+/// configuration (FR-358).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SpineLimits {
     /// S1: the lexer and parser ceilings.
     pub source: qsl_cst::Limits,
@@ -2279,6 +2282,25 @@ pub struct SpineLimits {
     pub imports: qsl_package::V2ReadLimits,
     /// The progress ledger's ceilings (FR-502).
     pub progress: ProgressLimits,
+}
+
+/// The native-join storage ceiling, in logical units (FR-358), the compile
+/// entry gives each import read: the one finite value this outermost
+/// configuration owns. No lower layer derives or defaults it.
+pub const IMPORT_NATIVE_JOIN_STORAGE: u64 = 1 << 24;
+
+impl Default for SpineLimits {
+    fn default() -> Self {
+        Self {
+            source: qsl_cst::Limits::default(),
+            model: ModelNormalizationLimits::default(),
+            checking: CheckingLimits::default(),
+            dependencies: DependencyLimits::default(),
+            assembly: AssemblyLimits::default(),
+            imports: qsl_package::V2ReadLimits::bounded(IMPORT_NATIVE_JOIN_STORAGE),
+            progress: ProgressLimits::default(),
+        }
+    }
 }
 
 /// FR-255: every compile stage's settings, each owned by one part.

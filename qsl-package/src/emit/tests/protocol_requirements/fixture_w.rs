@@ -527,7 +527,7 @@ fn tc134_attempt_bounds_and_provenance_mutations_are_checked() {
     evidence
         .insert_domain_package_document(package_identity(&domain), domain.as_slice())
         .expect("fresh domain evidence");
-    let refused = read_v2(&jcs(&wire), library(), V2ReadLimits::default(), &evidence);
+    let refused = read_v2(&jcs(&wire), library(), V2ReadLimits::fixture(), &evidence);
     let Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) = refused else {
         panic!("a forward reference to an attempt instead of an effect must refuse");
     };
@@ -1601,7 +1601,7 @@ fn tc134_v1_contract_version_is_refused_with_clock_selections_present() {
     let outcome = read_v2(
         &serde_json::to_vec(&forged).unwrap(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     );
     assert!(

@@ -92,7 +92,7 @@ fn emitted_from(emission: Emission, document: Vec<u8>) -> Emitted {
 
 impl Emitted {
     fn read(&self, bytes: &[u8]) -> Read {
-        read_v2(bytes, library(), V2ReadLimits::default(), &self.evidence)
+        read_v2(bytes, library(), V2ReadLimits::fixture(), &self.evidence)
     }
 
     /// The node of the variant type `name`.

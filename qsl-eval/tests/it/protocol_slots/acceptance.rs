@@ -1118,7 +1118,7 @@ fn assert_reader_admits(package: &CheckedPackage) {
         qsl_semantics::library::LibraryName::new(package.emitted_package_name().unwrap()).unwrap(),
         &input,
         &mut admitted,
-        qsl_package::V2ReadLimits::default(),
+        qsl_package::V2ReadLimits::fixture(),
     )
     .expect(
         "the actual contract reader admits the emitted related records before any slot evaluates",
@@ -2382,7 +2382,7 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
         &package,
         qsl_semantics::library::LibraryName::new("acceptance").unwrap(),
         &domain_packages,
-        qsl_package::V2ReadLimits::default(),
+        qsl_package::V2ReadLimits::fixture(),
     )
     .expect("strict contract-reader admission succeeds for checked fixture E");
     let reader_view = read
@@ -2393,7 +2393,7 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
         &package,
         qsl_semantics::library::LibraryName::new("acceptance").unwrap(),
         &domain_packages,
-        qsl_package::V2ReadLimits::default(),
+        qsl_package::V2ReadLimits::fixture(),
     )
     .expect("a second strict reader independently admits the same source package");
     let second_reader_view = second_read
@@ -2861,7 +2861,7 @@ fn read_checked_package_with_model_document<'p>(
         package,
         qsl_semantics::library::LibraryName::new("acceptance").unwrap(),
         &domain_packages,
-        qsl_package::V2ReadLimits::default(),
+        qsl_package::V2ReadLimits::fixture(),
     )
     .expect("strict I2 admission accepts the emitted TC-1070 package")
 }
@@ -4715,7 +4715,10 @@ fn bare_rows(
 ) -> qsl_package::ReadIdentityRows {
     qsl_package::emit_checked(package)
         .expect("emits")
-        .identity_rows(v2)
+        .identity_rows(
+            v2,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect("final identity rows")
 }
 
@@ -4733,10 +4736,15 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
     let equality = qsl_package::emit_checked(&package)
         .expect("emits")
         .equality_witness(v2);
-    let bare = qsl_package::BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-        identities: &rows,
-        equality: Some(&equality),
-    });
+    let bare = qsl_package::BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: Some(&equality),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let view = package.evaluation_view();
     let row_origins: std::collections::BTreeSet<String> = v2
         .checked_term_data()
@@ -4882,14 +4890,18 @@ fn rows_of_another_package_are_a_foreign_identity_witness() {
         &other,
         qsl_semantics::library::LibraryName::new("other").unwrap(),
         &domain,
-        qsl_package::V2ReadLimits::default(),
+        qsl_package::V2ReadLimits::fixture(),
     )
     .expect("the other package is admitted");
-    let bare =
-        qsl_package::BarePackage::new(other_read.admitted()).with_supply(qsl_package::BareSupply {
-            identities: &rows,
-            equality: None,
-        });
+    let bare = qsl_package::BarePackage::new(other_read.admitted())
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: None,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let clause = slot(&other, "Refunds", "Refunds", "activation.guard", None).node;
     let result = bare.select_protocol_slot(&qsl_package::ProtocolSlotDescriptor::new(
         clause,
@@ -4916,10 +4928,15 @@ fn the_bare_selection_refuses_as_the_source_selection_does() {
     let read = read_checked_package(&package);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let bare = qsl_package::BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-        identities: &rows,
-        equality: None,
-    });
+    let bare = qsl_package::BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: None,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let view = package.evaluation_view();
     let clause = slot(&package, "Refunds", "Refunds", "activation.guard", None).node;
     let descriptor = |member: &str, index| {
@@ -4981,10 +4998,15 @@ fn the_bare_route_names_fixture_l_decision_slots_by_node_member_and_index() {
     let equality = qsl_package::emit_checked(&package)
         .expect("emits")
         .equality_witness(v2);
-    let bare = qsl_package::BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-        identities: &rows,
-        equality: Some(&equality),
-    });
+    let bare = qsl_package::BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: Some(&equality),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let origin = |owner: &str, member: &str, index: usize| {
         let wanted = slot(&package, "Pipeline", owner, member, Some(index));
         bare.select_protocol_slot(&qsl_package::ProtocolSlotDescriptor::new(

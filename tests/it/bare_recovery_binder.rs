@@ -87,10 +87,15 @@ fn read_recipe(
 
 impl Recipe {
     fn bare(&self) -> BarePackage<'_> {
-        BarePackage::new(&self.package).with_supply(BareSupply {
-            identities: &self.identities,
-            equality: Some(&self.equality),
-        })
+        BarePackage::new(&self.package)
+            .with_supply(
+                BareSupply {
+                    identities: &self.identities,
+                    equality: Some(&self.equality),
+                },
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+            )
+            .expect("the fixture budget admits the supply")
     }
 
     fn compensation(&self, name: &str) -> NodeKey {

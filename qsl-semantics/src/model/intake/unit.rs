@@ -116,15 +116,18 @@ impl SelectedModels {
     }
 
     /// The selected model stage's rows, validated against the package IR
-    /// admission that retained the same selected declarations.
+    /// admission that retained the same selected declarations, charged to
+    /// the caller's `budget`.
     pub fn exact_identities(
         &self,
         package: &quire_contract_model::CheckedPackageV2,
+        budget: &mut quire_contract_model::NativeJoinBudget,
     ) -> Result<SelectedExactIdentities, quire_contract_model::ExactTypeProjectionError> {
         super::selected_exact_identities_from_rows(
             package,
             &self.exact_declarations,
             &self.exact_fields,
+            budget,
         )
     }
 

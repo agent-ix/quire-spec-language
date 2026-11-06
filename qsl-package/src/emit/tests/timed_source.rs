@@ -168,14 +168,17 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
     let read = read_checked_package_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the emitted timed model: {failure:?}"));
     let admitted = read.into_value().admitted;
     let identities = checked
         .graph()
-        .selected_exact_identities(&admitted)
+        .selected_exact_identities(
+            &admitted,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect("the model declaration and field rows join admission");
     let projected = admitted
         .project_selected_type_declarations(
@@ -349,7 +352,7 @@ fn a_package_dimension_a_function_names_is_written_model_owned() {
     read_checked_package_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the model-owned dimension: {failure:?}"));
@@ -401,7 +404,7 @@ fn a_package_owned_time_unit_emits_its_model_owned_nominal_nodes() {
     read_checked_package_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits package-owned time nodes: {failure:?}"));
@@ -435,7 +438,12 @@ fn an_authentic_selected_model_unit_round_trips_in_required_identity_handoff() {
     else {
         panic!("the genuine unit package admits");
     };
-    let rows = emission.identity_rows(&package).unwrap();
+    let rows = emission
+        .identity_rows(
+            &package,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
+        .unwrap();
     let unit_index = rows
         .declarations()
         .iter()
@@ -507,7 +515,7 @@ fn a_tick_time_source_emits_its_exact_period_and_operation_anchor() {
     let read = read_checked_package_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the tick model: {failure:?}"));

@@ -327,7 +327,7 @@ fn formula_nodes(
 
 /// Write the plan root and entries onto the package `base` was emitted as,
 /// reading it back through IR first (the writer works on the admitted
-/// graph).
+/// graph) under the caller's `limits`.
 ///
 /// `retained` is the emission `base` was written from. Every witness row it
 /// retained from its acquisition (selected model rows, equality producer and
@@ -339,11 +339,12 @@ pub fn emit_monitor_plan_over(
     identity: qsl_semantics::library::LibraryName,
     evidence: &quire_contract_model::CheckedPackageEvidence,
     plan: &MonitorPlanWire<'_>,
+    limits: crate::checked_v2::V2ReadLimits,
 ) -> Result<Emission, EmitRefusal> {
     let read = crate::checked_v2::read_checked_package_v2(
         retained.package().bytes(),
         identity,
-        crate::checked_v2::V2ReadLimits::default(),
+        limits,
         evidence,
     )
     .map_err(|_| invariant("the base package does not read back"))?;

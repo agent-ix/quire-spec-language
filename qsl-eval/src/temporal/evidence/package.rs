@@ -21,7 +21,8 @@ use qsl_package::checked_views::{
 };
 use qsl_package::{
     AdmittedPackageRead, BarePackage, CheckedNodeId, CheckedOccurrence, CheckedPackageV2,
-    CheckedSelection, Emission, SelectedExactIdentities, TemporalBinding, TemporalClauseRef,
+    CheckedSelection, Emission, NativeJoinBudget, SelectedExactIdentities, TemporalBinding,
+    TemporalClauseRef,
 };
 use qsl_semantics::check::{Activation, CheckedFormula, FormulaNode, TemporalProfile};
 use quire_eval::CallFailure;
@@ -104,7 +105,7 @@ impl PackageRows {
 /// The rows are not the package's: an emission that is not the one the
 /// package was read from, or names that cannot pair the package's clauses to
 /// the checked graph's.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum PackageMismatch {
     /// An emission clause occurrence is no `temporal_clause_names` row of
     /// the package, or the clause at its position carries another name.
@@ -120,6 +121,11 @@ pub enum PackageMismatch {
     /// to one clause occurrence.
     #[error("a clause name does not pair one name row to one clause")]
     AmbiguousName,
+    /// The caller's native join work or storage budget was consumed while the
+    /// package joined the source's selected identities (FR-358). IR's own
+    /// refusal; the identities are neither empty nor unknown.
+    #[error("the native join budget was consumed: {0}")]
+    Exhausted(Box<qsl_package::ExactTypeProjectionError>),
 }
 
 /// The source a route that holds one keeps for the cross-check of FR-515:
@@ -145,7 +151,7 @@ pub struct EvidencePackage<'p> {
     /// The selected model identity rows a declaration-bearing capture type
     /// needs: the source unit's on the routes that hold one, none on the bare
     /// route.
-    identities: SelectedExactIdentities,
+    identities: std::borrow::Cow<'p, SelectedExactIdentities>,
     rows: PackageRows,
     activation_map: Vec<ActivationRow>,
     progress_capacity: u64,
@@ -160,10 +166,12 @@ impl<'p> EvidencePackage<'p> {
     /// # Errors
     ///
     /// [`PackageMismatch`] when `emission` is not the one `read` was read
-    /// from.
+    /// from, or [`PackageMismatch::Exhausted`] when `budget`, the caller's one
+    /// native allowance for the pass, runs out.
     pub fn from_emission(
         emission: &Emission,
         read: &'p AdmittedPackageRead<'p>,
+        budget: &mut NativeJoinBudget,
     ) -> Result<Self, PackageMismatch> {
         let rows = PackageRows::of_package(read.admitted())?;
         let held = emission.temporal_rows();
@@ -188,11 +196,12 @@ impl<'p> EvidencePackage<'p> {
             return Err(PackageMismatch::Bindings);
         }
         let clauses = held.clauses().to_vec();
-        Ok(Self::with_rows(
+        Self::with_rows(
             read.admitted(),
             Some(SourceCheck { read, clauses }),
             rows,
-        ))
+            budget,
+        )
     }
 
     /// The package constructed from the emitted bytes read back, paired with
@@ -204,8 +213,13 @@ impl<'p> EvidencePackage<'p> {
     /// # Errors
     ///
     /// [`PackageMismatch::AmbiguousName`] when two clauses of the checked
-    /// graph carry one name or two name rows pair to one occurrence.
-    pub fn from_read(read: &'p AdmittedPackageRead<'p>) -> Result<Self, PackageMismatch> {
+    /// graph carry one name or two name rows pair to one occurrence, and
+    /// [`PackageMismatch::Exhausted`] when `budget`, the caller's one native
+    /// allowance for the pass, runs out.
+    pub fn from_read(
+        read: &'p AdmittedPackageRead<'p>,
+        budget: &mut NativeJoinBudget,
+    ) -> Result<Self, PackageMismatch> {
         let rows = PackageRows::of_package(read.admitted())?;
         let graph = read.source().graph();
         let mut clauses: Vec<TemporalClauseRef> = Vec::new();
@@ -227,18 +241,21 @@ impl<'p> EvidencePackage<'p> {
                 clause,
             });
         }
-        Ok(Self::with_rows(
+        Self::with_rows(
             read.admitted(),
             Some(SourceCheck { read, clauses }),
             rows,
-        ))
+            budget,
+        )
     }
 
     /// The package constructed from a package read from its bytes alone
     /// (FR-531, FR-532). It holds no source, so no clause is cross-checked:
     /// the package is evaluated as admitted. The temporal call reads nothing
-    /// but the package; the supply's identity rows, when the consumer gave
-    /// them, only let a record-typed capture project its type.
+    /// but the package; the identities the bare package joined once at
+    /// `with_supply`, when the consumer gave a supply, only let a
+    /// record-typed capture project its type. They are borrowed, not joined
+    /// or copied again.
     ///
     /// # Errors
     ///
@@ -246,36 +263,47 @@ impl<'p> EvidencePackage<'p> {
     /// rows pair to one `{ declaration, occurrence }`.
     pub fn from_package(bare: &'p BarePackage<'p>) -> Result<Self, PackageMismatch> {
         let rows = PackageRows::of_package(bare.package())?;
-        let mut package = Self::with_rows(bare.package(), None, rows);
-        // A declaration-bearing capture type needs the selected identity
-        // rows; the supply's rows serve where the consumer gave them.
-        if let Some(supply) = bare.supply() {
-            if let Ok(identities) = SelectedExactIdentities::from_stage_rows(
-                bare.package(),
-                supply.identities.declarations().to_vec(),
-                supply.identities.fields().to_vec(),
-            ) {
-                package.identities = identities;
-            }
-        }
-        Ok(package)
+        let identities = bare.identities().map_or_else(
+            || std::borrow::Cow::Owned(SelectedExactIdentities::empty()),
+            std::borrow::Cow::Borrowed,
+        );
+        Ok(Self::assemble(bare.package(), None, identities, rows))
     }
 
     fn with_rows(
         package: &'p CheckedPackageV2,
         source: Option<SourceCheck<'p>>,
         rows: PackageRows,
+        budget: &mut NativeJoinBudget,
+    ) -> Result<Self, PackageMismatch> {
+        let identities = match source.as_ref().map(|held| {
+            held.read
+                .source()
+                .graph()
+                .selected_exact_identities(held.read.admitted(), budget)
+        }) {
+            Some(Ok(identities)) => identities,
+            Some(Err(refusal))
+                if qsl_semantics::model::intake::is_native_budget_denial(&refusal) =>
+            {
+                return Err(PackageMismatch::Exhausted(Box::new(refusal)));
+            }
+            Some(Err(_)) | None => SelectedExactIdentities::empty(),
+        };
+        Ok(Self::assemble(
+            package,
+            source,
+            std::borrow::Cow::Owned(identities),
+            rows,
+        ))
+    }
+
+    fn assemble(
+        package: &'p CheckedPackageV2,
+        source: Option<SourceCheck<'p>>,
+        identities: std::borrow::Cow<'p, SelectedExactIdentities>,
+        rows: PackageRows,
     ) -> Self {
-        let identities = source
-            .as_ref()
-            .and_then(|held| {
-                held.read
-                    .source()
-                    .graph()
-                    .selected_exact_identities(held.read.admitted())
-                    .ok()
-            })
-            .unwrap_or_else(SelectedExactIdentities::empty);
         let activation_map = activation_relation(package)
             .into_iter()
             .map(|(control, clause)| ActivationRow { control, clause })

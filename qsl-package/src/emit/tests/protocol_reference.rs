@@ -734,7 +734,7 @@ fn a_whole_model_role_is_emitted_and_admitted() {
     let read = read_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     );
     assert!(

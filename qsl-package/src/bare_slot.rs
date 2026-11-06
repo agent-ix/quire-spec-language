@@ -419,13 +419,7 @@ impl<'p> BarePackage<'p> {
         descriptor: &ProtocolSlotDescriptor,
     ) -> Result<BareSlot, BareSelectionFailure> {
         let package = self.package();
-        let supply = self.supply().ok_or(BareSelectionFailure::Identity(
-            IdentityWitnessRefusal::Missing,
-        ))?;
-        let identities = supply
-            .identities
-            .selected(package)
-            .map_err(BareSelectionFailure::Identity)?;
+        let (supply, identities) = self.witness()?;
         let graph = wire_graph(package).map_err(|_| fault("bare-package-has-structural-keys"))?;
         let nodes: BTreeMap<&CheckedNodeId, &Node> = package
             .graph()
@@ -453,16 +447,11 @@ impl<'p> BarePackage<'p> {
         // A protocol node outside the member table (a queue, a reference
         // carrier, a sequence, a role without `until`) has no expression.
         let op = control_operation(node).map_err(|_| absent(descriptor))?;
-        let walker = BareWalker::new(
-            package,
-            identities.clone(),
-            supply.equality,
-            package_work_limit(),
-        )
-        .map_err(SlotSelectionFailure::Fault)?;
+        let walker = BareWalker::new(package, identities, supply.equality, package_work_limit())
+            .map_err(SlotSelectionFailure::Fault)?;
         let reader = TypeReader {
             admitted: package,
-            identities: &identities,
+            identities,
             nodes: &nodes,
             graph: &graph,
             work_limit: package_work_limit(),
@@ -642,13 +631,7 @@ impl<'p> BarePackage<'p> {
         &self,
         slot: &BareSlot,
     ) -> Result<ReaderProtocolProjection, BareSelectionFailure> {
-        let supply = self.supply().ok_or(BareSelectionFailure::Identity(
-            IdentityWitnessRefusal::Missing,
-        ))?;
-        let identities = supply
-            .identities
-            .selected(self.package())
-            .map_err(BareSelectionFailure::Identity)?;
+        let (supply, identities) = self.witness()?;
         let walker = BareWalker::new(
             self.package(),
             identities,
@@ -687,9 +670,10 @@ fn ordered_candidates<'a>(
     spanned.into_iter().map(|(_, name)| name).collect()
 }
 
-/// The projection work bound: the I2 reader's default.
+/// The projection work bound: IR's own bounded reader work. Exact projection
+/// takes a scalar work limit until IR-1359 moves it onto the native budget.
 pub(crate) fn package_work_limit() -> u64 {
-    crate::checked_v2::V2ReadLimits::default().work
+    quire_contract_model::CheckedPackageReadLimits::bounded().work
 }
 
 /// The nodes the slot's walk can visit from `root`: every node reachable by

@@ -630,7 +630,7 @@ fn reader_view_over(
         &emission,
         LibraryName::new(name).unwrap(),
         &packages,
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
     )
     .expect("the I2 reader admits the edited package");
     match read.evaluation_view() {

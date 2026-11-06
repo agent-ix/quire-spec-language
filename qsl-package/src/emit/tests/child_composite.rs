@@ -42,7 +42,7 @@ pub(super) fn emit_unit(unit_body: &str) -> (Emission, Value, Read) {
     let read = read_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     );
     (emission, wire, read)
@@ -147,7 +147,10 @@ fn selected_record_and_inherited_field_rows_join_ir_projection() {
     let record_node = record_row.structural_node.clone();
     let witnesses = checked
         .graph()
-        .selected_exact_identities(&admitted)
+        .selected_exact_identities(
+            &admitted,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect("record and inherited field rows join IR admission");
     let projection = admitted
         .project_exact_type(&record_node, &witnesses, 256)
@@ -183,6 +186,7 @@ fn selected_record_and_inherited_field_rows_join_ir_projection() {
         &admitted,
         declarations,
         missing_rows,
+        &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
     )
     .expect("remaining producer rows still join");
     let refusal = admitted

@@ -56,8 +56,8 @@ mod wire_form;
 
 #[cfg(feature = "std")]
 pub use bare::{
-    BarePackage, BareSupply, IdentityFileRefusal, IdentityMember, IdentityWitnessRefusal,
-    ReadIdentityRows, IDENTITIES_FORMAT,
+    BarePackage, BareSupply, IdentityFileRefusal, IdentityJoinFailure, IdentityMember,
+    IdentityWitnessRefusal, ReadIdentityRows, IDENTITIES_FORMAT,
 };
 #[cfg(feature = "std")]
 pub use bare_slot::{BareSelectionFailure, BareSlot, BareSource};
@@ -76,10 +76,11 @@ pub use checked_v2::{
     CheckedConstraintTarget, CheckedGuardPart, CheckedResetTarget, CheckedTimeInvariant,
     CheckedTimeSource, CheckedTimeSourceKind, CheckedTimedModel, CheckedUrgency, ClauseRoot,
     ClauseRootUnresolved, ClockComparison, ClockPathStep, HybridRead, HybridReadError, HyperRoot,
-    HyperRootUnresolved, ImportViewRefusal, PackageTerminal, PackageTerminalDeclaration,
-    ReadHybridClaim, ReadHybridModel, ReadTerminal, ReadTerminalDeclaration, ResolvedClockPathStep,
-    SchedulabilityRoot, SourceMapDefect, StateGraphKind, StateGraphRoot, TerminalResolveRefusal,
-    TimedLiteralTypes, TimedNodeMetadata, UnsupportedWire, V2ReadLimits, V2ReadRefusal,
+    HyperRootUnresolved, ImportViewRefusal, NativeJoinLimits, PackageTerminal,
+    PackageTerminalDeclaration, ReadHybridClaim, ReadHybridModel, ReadTerminal,
+    ReadTerminalDeclaration, ResolvedClockPathStep, SchedulabilityRoot, SourceMapDefect,
+    StateGraphKind, StateGraphRoot, TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata,
+    UnsupportedWire, V2ReadLimits, V2ReadRefusal,
 };
 #[cfg(feature = "std")]
 pub use emit::{
@@ -121,8 +122,8 @@ pub use reader_protocol_projection::{
 pub use quire_contract_model::{
     CheckedArtifactRef, CheckedIntervalEnd, CheckedNodeId, CheckedOccurrence,
     CheckedOccurrenceRole, CheckedOperationInterval, CheckedOperationRational, CheckedPackageV2,
-    CheckedSelection, ClockConfiguration, ClockExactNumber, SelectedExactIdentities,
-    TemporalBinding,
+    CheckedSelection, ClockConfiguration, ClockExactNumber, ExactTypeProjectionError,
+    ExactTypeProjectionErrorCode, NativeJoinBudget, SelectedExactIdentities, TemporalBinding,
 };
 
 // The FR-105-AC-6 fault-injection seam. Public only under

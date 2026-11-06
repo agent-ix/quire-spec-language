@@ -76,7 +76,7 @@ fn with_routes<R>(
         &emission,
         LibraryName::new("fixture").expect("a library name"),
         &no_domains,
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
     )
     .expect("the checked package reader admits the aggregate");
     let clause = read
@@ -86,9 +86,17 @@ fn with_routes<R>(
         .expect("one named aggregate clause")
         .declaration
         .clone();
-    let from_emission =
-        EvidencePackage::from_emission(&emission, &read).expect("emission facts read");
-    let from_read = EvidencePackage::from_read(&read).expect("package facts read");
+    let from_emission = EvidencePackage::from_emission(
+        &emission,
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("emission facts read");
+    let from_read = EvidencePackage::from_read(
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("package facts read");
     let bare = qsl_package::BarePackage::new(read.admitted());
     let from_package = EvidencePackage::from_package(&bare).expect("bare package facts read");
     run(

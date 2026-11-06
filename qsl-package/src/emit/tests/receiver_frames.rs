@@ -131,7 +131,7 @@ impl Emitted {
         read_v2(
             &jcs(envelope),
             library(),
-            V2ReadLimits::default(),
+            V2ReadLimits::fixture(),
             &self.evidence,
         )
     }
@@ -471,7 +471,7 @@ fn ledger_operation_effects_read_back_with_selected_type_projection() {
     let admitted = match read_v2(
         emission.package().bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     ) {
         Read::Verified { admitted, .. } => admitted,
@@ -493,7 +493,10 @@ fn ledger_operation_effects_read_back_with_selected_type_projection() {
 
     let identities = checked
         .graph()
-        .selected_exact_identities(&admitted)
+        .selected_exact_identities(
+            &admitted,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect("selected declarations join the admitted model");
     let projected = admitted
         .project_selected_type_declarations(
@@ -664,7 +667,7 @@ fn same_operation_name_keeps_its_document_and_declaring_identity() {
     let read = read_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     );
     assert!(matches!(read, Read::Verified { .. }), "{read:?}");
@@ -1219,6 +1222,6 @@ fn constraint_state_clause_reads_back_as_a_distinct_kind() {
             parts.document.as_slice(),
         )
         .expect("a fresh evidence key");
-    let read = read_v2(&jcs(&wire), library(), V2ReadLimits::default(), &evidence);
+    let read = read_v2(&jcs(&wire), library(), V2ReadLimits::fixture(), &evidence);
     assert!(matches!(read, Read::Verified { .. }), "{read:?}");
 }

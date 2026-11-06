@@ -24,9 +24,14 @@
 //!     write, CheckedHandoffRequest, Corpus, Selection,
 //! };
 //! use quire_spec_language::emit_checked_v2::Request;
+//! use qsl_package::NativeJoinLimits;
 //!
 //! fn handoff(emit: Request, directory: &std::path::Path) {
-//!     let request = CheckedHandoffRequest { emit, corpus: Corpus::None };
+//!     let request = CheckedHandoffRequest {
+//!         emit,
+//!         corpus: Corpus::None,
+//!         native_join: NativeJoinLimits::new(1 << 20, 1 << 20),
+//!     };
 //!     write(&request, directory).expect("the handoff is written");
 //!     let sidecar = std::fs::read(directory.join("selection.json")).unwrap();
 //!     let _selection = Selection::read(&sidecar).expect("a sidecar");
@@ -86,6 +91,10 @@ pub struct CheckedHandoffRequest {
     pub emit: emit_checked_v2::Request,
     /// The corpus to add.
     pub corpus: Corpus,
+    /// The finite work and logical-storage ceilings of the identity file's
+    /// native joins (FR-531, FR-358). The writer owns no default: the caller
+    /// states them, and one budget of them serves the write.
+    pub native_join: qsl_package::NativeJoinLimits,
 }
 
 /// A stable code for an [`Error`].
@@ -111,6 +120,8 @@ pub enum ErrorCode {
     Encode,
     /// The checked unit holds a value the sidecar cannot name.
     Unnameable,
+    /// The caller's native join work or storage ceiling was consumed.
+    NativeJoinExhausted,
 }
 
 /// Why no directory was written.
@@ -179,6 +190,11 @@ pub enum Error {
         /// The missing value.
         what: String,
     },
+    /// The request's native join work or storage ceiling was consumed while
+    /// joining the selected identities (FR-358). IR's own refusal; not an
+    /// unnameable value.
+    #[error("the native join budget was consumed: {0}")]
+    NativeJoinExhausted(Box<quire_contract_model::ExactTypeProjectionError>),
 }
 
 impl Error {
@@ -195,6 +211,7 @@ impl Error {
             Self::Io { .. } => ErrorCode::Io,
             Self::Encode { .. } => ErrorCode::Encode,
             Self::Unnameable { .. } => ErrorCode::Unnameable,
+            Self::NativeJoinExhausted(_) => ErrorCode::NativeJoinExhausted,
         }
     }
 }
@@ -295,7 +312,11 @@ pub fn write_with(
     insert_inputs(&mut files, &compiled)?;
     files.insert("selection.json", selection.to_bytes()?)?;
     files.insert("inventory.json", inventory_file(&compiled, &bytes)?)?;
-    files.insert("identities.json", identity_file(&compiled, &package)?)?;
+    let mut budget = request.native_join.budget();
+    files.insert(
+        "identities.json",
+        identity_file(&compiled, &package, &mut budget)?,
+    )?;
     files.insert(
         "equality.json",
         equality_file(&compiled, request, &package)?,
@@ -327,12 +348,13 @@ fn inventory_file(compiled: &Compiled, bytes: &[u8]) -> Result<Vec<u8>, Error> {
 fn identity_file(
     compiled: &Compiled,
     package: &quire_contract_model::CheckedPackageV2,
+    budget: &mut quire_contract_model::NativeJoinBudget,
 ) -> Result<Vec<u8>, Error> {
     let unnameable = |what: String| Error::Unnameable { what };
     compiled
         .emitted
         .emission()
-        .identity_rows(package)
+        .identity_rows(package, budget)
         .map_err(|refused| unnameable(format!("identity file: {refused}")))?
         .to_bytes(package)
         .map_err(|refused| unnameable(format!("identity file: {refused}")))

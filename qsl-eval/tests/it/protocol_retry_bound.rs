@@ -307,7 +307,7 @@ fn compensation_attempt_bound_admits_n_and_refuses_attempt_n_plus_one() {
             &fixture.package,
             qsl_semantics::library::LibraryName::new("qsl-1757").expect("package name"),
             &fixture.packages,
-            qsl_package::V2ReadLimits::default(),
+            qsl_package::V2ReadLimits::fixture(),
         )
         .expect("strict reader admits the protocol");
         for (index, name) in [(0, "Refund"), (1, "Partial")] {

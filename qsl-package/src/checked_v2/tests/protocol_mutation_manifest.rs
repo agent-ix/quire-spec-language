@@ -436,7 +436,7 @@ fn replay_row(
             Some(read_v2(
                 &fixture_wire_bytes(&edited),
                 identity(name),
-                V2ReadLimits::default(),
+                V2ReadLimits::fixture(),
                 &evidence,
             ))
         }

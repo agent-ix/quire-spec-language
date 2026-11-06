@@ -103,7 +103,7 @@ fn a_step_relation_emits_and_reads_back_its_execution_body() {
     let admitted = crate::checked_v2::read_checked_package_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     )
     .unwrap_or_else(|failure| panic!("I2 admits the step relation: {failure:?}"))
@@ -189,7 +189,7 @@ fn one_step_relation_claim_occurrence_is_admitted_by_ir() {
     let admitted = crate::checked_v2::read_checked_package_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     )
     .unwrap_or_else(|failure| panic!("Contract IR admits the relation package: {failure:?}"))

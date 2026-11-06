@@ -631,6 +631,7 @@ fn the_writers_renames_reach_the_rows_it_carries() {
         qsl_semantics::library::LibraryName::new(emission.package().name()).unwrap(),
         &evidence,
         &wire_plan,
+        crate::V2ReadLimits::fixture(),
     )
     .expect("the plan root is written");
 

@@ -3416,7 +3416,7 @@ fn read_back(chain: &Chain, packages: &qsl_semantics::model::intake::PackageInpu
         LibraryName::new(identity).expect("a non-empty identity"),
         packages,
         &mut AdmittedPackages::default(),
-        qsl_package::V2ReadLimits::default(),
+        qsl_package::V2ReadLimits::fixture(),
     )
     .unwrap_or_else(|refusal| panic!("the I2 reader refused {identity}: {refusal}"));
 }

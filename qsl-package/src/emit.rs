@@ -1262,11 +1262,13 @@ impl Emission {
     pub fn identity_rows(
         &self,
         package: &CheckedPackageV2,
+        budget: &mut quire_contract_model::NativeJoinBudget,
     ) -> Result<crate::ReadIdentityRows, crate::IdentityFileRefusal> {
         let joined = qsl_semantics::model::intake::selected_exact_identities_from_rows(
             package,
             &self.selected_exact_declaration_rows,
             &self.selected_exact_field_rows,
+            budget,
         )
         .map_err(|error| crate::IdentityFileRefusal::Native(Box::new(error)))?;
         let records = self

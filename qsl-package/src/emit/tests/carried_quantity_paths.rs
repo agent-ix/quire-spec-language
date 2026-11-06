@@ -144,7 +144,7 @@ fn a_truncated_carried_path_is_refused_by_the_strict_reader() {
     let read = read_v2(
         &jcs(&wire),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &read_evidence(&emission),
     );
     assert!(matches!(read, Read::Refused(_)), "{read:?}");

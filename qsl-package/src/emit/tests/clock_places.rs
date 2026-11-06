@@ -262,7 +262,7 @@ fn read_back(document: &[u8]) -> Result<Vec<CheckedTimedModel>, String> {
     let read = read_checked_package_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     )
     .map_err(|failure| format!("{failure:?}"))?;
@@ -418,7 +418,7 @@ fn read_back_with(document: &[u8], body: &str) -> Result<Vec<CheckedTimedModel>,
     let read = read_checked_package_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     )
     .map_err(|failure| format!("{failure:?}"))?;
