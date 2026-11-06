@@ -346,6 +346,7 @@ impl Subject {
         universes: &[(&str, &[&str])],
     ) -> ModelSystem<'s> {
         ModelSystem::new(ModelSimulationRequest {
+            emit: qsl_package::EmitLimits::fixture(),
             package: &self.package,
             packages: &self.packages,
             normalization: ModelNormalizationLimits::default(),

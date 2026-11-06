@@ -915,7 +915,8 @@ fn a_named_lookup_finds_a_member_and_an_uncovered_type_is_incomplete() {
 /// The `relation`/`population` nodes of an emitted package, as the node's
 /// owning declaration identity.
 fn population_references(unit: &Unit) -> Vec<String> {
-    let emission = emit_checked(&unit.package).expect("the package emits");
+    let emission =
+        emit_checked(&unit.package, qsl_package::EmitLimits::fixture()).expect("the package emits");
     assert!(emission.omitted().is_empty(), "{:?}", emission.omitted());
     let wire: Json = serde_json::from_slice(emission.package().bytes()).expect("the wire is JSON");
     let mut owners: Vec<String> = wire["semantic_graph"]["nodes"]

@@ -60,6 +60,7 @@ mod navigation;
 mod one_occurrence;
 mod operation_effects;
 mod option_value;
+mod output_limit;
 mod owner_model;
 mod owners;
 mod plan_subject_selection;
@@ -249,6 +250,29 @@ fn tree() -> CheckedPackage {
             .check(CheckingLimits::default())
             .expect("Tree checks"),
     )
+}
+
+/// The explicit finite emit ceiling every fixture emission runs under.
+fn ceiling() -> crate::EmitLimits {
+    crate::EmitLimits::fixture()
+}
+
+/// The entry with the fixture ceiling the caller must state.
+fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
+    super::emit_checked(package, ceiling())
+}
+
+fn emit_checked_with_protocol_results(
+    package: &CheckedPackage,
+) -> Result<ProtocolEmission, EmitRefusal> {
+    super::emit_checked_with_protocol_results(package, ceiling())
+}
+
+fn emit_package(
+    package: &CheckedPackage,
+    regions: impl Fn(&Location) -> Option<SourceRegion>,
+) -> Result<Emission, EmitRefusal> {
+    super::emit_package(package, regions, ceiling())
 }
 
 /// `package` emitted with every occurrence placed at the whole of the unit it
@@ -978,7 +1002,7 @@ fn written_nodes(package: &CheckedPackage) -> Vec<Value> {
     nodes
         .iter()
         .map(|node| {
-            let bytes = quire_canonical::to_vec(node, crate::checked::EMIT_LIMITS).unwrap();
+            let bytes = quire_canonical::to_vec(node, ceiling().canonical()).unwrap();
             serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()
         })
         .collect()
@@ -1754,6 +1778,9 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             }
             Err(EmitRefusal::ProtocolResultInvariant) => Seen::ProtocolResultInvariant,
             Err(EmitRefusal::ProtocolResultsRequired) => Seen::ProtocolResultsRequired,
+            Err(EmitRefusal::OutputLimit(_)) => {
+                panic!("the fixture set emits under a ceiling no fixture reaches")
+            }
             Err(EmitRefusal::SourceMapInvariant | EmitRefusal::UnresolvedNodeReference) => {
                 panic!("the typed inspection source map matches the emitted entries")
             }
@@ -1818,7 +1845,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
 fn a_cancelled_handle_stops_the_emitter_before_it_writes_a_node() {
     let cancel = quire_exact::Cancel::new();
     cancel.cancel(quire_exact::CancelCause::Deadline);
-    match emit_checked_with_cancel(&package(vec![t_read_from_text()]), &cancel) {
+    match super::emit_checked_with_cancel(&package(vec![t_read_from_text()]), &cancel, ceiling()) {
         Err(EmitRefusal::Cancelled { cause }) => {
             assert_eq!(cause, quire_exact::CancelCause::Deadline);
         }
@@ -2446,17 +2473,22 @@ fn a_fault_injected_partway_through_node_emission_writes_nothing() {
     let target = total / 2;
     let attempts = std::cell::Cell::new(0usize);
     let fault_reason = "fault injection (test): forced encoding failure";
-    let refusal = emit_package_with_fault(&package, whole_unit, |_id| {
-        let seen = attempts.get();
-        attempts.set(seen + 1);
-        if seen == target {
-            Some(EmitRefusal::Encoding {
-                reason: fault_reason.to_owned(),
-            })
-        } else {
-            None
-        }
-    })
+    let refusal = emit_package_with_fault(
+        &package,
+        whole_unit,
+        |_id| {
+            let seen = attempts.get();
+            attempts.set(seen + 1);
+            if seen == target {
+                Some(EmitRefusal::Encoding {
+                    reason: fault_reason.to_owned(),
+                })
+            } else {
+                None
+            }
+        },
+        crate::EmitLimits::fixture(),
+    )
     .expect_err("a mid-emission fault refuses the whole package");
 
     // The fault actually fired: this is its own refusal, not some earlier,
@@ -3203,8 +3235,12 @@ fn import(identity: &str, package: CheckedPackage) -> crate::Import {
 
 /// `mid`-style package: `t` read from [`TEXT`], linked with `imports`.
 fn linked(name: &str, imports: Vec<crate::Import>) -> CheckedPackage {
-    CheckedPackage::link_with(graph_of_named(name, vec![t_read_from_text()]), imports)
-        .expect("the intermediate package links")
+    CheckedPackage::link_with(
+        graph_of_named(name, vec![t_read_from_text()]),
+        imports,
+        crate::EmitLimits::fixture(),
+    )
+    .expect("the intermediate package links")
 }
 
 /// QSL's I2 read of `package`, a package with a dependency closure, admits
@@ -3217,6 +3253,7 @@ fn read_linked(package: &CheckedPackage) {
         package,
         &std::collections::BTreeMap::new(),
         crate::V2ReadLimits::fixture(),
+        ceiling(),
         &mut evidence,
     )
     .expect("each dependency reads back");
@@ -3250,6 +3287,7 @@ fn the_lock_records_direct_imports_and_derives_the_closure() {
             import("test/units", dependency("test/units")),
             import("test/geometry", dependency("test/geometry")),
         ],
+        crate::EmitLimits::fixture(),
     )
     .expect("two named imports link");
     assert_eq!(
@@ -3285,8 +3323,12 @@ fn the_lock_records_direct_imports_and_derives_the_closure() {
             .len(),
         1
     );
-    let root = CheckedPackage::link_with(root_graph(), vec![import("test/b", b)])
-        .expect("the root links through b and c");
+    let root = CheckedPackage::link_with(
+        root_graph(),
+        vec![import("test/b", b)],
+        crate::EmitLimits::fixture(),
+    )
+    .expect("the root links through b and c");
     assert_eq!(
         closure(&root),
         [
@@ -3327,8 +3369,12 @@ fn direct_only_chain_reads_with_recursively_admitted_dependencies() {
         vec![import("test/units", dependency("test/units"))],
     );
     let b = linked("test/b", vec![import("test/c", c)]);
-    let root = CheckedPackage::link_with(root_graph(), vec![import("test/b", b)])
-        .expect("A links through B and C");
+    let root = CheckedPackage::link_with(
+        root_graph(),
+        vec![import("test/b", b)],
+        crate::EmitLimits::fixture(),
+    )
+    .expect("A links through B and C");
     read_linked(&root);
 }
 
@@ -3360,6 +3406,7 @@ fn a_diamond_selecting_one_package_unifies() {
             identity: lib("test/units"),
             package: second,
         }],
+        crate::EmitLimits::fixture(),
     )
     .expect("the intermediate package links");
     let root = CheckedPackage::link_with(
@@ -3371,6 +3418,7 @@ fn a_diamond_selecting_one_package_unifies() {
             },
             import("test/mid", mid),
         ],
+        crate::EmitLimits::fixture(),
     )
     .expect("equal canonical package bytes unify across distinct allocations");
     let units = &root.dependency_selections()[&lib("test/units")];
@@ -3387,8 +3435,12 @@ fn a_diamond_selecting_one_package_unifies() {
 #[test]
 fn e4_refuses_an_import_whose_manifest_names_another_library() {
     let wrong = dependency("test/actual");
-    let refusal = CheckedPackage::link_with(root_graph(), vec![import("test/expected", wrong)])
-        .expect_err("an import must match its emitted manifest name");
+    let refusal = CheckedPackage::link_with(
+        root_graph(),
+        vec![import("test/expected", wrong)],
+        crate::EmitLimits::fixture(),
+    )
+    .expect_err("an import must match its emitted manifest name");
     let crate::LinkRefusal::IdentityMismatch { expected, actual } = refusal else {
         panic!("expected IdentityMismatch, got {refusal:?}");
     };
@@ -3409,6 +3461,7 @@ fn a_direct_import_reached_transitively_first_stays_in_the_lock() {
             import("test/mid", mid),
             import("test/units", dependency("test/units")),
         ],
+        crate::EmitLimits::fixture(),
     )
     .expect("equal direct and transitive paths unify");
     assert_eq!(
@@ -3438,6 +3491,7 @@ fn dependency_selections_are_written_in_utf8_byte_order() {
             import("test/\u{1F600}", dependency("test/\u{1F600}")),
             import("test/\u{FF61}", dependency("test/\u{FF61}")),
         ],
+        crate::EmitLimits::fixture(),
     )
     .expect("two identities link");
     let emission = emit(&root);
@@ -3490,6 +3544,7 @@ fn e4_refuses_a_conflicting_diamond() {
     let split = CheckedPackage::link_with(
         root_graph(),
         vec![import("test/mid", mid), import("test/mid2", mid2)],
+        crate::EmitLimits::fixture(),
     )
     .expect_err("one identity at two different packages does not unify");
     let crate::LinkRefusal::ConflictingDefinition {
@@ -3516,6 +3571,7 @@ fn e4_refuses_a_conflicting_diamond() {
             identity: lib("test/units"),
             package: Arc::new(package(vec![t()])),
         }],
+        crate::EmitLimits::fixture(),
     )
     .expect_err("an unplaceable dependency does not emit");
     assert!(
@@ -4344,6 +4400,7 @@ fn a_package_remembers_its_emission_and_link_with_reuses_it() {
             identity: lib("test/units"),
             package: Arc::clone(&shared),
         }],
+        crate::EmitLimits::fixture(),
     )
     .expect("the root links");
     assert!(Arc::ptr_eq(
@@ -4358,6 +4415,7 @@ fn a_package_remembers_its_emission_and_link_with_reuses_it() {
             identity: lib("test/units"),
             package: Arc::clone(&unemitted),
         }],
+        crate::EmitLimits::fixture(),
     )
     .expect("the root links");
     assert!(unemitted.remembered_emission().is_some());

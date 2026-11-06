@@ -53,7 +53,8 @@ pub struct ScalarOccurrence {
 /// once with `quire_contract_model::read_checked_package` under this
 /// evidence and passes the admitted [`CheckedPackageV2`] to
 /// [`bind_scalar_operands`]. `imports` is the I2 reader's ceilings for the
-/// dependency closure ([`super::SpineLimits::imports`]). A refusal is an
+/// dependency closure ([`super::SpineLimits::imports`]) and `emit` the
+/// ceiling its emissions run under ([`super::SpineLimits::package`]). A refusal is an
 /// internal failure: the documents were admitted at I1 and the closure was
 /// linked at S4.
 pub fn admission_evidence(
@@ -61,6 +62,7 @@ pub fn admission_evidence(
     checked: &CheckedUnit,
     emitted: &EmittedUnit,
     imports: qsl_package::V2ReadLimits,
+    emit: qsl_package::EmitLimits,
 ) -> Result<CheckedPackageEvidence, Box<RunRefusal>> {
     let mut evidence = emitted.evidence().clone();
     for (identity, document) in models.packages() {
@@ -68,8 +70,14 @@ pub fn admission_evidence(
             .insert_domain_package_document(identity.as_str(), document.as_slice())
             .map_err(|_| fault("domain-package-documents-do-not-conflict"))?;
     }
-    qsl_package::supply_closure(checked.package(), models.packages(), imports, &mut evidence)
-        .map_err(|_| fault("dependency-closure-reads-back"))?;
+    qsl_package::supply_closure(
+        checked.package(),
+        models.packages(),
+        imports,
+        emit,
+        &mut evidence,
+    )
+    .map_err(|_| fault("dependency-closure-reads-back"))?;
     Ok(evidence)
 }
 

@@ -85,6 +85,7 @@ impl Bounded {
             &fixture.clauses[0],
             &fixture.temporal_clock_selections,
             &Cancel::new(),
+            qsl_package::EmitLimits::fixture(),
         )
         .expect("the package declares the clause");
         let binding = vec![qsl_eval::automaton::ContextBinding {

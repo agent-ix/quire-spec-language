@@ -280,6 +280,9 @@ pub struct AnalyzeLimits {
     pub normalization: ModelNormalizationLimits,
     /// The operation deadline in milliseconds, if one was supplied.
     pub deadline_ms: Option<u64>,
+    /// The ceiling on the canonical bytes of each package emission the
+    /// analysis makes (`emit.output_bytes`, FR-264 Behavior 5).
+    pub emit: qsl_package::EmitLimits,
 }
 
 impl Default for AnalyzeLimits {
@@ -300,6 +303,7 @@ impl Default for AnalyzeLimits {
             observation: ObservationLimits::default(),
             normalization: ModelNormalizationLimits::default(),
             deadline_ms: None,
+            emit: qsl_package::EmitLimits::new(qsl_replay::spine::EMIT_OUTPUT_BYTES_DEFAULT),
         }
     }
 }
@@ -848,6 +852,7 @@ pub fn analyze(
             max_candidates: u64::MAX,
         },
         meter: limits.accounting,
+        emit: limits.emit,
     };
     ModelSystem::new(simulation)
         .map_err(|failure| StageFailure::Refused(AnalyzeRefusal::Binding(failure)))?;
@@ -887,6 +892,7 @@ fn statistical_work<'a>(
                         max_candidates: u64::MAX,
                     },
                     meter: limits.accounting,
+                    emit: limits.emit,
                 },
                 proof_bounds: Vec::new(),
             },

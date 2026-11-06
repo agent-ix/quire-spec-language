@@ -701,13 +701,9 @@ fn complete_sources(
         .map_err(failure)?
         .into_value()
     };
-    let emitted = qsl_replay::spine::package(
-        &checked,
-        qsl_replay::spine::PackageLimits::default(),
-        &cancel,
-    )
-    .map_err(failure)?
-    .into_value();
+    let emitted = qsl_replay::spine::package(&checked, limits.package, &cancel)
+        .map_err(failure)?
+        .into_value();
     Ok(emitted.package().bytes().to_vec())
 }
 

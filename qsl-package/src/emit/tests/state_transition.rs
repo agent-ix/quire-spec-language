@@ -664,11 +664,16 @@ fn a_fault_on_the_transition_or_a_derived_node_refuses_the_compile() {
         let reason = format!("fault injection (test): {label}");
         // The fault sees the emitter's structural id of the wire's node.
         let id: CheckedNodeId = crate::emit::checked_node_id_of(&graph.key_of_value(&id).unwrap());
-        let refusal = emit_package_with_fault(&package, package.graph().memoized_regions(), |at| {
-            (*at == id).then(|| EmitRefusal::Encoding {
-                reason: reason.clone(),
-            })
-        })
+        let refusal = emit_package_with_fault(
+            &package,
+            package.graph().memoized_regions(),
+            |at| {
+                (*at == id).then(|| EmitRefusal::Encoding {
+                    reason: reason.clone(),
+                })
+            },
+            crate::EmitLimits::fixture(),
+        )
         .expect_err("a fault refuses the whole package");
         assert!(
             matches!(&refusal, EmitRefusal::Encoding { reason: got } if *got == reason),

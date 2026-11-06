@@ -827,7 +827,7 @@ pub fn check_zone_certificate<O: Clone + Eq>(
                 });
             };
             let emitted = |package: &CheckedPackage| {
-                qsl_package::emit_checked(package)
+                qsl_package::emit_checked(package, request.simulation.emit)
                     .map(|emission| emission.package().clone())
                     .map_err(|refusal| ZoneCertificateRefusal::Package(Box::new(refusal)))
             };

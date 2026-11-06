@@ -318,9 +318,11 @@ fn emit_and_read(package: &CheckedPackage) -> Result<EmittedRead, Error> {
     // of the unit the package was checked from.
     let source = package.graph().source().clone();
     let length = u64::try_from(spine_model::unit().len()).unwrap_or(u64::MAX);
-    let emission = qsl_package::emit_package(package, |_| {
-        SourceRegion::new(source.clone(), 0, length).ok()
-    })
+    let emission = qsl_package::emit_package(
+        package,
+        |_| SourceRegion::new(source.clone(), 0, length).ok(),
+        qsl_package::EmitLimits::fixture(),
+    )
     .map_err(|refusal| Error::Emit(format!("{refusal:?}")))?;
     if !emission.omitted().is_empty() {
         return Err(Error::Omitted {
@@ -339,6 +341,7 @@ fn emit_and_read(package: &CheckedPackage) -> Result<EmittedRead, Error> {
         &domain_packages,
         &mut admitted,
         V2ReadLimits::fixture(),
+        qsl_package::EmitLimits::fixture(),
     )
     .map_err(|refusal| Error::Admission(format!("{refusal:?}")))?;
     let admitted = admitted

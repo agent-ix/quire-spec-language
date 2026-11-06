@@ -418,6 +418,7 @@ impl World {
 
     fn simulation(&self) -> ModelSimulationRequest<'_> {
         ModelSimulationRequest {
+            emit: qsl_package::EmitLimits::fixture(),
             package: &self.package,
             packages: &self.packages,
             normalization: ModelNormalizationLimits::default(),

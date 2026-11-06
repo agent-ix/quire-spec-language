@@ -758,7 +758,8 @@ fn empty_collection_queries_return_their_defined_identity_on_the_spine() {
     .expect("the checked package admits all query functions")
     .into_value();
 
-    let emitted = qsl_package::emit_checked(checked.package()).expect("query package emits");
+    let emitted = qsl_package::emit_checked(checked.package(), qsl_package::EmitLimits::fixture())
+        .expect("query package emits");
     let wire: serde_json::Value =
         serde_json::from_slice(emitted.package().bytes()).expect("emitted query package JSON");
     let nodes = wire["semantic_graph"]["nodes"]

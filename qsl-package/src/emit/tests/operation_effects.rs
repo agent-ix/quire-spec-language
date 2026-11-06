@@ -545,6 +545,7 @@ fn an_unavailable_effect_omits_the_whole_member() {
         &checked,
         checked.graph().memoized_regions(),
         &cannot_decode_relationship,
+        crate::EmitLimits::fixture(),
     )
     .expect("the remaining nodes emit");
     assert!(
@@ -615,6 +616,7 @@ fn each_node_an_effect_names_omits_the_whole_member_when_the_package_lacks_it() 
             &checked,
             checked.graph().memoized_regions(),
             &cannot_decode_process,
+            crate::EmitLimits::fixture(),
         )
         .expect("the remaining nodes emit");
         assert!(
@@ -661,7 +663,7 @@ fn wire_without_member(package: &CheckedPackageV2) -> Value {
         },
         package.capability_report(),
         package.diagnostics(),
-        crate::checked::EMIT_LIMITS,
+        ceiling().canonical(),
     )
     .expect("the typed writer encodes an admitted package");
     serde_json::from_slice(&bytes).expect("the wire is JSON")

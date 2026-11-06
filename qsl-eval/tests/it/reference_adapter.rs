@@ -287,6 +287,7 @@ fn registration_is_decided_from_the_packages_admitted_signature() {
             identity: LibraryName::new("lib.g").unwrap(),
             package: Arc::new(dependency),
         }],
+        qsl_package::EmitLimits::fixture(),
     )
     .expect("the dependency links");
     let f_key = identity(&root, "f");

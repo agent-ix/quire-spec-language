@@ -176,13 +176,21 @@ fn frame_occurrence_region_is_the_first_naming_clauses_operation_reference() {
     let [(_, _, frame_location)] = located[..] else {
         panic!("one generated frame occurrence: {located:?}");
     };
-    qsl_package::emit_package(&base.package, |location| graph.region(location))
-        .expect("every occurrence placed emits");
-    let refusal = qsl_package::emit_package(&base.package, |location| {
-        (location != frame_location)
-            .then(|| graph.region(location))
-            .flatten()
-    })
+    qsl_package::emit_package(
+        &base.package,
+        |location| graph.region(location),
+        qsl_package::EmitLimits::fixture(),
+    )
+    .expect("every occurrence placed emits");
+    let refusal = qsl_package::emit_package(
+        &base.package,
+        |location| {
+            (location != frame_location)
+                .then(|| graph.region(location))
+                .flatten()
+        },
+        qsl_package::EmitLimits::fixture(),
+    )
     .expect_err("the unplaced frame occurrence refuses");
     assert!(
         matches!(

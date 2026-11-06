@@ -252,8 +252,12 @@ fn every_nested_form_emits_in_the_stratified_grammar_at_2_and_1000_levels() {
                     let package = CheckedPackage::link(graph);
                     // The forms are built in code, not read from a source
                     // unit, so every occurrence is placed at the fixture unit.
-                    let emission = crate::emit::emit_package(&package, whole_unit)
-                        .unwrap_or_else(|refusal| panic!("{form:?} x{levels} emits: {refusal:?}"));
+                    let emission = crate::emit::emit_package(
+                        &package,
+                        whole_unit,
+                        crate::EmitLimits::fixture(),
+                    )
+                    .unwrap_or_else(|refusal| panic!("{form:?} x{levels} emits: {refusal:?}"));
                     let written = wire(&emission);
                     for node in nodes(&written) {
                         assert!(

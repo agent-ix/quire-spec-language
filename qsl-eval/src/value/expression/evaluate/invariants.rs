@@ -612,7 +612,7 @@ fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
             .unwrap(),
     );
     let identity = LibraryName::new("fixture:callable").unwrap();
-    let emission = qsl_package::emit_checked(&library).unwrap();
+    let emission = qsl_package::emit_checked(&library, qsl_package::EmitLimits::fixture()).unwrap();
     let view = qsl_package::read_import_view(
         &library,
         &emission,
@@ -620,6 +620,7 @@ fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
         &std::collections::BTreeMap::new(),
         &mut qsl_package::AdmittedPackages::default(),
         qsl_package::V2ReadLimits::fixture(),
+        qsl_package::EmitLimits::fixture(),
     )
     .unwrap();
     let callee = library.graph().callable("Body").unwrap().identity.clone();
@@ -2289,24 +2290,14 @@ fn iteration_resume_finish_and_stop_reporting_reach_distinct_producers() {
         claim_level(m);
         m.note_stop(&iteration(literal.root()))
     });
-    for visit in [
-        Visit::Filter,
-        Visit::Forall,
-        Visit::Exists,
-        Visit::Count,
-        Visit::Sum,
-    ] {
+    for visit in [Visit::Filter, Visit::Forall, Visit::Exists, Visit::Count] {
         let root = body(|ids| NodeKind::Query {
             visit,
             slot: 0,
             source: ids[0],
             body: ids[1],
         });
-        let wrong = if visit == Visit::Sum {
-            Value::Boolean(true)
-        } else {
-            Value::Integer(Integer::one())
-        };
+        let wrong = Value::Integer(Integer::one());
         probe!("query-body-value-invalid", m, [], {
             let mut i = iteration(root.root());
             i.awaiting = true;
@@ -2328,11 +2319,6 @@ fn iteration_resume_finish_and_stop_reporting_reach_distinct_producers() {
         i.accumulator = Some(Value::Boolean(true));
         m.push_value(Value::Integer(Integer::one()), false);
         m.iterate(i)
-    });
-    probe!("sum-accumulator-value-invalid", m, [], {
-        let mut i = iteration(sum.root());
-        i.accumulator = Some(Value::Boolean(true));
-        m.finish(*i)
     });
     let fold = body(|ids| NodeKind::Fold {
         accumulator: 0,

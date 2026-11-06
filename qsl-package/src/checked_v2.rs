@@ -29,7 +29,7 @@ use qsl_semantics::check::wire_id::{WireGraph, WireIdError};
 use qsl_semantics::library::{ImportView, LibraryName, LibraryPackage, LibraryRefusal};
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, InternalFault};
 
-use crate::checked::CheckedPackage;
+use crate::checked::{CheckedPackage, EmitLimits};
 use crate::emit::{emit_checked, Emission, EmitRefusal};
 use quire_exact::{NodeKey, Origin, Role};
 
@@ -979,6 +979,7 @@ pub fn read_import_view(
     domain_packages: &qsl_semantics::model::intake::PackageInput,
     admitted: &mut AdmittedPackages,
     limits: V2ReadLimits,
+    emit: EmitLimits,
 ) -> Result<ImportView, ImportViewRefusal> {
     let mut held = BTreeMap::new();
     hold_closure(package, &mut held);
@@ -987,6 +988,7 @@ pub fn read_import_view(
         domain_packages,
         admitted: std::mem::take(&mut admitted.0),
         limits,
+        emit,
     };
     let read = reader.read_emitted(package, emission, identity.clone());
     admitted.0 = reader.admitted;
@@ -1002,12 +1004,13 @@ pub fn read_evaluation_package<'package>(
     identity: LibraryName,
     domain_packages: &qsl_semantics::model::intake::PackageInput,
     limits: V2ReadLimits,
+    emit: EmitLimits,
 ) -> Result<AdmittedPackageRead<'package>, ImportViewRefusal> {
-    let emission = emit_checked(package).map_err(|refusal| ImportViewRefusal::Emission {
+    let emission = emit_checked(package, emit).map_err(|refusal| ImportViewRefusal::Emission {
         package: identity.clone(),
         refusal: Some(refusal),
     })?;
-    read_evaluation_emission(package, &emission, identity, domain_packages, limits)
+    read_evaluation_emission(package, &emission, identity, domain_packages, limits, emit)
 }
 
 /// Admit `emission`, the bytes `package` was emitted to (with the clock
@@ -1021,6 +1024,7 @@ pub fn read_evaluation_emission<'package>(
     identity: LibraryName,
     domain_packages: &qsl_semantics::model::intake::PackageInput,
     limits: V2ReadLimits,
+    emit: EmitLimits,
 ) -> Result<AdmittedPackageRead<'package>, ImportViewRefusal> {
     let mut held = BTreeMap::new();
     hold_closure(package, &mut held);
@@ -1029,6 +1033,7 @@ pub fn read_evaluation_emission<'package>(
         domain_packages,
         admitted: BTreeMap::new(),
         limits,
+        emit,
     };
     let read = reader.read_emitted(package, emission, identity.clone())?;
     let mut closure = reader.admitted;
@@ -1260,6 +1265,7 @@ pub fn supply_closure(
     package: &CheckedPackage,
     domain_packages: &qsl_semantics::model::intake::PackageInput,
     limits: V2ReadLimits,
+    emit: EmitLimits,
     evidence: &mut CheckedPackageEvidence,
 ) -> Result<(), ImportViewRefusal> {
     let mut held = BTreeMap::new();
@@ -1269,6 +1275,7 @@ pub fn supply_closure(
         domain_packages,
         admitted: BTreeMap::new(),
         limits,
+        emit,
     }
     .supply(package, evidence)
 }
@@ -1296,6 +1303,7 @@ struct ClosureReader<'p> {
     domain_packages: &'p qsl_semantics::model::intake::PackageInput,
     admitted: BTreeMap<LibraryName, Arc<CheckedPackageV2>>,
     limits: V2ReadLimits,
+    emit: EmitLimits,
 }
 
 impl ClosureReader<'_> {
@@ -1306,10 +1314,11 @@ impl ClosureReader<'_> {
         package: &CheckedPackage,
         identity: LibraryName,
     ) -> Result<V2Read, ImportViewRefusal> {
-        let emission = emit_checked(package).map_err(|refusal| ImportViewRefusal::Emission {
-            package: identity.clone(),
-            refusal: Some(refusal),
-        })?;
+        let emission =
+            emit_checked(package, self.emit).map_err(|refusal| ImportViewRefusal::Emission {
+                package: identity.clone(),
+                refusal: Some(refusal),
+            })?;
         self.read_emitted(package, &emission, identity)
     }
 

@@ -195,7 +195,7 @@ pub fn emit_plan_root(
         return Err(PlanRootRefusal::EntriesChangedThePlan);
     }
 
-    let emitted = emit_checked(combined.package())?;
+    let emitted = emit_checked(combined.package(), request.limits.package.emit())?;
     let mut evidence = emitted.evidence().clone();
     for (identity, document) in request.packages {
         // A document the evidence already holds is the same document: the
@@ -239,6 +239,7 @@ pub fn emit_plan_root(
         &evidence,
         &wire,
         request.limits.imports,
+        request.limits.package.emit(),
     )?;
     Ok(PlanRoot {
         plan,

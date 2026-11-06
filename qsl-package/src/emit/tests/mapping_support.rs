@@ -571,7 +571,7 @@ fn the_reader_refuses_a_package_with_no_profile_selection_row() {
 
 /// The outcome of reading `wire`'s canonical bytes.
 fn read_wire_outcome(wire: &Value) -> Read {
-    let bytes = quire_canonical::to_vec(wire, crate::checked::EMIT_LIMITS).expect("canonical");
+    let bytes = quire_canonical::to_vec(wire, ceiling().canonical()).expect("canonical");
     read_v2(&bytes, library(), V2ReadLimits::fixture(), &evidence(wire))
 }
 

@@ -632,6 +632,7 @@ fn the_writers_renames_reach_the_rows_it_carries() {
         &evidence,
         &wire_plan,
         crate::V2ReadLimits::fixture(),
+        crate::EmitLimits::fixture(),
     )
     .expect("the plan root is written");
 
