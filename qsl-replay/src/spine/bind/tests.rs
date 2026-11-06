@@ -96,6 +96,7 @@ fn admit(unit: &Unit) -> Box<CheckedPackageV2> {
         &unit.checked,
         &unit.emitted,
         SpineLimits::default().imports,
+        qsl_package::EmitLimits::fixture(),
     )
     .expect("the admission evidence assembles");
     match read_checked_package(

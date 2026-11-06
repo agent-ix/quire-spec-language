@@ -190,12 +190,14 @@ pub(super) fn lower_package(
             temporal.clause().profile()
                 == qsl_semantics::check::TemporalProfile::EventPositionFalseExtension
         })
-        .map(|temporal| crate::emit::TemporalClockSelection {
-            source: graph.source().clone(),
-            declaration_span: temporal.clause().span(),
-            clock: quire_contract_model::ClockConfiguration::EventPosition {
-                sequence_authority: "test-order-events".into(),
-            },
+        .map(|temporal| {
+            crate::emit::TemporalClockSelection::new(
+                graph.source().clone(),
+                temporal.clause().span(),
+                quire_contract_model::ClockConfiguration::EventPosition {
+                    sequence_authority: "test-order-events".into(),
+                },
+            )
         })
         .chain(graph.protocols().iter().flat_map(|protocol| {
             protocol
@@ -206,20 +208,25 @@ pub(super) fn lower_package(
                     template.temporal_profile
                         == Some(qsl_semantics::check::TemporalProfile::EventPositionFalseExtension)
                 })
-                .map(|template| crate::emit::TemporalClockSelection {
-                    source: graph.source().clone(),
-                    declaration_span: template.span,
-                    clock: quire_contract_model::ClockConfiguration::EventPosition {
-                        sequence_authority: "test-order-events".into(),
-                    },
+                .map(|template| {
+                    crate::emit::TemporalClockSelection::new(
+                        graph.source().clone(),
+                        template.span,
+                        quire_contract_model::ClockConfiguration::EventPosition {
+                            sequence_authority: "test-order-events".into(),
+                        },
+                    )
                 })
         }))
         .collect::<Vec<_>>();
     let package = CheckedPackage::link(graph);
     let activation_rows = package.protocol_activation_relation();
-    let emission =
-        crate::emit::emit_checked_with_temporal_selections(&package, &temporal_selections)
-            .expect("the package emits");
+    let emission = crate::emit::emit_checked_with_temporal_selections(
+        &package,
+        &temporal_selections,
+        crate::EmitLimits::fixture(),
+    )
+    .expect("the package emits");
     assert_eq!(emission.omitted, []);
     let occurrences = package.protocol_occurrence_schemas();
     let mut evidence = read_evidence(&emission);

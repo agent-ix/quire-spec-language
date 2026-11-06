@@ -327,7 +327,8 @@ fn formula_nodes(
 
 /// Write the plan root and entries onto the package `base` was emitted as,
 /// reading it back through IR first (the writer works on the admitted
-/// graph) under the caller's `limits`.
+/// graph) under the caller's `limits`, and writes the plan package under the
+/// caller's `emit` ceiling.
 ///
 /// `retained` is the emission `base` was written from. Every witness row it
 /// retained from its acquisition (selected model rows, equality producer and
@@ -340,6 +341,7 @@ pub fn emit_monitor_plan_over(
     evidence: &quire_contract_model::CheckedPackageEvidence,
     plan: &MonitorPlanWire<'_>,
     limits: crate::checked_v2::V2ReadLimits,
+    emit: crate::checked::EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     let read = crate::checked_v2::read_checked_package_v2(
         retained.package().bytes(),
@@ -348,7 +350,7 @@ pub fn emit_monitor_plan_over(
         evidence,
     )
     .map_err(|_| invariant("the base package does not read back"))?;
-    emit_monitor_plan(&read.into_value().admitted, retained, plan)
+    emit_monitor_plan(&read.into_value().admitted, retained, plan, emit)
 }
 
 /// Write the plan root and entries onto the admitted package `base`.
@@ -356,6 +358,7 @@ fn emit_monitor_plan(
     base: &CheckedPackageV2,
     retained: &Emission,
     plan: &MonitorPlanWire<'_>,
+    limits: crate::checked::EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     let ids = &StructuralIds::default();
     let mut nodes = base.graph().nodes.clone();
@@ -680,7 +683,15 @@ fn emit_monitor_plan(
         owner: None,
         body,
     });
-    finish(base, retained, &all_changes, nodes, source_map, inspection)
+    finish(
+        base,
+        retained,
+        &all_changes,
+        nodes,
+        source_map,
+        inspection,
+        limits,
+    )
 }
 
 /// The body-root node of every declared `function` node the `roots` reach
@@ -1233,6 +1244,7 @@ fn finish(
     nodes: Vec<CheckedSemanticNodeV2>,
     source_map: Vec<CheckedSourceMapEntry>,
     inspection_source_map: qsl_foundation::source::provenance::PackageSourceMap,
+    limits: crate::checked::EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     let lock = base.lock().clone();
     let semantic_graph = CheckedSemanticGraphV2 {
@@ -1269,7 +1281,7 @@ fn finish(
             },
             &capability_report,
             &diagnostics,
-            crate::checked::EMIT_LIMITS,
+            limits.canonical(),
         )
         .map_err(EmitRefusal::from)
     })?;

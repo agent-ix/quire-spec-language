@@ -545,6 +545,7 @@ impl RingWorld {
             ]
         };
         ModelSimulationRequest {
+            emit: qsl_package::EmitLimits::fixture(),
             package: &self.package,
             packages: &self.packages,
             normalization: ModelNormalizationLimits::default(),
@@ -746,6 +747,7 @@ impl MapWorld {
     fn system(&self, model: &str, universes: Vec<PopulationUniverse>) -> ModelSystem<'_> {
         ModelSystem::over_model(
             ModelSimulationRequest {
+                emit: qsl_package::EmitLimits::fixture(),
                 package: &self.package,
                 packages: &self.packages,
                 normalization: ModelNormalizationLimits::default(),

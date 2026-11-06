@@ -354,13 +354,13 @@ pub(crate) fn tcb_01_event_position_selection(
                 return None;
             }
             assert_eq!(clause.clock(), "model-steps");
-            Some(TemporalClockSelection {
-                source: graph.source().clone(),
-                declaration_span: clause.span(),
-                clock: ClockConfiguration::EventPosition {
+            Some(TemporalClockSelection::new(
+                graph.source().clone(),
+                clause.span(),
+                ClockConfiguration::EventPosition {
                     sequence_authority: "order-events".into(),
                 },
-            })
+            ))
         })
         .collect()
 }
@@ -625,6 +625,7 @@ pub(crate) fn model_subject<'a>(
 ) -> ModelSubject<'a> {
     ModelSubject {
         simulation: ModelSimulationRequest {
+            emit: qsl_package::EmitLimits::fixture(),
             package,
             packages: &documents.packages,
             normalization: ModelNormalizationLimits::default(),

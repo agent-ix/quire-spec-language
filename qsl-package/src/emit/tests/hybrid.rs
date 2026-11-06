@@ -119,12 +119,14 @@ fn compile_checked(declarations: &str) -> (Emission, Value, Checked) {
             temporal.clause().profile()
                 == qsl_semantics::check::TemporalProfile::EventPositionFalseExtension
         })
-        .map(|temporal| crate::emit::TemporalClockSelection {
-            source: graph.source().clone(),
-            declaration_span: temporal.clause().span(),
-            clock: quire_contract_model::ClockConfiguration::EventPosition {
-                sequence_authority: "test-hybrid-events".into(),
-            },
+        .map(|temporal| {
+            crate::emit::TemporalClockSelection::new(
+                graph.source().clone(),
+                temporal.clause().span(),
+                quire_contract_model::ClockConfiguration::EventPosition {
+                    sequence_authority: "test-hybrid-events".into(),
+                },
+            )
         })
         .collect::<Vec<_>>();
     let checked = Checked {
@@ -135,6 +137,7 @@ fn compile_checked(declarations: &str) -> (Emission, Value, Checked) {
     let emission = crate::emit::emit_checked_with_temporal_selections(
         &CheckedPackage::link(graph),
         &selections,
+        crate::EmitLimits::fixture(),
     )
     .expect("the package emits");
     assert_eq!(emission.omitted, []);

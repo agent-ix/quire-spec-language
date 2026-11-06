@@ -1765,8 +1765,9 @@ fn conformance_typed_timed_model_writer_emits_an_admitted_package() {
         .expect("writer output reconstructs as the same typed model");
     assert_eq!(round_tripped, timed_models);
 
-    let emission = crate::emit::emit_timed_models(&admitted, &timed_models)
-        .expect("QSL writes the checked timed model into a complete package");
+    let emission =
+        crate::emit::emit_timed_models(&admitted, &timed_models, crate::EmitLimits::fixture())
+            .expect("QSL writes the checked timed model into a complete package");
     let emitted_package: Value =
         serde_json::from_slice(emission.package().bytes()).expect("writer emits a v2 package");
     assert_eq!(emission.package().name(), emitted_package["name"]);
@@ -1884,8 +1885,9 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
     assert!(timed.clock_places.is_empty());
     assert!(timed.literal_types.integer.is_none());
 
-    let emission = crate::emit::emit_timed_models(&admitted, &timed_models)
-        .expect("a no-clock model writes without an integer literal type");
+    let emission =
+        crate::emit::emit_timed_models(&admitted, &timed_models, crate::EmitLimits::fixture())
+            .expect("a no-clock model writes without an integer literal type");
     let emitted: Value = serde_json::from_slice(emission.package().bytes()).unwrap();
     let (_, round_trip) = read_fixture_wire(TIMED_MODEL_NODES, &emitted);
     let Read::Verified {
@@ -2026,8 +2028,12 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
             .clone()
     };
     for (case, mut expected) in cases {
-        let emission = crate::emit::emit_timed_models(&admitted, &[expected.clone()])
-            .unwrap_or_else(|error| panic!("{case} mutation emits: {error}"));
+        let emission = crate::emit::emit_timed_models(
+            &admitted,
+            &[expected.clone()],
+            crate::EmitLimits::fixture(),
+        )
+        .unwrap_or_else(|error| panic!("{case} mutation emits: {error}"));
         let wire: Value = serde_json::from_slice(emission.package().bytes()).unwrap();
         assert_eq!(wire["name"], base_wire["name"], "{case} keeps package name");
         let (_, outcome) = read_fixture_wire(TIMED_MODEL_NODES, &wire);
@@ -2114,9 +2120,12 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
     let mut changed_tick = tick_models.remove(0);
     let original_tick_source = id_for(&tick_admitted, "time_source");
     changed_tick.source.period = Some("3/2".to_owned());
-    let tick_emission =
-        crate::emit::emit_timed_models(&tick_admitted, std::slice::from_ref(&changed_tick))
-            .expect("changed tick period emits");
+    let tick_emission = crate::emit::emit_timed_models(
+        &tick_admitted,
+        std::slice::from_ref(&changed_tick),
+        crate::EmitLimits::fixture(),
+    )
+    .expect("changed tick period emits");
     let changed_tick_wire: Value = serde_json::from_slice(tick_emission.package().bytes()).unwrap();
     assert_eq!(changed_tick_wire["name"], tick_wire["name"]);
     let (_, changed_tick_outcome) = read_fixture_wire(

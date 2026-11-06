@@ -559,6 +559,7 @@ impl World {
     ) -> ModelSubject<'a> {
         ModelSubject {
             simulation: ModelSimulationRequest {
+                emit: qsl_package::EmitLimits::fixture(),
                 package,
                 packages: &self.packages,
                 normalization: ModelNormalizationLimits::default(),
@@ -773,6 +774,7 @@ mod tp4 {
                 self.clause(),
                 &[],
                 &Cancel::new(),
+                qsl_package::EmitLimits::fixture(),
             )
             .expect("the clause resolves in its package");
             let system = ModelSystem::new(subject.simulation).expect("the model admits");

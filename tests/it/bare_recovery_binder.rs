@@ -9,7 +9,7 @@ use qsl_package::{BarePackage, BareSupply, ProtocolSlotDescriptor};
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
 use quire_spec_language::checked_handoff::Corpus;
 
-use super::checked_handoff::{admitted, request, tree};
+use super::checked_handoff::{admitted, integer_request, request, tree};
 use quire_spec_language::checked_handoff::{evidence, write};
 
 const UNLIMITED: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
@@ -47,7 +47,7 @@ const FULL_RECOVER: &str = "sum<M::Total>(receipt in recoveredFull.receipts: rec
 /// R with the `Full` recover condition replaced by `condition`.
 fn recipe_with(condition: Option<&str>) -> Recipe {
     let holder = tempfile::tempdir().expect("directory");
-    let mut request = request("event_position", Corpus::None);
+    let mut request = integer_request(holder.path());
     if let Some(condition) = condition {
         let text = std::fs::read_to_string(&request.emit.source).expect("R's unit");
         assert!(
@@ -371,6 +371,48 @@ fn nested_query_binders_are_no_sources_and_the_predicate_evaluates() {
     assert!(holds(recipe.recover("Full", &[5], 0, false)));
 }
 
+/// FR-533 "Types the bytes cannot project": over R with the unit `U` on
+/// `Amount` and `Total` (FR-517-AC-13), Contract IR cannot project the
+/// `Recovery` record, because its `receipts` member names the source-owned
+/// unit. The bare world therefore holds no `Recovery`, and the slot that reads
+/// it refuses `MissingTypeRepresentation` rather than substituting a record of
+/// another shape; the other tests of this file read the unit-free variant.
+#[trace("FR-533-AC-19", "TC-1333")]
+#[test]
+fn recovery_over_the_unit_u_is_a_missing_type_representation() {
+    let holder = tempfile::tempdir().expect("directory");
+    let recipe = read_recipe(holder, &request("event_position", Corpus::None));
+    let bare = recipe.bare();
+    let world = bare.world().expect("world");
+    let records: Vec<String> = world
+        .types()
+        .composites()
+        .map(|record| record.name().to_owned())
+        .collect();
+    assert!(
+        records.iter().all(|name| !name.ends_with("Recovery")),
+        "{records:?}"
+    );
+    let refused = bare
+        .select_protocol_slot(&ProtocolSlotDescriptor::new(
+            recipe.compensation("Full"),
+            "recovery.predicate",
+            None,
+        ))
+        .map(|selected| {
+            selected
+                .sources()
+                .iter()
+                .map(|source| format!("{} {:?}", source.name(), source.value_type()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_err();
+    assert!(
+        format!("{refused:?}").contains("MissingTypeRepresentation"),
+        "the Recovery binder is not typed as a quantity: {refused:?}"
+    );
+}
+
 /// A binder that has the name of a binder already readable is refused when the
 /// unit is checked, so a source and an introduced binder of one slot never
 /// share a name and no package holds that pair.
@@ -555,7 +597,7 @@ fn a_case_arm_binder_in_a_recover_condition_is_admitted_and_evaluates() {
     use qsl_replay::spine::{self, DependencyInput, ParseRequest, SpineLimits, SuppliedLibrary};
 
     let holder = tempfile::tempdir().expect("directory");
-    let mut request = request("event_position", Corpus::None);
+    let mut request = integer_request(holder.path());
     let text = std::fs::read_to_string(&request.emit.source).expect("R's unit");
     let unit = holder.path().join("unit.native");
     let condition = "let total = (case Shape::Circle(sum<M::Total>(receipt in recoveredFull.receipts: receipt)) { Empty: targetFull; Circle(r): r; }) in total <= targetFull and total >= targetFull and not activatedFull";

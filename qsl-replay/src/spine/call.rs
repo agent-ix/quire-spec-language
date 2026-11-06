@@ -503,7 +503,7 @@ pub(crate) fn run_reading<T>(
     let checked = front_end::check(&parsed, package_name, &models, dependencies, limits, cancel)
         .map_err(refusal)?
         .into_value();
-    let emitted = front_end::package(&checked, front_end::PackageLimits::default(), cancel)
+    let emitted = front_end::package(&checked, limits.package, cancel)
         .map_err(refusal)?
         .into_value();
     let package = checked.package();

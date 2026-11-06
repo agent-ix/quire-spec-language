@@ -4,6 +4,8 @@ profile v = "quire.model.complete/v1";
 profile t = "quire.temporal.fixed-sample.false-extension/v1";
 import "agent-ix/checked-handoff-library" as L;
 model M = "agent-ix/checked-handoff";
+dimension Money;
+unit U : Money = rational(1, 1);
 
 temporal DueSample using t over (view: M::Workflow) clock "sample-clock" on origin {
     always[0,30] holds(

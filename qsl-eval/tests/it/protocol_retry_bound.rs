@@ -212,6 +212,7 @@ fn system<'a>(fixture: &'a Fixture) -> ProtocolSystem<'a, Sc> {
         node: tc1070::model::id("nodes"),
     };
     let request = ModelSimulationRequest {
+        emit: qsl_package::EmitLimits::fixture(),
         package: &fixture.package,
         packages: &fixture.packages,
         normalization: ModelNormalizationLimits::default(),
@@ -308,6 +309,7 @@ fn compensation_attempt_bound_admits_n_and_refuses_attempt_n_plus_one() {
             qsl_semantics::library::LibraryName::new("qsl-1757").expect("package name"),
             &fixture.packages,
             qsl_package::V2ReadLimits::fixture(),
+            qsl_package::EmitLimits::fixture(),
         )
         .expect("strict reader admits the protocol");
         for (index, name) in [(0, "Refund"), (1, "Partial")] {

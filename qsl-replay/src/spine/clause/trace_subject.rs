@@ -104,7 +104,7 @@ pub fn run_trace_subject_clause(
         let emitted = front_end::package_with_temporal_selections(
             &checked,
             &temporal_selections,
-            front_end::PackageLimits::default(),
+            request.limits.package,
             &cancel,
         )?
         .into_value();
@@ -441,11 +441,11 @@ fn temporal_clock_selections(
                 }
                 TemporalProfile::InfiniteTrace | TemporalProfile::Timed => return None,
             };
-            Some(TemporalClockSelection {
-                source: parsed.source().reference().clone(),
-                declaration_span: form.span(),
+            Some(TemporalClockSelection::new(
+                parsed.source().reference().clone(),
+                form.span(),
                 clock,
-            })
+            ))
         })
         .collect()
 }

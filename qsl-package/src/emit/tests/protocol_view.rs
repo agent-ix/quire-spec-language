@@ -67,8 +67,12 @@ fn fixture_over(text: &str) -> Fixture {
     let protocol = protocol.clone();
     let package = CheckedPackage::link(graph);
     let activation_rows = package.protocol_activation_relation();
-    let emission = crate::emit::emit_checked_with_temporal_selections(&package, &selections)
-        .expect("the package emits");
+    let emission = crate::emit::emit_checked_with_temporal_selections(
+        &package,
+        &selections,
+        crate::EmitLimits::fixture(),
+    )
+    .expect("the package emits");
     let mut evidence = read_evidence(&emission);
     evidence
         .insert_domain_package_document(package_identity(&document()[..]), &document()[..])
@@ -1237,14 +1241,19 @@ fn the_lock_views_return_the_selections_and_refuse_an_absent_one() {
         "test/b",
         vec![import("test/units", super::dependency("test/units"))],
     );
-    let root = CheckedPackage::link_with(root_graph(), vec![import("test/b", middle)])
-        .expect("the root links");
+    let root = CheckedPackage::link_with(
+        root_graph(),
+        vec![import("test/b", middle)],
+        crate::EmitLimits::fixture(),
+    )
+    .expect("the root links");
     let emission = emit(&root);
     let mut evidence = read_evidence(&emission);
     crate::checked_v2::supply_closure(
         &root,
         &std::collections::BTreeMap::new(),
         crate::V2ReadLimits::fixture(),
+        ceiling(),
         &mut evidence,
     )
     .expect("each dependency reads back");

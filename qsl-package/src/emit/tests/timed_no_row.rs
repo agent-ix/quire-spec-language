@@ -220,13 +220,13 @@ fn a_clock_selection_supplied_for_a_timed_clause_is_refused() {
             timestamp_unit: "test-rfc3339".into(),
         },
     ] {
-        let selection = TemporalClockSelection {
-            source: source.clone(),
-            declaration_span: span,
-            clock,
-        };
-        let refusal = crate::emit::emit_checked_with_temporal_selections(&package, &[selection])
-            .expect_err("a Timed clause takes no clock selection");
+        let selection = TemporalClockSelection::new(source.clone(), span, clock);
+        let refusal = crate::emit::emit_checked_with_temporal_selections(
+            &package,
+            &[selection],
+            crate::EmitLimits::fixture(),
+        )
+        .expect_err("a Timed clause takes no clock selection");
         match &refusal {
             EmitRefusal::SurplusTemporalClockSelection {
                 source_ref,

@@ -82,8 +82,11 @@ fn has_collection_bounds(graph: &CheckedGraph) -> bool {
 
 /// The S4 document, including its structural node ids.
 fn emitted(graph: CheckedGraph) -> serde_json::Value {
-    let emission =
-        qsl_package::emit_checked(&CheckedPackage::link(graph)).expect("the checked unit emits");
+    let emission = qsl_package::emit_checked(
+        &CheckedPackage::link(graph),
+        qsl_package::EmitLimits::fixture(),
+    )
+    .expect("the checked unit emits");
     assert!(emission.omitted().is_empty(), "every fixture node emits");
     serde_json::from_slice(emission.package().bytes()).expect("a v2 document")
 }

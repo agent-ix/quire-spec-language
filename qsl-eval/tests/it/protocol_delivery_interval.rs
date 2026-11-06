@@ -149,6 +149,7 @@ fn system<'a>(fixture: &'a Fixture) -> ProtocolSystem<'a, Sc> {
         keys: vec!["g1".to_owned()],
     };
     let request = ModelSimulationRequest {
+        emit: qsl_package::EmitLimits::fixture(),
         package: &fixture.package,
         packages: &fixture.packages,
         normalization: ModelNormalizationLimits::default(),

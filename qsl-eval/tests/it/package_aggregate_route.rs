@@ -59,17 +59,23 @@ fn with_routes<R>(
     let selection = graph
         .temporal_clauses()
         .iter()
-        .map(|clause| TemporalClockSelection {
-            source: graph.source().clone(),
-            declaration_span: clause.clause().span(),
-            clock: ClockConfiguration::EventPosition {
-                sequence_authority: "order-events".into(),
-            },
+        .map(|clause| {
+            TemporalClockSelection::new(
+                graph.source().clone(),
+                clause.clause().span(),
+                ClockConfiguration::EventPosition {
+                    sequence_authority: "order-events".into(),
+                },
+            )
         })
         .collect::<Vec<_>>();
     let package = CheckedPackage::link(graph);
-    let emission = emit_checked_with_temporal_selections(&package, &selection)
-        .expect("the checked package emits");
+    let emission = emit_checked_with_temporal_selections(
+        &package,
+        &selection,
+        qsl_package::EmitLimits::fixture(),
+    )
+    .expect("the checked package emits");
     let no_domains = package_input(std::iter::empty::<&[u8]>()).expect("empty model closure");
     let read = read_evaluation_emission(
         &package,
@@ -77,6 +83,7 @@ fn with_routes<R>(
         LibraryName::new("fixture").expect("a library name"),
         &no_domains,
         V2ReadLimits::fixture(),
+        qsl_package::EmitLimits::fixture(),
     )
     .expect("the checked package reader admits the aggregate");
     let clause = read

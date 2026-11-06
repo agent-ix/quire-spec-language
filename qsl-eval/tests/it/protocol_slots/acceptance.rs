@@ -2,6 +2,7 @@
 //! TC-1070's E and L protocols, evaluated through their emitted identities.
 
 use super::*;
+use qsl_package::EmitLimits;
 use qsl_semantics::model::observation::PathStep;
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_exact::{
@@ -1108,7 +1109,8 @@ fn observation_with_row<'a>(
 }
 
 fn assert_reader_admits(package: &CheckedPackage) {
-    let emission = qsl_package::emit_checked(package).expect("the complete E/L package emits");
+    let emission = qsl_package::emit_checked(package, EmitLimits::fixture())
+        .expect("the complete E/L package emits");
     let bytes = serde_json::to_vec(&document()).unwrap();
     let input = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
     let mut admitted = qsl_package::AdmittedPackages::default();
@@ -1119,6 +1121,7 @@ fn assert_reader_admits(package: &CheckedPackage) {
         &input,
         &mut admitted,
         qsl_package::V2ReadLimits::fixture(),
+        EmitLimits::fixture(),
     )
     .expect(
         "the actual contract reader admits the emitted related records before any slot evaluates",
@@ -2383,6 +2386,7 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
         qsl_semantics::library::LibraryName::new("acceptance").unwrap(),
         &domain_packages,
         qsl_package::V2ReadLimits::fixture(),
+        EmitLimits::fixture(),
     )
     .expect("strict contract-reader admission succeeds for checked fixture E");
     let reader_view = read
@@ -2394,6 +2398,7 @@ fn reader_backed_protocol_slot_uses_retained_view_and_preserves_refusal_evidence
         qsl_semantics::library::LibraryName::new("acceptance").unwrap(),
         &domain_packages,
         qsl_package::V2ReadLimits::fixture(),
+        EmitLimits::fixture(),
     )
     .expect("a second strict reader independently admits the same source package");
     let second_reader_view = second_read
@@ -2862,6 +2867,7 @@ fn read_checked_package_with_model_document<'p>(
         qsl_semantics::library::LibraryName::new("acceptance").unwrap(),
         &domain_packages,
         qsl_package::V2ReadLimits::fixture(),
+        EmitLimits::fixture(),
     )
     .expect("strict I2 admission accepts the emitted TC-1070 package")
 }
@@ -4713,7 +4719,7 @@ fn bare_rows(
     package: &CheckedPackage,
     v2: &qsl_package::CheckedPackageV2,
 ) -> qsl_package::ReadIdentityRows {
-    qsl_package::emit_checked(package)
+    qsl_package::emit_checked(package, EmitLimits::fixture())
         .expect("emits")
         .identity_rows(
             v2,
@@ -4733,7 +4739,7 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
     let read = read_checked_package(&package);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let equality = qsl_package::emit_checked(&package)
+    let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
         .equality_witness(v2);
     let bare = qsl_package::BarePackage::new(v2)
@@ -4891,6 +4897,7 @@ fn rows_of_another_package_are_a_foreign_identity_witness() {
         qsl_semantics::library::LibraryName::new("other").unwrap(),
         &domain,
         qsl_package::V2ReadLimits::fixture(),
+        EmitLimits::fixture(),
     )
     .expect("the other package is admitted");
     let bare = qsl_package::BarePackage::new(other_read.admitted())
@@ -4995,7 +5002,7 @@ fn the_bare_route_names_fixture_l_decision_slots_by_node_member_and_index() {
     let read = read_checked_package(&package);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let equality = qsl_package::emit_checked(&package)
+    let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
         .equality_witness(v2);
     let bare = qsl_package::BarePackage::new(v2)

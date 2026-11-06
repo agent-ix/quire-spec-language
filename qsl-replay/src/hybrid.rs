@@ -1257,7 +1257,8 @@ mod tests {
     fn process_request_composes_and_reads_v2_package_bytes_with_hybrid_limits() {
         let (graph, _) = no_initial_state_fixture();
         let package = qsl_package::CheckedPackage::link(graph);
-        let emission = qsl_package::emit_checked(&package).expect("the package emits");
+        let emission = qsl_package::emit_checked(&package, qsl_package::EmitLimits::fixture())
+            .expect("the package emits");
         let package_bytes = emission.package().bytes();
         let budget = SolverBudget::from_request(Some(&ratio(3, 2)), Some(1000))
             .expect("the budget is admitted");
@@ -1393,7 +1394,8 @@ mod tests {
         assert!(in_process.get("counterexamples").is_none());
 
         let package = qsl_package::CheckedPackage::link(graph);
-        let emission = qsl_package::emit_checked(&package).expect("the v2 provider package emits");
+        let emission = qsl_package::emit_checked(&package, qsl_package::EmitLimits::fixture())
+            .expect("the v2 provider package emits");
         let package_bytes = emission.package().bytes();
         let unset = SolverBudget::from_request(None, None).expect("unset budget is valid");
         let item = process_item(package_bytes, unset);

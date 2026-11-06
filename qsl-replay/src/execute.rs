@@ -1632,7 +1632,7 @@ pub(crate) fn run_spine_with_temporal_selections_and_execution_points(
     let emitted = spine::package_with_temporal_selections(
         &checked,
         temporal_selections,
-        spine::PackageLimits::default(),
+        limits.package,
         &cancel,
     )
     .map_err(refusal)?
@@ -1948,7 +1948,7 @@ fn run_spine_units(
     let emitted = spine::package_with_temporal_selections(
         &checked,
         temporal_selections,
-        spine::PackageLimits::default(),
+        limits.package,
         &cancel,
     )
     .map_err(&refusal)?

@@ -249,11 +249,12 @@ fn d10_units(reverse: bool) -> D10Units {
         clause_node.clone(),
         clause.claim().clone(),
     );
-    let package_bytes = qsl_package::emit_checked(checked[0].package())
-        .expect("D10 package emits")
-        .package()
-        .bytes()
-        .to_vec();
+    let package_bytes =
+        qsl_package::emit_checked(checked[0].package(), qsl_package::EmitLimits::fixture())
+            .expect("D10 package emits")
+            .package()
+            .bytes()
+            .to_vec();
     let sources = order
         .iter()
         .map(|index| {
@@ -648,13 +649,13 @@ fn temporal_selection_on_a_library_source_reaches_its_emission() {
     )
     .expect("the library unit parses")
     .into_value();
-    let selection = qsl_package::TemporalClockSelection {
-        source: library.source().reference().clone(),
-        declaration_span: qsl_foundation::source::Span { start: 0, end: 1 },
-        clock: qsl_package::ClockConfiguration::EventPosition {
+    let selection = qsl_package::TemporalClockSelection::new(
+        library.source().reference().clone(),
+        qsl_foundation::source::Span { start: 0, end: 1 },
+        qsl_package::ClockConfiguration::EventPosition {
             sequence_authority: "none".into(),
         },
-    };
+    );
     let refused =
         qsl_replay::replay_with_temporal_selections(wire, &[selection], ReplayLimits::default())
             .expect_err("a selection naming no temporal declaration is surplus");

@@ -620,7 +620,7 @@ pub fn call_site<'a, S: CallSiteSelection>(
     )
     .map_err(refusal)?
     .into_value();
-    let emitted = spine::package(&checked, spine::PackageLimits::default(), &cancel)
+    let emitted = spine::package(&checked, limits.package, &cancel)
         .map_err(refusal)?
         .into_value();
     let site = selection.locate(&sealed::Compiled {

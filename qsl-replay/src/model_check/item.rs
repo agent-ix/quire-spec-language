@@ -223,6 +223,7 @@ impl ModelCheckItem<'_> {
                     clause,
                     temporal_clock_selections,
                     cancel,
+                    subject.simulation.emit,
                 )?;
                 let over = &clause.over().1;
                 let bindings = system.instances(over).map_err(ItemRefusal::Unbounded)?;

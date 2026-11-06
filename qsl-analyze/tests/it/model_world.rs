@@ -336,6 +336,7 @@ impl World {
     pub(crate) fn subject(&self, keys: &[&str], meter: ScalarLimits) -> ModelSubject<'_> {
         ModelSubject {
             simulation: ModelSimulationRequest {
+                emit: qsl_package::EmitLimits::fixture(),
                 package: &self.package,
                 packages: &self.packages,
                 normalization: ModelNormalizationLimits::default(),

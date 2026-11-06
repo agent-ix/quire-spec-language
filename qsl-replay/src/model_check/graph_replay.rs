@@ -136,6 +136,7 @@ pub fn replay_model_graph_with_cancel_and_temporal_selections(
             claim,
             temporal_clock_selections,
             cancel,
+            caller.spine.package.emit(),
         )
         .map_err(|refusal| match refusal {
             crate::model_check::identity::ClauseRootRefusal::Cancelled(cause) => {
@@ -157,6 +158,7 @@ pub fn replay_model_graph_with_cancel_and_temporal_selections(
             clause,
             temporal_clock_selections,
             cancel,
+            caller.spine.package.emit(),
         )
         .map_err(|refusal| match refusal {
             crate::model_check::identity::ClauseRootRefusal::Cancelled(cause) => {
@@ -184,6 +186,7 @@ pub fn replay_model_graph_with_cancel_and_temporal_selections(
         observation: caller.observation,
         expansion: subject.expansion,
         meter: request.accounting_limits(),
+        emit: caller.spine.package.emit(),
     };
     let system = ModelSystem::new(simulation).map_err(ReplayRefusal::Admission)?;
     let model_limits = caller.engines.model_check;

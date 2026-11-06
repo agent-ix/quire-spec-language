@@ -110,6 +110,72 @@ pub(super) fn request(kind: &str, corpus: Corpus) -> CheckedHandoffRequest {
     }
 }
 
+/// R's model with `Amount` and `Total` as the bounded integer scalars they
+/// were before FR-517-AC-13, so that no type of the model names the unit `U`.
+pub(super) fn integer_model() -> Value {
+    let mut model: Value =
+        serde_json::from_slice(&std::fs::read(format!("{DIR}/model.semantic-ir.json")).unwrap())
+            .unwrap();
+    for name in ["Amount", "Total"] {
+        let declared = model["types"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|declared| {
+                declared["identity"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with(&format!("/{name}"))
+            })
+            .unwrap();
+        let object = declared.as_object_mut().unwrap();
+        object.remove("target");
+        object.insert("scalar".into(), "integer".into());
+        object.insert(
+            "kind".into(),
+            serde_json::json!({"module": "agent-ix/checked-handoff", "name": "value_type"}),
+        );
+        for constraint in object["constraints"].as_array_mut().unwrap() {
+            constraint["appliesTo"] = "ix://quire/native/Integer".into();
+        }
+    }
+    model
+}
+
+/// [`request`] for the event-position unit over R without the unit `U`: the
+/// copy of R written into `dir` has `Amount` and `Total` as the bounded
+/// integer scalars they were before FR-517-AC-13, and its sources declare no
+/// unit and read no unit literal. Contract IR cannot yet project a record of
+/// the model that names a source-owned unit (`UnresolvedSelectedDeclaration`),
+/// so the bare route reads `Recovery` only over this variant.
+pub(super) fn integer_request(dir: &Path) -> CheckedHandoffRequest {
+    let model = integer_model();
+    let without_unit = |text: String| {
+        text.replace("dimension Money;\nunit U : Money = rational(1, 1);\n", "")
+            .replace(" U\n", "\n")
+            .replace(" U ", " ")
+    };
+    let model_path = dir.join("model.semantic-ir.json");
+    std::fs::write(&model_path, serde_json::to_vec_pretty(&model).unwrap()).unwrap();
+    let mut handoff = request("event_position", Corpus::None);
+    let library = dir.join("library.native");
+    std::fs::write(
+        &library,
+        without_unit(std::fs::read_to_string(format!("{DIR}/library.native")).unwrap()),
+    )
+    .unwrap();
+    let source = dir.join("unit.native");
+    std::fs::write(
+        &source,
+        without_unit(std::fs::read_to_string(&handoff.emit.source).unwrap()),
+    )
+    .unwrap();
+    handoff.emit.models = vec![model_path];
+    handoff.emit.libraries = vec![("agent-ix/checked-handoff-library".into(), library)];
+    handoff.emit.source = source;
+    handoff
+}
+
 pub(super) const KINDS: [&str; 3] = ["event_position", "fixed_sample", "timestamped_event"];
 
 /// Every regular file below `root`, keyed by its root-relative path.
@@ -1716,7 +1782,8 @@ fn protocol_package_is_independently_admitted_and_identity_mutations_refuse() {
     admitted(&round_trip, &held);
 
     let mut source = serde_json::from_slice::<Value>(bytes).unwrap();
-    source["lock"]["sources"][0]["identity"] = serde_json::json!("source:foreign");
+    source["source_map"][0]["regions"][0]["source"]["identity"] =
+        serde_json::json!("source:foreign");
     let source_refusal = refusal(source);
     assert_eq!(
         source_refusal.code,
@@ -1729,6 +1796,21 @@ fn protocol_package_is_independently_admitted_and_identity_mutations_refuse() {
             .as_ref()
             .map(|path| path.as_str()),
         Some("/source_map/0/regions/0/source")
+    );
+
+    // R's source-owned dimension `Money` names the lock's source as its owner
+    // (FR-517-AC-13), so a lock that names another source leaves it without
+    // its selection before any source-map region is read.
+    let mut lock = serde_json::from_slice::<Value>(bytes).unwrap();
+    lock["lock"]["sources"][0]["identity"] = serde_json::json!("source:foreign");
+    let lock_refusal = refusal(lock);
+    assert_eq!(
+        lock_refusal.code,
+        CheckedPackageRefusalCode::MissingDeclaration
+    );
+    assert_eq!(
+        lock_refusal.cause,
+        Some(CheckedPackageRefusalCause::MissingSelection)
     );
 
     let mut model = serde_json::from_slice::<Value>(bytes).unwrap();
@@ -2278,22 +2360,81 @@ fn a_differing_declared_clause_name_is_refused_on_clause_name() {
     );
 }
 
-/// FR-517-AC-13: with the model admitting a unit on a bounded scalar, the
-/// `Amount` and `Total` scalars of R carry the unit `U`: each is an alias of
-/// `ix://quire/unit/U` whose `min` and `max` name the alias (QSpec FR-154
-/// "Unit bounds"), the form [`unit_model`] writes.
+/// The identity of every `quire.op.collection.sum.*` operation in `value`.
+fn sum_identities(value: &Value, found: &mut Vec<String>) {
+    match value {
+        Value::Object(members) => {
+            for (name, member) in members {
+                match member.as_str() {
+                    Some(identity)
+                        if name == "identity"
+                            && identity.starts_with("quire.op.collection.sum.") =>
+                    {
+                        found.push(identity.to_owned());
+                    }
+                    _ => sum_identities(member, found),
+                }
+            }
+        }
+        Value::Array(items) => items.iter().for_each(|item| sum_identities(item, found)),
+        _ => {}
+    }
+}
+
+/// FR-517-AC-13: the `Amount` and `Total` scalars of R carry the unit `U`:
+/// each is an alias of `ix://quire/unit/U` whose `min` and `max` name the
+/// alias (QSpec FR-154 "Unit bounds"). The written event-position package
+/// holds the node of `U`, types both captures by it and lowers each of R's
+/// receipt sums to the quantity family.
 #[trace("FR-517-AC-13", "TC-1312")]
 #[test]
-#[ignore = "open: QSL-1694 via QSL-1690/1691/1692 (spine items FR-517-AC-18..20): R's Amount and Total cannot yet be unit aliases"]
 fn amount_and_total_carry_the_unit_u() {
     let model: Value =
         serde_json::from_slice(&std::fs::read(format!("{DIR}/model.semantic-ir.json")).unwrap())
             .unwrap();
-    for scalar in ["Amount", "Total"] {
+    for (scalar, lower, upper) in [("Amount", "1", "20"), ("Total", "0", "100")] {
         let declared = declared_type(&model, scalar);
         assert_eq!(declared["kind"], "alias", "{scalar}");
         assert_eq!(declared["target"], "ix://quire/unit/U", "{scalar}");
+        let bounds: Vec<_> = declared["constraints"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|constraint| {
+                assert_eq!(constraint["appliesTo"], declared["identity"], "{scalar}");
+                (
+                    constraint["keyword"].as_str().unwrap(),
+                    constraint["operands"]["value"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(bounds, [("min", lower), ("max", upper)], "{scalar}");
     }
+
+    let (_holder, out) = written("event_position", Corpus::None, &Double::default());
+    let wire: Value = serde_json::from_slice(&tree(&out)["checked-package.json"]).unwrap();
+    let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+    let unit = nodes
+        .iter()
+        .find(|node| node["declaration"]["qualified_name"] == serde_json::json!(["U"]))
+        .expect("the package holds the node of U");
+    assert_eq!(unit["semantic_form"], "unit");
+    for capture in ["targetFull", "targetPartial"] {
+        let binder = nodes
+            .iter()
+            .find(|node| {
+                node["semantic_form"] == "parameter"
+                    && node["body"]["members"][0]["value"]["value"] == capture
+            })
+            .unwrap_or_else(|| panic!("the {capture} capture binder"));
+        assert_eq!(binder["semantic_type"], unit["node_id"], "{capture}");
+    }
+    let mut sums = Vec::new();
+    sum_identities(&wire["semantic_graph"], &mut sums);
+    assert_eq!(
+        sums, ["quire.op.collection.sum.quantity"; 3],
+        "Healthy, Full and Partial, whose two equal sums are one node"
+    );
 }
 
 /// The type of R's model whose identity ends in `/name`.
@@ -2685,19 +2826,20 @@ fn the_recover_conditions_compare_the_receipt_sum_with_the_target() {
             .unwrap();
         render(nodes, &recovery["value"]["members"][1]["value"])
     };
-    let sum =
-        |binder: &str| format!("collection.sum.integer(record.project({binder}), receipt=receipt)");
+    let sum = |binder: &str| {
+        format!("collection.sum.quantity(record.project({binder}), receipt=receipt)")
+    };
     assert_eq!(
         predicate("Full"),
         format!(
-            "boolean.and(integer.eq({}, targetFull), boolean.not(activatedFull))",
+            "boolean.and(quantity.eq({}, targetFull), boolean.not(activatedFull))",
             sum("recoveredFull")
         )
     );
     assert_eq!(
         predicate("Partial"),
         format!(
-            "boolean.and(boolean.and(integer.gt({}, 0), integer.lt({}, targetPartial)), \
+            "boolean.and(boolean.and(quantity.gt({}, 0), quantity.lt({}, targetPartial)), \
              boolean.not(activatedPartial))",
             sum("recoveredPartial"),
             sum("recoveredPartial")

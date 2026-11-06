@@ -9,6 +9,7 @@
 //! values and the assertion oracle.
 
 use ix_trace_rs::trace;
+use qsl_package::EmitLimits;
 use qsl_replay::{
     acquire_checked_closure, encode_refinement_query, CheckedClosureHandle, DependencyInput,
     RefinementKeyRefusal, RefinementQueryKind, RefinementQueryRequest, RefinementQuerySubject,
@@ -69,6 +70,7 @@ fn with_request<T>(
                 )],
                 1_000_000,
                 UNLIMITED,
+                EmitLimits::fixture(),
             )
         };
         let node = handle
@@ -217,6 +219,7 @@ fn with_zero_step_request(body: impl FnOnce(&RefinementQueryRequest<'_>)) {
             )],
             1_000_000,
             UNLIMITED,
+            EmitLimits::fixture(),
         )
     };
     let request = RefinementQueryRequest::new(
@@ -557,6 +560,7 @@ fn a_request_key_from_another_refinement_cannot_define_the_selected_rows() {
                 )],
                 1_000_000,
                 UNLIMITED,
+                EmitLimits::fixture(),
             )
         };
         let request = RefinementQueryRequest::new(

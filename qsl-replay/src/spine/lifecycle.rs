@@ -2008,11 +2008,53 @@ fn check_with_context_and_temporal_selections(
     })
 }
 
-/// The limits value [`package`] takes (FR-275, FR-277). E4 enforces no bound
-/// of its own yet, so it has no field; a bound E4 gains is a field here.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+/// The limits value [`package`] takes (FR-275, FR-277): E4's ceiling on the
+/// canonical bytes one emission writes, `emit.output_bytes` (FR-264
+/// Behavior 5). This outer configuration states the published default.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
-pub struct PackageLimits {}
+pub struct PackageLimits {
+    /// Inclusive canonical bytes of one emitted package, set by
+    /// `emit.output_bytes`. Defaults to 16777216.
+    pub output_bytes: u64,
+}
+
+impl Default for PackageLimits {
+    fn default() -> Self {
+        Self {
+            output_bytes: super::EMIT_OUTPUT_BYTES_DEFAULT,
+        }
+    }
+}
+
+impl PackageLimits {
+    /// These limits with `emit.output_bytes` set to `bound`, including zero.
+    #[must_use]
+    pub const fn with_output_bytes(mut self, bound: u64) -> Self {
+        self.output_bytes = bound;
+        self
+    }
+
+    /// The emit entries' ceiling for these limits.
+    #[must_use]
+    pub const fn emit(self) -> qsl_package::EmitLimits {
+        qsl_package::EmitLimits::new(self.output_bytes)
+    }
+}
+
+/// FR-255: the `emit.output_bytes` setting, mapped through the emit limits.
+impl qsl_foundation::SettingLimits for PackageLimits {
+    fn bounds(&self) -> Vec<(qsl_foundation::Setting, u64)> {
+        self.emit().bounds()
+    }
+
+    fn set_bound(&mut self, setting: qsl_foundation::Setting, bound: u64) -> bool {
+        let mut emit = self.emit();
+        let changed = emit.set_bound(setting, bound);
+        self.output_bytes = emit.output_bytes;
+        changed
+    }
+}
 
 /// E4: emit `checked` as `quire.checked-package/v2` bytes with its source
 /// provision (FR-278). It runs no stage up to S4.
@@ -2032,7 +2074,6 @@ pub fn package_with_temporal_selections(
     limits: PackageLimits,
     cancel: &Cancel,
 ) -> Result<Staged<EmittedUnit>, FrontEndFailure> {
-    let PackageLimits {} = limits;
     stage(
         cancel,
         &|_| None,
@@ -2071,9 +2112,10 @@ pub fn package_with_temporal_selections(
                     &checked.package,
                     &own,
                     cancel,
+                    limits.emit(),
                 )
             })
-            .map_err(|refusal| Box::new(CompileRefusal::Emit(refusal)))?;
+            .map_err(emit_refusal)?;
             let results = merge_emission_results(
                 &checked.protocol_results,
                 lifecycle_emission_results(&protocol_emission, &checked.source),
@@ -2891,6 +2933,15 @@ fn parse_operation_clauses(
         })
 }
 
+/// The compile refusal for an emit refusal; a reached `emit.output_bytes`
+/// ceiling is the stage limit outcome (FR-264 Behavior 5).
+fn emit_refusal(refusal: qsl_package::EmitRefusal) -> Box<CompileRefusal> {
+    Box::new(match refusal {
+        qsl_package::EmitRefusal::OutputLimit(limit) => CompileRefusal::Limit(limit),
+        other => CompileRefusal::Emit(other),
+    })
+}
+
 /// E4 over one checked package, refusing a wire that would omit nodes: a
 /// package missing part of the checked graph is partial output, which E4
 /// never writes (ADR-011 §2.3).
@@ -2898,10 +2949,15 @@ fn emit_unit(
     package: &pkg::CheckedPackage,
     selections: &[qsl_package::TemporalClockSelection],
     cancel: &Cancel,
+    limits: PackageLimits,
 ) -> Result<Emission, Box<CompileRefusal>> {
-    let emission =
-        qsl_package::emit_checked_with_temporal_selections_and_cancel(package, selections, cancel)
-            .map_err(|refusal| Box::new(CompileRefusal::Emit(refusal)))?;
+    let emission = qsl_package::emit_checked_with_temporal_selections_and_cancel(
+        package,
+        selections,
+        cancel,
+        limits.emit(),
+    )
+    .map_err(emit_refusal)?;
     if !emission.omitted().is_empty() {
         return Err(Box::new(CompileRefusal::Omitted(
             emission.omitted().to_vec(),
@@ -2994,7 +3050,7 @@ pub(crate) fn compose(
     )
     .map_err(refusal)?
     .into_value();
-    let emitted = package(&checked, PackageLimits::default(), &cancel)
+    let emitted = package(&checked, limits.package, &cancel)
         .map_err(refusal)?
         .into_value();
     record_declarations(&checked.package);
@@ -3511,7 +3567,7 @@ impl<'a> Resolution<'a> {
             graph.with_unit_refusals(refusals, region)
         };
         charged(cancel, &mut self.work.s4, || {
-            pkg::CheckedPackage::link_with(graph, links)
+            pkg::CheckedPackage::link_with(graph, links, self.limits.package.emit())
         })
         .map_err(|refusal| Box::new(CompileRefusal::Link(refusal)))
     }
@@ -3583,7 +3639,7 @@ impl<'a> Resolution<'a> {
             let cancel = self.cancel;
             let selections = self.temporal_selections_for(&source);
             let emission = charged(cancel, &mut self.work.e4, || {
-                emit_unit(&package, &selections, cancel)
+                emit_unit(&package, &selections, cancel, self.limits.package)
             })
             .map_err(|refusal| unwind(&libraries, refusal))?;
             let Some(done) = libraries.pop() else {
@@ -3605,6 +3661,7 @@ impl<'a> Resolution<'a> {
                 self.packages,
                 &mut self.admitted,
                 self.limits.imports,
+                self.limits.package.emit(),
             )
             .map_err(|refusal| {
                 unwind(

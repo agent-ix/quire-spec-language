@@ -525,6 +525,7 @@ fn request<'a>(
     max_candidates: u64,
 ) -> ModelSimulationRequest<'a> {
     ModelSimulationRequest {
+        emit: qsl_package::EmitLimits::fixture(),
         package: &world.package,
         packages: &world.packages,
         normalization: ModelNormalizationLimits::default(),
@@ -1587,6 +1588,7 @@ impl OrdersWorld {
 
     fn system(&self) -> ModelSystem<'_> {
         ModelSystem::new(ModelSimulationRequest {
+            emit: qsl_package::EmitLimits::fixture(),
             package: &self.package,
             packages: &self.packages,
             normalization: ModelNormalizationLimits::default(),

@@ -81,6 +81,9 @@ pub struct RefinementQuerySubject<'a> {
     pub observation: ObservationLimits,
     /// The evaluation meter budget; each clause evaluation gets a fresh meter.
     pub meter: ScalarLimits,
+    /// The ceiling on the canonical bytes of each package emission the
+    /// item's analysis makes (`emit.output_bytes`, FR-264 Behavior 5).
+    pub emit: qsl_package::EmitLimits,
     /// The ADR-014 B-4 proof bounds the item is qualified by.
     pub proof_bounds: Vec<ProofBound>,
 }
@@ -107,7 +110,8 @@ impl RefinementUniverse {
 impl<'a> RefinementQuerySubject<'a> {
     /// A subject over the provisions `packages` and `snapshots`, starting at
     /// `initial`, simulating `universes`, with at most `max_candidates` per
-    /// expansion and the evaluation budget `meter`. The normalization and
+    /// expansion, the evaluation budget `meter` and the emission ceiling
+    /// `emit`. The normalization and
     /// observation limits are their defaults and there are no proof bounds;
     /// set the public fields to change them.
     pub fn new(
@@ -117,6 +121,7 @@ impl<'a> RefinementQuerySubject<'a> {
         universes: Vec<RefinementUniverse>,
         max_candidates: u64,
         meter: ScalarLimits,
+        emit: qsl_package::EmitLimits,
     ) -> Self {
         Self {
             packages,
@@ -127,6 +132,7 @@ impl<'a> RefinementQuerySubject<'a> {
             normalization: ModelNormalizationLimits::default(),
             observation: ObservationLimits::default(),
             meter,
+            emit,
             proof_bounds: Vec::new(),
         }
     }
@@ -154,6 +160,7 @@ impl RefinementQuerySubject<'_> {
                     max_candidates: self.max_candidates,
                 },
                 meter: self.meter,
+                emit: self.emit,
             },
             proof_bounds: self.proof_bounds.clone(),
         }

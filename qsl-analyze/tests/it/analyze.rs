@@ -592,7 +592,8 @@ fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
          { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
          until holds(s.phase = 2) within 10) <= 2 }\n";
     let world = World::new(&prob_world::service(claim));
-    qsl_package::emit_checked(&world.package).expect_err("S4 refuses Service");
+    qsl_package::emit_checked(&world.package, qsl_package::EmitLimits::fixture())
+        .expect_err("S4 refuses Service");
 
     let engines = Engines::qsl().expect("they register");
     let limits = AnalyzeLimits {
@@ -637,7 +638,8 @@ fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
             qsl_replay::statistical::SampledWitnessReplay::Reproduced
         );
     }
-    qsl_package::emit_checked(&world.package).expect_err("S4 still refuses Service");
+    qsl_package::emit_checked(&world.package, qsl_package::EmitLimits::fixture())
+        .expect_err("S4 still refuses Service");
 }
 
 /// FR-280-AC-6 (TC-761 step 5): a provider binding that omits a required

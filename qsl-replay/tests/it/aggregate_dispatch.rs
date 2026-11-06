@@ -4,6 +4,7 @@
 use ix_trace_rs::trace;
 use qsl_cst::Limits as SourceLimits;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
+use qsl_package::EmitLimits;
 use qsl_replay::spine::{self, admit_parsed_unit_list, check_units, select_units, ParseRequest};
 use qsl_replay::{DependencyInput, SourceIdentity, SuppliedLibrary};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -418,12 +419,12 @@ fn split_pre_clauses_link_independently_of_request_order() {
     assert_eq!(forward[1].source().identity().identity.as_str(), "ac1:b");
     assert_eq!(reverse[0].source().identity().identity.as_str(), "ac1:a");
     assert_eq!(reverse[1].source().identity().identity.as_str(), "ac1:b");
-    let forward_bytes = qsl_package::emit_checked(forward[0].package())
+    let forward_bytes = qsl_package::emit_checked(forward[0].package(), EmitLimits::fixture())
         .expect("forward aggregate emits")
         .package()
         .bytes()
         .to_vec();
-    let reverse_bytes = qsl_package::emit_checked(reverse[0].package())
+    let reverse_bytes = qsl_package::emit_checked(reverse[0].package(), EmitLimits::fixture())
         .expect("reverse aggregate emits")
         .package()
         .bytes()
@@ -458,9 +459,11 @@ fn split_d10_clauses_match_the_single_order_oracle_in_every_link_order() {
                     "split D10 differs from its single-unit result/charges"
                 );
                 let first_emission =
-                    qsl_package::emit_checked(checked[0].package()).expect("D10 package emits");
-                let second_emission = qsl_package::emit_checked(opposite[0].package())
-                    .expect("D10 package emits in opposite order");
+                    qsl_package::emit_checked(checked[0].package(), EmitLimits::fixture())
+                        .expect("D10 package emits");
+                let second_emission =
+                    qsl_package::emit_checked(opposite[0].package(), EmitLimits::fixture())
+                        .expect("D10 package emits in opposite order");
                 let first_wire: Value = serde_json::from_slice(first_emission.package().bytes())
                     .expect("canonical package wire is JSON");
                 let second_wire: Value = serde_json::from_slice(second_emission.package().bytes())

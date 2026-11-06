@@ -155,7 +155,8 @@ fn emitted() -> (TypeEnvironment, Value, Box<CheckedPackageV2>) {
 /// reader: the wire, IR's package and the emitter's omissions.
 fn emit_and_read(types: TypeEnvironment) -> (Value, Box<CheckedPackageV2>, Vec<OmittedNode>) {
     let package = package_declaring(types);
-    let emission = emit_package(&package, whole_unit).expect("the package emits");
+    let emission = emit_package(&package, whole_unit, crate::EmitLimits::fixture())
+        .expect("the package emits");
     let (wire, admitted) = read_emission(&emission);
     (wire, admitted, emission.omitted)
 }
@@ -679,7 +680,7 @@ fn emit_text(declarations: &str) -> (CheckedPackage, Value, Box<CheckedPackageV2
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("{declarations}: {refusals:?}")),
     );
-    let emission = emit_checked(&package).expect("the package emits");
+    let emission = emit_checked(&package, crate::EmitLimits::fixture()).expect("the package emits");
     let (wire, admitted) = read_emission(&emission);
     (package, wire, admitted)
 }

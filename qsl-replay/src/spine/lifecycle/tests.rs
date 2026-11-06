@@ -3,6 +3,7 @@
 //! operations over a caller-owned handle, and compose to a checked,
 //! emitted package.
 
+use qsl_package::EmitLimits;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -66,20 +67,20 @@ fn temporal_selection_partition_uses_the_exact_source_reference() {
     let root = RawSourceRef::new("test-authority", "root.native").expect("valid source");
     let library = RawSourceRef::new("test-authority", "library.native").expect("valid source");
     let selections = [
-        TemporalClockSelection {
-            source: root.clone(),
-            declaration_span: Span { start: 10, end: 20 },
-            clock: ClockConfiguration::EventPosition {
+        TemporalClockSelection::new(
+            root.clone(),
+            Span { start: 10, end: 20 },
+            ClockConfiguration::EventPosition {
                 sequence_authority: "root-events".into(),
             },
-        },
-        TemporalClockSelection {
-            source: library.clone(),
-            declaration_span: Span { start: 30, end: 40 },
-            clock: ClockConfiguration::EventPosition {
+        ),
+        TemporalClockSelection::new(
+            library.clone(),
+            Span { start: 30, end: 40 },
+            ClockConfiguration::EventPosition {
                 sequence_authority: "library-events".into(),
             },
-        },
+        ),
     ];
 
     assert_eq!(
@@ -2060,20 +2061,20 @@ fn aggregate_package_accepts_temporal_selection_from_later_source() {
     .expect("the aggregate temporal clause checks")
     .into_value();
     assert_eq!(checked[0].source().identity(), source_a);
-    let first_selection = TemporalClockSelection {
-        source: checked[0].source().reference().clone(),
-        declaration_span: first_temporal_span,
-        clock: ClockConfiguration::EventPosition {
+    let first_selection = TemporalClockSelection::new(
+        checked[0].source().reference().clone(),
+        first_temporal_span,
+        ClockConfiguration::EventPosition {
             sequence_authority: "aggregate-events".into(),
         },
-    };
-    let selection = TemporalClockSelection {
-        source: checked[1].source().reference().clone(),
-        declaration_span: temporal_span,
-        clock: ClockConfiguration::EventPosition {
+    );
+    let selection = TemporalClockSelection::new(
+        checked[1].source().reference().clone(),
+        temporal_span,
+        ClockConfiguration::EventPosition {
             sequence_authority: "aggregate-events".into(),
         },
-    };
+    );
     let emitted = package_with_temporal_selections(
         &checked[0],
         &[first_selection, selection],
@@ -2084,17 +2085,17 @@ fn aggregate_package_accepts_temporal_selection_from_later_source() {
     .into_value();
     assert!(!emitted.package().bytes().is_empty());
 
-    let uncompiled = TemporalClockSelection {
-        source: qsl_foundation::source::provenance::RawSourceRef::new(
+    let uncompiled = TemporalClockSelection::new(
+        qsl_foundation::source::provenance::RawSourceRef::new(
             "test:lifecycle:uncompiled",
             "uncompiled:1",
         )
         .expect("the uncompiled source reference is valid"),
-        declaration_span: temporal_span,
-        clock: ClockConfiguration::EventPosition {
+        temporal_span,
+        ClockConfiguration::EventPosition {
             sequence_authority: "aggregate-events".into(),
         },
-    };
+    );
     let refusal = package_with_temporal_selections(
         &checked[0],
         &[uncompiled],
@@ -2121,7 +2122,7 @@ fn syntax_refusal_does_not_suppress_clean_protocol_emission() {
     let source = |protocols: &str| format!("{HEADER}model M = \"acme/orders\";\n{protocols}");
     let standalone_nodes = |name: &str| {
         let checked = checked_protocol_source(source(&protocol_source(name, true)).as_bytes());
-        let emission = emit_checked_with_protocol_results(&checked.package)
+        let emission = emit_checked_with_protocol_results(&checked.package, EmitLimits::fixture())
             .expect("a standalone protocol emits");
         let [ProtocolEmissionResult::Emitted { nodes, .. }] = emission.results() else {
             panic!("one standalone protocol emits: {:?}", emission.results());
@@ -2524,7 +2525,7 @@ fn chain_of(
         &cancel,
     )?
     .into_value();
-    let emitted = package(&checked, PackageLimits::default(), &cancel)?.into_value();
+    let emitted = package(&checked, limits.package, &cancel)?.into_value();
     Ok(Chain {
         parsed,
         models,
@@ -3408,7 +3409,8 @@ fn an_unimported_library_internal_list_defect_refuses_the_compile_at_its_owner()
 
 /// `chain`'s emitted bytes through the I2 reader, as `identity` (the name the package was checked under).
 fn read_back(chain: &Chain, packages: &qsl_semantics::model::intake::PackageInput, identity: &str) {
-    let emission = emit_checked(chain.checked.package()).expect("the package emits");
+    let emission =
+        emit_checked(chain.checked.package(), EmitLimits::fixture()).expect("the package emits");
     assert_eq!(emission.package(), chain.emitted.package());
     read_import_view(
         chain.checked.package(),
@@ -3417,6 +3419,7 @@ fn read_back(chain: &Chain, packages: &qsl_semantics::model::intake::PackageInpu
         packages,
         &mut AdmittedPackages::default(),
         qsl_package::V2ReadLimits::fixture(),
+        EmitLimits::fixture(),
     )
     .unwrap_or_else(|refusal| panic!("the I2 reader refused {identity}: {refusal}"));
 }
@@ -4046,6 +4049,53 @@ fn a_reached_limit_is_raised_by_the_settings_operation_and_by_a_request() {
             |value| check_under(work(value)[entry]),
         );
     }
+}
+
+/// FR-264-AC-7 and FR-255-AC-4 for `emit.output_bytes`: through the settings
+/// operation's operand and a replay request's `stage_limits` entry, the E4
+/// entry refuses one byte below the fixture package's canonical length with
+/// the `emit.output_bytes` limit naming that bound, refuses at zero, and emits
+/// at exactly the length, with the bytes the default ceiling writes.
+#[trace("TC-738", "FR-264-AC-7")]
+#[test]
+fn the_emit_output_ceiling_is_raised_by_the_settings_operation_and_by_a_request() {
+    let chain = fixture_chain();
+    let default_bytes = chain.emitted.package().bytes().to_vec();
+    let length = u64::try_from(default_bytes.len()).unwrap();
+    let name = Setting::EmitOutputBytes.name();
+    for entry in 0..2 {
+        let run = |value: u64| {
+            let operand = format!("{name}={value}");
+            let by_operand = CallerLimits::from_operands([operand.as_str()])
+                .expect("a well-formed operand")
+                .spine;
+            let entries: StageLimits = [(Setting::EmitOutputBytes, value)].into_iter().collect();
+            let by_request = CallerLimits::for_request(
+                &entries,
+                crate::limits::AccountingLimits::default().0,
+                ReplayLimits::default(),
+            )
+            .spine;
+            let limits = [by_operand, by_request][entry];
+            assert_eq!(limits.package.output_bytes, value);
+            package(&chain.checked, limits.package, &Cancel::new())
+        };
+        let counter = assert_field(
+            Setting::EmitOutputBytes,
+            FoundationKind::InputBytes,
+            length * 2,
+            |value| reached(run(value)),
+        );
+        assert_eq!(counter, length);
+        assert!(matches!(reached(run(0)), Reached::Limit(zero) if zero.actual() > 0));
+        let exact = run(length).expect("the exact length emits").into_value();
+        assert_eq!(exact.package().bytes(), default_bytes);
+    }
+    assert_eq!(
+        SpineLimits::default().package.output_bytes,
+        16_777_216,
+        "the outer configuration states the published default"
+    );
 }
 
 /// FR-255-AC-6, the second half: the effective limits a parsed source and a

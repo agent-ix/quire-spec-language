@@ -124,7 +124,8 @@ fn a_relation_and_a_hyper_clause_yield_one_checked_unit_with_both_nodes() {
         "the report reads the whole source, not the predicate alone"
     );
 
-    let emission = qsl_package::emit_checked(unit.package()).expect("the unit emits");
+    let emission = qsl_package::emit_checked(unit.package(), qsl_package::EmitLimits::fixture())
+        .expect("the unit emits");
     let wire: serde_json::Value =
         serde_json::from_slice(emission.package().bytes()).expect("the wire is JSON");
     let nodes = wire["semantic_graph"]["nodes"].as_array().expect("nodes");

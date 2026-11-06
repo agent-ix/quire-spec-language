@@ -663,7 +663,8 @@ fn try_root_bytes_with(
     let mut spec = spec_from_plan(&plan).unwrap();
     edit_spec(&mut spec);
     let (package, _) = crate::monitor_plan::checked_clause_in(formula, &tweak(render(&spec)), true);
-    let emission = emit_checked(&package).expect("the unit emits");
+    let emission =
+        emit_checked(&package, qsl_package::EmitLimits::fixture()).expect("the unit emits");
     let name = qsl_semantics::library::LibraryName::new(emission.package().name()).unwrap();
     let domain = crate::units::Domain::config_version();
     let mut evidence = emission.evidence().clone();
@@ -717,6 +718,7 @@ fn try_root_bytes_with(
         &evidence,
         &wire,
         qsl_package::V2ReadLimits::fixture(),
+        qsl_package::EmitLimits::fixture(),
     )?;
     Ok((rooted.package().bytes().to_vec(), rooted.evidence().clone()))
 }
