@@ -21,7 +21,7 @@ use serde_json::Value;
 use super::checked_handoff::{admitted, request, tree};
 
 #[path = "../../qsl-semantics/tests/support/tc1070.rs"]
-mod tc1070;
+pub(super) mod tc1070;
 
 /// The request that compiles TC-1070's source `source` (fixtures E and L).
 fn fixture_request(directory: &Path, source: &str) -> CheckedHandoffRequest {

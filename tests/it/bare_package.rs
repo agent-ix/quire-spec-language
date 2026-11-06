@@ -15,12 +15,7 @@ use super::temporal_package_route::{
 };
 use quire_spec_language::checked_handoff::{evidence, write, Corpus};
 
-#[path = "../../qsl-semantics/tests/support/tc1070.rs"]
-#[allow(
-    dead_code,
-    reason = "the complete shared protocol fixture also provides unrelated acceptance variants"
-)]
-mod population_fixture;
+use super::bare_equality::tc1070 as population_fixture;
 
 /// The requests of the matrix: one per truth outcome, activation state and
 /// `Incomplete` counter of FR-523, over `clause`.

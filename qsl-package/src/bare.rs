@@ -157,6 +157,9 @@ pub enum IdentityMember {
     /// The `format` member.
     #[error("`format`")]
     Format,
+    /// A well-shaped but unsupported format string.
+    #[error("unsupported format `{0}`")]
+    Version(String),
     /// The `declarations` member.
     #[error("`declarations`")]
     Declarations,
@@ -290,9 +293,13 @@ impl<'de> serde::de::Visitor<'de> for TopVisitor<'_> {
                     if format.is_some() {
                         return Err(self.fail(IdentityMember::Repeated("format")));
                     }
-                    format = Some(map.next_value().inspect_err(|_: &A::Error| {
+                    let value: String = map.next_value().inspect_err(|_: &A::Error| {
                         self.problem.set(Some(IdentityMember::Format));
-                    })?);
+                    })?;
+                    if !is_identities_format(&value) {
+                        return Err(self.fail(IdentityMember::Version(value)));
+                    }
+                    format = Some(value);
                 }
                 "declarations" => {
                     if declarations.is_some() {
@@ -509,7 +516,10 @@ impl ReadIdentityRows {
         package: &CheckedPackageV2,
     ) -> Result<Self, IdentityFileRefusal> {
         let malformed = |member: IdentityMember| IdentityFileRefusal::Malformed { member };
-        let file = parse_file(identities_json).map_err(malformed)?;
+        let file = parse_file(identities_json).map_err(|member| match member {
+            IdentityMember::Version(format) => IdentityFileRefusal::Format(format),
+            other => malformed(other),
+        })?;
         if !is_identities_format(&file.format) {
             return Err(IdentityFileRefusal::Format(file.format));
         }
