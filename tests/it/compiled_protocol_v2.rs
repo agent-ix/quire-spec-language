@@ -1292,6 +1292,28 @@ fn assert_error<T>(report: &artifact::Report<T>, expected: Error) {
     assert_eq!(report.result().err(), Some(&expected));
 }
 
+fn v3_package_from_v2(
+    admitted: &native::AdmissionV2,
+    activations: &[v3::ExpectedActivation],
+) -> v3::wire::Package {
+    let package = admitted.admitted().package();
+    let mut inherited = package.inherited.clone();
+    inherited.wire = v3::WIRE.into();
+    inherited.media = v3::MEDIA.into();
+    inherited.schema = v3::SCHEMA.into();
+    v3::wire::Package {
+        inherited,
+        temporal_bindings: package.temporal_bindings.clone(),
+        activation_mappings: activations
+            .iter()
+            .map(|activation| v3::wire::ActivationMapping {
+                control: activation.control.clone(),
+                temporal_declaration: activation.temporal_declaration,
+            })
+            .collect(),
+    }
+}
+
 /// TC-143: FR-054-AC-1 through FR-054-AC-4.
 #[trace("TC-143", "FR-054-AC-1", "FR-054-AC-2", "FR-054-AC-3", "FR-054-AC-4")]
 #[test]
@@ -1318,32 +1340,14 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
             temporal_declaration: u32::try_from(declaration(emitted.admitted(), "ByEvent"))
                 .expect("temporal index"),
         };
-        let produced = native::admit_v3(
-            emitted,
-            &[native::ActivationSelection {
-                control: &activation.control,
-                temporal_declaration: activation.temporal_declaration,
-            }],
-            Limits::default(),
-        )
-        .into_result()
-        .expect("source-authorized canonical v3 emission");
-        let package = produced.admitted().package().clone();
+        let package = v3_package_from_v2(emitted, std::slice::from_ref(&activation));
+        let produced = v3::encode_candidate(&package, Limits::default())
+            .into_result()
+            .expect("canonical v3 candidate");
         let out_of_range = w::Handle {
             declaration: u32::MAX,
             index: 0,
         };
-        assert_error(
-            &native::admit_v3(
-                emitted,
-                &[native::ActivationSelection {
-                    control: &out_of_range,
-                    temporal_declaration: activation.temporal_declaration,
-                }],
-                Limits::default(),
-            ),
-            Error::V3(v3::Refusal::Control),
-        );
         let non_event = u32::try_from(
             controls
                 .iter()
@@ -1355,48 +1359,6 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
             declaration: flow,
             index: non_event,
         };
-        assert_error(
-            &native::admit_v3(
-                emitted,
-                &[native::ActivationSelection {
-                    control: &non_event,
-                    temporal_declaration: activation.temporal_declaration,
-                }],
-                Limits::default(),
-            ),
-            Error::V3(v3::Refusal::Control),
-        );
-        assert_error(
-            &native::admit_v3(
-                emitted,
-                &[native::ActivationSelection {
-                    control: &activation.control,
-                    temporal_declaration: flow,
-                }],
-                Limits::default(),
-            ),
-            Error::V3(v3::Refusal::TemporalDeclaration),
-        );
-        assert_error(
-            &native::admit_v3(
-                emitted,
-                &[
-                    native::ActivationSelection {
-                        control: &activation.control,
-                        temporal_declaration: activation.temporal_declaration,
-                    },
-                    native::ActivationSelection {
-                        control: &activation.control,
-                        temporal_declaration: activation.temporal_declaration,
-                    },
-                ],
-                Limits::default(),
-            ),
-            Error::V3(v3::Refusal::Mapping {
-                side: v3::InventorySide::Offer,
-                cause: v3::MappingCause::Duplicate,
-            }),
-        );
         let admitted = inputs
             .read_v3_bytes(
                 proofs,
@@ -1434,6 +1396,38 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
             .read_bytes(proofs, produced.bytes())
             .result()
             .is_err());
+        for control in [out_of_range, non_event] {
+            let mut invalid_control = package.clone();
+            invalid_control.activation_mappings[0].control = control;
+            let candidate = v3::encode_candidate(&invalid_control, Limits::default())
+                .into_result()
+                .expect("control mutations remain encodable candidates");
+            assert_error(
+                &inputs.read_v3_bytes(
+                    proofs,
+                    candidate.bytes(),
+                    &temporal.expected,
+                    std::slice::from_ref(&activation),
+                    Limits::default(),
+                ),
+                Error::V3(v3::Refusal::Control),
+            );
+        }
+        let mut non_temporal = package.clone();
+        non_temporal.activation_mappings[0].temporal_declaration = flow;
+        let non_temporal = v3::encode_candidate(&non_temporal, Limits::default())
+            .into_result()
+            .expect("non-temporal mutation remains encodable");
+        assert_error(
+            &inputs.read_v3_bytes(
+                proofs,
+                non_temporal.bytes(),
+                &temporal.expected,
+                std::slice::from_ref(&activation),
+                Limits::default(),
+            ),
+            Error::V3(v3::Refusal::TemporalDeclaration),
+        );
         let mut reordered = package.clone();
         let second = match &mut reordered.inherited.declarations[flow as usize].body {
             w::Body::Protocol { controls, .. } => {
@@ -1528,21 +1522,6 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
                 cause: v3::MappingCause::Duplicate,
             }),
         );
-        let mut non_temporal = package;
-        non_temporal.activation_mappings[0].temporal_declaration = flow;
-        let non_temporal = v3::encode_candidate(&non_temporal, Limits::default())
-            .into_result()
-            .expect("canonical non-temporal mapping");
-        assert_error(
-            &inputs.read_v3_bytes(
-                proofs,
-                non_temporal.bytes(),
-                &temporal.expected,
-                &[activation],
-                Limits::default(),
-            ),
-            Error::V3(v3::Refusal::TemporalDeclaration),
-        );
     });
 }
 
@@ -1557,7 +1536,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
     let inputs = checked_fr050_inputs_with_second_event(
         "temporal ByEvent using T over (view: M::Widget) clock \"event-clock\" on each (trigger: M::Widget) when (trigger.code > 0) { capture saved: M::Widget = trigger; always[0,0] not holds(view.code > 0) }",
     );
-    with_v2_inputs(inputs, |inputs, _, _, _, emitted| {
+    with_v2_inputs(inputs, |inputs, proofs, _, temporal, emitted| {
         let checked = checked_fr050_unit(inputs, 0);
         let flow = u32::try_from(declaration(emitted.admitted(), "Flow")).expect("flow index");
         let temporal_declaration =
@@ -1589,22 +1568,21 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
             control: second_control.clone(),
             temporal_declaration,
         };
-        let admitted = native::admit_v3(
-            emitted,
-            &[
-                native::ActivationSelection {
-                    control: &activation.control,
-                    temporal_declaration: activation.temporal_declaration,
-                },
-                native::ActivationSelection {
-                    control: &second_activation.control,
-                    temporal_declaration: second_activation.temporal_declaration,
-                },
-            ],
-            Limits::default(),
-        )
-        .into_result()
-        .expect("strict admitted v3 activation map");
+        let activations = [activation.clone(), second_activation.clone()];
+        let package = v3_package_from_v2(emitted, &activations);
+        let candidate = v3::encode_candidate(&package, Limits::default())
+            .into_result()
+            .expect("canonical v3 candidate");
+        let admitted = inputs
+            .read_v3_bytes(
+                proofs,
+                candidate.bytes(),
+                &temporal.expected,
+                &activations,
+                Limits::default(),
+            )
+            .into_result()
+            .expect("strict admitted v3 activation map");
 
         let clause = checked
             .package()
@@ -1654,7 +1632,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         assert!(matches!(
             ledger.evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: temporal::ProtocolSelection {
                         control: w::Handle {
@@ -1674,7 +1652,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         assert!(matches!(
             ledger.evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: temporal::ProtocolSelection {
                         control: selection.control.clone(),
@@ -1691,7 +1669,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let first = ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: trace.clone(),
@@ -1766,7 +1744,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let siblings = sibling_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: sibling_trace.clone(),
@@ -1805,7 +1783,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let guard_report = guard_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: guard_filtered,
@@ -1834,7 +1812,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let duplicate = sibling_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: duplicate_trace.clone(),
@@ -1862,7 +1840,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let duplicate_with_one_instance_budget = duplicate_limited_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: duplicate_trace.clone(),
@@ -1892,7 +1870,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let conflict = sibling_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: conflicting_delivery.clone(),
@@ -1916,7 +1894,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let conflicting_limited = conflicting_limited_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: conflicting_delivery,
@@ -1947,7 +1925,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         assert!(matches!(
             sibling_ledger.evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: sibling_trace.clone(),
@@ -1964,7 +1942,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let unknown = sibling_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: missing_evidence,
@@ -1989,7 +1967,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let refused = sibling_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: wrong_profile,
@@ -2013,7 +1991,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let missing_clock = evidence_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: missing_clock_parameters,
@@ -2036,7 +2014,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let capture = evidence_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: missing_capture,
@@ -2062,7 +2040,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let anchor = evidence_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: missing_anchor,
@@ -2088,7 +2066,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let progress = evidence_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: missing_progress,
@@ -2113,7 +2091,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let closure = closure_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: open_closure,
@@ -2139,7 +2117,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let trigger_scope = trigger_scope_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: open_trigger_scope,
@@ -2166,7 +2144,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let execution = execution_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: failed_execution,
@@ -2195,7 +2173,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let incomplete = incomplete_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: incomplete_input,
@@ -2220,7 +2198,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let budgeted = budget_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: sibling_trace.clone(),
@@ -2250,7 +2228,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let oversized = budget_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: sibling_trace.clone(),
@@ -2274,7 +2252,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let delivery_over_budget = budget_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: sibling_trace.clone(),
@@ -2303,7 +2281,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let empty_rows_over_budget = budget_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: empty_instance_rows,
@@ -2335,21 +2313,26 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
 
         // A different admitted package can reuse every local coordinate, but
         // cannot consume the first package's result as its predecessor.
-        let other_admitted = native::admit_v3(
-            emitted,
-            &[native::ActivationSelection {
-                control: &activation.control,
-                temporal_declaration: activation.temporal_declaration,
-            }],
-            Limits::default(),
-        )
-        .into_result()
-        .expect("strict admitted package with a distinct activation table");
+        let other_activations = [activation.clone()];
+        let other_package = v3_package_from_v2(emitted, &other_activations);
+        let other_candidate = v3::encode_candidate(&other_package, Limits::default())
+            .into_result()
+            .expect("canonical v3 candidate with a distinct activation table");
+        let other_admitted = inputs
+            .read_v3_bytes(
+                proofs,
+                other_candidate.bytes(),
+                &temporal.expected,
+                &other_activations,
+                Limits::default(),
+            )
+            .into_result()
+            .expect("strict admitted package with a distinct activation table");
         let mut cross_package_ledger = temporal::ProtocolLedger::new();
         let package_a_result = cross_package_ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: trace.clone(),
@@ -2363,7 +2346,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         assert!(matches!(
             cross_package_ledger.evaluate(
                 checked.package(),
-                other_admitted.admitted(),
+                &other_admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: corrected_trace.clone(),
@@ -2378,7 +2361,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         let corrected = ledger
             .evaluate(
                 checked.package(),
-                admitted.admitted(),
+                &admitted,
                 temporal::ProtocolEvaluationInput {
                     selection: selection.clone(),
                     trace: corrected_trace.clone(),
@@ -2406,7 +2389,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
             matches!(
                 ledger.evaluate(
                     checked.package(),
-                    admitted.admitted(),
+                    &admitted,
                     temporal::ProtocolEvaluationInput {
                         selection: selection.clone(),
                         trace: corrected_trace.clone(),
@@ -2424,7 +2407,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
             matches!(
                 ledger.evaluate(
                     checked.package(),
-                    admitted.admitted(),
+                    &admitted,
                     temporal::ProtocolEvaluationInput {
                         selection: selection.clone(),
                         trace: trace.clone(),
@@ -2441,7 +2424,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
             matches!(
                 ledger.evaluate(
                     checked.package(),
-                    admitted.admitted(),
+                    &admitted,
                     temporal::ProtocolEvaluationInput {
                         selection: selection.clone(),
                         trace: corrected_trace.clone(),
@@ -2458,7 +2441,7 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
             matches!(
                 ledger.evaluate(
                     checked.package(),
-                    admitted.admitted(),
+                    &admitted,
                     temporal::ProtocolEvaluationInput {
                         selection: temporal::ProtocolSelection {
                             control: second_control,

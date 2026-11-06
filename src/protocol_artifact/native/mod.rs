@@ -11,7 +11,6 @@ mod metadata;
 mod populations;
 mod runtime;
 mod temporal_v2;
-mod temporal_v3;
 mod types;
 mod values;
 
@@ -20,7 +19,6 @@ use crate::checking::composed::proofs::ProofReport;
 use crate::formal_source::FormalSource;
 
 pub use temporal_v2::{admit_v2, AdmissionV2, TemporalSelection};
-pub use temporal_v3::{admit_v3, ActivationSelection, AdmissionV3};
 
 /// Explicit external namespace selection for an actual authored formal source.
 #[derive(Clone, Copy, Debug)]
