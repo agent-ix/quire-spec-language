@@ -2239,8 +2239,8 @@ impl<'a> Typer<'a> {
         }
     }
 
-    /// Start `count<N>(x in c: p)` or `sum<N>(x in c: e)`: `N` names an
-    /// integer type.
+    /// Start `count<N>(x in c: p)` or `sum<N>(x in c: e)`: `N` names the
+    /// result type of the count or numeric sum.
     fn tally<'e, 'r>(
         &mut self,
         tally: Tally,
@@ -2250,7 +2250,7 @@ impl<'a> Typer<'a> {
         frames: &mut Vec<Frame<'e, 'r>>,
     ) -> Result<Step<'e, 'r>, CheckRefusal> {
         let value_type = self.type_named(result_type, &location)?;
-        if !is_integer(&value_type) {
+        if matches!(tally, Tally::Count) && !is_integer(&value_type) {
             return Err(mismatch(&location));
         }
         let source_location = location.child(0);
@@ -3114,7 +3114,9 @@ impl<'a> Typer<'a> {
                 let visit = match frame.tally {
                     Tally::Count => Visit::Count,
                     Tally::Sum => {
-                        if !is_integer(&body.value_type) {
+                        if !is_sum_family(&body.value_type)
+                            || !sum_result_matches(&body.value_type, &frame.value_type)
+                        {
                             return Err(mismatch(&body.location));
                         }
                         Visit::Sum
@@ -3589,5 +3591,26 @@ impl<'a> Typer<'a> {
             }
             .map(Step::Typed),
         }
+    }
+}
+
+fn is_sum_family(value_type: &ValueType) -> bool {
+    is_integer(value_type)
+        || matches!(
+            value_type,
+            ValueType::Rational(_)
+                | ValueType::Decimal(_)
+                | ValueType::Float(_)
+                | ValueType::Quantity(_)
+        )
+}
+
+fn sum_result_matches(summand: &ValueType, result: &ValueType) -> bool {
+    match (summand, result) {
+        (ValueType::Rational(_), ValueType::Rational(_))
+        | (ValueType::Decimal(_), ValueType::Decimal(_)) => true,
+        (ValueType::Float(summand), ValueType::Float(result)) => summand.width() == result.width(),
+        (ValueType::Quantity(summand), ValueType::Quantity(result)) => summand == result,
+        (summand, result) => is_integer(summand) && is_integer(result),
     }
 }

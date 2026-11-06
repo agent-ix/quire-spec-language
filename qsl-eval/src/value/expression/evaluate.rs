@@ -46,7 +46,7 @@ use quire_eval::{
 };
 use quire_exact::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_to_exact, IeeeComparison,
-    IeeeFlags, IeeeOperation,
+    IeeeFlags, IeeeOperation, IeeeValue,
 };
 use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue,
@@ -59,13 +59,15 @@ use quire_exact::{
     retain_boolean, ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands,
     OrderingOperator, RationalArithmetic,
 };
-use quire_exact::{evaluate_decimal, Decimal, DecimalOperation, DecimalType};
+use quire_exact::{
+    evaluate_decimal, evaluate_quantity_arithmetic, Decimal, DecimalOperation, DecimalType,
+};
 use quire_exact::{
     BoundViolation, CardinalityBound, Charge, ChargePoint, CollectionKind, Incomplete, Integer,
     IntegerInterval, LimitKind, Meter, PopulationId,
 };
 use quire_exact::{DivisionMember, IntegerDomain};
-use quire_exact::{FloatType, Rational};
+use quire_exact::{FloatType, QuantityArithmetic, Rational};
 use quire_exact::{Outcome, Refusal, Undefined};
 use quire_semantic_value::catalog::{render_identity, InternalFault};
 use quire_semantic_value::declaration::{
@@ -4164,6 +4166,108 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                             }));
                         false
                     }
+                    (Visit::Sum, Value::Rational(summand)) => {
+                        let total = match iteration.accumulator.take() {
+                            None => {
+                                if !node.value_type().admits(&Value::Rational(summand.clone())) {
+                                    return Err(Stop::Undefined(Undefined::SumOutOfDomain).into());
+                                }
+                                summand
+                            }
+                            Some(Value::Rational(total)) => {
+                                let result = outcome_into_stop(evaluate_rational_arithmetic(
+                                    RationalArithmetic::Add(&total, &summand),
+                                    None,
+                                    self.meter,
+                                ))?;
+                                if !node.value_type().admits(&Value::Rational(result.clone())) {
+                                    return Err(Stop::Undefined(Undefined::SumOutOfDomain).into());
+                                }
+                                result
+                            }
+                            Some(_) => return Err(invariant("sum-accumulator-value-invalid")),
+                        };
+                        iteration.accumulator = Some(Value::Rational(total));
+                        false
+                    }
+                    (Visit::Sum, Value::Decimal(summand)) => {
+                        let ValueType::Decimal(target) = node.value_type() else {
+                            return Err(invariant("sum-decimal-result-type-invalid"));
+                        };
+                        let total = match iteration.accumulator.take() {
+                            None => {
+                                if !target.contains(&summand) {
+                                    return Err(Stop::Undefined(Undefined::SumOutOfDomain).into());
+                                }
+                                summand
+                            }
+                            Some(Value::Decimal(total)) => {
+                                let result = match outcome_into_stop(evaluate_decimal(
+                                    DecimalOperation::Add(&total, &summand),
+                                    target,
+                                    self.meter,
+                                )) {
+                                    Ok(result) => result,
+                                    Err(Stop::Refused(Refusal::DecimalOutOfDomain { .. })) => {
+                                        return Err(
+                                            Stop::Undefined(Undefined::SumOutOfDomain).into()
+                                        )
+                                    }
+                                    Err(stop) => return Err(stop.into()),
+                                };
+                                if let Some(loss) = result.loss() {
+                                    self.record(node, ValueLoss::Decimal(loss.clone()))?;
+                                }
+                                result.value().clone()
+                            }
+                            Some(_) => return Err(invariant("sum-accumulator-value-invalid")),
+                        };
+                        iteration.accumulator = Some(Value::Decimal(total));
+                        false
+                    }
+                    (Visit::Sum, Value::Float(summand)) => {
+                        let ValueType::Float(target) = node.value_type() else {
+                            return Err(invariant("sum-float-result-type-invalid"));
+                        };
+                        let total = match iteration.accumulator.take() {
+                            None => summand,
+                            Some(Value::Float(total)) => {
+                                if !self.world.has_ieee_profile() {
+                                    return Err(invariant("ieee-profile-unresolved"));
+                                }
+                                let result = outcome_into_stop(
+                                    evaluate_ieee(
+                                        IeeeOperation::Add(total, summand),
+                                        target.rounding(),
+                                        self.meter,
+                                    )
+                                    .map_err(|_| invariant("ieee-operation-rejected"))?,
+                                )?;
+                                if result.flags() != IeeeFlags::EMPTY {
+                                    self.record(node, ValueLoss::IeeeFlags(result.flags()))?;
+                                }
+                                result.value()
+                            }
+                            Some(_) => return Err(invariant("sum-accumulator-value-invalid")),
+                        };
+                        iteration.accumulator = Some(Value::Float(total));
+                        false
+                    }
+                    (Visit::Sum, Value::Quantity(summand)) => {
+                        let total = match iteration.accumulator.take() {
+                            None => summand,
+                            Some(Value::Quantity(total)) => outcome_into_stop(
+                                evaluate_quantity_arithmetic(
+                                    QuantityArithmetic::Add(&total, &summand),
+                                    self.meter,
+                                )
+                                .map_err(|_| invariant("sum-quantity-unit-mismatch"))?,
+                            )?,
+                            Some(_) => return Err(invariant("sum-accumulator-value-invalid")),
+                        };
+                        iteration.accumulator = Some(Value::Quantity(total));
+                        false
+                    }
                     (Visit::Count, Value::Boolean(holds)) => {
                         if holds {
                             iteration.count = iteration.count.add(&Integer::one());
@@ -4698,22 +4802,53 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 Visit::Forall => retain_scalar(Value::Boolean(true), self.meter)?,
                 Visit::Exists => retain_scalar(Value::Boolean(false), self.meter)?,
                 Visit::Sum => {
-                    // Every non-empty total was decided as a running total; only
-                    // the empty sum's seed `0` is still undecided (FR-145).
+                    // Every non-empty total was decided as a running total;
+                    // only the empty sum's seed `0` is still undecided (FR-145).
                     let total = match iteration.accumulator {
-                        None => {
-                            let zero = Integer::zero();
-                            if sum_domain(node.value_type())
-                                .is_some_and(|domain| !domain.contains(&zero))
-                            {
-                                return Err(Stop::Undefined(Undefined::SumOutOfDomain).into());
+                        None => match node.value_type() {
+                            ValueType::Integer | ValueType::Int(_) => {
+                                let zero = Integer::zero();
+                                if sum_domain(node.value_type())
+                                    .is_some_and(|domain| !domain.contains(&zero))
+                                {
+                                    return Err(Stop::Undefined(Undefined::SumOutOfDomain).into());
+                                }
+                                Value::Integer(zero)
                             }
-                            zero
-                        }
-                        Some(Value::Integer(total)) => total,
+                            ValueType::Rational(domain) => {
+                                let zero = Rational::from_integer(Integer::zero());
+                                if !domain.contains(&zero) {
+                                    return Err(Stop::Undefined(Undefined::SumOutOfDomain).into());
+                                }
+                                Value::Rational(zero)
+                            }
+                            ValueType::Decimal(target) => {
+                                let zero = Decimal::new(Integer::zero(), target.min_scale());
+                                if !target.contains(&zero) {
+                                    return Err(Stop::Undefined(Undefined::SumOutOfDomain).into());
+                                }
+                                Value::Decimal(zero)
+                            }
+                            ValueType::Float(target) => Value::Float(match target.width() {
+                                quire_exact::IeeeWidth::Binary32 => IeeeValue::binary32(0),
+                                quire_exact::IeeeWidth::Binary64 => IeeeValue::binary64(0),
+                            }),
+                            ValueType::Quantity(unit) => Value::Quantity(Quantity::new(
+                                Rational::from_integer(Integer::zero()),
+                                unit.clone(),
+                            )),
+                            _ => return Err(invariant("sum-result-type-invalid")),
+                        },
+                        Some(
+                            total @ (Value::Integer(_)
+                            | Value::Rational(_)
+                            | Value::Decimal(_)
+                            | Value::Float(_)
+                            | Value::Quantity(_)),
+                        ) => total,
                         Some(_) => return Err(invariant("sum-accumulator-value-invalid")),
                     };
-                    retain_scalar(Value::Integer(total), self.meter)?
+                    retain_scalar(total, self.meter)?
                 }
                 Visit::Only => iteration
                     .results

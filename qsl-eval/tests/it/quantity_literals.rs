@@ -125,6 +125,75 @@ fn a_quantity_literal_evaluates_with_its_own_unit_magnitude() {
     assert!(truth(&package, "converted"));
 }
 
+/// FR-517-AC-20 (QSL-1692): a `sum` of same-unit quantities retains the unit
+/// and adds exact magnitudes.
+#[trace("TC-1312", "FR-517-AC-20")]
+#[test]
+fn a_quantity_sum_evaluates_to_its_magnitude_in_the_same_unit() {
+    let package = package_with(
+        "dimension Currency;\n\
+         unit U : Currency = rational(1, 1);\n\
+         type Cash = Quantity<U>;\n\
+         function receipts using v(): Sequence<Cash>[2, 2] pure { sequence[2 U, 3 U] }\n\
+         function quantity_sum using v(): Boolean pure { \
+             sum<Cash>(receipt in receipts(): receipt) = 5 U }",
+    )
+    .expect("quantity sum checks and lowers");
+    assert!(truth(&package, "quantity_sum"));
+}
+
+/// FR-517-AC-20 (QSL-1692): every numeric sum identity keeps its value family,
+/// including the zero seed for an empty source.
+#[trace("TC-1312", "FR-517-AC-20")]
+#[test]
+fn numeric_sums_keep_their_family_and_empty_identity() {
+    let package = package_with(
+        "type R = Rational[-100, 100; 1, 100];\n\
+         type D = Decimal[-100, 100; 0, 2; nearest-even];\n\
+         type F = Float32[nearest-even];\n\
+         type G = Float64[nearest-even];\n\
+         dimension Currency;\n\
+         unit U : Currency = rational(1, 1);\n\
+         type Q = Quantity<U>;\n\
+         function r_items using v(): Sequence<R>[0, 2] pure { sequence[rational(2, 1), rational(3, 1)] }\n\
+         function d_items using v(): Sequence<D>[0, 2] pure { sequence[decimal(2, 0), decimal(3, 0)] }\n\
+         function f_items using v(): Sequence<F>[0, 2] pure { sequence[float32(bits: 0x40000000), float32(bits: 0x40400000)] }\n\
+         function g_items using v(): Sequence<G>[0, 2] pure { sequence[float64(bits: 0x4000000000000000), float64(bits: 0x4008000000000000)] }\n\
+         function q_items using v(): Sequence<Q>[0, 2] pure { sequence[2 U, 3 U] }\n\
+         function r_empty_items using v(): Sequence<R>[0, 0] pure { sequence[] }\n\
+         function d_empty_items using v(): Sequence<D>[0, 0] pure { sequence[] }\n\
+         function f_empty_items using v(): Sequence<F>[0, 0] pure { sequence[] }\n\
+         function g_empty_items using v(): Sequence<G>[0, 0] pure { sequence[] }\n\
+         function q_empty_items using v(): Sequence<Q>[0, 0] pure { sequence[] }\n\
+         function rational_sum using v(): Boolean pure { sum<R>(x in r_items(): x) = rational(5, 1) }\n\
+         function decimal_sum using v(): Boolean pure { sum<D>(x in d_items(): x) = decimal(5, 0) }\n\
+         function float32_sum using v(): Boolean pure { sum<F>(x in f_items(): x) = float32(bits: 0x40a00000) }\n\
+         function float64_sum using v(): Boolean pure { sum<G>(x in g_items(): x) = float64(bits: 0x4014000000000000) }\n\
+         function quantity_sum using v(): Boolean pure { sum<Q>(x in q_items(): x) = 5 U }\n\
+         function rational_empty using v(): Boolean pure { sum<R>(x in r_empty_items(): x) = rational(0, 1) }\n\
+         function decimal_empty using v(): Boolean pure { sum<D>(x in d_empty_items(): x) = decimal(0, 0) }\n\
+         function float32_empty using v(): Boolean pure { sum<F>(x in f_empty_items(): x) = float32(bits: 0x00000000) }\n\
+         function float64_empty using v(): Boolean pure { sum<G>(x in g_empty_items(): x) = float64(bits: 0x0000000000000000) }\n\
+         function quantity_empty using v(): Boolean pure { sum<Q>(x in q_empty_items(): x) = 0 U }",
+    )
+    .expect("all numeric sums check and lower");
+
+    for name in [
+        "rational_sum",
+        "decimal_sum",
+        "float32_sum",
+        "float64_sum",
+        "quantity_sum",
+        "rational_empty",
+        "decimal_empty",
+        "float32_empty",
+        "float64_empty",
+        "quantity_empty",
+    ] {
+        assert!(truth(&package, name), "{name}");
+    }
+}
+
 /// FR-091-AC-72: the checked package-unit conversion is evaluated with the
 /// specified argument, `2 tick`, and returns `true`.
 #[trace("FR-091-AC-72", "QSpec-FR-142-AC-18", "QSpec-FR-142-AC-19")]

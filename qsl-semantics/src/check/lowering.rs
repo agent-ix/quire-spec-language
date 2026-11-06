@@ -4969,13 +4969,51 @@ impl<'a> Lowering<'a> {
                             },
                         ))
                     }
-                    Visit::Sum => (
-                        Operator::Collection,
-                        Operation {
-                            member: Some(self.type_argument(node.value_type(), node.location())?),
-                            ..plain("quire.op.collection.sum.integer")
-                        },
-                    ),
+                    Visit::Sum => {
+                        let (identity, mode) = match node.value_type() {
+                            ValueType::Integer | ValueType::Int(_) => {
+                                ("quire.op.collection.sum.integer", None)
+                            }
+                            ValueType::Rational(_) => ("quire.op.collection.sum.rational", None),
+                            ValueType::Decimal(decimal) => (
+                                "quire.op.collection.sum.decimal",
+                                Some(OperationMode::Rounding(decimal.rounding())),
+                            ),
+                            ValueType::Float(float) => (
+                                match float.width() {
+                                    quire_exact::IeeeWidth::Binary32 => {
+                                        "quire.op.collection.sum.float32"
+                                    }
+                                    quire_exact::IeeeWidth::Binary64 => {
+                                        "quire.op.collection.sum.float64"
+                                    }
+                                },
+                                Some(OperationMode::Rounding(float.rounding())),
+                            ),
+                            ValueType::Quantity(_) => (
+                                "quire.op.collection.sum.quantity",
+                                Some(OperationMode::Rounding(quire_exact::RoundingMode::Exact)),
+                            ),
+                            _ => {
+                                return Err(refuse(
+                                    node.location(),
+                                    CheckCause::UnsupportedFeature {
+                                        loci: vec![node.location().clone()],
+                                    },
+                                ));
+                            }
+                        };
+                        (
+                            Operator::Collection,
+                            Operation {
+                                member: Some(
+                                    self.type_argument(node.value_type(), node.location())?,
+                                ),
+                                mode,
+                                ..plain(identity)
+                            },
+                        )
+                    }
                 };
                 frames.push(LowerFrame::Binder(Box::new(BinderFrame {
                     node,

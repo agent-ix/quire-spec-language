@@ -80,7 +80,12 @@ fn opening<'t>(identity: Option<&str>, arguments: &'t [CheckedTerm]) -> Opening<
                 | "quire.op.collection.forall"
                 | "quire.op.collection.exists"
                 | "quire.op.collection.count"
-                | "quire.op.collection.sum.integer",
+                | "quire.op.collection.sum.integer"
+                | "quire.op.collection.sum.rational"
+                | "quire.op.collection.sum.decimal"
+                | "quire.op.collection.sum.float32"
+                | "quire.op.collection.sum.float64"
+                | "quire.op.collection.sum.quantity",
             ),
             [source, CheckedTerm::Binding { name, value }],
         ) => Opening::Query {
