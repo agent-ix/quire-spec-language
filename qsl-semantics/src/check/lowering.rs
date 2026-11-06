@@ -2777,9 +2777,10 @@ impl<'a> Lowering<'a> {
             ValueType::CarriedQuantity(carried) => self
                 .carried_quantity_type(carried, location)
                 .map(NodeRef::from),
-            // No checked type node carries a bounded quantity yet: a typed
-            // refusal, never a guessed node.
-            ValueType::BoundedQuantity(_) => Err(refuse(
+            ValueType::BoundedQuantity(bounded) => self
+                .bounded_quantity_type(bounded, location)
+                .map(NodeRef::from),
+            ValueType::Map(_) => Err(refuse(
                 location,
                 CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
             )),
@@ -4887,7 +4888,7 @@ impl<'a> Lowering<'a> {
                     }
                 } else if matches!(
                     node.at(*operand).value_type(),
-                    ValueType::Quantity(_) | ValueType::CarriedQuantity(_)
+                    ValueType::Quantity(_) | ValueType::BoundedQuantity(_) | ValueType::CarriedQuantity(_)
                 ) {
                     // FR-093 / FR-497 quantity conversions carry the target
                     // carrier's mode, or exact for an uncarried Quantity.
@@ -6754,6 +6755,7 @@ fn derived_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
                 .collect()
         }
         NodeTag::ScalarType if is_carried_quantity(content) => carried_quantity_operands(aggregate),
+        NodeTag::ScalarType if is_bounded_quantity(content) => bounded_quantity_operands(aggregate),
         _ => Vec::new(),
     }
 }
@@ -6770,6 +6772,32 @@ fn is_decimal_range(content: &NodeContent) -> bool {
 #[ix_trace_rs::string_edge]
 fn is_carried_quantity(content: &NodeContent) -> bool {
     content.semantic_form == "carried_quantity"
+}
+
+#[ix_trace_rs::string_edge]
+fn is_bounded_quantity(content: &NodeContent) -> bool {
+    content.semantic_form == "bounded_quantity"
+}
+
+/// The unit occurs once and each named endpoint retains its rational type.
+fn bounded_quantity_operands(aggregate: &AggregateTerm) -> Vec<quire_exact::PathSegment> {
+    use quire_exact::PathSegment;
+    let mut operands = Vec::with_capacity(7);
+    for member in &aggregate.members {
+        let MemberTerm::Binding(binding) = member else { continue };
+        match &binding.value {
+            BindingValue::Leaf(LeafTerm::Reference { target: NodeRef::Admitted(key) }) => {
+                operands.push(PathSegment::Node(key.clone()));
+            }
+            BindingValue::Leaf(LeafTerm::Literal { ty: NodeRef::Admitted(ty), value }) => {
+                operands.push(PathSegment::Text(binding.name.clone()));
+                operands.push(PathSegment::Node(ty.clone()));
+                operands.push(PathSegment::Text(literal_operand_text(value)));
+            }
+            _ => {}
+        }
+    }
+    operands
 }
 
 /// QSpec FR-322 "Derived type forms and forwarding": the operands of a

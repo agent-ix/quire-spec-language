@@ -15,7 +15,7 @@ use quire_checked::node::{AuthoredBound, EndSide};
 use std::collections::{BTreeMap, BTreeSet};
 
 use quire_exact::{
-    CarriedQuantityType, EffectiveId, Integer, NodeKey, QuantityCarrier, UnitDomain, UnitId,
+    BoundedQuantityType, CarriedQuantityType, EffectiveId, Integer, NodeKey, QuantityCarrier, UnitDomain, UnitId,
     ValueType,
 };
 
@@ -2690,6 +2690,35 @@ impl<'a> Lowering<'a> {
             }
         }
         Ok(())
+    }
+
+    /// A bounded nominal quantity retaining its inclusive magnitude interval.
+    pub(super) fn bounded_quantity_type(
+        &mut self,
+        bounded: &BoundedQuantityType,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let (Some(min), Some(max)) = (bounded.min(), bounded.max()) else {
+            return Err(refuse(location, CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)));
+        };
+        if bounded.unit().domain() != UnitDomain::Declared || min.magnitude() > max.magnitude() {
+            return Err(refuse(location, CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)));
+        }
+        let unit = self.quantity_type(bounded.unit().clone(), location)?;
+        let min = self.rational_literal(min.magnitude(), location)?;
+        let max = self.rational_literal(max.magnitude(), location)?;
+        self.insert(
+            location,
+            NodeTag::ScalarType,
+            "bounded_quantity",
+            None,
+            None,
+            BodyTerm::aggregate(vec![
+                MemberTerm::bound("unit", LeafTerm::reference(unit)),
+                MemberTerm::bound("min", min),
+                MemberTerm::bound("max", max),
+            ]),
+        )
     }
 
     /// A `Quantity<u, C>` type node with its exact carrier and rounding
