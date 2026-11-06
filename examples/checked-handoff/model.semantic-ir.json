@@ -804,6 +804,196 @@
         }
       ],
       "operations": []
+    },
+    {
+      "identity": "ix://agent-ix/checked-handoff/Ratio",
+      "displayName": "ix://agent-ix/checked-handoff/Ratio",
+      "kind": {
+        "module": "agent-ix/checked-handoff",
+        "name": "value_type"
+      },
+      "roles": [],
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://agent-ix/checked-handoff/Ratio",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://agent-ix/checked-handoff/Ratio"
+          ]
+        }
+      },
+      "extensions": [],
+      "unknownPolicy": "reject",
+      "scalar": "rational",
+      "constraints": [
+        {
+          "identity": "ix://agent-ix/checked-handoff/Ratio/constraints/minNumerator",
+          "keyword": "minNumerator",
+          "operands": {
+            "value": -1
+          },
+          "appliesTo": "ix://agent-ix/checked-handoff/Ratio",
+          "diagnosticCode": "bound.minNumerator",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Ratio",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Ratio"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/Ratio/constraints/maxNumerator",
+          "keyword": "maxNumerator",
+          "operands": {
+            "value": 1
+          },
+          "appliesTo": "ix://agent-ix/checked-handoff/Ratio",
+          "diagnosticCode": "bound.maxNumerator",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Ratio",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Ratio"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/Ratio/constraints/minDenominator",
+          "keyword": "minDenominator",
+          "operands": {
+            "value": 1
+          },
+          "appliesTo": "ix://agent-ix/checked-handoff/Ratio",
+          "diagnosticCode": "bound.minDenominator",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Ratio",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Ratio"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/Ratio/constraints/maxDenominator",
+          "keyword": "maxDenominator",
+          "operands": {
+            "value": 2
+          },
+          "appliesTo": "ix://agent-ix/checked-handoff/Ratio",
+          "diagnosticCode": "bound.maxDenominator",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Ratio",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Ratio"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "identity": "ix://agent-ix/checked-handoff/Exact",
+      "displayName": "ix://agent-ix/checked-handoff/Exact",
+      "kind": {
+        "module": "agent-ix/checked-handoff",
+        "name": "value_type"
+      },
+      "roles": [],
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://agent-ix/checked-handoff/Exact",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://agent-ix/checked-handoff/Exact"
+          ]
+        }
+      },
+      "extensions": [],
+      "unknownPolicy": "reject",
+      "scalar": "rational",
+      "constraints": [
+        {
+          "identity": "ix://agent-ix/checked-handoff/Exact/constraints/minNumerator",
+          "keyword": "minNumerator",
+          "operands": {
+            "value": "-9223372036854775808"
+          },
+          "appliesTo": "ix://agent-ix/checked-handoff/Exact",
+          "diagnosticCode": "bound.minNumerator",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Exact",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Exact"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/Exact/constraints/maxNumerator",
+          "keyword": "maxNumerator",
+          "operands": {
+            "value": "9223372036854775807"
+          },
+          "appliesTo": "ix://agent-ix/checked-handoff/Exact",
+          "diagnosticCode": "bound.maxNumerator",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Exact",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Exact"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/Exact/constraints/minDenominator",
+          "keyword": "minDenominator",
+          "operands": {
+            "value": 1
+          },
+          "appliesTo": "ix://agent-ix/checked-handoff/Exact",
+          "diagnosticCode": "bound.minDenominator",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Exact",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Exact"
+              ]
+            }
+          }
+        },
+        {
+          "identity": "ix://agent-ix/checked-handoff/Exact/constraints/maxDenominator",
+          "keyword": "maxDenominator",
+          "operands": {
+            "value": "9223372036854775807"
+          },
+          "appliesTo": "ix://agent-ix/checked-handoff/Exact",
+          "diagnosticCode": "bound.maxDenominator",
+          "origin": {
+            "generated": {
+              "generatorIdentity": "ix://agent-ix/checked-handoff/Exact",
+              "generatorVersion": "1.0.0",
+              "inputIdentities": [
+                "ix://agent-ix/checked-handoff/Exact"
+              ]
+            }
+          }
+        }
+      ]
     }
   ],
   "populations": []

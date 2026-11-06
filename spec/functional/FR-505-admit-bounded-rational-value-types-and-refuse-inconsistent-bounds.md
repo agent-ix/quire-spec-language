@@ -51,7 +51,10 @@ reader, checker and lowering realize it and invents none.
   `constraints` either is empty or holds `minNumerator`, `maxNumerator`,
   `minDenominator` and `maxDenominator`, each once, in any order. Each
   constraint's `appliesTo` is the value type itself and its `operands` is an
-  object whose only member `value` is a JSON integer.
+  object whose only member `value` is either a JSON integer of magnitude at
+  most `2^53` (`9007199254740992`), or a canonical signed-64 decimal integer
+  string in `i64::MIN..=i64::MAX`: `0`, a positive digit sequence without a
+  leading zero, or `-` followed by a nonzero digit and further digits.
 - Optionally a `unit` member on the value type, a unit reference
   `ix://quire/unit/<name>` of the form a unit `typeRef` takes (QSpec FR-154):
   the legacy rational scalar carried an authored unit (dimensionless or one
@@ -106,20 +109,26 @@ reader, checker and lowering realize it and invents none.
   4. a missing keyword: `invalid_model_binding`/`malformed-declaration` at
      `TypeDefinition.constraints`, naming the keyword;
   5. an `operands` that is not an object whose only member is `value`, or
-     whose `value` is absent or is not a JSON integer in the signed 64-bit
-     range (a fraction, an exponent spelling, a string such as `"3/4"`, or
-     9223372036854775808): `invalid_model_binding`/`malformed-declaration` at
+     whose `value` is absent or is neither a JSON integer in
+     `[-2^53, 2^53]` nor a canonical signed-64 decimal integer string
+     (a fraction, an exponent spelling, `"3/4"`, `"01"`, `"+1"`, `"-0"`,
+     `"9223372036854775808"` or `"-9223372036854775809"`):
+     `invalid_model_binding`/`malformed-declaration` at
      that constraint's `Constraint.operands`, naming the keyword; no operand is
-     rounded, widened or repaired, and -9223372036854775808 is in range;
+     rounded, widened or repaired;
   6. bounds outside `minNumerator <= maxNumerator` and
      `1 <= minDenominator <= maxDenominator`:
      `unsupported_construct`/`declaration-form` at
      `TypeDefinition.constraints`, naming the four bounds.
 - A denominator bound therefore lies in `1 ..= i64::MAX` by row 6: a zero or
-  negative `minDenominator` or `maxDenominator` is an in-range JSON integer
-  that passes row 5 and refuses `unsupported_construct`/`declaration-form`
-  at row 6. Row 5 checks only that an operand is a JSON integer in the signed
-  64-bit range.
+  negative `minDenominator` or `maxDenominator`, as an accepted integer or
+  canonical string, passes row 5 and refuses
+  `unsupported_construct`/`declaration-form` at row 6.
+- Before declaration intake, the package's FR-272 canonical-number check
+  SHALL refuse an integer number of magnitude above `2^53` as
+  `noncanonical_wire`/`inexact-integer` at its `document_pointer`. Such a
+  number never reaches row 5. The limit is inclusive and is not the narrower
+  checked-node ordinal bound; strings preserve the full signed-64 range.
 - The intake reader SHALL refuse a constraint carried by any other node whose
   `appliesTo` names a Rational value type, or an alias whose `target` chain
   reaches one, `invalid_model_binding`/`malformed-declaration` at the carrying
@@ -189,9 +198,9 @@ reader, checker and lowering realize it and invents none.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-505-AC-1 | A package with value type `Ratio` (`scalar` `rational`; constraints `maxDenominator` 12, `minNumerator` -3, `minDenominator` 1 and `maxNumerator` 7, in that order) and a field, an operation parameter and an operation result typed `Ratio` admits; each of the three sites and a plain alias of `Ratio` has the type `Rational[-3, 7; 1, 12]`, the package keeps one original declaration for `Ratio`, and the four sites name one `bounded_domain`/`rational_range` node over the `scalar_type`/`rational` node with bindings `numerator_min` -3, `numerator_max` 7, `denominator_min` 1 and `denominator_max` 12. A second value type of equal bounds names that same node and one with `maxDenominator` 13 names another. `Ratio` with an empty `constraints` admits as the unbounded `Rational`, and a field of it has no checked type; `Ratio` with `minNumerator` -9223372036854775808 admits. | Test (TC-1300) |
+| FR-505-AC-1 | A package with value type `Ratio` (`scalar` `rational`; constraints `maxDenominator` 12, `minNumerator` -3, `minDenominator` 1 and `maxNumerator` 7, in that order) and a field, an operation parameter and an operation result typed `Ratio` admits; each of the three sites and a plain alias of `Ratio` has the type `Rational[-3, 7; 1, 12]`, the package keeps one original declaration for `Ratio`, and the four sites name one `bounded_domain`/`rational_range` node over the `scalar_type`/`rational` node with bindings `numerator_min` -3, `numerator_max` 7, `denominator_min` 1 and `denominator_max` 12. A second value type of equal bounds names that same node and one with `maxDenominator` 13 names another. `Ratio` with an empty `constraints` admits as the unbounded `Rational`, and a field of it has no checked type; JSON integer bounds `-9007199254740992` and `9007199254740992`, and canonical string bounds `"-9223372036854775808"` and `"9223372036854775807"`, admit with unchanged exact bounds. | Test (TC-1300) |
 | FR-505-AC-2 | Over `Ratio`, each single defect refuses once at the `Ratio` node: a constraint `minLength` `unsupported_construct`/`declaration-form` at `Constraint.keyword` naming `minLength`; a `maxNumerator` whose `appliesTo` is another value type, or an alias of `Ratio`, `invalid_model_binding`/`malformed-declaration` at `Constraint.appliesTo`; `maxNumerator` given twice the same at the second `Constraint.keyword` naming `maxNumerator`; `minDenominator` removed the same at `TypeDefinition.constraints` naming `minDenominator`; `minNumerator` 8 against `maxNumerator` 7, `minDenominator` 0, `minDenominator` 13 against `maxDenominator` 12, `maxDenominator` 0 and `maxDenominator` -1 each `unsupported_construct`/`declaration-form` at `TypeDefinition.constraints` naming the bounds. | Test (TC-1300) |
-| FR-505-AC-3 | Operands `1.5`, `1e2`, `"3/4"` and 9223372036854775808 for `maxNumerator`, `0.5` for `maxDenominator`, a `maxNumerator` with no `operands.value`, and a `maxNumerator` whose `operands` carries a second member, each refuse `invalid_model_binding`/`malformed-declaration` at that constraint's `Constraint.operands` naming the keyword, with no bound rounded or widened. | Test (TC-1300) |
+| FR-505-AC-3 | Operands `1.5`, `1e2`, `"3/4"`, `"01"`, `"+1"`, `"-0"`, `"9223372036854775808"` and `"-9223372036854775809"` for `maxNumerator`, `0.5` for `maxDenominator`, a `maxNumerator` with no `operands.value`, and a `maxNumerator` whose `operands` carries a second member, each refuse `invalid_model_binding`/`malformed-declaration` at that constraint's `Constraint.operands` naming the keyword, with no bound rounded or widened. Integer numbers `9007199254740993`, `9007199254740994` and `-9007199254740994` refuse earlier as `noncanonical_wire`/`inexact-integer` at their exact document pointer, not row 5. | Test (TC-1300) |
 | FR-505-AC-4 | A field of type `Ratio` that adds its own `maxDenominator` constraint refuses `invalid_model_binding`/`malformed-declaration` at `Field.constraints`; an operation parameter typed `Ratio` with its own constraint refuses the same at `Operation.params[0].constraints`; an alias of `Ratio` that carries a constraint refuses the same at the alias node and `TypeDefinition.constraints`; a constraint carried by another value type whose `appliesTo` is `Ratio` refuses the same at that value type's node and `Constraint.appliesTo`, while `Ratio` itself admits. Two sites typed by two value types that differ only in `maxDenominator` (12 and 13) stay two distinct types. | Test (TC-1300) |
 | FR-505-AC-5 | A snapshot supplying `7/12`, `-3/1` and `0/1` to a `Ratio` field is admitted; `8/1`, `1/13`, `2/4` (unreduced), `-4/1` and the float `0.5` each refuse `invalid_runtime_input`/`invalid-value` naming the member path, and no value is reduced or rounded. With `Ratio` given `unit` `ix://quire/unit/m`, `1/4` is admitted as `1/4 m` and `1/13` refuses the same. | Test (TC-1300) |
 | FR-505-AC-6 | A field typed bare `ix://quire/native/Rational`, and a field typed a Rational value type with no constraints, each admit and their use in a clause refuses `ill_typed`/`operator-ineligible` as FR-056-AC-43 states; adding `Ratio` to the package leaves every other declaration's node identity unchanged. | Test (TC-1300) |
