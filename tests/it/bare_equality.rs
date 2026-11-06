@@ -44,6 +44,7 @@ fn fixture_request(directory: &Path, source: &str) -> CheckedHandoffRequest {
             out: None,
         },
         corpus: Corpus::None,
+        native_join: qsl_package::V2ReadLimits::fixture().native_join_limits(),
     }
 }
 
@@ -97,10 +98,14 @@ fn select(
     index: Option<usize>,
 ) -> Result<qsl_package::BareSlot, BareSelectionFailure> {
     BarePackage::new(package)
-        .with_supply(BareSupply {
-            identities,
-            equality,
-        })
+        .with_supply(
+            BareSupply {
+                identities,
+                equality,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply")
         .select_protocol_slot(&ProtocolSlotDescriptor::new(node, member, index))
 }
 
@@ -138,7 +143,12 @@ fn the_directory_for_fixture_e_holds_the_equality_file_a_slot_call_reads() {
         *file,
         "two writes of equal requests are byte-identical"
     );
-    let identities = ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
+    let identities = ReadIdentityRows::read(
+        &files["identities.json"],
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("rows");
     let refund = node_key(&package, "Refunds", "Refund");
     let relation = select(
         &package,
@@ -166,7 +176,12 @@ fn the_directory_for_fixture_e_holds_the_equality_file_a_slot_call_reads() {
 fn the_equality_witness_refusals_are_missing_foreign_and_unknown() {
     let (_holder, request, files) = handoff(tc1070::SOURCE);
     let package = read(&request, &files["checked-package.json"]);
-    let identities = ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
+    let identities = ReadIdentityRows::read(
+        &files["identities.json"],
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("rows");
     let refund = node_key(&package, "Refunds", "Refund");
     let refusal = |equality: Option<&ReadEqualityRows>| match select(
         &package,
@@ -339,7 +354,12 @@ fn decide_origin(
     member: &str,
     index: usize,
 ) -> Result<Option<String>, BareSelectionFailure> {
-    let identities = ReadIdentityRows::read(&files["identities.json"], package).expect("rows");
+    let identities = ReadIdentityRows::read(
+        &files["identities.json"],
+        package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("rows");
     let decide = node_key(package, "Pipeline", "Decide");
     select(package, &identities, None, decide, member, Some(index))
         .map(|slot| slot.origin().map(str::to_owned))
@@ -432,12 +452,21 @@ fn related_calls_resolve_equal_walks_in_numeric_origin_order() {
             }
         }
     });
-    let identities =
-        ReadIdentityRows::read(&files["identities.json"], &package).expect("identities");
-    let bare = BarePackage::new(&package).with_supply(BareSupply {
-        identities: &identities,
-        equality: None,
-    });
+    let identities = ReadIdentityRows::read(
+        &files["identities.json"],
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("identities");
+    let bare = BarePackage::new(&package)
+        .with_supply(
+            BareSupply {
+                identities: &identities,
+                equality: None,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let mut roots = Vec::new();
     let mut charges = Vec::new();
     for (member, span) in [("related.from", "99 100"), ("related.to", "100 105")] {
@@ -565,12 +594,21 @@ fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
             row["location"]["path"] = serde_json::json!([]);
         }
         let package = read(&request, &serde_json::to_vec(&wire).expect("bytes"));
-        let identities =
-            ReadIdentityRows::read(&files["identities.json"], &package).expect("identities");
-        let bare = BarePackage::new(&package).with_supply(BareSupply {
-            identities: &identities,
-            equality: None,
-        });
+        let identities = ReadIdentityRows::read(
+            &files["identities.json"],
+            &package,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("identities");
+        let bare = BarePackage::new(&package)
+            .with_supply(
+                BareSupply {
+                    identities: &identities,
+                    equality: None,
+                },
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+            )
+            .expect("the fixture budget admits the supply");
         let world = bare.world().expect("world");
         let got = record(
             world.types(),
@@ -666,11 +704,21 @@ fn a_slot_whose_rank_exceeds_its_candidates_refuses_missing_location_projection(
     // The public call must propagate the same view refusal before supply
     // admission or the first scalar charge.
     use qsl_eval::value::{CheckedPackageEvaluation, ProtocolSlot, ProtocolSupply};
-    let identities = ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
-    let bare = BarePackage::new(&package).with_supply(BareSupply {
-        identities: &identities,
-        equality: None,
-    });
+    let identities = ReadIdentityRows::read(
+        &files["identities.json"],
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("rows");
+    let bare = BarePackage::new(&package)
+        .with_supply(
+            BareSupply {
+                identities: &identities,
+                equality: None,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let slot = ProtocolSlot {
         node: node_key(&package, "Pipeline", "Decide"),
         member: "cases.guard".into(),
@@ -707,12 +755,21 @@ fn a_slot_whose_rank_exceeds_its_candidates_refuses_missing_location_projection(
     let all_missing = edited(&request, &files, |rows| {
         rows.retain(|row| !origin_name(row).starts_with(DECISION));
     });
-    let identities =
-        ReadIdentityRows::read(&files["identities.json"], &all_missing).expect("identities");
-    let bare = BarePackage::new(&all_missing).with_supply(BareSupply {
-        identities: &identities,
-        equality: None,
-    });
+    let identities = ReadIdentityRows::read(
+        &files["identities.json"],
+        &all_missing,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("identities");
+    let bare = BarePackage::new(&all_missing)
+        .with_supply(
+            BareSupply {
+                identities: &identities,
+                equality: None,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     for (member, index) in [("visible", 0), ("cases.guard", 1)] {
         let slot = ProtocolSlot {
             node: node_key(&all_missing, "Pipeline", "Decide"),
@@ -758,7 +815,12 @@ fn a_slot_whose_rank_exceeds_its_candidates_refuses_missing_location_projection(
 fn a_slot_is_named_by_control_node_member_and_index() {
     let (_holder, request, files) = handoff(tc1070::SOURCE);
     let package = read(&request, &files["checked-package.json"]);
-    let identities = ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
+    let identities = ReadIdentityRows::read(
+        &files["identities.json"],
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("rows");
     let decide = node_key(&package, "Pipeline", "Decide");
     let root = |member: &str, index| {
         select(
@@ -797,9 +859,12 @@ fn an_equality_witness_refusal_is_reported_before_a_node_refusal() {
     let rows = ReadEqualityRows::read(&files["equality.json"], &package).expect("rows");
     let mut stripped: Value = serde_json::from_slice(&files["identities.json"]).expect("JSON");
     stripped["fields"] = Value::Array(Vec::new());
-    let identities =
-        ReadIdentityRows::read(&serde_json::to_vec(&stripped).expect("bytes"), &package)
-            .expect("fewer rows still read");
+    let identities = ReadIdentityRows::read(
+        &serde_json::to_vec(&stripped).expect("bytes"),
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("fewer rows still read");
     let refund = node_key(&package, "Refunds", "Refund");
     let relation = |equality: Option<&ReadEqualityRows>| {
         select(
@@ -860,7 +925,12 @@ fn an_equality_inside_a_called_function_is_part_of_the_slots_walk() {
     assert_ne!(source, tc1070::SOURCE);
     let (_holder, request, files) = handoff(&source);
     let package = read(&request, &files["checked-package.json"]);
-    let identities = ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
+    let identities = ReadIdentityRows::read(
+        &files["identities.json"],
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("rows");
     let rows = ReadEqualityRows::read(&files["equality.json"], &package).expect("rows");
     let guard = |name: &str, equality: Option<&ReadEqualityRows>| {
         select(
@@ -980,16 +1050,31 @@ fn the_retry_relation_evaluates_from_the_handoff_files_alone() {
     use qsl_eval::value::{CheckedPackageEvaluation, ProtocolSlot};
     let (_holder, request, files) = handoff(tc1070::SOURCE);
     let package = read(&request, &files["checked-package.json"]);
-    let identities = ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
+    let identities = ReadIdentityRows::read(
+        &files["identities.json"],
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("rows");
     let rows = ReadEqualityRows::read(&files["equality.json"], &package).expect("rows");
-    let with_rows = BarePackage::new(&package).with_supply(BareSupply {
-        identities: &identities,
-        equality: Some(&rows),
-    });
-    let without_rows = BarePackage::new(&package).with_supply(BareSupply {
-        identities: &identities,
-        equality: None,
-    });
+    let with_rows = BarePackage::new(&package)
+        .with_supply(
+            BareSupply {
+                identities: &identities,
+                equality: Some(&rows),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
+    let without_rows = BarePackage::new(&package)
+        .with_supply(
+            BareSupply {
+                identities: &identities,
+                equality: None,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let world = with_rows.world().expect("the package declares its records");
     let types = world.types();
     let refund = node_key(&package, "Refunds", "Refund");
@@ -1101,7 +1186,12 @@ fn a_package_refusal_found_after_a_node_refusal_in_the_walk_is_reported_first() 
     let (_holder, request, files) = handoff(tc1070::SOURCE);
     let package = read(&request, &files["checked-package.json"]);
     let rows = ReadEqualityRows::read(&files["equality.json"], &package).expect("rows");
-    let full = ReadIdentityRows::read(&files["identities.json"], &package).expect("identities");
+    let full = ReadIdentityRows::read(
+        &files["identities.json"],
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("identities");
     let refund = node_key(&package, "Refunds", "Refund");
     let slot = select(
         &package,
@@ -1114,15 +1204,22 @@ fn a_package_refusal_found_after_a_node_refusal_in_the_walk_is_reported_first() 
     .expect("selects with the whole supply");
     let mut stripped: Value = serde_json::from_slice(&files["identities.json"]).expect("JSON");
     stripped["fields"] = Value::Array(Vec::new());
-    let identities =
-        ReadIdentityRows::read(&serde_json::to_vec(&stripped).expect("bytes"), &package)
-            .expect("fewer rows still read");
+    let identities = ReadIdentityRows::read(
+        &serde_json::to_vec(&stripped).expect("bytes"),
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("fewer rows still read");
     let project = |equality: Option<&ReadEqualityRows>| {
         BarePackage::new(&package)
-            .with_supply(BareSupply {
-                identities: &identities,
-                equality,
-            })
+            .with_supply(
+                BareSupply {
+                    identities: &identities,
+                    equality,
+                },
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+            )
+            .expect("the fixture budget admits the supply")
             .project_protocol_slot(&slot)
             .map(|_| ())
             .map_err(|failure| match failure {

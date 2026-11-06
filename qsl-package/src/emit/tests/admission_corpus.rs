@@ -819,7 +819,7 @@ fn read(emitted: &Emitted) -> Result<V2Read, StageFailure<V2ReadRefusal>> {
     read_checked_package_v2(
         emitted.emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     )
     .map(Staged::into_value)
@@ -1691,7 +1691,7 @@ fn a_protocol_refinement_selects_a_dependency_protocol_by_identity() {
         library.clone(),
         &dependency_models,
         &mut admitted,
-        crate::checked_v2::V2ReadLimits::default(),
+        crate::checked_v2::V2ReadLimits::fixture(),
     )
     .expect("dependency import view is admitted");
 
@@ -1832,7 +1832,7 @@ fn a_protocol_refinement_selects_a_dependency_protocol_by_identity() {
     let dependency_read = crate::checked_v2::read_checked_package_v2(
         dependency_emission.package.bytes(),
         library.clone(),
-        crate::checked_v2::V2ReadLimits::default(),
+        crate::checked_v2::V2ReadLimits::fixture(),
         &dependency_evidence,
     )
     .expect("dependency emission reads back")
@@ -1850,7 +1850,7 @@ fn a_protocol_refinement_selects_a_dependency_protocol_by_identity() {
     crate::checked_v2::read_checked_package_v2(
         root_emission.package.bytes(),
         qsl_semantics::library::LibraryName::new("test/root").unwrap(),
-        crate::checked_v2::V2ReadLimits::default(),
+        crate::checked_v2::V2ReadLimits::fixture(),
         &root_evidence,
     )
     .expect("root dependency protocol refinement reads back");
@@ -2077,7 +2077,7 @@ fn a_dependency_protocol_node_row_checks_its_receiver_argument() {
         library.clone(),
         &dependency_models,
         &mut admitted,
-        crate::checked_v2::V2ReadLimits::default(),
+        crate::checked_v2::V2ReadLimits::fixture(),
     )
     .expect("dependency import view");
     let unit = |target: &str| {

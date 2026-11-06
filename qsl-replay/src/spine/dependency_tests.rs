@@ -48,7 +48,7 @@ fn view_of(
         lib(identity),
         &BTreeMap::new(),
         &mut qsl_package::AdmittedPackages::default(),
-        qsl_package::V2ReadLimits::default(),
+        qsl_package::V2ReadLimits::fixture(),
     )
 }
 

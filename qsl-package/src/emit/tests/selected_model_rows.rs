@@ -138,14 +138,17 @@ fn selected_tuple_row_projects_the_admitted_type_and_missing_row_refuses() {
     let read = read_checked_package_v2(
         emission.package().bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     )
     .expect("IR admits the producer rows' package");
     let admitted = read.into_value().admitted;
     let identities = checked
         .graph()
-        .selected_exact_identities(&admitted)
+        .selected_exact_identities(
+            &admitted,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect("the selected declaration and field rows join admission");
 
     let projected = admitted
@@ -154,6 +157,7 @@ fn selected_tuple_row_projects_the_admitted_type_and_missing_row_refuses() {
             emission.selected_tuple_declaration_rows(),
             emission.selected_source_unit_rows(),
             10_000,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
         )
         .expect("the complete selected model type view joins");
     let [tuple] = projected.tuples() else {
@@ -170,6 +174,7 @@ fn selected_tuple_row_projects_the_admitted_type_and_missing_row_refuses() {
             &[],
             emission.selected_source_unit_rows(),
             10_000,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
         )
         .expect_err("a missing selected tuple row refuses the complete projection");
     assert_eq!(

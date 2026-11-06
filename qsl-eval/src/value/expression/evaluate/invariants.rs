@@ -619,7 +619,7 @@ fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
         identity.clone(),
         &std::collections::BTreeMap::new(),
         &mut qsl_package::AdmittedPackages::default(),
-        qsl_package::V2ReadLimits::default(),
+        qsl_package::V2ReadLimits::fixture(),
     )
     .unwrap();
     let callee = library.graph().callable("Body").unwrap().identity.clone();

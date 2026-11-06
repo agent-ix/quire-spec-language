@@ -259,7 +259,11 @@ fn ir_projects_a_union_type_through_the_emitted_rows_and_refuses_without_them() 
     };
 
     let identities = SelectedExactIdentities::empty()
-        .with_source_union_rows(&admitted, [row.clone()])
+        .with_source_union_rows(
+            &admitted,
+            [row.clone()],
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect("IR joins the emitted union row");
     let projected = admitted
         .project_exact_type(&row.structural_node, &identities, 64)
@@ -286,7 +290,11 @@ fn ir_projects_a_union_type_through_the_emitted_rows_and_refuses_without_them() 
     truncated.members[2].payload_nodes.pop();
     for bad in [reordered, truncated] {
         let refusal = SelectedExactIdentities::empty()
-            .with_source_union_rows(&admitted, [bad])
+            .with_source_union_rows(
+                &admitted,
+                [bad],
+                &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+            )
             .expect_err("a row that disagrees with the admitted union is refused");
         assert_eq!(
             refusal.code,

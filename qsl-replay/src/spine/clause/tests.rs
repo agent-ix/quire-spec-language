@@ -4811,7 +4811,7 @@ fn s4_state_package_reads_back_through_i2() {
         library,
         &packages,
         &mut admitted,
-        qsl_package::V2ReadLimits::default(),
+        qsl_package::V2ReadLimits::fixture(),
     )
     .unwrap_or_else(|refusal| panic!("I2 read refused: {refusal:?}"));
     let _ = view;

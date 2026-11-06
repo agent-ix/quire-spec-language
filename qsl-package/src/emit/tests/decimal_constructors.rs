@@ -54,7 +54,7 @@ fn admitted(emission: &Emission) {
     read_checked_package_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &read_evidence(emission),
     )
     .map(Staged::into_value)

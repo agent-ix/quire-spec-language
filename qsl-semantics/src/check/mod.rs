@@ -7850,10 +7850,12 @@ impl CheckedGraph {
     }
 
     /// The model-intake declaration and field rows, validated against the
-    /// IR package admitted from this checked graph's selected documents.
+    /// IR package admitted from this checked graph's selected documents,
+    /// charged to the caller's `budget`.
     pub fn selected_exact_identities(
         &self,
         package: &quire_contract_model::CheckedPackageV2,
+        budget: &mut quire_contract_model::NativeJoinBudget,
     ) -> Result<
         quire_contract_model::SelectedExactIdentities,
         quire_contract_model::ExactTypeProjectionError,
@@ -7862,6 +7864,7 @@ impl CheckedGraph {
             package,
             &self.selected_exact_identity_rows.0,
             &self.selected_exact_identity_rows.1,
+            budget,
         )
     }
 

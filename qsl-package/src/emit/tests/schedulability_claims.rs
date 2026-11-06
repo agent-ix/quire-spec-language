@@ -725,7 +725,7 @@ fn refusal_after(
     let refusal = match read_v2(
         &jcs(&envelope),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         emission.evidence(),
     ) {
         Read::Refused(crate::V2ReadRefusal::Envelope { refusal, .. }) => *refusal,

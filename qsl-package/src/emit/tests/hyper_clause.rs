@@ -104,7 +104,7 @@ fn admit(compiled: &Compiled) -> std::sync::Arc<quire_contract_model::CheckedPac
     crate::checked_v2::read_checked_package_v2(
         compiled.emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence(&compiled.wire),
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure:?}"))
@@ -645,7 +645,7 @@ fn admitted(built: &Built) -> std::sync::Arc<quire_contract_model::CheckedPackag
     crate::checked_v2::read_checked_package_v2(
         built.emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure:?}"))

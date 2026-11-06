@@ -148,7 +148,7 @@ fn admitted(emission: &Emission) {
         read_v2(
             emission.package.bytes(),
             library(),
-            V2ReadLimits::default(),
+            V2ReadLimits::fixture(),
             &read_evidence(emission),
         )
     };
@@ -698,7 +698,7 @@ fn read_back_hybrids(emission: &Emission, wire: &Value) -> HybridRead {
     let read = read_checked_package_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure:?}"));
@@ -814,7 +814,7 @@ fn edited(wire: &Value, digest: &str, edit: impl FnOnce(&mut Value)) -> Value {
 
 /// QSL's I2 read of `envelope`, expected to refuse in IR's reader.
 fn refused(emission: &Emission, wire: &Value, envelope: &Value) -> (CheckedPackageRefusal, String) {
-    let read = read_v2(&jcs(envelope), library(), V2ReadLimits::default(), &{
+    let read = read_v2(&jcs(envelope), library(), V2ReadLimits::fixture(), &{
         let mut evidence = CheckedPackageEvidence::new();
         for feature in wire["lock"]["required_features"].as_array().unwrap() {
             evidence.support_feature(feature.as_str().unwrap());

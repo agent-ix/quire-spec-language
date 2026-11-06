@@ -2512,6 +2512,7 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::I2Occurrences
             | Setting::I2Diagnostics
             | Setting::I2WorkUnits
+            | Setting::I2NativeJoinStorage
             | Setting::ExploreStates
             | Setting::ExploreTransitions
             | Setting::ModelCheckMaxStates

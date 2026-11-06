@@ -421,6 +421,10 @@ pub enum ViewFailure {
     Unsupported(Box<crate::reader_protocol_projection::UnsupportedView>),
     /// The admitted package broke a projection invariant; no view exists.
     Fault(InternalFault),
+    /// The read's native join work or storage ceiling was consumed while the
+    /// view joined the selected identities (FR-358); no view exists. IR's own
+    /// refusal, not a fault and not an empty identity set.
+    Exhausted(Box<quire_contract_model::ExactTypeProjectionError>),
 }
 
 /// The successful, immutable current-snapshot authority for protocol slots.

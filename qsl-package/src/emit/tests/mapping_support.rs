@@ -572,7 +572,7 @@ fn the_reader_refuses_a_package_with_no_profile_selection_row() {
 /// The outcome of reading `wire`'s canonical bytes.
 fn read_wire_outcome(wire: &Value) -> Read {
     let bytes = quire_canonical::to_vec(wire, crate::checked::EMIT_LIMITS).expect("canonical");
-    read_v2(&bytes, library(), V2ReadLimits::default(), &evidence(wire))
+    read_v2(&bytes, library(), V2ReadLimits::fixture(), &evidence(wire))
 }
 
 /// FR-527-AC-19 (TC-1322 row 19): classifying one clause twice gives equal
@@ -666,7 +666,7 @@ fn timed_classifications_named(name: &str, body: &str) -> Vec<Classification> {
     let Read::Verified { admitted, .. } = read_v2(
         emission.package.bytes(),
         LibraryName::new("example").expect("a library name"),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &read_evidence(&emission),
     ) else {
         panic!("the I2 read admits the timed package");

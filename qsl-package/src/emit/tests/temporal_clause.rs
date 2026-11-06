@@ -354,7 +354,7 @@ fn three_temporal_bindings_observe_i2_input_byte_bounds() {
     let evidence = evidence(wire);
     let exact = V2ReadLimits {
         artifact_bytes: bytes.len(),
-        ..V2ReadLimits::default()
+        ..V2ReadLimits::fixture()
     };
     let read = |limits| read_v2(bytes, library(), limits, &evidence);
     let one_short = read(V2ReadLimits {
@@ -608,7 +608,7 @@ fn temporal_clock_bindings_follow_node_reference_order() {
         .expect("selection order is independent of emitted binding order");
     let wire = wire(&emission);
     let bytes = emission.package.bytes();
-    let read = read_v2(bytes, library(), V2ReadLimits::default(), &evidence(&wire));
+    let read = read_v2(bytes, library(), V2ReadLimits::fixture(), &evidence(&wire));
     let Read::Verified { admitted, .. } = read else {
         panic!("the canonical binding order is admitted: {read:?}");
     };
@@ -793,7 +793,7 @@ pub(super) fn evidence(wire: &Value) -> CheckedPackageEvidence {
 
 /// QSL's I2 read of the wire `bytes`.
 fn read_bytes(bytes: &[u8], wire: &Value) -> Read {
-    read_v2(bytes, library(), V2ReadLimits::default(), &evidence(wire))
+    read_v2(bytes, library(), V2ReadLimits::fixture(), &evidence(wire))
 }
 
 /// QSL's full I2 read of `compiled`, and IR's admitted package.
@@ -801,7 +801,7 @@ pub(super) fn admit(compiled: &Compiled) -> std::sync::Arc<quire_contract_model:
     let read = crate::checked_v2::read_checked_package_v2(
         compiled.emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence(&compiled.wire),
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure:?}"));

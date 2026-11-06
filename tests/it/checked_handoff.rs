@@ -106,6 +106,7 @@ pub(super) fn request(kind: &str, corpus: Corpus) -> CheckedHandoffRequest {
             out: None,
         },
         corpus,
+        native_join: qsl_package::V2ReadLimits::fixture().native_join_limits(),
     }
 }
 
@@ -346,6 +347,7 @@ fn unit_directory(name: &str, text: &str) -> (tempfile::TempDir, BTreeMap<String
             out: None,
         },
         corpus: Corpus::None,
+        native_join: qsl_package::V2ReadLimits::fixture().native_join_limits(),
     };
     let out = dir.path().join("handoff");
     write(&request, &out).expect("the vector handoff is written");
@@ -2243,6 +2245,7 @@ fn unit_request(dir: &Path, body: &str) -> CheckedHandoffRequest {
             out: None,
         },
         corpus: Corpus::None,
+        native_join: qsl_package::V2ReadLimits::fixture().native_join_limits(),
     }
 }
 

@@ -98,10 +98,15 @@ fn the_bare_route_returns_the_source_value_and_charge_log_for_every_unobserved_s
     let equality = qsl_package::emit_checked(&package)
         .expect("emits")
         .equality_witness(v2);
-    let bare = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-        identities: &rows,
-        equality: Some(&equality),
-    });
+    let bare = BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: Some(&equality),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let world = bare.world().expect("world");
     let reader_view = read
         .evaluation_view()
@@ -382,10 +387,15 @@ fn records_with_option_and_collection_members_project_on_the_bytes_route() {
     let equality = qsl_package::emit_checked(&package)
         .expect("emits")
         .equality_witness(v2);
-    let bare = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-        identities: &rows,
-        equality: Some(&equality),
-    });
+    let bare = BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: Some(&equality),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let wanted = slot(
         &package,
         "Refunds",
@@ -578,10 +588,15 @@ fn original_model_field_keys_define_one_value_across_both_environments() {
     let equality = qsl_package::emit_checked(&package)
         .expect("emits")
         .equality_witness(v2);
-    let bare = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-        identities: &rows,
-        equality: Some(&equality),
-    });
+    let bare = BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: Some(&equality),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let world = bare.world().expect("world");
     let value = record(
         &package,
@@ -648,7 +663,7 @@ fn read_named<'p>(package: &'p CheckedPackage, name: &str) -> qsl_package::Admit
         package,
         qsl_semantics::library::LibraryName::new(name).unwrap(),
         &domain_packages,
-        qsl_package::V2ReadLimits::default(),
+        qsl_package::V2ReadLimits::fixture(),
     )
     .expect("strict I2 admission accepts the package")
 }
@@ -696,10 +711,15 @@ fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
     let equality = qsl_package::emit_checked(&package)
         .expect("emits")
         .equality_witness(v2);
-    let good = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-        identities: &rows,
-        equality: Some(&equality),
-    });
+    let good = BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: Some(&equality),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let world = good.world().expect("world");
     let wanted = slot(&package, "Refunds", "Refund", "retry.relation", None);
     let on_bytes = bytes_slot(v2, "Refunds", "Refund", &wanted);
@@ -748,10 +768,15 @@ fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
     let other_equality = qsl_package::emit_checked(&other)
         .expect("emits")
         .equality_witness(other_read.admitted());
-    let foreign = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-        identities: &other_rows,
-        equality: Some(&equality),
-    });
+    let foreign = BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &other_rows,
+                equality: Some(&equality),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     assert_eq!(
         call(&foreign, &on_bytes),
         package_refusal("foreign-identity-witness")
@@ -767,20 +792,30 @@ fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
         rows.fields().to_vec(),
         rows.source_records().to_vec(),
     );
-    let unknown = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-        identities: &unknown_rows,
-        equality: Some(&equality),
-    });
+    let unknown = BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &unknown_rows,
+                equality: Some(&equality),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     assert_eq!(
         call(&unknown, &on_bytes),
         package_refusal("unknown-identity-witness")
     );
     // Equality witnesses.
     let supply_with = |equality| {
-        BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-            identities: &rows,
-            equality,
-        })
+        BarePackage::new(v2)
+            .with_supply(
+                qsl_package::BareSupply {
+                    identities: &rows,
+                    equality,
+                },
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+            )
+            .expect("the fixture budget admits the supply")
     };
     assert_eq!(
         call(&supply_with(None), &on_bytes),
@@ -860,10 +895,15 @@ fn the_call_reports_identity_then_equality_then_node_refusals() {
     let (other, _) = fixture_named(SOURCE, &serde_json::to_vec(&document()).unwrap(), "other");
     let other_read = read_named(&other, "other");
     let other_rows = bare_rows(&other, other_read.admitted());
-    let foreign = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-        identities: &other_rows,
-        equality: None,
-    });
+    let foreign = BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &other_rows,
+                equality: None,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     assert_eq!(
         call(&foreign),
         (
@@ -878,10 +918,15 @@ fn the_call_reports_identity_then_equality_then_node_refusals() {
         rows.source_records().to_vec(),
     );
     let no_fields = |equality| {
-        BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-            identities: &stripped,
-            equality,
-        })
+        BarePackage::new(v2)
+            .with_supply(
+                qsl_package::BareSupply {
+                    identities: &stripped,
+                    equality,
+                },
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+            )
+            .expect("the fixture budget admits the supply")
     };
     assert_eq!(
         call(&no_fields(None)),
@@ -931,10 +976,15 @@ fn a_repeat_guard_takes_the_decision_origin_of_the_source_route() {
     let equality = qsl_package::emit_checked(&package)
         .expect("emits")
         .equality_witness(v2);
-    let bare = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-        identities: &rows,
-        equality: Some(&equality),
-    });
+    let bare = BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: Some(&equality),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let world = bare.world().expect("world");
     let view = package.evaluation_view();
     let mut exercised = 0;
@@ -1021,10 +1071,15 @@ fn retry_call<'p>(
     rows: &'p qsl_package::ReadIdentityRows,
     equality: &'p qsl_package::ReadEqualityRows,
 ) -> RetryCall<'p> {
-    let bare = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-        identities: rows,
-        equality: Some(equality),
-    });
+    let bare = BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: rows,
+                equality: Some(equality),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let world = bare.world().expect("world");
     let wanted = slot(package, "Refunds", "Refund", "retry.relation", None);
     let on_bytes = bytes_slot(v2, "Refunds", "Refund", &wanted);
@@ -1135,20 +1190,30 @@ fn a_called_equality_body_requires_its_witness_at_the_actual_evaluation_entry() 
         vec![("trigger", flag(&package, false)), ("target", int(0))],
         None,
     );
-    let no_equality = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-        identities: &rows,
-        equality: None,
-    });
+    let no_equality = BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: None,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let mut denied_meter = Meter::new(UNLIMITED);
     let missing = no_equality.evaluate_protocol_slot(&on_bytes, &given, &mut denied_meter);
     assert_pristine(&denied_meter);
     let (_, _, reason, locus) = refusal_of(missing);
     assert_eq!(reason.as_deref(), Some("missing-equality-witness"));
     assert_eq!(locus, CallAdmissionLocus::Package);
-    let with_equality = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-        identities: &rows,
-        equality: Some(&equality),
-    });
+    let with_equality = BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: Some(&equality),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let mut source_meter = Meter::new(UNLIMITED);
     let expected = package.evaluate_protocol_slot(&wanted, &given, &mut source_meter);
     let mut bytes_meter = Meter::new(UNLIMITED);
@@ -1298,10 +1363,15 @@ fn three_bare_calls_over_one_meter_sum_and_maximise_as_the_source_route_does() {
     let equality = qsl_package::emit_checked(&package)
         .expect("emits")
         .equality_witness(v2);
-    let bare = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-        identities: &rows,
-        equality: Some(&equality),
-    });
+    let bare = BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: Some(&equality),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let world = bare.world().expect("world");
     let specs = parity_slots(&package);
     // Each unobserved slot's call and its usage on a fresh bytes-route meter.
@@ -1406,10 +1476,15 @@ fn nothing_before_the_run_charges_and_a_refusal_leaves_the_meter_unchanged() {
         .expect("projects");
     assert_eq!(meter, before, "the steps before the run take no meter");
     // Refused at view creation: no equality rows.
-    let without_rows = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
-        identities: &rows,
-        equality: None,
-    });
+    let without_rows = BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: None,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
     let refused = without_rows.evaluate_protocol_slot(&call.on_bytes, &call.given, &mut meter);
     assert!(matches!(refused, Err(CallFailure::Admission(_))));
     assert_eq!(meter, before, "view creation");

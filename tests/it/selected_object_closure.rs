@@ -46,6 +46,7 @@ fn fixture_with_source(document: &Value, source_text: &str) -> Fixture {
             out: None,
         },
         corpus: Corpus::None,
+        native_join: qsl_package::V2ReadLimits::fixture().native_join_limits(),
     };
     let output = directory.path().join("handoff");
     write(&request, &output).expect("the genuine handoff writes");
@@ -53,8 +54,12 @@ fn fixture_with_source(document: &Value, source_text: &str) -> Fixture {
     let evidence = evidence(&request).expect("evidence");
     let bytes = files["checked-package.json"].clone();
     let package = admitted(&bytes, &evidence);
-    let rows = ReadIdentityRows::read(&files["identities.json"], &package)
-        .expect("the required identity carrier joins the admitted package");
+    let rows = ReadIdentityRows::read(
+        &files["identities.json"],
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("the required identity carrier joins the admitted package");
     Fixture {
         _directory: directory,
         package,
@@ -67,11 +72,20 @@ fn fixture_with_source(document: &Value, source_text: &str) -> Fixture {
 fn project(fixture: &Fixture) -> SelectedTypeDeclarations {
     let identities = fixture
         .rows
-        .selected(&fixture.package)
+        .selected(
+            &fixture.package,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect("native row join");
     fixture
         .package
-        .project_selected_type_declarations(&identities, &[], &[], 100_000)
+        .project_selected_type_declarations(
+            &identities,
+            &[],
+            &[],
+            100_000,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect("every selected document object has its genuine declaration witness")
 }
 
@@ -285,11 +299,18 @@ fn selected_object_closure_refuses_missing_and_foreign_object_witnesses() {
             .filter(|row| row.structural_node != other.structural_node)
             .cloned(),
         fixture.rows.fields().iter().cloned(),
+        &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
     )
     .expect("the remaining genuine rows join individually");
     let refusal = fixture
         .package
-        .project_selected_type_declarations(&missing, &[], &[], 100_000)
+        .project_selected_type_declarations(
+            &missing,
+            &[],
+            &[],
+            100_000,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect_err("a model reference cannot substitute for its missing object witness");
     assert_eq!(
         refusal.code,
@@ -312,6 +333,7 @@ fn selected_object_closure_refuses_missing_and_foreign_object_witnesses() {
         &fixture.package,
         foreign,
         fixture.rows.fields().iter().cloned(),
+        &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
     )
     .expect_err("an original object identity cannot join another object's real node");
     assert_eq!(
@@ -355,10 +377,17 @@ fn selected_object_closure_refuses_a_model_reference_whose_object_node_is_absent
             .filter(|row| row.structural_node != other.structural_node)
             .cloned(),
         fixture.rows.fields().iter().cloned(),
+        &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
     )
     .expect("only the remaining genuine declaration rows are supplied");
     let refusal = package
-        .project_selected_type_declarations(&identities, &[], &[], 100_000)
+        .project_selected_type_declarations(
+            &identities,
+            &[],
+            &[],
+            100_000,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect_err("retained model references cannot invent their absent object declaration");
     assert_eq!(
         refusal.code,

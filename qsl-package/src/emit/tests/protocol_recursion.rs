@@ -159,7 +159,7 @@ fn a_cyclic_predicate_join_protocol_is_grouped_and_reads_back() {
     let read = read_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     );
     assert!(matches!(read, Read::Verified { .. }), "I2 read: {read:?}");
@@ -287,7 +287,7 @@ fn an_attempt_bearing_protocol_in_a_predicate_cycle_is_grouped_and_reads_back() 
     let read = read_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     );
     assert!(matches!(read, Read::Verified { .. }), "I2 read: {read:?}");
@@ -509,7 +509,7 @@ fn a_100000_member_function_protocol_cycle_reads_back_at_i2() {
     evidence
         .insert_domain_package_document(model_digest.as_str(), SPINE_MODEL_DOCUMENT)
         .expect("model evidence admitted");
-    let read_limits = V2ReadLimits::default()
+    let read_limits = V2ReadLimits::fixture()
         .with_artifact_bytes(usize::MAX)
         .with_nodes(500_000)
         .with_edges(1_000_000)
@@ -581,7 +581,7 @@ fn large_protocol_controls_observe_i2_node_limit_and_emit_at_depth() {
     let default_read = read_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default().with_artifact_bytes(usize::MAX),
+        V2ReadLimits::fixture().with_artifact_bytes(usize::MAX),
         &evidence,
     );
     let Read::Limit(limit) = default_read else {
@@ -592,7 +592,7 @@ fn large_protocol_controls_observe_i2_node_limit_and_emit_at_depth() {
         qsl_foundation::diagnostic::LimitKind::NodeCount
     );
     assert_eq!(limit.setting(), qsl_foundation::Setting::I2Nodes);
-    let raised = V2ReadLimits::default()
+    let raised = V2ReadLimits::fixture()
         .with_artifact_bytes(usize::MAX)
         .with_nodes(100_000);
     let raised_read = read_v2(emission.package.bytes(), library(), raised, &evidence);

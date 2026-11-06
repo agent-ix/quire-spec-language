@@ -519,7 +519,8 @@ impl CompileRefusal {
                 | Setting::I2Edges
                 | Setting::I2Occurrences
                 | Setting::I2Diagnostics
-                | Setting::I2WorkUnits => SpineStage::Intake,
+                | Setting::I2WorkUnits
+                | Setting::I2NativeJoinStorage => SpineStage::Intake,
                 // Limits of operations outside the front-end compile: no
                 // front-end refusal carries one, so they name no stage of it.
                 // The `temporal_evidence.*` ceilings are of this kind: a
@@ -2260,8 +2261,10 @@ impl ImportRefusal {
 
 /// The stage limits one spine compile runs under: S1's, I1's, S3's and the
 /// import read's own limits types, each defaulting to that stage's published default. S2
-/// and the v2 emitter take none: S1's limits bound what S2 builds.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+/// and the v2 emitter take none: S1's limits bound what S2 builds. The import
+/// read's native-join storage ceiling uses the FR-255
+/// `i2.native_join_storage` default at the compile entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SpineLimits {
     /// S1: the lexer and parser ceilings.
     pub source: qsl_cst::Limits,
@@ -2279,6 +2282,25 @@ pub struct SpineLimits {
     pub imports: qsl_package::V2ReadLimits,
     /// The progress ledger's ceilings (FR-502).
     pub progress: ProgressLimits,
+}
+
+/// `i2.native_join_storage` default, in logical ownership units (FR-255,
+/// FR-358). The outer compile entry supplies this finite ceiling; lower layers
+/// do not derive or default it.
+pub const I2_NATIVE_JOIN_STORAGE_DEFAULT: u64 = 16_777_216;
+
+impl Default for SpineLimits {
+    fn default() -> Self {
+        Self {
+            source: qsl_cst::Limits::default(),
+            model: ModelNormalizationLimits::default(),
+            checking: CheckingLimits::default(),
+            dependencies: DependencyLimits::default(),
+            assembly: AssemblyLimits::default(),
+            imports: qsl_package::V2ReadLimits::bounded(I2_NATIVE_JOIN_STORAGE_DEFAULT),
+            progress: ProgressLimits::default(),
+        }
+    }
 }
 
 /// FR-255: every compile stage's settings, each owned by one part.
@@ -2523,7 +2545,7 @@ mod tests {
         SpineStage,
     };
     use ix_trace_rs::trace;
-    use qsl_foundation::{Code, SourceIdentity, Span};
+    use qsl_foundation::{Code, Setting, SettingLimits, SourceIdentity, Span};
     use qsl_semantics::check::{
         CheckCause, CheckRefusal, HybridCause, ProtocolAnchorCause, RefusedProtocolDependency,
     };
@@ -2532,6 +2554,21 @@ mod tests {
     use quire_semantic_value::checking::CheckingLimits;
     use quire_semantic_value::location::{Location, Origin};
     use std::collections::BTreeMap;
+
+    /// FR-255-AC-15/16 (TC-721): the outer import limits own the published
+    /// native-join storage default and accept the named setting independently.
+    #[trace("FR-255-AC-15", "FR-255-AC-16", "TC-721")]
+    #[test]
+    fn native_join_storage_uses_its_named_setting_and_default() {
+        let mut limits = SpineLimits::default();
+        assert_eq!(limits.imports.storage, 16_777_216);
+        assert!(limits
+            .bounds()
+            .contains(&(Setting::I2NativeJoinStorage, 16_777_216)));
+        assert!(limits.set_bound(Setting::I2NativeJoinStorage, 4096));
+        assert_eq!(limits.imports.storage, 4096);
+        assert_eq!(limits.imports.work, 1_000_000);
+    }
 
     /// FR-447: a hybrid checker refusal may belong to a temporal claim, so
     /// its message must not identify every cause as a hybrid declaration.

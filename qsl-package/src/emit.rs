@@ -1262,11 +1262,13 @@ impl Emission {
     pub fn identity_rows(
         &self,
         package: &CheckedPackageV2,
+        budget: &mut quire_contract_model::NativeJoinBudget,
     ) -> Result<crate::ReadIdentityRows, crate::IdentityFileRefusal> {
         let joined = qsl_semantics::model::intake::selected_exact_identities_from_rows(
             package,
             &self.selected_exact_declaration_rows,
             &self.selected_exact_field_rows,
+            budget,
         )
         .map_err(|error| crate::IdentityFileRefusal::Native(Box::new(error)))?;
         let records = self
@@ -1786,16 +1788,21 @@ fn nominal_term(
                 .map(|member| member.as_str().into())
                 .collect(),
         ),
-        NominalPayload::Dimension(dimension) => NominalBody::try_dimension(
-            dimension
+        // IR #928 made the base flag an explicit argument. This keeps the
+        // pre-#928 wire meaning (a dimension with no terms is a base
+        // dimension) and nothing more; the flag as a modelled fact is
+        // QSL-1766.
+        NominalPayload::Dimension(dimension) => {
+            let terms: Vec<DimensionTerm> = dimension
                 .terms()
                 .iter()
                 .map(|(base, exponent)| DimensionTerm {
                     dimension_node_id: node_id(ids, base),
                     exponent: exponent.to_string().into(),
                 })
-                .collect(),
-        ),
+                .collect();
+            NominalBody::try_dimension(terms.is_empty(), terms)
+        }
         NominalPayload::Unit(unit) => NominalBody::try_unit(
             node_id(ids, unit.dimension()),
             unit.target().map(|key| node_id(ids, key)),

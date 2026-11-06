@@ -112,10 +112,21 @@ impl DeclarationNodeKind {
 /// Join the selected-model stage's producer rows to the declaration forms
 /// admitted in `package`. Rows for declarations not present in this package
 /// graph are outside the emitted projection and do not enter the witness.
+///
+/// The join charges `budget`, the caller's one finite native work and storage
+/// allowance for the pass; this helper never creates, defaults or resets an
+/// allowance, so two joins on the same budget are charged cumulatively
+/// (FR-531, FR-358).
+///
+/// # Errors
+///
+/// IR's typed refusal, a budget denial (`ExhaustedWork` or
+/// `ExhaustedStorage`) included.
 pub fn selected_exact_identities_from_rows(
     package: &quire_contract_model::CheckedPackageV2,
     declaration_rows: &[quire_contract_model::SelectedExactDeclarationRow],
     field_rows: &[quire_contract_model::SelectedExactFieldRow],
+    budget: &mut quire_contract_model::NativeJoinBudget,
 ) -> Result<
     quire_contract_model::SelectedExactIdentities,
     quire_contract_model::ExactTypeProjectionError,
@@ -142,7 +153,30 @@ pub fn selected_exact_identities_from_rows(
                 })
             })
             .cloned(),
+        budget,
     )
+}
+
+/// Whether `refusal` is the caller's native budget running out rather than a
+/// defect of the rows or the package (FR-358): a join that ran out of work or
+/// storage says nothing about the identities it was joining.
+pub fn is_native_budget_denial(refusal: &quire_contract_model::ExactTypeProjectionError) -> bool {
+    use quire_contract_model::ExactTypeProjectionErrorCode as Code;
+    matches!(refusal.code, Code::ExhaustedWork | Code::ExhaustedStorage)
+}
+
+/// The FR-255 setting a native budget denial names: `i2.work_units` for a
+/// denied work charge, `i2.native_join_storage` for a denied storage charge,
+/// and `None` for any other refusal.
+pub fn native_budget_setting(
+    refusal: &quire_contract_model::ExactTypeProjectionError,
+) -> Option<qsl_foundation::Setting> {
+    use quire_contract_model::ExactTypeProjectionErrorCode as Code;
+    match refusal.code {
+        Code::ExhaustedWork => Some(qsl_foundation::Setting::I2WorkUnits),
+        Code::ExhaustedStorage => Some(qsl_foundation::Setting::I2NativeJoinStorage),
+        _ => None,
+    }
 }
 
 mod unit;

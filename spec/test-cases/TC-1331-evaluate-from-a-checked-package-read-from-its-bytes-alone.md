@@ -12,7 +12,7 @@ relationships:
 
 ## Description
 
-Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-20. **R** is the package of FR-517; the test crate depends on `quire-contract-model`, `qsl-package` and `qsl-eval` only.
+Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-25. **R** is the package of FR-517; the test crate depends on `quire-contract-model`, `qsl-package` and `qsl-eval` only.
 
 ## Test Procedure
 
@@ -38,7 +38,13 @@ Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-20. **R** is the pa
 | 18 | 19 | a genuine final source-record emission, including renamed members and nested opaque types | required `/2` rows round-trip unchanged; native IR record join and `source_record_view` equal the producer row |
 | 19 | 20 | old format; missing required arrays; repeated/unknown members; malformed or over-depth opaque key, including an isolated deep-key writer/reader control; stale/foreign/missing/conflicting record rows | typed parser/native row refusal; an empty supplied record set refuses at the actual native request and maps to public `MissingTypeRepresentation`, with no structural-key success fallback |
 
-Tag the test `#[trace("TC-1331", "FR-531-AC-1", ..., "FR-531-AC-20")]`.
+| 20 | 21 | a fixture's `with_supply` on a budget measured at (W, S), then (W - 1, S) and (W, S - 1) | the package; `ExhaustedWork`; `ExhaustedStorage`; consumed counters as IR reports; never `UnknownIdentityWitness`, a fault or an empty set |
+| 21 | 22 | foreign rows, unknown rows and no supply through an admitting budget; unknown rows through a budget one unit short | the three witness refusals at the slot call; the budget denial from `with_supply` |
+| 22 | 23 | two `with_supply` on one budget; selection, world and projection calls on the first package | cumulative counters; the second refused at the first crossing charge; no further native charge from the calls |
+| 23 | 24 | `V2ReadLimits` with `storage` at the measured join and one less; `from_read`, `from_emission`; the handoff writer with `native_join` one short | success; `ViewFailure::Exhausted`; `PackageMismatch::Exhausted`; `Error::NativeJoinExhausted`, no directory |
+| 24 | 25 | signature inspection of the six entries; a search for `NativeJoinBudget::new` in library sources | mutable-reference parameters; none below an entry; no `Copy` or `Clone` on `BarePackage` |
+
+Tag the test `#[trace("TC-1331", "FR-531-AC-1", ..., "FR-531-AC-25")]`.
 
 ## Expected Results
 

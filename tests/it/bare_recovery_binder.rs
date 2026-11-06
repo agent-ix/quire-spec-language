@@ -73,8 +73,12 @@ fn read_recipe(
         &files["checked-package.json"],
         &evidence(request).expect("evidence"),
     );
-    let identities =
-        qsl_package::ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
+    let identities = qsl_package::ReadIdentityRows::read(
+        &files["identities.json"],
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("rows");
     let equality =
         qsl_package::ReadEqualityRows::read(&files["equality.json"], &package).expect("rows");
     Recipe {
@@ -87,10 +91,15 @@ fn read_recipe(
 
 impl Recipe {
     fn bare(&self) -> BarePackage<'_> {
-        BarePackage::new(&self.package).with_supply(BareSupply {
-            identities: &self.identities,
-            equality: Some(&self.equality),
-        })
+        BarePackage::new(&self.package)
+            .with_supply(
+                BareSupply {
+                    identities: &self.identities,
+                    equality: Some(&self.equality),
+                },
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+            )
+            .expect("the fixture budget admits the supply")
     }
 
     fn compensation(&self, name: &str) -> NodeKey {

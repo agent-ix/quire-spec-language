@@ -302,7 +302,7 @@ fn read_with(emission: &Emission, evidence: &CheckedPackageEvidence) -> Read {
     read_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         evidence,
     )
 }
@@ -841,7 +841,7 @@ fn an_inline_nested_application_argument_is_a_malformed_wire() {
     let outcome = read_v2(
         &jcs(&tampered),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &read_evidence(&emission),
     );
     match outcome {
@@ -2652,7 +2652,7 @@ fn the_strict_reader_decides_every_text_literal_vector_as_specified() {
         let outcome = read_v2(
             &jcs(&tampered),
             library(),
-            V2ReadLimits::default(),
+            V2ReadLimits::fixture(),
             &read_evidence(&emission),
         );
         match case["expected"].as_str().unwrap() {
@@ -2784,7 +2784,7 @@ fn emit_model_unit(unit: &str, evidence_identity: Option<&str>) -> (Emission, Va
     let read = read_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     );
     (emission, wire, read)
@@ -3148,7 +3148,7 @@ fn read_linked(package: &CheckedPackage) {
     crate::checked_v2::supply_closure(
         package,
         &std::collections::BTreeMap::new(),
-        crate::V2ReadLimits::default(),
+        crate::V2ReadLimits::fixture(),
         &mut evidence,
     )
     .expect("each dependency reads back");

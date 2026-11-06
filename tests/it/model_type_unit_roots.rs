@@ -114,6 +114,7 @@ fn assert_root(position: &str) {
             out: None,
         },
         corpus: Corpus::None,
+        native_join: qsl_package::V2ReadLimits::fixture().native_join_limits(),
     };
     let out = dir.path().join("handoff");
     write(&request, &out).unwrap_or_else(|error| {

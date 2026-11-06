@@ -30,7 +30,7 @@ pub(super) fn read_protocol_over(wire: &Value, document: &[u8]) -> Read {
     evidence
         .insert_domain_package_document(package_identity(document), document)
         .expect("fresh domain evidence");
-    read_v2(&jcs(wire), library(), V2ReadLimits::default(), &evidence)
+    read_v2(&jcs(wire), library(), V2ReadLimits::fixture(), &evidence)
 }
 
 fn refused_at(
@@ -684,7 +684,7 @@ fn admitted_config(declarations: &str) -> Value {
     crate::checked_v2::read_checked_package_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure:?}"));

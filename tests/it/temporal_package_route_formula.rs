@@ -63,8 +63,12 @@ fn a_package_formula_that_differs_from_the_checked_clause_is_unreadable() {
     ] {
         let built = event_clauses(&source, &[("Only", "only-authority")]);
         let read = built.read(&built.emission);
-        let unaltered =
-            EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
+        let unaltered = EvidencePackage::from_emission(
+            &built.emission,
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the emission");
         let [clause] = clause_ids(&unaltered).try_into().expect("one clause");
         let asked = request(&unaltered, &clause, None, 3);
         assert!(
@@ -75,7 +79,12 @@ fn a_package_formula_that_differs_from_the_checked_clause_is_unreadable() {
         let other = event_clauses(&body, &[("Only", "only-authority")]);
         let changed = built.with_emission_of(other);
         let read = changed.read(&changed.emission);
-        let emitted = EvidencePackage::from_emission(&changed.emission, &read).expect("rows");
+        let emitted = EvidencePackage::from_emission(
+            &changed.emission,
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("rows");
         let [clause] = clause_ids(&emitted).try_into().expect("one clause");
         let mut meter = unlimited();
         let refused = emitted.evaluate_temporal_evidence(&clause, &asked, &mut meter);
@@ -88,7 +97,11 @@ fn a_package_formula_that_differs_from_the_checked_clause_is_unreadable() {
 
         // The read-back package is paired with the same in-process source
         // graph, so the same bytes are refused the same way.
-        let back = EvidencePackage::from_read(&read).expect("the read-back package");
+        let back = EvidencePackage::from_read(
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the read-back package");
         let mut meter = unlimited();
         let refused = back.evaluate_temporal_evidence(&clause, &asked, &mut meter);
         assert_eq!(
@@ -109,7 +122,12 @@ fn a_package_formula_that_differs_from_the_checked_clause_is_unreadable() {
 fn a_clause_the_package_does_not_hold_is_unresolved() {
     let built = recipe("event_position");
     let read = built.read(&built.emission);
-    let package = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
+    let package = EvidencePackage::from_emission(
+        &built.emission,
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("the emission");
     let due = clause_ids(&package).remove(0);
     let asked = request(&package, &due, None, 3);
     let protocol_clause = read
@@ -152,7 +170,11 @@ fn the_call_measures_the_package_listing() {
         &[("Due", "authority")],
     );
     let read = built.read(&built.emission);
-    let package = EvidencePackage::from_read(&read).expect("the read-back package");
+    let package = EvidencePackage::from_read(
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("the read-back package");
     let [clause] = clause_ids(&package).try_into().expect("one clause");
     let subject = package.subject(&clause, None).expect("reads");
     let view = package.temporal_subject(&clause).expect("reads");
@@ -188,7 +210,12 @@ fn a_clause_reference_at_another_clause_is_refused_at_construction() {
         &[("First", "first-authority"), ("Second", "second-authority")],
     );
     let read = built.read(&built.emission);
-    assert!(EvidencePackage::from_emission(&built.emission, &read).is_ok());
+    assert!(EvidencePackage::from_emission(
+        &built.emission,
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+    )
+    .is_ok());
     let refs = built.emission.temporal_rows().clauses().to_vec();
     let at = |position: fn(usize) -> usize| -> Vec<qsl_package::TemporalClauseRef> {
         refs.iter()
@@ -211,7 +238,11 @@ fn a_clause_reference_at_another_clause_is_refused_at_construction() {
             .with_temporal_clause_refs(at(position));
         assert!(
             matches!(
-                EvidencePackage::from_emission(&wrong, &read),
+                EvidencePackage::from_emission(
+                    &wrong,
+                    &read,
+                    &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+                ),
                 Err(PackageMismatch::ClauseRow)
             ),
             "{what}"
@@ -229,10 +260,18 @@ fn an_ambiguous_name_is_refused_by_the_read_route_only() {
     let same = same_named_clauses();
     let read = same.read(&same.emission);
     assert!(matches!(
-        EvidencePackage::from_read(&read),
+        EvidencePackage::from_read(
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+        ),
         Err(PackageMismatch::AmbiguousName)
     ));
-    assert!(EvidencePackage::from_emission(&same.emission, &read).is_ok());
+    assert!(EvidencePackage::from_emission(
+        &same.emission,
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+    )
+    .is_ok());
 
     let renamed = edited(twins(), |wire| {
         for row in wire["temporal_clause_names"].as_array_mut().unwrap() {
@@ -241,7 +280,10 @@ fn an_ambiguous_name_is_refused_by_the_read_route_only() {
     });
     let read = renamed.read(&renamed.emission);
     assert!(matches!(
-        EvidencePackage::from_read(&read),
+        EvidencePackage::from_read(
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+        ),
         Err(PackageMismatch::AmbiguousName)
     ));
 }
@@ -261,7 +303,11 @@ fn profile_selections_that_are_not_the_packages_are_refused() {
         .clone()
         .with_temporal_profile_selections(selections);
     assert!(matches!(
-        EvidencePackage::from_emission(&wrong, &read),
+        EvidencePackage::from_emission(
+            &wrong,
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+        ),
         Err(PackageMismatch::ProfileSelections)
     ));
 }
@@ -278,12 +324,20 @@ fn bindings_that_are_not_the_packages_are_refused() {
     bindings[0].clock_name = "another-clock".into();
     let wrong = built.emission.clone().with_temporal_bindings(bindings);
     assert!(matches!(
-        EvidencePackage::from_emission(&wrong, &read),
+        EvidencePackage::from_emission(
+            &wrong,
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+        ),
         Err(PackageMismatch::Bindings)
     ));
     let none = built.emission.clone().with_temporal_bindings(Vec::new());
     assert!(matches!(
-        EvidencePackage::from_emission(&none, &read),
+        EvidencePackage::from_emission(
+            &none,
+            &read,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+        ),
         Err(PackageMismatch::Bindings)
     ));
 }
@@ -308,7 +362,12 @@ fn a_clause_with_an_aggregate_atom_is_read_from_its_samples() {
         on origin { always[0,2] (count over past[0,1] min_count 5 >= 1) }";
     let built = event_clauses(clauses, &[("Fed", "fed"), ("Starved", "starved")]);
     let read = built.read(&built.emission);
-    let package = EvidencePackage::from_emission(&built.emission, &read).expect("the emission");
+    let package = EvidencePackage::from_emission(
+        &built.emission,
+        &read,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("the emission");
     let ids = clause_ids(&package);
     assert_eq!(ids.len(), 2);
     assert!(

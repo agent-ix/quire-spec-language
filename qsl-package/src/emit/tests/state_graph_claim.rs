@@ -76,7 +76,7 @@ pub(super) fn evidence(wire: &Value) -> CheckedPackageEvidence {
 }
 
 fn read_bytes(bytes: &[u8], wire: &Value) -> Read {
-    read_v2(bytes, library(), V2ReadLimits::default(), &evidence(wire))
+    read_v2(bytes, library(), V2ReadLimits::fixture(), &evidence(wire))
 }
 
 /// QSL's full I2 read of `compiled`, and IR's admitted package.
@@ -84,7 +84,7 @@ pub(super) fn admit(compiled: &Compiled) -> std::sync::Arc<quire_contract_model:
     crate::checked_v2::read_checked_package_v2(
         compiled.emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence(&compiled.wire),
     )
     .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure:?}"))

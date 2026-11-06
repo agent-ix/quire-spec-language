@@ -233,8 +233,13 @@ pub fn emit_plan_root(
         renamed_records: &["Instance", "Activation", "LimitReached"],
         renames: &WIRE_FIELD_NAMES,
     };
-    let emission =
-        emit_monitor_plan_over(&emitted, request.package_name.clone(), &evidence, &wire)?;
+    let emission = emit_monitor_plan_over(
+        &emitted,
+        request.package_name.clone(),
+        &evidence,
+        &wire,
+        request.limits.imports,
+    )?;
     Ok(PlanRoot {
         plan,
         obligations,

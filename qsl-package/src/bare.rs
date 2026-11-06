@@ -14,8 +14,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use quire_contract_model::{
-    CheckedNodeId, CheckedPackageV2, SelectedExactDeclarationForm, SelectedExactDeclarationRow,
-    SelectedExactFieldRow, SelectedExactIdentity, SelectedSourceRecordRow,
+    CheckedNodeId, CheckedPackageV2, ExactTypeProjectionError, NativeJoinBudget,
+    SelectedExactDeclarationForm, SelectedExactDeclarationRow, SelectedExactFieldRow,
+    SelectedExactIdentities, SelectedExactIdentity, SelectedSourceRecordRow,
 };
 use quire_exact::{EffectiveId, MemberId, MemberOwner, NodeKey, OriginalDeclarationKey, UnitId};
 use serde::{Deserialize, Serialize};
@@ -48,10 +49,20 @@ pub const IDENTITIES_FORMAT: &str = "quire.checked-handoff.identities/2";
 ///     let _ = qsl_package::BarePackage::from_term(term);
 /// }
 /// ```
-#[derive(Clone, Copy, Debug)]
+///
+/// The package joins its supply's identity rows once, at
+/// [`Self::with_supply`], under the caller's one native budget (FR-531,
+/// FR-358). It owns the joined identities and every later selection,
+/// world and projection call borrows them, so it is not `Copy` and not
+/// `Clone`: an unbudgeted copy of the joined identities cannot be made.
+#[derive(Debug)]
 pub struct BarePackage<'p> {
     package: &'p CheckedPackageV2,
     supply: Option<BareSupply<'p>>,
+    /// The supply's join, held with the witness defect it found: a missing,
+    /// foreign or unknown witness is refused by the stage that reads the
+    /// identities, not when the supply is attached (FR-390).
+    joined: Option<Result<SelectedExactIdentities, IdentityWitnessRefusal>>,
 }
 
 /// What a protocol-slot call reads beside the package (FR-531).
@@ -70,14 +81,58 @@ impl<'p> BarePackage<'p> {
         Self {
             package,
             supply: None,
+            joined: None,
         }
     }
 
-    /// The bare package with `supply`.
-    #[must_use]
-    pub fn with_supply(mut self, supply: BareSupply<'p>) -> Self {
+    /// The bare package with `supply`, its identity rows joined once and
+    /// charged to `budget`, the caller's one finite native work and storage
+    /// allowance for the pass (FR-531, FR-358). A missing, foreign or
+    /// structurally unknown witness is not refused here: it stays deferred to
+    /// the stage that reads the identities, in FR-390's order.
+    ///
+    /// # Errors
+    ///
+    /// IR's `ExhaustedWork` or `ExhaustedStorage` refusal when `budget` runs
+    /// out; no package is returned, and the denial is never an unknown
+    /// witness, a fault or an empty identity set.
+    pub fn with_supply(
+        mut self,
+        supply: BareSupply<'p>,
+        budget: &mut NativeJoinBudget,
+    ) -> Result<Self, ExactTypeProjectionError> {
+        self.joined = match supply.identities.selected(self.package, budget) {
+            Ok(identities) => Some(Ok(identities)),
+            Err(IdentityJoinFailure::Witness(defect)) => Some(Err(defect)),
+            Err(IdentityJoinFailure::Exhausted(denial)) => return Err(*denial),
+        };
         self.supply = Some(supply);
-        self
+        Ok(self)
+    }
+
+    /// The supply with the identities it joined, or the witness refusal
+    /// FR-531-AC-5 names.
+    pub(crate) fn witness(
+        &self,
+    ) -> Result<(&BareSupply<'p>, &SelectedExactIdentities), crate::BareSelectionFailure> {
+        let supply = self
+            .supply
+            .as_ref()
+            .ok_or(crate::BareSelectionFailure::Identity(
+                IdentityWitnessRefusal::Missing,
+            ))?;
+        match &self.joined {
+            Some(Ok(identities)) => Ok((supply, identities)),
+            Some(Err(defect)) => Err(crate::BareSelectionFailure::Identity(*defect)),
+            None => Err(crate::BareSelectionFailure::Identity(
+                IdentityWitnessRefusal::Missing,
+            )),
+        }
+    }
+
+    /// The joined identities, when the supply's witness was admitted.
+    pub fn identities(&self) -> Option<&SelectedExactIdentities> {
+        self.joined.as_ref().and_then(|joined| joined.as_ref().ok())
     }
 
     /// The package.
@@ -402,42 +457,57 @@ pub enum IdentityWitnessRefusal {
     Foreign,
 }
 
+/// Why the join of identity rows gave no identities: a defect of the witness
+/// or the caller's native budget running out (FR-358).
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum IdentityJoinFailure {
+    /// The rows are no witness for the package.
+    #[error(transparent)]
+    Witness(#[from] IdentityWitnessRefusal),
+    /// The caller's native work or storage allowance was consumed.
+    #[error("the native join budget was consumed: {0}")]
+    Exhausted(Box<ExactTypeProjectionError>),
+}
+
 impl ReadIdentityRows {
     /// The identity witness these rows give `package`, joined by IR's
-    /// `SelectedExactIdentities` projection.
+    /// `SelectedExactIdentities` projection and charged to `budget`.
     ///
     /// # Errors
     ///
     /// [`IdentityWitnessRefusal::Foreign`] for rows of another package,
-    /// [`IdentityWitnessRefusal::Unknown`] for rows IR does not join.
+    /// [`IdentityWitnessRefusal::Unknown`] for rows IR does not join, and
+    /// [`IdentityJoinFailure::Exhausted`] with IR's refusal when `budget`
+    /// runs out, which says nothing about the rows.
     pub fn selected(
         &self,
         package: &CheckedPackageV2,
-    ) -> Result<quire_contract_model::SelectedExactIdentities, IdentityWitnessRefusal> {
+        budget: &mut NativeJoinBudget,
+    ) -> Result<SelectedExactIdentities, IdentityJoinFailure> {
         if self.package != package.name() {
-            return Err(IdentityWitnessRefusal::Foreign);
+            return Err(IdentityWitnessRefusal::Foreign.into());
         }
-        self.join(package)
-            .map_err(|_| IdentityWitnessRefusal::Unknown)
+        self.join(package, budget).map_err(|refusal| {
+            if qsl_semantics::model::intake::is_native_budget_denial(&refusal) {
+                IdentityJoinFailure::Exhausted(Box::new(refusal))
+            } else {
+                IdentityWitnessRefusal::Unknown.into()
+            }
+        })
     }
 
     fn join(
         &self,
         package: &CheckedPackageV2,
-    ) -> Result<
-        quire_contract_model::SelectedExactIdentities,
-        quire_contract_model::ExactTypeProjectionError,
-    > {
-        quire_contract_model::SelectedExactIdentities::from_stage_rows(
+        budget: &mut NativeJoinBudget,
+    ) -> Result<SelectedExactIdentities, ExactTypeProjectionError> {
+        SelectedExactIdentities::from_stage_rows(
             package,
             self.declarations.iter().cloned(),
             self.fields.iter().cloned(),
+            budget,
         )?
-        .with_source_record_rows(
-            package,
-            self.source_records.iter().cloned(),
-            crate::bare_slot::package_work_limit(),
-        )
+        .with_source_record_rows(package, self.source_records.iter().cloned(), budget)
     }
 
     /// The package the rows were produced for.
@@ -466,14 +536,17 @@ impl ReadIdentityRows {
     /// as an artifact of the producer the consumer chose to read. Only what
     /// the package can answer is verified: that each node a row names is a
     /// node of the package and that each declaration's form matches its
-    /// identity. A refusal returns no rows.
+    /// identity. A refusal returns no rows. The validating join charges
+    /// `budget`, the caller's one native allowance for the pass (FR-358).
     ///
     /// # Errors
     ///
-    /// [`IdentityFileRefusal`].
+    /// [`IdentityFileRefusal`]; `Native` carries IR's budget denial when
+    /// `budget` runs out.
     pub fn read(
         identities_json: &[u8],
         package: &CheckedPackageV2,
+        budget: &mut NativeJoinBudget,
     ) -> Result<Self, IdentityFileRefusal> {
         let malformed = |member: IdentityMember| IdentityFileRefusal::Malformed { member };
         let file = parse_file(identities_json).map_err(|member| match member {
@@ -597,7 +670,7 @@ impl ReadIdentityRows {
             fields,
             source_records,
         };
-        rows.join(package)
+        rows.join(package, budget)
             .map_err(|error| IdentityFileRefusal::Native(Box::new(error)))?;
         Ok(rows)
     }

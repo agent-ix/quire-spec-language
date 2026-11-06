@@ -67,13 +67,7 @@ impl BarePackage<'_> {
     #[ix_trace_rs::string_edge]
     pub fn world(&self) -> Result<BareWorld, BareSelectionFailure> {
         let package = self.package();
-        let supply = self.supply().ok_or(BareSelectionFailure::Identity(
-            crate::bare::IdentityWitnessRefusal::Missing,
-        ))?;
-        let identities = supply
-            .identities
-            .selected(package)
-            .map_err(BareSelectionFailure::Identity)?;
+        let (_, identities) = self.witness()?;
         let mut composites = Vec::new();
         for row in identities.declaration_rows() {
             if !matches!(row.exact_identity, SelectedExactIdentity::Record(_)) {
@@ -81,7 +75,7 @@ impl BarePackage<'_> {
             }
             let Ok(projection) = package.project_exact_type(
                 &row.structural_node,
-                &identities,
+                identities,
                 crate::bare_slot::package_work_limit(),
             ) else {
                 continue;

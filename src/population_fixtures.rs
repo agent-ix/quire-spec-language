@@ -338,7 +338,7 @@ fn emit_and_read(package: &CheckedPackage) -> Result<EmittedRead, Error> {
         library.clone(),
         &domain_packages,
         &mut admitted,
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
     )
     .map_err(|refusal| Error::Admission(format!("{refusal:?}")))?;
     let admitted = admitted

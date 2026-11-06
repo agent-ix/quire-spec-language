@@ -683,6 +683,7 @@ fn the_plan_root_retains_the_acquisitions_witness_rows() {
         &package,
         emission.selected_exact_declaration_rows().iter().cloned(),
         emission.selected_exact_field_rows().iter().cloned(),
+        &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
     )
     .expect("IR joins the retained exact rows to the plan-root package");
 }
@@ -729,13 +730,20 @@ fn retained_source_record_rows_name_the_final_bindings_and_the_ir_join_accepts_t
     let rows = ir_source_record_rows(&root);
     let handoff = root
         .emission
-        .identity_rows(&package)
+        .identity_rows(
+            &package,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect("the final emission retains required handoff facts");
     let bytes = handoff
         .to_bytes(&package)
         .expect("the source-record handoff encodes");
-    let read = qsl_package::ReadIdentityRows::read(&bytes, &package)
-        .expect("final renamed source rows join natively");
+    let read = qsl_package::ReadIdentityRows::read(
+        &bytes,
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("final renamed source rows join natively");
     assert_eq!(read.source_records(), rows);
     assert_eq!(read.to_bytes(&package).unwrap(), bytes);
     let named = |record: &str| -> Vec<(String, String)> {
@@ -785,7 +793,11 @@ fn retained_source_record_rows_name_the_final_bindings_and_the_ir_join_accepts_t
     );
 
     let joined = SelectedExactIdentities::empty()
-        .with_source_record_rows(&package, rows.clone(), 10_000_000)
+        .with_source_record_rows(
+            &package,
+            rows.clone(),
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect("IR joins the retained source record rows");
     assert_eq!(joined.source_record_rows().count(), rows.len());
     for row in &rows {
@@ -806,7 +818,11 @@ fn retained_source_record_rows_name_the_final_bindings_and_the_ir_join_accepts_t
         assert_ne!(original, row.members[member].admitted_name);
         row.members[member].admitted_name = original;
         let error = SelectedExactIdentities::empty()
-            .with_source_record_rows(&package, stale, 10_000_000)
+            .with_source_record_rows(
+                &package,
+                stale,
+                &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+            )
             .expect_err("a base name is not the final binding name");
         assert_eq!(
             error.code,
@@ -885,7 +901,11 @@ fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them(
     };
     assert!(declared("Pair") && declared("Triple"), "{rows:?}");
     let joined = SelectedExactIdentities::empty()
-        .with_source_tuple_rows(&package, rows.clone(), 10_000_000)
+        .with_source_tuple_rows(
+            &package,
+            rows.clone(),
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect("IR joins the retained source tuple rows");
     for row in &rows {
         let projected = package
@@ -906,7 +926,11 @@ fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them(
         })
         .expect("Color's row");
     let joined = SelectedExactIdentities::empty()
-        .with_source_enum_rows(&package, enum_rows.clone(), 10_000_000)
+        .with_source_enum_rows(
+            &package,
+            enum_rows.clone(),
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect("IR joins the retained source enum rows");
     let projected = package
         .project_exact_type(&color.declaration.structural_node, &joined, 10_000_000)
@@ -943,7 +967,11 @@ fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them(
     let mut permuted = triple.clone();
     permuted.positions.swap(0, 2);
     let error = SelectedExactIdentities::empty()
-        .with_source_tuple_rows(&package, [permuted], 10_000_000)
+        .with_source_tuple_rows(
+            &package,
+            [permuted],
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect_err("permuted positions are refused");
     assert_eq!(
         error.code,

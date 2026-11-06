@@ -238,7 +238,10 @@ pub(super) fn lower_package(
     let selected_exact_identities = ir.as_ref().map_err(Clone::clone).and_then(|admitted| {
         package
             .graph()
-            .selected_exact_identities(admitted)
+            .selected_exact_identities(
+                admitted,
+                &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+            )
             .map_err(|error| format!("{error:?}"))
     });
     Lowered {

@@ -53,7 +53,7 @@ fn a_100000_node_cycle_emits_and_reads_back_under_supplied_limits() {
     let emission = emit_under(&package, package.graph().source());
     assert!(emission.omitted.is_empty());
     let wire = wire(&emission);
-    let limits = V2ReadLimits::default()
+    let limits = V2ReadLimits::fixture()
         .with_artifact_bytes(usize::MAX)
         .with_nodes(500_000)
         .with_edges(1_000_000)

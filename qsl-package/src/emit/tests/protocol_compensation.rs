@@ -95,7 +95,7 @@ fn emitted_text(unit: &str) -> Result<(Emission, Value, Read), Vec<CheckRefusal>
     let read = read_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence,
     );
     Ok((emission, wire, read))
@@ -127,7 +127,7 @@ fn a_compensation_without_a_selected_temporal_profile_is_refused_by_i2() {
     evidence
         .insert_domain_package_document(package_identity(&document), document.as_slice())
         .unwrap();
-    let outcome = read_v2(&jcs(&wire), library(), V2ReadLimits::default(), &evidence);
+    let outcome = read_v2(&jcs(&wire), library(), V2ReadLimits::fixture(), &evidence);
     let Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) = outcome else {
         panic!("missing temporal selection must refuse: {outcome:?}");
     };

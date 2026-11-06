@@ -207,7 +207,7 @@ fn the_indexed_v2_read_debug_output_grows_linearly_with_depth() {
                     let read = crate::checked_v2::read_checked_package_v2(
                         emission.package.bytes(),
                         library(),
-                        V2ReadLimits::default(),
+                        V2ReadLimits::fixture(),
                         &read_evidence(&emission),
                     )
                     .unwrap_or_else(|failure| panic!("admitted: {failure:?}"))

@@ -87,7 +87,7 @@ impl Emitted {
             read_v2(
                 &jcs(&self.wire),
                 library(),
-                V2ReadLimits::default(),
+                V2ReadLimits::fixture(),
                 &self.evidence,
             ),
             Read::Verified { .. }

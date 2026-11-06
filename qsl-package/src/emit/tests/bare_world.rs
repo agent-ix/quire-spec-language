@@ -13,13 +13,20 @@ fn ieee_flags(package: &CheckedPackage) -> (bool, bool) {
         panic!("the emitted package reads back");
     };
     let rows = emission
-        .identity_rows(&admitted)
+        .identity_rows(
+            &admitted,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+        )
         .expect("final identity rows");
     let world = BarePackage::new(&admitted)
-        .with_supply(BareSupply {
-            identities: &rows,
-            equality: None,
-        })
+        .with_supply(
+            BareSupply {
+                identities: &rows,
+                equality: None,
+            },
+            &mut crate::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply")
         .world()
         .expect("the world reads");
     let ieee = DefinitionRole::IeeeProfile.reference();

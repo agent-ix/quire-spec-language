@@ -393,21 +393,20 @@ pub(crate) struct SlotRequest {
     pub(crate) binders: Vec<NodeKey>,
 }
 
-/// Project every slot of `admitted` and pair each projected slot's walk with
+/// Project every slot of `admitted`, over the selected `identities` the view
+/// entry joined once under the pass's native budget, and pair each projected slot's walk with
 /// its origin's `protocol_locations` rows (FR-390 view creation).
 pub(crate) fn project_package(
-    source_graph: &qsl_semantics::check::CheckedGraph,
     admitted: &CheckedPackageV2,
     emission: &crate::Emission,
     package: &str,
     requests: Vec<SlotRequest>,
     work_limit: u64,
+    identities: quire_contract_model::SelectedExactIdentities,
 ) -> Result<ReaderProtocolSlots, PackageRefusal> {
     let index = WireIndex::new(
-        ProjectionSource::Source {
-            graph: source_graph,
-            emission,
-        },
+        ProjectionSource::Source { emission },
+        std::borrow::Cow::Owned(identities),
         admitted,
         work_limit,
     )
@@ -521,7 +520,7 @@ struct WireIndex<'wire> {
     nodes: BTreeMap<&'wire CheckedNodeId, &'wire CheckedSemanticNodeV2>,
     ids: BTreeMap<NodeKey, &'wire CheckedNodeId>,
     graph: WireGraph,
-    identities: quire_contract_model::SelectedExactIdentities,
+    identities: std::borrow::Cow<'wire, quire_contract_model::SelectedExactIdentities>,
     /// The producer's equality rows, rejoined once on the first equality.
     equality_rows: std::cell::OnceCell<crate::emit::equality_reader::EqualityRows>,
     work_limit: u64,
@@ -529,16 +528,12 @@ struct WireIndex<'wire> {
 
 /// What the projection reads beside the admitted package.
 pub(crate) enum ProjectionSource<'wire> {
-    /// The in-process route: the checked source graph's identity rows and
-    /// presence scope, and the emission's equality rows.
-    Source {
-        graph: &'wire qsl_semantics::check::CheckedGraph,
-        emission: &'wire crate::Emission,
-    },
-    /// The bytes route: the identity witness the supply gave and, where the
-    /// handoff carried one, the equality rows (FR-531).
+    /// The in-process route: the emission's equality rows. The identities
+    /// are the source graph's, joined once by the view entry.
+    Source { emission: &'wire crate::Emission },
+    /// The bytes route: where the handoff carried one, the equality rows
+    /// (FR-531). The identity witness the supply gave is borrowed.
     Bytes {
-        identities: quire_contract_model::SelectedExactIdentities,
         equality: Option<&'wire ReadEqualityRows>,
     },
 }
@@ -546,30 +541,10 @@ pub(crate) enum ProjectionSource<'wire> {
 impl<'wire> WireIndex<'wire> {
     fn new(
         source: ProjectionSource<'wire>,
+        identities: std::borrow::Cow<'wire, quire_contract_model::SelectedExactIdentities>,
         admitted: &'wire CheckedPackageV2,
         work_limit: u64,
     ) -> Result<Self, InternalFault> {
-        let (source, identities) = match source {
-            ProjectionSource::Source { graph, emission } => {
-                let rows = emission
-                    .identity_rows(admitted)
-                    .map_err(|_| fault("reader-selected-identities-are-admitted"))?;
-                let identities = rows
-                    .selected(admitted)
-                    .map_err(|_| fault("reader-selected-identities-are-admitted"))?;
-                (ProjectionSource::Source { graph, emission }, identities)
-            }
-            ProjectionSource::Bytes {
-                identities,
-                equality,
-            } => (
-                ProjectionSource::Bytes {
-                    identities: identities.clone(),
-                    equality,
-                },
-                identities,
-            ),
-        };
         let graph = crate::checked_v2::wire_graph(admitted)
             .map_err(|_| fault("reader-protocol-graph-has-structural-keys"))?;
         let mut nodes = BTreeMap::new();
@@ -606,7 +581,7 @@ impl<'wire> WireIndex<'wire> {
         id: &CheckedNodeId,
     ) -> Result<quire_semantic_value::declaration::AdmittedEqualityDecision, BuildError> {
         match &self.source {
-            ProjectionSource::Source { emission, .. } => {
+            ProjectionSource::Source { emission } => {
                 let row = emission
                     .equality_producer_identity_rows()
                     .iter()
@@ -853,16 +828,14 @@ pub(crate) struct BareWalker<'wire> {
 impl<'wire> BareWalker<'wire> {
     pub(crate) fn new(
         admitted: &'wire CheckedPackageV2,
-        identities: quire_contract_model::SelectedExactIdentities,
+        identities: &'wire quire_contract_model::SelectedExactIdentities,
         equality: Option<&'wire ReadEqualityRows>,
         work_limit: u64,
     ) -> Result<Self, InternalFault> {
         Ok(Self {
             index: WireIndex::new(
-                ProjectionSource::Bytes {
-                    identities,
-                    equality,
-                },
+                ProjectionSource::Bytes { equality },
+                std::borrow::Cow::Borrowed(identities),
                 admitted,
                 work_limit,
             )?,

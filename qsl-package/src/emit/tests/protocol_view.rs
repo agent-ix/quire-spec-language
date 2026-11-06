@@ -1244,7 +1244,7 @@ fn the_lock_views_return_the_selections_and_refuse_an_absent_one() {
     crate::checked_v2::supply_closure(
         &root,
         &std::collections::BTreeMap::new(),
-        crate::V2ReadLimits::default(),
+        crate::V2ReadLimits::fixture(),
         &mut evidence,
     )
     .expect("each dependency reads back");
