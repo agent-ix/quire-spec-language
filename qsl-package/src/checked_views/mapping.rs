@@ -126,9 +126,13 @@ pub struct Retained {
 ///
 /// ```compile_fail,E0451
 /// use qsl_package::checked_views::AuthenticatedSelection;
-/// fn forge(clause: quire_contract_model::CheckedNodeId) -> AuthenticatedSelection {
+/// fn forge(
+///     package: &quire_contract_model::CheckedPackageV2,
+///     clause: quire_contract_model::CheckedNodeId,
+/// ) -> AuthenticatedSelection {
 ///     AuthenticatedSelection {
 ///         package: "forged".into(),
+///         admission: package.admission_binding(),
 ///         clause,
 ///         definition: quire_contract_model::CheckedArtifactRef {
 ///             authority: "a".into(),
