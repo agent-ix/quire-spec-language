@@ -152,7 +152,7 @@ pub struct V2ReadLimits {
     /// The logical-storage ceiling the native identity joins of one pass
     /// share (FR-358): owned containers, rows, keys, handles and copied
     /// bytes, not allocator bytes and not [`Self::artifact_bytes`]. It is
-    /// required; no setting spelling names it yet.
+    /// required and raised by `i2.native_join_storage`.
     pub storage: u64,
 }
 
@@ -171,6 +171,8 @@ pub struct NativeJoinLimits {
 impl NativeJoinLimits {
     /// Map an exhausted native join using this pass's original ceilings and
     /// the budget's first unpaid charge.
+    /// Returns `None` for a non-budget error or a budget without a recorded
+    /// unpaid charge. `native` and `budget` must come from the same pass.
     pub fn refusal(
         self,
         native: Box<quire_contract_model::ExactTypeProjectionError>,

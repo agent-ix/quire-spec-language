@@ -191,8 +191,8 @@ pub enum Error {
         what: String,
     },
     /// The request's native join work or storage ceiling was consumed while
-    /// joining the selected identities (FR-358). IR's own refusal; not an
-    /// unnameable value.
+    /// joining the selected identities (FR-358). The stage diagnostic keeps
+    /// IR's native refusal; it is not an unnameable value.
     #[error("the native join budget was consumed: {0}")]
     NativeJoinExhausted(Box<qsl_package::NativeJoinLimitError>),
 }

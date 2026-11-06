@@ -444,8 +444,9 @@ pub enum ViewFailure {
     /// The admitted package broke a projection invariant; no view exists.
     Fault(InternalFault),
     /// The read's native join work or storage ceiling was consumed while the
-    /// view joined the selected identities (FR-358); no view exists. IR's own
-    /// refusal, not a fault and not an empty identity set.
+    /// view joined the selected identities (FR-358); no view exists. The
+    /// stage diagnostic retains IR's native refusal, not a fault or an empty
+    /// identity set.
     #[cfg(feature = "std")]
     Exhausted(Box<NativeJoinLimitError>),
 }
