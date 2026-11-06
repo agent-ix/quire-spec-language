@@ -69,6 +69,15 @@ surrounding: Closure) -> Result<Classification, MappingRefusal>`.
   stays until the Contract IR repoint (IR-1005), which maps the legacy value to
   this one. The function takes no decision-scope closure.
 
+`mapping_support` is a QSL owner classifier over its checked view. The function
+SHALL take no caller work budget and return no work receipt, and its work SHALL
+be bounded by the owner default that bounds the view it reads (the
+checked-package reader's work-unit default, FR-515): it reads the view and
+`surrounding` alone (AC-20), expands no formula of its own, and returns no
+resource-limit refusal of its own. A consumer that meters its own work therefore
+does not charge this owner work to its caller. This ruling does not change any
+FR-045 classification result.
+
 ## Outputs
 
 `Classification`: the disposition `Supported { target, total_sample_valuation,
@@ -176,6 +185,7 @@ view names a definition identity that is none of the five temporal profiles the
 | FR-527-AC-22 | A clause selected under `quire.temporal.timed/v1` returns `Unsupported` naming `TimedProfile` and no TL target. | Test (TC-1322) |
 | FR-527-AC-23 | A timed clause holding a past and a future operator returns `Unsupported` naming `TimedProfile` and `MixedDirection`. | Test (TC-1322) |
 | FR-527-AC-24 | Over a package whose clause `Gamma` has one occurrence, a supported result and an unsupported result (AC-22's timed clause named `Delta`, with one occurrence) hold the retained name `Some("Gamma")` and `Some("Delta")` respectively, each equal to `name()` of the view; over FR-337-AC-16's package of the two structurally equal clauses `Alpha` and `Beta`, the result holds `None`, equal to `name()` of the view. | Test (TC-1322) |
+| FR-527-AC-25 | The signature of `mapping_support` takes no budget, limit or receipt parameter and returns none; `MappingRefusal` holds no work-limit variant; over a view built at the FR-515 work-unit default exactly, it returns the same classification on a second call, and a view one expansion past that default is refused at view construction (`ViewRefusal::FormulaTooLarge`), never by `mapping_support`. | Test; Inspection |
 
 ## Dependencies
 

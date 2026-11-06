@@ -109,6 +109,38 @@ so a contradicting assertion is refused rather than absorbed. Evaluation without
 a ledger stands on the trace's own assertions alone and detects no contradiction
 across calls.
 
+On the checked-package native route, valuation evidence is admitted against the
+`CheckedPackageV2` declaration-to-arena relation and its occurrence keys from
+FR-515. The evaluator SHALL retain one valuation-evidence row for every admitted
+`holds`-valuation input, including repeated inputs, and SHALL NOT collapse
+valuation evidence into a map keyed only by leaf, declaration or position. Each
+row binds six facts: the *subject* (the checked declaration occurrence key of
+FR-515), the *position* (the admitted trace position it values, by the position's
+admitted ordinal), the *anchor* (the activation anchor of the instance, FR-044),
+the *capture instance* (the identity of that instance's immutable capture
+environment, FR-044), the *revision* (the observation owner's opaque revision
+reference for the observation the row came from), and the checked `holds`
+operand it values, with the Boolean value. Two rows that agree on all six facts
+remain two rows, in admission order; two rows that differ in any one fact are
+distinct rows. A trace position's legacy `leaf handle to Boolean` map is
+therefore not the evidence of record on this route.
+
+QSL checks every row only against values QSL itself holds: the subject SHALL be
+a declared occurrence of the evaluated declaration, the operand SHALL be a
+`holds` operand of that declaration's checked formula, the position SHALL be an
+admitted position of the trace, the anchor and capture instance SHALL equal
+those of the activated instance the row is evaluated for, and the revision SHALL
+equal the one opaque revision reference the caller names for the evaluation.
+A row failing one check is refused with `Refusal::Valuation`, a variant this
+requirement adds to the closed `Refusal` set, whose cause is one of
+`OccurrenceNotDeclared`, `OperandNotInFormula`, `PositionNotAdmitted`,
+`AnchorMismatch`, `CaptureInstanceMismatch` and `RevisionMismatch`. A row whose
+anchor, capture instance or revision names a different instance, or a revision
+other than the evaluation's own, is thereby a foreign or replayed row and is
+refused. QSL does not authenticate observation evidence (FR-516): it does not
+verify that the observation owner issued a revision or capture instance, and it
+defines no shape for either; it compares them as opaque values for equality.
+
 Caller-configured limits arrive as explicit values under
 [NFR-008](../non-functional/NFR-008-bound-temporal-evaluation.md). The evaluator
 consumes no ambient clock, installed default profile, file ordering, ingestion
@@ -298,6 +330,8 @@ closure combination, and SHALL refuse any one-axis substitution.
 | FR-043-AC-12 | A regressing watermark or a conflicting completeness revision under one binding returns a typed contradiction refusal without rolling back progress, restamping closure or rewriting an earlier result; a foreign clock, subject or binding cannot settle the obligation. | Test (TC-122, TC-1277) |
 | FR-043-AC-13 | Repeated evaluation with identical inputs reproduces one result identity; a changed profile, clock binding, declared period, epoch, unit, sequence authority or ceiling yields a distinct result identity and the earlier result is neither reused nor rewritten. | Test (TC-122, TC-1277); Analysis |
 | FR-043-AC-14 | Through `temporal::evaluate_v2` over a strict `/2` package whose declarations bind a fixed-sample (`epoch` 0, `period` 1, `unit` `ms`), an event-position (`sequence_authority` `seq`) and a timestamped-event (`timestamp_unit` `ns`) configuration, a trace with the exact profile, clock name and parameters evaluates and its report retains the package identity and version, declaration, definition identity and revision, clock name and parameter map. Each single change refuses `Refusal::Binding` before any position is visited, with no truth and no authenticated binding: another profile (`Profile`), another clock name (`Clock`), a missing or extra parameter key (`ClockParameters`), `epoch` 1 (`Epoch`), `period` 2 (`SamplePeriod`), `unit` `s` (`ClockUnit`), `sequence_authority` `other` (`SequenceAuthority`) and `timestamp_unit` `us` (`TimestampUnit`). Through the temporal `/1` `evaluate`, the profile and clock-name mutations refuse `Refusal::Binding` (`Profile`, `Clock`) as they do under `/2`; the parameter mutations (the key set, `epoch`, `period`, `unit`, `sequence_authority` and `timestamp_unit`) are not refused, and every `/1` result retains no authenticated binding. | Test (TC-122, TC-1277) |
+| FR-043-AC-15 | Over two occurrences of one checked temporal declaration that share a checked node and formula, evaluation retains distinct rows under their respective occurrence keys. Over one occurrence, three rows for one `holds` operand at one position with identical anchor, capture instance and revision are retained as three rows in admission order, and two rows for that operand at two different positions are retained as two rows; the output multiset of rows equals the admitted input multiset in every one of the six facts, and a `BTreeMap` keyed by position and leaf is not the retained form. | Test |
+| FR-043-AC-16 | Each of these single mutations of an otherwise valid row refuses with `Refusal::Valuation` naming the cause and yields no truth or partial support: an occurrence key the declaration does not hold (`OccurrenceNotDeclared`), an operand outside the checked formula (`OperandNotInFormula`), a position not in the trace (`PositionNotAdmitted`), another instance's anchor (`AnchorMismatch`), another instance's capture instance (`CaptureInstanceMismatch`), and a revision unequal to the evaluation's revision reference, including a row replayed from an earlier revision (`RevisionMismatch`). Omitting a required row yields missing-valuation incompleteness, never false. | Test |
 
 ## Dependencies
 
