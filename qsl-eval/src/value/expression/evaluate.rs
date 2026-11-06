@@ -76,8 +76,8 @@ use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::location::Location;
 use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 use quire_semantic_value::quantity::{
-    compare_quantity, convert_quantity, evaluate_quantity_unit, ConvertedValue, QuantityOperation,
-    QuantityTarget, UnitScope,
+    compare_quantity, convert_quantity, evaluate_quantity_unit, ConvertedValue, IdentifiedUnit,
+    QuantityOperation, QuantityTarget, UnitScope, UnitTable,
 };
 use quire_semantic_value::relationship_extent::Resolution;
 use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
@@ -791,6 +791,18 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             dispatch_tables,
             EvaluationFamily::Value,
         )
+    }
+
+    /// Retain compound units formed by the checker for this exact checked
+    /// body. Evaluation may read those identities at conversion boundaries.
+    pub(crate) fn with_formed_units(mut self, formed: &UnitTable) -> Result<Self, InternalFault> {
+        for unit in formed.clone() {
+            let identified = IdentifiedUnit::new(unit).map_err(|_| {
+                InternalFault::new("S6a", "checked-formed-unit-has-stable-identity")
+            })?;
+            self.units.form(identified);
+        }
+        Ok(self)
     }
 
     /// A value-family evaluator that records each completed application and

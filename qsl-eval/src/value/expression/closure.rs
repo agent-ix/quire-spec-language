@@ -331,6 +331,7 @@ where
                     meter,
                     graph.dispatch_tables(),
                 )
+                .with_formed_units(expression.formed_units())?
                 .run(expression.root(), expression.slots(), parameters)
                 .map(Transition::Done)
             }

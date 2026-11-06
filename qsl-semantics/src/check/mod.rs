@@ -500,6 +500,9 @@ struct CheckedFunction {
     identity: quire_exact::NodeKey,
     body: CheckedBody,
     slots: usize,
+    /// Compound units the body's checked typing formed; evaluation needs
+    /// these identities to read compound conversion sources and targets.
+    formed_units: quire_semantic_value::quantity::UnitTable,
 }
 
 impl DebugWith for CheckedFunction {
@@ -508,11 +511,13 @@ impl DebugWith for CheckedFunction {
             identity,
             body,
             slots,
+            formed_units,
         } = self;
         f.debug_struct("CheckedFunction")
             .field("identity", &NodeKeyDebug(identity, table))
             .field("body", &body)
             .field("slots", &slots)
+            .field("formed_units", &formed_units)
             .finish()
     }
 }
@@ -606,6 +611,7 @@ fn function_state<'a>(
         name: &signature.name,
         body: function.body.root(),
         slots: function.slots,
+        formed_units: &function.formed_units,
     }
 }
 
@@ -1365,6 +1371,8 @@ pub struct CheckedExpression {
     parameters: Vec<(String, ValueType)>,
     root: CheckedBody,
     slots: usize,
+    /// Compound units the expression's checked typing formed.
+    formed_units: quire_semantic_value::quantity::UnitTable,
     /// NFR-011: the ceilings this expression was checked under.
     effective_limits: CheckingLimits,
 }
@@ -1417,6 +1425,11 @@ impl CheckedExpression {
         self.slots
     }
 
+    /// Compound units formed while checking this expression.
+    pub fn formed_units(&self) -> &quire_semantic_value::quantity::UnitTable {
+        &self.formed_units
+    }
+
     /// NFR-011: the ceilings this expression was checked under. A
     /// standalone expression check applies the node ceiling only: it encodes no declaration preimage and charges no work, so the
     /// input-byte and work ceilings are recorded here as given but were not
@@ -1438,6 +1451,8 @@ pub struct FunctionState<'a> {
     pub body: CheckedNode<'a>,
     /// The evaluation slot count.
     pub slots: usize,
+    /// Compound units formed while checking this function's body.
+    pub formed_units: &'a quire_semantic_value::quantity::UnitTable,
 }
 
 /// One callable function's evaluation-visible identity and signature --
@@ -4581,8 +4596,8 @@ impl PackageDeclarations {
         // FR-094: the package's units and every compound unit typing formed,
         // kept until lowering has keyed each one's type node.
         let mut units = scope.types().units().clone();
-        for (_, body, _) in &mut drafts {
-            units.append(std::mem::take(&mut body.formed_units));
+        for (_, body, _) in &drafts {
+            units.append(body.formed_units.clone());
         }
         for clause in &mut typed_clauses {
             units.append(std::mem::take(&mut clause.formed_units));
@@ -6763,6 +6778,7 @@ impl PackageDeclarations {
                             identity: identity?,
                             body: body.body,
                             slots: body.slots,
+                            formed_units: body.formed_units,
                         },
                     ))
                 })
@@ -8056,11 +8072,13 @@ impl CheckedGraph {
             )
             .check(root.root())?;
         }
+        let formed_units = typer.into_formed_units();
         Ok(CheckedExpression {
             graph_identity: self.graph_identity.clone(),
             parameters,
             root,
             slots,
+            formed_units,
             effective_limits: limits,
         })
     }
