@@ -53,13 +53,14 @@ fn fixture(bound: u64) -> Fixture {
         .iter_mut()
         .find(|ty| ty["displayName"] == "Tally")
         .expect("bounded attempt tally");
-    let maximum = bound - 1;
+    let maximum = bound.saturating_sub(1);
+    let tally_maximum = bound.max(1);
     for constraint in tally["constraints"]
         .as_array_mut()
         .expect("Tally constraints")
     {
         if constraint["keyword"] == "max" {
-            constraint["operands"]["value"] = maximum.to_string().into();
+            constraint["operands"]["value"] = tally_maximum.to_string().into();
         }
     }
     let domain = serde_json::to_vec(&domain).expect("domain fixture serializes");
