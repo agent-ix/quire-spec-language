@@ -22,7 +22,36 @@ fn bounded(unit: UnitId, min: Option<Rational>, max: Option<Rational>) -> ValueT
 #[trace("TC-413", "FR-092-AC-28")]
 #[test]
 fn bounded_quantity_identity_retains_both_exact_endpoints_and_unit() {
+    let centimetre = UnitPreimage::new(
+        owner(),
+        vec!["Example".into(), "centimetre".into()],
+        node_key(LENGTH),
+        Some(node_key(METRE)),
+        &rational(1, 100),
+        &rational(0, 1),
+    )
+    .expect("centimetre targets metre in Length");
+    let centimetre_key = centimetre.key().expect("nominal centimetre identity");
+    let graph = admit_unit_graph(
+        [
+            (dimension("Length"), node_key(LENGTH)),
+            (dimension("Time"), node_key(TIME)),
+        ],
+        [
+            (unit("metre", LENGTH), node_key(METRE)),
+            (unit("second", TIME), node_key(SECOND)),
+            (centimetre, centimetre_key.clone()),
+        ],
+        &OwnerSelection::new([owner()]),
+    )
+    .expect("the shared-dimension unit graph admits");
+    let units = UnitTable::declared(&graph);
+    let centimetre = UnitId::declared(centimetre_key.clone());
     let metre = UnitId::declared(node_key(METRE));
+    assert!(units
+        .get(metre.clone())
+        .expect("metre")
+        .has_dimension_of(units.get(centimetre.clone()).expect("centimetre")));
     let value_type = |unit, lo, hi| bounded(unit, Some(lo), Some(hi));
     let types = [
         value_type(metre.clone(), rational(-3, 2), rational(7, 4)),
@@ -39,8 +68,9 @@ fn bounded_quantity_identity_retains_both_exact_endpoints_and_unit() {
             rational(0, 1),
             rational(20, 1),
         ),
+        value_type(centimetre, rational(-3, 2), rational(7, 4)),
     ];
-    let (keys, graph) = lower(&[], units(), |lowering| {
+    let (keys, graph) = lower(&[], units, |lowering| {
         types.each_ref().map(|ty| {
             lowering
                 .type_node(ty, &generated_location())
@@ -92,6 +122,14 @@ fn bounded_quantity_identity_retains_both_exact_endpoints_and_unit() {
     );
     assert_eq!(integer_path[5], PathSegment::Text("0".into()));
     assert_eq!(integer_path[8], PathSegment::Text("20".into()));
+    let mut centimetre_path = keys[6].path();
+    assert_eq!(centimetre_path[2], PathSegment::Node(centimetre_key));
+    centimetre_path[2] = PathSegment::Node(node_key(METRE));
+    assert_eq!(
+        centimetre_path,
+        keys[0].path(),
+        "only the nominal unit changes between same-dimension bounded types"
+    );
 }
 
 #[trace("TC-413", "FR-092-AC-28")]

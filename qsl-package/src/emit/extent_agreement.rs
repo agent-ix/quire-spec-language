@@ -848,7 +848,11 @@ fn bounded_quantity_emission_round_trips_with_exact_bounds_and_dependencies() {
     {
         evidence.support_feature(feature.as_str().expect("feature word"));
     }
-    for (member, value) in [(1, "2/4"), (1, "21"), (2, "19")] {
+    for (min, max, update_identity, suffix) in [
+        ("2/4", "1", true, "/body/members/1/value"),
+        ("8", "7", true, ""),
+        ("0", "19", false, ""),
+    ] {
         let mut bad = wire.clone();
         let bad_node = bad["semantic_graph"]["nodes"]
             .as_array_mut()
@@ -856,7 +860,24 @@ fn bounded_quantity_emission_round_trips_with_exact_bounds_and_dependencies() {
             .iter_mut()
             .find(|node| node["semantic_form"] == "bounded_quantity")
             .expect("bounded node");
-        bad_node["body"]["members"][member]["value"]["value"] = json!(value);
+        bad_node["body"]["members"][1]["value"]["value"] = json!(min);
+        bad_node["body"]["members"][2]["value"]["value"] = json!(max);
+        if update_identity {
+            let old = bad_node["node_id"].clone();
+            let mut new = old.clone();
+            new["path"][5] = json!(min);
+            new["path"][8] = json!(max);
+            replace_bounded_identity(&mut bad, &old, &new);
+        }
+        let graph = bad["semantic_graph"]["nodes"]
+            .as_array_mut()
+            .expect("graph");
+        graph.sort_by_key(|node| wire_id(&node["node_id"]));
+        let position = graph
+            .iter()
+            .position(|node| node["semantic_form"] == "bounded_quantity")
+            .expect("bounded node");
+        let expected_path = format!("/semantic_graph/nodes/{position}{suffix}");
         let bytes = serde_json::to_vec(&bad).expect("wire JSON");
         let CheckedPackageDispatchResult::Refused(refusal) =
             read_checked_package(&bytes, CheckedPackageReadLimits::bounded(), &evidence)
@@ -871,5 +892,30 @@ fn bounded_quantity_emission_round_trips_with_exact_bounds_and_dependencies() {
             refusal.cause,
             Some(quire_contract_model::CheckedPackageRefusalCause::InvalidDerivedShape)
         );
+        assert_eq!(
+            refusal
+                .loci
+                .first()
+                .and_then(|locus| locus.path.as_ref())
+                .map(|path| path.as_str()),
+            Some(expected_path.as_str())
+        );
+    }
+}
+
+/// Re-key the entire fixture, including nested identities and every reference.
+fn replace_bounded_identity(value: &mut Value, old: &Value, new: &Value) {
+    if value == old {
+        *value = new.clone();
+        return;
+    }
+    match value {
+        Value::Array(values) => values
+            .iter_mut()
+            .for_each(|value| replace_bounded_identity(value, old, new)),
+        Value::Object(members) => members
+            .values_mut()
+            .for_each(|value| replace_bounded_identity(value, old, new)),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
