@@ -986,7 +986,7 @@ fn rational_string_bounds_preserve_missing_operand_and_domain_refusal_order() {
             "minDenominator",
             serde_json::json!(denominator),
         );
-        document["types"][0]["unit"] = serde_json::json!(false);
+        document["types"][0]["unit"] = serde_json::json!("ix://quire/unit/absent");
         let parsed = parse_document(&serde_json::to_vec(&document).unwrap());
         let refusals = read_records("test/rational-value-type", &parsed).unwrap_err();
         assert!(
