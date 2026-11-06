@@ -62,3 +62,7 @@ Scope records:
   }
 ]
 ```
+
+## Round 1 scope verification
+
+Reviewed acc0cf0eae8be6de2c0f29d17fee3ae67985f55d: foundation owns one documented public structural formatter and replay consumes it without changing behavior. No new scoped traceability, reverse-ownership or stub gap. No matrix recomputation for confined consolidation. Verdict remains CONDITIONAL for previously recorded matrix timeout and pending paired-lock execution; full QSL-1770 integration remains open.

@@ -62,3 +62,13 @@ Scope records:
   }
 ]
 ```
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1, acc0cf0eae8be6de2c0f29d17fee3ae67985f55d: documented public foundation unit_spelling is the sole implementation; replay imports it and removes its duplicate. |
+
+### Round 1 verification
+
+Code-review/Rust disposition PASS: high finding fixed; no new findings, including lows. Original Findings and initial Verdict retained as historical results. Current code mergeable subject to paired lock bump and focused runtime gate. Reviewed foundation public API documentation, all replay formatter call sites and existing replay tests using super::unit_spelling: imported symbol remains accessible to child test module. Exhaustive matching preserves declared, compound and empty-compound behavior. No source edits, pushes or runtime tests performed. cargo fmt --check and git diff --check pass.
