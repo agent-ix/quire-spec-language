@@ -486,10 +486,10 @@ fn bounded_package() -> (CheckedPackage, quire_exact::UnitId, quire_exact::UnitI
         "dimension Length; unit m : Length = rational(1, 1); \
          unit cm : Length = rational(1, 100) * m;",
         |declarations| {
+            let unit_table =
+                quire_semantic_value::quantity::UnitTable::declared(&declarations.units);
             let unit_named = |name: String| {
-                declarations
-                    .types
-                    .units()
+                unit_table
                     .ids()
                     .find(|id| {
                         id.declared_key().is_some_and(|key| {
