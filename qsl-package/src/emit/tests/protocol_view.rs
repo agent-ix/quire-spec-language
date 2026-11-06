@@ -1513,9 +1513,9 @@ fn nodes_with_maximum(
 
 /// FR-519-AC-14 (TC-1314 row 14): the bound read through `attempts_maximum`
 /// equals the count the checked clause holds in memory for each template, at
-/// the authored count 3 of **R**'s shape and at the boundaries 1 and
+/// the authored count 3 of **R**'s shape and at the fixture boundaries 1 and
 /// `u64::MAX`, which **R** does not author.
-#[trace("FR-519-AC-14", "FR-520-AC-4", "TC-1314", "TC-1315")]
+#[trace("FR-519-AC-14", "TC-1314")]
 #[test]
 fn the_attempts_maximum_equals_the_authored_count_at_the_boundaries() {
     for (count, expected) in [("3", 3), ("1", 1), ("18446744073709551615", u64::MAX)] {
