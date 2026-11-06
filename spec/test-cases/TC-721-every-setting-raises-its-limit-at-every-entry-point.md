@@ -40,6 +40,9 @@ Scope: FR-255-AC-4, FR-255-AC-5, FR-255-AC-6 and FR-255-AC-15 to FR-255-AC-19.
    with (W, S), (W - 1, S) and (W, S - 1) (FR-255-AC-18).
 8. Retain each refused read's `stage_limit_exceeded`-class refusal, the IR error
    and the shared budget's first unpaid charge (FR-255-AC-19).
+9. Inspect the public declaration of `ExactTypeProjectionError` or compile a
+   public API probe against it; enumerate its public fields and check whether a
+   field named `cause` exists.
 
 Tag the tests `#[trace("TC-721", "FR-255-AC-4")]`, `#[trace("TC-721", "FR-255-AC-5")]`, `#[trace("TC-721", "FR-255-AC-6")]`, `#[trace("TC-721", "FR-255-AC-15")]`, `#[trace("TC-721", "FR-255-AC-16")]`, `#[trace("TC-721", "FR-255-AC-17")]`, `#[trace("TC-721", "FR-255-AC-18")]`, `#[trace("TC-721", "FR-255-AC-19")]`.
 
@@ -64,3 +67,5 @@ Tag the tests `#[trace("TC-721", "FR-255-AC-4")]`, `#[trace("TC-721", "FR-255-AC
   `exhausted_storage` and no separate public `cause` field, and
   `NativeJoinBudget::first_unpaid()` gives the first denied charge kind and
   amount.
+- Step 9: `ExactTypeProjectionError` exposes `code` and has no public field
+  named `cause`.
