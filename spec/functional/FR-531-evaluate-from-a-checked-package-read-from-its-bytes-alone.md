@@ -231,7 +231,6 @@ equal inputs.
 | `declarations` | the unit's `SelectedExactDeclarationRow` values in the order the emitter holds them; each is an object `{ "structural_node", "selected_document", "form", "original_identity", "exact_identity" }` with `structural_node` the wire node id string, `form` one of `record_value_type`, `object_type`, `union`, `declared_unit`, and `exact_identity` a tagged object `{ "kind": "record" \| "object" \| "union" \| "declared_unit", "value": <value> }` whose `value` is a node reference for `record` and `union`, an `EffectiveId` for `object` and a `UnitId` for `declared_unit`, each as the value encodings below state |
 | `fields` | the unit's `SelectedExactFieldRow` values in emitter order; each is `{ "record_node", "selected_document", "record_original_identity", "field_original_identity", "member_id" }` |
 | `source_records` | every final emission's source-owned record row, in final row order: `{ "structural_node", "source_authority", "source_identity", "qualified_declaration", "record_key", "members" }`; each ordered member is `{ "original_member_identity", "admitted_name", "presence", "type_node", "value_type" }` |
-
 | `source_unions` | every final emission's `SelectedSourceUnionRow`, in producer order: `{ "structural_node", "source_authority", "source_identity", "qualified_declaration", "type_handle", "settled_key", "members" }`; each ordered member is `{ "declaration", "identifier", "payload_nodes", "payload" }` |
 
 All five members are required. The reader SHALL reject `/1`, `/2`, an absent member,
