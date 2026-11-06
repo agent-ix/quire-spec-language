@@ -846,6 +846,41 @@ fn the_recipe_emits_the_protocol_the_compensations_and_the_three_clock_kinds() {
     );
 }
 
+/// FR-519-AC-14 (TC-1314 row 14): over R's event-position package, the
+/// attempts maximum read through `protocol_view` is 3 for `Full` and 3 for
+/// `Partial`, the count R authors; a non-compensation id of the package
+/// refuses `NotACompensation` (FR-519-AC-16).
+#[trace("FR-519-AC-14", "FR-519-AC-16", "TC-1314")]
+#[test]
+fn the_recipe_compensations_read_attempts_maximum_three_through_the_view() {
+    use qsl_package::protocol_view::{attempts_maximum, ViewRefusal};
+
+    let (_holder, out) = written("event_position", Corpus::None, &Double::default());
+    let files = tree(&out);
+    let held = evidence(&request("event_position", Corpus::None)).unwrap();
+    let package = admitted(&files["checked-package.json"], &held);
+    let mut read = Vec::new();
+    for (kind, node) in package.node_kinds().iter().zip(&package.graph().nodes) {
+        if *kind == CheckedNodeKind::Protocol(ProtocolForm::Compensation) {
+            let key = serde_json::to_string(&node.node_id).unwrap();
+            let name = ["Full", "Partial"]
+                .into_iter()
+                .find(|name| key.contains(&format!("\"{name}\"")))
+                .unwrap_or_else(|| panic!("a Full or Partial template: {key}"));
+            read.push((name, attempts_maximum(&package, &node.node_id)));
+        } else {
+            assert_eq!(
+                attempts_maximum(&package, &node.node_id),
+                Err(ViewRefusal::NotACompensation {
+                    node: node.node_id.clone()
+                })
+            );
+        }
+    }
+    read.sort_by_key(|(name, _)| *name);
+    assert_eq!(read, [("Full", Ok(3)), ("Partial", Ok(3))]);
+}
+
 /// FR-517-AC-4: the signed-64 extrema are values of the package, with the
 /// declared bounds not widened.
 #[trace("FR-517-AC-4", "FR-042-AC-10", "TC-1312")]

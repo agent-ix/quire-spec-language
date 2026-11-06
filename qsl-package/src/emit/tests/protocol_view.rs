@@ -13,9 +13,10 @@ use super::protocol_requirements::fixture_w::{
 };
 use super::*;
 use crate::protocol_view::{
-    binder, causal_relation, control_operation, declaration, delivery, dependency, locus,
-    operation_identity, owner_model, protocol_view, queue_capacity, relation_over, selection,
-    source, temporal_binding, ControlOperation, Delivery, QueueCapacity, Scheduling, ViewRefusal,
+    attempts_maximum, attempts_over, binder, causal_relation, control_operation, declaration,
+    delivery, dependency, locus, operation_identity, owner_model, protocol_view, queue_capacity,
+    relation_over, selection, source, temporal_binding, ControlOperation, Delivery, QueueCapacity,
+    Scheduling, ViewRefusal,
 };
 
 /// The TC-134 workflow plus an `await` anchored at an event, so every edge
@@ -1451,4 +1452,186 @@ fn the_population_declaration_node_is_selected_by_its_id() {
         .find(|member| member["name"] == "max")
         .expect("the bound's max");
     assert_eq!(maximum["value"]["value"], "3");
+}
+
+/// The TC-134 workflow with both compensations' bound authored as `count`.
+fn fixture_with_attempts(count: &str) -> Fixture {
+    fixture_over(
+        &source_text()
+            .replace(
+                "attempts 2 of M::RefundAttempt;",
+                &format!("attempts {count} of M::RefundAttempt;"),
+            )
+            .replace(
+                "attempts 1 of M::RefundAttempt;",
+                &format!("attempts {count} of M::RefundAttempt;"),
+            ),
+    )
+}
+
+/// The graph nodes of `package` with the `maximum` member of the compensation
+/// `id`'s `attempts` group replaced by `replacement` (removed when `None`).
+fn nodes_with_maximum(
+    package: &CheckedPackageV2,
+    id: &CheckedNodeId,
+    replacement: Option<&dyn Fn(&mut CheckedTerm)>,
+) -> Vec<CheckedSemanticNodeV2> {
+    let mut nodes = package.graph().nodes.clone();
+    let node = nodes.iter_mut().find(|node| &node.node_id == id).unwrap();
+    let CheckedTerm::Application { arguments, .. } = &mut node.body else {
+        panic!("an application body");
+    };
+    let group = arguments
+        .iter_mut()
+        .find_map(|argument| match argument {
+            CheckedTerm::Binding { name, value } if &**name == "attempts" => Some(&mut **value),
+            _ => None,
+        })
+        .expect("the attempts argument");
+    let CheckedTerm::Aggregate { members } = group else {
+        panic!("attempts is a group");
+    };
+    let at = members
+        .iter()
+        .position(
+            |member| matches!(member, CheckedTerm::Binding { name, .. } if &**name == "maximum"),
+        )
+        .expect("the maximum member");
+    match replacement {
+        None => {
+            members.remove(at);
+        }
+        Some(change) => {
+            let CheckedTerm::Binding { value, .. } = &mut members[at] else {
+                panic!("a binding");
+            };
+            change(value);
+        }
+    }
+    nodes
+}
+
+/// FR-519-AC-14 (TC-1314 row 14): the bound read through `attempts_maximum`
+/// equals the count the checked clause holds in memory for each template, at
+/// the authored count 3 of **R**'s shape and at the boundaries 1 and
+/// `u64::MAX`, which **R** does not author.
+#[trace("FR-519-AC-14", "FR-520-AC-4", "TC-1314", "TC-1315")]
+#[test]
+fn the_attempts_maximum_equals_the_authored_count_at_the_boundaries() {
+    for (count, expected) in [("3", 3), ("1", 1), ("18446744073709551615", u64::MAX)] {
+        let fixture = fixture_with_attempts(count);
+        let package = &*fixture.admitted;
+        let templates = &fixture.protocol.obligations.compensations;
+        assert_eq!(templates.len(), 2);
+        for (declared, name) in [("Refund", "Refund"), ("PartialRefund", "PartialRefund")] {
+            let template = templates.iter().find(|t| t.name == name).unwrap();
+            assert_eq!(template.maximum_attempts, expected);
+            let id = &by_name(package, declared).node_id;
+            assert_eq!(
+                attempts_maximum(package, id),
+                Ok(expected),
+                "{declared} {count}"
+            );
+            assert_eq!(
+                attempts_maximum(&fixture.qsl_read, id),
+                Ok(expected),
+                "{declared} {count}: QSL's read"
+            );
+        }
+    }
+    // The two templates keep their own counts.
+    let fixture = fixture();
+    let package = &*fixture.admitted;
+    assert_eq!(
+        attempts_maximum(package, &by_name(package, "Refund").node_id),
+        Ok(2)
+    );
+    assert_eq!(
+        attempts_maximum(package, &by_name(package, "PartialRefund").node_id),
+        Ok(1)
+    );
+}
+
+/// FR-519-AC-15 (TC-1314 row 15): a copy of the template without `maximum`
+/// refuses `MissingMember` naming `attempts.maximum`.
+#[trace("FR-519-AC-15", "TC-1314")]
+#[test]
+fn a_compensation_without_a_maximum_refuses_missing_member() {
+    let fixture = fixture();
+    let package = &*fixture.admitted;
+    let id = by_name(package, "Refund").node_id.clone();
+    let nodes = nodes_with_maximum(package, &id, None);
+    assert_eq!(
+        attempts_over(&nodes, &id),
+        Err(ViewRefusal::MissingMember {
+            node: id.clone(),
+            member: "attempts.maximum"
+        })
+    );
+    assert_eq!(attempts_over(&package.graph().nodes, &id), Ok(2));
+}
+
+/// FR-519-AC-16 (TC-1314 row 16): an absent id, a role and a control refuse
+/// `NotACompensation` naming the id.
+#[trace("FR-519-AC-16", "TC-1314")]
+#[test]
+fn a_node_that_is_no_compensation_refuses_naming_the_id() {
+    let fixture = fixture();
+    let package = &*fixture.admitted;
+    let mut absent = by_name(package, "Refund").node_id.clone();
+    absent.ordinal += 1000;
+    for id in [
+        absent,
+        by_name(package, "Orders").node_id.clone(),
+        by_name(package, "Main").node_id.clone(),
+        clause(package).node_id.clone(),
+    ] {
+        assert_eq!(
+            attempts_maximum(package, &id),
+            Err(ViewRefusal::NotACompensation { node: id.clone() })
+        );
+    }
+}
+
+/// FR-519-AC-17 (TC-1314 row 17): a copy with `maximum` zero, a text, or a
+/// value past `u64` refuses `MalformedMember` naming `attempts.maximum`.
+#[trace("FR-519-AC-17", "TC-1314")]
+#[test]
+fn a_zero_or_non_integer_maximum_refuses_malformed_member() {
+    let fixture = fixture();
+    let package = &*fixture.admitted;
+    let id = by_name(package, "Refund").node_id.clone();
+    let set = |kind: quire_contract_model::LiteralKind, payload: &'static str| {
+        move |term: &mut CheckedTerm| {
+            let CheckedTerm::Literal {
+                value_kind, value, ..
+            } = term
+            else {
+                panic!("the authored maximum is a literal");
+            };
+            *value_kind = kind;
+            *value = json!(payload);
+        }
+    };
+    let integer = quire_contract_model::LiteralKind::Integer;
+    let target = id.clone();
+    let reference = move |term: &mut CheckedTerm| *term = CheckedTerm::reference(target.clone());
+    let malformed: [&dyn Fn(&mut CheckedTerm); 4] = [
+        &set(integer, "0"),
+        &set(quire_contract_model::LiteralKind::Text, "3"),
+        &reference,
+        &set(integer, "18446744073709551616"),
+    ];
+    for change in malformed {
+        let nodes = nodes_with_maximum(package, &id, Some(change));
+        assert_eq!(
+            attempts_over(&nodes, &id),
+            Err(ViewRefusal::MalformedMember {
+                node: id.clone(),
+                member: "attempts.maximum"
+            })
+        );
+    }
+    let nodes = nodes_with_maximum(package, &id, Some(&set(integer, "7")));
+    assert_eq!(attempts_over(&nodes, &id), Ok(7));
 }
