@@ -48,6 +48,7 @@ mod control_node;
 mod converted_equality;
 mod decimal_constructors;
 mod deep_bodies;
+mod dimension_base;
 mod envelope_adoption;
 mod golden;
 mod hybrid;
