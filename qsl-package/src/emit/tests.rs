@@ -2866,11 +2866,7 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     // Rock is required even though no source expression names it.
     assert_eq!(
         emitted,
-        BTreeSet::from([
-            model_key("Gadget"),
-            model_key("Rock"),
-            model_key("Widget")
-        ])
+        BTreeSet::from([model_key("Gadget"), model_key("Rock"), model_key("Widget")])
     );
     // QSpec FR-322-AC-132/134/136: exactly one `model_root` for the one row,
     // last in graph order with its `generated` source-map entry last, keyed by
