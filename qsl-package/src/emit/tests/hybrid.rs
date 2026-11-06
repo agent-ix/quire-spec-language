@@ -948,7 +948,7 @@ fn the_i2_read_refuses_each_fr_481_defect_at_its_locus() {
             "node_tag": "value",
             "semantic_form": "literal",
             "semantic_type": boolean,
-            "dependencies": [boolean],
+            "dependencies": [],
             "occurrences": [{"role": "expression", "ordinal": 0}],
             "body": {"term": "literal", "type": boolean, "value": true, "value_kind": "boolean"},
         }));
