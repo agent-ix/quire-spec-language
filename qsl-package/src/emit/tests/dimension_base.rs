@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-092-AC-28 (TC-483): the emitter writes each source dimension's
+//! FR-092-AC-29 (TC-483): the emitter writes each source dimension's
 //! explicit `base` flag on the checked-package wire, so IR reads a base
 //! dimension as base and a derived dimension whose terms cancel to empty as
 //! derived.
