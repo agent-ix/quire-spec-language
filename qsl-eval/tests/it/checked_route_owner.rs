@@ -74,6 +74,7 @@ fn a_correction_derives_truth_from_its_own_evidence_and_leaves_the_corrected_res
         origins: _,
         trigger_evidence: _,
         trigger_scope: _,
+        native_valuations: _,
         decision_progress: _,
         decision_closure: _,
         surrounding_progress: _,

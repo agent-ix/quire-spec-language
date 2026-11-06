@@ -829,6 +829,7 @@ fn the_request_has_no_supplied_result_member_and_only_the_evaluator_writes_entri
         origins: _,
         trigger_evidence: _,
         trigger_scope: _,
+        native_valuations: _,
         decision_progress: _,
         decision_closure: _,
         surrounding_progress: _,
