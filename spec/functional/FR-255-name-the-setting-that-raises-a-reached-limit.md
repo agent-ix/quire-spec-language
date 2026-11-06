@@ -49,6 +49,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-315
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-531
+    type: references
 ---
 # FR-255: Name the setting that raises a reached limit, at every entry point
 
@@ -147,7 +149,8 @@ engine limits and the typed inspection operation's limit have their own table
 | `i2.edges` | I2 v2 reader | edge count | the v2 read limits' edges | 100000 edges |
 | `i2.occurrences` | I2 v2 reader | occurrence count | the v2 read limits' occurrences | 100000 occurrences |
 | `i2.diagnostics` | I2 v2 reader | diagnostic count | the v2 read limits' diagnostics | 10000 diagnostics |
-| `i2.work_units` | I2 v2 reader | work budget | the v2 read limits' work | 1000000 units |
+| `i2.work_units` | I2 v2 reader and native identity join | work budget | the v2 read limits' work; native-join budget work | 1000000 units |
+| `i2.native_join_storage` | I2 v2 reader native identity join | logical storage | `V2ReadLimits.storage`; native-join budget storage | 16777216 logical units |
 | `explore.states` | exploration | node count | exploration `Limits` max_states | 10000000 states |
 | `explore.transitions` | exploration | edge count | exploration `Limits` max_transitions | 100000000 transitions |
 | `prepare.compile_work_units` | execution-backend prepare | work budget | `PrepareLimits` compile_work_units | 16777216 units |
@@ -161,6 +164,38 @@ Another exception, besides the supplied-value ceilings of FR-277, is the monitor
 FR-251 under the setting name `monitor.max_event_rate`: it is a member of the
 monitor target and not a table row, because every table row is an unsigned
 integer.
+
+For native identity joins performed by an I2 v2 read (FR-531), the reader
+builds one `NativeJoinBudget` for the pass. Its work allowance is the existing
+`i2.work_units` value; `i2.native_join_storage` supplies its independent
+logical-storage allowance. The setting operation, replay `stage_limits` entry,
+and library limit value bind those names to `V2ReadLimits.work` and
+`V2ReadLimits.storage`, respectively. The FR-517 handoff request's
+`native_join` member states the same two ceilings; its work and storage are the
+values of `i2.work_units` and `i2.native_join_storage` respectively, and the
+request's configuration supplies them under those names.
+
+`V2ReadLimits.storage` is a required field with no `Default`. The published
+table default 16777216 applies only where the outer configuration (the compile
+or import entry that reads the `i2.*` settings table, such as
+`SpineLimits.imports`) supplies the value; no layer below that entry supplies
+one, and fixtures state explicit values. `V2ReadLimits::bounded(storage)` uses
+the supplied storage value and the other bounded-reader defaults, including the
+published `i2.work_units` default. It does not create a second work setting or
+derive storage from input bytes.
+
+Both native-join bounds are `u64` allowances and accept every value from zero
+through `u64::MAX`. A native join that cannot admit its next work or storage
+charge is a reached limit of the reader's own limits type: it returns the
+`stage_limit_exceeded`-class refusal of Behavior 1 (the `i2.*` row of its
+refusal-mapping table), with kind `work budget` and setting `i2.work_units` for
+a denied work charge, or kind `logical storage` and setting
+`i2.native_join_storage` for a denied storage charge, the configured bound, and
+the count the refused charge would have reached. IR's typed
+`ExactTypeProjectionError` (`exhausted_work` or `exhausted_storage`) is the
+library-level form of the same refusal and carries the same setting name; it has
+no separate public `cause` field, and the shared `NativeJoinBudget` exposes the
+first unpaid charge's kind and attempted amount.
 
 ## Engine limit setting names
 
@@ -428,12 +463,19 @@ these names through the same operand grammar as the stage settings
 | FR-255-AC-12 | Every limit name of the engine table matches `^[a-z][a-z0-9_]*$`; every setting name in the setting and engine tables matches `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`; and setting names are distinct across the setting, engine and accounting tables. Each engine limits type and the typed inspection operation maps each limit member to the table's (limit name, setting name) pair (`ExactProbLimits.model`'s members map to the `exact_prob.*` product rows; `InspectLimits.max_view_entries` maps to `max_view_entries`/`inspect.max_view_entries`; `TimedSampling.q` maps to none). Each engine's `LimitReached` names its member's pair. The inspection operation's `StageFailure::Limit` identifies `max_view_entries`, its configured bound and attempted count, and `inspect.max_view_entries` (FR-277, FR-297). Method-bound stops (`max_live_instances`, `max_store_buffer`, `max_messages`) retain their owner's member and value naming; their row's setting raises them through the settings operation. A stop outside the listed limits (evaluation meter, `MaxCandidates` of an engine without `ExpansionLimits`, `Time`, `ClauseMeter` or cancellation) is not covered here. Given `model_check.max_states=0`, the settings operation returns a usage refusal naming the operand; given `model_check.witness_samples=0`, it returns `ModelCheckLimits` with `witness_samples` 0. | Test (TC-1161) |
 | FR-255-AC-13 | FR-126-AC-8's run stopped by `max_states` 2 settles `incomplete`, `LimitReached{limit: max_states, value: 2, setting: model_check.max_states}`, and the settings operation given `model_check.max_states=3` raises it; FR-101-AC-15's exploration with `max_states` 2 returns `Outcome::Bounded` at `Limit::States` with value 2 under setting `explore.states`, and `explore.states=3` leaves a model check's `max_states` at its default. FR-126-AC-6's `max_automaton_states` 50 stop names `max_automaton_states` and `model_check.max_automaton_states`; FR-254-AC-3's `max_sample_steps` 1 stop names `statistical.max_sample_steps`. | Test (TC-1161) |
 | FR-255-AC-14 | The settings operation given `smt_encoding.max_constants=8` returns `SmtEncodingLimits` with `max_constants` 8 and its other five members at their defaults, and given `smt.max_solver_steps=1000` and `smt.max_solver_time=5` returns `SmtRunLimits` with those values; given no operand it returns both at the engine table's defaults; given `smt.max_solver_time=0` or `smt_encoding.max_monitor_states=0` it returns a usage refusal naming the operand. A replay request's `stage_limits` entry `smt_encoding.max_constants` at 8 runs the item's encoding under 8. FR-315-AC-40's `max_constants` 7 refusal names the row's limit name and setting, and FR-182-AC-14's solver stops name `max_solver_steps` with `smt.max_solver_steps` and `max_solver_time` with `smt.max_solver_time`. | Test (TC-1250) |
+| FR-255-AC-15 | With no I2 limits supplied by the outer configuration, the native-join budget for an I2 v2 read uses work limit 1000000 from `i2.work_units` and storage limit 16777216 from `i2.native_join_storage`; `V2ReadLimits.storage` has no `Default`, so a limits value built without a storage value does not compile and a fixture states an explicit value. | Test (TC-721) |
+| FR-255-AC-16 | Setting `i2.work_units` through the library limits, a replay request's `stage_limits`, and the settings operation changes only `V2ReadLimits.work`; setting `i2.native_join_storage` the same three ways changes only `V2ReadLimits.storage`; the FR-517 handoff request's `native_join` work and storage follow the same two names. | Test (TC-721) |
+| FR-255-AC-17 | Both `i2.work_units` and `i2.native_join_storage` accept 0 and `u64::MAX`; with storage 0 the nonempty identity join is refused at its first positive storage charge, and with `u64::MAX` it is admitted. | Test (TC-721) |
+| FR-255-AC-18 | For an identity-join fixture with measured charges W (work) and S (storage), limits (W, S) admit the join, (W - 1, S) refuses it as a work-budget limit naming `i2.work_units`, and (W, S - 1) refuses it as a logical-storage limit naming `i2.native_join_storage`. | Test (TC-721) |
+| FR-255-AC-19 | A refused native join returns the `stage_limit_exceeded`-class refusal with `kind`, `bound`, `actual` and `setting` of FR-255 Behavior 1; IR's `ExactTypeProjectionError` has code `exhausted_work` or `exhausted_storage` and no separate public `cause` field, and `NativeJoinBudget::first_unpaid()` reports the first denied kind and amount. | Test (TC-721) |
 
 ## Status
 
-The setting table, the one-mapping-per-limits-type rule, the builders, the
-settings operation, a request's `stage_limits` and the defaults are
-implemented (TC-720, TC-721). Backing of the criteria:
+The existing setting table, the one-mapping-per-limits-type rule, the
+builders, the settings operation, a request's `stage_limits` and their
+defaults are implemented (TC-720, TC-721). FR-255-AC-15 to FR-255-AC-19 specify native-join
+setting bindings, defaults and refusals; their implementation is not yet complete.
+Backing of the criteria:
 
 The `inspect.max_view_entries` row and its typed-view behavior are specified
 here for QSL-600; their implementation is not yet complete.
