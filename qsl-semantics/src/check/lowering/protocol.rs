@@ -425,6 +425,7 @@ fn bounded_carries(carries: &ValueType) -> bool {
         | ValueType::Float(_)
         | ValueType::Text(_) => true,
         ValueType::Collection(collection) => collection.bound().is_some(),
+        ValueType::Map(map) => map.bound().is_some(),
         ValueType::Boolean
         | ValueType::Integer
         | ValueType::String
@@ -437,7 +438,6 @@ fn bounded_carries(carries: &ValueType) -> bool {
         | ValueType::Quantity(_)
         | ValueType::BoundedQuantity(_)
         | ValueType::CarriedQuantity(_)
-        | ValueType::Map(_)
         | ValueType::Population(_) => false,
     }
 }
@@ -2547,5 +2547,29 @@ mod requirement_key_tests {
         assert!(matches!(resolved, Ok(None)), "{resolved:?}");
         let resolved = resolve_temporal_requirement_keys([(1, "A")], &keys, &refused, &location());
         assert!(matches!(resolved, Ok(Some(found)) if found == [one.clone()]));
+    }
+}
+
+#[cfg(test)]
+mod bounded_carries_tests {
+    use super::*;
+
+    fn map(bound: Option<(u64, u64)>) -> ValueType {
+        ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
+            ValueType::Boolean,
+            bound.map(|(lower, upper)| {
+                quire_exact::CardinalityBound::new(lower, upper).expect("a bound")
+            }),
+        )))
+    }
+
+    /// A bounded map lowers to a `bounded_domain` (FR-092-AC-28), which IR's
+    /// reader does not admit as a channel's `carries`; an unbounded map is the
+    /// `map` composite alone.
+    #[ix_trace_rs::trace("FR-092-AC-28", "TC-1021")]
+    #[test]
+    fn a_bounded_map_carries_a_bounded_domain_and_an_unbounded_one_does_not() {
+        assert!(bounded_carries(&map(Some((1, 4)))));
+        assert!(!bounded_carries(&map(None)));
     }
 }

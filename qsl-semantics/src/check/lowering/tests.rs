@@ -1186,26 +1186,91 @@ fn metre() -> quire_exact::UnitId {
     quire_exact::UnitId::compound(vec![(fixture_key("metre"), Integer::from(1_i64))])
 }
 
-/// No checked type node carries a map or a bounded quantity yet (quire-exact
-/// FR-386 and FR-387): building one refuses `TypeMismatch`, never a guessed
-/// node and never a panic. No QSL criterion governs this defensive refusal.
+fn bounded_map_of(values: ValueType, minimum: u64, maximum: u64) -> ValueType {
+    ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
+        values,
+        Some(CardinalityBound::new(minimum, maximum).unwrap()),
+    )))
+}
+
+/// FR-092-AC-28: `Map<Text, V>` lowers to a self-typed `composite_type`/`map`
+/// node whose body is the `key` binding (the bare Text scalar node) and then
+/// the `value` binding, and a bounded map adds a `collection_bounds` domain
+/// typed at that node. Equal operands give one node and a changed value type
+/// another, so the node is the ordered pair of its operand nodes.
+#[trace("FR-092-AC-28", "TC-1021")]
 #[test]
-fn a_map_and_a_bounded_quantity_have_no_type_node() {
-    for value_type in [map_of(ValueType::Boolean), bounded_metre()] {
-        let refusal = with_lowering(|lowering| {
-            lowering
-                .type_node(&value_type, &generated_location())
-                .expect_err("no type node")
-        });
-        assert!(
-            matches!(
-                refusal.cause,
-                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
-            ),
-            "{:?}",
-            refusal.cause
-        );
-    }
+fn a_map_type_lowers_to_a_key_then_value_composite_node() {
+    let types = [
+        map_of(ValueType::Boolean),
+        map_of(ValueType::Boolean),
+        map_of(int(0, 9)),
+        bounded_map_of(ValueType::Boolean, 1, 4),
+        ValueType::String,
+        ValueType::Boolean,
+    ];
+    let (graph, keys) = type_nodes(
+        &empty_scope(),
+        &SourceOwner::from(&fixture_source()),
+        &types,
+    );
+    assert_eq!(keys[0], keys[1], "equal operands are one node");
+    assert_ne!(keys[0], keys[2], "the value type is part of the identity");
+    let map = preimage(graph.node(keys[0].clone()).expect("the map node"));
+    assert_eq!(map["node_tag"], "composite_type");
+    assert_eq!(map["semantic_form"], "map");
+    assert!(map["semantic_type"].is_null(), "a map is its own type");
+    assert!(map["declaration"].is_null() && map["owner"].is_null());
+    let node = graph.node(keys[0].clone()).expect("the map node");
+    let operands = node.map_operand_nodes().expect("a key then a value");
+    let text = preimage(graph.node(operands[0].clone()).expect("the key node"));
+    assert_eq!(text["semantic_form"], "text");
+    assert_eq!(
+        operands[1], keys[5],
+        "the value operand is the Boolean node"
+    );
+    let members = map["body"]["members"].as_array().expect("members");
+    let names: Vec<&serde_json::Value> = members.iter().map(|member| &member["name"]).collect();
+    assert_eq!(names, [&json!("key"), &json!("value")]);
+
+    let domain = preimage(graph.node(keys[3].clone()).expect("the bounded map"));
+    assert_eq!(domain["node_tag"], "bounded_domain");
+    assert_eq!(domain["semantic_form"], "collection_bounds");
+    assert_eq!(
+        domain["semantic_type"]["digest"],
+        json!(keys[0].to_string())
+    );
+    let facts: Vec<_> = graph.source_collections().collect();
+    let bounded = facts
+        .iter()
+        .find(|(key, _)| **key == keys[3])
+        .map(|(_, fact)| fact)
+        .expect("a fact for the bounded map");
+    assert_eq!(bounded.key, Some(operands[0].clone()));
+    assert_eq!(bounded.element, keys[5]);
+    assert_eq!(bounded.base, keys[0]);
+    assert_eq!(bounded.value_type, types[3]);
+}
+
+/// No checked type node carries a bounded quantity yet (quire-exact FR-387):
+/// building one refuses `TypeMismatch`, never a guessed node and never a
+/// panic. No QSL criterion governs this defensive refusal.
+#[test]
+fn a_bounded_quantity_has_no_type_node() {
+    let value_type = bounded_metre();
+    let refusal = with_lowering(|lowering| {
+        lowering
+            .type_node(&value_type, &generated_location())
+            .expect_err("no type node")
+    });
+    assert!(
+        matches!(
+            refusal.cause,
+            CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+        ),
+        "{:?}",
+        refusal.cause
+    );
 }
 
 /// A map has no equality (QSpec FR-149 states none): `OperatorIneligible`.

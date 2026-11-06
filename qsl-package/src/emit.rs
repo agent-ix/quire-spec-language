@@ -550,9 +550,14 @@ pub struct SelectedSourceCollectionRow {
     pub structural_node: CheckedNodeId,
     /// The emitted collection composite node holding the element reference.
     pub base_node: CheckedNodeId,
-    /// The emitted element type node the base references.
+    /// The emitted element type node the base references; a map's value
+    /// type node.
     pub element_node: CheckedNodeId,
-    /// The checker's `ValueType::Collection`, kind, element and bound included.
+    /// A map's emitted key type node, which the base references before the
+    /// value; `None` for every other collection.
+    pub key_node: Option<CheckedNodeId>,
+    /// The checker's `ValueType::Collection` or `ValueType::Map`, kind,
+    /// element and bound included.
     pub value_type: quire_exact::ValueType,
 }
 
@@ -6665,27 +6670,38 @@ fn source_collection_rows(
         .source_collections()
         .filter_map(|(key, collection)| Some((collection, emitted.get(key)?)))
         .map(|(collection, structural_node)| {
-            // A collection node's body is one bare reference, its element.
-            let base = semantic
-                .node(collection.base.clone())
-                .and_then(|node| node.tuple_position_nodes());
+            // A collection node's body is one bare reference, its element; a
+            // map's is its `key` then `value` bindings.
+            let base =
+                semantic
+                    .node(collection.base.clone())
+                    .and_then(|node| match collection.key {
+                        None => node.tuple_position_nodes(),
+                        Some(_) => node.map_operand_nodes(),
+                    });
             collection_row(structural_node, collection, base, emitted)
         })
         .collect()
 }
 
-/// One collection row joined to `emitted`. A value type that is not a
-/// collection (a map has no type node), a base node that does not reference
-/// exactly the element, and a node that was not emitted are writer faults.
+/// One collection row joined to `emitted`. A value type that is neither a
+/// collection nor a map, a key node on a collection or none on a map, a base
+/// node that does not reference exactly the element (a map's: the key, then
+/// the value), and a node that was not emitted are writer faults.
 fn collection_row(
     structural_node: &CheckedNodeId,
     collection: &qsl_semantics::check::SourceCollection,
     base_references: Option<Vec<NodeKey>>,
     emitted: &HashMap<NodeKey, CheckedNodeId>,
 ) -> Result<SelectedSourceCollectionRow, EmitRefusal> {
-    if !matches!(collection.value_type, quire_exact::ValueType::Collection(_))
-        || base_references.as_deref() != Some(std::slice::from_ref(&collection.element))
-    {
+    let expected: Vec<NodeKey> = match (&collection.value_type, &collection.key) {
+        (quire_exact::ValueType::Collection(_), None) => vec![collection.element.clone()],
+        (quire_exact::ValueType::Map(_), Some(key)) => {
+            vec![key.clone(), collection.element.clone()]
+        }
+        _ => return Err(EmitRefusal::SourceMapInvariant),
+    };
+    if base_references.as_deref() != Some(expected.as_slice()) {
         return Err(EmitRefusal::SourceMapInvariant);
     }
     let node = |key: &NodeKey| {
@@ -6698,6 +6714,7 @@ fn collection_row(
         structural_node: structural_node.clone(),
         base_node: node(&collection.base)?,
         element_node: node(&collection.element)?,
+        key_node: collection.key.as_ref().map(node).transpose()?,
         value_type: collection.value_type.clone(),
     })
 }

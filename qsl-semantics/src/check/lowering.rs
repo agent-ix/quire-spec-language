@@ -43,8 +43,8 @@ use qsl_foundation::source::node_table::{
 
 use quire_exact::{
     ArithmeticOperator, Charge, ChargePoint, CollectionKind, CollectionType, EffectiveId,
-    Identifier, Integer, Meter, NodeKey, OrderingOperator, Origin as OccurrenceOrigin, Presence,
-    TextProfile, Value, ValueType,
+    Identifier, Integer, MapType, Meter, NodeKey, OrderingOperator, Origin as OccurrenceOrigin,
+    Presence, TextProfile, Value, ValueType,
 };
 
 use super::check::{EnumBinding, Scope};
@@ -370,6 +370,19 @@ impl SemanticNode {
         leaf.reference_target()?.admitted().cloned()
     }
 
+    /// QSpec FR-322 "Derived type forms": a `composite_type`/`map` node's key
+    /// then value type nodes, read from its `key` and `value` bindings in that
+    /// order. `None` for every node whose body is not that shape.
+    pub fn map_operand_nodes(&self) -> Option<Vec<NodeKey>> {
+        let bindings = self.record_member_nodes()?;
+        match bindings.as_slice() {
+            [("key", _), ("value", _)] => {
+                Some(bindings.into_iter().map(|(_, node)| node).collect())
+            }
+            _ => None,
+        }
+    }
+
     /// QSpec FR-440 "Union type node": a union type node's members in
     /// declared order, each as its name and the payload type nodes its
     /// `Group` of references names in position order. `None` for every node
@@ -478,8 +491,11 @@ pub struct SourceCollection {
     pub value_type: ValueType,
     /// The collection composite node holding the element reference.
     pub base: NodeKey,
-    /// The element type node the base references.
+    /// The element type node the base references; a map's value type node.
     pub element: NodeKey,
+    /// A map's key type node, which its base references before the value;
+    /// `None` for every other collection.
+    pub key: Option<NodeKey>,
 }
 
 /// A collection's nodes as lowering built them, possibly still placeholders.
@@ -487,6 +503,7 @@ struct CollectionFact {
     node: NodeRef,
     base: NodeRef,
     element: NodeRef,
+    key: Option<NodeRef>,
     value_type: ValueType,
 }
 
@@ -1150,6 +1167,8 @@ enum TypeFrame<'v> {
     Option,
     /// A collection's nodes, waiting for its element's node.
     Collection(&'v CollectionType),
+    /// A map's nodes: its built key node, waiting for its value's node.
+    Map(&'v MapType, NodeRef),
     /// A declared record or tuple, waiting for its next member's node.
     Composite(CompositeFrame<'v>),
 }
@@ -2113,6 +2132,10 @@ impl<'a> Lowering<'a> {
                         value_type: fact.value_type,
                         base: fact.base.admitted()?.clone(),
                         element: fact.element.admitted()?.clone(),
+                        key: match &fact.key {
+                            None => None,
+                            Some(key) => Some(key.admitted()?.clone()),
+                        },
                     },
                 ))
             })
@@ -2601,6 +2624,9 @@ impl<'a> Lowering<'a> {
                     Some(TypeFrame::Collection(collection)) => {
                         TypeStep::Built(self.collection_type(collection, key, location)?)
                     }
+                    Some(TypeFrame::Map(map, map_key)) => {
+                        TypeStep::Built(self.map_type(map, map_key, key, location)?)
+                    }
                     Some(TypeFrame::Composite(mut composite)) => {
                         composite.accept(key);
                         self.advance(composite, location, &mut frames)?
@@ -2630,6 +2656,13 @@ impl<'a> Lowering<'a> {
             ValueType::Collection(collection) => {
                 frames.push(TypeFrame::Collection(collection));
                 return Ok(TypeStep::Descend(collection.element()));
+            }
+            ValueType::Map(map) => {
+                // QSpec FR-322 "Derived type forms": `Map<Text, V>`'s key is
+                // the bare Text scalar node, built before the value type.
+                let key = NodeRef::from(self.scalar("text", location)?);
+                frames.push(TypeFrame::Map(map, key));
+                return Ok(TypeStep::Descend(map.values()));
             }
             ValueType::Composite(declaration) => {
                 return match self.open_composite(declaration.clone(), location)? {
@@ -2744,9 +2777,9 @@ impl<'a> Lowering<'a> {
             ValueType::CarriedQuantity(carried) => self
                 .carried_quantity_type(carried, location)
                 .map(NodeRef::from),
-            // No checked type node carries a map or a bounded quantity yet:
-            // a typed refusal, never a guessed node.
-            ValueType::Map(_) | ValueType::BoundedQuantity(_) => Err(refuse(
+            // No checked type node carries a bounded quantity yet: a typed
+            // refusal, never a guessed node.
+            ValueType::BoundedQuantity(_) => Err(refuse(
                 location,
                 CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
             )),
@@ -2818,7 +2851,60 @@ impl<'a> Lowering<'a> {
             node: node.clone(),
             base,
             element,
+            key: None,
             value_type: ValueType::Collection(std::sync::Arc::new(collection.clone())),
+        });
+        Ok(node)
+    }
+
+    /// `map`'s bounded node over its key node `key` and value node `value`
+    /// (QSpec FR-322 "Derived type forms": the `key` then `value` bindings of
+    /// a self-typed `composite_type`/`map`, with the bounds, when declared,
+    /// in a separate `collection_bounds` domain).
+    fn map_type(
+        &mut self,
+        map: &MapType,
+        key: NodeRef,
+        value: NodeRef,
+        location: &Location,
+    ) -> Result<NodeRef, CheckRefusal> {
+        let base = self.insert_ref(
+            location,
+            NodeTag::CompositeType,
+            "map",
+            None,
+            None,
+            BodyTerm::aggregate(vec![
+                MemberTerm::binding(
+                    "key",
+                    BindingValue::Leaf(LeafTerm::reference_node(key.clone())),
+                ),
+                MemberTerm::binding(
+                    "value",
+                    BindingValue::Leaf(LeafTerm::reference_node(value.clone())),
+                ),
+            ]),
+        )?;
+        let node = match map.bound() {
+            None => base.clone(),
+            Some(bound) => {
+                let min = self.integer_literal(Integer::from(bound.minimum()), location)?;
+                let max = self.integer_literal(Integer::from(bound.maximum()), location)?;
+                self.bounded(
+                    "collection_bounds",
+                    base.clone(),
+                    vec![("min", min), ("max", max)],
+                    location,
+                )?
+            }
+        };
+        self.unsettled_collections.push(self.collection_facts.len());
+        self.collection_facts.push(CollectionFact {
+            node: node.clone(),
+            base,
+            element: value,
+            key: Some(key),
+            value_type: ValueType::Map(std::sync::Arc::new(map.clone())),
         });
         Ok(node)
     }
@@ -3668,6 +3754,9 @@ impl<'a> Lowering<'a> {
                 fact.node = resolve(&fact.node).map_err(|()| unresolved(&root))?;
                 fact.base = resolve(&fact.base).map_err(|()| unresolved(&root))?;
                 fact.element = resolve(&fact.element).map_err(|()| unresolved(&root))?;
+                if let Some(key) = &fact.key {
+                    fact.key = Some(resolve(key).map_err(|()| unresolved(&root))?);
+                }
             }
         }
         for (node, role, location) in occurrences {

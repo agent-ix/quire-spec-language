@@ -984,11 +984,15 @@ pub(super) fn carry_rows(
             structural_node,
             base_node,
             element_node,
+            key_node,
             value_type: _,
         } = row;
         rekey.id(structural_node);
         rekey.id(base_node);
         rekey.id(element_node);
+        if let Some(key_node) = key_node {
+            rekey.id(key_node);
+        }
     }
     let mut exact_declarations = retained.selected_exact_declaration_rows.clone();
     for row in &mut exact_declarations {
@@ -1175,8 +1179,8 @@ pub(super) fn follow_final_positions(
     Ok(())
 }
 
-/// Sets each collection row's `element_node` to the node the final collection
-/// node references, and requires a bounded collection's domain node to be
+/// Sets each collection row's `element_node` (and a map row's `key_node`) to
+/// the node the final collection node references, and requires a bounded collection's domain node to be
 /// typed by that collection node, so a re-pointed element or bound is named
 /// by its final node. A row whose nodes are absent or malformed is a writer
 /// fault.
@@ -1197,10 +1201,20 @@ pub(super) fn follow_final_collections(
         let CheckedTerm::Aggregate { members } = &base.body else {
             return Err(invariant("a collection node's body is an aggregate"));
         };
-        let [CheckedTerm::Reference { target }] = members.as_slice() else {
-            return Err(invariant("a collection node references its element"));
-        };
-        row.element_node = target.clone();
+        match (&row.key_node, members.as_slice()) {
+            (None, [CheckedTerm::Reference { target }]) => row.element_node = target.clone(),
+            (Some(_), [key, value]) => {
+                let (Some(key), Some(value)) = (
+                    binding_reference(key, "key"),
+                    binding_reference(value, "value"),
+                ) else {
+                    return Err(invariant("a map node binds its key then its value"));
+                };
+                row.key_node = Some(key.clone());
+                row.element_node = value.clone();
+            }
+            _ => return Err(invariant("a collection node references its element")),
+        }
         if row.structural_node != row.base_node
             && find(&row.structural_node)?.semantic_type != row.base_node
         {
@@ -1291,6 +1305,18 @@ fn finish(
         temporal_binding_rows: rows.temporal_binding_rows,
         temporal_rows: rows.temporal_rows,
     })
+}
+
+/// The node a `binding` term named `name` references, or `None` for any other
+/// term.
+fn binding_reference<'t>(term: &'t CheckedTerm, name: &str) -> Option<&'t CheckedNodeId> {
+    let CheckedTerm::Binding { name: found, value } = term else {
+        return None;
+    };
+    match (found.as_ref() == name, value.as_ref()) {
+        (true, CheckedTerm::Reference { target }) => Some(target),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

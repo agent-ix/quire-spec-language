@@ -129,9 +129,11 @@ Catches an implementation that binds by name and looks it up again at emission, 
   unjoined declaration refuses `UnavailableIdentityWitness`. The omitted case
   node is a writer fault.
 - Step 14 gives one `SelectedSourceCollectionRow` per collection node, as
-  FR-092-AC-24 states. The wrong element, the map and the unemitted node are
-  writer faults, the re-pointed element is followed and the mistyped bound is
-  refused. The unit with no collection gives none.
+  FR-092-AC-24 states. The wrong element, a map row with no key node and the
+  unemitted node are writer faults, the re-pointed element is followed and the
+  mistyped bound is refused. The unit with no collection gives none. A map
+  gives the node and row of FR-092-AC-28: a key then a value binding, a key
+  node on its row, and a key or value node that is re-pointed is followed.
 - Assertions compare typed fields, causes and keys, never message text.
 - Step 15 gives one `SelectedModelEnumShapeRow` with the variants in case-name
   byte order and the ids of the model enum rows, as FR-092-AC-26 states; each
