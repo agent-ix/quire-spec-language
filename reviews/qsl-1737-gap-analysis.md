@@ -12,7 +12,7 @@ Audited the changed requirement → trace tag → assertion → production-code 
 
 ## Scope
 
-- FR-092-AC-28 — examined: "An alias and equivalent reduced endpoints share its identity; changing `m` to `cm` or either endpoint gives a distinct node."
+- FR-092-AC-29 — examined: "An alias and equivalent reduced endpoints share its identity; changing `m` to `cm` or either endpoint gives a distinct node."
 - FR-093-AC-61 — examined: "Bounded nominal quantities lower addition, conversion and less-than to their existing quantity operation identities."
 - TC-413 steps 10–12 and implementation status — examined: enabled typed-API tests are distinguished from deferred native and bounded-result conversion evidence.
 - TC-413 verifies FR-093 — examined: the added relationship targets the operation requirement.
