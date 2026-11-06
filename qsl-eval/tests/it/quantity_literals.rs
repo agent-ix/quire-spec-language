@@ -486,7 +486,7 @@ fn bounded_package() -> (CheckedPackage, quire_exact::UnitId, quire_exact::UnitI
         "dimension Length; unit m : Length = rational(1, 1); \
          unit cm : Length = rational(1, 100) * m;",
         |declarations| {
-            let unit_named = |name| {
+            let unit_named = |name: String| {
                 declarations
                     .types
                     .units()

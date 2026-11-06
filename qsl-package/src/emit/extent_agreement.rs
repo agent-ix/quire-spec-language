@@ -839,7 +839,7 @@ fn bounded_quantity_emission_round_trips_with_exact_bounds_and_dependencies() {
         members[0]["value"]["target"].clone(),
         members[1]["value"]["type"].clone(),
     ];
-    dependencies.sort_by_key(|value| wire_id(value));
+    dependencies.sort_by_key(wire_id);
     assert_eq!(node["dependencies"], json!(dependencies));
     let mut bad = wire.clone();
     let bad_node = bad["semantic_graph"]["nodes"]
