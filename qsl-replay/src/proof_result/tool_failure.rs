@@ -81,7 +81,8 @@ impl ToolFailure {
     }
 
     /// Read a serialized `tool-failure{defect}` cause back into its variant.
-    /// `None` when the value is not exactly FR-331's `tool-failure` cause:
+    /// `None` when the value is not exactly the outcome document's
+    /// `tool-failure` cause (FR-286, `kind` spelling):
     /// another `kind`, an unknown `defect`, a missing or non-integer
     /// `limit` or `value` on a byte-limit defect, or any other member.
     pub fn read_cause(cause: &Value) -> Option<Self> {

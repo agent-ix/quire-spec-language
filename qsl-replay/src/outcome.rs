@@ -314,6 +314,14 @@ impl WireLocus {
     }
 }
 
+/// The value of an item cause's `limit` member.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+enum CauseLimit {
+    Name(&'static str),
+    Bytes(u64),
+}
+
 /// The typed cause an item's terminal record carries: its FR-331 spelling in
 /// `kind`, and the members that spelling names.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -355,15 +363,13 @@ pub struct ItemCause {
     rule: Option<CertificateRule>,
     #[serde(rename = "at", skip_serializing_if = "Option::is_none")]
     certificate_at: Option<CertificateLocus>,
+    /// The `limit` member: a limit's name, or a byte-limit `tool-failure`
+    /// cause's configured maximum. One field, so the two cannot collide.
     #[serde(skip_serializing_if = "Option::is_none")]
-    limit: Option<&'static str>,
+    limit: Option<CauseLimit>,
     /// A `tool-failure` cause's FR-462 `defect`.
     #[serde(skip_serializing_if = "Option::is_none")]
     defect: Option<&'static str>,
-    /// A byte-limit `tool-failure` cause's configured maximum, written as
-    /// `limit`; never set beside `limit`.
-    #[serde(rename = "limit", skip_serializing_if = "Option::is_none")]
-    byte_limit: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     value: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -586,7 +592,6 @@ impl ItemCause {
             certificate_at: None,
             limit: None,
             defect: None,
-            byte_limit: None,
             value: None,
             lower: None,
             upper: None,
@@ -951,7 +956,7 @@ impl OutcomeItem {
                 match cause {
                     IncompleteCause::Cancelled { source } => item.source = Some(*source),
                     IncompleteCause::LimitReached { limit, value } => {
-                        item.limit = Some(limit.as_str());
+                        item.limit = Some(CauseLimit::Name(limit.as_str()));
                         item.value = Some(*value);
                         item.setting = Some(limit.setting());
                     }
@@ -967,7 +972,7 @@ impl OutcomeItem {
                 let mut item = ItemCause::kind("tool-failure");
                 item.defect = Some(failure.defect());
                 if let Some((limit, value)) = failure.byte_counts() {
-                    item.byte_limit = Some(limit);
+                    item.limit = Some(CauseLimit::Bytes(limit));
                     item.value = Some(value);
                 }
                 Some(item)
@@ -1172,7 +1177,7 @@ fn clause_run_cause(report: &ClauseRunReport) -> Option<ItemCause> {
         ..ItemCause::kind(cause)
     };
     let limit = |kind: &'static str, value: u64, setting: &'static str| ItemCause {
-        limit: Some(kind),
+        limit: Some(CauseLimit::Name(kind)),
         value: Some(value),
         setting: Some(setting),
         ..ItemCause::kind("limit-reached")

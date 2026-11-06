@@ -110,12 +110,14 @@ fn timed_out_and_cancelled_are_incomplete() {
 #[trace("TC-775", "FR-291-AC-3")]
 #[test]
 fn a_plugin_failure_leaves_sibling_records_unchanged() {
-    let proved = |index| TerminalRecord::proved(RequestIndex::new(index), backend(), 2);
+    let proved =
+        |index| TerminalRecord::proved(RequestIndex::new(index), BackendId::new("compile-time"), 2);
     let failed = TerminalRecord::tool_failed(RequestIndex::new(0), backend(), ToolFailure::Crash);
     let (document, mixed) = write(vec![item(&failed), item(&proved(1))]);
     let (_, alone) = write(vec![item(&proved(1))]);
-    let mut sibling = mixed["items"][1].clone();
-    sibling["request_index"] = alone["items"][0]["request_index"].clone();
-    assert_eq!(sibling, alone["items"][0]);
+    assert_eq!(
+        serde_json::to_vec(&mixed["items"][1]).expect("bytes"),
+        serde_json::to_vec(&alone["items"][0]).expect("bytes"),
+    );
     assert_eq!(document.category().exit_code(), 30);
 }
