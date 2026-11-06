@@ -1209,6 +1209,37 @@ fn checked_successor_authenticates_each_emitted_profile_and_clock_before_evaluat
     );
 }
 
+/// FR-054-AC-1 production half: the canonical `/3` package is the checked `/2`
+/// admission with only the version headers changed and the authored activation
+/// table appended, encoded by the production `/3` encoder. Fixtures must equal
+/// this derivation byte for byte, so they cannot drift from the `/2` wire.
+fn derive_v3_bytes(
+    emitted: &native::AdmissionV2,
+    activations: &[v3::ExpectedActivation],
+) -> Vec<u8> {
+    let v2_package = emitted.admitted().package();
+    let mut inherited = v2_package.inherited.clone();
+    inherited.wire = v3::WIRE.into();
+    inherited.media = v3::MEDIA.into();
+    inherited.schema = v3::SCHEMA.into();
+    let package = v3::wire::Package {
+        inherited,
+        temporal_bindings: v2_package.temporal_bindings.clone(),
+        activation_mappings: activations
+            .iter()
+            .map(|selection| v3::wire::ActivationMapping {
+                control: selection.control.clone(),
+                temporal_declaration: selection.temporal_declaration,
+            })
+            .collect(),
+    };
+    v3::encode_candidate(&package, Limits::default())
+        .into_result()
+        .expect("derived v3 package encodes canonically")
+        .bytes()
+        .to_vec()
+}
+
 fn declaration(package: &v2::AdmittedPackage, name: &str) -> usize {
     package
         .inherited()
@@ -1339,6 +1370,11 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
             declaration: flow,
             index: non_event,
         };
+        assert_eq!(
+            derive_v3_bytes(emitted, std::slice::from_ref(&activation)),
+            bytes,
+            "the control-map fixture is the canonical /3 derivation of the /2 admission"
+        );
         let admitted = inputs
             .read_v3_bytes(
                 proofs,
@@ -1541,6 +1577,11 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
             temporal_declaration,
         };
         let activations = [activation.clone(), second_activation.clone()];
+        assert_eq!(
+            derive_v3_bytes(emitted, &activations),
+            include_bytes!("../fixtures/compiled-protocol-v3-owner-lineage.json").as_slice(),
+            "the owner-lineage fixture is the canonical /3 derivation of the /2 admission"
+        );
         let admitted = inputs
             .read_v3_bytes(
                 proofs,
