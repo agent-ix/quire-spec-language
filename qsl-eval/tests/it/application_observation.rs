@@ -621,7 +621,21 @@ fn family_refusal_is_owned_without_projecting_its_cause() {
     else {
         panic!("family refusal: {:?}", report.evaluation);
     };
-    assert_eq!(cause.catalog_code().cause(), "reference-unresolved");
+    assert_eq!(
+        cause.catalog_code(),
+        quire_semantic_value::catalog::CatalogCode::new(
+            "unknown_required_feature",
+            "unsupported-feature"
+        )
+    );
+    assert_eq!(
+        cause
+            .catalog_fields()
+            .expect("typed refusal fields")
+            .get("construct")
+            .map(String::as_str),
+        Some("dereference")
+    );
     let ledger = report.ledger.as_ref().expect("full family-refusal ledger");
     assert_eq!(
         ledger
@@ -629,14 +643,7 @@ fn family_refusal_is_owned_without_projecting_its_cause() {
             .iter()
             .map(|entry| entry.request.clone())
             .collect::<Vec<_>>(),
-        [
-            request(ChargePoint::FunctionCall, &[], 0),
-            request(
-                ChargePoint::ModelNavigate,
-                &[(LimitKind::ValueOccurrences, 1)],
-                0
-            )
-        ]
+        [request(ChargePoint::FunctionCall, &[], 0)]
     );
     assert!(report.observed.is_empty());
     assert_totals(&report, &meter);
