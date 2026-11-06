@@ -379,7 +379,7 @@ fn equal_formula_bytes_under_different_profiles_classify_differently() {
 
 /// FR-527-AC-12 (TC-1322 row 12): changing `surrounding` changes the target of
 /// FR-045's future rows and nothing else.
-#[trace("FR-527-AC-12", "TC-1322")]
+#[trace("TC-1322", "FR-527-AC-12")]
 #[test]
 fn the_closure_changes_only_the_future_rows_target() {
     let rows = [
@@ -450,7 +450,7 @@ fn lock_row(package: &CheckedPackageV2, profile: &str) -> quire_contract_model::
 /// package identity, the clause and the definition identity and artifact equal
 /// to the values read from the lock row, supported or not. The selection has
 /// no clock parameter map.
-#[trace("FR-527-AC-13", "TC-1322")]
+#[trace("TC-1322", "FR-527-AC-13")]
 #[test]
 fn every_result_retains_the_selection_of_the_lock_row() {
     let cases = [

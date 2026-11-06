@@ -149,9 +149,11 @@ view names a definition identity that is none of the five temporal profiles the
 - `selection` SHALL be constructible only by the classifier.
 - The classifier SHALL retain the owner's admitted-package binding in
   `selection` on supported and unsupported results. Comparing classifications
-  SHALL include that binding. The classifier's public selection API SHALL
-  expose the binding and delegate its package-membership check to its owner;
-  it SHALL NOT substitute a QSL identity carrier or a package-name check.
+  SHALL include that binding. The selection's `admission_binding()` SHALL
+  return the actual owner's `AdmissionBinding`, and its `belongs_to(package)`
+  SHALL delegate to `package.retains(binding)`; `Classification::belongs_to`
+  SHALL forward the same owner check. The classifier SHALL NOT substitute a
+  QSL identity carrier or a package-name check.
 - The classifier SHALL give the same disposition to the same clause whatever the
   package's route. The two routes are the IR reader applied to the bytes the
   unit's emitter returns in process, and the IR reader applied to the bytes of
