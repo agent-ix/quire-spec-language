@@ -262,6 +262,27 @@ pub(crate) fn timed_package(document: &[u8], body: &str) -> CheckedPackage {
     CheckedPackage::link(graph)
 }
 
+/// [`package_with_clauses`] under the bounded profile `quire.temporal.event-position.false-extension/v1`
+/// in place of infinite-trace.
+pub(crate) fn bounded_package_with_clauses(
+    document: &[u8],
+    declared: &[(&str, &str, &str)],
+) -> CheckedPackage {
+    let text = declared
+        .iter()
+        .fold(unit_text(""), |text, (name, fairness, formula)| {
+            text + &clause_text(name, fairness, formula)
+        })
+        .replace(
+            "quire.temporal.infinite-trace/v1",
+            "quire.temporal.event-position.false-extension/v1",
+        );
+    let graph = declarations_from_text(document, text)
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+    CheckedPackage::link(graph)
+}
+
 /// The text of the temporal clause `name` over `c: M::Counter`, `on origin`,
 /// whose formula is `formula` under infinite-trace.
 pub(crate) fn clause_text(name: &str, fairness: &str, formula: &str) -> String {
