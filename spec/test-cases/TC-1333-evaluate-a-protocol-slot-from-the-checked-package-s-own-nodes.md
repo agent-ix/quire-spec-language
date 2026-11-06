@@ -38,6 +38,8 @@ Verify protocol-slot evaluation from a bare package and its equality with the so
 
 Tag the test `#[trace("FR-533-AC-1", ..., "FR-533-AC-18", "TC-1333")]`; rows 1 and 2 also carry FR-390-AC-11 and FR-520-AC-9.
 
+| 20 | 20 | Strictly admitted **R** with the source `Shape` union constructed and matched in `Full`'s recovery predicate; vary receipts, target and activation, then add an unrelated union; compare the bare and source type environments | Equal Boolean values and ordered charges; original union type handle, sealed member/declaration identities, ordered members and positional payload types agree; missing required projections refuse before any charge |
+
 ## Expected Results
 
 Each row's Expected column.
