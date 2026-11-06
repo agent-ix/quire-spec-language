@@ -313,12 +313,12 @@ The unit `U` on `Amount` and `Total` is not portable yet. In the model it is
 an alias of `ix://quire/unit/U` whose `min` and `max` name the alias (QSpec
 FR-154 "Unit bounds"; FR-230-AC-26), and each source declares
 `dimension Money;` and `unit U : Money = rational(1, 1);`. Unit-typed members
-check against unit literals (`amount >= 1 U` in `BeforeApply`), but **R**
-still refuses at two points, which FR-517-AC-19 and AC-20 state as the capabilities the spine must have:
-
-A measurement unit that only the selected model's types name is emitted with
+check against unit literals (`amount >= 1 U` in `BeforeApply`). A measurement
+unit that only the selected model's types name is emitted with
 its dimension and target closure (FR-094); the library and fixed-sample and
 timestamped-event units no longer need an expression that reads a unit-typed member.
+**R** still refuses at two points, which FR-517-AC-19 and AC-20 state as the
+capabilities the spine must have:
 
 - A model alias has no node and is not a source type name (FR-230), so
   `sum<M::Total>` and `capture targetFull: M::Total` refuse

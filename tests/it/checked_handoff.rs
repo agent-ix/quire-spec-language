@@ -10,7 +10,7 @@ use ix_trace_rs::trace;
 use quire_contract_model::{
     read_checked_package, CheckedNodeKind, CheckedPackageDispatchResult, CheckedPackageEvidence,
     CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCause,
-    CheckedPackageRefusalCode, CheckedPackageV2, ClockConfiguration, ClockExactNumber, JsonPointer,
+    CheckedPackageRefusalCode, CheckedPackageV2, ClockConfiguration, ClockExactNumber,
     ProtocolForm, TemporalForm,
 };
 use quire_spec_language::checked_handoff::{

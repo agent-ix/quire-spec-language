@@ -2569,7 +2569,7 @@ impl<'a> Lowering<'a> {
     /// FR-094: model type references root their declared units independently
     /// of expression reachability. Aliases and container declarations remain
     /// in the admitted record table, so each direct reference is inspected once.
-    pub(super) fn model_type_unit_nodes(
+    pub(in crate::check) fn model_type_unit_nodes(
         &mut self,
         units: &BTreeMap<String, UnitId>,
     ) -> Result<(), CheckRefusal> {
