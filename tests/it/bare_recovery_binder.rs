@@ -55,7 +55,8 @@ fn recipe_with(condition: Option<&str>) -> Recipe {
             "the recipe text is as expected"
         );
         let unit = holder.path().join("unit.native");
-        std::fs::write(&unit, text.replace(FULL_RECOVER, condition)).expect("variant");
+        let text = text.replace(FULL_RECOVER, condition);
+        std::fs::write(&unit, text).expect("variant");
         request.emit.source = unit;
     }
     let out = holder.path().join("handoff");
@@ -456,4 +457,118 @@ fn a_supply_for_an_introduced_binder_is_refused_as_unknown() {
     for counter in quire_exact::LimitKind::ALL {
         assert_eq!(meter.consumed(counter), 0, "{counter:?}");
     }
+}
+
+/// One recover condition of `Full` and the supplies it is evaluated over:
+/// (receipts, target, activated, expected).
+type Supplies = [(&'static [i64], i64, bool, bool)];
+
+fn assert_form(condition: &str, supplies: &Supplies) {
+    let recipe = recipe_with(Some(condition));
+    assert_eq!(source_names(&recipe), FULL_SOURCES, "{condition}");
+    for (receipts, target, activated, expected) in supplies {
+        assert_eq!(
+            holds(recipe.recover("Full", receipts, *target, *activated)),
+            *expected,
+            "{condition} over {receipts:?}, {target}, {activated}"
+        );
+    }
+}
+
+/// Each operation FR-390 rule 3 names, over a well-typed condition: the
+/// introduced binder is no source and the predicate evaluates to its text.
+#[trace("FR-390-AC-68", "TC-1071", "TC-1333")]
+#[test]
+fn forall_binder_is_no_source() {
+    assert_form(
+        "forall(x in recoveredFull.receipts: x <= targetFull) and not activatedFull",
+        &[
+            (&[2, 3], 3, false, true),
+            (&[2, 3], 2, false, false),
+            (&[2, 3], 3, true, false),
+        ],
+    );
+}
+
+#[trace("FR-390-AC-68", "TC-1071", "TC-1333")]
+#[test]
+fn exists_binder_is_no_source() {
+    assert_form(
+        "exists(x in recoveredFull.receipts: x <= targetFull and x >= targetFull) and not activatedFull",
+        &[
+            (&[2, 3], 3, false, true),
+            (&[2, 3], 4, false, false),
+            (&[2, 3], 3, true, false),
+        ],
+    );
+}
+
+#[trace("FR-390-AC-68", "TC-1071", "TC-1333")]
+#[test]
+fn filter_binder_is_no_source() {
+    assert_form(
+        "count<M::Total>(y in filter(x in recoveredFull.receipts: x > 2): true) = targetFull and not activatedFull",
+        &[
+            (&[2, 3, 4], 2, false, true),
+            (&[2, 3, 4], 1, false, false),
+            (&[1, 2], 0, false, true),
+        ],
+    );
+}
+
+#[trace("FR-390-AC-68", "TC-1071", "TC-1333")]
+#[test]
+fn map_binder_is_no_source() {
+    assert_form(
+        "sum<M::Total>(y in map(x in recoveredFull.receipts: x): y) = targetFull and not activatedFull",
+        &[
+            (&[2, 3], 5, false, true),
+            (&[2, 3], 4, false, false),
+            (&[2, 3], 5, true, false),
+        ],
+    );
+}
+
+/// A `case` arm binder in a recover condition: the unit checks, but the
+/// contract reader refuses the package (`BinderScope`: the arm binder is
+/// outside the stage's readable set), so no valid package holds one and the
+/// bare route never sees it. The walk over arm binders is unit-tested in
+/// `introduced_binders`; this pins where the form stops.
+#[trace("FR-390-AC-68", "TC-1071")]
+#[test]
+fn a_case_arm_binder_in_a_recover_condition_is_refused_by_the_contract_reader() {
+    let holder = tempfile::tempdir().expect("directory");
+    let mut request = request("event_position", Corpus::None);
+    let text = std::fs::read_to_string(&request.emit.source).expect("R's unit");
+    let unit = holder.path().join("unit.native");
+    let condition = "let total = (case Shape::Circle(sum<M::Total>(receipt in recoveredFull.receipts: receipt)) { Empty: 0; Circle(r): r; }) in total <= targetFull and total >= targetFull and not activatedFull";
+    std::fs::write(
+        &unit,
+        text.replace(FULL_RECOVER, condition).replace(
+            "model M = \"agent-ix/checked-handoff\";",
+            "model M = \"agent-ix/checked-handoff\";\nunion Shape { Empty, Circle(Integer) }",
+        ),
+    )
+    .expect("variant");
+    request.emit.source = unit;
+    let refused = format!("{:?}", write(&request, &holder.path().join("handoff")));
+    assert!(
+        refused.contains("ReaderRefused") && refused.contains("BinderScope"),
+        "{refused}"
+    );
+}
+
+/// A binder the body never reads is no source and the predicate evaluates
+/// (it is not a refusal), also nested inside another query.
+#[trace("FR-390-AC-68", "TC-1071", "TC-1333")]
+#[test]
+fn a_binder_the_body_never_reads_is_no_source() {
+    assert_form(
+        "count<M::Total>(unused in recoveredFull.receipts: true) = targetFull and not activatedFull",
+        &[(&[2, 3], 2, false, true), (&[2, 3], 3, false, false)],
+    );
+    assert_form(
+        "count<M::Total>(a in recoveredFull.receipts: count<M::Total>(unused in recoveredFull.receipts: true) = 2 and a > 0) = targetFull and not activatedFull",
+        &[(&[2, 3], 2, false, true), (&[2, 3], 3, false, false)],
+    );
 }

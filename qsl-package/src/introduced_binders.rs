@@ -249,3 +249,110 @@ fn own_names(body: &CheckedTerm) -> Vec<&str> {
         Opening::Case(_) | Opening::None => Vec::new(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use ix_trace_rs::trace;
+    use serde_json::{json, Value};
+
+    use super::*;
+
+    fn id(name: &str) -> Value {
+        json!({"ordinal": 0, "package": "p", "path": [name]})
+    }
+
+    fn node(name: &str, tag: &str, form: &str, dependencies: &[&str], body: Value) -> Value {
+        json!({
+            "node_id": id(name),
+            "schema_version": "quire.checked-semantic-graph/v2",
+            "node_tag": tag,
+            "semantic_form": form,
+            "semantic_type": id("type"),
+            "dependencies": dependencies.iter().map(|d| id(d)).collect::<Vec<_>>(),
+            "occurrences": [],
+            "body": body,
+        })
+    }
+
+    fn parameter(name: &str, text: &str) -> Value {
+        let literal = |kind: &str, value: Value| json!({"term": "literal", "type": id("type"), "value": value, "value_kind": kind});
+        node(
+            name,
+            "value",
+            "parameter",
+            &[],
+            json!({"term": "aggregate", "members": [
+                {"term": "binding", "name": "name", "value": literal("text", json!(text))},
+                {"term": "binding", "name": "level", "value": literal("integer", json!("0"))},
+            ]}),
+        )
+    }
+
+    fn reference(name: &str) -> Value {
+        json!({"term": "reference", "target": id(name)})
+    }
+
+    /// The parameter nodes a walk from `root` reaches outside every scope.
+    fn sources(nodes: Vec<Value>, root: &str) -> Vec<String> {
+        let nodes: BTreeMap<CheckedNodeId, CheckedSemanticNodeV2> = nodes
+            .into_iter()
+            .map(|value| {
+                let node: CheckedSemanticNodeV2 = serde_json::from_value(value).expect("a node");
+                (node.node_id.clone(), node)
+            })
+            .collect();
+        let lookup = |id: &CheckedNodeId| nodes.get(id);
+        let mut found = Vec::new();
+        let start: CheckedTerm = serde_json::from_value(reference(root)).expect("a term");
+        reach_term(&lookup, &start, &mut |node| {
+            found.push(
+                crate::reader_protocol_projection::parameter_name(&node.body)
+                    .unwrap_or_default()
+                    .to_owned(),
+            );
+        });
+        found.sort();
+        found
+    }
+
+    /// FR-390 rule 3: the binders of a `case` arm are not sources. The package
+    /// reader admits no arm binder in a protocol slot today, so this walks the
+    /// term directly. The scrutinee `s` and the body's read of `outer` stay
+    /// sources.
+    #[trace("FR-390-AC-68", "TC-1071")]
+    #[test]
+    fn a_case_arm_binder_is_not_a_source() {
+        let arm = json!({"term": "binding", "name": "Circle", "value": {
+            "term": "aggregate",
+            "members": [
+                {"term": "aggregate", "members": [reference("r")]},
+                {"term": "aggregate", "members": [reference("r"), reference("outer")]},
+            ],
+        }});
+        let case = node(
+            "case",
+            "expression",
+            "case",
+            &["s", "r", "outer"],
+            json!({
+                "term": "application",
+                "operator": "case",
+                "operation": {"identity": "quire.op.control.case", "laws": [], "leaves": [], "member": null, "mode": null},
+                "arguments": [reference("s"), arm],
+                "result_type": id("type"),
+            }),
+        );
+        let found = sources(
+            vec![
+                case,
+                parameter("s", "s"),
+                parameter("r", "r"),
+                parameter("outer", "outer"),
+            ],
+            "case",
+        );
+        assert_eq!(found, vec!["outer", "s"]);
+    }
+}
