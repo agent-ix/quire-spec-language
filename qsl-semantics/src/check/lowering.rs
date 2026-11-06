@@ -6631,6 +6631,13 @@ fn is_compound_unit(content: &NodeContent) -> bool {
     content.semantic_form == "compound_unit"
 }
 
+/// Whether `content` is a `composite_type` map. The form is the FR-322 wire
+/// spelling the node was built with.
+#[ix_trace_rs::string_edge]
+fn is_map(content: &NodeContent) -> bool {
+    content.semantic_form == "map"
+}
+
 /// The operand segments of a derived node's path (QSpec FR-322: `[node_tag,
 /// semantic_form, ...operands]`, each operand a string or an operand node's
 /// key). A `reference`, `option` or collection type names its target; a
@@ -6713,14 +6720,12 @@ fn derived_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
                 }) => Some(PathSegment::Node(key.clone())),
                 // A map names its key node then its value node, bound as
                 // `key` and `value` (IR's reader checks both operands).
-                MemberTerm::Binding(binding) if content.semantic_form == "map" => {
-                    match &binding.value {
-                        BindingValue::Leaf(LeafTerm::Reference {
-                            target: NodeRef::Admitted(key),
-                        }) => Some(PathSegment::Node(key.clone())),
-                        _ => None,
-                    }
-                }
+                MemberTerm::Binding(binding) if is_map(content) => match &binding.value {
+                    BindingValue::Leaf(LeafTerm::Reference {
+                        target: NodeRef::Admitted(key),
+                    }) => Some(PathSegment::Node(key.clone())),
+                    _ => None,
+                },
                 _ => None,
             })
             .collect(),
