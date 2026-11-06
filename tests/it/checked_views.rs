@@ -20,7 +20,7 @@ use super::checked_handoff::{admitted, request, tree, KINDS};
 
 /// The package of `kind` and its selection sidecar, as the handoff writer
 /// wrote them and the reader admits them.
-fn recipe_package(kind: &str) -> (Box<CheckedPackageV2>, Value) {
+pub(super) fn recipe_package(kind: &str) -> (Box<CheckedPackageV2>, Value) {
     let holder = tempfile::tempdir().expect("temporary directory");
     let out = holder.path().join("handoff");
     write(&request(kind, Corpus::None), &out).expect("the handoff is written");

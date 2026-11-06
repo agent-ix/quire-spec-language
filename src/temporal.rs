@@ -24,6 +24,7 @@ mod progress;
 mod protocol;
 mod result;
 mod trace;
+mod valuation;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -56,6 +57,9 @@ pub use result::{
 };
 pub use trace::{
     CaptureInput, ClockBinding, Eviction, Evidence, OrderKey, Position, Trace, Trigger,
+};
+pub use valuation::{
+    MissingValuation, ValuationCause, ValuationEvidence, ValuationInstance, ValuationRow,
 };
 
 /// Evaluate one admitted temporal declaration against one caller-supplied trace.
