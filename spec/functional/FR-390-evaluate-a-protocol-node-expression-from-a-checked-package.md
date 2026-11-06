@@ -686,9 +686,8 @@ check with its one record:
    a name, and a scope never nests another of the same name. A binder level is the count of binders readable where its construct is
    entered (FR-383), relative to the slot, so no level orders or identifies an
    introduced binder. A binder the body never reads is introduced and is no
-   source, also when the application lists its node among its dependencies. A
-   `case` arm binder is not a source either; the contract reader does not yet admit
-   an arm binder in a protocol slot (`BinderScope`), so a valid package holds none.
+   source. A `case` arm binder is not a source either; the contract reader does
+   not yet admit an arm binder in a protocol slot (`BinderScope`), so a valid package holds none.
    A key supplied for an introduced binder is a key that is no
    source of the slot and is refused under rule 4.
 4. If one binder key is supplied twice, then admission SHALL refuse
