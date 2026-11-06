@@ -1788,16 +1788,21 @@ fn nominal_term(
                 .map(|member| member.as_str().into())
                 .collect(),
         ),
-        NominalPayload::Dimension(dimension) => NominalBody::try_dimension(
-            dimension
+        // IR #928 made the base flag an explicit argument. This keeps the
+        // pre-#928 wire meaning (a dimension with no terms is a base
+        // dimension) and nothing more; the flag as a modelled fact is
+        // QSL-1766.
+        NominalPayload::Dimension(dimension) => {
+            let terms: Vec<DimensionTerm> = dimension
                 .terms()
                 .iter()
                 .map(|(base, exponent)| DimensionTerm {
                     dimension_node_id: node_id(ids, base),
                     exponent: exponent.to_string().into(),
                 })
-                .collect(),
-        ),
+                .collect();
+            NominalBody::try_dimension(terms.is_empty(), terms)
+        }
         NominalPayload::Unit(unit) => NominalBody::try_unit(
             node_id(ids, unit.dimension()),
             unit.target().map(|key| node_id(ids, key)),
