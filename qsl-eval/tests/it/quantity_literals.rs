@@ -518,6 +518,17 @@ fn bounded_package() -> (CheckedPackage, quire_exact::UnitId, quire_exact::UnitI
                     .expect("bounded source unit"),
                 )),
             ));
+            declarations.aliases.push((
+                "Narrow".into(),
+                ValueType::BoundedQuantity(std::sync::Arc::new(
+                    BoundedQuantityType::new(
+                        unit.clone(),
+                        Some(endpoint(0_i64)),
+                        Some(endpoint(1_i64)),
+                    )
+                    .expect("narrow bounded source unit"),
+                )),
+            ));
             declarations.aliases.extend([
                 ("Length".into(), ValueType::Quantity(unit)),
                 ("Centimetres".into(), ValueType::Quantity(centimetre)),
@@ -561,6 +572,12 @@ fn bounded_package() -> (CheckedPackage, quire_exact::UnitId, quire_exact::UnitI
                     Expression::convert(named("Bounded"), Expression::name("a")),
                 ),
                 function(
+                    "to_narrow",
+                    vec![("a".into(), named("Bounded"))],
+                    named("Narrow"),
+                    Expression::convert(named("Narrow"), Expression::name("a")),
+                ),
+                function(
                     "to_cm",
                     vec![("a".into(), named("Bounded"))],
                     named("Centimetres"),
@@ -577,8 +594,10 @@ fn bounded_package() -> (CheckedPackage, quire_exact::UnitId, quire_exact::UnitI
 #[trace("TC-413", "FR-093-AC-61")]
 #[test]
 fn conversion_to_a_bounded_result_checks_both_inclusive_endpoints() {
+    use qsl_foundation::diagnostic::Locus;
+    use quire_semantic_value::catalog::{CatalogCode, Category};
     use quire_exact::{Integer, Quantity, Rational, Refusal};
-    let (package, _, centimetre) = bounded_package();
+    let (package, metre, centimetre) = bounded_package();
     let call = |centimetres: i64| {
         package
             .call(
@@ -591,27 +610,142 @@ fn conversion_to_a_bounded_result_checks_both_inclusive_endpoints() {
                 &mut Meter::new(UNLIMITED),
             )
             .expect("bounded conversion runs")
-            .outcome
     };
     for (centimetres, metres) in [(0_i64, "0/1"), (150, "3/2"), (200, "2/1")] {
-        match call(centimetres) {
+        match call(centimetres).outcome {
             FamilyOutcome::Evaluated(Outcome::Completed(Value::Quantity(value))) => {
                 assert_eq!(value.magnitude().to_string(), metres);
+                assert_eq!(value.unit(), &metre);
             }
             other => panic!("{centimetres} cm is inside [0, 2] m, got {other:?}"),
         }
     }
     for centimetres in [201_i64, -1] {
-        match call(centimetres) {
-            FamilyOutcome::Evaluated(Outcome::Refused(Refusal::BoundedQuantityOutOfDomain {
-                target,
-            })) => {
-                assert_eq!(target.min().to_string(), "0/1");
-                assert_eq!(target.max().to_string(), "2/1");
-            }
-            other => panic!("{centimetres} cm is outside [0, 2] m, got {other:?}"),
-        }
+        let evaluation = call(centimetres);
+        let location = evaluation
+            .location
+            .clone()
+            .expect("the refusal carries its locus");
+        let FamilyOutcome::Evaluated(Outcome::Refused(refusal)) = &evaluation.outcome else {
+            panic!("{centimetres} cm is outside [0, 2] m, got {:?}", evaluation.outcome);
+        };
+        let Refusal::BoundedQuantityOutOfDomain { target } = refusal else {
+            panic!("expected the bounded quantity refusal, got {refusal:?}");
+        };
+        assert_eq!(target.min().to_string(), "0/1");
+        assert_eq!(target.max().to_string(), "2/1");
+        assert_eq!(target.unit(), &metre);
+        let record = qsl_foundation::diagnostic::kernel_refusal_record(
+            refusal,
+            Some(Locus::Occurrence(location.clone())),
+        )
+        .expect("bounded quantity refusal has a record");
+        assert_eq!(
+            record.code(),
+            CatalogCode::new("rational_out_of_domain", "outside-domain")
+        );
+        assert_eq!(record.category(), Category::Refusal);
+        assert_eq!(record.locus(), Some(&Locus::Occurrence(location)));
     }
+}
+
+#[trace("TC-413", "FR-093-AC-61")]
+#[test]
+fn conversion_between_two_bounded_types_checks_the_target_interval() {
+    use quire_exact::{Integer, Quantity, Rational, Refusal};
+    let (package, metre, _) = bounded_package();
+    let call = |half_metres: i64| {
+        package
+            .call(
+                &QualifiedName::unqualified("to_narrow").expect("function name"),
+                vec![Value::Quantity(Quantity::new(
+                    Rational::new(Integer::from(half_metres), Integer::from(2))
+                        .expect("exact magnitude"),
+                    metre.clone(),
+                ))],
+                &ObjectEnvironment::default(),
+                &mut Meter::new(UNLIMITED),
+            )
+            .expect("bounded to bounded conversion runs")
+            .outcome
+    };
+    match call(2) {
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Quantity(value))) => {
+            assert_eq!(value.magnitude().to_string(), "1/1");
+            assert_eq!(value.unit(), &metre);
+        }
+        other => panic!("1 m is inside [0, 1] m, got {other:?}"),
+    }
+    match call(3) {
+        FamilyOutcome::Evaluated(Outcome::Refused(Refusal::BoundedQuantityOutOfDomain {
+            target,
+        })) => {
+            assert_eq!(target.max().to_string(), "1/1");
+        }
+        other => panic!("3/2 m is outside [0, 1] m, got {other:?}"),
+    }
+}
+
+#[trace("TC-413", "FR-093-AC-61")]
+#[test]
+fn conversion_into_a_bounded_type_from_another_dimension_is_a_type_mismatch() {
+    use quire_exact::{BoundedQuantityType, Integer, PathSegment, Quantity, Rational, ValueType};
+    let refusals = package_with_aliases(
+        "dimension Length; dimension Time; unit m : Length = rational(1, 1); \
+         unit s : Time = rational(1, 1);",
+        |declarations| {
+            use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
+            let unit_table =
+                quire_semantic_value::quantity::UnitTable::declared(&declarations.units);
+            let unit_named = |name: &str| {
+                unit_table
+                    .ids()
+                    .find(|id| {
+                        id.declared_key().is_some_and(|key| {
+                            key.path().last() == Some(&PathSegment::Text(name.to_owned()))
+                        })
+                    })
+                    .expect("source unit")
+            };
+            let metre = unit_named("m");
+            let endpoint = |magnitude| {
+                Quantity::new(
+                    Rational::from_integer(Integer::from(magnitude)),
+                    metre.clone(),
+                )
+            };
+            declarations.aliases.push((
+                "Bounded".into(),
+                ValueType::BoundedQuantity(std::sync::Arc::new(
+                    BoundedQuantityType::new(
+                        metre.clone(),
+                        Some(endpoint(0_i64)),
+                        Some(endpoint(2_i64)),
+                    )
+                    .expect("bounded source unit"),
+                )),
+            ));
+            declarations
+                .aliases
+                .push(("Seconds".into(), ValueType::Quantity(unit_named("s"))));
+            let span = qsl_foundation::Span { start: 0, end: 0 };
+            declarations.functions = vec![FunctionDeclaration::new(
+                "from_seconds",
+                vec![("a".into(), TypeForm::name("Seconds", span))],
+                TypeForm::name("Bounded", span),
+                None,
+                Expression::convert(TypeForm::name("Bounded", span), Expression::name("a")),
+            )];
+        },
+    )
+    .expect_err("a time quantity does not convert into a length bound");
+    assert!(
+        refusals.iter().any(|refusal| matches!(
+            &refusal.cause,
+            CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+        )),
+        "refused as a type mismatch: {refusals:?}"
+    );
 }
 
 #[trace("TC-413", "FR-093-AC-61")]

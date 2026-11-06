@@ -292,7 +292,6 @@ fn completed(evaluation: Evaluation) -> Result<Value, Box<Evaluation>> {
     }
 }
 
-/// A QSL-owned invariant at its detecting producer (FR-090).
 /// The inclusive exact result interval of a bounded quantity type; a type
 /// with an open endpoint never reaches evaluation, as `check` refuses it.
 fn bounded_result_interval(bounded: &BoundedQuantityType) -> Result<QuantityResultInterval, Halt> {
@@ -306,6 +305,7 @@ fn bounded_result_interval(bounded: &BoundedQuantityType) -> Result<QuantityResu
     ))
 }
 
+/// A QSL-owned invariant at its detecting producer (FR-090).
 fn invariant(identifier: &'static str) -> Halt {
     Halt::Fault(InternalFault::new("S6a", identifier))
 }
@@ -3001,16 +3001,20 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     )?;
                     // QSpec FR-322-AC-384: a bounded result checks the exact
                     // converted magnitude against both inclusive endpoints.
-                    if let (ValueType::BoundedQuantity(bounded), Value::Quantity(quantity)) =
-                        (target_type, &converted)
-                    {
-                        let interval = bounded_result_interval(bounded)?;
-                        let admitted =
-                            admit_quantity_result(quantity.clone(), &interval, self.meter)
-                                .map_err(|_| invariant("bounded-quantity-result-unit-mismatch"))?;
-                        Value::Quantity(outcome_into_stop(admitted)?)
-                    } else {
-                        converted
+                    match (target_type, converted) {
+                        (ValueType::BoundedQuantity(bounded), Value::Quantity(quantity)) => {
+                            let interval = bounded_result_interval(bounded)?;
+                            let admitted =
+                                admit_quantity_result(quantity, &interval, self.meter)
+                                    .map_err(|_| {
+                                        invariant("bounded-quantity-result-unit-mismatch")
+                                    })?;
+                            Value::Quantity(outcome_into_stop(admitted)?)
+                        }
+                        (ValueType::BoundedQuantity(_), _) => {
+                            return Err(invariant("bounded-quantity-conversion-quantity-expected"));
+                        }
+                        (_, converted) => converted,
                     }
                 }
             }
