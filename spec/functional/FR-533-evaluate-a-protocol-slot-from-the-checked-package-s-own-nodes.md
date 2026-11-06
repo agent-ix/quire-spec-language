@@ -273,7 +273,7 @@ Contract IR's selected-record projection carries a record's members whether they
 plain, Optional, Collection members (kind and cardinality bound intact) or
 Collections of Options and Options of Collections, so the bare route reads each
 member's type and presence from the package and evaluates slots over such records as
-the in-process route does. A node that reads a Collection member has the Collection as its type: the bare route reads its cardinality bound from the bounds node, its kind and element from the collection type node, and types the element as Contract IR types a node of that element type, so a query over the member evaluates as the in-process route does. A shape Contract IR cannot carry keeps the refusal, and Contract IR's criteria give
+the in-process route does. A node that reads a Collection member has the Collection as its type: the bare route reads its cardinality bound from the bounds node, its kind and element from the collection type node, and types the element as Contract IR types a node of that element type, so a query over the member evaluates as the in-process route does. A record whose member names a scalar that Contract IR cannot resolve, such as a source-owned unit reached through a model alias, is not typed as that scalar: the failure is inside the record, and a slot that reads the record refuses `MissingTypeRepresentation`. A shape Contract IR cannot carry keeps the refusal, and Contract IR's criteria give
 no positive case for an optional member typed by an Option or for an Option nested in
 an Option through aliases; such a shape is an unmet dependency, not a scope reduction
 (FR-390).
