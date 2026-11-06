@@ -90,6 +90,8 @@ impl BarePackage<'_> {
                 continue;
             };
             let mut ordered_fields: Vec<_> = view.fields().iter().collect();
+            // The MODEL binding list is authored order; runtime record
+            // slots use the original declaration-key order on both routes.
             ordered_fields.sort_by(|left, right| left.ir_identity().cmp(right.ir_identity()));
             let fields = ordered_fields
                 .into_iter()

@@ -335,10 +335,12 @@ fn document_bag() -> serde_json::Value {
         }
         field
     };
+    let mut options = field("options", false, true);
+    options["typeRef"] = json!(model::id("MaybeTally"));
     let bag = model::declaration(
         "Bag",
         "record",
-        json!({"fields": [field("items", false, true), field("one", true, false), field("maybe", true, true)]}),
+        json!({"fields": [field("items", false, true), field("one", true, false), field("maybe", true, true), options]}),
     );
     let types = doc["types"].as_array_mut().unwrap();
     let receipt = types
@@ -351,6 +353,9 @@ fn document_bag() -> serde_json::Value {
         &model::id("Bag"),
     ));
     types.push(bag);
+    types.push(json!({
+        "identity": model::id("MaybeTally"), "kind": "option", "inner": model::id("Tally")
+    }));
     doc
 }
 
@@ -435,6 +440,7 @@ fn records_with_option_and_collection_members_project_on_the_bytes_route() {
             ("items".to_owned(), quire_exact::Presence::Required),
             ("maybe".to_owned(), quire_exact::Presence::Optional),
             ("one".to_owned(), quire_exact::Presence::Optional),
+            ("options".to_owned(), quire_exact::Presence::Required),
         ]
     );
     bare.project_protocol_slot(&selected)
@@ -458,10 +464,21 @@ fn records_with_option_and_collection_members_project_on_the_bytes_route() {
         let maybe = quire_exact::from_admitted(
             CollectionType::new(
                 CollectionKind::Sequence,
-                tally,
+                tally.clone(),
                 Some(CardinalityBound::new(0, 3).expect("bound")),
             ),
             vec![int(3)],
+        );
+        let options = quire_exact::from_admitted(
+            CollectionType::new(
+                CollectionKind::Sequence,
+                ValueType::Option(std::sync::Arc::new(tally.clone())),
+                Some(CardinalityBound::new(0, 3).expect("bound")),
+            ),
+            vec![
+                quire_exact::OptionValue::present(tally.clone(), int(1)).expect("some tally"),
+                quire_exact::OptionValue::none(tally),
+            ],
         );
         let find = |name: &str| {
             types
@@ -477,6 +494,7 @@ fn records_with_option_and_collection_members_project_on_the_bytes_route() {
                     ("items", FieldValue::Present(items)),
                     ("one", FieldValue::Present(int(2))),
                     ("maybe", FieldValue::Present(maybe)),
+                    ("options", FieldValue::Present(options)),
                 ],
             )
             .expect("bag");
@@ -667,7 +685,7 @@ fn assert_pristine(meter: &Meter) {
 /// The in-process reader view's `UnsupportedView` half of FR-390-AC-66 is not
 /// asserted here; the `Package` locus of `UnsupportedView` is covered by the
 /// qsl-package order test and the remainder is open.
-#[trace("FR-533-AC-15", "FR-390-AC-66", "FR-531-AC-5", "TC-1333", "TC-1331")]
+#[trace("TC-1333", "TC-1331", "FR-533-AC-15", "FR-531-AC-5")]
 #[test]
 fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
     let package = fixture();

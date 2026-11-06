@@ -377,11 +377,168 @@ fn renamed_origins_are_taken_in_numeric_order_not_byte_order() {
     assert_eq!(origin("cases.guard", 0), want("1001..1002"));
 }
 
+fn binding_mut<'a>(group: &'a mut Value, name: &str) -> &'a mut Value {
+    &mut group["members"]
+        .as_array_mut()
+        .expect("group members")
+        .iter_mut()
+        .find(|binding| binding["name"] == name)
+        .expect("named binding")["value"]
+}
+
+/// Two genuine case slots share a walk only in this admitted package copy:
+/// the source checker correctly refuses identical exhaustive guards.
+#[trace("TC-1333", "FR-533-AC-13")]
+#[test]
+fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
+    use qsl_eval::value::{CheckedPackageEvaluation, ProtocolSlot, ProtocolSlotEvaluation};
+    let (_holder, request, files) = handoff(tc1070::SOURCE);
+    for labels_follow_source in [false, true] {
+        let mut wire: Value =
+            serde_json::from_slice(&files["checked-package.json"]).expect("package");
+        let nodes = wire["semantic_graph"]["nodes"]
+            .as_array_mut()
+            .expect("nodes");
+        let decide = nodes
+            .iter_mut()
+            .find(|node| {
+                node["declaration"]["qualified_name"]
+                    == serde_json::json!(["Pipeline", "run", "Main", "Decide"])
+            })
+            .expect("choice");
+        let cases = &mut decide["body"]["arguments"]
+            .as_array_mut()
+            .expect("arguments")
+            .iter_mut()
+            .find(|binding| binding["name"] == "cases")
+            .expect("cases")["value"]["members"];
+        let cases = cases.as_array_mut().expect("case groups");
+        let root = binding_mut(&mut cases[1], "guard")["target"].clone();
+        let removed = binding_mut(&mut cases[0], "guard")["target"].clone();
+        binding_mut(&mut cases[0], "guard")["target"] = root;
+        if labels_follow_source {
+            binding_mut(&mut cases[0], "label")["value"] = "b".into();
+            binding_mut(&mut cases[1], "label")["value"] = "a".into();
+            cases.swap(0, 1);
+        }
+        let body_order: Vec<_> = cases
+            .iter_mut()
+            .map(|case| {
+                binding_mut(case, "body")["target"]["path"]
+                    .as_array()
+                    .expect("body path")
+                    .last()
+                    .expect("body name")
+                    .clone()
+            })
+            .collect();
+        assert_eq!(
+            body_order,
+            if labels_follow_source {
+                serde_json::json!(["A", "B"])
+            } else {
+                serde_json::json!(["B", "A"])
+            }
+            .as_array()
+            .expect("body names")
+            .clone()
+        );
+        decide["dependencies"]
+            .as_array_mut()
+            .expect("dependencies")
+            .retain(|id| *id != removed);
+        nodes.retain(|node| node["node_id"] != removed);
+        wire["source_map"]
+            .as_array_mut()
+            .expect("source map")
+            .retain(|row| row["node_id"] != removed);
+        let rows = wire["checked_term_data"]["protocol_locations"]
+            .as_array_mut()
+            .expect("locations");
+        rows.retain(|row| row["application"] != removed);
+        for row in rows
+            .iter_mut()
+            .filter(|row| origin_name(row).starts_with(DECISION))
+        {
+            row["location"]["path"] = serde_json::json!([]);
+        }
+        let package = read(&request, &serde_json::to_vec(&wire).expect("bytes"));
+        let identities =
+            ReadIdentityRows::read(&files["identities.json"], &package).expect("identities");
+        let bare = BarePackage::new(&package).with_supply(BareSupply {
+            identities: &identities,
+            equality: None,
+        });
+        let world = bare.world().expect("world");
+        let got = record(
+            world.types(),
+            "Flag",
+            vec![("ready", quire_exact::Value::Boolean(true))],
+        );
+        let mut charges = Vec::new();
+        for (index, span) in [(0, "2676..2685"), (1, "2735..2748")] {
+            let slot = ProtocolSlot {
+                node: node_key(&package, "Pipeline", "Decide"),
+                member: "cases.guard".into(),
+                index: Some(index),
+            };
+            let selected = bare
+                .select_protocol_slot(&ProtocolSlotDescriptor::new(
+                    slot.node.clone(),
+                    slot.member.clone(),
+                    slot.index,
+                ))
+                .expect("tied slot selects");
+            assert_eq!(
+                selected.origin(),
+                Some(format!("{DECISION}{span}").as_str())
+            );
+            let supply = supply_of(&selected, vec![("got", got.clone())]);
+            let mut meter = quire_exact::Meter::new(UNLIMITED);
+            let result = bare.evaluate_protocol_slot(&slot, &supply, &mut meter);
+            let Ok(ProtocolSlotEvaluation::Evaluated(evaluation, binder_charges)) = &result else {
+                panic!("evaluates: {result:?}");
+            };
+            assert_eq!(evaluation.location, None, "a completed evaluation has no stop location");
+            let projection = bare.project_protocol_slot(&selected).expect("projects");
+            let expected_location = quire_semantic_value::location::Location::at(
+                quire_semantic_value::location::Origin::TypeDeclaration {
+                    name: format!("{DECISION}{span}")
+                },
+                &[],
+            );
+            assert_eq!(
+                projection.location(projection.root()),
+                Some(&expected_location),
+                "the visit retains its exact paired location"
+            );
+            charges.push((
+                format!("{binder_charges:?}"),
+                meter.admitted_charges().to_vec(),
+            ));
+            assert!(is_boolean(&completed(result), true));
+            let mut limits = UNLIMITED;
+            limits.work_units = 0;
+            let mut limited = quire_exact::Meter::new(limits);
+            let stopped = bare.evaluate_protocol_slot(&slot, &supply, &mut limited);
+            let Ok(ProtocolSlotEvaluation::Evaluated(evaluation, _)) = stopped else {
+                panic!("the limited call returns an evaluation");
+            };
+            assert!(matches!(evaluation.outcome, quire_eval::FamilyOutcome::Evaluated(quire_exact::Outcome::Incomplete(_))));
+            assert_eq!(evaluation.location, Some(expected_location), "the actual stopped call reports the exchanged location");
+        }
+        assert_eq!(
+            charges[0], charges[1],
+            "origin pairing does not change ordered charges"
+        );
+    }
+}
+
 /// FR-533-AC-14 (missing candidate half): with the first origin's rows
 /// removed, `visible[0]` (rank 0, one candidate) takes the second origin and
 /// `cases.guard[1]` (rank 1, none) refuses `MissingLocationProjection` at the
 /// `Node` locus of the `got.ready` application.
-#[trace("FR-533-AC-14", "TC-1333")]
+#[trace("TC-1333", "FR-533-AC-14")]
 #[test]
 fn a_slot_whose_rank_exceeds_its_candidates_refuses_missing_location_projection() {
     use qsl_package::UnsupportedReason;
@@ -409,6 +566,47 @@ fn a_slot_whose_rank_exceeds_its_candidates_refuses_missing_location_projection(
     };
     assert_eq!(view.locus().key(), Some(&missing.application));
     assert_eq!((missing.rows, missing.index), (0, 0));
+
+    // The public call must propagate the same view refusal before supply
+    // admission or the first scalar charge.
+    use qsl_eval::value::{CheckedPackageEvaluation, ProtocolSlot, ProtocolSupply};
+    let identities = ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
+    let bare = BarePackage::new(&package).with_supply(BareSupply {
+        identities: &identities,
+        equality: None,
+    });
+    let slot = ProtocolSlot {
+        node: node_key(&package, "Pipeline", "Decide"),
+        member: "cases.guard".into(),
+        index: Some(1),
+    };
+    let mut meter = quire_exact::Meter::new(UNLIMITED);
+    let result = bare.evaluate_protocol_slot(
+        &slot,
+        &ProtocolSupply {
+            binders: Vec::new(),
+            observation: None,
+        },
+        &mut meter,
+    );
+    let Err(quire_eval::CallFailure::Admission(refusal)) = result else {
+        panic!("missing candidate refuses at the call: {result:?}");
+    };
+    let quire_eval::CallAdmissionFailure::Refused(refused) = *refusal else {
+        panic!("a projection refusal");
+    };
+    assert_eq!(
+        refused.locus,
+        quire_eval::CallAdmissionLocus::Node(missing.application.clone())
+    );
+    assert_eq!(
+        refused.record.fields.get("reason").map(String::as_str),
+        Some("missing-location-projection")
+    );
+    for counter in quire_exact::LimitKind::ALL {
+        assert_eq!(meter.consumed(counter), 0, "{counter:?}");
+    }
+    assert!(meter.admitted_charges().is_empty());
 }
 
 /// FR-390-AC-65 (selection level): a slot is named by (control node, member,
