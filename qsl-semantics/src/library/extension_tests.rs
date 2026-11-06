@@ -71,7 +71,6 @@ fn missing(document: &Value) -> MissingMember {
     }
 }
 
-#[trace("TC-883", "QSpec-FR-467-AC-1")]
 #[test]
 fn a_valid_extension_is_held_with_its_productions_joined_to_node_entries() {
     let held = hold(
@@ -395,7 +394,7 @@ fn only_the_first_violated_rule_is_reported() {
     assert_eq!(refusal.cause(), ExtensionCause::ConflictingDefinition);
 }
 
-#[trace("TC-883", "FR-354-AC-3")]
+#[trace("TC-883")]
 #[test]
 fn only_selected_extensions_are_validated_and_held() {
     // An unselected invalid definition neither refuses nor is held.
@@ -411,7 +410,205 @@ fn only_selected_extensions_are_validated_and_held() {
     .unwrap();
     assert_eq!(held.len(), 1);
     assert!(held.get(&reference("ext.b")).is_none());
+}
 
+#[trace("TC-491", "FR-111-AC-2")]
+#[test]
+fn a_selection_the_catalog_lacks_refuses_unknown_profile() {
     let refusal = hold(vec![], &["ext.a"]).unwrap_err();
+    assert_eq!(
+        refusal,
+        ExtensionRefusal::UnsupportedSelection(reference("ext.a"))
+    );
+    assert_eq!(refusal.code(), Code::UnknownProfile);
+    assert_eq!(refusal.cause().as_str(), "unsupported-selection");
+
+    // The identity under another authority names nothing.
+    let other = DefinitionRef::new("other", "ext.a").unwrap();
+    let catalog = DefinitionCatalog::new(vec![extension(
+        "ext.a",
+        &[],
+        &retention("retention", "retention"),
+    )])
+    .unwrap();
+    let refusal = catalog
+        .hold_extensions(std::slice::from_ref(&other), &core())
+        .unwrap_err();
+    assert_eq!(refusal, ExtensionRefusal::UnsupportedSelection(other));
+}
+
+#[trace("TC-491", "FR-111-AC-3")]
+#[test]
+fn one_identity_selected_under_two_authorities_refuses_ambiguous_declaration() {
+    let other = DefinitionRef::new("other", "ext.a").unwrap();
+    let catalog = DefinitionCatalog::new(vec![extension(
+        "ext.a",
+        &[],
+        &retention("retention", "retention"),
+    )])
+    .unwrap();
+    let refusal = catalog
+        .hold_extensions(&[reference("ext.a"), other.clone()], &core())
+        .unwrap_err();
+    assert_eq!(
+        refusal,
+        ExtensionRefusal::ConflictingAuthority {
+            first: reference("ext.a"),
+            second: other
+        }
+    );
+    assert_eq!(refusal.code(), Code::AmbiguousDeclaration);
+    assert_eq!(refusal.cause().as_str(), "conflicting-authority");
+}
+
+#[trace("TC-491", "FR-111-AC-2")]
+#[test]
+fn a_dependency_edge_to_an_absent_definition_refuses_missing_import() {
+    let refusal = hold(
+        vec![extension(
+            "ext.a",
+            &["ext.gone"],
+            &retention("alpha", "kind_a"),
+        )],
+        &["ext.a"],
+    )
+    .unwrap_err();
+    assert_eq!(
+        refusal,
+        ExtensionRefusal::MissingDependency {
+            dependent: reference("ext.a"),
+            dependency: reference("ext.gone")
+        }
+    );
     assert_eq!(refusal.code(), Code::MissingImport);
+    assert_eq!(refusal.cause().as_str(), "missing-selection");
+}
+
+#[trace("TC-883", "QSpec-FR-467-AC-6")]
+#[test]
+fn a_duplicate_node_entry_lacking_a_member_is_rule_one_not_rule_two() {
+    let mut document = retention("alpha", "kind_a");
+    let mut duplicate = document["typed_node_schema"]["nodes"][0].clone();
+    duplicate.as_object_mut().unwrap().remove("node_kind");
+    document["typed_node_schema"]["nodes"]
+        .as_array_mut()
+        .unwrap()
+        .push(duplicate);
+    assert_eq!(
+        missing(&document),
+        MissingMember::NodeKind {
+            keyword: "alpha".into()
+        }
+    );
+
+    let mut document = retention("alpha", "kind_a");
+    let mut duplicate = document["typed_node_schema"]["nodes"][0].clone();
+    duplicate["clauses"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("type");
+    document["typed_node_schema"]["nodes"]
+        .as_array_mut()
+        .unwrap()
+        .push(duplicate);
+    assert_eq!(
+        missing(&document),
+        MissingMember::ClauseType {
+            keyword: "alpha".into(),
+            clause: "days".into()
+        }
+    );
+}
+
+#[trace("TC-883", "QSpec-FR-467-AC-6")]
+#[test]
+fn a_rule_one_violation_in_a_later_definition_beats_a_rule_two_one_in_an_earlier() {
+    let mut broken = retention("beta", "kind_b");
+    broken.as_object_mut().unwrap().remove("typed_node_schema");
+    let refusal = hold(
+        vec![
+            extension("ext.a", &[], &retention("function", "kind_a")),
+            extension("ext.b", &[], &broken),
+        ],
+        &["ext.a", "ext.b"],
+    )
+    .unwrap_err();
+    assert_eq!(refusal.cause(), ExtensionCause::MissingMember);
+}
+
+#[trace("TC-883", "FR-354-AC-3")]
+#[test]
+fn keyword_and_clause_name_members_and_unparseable_bytes_are_missing_members() {
+    let mut no_keyword = retention("retention", "retention");
+    no_keyword["grammar_schema"]["productions"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("keyword");
+    assert_eq!(
+        missing(&no_keyword),
+        MissingMember::ProductionKeyword { index: 0 }
+    );
+
+    let mut production_clause = retention("retention", "retention");
+    production_clause["grammar_schema"]["productions"][0]["clauses"][1] = json!("");
+    assert_eq!(
+        missing(&production_clause),
+        MissingMember::ProductionClauseName {
+            keyword: "retention".into(),
+            index: 1
+        }
+    );
+
+    let mut entry_clause = retention("retention", "retention");
+    entry_clause["typed_node_schema"]["nodes"][0]["clauses"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("name");
+    // Production clause `days` has no entry first.
+    assert_eq!(
+        missing(&entry_clause),
+        MissingMember::ClauseEntry {
+            keyword: "retention".into(),
+            clause: "days".into()
+        }
+    );
+    let mut entry_clause = retention("retention", "retention");
+    entry_clause["typed_node_schema"]["nodes"][0]["clauses"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"type": "Text"}));
+    assert_eq!(
+        missing(&entry_clause),
+        MissingMember::EntryClauseName {
+            keyword: "retention".into(),
+            index: 2
+        }
+    );
+
+    let mut keywordless = retention("retention", "retention");
+    keywordless["typed_node_schema"]["nodes"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"node_kind": "orphan", "clauses": []}));
+    assert_eq!(
+        missing(&keywordless),
+        MissingMember::EntryKeyword { index: 1 }
+    );
+
+    let unparseable = Definition::from_exact_bytes(
+        &READER_AUTHORITY,
+        "agent-ix",
+        "ext.a",
+        DefinitionRole::Source,
+        BTreeSet::new(),
+        BTreeSet::new(),
+        b"{not json",
+    )
+    .unwrap();
+    match hold(vec![unparseable], &["ext.a"]).unwrap_err() {
+        ExtensionRefusal::MissingMember { member, .. } => {
+            assert_eq!(member, MissingMember::GrammarSchema)
+        }
+        other => panic!("expected missing-member, got {other:?}"),
+    }
 }
