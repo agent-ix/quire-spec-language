@@ -790,9 +790,25 @@ fn assert_case_arm_union(unrelated: bool) {
         let source_result = source
             .evaluate_protocol_slot(&source_slot, &supply, &mut source_meter)
             .expect("the source evaluates");
+        let bare_supply = ProtocolSupply {
+            binders: values
+                .iter()
+                .map(|(name, value)| {
+                    let binder = selected
+                        .sources()
+                        .iter()
+                        .find(|source| source.name() == *name)
+                        .expect("a caller source on the bare route")
+                        .binder()
+                        .clone();
+                    (binder, SuppliedValue::Value(value.clone()).into())
+                })
+                .collect(),
+            observation: None,
+        };
         let mut bare_meter = Meter::new(UNLIMITED);
         let bare_result = bare
-            .evaluate_protocol_slot(&bare_slot, &supply, &mut bare_meter)
+            .evaluate_protocol_slot(&bare_slot, &bare_supply, &mut bare_meter)
             .expect("the bare route constructs and matches the source union");
         let qsl_eval::value::ProtocolSlotEvaluation::Evaluated(bare_evaluation, _) = bare_result
         else {
@@ -815,7 +831,7 @@ fn assert_case_arm_union(unrelated: bool) {
         );
         let mut missing_meter = Meter::new(UNLIMITED);
         let failure = missing_union
-            .evaluate_protocol_slot(&bare_slot, &supply, &mut missing_meter)
+            .evaluate_protocol_slot(&bare_slot, &bare_supply, &mut missing_meter)
             .expect_err("a union without its original declaration projection refuses");
         let quire_eval::CallFailure::Admission(failure) = failure else {
             panic!("the missing projection refuses during admission")
