@@ -32,6 +32,8 @@ impl Schemas {
         let package: Value = serde_json::from_slice(&bytes).map_err(|error| {
             crate::error::Error::QualificationRefusal(format!("{}: {error}", path.display()))
         })?;
+        let mut corpus = corpus.clone();
+        guard_witness_alternatives(&mut corpus);
         let compile = |name| {
             jsonschema::JSONSchema::options()
                 .with_draft(jsonschema::Draft::Draft202012)
@@ -45,6 +47,37 @@ impl Schemas {
             replay: compile("ReplayRequest")?,
         })
     }
+}
+
+/// Guard recursive alternatives by a discriminator the published schema
+/// already requires. Each original arm implies its guard, so this preserves
+/// oneOf's accepted documents and multiplicity while avoiding traversal of
+/// unrelated collection arms when a deep value has an invalid leaf.
+fn guard_witness_alternatives(corpus: &mut Value) -> usize {
+    let Some(alternatives) = corpus
+        .pointer_mut("/$defs/WitnessValue/oneOf")
+        .and_then(Value::as_array_mut)
+    else {
+        return 0;
+    };
+    let mut guarded = 0;
+    for arm in alternatives {
+        if arm.get("type").and_then(Value::as_str) != Some("object")
+            || !arm
+                .get("required")
+                .and_then(Value::as_array)
+                .is_some_and(|members| members.iter().any(|member| member == "kind"))
+        {
+            continue;
+        }
+        let Some(kind) = arm.pointer("/properties/kind").cloned() else {
+            continue;
+        };
+        let original = std::mem::replace(arm, Value::Null);
+        *arm = json!({"if":{"type":"object", "required":["kind"], "properties":{"kind":kind}}, "then":original, "else":false});
+        guarded += 1;
+    }
+    guarded
 }
 
 #[derive(Serialize)]
@@ -193,7 +226,13 @@ fn document(bytes: &[u8], schema: &jsonschema::JSONSchema) -> Result<Value, Fail
                     pointer.push_str(property);
                 }
             }
-            return Err(Failure::decode(pointer, error.to_string()));
+            return Err(Failure::decode(
+                pointer,
+                format!(
+                    "input does not match the published schema at {}",
+                    error.schema_path
+                ),
+            ));
         }
     }
     Ok(value.into_inner())
@@ -232,10 +271,6 @@ fn object<'a>(
     value
         .as_object()
         .ok_or_else(|| Failure::decode(pointer, "expected an object"))
-}
-
-fn encode(value: impl Serialize) -> Result<Vec<u8>, Failure> {
-    serde_json::to_vec(&value).map_err(|error| Failure::decode("", error.to_string()))
 }
 
 fn from_document(document: OutcomeDocument, actual: Option<Value>) -> Result<Execution, Failure> {
@@ -739,5 +774,78 @@ fn call_value(
             ))
         }
         _ => Err(Failure::decode(pointer, "unknown corpus input value")),
+    }
+}
+
+#[cfg(test)]
+mod schema_tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    #[test]
+    #[trace("TC-1325", "FR-350-AC-11", "FR-350-AC-14")]
+    fn required_kind_guards_preserve_published_witness_admission_and_oneof_ambiguity() {
+        let qspec = std::env::var_os("QSPEC_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .ancestors()
+                    .map(|parent| parent.join("quire-specification"))
+                    .find(|path| path.is_dir())
+                    .unwrap()
+            });
+        let original: Value = serde_json::from_slice(
+            &fs::read(qspec.join("proposals/conformance-corpus-v1/schema.json")).unwrap(),
+        )
+        .unwrap();
+        let mut guarded = original.clone();
+        let alternatives = original["$defs"]["WitnessValue"]["oneOf"]
+            .as_array()
+            .unwrap()
+            .len();
+        assert_eq!(guard_witness_alternatives(&mut guarded), alternatives);
+        let compile = |schema| {
+            jsonschema::JSONSchema::options()
+                .with_draft(jsonschema::Draft::Draft202012)
+                .with_document("urn:quire:conformance-corpus:v1".to_owned(), schema)
+                .compile(&json!({"$ref":"urn:quire:conformance-corpus:v1#/$defs/WitnessValue"}))
+                .unwrap()
+        };
+        let original = compile(original);
+        let guarded = compile(guarded);
+        for value in [
+            Value::Null,
+            json!(true),
+            json!({}),
+            json!({"kind":"boolean", "value":true}),
+            json!({"kind":"boolean", "value":"true"}),
+            json!({"kind":"integer", "decimal":"9007199254740993"}),
+            json!({"kind":"sequence", "elements":[]}),
+            json!({"kind":"sequence", "elements":[{"kind":"boolean", "value":true}]}),
+            json!({"kind":"sequence", "elements":[{"kind":"boolean", "value":"invalid"}]}),
+            json!({"kind":"option", "value":null}),
+            json!({"kind":"option", "value":{"kind":"boolean", "value":false}}),
+            json!({"kind":"set", "elements":[], "extra":true}),
+            json!({"kind":"unknown", "elements":[]}),
+            json!({"elements":[]}),
+        ] {
+            assert_eq!(
+                original.is_valid(&value),
+                guarded.is_valid(&value),
+                "{value}"
+            );
+        }
+        let arm =
+            json!({"type":"object", "required":["kind"], "properties":{"kind":{"const":"same"}}});
+        let mut ambiguous = json!({"$defs":{"WitnessValue":{"oneOf":[arm.clone(), arm]}}});
+        let unguarded = compile(ambiguous.clone());
+        assert_eq!(guard_witness_alternatives(&mut ambiguous), 2);
+        let guarded = compile(ambiguous);
+        let value = json!({"kind":"same"});
+        assert!(!unguarded.is_valid(&value));
+        assert!(
+            !guarded.is_valid(&value),
+            "guards must not select the first matching arm"
+        );
     }
 }

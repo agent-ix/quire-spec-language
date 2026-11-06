@@ -9,7 +9,7 @@ use std::path::{Component, Path, PathBuf};
 
 use qsl_foundation::diagnostic::Code;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use crate::error::{Error, Result};
 use crate::Outcome;
@@ -211,18 +211,90 @@ struct InputFile {
     path: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(tag = "disposition", rename_all = "snake_case")]
 enum Expected {
     Value {
-        value: Value,
+        value: DeepValue,
     },
     Refusal {
         code: String,
         cause: String,
-        #[serde(default)]
-        details: Map<String, Value>,
+        details: DeepValue,
     },
+}
+
+impl<'de> Deserialize<'de> for Expected {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = Expected;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a closed expected disposition")
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> std::result::Result<Self::Value, A::Error> {
+                let mut disposition = None;
+                let mut value = None;
+                let mut code = None;
+                let mut cause = None;
+                let mut details = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "disposition" if disposition.is_none() => {
+                            disposition = Some(map.next_value::<String>()?)
+                        }
+                        "value" if value.is_none() => value = Some(map.next_value::<DeepValue>()?),
+                        "code" if code.is_none() => code = Some(map.next_value::<String>()?),
+                        "cause" if cause.is_none() => cause = Some(map.next_value::<String>()?),
+                        "details" if details.is_none() => {
+                            let value = map.next_value::<DeepValue>()?;
+                            if !value.is_object() {
+                                return Err(serde::de::Error::custom(
+                                    "refusal details is an object",
+                                ));
+                            }
+                            details = Some(value);
+                        }
+                        "disposition" | "value" | "code" | "cause" | "details" => {
+                            return Err(serde::de::Error::custom(
+                                "duplicate expected-disposition member",
+                            ))
+                        }
+                        _ => {
+                            return Err(serde::de::Error::unknown_field(
+                                &key,
+                                &["disposition", "value", "code", "cause", "details"],
+                            ))
+                        }
+                    }
+                }
+                match disposition.as_deref() {
+                    Some("value") if code.is_none() && cause.is_none() && details.is_none() => {
+                        Ok(Expected::Value {
+                            value: value.ok_or_else(|| serde::de::Error::missing_field("value"))?,
+                        })
+                    }
+                    Some("refusal") if value.is_none() => Ok(Expected::Refusal {
+                        code: code.ok_or_else(|| serde::de::Error::missing_field("code"))?,
+                        cause: cause.ok_or_else(|| serde::de::Error::missing_field("cause"))?,
+                        details: details.unwrap_or_else(|| DeepValue::new(serde_json::json!({}))),
+                    }),
+                    None => Err(serde::de::Error::missing_field("disposition")),
+                    _ => Err(serde::de::Error::custom(
+                        "invalid expected disposition members",
+                    )),
+                }
+            }
+        }
+        deserializer.deserialize_map(Visitor)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -251,7 +323,7 @@ struct VectorReport {
     id: String,
     outcome: VectorOutcome,
     expected: Expected,
-    actual: Value,
+    actual: DeepValue,
 }
 
 #[derive(Debug, Serialize)]
@@ -351,12 +423,20 @@ pub fn execute_with_qspec(qspec: &Path, operands: &[OsString]) -> Result<Executi
     let corpus_bytes = fs::read(&corpus_path).map_err(|error| {
         Error::QualificationRefusal(format!("{}: {error}", corpus_path.display()))
     })?;
-    let value = parse_unique_json(&corpus_bytes).map_err(|reason| {
+    let value = DeepValue::new(parse_unique_json(&corpus_bytes).map_err(|reason| {
         Error::QualificationRefusal(format!("{}: {reason}", corpus_path.display()))
-    })?;
-    let canonical = serde_json_canonicalizer::to_vec(&value).map_err(|error| {
+    })?);
+    let document = quire_canonical::read(
+        &corpus_bytes,
+        u64::try_from(corpus_bytes.len()).unwrap_or(u64::MAX),
+    )
+    .map_err(|error| {
         Error::QualificationRefusal(format!("{}: canonicalize: {error}", corpus_path.display()))
     })?;
+    let canonical = quire_canonical::to_vec(&document, quire_canonical::Limits::new(u64::MAX))
+        .map_err(|error| {
+            Error::QualificationRefusal(format!("{}: canonicalize: {error}", corpus_path.display()))
+        })?;
     if canonical != corpus_bytes {
         return Err(Error::QualificationRefusal(format!(
             "{} is not canonical JSON",
@@ -365,14 +445,23 @@ pub fn execute_with_qspec(qspec: &Path, operands: &[OsString]) -> Result<Executi
     }
     if let Err(errors) = schema.validate(&value) {
         let reasons = errors
-            .map(|error| format!("{}: {}", error.instance_path, error))
+            .map(|error| {
+                format!(
+                    "{}: fails schema {}",
+                    error.instance_path, error.schema_path
+                )
+            })
             .collect::<Vec<_>>()
             .join("; ");
         return Err(Error::QualificationRefusal(reasons));
     }
-    let corpus: Corpus = serde_json::from_value(value).map_err(|error| {
+    // Fixed-shape corpus fields decode directly from the bytes. Expected
+    // payloads use RawValue below, so serde never builds an internally-tagged
+    // recursive Content tree for an arbitrary operation oracle.
+    let corpus: Corpus = serde_json::from_slice(&corpus_bytes).map_err(|error| {
         Error::QualificationRefusal(format!("{}: {error}", corpus_path.display()))
     })?;
+    drop(value);
     validate_semantics(&corpus)?;
 
     let all_capabilities = corpus
@@ -748,7 +837,7 @@ fn execute_vector(
                     id: vector.id.clone(),
                     outcome,
                     expected: vector.expected.clone(),
-                    actual: result.actual,
+                    actual: DeepValue::new(result.actual),
                 },
                 result.bytes,
             )
@@ -767,7 +856,7 @@ fn execute_vector(
 
 fn matches_expected(expected: &Expected, actual: &Value) -> bool {
     match expected {
-        Expected::Value { value } => value == actual,
+        Expected::Value { value } => json_equal(value, actual),
         Expected::Refusal {
             code,
             cause,
@@ -775,9 +864,13 @@ fn matches_expected(expected: &Expected, actual: &Value) -> bool {
         } => {
             actual.get("code").and_then(Value::as_str) == Some(code)
                 && actual.get("cause").and_then(Value::as_str) == Some(cause)
-                && details
-                    .iter()
-                    .all(|(name, expected)| actual.get(name) == Some(expected))
+                && details.as_object().is_some_and(|details| {
+                    details.iter().all(|(name, expected)| {
+                        actual
+                            .get(name)
+                            .is_some_and(|value| json_equal(expected, value))
+                    })
+                })
         }
     }
 }
@@ -792,13 +885,13 @@ fn vector_failure(
         id: vector.id.clone(),
         outcome,
         expected,
-        actual,
+        actual: DeepValue::new(actual),
     }
 }
 
 fn settle_vector(expected: &Expected, actual: &Value) -> VectorOutcome {
     match expected {
-        Expected::Value { value } if value == actual => VectorOutcome::Passed,
+        Expected::Value { value } if json_equal(value, actual) => VectorOutcome::Passed,
         Expected::Refusal { .. } if matches_expected(expected, actual) => VectorOutcome::Passed,
         _ if matches!(
             actual
@@ -1016,6 +1109,174 @@ impl std::ops::Deref for DeepValue {
     }
 }
 
+impl Clone for DeepValue {
+    fn clone(&self) -> Self {
+        enum Task<'a> {
+            Read(&'a Value),
+            Array(usize),
+            Object(Vec<&'a str>),
+        }
+        let mut tasks = vec![Task::Read(&self.0)];
+        let mut values = Vec::<DeepValue>::new();
+        while let Some(task) = tasks.pop() {
+            let value = match task {
+                Task::Read(Value::Array(items)) => {
+                    tasks.push(Task::Array(items.len()));
+                    tasks.extend(items.iter().rev().map(Task::Read));
+                    continue;
+                }
+                Task::Read(Value::Object(members)) => {
+                    tasks.push(Task::Object(members.keys().map(String::as_str).collect()));
+                    tasks.extend(members.values().rev().map(Task::Read));
+                    continue;
+                }
+                Task::Read(scalar) => scalar.clone(),
+                Task::Array(count) => {
+                    // Every close task follows exactly these immutable
+                    // source children; caller data cannot change the count.
+                    let start = values
+                        .len()
+                        .checked_sub(count)
+                        .expect("cloned array children");
+                    Value::Array(
+                        values
+                            .split_off(start)
+                            .into_iter()
+                            .map(Self::into_inner)
+                            .collect(),
+                    )
+                }
+                Task::Object(names) => {
+                    let start = values
+                        .len()
+                        .checked_sub(names.len())
+                        .expect("cloned object children");
+                    Value::Object(
+                        names
+                            .into_iter()
+                            .zip(values.split_off(start))
+                            .map(|(name, value)| (name.to_owned(), value.into_inner()))
+                            .collect(),
+                    )
+                }
+            };
+            values.push(Self::new(value));
+        }
+        values
+            .pop()
+            .expect("a source JSON value produces one clone")
+    }
+}
+
+impl std::fmt::Debug for DeepValue {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.0 {
+            Value::Array(items) => formatter
+                .debug_struct("JsonArray")
+                .field("length", &items.len())
+                .finish(),
+            Value::Object(members) => formatter
+                .debug_struct("JsonObject")
+                .field("length", &members.len())
+                .finish(),
+            scalar => std::fmt::Debug::fmt(scalar, formatter),
+        }
+    }
+}
+
+impl Serialize for DeepValue {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        let bytes = json_bytes(&self.0).map_err(serde::ser::Error::custom)?;
+        let text = String::from_utf8(bytes).map_err(serde::ser::Error::custom)?;
+        let raw =
+            serde_json::value::RawValue::from_string(text).map_err(serde::ser::Error::custom)?;
+        raw.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for DeepValue {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        // RawValue skips the arbitrary JSON subtree iteratively. The shared
+        // reader then verifies uniqueness and constructs the guarded tree.
+        let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+        parse_unique_json(raw.get().as_bytes())
+            .map(Self::new)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+fn json_equal(left: &Value, right: &Value) -> bool {
+    let mut pending = vec![(left, right)];
+    while let Some((left, right)) = pending.pop() {
+        match (left, right) {
+            (Value::Array(left), Value::Array(right)) if left.len() == right.len() => {
+                pending.extend(left.iter().zip(right))
+            }
+            (Value::Object(left), Value::Object(right)) if left.len() == right.len() => {
+                for (name, left) in left {
+                    let Some(right) = right.get(name) else {
+                        return false;
+                    };
+                    pending.push((left, right));
+                }
+            }
+            (Value::Array(_) | Value::Object(_), _) | (_, Value::Array(_) | Value::Object(_)) => {
+                return false
+            }
+            (left, right) if left != right => return false,
+            _ => {}
+        }
+    }
+    true
+}
+
+/// Serialize JSON framing iteratively, delegating each scalar (including
+/// its exact serde number representation) to the existing JSON encoder.
+fn json_bytes(value: &Value) -> serde_json::Result<Vec<u8>> {
+    enum Task<'a> {
+        Value(&'a Value),
+        Name(&'a str),
+        Byte(u8),
+    }
+    let mut bytes = Vec::new();
+    let mut pending = vec![Task::Value(value)];
+    while let Some(task) = pending.pop() {
+        match task {
+            Task::Byte(byte) => bytes.push(byte),
+            Task::Name(name) => serde_json::to_writer(&mut bytes, name)?,
+            Task::Value(Value::Array(items)) => {
+                bytes.push(b'[');
+                pending.push(Task::Byte(b']'));
+                for (index, value) in items.iter().enumerate().rev() {
+                    pending.push(Task::Value(value));
+                    if index != 0 {
+                        pending.push(Task::Byte(b','));
+                    }
+                }
+            }
+            Task::Value(Value::Object(members)) => {
+                bytes.push(b'{');
+                pending.push(Task::Byte(b'}'));
+                for (index, (name, value)) in members.iter().enumerate().rev() {
+                    pending.push(Task::Value(value));
+                    pending.push(Task::Byte(b':'));
+                    pending.push(Task::Name(name));
+                    if index != 0 {
+                        pending.push(Task::Byte(b','));
+                    }
+                }
+            }
+            Task::Value(scalar) => serde_json::to_writer(&mut bytes, scalar)?,
+        }
+    }
+    Ok(bytes)
+}
+
 impl Drop for DeepValue {
     fn drop(&mut self) {
         qsl_foundation::node_wire::discard_node_json(std::mem::take(&mut self.0));
@@ -1024,7 +1285,7 @@ impl Drop for DeepValue {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_unique_json, DeepValue};
+    use super::{json_bytes, json_equal, parse_unique_json, DeepValue};
     use ix_trace_rs::trace;
     #[test]
     fn rejects_duplicate_object_members() {
@@ -1070,5 +1331,98 @@ mod tests {
             .expect("spawn the bounded-stack JSON control")
             .join()
             .expect("deep parsing, refusal and release do not overflow");
+    }
+
+    #[trace("TC-875", "FR-350-AC-1", "FR-350-AC-5", "FR-350-AC-11")]
+    #[test]
+    fn deep_value_serialization_preserves_the_existing_json_scalar_contract() {
+        let value = serde_json::json!({
+            "wide": u64::MAX,
+            "negative_zero": -0.0,
+            "exponent": 1e100,
+            "nested": [null, true, {"escaped": "\"\\\n😀"}]
+        });
+        let bytes = json_bytes(&value).expect("existing scalar facts encode");
+        assert_eq!(bytes, serde_json::to_vec(&value).unwrap());
+        let document = quire_canonical::read(&bytes, u64::MAX).unwrap();
+        assert_eq!(
+            quire_canonical::to_vec(&document, quire_canonical::Limits::new(u64::MAX)).unwrap(),
+            serde_json_canonicalizer::to_vec(&value).unwrap(),
+        );
+        let read = DeepValue::new(parse_unique_json(&bytes).unwrap());
+        assert!(json_equal(&value, &read));
+        assert_eq!(serde_json::to_vec(&read).unwrap(), bytes);
+    }
+
+    #[trace("TC-875", "FR-350-AC-1", "FR-350-AC-5", "FR-350-AC-11")]
+    #[test]
+    fn a_fifty_thousand_deep_oracle_returns_failed_and_releases_its_report() {
+        std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(|| {
+                let qspec = std::env::var_os("QSPEC_DIR")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| {
+                        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                            .ancestors()
+                            .map(|parent| parent.join("quire-specification"))
+                            .find(|path| path.is_dir())
+                            .expect("a QSpec checkout or QSPEC_DIR")
+                    });
+                let mut nested = b"[".repeat(50_000);
+                nested.push(b'0');
+                nested.extend_from_slice(&b"]".repeat(50_000));
+                let oracle = DeepValue::new(parse_unique_json(&nested).unwrap());
+                let copy = oracle.clone();
+                assert!(json_equal(&oracle, &copy));
+                drop(copy);
+
+                for refusal in [false, true] {
+                    let directory = tempfile::tempdir().unwrap();
+                    let corpus_root = directory.path();
+                    std::fs::write(corpus_root.join("unit.native"),
+                        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction f using v(x: Int[0,9]): Int[0,9] pure { x }\n").unwrap();
+                    let expected = if refusal {
+                        serde_json::json!({"disposition":"refusal", "code":"ill_typed", "cause":"type-mismatch", "details":{"deep":null}})
+                    } else {
+                        serde_json::json!({"disposition":"value", "value":null})
+                    };
+                    let mut corpus = DeepValue::new(serde_json::json!({
+                        "contract_version":"quire.conformance-corpus/v1",
+                        "vectors":[{"id":"V1-TOOL-004-depth", "capability_id":"V1-TOOL-004", "class":"positive", "subject":{"consumer_type":"tool", "operation":"format"}, "applicability":{"consumer_types":["tool"]}, "input":{"files":[{"kind":"source", "path":"unit.native"}]}, "expected":expected}],
+                        "results":[],
+                        "coverage":{"primary":[{"capability_id":"V1-TOOL-004", "applicability":{"consumer_types":["tool"], "semantic_profiles":["quire.value.complete/v1"]}}], "criteria_rollups":[], "consumer_rollups":[]}
+                    }));
+                    let expected = &mut corpus.0["vectors"][0]["expected"];
+                    if refusal {
+                        expected["details"]["deep"] = oracle.clone().into_inner();
+                    } else {
+                        expected["value"] = oracle.clone().into_inner();
+                    }
+                    std::fs::write(corpus_root.join("complete-v1.json"), json_bytes(&corpus).unwrap()).unwrap();
+                    let arguments = [
+                        "--corpus".into(), corpus_root.as_os_str().to_owned(),
+                    ];
+                    let execution = super::execute_with_qspec(&qspec, &arguments)
+                        .expect("a mismatching deep oracle settles rather than aborting");
+                    assert_eq!(execution.outcome.code, 1);
+                    let report = DeepValue::new(parse_unique_json(execution.outcome.stdout.as_bytes()).unwrap());
+                    assert_eq!(report["capabilities"][0]["vectors"][0]["outcome"], "failed");
+                    assert!(report["capabilities"][0]["vectors"][0]["actual"]
+                        .as_str()
+                        .expect("the real formatter succeeded before oracle comparison")
+                        .contains("function f"));
+                    assert_eq!(report["verdict"], "not-qualified");
+                    let expected = &report["capabilities"][0]["vectors"][0]["expected"];
+                    let retained = if refusal { &expected["details"]["deep"] } else { &expected["value"] };
+                    assert!(json_equal(&oracle, retained), "the complete oracle is retained in the report");
+                    let repeated = super::execute_with_qspec(&qspec, &arguments)
+                        .expect("the repeated complete qualification remains admitted");
+                    assert_eq!(execution.outcome.stdout, repeated.outcome.stdout);
+                }
+            })
+            .expect("spawn the bounded-stack complete qualification control")
+            .join()
+            .expect("corpus admission, comparison, report serialization and cleanup do not overflow");
     }
 }

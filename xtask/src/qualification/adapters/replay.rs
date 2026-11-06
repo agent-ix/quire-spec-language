@@ -796,11 +796,19 @@ mod depth_tests {
                     .find(|path| path.is_dir())
                     .expect("a QSpec checkout or QSPEC_DIR")
             });
-        let schema: serde_json::Value = serde_json::from_slice(
+        let mut schema: serde_json::Value = serde_json::from_slice(
             &std::fs::read(qspec.join("proposals/conformance-corpus-v1/schema.json"))
                 .expect("the published corpus schema"),
         )
         .expect("the selected schema is JSON");
+        let alternatives = schema["$defs"]["WitnessValue"]["oneOf"]
+            .as_array()
+            .expect("the published discriminated alternatives")
+            .len();
+        assert_eq!(
+            super::super::guard_witness_alternatives(&mut schema),
+            alternatives
+        );
         let schema = jsonschema::JSONSchema::options()
             .with_draft(jsonschema::Draft::Draft202012)
             .with_document("urn:quire:conformance-corpus:v1".to_owned(), schema)
@@ -808,6 +816,12 @@ mod depth_tests {
                 &serde_json::json!({"$ref":"urn:quire:conformance-corpus:v1#/$defs/WitnessValue"}),
             )
             .expect("the actual published witness schema compiles");
+        let mut valid = br#"{"kind":"sequence","elements":["#.repeat(192);
+        valid.extend_from_slice(br#"{"kind":"boolean","value":true}"#);
+        valid.extend_from_slice(&b"]}".repeat(192));
+        let admitted = super::super::document(&valid, &schema)
+            .unwrap_or_else(|_| panic!("a schema-valid deep witness remains admitted"));
+        drop(super::super::super::DeepValue::new(admitted));
         let mut bytes = br#"{"kind":"sequence","elements":["#.repeat(192);
         bytes.extend_from_slice(br#"{"kind":"boolean","value":"not-a-boolean"}"#);
         bytes.extend_from_slice(&b"]}".repeat(192));

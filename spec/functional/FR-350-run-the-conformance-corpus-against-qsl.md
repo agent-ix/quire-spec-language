@@ -102,8 +102,14 @@ The runner SHALL read the selected QSpec corpus and the files named by each
 vector's `input.files` without rewriting its vectors, `expected`
 dispositions, `results` or `coverage`. Expected dispositions come from the
 corpus's independent oracle; the runner SHALL NOT replace them with results
-calculated by QSL. A syntactically valid file path that is not readable is
-that vector's `tool-failure`, not a corpus preflight refusal.
+calculated by QSL. Corpus preflight, expected-result comparison, reporting
+and release SHALL retain deeply nested oracle values without native stack
+recursion. A schema-valid oracle that differs from the operation result is
+`failed`, including when the oracle has thousands of nested containers;
+its depth never changes a mismatch into a process abort. Duplicate decoded
+object names remain a preflight refusal. A syntactically valid file path
+that is not readable is that vector's `tool-failure`, not a corpus preflight
+refusal.
 
 The runner SHALL resolve `--limit` operands through the existing
 [FR-255 settings operation](FR-255-name-the-setting-that-raises-a-reached-limit.md).
@@ -189,9 +195,10 @@ its refinements are never silently dropped.
 The replay-result owner serializes function results without re-evaluation,
 retaining the settled arm, category, optional value, disagreement, witness
 record, source regions, named evaluator charges, evaluated limit and complete
-pre-call stop context. A function Witness result retains an explicit `record:
-null`, because the native function-call settlement has no decisive occurrence
-(ADR-031 SW-7); qualification never invents a separating record. Each supplied stop preserves its original phase,
+pre-call stop context. A function Witness result retains an explicit
+`record: null`, because the native function-call settlement has no decisive
+occurrence (ADR-031 SW-7); qualification never invents a separating record.
+Each supplied stop preserves its original phase,
 parameter, event, locus, consumed prefix and typed native cause. Qualification
 compares that result envelope and separately retains the public operation's
 returned bytes. Native inconclusive results keep their category; only an

@@ -53,3 +53,13 @@ Computed matrix unavailable: timeout exit 124, artifacts matrix.json (empty) and
 ## Clarification
 
 The original FND-001 request for a genuine function replay with a nonempty decisive record is too strong. ADR-031 SW-7 and `qsl-replay/src/execute.rs:1393-1411` establish that a function result has no decisive occurrence and settles with `WitnessCheck::Agrees(None)`. Reject that nonempty-record expectation; do not fabricate one or reroute the corpus through a different state-clause envelope. The concrete coverage gap is the reachable public Witness replay arm, its absent record, actual resolved source regions and a real disagreement path. A control must exercise those facts so removing them from the new writer fails. The finding remains conditional for this reachable coverage scope. Original finding text is retained for auditability.
+
+## Dispositions
+
+Round 1 at b7bb37969.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | A genuine public function Witness replay now asserts the witnessed arm and false value, explicit record:null with key presence, a true-result verdict disagreement with exact code-owned values, and a genuine undefined operation's source regions/no-value disagreement. Incorrect oracle record, region and disagreement members fail qualification. The original demand for Some(record) is rejected per the Clarification: ADR-031 SW-7 makes it unreachable for function replay. No fabricated record or state-envelope rerouting was added. |
+
+Current verdict: PASS for the original scoped coverage finding. The new corpus deep-boundary defect is recorded once as code-review FND-003. Historical focused fix tests were compiling at disposition; no independent build or full gate was run.

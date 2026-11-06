@@ -35,3 +35,7 @@ PASS for the changed specification. Scope remains an adapter leg, not a claim th
 ## Coverage
 
 Changed FR-350 and TC-1325 validation exit 0 is recorded in spec-validation.log. Existing stage and accounting settings are reused. The requirement excerpts align with the merged QSpec model-absence rule. No new relationship edge or requirement-statement EARS rewrite was added, so additional dependency/EARS lenses were not selected. Code and gap findings are recorded in their own artifacts.
+
+## Dispositions
+
+Round 1 at b7bb37969. No original specification defects required disposition. The amended procedure grounds field retention in the existing observation owner and limits the witness-record claim to the reachable function result's absence. No new spec defect was found. Current verdict: PASS.

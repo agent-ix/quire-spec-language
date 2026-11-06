@@ -54,3 +54,21 @@ FAIL; not mergeable until both findings are resolved. The population omission is
 Static source and call-site review only; no duplicate build was started. Historical coder evidence reports 13 adapter tests, five CLI tests, and the supplied-cause codec unit control passing. Those are not independent reruns. The single combined-tree final gate remains the lead's responsibility after fixes. Population owner docs and implementation independently establish that subset-value validation reads PopulationMember.field_values, while observation snapshot admission contains no replacement subsetting check.
 
 No applicable AssuranceProfile was found. Optional semantic gap review was not requested or run; ordinary code/spec faithfulness review was performed.
+
+## Dispositions
+
+Round 1 at b7bb37969. Production fixes and the declaration-refusal precedence correction were reviewed statically in the existing worktree. No build was run.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The observation owner now converts the checked object closure into its existing PopulationDocument, retaining original field declarations through EffectiveAttribute::stands_for, both sides of subset relations, inherited/redefined storage and optional/collection references. Adapter admission uses the same cumulative meter. Genuine false-subset and inherited/redefined positive controls exercise the public route. |
+| FND-002 | fixed | Replay documents use the shared iterative canonical reader without scalar normalization, guarded deep JSON release, an explicit-stack witness conversion and the extracted existing owner byte reader. Tests cover 1,000 levels on a 512-KiB stack and a deeply malformed published witness. Tuple/union declaration lookup retains its former refusal precedence. The newly exposed corpus preflight boundary is FND-003 below. |
+| FND-003 | still-open | Deep corpus expected values are newly admitted by the shared parser but still reach recursive preflight serialization, typed decoding and raw value handling outside the vector fault guard. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | The shared iterative parser now admits deeply nested corpus oracle values, but corpus preflight immediately canonicalizes the raw serde_json::Value through recursive Serialize outside the vector fault guard, then deserializes, clones and reports raw Expected values. A canonical schema-valid corpus with a deeply nested expected.value can therefore stack-abort instead of refusing or reporting failure. Keep the corpus boundary depth-safe as well, or preserve its prior bounded preflight distinctly from the deep replay-document route; do not leave newly admitted trees to recursive canonicalization/drop. | xtask/src/qualification.rs:354-375; xtask/src/qualification.rs:750-759 |
+
+Current verdict: CONDITIONAL and not mergeable while FND-003 remains open. QSpec ValueDisposition.value imposes no schema nesting ceiling; 50,000 singleton arrays fit in about 100 KiB. The serde_json_canonicalizer owner implementation invokes value.serialize directly, and this preflight occurs before execute_vector's catch_unwind. This is a reachable schema-valid mismatching oracle, not a hypothetical future native result shape. No reproducer build was run under the lead's no-duplicate-build instruction.

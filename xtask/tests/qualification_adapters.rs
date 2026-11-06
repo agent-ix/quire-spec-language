@@ -689,6 +689,7 @@ fn subset_population_fixture(redefined: bool) -> Fixture {
     let mut chosen = field("Gadget", "chosen", true, false);
     chosen["subsets"] = json!(["ix://acme/orders/Widget/allowed"]);
     let mut maybe = field("Gadget", "maybe", false, true);
+    maybe["multiplicity"]["ordered"] = json!(true);
     maybe["subsets"] = json!(["ix://acme/orders/Widget/allowed"]);
     model["types"][1]["fields"] = json!([chosen, maybe]);
     if redefined {
