@@ -205,11 +205,6 @@ const WORKSPACE_EMPTY: &[EmptySuite] = &[
         reason: "no unit tests in src/; the crate's tests are in its tests/ directory",
     },
     EmptySuite {
-        source: "src/main.rs",
-        kind: SuiteKind::Tests,
-        reason: "the quire-spec binary entry point; no #[test] item in it",
-    },
-    EmptySuite {
         source: "xtask/src/main.rs",
         kind: SuiteKind::Tests,
         reason: "the xtask binary entry point; no #[test] item in it",
@@ -256,6 +251,11 @@ const WORKSPACE_EMPTY: &[EmptySuite] = &[
     },
     EmptySuite {
         source: "qsl-walk-grow/src/lib.rs",
+        kind: SuiteKind::Doctests,
+        reason: NO_DOC_EXAMPLE,
+    },
+    EmptySuite {
+        source: "tests/fixtures/checked-closure-consumer/src/lib.rs",
         kind: SuiteKind::Doctests,
         reason: NO_DOC_EXAMPLE,
     },

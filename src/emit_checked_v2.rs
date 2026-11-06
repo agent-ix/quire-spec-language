@@ -10,7 +10,7 @@
 //! caller of [`run`].
 //!
 //! Every failure (usage, unreadable file, write failure, refusal) exits with
-//! the refusal category's code, 20, as `quire-spec` does, unless the
+//! the refusal category's code, 20, as the `quire` driver does, unless the
 //! producer's catalog code belongs to another category (for example 22 for
 //! an incomplete result); the stderr diagnostic tells them apart. No bytes
 //! are written on failure.
@@ -243,7 +243,7 @@ fn without_limit_hint(refusal: &ReplayRefusal) -> String {
     }
 }
 
-/// Read at most the source ceiling plus one byte, as `quire-spec` does, so an
+/// Read at most the source ceiling plus one byte, as the `quire` driver does, so an
 /// oversized file reaches the producer's own size refusal without an
 /// unbounded read.
 ///
