@@ -293,6 +293,14 @@ ported recipe is **R**; its elements and their spine requirements:
 | `temporal` bodies, three clock kinds: event position, fixed sample, timestamped event | four `temporal` clauses, each under a `profile` selection; clock configurations are given in the request (QSL-1557); `temporal_bindings` holds one row per temporal clause and per compensation template, in ascending `NodeRef` order |
 | `workflow` body: roles `Service` and `Provider`, channel `Decisions` with two `Notice` receives and an all-branch join, `Outcome` choice with complementary Boolean guards, `Workflow::apply` with pre and post, and the compensations `Full` (commit `Main::Committed`) and `Partial` (commit `never`) | one `protocol` with the same roles, channel, join, choice, effect and two `compensate` templates (FR-383), whose `recover` conditions compare the receipt sum with the captured target (FR-517-AC-14) |
 
+The shared library of **R** SHALL reach both unit-less Rational types through
+typed predicate parameters and Rational literals. Each of the three packages
+SHALL carry the two extreme literals with the emitted bounded Rational type of
+`Exact`, not merely as source text or values of an unbounded Rational type.
+`Ratio` keeps numerator bounds -1..1 and denominator bounds 1..2; `Exact` keeps
+numerator bounds -9223372036854775808..9223372036854775807 and denominator bounds
+1..9223372036854775807. Neither declaration gains a `unit`.
+
 The legacy recipe's `Workflow` attempt and recovery binders are not portable,
 and **R** replaces their type rather than the element. An attempt record is a
 record or an event type (FR-381 "Activation, attempts and deadline"; QSpec

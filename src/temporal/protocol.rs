@@ -677,6 +677,8 @@ fn remap_error_instance(error: &mut super::Error, instance: usize) {
             | super::Refusal::Contradiction { subject, .. }
             | super::Refusal::Progress { subject, .. }
             | super::Refusal::Reference { subject } => subject.instance = instance,
+            // A valuation refusal is located by its row, not by an instance.
+            super::Refusal::Valuation { .. } => {}
         },
         super::Error::Incomplete(incomplete) => incomplete.subject.instance = instance,
         super::Error::Exhausted(exhaustion) => exhaustion.subject.instance = instance,

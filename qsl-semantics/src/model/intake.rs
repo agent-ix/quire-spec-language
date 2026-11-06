@@ -4080,13 +4080,19 @@ fn read_rational_value_type(
                 operands.is_object() && operands.as_object().is_some_and(|m| m.len() == 1)
             })
             .and_then(|operands| operands.get("value"))
-            .and_then(Value::as_i64);
+            .and_then(|operand| {
+                let exact = bound_operand(operand, keyword).ok()?;
+                let value = i64::try_from(exact).ok()?;
+                (operand.is_string() || exact.unsigned_abs() <= (1_u128 << 53)).then_some(value)
+            });
         let Some(value) = value else {
             return Err(malformed_member(
                 constraint,
                 constraint_at,
                 MemberPath::from_document_location(constraint_at).child("operands"),
-                format!("{keyword}: operands must contain only an i64 JSON integer value"),
+                format!(
+                    "{keyword}: operands must contain only a safe JSON integer or canonical signed-64 decimal string"
+                ),
             ));
         };
         bounds[index] = value;
@@ -4130,9 +4136,9 @@ fn read_rational_value_type(
 }
 
 /// Parse a scalar bound exactly in `i128::MIN..=i128::MAX` (FR-056).
-/// Public Semantic IR validation first requires canonical integer strings
-/// under FCD FR-144; the internal JSON-integer branch below does not authorize
-/// numeric operands on that wire. `Err` names `keyword` and the written value.
+/// The caller admits safe JSON integers through ±2^53 or canonical signed-64
+/// decimal strings under QSpec FR-154 / TC-981. `Err` names `keyword` and the
+/// written value.
 fn bound_operand(operand: &Value, keyword: &str) -> Result<i128, String> {
     if let Some(number) = operand.as_i64() {
         return Ok(i128::from(number));
