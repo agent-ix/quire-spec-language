@@ -81,8 +81,12 @@ downstream reader acceptance has been delivered.
 
 ## Implementation status
 
-The QSL-side type-key, addition, comparison and conversion-from-bounded
-checks are enabled. Conversion **into** a bounded quantity remains a typed
+The enabled QSL-side tests use the public typed declaration API for bounded
+aliases and function forms, a genuinely source-assembled nominal unit graph,
+and the production checker, lowering and evaluator with real quantity
+arguments. They do not claim a source grammar for bounded quantity types.
+Type-key, addition, comparison and conversion-from-bounded checks are
+enabled. Conversion **into** a bounded quantity remains a typed
 refusal: the shared evaluator currently reads its target as an ordinary
 quantity, and its `rational_out_of_domain` payload describes a
 numerator/denominator domain rather than a magnitude interval. No interval
