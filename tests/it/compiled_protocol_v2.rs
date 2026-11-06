@@ -1292,33 +1292,14 @@ fn assert_error<T>(report: &artifact::Report<T>, expected: Error) {
     assert_eq!(report.result().err(), Some(&expected));
 }
 
-fn v3_package_from_v2(
-    admitted: &native::AdmissionV2,
-    activations: &[v3::ExpectedActivation],
-) -> v3::wire::Package {
-    let package = admitted.admitted().package();
-    let mut inherited = package.inherited.clone();
-    inherited.wire = v3::WIRE.into();
-    inherited.media = v3::MEDIA.into();
-    inherited.schema = v3::SCHEMA.into();
-    v3::wire::Package {
-        inherited,
-        temporal_bindings: package.temporal_bindings.clone(),
-        activation_mappings: activations
-            .iter()
-            .map(|activation| v3::wire::ActivationMapping {
-                control: activation.control.clone(),
-                temporal_declaration: activation.temporal_declaration,
-            })
-            .collect(),
-    }
-}
-
 /// TC-143: FR-054-AC-1 through FR-054-AC-4.
 #[trace("TC-143", "FR-054-AC-1", "FR-054-AC-2", "FR-054-AC-3", "FR-054-AC-4")]
 #[test]
 fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
     with_v2(|inputs, proofs, _, temporal, emitted| {
+        let bytes = include_bytes!("../fixtures/compiled-protocol-v3-control-map.json");
+        let package: v3::wire::Package =
+            serde_json::from_slice(bytes).expect("authored canonical v3 wire fixture");
         let inherited = emitted.admitted().package().inherited.clone();
         let flow = u32::try_from(declaration(emitted.admitted(), "Flow")).expect("flow index");
         let controls = match &inherited.declarations[flow as usize].body {
@@ -1340,10 +1321,6 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
             temporal_declaration: u32::try_from(declaration(emitted.admitted(), "ByEvent"))
                 .expect("temporal index"),
         };
-        let package = v3_package_from_v2(emitted, std::slice::from_ref(&activation));
-        let produced = v3::encode_candidate(&package, Limits::default())
-            .into_result()
-            .expect("canonical v3 candidate");
         let out_of_range = w::Handle {
             declaration: flow,
             index: u32::try_from(controls.len())
@@ -1365,7 +1342,7 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
         let admitted = inputs
             .read_v3_bytes(
                 proofs,
-                produced.bytes(),
+                bytes,
                 &temporal.expected,
                 std::slice::from_ref(&activation),
                 Limits::default(),
@@ -1387,18 +1364,10 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
             .result()
             .is_err());
         assert!(inputs
-            .read_v2_bytes(
-                proofs,
-                produced.bytes(),
-                &temporal.expected,
-                Limits::default(),
-            )
+            .read_v2_bytes(proofs, bytes, &temporal.expected, Limits::default(),)
             .result()
             .is_err());
-        assert!(inputs
-            .read_bytes(proofs, produced.bytes())
-            .result()
-            .is_err());
+        assert!(inputs.read_bytes(proofs, bytes).result().is_err());
         for control in [out_of_range, non_event] {
             let mut invalid_control = package.clone();
             invalid_control.activation_mappings[0].control = control;
@@ -1572,14 +1541,10 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
             temporal_declaration,
         };
         let activations = [activation.clone(), second_activation.clone()];
-        let package = v3_package_from_v2(emitted, &activations);
-        let candidate = v3::encode_candidate(&package, Limits::default())
-            .into_result()
-            .expect("canonical v3 candidate");
         let admitted = inputs
             .read_v3_bytes(
                 proofs,
-                candidate.bytes(),
+                include_bytes!("../fixtures/compiled-protocol-v3-owner-lineage.json"),
                 &temporal.expected,
                 &activations,
                 Limits::default(),
@@ -2317,7 +2282,11 @@ fn checked_protocol_temporal_owner_identity_and_correction_lineage() {
         // A different admitted package can reuse every local coordinate, but
         // cannot consume the first package's result as its predecessor.
         let other_activations = [activation.clone()];
-        let other_package = v3_package_from_v2(emitted, &other_activations);
+        let mut other_package: v3::wire::Package = serde_json::from_slice(include_bytes!(
+            "../fixtures/compiled-protocol-v3-owner-lineage.json"
+        ))
+        .expect("authored canonical v3 wire fixture");
+        other_package.activation_mappings.truncate(1);
         let other_candidate = v3::encode_candidate(&other_package, Limits::default())
             .into_result()
             .expect("canonical v3 candidate with a distinct activation table");
