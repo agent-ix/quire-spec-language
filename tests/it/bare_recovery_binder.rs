@@ -59,12 +59,19 @@ fn recipe_with(condition: Option<&str>) -> Recipe {
         std::fs::write(&unit, text).expect("variant");
         request.emit.source = unit;
     }
+    read_recipe(holder, &request)
+}
+
+fn read_recipe(
+    holder: tempfile::TempDir,
+    request: &quire_spec_language::checked_handoff::CheckedHandoffRequest,
+) -> Recipe {
     let out = holder.path().join("handoff");
-    write(&request, &out).expect("the handoff is written");
+    write(request, &out).expect("the handoff is written");
     let files = tree(&out);
     let package = admitted(
         &files["checked-package.json"],
-        &evidence(&request).expect("evidence"),
+        &evidence(request).expect("evidence"),
     );
     let identities =
         qsl_package::ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
@@ -529,14 +536,15 @@ fn map_binder_is_no_source() {
     );
 }
 
-/// A `case` arm binder in a recover condition: the unit checks, but the
-/// contract reader refuses the package (`BinderScope`: the arm binder is
-/// outside the stage's readable set), so no valid package holds one and the
-/// bare route never sees it. The walk over arm binders is unit-tested in
-/// `introduced_binders`; this pins where the form stops.
-#[trace("FR-390-AC-68", "TC-1071")]
+/// A genuine case arm binds its payload inside the recover condition. The
+/// handoff admits, the arm binder is no caller source, and the source and
+/// bytes routes return the authored Boolean values and equal charge logs.
+#[trace("FR-390-AC-68", "TC-1071", "TC-1333")]
 #[test]
-fn a_case_arm_binder_in_a_recover_condition_is_refused_by_the_contract_reader() {
+fn a_case_arm_binder_in_a_recover_condition_is_admitted_and_evaluates() {
+    use qsl_foundation::SourceIdentity;
+    use qsl_replay::spine::{self, DependencyInput, ParseRequest, SpineLimits, SuppliedLibrary};
+
     let holder = tempfile::tempdir().expect("directory");
     let mut request = request("event_position", Corpus::None);
     let text = std::fs::read_to_string(&request.emit.source).expect("R's unit");
@@ -551,11 +559,174 @@ fn a_case_arm_binder_in_a_recover_condition_is_refused_by_the_contract_reader() 
     )
     .expect("variant");
     request.emit.source = unit;
-    let refused = format!("{:?}", write(&request, &holder.path().join("handoff")));
-    assert!(
-        refused.contains("ReaderRefused") && refused.contains("BinderScope"),
-        "{refused}"
+
+    let source = SourceIdentity::new("local", format!("source:{}", request.emit.source.display()));
+    let bytes = std::fs::read(&request.emit.source).expect("the authored case-arm unit");
+    let models = request
+        .emit
+        .models
+        .iter()
+        .map(|path| std::fs::read(path).expect("the recipe's model"))
+        .collect::<Vec<_>>();
+    let packages = qsl_semantics::model::intake::package_input(models.iter().map(Vec::as_slice))
+        .expect("the selected model");
+    let dependencies = DependencyInput::new(
+        request
+            .emit
+            .libraries
+            .iter()
+            .map(|(identity, path)| SuppliedLibrary {
+                identity: identity.clone(),
+                source: SourceIdentity::new("local", format!("library:{}", path.display())),
+                path: path.display().to_string(),
+                bytes: std::fs::read(path).expect("the recipe's library"),
+            })
+            .collect(),
+    )
+    .expect("the selected library");
+    let limits = SpineLimits::default();
+    let cancel = quire_exact::Cancel::new();
+    let parsed = spine::parse(
+        &ParseRequest {
+            source: &source,
+            path: &request.emit.source.display().to_string(),
+            bytes: &bytes,
+        },
+        limits.source,
+        &cancel,
+    )
+    .expect("the case-arm unit parses")
+    .into_value();
+    let models = spine::select(&parsed, &packages, limits.model, &cancel)
+        .expect("the model is selected")
+        .into_value();
+    let checked = spine::check(
+        &parsed,
+        request.emit.package_name.clone(),
+        &models,
+        &dependencies,
+        limits,
+        &cancel,
+    )
+    .expect("the genuine case-arm unit checks")
+    .into_value();
+    let source = checked.package();
+    let source_protocol = source.graph().protocol("Flow").expect("Flow");
+    let full = source_protocol
+        .obligations
+        .compensations
+        .iter()
+        .position(|template| template.name == "Full")
+        .expect("Full");
+    let source_slot = ProtocolSlot {
+        node: source
+            .graph()
+            .protocol_node_keys("Flow")
+            .expect("Flow's keys")
+            .compensations[&full]
+            .clone(),
+        member: "recovery.predicate".to_owned(),
+        index: None,
+    };
+    let view = source.evaluation_view();
+    let source_selected = view
+        .select_protocol_slot(&ProtocolSlotDescriptor::new(
+            source_slot.node.clone(),
+            "recovery.predicate",
+            None,
+        ))
+        .expect("the source recovery predicate selects");
+    let recipe = read_recipe(holder, &request);
+    assert_eq!(
+        source_names(&recipe),
+        FULL_SOURCES,
+        "the arm binder is no source"
     );
+    let bare = recipe.bare();
+    let bare_slot = ProtocolSlot {
+        node: recipe.compensation("Full"),
+        member: "recovery.predicate".to_owned(),
+        index: None,
+    };
+    let selected = bare
+        .select_protocol_slot(&ProtocolSlotDescriptor::new(
+            bare_slot.node.clone(),
+            "recovery.predicate",
+            None,
+        ))
+        .expect("the admitted recovery predicate selects");
+    for (receipts, target, activated, expected) in [
+        (&[2, 3][..], 5, false, true),
+        (&[2, 3][..], 4, false, false),
+        (&[2, 3][..], 6, false, false),
+        (&[2, 3][..], 5, true, false),
+        (&[][..], 0, false, true),
+    ] {
+        let values = [
+            ("recoveredFull", recipe.recovery(&bare, receipts)),
+            ("targetFull", int(target)),
+            ("activatedFull", Value::Boolean(activated)),
+        ];
+        let supply = |sources: &[qsl_package::ProtocolSource]| ProtocolSupply {
+            binders: values
+                .iter()
+                .map(|(name, value)| {
+                    let binder = sources
+                        .iter()
+                        .find(|source| source.name() == *name)
+                        .expect("a caller source")
+                        .binder()
+                        .clone();
+                    (binder, SuppliedValue::Value(value.clone()).into())
+                })
+                .collect(),
+            observation: None,
+        };
+        let mut source_meter = Meter::new(UNLIMITED);
+        let mut bare_meter = Meter::new(UNLIMITED);
+        let source_result = source
+            .evaluate_protocol_slot(
+                &source_slot,
+                &supply(source_selected.sources()),
+                &mut source_meter,
+            )
+            .expect("the source evaluates");
+        let bare_result = bare
+            .evaluate_protocol_slot(&bare_slot, &supply(selected.sources()), &mut bare_meter)
+            .expect("the bare route evaluates");
+        let qsl_eval::value::ProtocolSlotEvaluation::Evaluated(source_evaluation, _) =
+            source_result
+        else {
+            panic!("the source returns an evaluation")
+        };
+        let qsl_eval::value::ProtocolSlotEvaluation::Evaluated(bare_evaluation, _) = bare_result
+        else {
+            panic!("the bare route returns an evaluation")
+        };
+        assert_eq!(
+            source_evaluation.outcome,
+            quire_eval::FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(Value::Boolean(
+                expected
+            )))
+        );
+        assert_eq!(
+            bare_evaluation.outcome, source_evaluation.outcome,
+            "receipts={receipts:?}, target={target}, activated={activated}"
+        );
+        assert_eq!(bare_evaluation.losses, source_evaluation.losses);
+        assert_eq!(
+            bare_meter.admitted_charges(),
+            source_meter.admitted_charges(),
+            "the ordered scalar charge log agrees"
+        );
+        for counter in quire_exact::LimitKind::ALL {
+            assert_eq!(
+                bare_meter.consumed(counter),
+                source_meter.consumed(counter),
+                "{counter:?}"
+            );
+        }
+    }
 }
 
 /// A binder the body never reads is no source and the predicate evaluates
