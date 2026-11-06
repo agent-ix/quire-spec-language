@@ -492,8 +492,9 @@ fn bounded_package() -> (CheckedPackage, quire_exact::UnitId, quire_exact::UnitI
                     .units()
                     .ids()
                     .find(|id| {
-                        id.declared_key()
-                            .is_some_and(|key| key.path().last() == Some(&PathSegment::Text(name)))
+                        id.declared_key().is_some_and(|key| {
+                            key.path().last() == Some(&PathSegment::Text(name.clone()))
+                        })
                     })
                     .expect("source unit")
             };
@@ -590,9 +591,13 @@ fn bounded_quantities_evaluate_add_comparison_and_conversion_from_their_interval
             &mut Meter::new(UNLIMITED),
         )
         .expect("bounded comparison runs");
-    assert_eq!(
-        less.outcome,
-        FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+    assert!(
+        matches!(
+            less.outcome,
+            FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+        ),
+        "bounded comparison: {:?}",
+        less.outcome
     );
     for (name, arguments, expected) in [
         (
