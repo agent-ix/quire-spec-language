@@ -904,6 +904,56 @@ fn bounded_and_open_intervals_emit_and_are_admitted() {
     }
 }
 
+/// FR-513-AC-9 / TC-1308 row 19: a hyper clause's selection naming another
+/// profile's definition identity refuses `invalid_package` / `invalid-value`
+/// at field `definition` on the clause's span; the selection that names the
+/// clause's own law emits.
+#[trace("TC-1308", "FR-513-AC-9", "FR-050-AC-3")]
+#[test]
+fn a_substituted_hyper_clause_definition_identity_refuses_at_the_definition_field() {
+    use crate::emit::{EmitRefusal, TemporalClockSelection};
+
+    let declarations = format!(
+        "hyper Window using t over behaviours (c: V::ConfigVersion) {TWO_FORALL} \
+         {{ always [0, 3] holds(c.versionNumber @ a = c.versionNumber @ b) }}"
+    );
+    let (text, documents) = world_unit(EVENT, &["V"], &declarations);
+    let graph = assemble_with_models(text.as_bytes(), &packages_of(&documents))
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}\n{text}"));
+    assert_eq!(graph.hyper_clauses().len(), 1);
+    let span = graph.hyper_clauses()[0].span();
+    let selected = TemporalClockSelection::new(
+        graph.source().clone(),
+        span,
+        quire_contract_model::ClockConfiguration::EventPosition {
+            sequence_authority: "test-hyper-events".into(),
+        },
+    );
+    let package = CheckedPackage::link(graph);
+    crate::emit::emit_checked_with_temporal_selections(&package, std::slice::from_ref(&selected))
+        .expect("the selection that names the clause's own law emits");
+
+    let mut substituted = selected;
+    substituted.definition.identity = "quire.temporal.fixed-sample.false-extension/v1".into();
+    let refusal = crate::emit::emit_checked_with_temporal_selections(
+        &package,
+        std::slice::from_ref(&substituted),
+    )
+    .expect_err("a substituted definition identity cannot produce a package");
+    assert!(
+        matches!(
+            &refusal,
+            EmitRefusal::InvalidTemporalClockValue { span: at, field, .. }
+                if *at == span && *field == "definition"
+        ),
+        "{refusal:?}"
+    );
+    assert_eq!(refusal.code(), qsl_foundation::Code::InvalidPackage);
+    assert_eq!(refusal.cause(), Some("invalid-value"));
+}
+
 /// FR-488-AC-20: a fairness set under a bounded profile is refused at the
 /// constraint.
 #[trace("TC-1266", "FR-488-AC-20")]
