@@ -2460,6 +2460,8 @@ fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
                         "exponent": if dimension_name == "Area" { "2" } else { "1" }
                     }]);
                     dimension["dependencies"] = json!([base_id]);
+                    // QSpec FR-322-AC-387: a dimension with terms is derived.
+                    dimension["body"]["base"] = json!(false);
                 }
                 let dimension_id = dimension["node_id"].clone();
                 dimension["semantic_type"] = dimension_id.clone();
