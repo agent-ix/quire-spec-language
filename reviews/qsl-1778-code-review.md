@@ -88,6 +88,21 @@ Round 1, reviewed head `9718b750a`.
 | FND-002 | fixed | All nine native owner tests now pair TC-144 with criteria; owning procedure includes the native API. |
 | FND-003 | still-open | Two newly added tests still omit TC-144; add the owning TC id. |
 
+### Round 1 additional finding
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-003 | still-open | Add TC-144 to reader_refuses_a_result_identity_of_another_clause_or_occurrence and subject_and_evaluation_refuse_foreign_occurrence_revision_and_anchor. |
+
+
+### Round 2
+
+Reviewed head `1ad7a1fc0`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-003 | fixed | Both newly introduced tests now include TC-144. |
+
 ## Disposition evidence (round 1)
 
 Disposition round 1 at 9718b750a in the original QSL-1778 worktree only. Static inspection of b80fec47d..9718b750a, no reviewer build or final gate. Canonical parsing now requires all 17 members; payload authority is checked by the existing evidence-owner identity_of encoder shared with evaluation. native_request is shared by evaluation and reading, binding observation/revision and admitted rows without executing temporal positions. The foreign canonical identity control transplants a revised observation identity onto unchanged original bytes and original observation, and must refuse UnknownTag. The coder mutation log /tmp/QSL-1778-fix-canonical-mutation.log shows this control failing at its intended assertion when comparison is disabled; restored log shows nine tests passing. All nine tests now have TC-144 plus criterion tags; TC-144 explicitly includes native owner report procedures 10-13.
@@ -104,8 +119,10 @@ Final adopted head `5ed40a131` adds peer fixes after `9718b750a`. Both original 
 | --- | --- | --- | --- | --- |
 | FND-003 | low | Two tests added by the peer fix omit TC ids from their trace attributes, reintroducing the paired TC/criterion metadata violation. | tests/it/native_owner_report.rs:877,904 | implementation-bug-despite-evidence |
 
-## Round 1 new-finding disposition
+## Round 2 evidence and readiness
 
-| FND | outcome | reason |
-| --- | --- | --- |
-| FND-003 | still-open | Add TC-144 to reader_refuses_a_result_identity_of_another_clause_or_occurrence and subject_and_evaluation_refuse_foreign_occurrence_revision_and_anchor. |
+Disposition round 2, final reviewed head 1ad7a1fc0 (owned fix 402547d2a..1ad7a1fc0). Same existing QSL-1778 worktree only; no source edits, build, clone or extra worktree. Relevant merged-main delta leaves native owner production behavior and canonical identity validation unchanged; owned production delta is formatting only. Both new test attributes now pair TC-144 with their criterion ids. The explicitly ignored local lane cargo-compiles the integration executable twice with different Rust metadata in the sole existing target, asserts fresh=false for each compilation, executes the exact fixture in each binary, and compares nonempty byte outputs. Existing pre-rebase coder receipts show eleven normal tests passing and the two-build lane passing with 7209 bytes from each binary; these were inspected, not rerun. Foreign-clause control uses a genuinely admitted other package, and the shortened request rejects its still-admitted position-1 valuation row.
+
+Source-map reachability independently traced: quire-contract-model/src/checked_package/common.rs validate_source_map_entries constructs expected (node, role, ordinal) from all graph occurrences and compares actual source-map keys exactly, returning InvalidSourceMap when actual != expected. checked_package/v2/mod.rs calls that validator before constructing the admitted CheckedPackageV2, whose fields are private; TemporalSubjectView::arena_of requires a declared occurrence. Thus a missing map entry for an accepted occurrence cannot reach CheckedSubject::new through the public admitted API. TC-144 now documents this defensive-arm proof rather than fabricating an invalid checked package.
+
+All findings across the six reviewed artifacts have a latest resolved outcome. No new fix-diff findings. Review mergeable, subject to the lead's one final gate and normal integration checks; no claim that the unavailable repository-wide matrix or final gate passed.

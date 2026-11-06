@@ -55,6 +55,20 @@ Round 1, current head `5ed40a131`. Original review rows unchanged.
 | FND-004 | fixed | The same fallible encoded helper is used throughout row_key; no serialization expect remains. Closed checked identity/role values expose no caller-supplied serializer, and the declared closed refusal enum is retained. |
 | FND-005 | fixed | Fixed-size array prevents silent zip truncation; PACKAGE_VERSION is one constant. Typed CheckedPackageV2 admits only v2, so no dynamic alternative package version exists; byte-version mismatch remains meaningfully refused. |
 
+### Round 2
+
+Reviewed head `1ad7a1fc0`.
+
+No defect findings were still open in this artifact before round 2; no new findings. Prior fixed/rejected outcomes remain unchanged.
+
 ## Disposition evidence
 
 Static review in the sole existing ticket worktree, no build/clone/worktree created. Existing coder receipts considered but not represented as reviewer reruns. Final gate remains the lead's next stage after every open finding is resolved.
+
+## Round 2 evidence and readiness
+
+Disposition round 2, final reviewed head 1ad7a1fc0 (owned fix 402547d2a..1ad7a1fc0). Same existing QSL-1778 worktree only; no source edits, build, clone or extra worktree. Relevant merged-main delta leaves native owner production behavior and canonical identity validation unchanged; owned production delta is formatting only. Both new test attributes now pair TC-144 with their criterion ids. The explicitly ignored local lane cargo-compiles the integration executable twice with different Rust metadata in the sole existing target, asserts fresh=false for each compilation, executes the exact fixture in each binary, and compares nonempty byte outputs. Existing pre-rebase coder receipts show eleven normal tests passing and the two-build lane passing with 7209 bytes from each binary; these were inspected, not rerun. Foreign-clause control uses a genuinely admitted other package, and the shortened request rejects its still-admitted position-1 valuation row.
+
+Source-map reachability independently traced: quire-contract-model/src/checked_package/common.rs validate_source_map_entries constructs expected (node, role, ordinal) from all graph occurrences and compares actual source-map keys exactly, returning InvalidSourceMap when actual != expected. checked_package/v2/mod.rs calls that validator before constructing the admitted CheckedPackageV2, whose fields are private; TemporalSubjectView::arena_of requires a declared occurrence. Thus a missing map entry for an accepted occurrence cannot reach CheckedSubject::new through the public admitted API. TC-144 now documents this defensive-arm proof rather than fabricating an invalid checked package.
+
+All findings across the six reviewed artifacts have a latest resolved outcome. No new fix-diff findings. Review mergeable, subject to the lead's one final gate and normal integration checks; no claim that the unavailable repository-wide matrix or final gate passed.

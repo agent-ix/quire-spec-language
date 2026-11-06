@@ -46,6 +46,23 @@ Round 1, current head `5ed40a131`. Original review rows unchanged.
 | FND-001 | still-open | The environment-dependent comparison was removed, but replacement runs with_inputs twice in the same test executable. That constructs independent package/evidence values; it does not compare independently compiled binaries as TC-144 row11 explicitly requires. Preserve or wire actual two-build byte comparison in the one final gate, without another worktree. |
 | FND-002 | still-open | New test covers foreign occurrence, request occurrence mismatch and evaluate_v2 revision/anchor refusal. It still omits the separately listed foreign clause and admitted row position beyond the shorter request; source-map refusal feasibility also has no disposition. Complete reachable controls or justify unreachable branches explicitly. |
 
+### Round 2
+
+Reviewed head `1ad7a1fc0`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Actual independent Rust recompilation lane is explicit, executable and has a passing receipt. |
+| FND-002 | fixed | Genuine foreign-clause and short-request refusal controls added; missing source-map arm is unreachable after admitted-package exact-key validation, traced below. |
+
 ## Disposition evidence
 
 Static review in the sole existing ticket worktree, no build/clone/worktree created. Existing coder receipts considered but not represented as reviewer reruns. Final gate remains the lead's next stage after every open finding is resolved.
+
+## Round 2 evidence and readiness
+
+Disposition round 2, final reviewed head 1ad7a1fc0 (owned fix 402547d2a..1ad7a1fc0). Same existing QSL-1778 worktree only; no source edits, build, clone or extra worktree. Relevant merged-main delta leaves native owner production behavior and canonical identity validation unchanged; owned production delta is formatting only. Both new test attributes now pair TC-144 with their criterion ids. The explicitly ignored local lane cargo-compiles the integration executable twice with different Rust metadata in the sole existing target, asserts fresh=false for each compilation, executes the exact fixture in each binary, and compares nonempty byte outputs. Existing pre-rebase coder receipts show eleven normal tests passing and the two-build lane passing with 7209 bytes from each binary; these were inspected, not rerun. Foreign-clause control uses a genuinely admitted other package, and the shortened request rejects its still-admitted position-1 valuation row.
+
+Source-map reachability independently traced: quire-contract-model/src/checked_package/common.rs validate_source_map_entries constructs expected (node, role, ordinal) from all graph occurrences and compares actual source-map keys exactly, returning InvalidSourceMap when actual != expected. checked_package/v2/mod.rs calls that validator before constructing the admitted CheckedPackageV2, whose fields are private; TemporalSubjectView::arena_of requires a declared occurrence. Thus a missing map entry for an accepted occurrence cannot reach CheckedSubject::new through the public admitted API. TC-144 now documents this defensive-arm proof rather than fabricating an invalid checked package.
+
+All findings across the six reviewed artifacts have a latest resolved outcome. No new fix-diff findings. Review mergeable, subject to the lead's one final gate and normal integration checks; no claim that the unavailable repository-wide matrix or final gate passed.
