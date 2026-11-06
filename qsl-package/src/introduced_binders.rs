@@ -217,36 +217,15 @@ impl<'w> Walk<'_, 'w> {
                 let mut covered = BTreeSet::new();
                 self.term(&node.body, shadow, &mut covered);
                 // A dependency the body does not reference is still part of
-                // the closure, under the scopes the node is reached in; a
-                // binder the node's own scopes name is not read from outside.
-                let own = own_names(&node.body);
-                let outside = own
-                    .iter()
-                    .fold(shadow.clone(), |acc, name| acc.with_name(name));
+                // the closure, under the scopes the node is reached in.
                 for dependency in &node.dependencies {
                     if !covered.contains(dependency) {
-                        self.node(dependency, &outside);
+                        self.node(dependency, shadow);
                     }
                 }
             }
             _ => {}
         }
-    }
-}
-
-/// The names a node's own application binds.
-fn own_names(body: &CheckedTerm) -> Vec<&str> {
-    let CheckedTerm::Application {
-        operation,
-        arguments,
-        ..
-    } = body
-    else {
-        return Vec::new();
-    };
-    match opening(operation.identity(), arguments) {
-        Opening::Let { name, .. } | Opening::Query { name, .. } => vec![name],
-        Opening::Case(_) | Opening::None => Vec::new(),
     }
 }
 
@@ -355,53 +334,5 @@ mod tests {
             "case",
         );
         assert_eq!(found, vec!["outer", "s"]);
-    }
-
-    /// A binder the body never reads has no reference in the term, yet its
-    /// node can be a dependency of the application that introduces it. It is
-    /// introduced, so it is no source, also under an enclosing application.
-    #[trace("FR-390-AC-68", "TC-1071")]
-    #[test]
-    fn an_unread_binder_listed_as_a_dependency_is_not_a_source() {
-        let count = |name: &str, dependencies: &[&str], source: &str, bound: &str, body: Value| {
-            node(
-                name,
-                "expression",
-                "collection",
-                dependencies,
-                json!({
-                    "term": "application",
-                    "operator": "collection",
-                    "operation": {"identity": "quire.op.collection.count", "laws": [], "leaves": [], "member": null, "mode": null},
-                    "arguments": [
-                        reference(source),
-                        {"term": "binding", "name": bound, "value": body},
-                    ],
-                    "result_type": id("type"),
-                }),
-            )
-        };
-        let truth =
-            json!({"term": "literal", "type": id("type"), "value": true, "value_kind": "boolean"});
-        let found = sources(
-            vec![
-                count("alone", &["s", "unread"], "s", "unread", truth.clone()),
-                parameter("s", "s"),
-                parameter("unread", "unread"),
-            ],
-            "alone",
-        );
-        assert_eq!(found, vec!["s"]);
-        // Nested: the outer body is the inner application, which lists `unread`.
-        let found = sources(
-            vec![
-                count("outer", &["s", "inner"], "s", "a", reference("inner")),
-                count("inner", &["s", "unread"], "s", "unread", truth),
-                parameter("s", "s"),
-                parameter("unread", "unread"),
-            ],
-            "outer",
-        );
-        assert_eq!(found, vec!["s"]);
     }
 }
