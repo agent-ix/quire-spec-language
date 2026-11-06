@@ -14,7 +14,7 @@ relationships:
 
 ## Description
 
-Verify that a protocol reference expression builds, resolves its target by structural node id, refuses an unknown, non-protocol or stale target, admits a repeated reference as a further occurrence of one carrier, and emits exactly the carrier QSpec FR-322-AC-66 specifies, whose structural path includes its bound target. Scope: FR-308-AC-6, FR-218-AC-8, FR-218-AC-9, FR-092-AC-16, FR-092-AC-17, FR-092-AC-18, FR-092-AC-19, FR-092-AC-20, FR-092-AC-21, FR-092-AC-22, FR-092-AC-23.
+Verify that a protocol reference expression builds, resolves its target by structural node id, refuses an unknown, non-protocol or stale target, admits a repeated reference as a further occurrence of one carrier, and emits exactly the carrier QSpec FR-322-AC-66 specifies, whose structural path includes its bound target. Scope: FR-308-AC-6, FR-218-AC-8, FR-218-AC-9, FR-092-AC-16, FR-092-AC-17, FR-092-AC-18, FR-092-AC-19, FR-092-AC-20, FR-092-AC-21, FR-092-AC-22, FR-092-AC-23, FR-092-AC-24.
 
 Catches an implementation that binds by name and looks it up again at emission, one that emits a `dependency_reference` or a separate collection, one that emits a second carrier or refuses for a repeated reference, one that changes the carrier id when a reference is repeated, one that lets the occurrences enter node identity, one that carries a semantic type other than the target's, one that emits a bare union key with no member or payload witness, and one that builds the carrier path without its target.
 
@@ -60,6 +60,10 @@ Catches an implementation that binds by name and looks it up again at emission, 
     `ordered enum Level { LOW, MID, HIGH }`. Compare each shape row with the
     admitted binding's shape, rebuild each shape with a variant reordered,
     removed or the ordered flag flipped, and omit one case's member node.
+14. Emit a unit that declares `record R { xs: Sequence<Integer>[0, 3]; s: Set<Boolean>; }`,
+    then a unit with no collection. Join each collection row with a wrong
+    element reference, a map in place of the collection type and an unemitted
+    node, and follow a re-pointed element and a bound typed by another node.
 
 ## Expected Results
 
@@ -107,22 +111,19 @@ Catches an implementation that binds by name and looks it up again at emission, 
   type nodes share its recursion group. The tuple, union and model-owned-record
   units give no source record row. IR admits each row's record node and
   type nodes.
-- Step 12 gives one `SelectedSourceTupleRow` per source tuple. `Triple`'s row
-  names the emitted `composite_type`/`tuple` node, its source authority and
-  identity equal that node's owner, its qualified declaration is `["Triple"]`
-  and its type handle is the checked declaration's key. Its positions have
-  ordinals 0, 1 and 2, checked types `Composite(Pair)`, `Option<Integer>` and
-  `Boolean`, and type node ids equal to the node's references in order. IR joins
-  the rows and projects `Composite` of the type handle with the complete view;
-  with no row it refuses `UnavailableIdentityWitness`; every permuted,
-  short, extended, renumbered or re-pointed row refuses
-  `MismatchedIdentityWitness`. The record-only unit gives no tuple row. The
-  short list, the unemitted node and the missing declaration are writer
-  faults, and the re-pointed position is named by its final type node.
-- Step 13 gives one `SelectedSourceEnumShapeRow` per enum whose shape equals
-  the admitted binding's, with `Status` unordered in case-name byte order and
-  `Level` ordered in declaration order, each case's variant the shape's variant
-  at its rank and each node id equal to the matching declaration or member
-  row's. A reordered or removed variant and a flipped ordered flag do not equal
-  the row's shape. The omitted case node is a writer fault.
+- Step 12 gives one `SelectedSourceTupleRow` per source tuple, as
+  FR-092-AC-22 states for `Triple`. IR joins the rows and projects
+  `Composite` of the type handle; with no row it refuses
+  `UnavailableIdentityWitness`; every permuted, short, extended, renumbered or
+  re-pointed row refuses `MismatchedIdentityWitness`. The record-only unit
+  gives no tuple row. The short list, the unemitted node and the missing
+  declaration are writer faults, and a re-pointed position is named by its
+  final type node.
+- Step 13 gives one `SelectedSourceEnumShapeRow` per enum, as FR-092-AC-23
+  states. A reordered or removed variant and a flipped ordered flag do not
+  equal the row's shape. The omitted case node is a writer fault.
+- Step 14 gives one `SelectedSourceCollectionRow` per collection node, as
+  FR-092-AC-24 states. The wrong element, the map and the unemitted node are
+  writer faults, the re-pointed element is followed and the mistyped bound is
+  refused. The unit with no collection gives none.
 - Assertions compare typed fields, causes and keys, never message text.

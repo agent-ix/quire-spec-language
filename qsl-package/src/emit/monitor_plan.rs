@@ -732,6 +732,7 @@ pub(super) struct RetainedRows {
     pub(super) selected_source_record_rows: Vec<super::SelectedSourceRecordRow>,
     pub(super) selected_source_tuple_rows: Vec<quire_contract_model::SelectedSourceTupleRow>,
     pub(super) selected_source_enum_shape_rows: Vec<super::SelectedSourceEnumShapeRow>,
+    pub(super) selected_source_collection_rows: Vec<super::SelectedSourceCollectionRow>,
     pub(super) selected_exact_declaration_rows:
         Vec<quire_contract_model::SelectedExactDeclarationRow>,
     pub(super) selected_exact_field_rows: Vec<quire_contract_model::SelectedExactFieldRow>,
@@ -972,6 +973,18 @@ pub(super) fn carry_rows(
             rekey.id(structural_node);
         }
     }
+    let mut source_collections = retained.selected_source_collection_rows.clone();
+    for row in &mut source_collections {
+        let super::SelectedSourceCollectionRow {
+            structural_node,
+            base_node,
+            element_node,
+            value_type: _,
+        } = row;
+        rekey.id(structural_node);
+        rekey.id(base_node);
+        rekey.id(element_node);
+    }
     let mut exact_declarations = retained.selected_exact_declaration_rows.clone();
     for row in &mut exact_declarations {
         let m::SelectedExactDeclarationRow {
@@ -1074,6 +1087,7 @@ pub(super) fn carry_rows(
         selected_source_record_rows: source_records,
         selected_source_tuple_rows: source_tuples,
         selected_source_enum_shape_rows: source_enum_shapes,
+        selected_source_collection_rows: source_collections,
         selected_exact_declaration_rows: exact_declarations,
         selected_exact_field_rows: exact_fields,
         equality_producer_identity_rows: producers,
@@ -1155,6 +1169,39 @@ pub(super) fn follow_final_positions(
     Ok(())
 }
 
+/// Sets each collection row's `element_node` to the node the final collection
+/// node references, and requires a bounded collection's domain node to be
+/// typed by that collection node, so a re-pointed element or bound is named
+/// by its final node. A row whose nodes are absent or malformed is a writer
+/// fault.
+pub(super) fn follow_final_collections(
+    rows: &mut [super::SelectedSourceCollectionRow],
+    nodes: &[CheckedSemanticNodeV2],
+) -> Result<(), EmitRefusal> {
+    let find = |id: &CheckedNodeId| {
+        nodes
+            .iter()
+            .find(|node| &node.node_id == id)
+            .ok_or_else(|| invariant("a collection row names a node of the package"))
+    };
+    for row in rows {
+        let base = find(&row.base_node)?;
+        let CheckedTerm::Aggregate { members } = &base.body else {
+            return Err(invariant("a collection node's body is an aggregate"));
+        };
+        let [CheckedTerm::Reference { target }] = members.as_slice() else {
+            return Err(invariant("a collection node references its element"));
+        };
+        row.element_node = target.clone();
+        if row.structural_node != row.base_node
+            && find(&row.structural_node)?.semantic_type != row.base_node
+        {
+            return Err(invariant("a bounded collection is typed by its collection"));
+        }
+    }
+    Ok(())
+}
+
 /// The shared tail: index the graph, encode and wrap the bytes.
 fn finish(
     base: &CheckedPackageV2,
@@ -1206,6 +1253,10 @@ fn finish(
     let mut rows = carry_rows(retained, changes);
     follow_final_bindings(&mut rows.selected_source_record_rows, &semantic_graph.nodes)?;
     follow_final_positions(&mut rows.selected_source_tuple_rows, &semantic_graph.nodes)?;
+    follow_final_collections(
+        &mut rows.selected_source_collection_rows,
+        &semantic_graph.nodes,
+    )?;
     Ok(Emission {
         package,
         omitted: rows.omitted,
@@ -1223,6 +1274,7 @@ fn finish(
         selected_source_record_rows: rows.selected_source_record_rows,
         selected_source_tuple_rows: rows.selected_source_tuple_rows,
         selected_source_enum_shape_rows: rows.selected_source_enum_shape_rows,
+        selected_source_collection_rows: rows.selected_source_collection_rows,
         selected_exact_declaration_rows: rows.selected_exact_declaration_rows,
         selected_exact_field_rows: rows.selected_exact_field_rows,
         equality_producer_identity_rows: rows.equality_producer_identity_rows,

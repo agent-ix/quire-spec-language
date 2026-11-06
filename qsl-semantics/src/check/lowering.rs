@@ -468,6 +468,28 @@ pub struct SourceEnumMember {
     pub case: Box<str>,
 }
 
+/// One lowered collection type node: the checker's collection type and the
+/// nodes that make it up (FR-092 "Source collection rows"). A bounded
+/// collection's `node` is its `collection_bounds` domain over `base`; an
+/// unbounded one is `base` itself.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceCollection {
+    /// The checker's `ValueType::Collection` the node was built from.
+    pub value_type: ValueType,
+    /// The collection composite node holding the element reference.
+    pub base: NodeKey,
+    /// The element type node the base references.
+    pub element: NodeKey,
+}
+
+/// A collection's nodes as lowering built them, possibly still placeholders.
+struct CollectionFact {
+    node: NodeRef,
+    base: NodeRef,
+    element: NodeRef,
+    value_type: ValueType,
+}
+
 /// The checked semantic graph: every lowered node by key.
 ///
 /// Nodes are held by hash, so a lookup costs a key's hash and, for the
@@ -491,6 +513,9 @@ pub struct SemanticGraph {
     /// Each declared composite's final node key by its declaration key
     /// (FR-092 "Source record identity rows"), set when lowering finishes.
     composite_nodes: BTreeMap<NodeKey, NodeKey>,
+    /// Each lowered collection type's facts by its final node, set when
+    /// lowering finishes.
+    collection_nodes: BTreeMap<NodeKey, SourceCollection>,
     /// `nodes`' keys ascending, once ranked.
     order: Vec<NodeKey>,
 }
@@ -584,6 +609,12 @@ impl SemanticGraph {
     /// The source-owned enum members associated with lowered nodes.
     pub fn source_enum_members(&self) -> impl Iterator<Item = (&NodeKey, &SourceEnumMember)> {
         self.source_enum_members.iter()
+    }
+
+    /// Every lowered collection type node with the checker's type and the
+    /// nodes it is made of (FR-092 "Source collection rows").
+    pub fn source_collections(&self) -> impl Iterator<Item = (&NodeKey, &SourceCollection)> {
+        self.collection_nodes.iter()
     }
 
     /// The final node key of the declared composite `declaration`, if
@@ -901,6 +932,9 @@ pub(crate) struct Lowering<'a> {
     /// the package has so far).
     unsettled_functions: Vec<usize>,
     unsettled_composites: Vec<NodeKey>,
+    /// Every collection type node built, with the indices not yet settled.
+    collection_facts: Vec<CollectionFact>,
+    unsettled_collections: Vec<usize>,
     /// Composites whose node is being built, innermost last.
     composites_in_progress: Vec<NodeKey>,
     /// [`Self::composites_in_progress`] as a set: a chain of composites
@@ -1962,6 +1996,8 @@ impl<'a> Lowering<'a> {
             composites: HashMap::new(),
             unsettled_functions: Vec::new(),
             unsettled_composites: Vec::new(),
+            collection_facts: Vec::new(),
+            unsettled_collections: Vec::new(),
             composites_in_progress: Vec::new(),
             composites_open: HashSet::new(),
             composite_placeholders: HashMap::new(),
@@ -2067,6 +2103,20 @@ impl<'a> Lowering<'a> {
         .into_iter()
         .collect();
         self.graph.composite_nodes = composites.clone();
+        self.graph.collection_nodes = self
+            .collection_facts
+            .into_iter()
+            .filter_map(|fact| {
+                Some((
+                    fact.node.admitted()?.clone(),
+                    SourceCollection {
+                        value_type: fact.value_type,
+                        base: fact.base.admitted()?.clone(),
+                        element: fact.element.admitted()?.clone(),
+                    },
+                ))
+            })
+            .collect();
         Ok(Lowered {
             graph: self.graph,
             correspondence: self.correspondence,
@@ -2745,22 +2795,32 @@ impl<'a> Lowering<'a> {
             collection_form(collection.kind()),
             None,
             None,
-            BodyTerm::aggregate(vec![MemberTerm::reference_node(element)]),
+            BodyTerm::aggregate(vec![MemberTerm::reference_node(element.clone())]),
         )?;
         // An unbounded `K<T>` is its composite node alone: it has no
         // `collection_bounds` domain (ADR-014 N-3), which is the form IR's
         // `requires-bound` reads as unbounded.
-        let Some(bound) = collection.bound() else {
-            return Ok(base);
+        let node = match collection.bound() {
+            None => base.clone(),
+            Some(bound) => {
+                let min = self.integer_literal(Integer::from(bound.minimum()), location)?;
+                let max = self.integer_literal(Integer::from(bound.maximum()), location)?;
+                self.bounded(
+                    "collection_bounds",
+                    base.clone(),
+                    vec![("min", min), ("max", max)],
+                    location,
+                )?
+            }
         };
-        let min = self.integer_literal(Integer::from(bound.minimum()), location)?;
-        let max = self.integer_literal(Integer::from(bound.maximum()), location)?;
-        self.bounded(
-            "collection_bounds",
+        self.unsettled_collections.push(self.collection_facts.len());
+        self.collection_facts.push(CollectionFact {
+            node: node.clone(),
             base,
-            vec![("min", min), ("max", max)],
-            location,
-        )
+            element,
+            value_type: ValueType::Collection(std::sync::Arc::new(collection.clone())),
+        });
+        Ok(node)
     }
 
     /// Start the declared record or tuple `declaration`: its node
@@ -3420,6 +3480,7 @@ impl<'a> Lowering<'a> {
         let unsettled_functions = std::mem::take(&mut self.unsettled_functions);
         let unsettled_protocols = std::mem::take(&mut self.unsettled_protocols);
         let unsettled_composites = std::mem::take(&mut self.unsettled_composites);
+        let unsettled_collections = std::mem::take(&mut self.unsettled_collections);
         self.composite_placeholders.clear();
         let mut aliases = BTreeMap::new();
         for (placeholder, built) in placeholders {
@@ -3600,6 +3661,13 @@ impl<'a> Lowering<'a> {
         for declaration in unsettled_composites {
             if let Some(node) = self.composites.get_mut(&declaration) {
                 *node = resolve(node).map_err(|()| unresolved(&root))?;
+            }
+        }
+        for index in unsettled_collections {
+            if let Some(fact) = self.collection_facts.get_mut(index) {
+                fact.node = resolve(&fact.node).map_err(|()| unresolved(&root))?;
+                fact.base = resolve(&fact.base).map_err(|()| unresolved(&root))?;
+                fact.element = resolve(&fact.element).map_err(|()| unresolved(&root))?;
             }
         }
         for (node, role, location) in occurrences {

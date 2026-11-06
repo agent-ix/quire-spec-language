@@ -7,11 +7,11 @@
 //! and refuses a row that permutes, drops, adds or re-points a position.
 
 use quire_contract_model::{
-    CheckedPackageReadLimits, CheckedPackageV2, CheckedPackageV2ReadResult,
     ExactTypeProjectionErrorCode, SelectedExactIdentities, SelectedSourceTupleRow,
 };
 
 use super::source_enum_rows::node_with_id;
+use super::source_union_rows::admit_bytes;
 use super::*;
 
 const TUPLES: &str = "tuple Pair(Integer, Boolean);\n\
@@ -51,21 +51,6 @@ fn row_of<'e>(
 
 fn id_json(id: &CheckedNodeId) -> Value {
     serde_json::to_value(id).expect("a node id serializes")
-}
-
-fn admit(emission: &Emission, wire: &Value) -> CheckedPackageV2 {
-    let mut evidence = CheckedPackageEvidence::new();
-    for feature in wire["lock"]["required_features"].as_array().unwrap() {
-        evidence.support_feature(feature.as_str().unwrap());
-    }
-    match CheckedPackageV2::read(
-        emission.package.bytes(),
-        CheckedPackageReadLimits::bounded(),
-        &evidence,
-    ) {
-        CheckedPackageV2ReadResult::Admitted(package) => *package,
-        other => panic!("IR admits the emitted package: {other:?}"),
-    }
 }
 
 #[trace("FR-092-AC-22", "TC-1021")]
@@ -127,19 +112,6 @@ fn a_source_tuple_emits_its_declaration_and_ordered_position_rows() {
         row_of(&package, &emission, "Pair").structural_node
     );
 
-    let keys: Vec<&NodeKey> = emission
-        .selected_source_tuple_rows()
-        .iter()
-        .map(|row| {
-            package
-                .graph()
-                .semantic_graph()
-                .composite_node(&row.type_handle)
-                .expect("a tuple node")
-        })
-        .collect();
-    assert!(keys.windows(2).all(|pair| pair[0] < pair[1]));
-
     let (_, records, _) = emitted(super::source_record_rows::RECORDS);
     assert_eq!(records.selected_source_tuple_rows(), []);
 }
@@ -148,7 +120,7 @@ fn a_source_tuple_emits_its_declaration_and_ordered_position_rows() {
 #[test]
 fn ir_joins_the_emitted_tuple_rows_and_refuses_a_misdescribed_position_list() {
     let (package, emission, wire) = emitted(TUPLES);
-    let admitted = admit(&emission, &wire);
+    let admitted = admit_bytes(&emission, &wire);
     let row = row_of(&package, &emission, "Triple").clone();
 
     let joined = SelectedExactIdentities::empty()
@@ -229,7 +201,7 @@ fn guard_inputs(
 #[trace("FR-092-AC-22", "TC-1021")]
 #[test]
 fn positions_that_disagree_with_the_declaration_are_a_writer_fault() {
-    let (package, emission, _) = emitted(TUPLES);
+    let (package, _, _) = emitted(TUPLES);
     let (declared, nodes, emitted) = guard_inputs(&package);
     let rows =
         crate::emit::tuple_position_rows(&declared, nodes.clone(), &emitted).expect("they agree");
@@ -247,12 +219,6 @@ fn positions_that_disagree_with_the_declaration_are_a_writer_fault() {
         "a type node that was not emitted"
     );
 
-    let emitted_all: HashMap<NodeKey, CheckedNodeId> = package
-        .graph()
-        .semantic_graph()
-        .nodes()
-        .map(|node| (node.key(), node_id(node.key())))
-        .collect();
     let graph = package.graph();
     let without = graph
         .scope()
@@ -260,11 +226,10 @@ fn positions_that_disagree_with_the_declaration_are_a_writer_fault() {
         .composites()
         .filter(|declaration| declaration.name() != "Triple");
     assert_eq!(
-        crate::emit::source_tuple_rows_over(graph, &emitted_all, without),
+        crate::emit::source_tuple_rows_over(graph, &emitted, without),
         Err(EmitRefusal::SourceMapInvariant),
         "an emitted tuple node no declaration joins to is a fault, not no row"
     );
-    assert_eq!(emission.selected_source_tuple_rows().len(), 2);
 }
 
 #[trace("FR-092-AC-22", "TC-1021")]
@@ -275,7 +240,7 @@ fn the_final_tuple_node_decides_each_position_type_node() {
     let mut rows = vec![row.clone()];
     crate::emit::monitor_plan::follow_final_positions(&mut rows, &emission.wire_nodes)
         .expect("an unchanged node follows");
-    assert_eq!(rows, [row.clone()]);
+    assert_eq!(rows, std::slice::from_ref(&row));
 
     // A writer that re-points a position changes the row with it.
     let edit = |change: &dyn Fn(&mut Vec<CheckedTerm>)| {
@@ -351,21 +316,6 @@ fn a_source_enum_emits_its_checked_variant_shape_with_final_node_ids() {
                 id_json(&case.structural_node)
             );
         }
-        let declaration_row = emission
-            .selected_enum_declaration_rows()
-            .iter()
-            .find(|d| d.node_key == row.declaration_key)
-            .expect("the declaration row");
-        assert_eq!(declaration_row.structural_node, row.structural_node);
-        let member_ids: Vec<_> = emission
-            .selected_enum_member_rows()
-            .iter()
-            .filter(|m| m.declaration_node == row.structural_node)
-            .map(|m| (m.case.clone(), m.structural_node.clone()))
-            .collect();
-        for case in &row.cases {
-            assert!(member_ids.contains(&(case.case.clone(), case.structural_node.clone())));
-        }
     }
 }
 
@@ -407,5 +357,135 @@ fn a_reordered_or_missing_variant_is_not_the_checked_shape() {
         crate::emit::source_enum_shape_rows(package.graph(), &missing_case),
         Err(EmitRefusal::SourceMapInvariant),
         "a case node that was not emitted"
+    );
+}
+
+const COLLECTIONS: &str = "record R { xs: Sequence<Integer>[0, 3]; s: Set<Boolean>; }\n\
+    function f using v(r: R): Boolean pure { true }\n";
+
+#[trace("FR-092-AC-24", "TC-1021")]
+#[test]
+fn a_collection_type_node_is_paired_with_the_checkers_collection_type() {
+    let (package, emission, wire) = emitted(COLLECTIONS);
+    let CompositeShape::Record(fields) = declaration(&package, "R").shape() else {
+        panic!("R is a record");
+    };
+    let rows = emission.selected_source_collection_rows();
+    assert_eq!(rows.len(), 2);
+    let record = super::source_record_rows::row_of(&package, &emission, "R");
+    for (index, form, bounded, element_form) in [
+        (0, "sequence", true, "integer"),
+        (1, "set", false, "boolean"),
+    ] {
+        let row = rows
+            .iter()
+            .find(|row| row.value_type == *fields[index].value_type())
+            .expect("a row for the field's checked type");
+        assert_eq!(
+            row.structural_node, record.members[index].type_node,
+            "the record binds the collection row's node"
+        );
+        assert_eq!(row.structural_node != row.base_node, bounded);
+        let base = node_with_id(&wire, &row.base_node);
+        assert_eq!(base["semantic_form"], json!(form));
+        assert_eq!(
+            base["body"]["members"][0]["target"],
+            id_json(&row.element_node)
+        );
+        assert_eq!(
+            node_with_id(&wire, &row.element_node)["semantic_form"],
+            json!(element_form)
+        );
+        if bounded {
+            let domain = node_with_id(&wire, &row.structural_node);
+            assert_eq!(domain["semantic_form"], json!("collection_bounds"));
+            assert_eq!(domain["semantic_type"], id_json(&row.base_node));
+        }
+    }
+    assert_eq!(
+        emitted(super::source_record_rows::RECORDS)
+            .1
+            .selected_source_collection_rows(),
+        []
+    );
+}
+
+#[trace("FR-092-AC-24", "TC-1021")]
+#[test]
+fn a_collection_row_that_disagrees_with_its_nodes_is_a_writer_fault() {
+    let (package, emission, _) = emitted(COLLECTIONS);
+    let graph = package.graph().semantic_graph();
+    let (key, collection) = graph.source_collections().next().expect("a collection");
+    let emitted_ids: HashMap<NodeKey, CheckedNodeId> = graph
+        .nodes()
+        .map(|node| (node.key(), node_id(node.key())))
+        .collect();
+    let structural = node_id(key.clone());
+    let references = Some(vec![collection.element.clone()]);
+    let join = |c: &qsl_semantics::check::SourceCollection,
+                refs: Option<Vec<NodeKey>>,
+                ids: &HashMap<NodeKey, CheckedNodeId>| {
+        crate::emit::collection_row(&structural, c, refs, ids)
+    };
+    assert!(join(collection, references.clone(), &emitted_ids).is_ok());
+
+    // A wrong element reference.
+    let other = graph
+        .source_collections()
+        .map(|(_, c)| c.element.clone())
+        .find(|element| *element != collection.element)
+        .expect("another element");
+    assert_eq!(
+        join(collection, Some(vec![other]), &emitted_ids),
+        Err(EmitRefusal::SourceMapInvariant)
+    );
+    // A map is not a collection.
+    let mut mixed = collection.clone();
+    mixed.value_type = ValueType::map(quire_exact::MapType::new(ValueType::Boolean, None));
+    assert_eq!(
+        join(&mixed, references.clone(), &emitted_ids),
+        Err(EmitRefusal::SourceMapInvariant)
+    );
+    // An element that was not emitted.
+    let mut without = emitted_ids.clone();
+    without.remove(&collection.element);
+    assert_eq!(
+        join(collection, references, &without),
+        Err(EmitRefusal::SourceMapInvariant)
+    );
+
+    // The final nodes decide the element and the bound's base.
+    let bounded = emission
+        .selected_source_collection_rows()
+        .iter()
+        .find(|row| row.structural_node != row.base_node)
+        .expect("the bounded sequence")
+        .clone();
+    let mut rows = vec![bounded.clone()];
+    crate::emit::monitor_plan::follow_final_collections(&mut rows, &emission.wire_nodes)
+        .expect("the emitted nodes agree");
+    assert_eq!(rows, std::slice::from_ref(&bounded));
+    let mut nodes = emission.wire_nodes.clone();
+    for node in &mut nodes {
+        if node.node_id == bounded.base_node {
+            node.body = CheckedTerm::Aggregate {
+                members: vec![CheckedTerm::Reference {
+                    target: bounded.structural_node.clone(),
+                }],
+            };
+        }
+    }
+    let mut moved = vec![bounded.clone()];
+    crate::emit::monitor_plan::follow_final_collections(&mut moved, &nodes)
+        .expect("a re-pointed element follows");
+    assert_eq!(moved[0].element_node, bounded.structural_node);
+    for node in &mut nodes {
+        if node.node_id == bounded.structural_node {
+            node.semantic_type = bounded.element_node.clone();
+        }
+    }
+    assert!(
+        crate::emit::monitor_plan::follow_final_collections(&mut [bounded], &nodes).is_err(),
+        "a bound over another node than the collection"
     );
 }

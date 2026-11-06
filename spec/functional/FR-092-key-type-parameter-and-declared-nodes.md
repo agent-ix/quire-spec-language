@@ -143,8 +143,8 @@ checked declaration and the lowered tuple node, never from package bytes,
 decoded nodes or display names. A writer that re-points or renames a node
 after lowering SHALL carry the final id in the row, so the row names each
 position by the reference the written package holds at that ordinal. A model
-tuple carries its model tuple declaration row and no source tuple row. A
-tuple node that is not emitted has no row. An emitted source tuple node that
+tuple carries no source tuple row, and a tuple node that is not emitted has
+no row. An emitted source tuple node that
 no declared tuple joins to, a tuple whose references disagree with its
 declaration in count, and a position whose type node is not emitted, are
 writer faults, not a row with a missing entry. Rows are written in ascending
@@ -165,10 +165,24 @@ key. The replay facade `AdmittedEnum` exposes the same shape and each case's
 variant. A declaration bound twice has one row. A declaration that is not
 emitted has no row, and a case whose member node is not emitted is a writer
 fault. Rows are written in ascending order of their declarations' keys.
-A collection type is structural: it has no declaration, so it has no source
-row; its element, key and value type nodes are the references of its emitted
-node and its checked type is the `ValueType::Collection` or `Map` its
-consumers already hold.
+
+### Source collection rows
+
+A collection type is structural: it has no declaration, owner or declaration
+row. For each collection type node it emits, the `Emission` SHALL carry one
+`SelectedSourceCollectionRow` pairing that node with the checker's
+`ValueType::Collection` it was built from. The row holds the node's emitted
+id (the `collection_bounds` domain of a bounded collection, otherwise the
+collection composite node), the emitted collection composite node, the
+emitted element type node that composite references, and the checked type
+with its kind, element and cardinality bound. `check` reads the type from the
+collection being lowered, never from package bytes or node forms. A writer
+that re-points the element, or the bound's base, SHALL carry the final node
+in the row. A value type that is not a collection, a collection node that
+does not reference exactly the element, a bounded domain not typed by its
+collection node and a node that is not emitted are writer faults. A map has
+no type node, so it has no row. Rows are written in ascending order of their
+nodes' keys.
 
 ### Type nodes
 
@@ -274,6 +288,7 @@ missing profile selections retain FR-383 and FR-218's refusals.
 | FR-092-AC-21 | Emitting a unit that declares `record Point { x: Integer; y: Integer; }` and `record Tagged { p: Point; note: Boolean?; maybe: Option<Integer>; }` gives one `SelectedSourceRecordRow` per record. `Tagged`'s row names the emitted `composite_type`/`record` node; its source authority and identity equal that node's source owner; its qualified declaration is `["Tagged"]`; its record key is the checked declaration's key. Its members are `p`, `note` and `maybe` in declaration order with equal declared and binding names, presence `Required`, `Optional` and `Required`, field types `Composite(Point)`, `Boolean` and `Option<Integer>`, and type node ids equal to the targets of the node's bindings; `p`'s type node is `Point`'s row node. For a recursive record each member type node that reaches the record shares the record node's recursion group. A binding list whose count disagrees with the declaration, a type node that is not emitted, and an emitted source record node that no declared record joins to are writer faults; a binding whose name differs from the declared name keeps both names. A unit with no source record, a tuple or union unit, and a unit whose records are model-owned has no source record row, and every emitted source record node has exactly one row. | Test (TC-1021) |
 | FR-092-AC-22 | Emitting a unit that declares `tuple Pair(Integer, Boolean);` and `tuple Triple(Pair, Option<Integer>, Boolean);` gives one `SelectedSourceTupleRow` per tuple. `Triple`'s row names the emitted `composite_type`/`tuple` node; its source authority and identity equal that node's source owner; its qualified declaration is `["Triple"]`; its type handle is the checked declaration's key. Its positions have ordinals 0, 1 and 2 with checked types `Composite(Pair)`, `Option<Integer>` and `Boolean`, and type node ids equal to the node's references in order; position 0's type node is `Pair`'s row node. IR's `with_source_tuple_rows` accepts the rows against the package read back and `project_exact_type` of the tuple node returns `Composite` of the type handle with the complete view, while the same node with no row refuses `UnavailableIdentityWitness` and a row that permutes, drops or adds a position, renumbers an ordinal or re-points a type node refuses `MismatchedIdentityWitness`. A position list that disagrees with the declaration in count, a type node that is not emitted, and an emitted source tuple node that no declared tuple joins to are writer faults; a position the writer re-pointed is named by its final type node. A unit with no source tuple has no tuple row, and every emitted source tuple node has exactly one row. | Test (TC-1021) |
 | FR-092-AC-23 | Emitting a unit that declares `enum Status { READY, DONE }` and `ordered enum Level { LOW, MID, HIGH }` gives one `SelectedSourceEnumShapeRow` per enum. `Status`'s shape is unordered with its variants in case-name byte order `DONE`, `READY`; `Level`'s is ordered with `LOW`, `MID`, `HIGH`. Each row's shape equals the admitted binding's shape, each case's variant is the shape's variant at that rank, the declaration id equals the declaration row's id and each case's node id equals the matching member row's id. A shape with a variant reordered or removed, or with the other ordered flag, is not equal to the row's shape. A case whose member node is not emitted is a writer fault. `AdmittedEnum` exposes the same shape and each case's variant. Collection types have no source row. | Test (TC-1021) |
+| FR-092-AC-24 | Emitting a unit that declares `record R { xs: Sequence<Integer>[0, 3]; s: Set<Boolean>; }` gives one `SelectedSourceCollectionRow` per collection type node. The bounded sequence's row names its emitted `collection_bounds` node, typed by its emitted `sequence` composite node, which references the `integer` element node the row names, with the checked `Sequence<Integer>[0, 3]`; the set's row has equal structural and base nodes, a `set` composite and a `boolean` element. `R`'s source record row binds each field to its collection row's node. A value type that is not a collection, a base that does not reference exactly the row's element and an unemitted node are writer faults; a re-pointed element or a bound typed by another node than its collection is followed or refused from the final nodes. A unit with no collection has none. | Test (TC-1021) |
 
 ## Dependencies
 

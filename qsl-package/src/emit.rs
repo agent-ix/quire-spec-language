@@ -533,6 +533,22 @@ pub struct SelectedSourceEnumShapeCaseRow {
     pub variant: quire_exact::VariantId,
 }
 
+/// One collection type node the package carries, paired with the checker's
+/// collection type (FR-092 "Source collection rows"). A collection is
+/// anonymous, so the row has a node and no declaration or source owner.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedSourceCollectionRow {
+    /// The collection type's emitted node: the `collection_bounds` domain of a
+    /// bounded collection, otherwise the collection composite node itself.
+    pub structural_node: CheckedNodeId,
+    /// The emitted collection composite node holding the element reference.
+    pub base_node: CheckedNodeId,
+    /// The emitted element type node the base references.
+    pub element_node: CheckedNodeId,
+    /// The checker's `ValueType::Collection`, kind, element and bound included.
+    pub value_type: quire_exact::ValueType,
+}
+
 /// The emitted package and the nodes it omits.
 #[derive(Clone)]
 pub struct Emission {
@@ -579,6 +595,8 @@ pub struct Emission {
     pub(crate) selected_source_tuple_rows: Vec<quire_contract_model::SelectedSourceTupleRow>,
     /// QSL-stage checked variant shapes of emitted source-owned enums.
     pub(crate) selected_source_enum_shape_rows: Vec<SelectedSourceEnumShapeRow>,
+    /// QSL-stage collection type facts for emitted collection nodes.
+    pub(crate) selected_source_collection_rows: Vec<SelectedSourceCollectionRow>,
     /// The checking stage's selected model declaration rows (record, object,
     /// declared unit), retained from the acquisition these bytes were
     /// emitted from. A collection type is structural and has no row.
@@ -817,6 +835,7 @@ impl DebugWith for Emission {
             selected_source_record_rows,
             selected_source_tuple_rows,
             selected_source_enum_shape_rows,
+            selected_source_collection_rows,
             selected_exact_declaration_rows,
             selected_exact_field_rows,
             equality_producer_identity_rows,
@@ -859,6 +878,10 @@ impl DebugWith for Emission {
             .field(
                 "selected_source_enum_shape_rows",
                 selected_source_enum_shape_rows,
+            )
+            .field(
+                "selected_source_collection_rows",
+                selected_source_collection_rows,
             )
             .field(
                 "selected_exact_declaration_rows",
@@ -1173,6 +1196,12 @@ impl Emission {
     /// the declarations' keys.
     pub fn selected_source_enum_shape_rows(&self) -> &[SelectedSourceEnumShapeRow] {
         &self.selected_source_enum_shape_rows
+    }
+
+    /// Collection type rows carried by this emission, ascending by the
+    /// collection nodes' keys.
+    pub fn selected_source_collection_rows(&self) -> &[SelectedSourceCollectionRow] {
+        &self.selected_source_collection_rows
     }
 
     /// Selected model declaration rows (record, object, declared unit) of the
@@ -5217,6 +5246,7 @@ pub fn emit_timed_models(
         selected_source_record_rows: Vec::new(),
         selected_source_tuple_rows: Vec::new(),
         selected_source_enum_shape_rows: Vec::new(),
+        selected_source_collection_rows: Vec::new(),
         selected_exact_declaration_rows: Vec::new(),
         selected_exact_field_rows: Vec::new(),
         equality_producer_identity_rows: Vec::new(),
@@ -6140,6 +6170,7 @@ fn emit_package_inner(
     let selected_source_record_rows = source_record_rows(graph, &emitted_node_ids)?;
     let selected_source_tuple_rows = source_tuple_rows(graph, &emitted_node_ids)?;
     let selected_source_enum_shape_rows = source_enum_shape_rows(graph, &emitted_node_ids)?;
+    let selected_source_collection_rows = source_collection_rows(graph, &emitted_node_ids)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
@@ -6198,6 +6229,7 @@ fn emit_package_inner(
         selected_source_record_rows,
         selected_source_tuple_rows,
         selected_source_enum_shape_rows,
+        selected_source_collection_rows,
         selected_exact_declaration_rows: graph.selected_exact_declaration_rows().to_vec(),
         selected_exact_field_rows: graph.selected_exact_field_rows().to_vec(),
         equality_producer_identity_rows,
@@ -6468,9 +6500,9 @@ fn source_tuple_rows_over<'d>(
     let unmatched = semantic.nodes().any(|node| {
         node.node_tag() == NodeTag::CompositeType
             && matches!(node.owner(), Some(Owner::Source(_)))
-            && node.tuple_position_nodes().is_some_and(|nodes| {
-                !nodes.is_empty() && node.declaration().is_some() && node_is_tuple(node)
-            })
+            && node
+                .tuple_position_nodes()
+                .is_some_and(|nodes| !nodes.is_empty())
             && emitted.contains_key(&node.key())
             && !rowed.contains(&node.key())
     });
@@ -6479,10 +6511,6 @@ fn source_tuple_rows_over<'d>(
     }
     rows.sort_by(|(left, _), (right, _)| left.cmp(right));
     Ok(rows.into_iter().map(|(_, row)| row).collect())
-}
-
-fn node_is_tuple(node: &qsl_semantics::check::SemanticNode) -> bool {
-    node.semantic_form() == "tuple"
 }
 
 /// The position entries of one tuple row, joining the declared position
@@ -6565,6 +6593,55 @@ fn source_enum_shape_rows(
         );
     }
     Ok(rows.into_values().collect())
+}
+
+/// FR-092 "Source collection rows": one row per emitted collection type node,
+/// pairing it with the checker's collection type and the emitted element
+/// node. A collection whose node is not emitted has no row.
+fn source_collection_rows(
+    graph: &CheckedGraph,
+    emitted: &HashMap<NodeKey, CheckedNodeId>,
+) -> Result<Vec<SelectedSourceCollectionRow>, EmitRefusal> {
+    let semantic = graph.semantic_graph();
+    semantic
+        .source_collections()
+        .filter_map(|(key, collection)| Some((collection, emitted.get(key)?)))
+        .map(|(collection, structural_node)| {
+            // A collection node's body is one bare reference, its element.
+            let base = semantic
+                .node(collection.base.clone())
+                .and_then(|node| node.tuple_position_nodes());
+            collection_row(structural_node, collection, base, emitted)
+        })
+        .collect()
+}
+
+/// One collection row joined to `emitted`. A value type that is not a
+/// collection (a map has no type node), a base node that does not reference
+/// exactly the element, and a node that was not emitted are writer faults.
+fn collection_row(
+    structural_node: &CheckedNodeId,
+    collection: &qsl_semantics::check::SourceCollection,
+    base_references: Option<Vec<NodeKey>>,
+    emitted: &HashMap<NodeKey, CheckedNodeId>,
+) -> Result<SelectedSourceCollectionRow, EmitRefusal> {
+    if !matches!(collection.value_type, quire_exact::ValueType::Collection(_))
+        || base_references.as_deref() != Some(std::slice::from_ref(&collection.element))
+    {
+        return Err(EmitRefusal::SourceMapInvariant);
+    }
+    let node = |key: &NodeKey| {
+        emitted
+            .get(key)
+            .cloned()
+            .ok_or(EmitRefusal::SourceMapInvariant)
+    };
+    Ok(SelectedSourceCollectionRow {
+        structural_node: structural_node.clone(),
+        base_node: node(&collection.base)?,
+        element_node: node(&collection.element)?,
+        value_type: collection.value_type.clone(),
+    })
 }
 
 /// The member entries of one record row, joining the declared fields to the
