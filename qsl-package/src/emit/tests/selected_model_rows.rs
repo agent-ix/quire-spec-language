@@ -157,6 +157,7 @@ fn selected_tuple_row_projects_the_admitted_type_and_missing_row_refuses() {
             emission.selected_tuple_declaration_rows(),
             emission.selected_source_unit_rows(),
             10_000,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
         )
         .expect("the complete selected model type view joins");
     let [tuple] = projected.tuples() else {
@@ -173,6 +174,7 @@ fn selected_tuple_row_projects_the_admitted_type_and_missing_row_refuses() {
             &[],
             emission.selected_source_unit_rows(),
             10_000,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
         )
         .expect_err("a missing selected tuple row refuses the complete projection");
     assert_eq!(

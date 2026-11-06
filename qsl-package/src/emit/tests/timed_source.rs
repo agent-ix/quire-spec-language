@@ -186,6 +186,7 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
             emission.selected_tuple_declaration_rows(),
             emission.selected_source_unit_rows(),
             10_000,
+            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
         )
         .expect("the source-owned unit row joins the admitted type view");
     assert_eq!(projected.units().len(), 1);
@@ -205,6 +206,7 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
                 emission.selected_tuple_declaration_rows(),
                 &[],
                 10_000,
+                &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000)
             )
             .expect_err("a missing source-unit row refuses the whole projection")
             .code,
@@ -453,14 +455,23 @@ fn an_authentic_selected_model_unit_round_trips_in_required_identity_handoff() {
         .expect("an actual producer-issued declared unit row");
     let bytes = rows.to_bytes(&package).unwrap();
     assert_eq!(
-        crate::ReadIdentityRows::read(&bytes, &package).unwrap(),
+        crate::ReadIdentityRows::read(
+            &bytes,
+            &package,
+            &mut crate::V2ReadLimits::fixture().native_join_budget()
+        )
+        .unwrap(),
         rows
     );
     let original: Value = serde_json::from_slice(&bytes).unwrap();
     let mut kind = original.clone();
     kind["declarations"][unit_index]["exact_identity"]["value"]["kind"] = json!("compound");
     assert_eq!(
-        crate::ReadIdentityRows::read(&serde_json::to_vec(&kind).unwrap(), &package),
+        crate::ReadIdentityRows::read(
+            &serde_json::to_vec(&kind).unwrap(),
+            &package,
+            &mut crate::V2ReadLimits::fixture().native_join_budget()
+        ),
         Err(crate::IdentityFileRefusal::Malformed {
             member: crate::IdentityMember::ExactIdentity
         })
@@ -469,7 +480,11 @@ fn an_authentic_selected_model_unit_round_trips_in_required_identity_handoff() {
     foreign["declarations"][unit_index]["exact_identity"]["value"]["node"]["package"] =
         json!("foreign-package");
     assert_eq!(
-        crate::ReadIdentityRows::read(&serde_json::to_vec(&foreign).unwrap(), &package),
+        crate::ReadIdentityRows::read(
+            &serde_json::to_vec(&foreign).unwrap(),
+            &package,
+            &mut crate::V2ReadLimits::fixture().native_join_budget()
+        ),
         Err(crate::IdentityFileRefusal::Unjoined {
             member: crate::IdentityMember::Declarations,
             index: unit_index
@@ -478,7 +493,11 @@ fn an_authentic_selected_model_unit_round_trips_in_required_identity_handoff() {
     let mut wrong = original;
     wrong["declarations"][unit_index]["exact_identity"]["kind"] = json!("record");
     assert_eq!(
-        crate::ReadIdentityRows::read(&serde_json::to_vec(&wrong).unwrap(), &package),
+        crate::ReadIdentityRows::read(
+            &serde_json::to_vec(&wrong).unwrap(),
+            &package,
+            &mut crate::V2ReadLimits::fixture().native_join_budget()
+        ),
         Err(crate::IdentityFileRefusal::Unjoined {
             member: crate::IdentityMember::Declarations,
             index: unit_index

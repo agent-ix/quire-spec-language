@@ -1096,19 +1096,28 @@ impl AdmittedPackageRead<'_> {
         }
         let limits = self.read.effective_limits;
         let mut budget = limits.native_join_budget();
-        let identities = self
-            .source
-            .graph()
-            .selected_exact_identities(&self.read.admitted, &mut budget)
-            .map_err(|refusal| {
-                if qsl_semantics::model::intake::is_native_budget_denial(&refusal) {
-                    ViewFailure::Exhausted(Box::new(refusal))
-                } else {
-                    ViewFailure::Fault(InternalFault::new(
-                        "FR-390",
-                        "reader-selected-identities-are-admitted",
-                    ))
+        let fault = || {
+            ViewFailure::Fault(InternalFault::new(
+                "FR-390",
+                "reader-selected-identities-are-admitted",
+            ))
+        };
+        let rows = self
+            .emission
+            .identity_rows(&self.read.admitted, &mut budget)
+            .map_err(|refusal| match refusal {
+                crate::IdentityFileRefusal::Native(native)
+                    if qsl_semantics::model::intake::is_native_budget_denial(&native) =>
+                {
+                    ViewFailure::Exhausted(native)
                 }
+                _ => fault(),
+            })?;
+        let identities = rows
+            .selected(&self.read.admitted, &mut budget)
+            .map_err(|refusal| match refusal {
+                crate::IdentityJoinFailure::Exhausted(denial) => ViewFailure::Exhausted(denial),
+                crate::IdentityJoinFailure::Witness(_) => fault(),
             })?;
         let slots = project_package(
             &self.read.admitted,

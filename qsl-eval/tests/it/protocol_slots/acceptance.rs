@@ -4717,7 +4717,7 @@ fn bare_rows(
         .expect("emits")
         .identity_rows(
             v2,
-            &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
         )
         .expect("final identity rows")
 }

@@ -689,10 +689,12 @@ follows.
   members from Contract IR's bounded reader limits. A read's view builds its
   budget once from the read's `work` and `storage`. The storage ceiling is a
   count of logical ownership units, never derived from `artifact_bytes`, and
-  is named `i2.native_join_storage` by FR-255. The compile entry's
-  `SpineLimits` supplies the published default of 16,777,216; a request's
-  `native_join` limits and a test fixture state their finite values explicitly.
-  Nothing below an entry supplies a budget.
+  is the `i2.native_join_storage` setting (FR-255); `V2ReadLimits.work` is
+  `i2.work_units`. The table default 16777216 applies only where the outer
+  configuration reads the `i2.*` settings table: the compile entry's
+  `SpineLimits` supplies it, and a request's `native_join` limits and a test
+  fixture state their finite values explicitly. Nothing below an entry
+  supplies a budget.
 - **One join, then borrowing.** `with_supply` joins the supply once, moves the
   joined identities into the `BarePackage`, and every later selection, world,
   projection and temporal call borrows them. A `BarePackage` is therefore
@@ -705,7 +707,10 @@ follows.
   Contract IR's `ExactTypeProjectionError` with code `ExhaustedWork` or
   `ExhaustedStorage`, its locus and its attempted charge, and no
   `BarePackage`. It is not an `UnknownIdentityWitness`, not an
-  `InternalFault` and not an empty set of identities. The same denial from a
+  `InternalFault` and not an empty set of identities. A denial surfaced through
+  the stage-failure or diagnostic path is a `stage_limit_exceeded`-class refusal
+  naming `i2.work_units` or `i2.native_join_storage`; `ExhaustedWork` and
+  `ExhaustedStorage` stay the library form. The same denial from a
   view's join is `ViewFailure::Exhausted`, from an evidence constructor
   `PackageMismatch::Exhausted`, and from the handoff writer
   `Error::NativeJoinExhausted`. `qsl-eval`'s `CallFailure` has no arm for it:
@@ -752,10 +757,10 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-18 | For a row whose fact value type is each of a `carried_quantity` over a decimal carrier, over an integer carrier and over a rational carrier, a `bounded_quantity` with both bounds and with `min` and `max` null, and a `map` with a bound and without one (including the example of "Value encodings"), `ReadEqualityRows::to_bytes` followed by `ReadEqualityRows::read` returns equal rows, a second write is byte-identical, and the value-type subtree the writer emits for the example, parsed as JSON, equals the example's JSON value with its members in the stated order (members compared in order, not as a set); a `bounded_quantity` whose bound is in another unit than `unit`, and a `carried_quantity` carrier tagged other than `decimal`, `integer` or `rational`, return `Malformed`. | Test (TC-1331) |
 | FR-531-AC-19 | An authentic final emission with a source record round-trips its original opaque record key, source owner, final structural/type IDs, ordered original member identities, final admitted names, presence and exact value types, including nested opaque identities. The bytes-only read joins it through native IR and `source_record_view` equals the original row; no healthy source record succeeds by structural-key substitution. | Test (TC-1331) |
 | FR-531-AC-20 | A file with `/1`, absent `source_records`, an unknown/repeated member, malformed or over-depth opaque key/type, foreign structural/type node, stale admitted name or conflicting record row refuses with the named typed format/shape/native-join condition and no partial identity read. With a supplied empty record-row list, an actual request for that record preserves native `UnavailableIdentityWitness`, never succeeding by structural-key substitution. Whole-witness completeness is not asserted by this carrier read. | Test (TC-1331) |
-| FR-531-AC-21 | A `BarePackage::with_supply` over a fixture whose identity join is measured on a fresh budget at work **W** and storage **S** returns the package on `NativeJoinBudget::new(W, S)`, and returns `ExhaustedWork` on `new(W - 1, S)` and `ExhaustedStorage` on `new(W, S - 1)`, each with IR's locus and attempted charge, no package, and the budget's consumed counters equal to those IR reports. The three results differ in kind from `UnknownIdentityWitness`, `InternalFault` and an empty identity set. | Test (TC-1331) |
+| FR-531-AC-21 | A `BarePackage::with_supply` over a fixture whose identity join is measured on a fresh budget at work **W** and storage **S** returns the package on `NativeJoinBudget::new(W, S)`, and returns `ExhaustedWork` on `new(W - 1, S)` and `ExhaustedStorage` on `new(W, S - 1)`, each with IR's locus and attempted charge, no package, the work denial naming `i2.work_units` and the storage denial naming `i2.native_join_storage`, and the budget's consumed counters equal to those IR reports. The three results differ in kind from `UnknownIdentityWitness`, `InternalFault` and an empty identity set. | Test (TC-1331) |
 | FR-531-AC-22 | Over a supply with rows of another package, with rows IR does not join, and with no supply, `with_supply` over a budget that admits the join returns a package whose slot call refuses `ForeignIdentityWitness`, `UnknownIdentityWitness` and `MissingIdentityWitness`, as FR-531-AC-5 states, and the same rows over a budget one unit short of the unknown rows' join return the budget denial and not `UnknownIdentityWitness`. | Test (TC-1331) |
 | FR-531-AC-23 | Two joins on one budget are charged cumulatively: after a successful `with_supply` the budget's consumed counters equal the join's measured work and storage, a second `with_supply` on the same budget is refused at the first charge that crosses the remaining allowance, and a selection, a world and a projection call made on the first package consume no further native work or storage. | Test (TC-1331) |
-| FR-531-AC-24 | `V2ReadLimits` has a required `storage` member and no `Default`; a read's evaluation view over limits whose `storage` is exactly the measured join storage succeeds and over one unit less returns `ViewFailure::Exhausted` with `ExhaustedStorage`; `EvidencePackage::from_read` and `from_emission` over a budget one unit short of the source join return `PackageMismatch::Exhausted`; the handoff writer over `native_join` one unit short returns `Error::NativeJoinExhausted` and writes no directory. | Test (TC-1331) |
+| FR-531-AC-24 | `V2ReadLimits` has a required `storage` member and no `Default`; a read's evaluation view over limits whose `storage` is exactly the measured join storage succeeds and over one unit less returns `ViewFailure::Exhausted` with `ExhaustedStorage`, whose refusal names `i2.native_join_storage`; `EvidencePackage::from_read` and `from_emission` over a budget one unit short of the source join return `PackageMismatch::Exhausted`; the handoff writer over `native_join` one unit short returns `Error::NativeJoinExhausted` and writes no directory. | Test (TC-1331) |
 | FR-531-AC-25 | An inspection of the public signatures of `selected_exact_identities_from_rows`, `SelectedModels::exact_identities`, `CheckedGraph::selected_exact_identities`, `ReadIdentityRows::selected`, `BarePackage::with_supply` and the evidence constructors finds each takes a `NativeJoinBudget` by mutable reference, finds no `NativeJoinBudget::new` and no `u64::MAX` allowance in a library path below an entry, and finds that `BarePackage` implements neither `Copy` nor `Clone`. | Inspection (TC-1331) |
 
 ## Dependencies

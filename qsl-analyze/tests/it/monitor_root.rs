@@ -738,8 +738,12 @@ fn retained_source_record_rows_name_the_final_bindings_and_the_ir_join_accepts_t
     let bytes = handoff
         .to_bytes(&package)
         .expect("the source-record handoff encodes");
-    let read = qsl_package::ReadIdentityRows::read(&bytes, &package)
-        .expect("final renamed source rows join natively");
+    let read = qsl_package::ReadIdentityRows::read(
+        &bytes,
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("final renamed source rows join natively");
     assert_eq!(read.source_records(), rows);
     assert_eq!(read.to_bytes(&package).unwrap(), bytes);
     let named = |record: &str| -> Vec<(String, String)> {

@@ -285,13 +285,22 @@ fn required_identity_handoff_preserves_original_record_keys_and_native_views() {
     let bytes = rows
         .to_bytes(&package)
         .expect("the required carrier encodes");
-    let read =
-        crate::ReadIdentityRows::read(&bytes, &package).expect("native joins accept the rows");
+    let read = crate::ReadIdentityRows::read(
+        &bytes,
+        &package,
+        &mut crate::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("native joins accept the rows");
     assert_eq!(read, rows);
     assert_eq!(read.to_bytes(&package).unwrap(), bytes);
     drop(rows);
     drop(emission);
-    let selected = read.selected(&package).expect("the native record witness");
+    let selected = read
+        .selected(
+            &package,
+            &mut crate::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the native record witness");
     for row in read.source_records() {
         let projection = package
             .project_exact_type(&row.structural_node, &selected, 1_000_000)
@@ -355,16 +364,22 @@ fn required_source_record_rows_refuse_missing_fields_and_stale_native_bindings()
     let mut missing = good.clone();
     missing.as_object_mut().unwrap().remove("source_records");
     assert_eq!(
-        crate::ReadIdentityRows::read(&serde_json::to_vec(&missing).unwrap(), &package),
+        crate::ReadIdentityRows::read(
+            &serde_json::to_vec(&missing).unwrap(),
+            &package,
+            &mut crate::V2ReadLimits::fixture().native_join_budget()
+        ),
         Err(crate::IdentityFileRefusal::Malformed {
             member: crate::IdentityMember::SourceRecords,
         })
     );
     let mut stale = good.clone();
     stale["source_records"][0]["members"][0]["admitted_name"] = json!("not-the-final-name");
-    let Err(crate::IdentityFileRefusal::Native(error)) =
-        crate::ReadIdentityRows::read(&serde_json::to_vec(&stale).unwrap(), &package)
-    else {
+    let Err(crate::IdentityFileRefusal::Native(error)) = crate::ReadIdentityRows::read(
+        &serde_json::to_vec(&stale).unwrap(),
+        &package,
+        &mut crate::V2ReadLimits::fixture().native_join_budget(),
+    ) else {
         panic!("a stale binding must refuse natively");
     };
     assert_eq!(
@@ -373,9 +388,11 @@ fn required_source_record_rows_refuse_missing_fields_and_stale_native_bindings()
     );
     let mut foreign = good.clone();
     foreign["source_records"][0]["source_identity"] = json!("another-selected-source");
-    let Err(crate::IdentityFileRefusal::Native(error)) =
-        crate::ReadIdentityRows::read(&serde_json::to_vec(&foreign).unwrap(), &package)
-    else {
+    let Err(crate::IdentityFileRefusal::Native(error)) = crate::ReadIdentityRows::read(
+        &serde_json::to_vec(&foreign).unwrap(),
+        &package,
+        &mut crate::V2ReadLimits::fixture().native_join_budget(),
+    ) else {
         panic!("a foreign source owner must refuse natively");
     };
     assert_eq!(
@@ -388,9 +405,11 @@ fn required_source_record_rows_refuse_missing_fields_and_stale_native_bindings()
         .as_array_mut()
         .unwrap()
         .push(repeated);
-    let Err(crate::IdentityFileRefusal::Native(error)) =
-        crate::ReadIdentityRows::read(&serde_json::to_vec(&conflicting).unwrap(), &package)
-    else {
+    let Err(crate::IdentityFileRefusal::Native(error)) = crate::ReadIdentityRows::read(
+        &serde_json::to_vec(&conflicting).unwrap(),
+        &package,
+        &mut crate::V2ReadLimits::fixture().native_join_budget(),
+    ) else {
         panic!("duplicate source rows must refuse natively");
     };
     assert_eq!(
@@ -399,9 +418,18 @@ fn required_source_record_rows_refuse_missing_fields_and_stale_native_bindings()
     );
     let mut missing = good.clone();
     missing["source_records"] = json!([]);
-    let missing = crate::ReadIdentityRows::read(&serde_json::to_vec(&missing).unwrap(), &package)
-        .expect("a carrier read is not a whole-witness validator");
-    let incomplete = missing.selected(&package).unwrap();
+    let missing = crate::ReadIdentityRows::read(
+        &serde_json::to_vec(&missing).unwrap(),
+        &package,
+        &mut crate::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("a carrier read is not a whole-witness validator");
+    let incomplete = missing
+        .selected(
+            &package,
+            &mut crate::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .unwrap();
     let requested = &rows.source_records()[0].structural_node;
     let refusal = package
         .project_exact_type(requested, &incomplete, 1_000_000)
@@ -471,7 +499,11 @@ fn required_identity_handoff_refuses_deep_original_keys_without_stack_growth() {
     let input = good.replace(&original, &deep);
     assert!(
         matches!(
-            crate::ReadIdentityRows::read(input.as_bytes(), &package),
+            crate::ReadIdentityRows::read(
+                input.as_bytes(),
+                &package,
+                &mut crate::V2ReadLimits::fixture().native_join_budget()
+            ),
             Err(crate::IdentityFileRefusal::Malformed { .. })
         ),
         "a deeply nested input returns a typed refusal"

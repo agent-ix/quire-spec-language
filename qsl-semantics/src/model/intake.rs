@@ -165,6 +165,20 @@ pub fn is_native_budget_denial(refusal: &quire_contract_model::ExactTypeProjecti
     matches!(refusal.code, Code::ExhaustedWork | Code::ExhaustedStorage)
 }
 
+/// The FR-255 setting a native budget denial names: `i2.work_units` for a
+/// denied work charge, `i2.native_join_storage` for a denied storage charge,
+/// and `None` for any other refusal.
+pub fn native_budget_setting(
+    refusal: &quire_contract_model::ExactTypeProjectionError,
+) -> Option<qsl_foundation::Setting> {
+    use quire_contract_model::ExactTypeProjectionErrorCode as Code;
+    match refusal.code {
+        Code::ExhaustedWork => Some(qsl_foundation::Setting::I2WorkUnits),
+        Code::ExhaustedStorage => Some(qsl_foundation::Setting::I2NativeJoinStorage),
+        _ => None,
+    }
+}
+
 mod unit;
 pub use unit::{
     admit_unit, admit_unit_with_cancel, admit_units_with_cancel, OperationClauseFailure,

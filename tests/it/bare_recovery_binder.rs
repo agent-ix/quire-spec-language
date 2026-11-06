@@ -73,8 +73,12 @@ fn read_recipe(
         &files["checked-package.json"],
         &evidence(request).expect("evidence"),
     );
-    let identities =
-        qsl_package::ReadIdentityRows::read(&files["identities.json"], &package).expect("rows");
+    let identities = qsl_package::ReadIdentityRows::read(
+        &files["identities.json"],
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("rows");
     let equality =
         qsl_package::ReadEqualityRows::read(&files["equality.json"], &package).expect("rows");
     Recipe {

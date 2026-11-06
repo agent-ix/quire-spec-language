@@ -92,7 +92,7 @@ impl SourceInventoryEnumerator for Traversal<'_> {
 
 /// The IR dimension a QSL stage limit kind charges, or `None` for a kind
 /// that is not a type-admission stage limit. `TickCount` is a runtime
-/// temporal-evidence limit (FR-523) reported as `Incomplete`; FR-514 maps no
+/// temporal-evidence limit (FR-523) reported as `Incomplete`, and `LogicalStorage` is the native-join storage limit (FR-358); FR-514 maps no
 /// type-work dimension to it, so it never becomes a `TypeWorkExhausted` cause.
 fn dimension(kind: LimitKind) -> Option<SourceTypeWorkDimension> {
     match kind {
@@ -104,7 +104,7 @@ fn dimension(kind: LimitKind) -> Option<SourceTypeWorkDimension> {
         }
         LimitKind::WorkBudget => Some(SourceTypeWorkDimension::Constraints),
         LimitKind::RationalBits => Some(SourceTypeWorkDimension::Normalization),
-        LimitKind::TickCount => None,
+        LimitKind::TickCount | LimitKind::LogicalStorage => None,
     }
 }
 

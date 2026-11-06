@@ -355,7 +355,14 @@ fn identity_file(
         .emitted
         .emission()
         .identity_rows(package, budget)
-        .map_err(|refused| unnameable(format!("identity file: {refused}")))?
+        .map_err(|refused| match refused {
+            qsl_package::IdentityFileRefusal::Native(native)
+                if qsl_semantics::model::intake::is_native_budget_denial(&native) =>
+            {
+                Error::NativeJoinExhausted(native)
+            }
+            other => unnameable(format!("identity file: {other}")),
+        })?
         .to_bytes(package)
         .map_err(|refused| unnameable(format!("identity file: {refused}")))
 }

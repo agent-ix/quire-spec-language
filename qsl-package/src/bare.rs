@@ -487,7 +487,7 @@ impl ReadIdentityRows {
         if self.package != package.name() {
             return Err(IdentityWitnessRefusal::Foreign.into());
         }
-        self.join(package).map_err(|refusal| {
+        self.join(package, budget).map_err(|refusal| {
             if qsl_semantics::model::intake::is_native_budget_denial(&refusal) {
                 IdentityJoinFailure::Exhausted(Box::new(refusal))
             } else {
@@ -536,14 +536,17 @@ impl ReadIdentityRows {
     /// as an artifact of the producer the consumer chose to read. Only what
     /// the package can answer is verified: that each node a row names is a
     /// node of the package and that each declaration's form matches its
-    /// identity. A refusal returns no rows.
+    /// identity. A refusal returns no rows. The validating join charges
+    /// `budget`, the caller's one native allowance for the pass (FR-358).
     ///
     /// # Errors
     ///
-    /// [`IdentityFileRefusal`].
+    /// [`IdentityFileRefusal`]; `Native` carries IR's budget denial when
+    /// `budget` runs out.
     pub fn read(
         identities_json: &[u8],
         package: &CheckedPackageV2,
+        budget: &mut NativeJoinBudget,
     ) -> Result<Self, IdentityFileRefusal> {
         let malformed = |member: IdentityMember| IdentityFileRefusal::Malformed { member };
         let file = parse_file(identities_json).map_err(|member| match member {
@@ -667,7 +670,7 @@ impl ReadIdentityRows {
             fields,
             source_records,
         };
-        rows.join(package)
+        rows.join(package, budget)
             .map_err(|error| IdentityFileRefusal::Native(Box::new(error)))?;
         Ok(rows)
     }
