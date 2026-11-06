@@ -216,3 +216,63 @@ impl OperationCapture {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+    use quire_exact::{Charge, ChargePoint, Integer, ScalarLimits};
+
+    #[trace("TC-1338", "FR-090-AC-24")]
+    #[test]
+    fn capture_preserves_ordered_duplicate_requests_and_exact_cumulative_amounts() {
+        let limits = ScalarLimits {
+            integer_bits: 100,
+            decimal_digits: 100,
+            scale_expansion: 100,
+            text_input_bytes: 100,
+            text_scalars: 100,
+            normalized_scalars: 100,
+            unit_edges: 100,
+            value_occurrences: 100,
+            work_units: 1000,
+            result_units: 1000,
+        };
+        let mut meter = Meter::new(limits);
+        let mut capture = OperationCapture::new(ApplicationObservationOptions {
+            function_case_limit: 1,
+            max_events: 1,
+            max_size_requests: 3,
+        });
+        capture.start(&mut meter);
+        meter
+            .charge(
+                Charge::new(ChargePoint::CollectionVisit)
+                    .size(LimitKind::IntegerBits, 9)
+                    .size(LimitKind::IntegerBits, 3)
+                    .size(LimitKind::IntegerBits, 9)
+                    .work(Integer::from(300_u64))
+                    .results(200),
+            )
+            .expect("admitted request");
+        capture.drain(&mut meter, None);
+        let ledger = capture.finish(&mut meter).expect("complete capture");
+        let event = &ledger.entries()[0].request;
+        assert_eq!(
+            event.sizes,
+            [
+                (LimitKind::IntegerBits, Integer::from(9_u64)),
+                (LimitKind::IntegerBits, Integer::from(3_u64)),
+                (LimitKind::IntegerBits, Integer::from(9_u64))
+            ]
+        );
+        assert_eq!(event.work_units, Integer::from(300_u64));
+        assert_eq!(event.result_units, Integer::from(200_u64));
+        assert_eq!(ledger.interval_amounts().amount(LimitKind::IntegerBits), 9);
+        assert_eq!(ledger.interval_amounts().amount(LimitKind::WorkUnits), 300);
+        assert_eq!(
+            ledger.interval_amounts().amount(LimitKind::ResultUnits),
+            200
+        );
+    }
+}

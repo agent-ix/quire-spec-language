@@ -152,7 +152,7 @@ fn completed_call_preserves_actual_outcome_full_requests_and_totals() {
     let mut meter = Meter::new(UNLIMITED);
     let report = observe(&package, "f", vec![int(3), int(5)], &mut meter, options());
     assert!(
-        matches!(report.outcome(), Some(FamilyOutcome::Evaluated(Outcome::Completed(value))) if value == &int(8))
+        matches!(report.outcome(), Some(FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(value)))) if value == &Integer::from(8_i64))
     );
     let actual = report.evaluation.as_ref().expect("evaluation");
     assert!(std::ptr::eq(
@@ -180,7 +180,7 @@ fn completed_call_preserves_actual_outcome_full_requests_and_totals() {
     assert_totals(&report, &meter);
     assert!(meter.take_charge_capture().is_none());
     assert!(
-        matches!(report.into_evaluation().expect("owned result").outcome, FamilyOutcome::Evaluated(Outcome::Completed(value)) if value == int(8))
+        matches!(report.into_evaluation().expect("owned result").outcome, FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(value))) if value == Integer::from(8_i64))
     );
 }
 
@@ -238,7 +238,7 @@ fn separate_whole_call_caps_return_typed_prefix_without_affecting_evaluation() {
             },
         );
         assert!(
-            matches!(report.outcome(), Some(FamilyOutcome::Evaluated(Outcome::Completed(value))) if value == &int(8))
+            matches!(report.outcome(), Some(FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(value)))) if value == &Integer::from(8_i64))
         );
         let partial = report
             .ledger
@@ -436,17 +436,38 @@ fn opaque_ieee_conversion_retains_losses_and_typed_refusal() {
             format!("{:?}", ordinary.outcome)
         );
         assert_eq!(report.losses(), Some(ordinary.losses.as_slice()));
-        let points: Vec<_> = report
+        let requests: Vec<_> = report
             .ledger
             .as_ref()
             .expect("full opaque ledger")
             .entries()
             .iter()
-            .map(|row| row.request.point)
+            .map(|row| row.request.clone())
             .collect();
-        assert_eq!(points.first(), Some(&ChargePoint::FunctionCall));
-        assert!(points.contains(&ChargePoint::IeeeOperands));
-        assert!(points.contains(&ChargePoint::IeeeRound));
+        let mut expected = vec![
+            request(ChargePoint::FunctionCall, &[], 0),
+            request(
+                ChargePoint::IeeeOperands,
+                &[
+                    (LimitKind::IntegerBits, 64),
+                    (LimitKind::ValueOccurrences, 1),
+                ],
+                0,
+            ),
+            request(
+                ChargePoint::IeeeExactIntermediate,
+                &[(LimitKind::IntegerBits, 32)],
+                0,
+            ),
+            request(ChargePoint::IeeeRound, &[(LimitKind::IntegerBits, 32)], 0),
+        ];
+        if mode != "exact" {
+            expected.push(request(ChargePoint::IeeeResultRetain, &[], 1));
+        }
+        assert_eq!(
+            requests, expected,
+            "opaque kernel boundaries retain their full payload"
+        );
         assert_totals(&report, &meter);
     }
 }
@@ -500,15 +521,18 @@ fn nested_calls_preserve_completed_values_counts_and_whole_call_capacity() {
         assert_eq!(report.function_evaluations, function_case_limit);
         if function_case_limit == 2 {
             assert!(
-                matches!(report.outcome(), Some(FamilyOutcome::Evaluated(Outcome::Completed(value))) if value == &int(106))
+                matches!(report.outcome(), Some(FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(value)))) if value == &Integer::from(106_i64))
             );
             assert_eq!(
                 report
                     .observed
                     .iter()
-                    .map(|(_, value)| value.clone())
+                    .map(|(_, value)| match value {
+                        Value::Integer(value) => value.to_string(),
+                        other => panic!("integer result: {other:?}"),
+                    })
                     .collect::<Vec<_>>(),
-                [int(6), int(6), int(106)]
+                ["6", "6", "106"]
             );
         } else {
             assert!(matches!(
@@ -542,7 +566,7 @@ fn nested_calls_preserve_completed_values_counts_and_whole_call_capacity() {
         .expect_err("nested steps share one capacity");
     assert_eq!(partial.admitted_prefix().len(), 3);
     assert!(
-        matches!(report.outcome(), Some(FamilyOutcome::Evaluated(Outcome::Completed(value))) if value == &int(106))
+        matches!(report.outcome(), Some(FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(value)))) if value == &Integer::from(106_i64))
     );
 }
 
