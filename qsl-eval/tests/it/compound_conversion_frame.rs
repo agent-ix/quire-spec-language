@@ -39,7 +39,7 @@ const SOURCE: &str = "\
     unit N_m : Torque = rational(1, 1);\n\
     dimension Energy = Mass * Length ^ 2 / Time ^ 2;\n\
     unit J : Energy = rational(1, 1);\n\
-    function form_compound using v(n: Quantity<N_m>, metre: Quantity<m>, kilogram: Quantity<kg>, second: Quantity<s>): Boolean pure {\
+    function form_compound using v(n: Quantity<N_m>, metre: Quantity<m>, kilogram: Quantity<kg>, second: Quantity<s>, joule: Quantity<J>): Boolean pure {\
         1 kg * 1 m * 1 m / 1 s / 1 s = 1 kg * 1 m * 1 m / 1 s / 1 s }\n";
 
 fn evaluated(evaluation: Evaluation) -> Outcome<Value> {
@@ -50,6 +50,10 @@ fn evaluated(evaluation: Evaluation) -> Outcome<Value> {
 }
 
 fn convert_to(name: &str) -> Expression {
+    convert_from_to(name, "q")
+}
+
+fn convert_from_to(name: &str, source: &str) -> Expression {
     Expression::convert(
         TypeForm::builtin(
             BuiltinType::Quantity,
@@ -59,7 +63,7 @@ fn convert_to(name: &str) -> Expression {
             name,
             qsl_foundation::Span { start: 0, end: 0 },
         )]),
-        Expression::name("q".to_owned()),
+        Expression::name(source.to_owned()),
     )
 }
 
@@ -95,6 +99,9 @@ fn checked_conversions_run_the_compound_pivot_in_the_retained_frame() {
     };
     let ValueType::Quantity(second) = &callable.parameters[3].1 else {
         panic!("the producer also receives seconds");
+    };
+    let ValueType::Quantity(joule) = &callable.parameters[4].1 else {
+        panic!("the producer also receives joules");
     };
     let UnitId::Compound(compound_terms) = compound_unit else {
         panic!("the pivot target is compound");
@@ -142,8 +149,27 @@ fn checked_conversions_run_the_compound_pivot_in_the_retained_frame() {
                 Rational::from_integer(1_i64.into()),
                 second.clone(),
             )),
+            Value::Quantity(Quantity::new(
+                Rational::from_integer(1_i64.into()),
+                joule.clone(),
+            )),
         ]
     };
+
+    let named_dimension_mismatch = graph
+        .check_clause_expression(
+            vec![("n".to_owned(), ValueType::Quantity(n_m.clone()))],
+            &convert_from_to("J", "n"),
+            None,
+            ClauseKind::Body,
+            CheckMode::Linked,
+            CheckingLimits::default(),
+        )
+        .expect_err("Torque-to-Energy conversion refuses despite equal base dimensions");
+    assert!(matches!(
+        named_dimension_mismatch.cause,
+        CheckCause::IllTyped(_)
+    ));
 
     let mut literal_meter = Meter::new(UNLIMITED);
     let literal_result = evaluated(

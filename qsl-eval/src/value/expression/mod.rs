@@ -155,8 +155,7 @@ fn unsupported_projection(unsupported: &qsl_package::UnsupportedView) -> CallFai
     )))
 }
 
-/// FR-358, FR-142 closed-subexpression evaluation: run a checked subtree (a
-/// closed subexpression of a function body reads no local and no object) in its
+/// FR-142 compound conversion evaluation: run a checked subtree in its
 /// original frame, with the checked stage's retained formed-unit table.
 /// `arguments` are the genuine values for the function's parameter slots;
 /// the checked frame's `slots` count preserves local-slot addressing.
