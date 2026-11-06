@@ -45,3 +45,26 @@ Independent source review only. No build, test, or gate was run by this reviewer
 | FND-001 | fixed | The parser comment now states the accepted safe JSON integer and canonical signed-64 string forms. |
 
 After excerpt: `/// The caller admits safe JSON integers through ±2^53 or canonical signed-64 decimal strings under QSpec FR-154 / TC-981.`
+
+
+## Fix review — round 1
+
+Reviewed frozen head `a22cf0c22966f4c1b56aafb4f85adbb3edfb5347` in the ticket's existing worktree. The refreshed IR lock admits the signed-64 string bounds. The first final-gate attempt failed because imported predicates were not called by the three root sources: no Rational literal nodes reached those packages. This fix calls both typed predicates with all four required literals inside each source unit's existing temporal `holds` expression. The model and both declared domains remain unchanged.
+
+The revised oracle independently admits the emitted package bytes, reads each literal with `literal_read()`, checks its type identity against the node's semantic type, requires `BoundedDomainForm::RationalRange` over `ScalarTypeForm::Rational`, then checks the four ordered named `CheckedTerm::Binding` members and exact integer values/types. All four required values must appear in each of the three packages. Removing a root call loses a required map entry; widening or changing any bound fails its exact comparison. There is no raw-JSON-only substitute, unsupported-type skip, new mock boundary, or expansion of kernel projection behavior.
+
+**PASS** — no new or remaining finding in the reviewed feature/fix scope. The prior parser-comment finding remains fixed. Existing specification and EARS conclusions remain unchanged: this fix modifies fixtures and the acceptance oracle, not normative requirements.
+
+Evidence: `/tmp/qsl1693-public-typed-bounds.log` records the exact focused acceptance test passing (one test, all three package kinds) at this head. The original single final gate remains a recorded failure, and was not rerun by this reviewer. No build or test was run by this reviewer; the lead owns the remaining confined Clippy checks. No new worktree, clone, source edit, commit, or push was made.
+
+No applicable AssuranceProfile document was found under this repository's `spec/` tree. Plan completion: not assessed. This is a scoped continuation review, not a whole-repository coverage claim.
+
+## Disposition round 1
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The parser comment still describes the accepted safe JSON integer and canonical signed-64 string representations. No regression was introduced by the fixture/oracle fix. |
+
+After excerpt: `/// The caller admits safe JSON integers through ±2^53 or canonical signed-64`
+
+The original Linear review marker had `clean: true` while the retained code-review artifact records this already-fixed comment finding. This disposition preserves the artifact's finding verbatim and makes its fixed outcome explicit; no historical finding or comment was rewritten.
