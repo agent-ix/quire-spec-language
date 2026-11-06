@@ -6164,12 +6164,15 @@ fn emit_package_inner(
             ))
         })
         .collect();
-    let (selected_enum_declaration_rows, selected_enum_member_rows) =
-        source_enum_rows(graph.semantic_graph(), &emitted_node_ids)?;
+    let selected_source_enum_shape_rows = source_enum_shape_rows(graph, &emitted_node_ids)?;
+    let (selected_enum_declaration_rows, selected_enum_member_rows) = source_enum_rows(
+        graph.semantic_graph(),
+        &emitted_node_ids,
+        &selected_source_enum_shape_rows,
+    )?;
     let selected_source_union_rows = source_union_rows(graph, &emitted_node_ids)?;
     let selected_source_record_rows = source_record_rows(graph, &emitted_node_ids)?;
     let selected_source_tuple_rows = source_tuple_rows(graph, &emitted_node_ids)?;
-    let selected_source_enum_shape_rows = source_enum_shape_rows(graph, &emitted_node_ids)?;
     let selected_source_collection_rows = source_collection_rows(graph, &emitted_node_ids)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
@@ -6247,10 +6250,14 @@ fn emit_package_inner(
 /// FR-092 "Source enum identity rows": one declaration row per emitted
 /// source-owned enum and one member row per emitted case, joined to the
 /// final structural ids. A member's declaration is its `semantic_type`, so an
-/// emitted member whose declaration is not emitted is a writer fault.
+/// emitted member whose declaration is not emitted is a writer fault. Each row
+/// carries the checked `EnumShape` and the case's variant, read from the
+/// source enum shape rows, so a declaration or case with no shape row is a
+/// writer fault.
 fn source_enum_rows(
     graph: &qsl_semantics::check::SemanticGraph,
     emitted: &HashMap<NodeKey, CheckedNodeId>,
+    shapes: &[SelectedSourceEnumShapeRow],
 ) -> Result<
     (
         Vec<quire_contract_model::SelectedEnumDeclarationRow>,
@@ -6260,16 +6267,22 @@ fn source_enum_rows(
 > {
     let declaration_rows = graph
         .source_enum_declarations()
-        .filter_map(|(key, declaration)| {
-            Some(quire_contract_model::SelectedEnumDeclarationRow::new(
-                emitted.get(key)?.clone(),
+        .filter_map(|(key, declaration)| Some((key, declaration, emitted.get(key)?)))
+        .map(|(key, declaration, structural_node)| {
+            let shape = shapes
+                .iter()
+                .find(|row| &row.declaration_key == key)
+                .ok_or(EmitRefusal::SourceMapInvariant)?;
+            Ok(quire_contract_model::SelectedEnumDeclarationRow::new(
+                structural_node.clone(),
                 declaration.owner.authority(),
                 declaration.owner.identity(),
                 declaration.qualified_declaration.clone(),
                 key.clone(),
+                shape.shape.clone(),
             ))
         })
-        .collect();
+        .collect::<Result<_, EmitRefusal>>()?;
     let member_rows = graph
         .source_enum_members()
         .filter_map(|(key, member)| Some((key, member, emitted.get(key)?)))
@@ -6280,6 +6293,13 @@ fn source_enum_rows(
             let declaration_node = emitted
                 .get(&member.declaration_key)
                 .ok_or(EmitRefusal::SourceMapInvariant)?;
+            let variant = shapes
+                .iter()
+                .filter(|row| row.declaration_key == member.declaration_key)
+                .flat_map(|row| row.cases.iter())
+                .find(|case| &case.member_key == key)
+                .map(|case| case.variant.clone())
+                .ok_or(EmitRefusal::SourceMapInvariant)?;
             Ok(quire_contract_model::SelectedEnumMemberRow::new(
                 structural_node.clone(),
                 declaration.owner.authority(),
@@ -6288,6 +6308,7 @@ fn source_enum_rows(
                 declaration.qualified_declaration.clone(),
                 member.case.clone(),
                 key.clone(),
+                variant,
             ))
         })
         .collect::<Result<_, EmitRefusal>>()?;

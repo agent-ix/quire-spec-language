@@ -2658,7 +2658,7 @@ impl<'a> Lowering<'a> {
                         QuantityKind::Dimension,
                         "dimension",
                         None,
-                        NominalPayload::Dimension(if *base {
+                        NominalPayload::Dimension(if base {
                             DimensionPayload::new(terms)
                         } else {
                             DimensionPayload::new_derived(terms)

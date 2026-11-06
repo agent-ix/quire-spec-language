@@ -989,6 +989,7 @@ pub(crate) fn node_children(kind: &NodeKind<NodeId>) -> Vec<NodeId> {
         } => vec![*low, *high, *body],
         NodeKind::Coerce(operand, _)
         | NodeKind::Negate(operand)
+        | NodeKind::QuantityNegate(operand)
         | NodeKind::Not(operand)
         | NodeKind::Field { operand, .. }
         | NodeKind::Attribute {

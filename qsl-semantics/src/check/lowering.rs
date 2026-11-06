@@ -4316,6 +4316,10 @@ impl<'a> Lowering<'a> {
                     Operands::Two(left, right),
                 )
             }
+            NodeKind::QuantityNegate(operand) => (
+                Keyed::Application(Operator::Unary, plain("quire.op.quantity.negate")),
+                Operands::One(operand),
+            ),
             NodeKind::QuantityPower(base, exponent) => (
                 Keyed::Application(Operator::Binary, plain("quire.op.quantity.pow")),
                 Operands::Two(base, exponent),
