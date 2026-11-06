@@ -532,7 +532,7 @@ fn subtype_fixture_diagnostics(graph: &qsl_semantics::check::CheckedGraph, sourc
     assert_eq!(node.semantic_form(), "object_type");
     let occurrences: Vec<_> = graph
         .occurrences()
-        .filter(|(key, _, _)| *key == member)
+        .filter(|(key, origin, _)| *key == member && origin.role().as_str() == "type")
         .collect();
     assert_eq!(
         occurrences.len(),
@@ -553,13 +553,25 @@ fn subtype_fixture_diagnostics(graph: &qsl_semantics::check::CheckedGraph, sourc
     assert_eq!(*index, 0);
     assert_eq!(location.depth(), 0);
     let region = graph
-        .occurrence_region(member, origin)
+        .occurrence_region(member.clone(), origin)
         .expect("the population type has its real clause body region");
     assert_eq!(region.source(), graph.source());
     let start = source.find("{ true }").expect("original subtype body") + 2;
     assert_eq!(usize::try_from(region.start()).unwrap(), start);
     assert_eq!(usize::try_from(region.end()).unwrap(), start + "true".len());
     assert_eq!(&source[start..start + "true".len()], "true");
+
+    let generated_roots: Vec<_> = graph
+        .occurrences()
+        .filter(|(key, origin, _)| *key == member && origin.role().as_str() == "generated")
+        .collect();
+    assert_eq!(generated_roots.len(), 1, "one selected-model object root");
+    let (_, root_origin, root_location) = &generated_roots[0];
+    assert_eq!(root_origin.ordinal(), 0);
+    assert!(matches!(
+        &root_location.origin,
+        Origin::TypeDeclaration { name } if name == "Config"
+    ));
 }
 
 macro_rules! state_identity_tests {
@@ -615,6 +627,7 @@ fn state_generated_occurrences_have_authored_regions() {
     }
     let mut generated_zero = 0;
     let mut operation_references = 0;
+    let mut selected_model_roots = 0;
     for (key, origin, location) in graph.occurrences() {
         if origin.role().as_str() != "generated" {
             continue;
@@ -635,16 +648,17 @@ fn state_generated_occurrences_have_authored_regions() {
             "generated occurrence must be placed"
         );
         if matches!(&location.origin, Origin::TypeDeclaration { .. }) {
+            let reference = &source
+                [usize::try_from(region.start()).unwrap()..usize::try_from(region.end()).unwrap()];
+            if !reference.ends_with("::attemptUpdate") {
+                selected_model_roots += 1;
+                assert!(reference.starts_with("model Config ="));
+                continue;
+            }
             operation_references += 1;
             // The frame's occurrence for the named operation sits at the
             // operation reference of the first clause naming it.
             assert_eq!(location.depth(), 0, "the reference is one position");
-            let reference = &source
-                [usize::try_from(region.start()).unwrap()..usize::try_from(region.end()).unwrap()];
-            assert!(
-                reference.ends_with("::attemptUpdate"),
-                "the operation reference: {reference:?}"
-            );
             let clause = source
                 .find(" VersionUnchanged using ")
                 .expect("the clause naming the operation");
@@ -696,6 +710,10 @@ fn state_generated_occurrences_have_authored_regions() {
     assert_eq!(
         operation_references, 1,
         "the one named operation's frame occurrence is placed at its reference"
+    );
+    assert!(
+        selected_model_roots > 0,
+        "selected model object declarations have generated alias occurrences"
     );
     let original = qsl_package::emit_checked(&qsl_package::CheckedPackage::link(graph))
         .expect("actual public S4 requires all original occurrences to be located");

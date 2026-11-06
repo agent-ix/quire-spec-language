@@ -741,11 +741,9 @@ fn call_site_keys_a_state_field_under_its_declaring_type_by_name_ordinal() {
     }
 }
 
-/// FR-121-AC-19: a field's domain key does not depend on whether the
-/// package's lowering minted its declaring type's node. With no clause on
-/// `Sub`, nothing in the graph names `Sub`'s node, yet `Sub.alpha` is
-/// keyed under the same node the AC-18 unit, whose invariant mints it,
-/// keys it under.
+/// FR-121-AC-19: a field's domain key does not depend on whether a clause
+/// names its declaring type. The selected model roots `Sub` even without a
+/// clause on it; adding an invariant that names `Sub.alpha` keeps the same key.
 #[trace("TC-516", "FR-121-AC-19")]
 #[test]
 fn call_site_keys_a_field_of_a_type_no_clause_names() {
@@ -770,15 +768,14 @@ fn call_site_keys_a_field_of_a_type_no_clause_names() {
         panic!("a field key is a node key: {unminted:?}");
     };
     let compiled = compile_config_version_unit(&unit, &packages);
-    assert!(
-        !compiled
-            .package
-            .graph()
-            .semantic_graph()
-            .nodes()
-            .any(|node| wire(node.key()) == *sub),
-        "no clause names Sub, so its node is not in the graph"
-    );
+    let sub_node = compiled
+        .package
+        .graph()
+        .semantic_graph()
+        .nodes()
+        .find(|node| wire(node.key()) == *sub)
+        .expect("the selected model roots Sub without a clause naming it");
+    assert_eq!(sub_node.semantic_form(), "object_type");
     assert_eq!(unminted, minted);
 }
 
