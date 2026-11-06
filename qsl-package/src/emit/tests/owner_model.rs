@@ -184,11 +184,19 @@ fn selected_model_identity_rows_back_reference_projection_and_missing_rows_refus
     let mut witnessed = false;
     let mut refused_without_rows = false;
     for node in &admitted.graph().nodes {
-        if let Ok(projected) = admitted.project_exact_type(&node.node_id, identities, 64) {
+        if let Ok(projected) = admitted.project_exact_type(
+            &node.node_id,
+            identities,
+            &mut crate::V2ReadLimits::fixture().native_join_budget(),
+        ) {
             if matches!(projected.value_type(), quire_exact::ValueType::Reference(_)) {
                 witnessed = true;
                 let refusal = admitted
-                    .project_exact_type(&node.node_id, &SelectedExactIdentities::empty(), 64)
+                    .project_exact_type(
+                        &node.node_id,
+                        &SelectedExactIdentities::empty(),
+                        &mut crate::V2ReadLimits::fixture().native_join_budget(),
+                    )
                     .expect_err("a reference cannot project without selected identity rows");
                 assert_eq!(
                     refusal.code,

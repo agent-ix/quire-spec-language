@@ -153,7 +153,11 @@ fn selected_record_and_inherited_field_rows_join_ir_projection() {
         )
         .expect("record and inherited field rows join IR admission");
     let projection = admitted
-        .project_exact_type(&record_node, &witnesses, 256)
+        .project_exact_type(
+            &record_node,
+            &witnesses,
+            &mut crate::V2ReadLimits::fixture().native_join_budget(),
+        )
         .expect("the selected record has a complete Exact view");
     let view = projection.record_view().expect("the record projection");
     let projected_fields: std::collections::BTreeSet<_> = view
@@ -190,7 +194,11 @@ fn selected_record_and_inherited_field_rows_join_ir_projection() {
     )
     .expect("remaining producer rows still join");
     let refusal = admitted
-        .project_exact_type(&record_node, &missing, 256)
+        .project_exact_type(
+            &record_node,
+            &missing,
+            &mut crate::V2ReadLimits::fixture().native_join_budget(),
+        )
         .expect_err("a missing inherited-field witness refuses the whole view");
     assert_eq!(
         refusal.code,

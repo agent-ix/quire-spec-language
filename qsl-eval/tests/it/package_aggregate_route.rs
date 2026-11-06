@@ -98,7 +98,11 @@ fn with_routes<R>(
     )
     .expect("package facts read");
     let bare = qsl_package::BarePackage::new(read.admitted());
-    let from_package = EvidencePackage::from_package(&bare).expect("bare package facts read");
+    let from_package = EvidencePackage::from_package(
+        &bare,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("bare package facts read");
     run(
         EvidenceRoutes {
             from_emission,

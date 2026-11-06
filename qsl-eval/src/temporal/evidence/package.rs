@@ -12,7 +12,7 @@
 //! the cross-check of FR-515 that the package's `formula_graph()` equals the
 //! source clause, and read nothing else from it.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_package::checked_views::{
     activation_relation, instance_bound_atoms as view_bound_atoms, temporal_subject,
@@ -21,8 +21,8 @@ use qsl_package::checked_views::{
 };
 use qsl_package::{
     AdmittedPackageRead, BarePackage, CheckedNodeId, CheckedOccurrence, CheckedPackageV2,
-    CheckedSelection, Emission, NativeJoinBudget, SelectedExactIdentities, TemporalBinding,
-    TemporalClauseRef,
+    CheckedSelection, Emission, ExactTypeProjection, ExactTypeProjectionError, NativeJoinBudget,
+    SelectedExactIdentities, TemporalBinding, TemporalClauseRef,
 };
 use qsl_semantics::check::{Activation, CheckedFormula, FormulaNode, TemporalProfile};
 use quire_eval::CallFailure;
@@ -148,10 +148,12 @@ struct SourceCheck<'p> {
 pub struct EvidencePackage<'p> {
     package: &'p CheckedPackageV2,
     source: Option<SourceCheck<'p>>,
-    /// The selected model identity rows a declaration-bearing capture type
-    /// needs: the source unit's on the routes that hold one, none on the bare
-    /// route.
-    identities: std::borrow::Cow<'p, SelectedExactIdentities>,
+    /// Capture types projected once under the admission entry's native budget.
+    /// The bare route borrows the projections retained by its owner.
+    projections: std::borrow::Cow<
+        'p,
+        BTreeMap<CheckedNodeId, Result<ExactTypeProjection, ExactTypeProjectionError>>,
+    >,
     rows: PackageRows,
     activation_map: Vec<ActivationRow>,
     progress_capacity: u64,
@@ -252,22 +254,46 @@ impl<'p> EvidencePackage<'p> {
     /// The package constructed from a package read from its bytes alone
     /// (FR-531, FR-532). It holds no source, so no clause is cross-checked:
     /// the package is evaluated as admitted. The temporal call reads nothing
-    /// but the package; the identities the bare package joined once at
-    /// `with_supply`, when the consumer gave a supply, only let a
-    /// record-typed capture project its type. They are borrowed, not joined
-    /// or copied again.
+    /// but the package and its owner type projections. Projections the bare
+    /// package already retained are borrowed. Otherwise capture types are
+    /// projected once under `budget`, the caller's native allowance for the
+    /// pass; evaluation neither projects nor copies them again.
     ///
     /// # Errors
     ///
     /// [`PackageMismatch::AmbiguousName`] when two `temporal_clause_names`
-    /// rows pair to one `{ declaration, occurrence }`.
-    pub fn from_package(bare: &'p BarePackage<'p>) -> Result<Self, PackageMismatch> {
+    /// rows pair to one `{ declaration, occurrence }`, or
+    /// [`PackageMismatch::Exhausted`] when a capture projection consumes
+    /// `budget`.
+    pub fn from_package(
+        bare: &'p BarePackage<'p>,
+        budget: &mut NativeJoinBudget,
+    ) -> Result<Self, PackageMismatch> {
         let rows = PackageRows::of_package(bare.package())?;
-        let identities = bare.identities().map_or_else(
-            || std::borrow::Cow::Owned(SelectedExactIdentities::empty()),
-            std::borrow::Cow::Borrowed,
-        );
-        Ok(Self::assemble(bare.package(), None, identities, rows))
+        let retained = bare.exact_type_projections();
+        let complete = rows.names.iter().all(|row| {
+            match temporal_subject(bare.package(), &row.declaration) {
+                Ok(view) => view
+                    .captures()
+                    .iter()
+                    .all(|initializer| retained.contains_key(initializer)),
+                // Unreadable clauses keep their existing subject-stage refusal.
+                Err(_) => true,
+            }
+        });
+        let projections = if complete {
+            std::borrow::Cow::Borrowed(retained)
+        } else {
+            let empty = SelectedExactIdentities::empty();
+            let identities = bare.identities().unwrap_or(&empty);
+            std::borrow::Cow::Owned(Self::project_captures(
+                bare.package(),
+                &rows,
+                identities,
+                budget,
+            )?)
+        };
+        Ok(Self::assemble(bare.package(), None, projections, rows))
     }
 
     fn with_rows(
@@ -290,18 +316,56 @@ impl<'p> EvidencePackage<'p> {
             }
             Some(Err(_)) | None => SelectedExactIdentities::empty(),
         };
+        let projections = Self::project_captures(package, &rows, &identities, budget)?;
         Ok(Self::assemble(
             package,
             source,
-            std::borrow::Cow::Owned(identities),
+            std::borrow::Cow::Owned(projections),
             rows,
         ))
+    }
+
+    fn project_captures(
+        package: &CheckedPackageV2,
+        rows: &PackageRows,
+        identities: &SelectedExactIdentities,
+        budget: &mut NativeJoinBudget,
+    ) -> Result<
+        BTreeMap<CheckedNodeId, Result<ExactTypeProjection, ExactTypeProjectionError>>,
+        PackageMismatch,
+    > {
+        let mut projections = BTreeMap::new();
+        for row in &rows.names {
+            let Ok(view) = temporal_subject(package, &row.declaration) else {
+                // Unreadable clauses keep their existing subject-stage refusal.
+                continue;
+            };
+            for initializer in view.captures() {
+                if projections.contains_key(initializer) {
+                    continue;
+                }
+                let projection = package.project_exact_type(initializer, identities, budget);
+                let projection = match projection {
+                    Err(denial)
+                        if qsl_semantics::model::intake::is_native_budget_denial(&denial) =>
+                    {
+                        return Err(PackageMismatch::Exhausted(Box::new(denial)));
+                    }
+                    projection => projection,
+                };
+                projections.insert(initializer.clone(), projection);
+            }
+        }
+        Ok(projections)
     }
 
     fn assemble(
         package: &'p CheckedPackageV2,
         source: Option<SourceCheck<'p>>,
-        identities: std::borrow::Cow<'p, SelectedExactIdentities>,
+        projections: std::borrow::Cow<
+            'p,
+            BTreeMap<CheckedNodeId, Result<ExactTypeProjection, ExactTypeProjectionError>>,
+        >,
         rows: PackageRows,
     ) -> Self {
         let activation_map = activation_relation(package)
@@ -311,7 +375,7 @@ impl<'p> EvidencePackage<'p> {
         Self {
             package,
             source,
-            identities,
+            projections,
             rows,
             activation_map,
             progress_capacity: DEFAULT_COVERED_POSITIONS,
@@ -442,7 +506,7 @@ impl<'p> EvidencePackage<'p> {
         let instance_bound =
             bound_atom_indices(graph, &reads).ok_or_else(|| unreadable("atom-count"))?;
         let captures: Vec<(Box<str>, quire_exact::ValueType)> = view
-            .capture_value_types(&self.identities)
+            .capture_value_types(&self.projections)
             .ok_or_else(|| unreadable("capture-type"))?
             .into_iter()
             .zip(view.capture_names())

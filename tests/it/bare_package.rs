@@ -89,7 +89,11 @@ fn the_bare_route_gives_the_results_and_charges_of_the_two_source_routes() {
         )
         .expect("read");
         let bare = BarePackage::new(read.admitted());
-        let bytes = EvidencePackage::from_package(&bare).expect("bare");
+        let bytes = EvidencePackage::from_package(
+            &bare,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("bare");
         assert_eq!(emitted.rows(), bytes.rows());
         for clause in clause_ids(&emitted) {
             let subject = emitted.subject(&clause, None).expect("reads");
@@ -170,7 +174,11 @@ fn the_progress_binding_names_the_package_and_no_source_label() {
     )
     .expect("emission");
     let bare = BarePackage::new(read.admitted());
-    let bytes = EvidencePackage::from_package(&bare).expect("bare");
+    let bytes = EvidencePackage::from_package(
+        &bare,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("bare");
     for clause in clause_ids(&bytes) {
         let left = emitted.subject(&clause, None).expect("reads");
         let right = bytes.subject(&clause, None).expect("reads");
@@ -209,7 +217,11 @@ fn a_shared_holds_node_is_one_atom_on_every_route() {
         )
         .expect("read");
         let bare = BarePackage::new(read.admitted());
-        let bytes = EvidencePackage::from_package(&bare).expect("bare");
+        let bytes = EvidencePackage::from_package(
+            &bare,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("bare");
         let [clause] = clause_ids(&bytes).try_into().expect("one clause");
         let mut outcomes = Vec::new();
         for package in [&emitted, &back, &bytes] {
@@ -283,7 +295,11 @@ fn directory(
 fn a_handoff_directory_gives_a_bare_package_and_an_identity_file() {
     let (_holder, files, package) = directory("event_position");
     let bare = BarePackage::new(&package);
-    let evaluation = EvidencePackage::from_package(&bare).expect("bare");
+    let evaluation = EvidencePackage::from_package(
+        &bare,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("bare");
     let due = clause_ids(&evaluation)
         .into_iter()
         .find(|clause| {
@@ -847,7 +863,11 @@ fn the_consumer_entry_sections_name_the_bare_entry() {
 fn a_node_that_is_no_temporal_clause_is_unresolved_over_the_bare_package() {
     let (_holder, _files, package) = directory("event_position");
     let bare = BarePackage::new(&package);
-    let evaluation = EvidencePackage::from_package(&bare).expect("bare");
+    let evaluation = EvidencePackage::from_package(
+        &bare,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("bare");
     let due = clause_ids(&evaluation)
         .into_iter()
         .next()
@@ -944,7 +964,11 @@ fn a_record_typed_capture_projects_with_the_source_identities() {
         assert_eq!(held, declared);
     }
     let bare = BarePackage::new(read.admitted());
-    let bytes = EvidencePackage::from_package(&bare).expect("bare");
+    let bytes = EvidencePackage::from_package(
+        &bare,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("bare");
     let refused = bytes
         .subject(&clause, None)
         .err()
@@ -1023,7 +1047,11 @@ fn the_supplied_identity_rows_project_a_record_typed_capture_on_the_bare_route()
             &mut budget,
         )
         .expect("the fixture budget admits the supply");
-    let package = EvidencePackage::from_package(&bare).expect("bare");
+    let package = EvidencePackage::from_package(
+        &bare,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("bare");
     let [clause] = clause_ids(&package).try_into().expect("one clause");
     let subject = package
         .subject(&clause, None)
@@ -1158,7 +1186,11 @@ fn bytes_that_differ_from_the_source_drive_the_bare_result() {
     let built = event_clauses(ONE_CLAUSE, &[("Due", "authority")]);
     let genuine_read = built.read(&built.emission);
     let genuine_bare = BarePackage::new(genuine_read.admitted());
-    let genuine = EvidencePackage::from_package(&genuine_bare).expect("bare");
+    let genuine = EvidencePackage::from_package(
+        &genuine_bare,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("bare");
     let [clause] = clause_ids(&genuine).try_into().expect("one clause");
     let asked = evidence_request(&genuine, &clause, None, 5);
     assert!(run(&genuine, &clause, &asked).0.is_ok());
@@ -1168,7 +1200,11 @@ fn bytes_that_differ_from_the_source_drive_the_bare_result() {
     });
     let read = built.read(&renamed);
     let bare = BarePackage::new(read.admitted());
-    let package = EvidencePackage::from_package(&bare).expect("bare");
+    let package = EvidencePackage::from_package(
+        &bare,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("bare");
     let (refused, charges) = run(&package, &clause, &asked);
     assert_eq!(
         super::temporal_package_route::cause(&refused.expect_err("another clock row")),
@@ -1193,7 +1229,11 @@ fn bytes_that_differ_from_the_source_drive_the_bare_result() {
     let longer = with_interval(&built, json!({"lower": "0", "upper": "4"}));
     let read = built.read(&longer);
     let bare = BarePackage::new(read.admitted());
-    let package = EvidencePackage::from_package(&bare).expect("bare");
+    let package = EvidencePackage::from_package(
+        &bare,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("bare");
     let (baseline, _) = run(&genuine, &clause, &asked);
     let baseline = baseline.expect("the genuine package evaluates");
     let (replaced, _) = run(&package, &clause, &asked);
@@ -1311,7 +1351,11 @@ fn every_temporal_operator_gives_the_same_result_over_the_three_routes() {
         )
         .expect("read");
         let bare = BarePackage::new(read.admitted());
-        let bytes = EvidencePackage::from_package(&bare).expect("bare");
+        let bytes = EvidencePackage::from_package(
+            &bare,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("bare");
         let [clause] = clause_ids(&bytes).try_into().expect("one clause");
         for trace in &traces {
             let mut asked = evidence_request(&emitted, &clause, None, 3);
@@ -1382,7 +1426,11 @@ fn the_replay_binding_names_the_package_the_source_emits() {
         let built = recipe(kind);
         let read = built.read(&built.emission);
         let bare = BarePackage::new(read.admitted());
-        let package = EvidencePackage::from_package(&bare).expect("bare");
+        let package = EvidencePackage::from_package(
+            &bare,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("bare");
         for clause in clause_ids(&package) {
             let subject = package.subject(&clause, None).expect("reads");
             assert_eq!(
@@ -1443,7 +1491,7 @@ fn supply_on<'p>(
 /// FR-531-AC-21 (TC-1331): `with_supply` succeeds on a budget of exactly the
 /// measured work and storage, and refuses one unit short of either with
 /// IR's typed exhaustion and no package, never as an unknown witness.
-#[trace("FR-531-AC-21", "TC-1331")]
+#[trace("TC-1331", "FR-531-AC-21")]
 #[test]
 fn with_supply_is_admitted_at_the_measured_budget_and_refused_one_short() {
     use quire_contract_model::{ExactTypeProjectionErrorCode as Code, NativeJoinBudget};
@@ -1455,6 +1503,22 @@ fn with_supply_is_admitted_at_the_measured_budget_and_refused_one_short() {
     let admitted = supply_on(&read, &rows, &mut exact).expect("the exact budget admits");
     assert_eq!(exact.consumed(), need);
     assert!(admitted.identities().is_some());
+    let mut join_only = NativeJoinBudget::new(1 << 30, 1 << 30);
+    rows.selected(read.admitted(), &mut join_only)
+        .expect("the same original identity rows join");
+    assert!(
+        need.work > join_only.consumed().work,
+        "the caller pays for Exact projection after the identity join"
+    );
+    admitted
+        .world()
+        .expect("retained record projections build the world");
+    admitted.world().expect("retained projections are reusable");
+    assert_eq!(
+        exact.consumed(),
+        need,
+        "world reads do not reset or recharge the ledger"
+    );
 
     let mut short_work = NativeJoinBudget::new(need.work - 1, need.storage);
     let denied = supply_on(&read, &rows, &mut short_work).expect_err("denied");
