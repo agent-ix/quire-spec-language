@@ -66,12 +66,21 @@ impl Built {
         &self,
         emission: &Emission,
     ) -> Result<AdmittedPackageRead<'_>, qsl_package::ImportViewRefusal> {
+        self.try_read_under(emission, V2ReadLimits::fixture())
+    }
+
+    /// The read of `emission` under `limits`, which the reader may refuse.
+    pub(super) fn try_read_under(
+        &self,
+        emission: &Emission,
+        limits: V2ReadLimits,
+    ) -> Result<AdmittedPackageRead<'_>, qsl_package::ImportViewRefusal> {
         read_evaluation_emission(
             self.unit.package(),
             emission,
             LibraryName::new(emission.package().name()).expect("a library name"),
             &self.packages,
-            V2ReadLimits::fixture(),
+            limits,
         )
     }
 }

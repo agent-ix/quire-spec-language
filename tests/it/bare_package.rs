@@ -1360,3 +1360,270 @@ fn the_replay_binding_names_the_package_the_source_emits() {
         assert_eq!(read.admitted().name(), built.replay_package_identity());
     }
 }
+
+/// The unit rows of `record_capture` bound to its admitted package, and the
+/// native work and storage one join of them takes (FR-358): the measured
+/// requirement the exhaustion tests stand on.
+fn record_rows(
+    read: &qsl_package::AdmittedPackageRead<'_>,
+) -> (ReadIdentityRows, quire_contract_model::NativeJoinCharge) {
+    let graph = read.source().graph();
+    let rows = ReadIdentityRows::of_rows(
+        read.admitted(),
+        graph.selected_exact_declaration_rows().to_vec(),
+        graph.selected_exact_field_rows().to_vec(),
+    );
+    let mut measure = quire_contract_model::NativeJoinBudget::new(1 << 30, 1 << 30);
+    BarePackage::new(read.admitted())
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: None,
+            },
+            &mut measure,
+        )
+        .expect("an ample budget admits the supply");
+    let measured = measure.consumed();
+    assert!(
+        measured.work > 0 && measured.storage > 0,
+        "the fixture joins at least one row: {measured:?}"
+    );
+    (rows, measured)
+}
+
+fn supply_on<'p>(
+    read: &'p qsl_package::AdmittedPackageRead<'_>,
+    rows: &'p ReadIdentityRows,
+    budget: &mut quire_contract_model::NativeJoinBudget,
+) -> Result<BarePackage<'p>, quire_contract_model::ExactTypeProjectionError> {
+    BarePackage::new(read.admitted()).with_supply(
+        qsl_package::BareSupply {
+            identities: rows,
+            equality: None,
+        },
+        budget,
+    )
+}
+
+/// FR-531-AC-19 (TC-1331): `with_supply` succeeds on a budget of exactly the
+/// measured work and storage, and refuses one unit short of either with
+/// IR's typed exhaustion and no package, never as an unknown witness.
+#[trace("FR-531-AC-19", "TC-1331")]
+#[test]
+fn with_supply_is_admitted_at_the_measured_budget_and_refused_one_short() {
+    use quire_contract_model::{ExactTypeProjectionErrorCode as Code, NativeJoinBudget};
+    let built = record_capture();
+    let read = built.read(&built.emission);
+    let (rows, need) = record_rows(&read);
+
+    let mut exact = NativeJoinBudget::new(need.work, need.storage);
+    let admitted = supply_on(&read, &rows, &mut exact).expect("the exact budget admits");
+    assert_eq!(exact.consumed(), need);
+    assert!(admitted.identities().is_some());
+
+    let mut short_work = NativeJoinBudget::new(need.work - 1, need.storage);
+    let denied = supply_on(&read, &rows, &mut short_work)
+        .err()
+        .expect("denied");
+    assert_eq!(denied.code, Code::ExhaustedWork);
+    assert_eq!(
+        short_work.first_unpaid().map(|unpaid| unpaid.kind),
+        Some(quire_contract_model::NativeJoinChargeKind::Work)
+    );
+    assert!(short_work.consumed().work <= need.work - 1);
+
+    let mut short_storage = NativeJoinBudget::new(need.work, need.storage - 1);
+    let denied = supply_on(&read, &rows, &mut short_storage)
+        .err()
+        .expect("denied");
+    assert_eq!(denied.code, Code::ExhaustedStorage);
+    assert_eq!(
+        short_storage.first_unpaid().map(|unpaid| unpaid.kind),
+        Some(quire_contract_model::NativeJoinChargeKind::Storage)
+    );
+}
+
+/// FR-531-AC-20 (TC-1331): an unknown or missing witness is held and refused
+/// by the call that reads it, in FR-531-AC-5's terms (the foreign case is
+/// FR-531-AC-5's own protocol-slot test), while a budget
+/// that runs out during the unknown rows' join is the budget's denial and
+/// not `UnknownIdentityWitness`.
+#[trace("FR-531-AC-20", "TC-1331")]
+#[test]
+fn witness_defects_stay_deferred_and_a_denial_is_not_an_unknown_witness() {
+    use qsl_package::{BareSelectionFailure, IdentityWitnessRefusal};
+    use quire_contract_model::{ExactTypeProjectionErrorCode as Code, NativeJoinBudget};
+    let built = record_capture();
+    let read = built.read(&built.emission);
+    let graph = read.source().graph();
+
+    // Unknown: the declaration rows written twice, which IR refuses as
+    // competing claims on one declaration.
+    let doubled: Vec<_> = graph
+        .selected_exact_declaration_rows()
+        .iter()
+        .chain(graph.selected_exact_declaration_rows())
+        .cloned()
+        .collect();
+    let unknown = ReadIdentityRows::of_rows(
+        read.admitted(),
+        doubled,
+        graph.selected_exact_field_rows().to_vec(),
+    );
+    let mut ample = NativeJoinBudget::new(1 << 30, 1 << 30);
+    let held =
+        supply_on(&read, &unknown, &mut ample).expect("a witness defect is not refused here");
+    assert!(held.identities().is_none());
+    assert!(matches!(
+        held.world().err(),
+        Some(BareSelectionFailure::Identity(
+            IdentityWitnessRefusal::Unknown
+        ))
+    ));
+
+    // The same rows through a budget that cannot pay for the join: the denial.
+    let spent = ample.consumed();
+    assert!(spent.work > 0);
+    let mut starved = NativeJoinBudget::new(spent.work - 1, spent.storage);
+    let denied = supply_on(&read, &unknown, &mut starved)
+        .err()
+        .expect("denied");
+    assert!(matches!(
+        denied.code,
+        Code::ExhaustedWork | Code::ExhaustedStorage
+    ));
+
+    // Missing: no supply at all.
+    let bare = BarePackage::new(read.admitted());
+    assert!(matches!(
+        bare.world().err(),
+        Some(BareSelectionFailure::Identity(
+            IdentityWitnessRefusal::Missing
+        ))
+    ));
+}
+
+/// FR-531-AC-21 (TC-1331): joins on one budget are cumulative; the second
+/// refuses at the first charge past what the first left, and the package the
+/// first returned keeps serving calls that join nothing.
+#[trace("FR-531-AC-21", "TC-1331")]
+#[test]
+fn two_joins_on_one_budget_are_charged_cumulatively() {
+    use quire_contract_model::NativeJoinBudget;
+    let built = record_capture();
+    let read = built.read(&built.emission);
+    let (rows, need) = record_rows(&read);
+
+    let mut budget = NativeJoinBudget::new(need.work, need.storage);
+    let first = supply_on(&read, &rows, &mut budget).expect("the first join is paid for");
+    assert_eq!(budget.consumed(), need);
+    let second = supply_on(&read, &rows, &mut budget).err().expect("denied");
+    assert!(matches!(
+        second.code,
+        quire_contract_model::ExactTypeProjectionErrorCode::ExhaustedWork
+            | quire_contract_model::ExactTypeProjectionErrorCode::ExhaustedStorage
+    ));
+    assert!(budget.first_unpaid().is_some());
+    assert!(budget.consumed().work <= need.work);
+    assert!(budget.consumed().storage <= need.storage);
+    first
+        .world()
+        .expect("the first package borrows its identities");
+
+    // With room for exactly two joins the second is admitted.
+    let mut twice = NativeJoinBudget::new(need.work * 2, need.storage * 2);
+    supply_on(&read, &rows, &mut twice).expect("first");
+    supply_on(&read, &rows, &mut twice).expect("second");
+    assert_eq!(twice.consumed().work, need.work * 2);
+}
+
+/// FR-531-AC-22 (TC-1331): the view, the evidence constructors and the handoff
+/// writer refuse a native budget one short with their own typed denial.
+#[trace("FR-531-AC-22", "TC-1331")]
+#[test]
+fn the_view_the_constructors_and_the_writer_refuse_a_budget_one_short() {
+    use qsl_eval::temporal::evidence::PackageMismatch;
+    use quire_contract_model::{ExactTypeProjectionErrorCode as Code, NativeJoinBudget};
+    let built = record_capture();
+    let ample = built.read(&built.emission);
+    let graph = ample.source().graph();
+    let mut measure = NativeJoinBudget::new(1 << 30, 1 << 30);
+    graph
+        .selected_exact_identities(ample.admitted(), &mut measure)
+        .expect("an ample budget joins the source rows");
+    let need = measure.consumed();
+    assert!(need.storage > 0 && need.work > 0);
+
+    // The evaluation view builds its budget from the read's limits.
+    let limits = |work: u64, storage: u64| {
+        qsl_package::V2ReadLimits::fixture()
+            .with_work(work)
+            .with_storage(storage)
+    };
+    let exact = built
+        .try_read_under(&built.emission, limits(need.work, need.storage))
+        .expect("the reader admits");
+    assert!(exact.evaluation_view().is_ok());
+    let short = built
+        .try_read_under(&built.emission, limits(need.work, need.storage - 1))
+        .expect("the reader admits");
+    match short.evaluation_view() {
+        Err(qsl_package::ViewFailure::Exhausted(denial)) => {
+            assert_eq!(denial.code, Code::ExhaustedStorage);
+        }
+        other => panic!("expected the storage denial, got {:?}", other.err()),
+    }
+
+    // The evidence constructors that hold a source.
+    let mut enough = NativeJoinBudget::new(need.work, need.storage);
+    EvidencePackage::from_read(&ample, &mut enough).expect("exact budget admits");
+    let mut one_short = NativeJoinBudget::new(need.work, need.storage - 1);
+    match EvidencePackage::from_read(&ample, &mut one_short) {
+        Err(PackageMismatch::Exhausted(denial)) => assert_eq!(denial.code, Code::ExhaustedStorage),
+        other => panic!("expected the storage denial, got {:?}", other.err()),
+    }
+    let mut no_work = NativeJoinBudget::new(need.work - 1, need.storage);
+    match EvidencePackage::from_emission(&built.emission, &ample, &mut no_work) {
+        Err(PackageMismatch::Exhausted(denial)) => assert_eq!(denial.code, Code::ExhaustedWork),
+        other => panic!("expected the work denial, got {:?}", other.err()),
+    }
+}
+
+/// FR-531-AC-22 (writer half, TC-1331): a handoff request whose native join
+/// limits cannot pay for the identity join is refused with the typed denial
+/// and writes no directory; the fixture limits write it.
+#[trace("FR-531-AC-22", "TC-1331")]
+#[test]
+fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join() {
+    use quire_contract_model::ExactTypeProjectionErrorCode as Code;
+    use quire_spec_language::checked_handoff::{Error, ErrorCode};
+    let scratch = tempfile::tempdir().expect("tempdir");
+    for (limits, code) in [
+        (
+            qsl_package::NativeJoinLimits::new(0, 1 << 24),
+            Code::ExhaustedWork,
+        ),
+        (
+            qsl_package::NativeJoinLimits::new(1 << 24, 0),
+            Code::ExhaustedStorage,
+        ),
+    ] {
+        let mut asked = request("event_position", Corpus::None);
+        asked.native_join = limits;
+        let target = scratch.path().join(format!("{code:?}"));
+        match write(&asked, &target) {
+            Err(error @ Error::NativeJoinExhausted(_)) => {
+                assert_eq!(error.code(), ErrorCode::NativeJoinExhausted);
+                let Error::NativeJoinExhausted(denial) = error else {
+                    unreachable!()
+                };
+                assert_eq!(denial.code, code);
+            }
+            other => panic!("expected the native denial, got {other:?}"),
+        }
+        assert!(!target.exists(), "a refused write leaves no directory");
+    }
+    let target = scratch.path().join("written");
+    write(&request("event_position", Corpus::None), &target).expect("the fixture limits write");
+    assert!(target.join("identities.json").exists());
+}
