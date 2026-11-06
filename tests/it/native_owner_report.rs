@@ -518,6 +518,37 @@ fn reader_rejects_a_correction_self_edge_and_original_with_invented_predecessor(
                 Report::from_owner_bytes(&self_edge, &revised_subject, &revised_observation),
                 Err(ReportRefusal::InvalidPredecessor)
             );
+            // Alter only lineage metadata: the result identity differs, but
+            // its evaluation input still equals the predecessor's input.
+            let mut same_input = original.result_identity().to_vec();
+            let mut cursor = 0;
+            let mut changed_relation = false;
+            while cursor < same_input.len() {
+                let tag = same_input[cursor];
+                let length = usize::try_from(u64::from_be_bytes(
+                    same_input[cursor + 1..cursor + 9].try_into().unwrap(),
+                ))
+                .unwrap();
+                if tag == 11 {
+                    same_input[cursor + 9] ^= 1;
+                    changed_relation = true;
+                    break;
+                }
+                cursor += 9 + length;
+            }
+            assert!(changed_relation);
+            assert_ne!(same_input, original.result_identity());
+            let mut unchanged_input = bytes[..spans[9].0].to_vec();
+            unchanged_input.push(10);
+            unchanged_input
+                .extend_from_slice(&u64::try_from(same_input.len()).unwrap().to_le_bytes());
+            unchanged_input.extend_from_slice(&same_input);
+            unchanged_input.extend_from_slice(&bytes[spans[9].2..]);
+            assert_eq!(
+                Report::from_owner_bytes(&unchanged_input, &revised_subject, &revised_observation),
+                Err(ReportRefusal::InvalidPredecessor)
+            );
+
             assert_eq!(
                 Report::from_owner_bytes(&bytes, &subject, &revised_observation),
                 Err(ReportRefusal::InvalidPredecessor)
