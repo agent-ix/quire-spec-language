@@ -6,5 +6,11 @@ import "agent-ix/checked-handoff-library" as L;
 model M = "agent-ix/checked-handoff";
 
 temporal DueTimestamp using t over (view: M::Workflow) clock "timestamp-clock" on origin {
-    always[0,30] holds(L::Ready(view.ready))
+    always[0,30] holds(
+        L::Ready(view.ready)
+        and L::RatioBounded(rational(-1, 2))
+        and L::RatioBounded(rational(1, 2))
+        and L::ExactBounded(rational(-9223372036854775808, 9223372036854775807))
+        and L::ExactBounded(rational(9223372036854775807, 9223372036854775806))
+    )
 }

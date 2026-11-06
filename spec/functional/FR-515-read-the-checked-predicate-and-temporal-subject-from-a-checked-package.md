@@ -106,8 +106,8 @@ For native evaluation, the checked-package evaluation view SHALL expose a
 read-only declaration-to-arena relation: for every occurrence of a declaration,
 `arena_of(&ClauseOccurrence) -> Result<ArenaHandle, ViewRefusal>` and
 `occurrence_of(ArenaHandle) -> Result<ClauseOccurrence, ViewRefusal>`. The
-relation is built from the admitted package and is the only source of arena
-handles: a caller-supplied occurrence key or handle is a lookup key, not an
+relation is a method pair of `TemporalSubjectView`, is built from the admitted package and is the only source of arena
+handles. An `ArenaHandle` is opaque: it names the view's declaration node and the slot of the occurrence in the view's occurrence order, so a handle read from the view of another declaration is declared by no row of this one. It is not derived from formula bytes, a digest or a hash. A caller-supplied occurrence key or handle is a lookup key, not an
 assertion, and SHALL be accepted only when it equals a row the view itself
 declares. QSL does not authenticate the caller; the check is equality with a
 declared row. A key naming no declared occurrence refuses
