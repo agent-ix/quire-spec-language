@@ -1,0 +1,105 @@
+---
+id: SR-15208992
+title: "QSL-1778 spec-review-base"
+type: SpecReview
+analysis: base
+scope: "agent-ix/quire-spec-language; QSL-1778; native owner reports and FR-052"
+review_set: subset
+---
+
+## Summary
+
+Ticket QSL-1778; PR quire-spec-language#2448; frozen b80fec47d, owned delta fca596eac...HEAD. Dependency QSL-1777/#2446 remains Draco-owned and was not reviewed as this ticket. No source edits or builds performed. Historical /tmp/QSL-1778-tests.log reports nine tests passed; this is coder evidence, not an independent rerun. Final gate remains outstanding.
+
+Direct base review of the FR-052 explanatory amendment and AC12/15-18 context: the checked subject is tied to an actual admitted occurrence, valuation authority and request ledger; sole temporal semantics owner remains the existing engine. No hash/digest/pin or cross-repository copied semantics added. No new relationship edges, verification-method allocations, architecture decisions or application UI. No applicable AssuranceProfile found; direct review used, no enforced workflow or human approval gate invoked.
+
+## Examined Scope
+
+```yaml
+scope:
+- id: FR-052-AC-12
+  path: spec/functional/FR-052-publish-native-temporal-evaluation-owner.md
+  role: examined
+  excerpt: Where the route accepts a correction relation, a valid correction names
+    its exact direct predecessor and changed evaluation input; self, non-direct, cross-obligation,
+    cross-occurrence (a predecessor of another declaration occurrence of the same
+    checked declaration) or identity-mismatched predecessors refuse, and the predecessor
+    result remains unchanged; on the native `Report` route the predecessor is named
+    by FR-043 result identity. This criterion does not authorize bridge predecessor
+    or supersession lineage, which Contract IR owns.
+- id: FR-052-AC-15
+  path: spec/functional/FR-052-publish-native-temporal-evaluation-owner.md
+  role: examined
+  excerpt: An evaluation through `temporal::evaluate_v2` returns a `Report` whose
+    subject (package identity and version, clause `CheckedNodeId`, occurrence key,
+    source-map entry), observation and revision references, truth, settlement, support
+    and typed outcome equal those of the evaluation; two occurrences of one declaration
+    sharing a node return reports differing in the occurrence key.
+- id: FR-052-AC-16
+  path: spec/functional/FR-052-publish-native-temporal-evaluation-owner.md
+  role: examined
+  excerpt: Every support entry of a report names a trace position ordinal and a valuation-evidence
+    row key present in the admitted evidence; for an evaluation with three identical
+    rows at one position and one row at another, the support relation lists the rows
+    with that multiplicity, and no support entry exists for a position or row the
+    evaluation did not admit.
+- id: FR-052-AC-17
+  path: spec/functional/FR-052-publish-native-temporal-evaluation-owner.md
+  role: examined
+  excerpt: '`from_owner_bytes(to_owner_bytes(r), subject, observation)` returns a
+    report equal to `r`, including support multiplicity and predecessor, and `to_owner_bytes`
+    is byte-identical across two calls and two builds of the same evaluation.'
+- id: FR-052-AC-18
+  path: spec/functional/FR-052-publish-native-temporal-evaluation-owner.md
+  role: examined
+  excerpt: 'Each single mutation of valid owner bytes is refused with the named `ReportRefusal`
+    and returns no report: an unknown version or format tag (`UnsupportedVersion`),
+    a prefix of the bytes (`Truncated`), one appended byte (`TrailingBytes`), an unknown
+    outcome tag (`UnknownTag`), two members swapped (`OutOfOrder`), a different supplied
+    subject, occurrence key or observation reference (`BindingMismatch` naming the
+    dimension), and a support entry naming a row or position the report does not hold
+    (`SupportNotInTrace`).'
+```
+
+## Findings
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-001 | low | No findings (placeholder) | - | implementation-bug-despite-evidence |
+
+## Verdict
+
+PASS within the stated scope.
+
+## Dispositions
+
+Round 1, reviewed head `9718b750a`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+
+No defect findings in this artifact required disposition; placeholder is not a finding.
+
+### Round 2
+
+Reviewed head `1ad7a1fc0`.
+
+No defect findings were still open in this artifact before round 2; no new findings. Prior fixed/rejected outcomes remain unchanged.
+
+## Disposition evidence (round 1)
+
+Disposition round 1 at 9718b750a in the original QSL-1778 worktree only. Static inspection of b80fec47d..9718b750a, no reviewer build or final gate. Canonical parsing now requires all 17 members; payload authority is checked by the existing evidence-owner identity_of encoder shared with evaluation. native_request is shared by evaluation and reading, binding observation/revision and admitted rows without executing temporal positions. The foreign canonical identity control transplants a revised observation identity onto unchanged original bytes and original observation, and must refuse UnknownTag. The coder mutation log /tmp/QSL-1778-fix-canonical-mutation.log shows this control failing at its intended assertion when comparison is disabled; restored log shows nine tests passing. All nine tests now have TC-144 plus criterion tags; TC-144 explicitly includes native owner report procedures 10-13.
+
+Original findings and original verdict are unchanged historical records. Current disposition: both original code-review findings fixed; no new defect in the fix diff. The separate later SR-20261105101067 gap review on Linear is outside this artifact set and remains for the lead to reconcile before merge. The original computed-matrix limitation remains.
+
+## Additional round 1 head reconciliation
+
+Final adopted head `5ed40a131` adds peer fixes after `9718b750a`. Both original findings remain fixed. Two newly added tests omit TC ids; this is a new finding in SR-15208990. The peer review SR-20261105101066/67 is now included in this disposition pass, not superseded. No extra worktree, clone or build was created.
+
+## Round 2 evidence and readiness
+
+Disposition round 2, final reviewed head 1ad7a1fc0 (owned fix 402547d2a..1ad7a1fc0). Same existing QSL-1778 worktree only; no source edits, build, clone or extra worktree. Relevant merged-main delta leaves native owner production behavior and canonical identity validation unchanged; owned production delta is formatting only. Both new test attributes now pair TC-144 with their criterion ids. The explicitly ignored local lane cargo-compiles the integration executable twice with different Rust metadata in the sole existing target, asserts fresh=false for each compilation, executes the exact fixture in each binary, and compares nonempty byte outputs. Existing pre-rebase coder receipts show eleven normal tests passing and the two-build lane passing with 7209 bytes from each binary; these were inspected, not rerun. Foreign-clause control uses a genuinely admitted other package, and the shortened request rejects its still-admitted position-1 valuation row.
+
+Source-map reachability independently traced: quire-contract-model/src/checked_package/common.rs validate_source_map_entries constructs expected (node, role, ordinal) from all graph occurrences and compares actual source-map keys exactly, returning InvalidSourceMap when actual != expected. checked_package/v2/mod.rs calls that validator before constructing the admitted CheckedPackageV2, whose fields are private; TemporalSubjectView::arena_of requires a declared occurrence. Thus a missing map entry for an accepted occurrence cannot reach CheckedSubject::new through the public admitted API. TC-144 now documents this defensive-arm proof rather than fabricating an invalid checked package.
+
+All findings across the six reviewed artifacts have a latest resolved outcome. No new fix-diff findings. Review mergeable, subject to the lead's one final gate and normal integration checks; no claim that the unavailable repository-wide matrix or final gate passed.

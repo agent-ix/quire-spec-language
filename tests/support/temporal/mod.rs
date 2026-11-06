@@ -212,7 +212,7 @@ pub fn holds_leaf(package: &artifact::AdmittedPackage, declaration: usize) -> u3
 }
 
 /// The single assessed obligation of a successful report.
-pub fn assessment(report: &temporal::Report) -> &temporal::Assessment {
+pub fn assessment(report: &temporal::ArtifactReport) -> &temporal::Assessment {
     let obligations = report
         .result()
         .unwrap_or_else(|error| panic!("evaluation stopped: {error:?}"));
