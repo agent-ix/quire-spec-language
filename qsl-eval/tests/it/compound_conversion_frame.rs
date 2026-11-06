@@ -4,7 +4,7 @@
 use ix_trace_rs::trace;
 use qsl_eval::value::evaluate_closed_with_frame;
 use qsl_forms::{BuiltinType, ClauseKind, Expression, TypeForm};
-use qsl_semantics::check::{CheckCause, CheckedNode};
+use qsl_semantics::check::CheckCause;
 use quire_checked::node::NodeKind;
 use quire_eval::{Evaluation, FamilyOutcome};
 use quire_exact::{
@@ -13,7 +13,20 @@ use quire_exact::{
 };
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 
-use super::quantity_literals::{UNLIMITED, package_with};
+use super::quantity_literals::package_with;
+
+const UNLIMITED: ScalarLimits = ScalarLimits {
+    integer_bits: u64::MAX,
+    decimal_digits: u64::MAX,
+    scale_expansion: u64::MAX,
+    text_input_bytes: u64::MAX,
+    text_scalars: u64::MAX,
+    normalized_scalars: u64::MAX,
+    unit_edges: u64::MAX,
+    value_occurrences: u64::MAX,
+    work_units: u64::MAX,
+    result_units: u64::MAX,
+};
 
 const SOURCE: &str = "\
     dimension Time;\n\
@@ -26,19 +39,8 @@ const SOURCE: &str = "\
     unit N_m : Torque = rational(1, 1);\n\
     dimension Energy = Mass * Length ^ 2 / Time ^ 2;\n\
     unit J : Energy = rational(1, 1);\n\
-    function form_compound using v(n: Quantity<N_m>, metre: Quantity<m>): Boolean pure {\
-        n * (1 kg / 1 kg) = n * (1 kg / 1 kg) }\n";
-
-fn compound_quantity_node(node: CheckedNode<'_>) -> Option<CheckedNode<'_>> {
-    let mut pending = vec![node];
-    while let Some(node) = pending.pop() {
-        if matches!(node.kind(), NodeKind::Quantity(_, _, _)) {
-            return Some(node);
-        }
-        pending.extend(node.children());
-    }
-    None
-}
+    function form_compound using v(n: Quantity<N_m>, metre: Quantity<m>, kilogram: Quantity<kg>, second: Quantity<s>): Boolean pure {\
+        1 kg * 1 m * 1 m / 1 s / 1 s = 1 kg * 1 m * 1 m / 1 s / 1 s }\n";
 
 fn evaluated(evaluation: Evaluation) -> Outcome<Value> {
     match evaluation.outcome {
@@ -61,23 +63,21 @@ fn convert_to(name: &str) -> Expression {
     )
 }
 
-/// TC-187 U25's compound side survives checking and is available to a later
-/// checked conversion. Its bound value is produced by evaluating a checked
-/// node in the original frame; the conversion itself spends only the U25
+/// TC-187 U25's full pivot sequence uses two checker-produced conversion
+/// nodes in the original parameter frame. Each leg spends only its own U25
 /// conversion charges.
 #[trace("QSpec-FR-142-AC-10", "QSpec-TC-187")]
 #[test]
-fn checked_conversion_reads_compound_source_from_its_retained_frame() {
+fn checked_conversions_run_the_compound_pivot_in_the_retained_frame() {
     let package = package_with(SOURCE).expect("the compound fixture checks");
     let graph = package.graph();
     let function = graph
         .function_state(0)
         .expect("the compound producer exists");
-    let NodeKind::Equality(_, _, left, _) = function.body.kind() else {
+    let NodeKind::Equality(_, _, _, right) = function.body.kind() else {
         panic!("the producer's root is its equality");
     };
-    let compound_node = compound_quantity_node(function.body.at(*left))
-        .expect("the producer contains the checked compound multiplication");
+    let compound_node = function.body.at(*right);
     let ValueType::Quantity(compound_unit) = compound_node.value_type() else {
         panic!("the compound node has a quantity result");
     };
@@ -90,33 +90,142 @@ fn checked_conversion_reads_compound_source_from_its_retained_frame() {
     let ValueType::Quantity(metre) = &callable.parameters[1].1 else {
         panic!("the producer also receives metres");
     };
-    let mut producer_meter = Meter::new(UNLIMITED);
-    let compound = evaluated(
+    let ValueType::Quantity(kilogram) = &callable.parameters[2].1 else {
+        panic!("the producer also receives kilograms");
+    };
+    let ValueType::Quantity(second) = &callable.parameters[3].1 else {
+        panic!("the producer also receives seconds");
+    };
+    let UnitId::Compound(compound_terms) = compound_unit else {
+        panic!("the pivot target is compound");
+    };
+    let mut expected_terms = vec![
+        (
+            kilogram
+                .declared_key()
+                .expect("kilogram has a declared identity")
+                .clone(),
+            Integer::one(),
+        ),
+        (
+            metre
+                .declared_key()
+                .expect("metre has a declared identity")
+                .clone(),
+            Integer::from(2_i64),
+        ),
+        (
+            second
+                .declared_key()
+                .expect("second has a declared identity")
+                .clone(),
+            Integer::from(-2_i64),
+        ),
+    ];
+    expected_terms.sort_by(|left, right| left.0.cmp(&right.0));
+    assert_eq!(compound_terms.as_ref(), expected_terms);
+    let arguments = || {
+        vec![
+            Value::Quantity(Quantity::new(
+                Rational::from_integer(1_i64.into()),
+                n_m.clone(),
+            )),
+            Value::Quantity(Quantity::new(
+                Rational::from_integer(1_i64.into()),
+                metre.clone(),
+            )),
+            Value::Quantity(Quantity::new(
+                Rational::from_integer(1_i64.into()),
+                kilogram.clone(),
+            )),
+            Value::Quantity(Quantity::new(
+                Rational::from_integer(1_i64.into()),
+                second.clone(),
+            )),
+        ]
+    };
+
+    let mut literal_meter = Meter::new(UNLIMITED);
+    let literal_result = evaluated(
         evaluate_closed_with_frame(
             &package,
             compound_node,
             function.slots,
-            vec![
-                Value::Quantity(Quantity::new(
-                    Rational::from_integer(1_i64.into()),
-                    n_m.clone(),
-                )),
-                Value::Quantity(Quantity::new(
-                    Rational::from_integer(1_i64.into()),
-                    metre.clone(),
-                )),
-            ],
+            arguments(),
             function.formed_units,
-            &mut producer_meter,
+            &mut literal_meter,
         )
-        .expect("the checked producer node evaluates"),
+        .expect("the checked compound quantity literal evaluates in the genuine function frame"),
     );
-    let Outcome::Completed(Value::Quantity(compound_value)) = compound else {
-        panic!("the producer returns the compound quantity: {compound:?}");
+    let Outcome::Completed(Value::Quantity(compound_literal)) = literal_result else {
+        panic!("the compound quantity literal evaluates: {literal_result:?}");
+    };
+    assert_eq!(compound_literal.unit(), compound_unit);
+    assert_eq!(
+        compound_literal.magnitude(),
+        &Rational::from_integer(1_i64.into())
+    );
+
+    let first_conversion = graph
+        .check_quantity_conversion(
+            callable.parameters.to_vec(),
+            &Expression::name("n".to_owned()),
+            compound_unit.clone(),
+            ClauseKind::Body,
+            CheckMode::Linked,
+            CheckingLimits::default(),
+        )
+        .expect("the retained compound target admits the first U25 conversion");
+
+    let conversion_meter = || {
+        Meter::new(ScalarLimits {
+            integer_bits: 1,
+            decimal_digits: 0,
+            scale_expansion: 0,
+            text_input_bytes: 0,
+            text_scalars: 0,
+            normalized_scalars: 0,
+            unit_edges: 1,
+            value_occurrences: 1,
+            work_units: 3,
+            result_units: 1,
+        })
+    };
+    let mut first_meter = conversion_meter();
+    let first_result = evaluated(
+        evaluate_closed_with_frame(
+            &package,
+            first_conversion.root(),
+            first_conversion.slots(),
+            arguments(),
+            first_conversion.formed_units(),
+            &mut first_meter,
+        )
+        .expect("N_m converts to the checked compound pivot in the bound frame"),
+    );
+    let Outcome::Completed(Value::Quantity(compound_value)) = first_result else {
+        panic!("the first conversion returns the compound pivot: {first_result:?}");
     };
     assert_eq!(compound_value.unit(), compound_unit);
+    assert_eq!(
+        compound_value.magnitude(),
+        &Rational::from_integer(1_i64.into())
+    );
+    let expected_charges = vec![
+        ChargePoint::UnitIdentityRead,
+        ChargePoint::UnitTargetDomain,
+        ChargePoint::UnitResultRetain,
+    ];
+    let charge_points = |meter: &Meter| {
+        meter
+            .admitted_charges()
+            .iter()
+            .map(|charge| charge.point)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(charge_points(&first_meter), expected_charges);
 
-    let conversion = graph
+    let second_conversion = graph
         .check_clause_expression(
             vec![("q".to_owned(), ValueType::Quantity(compound_unit.clone()))],
             &convert_to("J"),
@@ -125,76 +234,53 @@ fn checked_conversion_reads_compound_source_from_its_retained_frame() {
             CheckMode::Linked,
             CheckingLimits::default(),
         )
-        .expect("the retained compound type is available to a checked conversion");
-
-    let mut meter = Meter::new(ScalarLimits {
-        integer_bits: 1,
-        decimal_digits: 0,
-        scale_expansion: 0,
-        text_input_bytes: 0,
-        text_scalars: 0,
-        normalized_scalars: 0,
-        unit_edges: 1,
-        value_occurrences: 1,
-        work_units: 3,
-        result_units: 1,
-    });
-    let result = evaluated(
+        .expect("the retained compound source admits the second U25 conversion");
+    let mut second_meter = conversion_meter();
+    let second_result = evaluated(
         evaluate_closed_with_frame(
             &package,
-            conversion.root(),
-            conversion.slots(),
+            second_conversion.root(),
+            second_conversion.slots(),
             vec![Value::Quantity(compound_value)],
-            conversion.formed_units(),
-            &mut meter,
+            second_conversion.formed_units(),
+            &mut second_meter,
         )
-        .expect("the checked conversion evaluates in its bound frame"),
+        .expect("the compound pivot converts to J in its bound frame"),
     );
-    let Outcome::Completed(Value::Quantity(converted)) = result else {
-        panic!("the conversion returns J: {result:?}");
+    let Outcome::Completed(Value::Quantity(joule)) = second_result else {
+        panic!("the second conversion returns J: {second_result:?}");
     };
-    assert_eq!(converted.magnitude(), &Rational::from_integer(1_i64.into()));
-    assert_eq!(
-        meter
-            .admitted_charges()
-            .iter()
-            .map(|charge| charge.point)
-            .collect::<Vec<_>>(),
-        vec![
-            ChargePoint::UnitIdentityRead,
-            ChargePoint::UnitTargetDomain,
-            ChargePoint::UnitResultRetain,
-        ]
-    );
+    assert_eq!(joule.magnitude(), &Rational::from_integer(1_i64.into()));
+    assert_eq!(charge_points(&second_meter), expected_charges);
 
-    let unknown_compound = ValueType::Quantity(UnitId::compound(vec![(
+    let unknown_compound = UnitId::compound(vec![(
         crate::support::ids::node_key([0xAB]),
         Integer::one(),
-    )]));
+    )]);
     let unknown = graph
-        .check_clause_expression(
-            vec![("q".to_owned(), unknown_compound)],
-            &convert_to("J"),
-            None,
+        .check_quantity_conversion(
+            callable.parameters.to_vec(),
+            &Expression::name("n".to_owned()),
+            unknown_compound,
             ClauseKind::Body,
             CheckMode::Linked,
             CheckingLimits::default(),
         )
-        .expect_err("an unretained compound unit refuses during checking");
+        .expect_err("an unretained compound target refuses during checking");
     assert!(matches!(unknown.cause, CheckCause::IllTyped(_)));
 
     let mismatch = graph
-        .check_clause_expression(
-            vec![("q".to_owned(), ValueType::Quantity(metre.clone()))],
-            &convert_to("J"),
-            None,
+        .check_quantity_conversion(
+            callable.parameters.to_vec(),
+            &Expression::name("n".to_owned()),
+            metre.clone(),
             ClauseKind::Body,
             CheckMode::Linked,
             CheckingLimits::default(),
         )
-        .expect_err("a Length quantity cannot convert to Energy");
+        .expect_err("an N_m quantity cannot convert to Length");
     assert!(
         matches!(mismatch.cause, CheckCause::IllTyped(_)),
-        "incompatible Length-to-Energy conversion has a typed refusal: {mismatch:?}"
+        "incompatible Energy-to-Length target has a typed refusal: {mismatch:?}"
     );
 }

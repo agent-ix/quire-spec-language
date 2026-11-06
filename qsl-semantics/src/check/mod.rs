@@ -8038,6 +8038,54 @@ impl CheckedGraph {
         mode: CheckMode,
         limits: CheckingLimits,
     ) -> Result<CheckedExpression, CheckRefusal> {
+        self.check_clause_expression_inner(
+            parameters,
+            expression,
+            expected,
+            clause_kind,
+            mode,
+            limits,
+            None,
+        )
+    }
+
+    /// Check a quantity expression and append an explicit conversion to
+    /// `target_unit`, including a compound unit retained by this checked
+    /// graph. Unlike source `convert<Quantity<U>>`, this programmatic entry
+    /// accepts a unit identity directly. The source expression and every
+    /// frame parameter are still checked normally; the target must be held
+    /// by this graph and dimension-compatible with the source.
+    pub fn check_quantity_conversion(
+        &self,
+        parameters: Vec<(String, ValueType)>,
+        expression: &Expression,
+        target_unit: quire_exact::UnitId,
+        clause_kind: ClauseKind,
+        mode: CheckMode,
+        limits: CheckingLimits,
+    ) -> Result<CheckedExpression, CheckRefusal> {
+        let target = ValueType::Quantity(target_unit);
+        self.check_clause_expression_inner(
+            parameters,
+            expression,
+            None,
+            clause_kind,
+            mode,
+            limits,
+            Some(&target),
+        )
+    }
+
+    fn check_clause_expression_inner(
+        &self,
+        parameters: Vec<(String, ValueType)>,
+        expression: &Expression,
+        expected: Option<&ValueType>,
+        clause_kind: ClauseKind,
+        mode: CheckMode,
+        limits: CheckingLimits,
+        conversion_target: Option<&ValueType>,
+    ) -> Result<CheckedExpression, CheckRefusal> {
         let location = root(Origin::Expression);
         let mut nodes = 0_u64;
         let typer = Typer::new(
@@ -8064,12 +8112,18 @@ impl CheckedGraph {
         let mut typer = typer.with_context(cx.reborrow(&self.scope));
         typer.include_formed_units(&self.evaluation_units, &location)?;
         bind_parameters(&mut typer, &parameters, &location)?;
-        let root = match expected {
-            Some(expected) => {
-                typer.check_declared_type(expected, &location)?;
-                typer.check_as(expression, expected, &location)?
+        let root = match conversion_target {
+            Some(target) => {
+                let converted = typer.infer_conversion(expression, target, &location)?;
+                typer.finish_body(converted)
             }
-            None => typer.infer(expression, None, &location)?,
+            None => match expected {
+                Some(expected) => {
+                    typer.check_declared_type(expected, &location)?;
+                    typer.check_as(expression, expected, &location)?
+                }
+                None => typer.infer(expression, None, &location)?,
+            },
         };
         let slots = typer.slots();
         if mode == CheckMode::Linked {
