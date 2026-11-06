@@ -57,6 +57,7 @@ mod package_aggregate_route;
 mod property_automata;
 mod protocol_delivery_interval;
 mod protocol_reference;
+mod protocol_retry_bound;
 mod protocol_slots;
 mod quantity_literals;
 mod quantity_power;
