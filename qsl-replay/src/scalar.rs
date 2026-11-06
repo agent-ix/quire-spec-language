@@ -622,6 +622,7 @@ pub(crate) fn evaluated(outcome: Outcome<Value>) -> Result<Evaluated, InternalFa
             | Refusal::TextLengthOutOfDomain { .. }
             | Refusal::IntegerOutOfDomain { .. }
             | Refusal::RationalOutOfDomain { .. }
+            | Refusal::BoundedQuantityOutOfDomain { .. }
             | Refusal::IeeeRationalOutOfDomain { .. }
             | Refusal::CardinalityOutOfBound { .. } => {
                 Evaluated::Outcome(ScalarOutcome::OutOfRange)
