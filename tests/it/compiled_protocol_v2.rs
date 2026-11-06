@@ -1345,8 +1345,11 @@ fn v3_control_temporal_activation_mapping_is_strict_and_non_inferential() {
             .into_result()
             .expect("canonical v3 candidate");
         let out_of_range = w::Handle {
-            declaration: u32::MAX,
-            index: 0,
+            declaration: flow,
+            index: u32::try_from(controls.len())
+                .expect("control count fits the handle")
+                .checked_add(1)
+                .expect("fixture control index remains representable"),
         };
         let non_event = u32::try_from(
             controls
