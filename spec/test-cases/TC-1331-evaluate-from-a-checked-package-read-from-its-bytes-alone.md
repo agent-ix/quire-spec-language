@@ -5,12 +5,14 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-531
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-517
+    type: verifies
 ---
 # TC-1331: Evaluate from a checked package read from its bytes alone
 
 ## Description
 
-Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-18. **R** is the package of FR-517; the test crate depends on `quire-contract-model`, `qsl-package` and `qsl-eval` only.
+Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-20. **R** is the package of FR-517; the test crate depends on `quire-contract-model`, `qsl-package` and `qsl-eval` only.
 
 ## Test Procedure
 
@@ -33,8 +35,10 @@ Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-18. **R** is the pa
 | 15 | 16 | a slot call on fixture E's `Refund` retry relation with `equality: None`, foreign rows, the package's own rows without the application's row; `Refund`'s `trigger.guard` | `MissingEqualityWitness`, `ForeignEqualityWitness`, `UnknownEqualityWitness` as exit-21 `Admission` at `CallAdmissionLocus::Package`, meter untouched; evaluates |
 | 16 | 17 | the vector rows of "The equality file"; a row of every fact tag, value-type tag, owner kind and a compound unit in a fact row; malformed rationals; a compound unit in `source_units` | bytes equal the vector; rows round-trip with byte-identical rewrites; `Malformed` |
 | 17 | 18 | rows with a `carried_quantity` fact value type over each carrier, a `bounded_quantity` with and without bounds, a `map` with and without a bound, and the example of "Value encodings"; a bound in another unit; an unknown carrier tag | write then read returns equal rows, byte-identical rewrite, the example value-type subtree as JSON, members in order; `Malformed` for the last two |
+| 18 | 19 | a genuine final source-record emission, including renamed members and nested opaque types | required `/2` rows round-trip unchanged; native IR record join and `source_record_view` equal the producer row |
+| 19 | 20 | old format; missing required arrays; repeated/unknown members; malformed or over-depth opaque key, including an isolated deep-key writer/reader control; stale/foreign/missing/conflicting record rows | typed parser/native row refusal; an empty supplied record set refuses at the actual native request and maps to public `MissingTypeRepresentation`, with no structural-key success fallback |
 
-Tag the test `#[trace("FR-531-AC-1", ..., "FR-531-AC-18", "TC-1331")]`.
+Tag the test `#[trace("TC-1331", "FR-531-AC-1", ..., "FR-531-AC-20")]`.
 
 ## Expected Results
 

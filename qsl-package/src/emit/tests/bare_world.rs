@@ -3,7 +3,7 @@
 //! of a bytes-route world is the lock's selection of the profile law.
 
 use super::*;
-use crate::{BarePackage, BareSupply, ReadIdentityRows};
+use crate::{BarePackage, BareSupply};
 
 /// Whether the bytes-route world of `package` holds the IEEE profile, and
 /// whether its lock selects the profile law.
@@ -12,11 +12,9 @@ fn ieee_flags(package: &CheckedPackage) -> (bool, bool) {
     let Read::Verified { admitted, .. } = read_back(&emission) else {
         panic!("the emitted package reads back");
     };
-    let rows = ReadIdentityRows::of_rows(
-        &admitted,
-        package.graph().selected_exact_declaration_rows().to_vec(),
-        package.graph().selected_exact_field_rows().to_vec(),
-    );
+    let rows = emission
+        .identity_rows(&admitted)
+        .expect("final identity rows");
     let world = BarePackage::new(&admitted)
         .with_supply(BareSupply {
             identities: &rows,

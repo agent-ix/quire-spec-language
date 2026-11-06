@@ -89,7 +89,7 @@ A new directory containing exactly:
 | `models/<n>.json` | each domain package document, exact bytes, in selection order |
 | `inventory.json` | `qsl_replay::qsl_inventory` over the unit, with the formal identity the writer selects (FR-514), in the encoding "The inventory file" states; the writer runs the replay spine over the unit's source to obtain the `check` outcome `qsl_inventory` takes (FR-517-AC-11). |
 | `selection.json` | the selection sidecar, `quire.checked-handoff.selection/1` |
-| `identities.json` | the identity file, `quire.checked-handoff.identities/1`: the selected model identity rows of the in-process unit (FR-390), in the encoding FR-531 "The identity file" states, read by a bytes-only consumer with the package to evaluate a protocol slot (FR-531) |
+| `identities.json` | the required identity file, `quire.checked-handoff.identities/2`: selected declaration/field rows and final-emission source-record rows, in the encoding FR-531 "The identity file" states; a bytes-only consumer reads it with the package (FR-531) |
 | `equality.json` | the equality file, `quire.checked-handoff.equality/1`: the equality application rows, equality fact rows and selected source-unit rows of the in-process unit, in the encoding FR-531 "The equality file" states, read by a bytes-only consumer with the package to evaluate a protocol slot whose walk holds an `==` or `!=` application (FR-533) |
 | `mutations/manifest.json`, `mutations/<case>.json` | present only for `corpus = Standard` (FR-518) |
 
@@ -367,6 +367,7 @@ the three directories. The packages hold:
 | FR-517-AC-20 | `sum<N>` checks a summand of any numeric family QSpec FR-145 and FR-322 give a `quire.op.collection.sum` identity for, the carried-quantity family included, and lowers to that family's identity; over **R**, the `Healthy` invariant's receipt sum over `Quantity<U>` checks and evaluates to the sum of the receipts' magnitudes in `U`. | Test (TC-1312) |
 | FR-517-AC-21 | The handoff directory written for TC-1070 fixture E contains `equality.json`, whose bytes equal the encoding FR-531 states of the rows of the in-process unit, with the three row lists non-empty (the unit holds integer `=` applications) and each row's node members naming nodes of `checked-package.json`; the directory written for the unit of the inventory vector (`unit.native`, which holds no `==` or `!=` application) contains `equality.json` with the three lists empty; two writes of equal requests give byte-identical files. | Test (TC-1312) |
 | FR-517-AC-22 | A writer given a unit whose equality rows name a node the package does not hold returns `Error::Unnameable` and writes nothing, as for `inventory.json`; the written file holds no source text, no digest and no member the encoding of FR-531 does not list. | Test (TC-1312) |
+| FR-517-AC-23 | The writer emits the required `identities/2` source-record list from the same final emission as the package: original opaque record keys, final structural/type references, original and final member names and order round-trip through native record joins. The reader requires the list and refuses the old format or an omitted list; no optional compatibility path or source fallback supplies it. | Test (TC-1312) |
 
 ## Dependencies
 

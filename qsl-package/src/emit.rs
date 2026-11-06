@@ -1252,6 +1252,55 @@ impl Emission {
         &self.selected_exact_field_rows
     }
 
+    /// The required identity handoff facts from this final emission. This
+    /// preserves original opaque source keys separately from graph references.
+    ///
+    /// # Errors
+    ///
+    /// The native typed stage-row refusal when declaration or field claims do
+    /// not join the admitted package.
+    pub fn identity_rows(
+        &self,
+        package: &CheckedPackageV2,
+    ) -> Result<crate::ReadIdentityRows, crate::IdentityFileRefusal> {
+        let joined = qsl_semantics::model::intake::selected_exact_identities_from_rows(
+            package,
+            &self.selected_exact_declaration_rows,
+            &self.selected_exact_field_rows,
+        )
+        .map_err(|error| crate::IdentityFileRefusal::Native(Box::new(error)))?;
+        let records = self
+            .selected_source_record_rows
+            .iter()
+            .map(|row| quire_contract_model::SelectedSourceRecordRow {
+                structural_node: row.structural_node.clone(),
+                source_authority: row.source_authority.clone(),
+                source_identity: row.source_identity.clone(),
+                qualified_declaration: row.qualified_declaration.clone(),
+                record_key: row.record_key.clone(),
+                members: row
+                    .members
+                    .iter()
+                    .map(
+                        |member| quire_contract_model::SelectedSourceRecordMemberRow {
+                            original_member_identity: member.original_member_identity.clone(),
+                            admitted_name: member.admitted_name.clone(),
+                            presence: member.presence,
+                            type_node: member.type_node.clone(),
+                            value_type: member.value_type.clone(),
+                        },
+                    )
+                    .collect(),
+            })
+            .collect();
+        Ok(crate::ReadIdentityRows::of_rows(
+            package,
+            joined.declaration_rows().cloned().collect(),
+            joined.field_rows().to_vec(),
+            records,
+        ))
+    }
+
     /// QSL-owned identity rows keyed by equality application and occurrence.
     pub fn equality_producer_identity_rows(&self) -> &[EqualityProducerEmissionRow] {
         &self.equality_producer_identity_rows
@@ -5043,14 +5092,9 @@ fn timed_body_operands(
     Ok(())
 }
 
-/// QSpec FR-322 `model_root`, FR-322-AC-132 and AC-134: for each selected
-/// domain package, in `CheckedGraph::model_selections` order, one self-typed `model` node
-/// keyed by the selection's identity alone, appended after every
-/// other node, with one `generated` source-map entry appended after every
-/// other entry. The selection records no selecting occurrence, so the entry's
-/// region is the first byte of the checked unit (QSpec: the entry is a
-/// producer assertion no reader verifies, and the published regions are
-/// one-byte placeholders).
+/// QSpec FR-322 `model_root`, FR-322-AC-132 and AC-134: append one self-typed
+/// root and generated source-map entry per selected domain package, in
+/// selection order. The placeholder region is the checked unit's first byte.
 fn append_model_roots<'a>(
     ids: &StructuralIds,
     roots: impl Iterator<

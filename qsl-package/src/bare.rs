@@ -15,15 +15,18 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use quire_contract_model::{
     CheckedNodeId, CheckedPackageV2, SelectedExactDeclarationForm, SelectedExactDeclarationRow,
-    SelectedExactFieldRow, SelectedExactIdentity,
+    SelectedExactFieldRow, SelectedExactIdentity, SelectedSourceRecordRow,
 };
 use quire_exact::{EffectiveId, MemberId, MemberOwner, NodeKey, OriginalDeclarationKey, UnitId};
 use serde::{Deserialize, Serialize};
 
 use crate::checked_v2::wire_graph;
 
+mod carried;
+use carried::SourceRecordJson;
+
 /// The format of `identities.json` (FR-531 "The identity file").
-pub const IDENTITIES_FORMAT: &str = "quire.checked-handoff.identities/1";
+pub const IDENTITIES_FORMAT: &str = "quire.checked-handoff.identities/2";
 
 /// A checked package as a bytes-only consumer holds it (FR-531).
 ///
@@ -115,6 +118,7 @@ pub struct ReadIdentityRows {
     package: String,
     declarations: Vec<SelectedExactDeclarationRow>,
     fields: Vec<SelectedExactFieldRow>,
+    source_records: Vec<SelectedSourceRecordRow>,
 }
 
 /// Why an identity file was not read: a closed set, naming what it found.
@@ -137,6 +141,9 @@ pub enum IdentityFileRefusal {
         /// The first row that does not join.
         index: usize,
     },
+    /// IR refused the original producer rows at its typed structural locus.
+    #[error("the identity file has an invalid native witness: {0:?}")]
+    Native(Box<quire_contract_model::ExactTypeProjectionError>),
 }
 
 /// The member of an identity file a refusal names (FR-531 "The identity file").
@@ -148,12 +155,18 @@ pub enum IdentityMember {
     /// The `format` member.
     #[error("`format`")]
     Format,
+    /// A well-shaped but unsupported format string.
+    #[error("unsupported format `{0}`")]
+    Version(String),
     /// The `declarations` member.
     #[error("`declarations`")]
     Declarations,
     /// The `fields` member.
     #[error("`fields`")]
     Fields,
+    /// The required final-emission source-record rows.
+    #[error("`source_records`")]
+    SourceRecords,
     /// A declaration row's `form`.
     #[error("`form`")]
     Form,
@@ -176,6 +189,7 @@ struct File {
     format: String,
     declarations: Vec<DeclarationJson>,
     fields: Vec<FieldJson>,
+    source_records: Vec<SourceRecordJson>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -265,15 +279,20 @@ impl<'de> serde::de::Visitor<'de> for TopVisitor<'_> {
         let mut format: Option<String> = None;
         let mut declarations: Option<Vec<DeclarationJson>> = None;
         let mut fields: Option<Vec<FieldJson>> = None;
+        let mut source_records: Option<Vec<SourceRecordJson>> = None;
         while let Some(key) = map.next_key::<String>()? {
             match key.as_str() {
                 "format" => {
                     if format.is_some() {
                         return Err(self.fail(IdentityMember::Repeated("format")));
                     }
-                    format = Some(map.next_value().inspect_err(|_: &A::Error| {
+                    let value: String = map.next_value().inspect_err(|_: &A::Error| {
                         self.problem.set(Some(IdentityMember::Format));
-                    })?);
+                    })?;
+                    if !is_identities_format(&value) {
+                        return Err(self.fail(IdentityMember::Version(value)));
+                    }
+                    format = Some(value);
                 }
                 "declarations" => {
                     if declarations.is_some() {
@@ -291,18 +310,28 @@ impl<'de> serde::de::Visitor<'de> for TopVisitor<'_> {
                         self.problem.set(Some(IdentityMember::Fields));
                     })?);
                 }
+                "source_records" => {
+                    if source_records.is_some() {
+                        return Err(self.fail(IdentityMember::Repeated("source_records")));
+                    }
+                    source_records = Some(map.next_value().inspect_err(|_: &A::Error| {
+                        self.problem.set(Some(IdentityMember::SourceRecords));
+                    })?);
+                }
                 other => return Err(self.fail(IdentityMember::Unknown(other.to_owned()))),
             }
         }
-        match (format, declarations, fields) {
-            (Some(format), Some(declarations), Some(fields)) => Ok(File {
+        match (format, declarations, fields, source_records) {
+            (Some(format), Some(declarations), Some(fields), Some(source_records)) => Ok(File {
                 format,
                 declarations,
                 fields,
+                source_records,
             }),
-            (None, _, _) => Err(self.fail(IdentityMember::Format)),
-            (_, None, _) => Err(self.fail(IdentityMember::Declarations)),
-            (_, _, None) => Err(self.fail(IdentityMember::Fields)),
+            (None, _, _, _) => Err(self.fail(IdentityMember::Format)),
+            (_, None, _, _) => Err(self.fail(IdentityMember::Declarations)),
+            (_, _, None, _) => Err(self.fail(IdentityMember::Fields)),
+            (_, _, _, None) => Err(self.fail(IdentityMember::SourceRecords)),
         }
     }
 }
@@ -388,12 +417,27 @@ impl ReadIdentityRows {
         if self.package != package.name() {
             return Err(IdentityWitnessRefusal::Foreign);
         }
-        qsl_semantics::model::intake::selected_exact_identities_from_rows(
+        self.join(package)
+            .map_err(|_| IdentityWitnessRefusal::Unknown)
+    }
+
+    fn join(
+        &self,
+        package: &CheckedPackageV2,
+    ) -> Result<
+        quire_contract_model::SelectedExactIdentities,
+        quire_contract_model::ExactTypeProjectionError,
+    > {
+        quire_contract_model::SelectedExactIdentities::from_stage_rows(
             package,
-            &self.declarations,
-            &self.fields,
+            self.declarations.iter().cloned(),
+            self.fields.iter().cloned(),
+        )?
+        .with_source_record_rows(
+            package,
+            self.source_records.iter().cloned(),
+            crate::bare_slot::package_work_limit(),
         )
-        .map_err(|_| IdentityWitnessRefusal::Unknown)
     }
 
     /// The package the rows were produced for.
@@ -409,6 +453,11 @@ impl ReadIdentityRows {
     /// The selected record-field rows, in file order.
     pub fn fields(&self) -> &[SelectedExactFieldRow] {
         &self.fields
+    }
+
+    /// Original source-record producer rows, with final graph references.
+    pub fn source_records(&self) -> &[SelectedSourceRecordRow] {
+        &self.source_records
     }
 
     /// Read `identities_json`, joining its rows to `package`.
@@ -427,7 +476,10 @@ impl ReadIdentityRows {
         package: &CheckedPackageV2,
     ) -> Result<Self, IdentityFileRefusal> {
         let malformed = |member: IdentityMember| IdentityFileRefusal::Malformed { member };
-        let file = parse_file(identities_json).map_err(malformed)?;
+        let file = parse_file(identities_json).map_err(|member| match member {
+            IdentityMember::Version(format) => IdentityFileRefusal::Format(format),
+            other => malformed(other),
+        })?;
         if !is_identities_format(&file.format) {
             return Err(IdentityFileRefusal::Format(file.format));
         }
@@ -534,11 +586,20 @@ impl ReadIdentityRows {
                 member_id,
             ));
         }
-        Ok(Self {
+        let source_records = file
+            .source_records
+            .into_iter()
+            .map(SourceRecordJson::row)
+            .collect::<Result<Vec<_>, _>>()?;
+        let rows = Self {
             package: package.name().to_owned(),
             declarations,
             fields,
-        })
+            source_records,
+        };
+        rows.join(package)
+            .map_err(|error| IdentityFileRefusal::Native(Box::new(error)))?;
+        Ok(rows)
     }
 
     /// The rows of the in-process unit, for a package it was emitted as.
@@ -546,11 +607,13 @@ impl ReadIdentityRows {
         package: &CheckedPackageV2,
         declarations: Vec<SelectedExactDeclarationRow>,
         fields: Vec<SelectedExactFieldRow>,
+        source_records: Vec<SelectedSourceRecordRow>,
     ) -> Self {
         Self {
             package: package.name().to_owned(),
             declarations,
             fields,
+            source_records,
         }
     }
 
@@ -654,6 +717,11 @@ impl ReadIdentityRows {
             format: IDENTITIES_FORMAT.to_owned(),
             declarations,
             fields,
+            source_records: self
+                .source_records
+                .iter()
+                .map(SourceRecordJson::of)
+                .collect::<Result<_, _>>()?,
         };
         let mut bytes =
             serde_json::to_vec_pretty(&file).map_err(|_| malformed(IdentityMember::File))?;

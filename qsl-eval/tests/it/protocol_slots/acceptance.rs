@@ -4713,11 +4713,10 @@ fn bare_rows(
     package: &CheckedPackage,
     v2: &qsl_package::CheckedPackageV2,
 ) -> qsl_package::ReadIdentityRows {
-    qsl_package::ReadIdentityRows::of_rows(
-        v2,
-        package.graph().selected_exact_declaration_rows().to_vec(),
-        package.graph().selected_exact_field_rows().to_vec(),
-    )
+    qsl_package::emit_checked(package)
+        .expect("emits")
+        .identity_rows(v2)
+        .expect("final identity rows")
 }
 
 /// FR-533-AC-1 (selection half), AC-4 (selection path), with the bytes-route

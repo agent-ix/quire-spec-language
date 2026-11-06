@@ -407,6 +407,77 @@ fn a_package_owned_time_unit_emits_its_model_owned_nominal_nodes() {
     .unwrap_or_else(|failure| panic!("the I2 read admits package-owned time nodes: {failure:?}"));
 }
 
+#[trace("TC-1331", "FR-531-AC-13")]
+#[test]
+fn an_authentic_selected_model_unit_round_trips_in_required_identity_handoff() {
+    let document = package_units_document();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let unit = config_version_unit::unit_text().replace(
+        "profile v = \"quire.model.complete/v1\";\n",
+        "profile v = \"quire.model.complete/v1\";\nprofile t = \"quire.temporal.complete/v1\";\n",
+    );
+    let unit = format!("{unit}time Config dense unit Config::ms;\n");
+    let graph = assemble_with_models(unit.as_bytes(), &packages)
+        .unwrap()
+        .check(CheckingLimits::default())
+        .unwrap();
+    let emission = emit_checked(&CheckedPackage::link(graph)).unwrap();
+    let mut evidence = emission.evidence().clone();
+    evidence
+        .insert_domain_package_document(package_identity(&document), document)
+        .unwrap();
+    let quire_contract_model::CheckedPackageV2ReadResult::Admitted(package) =
+        quire_contract_model::CheckedPackageV2::read(
+            emission.package().bytes(),
+            quire_contract_model::CheckedPackageReadLimits::bounded(),
+            &evidence,
+        )
+    else {
+        panic!("the genuine unit package admits");
+    };
+    let rows = emission.identity_rows(&package).unwrap();
+    let unit_index = rows
+        .declarations()
+        .iter()
+        .position(|row| {
+            row.form == quire_contract_model::SelectedExactDeclarationForm::DeclaredUnit
+        })
+        .expect("an actual producer-issued declared unit row");
+    let bytes = rows.to_bytes(&package).unwrap();
+    assert_eq!(
+        crate::ReadIdentityRows::read(&bytes, &package).unwrap(),
+        rows
+    );
+    let original: Value = serde_json::from_slice(&bytes).unwrap();
+    let mut kind = original.clone();
+    kind["declarations"][unit_index]["exact_identity"]["value"]["kind"] = json!("compound");
+    assert_eq!(
+        crate::ReadIdentityRows::read(&serde_json::to_vec(&kind).unwrap(), &package),
+        Err(crate::IdentityFileRefusal::Malformed {
+            member: crate::IdentityMember::ExactIdentity
+        })
+    );
+    let mut foreign = original.clone();
+    foreign["declarations"][unit_index]["exact_identity"]["value"]["node"]["package"] =
+        json!("foreign-package");
+    assert_eq!(
+        crate::ReadIdentityRows::read(&serde_json::to_vec(&foreign).unwrap(), &package),
+        Err(crate::IdentityFileRefusal::Unjoined {
+            member: crate::IdentityMember::Declarations,
+            index: unit_index
+        })
+    );
+    let mut wrong = original;
+    wrong["declarations"][unit_index]["exact_identity"]["kind"] = json!("record");
+    assert_eq!(
+        crate::ReadIdentityRows::read(&serde_json::to_vec(&wrong).unwrap(), &package),
+        Err(crate::IdentityFileRefusal::Unjoined {
+            member: crate::IdentityMember::Declarations,
+            index: unit_index
+        })
+    );
+}
+
 #[trace("FR-230-AC-32", "FR-230-AC-35")]
 #[test]
 fn a_tick_time_source_emits_its_exact_period_and_operation_anchor() {

@@ -761,8 +761,12 @@ fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
     let mut again = first.clone();
     again.original_identity = format!("{}-again", first.original_identity).into();
     conflicting.push(again);
-    let unknown_rows =
-        qsl_package::ReadIdentityRows::of_rows(v2, conflicting, rows.fields().to_vec());
+    let unknown_rows = qsl_package::ReadIdentityRows::of_rows(
+        v2,
+        conflicting,
+        rows.fields().to_vec(),
+        rows.source_records().to_vec(),
+    );
     let unknown = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
         identities: &unknown_rows,
         equality: Some(&equality),
@@ -867,8 +871,12 @@ fn the_call_reports_identity_then_equality_then_node_refusals() {
             CallAdmissionLocus::Package
         )
     );
-    let stripped =
-        qsl_package::ReadIdentityRows::of_rows(v2, rows.declarations().to_vec(), Vec::new());
+    let stripped = qsl_package::ReadIdentityRows::of_rows(
+        v2,
+        rows.declarations().to_vec(),
+        Vec::new(),
+        rows.source_records().to_vec(),
+    );
     let no_fields = |equality| {
         BarePackage::new(v2).with_supply(qsl_package::BareSupply {
             identities: &stripped,

@@ -15,6 +15,8 @@ use super::temporal_package_route::{
 };
 use quire_spec_language::checked_handoff::{evidence, write, Corpus};
 
+use super::bare_equality::tc1070 as population_fixture;
+
 /// The requests of the matrix: one per truth outcome, activation state and
 /// `Incomplete` counter of FR-523, over `clause`.
 fn matrix(
@@ -275,7 +277,7 @@ fn a_handoff_directory_gives_a_bare_package_and_an_identity_file() {
     assert!(!charges.is_empty());
 
     let file: Value = serde_json::from_slice(&files["identities.json"]).expect("JSON");
-    assert_eq!(file["format"], "quire.checked-handoff.identities/1");
+    assert_eq!(file["format"], "quire.checked-handoff.identities/2");
     assert!(files["identities.json"].ends_with(b"}\n"));
     let rows = ReadIdentityRows::read(&files["identities.json"], &package).expect("reads");
     assert_eq!(rows.package_name(), package.name());
@@ -290,6 +292,135 @@ fn a_handoff_directory_gives_a_bare_package_and_an_identity_file() {
     );
     let (_again, second, _) = directory("event_position");
     assert_eq!(files["identities.json"], second["identities.json"]);
+}
+
+#[trace("TC-1331", "FR-531-AC-19", "FR-517-AC-23")]
+#[test]
+fn a_public_record_projection_requires_its_original_carried_native_witness() {
+    let holder = tempfile::tempdir().unwrap();
+    let source = holder.path().join("unit.native");
+    let model = holder.path().join("model.json");
+    let text = population_fixture::SOURCE.replace(
+        "model M = \"test/orders\";",
+        "model M = \"test/orders\";\nrecord Pair { x: Integer; y: Integer; }",
+    ).replace(
+        "on each (opened: M::Tick) when (opened.ready) {",
+        "on each (opened: M::Tick) when (opened.ready) {\n  capture kept: Pair = Pair{ x: 1, y: 2 };\n  capture fieldRead: Integer = kept.x;",
+    );
+    std::fs::write(&source, text).unwrap();
+    std::fs::write(
+        &model,
+        serde_json::to_vec(&population_fixture::document()).unwrap(),
+    )
+    .unwrap();
+    let asked = quire_spec_language::checked_handoff::CheckedHandoffRequest {
+        emit: quire_spec_language::emit_checked_v2::Request {
+            source,
+            package_name: "record-handoff".into(),
+            models: vec![model],
+            libraries: Vec::new(),
+            execution_points: None,
+            temporal_selections: Vec::new(),
+            out: None,
+        },
+        corpus: Corpus::None,
+    };
+    let out = holder.path().join("handoff");
+    write(&asked, &out).expect("the genuine source-record protocol handoff writes");
+    let files = tree(&out);
+    let package = admitted(&files["checked-package.json"], &evidence(&asked).unwrap());
+    let rows = ReadIdentityRows::read(&files["identities.json"], &package).unwrap();
+    let original = rows
+        .source_records()
+        .iter()
+        .find(|row| {
+            row.qualified_declaration
+                .last()
+                .is_some_and(|name| name.as_ref() == "Pair")
+        })
+        .expect("the original Pair row");
+    let equality = qsl_package::ReadEqualityRows::read(&files["equality.json"], &package).unwrap();
+    let graph = qsl_semantics::check::wire_id::WireGraph::new(
+        package.graph().nodes.iter().map(|node| &node.node_id),
+    )
+    .unwrap();
+    let protocol = package
+        .graph()
+        .nodes
+        .iter()
+        .find(|node| {
+            node.node_tag.as_ref() == "protocol"
+                && node.declaration.as_ref().is_some_and(|declaration| {
+                    declaration
+                        .qualified_name
+                        .last()
+                        .is_some_and(|name| name.as_ref() == "Refunds")
+                })
+        })
+        .unwrap();
+    let descriptor = |index| {
+        qsl_package::ProtocolSlotDescriptor::new(
+            graph.key(&protocol.node_id).unwrap(),
+            "captures",
+            Some(index),
+        )
+    };
+    let bare = BarePackage::new(&package).with_supply(qsl_package::BareSupply {
+        identities: &rows,
+        equality: Some(&equality),
+    });
+    let kept = bare.select_protocol_slot(&descriptor(0)).unwrap();
+    let projection = bare
+        .project_protocol_slot(&kept)
+        .expect("the native opaque record projects");
+    assert_eq!(
+        projection.value_type(projection.root()),
+        Some(&quire_exact::ValueType::Composite(
+            original.record_key.clone()
+        ))
+    );
+    let field = bare.select_protocol_slot(&descriptor(1)).unwrap();
+    let projected_field = bare
+        .project_protocol_slot(&field)
+        .expect("the observable source-record binder field projects");
+    assert_eq!(
+        projected_field.value_type(projected_field.root()),
+        Some(&quire_exact::ValueType::Integer)
+    );
+    assert!(
+        matches!(
+            projected_field.kind(projected_field.root()),
+            Some(quire_checked::node::NodeKind::Field {
+                optional: false,
+                ..
+            })
+        ),
+        "the observable capture binder retains an actual field read"
+    );
+    let missing = ReadIdentityRows::of_rows(
+        &package,
+        rows.declarations().to_vec(),
+        rows.fields().to_vec(),
+        Vec::new(),
+    );
+    let bare = BarePackage::new(&package).with_supply(qsl_package::BareSupply {
+        identities: &missing,
+        equality: Some(&equality),
+    });
+    let selected = bare.select_protocol_slot(&descriptor(0)).unwrap();
+    let qsl_package::BareSelectionFailure::Unsupported(view) =
+        (match bare.project_protocol_slot(&selected) {
+            Err(error) => error,
+            Ok(_) => panic!("a missing record witness must not become a structural-key success"),
+        })
+    else {
+        panic!("the public refusal is typed unsupported");
+    };
+    assert_eq!(
+        view.reason(),
+        &qsl_package::UnsupportedReason::MissingTypeRepresentation
+    );
+    assert_eq!(view.locus().key(), Some(selected.root()));
 }
 
 /// FR-531-AC-12, FR-531-AC-13 (TC-1331): the identity file's refusals are
@@ -324,11 +455,11 @@ fn the_identity_file_refuses_what_it_cannot_join() {
         malformed(IdentityMember::Repeated("fields"))
     );
     let mut format = good.clone();
-    format["format"] = json!("quire.checked-handoff.identities/2");
+    format["format"] = json!("quire.checked-handoff.identities/1");
     assert_eq!(
         read(&format),
         Err(IdentityFileRefusal::Format(
-            "quire.checked-handoff.identities/2".to_owned()
+            "quire.checked-handoff.identities/1".to_owned()
         ))
     );
 
@@ -365,11 +496,16 @@ fn the_identity_file_refuses_what_it_cannot_join() {
         file
     };
     let node = first["structural_node"].clone();
-    assert!(read(&unit_row(
+    let Err(IdentityFileRefusal::Native(refusal)) = read(&unit_row(
         json!({"kind": "declared", "node": node}),
-        "declared_unit"
-    ))
-    .is_ok());
+        "declared_unit",
+    )) else {
+        panic!("a record cannot become a declared unit through its carrier tag");
+    };
+    assert_eq!(
+        refusal.code,
+        quire_contract_model::ExactTypeProjectionErrorCode::MismatchedIdentityWitness
+    );
     assert_eq!(
         read(&unit_row(
             json!({"kind": "compound", "node": node}),
@@ -399,13 +535,24 @@ fn the_identity_file_refuses_what_it_cannot_join() {
             )
         })
         .expect("R selects a record or union declaration");
-    let other = declarations
+    let other = package
+        .graph()
+        .nodes
         .iter()
-        .map(|row| &row["structural_node"])
-        .find(|other| **other != declarations[at]["structural_node"])
-        .expect("a second node of the package");
+        .map(|node| serde_json::to_value(&node.node_id).unwrap())
+        .find(|node| {
+            declarations
+                .iter()
+                .all(|row| row["structural_node"] != *node)
+        })
+        .expect("a node not already serving as another declaration's opaque handle");
     let mut forged = good.clone();
     forged["declarations"][at]["exact_identity"]["value"] = other.clone();
+    for field in forged["fields"].as_array_mut().unwrap() {
+        if field["record_node"] == declarations[at]["structural_node"] {
+            field["member_id"]["owner"]["node"] = other.clone();
+        }
+    }
     let forged_rows = read(&forged).expect("a joining forgery is accepted");
     assert_ne!(forged_rows, rows);
 }
@@ -794,12 +941,11 @@ fn the_reader_refuses_the_packages_that_would_meet_the_defensive_reasons() {
 fn the_supplied_identity_rows_project_a_record_typed_capture_on_the_bare_route() {
     let built = record_capture();
     let read = built.read(&built.emission);
+    let rows = built
+        .emission
+        .identity_rows(read.admitted())
+        .expect("final identity rows");
     let graph = read.source().graph();
-    let rows = ReadIdentityRows::of_rows(
-        read.admitted(),
-        graph.selected_exact_declaration_rows().to_vec(),
-        graph.selected_exact_field_rows().to_vec(),
-    );
     let bare = BarePackage::new(read.admitted()).with_supply(qsl_package::BareSupply {
         identities: &rows,
         equality: None,

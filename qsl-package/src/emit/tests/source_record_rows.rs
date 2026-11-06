@@ -260,6 +260,226 @@ fn ir_admits_the_row_nodes_as_record_declarations_and_their_type_nodes() {
     }
 }
 
+#[trace("TC-1312", "TC-1331", "FR-531-AC-19", "FR-517-AC-23")]
+#[test]
+fn required_identity_handoff_preserves_original_record_keys_and_native_views() {
+    let (_, emission, wire) = emitted(RECORDS);
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    let CheckedPackageV2ReadResult::Admitted(package) = CheckedPackageV2::read(
+        emission.package().bytes(),
+        CheckedPackageReadLimits::bounded(),
+        &evidence,
+    ) else {
+        panic!("the genuine record package admits");
+    };
+    let rows = emission
+        .identity_rows(&package)
+        .expect("final producer rows");
+    assert_eq!(rows.source_records().len(), 2);
+    let bytes = rows
+        .to_bytes(&package)
+        .expect("the required carrier encodes");
+    let read =
+        crate::ReadIdentityRows::read(&bytes, &package).expect("native joins accept the rows");
+    assert_eq!(read, rows);
+    assert_eq!(read.to_bytes(&package).unwrap(), bytes);
+    drop(rows);
+    drop(emission);
+    let selected = read.selected(&package).expect("the native record witness");
+    for row in read.source_records() {
+        let projection = package
+            .project_exact_type(&row.structural_node, &selected, 1_000_000)
+            .expect("native source record projects");
+        assert_eq!(projection.source_record_view(), Some(row));
+        assert_eq!(
+            projection.value_type(),
+            &ValueType::Composite(row.record_key.clone())
+        );
+    }
+    let encoded: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(encoded["format"], "quire.checked-handoff.identities/2");
+    assert!(encoded["source_records"][0]["record_key"]["path"].is_array());
+    let tagged = read
+        .source_records()
+        .iter()
+        .find(|row| {
+            row.qualified_declaration
+                .last()
+                .is_some_and(|name| name.as_ref() == "Tagged")
+        })
+        .unwrap();
+    let point = read
+        .source_records()
+        .iter()
+        .find(|row| {
+            row.qualified_declaration
+                .last()
+                .is_some_and(|name| name.as_ref() == "Point")
+        })
+        .unwrap();
+    assert_eq!(
+        tagged.members[0].value_type,
+        ValueType::Composite(point.record_key.clone())
+    );
+}
+
+#[trace("TC-1331", "FR-531-AC-20")]
+#[test]
+fn required_source_record_rows_refuse_missing_fields_and_stale_native_bindings() {
+    let (_, emission, wire) = emitted(RECORDS);
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    let CheckedPackageV2ReadResult::Admitted(package) = CheckedPackageV2::read(
+        emission.package().bytes(),
+        CheckedPackageReadLimits::bounded(),
+        &evidence,
+    ) else {
+        panic!("the genuine package admits");
+    };
+    let rows = emission.identity_rows(&package).unwrap();
+    let bytes = rows.to_bytes(&package).unwrap();
+    let good: Value = serde_json::from_slice(&bytes).unwrap();
+    let mut missing = good.clone();
+    missing.as_object_mut().unwrap().remove("source_records");
+    assert_eq!(
+        crate::ReadIdentityRows::read(&serde_json::to_vec(&missing).unwrap(), &package),
+        Err(crate::IdentityFileRefusal::Malformed {
+            member: crate::IdentityMember::SourceRecords,
+        })
+    );
+    let mut stale = good.clone();
+    stale["source_records"][0]["members"][0]["admitted_name"] = json!("not-the-final-name");
+    let Err(crate::IdentityFileRefusal::Native(error)) =
+        crate::ReadIdentityRows::read(&serde_json::to_vec(&stale).unwrap(), &package)
+    else {
+        panic!("a stale binding must refuse natively");
+    };
+    assert_eq!(
+        error.code,
+        quire_contract_model::ExactTypeProjectionErrorCode::MismatchedIdentityWitness
+    );
+    let mut foreign = good.clone();
+    foreign["source_records"][0]["source_identity"] = json!("another-selected-source");
+    let Err(crate::IdentityFileRefusal::Native(error)) =
+        crate::ReadIdentityRows::read(&serde_json::to_vec(&foreign).unwrap(), &package)
+    else {
+        panic!("a foreign source owner must refuse natively");
+    };
+    assert_eq!(
+        error.code,
+        quire_contract_model::ExactTypeProjectionErrorCode::MismatchedIdentityWitness
+    );
+    let mut conflicting = good.clone();
+    let repeated = conflicting["source_records"][0].clone();
+    conflicting["source_records"]
+        .as_array_mut()
+        .unwrap()
+        .push(repeated);
+    let Err(crate::IdentityFileRefusal::Native(error)) =
+        crate::ReadIdentityRows::read(&serde_json::to_vec(&conflicting).unwrap(), &package)
+    else {
+        panic!("duplicate source rows must refuse natively");
+    };
+    assert_eq!(
+        error.code,
+        quire_contract_model::ExactTypeProjectionErrorCode::ConflictingIdentityWitness
+    );
+    let mut missing = good.clone();
+    missing["source_records"] = json!([]);
+    let missing = crate::ReadIdentityRows::read(&serde_json::to_vec(&missing).unwrap(), &package)
+        .expect("a carrier read is not a whole-witness validator");
+    let incomplete = missing.selected(&package).unwrap();
+    let requested = &rows.source_records()[0].structural_node;
+    let refusal = package
+        .project_exact_type(requested, &incomplete, 1_000_000)
+        .expect_err("the actual missing record request refuses natively");
+    assert_eq!(
+        refusal.code,
+        quire_contract_model::ExactTypeProjectionErrorCode::UnavailableIdentityWitness
+    );
+}
+
+#[trace("TC-1331", "FR-531-AC-20")]
+#[test]
+fn required_identity_handoff_refuses_deep_original_keys_without_stack_growth() {
+    const CHILD: &str = "QSL1760_DEEP_IDENTITY_CHILD";
+    const TEST: &str = "emit::tests::source_record_rows::required_identity_handoff_refuses_deep_original_keys_without_stack_growth";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", TEST, "--nocapture"])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "isolated deep-key control failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    let (_, emission, wire) = emitted(RECORDS);
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    let CheckedPackageV2ReadResult::Admitted(package) = CheckedPackageV2::read(
+        emission.package().bytes(),
+        CheckedPackageReadLimits::bounded(),
+        &evidence,
+    ) else {
+        panic!("the genuine record package admits");
+    };
+    let rows = emission.identity_rows(&package).unwrap();
+    let mut key = NodeKey::new(
+        "deep-original",
+        vec![quire_exact::PathSegment::Text("leaf".into())],
+        0,
+    )
+    .unwrap();
+    for ordinal in 1..2000 {
+        key = NodeKey::new(
+            "deep-original",
+            vec![quire_exact::PathSegment::Node(key)],
+            ordinal,
+        )
+        .unwrap();
+    }
+    let shallow: Value = serde_json::from_slice(&rows.to_bytes(&package).unwrap()).unwrap();
+    let good = serde_json::to_string(&shallow).unwrap();
+    let original =
+        qsl_foundation::node_wire::node_key_to_text(&rows.source_records()[0].record_key).unwrap();
+    let deep = qsl_foundation::node_wire::node_key_to_text(&key).unwrap();
+    assert!(good.contains(&original));
+    let input = good.replace(&original, &deep);
+    assert!(
+        matches!(
+            crate::ReadIdentityRows::read(input.as_bytes(), &package),
+            Err(crate::IdentityFileRefusal::Malformed { .. })
+        ),
+        "a deeply nested input returns a typed refusal"
+    );
+    let mut source_records = rows.source_records().to_vec();
+    source_records[0].record_key = key;
+    let carried = crate::ReadIdentityRows::of_rows(
+        &package,
+        rows.declarations().to_vec(),
+        rows.fields().to_vec(),
+        source_records,
+    );
+    assert_eq!(
+        carried.to_bytes(&package),
+        Err(crate::IdentityFileRefusal::Malformed {
+            member: crate::IdentityMember::SourceRecords
+        }),
+        "the public writer refuses before recursive serialization or drop"
+    );
+}
+
 /// The declared fields, node bindings and emitted ids of `Tagged`.
 type GuardInputs = (
     Vec<quire_semantic_value::declaration::FieldDeclaration>,
