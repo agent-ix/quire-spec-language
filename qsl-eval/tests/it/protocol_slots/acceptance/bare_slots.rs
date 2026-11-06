@@ -49,10 +49,8 @@ fn bytes_slot(
     }
 }
 
-/// A record `value` of the source environment rebuilt in the bytes
-/// environment: the bytes route declares a record's fields in the order the
-/// package gives them, so a consumer builds its values from that
-/// environment, field by field by name.
+/// The identical record value must belong to both environments without
+/// rebuilding its slots by display name.
 fn in_bytes_environment(
     value: &Value,
     source: &quire_semantic_value::declaration::TypeEnvironment,
@@ -67,14 +65,13 @@ fn in_bytes_environment(
     else {
         panic!("the fixture value is a record");
     };
-    let named = fields
-        .iter()
-        .zip(composite.slots())
-        .map(|(field, slot)| (field.name(), slot.clone()))
-        .collect::<Vec<_>>();
-    bytes
-        .record(key, named)
-        .expect("the record is declared in the package")
+    let Some(quire_semantic_value::declaration::CompositeShape::Record(byte_fields)) =
+        bytes.composite(key).map(|record| record.shape())
+    else {
+        panic!("the bytes environment holds the same record");
+    };
+    assert_eq!(fields, byte_fields, "the canonical field order is shared");
+    value.clone()
 }
 
 /// FR-533-AC-16 and FR-531-AC-1 (evaluate halves), and the source-route
@@ -84,7 +81,14 @@ fn in_bytes_environment(
 /// each used counter, and with every binder unavailable; the integer
 /// equality of `Refund`'s retry relation and recovery predicate is among
 /// them and reads the equality rows of the handoff.
-#[trace("FR-533-AC-16", "FR-531-AC-1", "TC-1333")]
+#[trace(
+    "TC-1333",
+    "FR-533-AC-1",
+    "FR-533-AC-2",
+    "FR-533-AC-8",
+    "FR-533-AC-16",
+    "FR-531-AC-1"
+)]
 #[test]
 fn the_bare_route_returns_the_source_value_and_charge_log_for_every_unobserved_slot() {
     let package = fixture();
@@ -99,7 +103,11 @@ fn the_bare_route_returns_the_source_value_and_charge_log_for_every_unobserved_s
         equality: Some(&equality),
     });
     let world = bare.world().expect("world");
+    let reader_view = read
+        .evaluation_view()
+        .expect("the reader-backed view projects");
     let mut compared = Vec::new();
+    let mut unavailable_locations = 0;
     for spec in parity_slots(&package).iter().filter(|spec| !spec.observed) {
         let wanted = slot(&package, spec.protocol, spec.owner, spec.member, spec.index);
         let on_bytes = bytes_slot(v2, spec.protocol, spec.owner, &wanted);
@@ -119,6 +127,21 @@ fn the_bare_route_returns_the_source_value_and_charge_log_for_every_unobserved_s
         let source = package.evaluate_protocol_slot(&wanted, &given, &mut source_meter);
         let mut bare_meter = Meter::new(UNLIMITED);
         let bytes = bare.evaluate_protocol_slot(&on_bytes, &bytes_given, &mut bare_meter);
+        let descriptor = qsl_package::ProtocolSlotDescriptor::new(
+            wanted.node.clone(),
+            wanted.member.clone(),
+            wanted.index,
+        );
+        let reader_selected = reader_view
+            .select_protocol_slot(&descriptor)
+            .expect("the reader selects the same slot");
+        let mut reader_meter = Meter::new(UNLIMITED);
+        let reader = package.evaluate_selected_protocol_slot(
+            &reader_view,
+            &reader_selected,
+            &given,
+            &mut reader_meter,
+        );
         assert!(
             matches!(source, Ok(ProtocolSlotEvaluation::Evaluated(..))),
             "{}: source {source:?}",
@@ -131,8 +154,45 @@ fn the_bare_route_returns_the_source_value_and_charge_log_for_every_unobserved_s
             spec.name
         );
         charges_and_usage_match(spec.name, &source_meter, &bare_meter);
+        assert_eq!(
+            without_location(&source),
+            without_location(&reader),
+            "{}: reader-backed result",
+            spec.name
+        );
+        charges_and_usage_match(spec.name, &source_meter, &reader_meter);
         if let Some(expected) = &spec.expected {
             assert_value_eq!(completed(bytes.unwrap()), *expected, "bare slot value");
+        }
+        if !values.is_empty() {
+            let mut wrong_values = values.clone();
+            wrong_values[0].1 = if matches!(wrong_values[0].1, Value::Boolean(_)) {
+                int(0)
+            } else {
+                Value::Boolean(false)
+            };
+            let wrong = supply(&package, spec.protocol, wrong_values, None);
+            let mut source_meter = Meter::new(UNLIMITED);
+            let source = package.evaluate_protocol_slot(&wanted, &wrong, &mut source_meter);
+            let mut bare_meter = Meter::new(UNLIMITED);
+            let bytes = bare.evaluate_protocol_slot(&on_bytes, &wrong, &mut bare_meter);
+            let mut reader_meter = Meter::new(UNLIMITED);
+            let reader = package.evaluate_selected_protocol_slot(
+                &reader_view,
+                &reader_selected,
+                &wrong,
+                &mut reader_meter,
+            );
+            assert!(
+                matches!(source, Err(CallFailure::Admission(_))),
+                "{}: wrong value refuses",
+                spec.name
+            );
+            assert_eq!(without_location(&source), without_location(&bytes));
+            assert_eq!(without_location(&source), without_location(&reader));
+            assert_pristine(&source_meter);
+            assert_pristine(&bare_meter);
+            assert_pristine(&reader_meter);
         }
         // AC-2: the exact budget and one short of each used counter.
         let exact = limits_at(&source_meter);
@@ -192,16 +252,66 @@ fn the_bare_route_returns_the_source_value_and_charge_log_for_every_unobserved_s
             let on_source =
                 package.evaluate_protocol_slot(&wanted, &unavailable, &mut source_meter);
             let on_bare = bare.evaluate_protocol_slot(&on_bytes, &unavailable, &mut bare_meter);
+            let mut reader_meter = Meter::new(UNLIMITED);
+            let on_reader = package.evaluate_selected_protocol_slot(
+                &reader_view,
+                &reader_selected,
+                &unavailable,
+                &mut reader_meter,
+            );
             assert!(matches!(
                 on_bare,
                 Ok(ProtocolSlotEvaluation::Unavailable { .. })
             ));
             assert_eq!(without_location(&on_source), without_location(&on_bare));
+            assert_eq!(without_location(&on_source), without_location(&on_reader));
             charges_and_usage_match(spec.name, &source_meter, &bare_meter);
+            charges_and_usage_match(spec.name, &source_meter, &reader_meter);
+            let (
+                Ok(ProtocolSlotEvaluation::Unavailable {
+                    location: source_location,
+                    ..
+                }),
+                Ok(ProtocolSlotEvaluation::Unavailable {
+                    location: bytes_location,
+                    ..
+                }),
+                Ok(ProtocolSlotEvaluation::Unavailable {
+                    location: reader_location,
+                    ..
+                }),
+            ) = (&on_source, &on_bare, &on_reader)
+            else {
+                panic!("all three routes must halt at the unavailable read");
+            };
+            assert_eq!(
+                bytes_location, reader_location,
+                "{}: locations come from the same admitted rows",
+                spec.name
+            );
+            if let Some(location) = bytes_location {
+                assert_eq!(
+                    source_location.as_ref(),
+                    Some(location),
+                    "{}: wire-carried location",
+                    spec.name
+                );
+            } else {
+                assert!(
+                    source_location.is_some(),
+                    "{}: source location is the documented missing-wire parity",
+                    spec.name
+                );
+            }
+            unavailable_locations += 1;
         }
         compared.push((spec.owner, spec.member));
     }
     assert!(compared.len() >= 10, "{compared:?}");
+    assert!(
+        unavailable_locations > 0,
+        "location assertions must exercise real reads"
+    );
     assert!(
         compared.contains(&("Refund", "retry.relation")),
         "the integer equality slot is compared: {compared:?}"
@@ -225,10 +335,12 @@ fn document_bag() -> serde_json::Value {
         }
         field
     };
+    let mut options = field("options", false, true);
+    options["typeRef"] = json!(model::id("MaybeTally"));
     let bag = model::declaration(
         "Bag",
         "record",
-        json!({"fields": [field("items", false, true), field("one", true, false), field("maybe", true, true)]}),
+        json!({"fields": [field("items", false, true), field("one", true, false), field("maybe", true, true), options]}),
     );
     let types = doc["types"].as_array_mut().unwrap();
     let receipt = types
@@ -241,6 +353,10 @@ fn document_bag() -> serde_json::Value {
         &model::id("Bag"),
     ));
     types.push(bag);
+    types.push(json!({
+        "identity": model::id("MaybeTally"), "displayName": "MaybeTally", "kind": "option", "inner": model::id("Tally"),
+        "origin": model::origin("MaybeTally"), "roles": [], "constraints": [], "extensions": [], "unknownPolicy": "reject"
+    }));
     doc
 }
 
@@ -323,8 +439,9 @@ fn records_with_option_and_collection_members_project_on_the_bytes_route() {
         kinds,
         [
             ("items".to_owned(), quire_exact::Presence::Required),
-            ("one".to_owned(), quire_exact::Presence::Optional),
             ("maybe".to_owned(), quire_exact::Presence::Optional),
+            ("one".to_owned(), quire_exact::Presence::Optional),
+            ("options".to_owned(), quire_exact::Presence::Required),
         ]
     );
     bare.project_protocol_slot(&selected)
@@ -348,10 +465,21 @@ fn records_with_option_and_collection_members_project_on_the_bytes_route() {
         let maybe = quire_exact::from_admitted(
             CollectionType::new(
                 CollectionKind::Sequence,
-                tally,
+                tally.clone(),
                 Some(CardinalityBound::new(0, 3).expect("bound")),
             ),
             vec![int(3)],
+        );
+        let options = quire_exact::from_admitted(
+            CollectionType::new(
+                CollectionKind::Sequence,
+                ValueType::Option(std::sync::Arc::new(tally.clone())),
+                Some(CardinalityBound::new(0, 3).expect("bound")),
+            ),
+            vec![
+                quire_exact::OptionValue::present(tally.clone(), int(1)).expect("some tally"),
+                quire_exact::OptionValue::none(tally),
+            ],
         );
         let find = |name: &str| {
             types
@@ -367,6 +495,7 @@ fn records_with_option_and_collection_members_project_on_the_bytes_route() {
                     ("items", FieldValue::Present(items)),
                     ("one", FieldValue::Present(int(2))),
                     ("maybe", FieldValue::Present(maybe)),
+                    ("options", FieldValue::Present(options)),
                 ],
             )
             .expect("bag");
@@ -383,22 +512,34 @@ fn records_with_option_and_collection_members_project_on_the_bytes_route() {
     };
     let (source_receipt, source_bag) = bag_in(package.graph().scope().types());
     let (bytes_receipt, bytes_bag) = bag_in(world.types());
+    assert_value_eq!(
+        source_receipt,
+        bytes_receipt,
+        "the identical receipt works in both environments"
+    );
+    assert_value_eq!(
+        source_bag,
+        bytes_bag,
+        "the identical nested bag works in both environments"
+    );
     let mut source_meter = Meter::new(UNLIMITED);
     let on_source = package.evaluate_protocol_slot(
         &wanted,
-        &supply(&package, "Refunds", vec![("forward", source_receipt)], None),
+        &supply(
+            &package,
+            "Refunds",
+            vec![("forward", source_receipt.clone())],
+            None,
+        ),
         &mut source_meter,
     );
     let mut bytes_meter = Meter::new(UNLIMITED);
     let on_bare = bare.evaluate_protocol_slot(
         &on_bytes,
-        &supply(&package, "Refunds", vec![("forward", bytes_receipt)], None),
+        &supply(&package, "Refunds", vec![("forward", source_receipt)], None),
         &mut bytes_meter,
     );
-    // The two environments declare a record's fields in different orders
-    // (the source's by name, the package's as declared), so the returned
-    // record is compared with the same record built in its own environment,
-    // and the charge logs with each other.
+    assert_eq!(without_location(&on_source), without_location(&on_bare));
     charges_and_usage_match("bag capture", &source_meter, &bytes_meter);
     let (Ok(ProtocolSlotEvaluation::Evaluated(..)), Ok(ProtocolSlotEvaluation::Evaluated(..))) =
         (&on_source, &on_bare)
@@ -407,6 +548,96 @@ fn records_with_option_and_collection_members_project_on_the_bytes_route() {
     };
     assert_value_eq!(completed(on_source.unwrap()), source_bag, "source bag");
     assert_value_eq!(completed(on_bare.unwrap()), bytes_bag, "bytes bag");
+}
+
+#[trace("TC-1333", "FR-533-AC-7")]
+#[test]
+fn original_model_field_keys_define_one_value_across_both_environments() {
+    let mut document = document();
+    let receipt = document["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|ty| ty["displayName"] == "Receipt")
+        .expect("Receipt");
+    let zebra = model::field("Receipt", "zebra", "ix://quire/native/Boolean");
+    let alpha = model::field("Receipt", "alpha", &model::id("Total"));
+    receipt["fields"]
+        .as_array_mut()
+        .unwrap()
+        .extend([zebra, alpha]);
+    let document = serde_json::to_vec(&document).expect("model bytes");
+    let source = SOURCE.replace(
+        "capture target: M::Total = forward.total;",
+        "capture target: M::Total = forward.total;\n    capture held: M::Receipt = forward;",
+    );
+    let package = fixture_from_document(&source, &document).0;
+    let read = read_checked_package_with_model_document(&package, &document);
+    let v2 = read.admitted();
+    let rows = bare_rows(&package, v2);
+    let equality = qsl_package::emit_checked(&package)
+        .expect("emits")
+        .equality_witness(v2);
+    let bare = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
+        identities: &rows,
+        equality: Some(&equality),
+    });
+    let world = bare.world().expect("world");
+    let value = record(
+        &package,
+        "Receipt",
+        vec![
+            ("total", int(5)),
+            ("zebra", Value::Boolean(true)),
+            ("alpha", int(7)),
+        ],
+    );
+    let Value::Composite(composite) = &value else {
+        panic!("record value")
+    };
+    let key = composite.declaration();
+    for types in [package.graph().scope().types(), world.types()] {
+        let quire_semantic_value::declaration::CompositeShape::Record(fields) = types
+            .composite(key.clone())
+            .expect("Receipt in both environments")
+            .shape()
+        else {
+            panic!("Receipt is a record")
+        };
+        assert_eq!(
+            fields.iter().map(|field| field.name()).collect::<Vec<_>>(),
+            ["alpha", "total", "zebra"],
+            "original-key order opposes the authored field order"
+        );
+        assert!(types
+            .admits(&ValueType::Composite(key.clone()), &value)
+            .expect("membership"));
+    }
+    let wanted = slot(
+        &package,
+        "Refunds",
+        "Refund",
+        "registration_captures",
+        Some(1),
+    );
+    let on_bytes = bytes_slot(v2, "Refunds", "Refund", &wanted);
+    let given = supply(&package, "Refunds", vec![("forward", value.clone())], None);
+    let mut source_meter = Meter::new(UNLIMITED);
+    let source = package.evaluate_protocol_slot(&wanted, &given, &mut source_meter);
+    let mut bytes_meter = Meter::new(UNLIMITED);
+    let bytes = bare.evaluate_protocol_slot(&on_bytes, &given, &mut bytes_meter);
+    assert_eq!(without_location(&source), without_location(&bytes));
+    assert_value_eq!(
+        completed(source.unwrap()),
+        value,
+        "source retains the unchanged record"
+    );
+    assert_value_eq!(
+        completed(bytes.unwrap()),
+        value,
+        "bytes retain the unchanged record"
+    );
+    charges_and_usage_match("original model field order", &source_meter, &bytes_meter);
 }
 
 /// The strict read of `package` under the library name it was compiled as.
@@ -455,7 +686,7 @@ fn assert_pristine(meter: &Meter) {
 /// The in-process reader view's `UnsupportedView` half of FR-390-AC-66 is not
 /// asserted here; the `Package` locus of `UnsupportedView` is covered by the
 /// qsl-package order test and the remainder is open.
-#[trace("FR-533-AC-15", "FR-390-AC-66", "FR-531-AC-5", "TC-1333", "TC-1331")]
+#[trace("TC-1333", "TC-1331", "FR-533-AC-15", "FR-531-AC-5")]
 #[test]
 fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
     let package = fixture();
@@ -815,6 +1046,126 @@ fn retry_call<'p>(
         given,
         wanted,
     }
+}
+
+#[trace("TC-1333", "FR-533-AC-3", "FR-531-AC-3")]
+#[test]
+fn replacing_a_checked_source_changes_its_result_but_not_the_bytes_slot() {
+    let original = fixture();
+    let changed_source = SOURCE.replace(
+        "earlier.tally < 3 and later.tally = earlier.tally + 1",
+        "earlier.tally < 0 and later.tally = earlier.tally + 1",
+    );
+    assert_ne!(
+        changed_source, SOURCE,
+        "the source expression actually changes"
+    );
+    let replacement = fixture_from_source(&changed_source).0;
+    let read = read_checked_package(&original);
+    let v2 = read.admitted();
+    let rows = bare_rows(&original, v2);
+    let equality = qsl_package::emit_checked(&original)
+        .expect("emits")
+        .equality_witness(v2);
+    let call = retry_call(&original, v2, &rows, &equality);
+    let changed_slot = slot(&replacement, "Refunds", "Refund", "retry.relation", None);
+    assert_eq!(
+        call.wanted.node, changed_slot.node,
+        "the declared protocol identity is unchanged"
+    );
+    let mut before_meter = Meter::new(UNLIMITED);
+    let before = call
+        .bare
+        .evaluate_protocol_slot(&call.on_bytes, &call.given, &mut before_meter);
+    assert_value_eq!(completed(before.unwrap()), Value::Boolean(true));
+    let mut source_meter = Meter::new(UNLIMITED);
+    let changed = replacement.evaluate_protocol_slot(&changed_slot, &call.given, &mut source_meter);
+    assert_value_eq!(completed(changed.unwrap()), Value::Boolean(false));
+    let mut after_meter = Meter::new(UNLIMITED);
+    let after = call
+        .bare
+        .evaluate_protocol_slot(&call.on_bytes, &call.given, &mut after_meter);
+    assert_value_eq!(completed(after.unwrap()), Value::Boolean(true));
+    charges_and_usage_match(
+        "unchanged bytes after source replacement",
+        &before_meter,
+        &after_meter,
+    );
+}
+
+#[trace("TC-1333", "FR-533-AC-18", "FR-533-AC-17")]
+#[test]
+fn a_called_equality_body_requires_its_witness_at_the_actual_evaluation_entry() {
+    let source = SOURCE
+        .replace(
+            "profile S = \"quire.state.graph/v1\";",
+            "profile S = \"quire.state.graph/v1\";\n\
+             profile V = \"quire.value.complete/v1\";",
+        )
+        .replace(
+            "model M = \"test/orders\";",
+            "model M = \"test/orders\";\n\
+             function isZero using V(x: M::Total): Boolean pure { x = 0 }",
+        )
+        .replace(
+            "when { not trigger.ready and target >= 0 }",
+            "when { not trigger.ready and isZero(target) }",
+        );
+    assert!(source.contains("isZero(target)"));
+    let package = fixture_from_source(&source).0;
+    let read = read_checked_package(&package);
+    let v2 = read.admitted();
+    let rows = bare_rows(&package, v2);
+    let equality = qsl_package::emit_checked(&package)
+        .expect("emits")
+        .equality_witness(v2);
+    let wanted = slot(&package, "Refunds", "Refund", "trigger.guard", None);
+    let on_bytes = bytes_slot(v2, "Refunds", "Refund", &wanted);
+    let given = supply(
+        &package,
+        "Refunds",
+        vec![("trigger", flag(&package, false)), ("target", int(0))],
+        None,
+    );
+    let no_equality = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
+        identities: &rows,
+        equality: None,
+    });
+    let mut denied_meter = Meter::new(UNLIMITED);
+    let missing = no_equality.evaluate_protocol_slot(&on_bytes, &given, &mut denied_meter);
+    assert_pristine(&denied_meter);
+    let (_, _, reason, locus) = refusal_of(missing);
+    assert_eq!(reason.as_deref(), Some("missing-equality-witness"));
+    assert_eq!(locus, CallAdmissionLocus::Package);
+    let with_equality = BarePackage::new(v2).with_supply(qsl_package::BareSupply {
+        identities: &rows,
+        equality: Some(&equality),
+    });
+    let mut source_meter = Meter::new(UNLIMITED);
+    let expected = package.evaluate_protocol_slot(&wanted, &given, &mut source_meter);
+    let mut bytes_meter = Meter::new(UNLIMITED);
+    let actual = with_equality.evaluate_protocol_slot(&on_bytes, &given, &mut bytes_meter);
+    assert_eq!(without_location(&actual), without_location(&expected));
+    assert_value_eq!(completed(actual.unwrap()), Value::Boolean(true));
+    charges_and_usage_match("called equality body", &source_meter, &bytes_meter);
+
+    let control = slot(
+        &package,
+        "Refunds",
+        "Refund",
+        "activation_captures",
+        Some(0),
+    );
+    let on_bytes = bytes_slot(v2, "Refunds", "Refund", &control);
+    let control_supply = supply(
+        &package,
+        "Refunds",
+        vec![("trigger", flag(&package, false))],
+        None,
+    );
+    let mut meter = Meter::new(UNLIMITED);
+    let result = no_equality.evaluate_protocol_slot(&on_bytes, &control_supply, &mut meter);
+    assert_value_eq!(completed(result.unwrap()), Value::Boolean(false));
 }
 
 /// FR-520-AC-11, FR-533 "The call": the call owns the meter's interval
