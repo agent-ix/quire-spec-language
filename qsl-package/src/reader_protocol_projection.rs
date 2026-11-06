@@ -23,8 +23,8 @@ use quire_contract_model::{
     CheckedSemanticNodeV2, CheckedTerm, OperationModeKind,
 };
 use quire_exact::{
-    admit_text, ArithmeticOperator, Meter, NodeKey, OrderingOperator, ScalarLimits, TextPayload,
-    Timestamp, Uuid, Value, ValueType,
+    ArithmeticOperator, Meter, NodeKey, OrderingOperator, ScalarLimits, TextPayload, Timestamp,
+    Uuid, Value, ValueType, admit_text,
 };
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{
@@ -34,7 +34,7 @@ use quire_semantic_value::location::{Location, Origin};
 
 use crate::equality_file::{EqualityWitnessRefusal, ReadEqualityRows};
 use crate::introduced_binders::is_sum_identity;
-use crate::wire_form::{has_form, split_tag_form, OperationSuffix, WireForm, WireTag};
+use crate::wire_form::{OperationSuffix, WireForm, WireTag, has_form, split_tag_form};
 
 /// One projected protocol slot: owned evaluator nodes, the admitted function
 /// table its calls reach, and the frame its locals and case binders use.
@@ -1235,11 +1235,11 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         context: Context,
         locals: &BTreeMap<CheckedNodeId, usize>,
     ) -> Result<(NodeKind<usize, CheckedLiteral>, Vec<usize>), BuildError> {
-        let union_key = self
-            .index
-            .graph
-            .key(&node.semantic_type)
-            .map_err(|_| fault("reader-union-value-has-declaration-key"))?;
+        // A sealed member can only be interpreted against the original
+        // union declaration carried by the selected type projection.
+        let ValueType::Composite(union_key) = self.value_type(&node.semantic_type)? else {
+            return Err(fault("reader-union-value-has-declaration-key").into());
+        };
         let union_node = self
             .index
             .node(&node.semantic_type)
@@ -1890,9 +1890,8 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         let declaration = declaration.clone();
         let union_node = self
             .index
-            .ids
-            .get(&declaration)
-            .and_then(|id| self.index.node(id))
+            .node(scrutinee_id)
+            .and_then(|scrutinee| self.index.node(&scrutinee.semantic_type))
             .filter(|candidate| has_form(candidate, WireTag::CompositeType, WireForm::Union))
             .ok_or_else(|| fault("reader-union-case-declaration-is-admitted"))?;
         let CheckedTerm::Aggregate {
@@ -2429,17 +2428,6 @@ pub(crate) fn node_value_type(
                 _ => structural(declaration, WireTag::CompositeType, WireForm::Record),
             }
             .ok_or_else(|| fault("reader-record-type-has-exact-identity"))?;
-            Ok(ValueType::Composite(key))
-        }
-        Some((WireTag::CompositeType, WireForm::Union))
-            if error.code == Code::UnavailableIdentityWitness =>
-        {
-            let declaration = at.ok_or_else(|| fault("reader-union-type-error-has-node"))?;
-            let key = match selected(declaration) {
-                Some(Identity::Union(key)) => Some(key.clone()),
-                _ => structural(declaration, WireTag::CompositeType, WireForm::Union),
-            }
-            .ok_or_else(|| fault("reader-union-type-has-exact-identity"))?;
             Ok(ValueType::Composite(key))
         }
         Some((WireTag::ScalarType, WireForm::Unit)) if unresolved => {

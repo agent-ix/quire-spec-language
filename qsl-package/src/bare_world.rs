@@ -7,12 +7,13 @@
 //! A [`BareWorld`] holds the same declarations as the package's bytes and the
 //! identity rows give them, and nothing else: a record is the complete
 //! selected record view Contract IR projects (`SelectedRecordView`), the IEEE
-//! profile is the lock's selection of the profile law.
+//! profile is the lock's selection of the profile law. Source unions retain
+//! the original producer's sealed members and positional payload types.
 
 use quire_contract_model::SelectedExactIdentity;
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{
-    CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
+    CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment, UnionMemberDeclaration,
 };
 use quire_semantic_value::enumeration::EnumMemberIndex;
 
@@ -28,7 +29,7 @@ pub struct BareWorld {
 }
 
 impl BareWorld {
-    /// The package's record declarations.
+    /// The package's record and source union declarations.
     pub fn types(&self) -> &TypeEnvironment {
         &self.types
     }
@@ -54,7 +55,7 @@ fn fault(invariant: &'static str) -> BareSelectionFailure {
 
 impl BarePackage<'_> {
     /// The declarations this package's slots evaluate against, read from its
-    /// nodes and identity rows (FR-533). A record Contract IR cannot project
+    /// nodes and identity rows (FR-533). A composite Contract IR cannot project
     /// is absent: a slot that reads it refuses `MissingTypeRepresentation`
     /// when it is selected, and no record of a different shape is
     /// substituted.
@@ -62,7 +63,7 @@ impl BarePackage<'_> {
     /// # Errors
     ///
     /// [`BareSelectionFailure::Identity`] for a missing, foreign or unknown
-    /// identity witness; a fault when the projected records are not a closed
+    /// identity witness; a fault when the projected composites are not a closed
     /// environment.
     #[ix_trace_rs::string_edge]
     pub fn world(&self) -> Result<BareWorld, BareSelectionFailure> {
@@ -100,8 +101,31 @@ impl BarePackage<'_> {
                 CompositeShape::Record(fields),
             ));
         }
+        for union in identities.source_union_rows() {
+            if !matches!(
+                self.exact_type_projections().get(&union.structural_node),
+                Some(Ok(_))
+            ) {
+                continue;
+            }
+            let members = union
+                .members
+                .iter()
+                .map(|member| {
+                    UnionMemberDeclaration::from_verified(
+                        member.member.clone(),
+                        member.payload.clone(),
+                    )
+                })
+                .collect();
+            composites.push(CompositeDeclaration::new(
+                union.type_handle.clone(),
+                union.qualified_declaration.join("::"),
+                CompositeShape::Union(members),
+            ));
+        }
         let types = TypeEnvironment::new(composites, Vec::new())
-            .map_err(|_| fault("bare-records-are-a-closed-environment"))?;
+            .map_err(|_| fault("bare-composites-are-a-closed-environment"))?;
         let ieee = qsl_semantics::value::DefinitionRole::IeeeProfile.identity();
         Ok(BareWorld {
             types,

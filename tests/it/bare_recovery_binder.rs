@@ -490,9 +490,10 @@ fn a_supply_for_an_introduced_binder_is_refused_as_unknown() {
         binders: binders.clone().into_iter().collect(),
         observation: None,
     };
-    assert!(bare
-        .evaluate_protocol_slot(&slot, &given, &mut meter)
-        .is_ok());
+    assert!(
+        bare.evaluate_protocol_slot(&slot, &given, &mut meter)
+            .is_ok()
+    );
     binders.push((
         graph.key(&introduced.node_id).expect("key"),
         SuppliedValue::Value(int(1)).into(),
@@ -590,9 +591,14 @@ fn map_binder_is_no_source() {
 /// A genuine case arm binds its payload inside the recover condition. The
 /// handoff admits, the arm binder is no caller source, and the source and
 /// bytes routes return the authored Boolean values and equal charge logs.
-#[trace("FR-390-AC-68", "TC-1071", "TC-1333")]
+#[trace("FR-390-AC-68", "FR-533-AC-20", "TC-1071", "TC-1333")]
 #[test]
 fn a_case_arm_binder_in_a_recover_condition_is_admitted_and_evaluates() {
+    assert_case_arm_union(false);
+    assert_case_arm_union(true);
+}
+
+fn assert_case_arm_union(unrelated: bool) {
     use qsl_foundation::SourceIdentity;
     use qsl_replay::spine::{self, DependencyInput, ParseRequest, SpineLimits, SuppliedLibrary};
 
@@ -601,12 +607,15 @@ fn a_case_arm_binder_in_a_recover_condition_is_admitted_and_evaluates() {
     let text = std::fs::read_to_string(&request.emit.source).expect("R's unit");
     let unit = holder.path().join("unit.native");
     let condition = "let total = (case Shape::Circle(sum<M::Total>(receipt in recoveredFull.receipts: receipt)) { Empty: targetFull; Circle(r): r; }) in total <= targetFull and total >= targetFull and not activatedFull";
+    let declarations = if unrelated {
+        "model M = \"agent-ix/checked-handoff\";\nunion Shape { Empty, Circle(M::Total) }\nunion Unrelated { Other, Payload(Boolean) }"
+    } else {
+        "model M = \"agent-ix/checked-handoff\";\nunion Shape { Empty, Circle(M::Total) }"
+    };
     std::fs::write(
         &unit,
-        text.replace(FULL_RECOVER, condition).replace(
-            "model M = \"agent-ix/checked-handoff\";",
-            "model M = \"agent-ix/checked-handoff\";\nunion Shape { Empty, Circle(M::Total) }",
-        ),
+        text.replace(FULL_RECOVER, condition)
+            .replace("model M = \"agent-ix/checked-handoff\";", declarations),
     )
     .expect("variant");
     request.emit.source = unit;
@@ -694,11 +703,40 @@ fn a_case_arm_binder_in_a_recover_condition_is_admitted_and_evaluates() {
         "the arm binder is no source"
     );
     let bare = recipe.bare();
+    let world = bare.world().expect("the admitted source unions project");
+    for declaration in source.graph().scope().types().composites() {
+        if matches!(
+            declaration.shape(),
+            quire_semantic_value::declaration::CompositeShape::Union(_)
+        ) {
+            assert_eq!(
+                world.types().composite(declaration.key().clone()),
+                Some(declaration),
+                "the original union handle, sealed member identities and payload order survive the bytes route"
+            );
+        }
+    }
     let bare_slot = ProtocolSlot {
         node: recipe.compensation("Full"),
         member: "recovery.predicate".to_owned(),
         index: None,
     };
+    let missing_union_rows = qsl_package::ReadIdentityRows::of_rows(
+        &recipe.package,
+        recipe.identities.declarations().to_vec(),
+        recipe.identities.fields().to_vec(),
+        recipe.identities.source_records().to_vec(),
+        Vec::new(),
+    );
+    let missing_union = BarePackage::new(&recipe.package)
+        .with_supply(
+            BareSupply {
+                identities: &missing_union_rows,
+                equality: Some(&recipe.equality),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("omitting union rows is a missing projection, not a malformed package");
     let selected = bare
         .select_protocol_slot(&ProtocolSlotDescriptor::new(
             bare_slot.node.clone(),
@@ -726,6 +764,7 @@ fn a_case_arm_binder_in_a_recover_condition_is_admitted_and_evaluates() {
         (&[2, 3][..], 6, false, false),
         (&[2, 3][..], 5, true, false),
         (&[][..], 0, false, true),
+        (&[1, 5][..], 5, false, false),
     ] {
         let values = [
             ("recoveredFull", recipe.recovery(&bare, receipts)),
@@ -752,6 +791,14 @@ fn a_case_arm_binder_in_a_recover_condition_is_admitted_and_evaluates() {
         let source_result = source
             .evaluate_protocol_slot(&source_slot, &supply, &mut source_meter)
             .expect("the source evaluates");
+        let mut bare_meter = Meter::new(UNLIMITED);
+        let bare_result = bare
+            .evaluate_protocol_slot(&bare_slot, &supply, &mut bare_meter)
+            .expect("the bare route constructs and matches the source union");
+        let qsl_eval::value::ProtocolSlotEvaluation::Evaluated(bare_evaluation, _) = bare_result
+        else {
+            panic!("the bare route returns an evaluation")
+        };
         let qsl_eval::value::ProtocolSlotEvaluation::Evaluated(source_evaluation, _) =
             source_result
         else {
@@ -762,6 +809,26 @@ fn a_case_arm_binder_in_a_recover_condition_is_admitted_and_evaluates() {
             Some(expected),
             "receipts={receipts:?}, target={target}, activated={activated}"
         );
+        assert_eq!(completed_boolean(&bare_evaluation.outcome), Some(expected));
+        assert_eq!(
+            bare_meter.admitted_charges(),
+            source_meter.admitted_charges()
+        );
+        let mut missing_meter = Meter::new(UNLIMITED);
+        let failure = missing_union
+            .evaluate_protocol_slot(&bare_slot, &supply, &mut missing_meter)
+            .expect_err("a union without its original declaration projection refuses");
+        let quire_eval::CallFailure::Admission(failure) = failure else {
+            panic!("the missing projection refuses during admission")
+        };
+        let quire_eval::CallAdmissionFailure::Refused(record) = *failure else {
+            panic!("the missing projection produces a typed refusal")
+        };
+        assert_eq!(
+            record.record.fields.get("reason").map(String::as_str),
+            Some("missing-type-representation")
+        );
+        assert!(missing_meter.admitted_charges().is_empty());
     }
 }
 
