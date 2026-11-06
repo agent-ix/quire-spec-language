@@ -53,8 +53,18 @@ Frozen PR #2428 reviewed without code changes, Cargo commands, tests, builds, ga
 | FND-001 | fixed | TC-1331 rows 18-20 now directly continue the existing table. |
 | FND-002 | still-open | New disposition finding: FR-531 itself retains the same unheaded second table block at rows 19-21. |
 
+### Round 2
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | fixed | FR-531 AC19-21 now directly continue the existing acceptance table; the only substantive round-2 change is deletion of that separator blank line. |
+
 ## Disposition evidence (round 1)
 
 Reviewed fixed head 91c68d1df71f04254349acdf0d7d095663368425 and main merge e1e2909b5 without source edits or Cargo runs. Author confined logs record 35 tests passing, including all seven equality codec controls, genuine empty population round trip and isolated deep-key reader/writer refusals. Exact 32-key success and 33-key refusal are checked through the original NodeKey and Composite ValueType entry points. Scoped Quire validation is grammar-clean. Relative to merged main, QSL-1718 bare_slots changes remain only the two constructor argument migrations; its assertions and behavior are preserved. Driver adoption remains pending and the lead final gate has not run.
 
 Round 1 current verdict: CONDITIONAL; new base FND-002 remains open.
+
+## Disposition evidence (round 2)
+
+Verified documentation-only fix 76284f611b5ea019c66a732f2b4bfd466e91067f against the exact table boundary. No source, Cargo, build, test or gate changes were made by the reviewer. Current verdict: **PASS** for base review. All findings across this reviewer's methods now have a latest fixed disposition. The lead final scoped gate and normal downstream driver adoption remain separate.
