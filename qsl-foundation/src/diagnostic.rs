@@ -854,6 +854,15 @@ pub fn kernel_refusal_record(
         Refusal::RationalOutOfDomain { target } | Refusal::IeeeRationalOutOfDomain { target } => {
             BTreeMap::from([("expected", spell_rational(target))])
         }
+        Refusal::BoundedQuantityOutOfDomain { target } => BTreeMap::from([(
+            "expected",
+            format!(
+                "Quantity<{}>[{}, {}]",
+                unit_spelling(target.unit()),
+                target.min(),
+                target.max()
+            ),
+        )]),
         Refusal::IeeeNotExact { target, would_be } => BTreeMap::from([
             ("expected", target.as_str().to_owned()),
             (
@@ -872,6 +881,18 @@ pub fn kernel_refusal_record(
         Refusal::CheckedInvariant { .. } => return None,
     };
     Some(RefusalRecord::new(code, fields, locus))
+}
+
+/// A declared unit's full node key, or its ordered compound factors.
+fn unit_spelling(unit: &quire_exact::UnitId) -> String {
+    match unit {
+        quire_exact::UnitId::Declared(key) => key.to_string(),
+        quire_exact::UnitId::Compound(terms) => terms
+            .iter()
+            .map(|(key, exponent)| format!("{key}^{exponent}"))
+            .collect::<Vec<_>>()
+            .join("*"),
+    }
 }
 
 /// `Int[lo, hi]`, each bound as QSpec FR-038 writes an integer.
