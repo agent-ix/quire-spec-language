@@ -548,14 +548,14 @@ pub fn evaluate_v2(
     let bare = BarePackage::new(subject.package);
     let package = qsl_eval::temporal::evidence::EvidencePackage::from_package(&bare)?;
     let mut request = subject.request.clone();
-    request.correspondence.identity = observation.reference.clone();
-    request.correspondence.authority_revision = observation.revision.clone();
     let mut native = Writer::new();
+    native.field(1, observation.reference.as_bytes());
+    native.field(2, observation.revision.as_bytes());
     for row in subject.evidence.rows() {
         let mut entry = Writer::new();
         entry.field(1, &row_key(row));
         entry.field(2, &[u8::from(row.value)]);
-        native.field(1, &entry.finish());
+        native.field(3, &entry.finish());
     }
     request.native_valuations = native.finish();
     let operands = qsl_eval::temporal::evidence::native_atom_operands(&view);
