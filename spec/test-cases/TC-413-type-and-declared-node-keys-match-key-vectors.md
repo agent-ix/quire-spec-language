@@ -78,3 +78,14 @@ Steps 10–12 satisfy FR-092-AC-29 and FR-093-AC-61, using QSpec's published
 bounded-quantity vectors as the authority. Native admission is pending while
 the IR-1345 tests are ignored; QSL-side passing evidence does not claim that
 downstream reader acceptance has been delivered.
+
+## Implementation status
+
+The QSL-side type-key, addition, comparison and conversion-from-bounded
+checks are enabled. Conversion **into** a bounded quantity remains a typed
+refusal: the shared evaluator currently reads its target as an ordinary
+quantity, and its `rational_out_of_domain` payload describes a
+numerator/denominator domain rather than a magnitude interval. No interval
+is erased and no carrier is fabricated to report this refusal. The bounded
+result conversion assertions of FR-093-AC-61 remain pending that shared
+contract; this slice does not claim the full criterion satisfied.
