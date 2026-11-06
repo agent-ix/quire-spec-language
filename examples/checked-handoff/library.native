@@ -13,9 +13,9 @@ predicate RatioBounded using v (ratio: M::Ratio): Boolean {
     ratio >= rational(-1, 2) and ratio <= rational(1, 2)
 }
 
-predicate ExactBounded using v (exact: M::Exact): Boolean {
-    exact >= rational(-9223372036854775808, 9223372036854775807)
-    and exact <= rational(9223372036854775807, 9223372036854775806)
+predicate ExactBounded using v (fraction: M::Exact): Boolean {
+    fraction >= rational(-9223372036854775808, 9223372036854775807)
+    and fraction <= rational(9223372036854775807, 9223372036854775806)
 }
 
 predicate Ready using v (ready: Boolean): Boolean {
