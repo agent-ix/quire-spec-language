@@ -38,7 +38,11 @@ fn with_inputs(
 ) {
     let (package, _) = super::checked_views::recipe_package("event_position");
     let bare = qsl_package::BarePackage::new(&package);
-    let engine = EvidencePackage::from_package(&bare).expect("checked engine package");
+    let engine = EvidencePackage::from_package(
+        &bare,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("checked engine package");
     let node = &engine
         .rows()
         .names()
@@ -123,6 +127,7 @@ fn native_report_owns_truth_and_preserves_duplicate_support_and_roundtrip() {
             subject,
             observation,
             &mut super::temporal_package_route::unlimited(),
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
         )
         .expect("native owner evaluates");
         assert_eq!(report.truth(), Some(Truth::True));
@@ -144,14 +149,20 @@ fn native_report_owns_truth_and_preserves_duplicate_support_and_roundtrip() {
         );
         let bytes = report.to_owner_bytes();
         assert_eq!(bytes, report.to_owner_bytes());
-        let decoded = Report::from_owner_bytes(&bytes, subject, observation)
-            .expect("strict reader admits owner output");
+        let decoded = Report::from_owner_bytes(
+            &bytes,
+            subject,
+            observation,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("strict reader admits owner output");
         assert_eq!(decoded, report);
         assert_eq!(decoded.to_owner_bytes(), bytes);
         let repeated = evaluate_v2(
             subject,
             observation,
             &mut super::temporal_package_route::unlimited(),
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
         )
         .expect("same input reevaluates");
         assert_eq!(repeated.to_owner_bytes(), bytes);
@@ -166,12 +177,18 @@ fn every_truncated_prefix_and_extra_byte_is_refused() {
             subject,
             observation,
             &mut super::temporal_package_route::unlimited(),
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
         )
         .expect("evaluated");
         let bytes = report.to_owner_bytes();
         for end in 0..bytes.len() {
             assert_eq!(
-                Report::from_owner_bytes(&bytes[..end], subject, observation),
+                Report::from_owner_bytes(
+                    &bytes[..end],
+                    subject,
+                    observation,
+                    &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+                ),
                 Err(ReportRefusal::Truncated),
                 "prefix {end}"
             );
@@ -179,21 +196,36 @@ fn every_truncated_prefix_and_extra_byte_is_refused() {
         let mut appended = bytes.clone();
         appended.push(0);
         assert_eq!(
-            Report::from_owner_bytes(&appended, subject, observation),
+            Report::from_owner_bytes(
+                &appended,
+                subject,
+                observation,
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+            ),
             Err(ReportRefusal::TrailingBytes)
         );
         for index in [0, 4] {
             let mut mutated = bytes.clone();
             mutated[index] = 255;
             assert_eq!(
-                Report::from_owner_bytes(&mutated, subject, observation),
+                Report::from_owner_bytes(
+                    &mutated,
+                    subject,
+                    observation,
+                    &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+                ),
                 Err(ReportRefusal::UnsupportedVersion)
             );
         }
         let mut reordered = bytes.clone();
         reordered[5] = 255;
         assert_eq!(
-            Report::from_owner_bytes(&reordered, subject, observation),
+            Report::from_owner_bytes(
+                &reordered,
+                subject,
+                observation,
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+            ),
             Err(ReportRefusal::OutOfOrder)
         );
     });
@@ -207,6 +239,7 @@ fn opaque_observation_and_revision_binding_are_independent() {
             subject,
             observation,
             &mut super::temporal_package_route::unlimited(),
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
         )
         .expect("evaluated");
         let bytes = report.to_owner_bytes();
@@ -215,7 +248,12 @@ fn opaque_observation_and_revision_binding_are_independent() {
             ..observation.clone()
         };
         assert_eq!(
-            Report::from_owner_bytes(&bytes, subject, &foreign_observation),
+            Report::from_owner_bytes(
+                &bytes,
+                subject,
+                &foreign_observation,
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+            ),
             Err(ReportRefusal::BindingMismatch(
                 BindingDimension::Observation
             ))
@@ -225,7 +263,12 @@ fn opaque_observation_and_revision_binding_are_independent() {
             ..observation.clone()
         };
         assert_eq!(
-            Report::from_owner_bytes(&bytes, subject, &foreign_revision),
+            Report::from_owner_bytes(
+                &bytes,
+                subject,
+                &foreign_revision,
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+            ),
             Err(ReportRefusal::BindingMismatch(BindingDimension::Revision))
         );
     });
@@ -253,6 +296,7 @@ fn binding_outcome_member_order_and_support_mutations_are_typed_refusals() {
             subject,
             observation,
             &mut super::temporal_package_route::unlimited(),
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
         )
         .unwrap();
         let bytes = report.to_owner_bytes();
@@ -270,14 +314,24 @@ fn binding_outcome_member_order_and_support_mutations_are_typed_refusals() {
             let mut changed = bytes.clone();
             changed[spans[index].1] ^= 1;
             assert_eq!(
-                Report::from_owner_bytes(&changed, subject, observation),
+                Report::from_owner_bytes(
+                    &changed,
+                    subject,
+                    observation,
+                    &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+                ),
                 Err(ReportRefusal::BindingMismatch(dimension))
             );
         }
         let mut outcome = bytes.clone();
         outcome[spans[7].1] = 255;
         assert_eq!(
-            Report::from_owner_bytes(&outcome, subject, observation),
+            Report::from_owner_bytes(
+                &outcome,
+                subject,
+                observation,
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+            ),
             Err(ReportRefusal::UnknownTag)
         );
         let mut swapped = bytes[..5].to_vec();
@@ -285,14 +339,24 @@ fn binding_outcome_member_order_and_support_mutations_are_typed_refusals() {
         swapped.extend_from_slice(&bytes[spans[0].0..spans[0].2]);
         swapped.extend_from_slice(&bytes[spans[2].0..]);
         assert_eq!(
-            Report::from_owner_bytes(&swapped, subject, observation),
+            Report::from_owner_bytes(
+                &swapped,
+                subject,
+                observation,
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+            ),
             Err(ReportRefusal::OutOfOrder)
         );
         let mut duplicate = bytes[..spans[1].0].to_vec();
         duplicate.extend_from_slice(&bytes[spans[0].0..spans[0].2]);
         duplicate.extend_from_slice(&bytes[spans[1].0..]);
         assert_eq!(
-            Report::from_owner_bytes(&duplicate, subject, observation),
+            Report::from_owner_bytes(
+                &duplicate,
+                subject,
+                observation,
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+            ),
             Err(ReportRefusal::OutOfOrder)
         );
         let support_start = spans[8].1;
@@ -302,7 +366,12 @@ fn binding_outcome_member_order_and_support_mutations_are_typed_refusals() {
         let mut position = bytes.clone();
         position[first_row_start + row[0].1] = 200;
         assert_eq!(
-            Report::from_owner_bytes(&position, subject, observation),
+            Report::from_owner_bytes(
+                &position,
+                subject,
+                observation,
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+            ),
             Err(ReportRefusal::SupportNotInTrace)
         );
         let key_start = first_row_start + row[1].1;
@@ -310,7 +379,12 @@ fn binding_outcome_member_order_and_support_mutations_are_typed_refusals() {
         let mut foreign_key = bytes.clone();
         foreign_key[key_start + key[4].1] ^= 1;
         assert_eq!(
-            Report::from_owner_bytes(&foreign_key, subject, observation),
+            Report::from_owner_bytes(
+                &foreign_key,
+                subject,
+                observation,
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+            ),
             Err(ReportRefusal::SupportNotInTrace)
         );
     });
@@ -330,6 +404,7 @@ fn opposite_and_missing_valuations_are_computed_from_admitted_rows() {
                     &subject,
                     observation,
                     &mut super::temporal_package_route::unlimited(),
+                    &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
                 )
                 .unwrap();
                 assert_eq!(report.truth(), expected);
@@ -361,6 +436,7 @@ fn correction_keeps_direct_predecessor_immutable_and_rejects_stale_or_foreign_id
                 &subject,
                 observation,
                 &mut super::temporal_package_route::unlimited(),
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
             )
             .unwrap();
             let original_bytes = original.to_owner_bytes();
@@ -390,7 +466,8 @@ fn correction_keeps_direct_predecessor_immutable_and_rejects_stale_or_foreign_id
                 evaluate_v2(
                     &revised_subject,
                     observation,
-                    &mut super::temporal_package_route::unlimited()
+                    &mut super::temporal_package_route::unlimited(),
+                    &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
                 ),
                 Err(quire_spec_language::temporal::NativeReportError::Evaluation(_))
             ));
@@ -402,6 +479,7 @@ fn correction_keeps_direct_predecessor_immutable_and_rejects_stale_or_foreign_id
                 &revised_subject,
                 &revised_observation,
                 &mut super::temporal_package_route::unlimited(),
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
             )
             .unwrap();
             assert_eq!(revised.predecessor(), Some(original.result_identity()));
@@ -411,7 +489,8 @@ fn correction_keeps_direct_predecessor_immutable_and_rejects_stale_or_foreign_id
                 Report::from_owner_bytes(
                     &revised.to_owner_bytes(),
                     &revised_subject,
-                    &revised_observation
+                    &revised_observation,
+                    &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
                 )
                 .unwrap(),
                 revised
@@ -423,14 +502,20 @@ fn correction_keeps_direct_predecessor_immutable_and_rejects_stale_or_foreign_id
                 evaluate_v2(
                     &stale,
                     observation,
-                    &mut super::temporal_package_route::unlimited()
+                    &mut super::temporal_package_route::unlimited(),
+                    &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
                 ),
                 Err(quire_spec_language::temporal::NativeReportError::Report(
                     ReportRefusal::InvalidPredecessor
                 ))
             ));
             assert_eq!(
-                Report::from_owner_bytes(&revised.to_owner_bytes(), &stale, &revised_observation),
+                Report::from_owner_bytes(
+                    &revised.to_owner_bytes(),
+                    &stale,
+                    &revised_observation,
+                    &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+                ),
                 Err(ReportRefusal::InvalidPredecessor)
             );
             // A predecessor known in the ledger under another trigger grants no authority.
@@ -446,7 +531,8 @@ fn correction_keeps_direct_predecessor_immutable_and_rejects_stale_or_foreign_id
                 evaluate_v2(
                     &foreign,
                     observation,
-                    &mut super::temporal_package_route::unlimited()
+                    &mut super::temporal_package_route::unlimited(),
+                    &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
                 ),
                 Err(quire_spec_language::temporal::NativeReportError::Report(
                     ReportRefusal::InvalidPredecessor
@@ -470,6 +556,7 @@ fn reader_rejects_a_correction_self_edge_and_original_with_invented_predecessor(
                 &subject,
                 observation,
                 &mut super::temporal_package_route::unlimited(),
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
             )
             .unwrap();
             let selected = qsl_package::CheckedOccurrence {
@@ -501,6 +588,7 @@ fn reader_rejects_a_correction_self_edge_and_original_with_invented_predecessor(
                 &revised_subject,
                 &revised_observation,
                 &mut super::temporal_package_route::unlimited(),
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
             )
             .unwrap();
             let bytes = revised.to_owner_bytes();
@@ -515,7 +603,12 @@ fn reader_rejects_a_correction_self_edge_and_original_with_invented_predecessor(
             self_edge.extend_from_slice(original.result_identity());
             self_edge.extend_from_slice(&bytes[spans[9].2..]);
             assert_eq!(
-                Report::from_owner_bytes(&self_edge, &revised_subject, &revised_observation),
+                Report::from_owner_bytes(
+                    &self_edge,
+                    &revised_subject,
+                    &revised_observation,
+                    &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+                ),
                 Err(ReportRefusal::InvalidPredecessor)
             );
             // Alter only lineage metadata: the result identity differs, but
@@ -545,7 +638,12 @@ fn reader_rejects_a_correction_self_edge_and_original_with_invented_predecessor(
             unchanged_input.extend_from_slice(&same_input);
             unchanged_input.extend_from_slice(&bytes[spans[9].2..]);
             assert_eq!(
-                Report::from_owner_bytes(&unchanged_input, &revised_subject, &revised_observation),
+                Report::from_owner_bytes(
+                    &unchanged_input,
+                    &revised_subject,
+                    &revised_observation,
+                    &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+                ),
                 Err(ReportRefusal::InvalidPredecessor)
             );
 
@@ -562,7 +660,12 @@ fn reader_rejects_a_correction_self_edge_and_original_with_invented_predecessor(
             ] {
                 let forged = replace_identity(&unchanged_correction, &forged);
                 assert_eq!(
-                    Report::from_owner_bytes(&forged, &revised_subject, observation),
+                    Report::from_owner_bytes(
+                        &forged,
+                        &revised_subject,
+                        observation,
+                        &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+                    ),
                     Err(ReportRefusal::UnknownTag),
                     "an invented changed-input identity must not authorize unchanged evidence"
                 );
@@ -587,13 +690,19 @@ fn reader_rejects_a_correction_self_edge_and_original_with_invented_predecessor(
                         &replace_identity(&original_bytes, &malformed),
                         &subject,
                         observation,
+                        &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
                     ),
                     Err(ReportRefusal::UnknownTag)
                 );
             }
 
             assert_eq!(
-                Report::from_owner_bytes(&bytes, &subject, &revised_observation),
+                Report::from_owner_bytes(
+                    &bytes,
+                    &subject,
+                    &revised_observation,
+                    &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+                ),
                 Err(ReportRefusal::InvalidPredecessor)
             );
         },
@@ -617,7 +726,11 @@ fn refuse_cross_binding_predecessor(
 ) {
     use qsl_eval::temporal::evidence::{ObligationKey, Relation};
     let bare = qsl_package::BarePackage::new(package);
-    let engine = EvidencePackage::from_package(&bare).unwrap();
+    let engine = EvidencePackage::from_package(
+        &bare,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .unwrap();
     let request =
         super::temporal_package_route::request(&engine, &first.node, Some(first.ordinal), 1);
     let view = temporal_subject(package, &first.node).unwrap();
@@ -674,6 +787,7 @@ fn refuse_cross_binding_predecessor(
         &subject,
         &observation,
         &mut super::temporal_package_route::unlimited(),
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
     )
     .unwrap();
     let unchanged = original.to_owner_bytes();
@@ -713,6 +827,7 @@ fn refuse_cross_binding_predecessor(
         &second_subject,
         &observation,
         &mut super::temporal_package_route::unlimited(),
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
     )
     .unwrap();
     assert_eq!(second_report.truth(), None);
@@ -730,14 +845,21 @@ fn refuse_cross_binding_predecessor(
         );
     }
     assert_eq!(
-        Report::from_owner_bytes(&original.to_owner_bytes(), &subject, &observation).unwrap(),
+        Report::from_owner_bytes(
+            &original.to_owner_bytes(),
+            &subject,
+            &observation,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+        )
+        .unwrap(),
         original
     );
     assert_eq!(
         Report::from_owner_bytes(
             &second_report.to_owner_bytes(),
             &second_subject,
-            &observation
+            &observation,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
         )
         .unwrap(),
         second_report
@@ -749,7 +871,8 @@ fn refuse_cross_binding_predecessor(
         evaluate_v2(
             &foreign,
             &observation,
-            &mut super::temporal_package_route::unlimited()
+            &mut super::temporal_package_route::unlimited(),
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
         ),
         Err(quire_spec_language::temporal::NativeReportError::Report(
             ReportRefusal::InvalidPredecessor
@@ -763,7 +886,11 @@ fn refuse_cross_binding_predecessor(
 fn another_clause_and_another_occurrence_cannot_borrow_predecessor_authority() {
     let (package, _) = super::checked_views::recipe_package("event_position");
     let bare = qsl_package::BarePackage::new(&package);
-    let engine = EvidencePackage::from_package(&bare).unwrap();
+    let engine = EvidencePackage::from_package(
+        &bare,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .unwrap();
     let first = &engine
         .rows()
         .names()
@@ -791,7 +918,11 @@ fn another_clause_and_another_occurrence_cannot_borrow_predecessor_authority() {
     let read = twins.read(&twins.emission);
     let package = read.admitted();
     let bare = qsl_package::BarePackage::new(package);
-    let engine = EvidencePackage::from_package(&bare).unwrap();
+    let engine = EvidencePackage::from_package(
+        &bare,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .unwrap();
     let node = &engine.rows().names()[0].declaration;
     let view = temporal_subject(package, node).unwrap();
     assert_eq!(view.occurrences().len(), 2);
@@ -813,6 +944,7 @@ fn native_report_two_build_bytes() {
                 &subject,
                 observation,
                 &mut super::temporal_package_route::unlimited(),
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
             )
             .unwrap();
             assert_eq!(report.truth(), Some(Truth::True));
@@ -842,7 +974,13 @@ fn native_report_two_build_bytes() {
             assert_eq!(report.observation(), observation);
             let bytes = report.to_owner_bytes();
             assert_eq!(
-                Report::from_owner_bytes(&bytes, &subject, observation).unwrap(),
+                Report::from_owner_bytes(
+                    &bytes,
+                    &subject,
+                    observation,
+                    &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+                )
+                .unwrap(),
                 report
             );
             *first.borrow_mut() = bytes;
@@ -858,6 +996,7 @@ fn native_report_two_build_bytes() {
                 &subject,
                 observation,
                 &mut super::temporal_package_route::unlimited(),
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
             )
             .unwrap();
             assert_eq!(report.to_owner_bytes(), *first.borrow());
@@ -967,6 +1106,7 @@ fn reader_refuses_a_result_identity_of_another_clause_or_occurrence() {
             subject,
             observation,
             &mut super::temporal_package_route::unlimited(),
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
         )
         .unwrap();
         let bytes = report.to_owner_bytes();
@@ -976,13 +1116,23 @@ fn reader_refuses_a_result_identity_of_another_clause_or_occurrence() {
         let mut clause = bytes.clone();
         clause[identity.1 + 9] ^= 1;
         assert_eq!(
-            Report::from_owner_bytes(&clause, subject, observation),
+            Report::from_owner_bytes(
+                &clause,
+                subject,
+                observation,
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+            ),
             Err(ReportRefusal::UnknownTag)
         );
         let mut occurrence = bytes.clone();
         occurrence[identity.2 - 1] ^= 1;
         assert_eq!(
-            Report::from_owner_bytes(&occurrence, subject, observation),
+            Report::from_owner_bytes(
+                &occurrence,
+                subject,
+                observation,
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
+            ),
             Err(ReportRefusal::UnknownTag)
         );
     });
@@ -998,7 +1148,11 @@ fn subject_and_evaluation_refuse_foreign_occurrence_revision_and_anchor() {
             let twins = super::temporal_package_route::twins();
             let read = twins.read(&twins.emission);
             let bare = qsl_package::BarePackage::new(read.admitted());
-            let engine = EvidencePackage::from_package(&bare).unwrap();
+            let engine = EvidencePackage::from_package(
+                &bare,
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+            )
+            .unwrap();
             let view =
                 temporal_subject(read.admitted(), &engine.rows().names()[0].declaration).unwrap();
             let foreign_clause = &view.occurrences()[0];
@@ -1041,7 +1195,8 @@ fn subject_and_evaluation_refuse_foreign_occurrence_revision_and_anchor() {
                 evaluate_v2(
                     &subject,
                     &stale,
-                    &mut super::temporal_package_route::unlimited()
+                    &mut super::temporal_package_route::unlimited(),
+                    &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
                 ),
                 Err(NativeReportError::Report(ReportRefusal::BindingMismatch(
                     BindingDimension::Revision
@@ -1054,7 +1209,8 @@ fn subject_and_evaluation_refuse_foreign_occurrence_revision_and_anchor() {
                 evaluate_v2(
                     &subject,
                     observation,
-                    &mut super::temporal_package_route::unlimited()
+                    &mut super::temporal_package_route::unlimited(),
+                    &mut qsl_package::V2ReadLimits::fixture().native_join_budget()
                 ),
                 Err(NativeReportError::Report(ReportRefusal::SupportNotInTrace))
             ));

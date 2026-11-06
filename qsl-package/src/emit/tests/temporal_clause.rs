@@ -80,11 +80,11 @@ pub(super) fn compile_with(
         .temporal_clauses()
         .iter()
         .filter_map(|temporal| {
-            Some(crate::emit::TemporalClockSelection {
-                source: graph.source().clone(),
-                declaration_span: temporal.clause().span(),
-                clock: clock(temporal.clause())?,
-            })
+            Some(crate::emit::TemporalClockSelection::new(
+                graph.source().clone(),
+                temporal.clause().span(),
+                clock(temporal.clause())?,
+            ))
         })
         .collect::<Vec<_>>();
     selections.sort_by_key(|selection| {
@@ -437,10 +437,12 @@ fn three_temporal_bindings_observe_s3_input_byte_bounds() {
     let selections: Vec<_> = graph
         .temporal_clauses()
         .iter()
-        .map(|temporal| crate::emit::TemporalClockSelection {
-            source: graph.source().clone(),
-            declaration_span: temporal.clause().span(),
-            clock: fixture_clock(temporal.clause().profile()).expect("event clock selection"),
+        .map(|temporal| {
+            crate::emit::TemporalClockSelection::new(
+                graph.source().clone(),
+                temporal.clause().span(),
+                fixture_clock(temporal.clause().profile()).expect("event clock selection"),
+            )
         })
         .collect();
     let emission = crate::emit::emit_checked_with_temporal_selections(
@@ -512,11 +514,11 @@ fn temporal_clock_selections_are_unique_locus_bound_and_profile_typed() {
         &declared("Bound", "eventually[0,1] holds(c.versionNumber = 2)"),
     ));
     let temporal = &graph.temporal_clauses()[0];
-    let event_selection = crate::emit::TemporalClockSelection {
-        source: graph.source().clone(),
-        declaration_span: temporal.clause().span(),
-        clock: fixture_clock(temporal.clause().profile()).expect("event profile selection"),
-    };
+    let event_selection = crate::emit::TemporalClockSelection::new(
+        graph.source().clone(),
+        temporal.clause().span(),
+        fixture_clock(temporal.clause().profile()).expect("event profile selection"),
+    );
     let package = CheckedPackage::link(graph);
 
     let duplicate = [event_selection.clone(), event_selection.clone()];
@@ -594,6 +596,105 @@ fn temporal_clock_selections_are_unique_locus_bound_and_profile_typed() {
     assert_eq!(refusal.cause(), Some("timed-node-reference"));
 }
 
+/// FR-513-AC-9 / TC-1308 row 19: a selection's definition identity is the
+/// declaration's `temporal_profile` law that the lock's `profile_selections`
+/// row names. Another profile's identity, another authority, an empty
+/// identity and an extended identity each refuse `invalid_package` /
+/// `invalid-value` naming `definition`; the selection that names the law
+/// emits, and the row carries no field the selection added.
+#[trace("TC-1308", "FR-513-AC-9", "FR-050-AC-1", "FR-050-AC-3")]
+#[test]
+fn a_substituted_definition_identity_refuses_emission_at_the_definition_field() {
+    use crate::emit::{EmitRefusal, TemporalClockSelection};
+    use quire_contract_model::CheckedArtifactRef;
+
+    let event = "quire.temporal.event-position.false-extension/v1";
+    let fixed = "quire.temporal.fixed-sample.false-extension/v1";
+    let timestamped = "quire.temporal.timestamped-event.finite-window/v1";
+    let cases = [
+        (EVENT, "eventually[0,1] holds(c.versionNumber = 2)", event),
+        (
+            "quire.temporal.fixed-sample.false-extension/v1",
+            "eventually[0,5] holds(c.versionNumber = 2)",
+            fixed,
+        ),
+        (
+            "quire.temporal.timestamped-event.finite-window/v1",
+            "always[1,9] holds(c.versionNumber >= 1)",
+            timestamped,
+        ),
+    ];
+    for (profile, body, law) in cases {
+        let graph = check_graph(&unit(profile, &declared("Bound", body)));
+        let temporal = &graph.temporal_clauses()[0];
+        let span = temporal.clause().span();
+        let clock = fixture_clock(temporal.clause().profile()).expect("clock profile");
+        let selected = TemporalClockSelection::new(graph.source().clone(), span, clock);
+        assert_eq!(
+            selected.definition,
+            CheckedArtifactRef {
+                authority: "agent-ix".into(),
+                identity: law.into(),
+            },
+            "the constructor names the definition the clock alternative selects"
+        );
+        let package = CheckedPackage::link(graph);
+        let emission = crate::emit::emit_checked_with_temporal_selections(
+            &package,
+            std::slice::from_ref(&selected),
+        )
+        .expect("the selection that names the clause's own law emits");
+        assert_eq!(
+            emission.temporal_rows.profile_selections().len(),
+            1,
+            "the lock names the one law the selection was joined to"
+        );
+        assert_eq!(
+            emission.temporal_rows.profile_selections()[0].definition,
+            selected.definition
+        );
+
+        let other = [event, fixed, timestamped]
+            .into_iter()
+            .find(|identity| *identity != law)
+            .expect("another profile");
+        for definition in [
+            CheckedArtifactRef {
+                authority: "agent-ix".into(),
+                identity: other.into(),
+            },
+            CheckedArtifactRef {
+                authority: "other-authority".into(),
+                identity: law.into(),
+            },
+            CheckedArtifactRef {
+                authority: "agent-ix".into(),
+                identity: String::new().into(),
+            },
+            CheckedArtifactRef {
+                authority: "agent-ix".into(),
+                identity: format!("{law}x").into(),
+            },
+        ] {
+            let mut substituted = selected.clone();
+            substituted.definition = definition;
+            let refusal =
+                crate::emit::emit_checked_with_temporal_selections(&package, &[substituted])
+                    .expect_err("a substituted definition identity cannot produce a package");
+            assert!(
+                matches!(
+                    &refusal,
+                    EmitRefusal::InvalidTemporalClockValue { span: at, field, .. }
+                        if *at == span && *field == "definition"
+                ),
+                "{refusal:?}"
+            );
+            assert_eq!(refusal.code(), qsl_foundation::Code::InvalidPackage);
+            assert_eq!(refusal.cause(), Some("invalid-value"));
+        }
+    }
+}
+
 /// FR-050-AC-2 / TC-1308: the emitter canonicalizes temporal binding rows by
 /// structural declaration identity even when caller selections arrive in a
 /// different order.
@@ -617,12 +718,11 @@ fn temporal_clock_bindings_follow_node_reference_order() {
         .map(|temporal| {
             (
                 node_id(temporal.identity()),
-                TemporalClockSelection {
-                    source: graph.source().clone(),
-                    declaration_span: temporal.clause().span(),
-                    clock: fixture_clock(temporal.clause().profile())
-                        .expect("event profile selection"),
-                },
+                TemporalClockSelection::new(
+                    graph.source().clone(),
+                    temporal.clause().span(),
+                    fixture_clock(temporal.clause().profile()).expect("event profile selection"),
+                ),
             )
         })
         .collect();
@@ -662,11 +762,7 @@ fn malformed_temporal_clock_values_refuse_emission_at_the_field() {
 
     fn selection(graph: &qsl_semantics::check::CheckedGraph, clock: C) -> TemporalClockSelection {
         let temporal = &graph.temporal_clauses()[0];
-        TemporalClockSelection {
-            source: graph.source().clone(),
-            declaration_span: temporal.clause().span(),
-            clock,
-        }
+        TemporalClockSelection::new(graph.source().clone(), temporal.clause().span(), clock)
     }
 
     fn refuses_field(package: &CheckedPackage, selected: &TemporalClockSelection, field: &str) {

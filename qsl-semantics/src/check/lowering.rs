@@ -4969,13 +4969,71 @@ impl<'a> Lowering<'a> {
                             },
                         ))
                     }
-                    Visit::Sum => (
-                        Operator::Collection,
-                        Operation {
-                            member: Some(self.type_argument(node.value_type(), node.location())?),
-                            ..plain("quire.op.collection.sum.integer")
-                        },
-                    ),
+                    Visit::Sum => {
+                        let member = Some(self.type_argument(node.value_type(), node.location())?);
+                        // FR-093: the identity is the family of `N`; a float
+                        // sum carries the IEEE profile law and a decimal,
+                        // float or quantity sum the rounding mode `N` pins
+                        // (`exact` for a quantity).
+                        let (identity, laws, mode) = match node.value_type() {
+                            ValueType::Rational(_) => {
+                                ("quire.op.collection.sum.rational", None, None)
+                            }
+                            ValueType::Decimal(total) => (
+                                "quire.op.collection.sum.decimal",
+                                None,
+                                Some(total.rounding()),
+                            ),
+                            ValueType::Float(total) => (
+                                if total.width() == quire_exact::IeeeWidth::Binary32 {
+                                    "quire.op.collection.sum.float32"
+                                } else {
+                                    "quire.op.collection.sum.float64"
+                                },
+                                Some(self.law(LawRole::IeeeProfile, node.location())?),
+                                Some(total.rounding()),
+                            ),
+                            ValueType::Quantity(_) => (
+                                "quire.op.collection.sum.quantity",
+                                None,
+                                Some(quire_exact::RoundingMode::Exact),
+                            ),
+                            ValueType::Integer | ValueType::Int(_) => {
+                                ("quire.op.collection.sum.integer", None, None)
+                            }
+                            // Typing admits no other total (FR-145).
+                            ValueType::Boolean
+                            | ValueType::CarriedQuantity(_)
+                            | ValueType::BoundedQuantity(_)
+                            | ValueType::Text(_)
+                            | ValueType::String
+                            | ValueType::Uuid
+                            | ValueType::Timestamp
+                            | ValueType::Enum(_)
+                            | ValueType::Option(_)
+                            | ValueType::Composite(_)
+                            | ValueType::Collection(_)
+                            | ValueType::Map(_)
+                            | ValueType::Reference(_)
+                            | ValueType::Population(_) => {
+                                return Err(refuse(
+                                    node.location(),
+                                    CheckCause::UnsupportedFeature {
+                                        loci: vec![node.location().clone()],
+                                    },
+                                ))
+                            }
+                        };
+                        (
+                            Operator::Collection,
+                            Operation {
+                                member,
+                                laws: laws.into_iter().collect(),
+                                mode: mode.map(OperationMode::Rounding),
+                                ..plain(identity)
+                            },
+                        )
+                    }
                 };
                 frames.push(LowerFrame::Binder(Box::new(BinderFrame {
                     node,

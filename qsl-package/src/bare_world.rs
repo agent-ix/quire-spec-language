@@ -73,11 +73,8 @@ impl BarePackage<'_> {
             if !matches!(row.exact_identity, SelectedExactIdentity::Record(_)) {
                 continue;
             }
-            let Ok(projection) = package.project_exact_type(
-                &row.structural_node,
-                identities,
-                crate::bare_slot::package_work_limit(),
-            ) else {
+            let Some(Ok(projection)) = self.exact_type_projections().get(&row.structural_node)
+            else {
                 continue;
             };
             let Some(view) = projection.record_view() else {

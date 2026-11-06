@@ -185,6 +185,54 @@ pub(super) fn float_add_of(width: BuiltinType, mode: &str) -> CheckedPackage {
     )])
 }
 
+/// `total(s) = sum<D>(x in s: x)` over `Sequence<E>[0, 4]`, `E` and `D`
+/// two-place decimals of nearest-even rounding, `D` wide enough for four `E`.
+fn decimal_sum() -> CheckedPackage {
+    let decimal = |bound: i64| {
+        ValueType::Decimal(
+            quire_exact::DecimalType::new(
+                quire_exact::Integer::from(-bound),
+                quire_exact::Integer::from(bound),
+                2,
+                2,
+                quire_exact::RoundingMode::NearestEven,
+            )
+            .expect("a well-formed decimal type"),
+        )
+    };
+    let mut declarations =
+        PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default());
+    declarations.aliases = vec![
+        ("E".to_owned(), decimal(25_000)),
+        ("D".to_owned(), decimal(100_000)),
+    ];
+    declarations.ieee_profile = Some(ieee_profile());
+    declarations.functions = vec![typed(
+        "total",
+        &[(
+            "s",
+            TypeForm::collection(CollectionKind::Sequence, SPAN)
+                .with_arguments(vec![TypeForm::name("E", SPAN)])
+                .with_bounds(vec!["0".into(), "4".into()]),
+        )],
+        TypeForm::name("D", SPAN),
+        Expression::sum(
+            qsl_forms::DeclaredName {
+                name: "D".to_owned(),
+                span: SPAN,
+            },
+            "x".to_owned(),
+            name("s"),
+            name("x"),
+        ),
+    )];
+    CheckedPackage::link(
+        declarations
+            .check(CheckingLimits::default())
+            .expect("the fixture functions check"),
+    )
+}
+
 pub(super) fn cases() -> Vec<Case> {
     let integer = || TypeForm::builtin(BuiltinType::Integer, SPAN);
     let positive_rational = || form(BuiltinType::Rational, &["1", "9", "1", "9"]);
@@ -297,6 +345,7 @@ pub(super) fn cases() -> Vec<Case> {
                 ),
             ]),
         ),
+        case("quire.op.collection.sum.decimal", None, decimal_sum()),
         // The fixtures' two `float64.add` nodes carry `toward-zero` and
         // `nearest-even`: the mode is part of the `Float64[mode]` type
         // (FR-091-OQ-4), so one case per mode compares `mode` too.
@@ -313,16 +362,14 @@ pub(super) fn cases() -> Vec<Case> {
     ]
 }
 
-/// Fixture identities no row of FR-093's application table lowers in a
+/// Fixture identities no case here writes: no row of FR-093's table lowers in a
 /// function body: IEEE `numeric_equal`, integer
-/// division and remainder, a decimal `sum` (the `Sum` row writes
-/// `sum.integer` only), `reaches`, and the four rows AC-3 excludes because
+/// division and remainder, `reaches`, and the four rows AC-3 excludes because
 /// the `Value` family builds no such node in a function body.
-const NOT_LOWERED: [&str; 8] = [
+const NOT_LOWERED: [&str; 7] = [
     "quire.op.ieee.numeric_equal",
     "quire.op.integer.div",
     "quire.op.integer.rem",
-    "quire.op.collection.sum.decimal",
     "quire.op.model.reaches",
     "quire.op.model.dispatch_call",
     "quire.op.model.lookup",
@@ -421,5 +468,63 @@ fn conformance_emitted_application_nodes_match_qspec_positive_fixtures() {
     );
     println!(
         "conformance: {compared_nodes} emitted application nodes match QSpec's positive fixtures"
+    );
+}
+
+/// `total(s) = sum<F>(x in s: x)` over `Sequence<F>[0, 4]`, `F` a binary64
+/// nearest-even float, checked with the IEEE profile.
+fn float_sum() -> Result<CheckedPackage, Vec<CheckRefusal>> {
+    let float = ValueType::Float(quire_exact::FloatType::new(
+        quire_exact::IeeeWidth::Binary64,
+        quire_exact::RoundingMode::NearestEven,
+    ));
+    let mut declarations =
+        PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default());
+    declarations.aliases = vec![("F".to_owned(), float)];
+    declarations.ieee_profile = Some(ieee_profile());
+    declarations.functions = vec![typed(
+        "total",
+        &[(
+            "s",
+            TypeForm::collection(CollectionKind::Sequence, SPAN)
+                .with_arguments(vec![TypeForm::name("F", SPAN)])
+                .with_bounds(vec!["0".into(), "4".into()]),
+        )],
+        TypeForm::name("F", SPAN),
+        Expression::sum(
+            qsl_forms::DeclaredName {
+                name: "F".to_owned(),
+                span: SPAN,
+            },
+            "x".to_owned(),
+            name("s"),
+            name("x"),
+        ),
+    )];
+    declarations
+        .check(CheckingLimits::default())
+        .map(CheckedPackage::link)
+}
+
+/// FR-517-AC-20: a float sum is emitted with its IEEE profile law and IR's v2
+/// reader admits it.
+#[trace("FR-517-AC-20", "TC-1312")]
+#[test]
+fn a_float_sum_is_emitted_and_read_back_by_the_ir_reader() {
+    let package = float_sum().expect("the fixture functions check");
+    let emission = emit(&package);
+    assert_eq!(emission.omitted, []);
+    let wire = wire(&emission);
+    let sum = nodes(&wire)
+        .iter()
+        .find(|node| node["body"]["operation"]["identity"] == "quire.op.collection.sum.float64")
+        .expect("the float64 sum node");
+    assert_eq!(
+        sum["body"]["operation"]["laws"].as_array().map(Vec::len),
+        Some(1)
+    );
+    assert!(
+        matches!(read_back(&emission), Read::Verified { .. }),
+        "IR's v2 reader admits the float sum"
     );
 }

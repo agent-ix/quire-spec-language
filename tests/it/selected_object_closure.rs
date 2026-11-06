@@ -83,7 +83,6 @@ fn project(fixture: &Fixture) -> SelectedTypeDeclarations {
             &identities,
             &[],
             &[],
-            100_000,
             &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
         )
         .expect("every selected document object has its genuine declaration witness")
@@ -308,7 +307,6 @@ fn selected_object_closure_refuses_missing_and_foreign_object_witnesses() {
             &missing,
             &[],
             &[],
-            100_000,
             &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
         )
         .expect_err("a model reference cannot substitute for its missing object witness");
@@ -385,7 +383,6 @@ fn selected_object_closure_refuses_a_model_reference_whose_object_node_is_absent
             &identities,
             &[],
             &[],
-            100_000,
             &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
         )
         .expect_err("retained model references cannot invent their absent object declaration");
@@ -393,5 +390,5 @@ fn selected_object_closure_refuses_a_model_reference_whose_object_node_is_absent
         refusal.code,
         ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
     );
-    assert_eq!(refusal.form.as_ref(), "selected_document_type");
+    assert_eq!(refusal.form.as_deref(), Some("selected_document_type"));
 }

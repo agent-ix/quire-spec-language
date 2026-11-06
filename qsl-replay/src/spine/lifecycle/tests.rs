@@ -67,20 +67,20 @@ fn temporal_selection_partition_uses_the_exact_source_reference() {
     let root = RawSourceRef::new("test-authority", "root.native").expect("valid source");
     let library = RawSourceRef::new("test-authority", "library.native").expect("valid source");
     let selections = [
-        TemporalClockSelection {
-            source: root.clone(),
-            declaration_span: Span { start: 10, end: 20 },
-            clock: ClockConfiguration::EventPosition {
+        TemporalClockSelection::new(
+            root.clone(),
+            Span { start: 10, end: 20 },
+            ClockConfiguration::EventPosition {
                 sequence_authority: "root-events".into(),
             },
-        },
-        TemporalClockSelection {
-            source: library.clone(),
-            declaration_span: Span { start: 30, end: 40 },
-            clock: ClockConfiguration::EventPosition {
+        ),
+        TemporalClockSelection::new(
+            library.clone(),
+            Span { start: 30, end: 40 },
+            ClockConfiguration::EventPosition {
                 sequence_authority: "library-events".into(),
             },
-        },
+        ),
     ];
 
     assert_eq!(
@@ -2061,20 +2061,20 @@ fn aggregate_package_accepts_temporal_selection_from_later_source() {
     .expect("the aggregate temporal clause checks")
     .into_value();
     assert_eq!(checked[0].source().identity(), source_a);
-    let first_selection = TemporalClockSelection {
-        source: checked[0].source().reference().clone(),
-        declaration_span: first_temporal_span,
-        clock: ClockConfiguration::EventPosition {
+    let first_selection = TemporalClockSelection::new(
+        checked[0].source().reference().clone(),
+        first_temporal_span,
+        ClockConfiguration::EventPosition {
             sequence_authority: "aggregate-events".into(),
         },
-    };
-    let selection = TemporalClockSelection {
-        source: checked[1].source().reference().clone(),
-        declaration_span: temporal_span,
-        clock: ClockConfiguration::EventPosition {
+    );
+    let selection = TemporalClockSelection::new(
+        checked[1].source().reference().clone(),
+        temporal_span,
+        ClockConfiguration::EventPosition {
             sequence_authority: "aggregate-events".into(),
         },
-    };
+    );
     let emitted = package_with_temporal_selections(
         &checked[0],
         &[first_selection, selection],
@@ -2085,17 +2085,17 @@ fn aggregate_package_accepts_temporal_selection_from_later_source() {
     .into_value();
     assert!(!emitted.package().bytes().is_empty());
 
-    let uncompiled = TemporalClockSelection {
-        source: qsl_foundation::source::provenance::RawSourceRef::new(
+    let uncompiled = TemporalClockSelection::new(
+        qsl_foundation::source::provenance::RawSourceRef::new(
             "test:lifecycle:uncompiled",
             "uncompiled:1",
         )
         .expect("the uncompiled source reference is valid"),
-        declaration_span: temporal_span,
-        clock: ClockConfiguration::EventPosition {
+        temporal_span,
+        ClockConfiguration::EventPosition {
             sequence_authority: "aggregate-events".into(),
         },
-    };
+    );
     let refusal = package_with_temporal_selections(
         &checked[0],
         &[uncompiled],

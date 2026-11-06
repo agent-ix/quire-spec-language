@@ -542,11 +542,11 @@ fn clause_clock_selections(
                 matches!(form.form(), qsl_forms::DeclarationForm::Temporal(_))
                     && form.declared_name() == Some(selection.clause.as_str())
             })?;
-            Some(qsl_package::TemporalClockSelection {
-                source: parsed.source().reference().clone(),
-                declaration_span: form.span(),
-                clock: selection.clock.clone(),
-            })
+            Some(qsl_package::TemporalClockSelection::new(
+                parsed.source().reference().clone(),
+                form.span(),
+                selection.clock.clone(),
+            ))
         })
         .collect()
 }
@@ -587,11 +587,11 @@ pub(crate) fn clock_selections(
                     clause: selection.clause.clone(),
                 })?,
         };
-        joined.push(qsl_package::TemporalClockSelection {
-            source: checked.source().reference().clone(),
-            declaration_span: span,
-            clock: selection.clock.clone(),
-        });
+        joined.push(qsl_package::TemporalClockSelection::new(
+            checked.source().reference().clone(),
+            span,
+            selection.clock.clone(),
+        ));
     }
     Ok(joined)
 }

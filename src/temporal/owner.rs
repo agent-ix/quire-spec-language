@@ -351,6 +351,7 @@ impl Report {
     }
 
     /// Strictly admit owner bytes against the checked subject and observation.
+    /// Capture-type admission charges the caller's shared native `budget`.
     ///
     /// # Errors
     /// Returns the closed `ReportRefusal`, with no partial report.
@@ -358,6 +359,7 @@ impl Report {
         bytes: &[u8],
         subject: &CheckedSubject<'_>,
         observation: &ObservationRef,
+        budget: &mut qsl_package::NativeJoinBudget,
     ) -> Result<Self, ReportRefusal> {
         let mut reader = Reader::new(bytes)?;
         let dimensions = [
@@ -443,8 +445,13 @@ impl Report {
         }
         let request = native_request(subject, observation)?;
         let bare = BarePackage::new(subject.package);
-        let package = qsl_eval::temporal::evidence::EvidencePackage::from_package(&bare)
-            .map_err(|_| ReportRefusal::UnknownTag)?;
+        let package = qsl_eval::temporal::evidence::EvidencePackage::from_package(&bare, budget)
+            .map_err(|failure| match failure {
+                qsl_eval::temporal::evidence::PackageMismatch::Exhausted(denial) => {
+                    ReportRefusal::NativeBudget(denial)
+                }
+                _ => ReportRefusal::UnknownTag,
+            })?;
         let checked = package
             .subject(&subject.occurrence.node, request.occurrence.as_ref())
             .map_err(|_| ReportRefusal::UnknownTag)?;
@@ -552,17 +559,20 @@ pub enum NativeReportError {
 ///
 /// # Errors
 /// Typed binding, predecessor and checked-engine refusals return no report.
+/// Capture-type admission charges the caller's shared native `budget`; scalar
+/// evaluation retains its separate `meter`.
 pub fn evaluate_v2(
     subject: &CheckedSubject<'_>,
     observation: &ObservationRef,
     meter: &mut Meter,
+    budget: &mut qsl_package::NativeJoinBudget,
 ) -> Result<Report, NativeReportError> {
     let request = native_request(subject, observation)?;
     let view = temporal_subject(subject.package, &subject.occurrence.node)
         .map_err(|_| ReportRefusal::BindingMismatch(BindingDimension::Clause))?;
     let predecessor = subject.predecessor()?.map(<[u8]>::to_vec);
     let bare = BarePackage::new(subject.package);
-    let package = qsl_eval::temporal::evidence::EvidencePackage::from_package(&bare)?;
+    let package = qsl_eval::temporal::evidence::EvidencePackage::from_package(&bare, budget)?;
     let operands = qsl_eval::temporal::evidence::native_atom_operands(&view);
     let result = package.evaluate_temporal_evidence(&subject.occurrence.node, &request, meter)?;
     report_from_result(subject, observation, predecessor, &operands, result)
