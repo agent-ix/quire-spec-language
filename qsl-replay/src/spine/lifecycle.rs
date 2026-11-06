@@ -1208,7 +1208,7 @@ fn protocol_check_sites(
 /// sources another party needs to import or replay it.
 #[derive(Clone, Debug)]
 pub struct EmittedUnit {
-    package: pkg::EmittedPackage,
+    emission: pkg::Emission,
     sources: Vec<Source>,
     evidence: quire_contract_model::CheckedPackageEvidence,
     static_subject: Result<StaticSubject, SubjectUnavailable>,
@@ -1219,7 +1219,13 @@ pub struct EmittedUnit {
 impl EmittedUnit {
     /// The v2 wire bytes for the compiled package.
     pub fn package(&self) -> &pkg::EmittedPackage {
-        &self.package
+        self.emission.package()
+    }
+
+    /// The same final producer emission as the package bytes, retaining its
+    /// opaque identity rows for the required checked-handoff carrier.
+    pub fn emission(&self) -> &pkg::Emission {
+        &self.emission
     }
 
     /// The source provision: the unit's source and every resolved library's,
@@ -2127,7 +2133,7 @@ pub fn package_with_temporal_selections(
                 .cloned()
                 .collect();
             Ok(EmittedUnit {
-                package: emission.package().clone(),
+                emission: emission.clone(),
                 sources,
                 evidence: emission.evidence().clone(),
                 static_subject: checked.static_subject.clone(),

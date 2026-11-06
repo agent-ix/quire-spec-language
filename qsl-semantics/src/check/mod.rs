@@ -823,6 +823,7 @@ pub struct CheckedGraph {
         (
             quire_checked::key::DeclarationKey,
             Vec<quire_exact::EffectiveId>,
+            Vec<quire_checked::key::DeclarationKey>,
         ),
     >,
     /// QSpec FR-322: the `model_root` key of each selection, in the same order.
@@ -2645,7 +2646,14 @@ impl PackageDeclarations {
             .flat_map(AdmittedModel::named_populations)
             .filter_map(|population| {
                 let node = crate::model::key::population_node_key(population.key).ok()?;
-                Some((node, (population.key.clone(), population.members)))
+                Some((
+                    node,
+                    (
+                        population.key.clone(),
+                        population.members,
+                        population.original_members.to_vec(),
+                    ),
+                ))
             })
             .collect();
         let declaration_keys = models
@@ -7908,7 +7916,26 @@ impl CheckedGraph {
     )> {
         self.protocol_population_types
             .get(node)
-            .map(|(declaration, members)| (declaration, members.as_slice()))
+            .map(|(declaration, members, _)| (declaration, members.as_slice()))
+    }
+
+    /// Every selected population's original declaration and member declarations,
+    /// paired with the checking stage's normalized effective TYPE identities.
+    /// This includes declarations no source expression reads.
+    pub fn selected_population_catalog(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &quire_checked::key::DeclarationKey,
+            &[quire_checked::key::DeclarationKey],
+            &[quire_exact::EffectiveId],
+        ),
+    > {
+        self.protocol_population_types
+            .values()
+            .map(|(declaration, members, originals)| {
+                (declaration, originals.as_slice(), members.as_slice())
+            })
     }
 
     /// The identity of the domain package the model `model` selects, where
@@ -9049,10 +9076,10 @@ mod tests {
         let second = quire_checked::key::DeclarationKey::fixture("second_population");
         graph
             .protocol_population_types
-            .insert(root.clone(), (first.clone(), Vec::new()));
+            .insert(root.clone(), (first.clone(), Vec::new(), Vec::new()));
         graph
             .protocol_population_types
-            .insert(leaf.clone(), (second.clone(), Vec::new()));
+            .insert(leaf.clone(), (second.clone(), Vec::new(), Vec::new()));
         graph.model_roots.extend([root, leaf]);
         let text = format!("{graph:?}");
         let field = text

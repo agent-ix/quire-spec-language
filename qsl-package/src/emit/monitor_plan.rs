@@ -736,6 +736,7 @@ pub(super) struct RetainedRows {
     pub(super) selected_exact_declaration_rows:
         Vec<quire_contract_model::SelectedExactDeclarationRow>,
     pub(super) selected_exact_field_rows: Vec<quire_contract_model::SelectedExactFieldRow>,
+    pub(super) selected_population_catalogs: Vec<crate::SelectedPopulationCatalog>,
     pub(super) equality_producer_identity_rows: Vec<super::EqualityProducerEmissionRow>,
     pub(super) equality_fact_witness_rows: Vec<super::EqualityFactWitnessRow>,
     pub(super) temporal_binding_rows: super::TemporalBindingRows,
@@ -1016,6 +1017,15 @@ pub(super) fn carry_rows(
         } = row;
         rekey.id(record_node);
     }
+    let mut populations = retained.selected_population_catalogs.clone();
+    for crate::SelectedPopulationCatalog {
+        model_root,
+        selected_document: _,
+        populations: _,
+    } in &mut populations
+    {
+        rekey.id(model_root);
+    }
     let mut producers = retained.equality_producer_identity_rows.clone();
     for row in &mut producers {
         let super::EqualityProducerEmissionRow {
@@ -1099,6 +1109,7 @@ pub(super) fn carry_rows(
         selected_source_collection_rows: source_collections,
         selected_exact_declaration_rows: exact_declarations,
         selected_exact_field_rows: exact_fields,
+        selected_population_catalogs: populations,
         equality_producer_identity_rows: producers,
         equality_fact_witness_rows: facts,
         temporal_binding_rows: temporal,
@@ -1299,6 +1310,7 @@ fn finish(
         selected_source_collection_rows: rows.selected_source_collection_rows,
         selected_exact_declaration_rows: rows.selected_exact_declaration_rows,
         selected_exact_field_rows: rows.selected_exact_field_rows,
+        selected_population_catalogs: rows.selected_population_catalogs,
         equality_producer_identity_rows: rows.equality_producer_identity_rows,
         equality_fact_witness_rows: rows.equality_fact_witness_rows,
         wire_nodes: semantic_graph.nodes,

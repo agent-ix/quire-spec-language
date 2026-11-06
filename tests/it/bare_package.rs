@@ -275,7 +275,7 @@ fn a_handoff_directory_gives_a_bare_package_and_an_identity_file() {
     assert!(!charges.is_empty());
 
     let file: Value = serde_json::from_slice(&files["identities.json"]).expect("JSON");
-    assert_eq!(file["format"], "quire.checked-handoff.identities/1");
+    assert_eq!(file["format"], "quire.checked-handoff.identities/2");
     assert!(files["identities.json"].ends_with(b"}\n"));
     let rows = ReadIdentityRows::read(&files["identities.json"], &package).expect("reads");
     assert_eq!(rows.package_name(), package.name());
@@ -324,11 +324,11 @@ fn the_identity_file_refuses_what_it_cannot_join() {
         malformed(IdentityMember::Repeated("fields"))
     );
     let mut format = good.clone();
-    format["format"] = json!("quire.checked-handoff.identities/2");
+    format["format"] = json!("quire.checked-handoff.identities/1");
     assert_eq!(
         read(&format),
         Err(IdentityFileRefusal::Format(
-            "quire.checked-handoff.identities/2".to_owned()
+            "quire.checked-handoff.identities/1".to_owned()
         ))
     );
 
@@ -794,12 +794,11 @@ fn the_reader_refuses_the_packages_that_would_meet_the_defensive_reasons() {
 fn the_supplied_identity_rows_project_a_record_typed_capture_on_the_bare_route() {
     let built = record_capture();
     let read = built.read(&built.emission);
+    let rows = built
+        .emission
+        .identity_rows(read.admitted())
+        .expect("final identity rows");
     let graph = read.source().graph();
-    let rows = ReadIdentityRows::of_rows(
-        read.admitted(),
-        graph.selected_exact_declaration_rows().to_vec(),
-        graph.selected_exact_field_rows().to_vec(),
-    );
     let bare = BarePackage::new(read.admitted()).with_supply(qsl_package::BareSupply {
         identities: &rows,
         equality: None,

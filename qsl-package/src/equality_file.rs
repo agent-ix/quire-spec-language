@@ -327,20 +327,95 @@ impl Joins {
     }
 }
 
+/// The identity grammar used inside an Exact value type. Equality rows use
+/// package references; source declaration rows retain the producer's original
+/// opaque values, which need not name nodes of the emitted graph.
+trait TypeKeys {
+    fn write_key(&self, key: &NodeKey) -> Result<Json, Bad>;
+    fn read_key(&self, json: &Json) -> Result<NodeKey, Bad>;
+}
+
+impl TypeKeys for Joins {
+    fn write_key(&self, key: &NodeKey) -> Result<Json, Bad> {
+        self.node_id(key)
+    }
+
+    fn read_key(&self, json: &Json) -> Result<NodeKey, Bad> {
+        self.held(json).map(|(_, key)| key)
+    }
+}
+
+struct OriginalKeys;
+
+impl TypeKeys for OriginalKeys {
+    fn write_key(&self, key: &NodeKey) -> Result<Json, Bad> {
+        let value = qsl_foundation::node_wire::node_key_to_json(key)
+            .map_err(|_| Bad::Malformed("an original node identity".into()))?;
+        of(&value)
+    }
+
+    fn read_key(&self, json: &Json) -> Result<NodeKey, Bad> {
+        let value: serde_json::Value = to(json, "an original node identity")?;
+        qsl_foundation::node_wire::node_key_from_json(&value)
+            .map_err(|_| Bad::Malformed("an original node identity".into()))
+    }
+}
+
+/// The existing complete Exact value-type grammar with original opaque keys.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub(crate) struct OriginalValueType(Json);
+
+/// An original opaque key, using the shared structural-value codec.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub(crate) struct OriginalNodeKey(Json);
+
+#[derive(Clone, Copy, Debug, thiserror::Error)]
+#[error("a malformed original Exact value type")]
+pub(crate) struct OriginalValueTypeError;
+
+impl OriginalNodeKey {
+    pub(crate) fn of(key: &NodeKey) -> Result<Self, OriginalValueTypeError> {
+        OriginalKeys
+            .write_key(key)
+            .map(Self)
+            .map_err(|_| OriginalValueTypeError)
+    }
+
+    pub(crate) fn key(&self) -> Result<NodeKey, OriginalValueTypeError> {
+        OriginalKeys
+            .read_key(&self.0)
+            .map_err(|_| OriginalValueTypeError)
+    }
+}
+
+impl OriginalValueType {
+    pub(crate) fn of(value: &ValueType) -> Result<Self, OriginalValueTypeError> {
+        value_type(&OriginalKeys, value)
+            .map(Self)
+            .map_err(|_| OriginalValueTypeError)
+    }
+
+    pub(crate) fn value(&self) -> Result<ValueType, OriginalValueTypeError> {
+        value_type_from(&OriginalKeys, &self.0).map_err(|_| OriginalValueTypeError)
+    }
+}
+
 // ---- leaf encodings -------------------------------------------------------
 
-fn unit_id(joins: &Joins, unit: &UnitId, compound: bool) -> Result<Json, Bad> {
+fn unit_id(joins: &impl TypeKeys, unit: &UnitId, compound: bool) -> Result<Json, Bad> {
     match unit {
         UnitId::Declared(key) => Ok(object(vec![
             ("kind", text("declared")),
-            ("node", joins.node_id(key)?),
+            ("node", joins.write_key(key)?),
         ])),
         UnitId::Compound(terms) if compound => {
             let terms = terms
                 .iter()
                 .map(|(key, exponent)| {
                     Ok(object(vec![
-                        ("node", joins.node_id(key)?),
+                        ("node", joins.write_key(key)?),
                         ("exponent", text(exponent.to_string())),
                     ]))
                 })
@@ -356,10 +431,10 @@ fn unit_id(joins: &Joins, unit: &UnitId, compound: bool) -> Result<Json, Bad> {
 
 #[ix_trace_rs::string_edge]
 
-fn unit_from(joins: &Joins, json: &Json, compound: bool) -> Result<UnitId, Bad> {
+fn unit_from(joins: &impl TypeKeys, json: &Json, compound: bool) -> Result<UnitId, Bad> {
     let (tag, members) = json.tagged(&[("declared", &["node"]), ("compound", &["terms"])])?;
     if tag == "declared" {
-        return Ok(UnitId::declared(joins.held(members[0])?.1));
+        return Ok(UnitId::declared(joins.read_key(members[0])?));
     }
     if !compound {
         return malformed("a compound unit in a source unit row");
@@ -369,7 +444,7 @@ fn unit_from(joins: &Joins, json: &Json, compound: bool) -> Result<UnitId, Bad> 
         .iter()
         .map(|term| {
             let parts = term.members(&["node", "exponent"])?;
-            Ok((joins.held(parts[0])?.1, integer(parts[1])?))
+            Ok((joins.read_key(parts[0])?, integer(parts[1])?))
         })
         .collect::<Result<Vec<_>, Bad>>()?;
     Ok(UnitId::compound(terms))
@@ -539,7 +614,7 @@ fn interval_from(json: &Json) -> Result<IntegerInterval, Bad> {
         .or_else(|_| malformed("an empty interval"))
 }
 
-fn value_type(joins: &Joins, value: &ValueType) -> Result<Json, Bad> {
+fn value_type(joins: &impl TypeKeys, value: &ValueType) -> Result<Json, Bad> {
     let simple = |tag: &str| Ok(object(vec![("kind", text(tag))]));
     match value {
         ValueType::Boolean => simple("boolean"),
@@ -587,7 +662,7 @@ fn value_type(joins: &Joins, value: &ValueType) -> Result<Json, Bad> {
                 .variants()
                 .map(|variant| {
                     Ok(object(vec![
-                        ("owner", joins.node_id(variant.owner())?),
+                        ("owner", joins.write_key(variant.owner())?),
                         ("case", text(variant.case())),
                     ]))
                 })
@@ -604,7 +679,7 @@ fn value_type(joins: &Joins, value: &ValueType) -> Result<Json, Bad> {
         ])),
         ValueType::Composite(key) => Ok(object(vec![
             ("kind", text("composite")),
-            ("node", joins.node_id(key)?),
+            ("node", joins.write_key(key)?),
         ])),
         ValueType::Collection(collection) => Ok(object(vec![
             ("kind", text("collection")),
@@ -730,7 +805,7 @@ fn carrier_from(json: &Json) -> Result<QuantityCarrier, Bad> {
     })
 }
 
-fn bound_quantity(joins: &Joins, value: Option<&Quantity>) -> Result<Json, Bad> {
+fn bound_quantity(joins: &impl TypeKeys, value: Option<&Quantity>) -> Result<Json, Bad> {
     let Some(quantity) = value else {
         return Ok(Json::Null);
     };
@@ -746,7 +821,7 @@ fn bound_quantity(joins: &Joins, value: Option<&Quantity>) -> Result<Json, Bad> 
     ]))
 }
 
-fn bound_quantity_from(joins: &Joins, json: &Json) -> Result<Option<Quantity>, Bad> {
+fn bound_quantity_from(joins: &impl TypeKeys, json: &Json) -> Result<Option<Quantity>, Bad> {
     if matches!(json, Json::Null) {
         return Ok(None);
     }
@@ -791,7 +866,7 @@ const VALUE_TYPES: &[(&str, &[&str])] = &[
 
 #[ix_trace_rs::string_edge]
 
-fn value_type_from(joins: &Joins, json: &Json) -> Result<ValueType, Bad> {
+fn value_type_from(joins: &impl TypeKeys, json: &Json) -> Result<ValueType, Bad> {
     let (tag, m) = json.tagged(VALUE_TYPES)?;
     let width = |json: &Json| -> Result<u32, Bad> {
         u32::try_from(json.int()?).or_else(|_| malformed("a scale"))
@@ -835,14 +910,14 @@ fn value_type_from(joins: &Joins, json: &Json) -> Result<ValueType, Bad> {
                 .iter()
                 .map(|variant| {
                     let parts = variant.members(&["owner", "case"])?;
-                    VariantId::new(joins.held(parts[0])?.1, parts[1].text()?)
+                    VariantId::new(joins.read_key(parts[0])?, parts[1].text()?)
                         .or_else(|_| malformed("an empty case"))
                 })
                 .collect::<Result<Vec<_>, Bad>>()?;
             ValueType::Enum(EnumShape::new(m[0].boolean()?, variants))
         }
         "option" => ValueType::Option(value_type_from(joins, m[0])?.into()),
-        "composite" => ValueType::Composite(joins.held(m[0])?.1),
+        "composite" => ValueType::Composite(joins.read_key(m[0])?),
         "collection" => {
             let bound = match m[2] {
                 Json::Null => None,
@@ -1644,6 +1719,26 @@ mod tests {
             ValueType::Population(Some(3)),
             ValueType::Population(None),
         ]
+    }
+
+    #[trace("TC-1331", "FR-531-AC-19")]
+    #[test]
+    fn original_value_types_round_trip_without_a_graph_key_substitution() {
+        let (_, mut keys) = joins();
+        keys.insert("U", NodeKey::new("original-owner", vec![quire_exact::PathSegment::Text("unit".into())], 17).unwrap());
+        keys.insert("V", NodeKey::new("original-owner", vec![quire_exact::PathSegment::Text("record".into())], 23).unwrap());
+        for wanted in every_value_type(&keys) {
+            let wire = OriginalValueType::of(&wanted).expect("the Exact type encodes");
+            let bytes = serde_json::to_vec(&wire).unwrap();
+            let read: OriginalValueType = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(read.value().unwrap(), wanted);
+            assert_eq!(serde_json::to_vec(&read).unwrap(), bytes);
+        }
+        let wire = serde_json::to_value(OriginalValueType::of(&ValueType::Composite(keys["V"].clone())).unwrap()).unwrap();
+        assert_eq!(wire["node"], qsl_foundation::node_wire::node_key_to_json(&keys["V"]).unwrap());
+        let mut bad = wire; bad["node"]["extra"] = json!(true);
+        let decoded: OriginalValueType = serde_json::from_value(bad).unwrap();
+        assert!(decoded.value().is_err());
     }
 
     /// FR-531-AC-17: a row of every fact tag, every value-type tag, every

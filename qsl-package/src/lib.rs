@@ -57,7 +57,8 @@ mod wire_form;
 #[cfg(feature = "std")]
 pub use bare::{
     BarePackage, BareSupply, IdentityFileRefusal, IdentityMember, IdentityWitnessRefusal,
-    ReadIdentityRows, IDENTITIES_FORMAT,
+    ReadIdentityRows, SelectedPopulation, SelectedPopulationCatalog, SelectedPopulationMember,
+    IDENTITIES_FORMAT,
 };
 #[cfg(feature = "std")]
 pub use bare_slot::{BareSelectionFailure, BareSlot, BareSource};

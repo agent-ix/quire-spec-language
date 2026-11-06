@@ -551,8 +551,9 @@ impl<'wire> WireIndex<'wire> {
     ) -> Result<Self, InternalFault> {
         let (source, identities) = match source {
             ProjectionSource::Source { graph, emission } => {
-                let identities = graph
-                    .selected_exact_identities(admitted)
+                let rows = emission.identity_rows(admitted)
+                    .map_err(|_| fault("reader-selected-identities-are-admitted"))?;
+                let identities = rows.selected(admitted)
                     .map_err(|_| fault("reader-selected-identities-are-admitted"))?;
                 (ProjectionSource::Source { graph, emission }, identities)
             }
@@ -2404,8 +2405,7 @@ pub(crate) fn node_value_type(
                 .ok_or_else(|| fault("reader-string-type-has-checked-form"))?;
             Ok(ValueType::String)
         }
-        Some((WireTag::CompositeType, WireForm::Record))
-            if unresolved || error.code == Code::UnavailableIdentityWitness =>
+        Some((WireTag::CompositeType, WireForm::Record)) if unresolved =>
         {
             let declaration = at.ok_or_else(|| fault("reader-record-type-error-has-node"))?;
             let key = match selected(declaration) {

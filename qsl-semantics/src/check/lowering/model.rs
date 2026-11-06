@@ -335,6 +335,8 @@ pub(crate) struct NamedPopulationRecord<'m> {
     pub(crate) canonical: EffectiveId,
     /// Its declared member types the package admits.
     pub(crate) members: Vec<EffectiveId>,
+    /// Each member's original declaration before effective-type normalization.
+    pub(crate) original_members: &'m [DeclarationKey],
     /// The unit's authored bound on it.
     pub(crate) bound: Option<&'m AuthoredBound>,
 }
@@ -1337,6 +1339,7 @@ impl AdmittedModel {
                     ordinal,
                     canonical,
                     members,
+                    original_members: &record.member_types,
                     bound: self.population_bounds.get(&record.key),
                 })
             })

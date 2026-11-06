@@ -234,8 +234,12 @@ equal inputs.
 All five members are required. The reader SHALL reject `/1`, an absent member,
 an unknown or repeated member and a malformed row; it SHALL NOT supply an empty
 default, read a legacy variant or silently omit a row that cannot be represented.
-An empty `source_records` or `populations` array means the corresponding admitted
-producer set is actually empty. QSL-1762's selected object closure uses the same
+The writer SHALL emit an empty `source_records` or `populations` array only when
+the corresponding admitted producer set is actually empty. The format reader
+does not certify whole-witness completeness from an empty array: a request for a
+record whose row was omitted reaches native Exact projection and retains its
+typed `UnavailableIdentityWitness`, without a structural-key success fallback.
+QSL-1762's selected object closure uses the same
 declaration/field families and population catalogs; it introduces no second
 handoff format change.
 
@@ -271,8 +275,9 @@ The bytes reader SHALL retain these original producer values and join each sourc
 record through Contract IR's `with_source_record_rows` before exposing its Exact
 record type. A healthy carried row SHALL use `source_record_view`; the legacy
 `UnavailableIdentityWitness` structural-key substitution is not success for a
-carried source record. Missing, stale, foreign or conflicting record rows return
-a typed identity refusal with no partial read result. The catalog's native
+carried source record. Stale, foreign or conflicting supplied record rows return
+a typed native join refusal with no partial file read result. A missing row is
+refused by native projection when that record is requested. The catalog's native
 selected-document/completeness validation belongs to IR-1358, and whole-witness
 validate/rebind belongs to IR-1360; the carrier SHALL NOT introduce a QSL mirror
 validator or claim that record-row joining qualifies either larger supplier.
@@ -695,7 +700,7 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-18 | For a row whose fact value type is each of a `carried_quantity` over a decimal carrier, over an integer carrier and over a rational carrier, a `bounded_quantity` with both bounds and with `min` and `max` null, and a `map` with a bound and without one (including the example of "Value encodings"), `ReadEqualityRows::to_bytes` followed by `ReadEqualityRows::read` returns equal rows, a second write is byte-identical, and the value-type subtree the writer emits for the example, parsed as JSON, equals the example's JSON value with its members in the stated order (members compared in order, not as a set); a `bounded_quantity` whose bound is in another unit than `unit`, and a `carried_quantity` carrier tagged other than `decimal`, `integer` or `rational`, return `Malformed`. | Test (TC-1331) |
 
 | FR-531-AC-19 | An authentic final emission with a source record round-trips its original opaque record key, source owner, final structural/type IDs, ordered original member identities, final admitted names, presence and exact value types, including nested opaque identities. The bytes-only read joins it through native IR and `source_record_view` equals the original row; no healthy source record succeeds by structural-key substitution. | Test |
-| FR-531-AC-20 | A file with `/1`, absent `source_records` or `selected_populations`, an unknown/repeated member, malformed opaque key/type, foreign structural/type node, stale admitted name, conflicting record row or missing required source-record row refuses with the named typed format/shape/native-join condition and no partial identity read. Empty arrays succeed only for genuinely empty corresponding producer sets. | Test |
+| FR-531-AC-20 | A file with `/1`, absent `source_records` or `selected_populations`, an unknown/repeated member, malformed opaque key/type, foreign structural/type node, stale admitted name or conflicting record row refuses with the named typed format/shape/native-join condition and no partial identity read. With a supplied empty record-row list, an actual request for that record preserves native `UnavailableIdentityWitness`, never succeeding by structural-key substitution. Whole-witness completeness is not asserted by this carrier read. | Test |
 | FR-531-AC-21 | A handoff containing multiple selected roots, an unused population and an alias-normalized member type round-trips every original population/member declaration and its genuine normalized effective TYPE identity with no owner, in deterministic producer order. The population catalog is unchanged by replacing a snapshot or by whether an expression reaches the population. | Test |
 
 ## Dependencies

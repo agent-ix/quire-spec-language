@@ -617,6 +617,8 @@ pub struct Emission {
     /// The checking stage's selected record-field rows, retained from the same
     /// acquisition.
     pub(crate) selected_exact_field_rows: Vec<quire_contract_model::SelectedExactFieldRow>,
+    /// Original selected populations, bound to these final model-root IDs.
+    pub(crate) selected_population_catalogs: Vec<crate::SelectedPopulationCatalog>,
     /// Exact QSL identity witnesses for emitted equality occurrences.
     pub(crate) equality_producer_identity_rows: Vec<EqualityProducerEmissionRow>,
     /// Per-fact equality witnesses joined to final structural node ids.
@@ -850,6 +852,7 @@ impl DebugWith for Emission {
             selected_source_collection_rows,
             selected_exact_declaration_rows,
             selected_exact_field_rows,
+            selected_population_catalogs,
             equality_producer_identity_rows,
             equality_fact_witness_rows,
             wire_nodes,
@@ -900,6 +903,7 @@ impl DebugWith for Emission {
                 selected_exact_declaration_rows,
             )
             .field("selected_exact_field_rows", selected_exact_field_rows)
+            .field("selected_population_catalogs", selected_population_catalogs)
             .field(
                 "equality_producer_identity_rows",
                 equality_producer_identity_rows,
@@ -1250,6 +1254,57 @@ impl Emission {
     /// from.
     pub fn selected_exact_field_rows(&self) -> &[quire_contract_model::SelectedExactFieldRow] {
         &self.selected_exact_field_rows
+    }
+
+    /// Original populations and normalized member types for every final selected
+    /// model root, including populations not reached by expressions.
+    pub fn selected_population_catalogs(&self) -> &[crate::SelectedPopulationCatalog] {
+        &self.selected_population_catalogs
+    }
+
+    /// The required identity handoff facts from this final emission. This
+    /// preserves original opaque source keys separately from graph references.
+    pub fn identity_rows(
+        &self,
+        package: &CheckedPackageV2,
+    ) -> Result<crate::ReadIdentityRows, crate::IdentityFileRefusal> {
+        let joined = qsl_semantics::model::intake::selected_exact_identities_from_rows(
+            package,
+            &self.selected_exact_declaration_rows,
+            &self.selected_exact_field_rows,
+        )
+        .map_err(|error| crate::IdentityFileRefusal::Native(Box::new(error)))?;
+        let records = self
+            .selected_source_record_rows
+            .iter()
+            .map(|row| quire_contract_model::SelectedSourceRecordRow {
+                structural_node: row.structural_node.clone(),
+                source_authority: row.source_authority.clone(),
+                source_identity: row.source_identity.clone(),
+                qualified_declaration: row.qualified_declaration.clone(),
+                record_key: row.record_key.clone(),
+                members: row
+                    .members
+                    .iter()
+                    .map(
+                        |member| quire_contract_model::SelectedSourceRecordMemberRow {
+                            original_member_identity: member.original_member_identity.clone(),
+                            admitted_name: member.admitted_name.clone(),
+                            presence: member.presence,
+                            type_node: member.type_node.clone(),
+                            value_type: member.value_type.clone(),
+                        },
+                    )
+                    .collect(),
+            })
+            .collect();
+        Ok(crate::ReadIdentityRows::of_rows(
+            package,
+            joined.declaration_rows().cloned().collect(),
+            joined.field_rows().to_vec(),
+            records,
+            self.selected_population_catalogs.clone(),
+        ))
     }
 
     /// QSL-owned identity rows keyed by equality application and occurrence.
@@ -5051,6 +5106,59 @@ fn timed_body_operands(
 /// region is the first byte of the checked unit (QSpec: the entry is a
 /// producer assertion no reader verifies, and the published regions are
 /// one-byte placeholders).
+fn selected_population_catalogs(
+    graph: &qsl_semantics::check::CheckedGraph,
+    emitted: &BTreeMap<NodeKey, CheckedNodeId>,
+) -> Result<Vec<crate::SelectedPopulationCatalog>, EmitRefusal> {
+    graph
+        .model_roots()
+        .map(|(selection, root)| {
+            let model_root = emitted
+                .get(&root)
+                .cloned()
+                .ok_or(EmitRefusal::SourceMapInvariant)?;
+            let mut populations = graph
+                .selected_population_catalog()
+                .filter(|(declaration, _, _)| declaration.package == selection.identity)
+                .map(|(declaration, originals, effective)| {
+                    if originals.len() != effective.len() {
+                        return Err(EmitRefusal::SourceMapInvariant);
+                    }
+                    let members = originals
+                        .iter()
+                        .zip(effective)
+                        .map(|(original, effective_type)| {
+                            if effective_type.owner_chain().len() != 1 {
+                                return Err(EmitRefusal::SourceMapInvariant);
+                            }
+                            Ok(crate::SelectedPopulationMember {
+                                original: quire_exact::OriginalDeclarationKey::new(
+                                    &original.package,
+                                    &original.node,
+                                ),
+                                effective_type: effective_type.clone(),
+                            })
+                        })
+                        .collect::<Result<Vec<_>, EmitRefusal>>()?;
+                    Ok(crate::SelectedPopulation {
+                        original: quire_exact::OriginalDeclarationKey::new(
+                            &declaration.package,
+                            &declaration.node,
+                        ),
+                        members,
+                    })
+                })
+                .collect::<Result<Vec<_>, EmitRefusal>>()?;
+            populations.sort_by(|left, right| left.original.cmp(&right.original));
+            Ok(crate::SelectedPopulationCatalog {
+                model_root,
+                selected_document: selection.identity.as_str().into(),
+                populations,
+            })
+        })
+        .collect()
+}
+
 fn append_model_roots<'a>(
     ids: &StructuralIds,
     roots: impl Iterator<
@@ -5283,6 +5391,7 @@ pub fn emit_timed_models(
         selected_source_collection_rows: Vec::new(),
         selected_exact_declaration_rows: Vec::new(),
         selected_exact_field_rows: Vec::new(),
+        selected_population_catalogs: Vec::new(),
         equality_producer_identity_rows: Vec::new(),
         equality_fact_witness_rows: Vec::new(),
         wire_nodes: semantic_graph.nodes,
@@ -6205,6 +6314,7 @@ fn emit_package_inner(
     let selected_source_record_rows = source_record_rows(graph, &emitted_node_ids)?;
     let selected_source_tuple_rows = source_tuple_rows(graph, &emitted_node_ids)?;
     let selected_source_collection_rows = source_collection_rows(graph, &emitted_node_ids)?;
+    let selected_population_catalogs = selected_population_catalogs(graph, &emitted_node_ids)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
@@ -6266,6 +6376,7 @@ fn emit_package_inner(
         selected_source_collection_rows,
         selected_exact_declaration_rows: graph.selected_exact_declaration_rows().to_vec(),
         selected_exact_field_rows: graph.selected_exact_field_rows().to_vec(),
+        selected_population_catalogs,
         equality_producer_identity_rows,
         equality_fact_witness_rows,
         wire_nodes: semantic_graph.nodes,

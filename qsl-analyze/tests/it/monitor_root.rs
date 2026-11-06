@@ -719,7 +719,7 @@ fn ir_source_record_rows(root: &PlanRoot) -> Vec<quire_contract_model::SelectedS
 /// renames (`origin_tick` as `origin`, `amount` as `value`), keep the declared
 /// field name, and the strict reader's source-record join accepts them; a row
 /// that keeps the base name is refused.
-#[trace("TC-1081", "FR-251-AC-44")]
+#[trace("TC-1081", "TC-1331", "FR-251-AC-44", "FR-531-AC-19", "FR-517-AC-23")]
 #[test]
 fn retained_source_record_rows_name_the_final_bindings_and_the_ir_join_accepts_them() {
     use quire_contract_model::{ExactTypeProjectionErrorCode, SelectedExactIdentities};
@@ -727,6 +727,17 @@ fn retained_source_record_rows_name_the_final_bindings_and_the_ir_join_accepts_t
     let root = root_of(&authored(ROOT_SHAPES[0]), "C", &target()).expect("the plan root");
     let package = admitted(&root);
     let rows = ir_source_record_rows(&root);
+    let handoff = root
+        .emission
+        .identity_rows(&package)
+        .expect("the final emission retains required handoff facts");
+    let bytes = handoff
+        .to_bytes(&package)
+        .expect("the source-record handoff encodes");
+    let read = qsl_package::ReadIdentityRows::read(&bytes, &package)
+        .expect("final renamed source rows join natively");
+    assert_eq!(read.source_records(), rows);
+    assert_eq!(read.to_bytes(&package).unwrap(), bytes);
     let named = |record: &str| -> Vec<(String, String)> {
         let row = rows
             .iter()
