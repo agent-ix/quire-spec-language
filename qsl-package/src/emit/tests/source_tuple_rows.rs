@@ -703,3 +703,137 @@ fn a_map_row_follows_its_final_key_and_value_nodes() {
             .is_err()
     );
 }
+
+/// A checked package whose record `R` holds `m: Map<Text, Boolean>[1, 4]` and
+/// `n: Map<Text, Int[0, 9]>`, and a function over `R`. Source text spells no
+/// map, so the record is declared as the checker declares it, over the
+/// declaration API the emitter tests share.
+fn map_record_package() -> CheckedPackage {
+    use qsl_forms::TypeForm;
+    use quire_exact::{CardinalityBound, MapType, Presence};
+    use quire_semantic_value::declaration::{
+        CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
+    };
+
+    let handle = NodeKey::new(
+        "fixture",
+        vec![quire_exact::PathSegment::Text("R".into())],
+        0,
+    )
+    .expect("a well formed key");
+    let map = |values, bound: Option<(u64, u64)>| {
+        ValueType::map(MapType::new(
+            values,
+            bound.map(|(lower, upper)| CardinalityBound::new(lower, upper).expect("a bound")),
+        ))
+    };
+    let digit = ValueType::Int(
+        quire_exact::IntegerInterval::new(
+            quire_exact::Integer::from(0_i64),
+            quire_exact::Integer::from(9_i64),
+        )
+        .expect("an interval"),
+    );
+    let record = CompositeDeclaration::new(
+        handle,
+        "R",
+        CompositeShape::Record(vec![
+            FieldDeclaration::new(
+                "m",
+                map(ValueType::Boolean, Some((1, 4))),
+                Presence::Required,
+            ),
+            FieldDeclaration::new("n", map(digit, None), Presence::Required),
+        ]),
+    );
+    let span = qsl_foundation::Span { start: 0, end: 0 };
+    let mut declarations = qsl_semantics::check::depth_forms::declarations(
+        qsl_semantics::check::depth_forms::Form::And,
+        1,
+    );
+    declarations.functions = vec![qsl_semantics::check::depth_forms::function(
+        "f",
+        &[("r", TypeForm::name("R", span))],
+        qsl_semantics::check::depth_forms::boolean(),
+        None,
+        qsl_forms::Expression::boolean(true),
+    )];
+    declarations.types = TypeEnvironment::new([record], []).expect("R is admitted");
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
+    CheckedPackage::link(graph)
+}
+
+/// FR-092-AC-28 end to end: a record with map fields emits one row per map,
+/// with the key node a `text` scalar, the value node the field's value type
+/// and the base node binding the key then the value. `carry_rows` re-keys the
+/// key node with the other nodes of the row.
+#[trace("FR-092-AC-28", "TC-1021")]
+#[test]
+fn a_record_with_map_fields_emits_map_rows_and_carries_their_key_nodes() {
+    let package = map_record_package();
+    // The record is built in code, not read from a source unit, so every
+    // occurrence is placed at the fixture unit. The locked IR vocabulary has
+    // no `composite_type`/`map` form yet (IR-1356), so the emitter would omit
+    // the map nodes; the decode probe admits that one form so the rows the
+    // writer produces for it are checked.
+    let admits_map = |tag: CheckedNodeTag, form: &str| {
+        (tag == CheckedNodeTag::CompositeType && form == "map")
+            || CheckedNodeKind::decode(tag, form).is_some()
+    };
+    let emission = crate::emit::emit_package_decoding(&package, whole_unit, &admits_map)
+        .expect("the package emits");
+    assert_eq!(emission.omitted, []);
+    let wire = wire(&emission);
+    let rows = emission.selected_source_collection_rows();
+    assert_eq!(rows.len(), 2);
+    let record = super::source_record_rows::row_of(&package, &emission, "R");
+    for (index, value_form, bounded) in [(0, "boolean", true), (1, "integer_range", false)] {
+        let row = rows
+            .iter()
+            .find(|row| row.structural_node == record.members[index].type_node)
+            .expect("the record binds the map row's node");
+        assert!(matches!(row.value_type, ValueType::Map(_)));
+        assert_eq!(row.structural_node != row.base_node, bounded);
+        let key = row.key_node.clone().expect("a map row holds its key node");
+        assert_eq!(node_with_id(&wire, &key)["semantic_form"], json!("text"));
+        assert_eq!(
+            node_with_id(&wire, &row.element_node)["semantic_form"],
+            json!(value_form)
+        );
+        let base = node_with_id(&wire, &row.base_node);
+        assert_eq!(base["semantic_form"], json!("map"));
+        assert_eq!(base["body"]["members"][0]["name"], json!("key"));
+        assert_eq!(base["body"]["members"][0]["value"]["target"], id_json(&key));
+        assert_eq!(base["body"]["members"][1]["name"], json!("value"));
+        assert_eq!(
+            base["body"]["members"][1]["value"]["target"],
+            id_json(&row.element_node)
+        );
+    }
+
+    // The retained rows follow a renamed key node.
+    let key = rows[0].key_node.clone().expect("a key node");
+    let renamed = |id: &CheckedNodeId| CheckedNodeId {
+        package: format!("renamed:{}", id.package).into(),
+        path: id.path.clone(),
+        ordinal: id.ordinal,
+    };
+    let carried = crate::emit::monitor_plan::carry_rows(&emission, &[(key.clone(), renamed(&key))]);
+    for (got, was) in carried.selected_source_collection_rows.iter().zip(rows) {
+        let expected = was.key_node.as_ref().map(|node| {
+            if *node == key {
+                renamed(node)
+            } else {
+                node.clone()
+            }
+        });
+        assert_eq!(got.key_node, expected);
+        assert_eq!(got.element_node, was.element_node);
+    }
+    assert!(carried
+        .selected_source_collection_rows
+        .iter()
+        .any(|row| row.key_node == Some(renamed(&key))));
+}

@@ -550,8 +550,8 @@ pub struct SelectedSourceCollectionRow {
     pub structural_node: CheckedNodeId,
     /// The emitted collection composite node holding the element reference.
     pub base_node: CheckedNodeId,
-    /// The emitted element type node the base references; a map's value type
-    /// node.
+    /// The emitted element type node the base references; a map's value
+    /// type node.
     pub element_node: CheckedNodeId,
     /// A map's emitted key type node, which the base references before the
     /// value; `None` for every other collection.
