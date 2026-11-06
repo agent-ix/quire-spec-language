@@ -74,3 +74,28 @@ Optional semantic review was skipped. This report makes no repository-wide PASS 
 - Passed: `/home/peter/dev/worktrees/locked-build.sh /home/peter/dev/worktrees/qsl-1749-code/target cargo test --locked -p qsl-package complete_w_activation_map_matches_read_back` (1 passed).
 - Passed: `/home/peter/dev/worktrees/locked-build.sh /home/peter/dev/worktrees/qsl-1749-code/target cargo test --locked -p quire-spec-language --test it v3_control_temporal_activation_mapping_is_strict_and_non_inferential` (1 passed).
 - `quoin matrix --repo . --json` was stopped after >8 minutes without output; no computed matrix results are claimed.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Removed the unsupported FR-054-AC-3 trace from the checked-package test. TC-143 continues to carry the tag and exercises cross-version refusals. |
+
+### Round 1 after excerpt
+
+- FND-001:
+
+  ```rust
+  #[trace(
+      "TC-1194",
+      "FR-449-AC-1",
+      "FR-449-AC-2",
+      "FR-449-AC-3",
+      "FR-449-AC-4",
+      "FR-449-AC-5",
+      "FR-054-AC-1",
+      "FR-054-AC-2",
+      "FR-054-AC-4",
+      "FR-513-AC-11"
+  )]
+  ```

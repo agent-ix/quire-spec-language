@@ -66,3 +66,37 @@ The focused checked-package test passed. The checked-in v3 candidate fixture hel
 - A19 excerpt: “| A19 | `native::{admit_v3, ActivationSelection, AdmissionV3}` native/temporal_v3.rs:13-89 | GREEN |”
 
 - The checked-package test's `FR-054-AC-3` trace binding is not supported by its body; the legacy-reader test is the correct binding.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The conversion helper was removed. The reader test consumes an authored serialized fixture via `include_bytes!`; mutation cases still use the authoritative `v3::encode_candidate`. |
+| FND-002 | fixed | `FR-054-AC-3` was removed from the checked-package test's trace list. The retained TC-143 reader test still carries AC-3 and asserts cross-version refusals. |
+
+### Round 1 after excerpts
+
+- FND-001:
+
+  ```rust
+  let bytes = include_bytes!("../fixtures/compiled-protocol-v3-control-map.json");
+  let package: v3::wire::Package =
+      serde_json::from_slice(bytes).expect("authored canonical v3 wire fixture");
+  ```
+
+- FND-002:
+
+  ```rust
+  #[trace(
+      "TC-1194",
+      "FR-449-AC-1",
+      "FR-449-AC-2",
+      "FR-449-AC-3",
+      "FR-449-AC-4",
+      "FR-449-AC-5",
+      "FR-054-AC-1",
+      "FR-054-AC-2",
+      "FR-054-AC-4",
+      "FR-513-AC-11"
+  )]
+  ```
