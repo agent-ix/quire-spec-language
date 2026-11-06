@@ -5,6 +5,8 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-092
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-093
+    type: verifies
 ---
 # TC-413: Type and declared nodes carry structural ids and checked shapes
 
@@ -44,6 +46,18 @@ conformance vectors from its checkout; no QSpec fixture is copied here.
    carrier's structural path against QSpec's `dec_cents` and `q_dec`
    vectors, read the package with the IR v2 reader, then truncate a carried
    node's path and read again.
+10. For FR-092-AC-29, emit bounded nominal quantities using QSpec BQ-01
+    through BQ-04; inspect the complete body, self semantic type, canonical
+    path and exact sorted dependencies. Compare alias/equivalent-endpoint,
+    changed-endpoint and changed-unit identities. Verify missing endpoints
+    and compound units do not produce this form.
+11. For FR-093-AC-61, run its add, convert and less-than values and refusal
+    controls through QSL checking, lowering and evaluation. Inspect operation
+    identities and result types; keep the TC-440 bare-unit exact-id controls.
+12. Read emitted bounded packages with the native IR reader and mutate their
+    endpoints/path as QSpec BQ-05/BQ-06 require. Until IR-1345 implements the
+    native form, these round-trip tests are explicitly ignored with IR-1345
+    in the reason; steps 10 and 11's QSL-side unit tests remain enabled.
 
 ## Expected Results
 
@@ -59,3 +73,8 @@ preimage byte, digest, or obsolete T/D/G/L/E/P vector is an oracle.
 Step 9: each carried path holds unit, carrier, `"rounding"`, text type and mode in
 that order, the decimal carrier repeats its equal scale text, the reader admits
 the package and refuses the truncated path (FR-092-AC-27).
+
+Steps 10–12 satisfy FR-092-AC-29 and FR-093-AC-61, using QSpec's published
+bounded-quantity vectors as the authority. Native admission is pending while
+the IR-1345 tests are ignored; QSL-side passing evidence does not claim that
+downstream reader acceptance has been delivered.
