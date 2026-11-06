@@ -209,3 +209,140 @@ fn the_input_byte_ceiling_admits_the_exact_length_and_refuses_zero_and_one_short
         assert_eq!(limit.kind(), LimitKind::InputBytes);
     }
 }
+
+/// A wire whose graph holds `count` nodes of the given tag and form, each
+/// owned by its own lock source when `own_sources` is set, and each depending
+/// on the previous node when `chain` is set. The inventory the fixture
+/// varies is the only thing that grows with `count`.
+fn inventory_envelope(
+    count: usize,
+    tag: &str,
+    form: &str,
+    own_sources: bool,
+    chain: bool,
+) -> Value {
+    let (_, mut envelope) = envelope_declaring(
+        &(0..count)
+            .map(|index| (format!("pkg::N{index:03}"), format!("N{index:03}")))
+            .collect::<Vec<_>>()
+            .iter()
+            .map(|(label, export)| (label.as_str(), export.as_str()))
+            .collect::<Vec<_>>(),
+    );
+    let ids: Vec<Value> = envelope["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("nodes")
+        .iter()
+        .map(|node| node["node_id"].clone())
+        .collect();
+    for (index, node) in envelope["semantic_graph"]["nodes"]
+        .as_array_mut()
+        .expect("nodes")
+        .iter_mut()
+        .enumerate()
+    {
+        node["node_tag"] = json!(tag);
+        node["semantic_form"] = json!(form);
+        if own_sources {
+            node["owner"]["identity"] = json!(format!("src{index}"));
+        }
+        if chain && index > 0 {
+            node["dependencies"] = json!([ids[index - 1].clone()]);
+        }
+    }
+    if own_sources {
+        envelope["lock"]["sources"] = (0..count)
+            .map(|index| source_ref(&format!("src{index}")))
+            .collect();
+        for (index, entry) in envelope["source_map"]
+            .as_array_mut()
+            .expect("source map")
+            .iter_mut()
+            .enumerate()
+        {
+            entry["regions"][0]["source"] = source_ref(&format!("src{index}"));
+        }
+    }
+    envelope
+}
+
+/// FR-521 row 11, QSL-838 ruling (TC-1316): the legacy `sources`,
+/// `dependencies`, `definitions`, `models` and `declarations` inventory
+/// dimensions are bounded on the retained path by the graph ceilings, because
+/// each inventory entry is a graph node (with its source-map occurrence) or a
+/// graph edge. Each case grows only its own inventory to `N` entries and shows
+/// the ceiling that bounds it refusing at zero and one under `N`, and not
+/// stopping the read at `N`. These fixtures are not otherwise valid packages
+/// (the node forms are placeholders), so the exact case proves only that the
+/// ceiling does not stop the read.
+///
+/// | legacy dimension | bounded by |
+/// | --- | --- |
+/// | `sources` | `i2.nodes` and `i2.occurrences`: each source owns a node and a source-map entry |
+/// | `dependencies` | `i2.edges`: each dependency is a graph dependency edge |
+/// | `definitions`, `models` | `i2.nodes`, tested over real emissions in `emit/tests/inventory_ceilings.rs` |
+/// | `declarations` | `i2.nodes`: each declaration is a declared node |
+#[trace("TC-1316", "FR-521-AC-5", "FR-096-AC-10", "FR-255-AC-1")]
+#[test]
+fn each_inventory_dimension_is_refused_by_its_graph_ceiling_at_zero_and_one_under() {
+    const N: usize = 5;
+    let nodes = |count: u64| Ceiling {
+        setting: Setting::I2Nodes,
+        with: |limits, bound| limits.with_nodes(bound),
+        usage: count,
+        zero_actual: count.into(),
+        verifies: false,
+    };
+    let cases = [
+        (
+            "sources",
+            inventory_envelope(N, "scalar_type", "text", true, false),
+            nodes(5),
+        ),
+        (
+            "sources (occurrences)",
+            inventory_envelope(N, "scalar_type", "text", true, false),
+            Ceiling {
+                setting: Setting::I2Occurrences,
+                with: |limits, bound| limits.with_occurrences(bound),
+                usage: 10,
+                zero_actual: 1,
+                verifies: false,
+            },
+        ),
+        (
+            "dependencies",
+            inventory_envelope(N, "scalar_type", "text", false, true),
+            Ceiling {
+                setting: Setting::I2Edges,
+                with: |limits, bound| limits.with_edges(bound),
+                usage: 4,
+                zero_actual: 1,
+                verifies: false,
+            },
+        ),
+        (
+            "declarations",
+            inventory_envelope(N, "scalar_type", "text", false, false),
+            nodes(5),
+        ),
+    ];
+    for (dimension, envelope, ceiling) in cases {
+        let count = |pointer: &str| {
+            envelope
+                .pointer(pointer)
+                .map(|v| v.as_array().map(Vec::len))
+        };
+        match ceiling.setting {
+            Setting::I2Nodes => {
+                assert_eq!(count("/semantic_graph/nodes"), Some(Some(N)), "{dimension}")
+            }
+            Setting::I2Occurrences => {
+                assert_eq!(count("/lock/sources"), Some(Some(N)), "{dimension}");
+                assert_eq!(count("/source_map"), Some(Some(N)), "{dimension}");
+            }
+            _ => {}
+        }
+        zero_exact_one_short(&jcs(&envelope), &ceiling);
+    }
+}

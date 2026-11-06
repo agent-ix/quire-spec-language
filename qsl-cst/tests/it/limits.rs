@@ -341,10 +341,7 @@ fn a_zero_source_byte_allowance_refuses_a_non_empty_source() {
     )
     .unwrap_err();
     assert_eq!(refusal.code, CompleteCode::StageLimitExceeded);
-    assert_eq!(
-        refusal.limit(),
-        Some(SyntaxLimit::SourceBytes { bound: 0 })
-    );
+    assert_eq!(refusal.limit(), Some(SyntaxLimit::SourceBytes { bound: 0 }));
     let exact = Limits {
         source_bytes: text.len(),
         ..Limits::default()
