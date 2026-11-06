@@ -35,10 +35,10 @@ limits only (ADR-030 D-4.9).
    FR-322's stratified body grammar, with each composite subterm as its own
    node reached by `reference` (FR-258).
 2. **Read limits.** QSL's I2 read SHALL bound a v2 artifact by `i2.input_bytes`,
-   `i2.nodes`, `i2.edges`, `i2.occurrences`, `i2.diagnostics` and
-   `i2.work_units`, passed to IR's checked-package reader, with published
+   `i2.nodes`, `i2.edges`, `i2.occurrences`, `i2.diagnostics`, `i2.work_units` and
+   `i2.native_join_storage`, passed to IR's checked-package reader, with published
    defaults of 16777216 bytes, 10000 nodes, 100000 edges, 100000
-   occurrences, 10000 diagnostics and 1000000 work units, each with no
+   occurrences, 10000 diagnostics, 1000000 work units and 16777216 logical storage units (the last supplied by the outer configuration, FR-255), each with no
    ceiling, and no depth limit
    or setting. When IR's reader reports one of those limits, QSL SHALL return `StageFailure::Limit` with
    its kind, bound, count reached, setting (FR-255) and the locus FR-096
