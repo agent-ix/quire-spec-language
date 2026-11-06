@@ -563,6 +563,176 @@ fn a_missing_required_temporal_refuses_at_its_authored_name() {
     assert_eq!(&text[span.start..span.end], "Missing");
 }
 
+/// FR-513-AC-11 / TC-1308 row 21: a protocol whose `each` clause requires two
+/// temporals derives one activation row per requirement, in temporal-key
+/// order, that the I2 reader returns unchanged; the package has no member a
+/// caller could supply rows through; and each defective trigger, requirement
+/// or activation kind, and each incompatible envelope version, is refused at
+/// read-back before a view exists.
+#[trace(
+    "TC-1194",
+    "TC-1308",
+    "FR-449-AC-5",
+    "FR-054-AC-2",
+    "FR-054-AC-3",
+    "FR-513-AC-11"
+)]
+#[test]
+fn activation_relation_is_derived_and_each_invalid_node_or_envelope_refuses_at_read_back() {
+    use quire_contract_model::CheckedProtocolActivation;
+
+    let unit = format!(
+        "temporal Due using t over (c: M::Order) clock \"model-steps\" \
+         on origin {{ always true }}\n\
+         temporal Later using t over (c: M::Order) clock \"model-steps\" \
+         on origin {{ always eventually true }}\n{}",
+        flow_over(
+            "M::Order",
+            "on each (opened: M::Order)",
+            "role Buyer on M::Order;\nrequires temporal Due;\nrequires temporal Later;",
+        )
+    );
+    let valid = lower_with(model(), PROFILES, &unit);
+    assert!(valid.verified, "{}", valid.text);
+    assert_eq!(clause_edit_verdict(&valid, |_| {}), "admitted");
+
+    let index = protocol_clause_index(&valid.wire);
+    let clause = valid.wire["semantic_graph"]["nodes"][index].clone();
+    let trigger_pointer = "/body/arguments/1/value/members/1/value/target";
+    let kind_pointer = "/body/arguments/1/value/members/0/value/value";
+    let first_pointer = "/body/arguments/7/value/members/0/target";
+    let second_pointer = "/body/arguments/7/value/members/1/target";
+    let trigger = clause.pointer(trigger_pointer).expect("trigger").clone();
+    let first = clause
+        .pointer(first_pointer)
+        .expect("first requirement")
+        .clone();
+    let second = clause
+        .pointer(second_pointer)
+        .expect("second requirement")
+        .clone();
+
+    let rows = activation_rows(&valid);
+    assert_eq!(rows.len(), 2, "one row per requirement");
+    let clause_id = structural(&valid.wire, &clause["node_id"]);
+    let trigger_id = structural(&valid.wire, &trigger);
+    for row in &rows {
+        assert_eq!(row.clause, clause_id);
+        assert_eq!(
+            row.activation,
+            CheckedProtocolActivation::Each {
+                trigger: trigger_id.clone()
+            }
+        );
+    }
+    assert_eq!(rows[0].required_temporal, structural(&valid.wire, &first));
+    assert_eq!(rows[1].required_temporal, structural(&valid.wire, &second));
+    assert_ne!(rows[0].required_temporal, rows[1].required_temporal);
+
+    // No member of the package carries activation rows to supply, reorder or
+    // replace: the relation is derived from the clause node alone.
+    for scope in [&valid.wire, &valid.wire["lock"]] {
+        assert!(
+            scope
+                .as_object()
+                .expect("an object")
+                .keys()
+                .all(|key| !key.contains("activation")),
+            "{:?}",
+            scope
+                .as_object()
+                .map(|object| object.keys().collect::<Vec<_>>())
+        );
+    }
+
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&valid.wire).unwrap();
+    let foreign = valid.wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["semantic_form"] == "object_type")
+        .expect("a node of the domain package")["node_id"]
+        .clone();
+    let retarget = |pointer: &'static str, original: &Value, replacement: &Value| {
+        let graph = graph.clone();
+        let original = original.clone();
+        let replacement = replacement.clone();
+        move |clause: &mut Value| {
+            *clause.pointer_mut(pointer).unwrap() = replacement.clone();
+            let dependencies = clause["dependencies"].as_array_mut().unwrap();
+            dependencies.retain(|dependency| dependency != &original);
+            if !dependencies.contains(&replacement) {
+                dependencies.push(replacement.clone());
+            }
+            sort_dependencies(&graph, clause);
+        }
+    };
+    let clause_path = format!("/semantic_graph/nodes/{index}");
+    let malformed = |pointer: &str| {
+        format!("InvalidModelBinding at {clause_path}{pointer} (Some(MalformedDeclaration))")
+    };
+
+    // A trigger that is another temporal clause, or a node of another package.
+    assert_eq!(
+        clause_edit_verdict(&valid, retarget(trigger_pointer, &trigger, &first)),
+        malformed(trigger_pointer)
+    );
+    assert_eq!(
+        clause_edit_verdict(&valid, retarget(trigger_pointer, &trigger, &foreign)),
+        malformed(trigger_pointer)
+    );
+    // A requirement that is a node of another package.
+    assert_eq!(
+        clause_edit_verdict(&valid, retarget(first_pointer, &first, &foreign)),
+        malformed(first_pointer)
+    );
+    // A duplicate requirement row.
+    assert_eq!(
+        clause_edit_verdict(&valid, retarget(second_pointer, &second, &first)),
+        format!("InvalidSemanticGraph at {clause_path} (None)")
+    );
+    // A non-event or unknown activation kind, and an `each` without its trigger.
+    let wrong_kind = |kind: &'static str| {
+        clause_edit_verdict(&valid, |clause| {
+            *clause.pointer_mut(kind_pointer).unwrap() = json!(kind);
+        })
+    };
+    assert_eq!(
+        wrong_kind("origin"),
+        format!("MalformedWire at {clause_path} (None)")
+    );
+    assert_eq!(
+        wrong_kind("bogus"),
+        format!("MalformedWire at {clause_path} (None)")
+    );
+    assert_eq!(
+        clause_edit_verdict(&valid, |clause| {
+            clause
+                .pointer_mut("/body/arguments/1/value/members")
+                .unwrap()
+                .as_array_mut()
+                .unwrap()
+                .pop();
+        }),
+        format!("MalformedWire at {clause_path} (None)")
+    );
+
+    // The incompatible compiled-protocol envelopes are not upgraded.
+    for version in [
+        "quire.compiled-protocol/1",
+        "quire.compiled-protocol/2",
+        "quire.compiled-protocol/3",
+    ] {
+        let mut wire = valid.wire.clone();
+        wire["contract_version"] = json!(version);
+        assert_eq!(
+            verdict(&valid, &wire),
+            "UnknownContractVersion at /contract_version (None)",
+            "{version}"
+        );
+    }
+}
+
 /// Graph membership is checked before the activation relation is available.
 /// Missing dependency edges and missing target nodes are different defects.
 #[trace(
