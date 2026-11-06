@@ -949,7 +949,13 @@ fn the_extreme_rationals_are_package_values() {
                 .map(|constraint| {
                     (
                         constraint["keyword"].as_str().unwrap(),
-                        constraint["operands"]["value"].as_i64().unwrap(),
+                        constraint["operands"]["value"].as_i64().unwrap_or_else(|| {
+                            constraint["operands"]["value"]
+                                .as_str()
+                                .expect("wide bounds use canonical decimal strings")
+                                .parse::<i64>()
+                                .expect("declared bound is an exact signed-64 integer")
+                        }),
                     )
                 })
                 .collect();

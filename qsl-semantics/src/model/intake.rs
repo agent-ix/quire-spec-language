@@ -4080,13 +4080,19 @@ fn read_rational_value_type(
                 operands.is_object() && operands.as_object().is_some_and(|m| m.len() == 1)
             })
             .and_then(|operands| operands.get("value"))
-            .and_then(Value::as_i64);
+            .and_then(|operand| {
+                let exact = bound_operand(operand, keyword).ok()?;
+                let value = i64::try_from(exact).ok()?;
+                (operand.is_string() || exact.unsigned_abs() <= (1_u128 << 53)).then_some(value)
+            });
         let Some(value) = value else {
             return Err(malformed_member(
                 constraint,
                 constraint_at,
                 MemberPath::from_document_location(constraint_at).child("operands"),
-                format!("{keyword}: operands must contain only an i64 JSON integer value"),
+                format!(
+                    "{keyword}: operands must contain only a safe JSON integer or canonical signed-64 decimal string"
+                ),
             ));
         };
         bounds[index] = value;

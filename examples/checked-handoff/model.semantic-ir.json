@@ -925,7 +925,7 @@
           "identity": "ix://agent-ix/checked-handoff/Exact/constraints/minNumerator",
           "keyword": "minNumerator",
           "operands": {
-            "value": -9223372036854775808
+            "value": "-9223372036854775808"
           },
           "appliesTo": "ix://agent-ix/checked-handoff/Exact",
           "diagnosticCode": "bound.minNumerator",
@@ -943,7 +943,7 @@
           "identity": "ix://agent-ix/checked-handoff/Exact/constraints/maxNumerator",
           "keyword": "maxNumerator",
           "operands": {
-            "value": 9223372036854775807
+            "value": "9223372036854775807"
           },
           "appliesTo": "ix://agent-ix/checked-handoff/Exact",
           "diagnosticCode": "bound.maxNumerator",
@@ -979,7 +979,7 @@
           "identity": "ix://agent-ix/checked-handoff/Exact/constraints/maxDenominator",
           "keyword": "maxDenominator",
           "operands": {
-            "value": 9223372036854775807
+            "value": "9223372036854775807"
           },
           "appliesTo": "ix://agent-ix/checked-handoff/Exact",
           "diagnosticCode": "bound.maxDenominator",
