@@ -28,6 +28,9 @@
 
 const TEST_PACKAGE_NAME: &str = "root-integration-tests";
 
+#[cfg(feature = "checked-handoff")]
+mod selected_object_closure;
+
 #[path = "../support/mod.rs"]
 pub(crate) mod support;
 
