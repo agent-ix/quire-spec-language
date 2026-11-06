@@ -7714,6 +7714,11 @@ fn population_domain_key(
     state_clause::population_key(&domain, node)
 }
 
+enum ClauseExpressionTarget<'a> {
+    Expected(Option<&'a ValueType>),
+    Conversion(&'a ValueType),
+}
+
 impl CheckedGraph {
     /// Every checked predicate call, operation-contract reference and
     /// temporal-obligation reference, in source order. Each row retains its
@@ -8041,11 +8046,10 @@ impl CheckedGraph {
         self.check_clause_expression_inner(
             parameters,
             expression,
-            expected,
             clause_kind,
             mode,
             limits,
-            None,
+            ClauseExpressionTarget::Expected(expected),
         )
     }
 
@@ -8068,11 +8072,10 @@ impl CheckedGraph {
         self.check_clause_expression_inner(
             parameters,
             expression,
-            None,
             clause_kind,
             mode,
             limits,
-            Some(&target),
+            ClauseExpressionTarget::Conversion(&target),
         )
     }
 
@@ -8080,11 +8083,10 @@ impl CheckedGraph {
         &self,
         parameters: Vec<(String, ValueType)>,
         expression: &Expression,
-        expected: Option<&ValueType>,
         clause_kind: ClauseKind,
         mode: CheckMode,
         limits: CheckingLimits,
-        conversion_target: Option<&ValueType>,
+        target: ClauseExpressionTarget<'_>,
     ) -> Result<CheckedExpression, CheckRefusal> {
         let location = root(Origin::Expression);
         let mut nodes = 0_u64;
@@ -8112,12 +8114,12 @@ impl CheckedGraph {
         let mut typer = typer.with_context(cx.reborrow(&self.scope));
         typer.include_formed_units(&self.evaluation_units, &location)?;
         bind_parameters(&mut typer, &parameters, &location)?;
-        let root = match conversion_target {
-            Some(target) => {
+        let root = match target {
+            ClauseExpressionTarget::Conversion(target) => {
                 let converted = typer.infer_conversion(expression, target, &location)?;
                 typer.finish_body(converted)
             }
-            None => match expected {
+            ClauseExpressionTarget::Expected(expected) => match expected {
                 Some(expected) => {
                     typer.check_declared_type(expected, &location)?;
                     typer.check_as(expression, expected, &location)?
