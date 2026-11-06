@@ -896,7 +896,7 @@ fn rational_bound_operands_refuse_noncanonical_strings_and_shapes() {
         assert!(
             matches!(&refusals[0].cause,
                 qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. }
-                    if node == "ix://test/rational-value-type/Ratio" && member.to_string() == "TypeDefinition.constraints[1].operands"
+                    if node == "ix://test/rational-value-type/Ratio/constraints/minNumerator" && member.to_string() == "TypeDefinition.constraints[1].operands"
             ),
             "{value}: {refusals:?}"
         );
