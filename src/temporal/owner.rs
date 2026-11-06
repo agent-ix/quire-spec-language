@@ -16,6 +16,9 @@ use quire_exact::Meter;
 use super::owner_codec::{BindingDimension, Reader, ReportRefusal, Writer};
 use super::{ValuationEvidence, ValuationRow};
 
+/// The checked package format every native report is bound to.
+const PACKAGE_VERSION: &str = "quire.checked-package/v2";
+
 /// Opaque observation-owner references. Neither member is interpreted by QSL.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObservationRef {
@@ -32,7 +35,7 @@ pub struct CheckedSubject<'a> {
     occurrence: &'a ClauseOccurrence,
     evidence: &'a ValuationEvidence,
     request: &'a EvidenceRequest,
-    binding: Vec<Vec<u8>>,
+    binding: [Vec<u8>; 5],
     checked: ReportSubject,
 }
 
@@ -83,14 +86,14 @@ impl<'a> CheckedSubject<'a> {
             .ok_or(ReportRefusal::BindingMismatch(BindingDimension::SourceMap))?;
         let checked = ReportSubject {
             package_identity: package.name().to_owned(),
-            package_version: "quire.checked-package/v2".to_owned(),
+            package_version: PACKAGE_VERSION.to_owned(),
             clause: occurrence.node.clone(),
             occurrence: selected.clone(),
             source_map: source_map.clone(),
         };
-        let binding = vec![
+        let binding = [
             package.name().as_bytes().to_vec(),
-            b"quire.checked-package/v2".to_vec(),
+            PACKAGE_VERSION.as_bytes().to_vec(),
             encoded(&occurrence.node)?,
             encoded(&selected)?,
             encoded(source_map)?,
@@ -133,6 +136,57 @@ impl<'a> CheckedSubject<'a> {
         }
         Ok(Some(latest))
     }
+    /// The result identity must name this subject's clause, occurrence and
+    /// correction relation (FR-052-AC-12), not another evaluation's.
+    fn check_identity(&self, identity: &[u8]) -> Result<(), ReportRefusal> {
+        use qsl_eval::temporal::evidence::MemberEncoder;
+        let node = &self.occurrence.node;
+        let clause = MemberEncoder::new()
+            .text(&node.package)
+            .bytes(&encoded(node)?)
+            .finish();
+        let occurrence = MemberEncoder::new()
+            .bytes(&encoded(&(
+                node,
+                qsl_package::CheckedOccurrence {
+                    role: self.occurrence.role.clone(),
+                    ordinal: self.occurrence.ordinal,
+                },
+            ))?)
+            .finish();
+        let relation = match &self.request.relation {
+            Relation::Original => MemberEncoder::new().u64(0),
+            Relation::Superseding(prev) => MemberEncoder::new().u64(1).bytes(prev.as_bytes()),
+            Relation::Invalidating(prev) => MemberEncoder::new().u64(2).bytes(prev.as_bytes()),
+        }
+        .finish();
+        // Result identity members: tag, big-endian u64 length, payload.
+        let member = |wanted: u8| -> Option<&[u8]> {
+            let mut rest = identity;
+            while let Some((&tag, tail)) = rest.split_first() {
+                let length = usize::try_from(u64::from_be_bytes(tail.get(..8)?.try_into().ok()?))
+                    .ok()?;
+                let end = 8_usize.checked_add(length)?;
+                let payload = tail.get(8..end)?;
+                if tag == wanted {
+                    return Some(payload);
+                }
+                rest = tail.get(end..)?;
+            }
+            None
+        };
+        if member(1) != Some(clause.as_slice()) {
+            return Err(ReportRefusal::BindingMismatch(BindingDimension::Clause));
+        }
+        if member(17) != Some(occurrence.as_slice()) {
+            return Err(ReportRefusal::BindingMismatch(BindingDimension::Occurrence));
+        }
+        if member(11) != Some(relation.as_slice()) {
+            return Err(ReportRefusal::InvalidPredecessor);
+        }
+        Ok(())
+    }
+
     fn predecessor(&self) -> Result<Option<&[u8]>, ReportRefusal> {
         Ok(self
             .predecessor_entry()?
@@ -216,6 +270,14 @@ pub struct ReportSupport {
     pub position: u64,
     /// The admitted valuation row, including its six-fact key.
     pub row: ValuationRow,
+    key: Vec<u8>,
+}
+
+impl ReportSupport {
+    fn new(position: u64, row: ValuationRow) -> Result<Self, ReportRefusal> {
+        let key = row_key(&row)?;
+        Ok(Self { position, row, key })
+    }
 }
 
 /// The actual checked subject a native report was computed for.
@@ -237,7 +299,7 @@ pub struct ReportSubject {
 #[derive(Clone, Debug)]
 pub struct Report {
     checked: ReportSubject,
-    binding: Vec<Vec<u8>>,
+    binding: [Vec<u8>; 5],
     observation: ObservationRef,
     outcome: ReportOutcome,
     truth: Option<Truth>,
@@ -321,7 +383,7 @@ impl Report {
         for entry in &self.support {
             let mut row = Writer::new();
             row.field(1, &entry.position.to_le_bytes());
-            row.field(2, &row_key(&entry.row));
+            row.field(2, &entry.key);
             row.field(3, &[u8::from(entry.row.value)]);
             support.field(2, &row.finish());
         }
@@ -398,22 +460,20 @@ impl Report {
                 .find(|row| {
                     u64::try_from(row.position) == Ok(position)
                         && row.value == value
-                        && row_key(row) == key
+                        && row_key(row).is_ok_and(|expected| expected == key)
                         && row.revision == observation.revision
                         && row.position < subject.request.positions.len()
                 })
                 .ok_or(ReportRefusal::SupportNotInTrace)?;
             entry.finish()?;
-            support.push(ReportSupport {
-                position,
-                row: row.clone(),
-            });
+            support.push(ReportSupport::new(position, row.clone())?);
         }
         rows.finish()?;
         let identity = reader.field(10)?.to_vec();
         let input_identity =
             qsl_eval::temporal::evidence::ResultIdentity::input_identity_from_bytes(&identity)
                 .ok_or(ReportRefusal::UnknownTag)?;
+        subject.check_identity(&identity)?;
         let mut previous = Reader::new(reader.field(11)?)?;
         let predecessor = match previous.field(1)? {
             [0] => None,
@@ -471,17 +531,17 @@ fn read_u64(bytes: &[u8]) -> Result<u64, ReportRefusal> {
     let bytes = bytes.try_into().map_err(|_| ReportRefusal::Truncated)?;
     Ok(u64::from_le_bytes(bytes))
 }
-fn row_key(row: &ValuationRow) -> Vec<u8> {
+fn row_key(row: &ValuationRow) -> Result<Vec<u8>, ReportRefusal> {
     let mut writer = Writer::new();
     // Checked node identities and occurrence records have deterministic owner
     // serialization; they are length-delimited identity members, not artifacts.
     writer.field(
         1,
-        &serde_json::to_vec(&row.subject.node).expect("checked node identity encodes"),
+        &encoded(&row.subject.node)?,
     );
     writer.field(
         2,
-        &serde_json::to_vec(&row.subject.role).expect("checked role encodes"),
+        &encoded(&row.subject.role)?,
     );
     writer.field(3, &row.subject.ordinal.to_le_bytes());
     writer.field(4, &count_bytes(row.position));
@@ -490,9 +550,9 @@ fn row_key(row: &ValuationRow) -> Vec<u8> {
     writer.field(7, row.revision.as_bytes());
     writer.field(
         8,
-        &serde_json::to_vec(&row.operand).expect("checked operand identity encodes"),
+        &encoded(&row.operand)?,
     );
-    writer.finish()
+    Ok(writer.finish())
 }
 fn truth_tag(value: Option<Truth>) -> u8 {
     match value {
@@ -589,7 +649,7 @@ fn native_request(
     native.field(2, observation.revision.as_bytes());
     for row in subject.evidence.rows() {
         let mut entry = Writer::new();
-        entry.field(1, &row_key(row));
+        entry.field(1, &row_key(row)?);
         entry.field(2, &[u8::from(row.value)]);
         native.field(3, &entry.finish());
     }
@@ -653,11 +713,10 @@ fn report_from_result(
             .iter()
             .filter(|row| row.position == used.position && row.operand == *operand)
         {
-            support.push(ReportSupport {
-                position: u64::try_from(used.position)
-                    .map_err(|_| ReportRefusal::SupportNotInTrace)?,
-                row: row.clone(),
-            });
+            support.push(ReportSupport::new(
+                u64::try_from(used.position).map_err(|_| ReportRefusal::SupportNotInTrace)?,
+                row.clone(),
+            )?);
         }
     }
     Ok(Report {

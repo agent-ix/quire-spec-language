@@ -120,6 +120,7 @@ mod native_model_profiles;
 mod native_model_qualification;
 mod native_numeric_domain_emission;
 mod native_owned_attempt_progress;
+#[cfg(feature = "checked-handoff")]
 mod native_owner_report;
 mod native_payment_retry_emission;
 mod native_population_emission;

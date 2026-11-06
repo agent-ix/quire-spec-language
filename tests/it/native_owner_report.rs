@@ -8,7 +8,7 @@ use qsl_eval::temporal::evidence::{EvidencePackage, Truth};
 use qsl_package::checked_views::temporal_subject;
 use quire_spec_language::temporal::{
     evaluate_v2, BindingDimension, CheckedSubject, ClockBinding, Closure, Completeness, Execution,
-    ObservationRef, Position, Report, ReportRefusal, Trace, ValuationEvidence, ValuationInstance,
+    NativeReportError, ObservationRef, Position, Report, ReportRefusal, Trace, ValuationEvidence, ValuationInstance,
     ValuationRow, EVENT_POSITION,
 };
 
@@ -803,6 +803,7 @@ fn another_clause_and_another_occurrence_cannot_borrow_predecessor_authority() {
 #[trace("TC-144", "FR-052-AC-15", "FR-052-AC-17")]
 #[test]
 fn native_report_two_build_bytes() {
+    let first = std::cell::RefCell::new(Vec::new());
     with_inputs(
         true,
         false,
@@ -844,16 +845,104 @@ fn native_report_two_build_bytes() {
                 Report::from_owner_bytes(&bytes, &subject, observation).unwrap(),
                 report
             );
-            if let Some(previous) = std::env::var_os("QSL_OWNER_REPORT_PREVIOUS") {
-                assert_eq!(
-                    bytes,
-                    std::fs::read(previous).expect("first build's owner bytes"),
-                    "independently built evaluators must emit identical bytes"
-                );
-            }
-            if let Some(output) = std::env::var_os("QSL_OWNER_REPORT_OUTPUT") {
-                std::fs::write(output, &bytes).expect("write this build's owner bytes");
-            }
+            *first.borrow_mut() = bytes;
+        },
+    );
+    // A second, fully independent build of the package, evidence and request
+    // must encode to identical bytes.
+    with_inputs(
+        true,
+        false,
+        |package, occurrence, evidence, request, observation, _| {
+            let subject = CheckedSubject::new(package, occurrence, evidence, request).unwrap();
+            let report = evaluate_v2(
+                &subject,
+                observation,
+                &mut super::temporal_package_route::unlimited(),
+            )
+            .unwrap();
+            assert_eq!(report.to_owner_bytes(), *first.borrow());
+        },
+    );
+}
+
+#[trace("FR-052-AC-12")]
+#[test]
+fn reader_refuses_a_result_identity_of_another_clause_or_occurrence() {
+    with_subject(|subject, observation, _| {
+        let report = evaluate_v2(
+            subject,
+            observation,
+            &mut super::temporal_package_route::unlimited(),
+        )
+        .unwrap();
+        let bytes = report.to_owner_bytes();
+        let identity = fields(&bytes, 0)[9];
+        // Identity members are tag, eight-byte length, payload; the clause is
+        // first and the occurrence is last.
+        let mut clause = bytes.clone();
+        clause[identity.1 + 9] ^= 1;
+        assert_eq!(
+            Report::from_owner_bytes(&clause, subject, observation),
+            Err(ReportRefusal::BindingMismatch(BindingDimension::Clause))
+        );
+        let mut occurrence = bytes.clone();
+        occurrence[identity.2 - 1] ^= 1;
+        assert_eq!(
+            Report::from_owner_bytes(&occurrence, subject, observation),
+            Err(ReportRefusal::BindingMismatch(BindingDimension::Occurrence))
+        );
+    });
+}
+
+#[trace("FR-052-AC-9", "FR-052-AC-15")]
+#[test]
+fn subject_and_evaluation_refuse_foreign_occurrence_revision_and_anchor() {
+    with_inputs(
+        true,
+        false,
+        |package, occurrence, evidence, request, observation, _| {
+            let mut foreign = occurrence.clone();
+            foreign.ordinal += 1000;
+            assert!(matches!(
+                CheckedSubject::new(package, &foreign, evidence, request),
+                Err(ReportRefusal::BindingMismatch(BindingDimension::Occurrence))
+            ));
+            let mut other = request.clone();
+            other.occurrence = Some(qsl_package::CheckedOccurrence {
+                role: occurrence.role.clone(),
+                ordinal: occurrence.ordinal + 1000,
+            });
+            assert!(matches!(
+                CheckedSubject::new(package, occurrence, evidence, &other),
+                Err(ReportRefusal::BindingMismatch(BindingDimension::Occurrence))
+            ));
+            let subject = CheckedSubject::new(package, occurrence, evidence, request).unwrap();
+            let stale = ObservationRef {
+                reference: observation.reference.clone(),
+                revision: "revision:other".into(),
+            };
+            assert!(matches!(
+                evaluate_v2(
+                    &subject,
+                    &stale,
+                    &mut super::temporal_package_route::unlimited()
+                ),
+                Err(NativeReportError::Report(ReportRefusal::BindingMismatch(
+                    BindingDimension::Revision
+                )))
+            ));
+            let mut moved = request.clone();
+            moved.anchor = Some("obs-other".into());
+            let subject = CheckedSubject::new(package, occurrence, evidence, &moved).unwrap();
+            assert!(matches!(
+                evaluate_v2(
+                    &subject,
+                    observation,
+                    &mut super::temporal_package_route::unlimited()
+                ),
+                Err(NativeReportError::Report(ReportRefusal::SupportNotInTrace))
+            ));
         },
     );
 }
