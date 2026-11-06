@@ -32,7 +32,12 @@ They compare the owner's complete function result envelope, verify zero
 evaluator charges for a pre-call stop and retain the actual public output
 bytes across repeated runs. The owner codec exercises all five supplied-stop
 cause arms, both cancellation sources, overflow and the original nested locus;
-it does not convert any stop into a value. A nonempty refinement input that
+it does not convert any stop into a value. A genuine Witness-source function
+replay checks the positive settlement, explicit null record, exact verdict
+disagreement and the source region of an undefined remainder operation. Function calls
+cannot produce a nonempty separating record under ADR-031 SW-7. Removing a
+result member or changing its expected native facts makes the controls fail.
+A nonempty refinement input that
 FR-071 cannot represent stays unsupported even when its expected result is
 copied from that unsupported report.
 

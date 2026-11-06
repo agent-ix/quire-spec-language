@@ -908,111 +908,167 @@ fn render_text(report: &Report) -> String {
 }
 
 fn parse_unique_json(bytes: &[u8]) -> std::result::Result<Value, String> {
-    let mut deserializer = serde_json::Deserializer::from_slice(bytes);
-    let parsed = UniqueValue::deserialize(&mut deserializer).map_err(|error| error.to_string())?;
-    deserializer.end().map_err(|error| error.to_string())?;
-    Ok(parsed.0)
+    use quire_canonical::{Malformed, Node, NodeRef, ReadError};
+
+    // The file was admitted under the caller's byte ceiling. The shared
+    // reader's arena and every conversion stack are bounded by those bytes;
+    // neither introduces a second, hidden nesting ceiling.
+    let byte_bound = u64::try_from(bytes.len()).map_err(|error| error.to_string())?;
+    let document = quire_canonical::read(bytes, byte_bound).map_err(|error| match error {
+        ReadError::Malformed {
+            kind: Malformed::DuplicateName,
+            offset,
+        } => format!("duplicate object key at byte {offset}"),
+        other => other.to_string(),
+    })?;
+    enum Task<'a> {
+        Read(NodeRef<'a>),
+        Array(usize),
+        Object(Vec<&'a str>),
+    }
+    let mut tasks = vec![Task::Read(document.root())];
+    let mut values = Vec::<DeepValue>::new();
+    while let Some(task) = tasks.pop() {
+        let value = match task {
+            Task::Read(node) => match node.node() {
+                Node::Null => Value::Null,
+                Node::Bool(value) => Value::Bool(value),
+                // The shared reader also exposes an f64 for canonical
+                // writing. Decode the original scalar lexeme instead: a
+                // qualification adapter must not round a supplied integer.
+                Node::Number(number) => {
+                    serde_json::from_str(number.text()).map_err(|error| error.to_string())?
+                }
+                Node::String(value) => Value::String(value.to_owned()),
+                Node::Array(items) => {
+                    let items = items.collect::<Vec<_>>();
+                    tasks.push(Task::Array(items.len()));
+                    tasks.extend(items.into_iter().rev().map(Task::Read));
+                    continue;
+                }
+                Node::Object(members) => {
+                    let members = members.collect::<Vec<_>>();
+                    tasks.push(Task::Object(
+                        members.iter().map(|(name, _)| *name).collect(),
+                    ));
+                    tasks.extend(
+                        members
+                            .into_iter()
+                            .rev()
+                            .map(|(_, value)| Task::Read(value)),
+                    );
+                    continue;
+                }
+            },
+            Task::Array(length) => {
+                let start = values
+                    .len()
+                    .checked_sub(length)
+                    .ok_or("JSON array children")?;
+                Value::Array(
+                    values
+                        .split_off(start)
+                        .into_iter()
+                        .map(DeepValue::into_inner)
+                        .collect(),
+                )
+            }
+            Task::Object(names) => {
+                let start = values
+                    .len()
+                    .checked_sub(names.len())
+                    .ok_or("JSON object children")?;
+                Value::Object(
+                    names
+                        .into_iter()
+                        .zip(values.split_off(start))
+                        .map(|(name, value)| (name.to_owned(), value.into_inner()))
+                        .collect(),
+                )
+            }
+        };
+        values.push(DeepValue::new(value));
+    }
+    values
+        .pop()
+        .map(DeepValue::into_inner)
+        .ok_or_else(|| "missing JSON value".to_owned())
 }
 
-struct UniqueValue(Value);
+/// An untrusted JSON tree whose release never uses the native call stack.
+struct DeepValue(Value);
 
-impl<'de> Deserialize<'de> for UniqueValue {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct Visitor;
-        impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = UniqueValue;
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("a JSON value with unique object keys")
-            }
-            fn visit_bool<E>(self, value: bool) -> std::result::Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(UniqueValue(Value::Bool(value)))
-            }
-            fn visit_i64<E>(self, value: i64) -> std::result::Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(UniqueValue(Value::from(value)))
-            }
-            fn visit_u64<E>(self, value: u64) -> std::result::Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(UniqueValue(Value::from(value)))
-            }
-            fn visit_f64<E>(self, value: f64) -> std::result::Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(UniqueValue(Value::from(value)))
-            }
-            fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(UniqueValue(Value::String(value.to_owned())))
-            }
-            fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(UniqueValue(Value::String(value)))
-            }
-            fn visit_none<E>(self) -> std::result::Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(UniqueValue(Value::Null))
-            }
-            fn visit_unit<E>(self) -> std::result::Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(UniqueValue(Value::Null))
-            }
-            fn visit_seq<A>(self, mut seq: A) -> std::result::Result<Self::Value, A::Error>
-            where
-                A: serde::de::SeqAccess<'de>,
-            {
-                let mut values = Vec::new();
-                while let Some(value) = seq.next_element::<UniqueValue>()? {
-                    values.push(value.0);
-                }
-                Ok(UniqueValue(Value::Array(values)))
-            }
-            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
-            where
-                A: serde::de::MapAccess<'de>,
-            {
-                let mut values = Map::new();
-                while let Some(key) = map.next_key::<String>()? {
-                    if values.contains_key(&key) {
-                        return Err(serde::de::Error::custom(format!(
-                            "duplicate object key {key}"
-                        )));
-                    }
-                    let value = map.next_value::<UniqueValue>()?;
-                    values.insert(key, value.0);
-                }
-                Ok(UniqueValue(Value::Object(values)))
-            }
-        }
-        deserializer.deserialize_any(Visitor)
+impl DeepValue {
+    fn new(value: Value) -> Self {
+        Self(value)
+    }
+
+    fn into_inner(mut self) -> Value {
+        std::mem::take(&mut self.0)
+    }
+}
+
+impl std::ops::Deref for DeepValue {
+    type Target = Value;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Drop for DeepValue {
+    fn drop(&mut self) {
+        qsl_foundation::node_wire::discard_node_json(std::mem::take(&mut self.0));
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_unique_json;
+    use super::{parse_unique_json, DeepValue};
+    use ix_trace_rs::trace;
     #[test]
     fn rejects_duplicate_object_members() {
         assert!(parse_unique_json(br#"{"a":1,"a":2}"#)
             .unwrap_err()
             .contains("duplicate object key"));
+    }
+
+    #[trace("TC-1325", "FR-350-AC-11")]
+    #[test]
+    fn deep_json_keeps_numeric_facts_and_rejects_escaped_duplicate_members() {
+        std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(|| {
+                let depth = 1_000;
+                let mut bytes = b"[".repeat(depth);
+                bytes.extend_from_slice(
+                    br#"{"wide":18446744073709551615,"negative_zero":-0.0,"exponent":1e2}"#,
+                );
+                bytes.extend_from_slice(&b"]".repeat(depth));
+                let value = DeepValue::new(
+                    parse_unique_json(&bytes)
+                        .expect("nesting costs input bytes, not a fixed depth cap"),
+                );
+                let mut leaf = &*value;
+                for _ in 0..depth {
+                    leaf = &leaf.as_array().expect("one retained array per layer")[0];
+                }
+                assert_eq!(leaf["wide"].as_u64(), Some(u64::MAX));
+                assert!(leaf["negative_zero"]
+                    .as_f64()
+                    .expect("a supplied JSON float")
+                    .is_sign_negative());
+                assert_eq!(leaf["exponent"], serde_json::json!(100.0));
+
+                let mut duplicate = b"[".repeat(depth);
+                duplicate.extend_from_slice(br#"{"a":1,"\u0061":2}"#);
+                duplicate.extend_from_slice(&b"]".repeat(depth));
+                let error = parse_unique_json(&duplicate)
+                    .expect_err("decoded duplicate names remain refused at depth");
+                assert!(error.contains("duplicate object key"), "{error}");
+            })
+            .expect("spawn the bounded-stack JSON control")
+            .join()
+            .expect("deep parsing, refusal and release do not overflow");
     }
 }

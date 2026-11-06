@@ -130,7 +130,13 @@ documents the vector names. Each operation starts with fresh effective limits;
 signature lookup and object admission use those same limits. The runner's
 library entry retains the returned bytes of each passed vector separately
 from the FR-352 report, so callers can compare operation bytes without
-reconstructing them from the qualification verdict.
+reconstructing them from the qualification verdict. Population binding admission
+retains the original snapshot member order and every reference-valued field
+needed by native subsetting checks. Both sides of a subset relation retain
+their original field identities even when an inherited or redefining slot
+supplies their values; optional, empty and collection values keep their
+admitted meanings. All population arguments share the caller's one binding
+admission meter.
 ### The replay-request adapter
 
 The runner reads a `replay-request` file with its own decoder in `xtask`,
@@ -183,7 +189,9 @@ its refinements are never silently dropped.
 The replay-result owner serializes function results without re-evaluation,
 retaining the settled arm, category, optional value, disagreement, witness
 record, source regions, named evaluator charges, evaluated limit and complete
-pre-call stop context. Each supplied stop preserves its original phase,
+pre-call stop context. A function Witness result retains an explicit `record:
+null`, because the native function-call settlement has no decisive occurrence
+(ADR-031 SW-7); qualification never invents a separating record. Each supplied stop preserves its original phase,
 parameter, event, locus, consumed prefix and typed native cause. Qualification
 compares that result envelope and separately retains the public operation's
 returned bytes. Native inconclusive results keep their category; only an

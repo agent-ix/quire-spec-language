@@ -181,7 +181,9 @@ impl<'a> Inputs<'a> {
 }
 
 fn document(bytes: &[u8], schema: &jsonschema::JSONSchema) -> Result<Value, Failure> {
-    let value = super::parse_unique_json(bytes).map_err(|message| Failure::decode("", message))?;
+    let value = super::DeepValue::new(
+        super::parse_unique_json(bytes).map_err(|message| Failure::decode("", message))?,
+    );
     if let Err(mut errors) = schema.validate(&value) {
         if let Some(error) = errors.next() {
             let mut pointer = error.instance_path.to_string();
@@ -194,7 +196,7 @@ fn document(bytes: &[u8], schema: &jsonschema::JSONSchema) -> Result<Value, Fail
             return Err(Failure::decode(pointer, error.to_string()));
         }
     }
-    Ok(value)
+    Ok(value.into_inner())
 }
 
 fn unsigned(value: &Value, pointer: &str) -> Result<u64, Failure> {
@@ -513,10 +515,10 @@ fn run(
             Ok((objects, _)) => objects,
             Err(failure) => return admission_failure(failure),
         };
-        snapshot = Some(
+        snapshot = Some(super::DeepValue::new(
             super::parse_unique_json(bytes)
                 .map_err(|message| Failure::decode("/input/files", message))?,
-        );
+        ));
     }
     let signature = checked.package().graph().callable(function);
     let values = array(&call_input["arguments"], "/arguments")?;
@@ -532,9 +534,7 @@ fn run(
                 )
             })?;
             if let quire_exact::ValueType::Population(maximum) = parameter_type {
-                use qsl_semantics::model::population::{
-                    admit_binding, AdmissionOutcome, PopulationDocument, PopulationMember,
-                };
+                use qsl_semantics::model::population::{admit_binding, AdmissionOutcome};
                 let pointer = format!("/arguments/{index}");
                 let name = text(&value["name"], &pointer)?;
                 let provenance = objects
@@ -552,35 +552,19 @@ fn run(
                     .and_then(|snapshot| snapshot["populations"].as_array())
                     .and_then(|rows| rows.iter().find(|row| row["population"] == name))
                     .ok_or_else(|| Failure::decode(&pointer, "population snapshot is absent"))?;
-                let mut members = Vec::new();
-                for member in array(&row["objects"], &pointer)? {
-                    let identity = text(&member["key"], &pointer)?;
-                    let reference = objects
-                        .population_members(name)
-                        .into_iter()
-                        .flatten()
-                        .find(|reference| reference.object().as_str() == identity)
-                        .ok_or_else(|| {
-                            Failure::decode(&pointer, "population member was not admitted")
-                        })?;
-                    let type_identity = model
-                        .view
-                        .type_identities()
-                        .iter()
-                        .find(|(_, effective)| *effective == reference.object_type())
-                        .map(|(key, _)| key.clone())
-                        .ok_or_else(|| {
-                            Failure::decode(&pointer, "population member has no selected type")
-                        })?;
-                    members.push(PopulationMember {
-                        object: identity.to_owned(),
-                        type_identity,
-                        field_values: Vec::new(),
-                    });
-                }
-                let document = PopulationDocument {
-                    model_identity: model.view.model_selection().identity.clone(),
-                    members,
+                let member_order = array(&row["objects"], &pointer)?
+                    .iter()
+                    .map(|member| text(&member["key"], &pointer))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let document = match observation::admitted_population_document(
+                    &model.view,
+                    checked.package().graph().scope().types(),
+                    &objects,
+                    name,
+                    &member_order,
+                ) {
+                    Ok(document) => document,
+                    Err(failure) => return admission_failure(failure),
                 };
                 let binding = match admit_binding(
                     &model.view,

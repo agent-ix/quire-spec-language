@@ -245,17 +245,21 @@ fn malformed_calls_and_excess_arguments_are_corpus_failures() {
 }
 
 fn replay_fixture() -> Fixture {
+    replay_fixture_source(FALSE)
+}
+
+fn replay_fixture_source(source: &str) -> Fixture {
     let mut fixture = Fixture::new(
         "runtime",
         "replay",
-        FALSE,
+        source,
         json!({"disposition":"value","value":null}),
     );
     let selected = qsl_replay::call_site(
         qsl_foundation::SourceIdentity::new("agent-ix", "inputs/unit.native"),
         "qualification".into(),
         "inputs/unit.native",
-        FALSE.as_bytes(),
+        source.as_bytes(),
         [],
         &qsl_replay::DependencyInput::default(),
         &qsl_replay::QualifiedName::new(vec![qsl_replay::Identifier::new("negative").unwrap()])
@@ -308,7 +312,7 @@ fn replay_fixture() -> Fixture {
         byte_provision: vec![(
             "agent-ix".to_owned(),
             "inputs/unit.native".to_owned(),
-            FALSE.as_bytes().to_vec(),
+            source.as_bytes().to_vec(),
         )],
         documents: Vec::new(),
     };
@@ -317,10 +321,12 @@ fn replay_fixture() -> Fixture {
     let qsl_replay::ReplayResult::Input(input) = &native else {
         panic!("an input replay");
     };
-    assert_eq!(
-        input.value(),
-        Some(qsl_replay::EvaluatedValue::Boolean(false))
-    );
+    if source == FALSE {
+        assert_eq!(
+            input.value(),
+            Some(qsl_replay::EvaluatedValue::Boolean(false))
+        );
+    }
     let row: Value = serde_json::from_str(&native.to_function_json().unwrap()).unwrap();
     fixture.value["vectors"][0]["expected"] =
         json!({"disposition":"value", "value":{"results":[row]}});
@@ -336,7 +342,7 @@ fn replay_fixture() -> Fixture {
         "inputs/request.json",
         &serde_json::to_vec(&request).unwrap(),
     );
-    fixture.file("bytes", "inputs/bytes.native", FALSE.as_bytes());
+    fixture.file("bytes", "inputs/bytes.native", source.as_bytes());
     fixture
 }
 
@@ -656,4 +662,245 @@ fn unavailable_refinement_inputs_cannot_qualify_from_their_own_report() {
         second.outputs.is_empty(),
         "no operation ran and no passed bytes exist"
     );
+}
+
+fn subset_population_fixture(redefined: bool) -> Fixture {
+    let fixture = model_population_fixture();
+    let source = fs::read_to_string(fixture.corpus.join("inputs/unit.native"))
+        .unwrap()
+        .replace("[1]", "[2]");
+    fs::write(fixture.corpus.join("inputs/unit.native"), source).unwrap();
+    let path = fixture.corpus.join("inputs/model.json");
+    let mut model: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let template = model["types"][0]["fields"][0].clone();
+    let field = |owner: &str, name: &str, many: bool, optional: bool| {
+        let mut field = template.clone();
+        field["identity"] = json!(format!("ix://acme/orders/{owner}/{name}"));
+        field["name"] = json!(name);
+        field["typeRef"] = json!("ix://acme/orders/Gadget");
+        field["presence"] = json!(if optional { "optional" } else { "required" });
+        field["multiplicity"] = json!({"lower":if many {0} else {1}, "upper":if many {2} else {1}, "ordered":many, "unique":false});
+        field
+    };
+    model["types"][0]["fields"]
+        .as_array_mut()
+        .unwrap()
+        .push(field("Widget", "allowed", true, false));
+    let mut chosen = field("Gadget", "chosen", true, false);
+    chosen["subsets"] = json!(["ix://acme/orders/Widget/allowed"]);
+    let mut maybe = field("Gadget", "maybe", false, true);
+    maybe["subsets"] = json!(["ix://acme/orders/Widget/allowed"]);
+    model["types"][1]["fields"] = json!([chosen, maybe]);
+    if redefined {
+        let mut allowed = field("Gadget", "allowed", true, false);
+        allowed["redefines"] = json!("ix://acme/orders/Widget/allowed");
+        model["types"][1]["fields"]
+            .as_array_mut()
+            .unwrap()
+            .push(allowed);
+    }
+    fs::write(path, serde_json::to_vec(&model).unwrap()).unwrap();
+    let reference = |key| json!({"reference":{"population":"ix://acme/orders/Fleet", "key":key}});
+    let path = fixture.corpus.join("inputs/population.json");
+    let mut snapshot: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    snapshot["populations"][0]["objects"] = json!([
+        {"key":"g2", "type":"ix://acme/orders/Gadget", "fields":{"code":{"integer":"8"}, "allowed":{"sequence":[]}, "chosen":{"sequence":[]}, "maybe":{"absent":{}}}},
+        {"key":"g1", "type":"ix://acme/orders/Gadget", "fields":{"code":{"integer":"7"}, "allowed":{"sequence":[reference("g1")]}, "chosen":{"sequence":[reference("g1")]}, "maybe":{"present":reference("g1")}}}
+    ]);
+    fs::write(path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+    fixture
+}
+
+#[test]
+#[trace("TC-875", "FR-350-AC-8", "FR-350-AC-9")]
+fn population_subsetting_retains_inherited_redefined_optional_and_collection_values() {
+    for redefined in [false, true] {
+        let fixture = subset_population_fixture(redefined);
+        let passed = fixture.execute(&[]);
+        assert_eq!(passed.outcome.code, 0, "{}", passed.outcome.stdout);
+        let path = fixture.corpus.join("inputs/population.json");
+        let original = fs::read(&path).unwrap();
+        for field in ["chosen", "maybe"] {
+            let mut snapshot: Value = serde_json::from_slice(&original).unwrap();
+            let reference =
+                json!({"reference":{"population":"ix://acme/orders/Fleet", "key":"g2"}});
+            snapshot["populations"][0]["objects"][1]["fields"][field] = if field == "chosen" {
+                json!({"sequence":[reference]})
+            } else {
+                json!({"present":reference})
+            };
+            fs::write(&path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+            let failed = report(&fixture.execute(&[]));
+            assert_eq!(failed["capabilities"][0]["outcome"], "failed", "{failed}");
+            assert_eq!(
+                failed["capabilities"][0]["vectors"][0]["actual"]["cause"], "subsetting-violation",
+                "{failed}"
+            );
+        }
+        fs::write(&path, original).unwrap();
+        assert_eq!(fixture.execute(&[]).outcome.code, 0);
+        let limited = report(&fixture.execute(&["--limit", "admission.work_units=3"]));
+        assert_eq!(
+            limited["capabilities"][0]["outcome"], "incomplete",
+            "{limited}"
+        );
+        assert_eq!(
+            limited["capabilities"][0]["vectors"][0]["actual"]["fields"]["charge_point"],
+            "binding.subset-value"
+        );
+        assert_eq!(
+            fixture
+                .execute(&["--limit", "admission.work_units=4"])
+                .outcome
+                .code,
+            0
+        );
+        // Reusing a population for a second parameter keeps one cumulative
+        // admission meter, even when its identical binding already exists.
+        let source_path = fixture.corpus.join("inputs/unit.native");
+        let source = fs::read_to_string(&source_path).unwrap().replace(
+            "p: Population<M::Gadget>[2], ok",
+            "p: Population<M::Gadget>[2], q: Population<M::Gadget>[2], ok",
+        );
+        fs::write(source_path, source).unwrap();
+        let call_path = fixture.corpus.join("inputs/call.json");
+        let mut call: Value = serde_json::from_slice(&fs::read(&call_path).unwrap()).unwrap();
+        let population = call["arguments"][0].clone();
+        call["arguments"]
+            .as_array_mut()
+            .unwrap()
+            .insert(1, population);
+        fs::write(call_path, serde_json::to_vec(&call).unwrap()).unwrap();
+        assert_eq!(
+            report(&fixture.execute(&["--limit", "admission.work_units=7"]))["capabilities"][0]
+                ["outcome"],
+            "incomplete"
+        );
+        assert_eq!(
+            fixture
+                .execute(&["--limit", "admission.work_units=8"])
+                .outcome
+                .code,
+            0
+        );
+    }
+}
+
+fn use_witness(fixture: &mut Fixture) -> qsl_replay::ReplayResult {
+    let request = fixture.native_replay.as_mut().unwrap();
+    let qsl_replay::ReplaySource::Input(assignments) = &request.source else {
+        panic!("input fixture")
+    };
+    let transcript = format!(
+        "<<<assertion|qualification|negative|{}=1>>>",
+        qsl_replay::witness_entry_name(&assignments[0].parameter).unwrap()
+    );
+    request.source =
+        qsl_replay::ReplaySource::Witness(qsl_replay::Witness::parse(&transcript).unwrap());
+    let result = qsl_replay::replay(request.clone(), qsl_replay::ReplayLimits::default()).unwrap();
+    let path = fixture.corpus.join("inputs/request.json");
+    let mut wire: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    wire["source"] = json!({"kind":"witness", "transcript":transcript});
+    fs::write(path, serde_json::to_vec(&wire).unwrap()).unwrap();
+    let row: Value = serde_json::from_str(&result.to_function_json().unwrap()).unwrap();
+    fixture.value["vectors"][0]["expected"] =
+        json!({"disposition":"value", "value":{"results":[row]}});
+    result
+}
+
+#[test]
+#[trace("TC-1325", "FR-350-AC-5", "FR-350-AC-10", "FR-350-AC-11")]
+fn genuine_witness_replay_retains_record_absence_regions_and_disagreement() {
+    let mut fixture = replay_fixture();
+    let native = use_witness(&mut fixture);
+    let qsl_replay::ReplayResult::Witness(arm) = &native else {
+        panic!("witness arm")
+    };
+    assert_eq!(
+        arm.settlement(),
+        qsl_replay::WitnessSettlement::ReproducedWithEvaluatedWitness
+    );
+    assert_eq!(
+        arm.value(),
+        Some(qsl_replay::EvaluatedValue::Boolean(false))
+    );
+    assert!(
+        arm.record().is_none(),
+        "ADR-031 SW-7 function calls have no decisive occurrence"
+    );
+    let row = fixture.value["vectors"][0]["expected"]["value"]["results"][0].clone();
+    assert_eq!(row["arm"], "witness");
+    assert!(row.as_object().unwrap().contains_key("record"));
+    assert_eq!(row["record"], Value::Null);
+    assert_eq!(row["resolved_regions"], json!([]));
+    assert!(row.get("disagreement").is_none());
+    let passed = fixture.execute(&[]);
+    assert_eq!(passed.outcome.code, 0, "{}", passed.outcome.stdout);
+    assert_eq!(
+        passed.outputs["V1-TOOL-004-operation"],
+        qsl_replay::OutcomeDocument::from_replay(&Ok(native))
+            .to_bytes()
+            .unwrap()
+    );
+    for (member, incorrect) in [
+        ("record", json!({"invented":true})),
+        ("resolved_regions", json!([{"invented":true}])),
+        ("disagreement", json!({"kind":"no-value"})),
+    ] {
+        fixture.value["vectors"][0]["expected"]["value"]["results"][0] = row.clone();
+        fixture.value["vectors"][0]["expected"]["value"]["results"][0][member] = incorrect;
+        assert_eq!(
+            report(&fixture.execute(&[]))["capabilities"][0]["outcome"],
+            "failed"
+        );
+    }
+    let true_source = FALSE.replace("x < 0", "x > 0");
+    let mut true_fixture = replay_fixture_source(&true_source);
+    let true_native = use_witness(&mut true_fixture);
+    let qsl_replay::ReplayResult::Witness(true_arm) = true_native else {
+        panic!("witness arm")
+    };
+    assert_eq!(
+        true_arm.value(),
+        Some(qsl_replay::EvaluatedValue::Boolean(true))
+    );
+    assert!(matches!(
+        true_arm.disagreement(),
+        Some(qsl_replay::DisagreementCause::Verdicts { .. })
+    ));
+    let true_row = &true_fixture.value["vectors"][0]["expected"]["value"]["results"][0];
+    assert_eq!(
+        true_row["disagreement"],
+        json!({"cause":"verdicts", "proved":"violation", "replayed":"success"})
+    );
+    assert!(true_row.as_object().unwrap().contains_key("record"));
+    assert_eq!(true_fixture.execute(&[]).outcome.code, 0);
+    let undefined_source = FALSE.replace("x < 0", "10 mod (x - 1) > 0");
+    let mut undefined_fixture = replay_fixture_source(&undefined_source);
+    let undefined_native = use_witness(&mut undefined_fixture);
+    let qsl_replay::ReplayResult::Witness(undefined_arm) = undefined_native else {
+        panic!("witness arm")
+    };
+    assert!(undefined_arm.value().is_none());
+    assert!(
+        !undefined_arm.resolved_regions().is_empty(),
+        "the actual undefined operation retains its source"
+    );
+    let undefined_row = &undefined_fixture.value["vectors"][0]["expected"]["value"]["results"][0];
+    assert!(!undefined_row["resolved_regions"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let region = &undefined_arm.resolved_regions()[0];
+    assert!(undefined_source
+        [usize::try_from(region.start()).unwrap()..usize::try_from(region.end()).unwrap()]
+        .contains("mod"));
+    assert_eq!(undefined_row["resolved_regions"][0]["kind"], "region");
+    assert_eq!(
+        undefined_row["resolved_regions"][0]["start"],
+        region.start()
+    );
+    assert_eq!(undefined_row["resolved_regions"][0]["end"], region.end());
+    assert_eq!(undefined_row["disagreement"]["cause"], "no-value");
+    assert_eq!(undefined_fixture.execute(&[]).outcome.code, 0);
 }

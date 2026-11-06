@@ -4,18 +4,16 @@
 use std::collections::BTreeMap;
 use std::path::{Component, Path};
 
-use qsl_foundation::node_wire::node_key_to_json;
+use qsl_foundation::node_wire::{node_key_to_json, node_key_to_text};
 use qsl_foundation::SettingName;
 use qsl_replay::{
     DeclaredDomain, DomainKey, DomainKind, FiniteBound, Integer, ProofBound, ReplayRequestWire,
     ReplaySource, RequestTargetWire, WitnessValue,
 };
-use serde::Serialize;
 use serde_json::{json, Value};
 
 use super::{
-    array, document, encode, from_document, object, text, unsigned, Execution, Failure, InputKind,
-    Inputs,
+    array, document, from_document, object, text, unsigned, Execution, Failure, InputKind, Inputs,
 };
 
 pub(super) fn execute(
@@ -26,7 +24,7 @@ pub(super) fn execute(
     schema: &jsonschema::JSONSchema,
 ) -> Result<Execution, Failure> {
     let (_, bytes) = inputs.one(InputKind::ReplayRequest)?;
-    let value = document(bytes, schema)?;
+    let value = super::super::DeepValue::new(document(bytes, schema)?);
     if value["package"]["lock"]
         .get("refinement_internals")
         .is_some()
@@ -509,38 +507,188 @@ fn witness(
         )?)),
         _ => {
             let typed = witness_json(value, pointer, graph)?;
-            WitnessValue::from_wire_json(&typed)
+            let bytes = quire_canonical::to_vec(&*typed, quire_canonical::Limits::new(u64::MAX))
+                .map_err(|error| Failure::decode(pointer, error.to_string()))?;
+            WitnessValue::from_wire_bytes(&bytes)
                 .map_err(|error| Failure::decode(pointer, format!("{error:?}")))
         }
     }
+}
+
+fn node_text(
+    value: &Value,
+    pointer: &str,
+    graph: &qsl_replay::WireGraph,
+) -> Result<String, Failure> {
+    node_key_to_text(&node(value, pointer, graph)?)
+        .map_err(|error| Failure::decode(pointer, error.to_string()))
+}
+
+fn wire_object<const N: usize>(members: [(&str, Value); N]) -> Value {
+    Value::Object(
+        members
+            .into_iter()
+            .map(|(name, value)| (name.to_owned(), value))
+            .collect(),
+    )
 }
 
 fn witness_json(
     value: &Value,
     pointer: &str,
     graph: &qsl_replay::WireGraph,
+) -> Result<super::super::DeepValue, Failure> {
+    use super::super::DeepValue;
+    enum Task<'a> {
+        Read(&'a Value),
+        Finish(&'a Value, usize),
+    }
+    let mut tasks = vec![Task::Read(value)];
+    let mut values = Vec::<DeepValue>::new();
+    while let Some(task) = tasks.pop() {
+        match task {
+            Task::Read(value) => {
+                let kind = text(&value["kind"], pointer)?;
+                let children = match kind {
+                    "quantity" => vec![&value["magnitude"]],
+                    "option" => {
+                        if value["value"].is_null() {
+                            Vec::new()
+                        } else {
+                            vec![&value["value"]]
+                        }
+                    }
+                    "record" => {
+                        let mut children = Vec::new();
+                        for field in array(&value["fields"], pointer)? {
+                            let slot = &field["slot"];
+                            match text(&slot["kind"], pointer)? {
+                                "present" => children.push(&slot["value"]),
+                                "absent" | "null" => {}
+                                _ => return Err(Failure::decode(pointer, "unknown slot")),
+                            }
+                        }
+                        children
+                    }
+                    "tuple" | "union" => array(&value["components"], pointer)?.iter().collect(),
+                    "sequence" | "ordered_set" | "set" | "bag" => {
+                        array(&value["elements"], pointer)?.iter().collect()
+                    }
+                    _ => {
+                        values.push(DeepValue::new(witness_leaf(value, pointer, graph)?));
+                        continue;
+                    }
+                };
+                tasks.push(Task::Finish(value, children.len()));
+                tasks.extend(children.into_iter().rev().map(Task::Read));
+            }
+            Task::Finish(value, count) => {
+                let start = values
+                    .len()
+                    .checked_sub(count)
+                    .ok_or_else(|| Failure::decode(pointer, "missing witness children"))?;
+                let mut children = values.split_off(start).into_iter();
+                let kind = text(&value["kind"], pointer)?;
+                let next = |children: &mut std::vec::IntoIter<DeepValue>| {
+                    children
+                        .next()
+                        .map(DeepValue::into_inner)
+                        .ok_or_else(|| Failure::decode(pointer, "missing witness child"))
+                };
+                let converted = match kind {
+                    "quantity" => {
+                        let mut magnitude = DeepValue::new(next(&mut children)?);
+                        let unit = format!(
+                            "{{\"declared\":{}}}",
+                            node_text(&value["unit"], pointer, graph)?
+                        );
+                        magnitude
+                            .0
+                            .as_object_mut()
+                            .ok_or_else(|| Failure::decode(pointer, "invalid magnitude"))?
+                            .insert("unit".to_owned(), Value::String(unit));
+                        magnitude.into_inner()
+                    }
+                    "option" => wire_object([
+                        ("type", json!("option")),
+                        (
+                            "value",
+                            if count == 0 {
+                                Value::Null
+                            } else {
+                                next(&mut children)?
+                            },
+                        ),
+                    ]),
+                    "record" => {
+                        let name = node_text(&value["declaration"], pointer, graph)?;
+                        let mut fields = Vec::new();
+                        for field in array(&value["fields"], pointer)? {
+                            let slot = &field["slot"];
+                            let converted = match text(&slot["kind"], pointer)? {
+                                "present" => next(&mut children)?,
+                                "absent" => json!({"type":"absent"}),
+                                "null" => json!({"type":"null"}),
+                                _ => return Err(Failure::decode(pointer, "unknown slot")),
+                            };
+                            fields.push(DeepValue::new(wire_object([
+                                ("name", field["name"].clone()),
+                                ("value", converted),
+                            ])));
+                        }
+                        wire_object([
+                            ("type", json!("record")),
+                            ("name", Value::String(name)),
+                            (
+                                "fields",
+                                Value::Array(
+                                    fields.into_iter().map(DeepValue::into_inner).collect(),
+                                ),
+                            ),
+                        ])
+                    }
+                    "tuple" | "union" => {
+                        let name = node_text(&value["declaration"], pointer, graph)?;
+                        let components =
+                            Value::Array(children.map(DeepValue::into_inner).collect());
+                        let mut members = serde_json::Map::new();
+                        members.insert("type".into(), json!(kind));
+                        members.insert("name".into(), Value::String(name));
+                        if kind == "union" {
+                            members.insert("member".into(), value["member"].clone());
+                        }
+                        members.insert("components".into(), components);
+                        Value::Object(members)
+                    }
+                    "sequence" | "ordered_set" | "set" | "bag" => wire_object([
+                        ("type", json!(kind.replace('_', "-"))),
+                        (
+                            "elements",
+                            Value::Array(children.map(DeepValue::into_inner).collect()),
+                        ),
+                    ]),
+                    _ => return Err(Failure::decode(pointer, "unknown composite witness value")),
+                };
+                values.push(DeepValue::new(converted));
+            }
+        }
+    }
+    values
+        .pop()
+        .ok_or_else(|| Failure::decode(pointer, "missing witness value"))
+}
+
+fn witness_leaf(
+    value: &Value,
+    pointer: &str,
+    graph: &qsl_replay::WireGraph,
 ) -> Result<Value, Failure> {
     let kind = text(&value["kind"], pointer)?;
-    let id_text = |value: &Value| -> Result<String, Failure> {
-        encode(
-            node_key_to_json(&node(value, pointer, graph)?)
-                .map_err(|error| Failure::decode(pointer, error.to_string()))?,
-        )
-        .and_then(|bytes| {
-            String::from_utf8(bytes).map_err(|error| Failure::decode(pointer, error.to_string()))
-        })
-    };
-    let children = |name: &str| {
-        array(&value[name], pointer)?
-            .iter()
-            .map(|child| witness_json(child, pointer, graph))
-            .collect::<Result<Vec<_>, _>>()
-    };
     Ok(match kind {
         "boolean" => json!({"type":"boolean", "value":value["value"]}),
         "integer" | "exact_integer" => json!({"type":"integer", "value":value["decimal"]}),
         "enum" => {
-            json!({"type":"enum", "name":id_text(&value["declaration"])?, "member":value["member"]})
+            json!({"type":"enum", "name":node_text(&value["declaration"], pointer, graph)?, "member":value["member"]})
         }
         "text" => json!({"type":"text", "value":value["value"]}),
         "string" | "uuid" => json!({"kind":kind,"text":value["value"]}),
@@ -557,65 +705,112 @@ fn witness_json(
         "float64" => {
             json!({"type":"float64", "bits":format!("{:016x}", unsigned(&value["bits"], pointer)?)})
         }
-        "quantity" => {
-            let mut magnitude = witness_json(&value["magnitude"], pointer, graph)?;
-            magnitude.as_object_mut().ok_or_else(|| Failure::decode(pointer,"invalid magnitude"))?.insert("unit".into(), json!(serde_json::to_string(&json!({"declared":node_key_to_json(&node(&value["unit"], pointer, graph)?).map_err(|error| Failure::decode(pointer,error.to_string()))?})).map_err(|error| Failure::decode(pointer,error.to_string()))?));
-            magnitude
-        }
         "reference" => {
             let type_node = node(&value["object_type"], pointer, graph)?;
-            let path = node_key_to_json(&type_node)
-                .map_err(|error| Failure::decode(pointer, error.to_string()))?;
+            let path = super::super::DeepValue::new(
+                node_key_to_json(&type_node)
+                    .map_err(|error| Failure::decode(pointer, error.to_string()))?,
+            );
             let original = path["path"]
                 .as_array()
                 .and_then(|path| path.last())
                 .and_then(Value::as_str)
                 .ok_or_else(|| Failure::decode(pointer, "reference type is not a declared type"))?;
-            json!({"type":"reference", "universe":id_text(&value["universe"])?, "object_type":serde_json::to_string(&json!([{"package":type_node.package(),"node":original}])).map_err(|error| Failure::decode(pointer,error.to_string()))?, "identity":value["identity"]})
-        }
-        "option" => {
-            json!({"type":"option", "value":if value["value"].is_null() { Value::Null } else { witness_json(&value["value"],pointer,graph)? }})
-        }
-        "record" => {
-            let fields = array(&value["fields"], pointer)?
-                .iter()
-                .map(|field| {
-                    let slot = &field["slot"];
-                    let converted = match text(&slot["kind"], pointer)? {
-                        "present" => witness_json(&slot["value"], pointer, graph)?,
-                        "absent" => json!({"type":"absent"}),
-                        "null" => json!({"type":"null"}),
-                        _ => return Err(Failure::decode(pointer, "unknown slot")),
-                    };
-                    Ok(json!({"name":field["name"],"value":converted}))
-                })
-                .collect::<Result<Vec<_>, Failure>>()?;
-            json!({"type":"record","name":id_text(&value["declaration"])?,"fields":fields})
-        }
-        "tuple" => {
-            json!({"type":"tuple","name":id_text(&value["declaration"])?,"components":children("components")?})
-        }
-        "union" => {
-            json!({"type":"union","name":id_text(&value["declaration"])?,"member":value["member"],"components":children("components")?})
-        }
-        "sequence" | "ordered_set" | "set" | "bag" => {
-            json!({"type":kind.replace('_',"-"),"elements":children("elements")?})
+            json!({"type":"reference", "universe":node_text(&value["universe"], pointer, graph)?, "object_type":serde_json::to_string(&json!([{"package":type_node.package(),"node":original}])).map_err(|error| Failure::decode(pointer,error.to_string()))?, "identity":value["identity"]})
         }
         _ => return Err(Failure::decode(pointer, "unknown witness value")),
     })
 }
 
-#[derive(Serialize)]
-struct ReplayEnvelope {
-    results: Vec<Value>,
-}
 fn replay_value(result: &qsl_replay::ReplayResult) -> Result<Value, Failure> {
     let row = result
         .to_function_json()
         .map_err(|error| Failure::decode("", error.to_string()))?;
-    let row = serde_json::from_str(&row).map_err(|error| Failure::decode("", error.to_string()))?;
-    serde_json::to_value(ReplayEnvelope { results: vec![row] })
-        .map_err(|error| Failure::decode("", error.to_string()))
+    let row = super::super::parse_unique_json(row.as_bytes())
+        .map_err(|error| Failure::decode("", error))?;
+    Ok(wire_object([("results", Value::Array(vec![row]))]))
+}
+
+#[cfg(test)]
+mod depth_tests {
+    use ix_trace_rs::trace;
+
+    #[trace("TC-1325", "FR-350-AC-11")]
+    #[test]
+    fn a_deep_corpus_witness_converts_and_releases_on_a_small_stack() {
+        std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(|| {
+                let depth = 1_000;
+                let mut bytes = br#"{"kind":"sequence","elements":["#.repeat(depth);
+                bytes
+                    .extend_from_slice(br#"{"kind":"exact_integer","decimal":"9007199254740993"}"#);
+                bytes.extend_from_slice(&b"]}".repeat(depth));
+                let value = super::super::super::DeepValue::new(
+                    super::super::super::parse_unique_json(&bytes)
+                        .expect("the byte-bounded witness reads past 128 levels"),
+                );
+                let graph = qsl_replay::WireGraph::new([]).expect("an unused, empty key lookup");
+                let witness = super::witness(&value, "/source/assignments/0/value", &graph)
+                    .unwrap_or_else(|_| panic!("the owner admits the complete typed witness"));
+                let mut current = &witness;
+                for _ in 0..depth {
+                    let qsl_replay::WitnessValue::Sequence(elements) = current else {
+                        panic!("every sequence layer is retained");
+                    };
+                    assert_eq!(elements.len(), 1);
+                    current = &elements[0];
+                }
+                let qsl_replay::WitnessValue::ExactInteger(value) = current else {
+                    panic!("the leaf remains an exact integer");
+                };
+                assert_eq!(value.to_string(), "9007199254740993");
+                // Both the corpus JSON guard and the native witness release
+                // their complete deep trees on this same small stack.
+                drop(witness);
+            })
+            .expect("spawn the bounded-stack qualification control")
+            .join()
+            .expect("deep witness conversion and release do not overflow");
+    }
+
+    #[trace("TC-1325", "FR-350-AC-11")]
+    #[test]
+    fn malformed_typed_witnesses_at_depth_keep_the_decode_partition() {
+        let qspec = std::env::var_os("QSPEC_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .ancestors()
+                    .map(|parent| parent.join("quire-specification"))
+                    .find(|path| path.is_dir())
+                    .expect("a QSpec checkout or QSPEC_DIR")
+            });
+        let schema: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(qspec.join("proposals/conformance-corpus-v1/schema.json"))
+                .expect("the published corpus schema"),
+        )
+        .expect("the selected schema is JSON");
+        let schema = jsonschema::JSONSchema::options()
+            .with_draft(jsonschema::Draft::Draft202012)
+            .with_document("urn:quire:conformance-corpus:v1".to_owned(), schema)
+            .compile(
+                &serde_json::json!({"$ref":"urn:quire:conformance-corpus:v1#/$defs/WitnessValue"}),
+            )
+            .expect("the actual published witness schema compiles");
+        let mut bytes = br#"{"kind":"sequence","elements":["#.repeat(192);
+        bytes.extend_from_slice(br#"{"kind":"boolean","value":"not-a-boolean"}"#);
+        bytes.extend_from_slice(&b"]}".repeat(192));
+        let failure = match super::super::document(&bytes, &schema) {
+            Ok(value) => {
+                drop(super::super::super::DeepValue::new(value));
+                panic!("a mistyped witness leaf must refuse after deep JSON admission");
+            }
+            Err(failure) => failure,
+        };
+        assert_eq!(failure.cause, Some("corpus-decode"));
+        assert!(!failure.message.contains("recursion limit"));
+    }
 }
 
 use qsl_foundation::SettingLimits;

@@ -23,7 +23,6 @@ struct ReplayWire {
     #[serde(skip_serializing_if = "Option::is_none")]
     disagreement: Option<CauseWire<Box<RawValue>>>,
     resolved_regions: Vec<crate::OutcomeLocus>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     record: Option<RecordWire<Box<RawValue>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     limit: Option<LimitWire>,
