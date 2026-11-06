@@ -264,12 +264,13 @@ fn compensation_attempt_bound_admits_n_and_refuses_attempt_n_plus_one() {
         )
         .expect("strict reader admits the protocol");
         for (index, name) in [(0, "Refund"), (1, "Partial")] {
-            let compensation = keys
+            let compensation_key = keys
                 .compensations
                 .get(&index)
                 .unwrap_or_else(|| panic!("compensation {name} has an emitted node"));
+            let compensation = qsl_semantics::check::wire_id::structural_id(compensation_key);
             assert_eq!(
-                qsl_package::protocol_view::attempts_maximum(read.admitted(), compensation)
+                qsl_package::protocol_view::attempts_maximum(read.admitted(), &compensation)
                     .expect("protocol view reads attempts maximum"),
                 bound,
                 "{name}: the read bound equals the authored count",
