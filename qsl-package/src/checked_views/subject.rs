@@ -500,6 +500,12 @@ impl<'p> TemporalSubjectView<'p> {
     pub fn belongs_to(&self, package: &CheckedPackageV2) -> bool {
         std::ptr::eq(self.package, package)
     }
+
+    /// The opaque owner capability of the package from which this view was read.
+    /// Cloning the capability preserves admission identity, without copying the package.
+    pub fn admission_binding(&self) -> quire_contract_model::AdmissionBinding {
+        self.package.admission_binding()
+    }
 }
 
 /// Read the temporal clause `clause` of `package`.
