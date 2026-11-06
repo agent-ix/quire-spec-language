@@ -4,20 +4,21 @@
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use ix_trace_rs::trace;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
 const COUNTER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction digits using v(x: Int[0,9], y: Int[0,9]): Integer pure { x * 10 + y }\n";
-const FALSE: &str = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction negative using v(): Boolean pure { false }\n";
+const FALSE: &str = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction negative using v(x: Int[0,9]): Boolean pure { x < 0 }\n";
 
 struct Fixture {
     _temp: TempDir,
     corpus: PathBuf,
     qspec: PathBuf,
     value: Value,
+    expected_output: Option<Vec<u8>>,
+    native_replay: Option<qsl_replay::ReplayRequestWire>,
 }
 
 fn qspec_repository() -> PathBuf {
@@ -35,18 +36,7 @@ fn qspec_repository() -> PathBuf {
 }
 
 fn published(path: &str) -> Vec<u8> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(qspec_repository())
-        .args(["show", &format!("origin/main:{path}")])
-        .output()
-        .expect("read published QSpec input");
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    output.stdout
+    fs::read(qspec_repository().join(path)).expect("read the selected QSpec contract")
 }
 
 impl Fixture {
@@ -74,6 +64,8 @@ impl Fixture {
             corpus,
             qspec,
             value,
+            expected_output: None,
+            native_replay: None,
         }
     }
 
@@ -215,7 +207,7 @@ fn compiler_vectors_admit_the_actual_model_documents() {
     let result = report(&absent);
     assert_eq!(absent.outcome.code, 1);
     assert_eq!(
-        result["capabilities"][0]["vectors"][0]["actual"]["code"], "invalid_model_binding",
+        result["capabilities"][0]["vectors"][0]["actual"]["code"], "missing_import",
         "{result}"
     );
 }
@@ -270,7 +262,8 @@ fn replay_fixture() -> Fixture {
             .unwrap(),
     )
     .unwrap();
-    let node = |key| qsl_foundation::node_wire::node_key_to_json(key).unwrap();
+    let graph = qsl_replay::WireGraph::of_package_bytes(&selected.package).unwrap();
+    let node = |key| graph.wire_value(key).unwrap();
     let limits = qsl_replay::AccountingLimits::default()
         .bounds()
         .into_iter()
@@ -288,8 +281,55 @@ fn replay_fixture() -> Fixture {
     let request = json!({
         "package":serde_json::from_slice::<Value>(&selected.package).unwrap(),"profile_selections":[],"dependencies":[],
         "replay_target":{"members":{"function":"negative"},"arguments":false,"occurrence_key":{"node_id":node(&selected.site.function),"role":selected.site.declaration.origin().role().as_str(),"ordinal":selected.site.declaration.origin().ordinal().to_string()},"over":null},
-        "source":{"kind":"input","assignments":[]},"obligation_identity":{"node_id":node(selected.site.obligation_identity().node()),"model":selected.site.obligation_identity().model().map(|model|model.as_str()).unwrap_or("qualification"),"ordinal":selected.site.obligation_identity().ordinal()},"backend":"fixture", "state_environment":[],"accounting_limits":limits,"stage_limits":{},"supplied_limits":null,"object_environment":null,"declared_domains":[],"byte_provision":[{"authority":"agent-ix","identity":"inputs/unit.native","bytes_path":"inputs/bytes.native"}]
+        "source":{"kind":"input","assignments":[{"parameter":node(&selected.site.parameters[0].1),"value":{"kind":"integer","decimal":"1"}}]},"obligation_identity":{"node_id":node(selected.site.obligation_identity().node()),"model":selected.site.obligation_identity().model().map(|model|model.as_str()),"ordinal":selected.site.obligation_identity().ordinal()},"backend":"fixture", "state_environment":[],"accounting_limits":limits,"stage_limits":{},"supplied_limits":null,"object_environment":null,"declared_domains":[],"byte_provision":[{"authority":"agent-ix","identity":"inputs/unit.native","bytes_path":"inputs/bytes.native"}]
     });
+    let native_request = qsl_replay::ReplayRequestWire {
+        package_name: "qualification".to_owned(),
+        profile_selections: Vec::new(),
+        sources: vec![("agent-ix".to_owned(), "inputs/unit.native".to_owned())],
+        dependencies: Vec::new(),
+        replay_target: qsl_replay::RequestTargetWire::function(
+            qsl_replay::QualifiedName::new(vec![qsl_replay::Identifier::new("negative").unwrap()])
+                .unwrap(),
+            selected.site.declaration.clone(),
+        ),
+        source: qsl_replay::ReplaySource::Input(vec![qsl_replay::CanonicalAssignment {
+            parameter: selected.site.parameters[0].1.clone(),
+            value: qsl_replay::WitnessValue::Integer(1),
+        }]),
+        obligation_identity: selected.site.obligation_identity().clone(),
+        backend: "fixture".to_owned(),
+        state_environment: qsl_replay::StateEnvironment::new(Vec::new()),
+        accounting_limits: qsl_replay::AccountingLimits::default().0,
+        stage_limits: Default::default(),
+        supplied_limits: None,
+        object_environment: None,
+        declared_domains: Vec::new(),
+        byte_provision: vec![(
+            "agent-ix".to_owned(),
+            "inputs/unit.native".to_owned(),
+            FALSE.as_bytes().to_vec(),
+        )],
+        documents: Vec::new(),
+    };
+    let native = qsl_replay::replay(native_request.clone(), qsl_replay::ReplayLimits::default())
+        .expect("the actual public function replay completes");
+    let qsl_replay::ReplayResult::Input(input) = &native else {
+        panic!("an input replay");
+    };
+    assert_eq!(
+        input.value(),
+        Some(qsl_replay::EvaluatedValue::Boolean(false))
+    );
+    let row: Value = serde_json::from_str(&native.to_function_json().unwrap()).unwrap();
+    fixture.value["vectors"][0]["expected"] =
+        json!({"disposition":"value", "value":{"results":[row]}});
+    fixture.expected_output = Some(
+        qsl_replay::OutcomeDocument::from_replay(&Ok(native))
+            .to_bytes()
+            .unwrap(),
+    );
+    fixture.native_replay = Some(native_request);
     fixture.value["vectors"][0]["input"]["files"] = json!([]);
     fixture.file(
         "replay-request",
@@ -306,14 +346,12 @@ fn replay_vectors_decode_and_execute_without_a_source_file_kind() {
     let fixture = replay_fixture();
     let result = fixture.execute(&[]);
     let actual = report(&result);
-    assert_ne!(
-        actual["capabilities"][0]["outcome"], "tool-failure",
-        "{actual}"
+    assert_eq!(result.outcome.code, 0, "{actual}");
+    assert_eq!(
+        result.outputs["V1-TOOL-004-operation"],
+        *fixture.expected_output.as_ref().unwrap()
     );
-    assert!(
-        actual["capabilities"][0]["vectors"][0]["actual"]["results"].is_array(),
-        "real typed replay result: {actual}"
-    );
+    assert_eq!(result.outputs, fixture.execute(&[]).outputs);
 }
 
 #[test]
@@ -354,4 +392,268 @@ fn replay_corruption_is_an_attributed_tool_failure() {
         assert_eq!(actual["cause"], "corpus-decode", "{pointer}: {result}");
         assert_eq!(actual["pointer"], expected, "{pointer}: {result}");
     }
+}
+
+#[test]
+#[trace("TC-875", "FR-350-AC-3", "FR-350-AC-19")]
+fn compiler_limits_preserve_the_stage_setting_and_refusal_partition() {
+    let compiled = qsl_replay::compile_package(
+        qsl_replay::CompileUnit {
+            source: qsl_foundation::SourceIdentity::new("agent-ix", "inputs/unit.native"),
+            package_name: "qualification".to_owned(),
+            path: "inputs/unit.native",
+            bytes: COUNTER.as_bytes(),
+        },
+        [],
+        &qsl_replay::DependencyInput::default(),
+        qsl_replay::StageLimits::default(),
+        qsl_replay::ReplayLimits::default(),
+    )
+    .unwrap();
+    let fixture = Fixture::new(
+        "language",
+        "compile",
+        COUNTER,
+        json!({"disposition":"value","value":serde_json::from_slice::<Value>(compiled.bytes()).unwrap()}),
+    );
+    let limited = report(&fixture.execute(&["--limit", "s3.nodes=0"]));
+    assert_eq!(
+        limited["capabilities"][0]["outcome"], "incomplete",
+        "{limited}"
+    );
+    let actual = &limited["capabilities"][0]["vectors"][0]["actual"];
+    assert_eq!(actual["code"], "stage_limit_exceeded");
+    assert!(
+        serde_json::to_string(actual).unwrap().contains("s3.nodes"),
+        "the typed stage setting survives: {actual}"
+    );
+    assert_eq!(fixture.execute(&[]).outcome.code, 0);
+}
+
+#[test]
+#[trace("TC-875", "FR-350-AC-4", "FR-350-AC-5", "FR-350-AC-8")]
+fn runtime_vector_failures_do_not_change_sibling_budgets_or_source_bytes() {
+    let expected = json!({"disposition":"value","value":{"kind":"completed","value":{"kind":"integer","decimal":"12"}}});
+    let mut fixture = Fixture::new("runtime", "run", COUNTER, expected);
+    fixture.run_call(
+        json!([{"kind":"integer","decimal":"1"},{"kind":"integer","decimal":"2"}]),
+        json!({}),
+    );
+    let required = (1..=100)
+        .find(|bound| {
+            fixture
+                .execute(&["--limit", &format!("accounting.work_units={bound}")])
+                .outcome
+                .code
+                == 0
+        })
+        .expect("the real call has a finite bound");
+    let first = fixture.value["vectors"][0].clone();
+    let mut sibling = first.clone();
+    sibling["id"] = json!("V1-TOOL-004-sibling");
+    let mut absent = first.clone();
+    absent["id"] = json!("V1-TOOL-004-missing");
+    absent["input"]["files"][0]["path"] = json!("inputs/missing.native");
+    fixture.value["vectors"] = json!([first, absent, sibling]);
+    let source = fs::read(fixture.corpus.join("inputs/unit.native")).unwrap();
+    let limits = format!("accounting.work_units={required}");
+    let result = fixture.execute(&["--limit", &limits]);
+    let report_value = report(&result);
+    assert_eq!(report_value["counts"]["tool-failure"], 1, "{report_value}");
+    assert_eq!(
+        result.outputs.len(),
+        2,
+        "both siblings receive the complete budget: {report_value}"
+    );
+    assert_eq!(
+        result.outputs["V1-TOOL-004-operation"],
+        result.outputs["V1-TOOL-004-sibling"]
+    );
+    fixture.value["vectors"].as_array_mut().unwrap().reverse();
+    let reversed = fixture.execute(&["--limit", &limits]);
+    assert_eq!(reversed.outputs, result.outputs);
+    assert_eq!(reversed.outcome.stdout, result.outcome.stdout);
+    assert_eq!(
+        fs::read(fixture.corpus.join("inputs/unit.native")).unwrap(),
+        source
+    );
+}
+
+#[test]
+#[trace("TC-875", "FR-350-AC-1", "FR-350-AC-5")]
+fn another_consumers_open_operation_is_filtered_without_opening_its_input() {
+    let expected = json!({"disposition":"value","value":{"kind":"completed","value":{"kind":"integer","decimal":"12"}}});
+    let mut fixture = Fixture::new("runtime", "run", COUNTER, expected);
+    fixture.run_call(
+        json!([{"kind":"integer","decimal":"1"},{"kind":"integer","decimal":"2"}]),
+        json!({}),
+    );
+    let mut other = fixture.value["vectors"][0].clone();
+    other["id"] = json!("V1-TOOL-004-monitor");
+    other["subject"] = json!({"consumer_type":"monitor", "operation":"observe"});
+    other["applicability"]["consumer_types"] = json!(["monitor"]);
+    other["input"]["files"] = json!([{"kind":"input", "path":"inputs/not-opened.json"}]);
+    fixture.value["vectors"].as_array_mut().unwrap().push(other);
+    fixture.value["coverage"]["primary"][0]["applicability"]["consumer_types"] =
+        json!(["runtime", "monitor"]);
+    let executed = fixture.execute(&[]);
+    assert_eq!(executed.outcome.code, 0, "{}", executed.outcome.stdout);
+    assert_eq!(executed.outputs.len(), 1);
+}
+
+fn model_population_fixture() -> Fixture {
+    let source = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = \"acme/orders\";\nfunction seen using v(p: Population<M::Gadget>[1], ok: Boolean): Boolean pure { ok }\n";
+    let mut model: Value = serde_json::from_slice(include_bytes!(
+        "../../tests/fixtures/spine-model.semantic-ir.json"
+    ))
+    .unwrap();
+    model["constructs"].as_array_mut().unwrap().push(json!({
+        "kind":{"module":"acme/orders", "name":"population"}, "moduleVersion":"1.0.0",
+        "construct":{"identity":"none", "shape":"record", "members":{}, "meaning":"quire.meaning.model.population/v1"}
+    }));
+    model["populations"] = json!([{
+        "identity":"ix://acme/orders/Fleet", "displayName":"Fleet", "kind":{"module":"acme/orders", "name":"population"},
+        "members":["ix://acme/orders/Gadget"], "extent":"closed",
+        "origin":{"generated":{"generatorIdentity":"ix://acme/orders/Fleet", "generatorVersion":"1.0.0", "inputIdentities":["ix://acme/orders/Fleet"]}}
+    }]);
+    let mut fixture = Fixture::new(
+        "runtime",
+        "run",
+        source,
+        json!({"disposition":"value", "value":{"kind":"completed", "value":{"kind":"boolean", "value":true}}}),
+    );
+    fixture.file(
+        "model",
+        "inputs/model.json",
+        &serde_json::to_vec(&model).unwrap(),
+    );
+    fixture.file("population", "inputs/population.json", &serde_json::to_vec(&json!({
+        "format":"quire.state.snapshot/v1", "identity":{"authority":"fixture", "identity":"current"}, "observation":"current",
+        "model":{"identity":"acme/orders", "version":"1.0.0"},
+        "populations":[{"population":"ix://acme/orders/Fleet", "complete":true,
+            "objects":[{"key":"g1", "type":"ix://acme/orders/Gadget", "fields":{"code":{"integer":"7"}}}]}]
+    })).unwrap());
+    fixture.file("call", "inputs/call.json", &serde_json::to_vec(&json!({
+        "function":"seen", "arguments":[{"kind":"population", "name":"ix://acme/orders/Fleet"},{"kind":"boolean", "value":true}], "accounting":{}
+    })).unwrap());
+    fixture
+}
+
+#[test]
+#[trace("TC-875", "FR-350-AC-8", "FR-350-AC-9")]
+fn population_arguments_use_the_actual_admitted_model_binding() {
+    let fixture = model_population_fixture();
+    let result = fixture.execute(&[]);
+    assert_eq!(result.outcome.code, 0, "{}", result.outcome.stdout);
+    let call_path = fixture.corpus.join("inputs/call.json");
+    let mut call: Value = serde_json::from_slice(&fs::read(&call_path).unwrap()).unwrap();
+    call["arguments"][0]["name"] = json!("ix://foreign/Fleet");
+    fs::write(&call_path, serde_json::to_vec(&call).unwrap()).unwrap();
+    let refused = report(&fixture.execute(&[]));
+    assert_eq!(
+        refused["capabilities"][0]["outcome"], "incomplete",
+        "{refused}"
+    );
+    assert_eq!(
+        refused["capabilities"][0]["vectors"][0]["actual"]["cause"],
+        "missing-required-artifact"
+    );
+}
+
+#[test]
+#[trace("TC-1325", "FR-350-AC-3", "FR-350-AC-10", "FR-350-AC-11")]
+fn replay_pre_call_limits_keep_the_full_owner_context_and_zero_evaluation_charges() {
+    let mut fixture = replay_fixture();
+    let path = fixture.corpus.join("inputs/request.json");
+    let mut request: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let supplied =
+        quire_semantic_value::supplied_stop::SuppliedLimits::default().with_admission_work_units(0);
+    request["supplied_limits"] = json!({
+        "admission_work_units":"0", "conversion_work_units":supplied.conversion_work_units().to_string(),
+        "numeric_magnitude_bits":supplied.numeric_magnitude_bits().to_string()
+    });
+    fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+    let mut direct = fixture.native_replay.as_ref().unwrap().clone();
+    direct.supplied_limits = Some(supplied);
+    let native = qsl_replay::replay(direct, qsl_replay::ReplayLimits::default()).unwrap();
+    let stop = native
+        .pre_call_limit()
+        .expect("the native caller budget stops before evaluation");
+    assert_eq!(
+        stop.context.phase,
+        quire_semantic_value::supplied_stop::SuppliedPhase::Admission
+    );
+    let expected: Value = serde_json::from_str(&native.to_function_json().unwrap()).unwrap();
+    let mismatch = report(&fixture.execute(&[]));
+    assert_eq!(
+        mismatch["capabilities"][0]["outcome"], "incomplete",
+        "{mismatch}"
+    );
+    let row = &mismatch["capabilities"][0]["vectors"][0]["actual"]["results"][0];
+    assert_eq!(row["supplied"]["phase"], "admission");
+    assert_eq!(row["supplied"]["consumed"], "0");
+    assert_eq!(row["supplied"]["cause"]["kind"], "limit");
+    assert_eq!(
+        row["supplied"]["cause"]["field"],
+        "supplied.admission_work_units"
+    );
+    assert_eq!(row["supplied"]["cause"]["limit"], "0");
+    assert_eq!(row["charges"]["work_units"], "0");
+    assert!(row["value"].is_null());
+    assert!(
+        row.get("limit").is_none(),
+        "pre-call stops have no evaluated charge point"
+    );
+    fixture.value["vectors"][0]["expected"] =
+        json!({"disposition":"value", "value":{"results":[expected]}});
+    assert_eq!(
+        fixture.execute(&[]).outcome.code,
+        0,
+        "an independently expected native limit matches"
+    );
+}
+
+#[test]
+#[trace("TC-1325", "FR-350-AC-3", "FR-350-AC-10")]
+fn replay_evaluated_limits_retain_the_actual_named_charge_and_bound() {
+    let fixture = replay_fixture();
+    let limited = report(&fixture.execute(&["--limit", "accounting.work_units=1"]));
+    assert_eq!(
+        limited["capabilities"][0]["outcome"], "incomplete",
+        "{limited}"
+    );
+    let row = &limited["capabilities"][0]["vectors"][0]["actual"]["results"][0];
+    assert_eq!(row["limit"]["kind"], "work_units", "{row}");
+    assert_eq!(row["limit"]["bound"], "1");
+    assert_eq!(row["limit"]["setting"], "accounting.work_units");
+    assert!(row["limit"]["charge_point"]
+        .as_str()
+        .is_some_and(|point| !point.is_empty()));
+    assert!(row.get("supplied").is_none());
+    assert!(row["value"].is_null());
+}
+
+#[test]
+#[trace("TC-1325", "FR-350-AC-10", "FR-350-AC-11")]
+fn unavailable_refinement_inputs_cannot_qualify_from_their_own_report() {
+    let mut fixture = replay_fixture();
+    let path = fixture.corpus.join("inputs/request.json");
+    let mut request: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    request["package"]["lock"]["refinement_internals"] =
+        json!([{"refinement":"R", "internal":["unit/hidden"]}]);
+    fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+    let first = report(&fixture.execute(&[]));
+    assert_eq!(
+        first["capabilities"][0]["outcome"], "unsupported",
+        "{first}"
+    );
+    let actual = first["capabilities"][0]["vectors"][0]["actual"].clone();
+    assert_eq!(actual["pointer"], "/package/lock/refinement_internals");
+    fixture.value["vectors"][0]["expected"] = json!({"disposition":"value", "value":actual});
+    let second = fixture.execute(&[]);
+    assert_eq!(report(&second)["capabilities"][0]["outcome"], "unsupported");
+    assert!(
+        second.outputs.is_empty(),
+        "no operation ran and no passed bytes exist"
+    );
 }

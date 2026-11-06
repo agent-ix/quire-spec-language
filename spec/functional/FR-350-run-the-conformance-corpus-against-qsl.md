@@ -136,7 +136,7 @@ reconstructing them from the qualification verdict.
 The runner reads a `replay-request` file with its own decoder in `xtask`,
 because QSL has no byte reader for a replay request (FR-071's wire is an
 in-process shape, and the corpus encoding is corpus-owned, not a product wire).
-The decoder is test-support: it produces a `ReplayRequestWire` and decides
+The decoder produces a `ReplayRequestWire` and decides
 nothing about the request. A document that does not match the closed schema is
 a defect of the corpus, so it is a per-vector `tool-failure`; a request that
 matches the schema and that QSL refuses is a QSL result and is settled as one.
@@ -148,7 +148,8 @@ The published `$defs.ReplayRequest` (the conformance-corpus `schema.json`) has
 14 required properties and is authoritative for the corpus encoding. Its
 `package` is the whole checked-package v2 document (`$ref
 urn:quire:checked-package:v2`), and its `dependencies` is a separate top-level
-array of `DependencyEntry` objects `{identity, sources}` with no other member.
+array of `DependencyEntry` objects with `identity`, `sources` and optional
+`refinement_internals`.
 The adapter reads the request from those members and FR-071 stays unchanged:
 
 - the package's name, `package.name`, is the proved package's name in the
@@ -171,6 +172,23 @@ followed. A dependency entry is `{identity, sources}` (FR-071): it has no
 recompile identifies the dependency package by identity (FR-098). QSpec
 FR-323's `package_id` member of a dependency entry is the QSpec owner's
 prose conflict, reported there.
+An obligation's nullable `model` retains the public owner's exact optional
+identity: `null` becomes `None`, and a string becomes that exact model identity.
+No model identity is synthesized for a function obligation. A nonempty
+`refinement_internals` member in the package lock or a dependency cannot be
+represented by FR-071's current request carrier. That input remains
+`unsupported` and unqualified even if its oracle anticipates that report;
+its refinements are never silently dropped.
+
+The replay-result owner serializes function results without re-evaluation,
+retaining the settled arm, category, optional value, disagreement, witness
+record, source regions, named evaluator charges, evaluated limit and complete
+pre-call stop context. Each supplied stop preserves its original phase,
+parameter, event, locus, consumed prefix and typed native cause. Qualification
+compares that result envelope and separately retains the public operation's
+returned bytes. Native inconclusive results keep their category; only an
+actual limit or cancellation is classified as incomplete.
+
 The decoder refuses, as the consumer of QSpec FR-336-AC-8, a
 `bytes_path` that is absent, not listed as `kind: bytes` in the vector, absolute
 or parent-traversing, and a `stage_limits` key that names no FR-255 setting,

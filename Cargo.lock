@@ -2684,6 +2684,8 @@ dependencies = [
  "qsl-route",
  "qsl-semantics",
  "qsl-string-edge",
+ "quire-exact",
+ "quire-semantic-value",
  "serde",
  "serde_json",
  "serde_json_canonicalizer",

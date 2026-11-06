@@ -10,6 +10,7 @@ use qsl_foundation::{AccountingSetting, SettingLimits};
 use qsl_replay::spine;
 use qsl_replay::{Cancel, OutcomeDocument};
 use qsl_semantics::model::{intake, observation};
+use quire_semantic_value::catalog::Category;
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -49,7 +50,7 @@ impl Schemas {
 #[derive(Serialize)]
 pub(super) struct Failure {
     code: &'static str,
-    cause: &'static str,
+    cause: Option<&'static str>,
     pointer: String,
     message: String,
 }
@@ -58,7 +59,7 @@ impl Failure {
     fn decode(pointer: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             code: "qualification_input",
-            cause: "corpus-decode",
+            cause: Some("corpus-decode"),
             pointer: pointer.into(),
             message: message.into(),
         }
@@ -67,9 +68,23 @@ impl Failure {
     fn io(path: &str, message: impl Into<String>) -> Self {
         Self {
             code: "input-io",
-            cause: "input-io",
+            cause: Some("input-io"),
             pointer: path.to_owned(),
             message: message.into(),
+        }
+    }
+
+    pub(super) fn panic(payload: Box<dyn std::any::Any + Send>) -> Self {
+        let message = payload
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| payload.downcast_ref::<&str>().copied())
+            .unwrap_or("operation panicked with a non-text payload");
+        Self {
+            code: "qualification_fault",
+            cause: Some("panic"),
+            pointer: String::new(),
+            message: message.to_owned(),
         }
     }
 }
@@ -77,6 +92,7 @@ impl Failure {
 pub(super) enum Partition {
     Result,
     Unsupported,
+    AdapterUnavailable,
     Incomplete,
     ToolFailure,
 }
@@ -85,6 +101,20 @@ pub(super) struct Execution {
     pub(super) actual: Value,
     pub(super) bytes: Option<Vec<u8>>,
     pub(super) partition: Partition,
+}
+
+pub(super) fn unavailable_refinement(pointer: String) -> Result<Execution, Failure> {
+    Ok(Execution {
+        actual: serde_json::to_value(Failure {
+            code: qsl_foundation::Code::UnsupportedProjection.as_str(),
+            cause: None,
+            pointer,
+            message: "the public replay request has no refinement-internals input".to_owned(),
+        })
+        .map_err(|error| Failure::decode("", error.to_string()))?,
+        bytes: None,
+        partition: Partition::AdapterUnavailable,
+    })
 }
 
 struct Inputs<'a> {
@@ -207,17 +237,12 @@ fn encode(value: impl Serialize) -> Result<Vec<u8>, Failure> {
 }
 
 fn from_document(document: OutcomeDocument, actual: Option<Value>) -> Result<Execution, Failure> {
+    let partition = partition(document.category());
     let bytes = document
         .to_bytes()
         .map_err(|error| Failure::decode("", error.to_string()))?;
     let encoded: Value =
         serde_json::from_slice(&bytes).map_err(|error| Failure::decode("", error.to_string()))?;
-    let partition = match encoded["category"].as_str() {
-        Some("unsupported") => Partition::Unsupported,
-        Some("incomplete" | "inconclusive" | "cancelled") => Partition::Incomplete,
-        Some("internal-failure" | "internal_failure" | "fault") => Partition::ToolFailure,
-        _ => Partition::Result,
-    };
     let actual = actual.unwrap_or_else(|| {
         match encoded["diagnostics"]
             .as_array()
@@ -232,6 +257,21 @@ fn from_document(document: OutcomeDocument, actual: Option<Value>) -> Result<Exe
         bytes: Some(bytes),
         partition,
     })
+}
+
+fn partition(category: Category) -> Partition {
+    match category {
+        Category::Unsupported => Partition::Unsupported,
+        Category::Incomplete => Partition::Incomplete,
+        Category::InternalFailure => Partition::ToolFailure,
+        Category::Success
+        | Category::Violation
+        | Category::Undefined
+        | Category::Refusal
+        | Category::Pending
+        | Category::Inconclusive
+        | Category::Indeterminate => Partition::Result,
+    }
 }
 
 fn compile_refusal(refusal: &qsl_replay::ReplayRefusal) -> Result<Execution, Failure> {
@@ -254,7 +294,7 @@ fn compile_refusal(refusal: &qsl_replay::ReplayRefusal) -> Result<Execution, Fai
     Ok(Execution {
         actual,
         bytes: None,
-        partition: Partition::Result,
+        partition: partition(refusal.code().category()),
     })
 }
 
@@ -266,7 +306,7 @@ pub(super) fn execute(
     schemas: &Schemas,
 ) -> Result<Execution, Failure> {
     let inputs = Inputs::read(vector, root)?;
-    match (vector.subject.consumer_type, vector.subject.operation) {
+    match (vector.subject.consumer_type, &vector.subject.operation) {
         (ConsumerType::Runtime, Operation::Replay) => {
             replay::execute(&inputs, root, limits, overrides, &schemas.replay)
         }
@@ -325,7 +365,7 @@ fn diagnostic(diagnostic: &qsl_cst::diagnostic::CompleteDiagnostic) -> Result<Ex
     Ok(Execution {
         actual: json!({"code": diagnostic.code.as_str(), "cause": diagnostic.cause.as_str(), "locus": diagnostic.region.as_ref().map(|region| qsl_replay::OutcomeLocus::from(&qsl_foundation::diagnostic::Locus::Region(region.clone()))), "message": diagnostic.message}),
         bytes: None,
-        partition: Partition::Result,
+        partition: partition(diagnostic.code.category()),
     })
 }
 
@@ -417,9 +457,16 @@ fn run(
         Ok(checked) => checked.into_value(),
         Err(failure) => return front_end_failure(failure),
     };
+    let emitted = match spine::package(&checked, spine::PackageLimits::default(), &cancel) {
+        Ok(emitted) => emitted.into_value(),
+        Err(failure) => return front_end_failure(failure),
+    };
+    let wire_graph = qsl_replay::WireGraph::of_package_bytes(emitted.package().bytes())
+        .map_err(|message| Failure::decode("/input/files", message))?;
     let mut objects = qsl_replay::ObjectEnvironment::new(Default::default());
+    let mut snapshot = None;
     let snapshots = inputs
-        .0
+        .files
         .iter()
         .filter(|(file, _)| matches!(file.kind, InputKind::ObjectContext | InputKind::Population))
         .collect::<Vec<_>>();
@@ -448,7 +495,12 @@ fn run(
             .iter()
             .map(|model| model.view.model_selection().clone())
             .collect::<Vec<_>>();
-        objects = match observation::admit_current_snapshot(
+        let required = array(&call_input["arguments"], "/arguments")?
+            .iter()
+            .filter(|argument| argument["kind"] == "population")
+            .map(|argument| text(&argument["name"], "/arguments").map(str::to_owned))
+            .collect::<Result<Vec<_>, _>>()?;
+        objects = match observation::admit_trace_snapshot(
             &models,
             checked.package().graph().scope().types(),
             &packages,
@@ -456,25 +508,123 @@ fn run(
             &provision,
             &selected_document,
             limits.observation,
+            &required,
         ) {
             Ok((objects, _)) => objects,
             Err(failure) => return admission_failure(failure),
         };
+        snapshot = Some(
+            super::parse_unique_json(bytes)
+                .map_err(|message| Failure::decode("/input/files", message))?,
+        );
     }
     let signature = checked.package().graph().callable(function);
     let values = array(&call_input["arguments"], "/arguments")?;
     let mut arguments = Vec::new();
+    let mut population_meter =
+        qsl_semantics::model::population::AdmissionMeter::new(limits.admission);
     if let Some(signature) = signature {
         for (index, value) in values.iter().enumerate() {
-            let (parameter, _) = signature.parameters.get(index).ok_or_else(|| {
+            let (parameter, parameter_type) = signature.parameters.get(index).ok_or_else(|| {
                 Failure::decode(
                     format!("/arguments/{index}"),
                     "argument has no declared parameter",
                 )
             })?;
+            if let quire_exact::ValueType::Population(maximum) = parameter_type {
+                use qsl_semantics::model::population::{
+                    admit_binding, AdmissionOutcome, PopulationDocument, PopulationMember,
+                };
+                let pointer = format!("/arguments/{index}");
+                let name = text(&value["name"], &pointer)?;
+                let provenance = objects
+                    .population_node(name)
+                    .and_then(|node| objects.population_provenance(node))
+                    .ok_or_else(|| Failure::decode(&pointer, "population was not admitted"))?;
+                let key = provenance.declaration();
+                let model = selected
+                    .models()
+                    .iter()
+                    .find(|model| model.view.population(key).is_some())
+                    .ok_or_else(|| Failure::decode(&pointer, "population has no selected model"))?;
+                let row = snapshot
+                    .as_ref()
+                    .and_then(|snapshot| snapshot["populations"].as_array())
+                    .and_then(|rows| rows.iter().find(|row| row["population"] == name))
+                    .ok_or_else(|| Failure::decode(&pointer, "population snapshot is absent"))?;
+                let mut members = Vec::new();
+                for member in array(&row["objects"], &pointer)? {
+                    let identity = text(&member["key"], &pointer)?;
+                    let reference = objects
+                        .population_members(name)
+                        .into_iter()
+                        .flatten()
+                        .find(|reference| reference.object().as_str() == identity)
+                        .ok_or_else(|| {
+                            Failure::decode(&pointer, "population member was not admitted")
+                        })?;
+                    let type_identity = model
+                        .view
+                        .type_identities()
+                        .iter()
+                        .find(|(_, effective)| *effective == reference.object_type())
+                        .map(|(key, _)| key.clone())
+                        .ok_or_else(|| {
+                            Failure::decode(&pointer, "population member has no selected type")
+                        })?;
+                    members.push(PopulationMember {
+                        object: identity.to_owned(),
+                        type_identity,
+                        field_values: Vec::new(),
+                    });
+                }
+                let document = PopulationDocument {
+                    model_identity: model.view.model_selection().identity.clone(),
+                    members,
+                };
+                let binding = match admit_binding(
+                    &model.view,
+                    &document,
+                    key,
+                    qsl_semantics::model::dispatch::GeneralizationClosure::Closed,
+                    *maximum,
+                    &mut population_meter,
+                ) {
+                    AdmissionOutcome::Admitted(binding) => binding,
+                    AdmissionOutcome::Refused(refusal)
+                    | AdmissionOutcome::UnknownClosure(refusal) => {
+                        return Ok(Execution {
+                            actual: json!({"code":refusal.code.as_str(), "cause":refusal.catalog_code().cause(), "fields":refusal.cause.catalog_fields()}),
+                            bytes: None,
+                            partition: if refusal.code
+                                == qsl_foundation::diagnostic::Code::IncompletePopulation
+                            {
+                                Partition::Incomplete
+                            } else {
+                                Partition::Result
+                            },
+                        });
+                    }
+                    AdmissionOutcome::Incomplete(incomplete) => {
+                        return Ok(Execution {
+                            actual: json!({"code":"resource_exhausted", "cause":"insufficient-next-charge", "fields":incomplete.denial().catalog_fields()}),
+                            bytes: None,
+                            partition: Partition::Incomplete,
+                        })
+                    }
+                };
+                objects = std::mem::take(&mut objects)
+                    .with_population(binding)
+                    .map_err(|_| {
+                        Failure::decode(
+                            &pointer,
+                            "population binding conflicts with an earlier argument",
+                        )
+                    })?;
+            }
             arguments.push(spine::CallArgument {
                 parameter: parameter.clone(),
-                value: call_value(value, &objects, &checked, index)?,
+                value: call_value(value, &objects, &wire_graph, index)?,
             });
         }
     }
@@ -527,12 +677,17 @@ fn run(
 }
 
 fn admission_failure(failure: observation::AdmissionFailure) -> Result<Execution, Failure> {
+    let partition = match &failure {
+        observation::AdmissionFailure::Refused(_) => Partition::Result,
+        observation::AdmissionFailure::Incomplete(_) => Partition::Incomplete,
+        observation::AdmissionFailure::Fault(_) => Partition::ToolFailure,
+    };
     match failure {
         observation::AdmissionFailure::Refused(record)
         | observation::AdmissionFailure::Incomplete(record) => Ok(Execution {
             actual: json!({"code": record.catalog.code(), "cause": record.catalog.cause(), "fields": record.fields, "path": record.path.iter().map(|step| match step { observation::PathStep::Field(name) => json!({"kind":"field", "name":name}), observation::PathStep::OptionValue => json!({"kind":"option-value"}), observation::PathStep::Index(index) => json!({"kind":"index", "index":index}) }).collect::<Vec<_>>()}),
             bytes: None,
-            partition: Partition::Result,
+            partition,
         }),
         observation::AdmissionFailure::Fault(fault) => Ok(Execution {
             actual: json!({"code": fault.catalog_code().code(), "cause": fault.catalog_code().cause()}),
@@ -545,7 +700,7 @@ fn admission_failure(failure: observation::AdmissionFailure) -> Result<Execution
 fn call_value(
     value: &Value,
     objects: &qsl_replay::ObjectEnvironment,
-    _checked: &spine::CheckedUnit,
+    graph: &qsl_replay::WireGraph,
     index: usize,
 ) -> Result<qsl_replay::Value, Failure> {
     let pointer = format!("/arguments/{index}");
@@ -569,19 +724,35 @@ fn call_value(
             Ok(qsl_replay::Value::Population(binding.population_id()))
         }
         "reference" => {
-            let graph = qsl_replay::WireGraph::default();
             let universe = graph
                 .key_of_value(&value["universe"])
                 .map_err(|message| Failure::decode(&pointer, message))?;
-            let object_type = &value["type"];
+            let object_type = graph
+                .key_of_value(&value["type"])
+                .map_err(|message| Failure::decode(&pointer, message))?;
             let identity = text(&value["object_identity"], &pointer)?;
-            let reference = objects.references().iter().find(|reference| {
+            for reference in objects.references() {
+                if reference.universe().root_type() != &universe
+                    || reference.object().as_str() != identity
+                {
+                    continue;
+                }
                 let original = reference.object_type().original();
-                reference.universe().root_type() == &universe
-                    && reference.object().as_str() == identity
-                    && object_type == &json!({"package": original.package(), "path": ["model", "object_type", original.node()], "ordinal": 0})
-            }).ok_or_else(|| Failure::decode(&pointer, "reference is absent from the admitted object context"))?;
-            Ok(qsl_replay::Value::Reference(reference.clone()))
+                let admitted_type = qsl_semantics::model::key::model_node_key(
+                    original.package(),
+                    "model",
+                    "object_type",
+                    original.node(),
+                )
+                .map_err(|error| Failure::decode(&pointer, error.to_string()))?;
+                if admitted_type == object_type {
+                    return Ok(qsl_replay::Value::Reference(reference.clone()));
+                }
+            }
+            Err(Failure::decode(
+                &pointer,
+                "reference is absent from the admitted object context",
+            ))
         }
         _ => Err(Failure::decode(pointer, "unknown corpus input value")),
     }

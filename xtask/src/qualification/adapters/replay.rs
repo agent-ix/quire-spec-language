@@ -27,6 +27,22 @@ pub(super) fn execute(
 ) -> Result<Execution, Failure> {
     let (_, bytes) = inputs.one(InputKind::ReplayRequest)?;
     let value = document(bytes, schema)?;
+    if value["package"]["lock"]
+        .get("refinement_internals")
+        .is_some()
+    {
+        return super::unavailable_refinement("/package/lock/refinement_internals".to_owned());
+    }
+    for (index, dependency) in array(&value["dependencies"], "/dependencies")?
+        .iter()
+        .enumerate()
+    {
+        if dependency.get("refinement_internals").is_some() {
+            return super::unavailable_refinement(format!(
+                "/dependencies/{index}/refinement_internals"
+            ));
+        }
+    }
     let mut request = decode(&value, inputs, root)?;
     if let Some((path, error)) = inputs.unreadable_bytes.first() {
         return Err(Failure::io(path, error));
@@ -61,7 +77,20 @@ pub(super) fn execute(
     }
     let result = qsl_replay::replay(request, limits.replay);
     let actual = result.as_ref().ok().map(replay_value).transpose()?;
-    from_document(qsl_replay::OutcomeDocument::from_replay(&result), actual)
+    let mut execution = from_document(qsl_replay::OutcomeDocument::from_replay(&result), actual)?;
+    if result.as_ref().is_ok_and(|result| {
+        result.limit().is_some()
+            || result.pre_call_limit().is_some_and(|stop| {
+                matches!(
+                    stop.cause,
+                    quire_semantic_value::supplied_stop::SuppliedCause::Limit(_)
+                        | quire_semantic_value::supplied_stop::SuppliedCause::Cancelled(_)
+                )
+            })
+    }) {
+        execution.partition = super::Partition::Incomplete;
+    }
+    Ok(execution)
 }
 
 fn node(
@@ -283,7 +312,7 @@ fn decode(value: &Value, inputs: &Inputs<'_>, root: &Path) -> Result<ReplayReque
             ));
         }
         let bytes = inputs
-            .0
+            .files
             .iter()
             .find(|(file, _)| file.kind == InputKind::Bytes && file.path == path)
             .map(|(_, bytes)| bytes.clone())
@@ -364,10 +393,9 @@ fn decode(value: &Value, inputs: &Inputs<'_>, root: &Path) -> Result<ReplayReque
                 "/obligation_identity/node_id",
                 &graph,
             )?,
-            Some(qsl_replay::ModelIdentity::new(text(
-                &obligation["model"],
-                "/obligation_identity/model",
-            )?)),
+            optional(&obligation["model"], |value| {
+                text(value, "/obligation_identity/model").map(qsl_replay::ModelIdentity::new)
+            })?,
             ordinal,
         ),
         backend: text(&value["backend"], "/backend")?.to_owned(),
@@ -388,7 +416,7 @@ fn decode(value: &Value, inputs: &Inputs<'_>, root: &Path) -> Result<ReplayReque
             .collect::<Result<_, _>>()?,
         byte_provision,
         documents: inputs
-            .0
+            .files
             .iter()
             .filter(|(file, _)| {
                 matches!(
@@ -579,81 +607,15 @@ fn witness_json(
 
 #[derive(Serialize)]
 struct ReplayEnvelope {
-    results: Vec<ReplayRow>,
+    results: Vec<Value>,
 }
-#[derive(Serialize)]
-struct ReplayRow {
-    arm: &'static str,
-    settlement: &'static str,
-    category: Value,
-    value: Option<bool>,
-    charges: BTreeMap<&'static str, String>,
-    disagreement: Option<Value>,
-}
-
 fn replay_value(result: &qsl_replay::ReplayResult) -> Result<Value, Failure> {
-    let (arm, settlement, value) = match result {
-        qsl_replay::ReplayResult::Input(result) => (
-            "input",
-            match result.settlement() {
-                qsl_replay::InputSettlement::ReproducedWithoutWitness => {
-                    "reproduced-without-witness"
-                }
-                qsl_replay::InputSettlement::Inconclusive => "inconclusive",
-            },
-            result.value(),
-        ),
-        qsl_replay::ReplayResult::Witness(result) => (
-            "witness",
-            match result.settlement() {
-                qsl_replay::WitnessSettlement::ReproducedWithEvaluatedWitness => {
-                    "reproduced-with-evaluated-witness"
-                }
-                qsl_replay::WitnessSettlement::Inconclusive => "inconclusive",
-            },
-            result.value(),
-        ),
-        qsl_replay::ReplayResult::ObservedTemporal(_) | qsl_replay::ReplayResult::ModelGraph(_) => {
-            return Err(Failure::decode(
-                "/source",
-                "result is not a corpus replay source arm",
-            ))
-        }
-    };
-    let document = qsl_replay::OutcomeDocument::from_replay(&Ok(result.clone()));
-    let encoded: Value = serde_json::from_slice(
-        &document
-            .to_bytes()
-            .map_err(|error| Failure::decode("", error.to_string()))?,
-    )
-    .map_err(|error| Failure::decode("", error.to_string()))?;
-    let mut charges = BTreeMap::new();
-    for (setting, bound) in qsl_replay::AccountingLimits(result.charges()).bounds() {
-        charges.insert(setting.name(), bound.to_string());
-    }
-    let disagreement = result
-        .disagreement()
-        .map(|cause| {
-            cause
-                .to_json(None)
-                .map_err(|error| Failure::decode("", error.to_string()))
-                .and_then(|json| {
-                    serde_json::from_str(&json)
-                        .map_err(|error| Failure::decode("", error.to_string()))
-                })
-        })
-        .transpose()?;
-    serde_json::to_value(ReplayEnvelope {
-        results: vec![ReplayRow {
-            arm,
-            settlement,
-            category: encoded["category"].clone(),
-            value: value.map(|qsl_replay::EvaluatedValue::Boolean(value)| value),
-            charges,
-            disagreement,
-        }],
-    })
-    .map_err(|error| Failure::decode("", error.to_string()))
+    let row = result
+        .to_function_json()
+        .map_err(|error| Failure::decode("", error.to_string()))?;
+    let row = serde_json::from_str(&row).map_err(|error| Failure::decode("", error.to_string()))?;
+    serde_json::to_value(ReplayEnvelope { results: vec![row] })
+        .map_err(|error| Failure::decode("", error.to_string()))
 }
 
 use qsl_foundation::SettingLimits;

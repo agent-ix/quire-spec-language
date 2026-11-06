@@ -67,15 +67,49 @@ enum ConsumerType {
     Language,
     Runtime,
     Tool,
+    Monitor,
+    #[serde(rename = "analyzer/backend")]
+    AnalyzerBackend,
+    #[serde(rename = "consuming-system")]
+    ConsumingSystem,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum Operation {
     Compile,
     Run,
     Replay,
     Format,
+    Other(String),
+}
+
+impl<'de> Deserialize<'de> for Operation {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        Ok(match String::deserialize(deserializer)?.as_str() {
+            "compile" => Self::Compile,
+            "run" => Self::Run,
+            "replay" => Self::Replay,
+            "format" => Self::Format,
+            operation => Self::Other(operation.to_owned()),
+        })
+    }
+}
+
+impl Serialize for Operation {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(match self {
+            Self::Compile => "compile",
+            Self::Run => "run",
+            Self::Replay => "replay",
+            Self::Format => "format",
+            Self::Other(operation) => operation,
+        })
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -670,7 +704,7 @@ fn qsl_consumer(value: ConsumerType) -> bool {
 }
 fn is_qsl_subject(subject: &Subject) -> bool {
     matches!(
-        (subject.consumer_type, subject.operation),
+        (subject.consumer_type, &subject.operation),
         (ConsumerType::Language, Operation::Compile)
             | (ConsumerType::Runtime, Operation::Run | Operation::Replay)
             | (ConsumerType::Tool, Operation::Format)
@@ -684,7 +718,11 @@ fn execute_vector(
     overrides: &[String],
     schemas: &adapters::Schemas,
 ) -> (VectorReport, Option<Vec<u8>>) {
-    match adapters::execute(vector, root, limits, overrides, schemas) {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        adapters::execute(vector, root, limits, overrides, schemas)
+    }))
+    .unwrap_or_else(|payload| Err(adapters::Failure::panic(payload)));
+    match result {
         Ok(result) => {
             let outcome = match result.partition {
                 adapters::Partition::Result => settle_vector(&vector.expected, &result.actual),
@@ -702,6 +740,7 @@ fn execute_vector(
                         VectorOutcome::Incomplete
                     }
                 }
+                adapters::Partition::AdapterUnavailable => VectorOutcome::Unsupported,
                 adapters::Partition::ToolFailure => VectorOutcome::ToolFailure,
             };
             (
