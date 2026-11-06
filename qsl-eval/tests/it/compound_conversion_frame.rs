@@ -250,6 +250,10 @@ fn checked_conversions_run_the_compound_pivot_in_the_retained_frame() {
     let Outcome::Completed(Value::Quantity(joule)) = second_result else {
         panic!("the second conversion returns J: {second_result:?}");
     };
+    let ValueType::Quantity(joule_unit) = second_conversion.value_type() else {
+        panic!("the checked second conversion targets a quantity");
+    };
+    assert_eq!(joule.unit(), joule_unit);
     assert_eq!(joule.magnitude(), &Rational::from_integer(1_i64.into()));
     assert_eq!(charge_points(&second_meter), expected_charges);
 
