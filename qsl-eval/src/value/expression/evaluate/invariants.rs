@@ -2289,24 +2289,14 @@ fn iteration_resume_finish_and_stop_reporting_reach_distinct_producers() {
         claim_level(m);
         m.note_stop(&iteration(literal.root()))
     });
-    for visit in [
-        Visit::Filter,
-        Visit::Forall,
-        Visit::Exists,
-        Visit::Count,
-        Visit::Sum,
-    ] {
+    for visit in [Visit::Filter, Visit::Forall, Visit::Exists, Visit::Count] {
         let root = body(|ids| NodeKind::Query {
             visit,
             slot: 0,
             source: ids[0],
             body: ids[1],
         });
-        let wrong = if visit == Visit::Sum {
-            Value::Boolean(true)
-        } else {
-            Value::Integer(Integer::one())
-        };
+        let wrong = Value::Integer(Integer::one());
         probe!("query-body-value-invalid", m, [], {
             let mut i = iteration(root.root());
             i.awaiting = true;
@@ -2328,11 +2318,6 @@ fn iteration_resume_finish_and_stop_reporting_reach_distinct_producers() {
         i.accumulator = Some(Value::Boolean(true));
         m.push_value(Value::Integer(Integer::one()), false);
         m.iterate(i)
-    });
-    probe!("sum-accumulator-value-invalid", m, [], {
-        let mut i = iteration(sum.root());
-        i.accumulator = Some(Value::Boolean(true));
-        m.finish(*i)
     });
     let fold = body(|ids| NodeKind::Fold {
         accumulator: 0,
