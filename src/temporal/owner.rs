@@ -292,10 +292,6 @@ impl Report {
     pub fn ledger(&self) -> Option<&EvidenceLedger> {
         self.ledger.as_ref()
     }
-    /// The package identity, version, node, occurrence and source-map binding.
-    pub fn binding(&self) -> &[Vec<u8>] {
-        &self.binding
-    }
 
     /// Write the deterministic, ordered and self-delimiting owner representation.
     pub fn to_owner_bytes(&self) -> Vec<u8> {
