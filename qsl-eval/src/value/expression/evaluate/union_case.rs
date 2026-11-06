@@ -323,6 +323,104 @@ fn small_sum(nodes: &mut Nodes) -> NodeId {
     )
 }
 
+/// `sum<N>(x in q: x)` over the literals `values` of `element`, `N` being
+/// `total`.
+fn family_sum(values: Vec<Value>, element: ValueType, total: ValueType) -> CheckedBody {
+    let mut nodes = Nodes::default();
+    let elements = values
+        .into_iter()
+        .map(|value| nodes.literal(value, element.clone()))
+        .collect();
+    let sequence = CollectionType::new(CollectionKind::Sequence, element.clone(), None);
+    let collection = nodes.push(
+        NodeKind::Collection {
+            collection_type: sequence.clone(),
+            elements,
+        },
+        ValueType::collection(sequence),
+    );
+    let summand = nodes.local(3, element);
+    nodes.push(
+        NodeKind::Query {
+            visit: Visit::Sum,
+            slot: 3,
+            source: collection,
+            body: summand,
+        },
+        total,
+    );
+    nodes.body()
+}
+
+fn rational(numerator: i64, denominator: i64) -> Value {
+    Value::Rational(
+        quire_exact::Rational::new(Integer::from(numerator), Integer::from(denominator))
+            .expect("a nonzero denominator"),
+    )
+}
+
+fn rational_domain(maximum: i64) -> ValueType {
+    ValueType::Rational(
+        quire_exact::RationalDomain::new(
+            IntegerInterval::new(Integer::from(0_i64), Integer::from(maximum)).expect("a range"),
+            IntegerInterval::new(Integer::from(1_i64), Integer::from(2_i64)).expect("a range"),
+        )
+        .expect("a positive denominator"),
+    )
+}
+
+/// FR-517-AC-20, FR-145: a rational total or decimal total that leaves `N`'s
+/// domain, and a non-integer seed outside it, are the located undefined
+/// outcome, not the family's membership refusal. The checker refuses a
+/// program that can reach them (FR-100), so only the evaluator is driven.
+#[trace("FR-517-AC-20", "TC-1312")]
+#[test]
+fn a_rational_or_decimal_total_or_seed_outside_the_domain_is_undefined() {
+    let world = world();
+    let undefined = |body: CheckedBody| {
+        let (result, _) = run(&world, &body, 4, SCALAR_LIMITS_UNLIMITED);
+        matches!(
+            outcome(result),
+            Outcome::Undefined(Undefined::SumOutOfDomain)
+        )
+    };
+    // 3 + 3 = 6 is outside [0, 4] but inside [0, 8].
+    let threes = || vec![rational(3, 1), rational(3, 1)];
+    assert!(undefined(family_sum(
+        threes(),
+        rational_domain(4),
+        rational_domain(4)
+    )));
+    let (result, _) = run(
+        &world,
+        &family_sum(threes(), rational_domain(4), rational_domain(8)),
+        4,
+        SCALAR_LIMITS_UNLIMITED,
+    );
+    assert!(matches!(outcome(result), Outcome::Completed(_)));
+    // The seed 5 is outside [0, 4] before any addition.
+    assert!(undefined(family_sum(
+        vec![rational(5, 1), rational(1, 1)],
+        rational_domain(8),
+        rational_domain(4),
+    )));
+    // Decimal: 6.00 + 6.00 = 12.00 is outside [0.00, 10.00].
+    let decimal = quire_exact::DecimalType::new(
+        Integer::from(0_i64),
+        Integer::from(1000_i64),
+        2,
+        2,
+        quire_exact::RoundingMode::NearestEven,
+    )
+    .expect("a decimal type");
+    let six = || Value::Decimal(quire_exact::Decimal::new(Integer::from(600_i64), 2));
+    assert!(undefined(family_sum(
+        vec![six(), six()],
+        ValueType::Decimal(decimal.clone()),
+        ValueType::Decimal(decimal),
+    )));
+}
+
 /// FR-322-AC-2: a scrutinee that is undefined is the case's outcome, selecting
 /// no arm, and a construction's first stopped argument is its outcome with no
 /// later argument evaluated and no value built.

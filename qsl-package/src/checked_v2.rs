@@ -1158,10 +1158,17 @@ impl AdmittedPackageRead<'_> {
             self.slot_requests(),
             limits.work,
             identities,
+            &mut budget,
         )
         .map_err(|refusal| match refusal {
             PackageRefusal::Unsupported(view) => ViewFailure::Unsupported(Box::new(view)),
             PackageRefusal::Fault(fault) => ViewFailure::Fault(fault),
+            PackageRefusal::Exhausted(native) => {
+                match limits.native_join_limits().refusal(native, &budget) {
+                    Some(denial) => ViewFailure::Exhausted(Box::new(denial)),
+                    None => fault(),
+                }
+            }
         })?;
         Ok(crate::evaluation_view::AdmittedEvaluationView::reader(
             self, slots,

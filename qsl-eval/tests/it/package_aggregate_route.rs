@@ -59,12 +59,14 @@ fn with_routes<R>(
     let selection = graph
         .temporal_clauses()
         .iter()
-        .map(|clause| TemporalClockSelection {
-            source: graph.source().clone(),
-            declaration_span: clause.clause().span(),
-            clock: ClockConfiguration::EventPosition {
-                sequence_authority: "order-events".into(),
-            },
+        .map(|clause| {
+            TemporalClockSelection::new(
+                graph.source().clone(),
+                clause.clause().span(),
+                ClockConfiguration::EventPosition {
+                    sequence_authority: "order-events".into(),
+                },
+            )
         })
         .collect::<Vec<_>>();
     let package = CheckedPackage::link(graph);
@@ -98,7 +100,11 @@ fn with_routes<R>(
     )
     .expect("package facts read");
     let bare = qsl_package::BarePackage::new(read.admitted());
-    let from_package = EvidencePackage::from_package(&bare).expect("bare package facts read");
+    let from_package = EvidencePackage::from_package(
+        &bare,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("bare package facts read");
     run(
         EvidenceRoutes {
             from_emission,

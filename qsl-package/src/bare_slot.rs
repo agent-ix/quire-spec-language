@@ -447,14 +447,20 @@ impl<'p> BarePackage<'p> {
         // A protocol node outside the member table (a queue, a reference
         // carrier, a sequence, a role without `until`) has no expression.
         let op = control_operation(node).map_err(|_| absent(descriptor))?;
-        let walker = BareWalker::new(package, identities, supply.equality, package_work_limit())
-            .map_err(SlotSelectionFailure::Fault)?;
+        let walker = BareWalker::new(
+            package,
+            identities,
+            supply.equality,
+            package_work_limit(),
+            self.exact_type_projections(),
+        )
+        .map_err(SlotSelectionFailure::Fault)?;
         let reader = TypeReader {
             admitted: package,
             identities,
             nodes: &nodes,
             graph: &graph,
-            work_limit: package_work_limit(),
+            projections: self.exact_type_projections(),
         };
         let resolve =
             |descriptor: &ProtocolSlotDescriptor| -> Result<Resolved<'_>, BareSelectionFailure> {
@@ -637,6 +643,7 @@ impl<'p> BarePackage<'p> {
             identities,
             supply.equality,
             package_work_limit(),
+            self.exact_type_projections(),
         )
         .map_err(SlotSelectionFailure::Fault)?;
         let binders: Vec<NodeKey> = slot
@@ -670,8 +677,8 @@ fn ordered_candidates<'a>(
     spanned.into_iter().map(|(_, name)| name).collect()
 }
 
-/// The projection work bound: IR's own bounded reader work. Exact projection
-/// takes a scalar work limit until IR-1359 moves it onto the native budget.
+/// The owner reader work bound for equality decisions and slot walks.
+/// Exact types were already projected under the supply entry's native budget.
 pub(crate) fn package_work_limit() -> u64 {
     quire_contract_model::CheckedPackageReadLimits::bounded().work
 }

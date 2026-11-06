@@ -266,7 +266,11 @@ fn ir_projects_a_union_type_through_the_emitted_rows_and_refuses_without_them() 
         )
         .expect("IR joins the emitted union row");
     let projected = admitted
-        .project_exact_type(&row.structural_node, &identities, 64)
+        .project_exact_type(
+            &row.structural_node,
+            &identities,
+            &mut crate::V2ReadLimits::fixture().native_join_budget(),
+        )
         .expect("a union with its rows projects");
     assert_eq!(
         projected.value_type(),
@@ -275,7 +279,11 @@ fn ir_projects_a_union_type_through_the_emitted_rows_and_refuses_without_them() 
 
     // A bare union key is no witness.
     let refusal = admitted
-        .project_exact_type(&row.structural_node, &SelectedExactIdentities::empty(), 64)
+        .project_exact_type(
+            &row.structural_node,
+            &SelectedExactIdentities::empty(),
+            &mut crate::V2ReadLimits::fixture().native_join_budget(),
+        )
         .expect_err("a union cannot project without its rows");
     assert_eq!(
         refusal.code,

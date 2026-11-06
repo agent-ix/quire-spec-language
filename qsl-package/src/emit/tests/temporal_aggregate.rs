@@ -240,10 +240,12 @@ fn a_duration_window_outside_the_clock_unit_node_refuses() {
     let selections: Vec<_> = graph
         .temporal_clauses()
         .iter()
-        .map(|temporal| crate::emit::TemporalClockSelection {
-            source: graph.source().clone(),
-            declaration_span: temporal.clause().span(),
-            clock: clock_in("ms"),
+        .map(|temporal| {
+            crate::emit::TemporalClockSelection::new(
+                graph.source().clone(),
+                temporal.clause().span(),
+                clock_in("ms"),
+            )
         })
         .collect();
     let refusal = crate::emit::emit_checked_with_temporal_selections(
@@ -347,11 +349,11 @@ fn emit_with_clock(
             timestamp_unit: timestamp_unit.to_owned(),
         }])
         .check(CheckingLimits::default())?;
-    let selections = [crate::emit::TemporalClockSelection {
-        source: graph.source().clone(),
-        declaration_span: span,
-        clock: clock_in(timestamp_unit),
-    }];
+    let selections = [crate::emit::TemporalClockSelection::new(
+        graph.source().clone(),
+        span,
+        clock_in(timestamp_unit),
+    )];
     Ok(crate::emit::emit_checked_with_temporal_selections(
         &CheckedPackage::link(graph),
         &selections,

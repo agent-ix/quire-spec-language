@@ -79,8 +79,7 @@ fn opening<'t>(identity: Option<&str>, arguments: &'t [CheckedTerm]) -> Opening<
                 | "quire.op.collection.filter"
                 | "quire.op.collection.forall"
                 | "quire.op.collection.exists"
-                | "quire.op.collection.count"
-                | "quire.op.collection.sum.integer",
+                | "quire.op.collection.count",
             ),
             [source, CheckedTerm::Binding { name, value }],
         ) => Opening::Query {
@@ -88,9 +87,32 @@ fn opening<'t>(identity: Option<&str>, arguments: &'t [CheckedTerm]) -> Opening<
             name: name.as_ref(),
             body: value,
         },
+        (Some(identity), [source, CheckedTerm::Binding { name, value }])
+            if is_sum_identity(identity) =>
+        {
+            Opening::Query {
+                source,
+                name: name.as_ref(),
+                body: value,
+            }
+        }
         (Some("quire.op.control.case"), [_, ..]) => Opening::Case(arguments),
         _ => Opening::None,
     }
+}
+
+/// Whether `identity` is one of the six `quire.op.collection.sum.*`
+/// identities, one per numeric family a `sum<N>` totals (FR-145).
+pub(crate) fn is_sum_identity(identity: &str) -> bool {
+    matches!(
+        identity,
+        "quire.op.collection.sum.integer"
+            | "quire.op.collection.sum.rational"
+            | "quire.op.collection.sum.decimal"
+            | "quire.op.collection.sum.float32"
+            | "quire.op.collection.sum.float64"
+            | "quire.op.collection.sum.quantity"
+    )
 }
 
 /// What a walk reports: each parameter node reached outside every scope that

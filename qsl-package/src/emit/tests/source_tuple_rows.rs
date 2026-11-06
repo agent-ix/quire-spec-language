@@ -130,7 +130,11 @@ fn ir_joins_the_emitted_tuple_rows_and_refuses_a_misdescribed_position_list() {
         )
         .expect("IR joins the emitted tuple rows");
     let projected = admitted
-        .project_exact_type(&row.structural_node, &joined, 10_000)
+        .project_exact_type(
+            &row.structural_node,
+            &joined,
+            &mut crate::V2ReadLimits::fixture().native_join_budget(),
+        )
         .expect("the tuple projects");
     assert_eq!(
         projected.value_type(),
@@ -142,7 +146,7 @@ fn ir_joins_the_emitted_tuple_rows_and_refuses_a_misdescribed_position_list() {
         .project_exact_type(
             &row.structural_node,
             &SelectedExactIdentities::empty(),
-            10_000,
+            &mut crate::V2ReadLimits::fixture().native_join_budget(),
         )
         .expect_err("a tuple cannot project without its row");
     assert_eq!(
@@ -323,7 +327,11 @@ fn a_source_enum_carries_its_checked_shape_and_ir_joins_it() {
             )
             .expect("IR joins the emitted enum rows");
         let projected = admitted
-            .project_exact_type(&row.declaration.structural_node, &joined, 10_000)
+            .project_exact_type(
+                &row.declaration.structural_node,
+                &joined,
+                &mut crate::V2ReadLimits::fixture().native_join_budget(),
+            )
             .expect("the enum projects");
         assert_eq!(projected.value_type(), &ValueType::Enum(shape.clone()));
         assert_eq!(projected.source_enum_view(), Some(row));
@@ -367,7 +375,7 @@ fn ir_refuses_an_enum_row_with_a_reordered_or_missing_variant_or_flipped_flag() 
         .project_exact_type(
             &level.declaration.structural_node,
             &SelectedExactIdentities::empty(),
-            10_000,
+            &mut crate::V2ReadLimits::fixture().native_join_budget(),
         )
         .expect_err("no row, no projection");
     assert_eq!(

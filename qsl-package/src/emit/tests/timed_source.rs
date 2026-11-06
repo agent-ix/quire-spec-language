@@ -185,7 +185,6 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
             &identities,
             emission.selected_tuple_declaration_rows(),
             emission.selected_source_unit_rows(),
-            10_000,
             &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
         )
         .expect("the source-owned unit row joins the admitted type view");
@@ -205,7 +204,6 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
                 &identities,
                 emission.selected_tuple_declaration_rows(),
                 &[],
-                10_000,
                 &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000)
             )
             .expect_err("a missing source-unit row refuses the whole projection")

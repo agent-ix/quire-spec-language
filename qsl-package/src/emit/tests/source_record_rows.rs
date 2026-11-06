@@ -303,7 +303,11 @@ fn required_identity_handoff_preserves_original_record_keys_and_native_views() {
         .expect("the native record witness");
     for row in read.source_records() {
         let projection = package
-            .project_exact_type(&row.structural_node, &selected, 1_000_000)
+            .project_exact_type(
+                &row.structural_node,
+                &selected,
+                &mut crate::V2ReadLimits::fixture().native_join_budget(),
+            )
             .expect("native source record projects");
         assert_eq!(projection.source_record_view(), Some(row));
         assert_eq!(
@@ -432,7 +436,11 @@ fn required_source_record_rows_refuse_missing_fields_and_stale_native_bindings()
         .unwrap();
     let requested = &rows.source_records()[0].structural_node;
     let refusal = package
-        .project_exact_type(requested, &incomplete, 1_000_000)
+        .project_exact_type(
+            requested,
+            &incomplete,
+            &mut crate::V2ReadLimits::fixture().native_join_budget(),
+        )
         .expect_err("the actual missing record request refuses natively");
     assert_eq!(
         refusal.code,
