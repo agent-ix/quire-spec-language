@@ -821,12 +821,14 @@ fn a_compensation_uses_its_finite_temporal_profile() {
                 template.temporal_profile
                     == Some(qsl_semantics::check::TemporalProfile::EventPositionFalseExtension)
             })
-            .map(|template| TemporalClockSelection {
-                source: checked.graph().source().clone(),
-                declaration_span: template.span,
-                clock: ClockConfiguration::EventPosition {
-                    sequence_authority: "compensation-events".into(),
-                },
+            .map(|template| {
+                TemporalClockSelection::new(
+                    checked.graph().source().clone(),
+                    template.span,
+                    ClockConfiguration::EventPosition {
+                        sequence_authority: "compensation-events".into(),
+                    },
+                )
             })
     }));
     let emission = qsl_package::emit_checked_with_temporal_selections(&checked, &selections)

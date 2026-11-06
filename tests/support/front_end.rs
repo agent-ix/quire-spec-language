@@ -232,11 +232,11 @@ fn default_clock_selections(checked: &CheckedUnit) -> Vec<qsl_package::TemporalC
                 // Every other profile is not clock-configured and takes no selection.
                 _ => return None,
             };
-            Some(qsl_package::TemporalClockSelection {
-                source: graph.source().clone(),
-                declaration_span: clause.span(),
+            Some(qsl_package::TemporalClockSelection::new(
+                graph.source().clone(),
+                clause.span(),
                 clock,
-            })
+            ))
         })
         .collect()
 }

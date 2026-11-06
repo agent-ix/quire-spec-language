@@ -581,12 +581,14 @@ fn build(profile: &str, aliases: &[&str], declarations: &str) -> Built {
             temporal.clause().profile()
                 == qsl_semantics::check::TemporalProfile::EventPositionFalseExtension
         })
-        .map(|temporal| crate::emit::TemporalClockSelection {
-            source: graph.source().clone(),
-            declaration_span: temporal.clause().span(),
-            clock: quire_contract_model::ClockConfiguration::EventPosition {
-                sequence_authority: "test-hyper-events".into(),
-            },
+        .map(|temporal| {
+            crate::emit::TemporalClockSelection::new(
+                graph.source().clone(),
+                temporal.clause().span(),
+                quire_contract_model::ClockConfiguration::EventPosition {
+                    sequence_authority: "test-hyper-events".into(),
+                },
+            )
         })
         .collect::<Vec<_>>();
     selections.extend(
@@ -597,12 +599,14 @@ fn build(profile: &str, aliases: &[&str], declarations: &str) -> Built {
                 hyper.profile()
                     == qsl_semantics::check::TemporalProfile::EventPositionFalseExtension
             })
-            .map(|hyper| crate::emit::TemporalClockSelection {
-                source: graph.source().clone(),
-                declaration_span: hyper.span(),
-                clock: quire_contract_model::ClockConfiguration::EventPosition {
-                    sequence_authority: "test-hyper-events".into(),
-                },
+            .map(|hyper| {
+                crate::emit::TemporalClockSelection::new(
+                    graph.source().clone(),
+                    hyper.span(),
+                    quire_contract_model::ClockConfiguration::EventPosition {
+                        sequence_authority: "test-hyper-events".into(),
+                    },
+                )
             }),
     );
     let clauses = graph.hyper_clauses().to_vec();
