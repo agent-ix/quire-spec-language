@@ -53,6 +53,7 @@ mod envelope_adoption;
 mod golden;
 mod hybrid;
 mod hyper_clause;
+mod inventory_ceilings;
 mod large_cycle;
 mod mapping_support;
 mod navigation;
