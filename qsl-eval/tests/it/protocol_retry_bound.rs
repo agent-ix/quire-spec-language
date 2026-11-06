@@ -47,26 +47,63 @@ struct Fixture {
 
 fn fixture(bound: u64) -> Fixture {
     let mut domain = tc1070::document();
-    let tally = domain["types"]
+    let total = domain["types"]
         .as_array_mut()
         .expect("domain types")
         .iter_mut()
-        .find(|ty| ty["displayName"] == "Tally")
-        .expect("bounded attempt tally");
-    let maximum = bound.saturating_sub(1);
-    let tally_maximum = bound.max(1);
-    for constraint in tally["constraints"]
+        .find(|ty| ty["displayName"] == "Total")
+        .expect("bounded Node total");
+    let max = total["constraints"]
         .as_array_mut()
-        .expect("Tally constraints")
-    {
-        if constraint["keyword"] == "max" {
-            constraint["operands"]["value"] = tally_maximum.to_string().into();
-        }
-    }
+        .expect("Total constraints")
+        .iter_mut()
+        .find(|constraint| constraint["keyword"] == "max")
+        .expect("Total maximum");
+    max["operands"]["value"] = "5".into();
+    let node = domain["types"]
+        .as_array_mut()
+        .expect("domain types")
+        .iter_mut()
+        .find(|ty| ty["displayName"] == "Node")
+        .expect("Node operation owner");
+    node["operations"][0]["returns"]["typeRef"] = "ix://quire/native/Boolean".into();
+    node["operations"][0]["frame"]["modifies"] =
+        serde_json::json!([tc1070::model::id("Node/total")]);
     let domain = serde_json::to_vec(&domain).expect("domain fixture serializes");
     let packages = package_input([domain.as_slice()]).expect("domain package admitted");
     let mut source = tc1070::SOURCE.to_owned();
     source = source
+        .replace("  capture order: M::Total = view.total;\n", "")
+        .replace("order >= 0", "true")
+        .replace("trigger: M::Flag", "trigger: Boolean")
+        .replace("partialTrigger: M::Flag", "partialTrigger: Boolean")
+        .replace("trigger.ready", "trigger")
+        .replace("partialTrigger.ready", "partialTrigger")
+        .replace("as (forward: M::Receipt)", "as (forward: Boolean)")
+        .replace("as (partialForward: M::Receipt)", "as (partialForward: Boolean)")
+        .replace("as (applied: M::Receipt)", "as (applied: Boolean)")
+        .replace("as (attempted: M::Flag)", "as (attempted: Boolean)")
+        .replace("attempted.ready", "attempted")
+        .replace(
+            "as (attempted: Boolean) { attempted }",
+            "as (attempted: Boolean) { true }",
+        )
+        .replace("as (committed: M::Flag)", "as (committed: Boolean)")
+        .replace("as (closed: M::Receipt)", "as (closed: Boolean)")
+        .replace("committed.ready", "committed")
+        .replace("capture target: M::Total = forward.total;\n", "")
+        .replace("capture partialTarget: M::Total = partialForward.total;\n", "")
+        .replace("target >= 0", "true")
+        .replace("partialTarget >= 0", "true")
+        .replace("target >= 0 and not activated", "not activated")
+        .replace("partialTarget >= 0 and not partialActivated", "not partialActivated")
+        .replace("recover (recovered: M::Receipt)", "recover (recovered: Boolean)")
+        .replace("recover (partialRecovered: M::Receipt)", "recover (partialRecovered: Boolean)")
+        .replace("recovered.total = target and not activated", "true")
+        .replace(
+            "partialRecovered.total = partialTarget and not partialActivated",
+            "true",
+        )
         .replace(
             "on each (opened: M::Tick) when (opened.ready) {",
             "on origin {",
@@ -79,6 +116,8 @@ fn fixture(bound: u64) -> Fixture {
             "not partialTrigger.ready and partialTarget >= 0",
             "partialTrigger.ready and partialTarget >= 0",
         )
+        .replace("not trigger and true", "trigger and true")
+        .replace("not partialTrigger and true", "partialTrigger and true")
         .replace(
             "capture activated: Boolean = trigger.ready;",
             "capture activated: Boolean = false;",
@@ -91,12 +130,15 @@ fn fixture(bound: u64) -> Fixture {
             "attempts 3 of M::Attempt",
             &format!("attempts {bound} of M::Attempt"),
         )
-        .replace("earlier.tally < 3", &format!("earlier.tally < {maximum}"))
+        .replace("    commit Main::Committed;\n", "    commit never;\n")
         .replace(
-            "partialEarlier.tally < 3",
-            &format!("partialEarlier.tally < {maximum}"),
+            "earlier.tally < 3 and later.tally = earlier.tally + 1\n      and true and not activated",
+            "true",
         )
-        .replace("commit Main::Committed;", "commit never;");
+        .replace(
+            "partialEarlier.tally < 3 and partialLater.tally = partialEarlier.tally + 1\n      and true and not partialActivated",
+            "true",
+        );
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("qsl-1757", "unit.native"),
         "unit.native",
@@ -133,7 +175,7 @@ fn fixture(bound: u64) -> Fixture {
         "format": "quire.state.snapshot/v1",
         "identity": {"authority": "test", "identity": format!("qsl-1757-{bound}")},
         "observation": "current",
-        "model": {"identity": tc1070::model::BUSINESS},
+        "model": {"identity": tc1070::model::PACKAGE},
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": [{
             "population": tc1070::model::id("nodes"),
@@ -199,7 +241,7 @@ fn system<'a>(fixture: &'a Fixture) -> ProtocolSystem<'a, Sc> {
         },
         roles: vec![RoleBinding {
             role: "Service".to_owned(),
-            model: tc1070::model::BUSINESS.to_owned(),
+            model: tc1070::model::PACKAGE.to_owned(),
         }],
         memory: ResolvedMemory::resolve(protocol, &[]).expect("sc memory selected"),
     };
@@ -278,7 +320,8 @@ fn compensation_attempt_bound_admits_n_and_refuses_attempt_n_plus_one() {
             );
         }
 
-        let reachable = system(&fixture)
+        let system = system(&fixture);
+        let reachable = system
             .reachable(NonZeroUsize::new(1).expect("one worker"))
             .expect("finite compensation exploration completes");
         for name in ["Refunds::Refund", "Refunds::Partial"] {
