@@ -90,7 +90,7 @@ the finite-backend negotiation of an integer division over unbounded operands
     (FR-100, FR-096-AC-14), and S6a evaluation SHALL return QSpec FR-147's
     outcome for the operands and the consumer domain with QSpec FR-147's
     charges. The consumer domain is the checked result type of the evaluated
-    function. The evaluation entries (`call`, `evaluate`, `evaluate_closed`)
+    function. The evaluation entries (`call`, `evaluate`, `evaluate_closed_with_frame`)
     take no result-domain parameter.
   - A kernel `DivisionOutOfDomain` and `ModuloOutOfDomain` render as FR-096
     states: `division_out_of_domain` with `quotient-outside-domain` or

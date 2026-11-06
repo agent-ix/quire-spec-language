@@ -66,7 +66,7 @@ fn convert_to(name: &str) -> Expression {
 /// TC-187 U25's full pivot sequence uses two checker-produced conversion
 /// nodes in the original parameter frame. Each leg spends only its own U25
 /// conversion charges.
-#[trace("QSpec-FR-142-AC-10", "QSpec-TC-187")]
+#[trace("FR-497-AC-9", "TC-1287", "QSpec-FR-142-AC-10", "QSpec-TC-187")]
 #[test]
 fn checked_conversions_run_the_compound_pivot_in_the_retained_frame() {
     let package = package_with(SOURCE).expect("the compound fixture checks");

@@ -1131,6 +1131,38 @@ struct ScopeIndex {
     units: BTreeMap<String, quire_exact::UnitId>,
 }
 
+/// Compound units a checked stage formed, each identified once when the
+/// stage was checked. Evaluation and later clause checking seed their unit
+/// scope from it without re-identifying or copying a table (FR-142).
+#[derive(Clone, Debug, Default)]
+pub struct FormedUnits(Vec<IdentifiedUnit>);
+
+impl FormedUnits {
+    /// Identify every unit of `table` once.
+    ///
+    /// # Errors
+    ///
+    /// As [`IdentifiedUnit::new`].
+    pub fn identify(
+        table: &UnitTable,
+    ) -> Result<Self, quire_semantic_value::semantic_node::IdentityRefusal> {
+        table
+            .ids()
+            .filter_map(|id| table.get(id))
+            .map(|unit| IdentifiedUnit::new(unit.clone()))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Self)
+    }
+
+    /// Record every unit in `scope`, which keeps the ones its package does
+    /// not already hold.
+    pub fn seed(&self, scope: &mut UnitScope<'_>) {
+        for unit in &self.0 {
+            scope.form(unit.clone());
+        }
+    }
+}
+
 /// The units `graph` declares by their declared name, read from `declared`,
 /// the table built over the same graph.
 fn unit_ids_by_name(
@@ -2739,27 +2771,16 @@ impl<'a> Typer<'a> {
         &self.slot_names
     }
 
+    /// Seed this typing pass with the checked graph's retained compound
+    /// units so an externally supplied frame can name one as a value type.
+    pub(crate) fn include_formed_units(&mut self, formed: &FormedUnits) {
+        formed.seed(&mut self.units);
+    }
+
     /// Every compound unit this pass formed (FR-094: kept until lowering
     /// keys each one's type node).
     pub(crate) fn into_formed_units(self) -> quire_semantic_value::quantity::UnitTable {
         self.units.into_formed()
-    }
-
-    /// Seed this typing pass with the checked graph's retained compound
-    /// units so an externally supplied frame can name one as a value type.
-    pub(crate) fn include_formed_units(
-        &mut self,
-        units: &UnitTable,
-        location: &Location,
-    ) -> Result<(), CheckRefusal> {
-        for unit in units.clone() {
-            let identified = IdentifiedUnit::new(unit).map_err(|refusal| CheckRefusal {
-                location: location.clone(),
-                cause: CheckCause::Identity(refusal),
-            })?;
-            self.units.form(identified);
-        }
-        Ok(())
     }
 
     /// The package-level declarations this typing pass resolves names

@@ -44,7 +44,7 @@ a compatibility façade.
 Checked-term evaluation receives only the checked package and expression
 identity selected by its owning entry point (`CheckedPackageEvaluation::call`,
 `evaluate` or `evaluate_protocol_slot`, or the applicable checked-family
-function such as `evaluate_closed`, `evaluate_state_predicate` or
+function such as `evaluate_closed_with_frame`, `evaluate_state_predicate` or
 `evaluate_refinement_row`). Family evaluation receives its
 typed checked family form and family-specific immutable inputs. Protocol-node
 evaluation receives the `ProtocolSlot`, `ProtocolSupply` and caller-supplied
@@ -83,7 +83,7 @@ The retiring public Rust surface comprises `evaluate`/`evaluate_v2`;
 
 | Retired state capability | Replacement owner and exercised entry point |
 | --- | --- |
-| `evaluate` / `evaluate_v2`, `EvaluationRequest` | The checked source pipeline selects a `CheckedPackage` and checked expression; `CheckedPackageEvaluation::{call, evaluate}` plus the applicable checked-family function such as `evaluate_closed`, `evaluate_state_predicate` or `evaluate_refinement_row` (FR-046/FR-047; TC-136) |
+| `evaluate` / `evaluate_v2`, `EvaluationRequest` | The checked source pipeline selects a `CheckedPackage` and checked expression; `CheckedPackageEvaluation::{call, evaluate}` plus the applicable checked-family function such as `evaluate_closed_with_frame`, `evaluate_state_predicate` or `evaluate_refinement_row` (FR-046/FR-047; TC-136) |
 | `StateView`, `BinderInput`, `PopulationInput`, `ObjectInput`, `FieldInput`, `FieldValue`, `InputSlot`, `ContextualSlot`, `ContextualValue`, `ContextualValueKind`, `Value`, `ValueKind`, `ValuePathSegment` | `ObjectEnvironment` and the checked clause environment from FR-107; family inputs are owned by FR-046/FR-047 and observation selections by FR-106 (TC-136) |
 | `ObjectKey`, `ObservationKey`, `ObservationIdentity` | The full object and observation identities admitted by FR-106 and retained by FR-107; duplicate and cross-observation cases are exercised in TC-136 (FR-106 AC-1/AC-2 and FR-107 AC-1/AC-2) |
 | `StaticAuthority` document identity | The checked source package selected by the compile path; FR-036 and its package identity checks replace a caller-supplied artifact (TC-136; FR-036-AC-1/AC-3) |

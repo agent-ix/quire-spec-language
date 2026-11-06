@@ -14,7 +14,7 @@ Verify that the `Quantity<u, C>` source form checks and lowers to the
 `carried_quantity` node, that conversion into it lowers with the node's
 rounding, and that the kernel gives the outcomes of QSpec FR-142-AC-28 to
 AC-31, including the `inexact_conversion` refusal and the exact `Rational[..]`
-carrier. Scope: FR-497-AC-1 to FR-497-AC-8.
+carrier. Scope: FR-497-AC-1 to FR-497-AC-9.
 
 ## Test Procedure
 
@@ -35,8 +35,13 @@ carrier. Scope: FR-497-AC-1 to FR-497-AC-8.
    `expected` and charge point.
 5. Build the `RefusalRecord` of an `InexactConversion` evaluation and render it
    through the FR-100 kernel-record table.
+6. Check the compound-pivot conversions of FR-497-AC-9 with
+   `check_quantity_conversion`, evaluate them with
+   `evaluate_closed_with_frame` and the checked expression's `FormedUnits`,
+   and compare unit, magnitude and charge point; check the refusals for an
+   unheld target and a target of another dimension.
 
-Tag the test `#[trace("FR-497-AC-1", "FR-497-AC-2", "FR-497-AC-3", "FR-497-AC-4", "FR-497-AC-5", "FR-497-AC-6", "FR-497-AC-7", "FR-497-AC-8", "TC-1287")]`.
+Tag the test `#[trace("FR-497-AC-1", "FR-497-AC-2", "FR-497-AC-3", "FR-497-AC-4", "FR-497-AC-5", "FR-497-AC-6", "FR-497-AC-7", "FR-497-AC-8", "FR-497-AC-9", "TC-1287")]`.
 Vectors are referenced by QSpec row ID, never copied.
 
 ## Expected Results
@@ -57,3 +62,6 @@ Vectors are referenced by QSpec row ID, never copied.
   there; `1/4 m` converts back to `25 cm`.
 - Step 5: code `inexact_conversion`, cause `inexact-conversion`, `expected` the
   carrier type, exit 20.
+- Step 6: each compound-pivot conversion gives its checked unit, magnitude and
+  charge point through the retained frame; an unheld or other-dimension target
+  refuses `ill_typed`.

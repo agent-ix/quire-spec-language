@@ -155,28 +155,8 @@ fn unsupported_projection(unsupported: &qsl_package::UnsupportedView) -> CallFai
     )))
 }
 
-/// FR-358: evaluate `node`, a closed subexpression of a checked function
-/// body (it reads no local), to its outcome under `meter`. `slots` is the
-/// function's evaluation slot count, so a `let` inside the subexpression
-/// finds its slot. The object environment is empty: a closed expression
-/// reads no object.
-pub fn evaluate_closed(
-    package: &CheckedPackage,
-    node: CheckedNode<'_>,
-    slots: usize,
-    meter: &mut Meter,
-) -> Result<Evaluation, InternalFault> {
-    evaluate_closed_with_frame(
-        package,
-        node,
-        slots,
-        Vec::new(),
-        &quire_semantic_value::quantity::UnitTable::default(),
-        meter,
-    )
-}
-
-/// FR-142 compound conversion evaluation: run a checked subtree in its
+/// FR-358, FR-142 closed-subexpression evaluation: run a checked subtree (a
+/// closed subexpression of a function body reads no local and no object) in its
 /// original frame, with the checked stage's retained formed-unit table.
 /// `arguments` are the genuine values for the function's parameter slots;
 /// the checked frame's `slots` count preserves local-slot addressing.
@@ -187,7 +167,7 @@ pub fn evaluate_closed_with_frame(
     node: CheckedNode<'_>,
     slots: usize,
     arguments: Vec<Value>,
-    formed_units: &quire_semantic_value::quantity::UnitTable,
+    formed_units: &qsl_semantics::check::FormedUnits,
     meter: &mut Meter,
 ) -> Result<Evaluation, InternalFault> {
     let objects = ObjectEnvironment::default();
@@ -198,7 +178,7 @@ pub fn evaluate_closed_with_frame(
         meter,
         package.graph().dispatch_tables(),
     )
-    .with_formed_units(formed_units)?
+    .with_formed_units(formed_units)
     .run(node, slots, arguments)
 }
 

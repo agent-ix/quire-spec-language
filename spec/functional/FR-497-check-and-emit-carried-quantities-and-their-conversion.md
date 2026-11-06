@@ -129,6 +129,23 @@ states only how `check`, lowering and the kernel realize them, and invents none.
   cause `inexact-conversion`, field `expected`: the target carrier type
   (`Decimal[lo, hi; smin, smax]` or `Int[lo, hi]`), and exits 20 like the
   other value refusals.
+- **Programmatic target and retained frame.** A host that already holds a
+  checked graph and a unit identity checks a conversion without source
+  `convert<..>` text through
+  `CheckedGraph::check_quantity_conversion(parameters, expression,
+  target_unit, clause_kind, mode, limits)`. It checks the source expression
+  and every frame parameter normally and appends the conversion to the
+  quantity type of `target_unit`, which MAY be a compound unit formed while
+  the graph was checked; a unit the graph does not hold, or one of another
+  dimension, refuses as `convert<..>` does. The checked graph and each checked
+  expression or function retain the compound units their checking formed
+  (`FormedUnits`), and
+  `qsl_eval::value::evaluate_closed_with_frame(package, node, slots,
+  arguments, formed_units, meter)` evaluates a checked subtree in that frame
+  with those units readable. It is the single public closed-subexpression
+  evaluation entry, so a conversion through a compound pivot (QSpec
+  FR-142-AC-10) gives the outcome and charges the same checked conversion
+  gives from source.
 - **No ambient conversion.** There is no implicit conversion between a carried
   quantity and its carrier, a bare `Quantity<u>`, or a numeric type; every such
   use refuses as "Type identity" states.
@@ -145,6 +162,7 @@ states only how `check`, lowering and the kernel realize them, and invents none.
 | FR-497-AC-6 | A non-`exact` carrier mode rounds under FR-140 with a `DecimalLoss` record before the bounds check and a conversion never rounds under a mode its target type does not name; the `nearest-even` outcomes of U07, U16 and U29 are unchanged (U44; `CQ-E17` to `CQ-E19`). A record or collection holding a carried quantity compares it by exact value in its identical type, and `collection.sum.quantity` is defined over `Quantity<u>` only, so a carried operand is converted back first (QSpec FR-142-AC-30). | Test (TC-1287) |
 | FR-497-AC-7 | The `InexactConversion` kernel refusal renders through FR-096's `RefusalRecord` and FR-100's kernel-record table as code `inexact_conversion`, cause `inexact-conversion`, field `expected` equal to the carrier type text, exit 20, and `Refusal::code()` and `Refusal::cause()` agree. | Test (TC-1287) |
 | FR-497-AC-8 | Under `CheckMode::Kernel`, with `unit cm : Length = rational(1, 100);` and `unit in : Length = rational(127, 5000);`, `convert<Quantity<m, Rational[-3, 7; 1, 12]>>` of `25 cm` gives `1/4 m` and of `-3 m` gives `-3 m`; `1 in`, `8 m` and `-4 m` each refuse `rational_out_of_domain`/`outside-domain` at the convert node after `unit.target-domain` and before `unit.result-retain`, with `expected` the carrier and no value, and none refuses `inexact_conversion`; `8 m` under a work limit that denies the `unit.target-domain` charge is `incomplete` there; `convert<Quantity<cm>>` of the `1/4 m` value gives `25 cm` (QSpec FR-142-AC-31; `CQ-E21` to `CQ-E26`). | Test (TC-1287) |
+| FR-497-AC-9 | With a compound unit (`J = kg * m * m / s / s` over a checked function whose body forms it), `CheckedGraph::check_quantity_conversion` checks the conversion of an `N_m` quantity into that compound unit and of the compound quantity into `J` (the compound pivot of QSpec FR-142-AC-10, TC-187 U25), and `evaluate_closed_with_frame` with the checked expression's `FormedUnits` evaluates each with the converted unit, magnitude and `unit.target-domain` charge point the checked conversion states; a compound target the graph does not hold, and a target of another dimension, each refuse `ill_typed` during checking. | Test (TC-1287) |
 
 ## Dependencies
 
