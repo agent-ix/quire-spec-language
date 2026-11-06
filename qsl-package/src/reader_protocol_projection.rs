@@ -1237,9 +1237,10 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
     ) -> Result<(NodeKind<usize, CheckedLiteral>, Vec<usize>), BuildError> {
         // A sealed member can only be interpreted against the original
         // union declaration carried by the selected type projection.
-        let ValueType::Composite(union_key) = self.value_type(&node.semantic_type)? else {
+        let ValueType::Composite(union_key) = &self.value_type(&node.semantic_type)? else {
             return Err(fault("reader-union-value-has-declaration-key").into());
         };
+        let union_key = union_key.clone();
         let union_node = self
             .index
             .node(&node.semantic_type)
