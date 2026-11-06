@@ -609,6 +609,25 @@ struct Fold {
     catalogued: bool,
 }
 
+/// Whether a summand of type `summand` is of the numeric family of `total`,
+/// the type `N` of `sum<N>` (FR-145): any integer for an integer total, any
+/// rational for a rational total, and the very decimal, float or unit of a
+/// decimal, float or quantity total. A bounded quantity of the unit is a
+/// quantity of it: its bounds restrict the members, not the sum.
+fn summand_of_family(total: &ValueType, summand: &ValueType) -> bool {
+    match (total, summand) {
+        (ValueType::Integer | ValueType::Int(_), _) => is_integer(summand),
+        (ValueType::Rational(_), ValueType::Rational(_)) => true,
+        (ValueType::Decimal(total), ValueType::Decimal(summand)) => total == summand,
+        (ValueType::Float(total), ValueType::Float(summand)) => total == summand,
+        (ValueType::Quantity(total), ValueType::Quantity(summand)) => total == summand,
+        (ValueType::Quantity(total), ValueType::BoundedQuantity(summand)) => {
+            total == summand.unit()
+        }
+        _ => false,
+    }
+}
+
 /// A counting or summing query.
 #[derive(Clone, Copy)]
 enum Tally {
@@ -2250,8 +2269,28 @@ impl<'a> Typer<'a> {
         frames: &mut Vec<Frame<'e, 'r>>,
     ) -> Result<Step<'e, 'r>, CheckRefusal> {
         let value_type = self.type_named(result_type, &location)?;
-        if !is_integer(&value_type) {
+        let admitted = match tally {
+            Tally::Count => is_integer(&value_type),
+            // FR-145: a `sum` totals any numeric family a
+            // `quire.op.collection.sum` identity exists for.
+            Tally::Sum => matches!(
+                value_type,
+                ValueType::Integer
+                    | ValueType::Int(_)
+                    | ValueType::Rational(_)
+                    | ValueType::Decimal(_)
+                    | ValueType::Float(_)
+                    | ValueType::Quantity(_)
+            ),
+        };
+        if !admitted {
             return Err(mismatch(&location));
+        }
+        if matches!(tally, Tally::Sum)
+            && matches!(value_type, ValueType::Float(_))
+            && self.scope.ieee_profile.is_none()
+        {
+            return Err(refuse(&location, CheckCause::IeeeProfileNotAdmitted));
         }
         let source_location = location.child(0);
         let domain = self.named_domain(source, &source_location)?;
@@ -3113,18 +3152,16 @@ impl<'a> Typer<'a> {
                 let body = typed;
                 let visit = match frame.tally {
                     Tally::Count => Visit::Count,
-                    Tally::Sum => {
-                        if !is_integer(&body.value_type) {
-                            return Err(mismatch(&body.location));
-                        }
-                        Visit::Sum
-                    }
+                    Tally::Sum => Visit::Sum,
                 };
                 let TallyFrame {
                     value_type,
                     location,
                     ..
                 } = *frame;
+                if matches!(visit, Visit::Sum) && !summand_of_family(&value_type, &body.value_type) {
+                    return Err(mismatch(&body.location));
+                }
                 Ok(Step::Typed(node(
                     NodeKind::Query {
                         visit,

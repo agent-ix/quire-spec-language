@@ -2255,34 +2255,98 @@ fn write_unit(body: &str) -> Result<(), Error> {
     write(&unit_request(dir.path(), body), &dir.path().join("handoff"))
 }
 
-/// FR-517-AC-16 (QSL-1558): the refusals that keep the unit `U` off R's
-/// `Amount` and `Total`. A unit-typed operation parameter compared with a
-/// unit literal is written and admitted; `sum` still refuses a quantity summand.
-#[trace("FR-517-AC-16", "TC-1312")]
+/// The checked-package wire `body` writes over [`unit_request`], read back by
+/// the writer's own IR admission.
+fn unit_wire(body: &str) -> Value {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("handoff");
+    write(&unit_request(dir.path(), body), &out).expect("the source is written and admitted");
+    serde_json::from_slice(&tree(&out)["checked-package.json"]).unwrap()
+}
+
+/// The `quire.op.collection.sum.*` application nodes of `wire`: each one's
+/// identity, rounding mode and the semantic type its `type_argument` names.
+fn sum_applications(wire: &Value) -> Vec<(String, Value, Value)> {
+    wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|node| {
+            let operation = &node["body"]["operation"];
+            let identity = operation["identity"].as_str()?;
+            identity.starts_with("quire.op.collection.sum.").then(|| {
+                (
+                    identity.to_owned(),
+                    operation["mode"].clone(),
+                    operation["member"]["declaration"].clone(),
+                )
+            })
+        })
+        .collect()
+}
+
+/// FR-517-AC-16 (QSL-1558): a unit-typed operation parameter compared with a
+/// unit literal is written and admitted, and so is `sum<Cash>` over
+/// `type Cash = Quantity<U>;` (FR-517-AC-20 delivered, so the quantity-sum
+/// refusal this criterion once pinned is gone).
+#[trace("FR-517-AC-16", "FR-517-AC-20", "TC-1312")]
 #[test]
-fn the_unit_on_amount_and_total_is_refused_where_the_spine_stops() {
+fn the_unit_on_amount_and_total_is_written_with_its_comparison_and_its_sum() {
     write_unit("pre BeforeApply using v on M::Workflow::apply { amount >= 1 U }")
         .expect("a unit-typed parameter against a unit literal is written");
 
-    let error = write_unit(
+    let wire = unit_wire(
         "type Cash = Quantity<U>;\n\
          invariant Bounded using v on M::Workflow at current {\n    \
          sum<Cash>(receipt in self.receipts: receipt) <= self.total\n}",
-    )
-    .unwrap_err();
-    assert_eq!(error.code(), ErrorCode::Compile);
-    let detail = format!("{error:?}");
-    assert!(
-        detail.contains("StateClause { clause: \"Bounded\"")
-            && detail.contains("IllTyped(TypeMismatch)"),
-        "{detail}"
+    );
+    let sums = sum_applications(&wire);
+    assert_eq!(sums.len(), 1, "{sums:?}");
+    let (identity, mode, type_argument) = &sums[0];
+    assert_eq!(identity, "quire.op.collection.sum.quantity");
+    assert_eq!(mode, &serde_json::json!({"kind": "rounding", "value": "exact"}));
+    let unit = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["declaration"]["qualified_name"] == serde_json::json!(["U"]))
+        .expect("the sum's unit");
+    assert_eq!(type_argument["path"], unit["declaration"]["qualified_name"]);
+}
+
+/// FR-517-AC-20: a decimal and a rational sum lower to their family's
+/// identity, the decimal carrying the rounding mode of `N`, and the real IR
+/// reader admits both.
+#[trace("FR-517-AC-20", "TC-1312")]
+#[test]
+fn decimal_and_rational_sums_lower_to_their_family_identity() {
+    let wire = unit_wire(
+        "type D = Decimal[0, 1000; 2, 2; toward-zero];\n\
+         type Q = Rational[0, 10; 1, 12];\n\
+         function decimals using v(s: Sequence<D>[0, 4]): D pure { sum<D>(x in s: x) }\n\
+         function rationals using v(s: Sequence<Q>[0, 4]): Q pure { sum<Q>(x in s: x) }",
+    );
+    let mut sums: Vec<_> = sum_applications(&wire)
+        .into_iter()
+        .map(|(identity, mode, _)| (identity, mode))
+        .collect();
+    sums.sort_by(|left, right| left.0.cmp(&right.0));
+    assert_eq!(
+        sums,
+        [
+            (
+                "quire.op.collection.sum.decimal".to_owned(),
+                serde_json::json!({"kind": "rounding", "value": "toward-zero"}),
+            ),
+            ("quire.op.collection.sum.rational".to_owned(), Value::Null),
+        ]
     );
 }
 
 /// Model aliases keep their admitted unit type when used as source names.
-/// The capture is emitted with U's exact node; the quantity sum reaches its
-/// existing type-checking boundary after the alias name has resolved.
-#[trace("TC-1312", "FR-517-AC-19")]
+/// The capture is emitted with U's exact node, and a sum over the alias
+/// resolves to the quantity family.
+#[trace("TC-1312", "FR-517-AC-19", "FR-517-AC-20")]
 #[test]
 fn model_alias_names_resolve_for_captures_and_quantity_sums() {
     let dir = tempfile::tempdir().unwrap();
@@ -2341,19 +2405,13 @@ fn model_alias_names_resolve_for_captures_and_quantity_sums() {
         .expect("the authentic targetFull capture binder");
     assert_eq!(capture["semantic_type"], unit["node_id"]);
 
-    let error = write_unit(
+    let wire = unit_wire(
         "invariant Bounded using v on M::Workflow at current {\n    \
          sum<M::Total>(receipt in self.receipts: receipt) <= self.total\n}",
-    )
-    .unwrap_err();
-    assert_eq!(error.code(), ErrorCode::Compile);
-    let detail = format!("{error:?}");
-    assert!(
-        detail.contains("StateClause { clause: \"Bounded\"")
-            && detail.contains("IllTyped(TypeMismatch)"),
-        "name resolution reaches the pending quantity-sum boundary: {detail}"
     );
-    assert!(!detail.contains("UnresolvedTypeName"), "{detail}");
+    let sums = sum_applications(&wire);
+    assert_eq!(sums.len(), 1, "the alias name resolves and the sum checks: {sums:?}");
+    assert_eq!(sums[0].0, "quire.op.collection.sum.quantity");
 }
 
 /// Model type references root U without an expression reading a quantity.

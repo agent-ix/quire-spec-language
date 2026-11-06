@@ -1546,7 +1546,12 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 | "quire.op.collection.forall"
                 | "quire.op.collection.exists"
                 | "quire.op.collection.count"
-                | "quire.op.collection.sum.integer",
+                | "quire.op.collection.sum.integer"
+                | "quire.op.collection.sum.rational"
+                | "quire.op.collection.sum.decimal"
+                | "quire.op.collection.sum.float32"
+                | "quire.op.collection.sum.float64"
+                | "quire.op.collection.sum.quantity",
             ) => {
                 let [source_term, CheckedTerm::Binding { name, value }] = arguments else {
                     return Err(fault("reader-collection-query-has-source-and-binder").into());
@@ -1564,7 +1569,14 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                     Some("quire.op.collection.forall") => Visit::Forall,
                     Some("quire.op.collection.exists") => Visit::Exists,
                     Some("quire.op.collection.count") => Visit::Count,
-                    Some("quire.op.collection.sum.integer") => Visit::Sum,
+                    Some(
+                        "quire.op.collection.sum.integer"
+                        | "quire.op.collection.sum.rational"
+                        | "quire.op.collection.sum.decimal"
+                        | "quire.op.collection.sum.float32"
+                        | "quire.op.collection.sum.float64"
+                        | "quire.op.collection.sum.quantity",
+                    ) => Visit::Sum,
                     _ => return Err(fault("reader-collection-query-identity-is-catalogued").into()),
                 };
                 Ok((

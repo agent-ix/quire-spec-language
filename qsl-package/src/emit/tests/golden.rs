@@ -313,10 +313,11 @@ pub(super) fn cases() -> Vec<Case> {
     ]
 }
 
-/// Fixture identities no row of FR-093's application table lowers in a
+/// Fixture identities no case here writes: no row of FR-093's table lowers in a
 /// function body: IEEE `numeric_equal`, integer
-/// division and remainder, a decimal `sum` (the `Sum` row writes
-/// `sum.integer` only), `reaches`, and the four rows AC-3 excludes because
+/// division and remainder, a decimal `sum` (its fixture is a set-sourced
+/// binder body no case here writes; FR-517-AC-20's tests cover its lowering),
+/// `reaches`, and the four rows AC-3 excludes because
 /// the `Value` family builds no such node in a function body.
 const NOT_LOWERED: [&str; 8] = [
     "quire.op.ieee.numeric_equal",
