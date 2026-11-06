@@ -1876,7 +1876,7 @@ mod tests {
             0,
         )
         .unwrap();
-        for ordinal in 1..ORIGINAL_KEY_NESTING_LIMIT {
+        for ordinal in 1..32 {
             key = NodeKey::new(
                 "original",
                 vec![quire_exact::PathSegment::Node(key)],
