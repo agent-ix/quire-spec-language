@@ -11,11 +11,11 @@ use quire_contract_model::{
 
 use super::protocol_graph::{flow_over, model};
 use super::reachability::lower_with;
-use super::temporal_clause::{EVENT, INFINITE, admit, compile, unit};
+use super::temporal_clause::{admit, compile, unit, EVENT, INFINITE};
 use super::*;
 use crate::checked_views::{
-    Activation, CheckedPredicateView, ClauseOccurrence, PredicateKind, PredicateSelection,
-    ViewRefusal, checked_predicate, temporal_subject,
+    checked_predicate, temporal_subject, Activation, CheckedPredicateView, ClauseOccurrence,
+    PredicateKind, PredicateSelection, ViewRefusal,
 };
 
 const FIXED: &str = "quire.temporal.fixed-sample.false-extension/v1";
@@ -201,13 +201,11 @@ fn each_clause_of_the_package_reads_its_node_facts() {
         assert_eq!(*view.over(), referenced(argument(wire, &id, 0)));
         assert_eq!(*view.over(), parameter(wire, "c"));
         assert_eq!(view.profile().definition.identity.as_ref(), profile);
-        assert!(
-            package
-                .lock()
-                .profile_selections
-                .iter()
-                .any(|row| row == view.profile())
-        );
+        assert!(package
+            .lock()
+            .profile_selections
+            .iter()
+            .any(|row| row == view.profile()));
         let row = package
             .temporal_bindings()
             .expect("a configured clause carries a binding")
@@ -589,12 +587,10 @@ fn a_boolean_term_below_a_holds_operand_is_a_clause_leaf() {
             .filter(|entry| entry.node_id == formula_root)
             .flat_map(|entry| entry.regions.iter())
             .collect();
-        assert!(
-            package
-                .source_map()
-                .iter()
-                .any(|entry| entry.node_id == part && view.source_span() == entry)
-        );
+        assert!(package
+            .source_map()
+            .iter()
+            .any(|entry| entry.node_id == part && view.source_span() == entry));
         assert!(!view.source_span().regions.is_empty());
         for region in &view.source_span().regions {
             assert!(
@@ -926,7 +922,12 @@ fn temporal_clause_names_are_selected_by_declaration_and_occurrence() {
 
     let gamma = admit(&compile(&unit_of(
         &[("e", EVENT)],
-        &clause("Gamma", "e", "on origin", body),
+        &clause(
+            "Gamma",
+            "e",
+            "on each (q: Config::ConfigVersion) when (c.versionNumber >= 3)",
+            body,
+        ),
     )));
     let [gamma_id] = clause_ids(&gamma).try_into().expect("one Gamma clause");
     let gamma_view = temporal_subject(&gamma, &gamma_id).expect("Gamma view");
@@ -935,6 +936,23 @@ fn temporal_clause_names_are_selected_by_declaration_and_occurrence() {
         gamma_view.name_of(&gamma_view.occurrences()[0]),
         Some("Gamma")
     );
+    let Activation::Each {
+        guard: Some(guard), ..
+    } = gamma_view.activation().clone()
+    else {
+        panic!("Gamma has a guarded activation");
+    };
+    let activation_guard = checked_predicate(
+        &gamma,
+        &PredicateSelection {
+            clause: gamma_id.clone(),
+            leaf: guard,
+        },
+    )
+    .expect("Gamma activation guard view");
+    assert_eq!(activation_guard.kind(), PredicateKind::ActivationGuard);
+    assert_eq!(activation_guard.name(), Some("Gamma"));
+
     let leaf = gamma_view.predicate_leaves()[0].clone();
     let predicate = checked_predicate(
         &gamma,

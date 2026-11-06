@@ -12,7 +12,7 @@ use quire_contract_model::{
 
 use super::*;
 
-use crate::checked_v2::{HybridRead, V2ReadRefusal, read_checked_package_v2, read_hybrids};
+use crate::checked_v2::{read_checked_package_v2, read_hybrids, HybridRead, V2ReadRefusal};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile v = \"quire.value.complete/v1\";\n\
@@ -373,13 +373,11 @@ fn braking_and_slow_enough_emit_as_hybrid_nodes_the_i2_read_admits() {
         node_with(&wire, target(binding(reset, "value")))["body"]["value"],
         "0"
     );
-    assert!(
-        reset["members"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|member| member["name"] != "relation")
-    );
+    assert!(reset["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|member| member["name"] != "relation"));
     // `Stopped` has no transition.
     assert_eq!(
         binding(&stopped["body"], "transitions")["members"],
@@ -446,13 +444,11 @@ fn braking2_slows_and_recent_emit_initial_entries_resets_activation_and_fairness
     let resets = binding(&transition["body"], "resets");
     assert_eq!(resets["members"].as_array().unwrap().len(), 2);
     assert_eq!(binding(&resets["members"][0], "variable")["value"], "0");
-    assert!(
-        resets["members"][0]["members"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|member| member["name"] != "relation")
-    );
+    assert!(resets["members"][0]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|member| member["name"] != "relation"));
     assert_eq!(binding(&resets["members"][1], "variable")["value"], "1");
     assert_eq!(binding(&resets["members"][1], "relation")["value"], "ge");
 
@@ -637,11 +633,9 @@ fn a_constant_formula_emits_true_and_false_nodes_and_the_alias_law() {
         let claim = clause(&wire, "h");
         let always = formula_root(&wire, claim);
         assert_eq!(operation(operand(&wire, always, 0)), constant);
-        assert!(
-            of_form(&wire, "formula")
-                .iter()
-                .all(|node| operation(node) != "quire.op.temporal.holds")
-        );
+        assert!(of_form(&wire, "formula")
+            .iter()
+            .all(|node| operation(node) != "quire.op.temporal.holds"));
     }
     for (alias, identity) in [
         ("p", "quire.temporal.infinite-trace/v1"),

@@ -7,11 +7,11 @@ use quire_contract_model::{
     ValueForm,
 };
 
-use super::ViewRefusal;
 use super::graph::Graph;
 use super::subject::{
-    Activation, ClauseOccurrence, FORMULA_VISITS, TemporalSubjectView, subject_in,
+    subject_in, Activation, ClauseOccurrence, TemporalSubjectView, FORMULA_VISITS,
 };
+use super::ViewRefusal;
 
 /// Which clause leaf a [`PredicateSelection`] names.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

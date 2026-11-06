@@ -7,13 +7,13 @@
 use quire_contract_model::{CheckedNodeId, CheckedPackageV2, CheckedSelectionRole};
 
 use super::temporal_clause::{
-    EVENT, INFINITE, admit, compile, declared, declared_on, evidence, unit,
+    admit, compile, declared, declared_on, evidence, unit, EVENT, INFINITE,
 };
 use super::*;
 use crate::checked_v2::V2ReadRefusal;
 use crate::checked_views::{
-    Activation, Classification, Closure, MappingRefusal, OUTSTANDING_PREMISES, Support, Target,
-    Unmatched, ViewRefusal, mapping_support, temporal_subject,
+    mapping_support, temporal_subject, Activation, Classification, Closure, MappingRefusal,
+    Support, Target, Unmatched, ViewRefusal, OUTSTANDING_PREMISES,
 };
 
 const FIXED: &str = "quire.temporal.fixed-sample.false-extension/v1";
@@ -603,7 +603,7 @@ fn classifying_a_clause_twice_gives_equal_results() {
 #[trace("FR-527-AC-18", "TC-1322")]
 #[test]
 fn a_profile_outside_the_admitted_identities_is_refused_at_check() {
-    use qsl_semantics::check::{ProfileCause, resolve_profiles};
+    use qsl_semantics::check::{resolve_profiles, ProfileCause};
     for identity in [
         "quire.temporal.unknown/v1",
         "quire.temporal.event-position.false-extension/v2",

@@ -12,8 +12,8 @@ use quire_contract_model::{
 };
 use quire_exact::{Origin, Role};
 
-use super::ViewRefusal;
 use super::graph::Graph;
+use super::ViewRefusal;
 use crate::checked_v2::{resolve_clause_root, role_spelling, wire_graph};
 
 /// The most formula applications one view expands: the reader's own
