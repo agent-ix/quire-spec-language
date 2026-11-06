@@ -883,8 +883,10 @@ pub fn kernel_refusal_record(
     Some(RefusalRecord::new(code, fields, locus))
 }
 
-/// A declared unit's full node key, or its ordered compound factors.
-fn unit_spelling(unit: &quire_exact::UnitId) -> String {
+/// A structural spelling of a unit: the declared node's full key, or the
+/// ordered compound terms as `key^exponent` factors joined by `*`.
+/// An empty compound unit has an empty spelling.
+pub fn unit_spelling(unit: &quire_exact::UnitId) -> String {
     match unit {
         quire_exact::UnitId::Declared(key) => key.to_string(),
         quire_exact::UnitId::Compound(terms) => terms

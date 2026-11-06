@@ -26,7 +26,7 @@ use std::sync::Arc;
 
 use qsl_cst::{CompleteDiagnostic, HostCause};
 use qsl_forms::{ClauseTextRefusal, FormsCause, FormsRefusal};
-use qsl_foundation::diagnostic::{LimitExceeded, Locus};
+use qsl_foundation::diagnostic::{unit_spelling, LimitExceeded, Locus};
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Setting;
 use qsl_foundation::{Code, SourceIdentity, Span};
@@ -2516,20 +2516,6 @@ fn value_type_source(value_type: &quire_exact::ValueType) -> String {
 fn carrier_with_mode(bracketed: &str, mode: quire_exact::RoundingMode) -> String {
     let inner = bracketed.strip_suffix(']').unwrap_or(bracketed);
     format!("{inner}; {}]", mode.as_str())
-}
-
-/// A structural spelling of a unit: the declared node's key, or the
-/// compound terms as `key^exponent` factors.
-fn unit_spelling(unit: &quire_exact::UnitId) -> String {
-    if let Some(key) = unit.declared_key() {
-        return key.to_string();
-    }
-    unit.compound_terms()
-        .unwrap_or_default()
-        .iter()
-        .map(|(key, exponent)| format!("{key}^{exponent}"))
-        .collect::<Vec<_>>()
-        .join("*")
 }
 
 /// A structural spelling of an effective identity: its original declaration.
