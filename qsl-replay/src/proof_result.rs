@@ -40,6 +40,7 @@ use std::collections::BTreeSet;
 mod plugin;
 mod plugin_read;
 mod plugin_replay;
+mod tool_failure;
 pub use plugin::{read_plugin_cause_kind, PluginResultRefusal, QslOnlyCause, ValueFault};
 pub use plugin_read::{
     read_first_party_solver_basis, read_plugin_assignments, read_plugin_basis,
@@ -47,6 +48,7 @@ pub use plugin_read::{
     read_plugin_inconclusive_cause_over,
 };
 pub use plugin_replay::{PluginReplayContext, PluginReplayRefusal};
+pub use tool_failure::ToolFailure;
 
 /// The wire spelling of `replay-parity`, one definition for the cause's own
 /// spelling and the plugin reader's refusal of it.
@@ -1218,6 +1220,8 @@ pub enum TerminalValue {
     Inconclusive(InconclusiveCause),
     /// A backend result of `failed`: the tool itself failed.
     Failed,
+    /// FR-291: a `failed` result whose cause is a plugin-run failure.
+    ToolFailed(ToolFailure),
     /// FR-192: a completed statistical run's `measured` result, on its own
     /// axis with no truth and no basis; never proof evidence (ADR-024
     /// SV-1, SV-10).
@@ -1267,7 +1271,7 @@ impl TerminalValue {
             Self::Declined { .. } => Category::Refusal,
             Self::Unsupported(_) => Category::Unsupported,
             Self::Incomplete(_) => Category::Incomplete,
-            Self::Failed => Category::InternalFailure,
+            Self::Failed | Self::ToolFailed(_) => Category::InternalFailure,
             // FR-192 (ADR-024 RU-2): a rejected measurement fails the
             // pipeline as a violation does.
             Self::Measured(verdict) => match verdict.decision {
@@ -1305,6 +1309,7 @@ impl TerminalValue {
             | Self::Unsupported(_)
             | Self::Incomplete(_)
             | Self::Failed
+            | Self::ToolFailed(_)
             | Self::Measured(_) => None,
         }
     }
@@ -1364,7 +1369,8 @@ impl TerminalValue {
             | Self::Declined { .. }
             | Self::Unsupported(_)
             | Self::Incomplete(_)
-            | Self::Failed => 0,
+            | Self::Failed
+            | Self::ToolFailed(_) => 0,
             Self::Measured(verdict) => verdict.measured_bytes(),
         }
     }
@@ -1631,6 +1637,16 @@ impl TerminalRecord {
     /// Build a failed record with the producing backend identity.
     pub fn failed(request_index: RequestIndex, backend: BackendId) -> Self {
         Self::with_backend(request_index, backend, TerminalValue::Failed)
+    }
+
+    /// FR-291: a `failed` record for a plugin-run failure, with the
+    /// producing backend identity.
+    pub fn tool_failed(
+        request_index: RequestIndex,
+        backend: BackendId,
+        failure: ToolFailure,
+    ) -> Self {
+        Self::with_backend(request_index, backend, TerminalValue::ToolFailed(failure))
     }
 
     /// FR-281: a `declined` record carrying the refusal's full FR-272

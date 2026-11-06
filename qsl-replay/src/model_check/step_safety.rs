@@ -71,7 +71,9 @@ impl StepRecordVerdict {
             TerminalValue::Unsupported(cause) => {
                 Self::Other(OtherBackendResult::Unsupported(cause.clone()))
             }
-            TerminalValue::Failed => Self::Other(OtherBackendResult::Failed),
+            TerminalValue::Failed | TerminalValue::ToolFailed(_) => {
+                Self::Other(OtherBackendResult::Failed)
+            }
             TerminalValue::Tested | TerminalValue::Measured(_) | TerminalValue::Declined { .. } => {
                 return None
             }

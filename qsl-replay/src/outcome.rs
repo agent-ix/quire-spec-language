@@ -218,7 +218,7 @@ impl ItemLabel {
             TerminalValue::Declined { .. } => Self::Declined,
             TerminalValue::Unsupported(_) => Self::Unsupported,
             TerminalValue::Incomplete(_) => Self::Incomplete,
-            TerminalValue::Failed => Self::Failed,
+            TerminalValue::Failed | TerminalValue::ToolFailed(_) => Self::Failed,
             TerminalValue::Measured(_) => Self::Measured,
         }
     }
@@ -357,6 +357,13 @@ pub struct ItemCause {
     certificate_at: Option<CertificateLocus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     limit: Option<&'static str>,
+    /// A `tool-failure` cause's FR-462 `defect`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    defect: Option<&'static str>,
+    /// A byte-limit `tool-failure` cause's configured maximum, written as
+    /// `limit`; never set beside `limit`.
+    #[serde(rename = "limit", skip_serializing_if = "Option::is_none")]
+    byte_limit: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     value: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -578,6 +585,8 @@ impl ItemCause {
             result: None,
             certificate_at: None,
             limit: None,
+            defect: None,
+            byte_limit: None,
             value: None,
             lower: None,
             upper: None,
@@ -954,6 +963,15 @@ impl OutcomeItem {
                 }
                 Some(item)
             }
+            TerminalValue::ToolFailed(failure) => {
+                let mut item = ItemCause::kind("tool-failure");
+                item.defect = Some(failure.defect());
+                if let Some((limit, value)) = failure.byte_counts() {
+                    item.byte_limit = Some(limit);
+                    item.value = Some(value);
+                }
+                Some(item)
+            }
             TerminalValue::Failed => record.diagnostic().map(|diagnostic| ItemCause {
                 code: Some(diagnostic.code().to_owned()),
                 ..ItemCause::kind(diagnostic.cause())
@@ -978,6 +996,7 @@ impl OutcomeItem {
             | TerminalValue::Incomplete(_)
             | TerminalValue::Inconclusive(_)
             | TerminalValue::Failed
+            | TerminalValue::ToolFailed(_)
             | TerminalValue::Measured(_) => (None, None),
         };
         let measured = match value {
@@ -989,7 +1008,8 @@ impl OutcomeItem {
             | TerminalValue::Unsupported(_)
             | TerminalValue::Incomplete(_)
             | TerminalValue::Inconclusive(_)
-            | TerminalValue::Failed => None,
+            | TerminalValue::Failed
+            | TerminalValue::ToolFailed(_) => None,
         };
         Self {
             request_index: record.request_index().get(),
