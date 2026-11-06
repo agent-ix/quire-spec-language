@@ -38,7 +38,7 @@ fn declaration<'p>(package: &'p CheckedPackage, name: &str) -> &'p CompositeDecl
 }
 
 /// IR's admission of the emitted bytes.
-fn admit_bytes(emission: &Emission, wire: &Value) -> CheckedPackageV2 {
+pub(super) fn admit_bytes(emission: &Emission, wire: &Value) -> CheckedPackageV2 {
     let mut evidence = CheckedPackageEvidence::new();
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());

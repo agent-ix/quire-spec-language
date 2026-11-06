@@ -19,7 +19,9 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::wire_id::WireGraph;
 use qsl_semantics::check::{CheckedGraph, CheckedTypeNode, CompositeForm};
 use qsl_semantics::library::LibraryName;
-use quire_exact::{Identifier, Integer, NodeKey, UnionMember, UnitId, ValueType, VariantId};
+use quire_exact::{
+    EnumShape, Identifier, Integer, NodeKey, UnionMember, UnitId, ValueType, VariantId,
+};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape};
 use quire_semantic_value::quantity::{QuantityUnit, UnitTable};
@@ -37,6 +39,7 @@ use crate::spine::{CompileRefusal, DependencyInput};
 pub struct AdmittedEnumCase {
     case: Identifier,
     key: NodeKey,
+    variant: VariantId,
 }
 
 impl AdmittedEnumCase {
@@ -49,6 +52,11 @@ impl AdmittedEnumCase {
     pub fn key(&self) -> &NodeKey {
         &self.key
     }
+
+    /// The `VariantId` the checked [`AdmittedEnum::shape`] holds for the case.
+    pub fn variant(&self) -> &VariantId {
+        &self.variant
+    }
 }
 
 /// One admitted enum declaration: its qualified name, ordering and key, and
@@ -58,6 +66,7 @@ pub struct AdmittedEnum {
     key: NodeKey,
     qualified_name: Vec<Identifier>,
     ordered: bool,
+    shape: EnumShape,
     cases: Vec<AdmittedEnumCase>,
 }
 
@@ -75,6 +84,12 @@ impl AdmittedEnum {
     /// Whether the enum is ordered.
     pub fn is_ordered(&self) -> bool {
         self.ordered
+    }
+
+    /// The checked `ValueType::Enum` shape: the ordered flag and the
+    /// canonical `VariantId` sequence, one per case in [`Self::cases`] order.
+    pub fn shape(&self) -> &EnumShape {
+        &self.shape
     }
 
     /// Every case, in canonical order.
@@ -1036,6 +1051,7 @@ fn enum_table(graph: &CheckedGraph) -> Result<BTreeMap<NodeKey, AdmittedEnum>, I
                 Ok(AdmittedEnumCase {
                     case: identifier(member.case())?,
                     key: member.member(),
+                    variant: member.variant(),
                 })
             })
             .collect::<Result<Vec<_>, InternalFault>>()?;
@@ -1050,6 +1066,7 @@ fn enum_table(graph: &CheckedGraph) -> Result<BTreeMap<NodeKey, AdmittedEnum>, I
                 key: declaration.key(),
                 qualified_name,
                 ordered: declaration.declaration().is_ordered(),
+                shape: binding.shape(),
                 cases,
             },
         );

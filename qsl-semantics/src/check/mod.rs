@@ -228,7 +228,7 @@ pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 pub use family::DeclarationMetrics;
 pub use lowering::{
     model_root_key, AdmittedModel, ForeignView, ModelClause, SemanticGraph, SemanticNode,
-    SourceEnumDeclaration, SourceEnumMember,
+    SourceCollection, SourceEnumDeclaration, SourceEnumMember,
 };
 pub use node_key::{AbstractionTerm, FrameEntry, ObjectEntry, PopulationEntry};
 pub use node_key::{
