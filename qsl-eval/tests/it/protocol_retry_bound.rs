@@ -119,7 +119,7 @@ fn fixture(bound: u64) -> Fixture {
     let package = CheckedPackage::link(
         PackageDeclarations::assemble(
             parsed.source().reference().clone(),
-            "qsl-1757 retry bound".to_owned(),
+            "qsl-1757".to_owned(),
             unit,
             models,
             Vec::new(),
