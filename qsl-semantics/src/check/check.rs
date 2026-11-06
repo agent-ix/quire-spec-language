@@ -2745,6 +2745,23 @@ impl<'a> Typer<'a> {
         self.units.into_formed()
     }
 
+    /// Seed this typing pass with the checked graph's retained compound
+    /// units so an externally supplied frame can name one as a value type.
+    pub(crate) fn include_formed_units(
+        &mut self,
+        units: &UnitTable,
+        location: &Location,
+    ) -> Result<(), CheckRefusal> {
+        for unit in units.clone() {
+            let identified = IdentifiedUnit::new(unit).map_err(|refusal| CheckRefusal {
+                location: location.clone(),
+                cause: CheckCause::Identity(refusal),
+            })?;
+            self.units.form(identified);
+        }
+        Ok(())
+    }
+
     /// The package-level declarations this typing pass resolves names
     /// against. `check::family::Application` (the relocated
     /// function-application checker) reads this to resolve a call's callee

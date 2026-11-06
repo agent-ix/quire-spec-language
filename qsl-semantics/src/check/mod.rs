@@ -723,6 +723,9 @@ pub struct CheckedGraph {
     /// structural node id the graph's nodes carry.
     package_name: String,
     scope: Scope,
+    /// Every compound unit retained from this check stage for later checked
+    /// subexpression evaluation and standalone clause checking.
+    evaluation_units: quire_semantic_value::quantity::UnitTable,
     functions: CheckedFunctions,
     dispatch_tables: Vec<DispatchTable>,
     /// FR-062-AC-2/FR-065-AC-3: the occurrence-keyed source map (identity,
@@ -967,6 +970,7 @@ impl DebugWith for CheckedGraph {
             function_sources,
             package_name,
             scope,
+            evaluation_units,
             functions,
             dispatch_tables,
             occurrences,
@@ -4621,6 +4625,7 @@ impl PackageDeclarations {
             units.append(std::mem::take(&mut protocol.obligations.formed_units));
             units.append(std::mem::take(&mut protocol.slots.formed_units));
         }
+        let evaluation_units = units.clone();
         let mut lowering = lowering::Lowering::new_with_source_owners(
             &scope,
             &owner,
@@ -7024,6 +7029,7 @@ impl PackageDeclarations {
             function_sources: self.function_sources,
             package_name,
             scope,
+            evaluation_units,
             functions,
             dispatch_tables,
             occurrences,
@@ -8055,6 +8061,7 @@ impl CheckedGraph {
             &mut scopes,
         );
         let mut typer = typer.with_context(cx.reborrow(&self.scope));
+        typer.include_formed_units(&self.evaluation_units, &location)?;
         bind_parameters(&mut typer, &parameters, &location)?;
         let root = match expected {
             Some(expected) => {
@@ -8690,6 +8697,12 @@ impl CheckedGraph {
     /// to the evaluator.
     pub fn scope(&self) -> &Scope {
         &self.scope
+    }
+
+    /// Every unit the checked graph retained, including compound units
+    /// formed while checking its declarations.
+    pub fn evaluation_units(&self) -> &quire_semantic_value::quantity::UnitTable {
+        &self.evaluation_units
     }
 
     /// The checked dispatch tables `scope`'s dispatch operations index into
