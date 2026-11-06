@@ -104,7 +104,7 @@ group of the compensation node `compensation`, the retry bound FR-381 checks as
 `maximum_attempts`: a `u64` of at least one, counting the initial attempt, held in
 the integer encoding of QSpec FR-322. It refuses with `ViewRefusal`, and returns
 no value, when `compensation` is absent from the package or names a node that is
-not a compensation (`NotACompensation`, a variant this requirement adds), when the
+not a compensation (`ViewRefusal::NotACompensation`, naming the id), when the
 node's `attempts` group lacks `maximum` (`MissingMember` naming
 `attempts.maximum`), and when `maximum` is not an integer or is zero
 (`MalformedMember` naming `attempts.maximum`). FR-520-AC-4 compares the retry
