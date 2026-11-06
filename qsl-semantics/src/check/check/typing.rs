@@ -3159,7 +3159,8 @@ impl<'a> Typer<'a> {
                     location,
                     ..
                 } = *frame;
-                if matches!(visit, Visit::Sum) && !summand_of_family(&value_type, &body.value_type) {
+                if matches!(visit, Visit::Sum) && !summand_of_family(&value_type, &body.value_type)
+                {
                     return Err(mismatch(&body.location));
                 }
                 Ok(Step::Typed(node(

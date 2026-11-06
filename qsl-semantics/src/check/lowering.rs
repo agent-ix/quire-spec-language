@@ -4976,7 +4976,9 @@ impl<'a> Lowering<'a> {
                         // float or quantity sum the rounding mode `N` pins
                         // (`exact` for a quantity).
                         let (identity, laws, mode) = match node.value_type() {
-                            ValueType::Rational(_) => ("quire.op.collection.sum.rational", None, None),
+                            ValueType::Rational(_) => {
+                                ("quire.op.collection.sum.rational", None, None)
+                            }
                             ValueType::Decimal(total) => (
                                 "quire.op.collection.sum.decimal",
                                 None,
@@ -4996,7 +4998,31 @@ impl<'a> Lowering<'a> {
                                 None,
                                 Some(quire_exact::RoundingMode::Exact),
                             ),
-                            _ => ("quire.op.collection.sum.integer", None, None),
+                            ValueType::Integer | ValueType::Int(_) => {
+                                ("quire.op.collection.sum.integer", None, None)
+                            }
+                            // Typing admits no other total (FR-145).
+                            ValueType::Boolean
+                            | ValueType::CarriedQuantity(_)
+                            | ValueType::BoundedQuantity(_)
+                            | ValueType::Text(_)
+                            | ValueType::String
+                            | ValueType::Uuid
+                            | ValueType::Timestamp
+                            | ValueType::Enum(_)
+                            | ValueType::Option(_)
+                            | ValueType::Composite(_)
+                            | ValueType::Collection(_)
+                            | ValueType::Map(_)
+                            | ValueType::Reference(_)
+                            | ValueType::Population(_) => {
+                                return Err(refuse(
+                                    node.location(),
+                                    CheckCause::UnsupportedFeature {
+                                        loci: vec![node.location().clone()],
+                                    },
+                                ))
+                            }
                         };
                         (
                             Operator::Collection,

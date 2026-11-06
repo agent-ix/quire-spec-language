@@ -2304,7 +2304,10 @@ fn the_unit_on_amount_and_total_is_written_with_its_comparison_and_its_sum() {
     assert_eq!(sums.len(), 1, "{sums:?}");
     let (identity, mode, type_argument) = &sums[0];
     assert_eq!(identity, "quire.op.collection.sum.quantity");
-    assert_eq!(mode, &serde_json::json!({"kind": "rounding", "value": "exact"}));
+    assert_eq!(
+        mode,
+        &serde_json::json!({"kind": "rounding", "value": "exact"})
+    );
     let unit = wire["semantic_graph"]["nodes"]
         .as_array()
         .unwrap()
@@ -2410,7 +2413,11 @@ fn model_alias_names_resolve_for_captures_and_quantity_sums() {
          sum<M::Total>(receipt in self.receipts: receipt) <= self.total\n}",
     );
     let sums = sum_applications(&wire);
-    assert_eq!(sums.len(), 1, "the alias name resolves and the sum checks: {sums:?}");
+    assert_eq!(
+        sums.len(),
+        1,
+        "the alias name resolves and the sum checks: {sums:?}"
+    );
     assert_eq!(sums[0].0, "quire.op.collection.sum.quantity");
 }
 

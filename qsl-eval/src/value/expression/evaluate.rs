@@ -1631,7 +1631,11 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         };
         let out_of_domain = || Halt::from(Stop::Undefined(Undefined::SumOutOfDomain));
         match (value_type, total, summand) {
-            (ValueType::Integer | ValueType::Int(_), Value::Integer(total), Value::Integer(summand)) => {
+            (
+                ValueType::Integer | ValueType::Int(_),
+                Value::Integer(total),
+                Value::Integer(summand),
+            ) => {
                 match outcome_into_stop(evaluate_integer_arithmetic(
                     IntegerArithmetic::Add(&total, &summand),
                     sum_domain(value_type),
@@ -1672,8 +1676,12 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     return Err(invariant("ieee-profile-unresolved"));
                 }
                 let result = outcome_into_stop(
-                    evaluate_ieee(IeeeOperation::Add(total, summand), float.rounding(), self.meter)
-                        .map_err(|_| invariant("ieee-operation-rejected"))?,
+                    evaluate_ieee(
+                        IeeeOperation::Add(total, summand),
+                        float.rounding(),
+                        self.meter,
+                    )
+                    .map_err(|_| invariant("ieee-operation-rejected"))?,
                 )?;
                 if result.flags() != IeeeFlags::EMPTY {
                     self.record(node, ValueLoss::IeeeFlags(result.flags()))?;
