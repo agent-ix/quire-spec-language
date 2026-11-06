@@ -476,28 +476,30 @@ fn a_carried_quantity_exponent_expression_is_not_admitted() {
     assert!(!parsed.is_admissible(), "the unsupported exponent refuses");
 }
 
-fn bounded_package() -> CheckedPackage {
+// The typed declaration API supplies bounds; this fixture does not claim a
+// source syntax for the bounded type. Its nominal units are source-assembled.
+fn bounded_package() -> (CheckedPackage, quire_exact::UnitId, quire_exact::UnitId) {
+    use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
     use quire_exact::{BoundedQuantityType, Integer, PathSegment, Quantity, Rational, ValueType};
-    package_with_aliases(
+    let mut held_units = None;
+    let package = package_with_aliases(
         "dimension Length; unit m : Length = rational(1, 1); \
-         unit cm : Length = rational(1, 100) * m; \
-         function add_bound using v(a: Bounded, b: Bounded): Quantity<m> pure { a + b } \
-         function sum_value using v(): Quantity<m> pure { add_bound(1 m, 2 m) } \
-         function less using v(a: Bounded, b: Quantity<cm>): Boolean pure { a < convert<Quantity<m>>(b) } \
-         function less_value using v(): Boolean pure { less(1 m, 150 cm) } \
-         function to_cm using v(a: Bounded): Quantity<cm> pure { convert<Quantity<cm>>(a) } \
-         function converted_value using v(): Quantity<cm> pure { to_cm(1.5 m) }",
+         unit cm : Length = rational(1, 100) * m;",
         |declarations| {
-            let unit = declarations
-                .types
-                .units()
-                .ids()
-                .find(|id| {
-                    id.declared_key().is_some_and(|key| {
-                        key.path().last() == Some(&PathSegment::Text("m".into()))
+            let unit_named = |name| {
+                declarations
+                    .types
+                    .units()
+                    .ids()
+                    .find(|id| {
+                        id.declared_key()
+                            .is_some_and(|key| key.path().last() == Some(&PathSegment::Text(name)))
                     })
-                })
-                .expect("source metre unit");
+                    .expect("source unit")
+            };
+            let unit = unit_named("m".to_owned());
+            let centimetre = unit_named("cm".to_owned());
+            held_units = Some((unit.clone(), centimetre.clone()));
             let endpoint = |magnitude| {
                 Quantity::new(
                     Rational::from_integer(Integer::from(magnitude)),
@@ -515,21 +517,98 @@ fn bounded_package() -> CheckedPackage {
                     .expect("bounded source unit"),
                 )),
             ));
+            declarations.aliases.extend([
+                ("Length".into(), ValueType::Quantity(unit)),
+                ("Centimetres".into(), ValueType::Quantity(centimetre)),
+            ]);
+            let span = qsl_foundation::Span { start: 0, end: 0 };
+            let named = |name| TypeForm::name(name, span);
+            let function = |name, parameters, result, body| {
+                FunctionDeclaration::new(name, parameters, result, None, body)
+            };
+            declarations.functions = vec![
+                function(
+                    "add_bound",
+                    vec![
+                        ("a".into(), named("Bounded")),
+                        ("b".into(), named("Bounded")),
+                    ],
+                    named("Length"),
+                    Expression::binary(
+                        BinaryOperator::Add,
+                        Expression::name("a"),
+                        Expression::name("b"),
+                    ),
+                ),
+                function(
+                    "less",
+                    vec![
+                        ("a".into(), named("Bounded")),
+                        ("b".into(), named("Centimetres")),
+                    ],
+                    TypeForm::builtin(BuiltinType::Boolean, span),
+                    Expression::binary(
+                        BinaryOperator::Less,
+                        Expression::name("a"),
+                        Expression::convert(named("Length"), Expression::name("b")),
+                    ),
+                ),
+                function(
+                    "to_cm",
+                    vec![("a".into(), named("Bounded"))],
+                    named("Centimetres"),
+                    Expression::convert(named("Centimetres"), Expression::name("a")),
+                ),
+            ];
         },
     )
-    .expect("bounded quantity functions check")
+    .expect("typed bounded quantity functions check");
+    let (metre, centimetre) = held_units.expect("assembled units retained");
+    (package, metre, centimetre)
 }
 
 #[trace("TC-413", "FR-093-AC-61")]
 #[test]
 fn bounded_quantities_evaluate_add_comparison_and_conversion_from_their_interval() {
-    let package = bounded_package();
-    assert!(truth(&package, "less_value"));
-    for (name, expected) in [("sum_value", "3/1"), ("converted_value", "150/1")] {
+    use quire_exact::{Integer, Quantity, Rational};
+    let (package, metre, centimetre) = bounded_package();
+    let quantity = |numerator, denominator, unit| {
+        Value::Quantity(Quantity::new(
+            Rational::new(Integer::from(numerator), Integer::from(denominator))
+                .expect("exact magnitude"),
+            unit,
+        ))
+    };
+    let less = package
+        .call(
+            &QualifiedName::unqualified("less").expect("function name"),
+            vec![
+                quantity(1_i64, 1_i64, metre.clone()),
+                quantity(150_i64, 1_i64, centimetre),
+            ],
+            &ObjectEnvironment::default(),
+            &mut Meter::new(UNLIMITED),
+        )
+        .expect("bounded comparison runs");
+    assert_eq!(
+        less.outcome,
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true)))
+    );
+    for (name, arguments, expected) in [
+        (
+            "add_bound",
+            vec![
+                quantity(1_i64, 1_i64, metre.clone()),
+                quantity(2_i64, 1_i64, metre.clone()),
+            ],
+            "3/1",
+        ),
+        ("to_cm", vec![quantity(3_i64, 2_i64, metre)], "150/1"),
+    ] {
         let evaluation = package
             .call(
                 &QualifiedName::unqualified(name).expect("function name"),
-                vec![],
+                arguments,
                 &ObjectEnvironment::default(),
                 &mut Meter::new(UNLIMITED),
             )
