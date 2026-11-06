@@ -100,6 +100,12 @@ impl<'p> CheckedPredicateView<'p> {
         self.subject.declaration()
     }
 
+    /// The declared temporal-clause name when the clause has one uniquely
+    /// named occurrence.
+    pub fn name(&self) -> Option<&str> {
+        self.subject.name()
+    }
+
     /// The Boolean leaf.
     pub fn leaf(&self) -> &'p CheckedNodeId {
         self.leaf

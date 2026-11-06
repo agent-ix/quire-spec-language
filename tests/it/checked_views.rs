@@ -247,34 +247,21 @@ fn the_recipe_due_leaf_reads_the_view_binder() {
     assert!(!view.source_span().regions.is_empty());
 }
 
-/// The clause name a view reads. The package carries none until IR-1278; the
-/// gated tests change here when it lands (this becomes `view.name()`).
-fn view_name(_view: &TemporalSubjectView<'_>) -> String {
-    unimplemented!("IR-1278: the checked package carries no temporal clause name")
-}
-
-/// The clause name a predicate view reads (see [`view_name`]).
-fn predicate_name(_view: &qsl_package::checked_views::CheckedPredicateView<'_>) -> String {
-    unimplemented!("IR-1278: the checked package carries no temporal clause name")
-}
-
-/// FR-515-AC-14 (TC-1310 row 14): with a reader that implements IR-1278,
-/// `name()` of a view returns the clause's declared name, equal to the name in
-/// the selection sidecar, for the clause view and for a predicate view.
+/// FR-515-AC-14 (TC-1310 row 14): `name()` reads the declared name from the
+/// admitted package carrier for both clause and predicate views.
 #[trace("FR-515-AC-14", "TC-1310")]
 #[test]
-#[ignore = "IR-1278: the checked package carries no temporal clause name until the reader admits one"]
 fn a_view_names_its_clause_as_the_sidecar_does() {
     for kind in KINDS {
         let (package, sidecar) = recipe_package(kind);
         for row in sidecar["clauses"].as_array().unwrap() {
             let id = id_of(&row["node"]);
             let view = temporal_subject(&package, &id).unwrap();
-            assert_eq!(view_name(&view), row["name"].as_str().unwrap());
+            assert_eq!(view.name(), row["name"].as_str());
             let leaf = view.predicate_leaves()[0].clone();
             let predicate =
                 checked_predicate(&package, &PredicateSelection { clause: id, leaf }).unwrap();
-            assert_eq!(predicate_name(&predicate), row["name"].as_str().unwrap());
+            assert_eq!(predicate.name(), row["name"].as_str());
         }
     }
 }
