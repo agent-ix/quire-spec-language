@@ -97,7 +97,8 @@ fn selected_object_closure_projects_standard_e_and_unused_ep_objects() {
     );
     assert_eq!(node(&ep).operations()[0].name(), "step");
     assert!(node(&ep).operations()[0].result().is_some());
-    let step = &node(&ep).operations()[0];
+    let original_node = node(&ep);
+    let step = &original_node.operations()[0];
     assert_eq!(step.identity(), tc1070::model::id("Node/step"));
     assert!(step.parameters().is_empty());
     assert_eq!(
