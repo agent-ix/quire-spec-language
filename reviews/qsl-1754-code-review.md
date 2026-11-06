@@ -10,11 +10,11 @@ relationships:
 ---
 ## Summary
 
-Reviewed the final PR #2420 diff at `010a1c9876d522600882c74aa9b07b662a4d530e` against main `d54a757618cd295253a63ccf2bafdde15f3971bc`, including the Rust implementation and tests. The rebase leaves the reviewed changes intact; no code defects were found. No builds were run in this review pass.
+Reviewed the final PR #2420 candidate at `1566ee38f17b6b923de448e69978f4a6fe95a492` against main `baa4a67095fd1fe19c77dc0478808bdf78d7b5d5`, including the Rust implementation and tests. The #2416 merge supplies source enum shape rows in the base; this candidate adds only model-owned enum shape rows for QSL-1756 plus carried quantity and decimal path behavior for QSL-1754/1755. No code defects were found. No builds were run in this review pass.
 
 ## Verdict
 
-PASS. The final diff has no code-review findings. The model enum shape test module and carried quantity tests are registered in the package test tree and carry FR-092 AC trace tags; the parent lane reports those focused tests passed on the pre-rebase equivalent.
+PASS. The final candidate diff has no code-review findings. The model enum shape test module and carried quantity tests are registered in the package test tree and carry FR-092 AC trace tags. Focused tests were reported green on the pre-rebase equivalent; they were not rerun on this candidate.
 
 ## Findings
 

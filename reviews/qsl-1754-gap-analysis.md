@@ -10,7 +10,7 @@ relationships:
 ---
 ## Summary
 
-The targeted trace chain for the two new FR-092 criteria is present: AC-26 is registered in `variant_types.rs`, and AC-27 is registered in `carried_quantity_paths.rs`; both modules are declared by `emit/tests.rs`. The full repository matrix did not complete in this reviewer lane, so this is a changed-scope manual gap check, not a repository-wide matrix verdict.
+The targeted trace chain for the two new FR-092 criteria is present: AC-26 is registered in `variant_types.rs`, and AC-27 is registered in `carried_quantity_paths.rs`; both modules are declared by `emit/tests.rs`. At candidate `1566ee38f17b6b923de448e69978f4a6fe95a492` based on `baa4a67095fd1fe19c77dc0478808bdf78d7b5d5`, source enum rows are supplied by the #2416 base merge, while this diff adds the model-owned enum row producer and the carried quantity path work. The full repository matrix did not complete in this reviewer lane, so this is a changed-scope manual gap check, not a repository-wide matrix verdict.
 
 Plan completion: not assessed
 

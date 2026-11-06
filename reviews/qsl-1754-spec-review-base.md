@@ -10,7 +10,7 @@ relationships:
 ---
 ## Summary
 
-Reviewed the changed FR-092 acceptance criteria and corresponding TC-1021 and TC-413 steps. AC-26 and AC-27 specify observable shape/path data and adverse controls that are represented in registered assertions; no ID, coverage, or consistency defect was found in the changed material.
+Reviewed the changed FR-092 acceptance criteria and corresponding TC-1021 and TC-413 steps against candidate `1566ee38f17b6b923de448e69978f4a6fe95a492` on base `baa4a67095fd1fe19c77dc0478808bdf78d7b5d5`. AC-26 and AC-27 specify observable shape/path data and adverse controls represented in registered assertions; #2416 supplies source enum rows from the base, and no ID, coverage, or consistency defect was found in the changed material.
 
 ## Verdict
 
