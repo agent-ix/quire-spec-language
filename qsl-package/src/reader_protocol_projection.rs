@@ -2089,20 +2089,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             Some(quire_contract_model::SelectedExactIdentity::Record(key)) => Some(key),
             _ => None,
         };
-        let native_source_record = self
-            .admitted()
-            .project_exact_type(
-                field_declaration,
-                &self.index.identities,
-                self.index.work_limit,
-            )
-            .ok()
-            .is_some_and(|projection| {
-                projection.source_record_view().is_some_and(|view| {
-                    &view.structural_node == field_declaration && view.record_key == record_key
-                })
-            });
-        if selected_record != Some(&record_key) && !native_source_record {
+        if selected_record != Some(&record_key) {
             // With no selected identity row for the field's declaring node,
             // its checked record declaration key must be the exact operand
             // identity; equal field shape is never evidence.
@@ -2155,18 +2142,6 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                             .admitted()
                             .project_exact_type(node, &self.index.identities, self.index.work_limit)
                             .ok()?;
-                        if let Some(view) = projection.source_record_view() {
-                            return (view.record_key == record_key)
-                                .then(|| {
-                                    view.members
-                                        .iter()
-                                        .find(|field| {
-                                            field.admitted_name.as_ref() == field_name.as_ref()
-                                        })
-                                        .map(|field| field.presence)
-                                })
-                                .flatten();
-                        }
                         let view = projection.record_view()?;
                         if view.record_key() != &record_key {
                             return None;

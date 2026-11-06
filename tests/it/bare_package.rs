@@ -474,7 +474,7 @@ fn a_public_record_projection_requires_its_original_carried_native_witness() {
     let field = bare.select_protocol_slot(&descriptor(1)).unwrap();
     let projected_field = bare
         .project_protocol_slot(&field)
-        .expect("member presence comes from the native source_record_view");
+        .expect("the observable source-record binder field projects");
     assert_eq!(
         projected_field.value_type(projected_field.root()),
         Some(&quire_exact::ValueType::Integer)
@@ -487,7 +487,7 @@ fn a_public_record_projection_requires_its_original_carried_native_witness() {
                 ..
             })
         ),
-        "the observable capture binder retains the native source-record field read"
+        "the observable capture binder retains an actual field read"
     );
     let missing = ReadIdentityRows::of_rows(
         &package,
