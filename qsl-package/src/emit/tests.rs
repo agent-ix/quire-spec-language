@@ -48,10 +48,12 @@ mod control_node;
 mod converted_equality;
 mod decimal_constructors;
 mod deep_bodies;
+mod dimension_base;
 mod envelope_adoption;
 mod golden;
 mod hybrid;
 mod hyper_clause;
+mod inventory_ceilings;
 mod large_cycle;
 mod mapping_support;
 mod navigation;
@@ -821,6 +823,69 @@ fn a_law_names_its_definition_by_authority_and_identity() {
         .as_array()
         .unwrap()
         .contains(&ieee));
+}
+
+/// FR-517-AC-20: `sum<F>` over `Float64[nearest-even]` with the IEEE profile
+/// selected lowers to `quire.op.collection.sum.float64` carrying the
+/// `ieee_profile` law and the `nearest-even` rounding mode, and IR's reader
+/// admits the package.
+#[trace("FR-517-AC-20", "FR-093-AC-20", "TC-416")]
+#[test]
+fn a_float_sum_carries_the_ieee_law_and_its_rounding_mode() {
+    let text = "language \"ix:native\" edition \"1-draft\";\n\
+        profile v = \"quire.value.complete/v1\";\n\
+        type F = Float64[nearest-even];\n\
+        function total using v(s: Sequence<F>[0, 4]): F pure { sum<F>(x in s: x) }\n";
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let mut declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "pkg".to_owned(),
+        unit,
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("the assembler builds the declarations");
+    declarations.ieee_profile = Some(
+        qsl_semantics::value::admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[])
+            .unwrap(),
+    );
+    let package = CheckedPackage::link(
+        declarations
+            .check(CheckingLimits::default())
+            .expect("the float sum checks"),
+    );
+    let emission = emit(&package);
+    let read = read_back(&emission);
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+    let wire = wire(&emission);
+    let sums: Vec<&Value> = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| {
+            node["body"]["operation"]["identity"] == json!("quire.op.collection.sum.float64")
+        })
+        .collect();
+    assert_eq!(sums.len(), 1, "{sums:?}");
+    let operation = &sums[0]["body"]["operation"];
+    assert_eq!(
+        operation["mode"],
+        json!({"kind": "rounding", "value": "nearest-even"})
+    );
+    let ieee = DefinitionRole::IeeeProfile.reference();
+    assert_eq!(
+        operation["laws"],
+        json!([{"role": "ieee_profile",
+                "definition": {"authority": ieee.authority, "identity": ieee.identity}}])
+    );
 }
 
 /// An emitted v2 artifact identical except that one `application` argument is

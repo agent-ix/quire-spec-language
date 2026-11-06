@@ -116,14 +116,14 @@ FR-515. The evaluator SHALL retain one valuation-evidence row for every admitted
 valuation evidence into a map keyed only by leaf, declaration or position. Each
 row binds six facts: the *subject* (the checked declaration occurrence key of
 FR-515), the *position* (the admitted trace position it values, by the position's
-admitted ordinal), the *anchor* (the activation anchor of the instance, FR-044),
+admitted ordinal, which is its index among the trace's admitted positions and not an order), the *anchor* (the activation anchor of the instance, FR-044),
 the *capture instance* (the identity of that instance's immutable capture
 environment, FR-044), the *revision* (the observation owner's opaque revision
 reference for the observation the row came from), and the checked `holds`
 operand it values, with the Boolean value. Two rows that agree on all six facts
 remain two rows, in admission order; two rows that differ in any one fact are
 distinct rows. A trace position's legacy `leaf handle to Boolean` map is
-therefore not the evidence of record on this route.
+therefore not the evidence of record on this route. The retained rows answer a lookup by subject, position and operand: the value the rows for that triple agree on, and missing-valuation incompleteness, never `false`, where no row values the triple or the rows for it disagree.
 
 QSL checks every row only against values QSL itself holds: the subject SHALL be
 a declared occurrence of the evaluated declaration, the operand SHALL be a

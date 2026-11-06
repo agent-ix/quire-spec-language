@@ -286,6 +286,15 @@ pub enum Refusal {
         /// Which declaration, instance, node and position the contradiction was located at.
         subject: Subject,
     },
+    /// A valuation-evidence row failed one of the checks QSL makes against
+    /// values it holds (FR-043-AC-16). No truth and no partial support follow.
+    #[error("temporal valuation row {row} refused: {cause:?}")]
+    Valuation {
+        /// The check the row failed.
+        cause: super::valuation::ValuationCause,
+        /// The row's index in admission order.
+        row: usize,
+    },
     /// The emitted graph did not match the shape this evaluator admits.
     #[error("temporal graph reference is not admissible")]
     Reference {
