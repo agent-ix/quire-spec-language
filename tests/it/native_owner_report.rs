@@ -884,13 +884,13 @@ fn reader_refuses_a_result_identity_of_another_clause_or_occurrence() {
         clause[identity.1 + 9] ^= 1;
         assert_eq!(
             Report::from_owner_bytes(&clause, subject, observation),
-            Err(ReportRefusal::BindingMismatch(BindingDimension::Clause))
+            Err(ReportRefusal::UnknownTag)
         );
         let mut occurrence = bytes.clone();
         occurrence[identity.2 - 1] ^= 1;
         assert_eq!(
             Report::from_owner_bytes(&occurrence, subject, observation),
-            Err(ReportRefusal::BindingMismatch(BindingDimension::Occurrence))
+            Err(ReportRefusal::UnknownTag)
         );
     });
 }

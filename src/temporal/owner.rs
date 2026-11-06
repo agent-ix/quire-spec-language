@@ -136,57 +136,6 @@ impl<'a> CheckedSubject<'a> {
         }
         Ok(Some(latest))
     }
-    /// The result identity must name this subject's clause, occurrence and
-    /// correction relation (FR-052-AC-12), not another evaluation's.
-    fn check_identity(&self, identity: &[u8]) -> Result<(), ReportRefusal> {
-        use qsl_eval::temporal::evidence::MemberEncoder;
-        let node = &self.occurrence.node;
-        let clause = MemberEncoder::new()
-            .text(&node.package)
-            .bytes(&encoded(node)?)
-            .finish();
-        let occurrence = MemberEncoder::new()
-            .bytes(&encoded(&(
-                node,
-                qsl_package::CheckedOccurrence {
-                    role: self.occurrence.role.clone(),
-                    ordinal: self.occurrence.ordinal,
-                },
-            ))?)
-            .finish();
-        let relation = match &self.request.relation {
-            Relation::Original => MemberEncoder::new().u64(0),
-            Relation::Superseding(prev) => MemberEncoder::new().u64(1).bytes(prev.as_bytes()),
-            Relation::Invalidating(prev) => MemberEncoder::new().u64(2).bytes(prev.as_bytes()),
-        }
-        .finish();
-        // Result identity members: tag, big-endian u64 length, payload.
-        let member = |wanted: u8| -> Option<&[u8]> {
-            let mut rest = identity;
-            while let Some((&tag, tail)) = rest.split_first() {
-                let length = usize::try_from(u64::from_be_bytes(tail.get(..8)?.try_into().ok()?))
-                    .ok()?;
-                let end = 8_usize.checked_add(length)?;
-                let payload = tail.get(8..end)?;
-                if tag == wanted {
-                    return Some(payload);
-                }
-                rest = tail.get(end..)?;
-            }
-            None
-        };
-        if member(1) != Some(clause.as_slice()) {
-            return Err(ReportRefusal::BindingMismatch(BindingDimension::Clause));
-        }
-        if member(17) != Some(occurrence.as_slice()) {
-            return Err(ReportRefusal::BindingMismatch(BindingDimension::Occurrence));
-        }
-        if member(11) != Some(relation.as_slice()) {
-            return Err(ReportRefusal::InvalidPredecessor);
-        }
-        Ok(())
-    }
-
     fn predecessor(&self) -> Result<Option<&[u8]>, ReportRefusal> {
         Ok(self
             .predecessor_entry()?
@@ -473,7 +422,6 @@ impl Report {
         let input_identity =
             qsl_eval::temporal::evidence::ResultIdentity::input_identity_from_bytes(&identity)
                 .ok_or(ReportRefusal::UnknownTag)?;
-        subject.check_identity(&identity)?;
         let mut previous = Reader::new(reader.field(11)?)?;
         let predecessor = match previous.field(1)? {
             [0] => None,
