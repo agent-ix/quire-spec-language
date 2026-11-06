@@ -593,11 +593,14 @@ fn map_binder_is_no_source() {
 #[trace("FR-390-AC-68", "FR-533-AC-20", "TC-1071", "TC-1333")]
 #[test]
 fn a_case_arm_binder_in_a_recover_condition_is_admitted_and_evaluates() {
-    assert_case_arm_union(false);
-    assert_case_arm_union(true);
+    assert_eq!(
+        assert_case_arm_union(false),
+        assert_case_arm_union(true),
+        "an unselected union does not change the slot's ordered charges"
+    );
 }
 
-fn assert_case_arm_union(unrelated: bool) {
+fn assert_case_arm_union(unrelated: bool) -> Vec<Vec<quire_exact::AdmittedCharge>> {
     use qsl_foundation::SourceIdentity;
     use qsl_replay::spine::{self, DependencyInput, ParseRequest, SpineLimits, SuppliedLibrary};
 
@@ -757,6 +760,7 @@ fn assert_case_arm_union(unrelated: bool) {
         bare_names, source_route_names,
         "both routes list the same sources"
     );
+    let mut charges = Vec::new();
     for (receipts, target, activated, expected) in [
         (&[2, 3][..], 5, false, true),
         (&[2, 3][..], 4, false, false),
@@ -829,6 +833,7 @@ fn assert_case_arm_union(unrelated: bool) {
             bare_meter.admitted_charges(),
             source_meter.admitted_charges()
         );
+        charges.push(bare_meter.admitted_charges().to_vec());
         let mut missing_meter = Meter::new(UNLIMITED);
         let failure = missing_union
             .evaluate_protocol_slot(&bare_slot, &bare_supply, &mut missing_meter)
@@ -845,6 +850,7 @@ fn assert_case_arm_union(unrelated: bool) {
         );
         assert!(missing_meter.admitted_charges().is_empty());
     }
+    charges
 }
 
 /// A binder the body never reads is no source and the predicate evaluates
