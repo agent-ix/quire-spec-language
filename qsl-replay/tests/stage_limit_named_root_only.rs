@@ -138,8 +138,8 @@ fn a_source_of_declarations_needs_s1_tokens_and_s1_nodes_raised_as_well() {
         ("s1.tokens", BOUND),
         ("s1.nodes", BOUND),
         // This real-declaration fixture also emits more than E4's 16-MiB
-        // default. Its positive caller supplies a finite 64-MiB ceiling.
-        ("emit.output_bytes", 64 << 20),
+        // default. Its positive caller supplies a finite 1-GiB ceiling.
+        ("emit.output_bytes", 1 << 30),
     ]);
     let admitted = admit(&text, all, replay).expect("all required limits raised admit the source");
     assert!(admitted.into_parts().1.enums().count() > 10_000);
