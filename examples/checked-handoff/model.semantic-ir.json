@@ -155,10 +155,7 @@
     {
       "identity": "ix://agent-ix/checked-handoff/Amount",
       "displayName": "ix://agent-ix/checked-handoff/Amount",
-      "kind": {
-        "module": "agent-ix/checked-handoff",
-        "name": "value_type"
-      },
+      "kind": "alias",
       "roles": [],
       "origin": {
         "generated": {
@@ -171,7 +168,6 @@
       },
       "extensions": [],
       "unknownPolicy": "reject",
-      "scalar": "integer",
       "constraints": [
         {
           "identity": "ix://agent-ix/checked-handoff/Amount/constraints/min",
@@ -179,7 +175,7 @@
           "operands": {
             "value": "1"
           },
-          "appliesTo": "ix://quire/native/Integer",
+          "appliesTo": "ix://agent-ix/checked-handoff/Amount",
           "diagnosticCode": "bound.min",
           "origin": {
             "generated": {
@@ -197,7 +193,7 @@
           "operands": {
             "value": "20"
           },
-          "appliesTo": "ix://quire/native/Integer",
+          "appliesTo": "ix://agent-ix/checked-handoff/Amount",
           "diagnosticCode": "bound.max",
           "origin": {
             "generated": {
@@ -209,15 +205,13 @@
             }
           }
         }
-      ]
+      ],
+      "target": "ix://quire/unit/U"
     },
     {
       "identity": "ix://agent-ix/checked-handoff/Total",
       "displayName": "ix://agent-ix/checked-handoff/Total",
-      "kind": {
-        "module": "agent-ix/checked-handoff",
-        "name": "value_type"
-      },
+      "kind": "alias",
       "roles": [],
       "origin": {
         "generated": {
@@ -230,7 +224,6 @@
       },
       "extensions": [],
       "unknownPolicy": "reject",
-      "scalar": "integer",
       "constraints": [
         {
           "identity": "ix://agent-ix/checked-handoff/Total/constraints/min",
@@ -238,7 +231,7 @@
           "operands": {
             "value": "0"
           },
-          "appliesTo": "ix://quire/native/Integer",
+          "appliesTo": "ix://agent-ix/checked-handoff/Total",
           "diagnosticCode": "bound.min",
           "origin": {
             "generated": {
@@ -256,7 +249,7 @@
           "operands": {
             "value": "100"
           },
-          "appliesTo": "ix://quire/native/Integer",
+          "appliesTo": "ix://agent-ix/checked-handoff/Total",
           "diagnosticCode": "bound.max",
           "origin": {
             "generated": {
@@ -268,7 +261,8 @@
             }
           }
         }
-      ]
+      ],
+      "target": "ix://quire/unit/U"
     },
     {
       "identity": "ix://agent-ix/checked-handoff/Tally",

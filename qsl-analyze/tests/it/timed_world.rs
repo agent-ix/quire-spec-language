@@ -467,6 +467,7 @@ impl World {
     /// FR-120's request of [`Self::system`].
     pub(crate) fn request(&self) -> ModelSimulationRequest<'_> {
         ModelSimulationRequest {
+            emit: qsl_package::EmitLimits::fixture(),
             package: &self.package,
             packages: &self.packages,
             normalization: ModelNormalizationLimits::default(),
@@ -678,6 +679,7 @@ impl Refining {
     /// FR-120's request of the concrete model `M` over the universe `{c}`.
     pub(crate) fn concrete_request(&self) -> ModelSimulationRequest<'_> {
         ModelSimulationRequest {
+            emit: qsl_package::EmitLimits::fixture(),
             package: &self.package,
             packages: &self.packages,
             normalization: ModelNormalizationLimits::default(),

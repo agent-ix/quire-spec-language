@@ -49,6 +49,20 @@ limits only (ADR-030 D-4.9).
 4. **Fixed-depth decoded nodes.** The decoded nodes of a `V2Read` SHALL be
    fixed-depth types, so that cloning, comparing, formatting for debug and
    dropping a `V2Read` visit its nodes without native recursion.
+5. **Emission output ceiling.** The S4 v2 emitter SHALL bound the canonical
+   bytes it writes for one package by `emit.output_bytes` (FR-255), a ceiling
+   the caller owns: every emit entry takes it as an argument, and no emit path
+   below the outer configuration is unbounded. The bound is inclusive: a
+   package whose canonical bytes number exactly the bound is emitted, and the
+   emitter writes no bytes for one byte more. A package the emitter returns
+   from its remembered emission counts the same bytes against the bound
+   supplied by the call. When the bound is reached the emitter SHALL return
+   `EmitRefusal::OutputLimit`, whose catalog code is `stage_limit_exceeded`
+   with cause `input-bytes-exceeded`, carrying kind `input bytes`, the
+   configured bound, the byte count the refused write would have reached, and
+   setting `emit.output_bytes`; the compile lifecycle returns it as its
+   `Limit` refusal. The published default is 16777216 bytes, supplied by the
+   outer configuration (FR-255).
 
 ## Acceptance Criteria
 
@@ -59,6 +73,8 @@ limits only (ADR-030 D-4.9).
 | FR-264-AC-3 | A v2 artifact identical to an emitted one except that one `application` argument is an inline `application` term is refused by QSL's I2 read with code `malformed_wire`, with no limit outcome. | Test (TC-739) |
 | FR-264-AC-4 | A v2 artifact with more nodes than `i2.nodes` at bound `B` returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed count and setting `i2.nodes`, with `Locus::Artifact`; read again with `i2.nodes` raised through the v2 read limits' builder and through FR-255's settings operation given `i2.nodes=<n>` (FR-255), which the driver CLI exposes as `--limit` (ADR-029 CB-1), it verifies. | Test (TC-739) |
 | FR-264-AC-5 | On a thread with a 512 KiB stack and the default limits, a v2 artifact whose JSON is 100,000 arrays deep is refused by QSL's I2 read with code `malformed_wire`, with no limit outcome and no outcome naming a depth. | Test (TC-739) |
+| FR-264-AC-6 | A package whose canonical emitted bytes number `N` is emitted at `emit.output_bytes` `N`, with bytes equal to the bytes emitted under a larger bound. At bound `N - 1` it returns `EmitRefusal::OutputLimit` with code `stage_limit_exceeded`, cause `input-bytes-exceeded`, kind input bytes, bound `N - 1`, an actual count above `N - 1` and setting `emit.output_bytes`, and writes no bytes. At bound 0 it returns the same refusal with bound 0. | Test (TC-738) |
+| FR-264-AC-7 | A package emitted once and then offered again to an emit entry at a bound below its remembered byte length returns the same `OutputLimit` refusal with actual `N`; at bound `N` it returns the remembered emission. The compile lifecycle given `emit.output_bytes` `N - 1` returns `CompileRefusal::Limit` naming `emit.output_bytes`, and given `N` emits. | Test (TC-738) |
 
 ## Dependencies
 
@@ -70,7 +86,7 @@ limits only (ADR-030 D-4.9).
 - [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)
   defines the I2 reader's limit loci.
 - [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md) names the
-  `i2.*` settings.
+  `i2.*` and `emit.output_bytes` settings.
 
 ## Overlap
 

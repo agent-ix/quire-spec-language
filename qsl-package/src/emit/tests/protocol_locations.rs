@@ -631,6 +631,7 @@ fn reader_view_over(
         LibraryName::new(name).unwrap(),
         &packages,
         V2ReadLimits::fixture(),
+        crate::EmitLimits::fixture(),
     )
     .expect("the I2 reader admits the edited package");
     match read.evaluation_view() {

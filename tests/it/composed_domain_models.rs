@@ -669,7 +669,8 @@ fn architecture_fixture_binds_references_through_spine_i2() {
             .is_some(),
         "the field read binds to the selected Pump.id domain key"
     );
-    let emitted = qsl_package::emit_checked(checked.package()).expect("checked unit emits");
+    let emitted = qsl_package::emit_checked(checked.package(), qsl_package::EmitLimits::fixture())
+        .expect("checked unit emits");
     assert!(
         !emitted.package().bytes().is_empty(),
         "the checked package carrying the bindings emits"

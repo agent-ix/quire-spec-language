@@ -343,6 +343,7 @@ fn system_over<'w>(world: &'w World, keys: &[&str]) -> ModelSystem<'w> {
 /// [`system_over`] under the expansion bound `max_candidates`.
 fn system_limited<'w>(world: &'w World, keys: &[&str], max_candidates: u64) -> ModelSystem<'w> {
     ModelSystem::new(ModelSimulationRequest {
+        emit: qsl_package::EmitLimits::fixture(),
         package: &world.package,
         packages: &world.packages,
         normalization: ModelNormalizationLimits::default(),

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-003: actual checked identities through S1, S2, S3 and S4.
 
+use qsl_package::EmitLimits;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
@@ -90,8 +91,11 @@ fn private_state_source_identity(document: Vec<u8>, body: &str) {
     let graph = declarations
         .check(quire_semantic_value::checking::CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("original private TC465 S3: {refusals:?}"));
-    let original = qsl_package::emit_checked(&qsl_package::CheckedPackage::link(graph))
-        .unwrap_or_else(|refusal| panic!("original private TC465 public S4: {refusal:?}"));
+    let original = qsl_package::emit_checked(
+        &qsl_package::CheckedPackage::link(graph),
+        EmitLimits::fixture(),
+    )
+    .unwrap_or_else(|refusal| panic!("original private TC465 public S4: {refusal:?}"));
     assert!(
         original.omitted().is_empty(),
         "private TC465 original S4 omissions"
@@ -190,10 +194,11 @@ fn protocol_attempt_identity(declarations: &str) {
         let graph = declarations
             .check(quire_semantic_value::checking::CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{revision}: protocol S3 refuses: {refusals:?}"));
-        let emission = qsl_package::emit_checked(&qsl_package::CheckedPackage::link(graph))
-            .unwrap_or_else(|refusal| {
-                panic!("{revision}: protocol public S4 refuses: {refusal:?}")
-            });
+        let emission = qsl_package::emit_checked(
+            &qsl_package::CheckedPackage::link(graph),
+            EmitLimits::fixture(),
+        )
+        .unwrap_or_else(|refusal| panic!("{revision}: protocol public S4 refuses: {refusal:?}"));
         assert!(emission.omitted().is_empty(), "protocol S4 omissions");
         parsed
     };
@@ -416,8 +421,11 @@ fn state_fixture_identity(case: usize) {
         let (source, _) = semantic_models::config_unit_with_body(&document, &body);
         subtype_fixture_diagnostics(&graph, &source);
     }
-    let original = qsl_package::emit_checked(&qsl_package::CheckedPackage::link(graph))
-        .unwrap_or_else(|refusal| panic!("state fixture {case}: original public S4: {refusal:?}"));
+    let original = qsl_package::emit_checked(
+        &qsl_package::CheckedPackage::link(graph),
+        EmitLimits::fixture(),
+    )
+    .unwrap_or_else(|refusal| panic!("state fixture {case}: original public S4: {refusal:?}"));
     assert!(
         original.omitted().is_empty(),
         "state fixture {case}: S4 omitted nodes"
@@ -715,8 +723,11 @@ fn state_generated_occurrences_have_authored_regions() {
         selected_model_roots > 0,
         "selected model object declarations have generated alias occurrences"
     );
-    let original = qsl_package::emit_checked(&qsl_package::CheckedPackage::link(graph))
-        .expect("actual public S4 requires all original occurrences to be located");
+    let original = qsl_package::emit_checked(
+        &qsl_package::CheckedPackage::link(graph),
+        EmitLimits::fixture(),
+    )
+    .expect("actual public S4 requires all original occurrences to be located");
     assert!(original.omitted().is_empty());
 }
 
@@ -874,8 +885,11 @@ fn ieee_fixture_identity(text: &str) {
         let graph = declarations
             .check(quire_semantic_value::checking::CheckingLimits::default())
             .expect("the owning IEEE profile admits the fixture");
-        let emission =
-            qsl_package::emit_checked(&qsl_package::CheckedPackage::link(graph)).unwrap();
+        let emission = qsl_package::emit_checked(
+            &qsl_package::CheckedPackage::link(graph),
+            EmitLimits::fixture(),
+        )
+        .unwrap();
         assert!(
             emission.omitted().is_empty(),
             "IEEE {revision}: emission omitted {:?}",
@@ -1310,6 +1324,7 @@ fn lifecycle_large_declaration_unit_keeps_format_identity() {
     limits.checking = quire_semantic_value::checking::CheckingLimits::new(u64::MAX)
         .with_input_bytes(u64::MAX)
         .with_work_budget(u64::MAX);
+    limits.package = limits.package.with_output_bytes(u64::MAX);
     crate::support::front_end::emitted_with_authority(
         SourceIdentity::new("agent-ix", "test:lifecycle"),
         "unit.native",
@@ -1432,6 +1447,7 @@ fn replay_large_source_generator_keeps_format_identity() {
         .with_nodes(1 << 40)
         .with_input_bytes(1 << 40)
         .with_work_budget(1 << 40);
+    limits.package = limits.package.with_output_bytes(1 << 40);
     crate::support::front_end::emitted_with_authority(
         SourceIdentity::new("agent-ix", "test:replay"),
         "test:replay",

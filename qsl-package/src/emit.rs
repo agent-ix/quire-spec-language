@@ -51,6 +51,7 @@ use quire_semantic_value::catalog::Category;
 use quire_semantic_value::location::Location;
 
 use super::{CheckedPackage, EmittedPackage};
+use crate::checked::EmitLimits;
 use crate::checked_v2::{
     CheckedClockConstraint, CheckedClockGuard, CheckedClockPlace, CheckedClockReset,
     CheckedConstraintTarget, CheckedGuardPart, CheckedResetTarget, CheckedTimeInvariant,
@@ -119,6 +120,11 @@ pub enum EmitRefusal {
     /// do not agree.
     #[error("the checked graph's per-protocol result mapping is incomplete")]
     ProtocolResultInvariant,
+    /// The package's canonical bytes would exceed the caller's
+    /// `emit.output_bytes` ceiling (FR-264 Behavior 5). The emitter writes no
+    /// bytes.
+    #[error("{0}")]
+    OutputLimit(qsl_foundation::diagnostic::LimitExceeded),
     /// A protocol reference is bound to a key that is not the key of a node
     /// the emitter writes (FR-218 stale target): a reference binds a key,
     /// never a name, and a name is never looked up again.
@@ -363,8 +369,23 @@ impl TemporalClockSelection {
 
 impl From<quire_canonical::Error> for EmitRefusal {
     fn from(error: quire_canonical::Error) -> Self {
-        encoding(error)
+        match error {
+            quire_canonical::Error::Limit(limit) => {
+                Self::OutputLimit(output_limit(limit.bound, u128::from(limit.required)))
+            }
+            other => encoding(other),
+        }
     }
+}
+
+/// The `emit.output_bytes` outcome for a package whose canonical bytes reach
+/// `actual` under `bound`.
+fn output_limit(bound: u64, actual: u128) -> qsl_foundation::diagnostic::LimitExceeded {
+    qsl_foundation::diagnostic::LimitExceeded::new(
+        qsl_foundation::Setting::EmitOutputBytes,
+        bound,
+        actual,
+    )
 }
 
 impl EmitRefusal {
@@ -407,6 +428,7 @@ impl EmitRefusal {
             | Self::MissingProtocolLocationContext { .. }
             | Self::UnrecordedProtocolTerm { .. } => Code::RuntimeInvariant,
             Self::ProtocolResultInvariant => Code::RuntimeInvariant,
+            Self::OutputLimit(_) => Code::StageLimitExceeded,
         }
     }
 
@@ -448,6 +470,7 @@ impl EmitRefusal {
             | Self::MissingProtocolLocationContext { .. }
             | Self::UnrecordedProtocolTerm { .. } => None,
             Self::ProtocolResultInvariant => None,
+            Self::OutputLimit(limit) => Some(limit.kind().catalog_cause()),
         }
     }
 }
@@ -4176,12 +4199,28 @@ fn require_protocol_results_for_refusals(package: &CheckedPackage) -> Result<(),
 /// [`emit_checked_with_cancel`]) returns its remembered emission: a checked
 /// package does not change, so a dependency reached again, or a caller that
 /// emits what the lifecycle already emitted, does not emit it twice.
-pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
+///
+/// `limits` is the caller's ceiling on the package's canonical bytes
+/// (`emit.output_bytes`); a remembered emission longer than it is refused
+/// with [`EmitRefusal::OutputLimit`] in place of being returned.
+pub fn emit_checked(package: &CheckedPackage, limits: EmitLimits) -> Result<Emission, EmitRefusal> {
     require_protocol_results_for_refusals(package)?;
     if let Some(emission) = package.remembered_emission() {
-        return Ok(emission.clone());
+        return remembered_within(emission, limits);
     }
-    emit_checked_with_cancel(package, &Cancel::new())
+    emit_checked_with_cancel(package, &Cancel::new(), limits)
+}
+
+/// A remembered `emission`, when its canonical bytes fit `limits`.
+fn remembered_within(emission: &Emission, limits: EmitLimits) -> Result<Emission, EmitRefusal> {
+    let actual = u64::try_from(emission.package().bytes().len()).unwrap_or(u64::MAX);
+    if actual > limits.output_bytes {
+        return Err(EmitRefusal::OutputLimit(output_limit(
+            limits.output_bytes,
+            u128::from(actual),
+        )));
+    }
+    Ok(emission.clone())
 }
 
 /// Emit the checked graph without reading or populating `CheckedPackage`'s
@@ -4190,6 +4229,7 @@ pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
 fn emit_checked_uncached(
     package: &CheckedPackage,
     cancel: &Cancel,
+    limits: EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     let graph = package.graph();
     emit_package_inner(
@@ -4199,6 +4239,7 @@ fn emit_checked_uncached(
         cancel,
         &ir_decodes,
         &[],
+        limits,
     )
 }
 
@@ -4207,11 +4248,13 @@ fn emit_checked_uncached(
 /// The returned aggregate carries a package only when every protocol emits.
 pub fn emit_checked_with_protocol_results(
     package: &CheckedPackage,
+    limits: EmitLimits,
 ) -> Result<ProtocolEmission, EmitRefusal> {
     emit_checked_with_protocol_results_and_temporal_selections_and_cancel(
         package,
         &[],
         &Cancel::new(),
+        limits,
     )
 }
 
@@ -4221,6 +4264,7 @@ pub fn emit_checked_with_protocol_results_and_temporal_selections_and_cancel(
     package: &CheckedPackage,
     selections: &[TemporalClockSelection],
     cancel: &Cancel,
+    limits: EmitLimits,
 ) -> Result<ProtocolEmission, EmitRefusal> {
     let graph = package.graph();
     let emission = match emit_package_inner(
@@ -4230,6 +4274,7 @@ pub fn emit_checked_with_protocol_results_and_temporal_selections_and_cancel(
         cancel,
         &ir_decodes,
         selections,
+        limits,
     ) {
         Ok(emission) => Some(emission),
         Err(EmitRefusal::NothingToEmit { .. }) if !graph.protocol_refusals().is_empty() => None,
@@ -4349,8 +4394,9 @@ pub fn emit_checked_with_protocol_results_and_temporal_selections_and_cancel(
 pub fn emit_checked_with_temporal_selections(
     package: &CheckedPackage,
     selections: &[TemporalClockSelection],
+    limits: EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
-    emit_checked_with_temporal_selections_and_cancel(package, selections, &Cancel::new())
+    emit_checked_with_temporal_selections_and_cancel(package, selections, &Cancel::new(), limits)
 }
 
 /// Emit with exact temporal selections while polling the caller's cancellation
@@ -4359,6 +4405,7 @@ pub fn emit_checked_with_temporal_selections_and_cancel(
     package: &CheckedPackage,
     selections: &[TemporalClockSelection],
     cancel: &Cancel,
+    limits: EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     require_protocol_results_for_refusals(package)?;
     let graph = package.graph();
@@ -4369,6 +4416,7 @@ pub fn emit_checked_with_temporal_selections_and_cancel(
         cancel,
         &ir_decodes,
         selections,
+        limits,
     )
 }
 
@@ -5251,6 +5299,7 @@ pub(crate) fn timed_models_of<'g>(
 pub fn emit_timed_models(
     base: &CheckedPackageV2,
     models: &[CheckedTimedModel],
+    limits: EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     let ids = &StructuralIds::default();
     let expected = base
@@ -5337,7 +5386,7 @@ pub fn emit_timed_models(
             },
             &capability_report,
             &diagnostics,
-            crate::checked::EMIT_LIMITS,
+            limits.canonical(),
         )
         .map_err(EmitRefusal::from)
     })?;
@@ -5377,9 +5426,10 @@ pub fn emit_timed_models(
 pub fn emit_checked_with_cancel(
     package: &CheckedPackage,
     cancel: &Cancel,
+    limits: EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     require_protocol_results_for_refusals(package)?;
-    let emission = emit_checked_uncached(package, cancel)?;
+    let emission = emit_checked_uncached(package, cancel, limits)?;
     package.remember_emission(&emission);
     Ok(emission)
 }
@@ -5391,9 +5441,18 @@ pub fn emit_checked_with_cancel(
 pub fn emit_package(
     package: &CheckedPackage,
     regions: impl Fn(&Location) -> Option<SourceRegion>,
+    limits: EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     require_protocol_results_for_refusals(package)?;
-    emit_package_inner(package, regions, |_| None, &Cancel::new(), &ir_decodes, &[])
+    emit_package_inner(
+        package,
+        regions,
+        |_| None,
+        &Cancel::new(),
+        &ir_decodes,
+        &[],
+        limits,
+    )
 }
 
 /// Emit a checked package with caller-placed source regions and explicit
@@ -5403,6 +5462,7 @@ pub fn emit_package_with_temporal_selections(
     package: &CheckedPackage,
     regions: impl Fn(&Location) -> Option<SourceRegion>,
     selections: &[TemporalClockSelection],
+    limits: EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     require_protocol_results_for_refusals(package)?;
     emit_package_inner(
@@ -5412,6 +5472,7 @@ pub fn emit_package_with_temporal_selections(
         &Cancel::new(),
         &ir_decodes,
         selections,
+        limits,
     )
 }
 
@@ -5430,9 +5491,18 @@ fn emit_package_with_fault(
     package: &CheckedPackage,
     regions: impl Fn(&Location) -> Option<SourceRegion>,
     fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
+    limits: EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     require_protocol_results_for_refusals(package)?;
-    emit_package_inner(package, regions, fault, &Cancel::new(), &ir_decodes, &[])
+    emit_package_inner(
+        package,
+        regions,
+        fault,
+        &Cancel::new(),
+        &ir_decodes,
+        &[],
+        limits,
+    )
 }
 
 /// As [`emit_package`], but against an IR whose v2 vocabulary `decodes`
@@ -5445,8 +5515,17 @@ fn emit_package_decoding(
     package: &CheckedPackage,
     regions: impl Fn(&Location) -> Option<SourceRegion>,
     decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
+    limits: EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
-    emit_package_inner(package, regions, |_| None, &Cancel::new(), decodes, &[])
+    emit_package_inner(
+        package,
+        regions,
+        |_| None,
+        &Cancel::new(),
+        decodes,
+        &[],
+        limits,
+    )
 }
 
 /// As [`emit_checked`], but lets a caller force a specific node's wire
@@ -5460,10 +5539,11 @@ fn emit_package_decoding(
 pub fn emit_checked_with_fault(
     package: &CheckedPackage,
     fault: impl Fn(&CheckedNodeId) -> Option<EmitRefusal>,
+    limits: EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     require_protocol_results_for_refusals(package)?;
     let graph = package.graph();
-    emit_package_with_fault(package, graph.memoized_regions(), fault)
+    emit_package_with_fault(package, graph.memoized_regions(), fault, limits)
 }
 
 /// The [`CheckedNodeId`] [`emit_checked_with_fault`]'s `fault` closure
@@ -5660,6 +5740,7 @@ fn emit_package_inner(
     cancel: &Cancel,
     decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
     temporal_selections: &[TemporalClockSelection],
+    limits: EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     let ids = &StructuralIds::default();
     let denied = || {
@@ -6319,7 +6400,7 @@ fn emit_package_inner(
             },
             &capability_report,
             &diagnostics,
-            crate::checked::EMIT_LIMITS,
+            limits.canonical(),
         )
         .map_err(EmitRefusal::from)
     })?;

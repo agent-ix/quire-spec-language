@@ -1107,7 +1107,7 @@ pub fn run_clause_with_temporal_selections(
         let emitted = front_end::package_with_temporal_selections(
             &checked,
             temporal_selections,
-            front_end::PackageLimits::default(),
+            request.limits.package,
             &cancel,
         )?
         .into_value();
@@ -1151,6 +1151,7 @@ pub fn run_clause_with_temporal_selections(
             &checked,
             &emitted,
             request.limits.imports,
+            request.limits.package.emit(),
         ) {
             Ok(evidence) => evidence,
             Err(_) => {

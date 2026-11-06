@@ -625,6 +625,7 @@ pub(crate) fn model_subject<'a>(
 ) -> ModelSubject<'a> {
     ModelSubject {
         simulation: ModelSimulationRequest {
+            emit: qsl_package::EmitLimits::fixture(),
             package,
             packages: &documents.packages,
             normalization: ModelNormalizationLimits::default(),

@@ -429,7 +429,8 @@ mod tests {
         .check(CheckingLimits::default())
         .expect("the fixture checks");
         let package = qsl_package::CheckedPackage::link(graph);
-        let emission = qsl_package::emit_checked(&package).expect("the fixture emits");
+        let emission = qsl_package::emit_checked(&package, qsl_package::EmitLimits::new(1 << 32))
+            .expect("the fixture emits");
         assert!(emission.omitted().is_empty());
         (package, emission)
     }

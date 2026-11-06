@@ -380,7 +380,8 @@ fn service_checks_and_refuses_emission_naming_its_first_random_parameter() {
     assert_eq!(model.random_parameters().len(), 2);
     assert_eq!(model.rewards().len(), 1);
     assert_eq!(model.workloads().len(), 1);
-    let refusal = qsl_package::emit_checked(&world.package).expect_err("S4 refuses");
+    let refusal = qsl_package::emit_checked(&world.package, qsl_package::EmitLimits::fixture())
+        .expect_err("S4 refuses");
     assert_eq!(
         refusal,
         qsl_package::EmitRefusal::ProbabilisticModelNotEmitted {

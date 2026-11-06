@@ -1178,11 +1178,11 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
     for (entrypoint, result) in [
         (
             "emit_checked_with_cancel",
-            emit_checked_with_cancel(&combined_package, &quire_exact::Cancel::new()),
+            emit_checked_with_cancel(&combined_package, &quire_exact::Cancel::new(), ceiling()),
         ),
         (
             "emit_checked_with_temporal_selections",
-            emit_checked_with_temporal_selections(&combined_package, &[]),
+            emit_checked_with_temporal_selections(&combined_package, &[], ceiling()),
         ),
         (
             "emit_checked_with_temporal_selections_and_cancel",
@@ -1190,12 +1190,13 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
                 &combined_package,
                 &[],
                 &quire_exact::Cancel::new(),
+                ceiling(),
             ),
         ),
         ("emit_package", emit_package(&combined_package, whole_unit)),
         (
             "emit_package_with_temporal_selections",
-            emit_package_with_temporal_selections(&combined_package, whole_unit, &[]),
+            emit_package_with_temporal_selections(&combined_package, whole_unit, &[], ceiling()),
         ),
     ] {
         assert!(

@@ -251,6 +251,7 @@ fn a_duration_window_outside_the_clock_unit_node_refuses() {
     let refusal = crate::emit::emit_checked_with_temporal_selections(
         &CheckedPackage::link(graph),
         &selections,
+        crate::EmitLimits::fixture(),
     )
     .expect_err("a source-declared unit is no clock unit node");
     assert!(
@@ -357,6 +358,7 @@ fn emit_with_clock(
     Ok(crate::emit::emit_checked_with_temporal_selections(
         &CheckedPackage::link(graph),
         &selections,
+        crate::EmitLimits::fixture(),
     )
     .map(|emission| wire(&emission)))
 }

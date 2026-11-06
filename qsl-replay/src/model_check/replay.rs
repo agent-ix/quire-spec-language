@@ -1087,6 +1087,7 @@ fn replay_on(
         observation: limits.observation,
         expansion: subject.expansion,
         meter,
+        emit: limits.spine.package.emit(),
     };
     let (settlement, hints) = replay((package, compiled.package.clone()), &simulation, meter)?;
     Ok(ModelTraceReplayResult {

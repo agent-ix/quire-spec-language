@@ -121,6 +121,7 @@ settings! {
     I2Diagnostics => "i2.diagnostics", "I2 v2 reader", DiagnosticCount;
     I2WorkUnits => "i2.work_units", "I2 v2 reader", WorkBudget;
     I2NativeJoinStorage => "i2.native_join_storage", "I2 v2 reader native identity join", LogicalStorage;
+    EmitOutputBytes => "emit.output_bytes", "E4 emit", InputBytes;
     ExploreStates => "explore.states", "exploration", NodeCount;
     ExploreTransitions => "explore.transitions", "exploration", EdgeCount;
     ModelCheckMaxStates => "model_check.max_states", "EN-1 model checker", NodeCount;

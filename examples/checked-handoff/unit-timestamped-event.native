@@ -4,6 +4,8 @@ profile v = "quire.model.complete/v1";
 profile t = "quire.temporal.timestamped-event.finite-window/v1";
 import "agent-ix/checked-handoff-library" as L;
 model M = "agent-ix/checked-handoff";
+dimension Money;
+unit U : Money = rational(1, 1);
 
 temporal DueTimestamp using t over (view: M::Workflow) clock "timestamp-clock" on origin {
     always[0,30] holds(

@@ -199,7 +199,8 @@ fn a_package_typed_unit_conversion_evaluates_true_for_two_ticks() {
     assert!(!truth(&package, "k1_at_three_ticks"));
     assert!(truth(&package, "chained"));
     // The emit path carries the model-owned unit nodes.
-    qsl_package::emit_checked(&package).expect("the package with package-owned units emits");
+    qsl_package::emit_checked(&package, qsl_package::EmitLimits::fixture())
+        .expect("the package with package-owned units emits");
 }
 
 /// FR-497-AC-4 (TC-1287): a source-checked carried conversion returns its

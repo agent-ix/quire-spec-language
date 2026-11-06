@@ -99,8 +99,13 @@ fn an_ir_that_cannot_decode_the_union_omits_it_and_every_node_naming_it() {
         !(tag == CheckedNodeTag::CompositeType && form == "union")
             && CheckedNodeKind::decode(tag, form).is_some()
     };
-    let emission = emit_package_decoding(&package, regions, &cannot_decode_union)
-        .expect("the remaining nodes emit");
+    let emission = emit_package_decoding(
+        &package,
+        regions,
+        &cannot_decode_union,
+        crate::EmitLimits::fixture(),
+    )
+    .expect("the remaining nodes emit");
 
     let graph = package.graph().semantic_graph();
     let id_of = |form: &str| -> CheckedNodeId {

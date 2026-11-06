@@ -68,6 +68,7 @@ impl ClauseIdentity {
         clause: &CheckedTemporalClause,
         temporal_clock_selections: &[TemporalClockSelection],
         cancel: &Cancel,
+        emit: qsl_package::EmitLimits,
     ) -> Result<Self, ClauseRootRefusal> {
         let node = package
             .graph()
@@ -78,8 +79,13 @@ impl ClauseIdentity {
                 name: clause.name().to_owned(),
             })?;
         let triple = node_occurrence(node);
-        let (admitted, library) =
-            read_back(package, domain_packages, temporal_clock_selections, cancel)?;
+        let (admitted, library) = read_back(
+            package,
+            domain_packages,
+            temporal_clock_selections,
+            cancel,
+            emit,
+        )?;
         let read = admitted
             .package(&library)
             .ok_or_else(|| ClauseRootRefusal::Package("the read recorded no package".to_owned()))?;
@@ -98,11 +104,13 @@ fn read_back(
     domain_packages: &qsl_semantics::model::intake::PackageInput,
     temporal_clock_selections: &[TemporalClockSelection],
     cancel: &Cancel,
+    emit: qsl_package::EmitLimits,
 ) -> Result<(AdmittedPackages, LibraryName), ClauseRootRefusal> {
     let emission = emit_checked_with_temporal_selections_and_cancel(
         package,
         temporal_clock_selections,
         cancel,
+        emit,
     )
     .map_err(|refusal| match refusal {
         EmitRefusal::Cancelled { cause } => ClauseRootRefusal::Cancelled(cause),
@@ -121,6 +129,7 @@ fn read_back(
         // join, so it asks for no native storage: a join attempted here is
         // refused at once rather than allowed an invented allowance.
         V2ReadLimits::bounded(0),
+        emit,
     )
     .map_err(|refusal| ClauseRootRefusal::Package(format!("{refusal:?}")))?;
     Ok((admitted, library))
@@ -162,14 +171,20 @@ impl StateGraphIdentity {
         claim: &CheckedStateGraphClaim,
         temporal_clock_selections: &[TemporalClockSelection],
         cancel: &Cancel,
+        emit: qsl_package::EmitLimits,
     ) -> Result<Self, ClauseRootRefusal> {
         let triple = claim
             .occurrence()
             .ok_or_else(|| ClauseRootRefusal::Undeclared {
                 name: claim.name().to_owned(),
             })?;
-        let (admitted, library) =
-            read_back(package, domain_packages, temporal_clock_selections, cancel)?;
+        let (admitted, library) = read_back(
+            package,
+            domain_packages,
+            temporal_clock_selections,
+            cancel,
+            emit,
+        )?;
         let read = admitted
             .package(&library)
             .ok_or_else(|| ClauseRootRefusal::Package("the read recorded no package".to_owned()))?;
@@ -208,6 +223,7 @@ impl HyperIdentity {
         clause: &CheckedHyperClause,
         temporal_clock_selections: &[TemporalClockSelection],
         cancel: &Cancel,
+        emit: qsl_package::EmitLimits,
     ) -> Result<Self, ClauseRootRefusal> {
         let assembled = package
             .graph()
@@ -225,8 +241,13 @@ impl HyperIdentity {
                 name: clause.name().to_owned(),
             }
         })?;
-        let (admitted, library) =
-            read_back(package, domain_packages, temporal_clock_selections, cancel)?;
+        let (admitted, library) = read_back(
+            package,
+            domain_packages,
+            temporal_clock_selections,
+            cancel,
+            emit,
+        )?;
         let read = admitted
             .package(&library)
             .ok_or_else(|| ClauseRootRefusal::Package("the read recorded no package".to_owned()))?;

@@ -154,6 +154,9 @@ pub struct ModelSimulationRequest<'a> {
     pub expansion: ExpansionLimits,
     /// The evaluation meter budget; each clause evaluation gets a fresh meter.
     pub meter: ScalarLimits,
+    /// The ceiling on the canonical bytes of each package emission the
+    /// subject's analysis makes (`emit.output_bytes`, FR-264 Behavior 5).
+    pub emit: qsl_package::EmitLimits,
 }
 
 /// A model state with its anchor (FR-120 "State, state key and anchor"). The

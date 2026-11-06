@@ -179,6 +179,7 @@ fn open_systems_inner<'a>(
         observation: concrete.observation,
         expansion: concrete.expansion,
         meter: concrete.meter,
+        emit: concrete.emit,
     };
     Ok(RefinementSystems {
         concrete: ModelSystem::over_model(concrete.clone(), concrete_model).map_err(admit)?,

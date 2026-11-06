@@ -47,6 +47,7 @@ fn fixture_with_raised_limits(body: &str) -> Fixture {
             .with_nodes(1 << 40)
             .with_input_bytes(1 << 40)
             .with_work_budget(1 << 40),
+        package: crate::spine::PackageLimits::default().with_output_bytes(1 << 40),
         ..SpineLimits::default()
     };
     let compiled = compose(
@@ -703,8 +704,8 @@ fn list(declaration: NodeKey, depth: usize) -> WitnessValue {
 /// FR-263-AC-1 (TC-736 steps 1 and 2): on a thread with a 512 KiB stack, a
 /// request whose source holds a function with a 100,000-term sum over a
 /// recursive list parameter, whose assignment (and witness entry) carries a
-/// 100,000-long recursive list, whose `stage_limits` carries raised `s1.*`
-/// and `s3.*` settings, and whose `replay.input_bytes` is raised to fit,
+/// 100,000-long recursive list, whose `stage_limits` carries raised `s1.*`,
+/// `s3.*` and `emit.output_bytes` settings, and whose `replay.input_bytes` is raised to fit,
 /// replays to the proving run's verdict,  Under the default limits it refuses by the first
 /// limit it reaches.
 #[trace("TC-736", "FR-263-AC-1")]
@@ -728,6 +729,7 @@ fn tc_736_a_100000_term_source_and_list_replay_to_the_proving_verdict() {
                 "s3.nodes",
                 "s3.input_bytes",
                 "s3.work_units",
+                "emit.output_bytes",
             ]
             .map(|name| {
                 let bound = if name == "s1.input_bytes" {

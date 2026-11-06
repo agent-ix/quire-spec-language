@@ -382,11 +382,15 @@ fn equality_file(
     let unnameable = |what: String| Error::Unnameable { what };
     let selections =
         emit_checked_v2::clock_selections(&compiled.checked, &request.emit.temporal_selections)?;
-    qsl_package::emit_checked_with_temporal_selections(compiled.checked.package(), &selections)
-        .map_err(|refusal| unnameable(format!("equality witness: {refusal}")))?
-        .equality_witness(package)
-        .to_bytes(package)
-        .map_err(|refused| unnameable(format!("equality file: {refused}")))
+    qsl_package::emit_checked_with_temporal_selections(
+        compiled.checked.package(),
+        &selections,
+        compiled.emit,
+    )
+    .map_err(|refusal| unnameable(format!("equality witness: {refusal}")))?
+    .equality_witness(package)
+    .to_bytes(package)
+    .map_err(|refused| unnameable(format!("equality file: {refused}")))
 }
 
 /// The exact input bytes under `sources/` and `models/`.
@@ -423,7 +427,12 @@ fn read_evidence(compiled: &Compiled) -> Result<CheckedPackageEvidence, Error> {
             })?;
     let mut evidence = compiled.emitted.evidence().clone();
     supply_documents(&mut evidence, &documents, "the unit")?;
-    admit_dependencies(compiled.checked.package(), &mut evidence, &documents)?;
+    admit_dependencies(
+        compiled.checked.package(),
+        &mut evidence,
+        &documents,
+        compiled.emit,
+    )?;
     Ok(evidence)
 }
 
@@ -448,17 +457,18 @@ fn admit_dependencies(
     package: &qsl_package::CheckedPackage,
     evidence: &mut CheckedPackageEvidence,
     documents: &qsl_semantics::model::intake::PackageInput,
+    emit: qsl_package::EmitLimits,
 ) -> Result<(), Error> {
     for (identity, dependency) in package.dependencies() {
         let failed = |detail: String| Error::Dependency {
             identity: identity.as_str().to_owned(),
             detail,
         };
-        let emission =
-            qsl_package::emit_checked(dependency).map_err(|refusal| failed(refusal.to_string()))?;
+        let emission = qsl_package::emit_checked(dependency, emit)
+            .map_err(|refusal| failed(refusal.to_string()))?;
         let mut own = emission.evidence().clone();
         supply_documents(&mut own, documents, identity.as_str())?;
-        admit_dependencies(dependency, &mut own, documents)?;
+        admit_dependencies(dependency, &mut own, documents, emit)?;
         let CheckedPackageDispatchResult::AdmittedV2(admitted) =
             read_checked_package(emission.package().bytes(), READ_LIMITS, &own)
         else {

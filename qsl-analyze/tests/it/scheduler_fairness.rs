@@ -9,6 +9,7 @@
 //! of `k.flag = 1` and the TP-1 claim `k.v <= 1` in place of `k.flag <= 1`.
 //! Its branches, channel premises and nodes are FR-212's.
 
+use qsl_package::EmitLimits;
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
@@ -636,9 +637,12 @@ fn protocol_targets_resolve_and_classes_hold_their_threads_steps() {
         ProtocolTarget::Branch { parallel: path, branch } if path == "Both" && branch == "s"
     )));
     let branch_selections = tcb_01_event_position_selection(&branch.checked);
-    let branch_emission =
-        qsl_package::emit_checked_with_temporal_selections(&branch.checked, &branch_selections)
-            .expect("typed branch fairness emits with its selected TCB-01 clock");
+    let branch_emission = qsl_package::emit_checked_with_temporal_selections(
+        &branch.checked,
+        &branch_selections,
+        EmitLimits::fixture(),
+    )
+    .expect("typed branch fairness emits with its selected TCB-01 clock");
     let branch_wire = branch_emission.package().bytes();
     assert!(String::from_utf8_lossy(branch_wire).contains("parallel_branch"));
 
@@ -673,9 +677,12 @@ fn protocol_targets_resolve_and_classes_hold_their_threads_steps() {
         ProtocolTarget::AttemptNode { node } if node == "Both/s/Sender/Done"
     )));
     let attempt_selections = tcb_01_event_position_selection(&attempt.checked);
-    let attempt_emission =
-        qsl_package::emit_checked_with_temporal_selections(&attempt.checked, &attempt_selections)
-            .expect("typed attempt fairness emits with its selected TCB-01 clock");
+    let attempt_emission = qsl_package::emit_checked_with_temporal_selections(
+        &attempt.checked,
+        &attempt_selections,
+        EmitLimits::fixture(),
+    )
+    .expect("typed attempt fairness emits with its selected TCB-01 clock");
     let attempt_wire = attempt_emission.package().bytes();
     assert!(String::from_utf8_lossy(attempt_wire).contains("attempt_node"));
     let missing = check_refusal(&with_constraint("", "fair weak Missing;"));
@@ -759,8 +766,12 @@ fn interleaved_operation_and_protocol_fairness_preserves_source_order() {
         &IS_ONE,
     );
     let selections = tcb_01_event_position_selection(&chatter.checked);
-    let emitted = qsl_package::emit_checked_with_temporal_selections(&chatter.checked, &selections)
-        .expect("mixed fairness emits with its selected TCB-01 clock");
+    let emitted = qsl_package::emit_checked_with_temporal_selections(
+        &chatter.checked,
+        &selections,
+        EmitLimits::fixture(),
+    )
+    .expect("mixed fairness emits with its selected TCB-01 clock");
     let wire: Value = serde_json::from_slice(emitted.package().bytes()).expect("wire JSON");
     let nodes = wire["semantic_graph"]["nodes"]
         .as_array()
@@ -831,8 +842,12 @@ fn a_compensation_uses_its_finite_temporal_profile() {
                 )
             })
     }));
-    let emission = qsl_package::emit_checked_with_temporal_selections(&checked, &selections)
-        .expect("compensation emits with its selected TCB-01 clock");
+    let emission = qsl_package::emit_checked_with_temporal_selections(
+        &checked,
+        &selections,
+        EmitLimits::fixture(),
+    )
+    .expect("compensation emits with its selected TCB-01 clock");
     let wire = emission.package().bytes();
     let wire: Value = serde_json::from_slice(wire).expect("emitted checked-package JSON");
     let nodes = wire["semantic_graph"]["nodes"]
@@ -902,8 +917,12 @@ fn an_authored_constraint_targets_its_own_compensation_templates_node() {
             &(compensation_fairness_profiles() + "profile t0 = \"quire.temporal.timed/v1\";\n"),
             &body,
         );
-        let emission = qsl_package::emit_checked_with_temporal_selections(&checked, &[])
-            .expect("the unit emits");
+        let emission = qsl_package::emit_checked_with_temporal_selections(
+            &checked,
+            &[],
+            EmitLimits::fixture(),
+        )
+        .expect("the unit emits");
         let wire: Value =
             serde_json::from_slice(emission.package().bytes()).expect("emitted checked package");
         let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
