@@ -494,7 +494,7 @@ fn run(
         Ok(checked) => checked.into_value(),
         Err(failure) => return front_end_failure(failure),
     };
-    let emitted = match spine::package(&checked, spine::PackageLimits::default(), &cancel) {
+    let emitted = match spine::package(&checked, limits.spine.package, &cancel) {
         Ok(emitted) => emitted.into_value(),
         Err(failure) => return front_end_failure(failure),
     };

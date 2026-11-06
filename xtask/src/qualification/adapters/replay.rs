@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path};
 
 use qsl_foundation::node_wire::{node_key_to_json, node_key_to_text};
-use qsl_foundation::SettingName;
+use qsl_foundation::{SettingLimits, SettingName};
 use qsl_replay::{
     DeclaredDomain, DomainKey, DomainKind, FiniteBound, Integer, ProofBound, ReplayRequestWire,
     ReplaySource, RequestTargetWire, WitnessValue,
@@ -836,5 +836,3 @@ mod depth_tests {
         assert!(!failure.message.contains("recursion limit"));
     }
 }
-
-use qsl_foundation::SettingLimits;

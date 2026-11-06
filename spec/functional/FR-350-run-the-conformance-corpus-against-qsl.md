@@ -133,7 +133,10 @@ and all other owning admission and refusal rules remain authoritative.
 The compiler adapter supplies every `model` file to the public compiler's
 domain-package input. It never substitutes an empty model input for the
 documents the vector names. Each operation starts with fresh effective limits;
-signature lookup and object admission use those same limits. The runner's
+signature lookup and object admission use those same limits. When adapting
+NodeId values requires checked-package emission, that emission receives the
+same caller's `emit.output_bytes` bound; the adapter never substitutes a fresh
+package limit. The runner's
 library entry retains the returned bytes of each passed vector separately
 from the FR-352 report, so callers can compare operation bytes without
 reconstructing them from the qualification verdict. Population binding admission

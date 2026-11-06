@@ -434,6 +434,46 @@ fn compiler_limits_preserve_the_stage_setting_and_refusal_partition() {
         "the typed stage setting survives: {actual}"
     );
     assert_eq!(fixture.execute(&[]).outcome.code, 0);
+    let exact = compiled.bytes().len();
+    assert_eq!(
+        fixture
+            .execute(&["--limit", &format!("emit.output_bytes={exact}")])
+            .outcome
+            .code,
+        0
+    );
+    let one_short =
+        report(&fixture.execute(&["--limit", &format!("emit.output_bytes={}", exact - 1)]));
+    assert_eq!(
+        one_short["capabilities"][0]["outcome"], "incomplete",
+        "{one_short}"
+    );
+    assert!(
+        serde_json::to_string(&one_short["capabilities"][0]["vectors"][0]["actual"])
+            .unwrap()
+            .contains("emit.output_bytes")
+    );
+    let mut runtime = Fixture::new(
+        "runtime",
+        "run",
+        COUNTER,
+        json!({"disposition":"value", "value":{"kind":"completed", "value":{"kind":"integer", "decimal":"12"}}}),
+    );
+    runtime.run_call(
+        json!([{"kind":"integer", "decimal":"1"},{"kind":"integer", "decimal":"2"}]),
+        json!({}),
+    );
+    let runtime_limit = report(&runtime.execute(&["--limit", "emit.output_bytes=0"]));
+    assert_eq!(
+        runtime_limit["capabilities"][0]["outcome"], "incomplete",
+        "{runtime_limit}"
+    );
+    assert!(
+        serde_json::to_string(&runtime_limit["capabilities"][0]["vectors"][0]["actual"])
+            .unwrap()
+            .contains("emit.output_bytes")
+    );
+    assert_eq!(runtime.execute(&[]).outcome.code, 0);
 }
 
 #[test]
