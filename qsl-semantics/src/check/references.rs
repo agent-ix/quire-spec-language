@@ -70,6 +70,7 @@ pub(crate) fn read_object(node: CheckedNode<'_>) -> Option<EffectiveId> {
         | NodeKind::IeeeTotalOrder(..)
         | NodeKind::IeeeBitIdentical(..)
         | NodeKind::Quantity(..)
+        | NodeKind::QuantityNegate(..)
         | NodeKind::QuantityPower(..)
         | NodeKind::ConvertDecimal(..)
         | NodeKind::Order(..)

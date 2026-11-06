@@ -872,6 +872,7 @@ pub(super) fn carry_rows(
             source_identity: _,
             qualified_declaration: _,
             node_key: _,
+            shape: _,
         } = row;
         rekey.id(structural_node);
     }
@@ -885,6 +886,7 @@ pub(super) fn carry_rows(
             declaration_qualified_name: _,
             case: _,
             member_key: _,
+            variant: _,
         } = row;
         rekey.id(structural_node);
         rekey.id(declaration_node);

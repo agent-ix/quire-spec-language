@@ -446,6 +446,7 @@ fn is_scalar_application(node: CheckedNode<'_>) -> bool {
         | NodeKind::IeeeFloat32Fma(..)
         | NodeKind::IeeeFloat64Fma(..)
         | NodeKind::Quantity(..)
+        | NodeKind::QuantityNegate(..)
         | NodeKind::QuantityPower(..)
         | NodeKind::ConvertDecimal(..)
         | NodeKind::Order(..)

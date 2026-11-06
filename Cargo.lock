@@ -1649,7 +1649,7 @@ dependencies = [
 [[package]]
 name = "quire-checked"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-eval?branch=main#9bb20e6bd6949e94ece964f923c691843763287f"
+source = "git+https://github.com/agent-ix/quire-eval?branch=main#c714820c71f3b809fb323768e0fe1949a6989acd"
 dependencies = [
  "quire-canonical",
  "quire-exact",
@@ -1662,7 +1662,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#d397b8aa59175c61f1f13dcb646a809409e43b53"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#53d8c864ada18b112c31697547ca5bc541e5edba"
 dependencies = [
  "ix-trace-rs",
  "jsonschema 0.17.1",
@@ -1688,7 +1688,7 @@ dependencies = [
 [[package]]
 name = "quire-eval"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-eval?branch=main#9bb20e6bd6949e94ece964f923c691843763287f"
+source = "git+https://github.com/agent-ix/quire-eval?branch=main#c714820c71f3b809fb323768e0fe1949a6989acd"
 dependencies = [
  "quire-exact",
  "quire-semantic-value",
@@ -1735,7 +1735,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#079b4a0abe015d53ebb282a4f940e79c9e509a97"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#585286d9225de92ce0812cb21b19e0008dcaaf4f"
 dependencies = [
  "quire-canonical",
  "quire-exact",

@@ -2445,6 +2445,20 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 self.units.form(unit);
                 Value::Quantity(quantity)
             }
+            NodeKind::QuantityNegate(_) => {
+                let Value::Quantity(operand) = self.pop()? else {
+                    return Err(invariant("quantity-negate-operand-expected"));
+                };
+                let Some(unit_operand) = self.units.resolve(&operand) else {
+                    return Err(unresolved_unit());
+                };
+                let (outcome, unit) =
+                    evaluate_quantity_unit(QuantityOperation::Negate(unit_operand), self.meter)
+                        .map_err(|_| invariant("quantity-operation-rejected"))?;
+                let quantity = outcome_into_stop(outcome)?;
+                self.units.form(unit);
+                Value::Quantity(quantity)
+            }
             NodeKind::QuantityPower(_, _) => {
                 let (Value::Integer(exponent), Value::Quantity(base)) = (self.pop()?, self.pop()?)
                 else {
