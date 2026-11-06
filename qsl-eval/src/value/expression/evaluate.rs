@@ -3119,11 +3119,10 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     match (target_type, converted) {
                         (ValueType::BoundedQuantity(bounded), Value::Quantity(quantity)) => {
                             let interval = bounded_result_interval(bounded)?;
-                            let admitted =
-                                admit_quantity_result(quantity, &interval, self.meter)
-                                    .map_err(|_| {
-                                        invariant("bounded-quantity-result-unit-mismatch")
-                                    })?;
+                            let admitted = admit_quantity_result(quantity, &interval, self.meter)
+                                .map_err(|_| {
+                                invariant("bounded-quantity-result-unit-mismatch")
+                            })?;
                             Value::Quantity(outcome_into_stop(admitted)?)
                         }
                         (ValueType::BoundedQuantity(_), _) => {

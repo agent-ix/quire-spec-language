@@ -594,9 +594,8 @@ fn bounded_package() -> (CheckedPackage, quire_exact::UnitId, quire_exact::UnitI
 #[trace("TC-413", "FR-093-AC-61")]
 #[test]
 fn conversion_to_a_bounded_result_checks_both_inclusive_endpoints() {
-    use qsl_foundation::diagnostic::Locus;
-    use quire_semantic_value::catalog::{CatalogCode, Category};
     use quire_exact::{Integer, Quantity, Rational, Refusal};
+    use quire_semantic_value::catalog::{CatalogCode, Category};
     let (package, metre, centimetre) = bounded_package();
     let call = |centimetres: i64| {
         package
@@ -627,7 +626,10 @@ fn conversion_to_a_bounded_result_checks_both_inclusive_endpoints() {
             .clone()
             .expect("the refusal carries its locus");
         let FamilyOutcome::Evaluated(Outcome::Refused(refusal)) = &evaluation.outcome else {
-            panic!("{centimetres} cm is outside [0, 2] m, got {:?}", evaluation.outcome);
+            panic!(
+                "{centimetres} cm is outside [0, 2] m, got {:?}",
+                evaluation.outcome
+            );
         };
         let Refusal::BoundedQuantityOutOfDomain { target } = refusal else {
             panic!("expected the bounded quantity refusal, got {refusal:?}");
@@ -635,17 +637,17 @@ fn conversion_to_a_bounded_result_checks_both_inclusive_endpoints() {
         assert_eq!(target.min().to_string(), "0/1");
         assert_eq!(target.max().to_string(), "2/1");
         assert_eq!(target.unit(), &metre);
-        let record = qsl_foundation::diagnostic::kernel_refusal_record(
-            refusal,
-            Some(Locus::Occurrence(location.clone())),
-        )
-        .expect("bounded quantity refusal has a record");
+        let record = qsl_eval::value::refusal_record(&evaluation, |at| package.graph().region(at))
+            .expect("bounded quantity refusal has a record");
         assert_eq!(
             record.code(),
             CatalogCode::new("rational_out_of_domain", "outside-domain")
         );
         assert_eq!(record.category(), Category::Refusal);
-        assert_eq!(record.locus(), Some(&Locus::Occurrence(location)));
+        // The conversion to the bounded result type is the body's root
+        // expression, and that node is the refusal's locus.
+        assert_eq!(location.depth(), 0, "refused at {location:?}");
+        assert_eq!(&evaluation.location, &Some(location));
     }
 }
 
@@ -659,7 +661,7 @@ fn conversion_between_two_bounded_types_checks_the_target_interval() {
             .call(
                 &QualifiedName::unqualified("to_narrow").expect("function name"),
                 vec![Value::Quantity(Quantity::new(
-                    Rational::new(Integer::from(half_metres), Integer::from(2))
+                    Rational::new(Integer::from(half_metres), Integer::from(2_i64))
                         .expect("exact magnitude"),
                     metre.clone(),
                 ))],
