@@ -2323,11 +2323,15 @@ fn the_unit_on_amount_and_total_is_written_with_its_comparison_and_its_sum() {
 #[trace("FR-517-AC-20", "TC-1312")]
 #[test]
 fn decimal_and_rational_sums_lower_to_their_family_identity() {
+    // Four summands of at most 10.00 (or 10) total at most 40.00 (or 80 over
+    // denominator 2), so each result domain is wider than its summand's.
     let wire = unit_wire(
-        "type D = Decimal[0, 1000; 2, 2; toward-zero];\n\
-         type Q = Rational[0, 10; 1, 12];\n\
-         function decimals using v(s: Sequence<D>[0, 4]): D pure { sum<D>(x in s: x) }\n\
-         function rationals using v(s: Sequence<Q>[0, 4]): Q pure { sum<Q>(x in s: x) }",
+        "type E = Decimal[0, 1000; 2, 2; toward-zero];\n\
+         type D = Decimal[0, 4000; 2, 2; toward-zero];\n\
+         type P = Rational[0, 10; 1, 2];\n\
+         type Q = Rational[-80, 80; 1, 2];\n\
+         function decimals using v(s: Sequence<E>[0, 4]): D pure { sum<D>(x in s: x) }\n\
+         function rationals using v(s: Sequence<P>[0, 4]): Q pure { sum<Q>(x in s: x) }",
     );
     let mut sums: Vec<_> = sum_applications(&wire)
         .into_iter()
@@ -2344,6 +2348,23 @@ fn decimal_and_rational_sums_lower_to_their_family_identity() {
             ("quire.op.collection.sum.rational".to_owned(), Value::Null),
         ]
     );
+}
+
+/// FR-517-AC-20, FR-046, FR-100: a decimal or rational sum whose bounded
+/// source can total more than the result domain is refused, never written.
+#[trace("FR-517-AC-20", "TC-1312")]
+#[test]
+fn a_bounded_decimal_or_rational_sum_leaving_its_domain_is_refused() {
+    write_unit(
+        "type D = Decimal[0, 1000; 2, 2; toward-zero];\n\
+         function decimals using v(s: Sequence<D>[0, 4]): D pure { sum<D>(x in s: x) }",
+    )
+    .expect_err("four decimals of 10.00 can total 40.00, outside D");
+    write_unit(
+        "type Q = Rational[0, 10; 1, 2];\n\
+         function rationals using v(s: Sequence<Q>[0, 4]): Q pure { sum<Q>(x in s: x) }",
+    )
+    .expect_err("four rationals of 10 can total 40, outside Q");
 }
 
 /// Model aliases keep their admitted unit type when used as source names.

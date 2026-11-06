@@ -10,8 +10,9 @@ use qsl_semantics::check::{CheckCause, PackageDeclarations};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::{admit_ieee_profile, DefinitionRole};
 use quire_eval::FamilyOutcome;
-use quire_exact::{IllTypedCause, Meter, Outcome, Undefined, Value};
+use quire_exact::{IllTypedCause, Meter, Outcome, Value};
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 
 use super::quantity_literals::{package_with, UNLIMITED};
 
@@ -24,6 +25,11 @@ const UNIT: &str = "dimension Length; unit m : Length = rational(1, 1);\n\
 /// The outcome of calling `f` in the package that `functions` declares, with
 /// the IEEE profile selected so that a float sum checks.
 fn outcome(functions: &str) -> Outcome<Value> {
+    evaluation(functions).0
+}
+
+/// [`outcome`] and the value losses the evaluation reported.
+fn evaluation(functions: &str) -> (Outcome<Value>, Vec<LocatedLoss>) {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n{functions}"
@@ -63,7 +69,18 @@ fn outcome(functions: &str) -> Outcome<Value> {
     let FamilyOutcome::Evaluated(outcome) = evaluation.outcome else {
         panic!("a kernel outcome, not {:?}", evaluation.outcome);
     };
-    outcome
+    (outcome, evaluation.losses)
+}
+
+/// The checker refuses `functions` for an unproved range (FR-046, FR-100).
+fn assert_unproved_range(functions: &str) {
+    let refusals = package_with(functions).expect_err("an unproved total is refused");
+    assert!(
+        refusals
+            .iter()
+            .any(|refusal| matches!(refusal.cause, CheckCause::Unproved(_))),
+        "{refusals:?}"
+    );
 }
 
 fn truth(functions: &str) -> bool {
@@ -101,19 +118,19 @@ fn a_quantity_sum_adds_the_summands_in_the_unit_of_n() {
     );
 }
 
-/// A unit declaring `type N = <ty>;` with the values `values` as the
-/// functions `e0`, `e1`, .. of type `N`, their sequence `xs` and the Boolean
-/// `body` as `f`.
-fn over(ty: &str, values: &[&str], body: &str) -> String {
-    let mut text = format!("type N = {ty};\n");
+/// A unit declaring the summand type `S` and the result type `N`, the values
+/// `values` as the functions `e0`, `e1`, .. of type `S`, their sequence `xs`
+/// and the Boolean `body` as `f`.
+fn over(summand: &str, result: &str, values: &[&str], body: &str) -> String {
+    let mut text = format!("type S = {summand};\ntype N = {result};\n");
     for (index, value) in values.iter().enumerate() {
-        text += &format!("function e{index} using v(): N pure {{ {value} }}\n");
+        text += &format!("function e{index} using v(): S pure {{ {value} }}\n");
     }
     let elements: Vec<_> = (0..values.len())
         .map(|index| format!("e{index}()"))
         .collect();
     text += &format!(
-        "function xs using v(): Sequence<N>[0, 4] pure {{ sequence[{}] }}\n\
+        "function xs using v(): Sequence<S>[0, 4] pure {{ sequence[{}] }}\n\
          function f using v(): Boolean pure {{ {body} }}\n",
         elements.join(", ")
     );
@@ -121,30 +138,29 @@ fn over(ty: &str, values: &[&str], body: &str) -> String {
 }
 
 /// FR-517-AC-20: the decimal family adds under the type `N` pins, an exact sum
-/// is the exact total, and a total outside `N`'s domain is the located
-/// undefined outcome of FR-145, not the family's membership refusal.
+/// is the exact total, and a total that can leave `N`'s domain is refused.
 #[trace("FR-517-AC-20", "TC-1312")]
 #[test]
 fn a_decimal_sum_is_exact_and_leaves_its_domain_undefined() {
+    // Four summands of at most 10.00 total at most 40.00, so `N` is wider.
     let ty = "Decimal[0, 1000; 2, 2; nearest-even]";
     let sum = |total: &str| {
         truth(&over(
             ty,
+            "Decimal[0, 4000; 2, 2; nearest-even]",
             &["decimal(150, 2)", "decimal(275, 2)"],
             &format!("sum<N>(x in xs(): x) = {total}"),
         ))
     };
     assert!(sum("decimal(425, 2)"));
     assert!(!sum("decimal(426, 2)"));
-    let text = over(ty, &["decimal(600, 2)", "decimal(600, 2)"], "true");
-    let overflow = outcome(&text.replace(
+    // A total that can leave `N`'s domain is refused when checked (FR-100):
+    // it never reaches a linked package's evaluation.
+    let text = over(ty, ty, &["decimal(600, 2)", "decimal(600, 2)"], "true").replace(
         "function f using v(): Boolean pure { true }",
         "function f using v(): N pure { sum<N>(x in xs(): x) }",
-    ));
-    assert!(
-        matches!(overflow, Outcome::Undefined(Undefined::SumOutOfDomain)),
-        "{overflow:?}"
     );
+    assert_unproved_range(&text);
 }
 
 /// FR-517-AC-20: the rational family, and the sum of an empty source being the
@@ -154,22 +170,25 @@ fn a_decimal_sum_is_exact_and_leaves_its_domain_undefined() {
 fn a_rational_sum_adds_exactly_and_an_empty_one_is_zero() {
     let sum = |second: &str| {
         truth(&over(
-            "Rational[0, 10; 1, 12]",
+            "Rational[0, 10; 1, 2]",
+            "Rational[-80, 80; 1, 2]",
             &["rational(1, 2)", second],
-            "sum<N>(x in xs(): x) = rational(5, 6)",
+            "sum<N>(x in xs(): x) = rational(3, 2)",
         ))
     };
-    assert!(sum("rational(1, 3)"));
-    assert!(!sum("rational(1, 4)"));
-    let text = over("Rational[1, 10; 1, 12]", &["rational(2, 1)"], "true");
-    let empty = outcome(&text.replace(
+    assert!(sum("rational(1, 1)"));
+    assert!(!sum("rational(3, 2)"));
+    let text = over(
+        "Rational[1, 10; 1, 2]",
+        "Rational[1, 80; 1, 2]",
+        &["rational(2, 1)"],
+        "true",
+    )
+    .replace(
         "function f using v(): Boolean pure { true }",
         "function f using v(): N pure { sum<N>(x in filter(y in xs(): y > rational(3, 1)): x) }",
-    ));
-    assert!(
-        matches!(empty, Outcome::Undefined(Undefined::SumOutOfDomain)),
-        "the empty sum 0 is outside [1, 10]: {empty:?}"
     );
+    assert_unproved_range(&text);
 }
 
 /// FR-517-AC-20: the float family adds under the rounding mode `N` pins.
@@ -178,6 +197,7 @@ fn a_rational_sum_adds_exactly_and_an_empty_one_is_zero() {
 fn a_float_sum_adds_under_its_pinned_rounding() {
     let sum = |second: &str| {
         truth(&over(
+            "Float64[nearest-even]",
             "Float64[nearest-even]",
             &["float64(bits: 0x3ff8000000000000)", second],
             "quire::value::ieee::bitIdentical(sum<N>(x in xs(): x), \
@@ -188,4 +208,67 @@ fn a_float_sum_adds_under_its_pinned_rounding() {
     assert!(sum("float64(bits: 0x4002000000000000)"));
     // 1.5 + 1.5 = 3.0
     assert!(!sum("float64(bits: 0x3ff8000000000000)"));
+}
+
+/// Whether checking `functions` refuses with a type mismatch.
+fn is_mismatch(functions: &str) -> bool {
+    package_with(functions)
+        .expect_err("the sum is refused")
+        .iter()
+        .any(|refusal| {
+            matches!(
+                refusal.cause,
+                CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+            )
+        })
+}
+
+/// FR-517-AC-20, FR-145: a summand must be of the very float
+/// type or unit of the total, so another float width or unit is a type mismatch.
+#[trace("FR-517-AC-20", "TC-1312")]
+#[test]
+fn a_summand_of_another_float_width_or_unit_is_a_type_mismatch() {
+    let sum = |summand: &str, result: &str| {
+        format!(
+            "type S = {summand};\ntype N = {result};\n\
+             function f using v(s: Sequence<S>[0, 4]): N pure {{ sum<N>(x in s: x) }}\n"
+        )
+    };
+    assert!(is_mismatch(&sum(
+        "Float32[nearest-even]",
+        "Float64[nearest-even]"
+    )));
+    assert!(is_mismatch(&format!(
+        "dimension Length; unit m : Length = rational(1, 1); unit km : Length = rational(1000, 1) * m;\n{}",
+        sum("Quantity<km>", "Quantity<m>")
+    )));
+}
+
+/// FR-517-AC-20, QSpec FR-148: an inexact float addition records the IEEE flag
+/// set it raised, located at the sum; an exact one records nothing.
+#[trace("FR-517-AC-20", "TC-1312")]
+#[test]
+fn an_inexact_float_sum_records_its_ieee_flags_at_the_sum() {
+    let inexact = |second: &str| {
+        evaluation(
+            &over(
+                "Float64[nearest-even]",
+                "Float64[nearest-even]",
+                &["float64(bits: 0x3ff0000000000000)", second],
+                "true",
+            )
+            .replace(
+                "function f using v(): Boolean pure { true }",
+                "function f using v(): N pure { sum<N>(x in xs(): x) }",
+            ),
+        )
+        .1
+    };
+    // 1 + 2^-60 is inexact; 1 + 1 is not.
+    let losses = inexact("float64(bits: 0x3c30000000000000)");
+    assert!(
+        matches!(losses.as_slice(), [loss] if matches!(loss.loss, ValueLoss::IeeeFlags(_))),
+        "{losses:?}"
+    );
+    assert!(inexact("float64(bits: 0x3ff0000000000000)").is_empty());
 }

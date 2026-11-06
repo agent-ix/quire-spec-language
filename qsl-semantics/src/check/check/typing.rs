@@ -611,14 +611,15 @@ struct Fold {
 
 /// Whether a summand of type `summand` is of the numeric family of `total`,
 /// the type `N` of `sum<N>` (FR-145): any integer for an integer total, any
-/// rational for a rational total, and the very decimal, float or unit of a
-/// decimal, float or quantity total. A bounded quantity of the unit is a
+/// rational for a rational total, any decimal for a decimal total (the
+/// addition rounds into `N`, recording the loss), and the very float or unit of
+/// a float or quantity total. A bounded quantity of the unit is a
 /// quantity of it: its bounds restrict the members, not the sum.
 fn summand_of_family(total: &ValueType, summand: &ValueType) -> bool {
     match (total, summand) {
         (ValueType::Integer | ValueType::Int(_), _) => is_integer(summand),
         (ValueType::Rational(_), ValueType::Rational(_)) => true,
-        (ValueType::Decimal(total), ValueType::Decimal(summand)) => total == summand,
+        (ValueType::Decimal(_), ValueType::Decimal(_)) => true,
         (ValueType::Float(total), ValueType::Float(summand)) => total == summand,
         (ValueType::Quantity(total), ValueType::Quantity(summand)) => total == summand,
         (ValueType::Quantity(total), ValueType::BoundedQuantity(summand)) => {
