@@ -472,7 +472,8 @@ fn a_cancelled_replay_is_refused_as_cancelled() {
 #[test]
 fn witnesses_replay_over_a_subject_whose_package_s4_refuses() {
     let refused = |world: &World| {
-        let refusal = qsl_package::emit_checked(&world.package).expect_err("S4 refuses");
+        let refusal = qsl_package::emit_checked(&world.package, qsl_package::EmitLimits::fixture())
+            .expect_err("S4 refuses");
         (refusal.code(), refusal.cause())
     };
     let not_yet = (
@@ -525,7 +526,8 @@ fn the_provider_entry_serves_a_package_s4_refuses_to_emit() {
 
     let world = World::new(&prob_world::service(&p95("Two", 2)));
     let refused = |world: &World| {
-        let refusal = qsl_package::emit_checked(&world.package).expect_err("S4 refuses Service");
+        let refusal = qsl_package::emit_checked(&world.package, qsl_package::EmitLimits::fixture())
+            .expect_err("S4 refuses Service");
         (refusal.code(), refusal.cause())
     };
     let before = refused(&world);

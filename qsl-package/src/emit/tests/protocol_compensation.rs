@@ -81,6 +81,7 @@ fn emitted_text(unit: &str) -> Result<(Emission, Value, Read), Vec<CheckRefusal>
     let emission = crate::emit::emit_checked_with_temporal_selections(
         &CheckedPackage::link(graph),
         &selections,
+        crate::EmitLimits::fixture(),
     )
     .expect("unit emits");
     assert_eq!(emission.omitted, []);

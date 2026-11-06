@@ -1526,8 +1526,12 @@ fn a_protocol_subjects_derived_items_follow_the_callers_at_its_clause_node() {
     let anchor = OccurrenceKey::declaration(node.clone());
     let package = case.checked();
     let selections = tcb_01_event_position_selection(package);
-    let emission = qsl_package::emit_checked_with_temporal_selections(package, &selections)
-        .expect("the package emits with its selected TCB-01 clock");
+    let emission = qsl_package::emit_checked_with_temporal_selections(
+        package,
+        &selections,
+        qsl_package::EmitLimits::fixture(),
+    )
+    .expect("the package emits with its selected TCB-01 clock");
     assert!(emission.source_map().regions(&anchor).is_some());
     for item in &written.items()[3..5] {
         assert_eq!(item.occurrence(), &anchor);

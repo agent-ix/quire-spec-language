@@ -65,7 +65,7 @@ pub use bare_slot::{BareSelectionFailure, BareSlot, BareSource};
 pub use bare_world::BareWorld;
 pub use checked::{CheckedPackage, ResolvedDependency};
 #[cfg(feature = "std")]
-pub use checked::{EmittedPackage, Import, LinkRefusal};
+pub use checked::{EmitLimits, EmittedPackage, Import, LinkRefusal};
 #[cfg(feature = "std")]
 pub use checked_v2::{
     clause_roots, hyper_roots, occurrence_role, read_evaluation_emission, read_evaluation_package,

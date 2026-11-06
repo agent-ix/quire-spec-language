@@ -104,7 +104,7 @@ pub fn run_trace_subject_clause(
         let emitted = front_end::package_with_temporal_selections(
             &checked,
             &temporal_selections,
-            front_end::PackageLimits::default(),
+            request.limits.package,
             &cancel,
         )?
         .into_value();

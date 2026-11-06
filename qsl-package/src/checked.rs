@@ -54,14 +54,62 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::library::LibraryName;
 
-/// The limits the E4 emitter encodes `quire.checked-package/v2` bytes under:
-/// no byte bound of its own. The bytes
-/// project a checked graph the check stage already bounded (`checking.nodes`,
-/// `checking.input_bytes`), the stage budget FR-259 Behavior 3 has the site
-/// pass; a bound here could only refuse a package `check` admitted, with no
-/// setting to raise.
+/// The caller-owned ceiling of one `quire.checked-package/v2` emission
+/// (FR-255 `emit.output_bytes`, FR-264 Behavior 5). It has no `Default`: the
+/// outer configuration (`PackageLimits`) states the published default.
 #[cfg(feature = "std")]
-pub(crate) const EMIT_LIMITS: quire_canonical::Limits = quire_canonical::Limits::new(u64::MAX);
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EmitLimits {
+    /// Inclusive canonical byte count of one package (`emit.output_bytes`),
+    /// used as given, including zero.
+    pub output_bytes: u64,
+}
+
+#[cfg(feature = "std")]
+impl EmitLimits {
+    /// Limits of `output_bytes` canonical bytes.
+    #[must_use]
+    pub const fn new(output_bytes: u64) -> Self {
+        Self { output_bytes }
+    }
+
+    /// These limits with `emit.output_bytes` set to `bound`.
+    #[must_use]
+    pub const fn with_output_bytes(mut self, bound: u64) -> Self {
+        self.output_bytes = bound;
+        self
+    }
+
+    /// An explicit finite ceiling of 2^32 bytes for a fixture. Public only
+    /// under `test-support` (and in this crate's tests); a production entry
+    /// states its own ceiling.
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub const fn fixture() -> Self {
+        Self::new(1 << 32)
+    }
+
+    /// The canonical encoder's byte ceiling for this emission.
+    pub(crate) const fn canonical(self) -> quire_canonical::Limits {
+        quire_canonical::Limits::new(self.output_bytes)
+    }
+}
+
+/// FR-255: the `emit.output_bytes` setting.
+#[cfg(feature = "std")]
+impl qsl_foundation::SettingLimits for EmitLimits {
+    fn bounds(&self) -> Vec<(qsl_foundation::Setting, u64)> {
+        vec![(qsl_foundation::Setting::EmitOutputBytes, self.output_bytes)]
+    }
+
+    fn set_bound(&mut self, setting: qsl_foundation::Setting, bound: u64) -> bool {
+        if setting != qsl_foundation::Setting::EmitOutputBytes {
+            return false;
+        }
+        self.output_bytes = bound;
+        true
+    }
+}
 
 #[cfg(feature = "std")]
 use crate::emit::{emit_checked, Emission, EmitRefusal};
@@ -472,9 +520,14 @@ impl CheckedPackage {
     /// closure; two selections of one library name unify only when their
     /// canonical package bytes are equal (FR-307), else
     /// [`LinkRefusal::ConflictingDefinition`].
-    /// A refusal yields no package.
+    /// A refusal yields no package. Each dependency emission the link makes
+    /// runs under the caller's `emit` ceiling (`emit.output_bytes`).
     #[cfg(feature = "std")]
-    pub fn link_with(graph: CheckedGraph, imports: Vec<Import>) -> Result<Self, LinkRefusal> {
+    pub fn link_with(
+        graph: CheckedGraph,
+        imports: Vec<Import>,
+        emit: EmitLimits,
+    ) -> Result<Self, LinkRefusal> {
         let mut dependencies: BTreeMap<LibraryName, Arc<CheckedPackage>> = BTreeMap::new();
         let mut selections: BTreeMap<LibraryName, ResolvedDependency> = BTreeMap::new();
         let direct_imports = imports
@@ -482,7 +535,7 @@ impl CheckedPackage {
             .map(|import| import.identity.clone())
             .collect();
         for import in imports {
-            check_dependency_emission(&import)?;
+            check_dependency_emission(&import, emit)?;
             let direct = ResolvedDependency {
                 package: Arc::clone(&import.package),
                 path: DependencyPath::Direct,
@@ -508,10 +561,12 @@ impl CheckedPackage {
                     .chain(transitive)
                     .collect();
             for (identity, resolved) in entries {
-                unify(&mut selections, identity, resolved)?;
+                unify(&mut selections, identity, resolved, emit)?;
             }
             match dependencies.get(&import.identity) {
-                Some(existing) if !same_package(existing, &import.package, &import.identity)? => {
+                Some(existing)
+                    if !same_package(existing, &import.package, &import.identity, emit)? =>
+                {
                     return Err(LinkRefusal::ConflictingDefinition {
                         identity: import.identity.clone(),
                         selections: Box::new([
@@ -654,12 +709,12 @@ impl CheckedPackage {
 /// Check that the imported package emits complete bytes under the imported
 /// library name. A remembered emission is reused when available.
 #[cfg(feature = "std")]
-fn check_dependency_emission(import: &Import) -> Result<(), LinkRefusal> {
+fn check_dependency_emission(import: &Import, emit: EmitLimits) -> Result<(), LinkRefusal> {
     let fresh;
     let emission = match import.package.remembered_emission() {
         Some(emission) => emission,
         None => {
-            fresh = emit_checked(&import.package).map_err(|refusal| {
+            fresh = emit_checked(&import.package, emit).map_err(|refusal| {
                 LinkRefusal::DependencyEmission {
                     identity: import.identity.clone(),
                     refusal: Some(refusal),
@@ -688,12 +743,13 @@ fn same_package(
     left: &CheckedPackage,
     right: &CheckedPackage,
     identity: &LibraryName,
+    emit_limits: EmitLimits,
 ) -> Result<bool, LinkRefusal> {
     if core::ptr::eq(left, right) {
         return Ok(true);
     }
     let emit = |package: &CheckedPackage| {
-        emit_checked(package).map_err(|refusal| LinkRefusal::DependencyEmission {
+        emit_checked(package, emit_limits).map_err(|refusal| LinkRefusal::DependencyEmission {
             identity: identity.clone(),
             refusal: Some(refusal),
         })
@@ -719,9 +775,12 @@ fn unify(
     selections: &mut BTreeMap<LibraryName, ResolvedDependency>,
     identity: LibraryName,
     resolved: ResolvedDependency,
+    emit: EmitLimits,
 ) -> Result<(), LinkRefusal> {
     match selections.get(&identity) {
-        Some(existing) if same_package(&existing.package, &resolved.package, &identity)? => Ok(()),
+        Some(existing) if same_package(&existing.package, &resolved.package, &identity, emit)? => {
+            Ok(())
+        }
         Some(existing) => Err(LinkRefusal::ConflictingDefinition {
             selections: Box::new([existing.clone(), resolved]),
             identity,

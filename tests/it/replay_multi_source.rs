@@ -249,11 +249,12 @@ fn d10_units(reverse: bool) -> D10Units {
         clause_node.clone(),
         clause.claim().clone(),
     );
-    let package_bytes = qsl_package::emit_checked(checked[0].package())
-        .expect("D10 package emits")
-        .package()
-        .bytes()
-        .to_vec();
+    let package_bytes =
+        qsl_package::emit_checked(checked[0].package(), qsl_package::EmitLimits::fixture())
+            .expect("D10 package emits")
+            .package()
+            .bytes()
+            .to_vec();
     let sources = order
         .iter()
         .map(|index| {

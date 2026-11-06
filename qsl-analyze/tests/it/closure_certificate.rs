@@ -22,6 +22,7 @@ use qsl_eval::automaton::{SafetyState, SafetyTranslation, StateContext};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_package::CheckedPackage;
+use qsl_package::EmitLimits;
 use qsl_replay::{
     check_closure, settle_model_check, CertificateLocus, CertificateRejection, CertificateRequest,
     CertificateRule, Certification, ClauseIdentity, ClauseRootRefusal, ClosureCertificate,
@@ -97,6 +98,7 @@ impl World {
             &clause,
             &[],
             &Cancel::new(),
+            EmitLimits::fixture(),
         )
         .expect("the package declares the clause");
         Invariant {
@@ -548,6 +550,7 @@ fn the_checker_resolves_each_clause_s_identity_from_the_package() {
             clause,
             &[],
             &Cancel::new(),
+            EmitLimits::fixture(),
         )
         .expect("the package declares the clause")
     };
@@ -931,6 +934,7 @@ fn a_cancellation_during_the_certificate_check_settles_cancelled() {
             request.subject.simulation.package,
             &clock_selections,
             cancel,
+            EmitLimits::fixture(),
         )
         .expect("emits with the fixture's selected temporal clock");
     });

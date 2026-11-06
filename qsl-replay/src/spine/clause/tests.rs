@@ -14,6 +14,7 @@
 //! them for TC-466, and the `frame` submodule (TC-514, FR-115) runs check 11
 //! as the thing under test through the `Frame` selection.
 
+use qsl_package::EmitLimits;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
 
@@ -3717,15 +3718,19 @@ fn a_fault_on_the_frame_node_refuses_the_whole_config_version_package() {
     let frame_id = qsl_package::checked_node_id_of(&frame_key);
     let fault_reason = "fault injection (test): forced encoding failure at the frame node";
 
-    let refusal = qsl_package::emit_checked_with_fault(&compiled.package, |id| {
-        if *id == frame_id {
-            Some(qsl_package::EmitRefusal::Encoding {
-                reason: fault_reason.to_owned(),
-            })
-        } else {
-            None
-        }
-    })
+    let refusal = qsl_package::emit_checked_with_fault(
+        &compiled.package,
+        |id| {
+            if *id == frame_id {
+                Some(qsl_package::EmitRefusal::Encoding {
+                    reason: fault_reason.to_owned(),
+                })
+            } else {
+                None
+            }
+        },
+        EmitLimits::fixture(),
+    )
     .expect_err("a fault at the frame node refuses the whole package");
 
     // The fault actually fired at the frame node, not some earlier,
@@ -4801,7 +4806,7 @@ fn s4_state_package_reads_back_through_i2() {
     let (_, packages) = config_version_unit_and_packages();
     let first = config_version_compiled();
 
-    let emission = qsl_package::emit_checked(&first.package)
+    let emission = qsl_package::emit_checked(&first.package, EmitLimits::fixture())
         .unwrap_or_else(|refusal| panic!("emission refused: {refusal:?}"));
     let library = LibraryName::new("fixture".to_owned()).unwrap();
     let mut admitted = qsl_package::AdmittedPackages::default();
@@ -4812,6 +4817,7 @@ fn s4_state_package_reads_back_through_i2() {
         &packages,
         &mut admitted,
         qsl_package::V2ReadLimits::fixture(),
+        EmitLimits::fixture(),
     )
     .unwrap_or_else(|refusal| panic!("I2 read refused: {refusal:?}"));
     let _ = view;

@@ -612,7 +612,7 @@ fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
             .unwrap(),
     );
     let identity = LibraryName::new("fixture:callable").unwrap();
-    let emission = qsl_package::emit_checked(&library).unwrap();
+    let emission = qsl_package::emit_checked(&library, qsl_package::EmitLimits::fixture()).unwrap();
     let view = qsl_package::read_import_view(
         &library,
         &emission,
@@ -620,6 +620,7 @@ fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
         &std::collections::BTreeMap::new(),
         &mut qsl_package::AdmittedPackages::default(),
         qsl_package::V2ReadLimits::fixture(),
+        qsl_package::EmitLimits::fixture(),
     )
     .unwrap();
     let callee = library.graph().callable("Body").unwrap().identity.clone();

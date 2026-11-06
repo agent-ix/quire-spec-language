@@ -1702,6 +1702,7 @@ fn a_protocol_refinement_selects_a_dependency_protocol_by_identity() {
         &dependency_models,
         &mut admitted,
         crate::checked_v2::V2ReadLimits::fixture(),
+        crate::EmitLimits::fixture(),
     )
     .expect("dependency import view is admitted");
 
@@ -1760,6 +1761,7 @@ fn a_protocol_refinement_selects_a_dependency_protocol_by_identity() {
             identity: library.clone(),
             package: std::sync::Arc::clone(&dependency),
         }],
+        crate::EmitLimits::fixture(),
     )
     .expect("dependency graph links");
     let checked = root
@@ -2088,6 +2090,7 @@ fn a_dependency_protocol_node_row_checks_its_receiver_argument() {
         &dependency_models,
         &mut admitted,
         crate::checked_v2::V2ReadLimits::fixture(),
+        crate::EmitLimits::fixture(),
     )
     .expect("dependency import view");
     let unit = |target: &str| {

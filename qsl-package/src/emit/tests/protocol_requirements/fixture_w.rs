@@ -1228,8 +1228,12 @@ fn tc134_timed_fixture_binds_every_compensation_node_and_temporal_declaration() 
         "the fixture writes two refund windows"
     );
     let package = CheckedPackage::link(graph);
-    let emission = crate::emit::emit_checked_with_temporal_selections(&package, &selections)
-        .expect("the timed package emits with its selections");
+    let emission = crate::emit::emit_checked_with_temporal_selections(
+        &package,
+        &selections,
+        crate::EmitLimits::fixture(),
+    )
+    .expect("the timed package emits with its selections");
     let wire = wire(&emission);
     let bindings = wire["temporal_bindings"]
         .as_array()
@@ -1319,6 +1323,7 @@ fn tc134_compensation_rows_are_one_per_declaration_occurrence() {
     let emission = crate::emit::emit_checked_with_temporal_selections(
         &CheckedPackage::link(graph),
         &selections,
+        crate::EmitLimits::fixture(),
     )
     .expect("the timed package emits with its selections");
     let wire = wire(&emission);
@@ -1376,8 +1381,12 @@ fn tc134_strict_reader_admits_compensation_rows() {
     let graph = tc134_timed_graph();
     let selections = tc134_selections(&graph);
     let package = CheckedPackage::link(graph);
-    let emission = crate::emit::emit_checked_with_temporal_selections(&package, &selections)
-        .expect("the timed package emits with its selections");
+    let emission = crate::emit::emit_checked_with_temporal_selections(
+        &package,
+        &selections,
+        crate::EmitLimits::fixture(),
+    )
+    .expect("the timed package emits with its selections");
     let wire = wire(&emission);
     let all_nodes = nodes(&wire);
     let compensation_ids: Vec<&Value> = all_nodes
@@ -1435,7 +1444,11 @@ fn tc134_explicit_temporal_declaration_refuses_each_unfit_clock_selection() {
     let selections = tc134_selections(&graph);
     let package = CheckedPackage::link(graph);
     let emit = |s: &[crate::emit::TemporalClockSelection]| {
-        crate::emit::emit_checked_with_temporal_selections(&package, s)
+        crate::emit::emit_checked_with_temporal_selections(
+            &package,
+            s,
+            crate::EmitLimits::fixture(),
+        )
     };
 
     assert!(matches!(
@@ -1589,8 +1602,12 @@ fn tc134_v1_contract_version_is_refused_with_clock_selections_present() {
     let graph = tc134_timed_graph();
     let selections = tc134_selections(&graph);
     let package = CheckedPackage::link(graph);
-    let emission = crate::emit::emit_checked_with_temporal_selections(&package, &selections)
-        .expect("the timed package emits");
+    let emission = crate::emit::emit_checked_with_temporal_selections(
+        &package,
+        &selections,
+        crate::EmitLimits::fixture(),
+    )
+    .expect("the timed package emits");
     let mut forged = wire(&emission);
     assert!(forged["temporal_bindings"].is_array());
     forged["contract_version"] = json!("quire.checked-package/v1");

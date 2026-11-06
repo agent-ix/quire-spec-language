@@ -2556,7 +2556,8 @@ mod tests {
             .iter()
             .next()
             .expect("dependency package");
-        let independent = qsl_package::emit_checked(dependency).expect("independent emission");
+        let independent = qsl_package::emit_checked(dependency, qsl_package::EmitLimits::fixture())
+            .expect("independent emission");
         assert_eq!(bytes, independent.package().bytes());
         assert!(!bytes.is_empty());
         let clone = handle.clone();

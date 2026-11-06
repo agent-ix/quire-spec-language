@@ -5,6 +5,7 @@
 use super::tc1070::model;
 use super::*;
 use qsl_eval::bare::BarePackage;
+use qsl_package::EmitLimits;
 use quire_eval::{CallAdmissionLocus, CallFailure};
 
 /// The bytes-route descriptor of the slot the source route selects with
@@ -95,7 +96,7 @@ fn the_bare_route_returns_the_source_value_and_charge_log_for_every_unobserved_s
     let read = read_checked_package(&package);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let equality = qsl_package::emit_checked(&package)
+    let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
         .equality_witness(v2);
     let bare = BarePackage::new(v2)
@@ -384,7 +385,7 @@ fn records_with_option_and_collection_members_project_on_the_bytes_route() {
     let read = read_checked_package_with_model_document(&package, &model_bytes);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let equality = qsl_package::emit_checked(&package)
+    let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
         .equality_witness(v2);
     let bare = BarePackage::new(v2)
@@ -585,7 +586,7 @@ fn original_model_field_keys_define_one_value_across_both_environments() {
     let read = read_checked_package_with_model_document(&package, &document);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let equality = qsl_package::emit_checked(&package)
+    let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
         .equality_witness(v2);
     let bare = BarePackage::new(v2)
@@ -664,6 +665,7 @@ fn read_named<'p>(package: &'p CheckedPackage, name: &str) -> qsl_package::Admit
         qsl_semantics::library::LibraryName::new(name).unwrap(),
         &domain_packages,
         qsl_package::V2ReadLimits::fixture(),
+        EmitLimits::fixture(),
     )
     .expect("strict I2 admission accepts the package")
 }
@@ -708,7 +710,7 @@ fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
     let read = read_checked_package(&package);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let equality = qsl_package::emit_checked(&package)
+    let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
         .equality_witness(v2);
     let good = BarePackage::new(v2)
@@ -765,7 +767,7 @@ fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
     let (other, _) = fixture_named(SOURCE, &serde_json::to_vec(&document()).unwrap(), "other");
     let other_read = read_named(&other, "other");
     let other_rows = bare_rows(&other, other_read.admitted());
-    let other_equality = qsl_package::emit_checked(&other)
+    let other_equality = qsl_package::emit_checked(&other, EmitLimits::fixture())
         .expect("emits")
         .equality_witness(other_read.admitted());
     let foreign = BarePackage::new(v2)
@@ -872,7 +874,7 @@ fn the_call_reports_identity_then_equality_then_node_refusals() {
     let read = read_checked_package(&package);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let equality = qsl_package::emit_checked(&package)
+    let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
         .equality_witness(v2);
     let wanted = slot(&package, "Refunds", "Refund", "retry.relation", None);
@@ -973,7 +975,7 @@ fn a_repeat_guard_takes_the_decision_origin_of_the_source_route() {
     let read = read_checked_package(&package);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let equality = qsl_package::emit_checked(&package)
+    let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
         .equality_witness(v2);
     let bare = BarePackage::new(v2)
@@ -1127,7 +1129,7 @@ fn replacing_a_checked_source_changes_its_result_but_not_the_bytes_slot() {
     let read = read_checked_package(&original);
     let v2 = read.admitted();
     let rows = bare_rows(&original, v2);
-    let equality = qsl_package::emit_checked(&original)
+    let equality = qsl_package::emit_checked(&original, EmitLimits::fixture())
         .expect("emits")
         .equality_witness(v2);
     let call = retry_call(&original, v2, &rows, &equality);
@@ -1179,7 +1181,7 @@ fn a_called_equality_body_requires_its_witness_at_the_actual_evaluation_entry() 
     let read = read_checked_package(&package);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let equality = qsl_package::emit_checked(&package)
+    let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
         .equality_witness(v2);
     let wanted = slot(&package, "Refunds", "Refund", "trigger.guard", None);
@@ -1250,7 +1252,7 @@ fn a_bare_call_leaves_the_callers_charge_capture_as_it_found_it() {
     let read = read_checked_package(&package);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let equality = qsl_package::emit_checked(&package)
+    let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
         .equality_witness(v2);
     let call = retry_call(&package, v2, &rows, &equality);
@@ -1286,7 +1288,7 @@ fn a_bare_supply_is_examined_in_binder_level_order() {
     let read = read_checked_package(&package);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let equality = qsl_package::emit_checked(&package)
+    let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
         .equality_witness(v2);
     let call = retry_call(&package, v2, &rows, &equality);
@@ -1360,7 +1362,7 @@ fn three_bare_calls_over_one_meter_sum_and_maximise_as_the_source_route_does() {
     let read = read_checked_package(&package);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let equality = qsl_package::emit_checked(&package)
+    let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
         .equality_witness(v2);
     let bare = BarePackage::new(v2)
@@ -1450,7 +1452,7 @@ fn nothing_before_the_run_charges_and_a_refusal_leaves_the_meter_unchanged() {
     let read = read_checked_package(&package);
     let v2 = read.admitted();
     let rows = bare_rows(&package, v2);
-    let equality = qsl_package::emit_checked(&package)
+    let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
         .equality_witness(v2);
     let call = retry_call(&package, v2, &rows, &equality);

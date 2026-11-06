@@ -148,6 +148,7 @@ pub fn settle_state_graph(
         claim,
         temporal_clock_selections,
         cancel,
+        subject.simulation.emit,
     ) {
         let row = match refusal {
             ClauseRootRefusal::Cancelled(source) => {

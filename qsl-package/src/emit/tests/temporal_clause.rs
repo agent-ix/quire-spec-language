@@ -98,6 +98,7 @@ pub(super) fn compile_with(
     let emission = crate::emit::emit_checked_with_temporal_selections(
         &CheckedPackage::link(graph),
         &selections,
+        crate::EmitLimits::fixture(),
     )
     .expect("the package emits");
     assert_eq!(emission.omitted, []);
@@ -445,6 +446,7 @@ fn three_temporal_bindings_observe_s3_input_byte_bounds() {
     let emission = crate::emit::emit_checked_with_temporal_selections(
         &CheckedPackage::link(graph),
         &selections,
+        crate::EmitLimits::fixture(),
     )
     .expect("the exact-limit graph emits");
     assert_eq!(emission.omitted, []);
@@ -468,19 +470,31 @@ fn configured_temporal_clause_without_selection_refuses_emission() {
         refusal,
         crate::emit::EmitRefusal::MissingTemporalClockSelection { .. }
     ));
-    let refusal = crate::emit::emit_checked_with_cancel(&package, &quire_exact::Cancel::new())
-        .expect_err("the cancelable default also refuses to invent a clock configuration");
+    let refusal = crate::emit::emit_checked_with_cancel(
+        &package,
+        &quire_exact::Cancel::new(),
+        crate::EmitLimits::fixture(),
+    )
+    .expect_err("the cancelable default also refuses to invent a clock configuration");
     assert!(matches!(
         refusal,
         crate::emit::EmitRefusal::MissingTemporalClockSelection { .. }
     ));
     let source = package.graph().source().clone();
-    let refusal = crate::emit::emit_package(&package, move |_| {
-        Some(
-            qsl_foundation::source::provenance::SourceRegion::new(source.clone(), 0, source_len)
+    let refusal = crate::emit::emit_package(
+        &package,
+        move |_| {
+            Some(
+                qsl_foundation::source::provenance::SourceRegion::new(
+                    source.clone(),
+                    0,
+                    source_len,
+                )
                 .unwrap(),
-        )
-    })
+            )
+        },
+        crate::EmitLimits::fixture(),
+    )
     .expect_err("caller-placed emission also requires an explicit clock configuration");
     assert!(matches!(
         refusal,
@@ -507,7 +521,11 @@ fn temporal_clock_selections_are_unique_locus_bound_and_profile_typed() {
 
     let duplicate = [event_selection.clone(), event_selection.clone()];
     assert!(matches!(
-        crate::emit::emit_checked_with_temporal_selections(&package, &duplicate),
+        crate::emit::emit_checked_with_temporal_selections(
+            &package,
+            &duplicate,
+            crate::EmitLimits::fixture()
+        ),
         Err(crate::emit::EmitRefusal::DuplicateTemporalClockSelection { .. })
     ));
 
@@ -518,8 +536,12 @@ fn temporal_clock_selections_are_unique_locus_bound_and_profile_typed() {
         ..event_selection.clone()
     };
     let wrong_profile_span = wrong_profile.declaration_span;
-    let refusal = crate::emit::emit_checked_with_temporal_selections(&package, &[wrong_profile])
-        .expect_err("a clock configuration must match its checked profile");
+    let refusal = crate::emit::emit_checked_with_temporal_selections(
+        &package,
+        &[wrong_profile],
+        crate::EmitLimits::fixture(),
+    )
+    .expect_err("a clock configuration must match its checked profile");
     assert!(matches!(
         &refusal,
         crate::emit::EmitRefusal::TemporalClockProfileMismatch { span, .. }
@@ -538,8 +560,12 @@ fn temporal_clock_selections_are_unique_locus_bound_and_profile_typed() {
     };
     let wrong_source_span = wrong_source.declaration_span;
     let wrong_source_ref = wrong_source.source.clone();
-    let refusal = crate::emit::emit_checked_with_temporal_selections(&package, &[wrong_source])
-        .expect_err("a selection cannot name a different source document");
+    let refusal = crate::emit::emit_checked_with_temporal_selections(
+        &package,
+        &[wrong_source],
+        crate::EmitLimits::fixture(),
+    )
+    .expect_err("a selection cannot name a different source document");
     assert!(matches!(
         &refusal,
         crate::emit::EmitRefusal::SurplusTemporalClockSelection { source_ref, span }
@@ -553,8 +579,12 @@ fn temporal_clock_selections_are_unique_locus_bound_and_profile_typed() {
         ..event_selection.clone()
     };
     let out_of_range_span = out_of_range.declaration_span;
-    let refusal = crate::emit::emit_checked_with_temporal_selections(&package, &[out_of_range])
-        .expect_err("an out-of-range declaration locus is a bad node reference");
+    let refusal = crate::emit::emit_checked_with_temporal_selections(
+        &package,
+        &[out_of_range],
+        crate::EmitLimits::fixture(),
+    )
+    .expect_err("an out-of-range declaration locus is a bad node reference");
     assert!(matches!(
         &refusal,
         crate::emit::EmitRefusal::SurplusTemporalClockSelection { span, .. }
@@ -604,8 +634,12 @@ fn temporal_clock_bindings_follow_node_reference_order() {
         .map(|(_, selection)| selection)
         .collect();
     let package = CheckedPackage::link(graph);
-    let emission = crate::emit::emit_checked_with_temporal_selections(&package, &reversed)
-        .expect("selection order is independent of emitted binding order");
+    let emission = crate::emit::emit_checked_with_temporal_selections(
+        &package,
+        &reversed,
+        crate::EmitLimits::fixture(),
+    )
+    .expect("selection order is independent of emitted binding order");
     let wire = wire(&emission);
     let bytes = emission.package.bytes();
     let read = read_v2(bytes, library(), V2ReadLimits::fixture(), &evidence(&wire));
@@ -639,6 +673,7 @@ fn malformed_temporal_clock_values_refuse_emission_at_the_field() {
         let refusal = crate::emit::emit_checked_with_temporal_selections(
             package,
             std::slice::from_ref(selected),
+            crate::EmitLimits::fixture(),
         )
         .expect_err("an invalid clock value cannot produce a package");
         assert!(matches!(

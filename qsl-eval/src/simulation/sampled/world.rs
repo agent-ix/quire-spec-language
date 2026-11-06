@@ -294,6 +294,7 @@ impl World {
     /// The system over this world, or its admission failure.
     pub(crate) fn admit(&self) -> Result<ModelSystem<'_>, AdmissionFailure> {
         ModelSystem::new(ModelSimulationRequest {
+            emit: qsl_package::EmitLimits::fixture(),
             package: &self.package,
             packages: &self.packages,
             normalization: ModelNormalizationLimits::default(),

@@ -218,9 +218,11 @@ fn a_source_relation_is_emitted_and_unbound_items_name_the_population() {
         "linking carries the source-checked relation"
     );
     let source = package.graph().source().clone();
-    let emission = emit_package(&package, move |_| {
-        Some(SourceRegion::new(source.clone(), 0, 1).expect("a source region"))
-    })
+    let emission = emit_package(
+        &package,
+        move |_| Some(SourceRegion::new(source.clone(), 0, 1).expect("a source region")),
+        qsl_package::EmitLimits::fixture(),
+    )
     .expect("the checked package emits");
     let wire: serde_json::Value =
         serde_json::from_slice(emission.package().bytes()).expect("the package is JSON");

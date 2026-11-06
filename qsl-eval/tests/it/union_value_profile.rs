@@ -42,7 +42,8 @@ fn package(declarations: &str) -> CheckedPackage {
 
 /// The lock's `definition_selections` of the emitted package.
 fn definition_selections(package: &CheckedPackage) -> Json {
-    let emission = emit_checked(package).expect("the package emits");
+    let emission =
+        emit_checked(package, qsl_package::EmitLimits::fixture()).expect("the package emits");
     let wire: Json = serde_json::from_slice(emission.package().bytes()).expect("the wire is JSON");
     wire["lock"]["definition_selections"].clone()
 }

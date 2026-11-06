@@ -489,6 +489,7 @@ mod tests {
         mapped.set_bound(Setting::ProgressCoveredPositions, 42);
         mapped.set_bound(Setting::PrepareCompileWorkUnits, 39);
         mapped.set_bound(Setting::PrepareCodeBytes, 40);
+        mapped.set_bound(Setting::EmitOutputBytes, 44);
         let built = CallerLimits {
             spine: SpineLimits {
                 source: qsl_cst::Limits::default()
@@ -520,6 +521,7 @@ mod tests {
                 progress: crate::spine::ProgressLimits {
                     covered_positions: 42,
                 },
+                package: crate::spine::PackageLimits::default().with_output_bytes(44),
                 ..SpineLimits::default()
             },
             library: LibraryLimits::default()
@@ -574,6 +576,39 @@ mod tests {
                 987_654_321
             };
             assert_eq!(bound_of(&requested, *setting), expected, "{setting}");
+        }
+    }
+
+    /// FR-255-AC-20: `emit.output_bytes` changes only the output-byte bound of
+    /// the compile lifecycle's E4 limits, through the library builder, the
+    /// settings operation and a request's `stage_limits` entry; the outer
+    /// configuration supplies 16777216; zero and `u64::MAX` are accepted.
+    #[trace("TC-721", "FR-255-AC-20")]
+    #[test]
+    fn the_emit_output_setting_changes_only_the_output_byte_bound() {
+        let defaults = CallerLimits::default();
+        assert_eq!(bound_of(&defaults, Setting::EmitOutputBytes), 16_777_216);
+        assert_eq!(defaults.spine.package.output_bytes, 16_777_216);
+        for bound in [0, 1_234_567, u64::MAX] {
+            let operand = format!("emit.output_bytes={bound}");
+            let by_operand = CallerLimits::from_operands([operand.as_str()]).unwrap();
+            let entries: StageLimits = [(Setting::EmitOutputBytes, bound)].into_iter().collect();
+            let by_request = CallerLimits::for_request(
+                &entries,
+                AccountingLimits::default().0,
+                ReplayLimits::default(),
+            );
+            let by_builder = CallerLimits {
+                spine: SpineLimits {
+                    package: crate::spine::PackageLimits::default().with_output_bytes(bound),
+                    ..SpineLimits::default()
+                },
+                ..CallerLimits::default()
+            };
+            for limits in [by_operand, by_request, by_builder] {
+                assert_eq!(limits.spine.package.emit().output_bytes, bound);
+                assert_eq!(bound_of(&limits, Setting::EmitOutputBytes), bound);
+            }
         }
     }
 

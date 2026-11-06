@@ -663,6 +663,7 @@ impl Documents {
         ProtocolSubject {
             model: ModelSubject {
                 simulation: ModelSimulationRequest {
+                    emit: qsl_package::EmitLimits::fixture(),
                     package,
                     packages: &self.packages,
                     normalization: ModelNormalizationLimits::default(),

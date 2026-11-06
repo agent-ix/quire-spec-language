@@ -10,6 +10,7 @@
 //! result against the world's own package, so every certificate rejection
 //! below is the certificate's own.
 
+use qsl_package::EmitLimits;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
@@ -225,9 +226,15 @@ fn state_graph_identity_readback_uses_the_explicit_temporal_selection() {
         },
     });
 
-    let without_selection =
-        StateGraphIdentity::resolve(&world.package, world.packages(), claim, &[], &Cancel::new())
-            .expect_err("whole-package read-back refuses to omit the configured binding");
+    let without_selection = StateGraphIdentity::resolve(
+        &world.package,
+        world.packages(),
+        claim,
+        &[],
+        &Cancel::new(),
+        EmitLimits::fixture(),
+    )
+    .expect_err("whole-package read-back refuses to omit the configured binding");
     assert!(
         format!("{without_selection}").contains("no selected clock configuration"),
         "unexpected refusal: {without_selection:?}"
@@ -243,15 +250,22 @@ fn state_graph_identity_readback_uses_the_explicit_temporal_selection() {
         claim,
         &selections,
         &Cancel::new(),
+        EmitLimits::fixture(),
     );
     assert!(
         format!("{selected_readback:?}").contains("OperationMemberMismatch"),
         "explicit selection should advance to the known temporal formula reader limit: {selected_readback:?}"
     );
 
-    let without_selection =
-        HyperIdentity::resolve(&world.package, world.packages(), hyper, &[], &Cancel::new())
-            .expect_err("hyper whole-package read-back also requires the configured binding");
+    let without_selection = HyperIdentity::resolve(
+        &world.package,
+        world.packages(),
+        hyper,
+        &[],
+        &Cancel::new(),
+        EmitLimits::fixture(),
+    )
+    .expect_err("hyper whole-package read-back also requires the configured binding");
     assert!(
         format!("{without_selection}").contains("no selected clock configuration"),
         "unexpected refusal: {without_selection:?}"
@@ -262,6 +276,7 @@ fn state_graph_identity_readback_uses_the_explicit_temporal_selection() {
         hyper,
         &selections,
         &Cancel::new(),
+        EmitLimits::fixture(),
     );
     assert!(
         format!("{hyper_readback:?}").contains("OperationMemberMismatch"),

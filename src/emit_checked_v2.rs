@@ -29,8 +29,8 @@ use qsl_foundation::source::MAX_SOURCE_BYTES;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_replay::{
     spine::{
-        self, CheckedUnit, DependencyInput, DependencyInputRefusal, EmittedUnit, PackageLimits,
-        ParseRequest, SpineLimits, StateClauseExecutionPoints, SuppliedLibrary,
+        self, CheckedUnit, DependencyInput, DependencyInputRefusal, EmittedUnit, ParseRequest,
+        SpineLimits, StateClauseExecutionPoints, SuppliedLibrary,
     },
     ReplayRefusal,
 };
@@ -381,6 +381,10 @@ pub(crate) struct Compiled {
     #[cfg(feature = "checked-handoff")]
     pub(crate) inventory:
         Result<quire_contract_model::source_obligation::SourceInventoryOutcome, String>,
+    /// The ceiling on each package emission the handoff writer makes
+    /// (`emit.output_bytes`).
+    #[cfg(feature = "checked-handoff")]
+    pub(crate) emit: qsl_package::EmitLimits,
     /// The emitted package and the evidence its reader needs.
     pub(crate) emitted: EmittedUnit,
 }
@@ -502,14 +506,10 @@ pub(crate) fn compile(request: &Request) -> Result<Compiled, Error> {
     });
     let checked = outcome.map_err(refusal)?.into_value();
     let selections = clock_selections(&checked, &request.temporal_selections)?;
-    let emitted = spine::package_with_temporal_selections(
-        &checked,
-        &selections,
-        PackageLimits::default(),
-        &cancel,
-    )
-    .map_err(refusal)?
-    .into_value();
+    let emitted =
+        spine::package_with_temporal_selections(&checked, &selections, limits.package, &cancel)
+            .map_err(refusal)?
+            .into_value();
     Ok(Compiled {
         #[cfg(feature = "checked-handoff")]
         source,
@@ -521,6 +521,8 @@ pub(crate) fn compile(request: &Request) -> Result<Compiled, Error> {
         checked,
         #[cfg(feature = "checked-handoff")]
         inventory,
+        #[cfg(feature = "checked-handoff")]
+        emit: limits.package.emit(),
         emitted,
     })
 }

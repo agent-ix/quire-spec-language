@@ -605,7 +605,8 @@ fn a_let_bound_read_references_the_same_object_types_as_the_inline_read() {
 #[trace("TC-1111", "NFR-015-AC-9")]
 fn bind_abstraction_resets_the_remembered_emission() {
     let mut package = package(CLAUSES);
-    let emitted = crate::emit_checked(&package).expect("the package emits");
+    let emitted =
+        crate::emit_checked(&package, crate::EmitLimits::fixture()).expect("the package emits");
     assert_eq!(
         package.emitted_package_name(),
         Some(emitted.package().name())

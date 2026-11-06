@@ -484,6 +484,7 @@ impl CompileRefusal {
                 | Setting::PrepareCodeBytes => {
                     unreachable!("format, render and prepare limits are not compile refusals")
                 }
+                Setting::EmitOutputBytes => SpineStage::Emit,
                 Setting::S1InputBytes
                 | Setting::S1Tokens
                 | Setting::S1Nodes
@@ -2282,12 +2283,21 @@ pub struct SpineLimits {
     pub imports: qsl_package::V2ReadLimits,
     /// The progress ledger's ceilings (FR-502).
     pub progress: ProgressLimits,
+    /// E4's ceiling on the canonical bytes of each emitted package
+    /// (`emit.output_bytes`, FR-264 Behavior 5): the library compiles of the
+    /// closure and the unit itself.
+    pub package: PackageLimits,
 }
 
 /// `i2.native_join_storage` default, in logical ownership units (FR-255,
 /// FR-358). The outer compile entry supplies this finite ceiling; lower layers
 /// do not derive or default it.
 pub const I2_NATIVE_JOIN_STORAGE_DEFAULT: u64 = 16_777_216;
+
+/// `emit.output_bytes` default, in canonical bytes (FR-255, FR-264). The outer
+/// compile entry supplies this finite ceiling; the emit entries below it do
+/// not derive or default it.
+pub const EMIT_OUTPUT_BYTES_DEFAULT: u64 = 16_777_216;
 
 impl Default for SpineLimits {
     fn default() -> Self {
@@ -2299,6 +2309,7 @@ impl Default for SpineLimits {
             assembly: AssemblyLimits::default(),
             imports: qsl_package::V2ReadLimits::bounded(I2_NATIVE_JOIN_STORAGE_DEFAULT),
             progress: ProgressLimits::default(),
+            package: PackageLimits::default(),
         }
     }
 }
@@ -2313,6 +2324,7 @@ impl qsl_foundation::SettingLimits for SpineLimits {
         bounds.extend(self.assembly.bounds());
         bounds.extend(self.imports.bounds());
         bounds.extend(self.progress.bounds());
+        bounds.extend(self.package.bounds());
         bounds
     }
 
@@ -2324,6 +2336,7 @@ impl qsl_foundation::SettingLimits for SpineLimits {
             || self.assembly.set_bound(setting, bound)
             || self.imports.set_bound(setting, bound)
             || self.progress.set_bound(setting, bound)
+            || self.package.set_bound(setting, bound)
     }
 }
 

@@ -784,7 +784,8 @@ fn a_record_with_map_fields_emits_map_rows_and_carries_their_key_nodes() {
     let package = map_record_package();
     // The record is built in code, not read from a source unit, so every
     // occurrence is placed at the fixture unit.
-    let emission = crate::emit::emit_package(&package, whole_unit).expect("the package emits");
+    let emission = crate::emit::emit_package(&package, whole_unit, crate::EmitLimits::fixture())
+        .expect("the package emits");
     assert_eq!(emission.omitted, []);
     let wire = wire(&emission);
     let rows = emission.selected_source_collection_rows();

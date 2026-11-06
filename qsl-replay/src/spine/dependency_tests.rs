@@ -41,7 +41,8 @@ fn view_of(
     package: &qsl_package::CheckedPackage,
     identity: &str,
 ) -> Result<qsl_semantics::library::ImportView, qsl_package::ImportViewRefusal> {
-    let emission = emit_checked(package).expect("the package emits");
+    let emission =
+        emit_checked(package, qsl_package::EmitLimits::fixture()).expect("the package emits");
     read_import_view(
         package,
         &emission,
@@ -49,6 +50,7 @@ fn view_of(
         &BTreeMap::new(),
         &mut qsl_package::AdmittedPackages::default(),
         qsl_package::V2ReadLimits::fixture(),
+        qsl_package::EmitLimits::fixture(),
     )
 }
 

@@ -310,7 +310,7 @@ fn emitted_union_rows_carry_the_admitted_composites_sealed_members_and_payloads(
     let text = format!("{HEADER}{UNIT}");
     let admitted = admit(&text, &DependencyInput::default());
     let rows = with_spine_package(&text, |package| {
-        qsl_package::emit_checked(package)
+        qsl_package::emit_checked(package, qsl_package::EmitLimits::fixture())
             .expect("the package emits")
             .selected_source_union_rows()
             .to_vec()

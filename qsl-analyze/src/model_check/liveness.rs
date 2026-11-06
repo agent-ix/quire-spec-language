@@ -180,6 +180,7 @@ pub(super) fn check(
         clause,
         request.temporal_clock_selections,
         cancel,
+        request.subject.simulation.emit,
     ) {
         Ok(_) => None,
         Err(ClauseRootRefusal::Cancelled(cause)) => Some(cause),
@@ -312,6 +313,7 @@ pub(super) fn check_protocol<M: MemoryModel>(
         clause,
         temporal_clock_selections,
         cancel,
+        simulation.emit,
     ) {
         Ok(_) => None,
         Err(ClauseRootRefusal::Cancelled(cause)) => Some(cause),

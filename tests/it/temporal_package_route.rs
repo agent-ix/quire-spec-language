@@ -8,6 +8,7 @@
 //! produces is the emitted bytes of two equal clauses with their occurrence
 //! ordinals renumbered.
 
+use qsl_package::EmitLimits;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -81,6 +82,7 @@ impl Built {
             LibraryName::new(emission.package().name()).expect("a library name"),
             &self.packages,
             limits,
+            EmitLimits::fixture(),
         )
     }
 }
@@ -127,6 +129,7 @@ fn emit(
     let emission = qsl_package::emit_checked_with_temporal_selections(
         unit.package(),
         &selections(&unit, clocks),
+        EmitLimits::fixture(),
     )
     .expect("the package emits");
     Built {
@@ -923,8 +926,12 @@ pub(super) fn same_named_clauses() -> Built {
             },
         })
         .collect();
-    let emission = qsl_package::emit_checked_with_temporal_selections(unit.package(), &selections)
-        .expect("the package emits");
+    let emission = qsl_package::emit_checked_with_temporal_selections(
+        unit.package(),
+        &selections,
+        EmitLimits::fixture(),
+    )
+    .expect("the package emits");
     Built {
         unit,
         emission,

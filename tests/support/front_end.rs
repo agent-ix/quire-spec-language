@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::{
     check, package_with_temporal_selections, parse, select, CheckedUnit, CompileRefusal,
-    DependencyInput, EmittedUnit, PackageLimits, ParseRequest, SpineLimits, SuppliedLibrary,
+    DependencyInput, EmittedUnit, ParseRequest, SpineLimits, SuppliedLibrary,
 };
 use quire_exact::Cancel;
 
@@ -185,14 +185,11 @@ fn emitted_once(
         Clocks::Unselected => Vec::new(),
         Clocks::ProfileDefault => default_clock_selections(&checked),
     };
-    Ok(package_with_temporal_selections(
-        &checked,
-        &selections,
-        PackageLimits::default(),
-        &Cancel::new(),
+    Ok(
+        package_with_temporal_selections(&checked, &selections, limits.package, &Cancel::new())
+            .map_err(refusal)?
+            .into_value(),
     )
-    .map_err(refusal)?
-    .into_value())
 }
 
 /// One default selection per configured temporal clause of `checked`, keyed by
@@ -387,13 +384,15 @@ pub fn dependency_fixture_identity(
     let mut pending = vec![(original.package(), formatted.package())];
     let mut visited = std::collections::BTreeSet::new();
     while let Some((original, formatted)) = pending.pop() {
-        let original_emission = qsl_package::emit_checked(original).unwrap();
+        let original_emission =
+            qsl_package::emit_checked(original, qsl_package::EmitLimits::fixture()).unwrap();
         assert!(
             original_emission.omitted().is_empty(),
             "{path}: original dependency emission omitted {:?}",
             original_emission.omitted()
         );
-        let formatted_emission = qsl_package::emit_checked(formatted).unwrap();
+        let formatted_emission =
+            qsl_package::emit_checked(formatted, qsl_package::EmitLimits::fixture()).unwrap();
         assert!(
             formatted_emission.omitted().is_empty(),
             "{path}: formatted dependency emission omitted {:?}",

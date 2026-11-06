@@ -83,7 +83,7 @@ caller raises or lowers it, and the value is used as given (a limit over a
 `u32` quantity, `model.sequence_maximum`, takes at most `u32::MAX`; FR-506). The requirement that owns each limit defines its counter:
 NFR-001 (`s1.*`), NFR-011 (`s3.*`), FR-082 (`environment.*`), FR-260 (`intake.*`), FR-297 (`inspect.*`), FR-298 (`render.*`),
 NFR-012 and FR-506 (`model.*`, `admission.*`), FR-106 (`observation.*`), FR-523 (`temporal_evidence.*`), FR-111
-(`library.*`), FR-099 (`dependency.*`), FR-098 (`replay.*`), FR-264 (`i2.*`),
+(`library.*`), FR-099 (`dependency.*`), FR-098 (`replay.*`), FR-264 (`i2.*`, `emit.*`),
 FR-003 (`format.*`), FR-294 (`prepare.*`), and FR-101 (`explore.*`). Analysis
 engine limits and the typed inspection operation's limit have their own table
 (Engine limit setting names).
@@ -151,6 +151,7 @@ engine limits and the typed inspection operation's limit have their own table
 | `i2.diagnostics` | I2 v2 reader | diagnostic count | the v2 read limits' diagnostics | 10000 diagnostics |
 | `i2.work_units` | I2 v2 reader and native identity join | work budget | the v2 read limits' work; native-join budget work | 1000000 units |
 | `i2.native_join_storage` | I2 v2 reader native identity join | logical storage | `V2ReadLimits.storage`; native-join budget storage | 16777216 logical units |
+| `emit.output_bytes` | E4 emit | input bytes | `qsl_package::EmitLimits` output_bytes; `qsl_replay::spine::PackageLimits` output_bytes | 16777216 bytes |
 | `explore.states` | exploration | node count | exploration `Limits` max_states | 10000000 states |
 | `explore.transitions` | exploration | edge count | exploration `Limits` max_transitions | 100000000 transitions |
 | `prepare.compile_work_units` | execution-backend prepare | work budget | `PrepareLimits` compile_work_units | 16777216 units |
@@ -183,6 +184,16 @@ one, and fixtures state explicit values. `V2ReadLimits::bounded(storage)` uses
 the supplied storage value and the other bounded-reader defaults, including the
 published `i2.work_units` default. It does not create a second work setting or
 derive storage from input bytes.
+
+`emit.output_bytes` bounds the canonical bytes the E4 emitter writes for one
+`quire.checked-package/v2` package (FR-264 Behavior 5). `EmitLimits.output_bytes`
+is a required field with no `Default`, and every emit entry of `qsl-package`
+takes the `EmitLimits` value as an argument, so no emit path below the outer
+configuration is unbounded. The published table default 16777216 applies only
+where the outer configuration supplies it: `PackageLimits::default()` of the
+compile lifecycle's E4 entry; no layer below that entry supplies one, and
+fixtures state explicit values. The bound is a `u64` allowance, used as given,
+from zero through `u64::MAX`.
 
 Both native-join bounds are `u64` allowances and accept every value from zero
 through `u64::MAX`. A native join that cannot admit its next work or storage
@@ -348,7 +359,7 @@ these names through the same operand grammar as the stage settings
    | --- | --- | --- |
    | `ModelNormalizationLimitsV1`, `PopulationAdmissionLimitsV1` (caller budgets) | `resource_exhausted`/`insufficient-next-charge` for a denied charge, a walk ceiling (`model.ancestor_steps`, `model.family_steps`, `admission.ancestor_steps`) being a denied one-edge charge (FR-082-AC-3, FR-083, QSpec FR-150-AC-11), wherever the ceiling is read, observation admission's re-run walks included | `model.*`, `admission.*` |
    | the format, intake and library resolution budgets | `resource_exhausted`/`input-bytes-exceeded`, `resource_exhausted`/`intake-limit-exceeded`, `resource_exhausted`/`insufficient-next-charge` | `format.output_bytes`, `intake.input_bytes`, `library.*` |
-   | a stage's or reader's own limits type | `stage_limit_exceeded` | `s1.*`, `s3.*`, `environment.*`, `i2.*`, `replay.input_bytes`, `observation.*`, `dependency.*`, `identity.input_bytes`, `inspect.max_view_entries`, `render.output_bytes` |
+   | a stage's or reader's own limits type | `stage_limit_exceeded` | `s1.*`, `s3.*`, `environment.*`, `i2.*`, `replay.input_bytes`, `observation.*`, `dependency.*`, `identity.input_bytes`, `inspect.max_view_entries`, `render.output_bytes`, `emit.output_bytes` |
    | the supplied-value limits type (pre-call phase budgets) | no catalog code: the phase-marked pre-call limit record of FR-277 (replay: `inconclusive`/`NoValue`), never a kernel charge point | FR-277's `supplied.admission_work_units` and `supplied.conversion_work_units`, which are not setting-table rows |
    | exploration limits | no catalog code: exploration returns `Outcome::Bounded` (FR-101) | `explore.*` |
    | `TemporalEvidenceLimits` and the progress ledger capacity (FR-523, FR-502) | no catalog code: the call returns `Incomplete(LimitReached{limit, value, setting})` with `limit` one of `node count`, `work budget`, `input bytes` or `tick count` (the kind of `temporal_evidence.history_span`) and the call's stop scope as FR-523 states | `temporal_evidence.*`, `progress.covered_positions` |
@@ -468,6 +479,7 @@ these names through the same operand grammar as the stage settings
 | FR-255-AC-17 | Both `i2.work_units` and `i2.native_join_storage` accept 0 and `u64::MAX`; with storage 0 the nonempty identity join is refused at its first positive storage charge, and with `u64::MAX` it is admitted. | Test (TC-721) |
 | FR-255-AC-18 | For an identity-join fixture with measured charges W (work) and S (storage), limits (W, S) admit the join, (W - 1, S) refuses it as a work-budget limit naming `i2.work_units`, and (W, S - 1) refuses it as a logical-storage limit naming `i2.native_join_storage`. | Test (TC-721) |
 | FR-255-AC-19 | A refused native join returns the `stage_limit_exceeded`-class refusal with `kind`, `bound`, `actual` and `setting` of FR-255 Behavior 1; IR's `ExactTypeProjectionError` has code `exhausted_work` or `exhausted_storage` and no separate public `cause` field, and `NativeJoinBudget::first_unpaid()` reports the first denied kind and amount. | Test (TC-721) |
+| FR-255-AC-20 | Setting `emit.output_bytes` through the emit limits' builder, a replay request's `stage_limits` and the settings operation changes only `EmitLimits.output_bytes` (`PackageLimits.output_bytes` of the compile lifecycle); `EmitLimits` has no `Default`, so a limits value built without an output-byte value does not compile and a fixture states an explicit value; the outer configuration's `PackageLimits::default()` supplies 16777216; and the setting accepts 0 and `u64::MAX`. | Test (TC-721) |
 
 ## Status
 

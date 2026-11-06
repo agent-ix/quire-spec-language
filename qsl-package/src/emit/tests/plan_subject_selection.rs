@@ -98,6 +98,7 @@ fn rooted(selected: usize) -> Rooted {
         &evidence,
         &wire_plan,
         crate::V2ReadLimits::fixture(),
+        crate::EmitLimits::fixture(),
     )
     .expect("the plan root is written");
     Rooted {

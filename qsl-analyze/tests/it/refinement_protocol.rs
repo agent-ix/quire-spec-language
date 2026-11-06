@@ -949,6 +949,7 @@ fn tso_flush_fairness_replays_against_an_unmet_inc_assumption() {
     let mut package_provision = world.package_provision().clone();
     package_provision.extend(documents.packages.clone());
     let concrete_request = qsl_eval::simulation::model::ModelSimulationRequest {
+        emit: qsl_package::EmitLimits::fixture(),
         package: &checked,
         packages: &package_provision,
         normalization: qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
