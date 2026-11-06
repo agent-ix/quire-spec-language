@@ -2325,7 +2325,16 @@ fn mismatch(location: &Location) -> CheckRefusal {
 fn quantity_unit(value_type: &ValueType) -> Option<&quire_exact::UnitId> {
     match value_type {
         ValueType::Quantity(unit) => Some(unit),
+        ValueType::BoundedQuantity(bounded) => Some(bounded.unit()),
         ValueType::CarriedQuantity(carried) => Some(carried.unit()),
+        _ => None,
+    }
+}
+
+fn uncarried_quantity_unit(value_type: &ValueType) -> Option<&quire_exact::UnitId> {
+    match value_type {
+        ValueType::Quantity(unit) => Some(unit),
+        ValueType::BoundedQuantity(bounded) => Some(bounded.unit()),
         _ => None,
     }
 }
@@ -3576,8 +3585,8 @@ impl<'a> Typer<'a> {
                 }
                 OrderedKind::Texts
             }
-            (ValueType::Quantity(l), ValueType::Quantity(r)) => {
-                let (Some(l), Some(r)) = (self.units.get(l.clone()), self.units.get(r.clone())) else {
+            (l, r) if uncarried_quantity_unit(l).is_some() && uncarried_quantity_unit(r).is_some() => {
+                let (Some(l), Some(r)) = (uncarried_quantity_unit(l).and_then(|id| self.units.get(id.clone())), uncarried_quantity_unit(r).and_then(|id| self.units.get(id.clone()))) else {
                     return Err(mismatch(location));
                 };
                 check_comparable(l, r)
@@ -3826,15 +3835,19 @@ impl<'a> Typer<'a> {
                     ValueType::Float(*l),
                 )
             }
-            (ValueType::Quantity(l), ValueType::Quantity(r), _) => {
+            (l, r, _)
+                if uncarried_quantity_unit(l).is_some() && uncarried_quantity_unit(r).is_some() =>
+            {
                 let operation = match operator {
                     ArithmeticOperator::Add => UnitOperation::Add,
                     ArithmeticOperator::Subtract => UnitOperation::Subtract,
                     ArithmeticOperator::Multiply => UnitOperation::Multiply,
                     ArithmeticOperator::Divide => UnitOperation::Divide,
                 };
-                let (Some(l), Some(r)) = (self.units.get(l.clone()), self.units.get(r.clone()))
-                else {
+                let (Some(l), Some(r)) = (
+                    uncarried_quantity_unit(l).and_then(|id| self.units.get(id.clone())),
+                    uncarried_quantity_unit(r).and_then(|id| self.units.get(id.clone())),
+                ) else {
                     return Err(mismatch(location));
                 };
                 let unit = result_unit(operation, l, r)
@@ -4745,7 +4758,9 @@ impl<'a> Typer<'a> {
                 ))
             }
             (
-                ValueType::Quantity(_) | ValueType::CarriedQuantity(_),
+                ValueType::Quantity(_)
+                | ValueType::BoundedQuantity(_)
+                | ValueType::CarriedQuantity(_),
                 ValueType::Quantity(_) | ValueType::CarriedQuantity(_),
             ) => {
                 let Some(source_unit) = quantity_unit(&operand.value_type) else {

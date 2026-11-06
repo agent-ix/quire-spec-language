@@ -4888,7 +4888,9 @@ impl<'a> Lowering<'a> {
                     }
                 } else if matches!(
                     node.at(*operand).value_type(),
-                    ValueType::Quantity(_) | ValueType::BoundedQuantity(_) | ValueType::CarriedQuantity(_)
+                    ValueType::Quantity(_)
+                        | ValueType::BoundedQuantity(_)
+                        | ValueType::CarriedQuantity(_)
                 ) {
                     // FR-093 / FR-497 quantity conversions carry the target
                     // carrier's mode, or exact for an uncarried Quantity.
@@ -6784,12 +6786,19 @@ fn bounded_quantity_operands(aggregate: &AggregateTerm) -> Vec<quire_exact::Path
     use quire_exact::PathSegment;
     let mut operands = Vec::with_capacity(7);
     for member in &aggregate.members {
-        let MemberTerm::Binding(binding) = member else { continue };
+        let MemberTerm::Binding(binding) = member else {
+            continue;
+        };
         match &binding.value {
-            BindingValue::Leaf(LeafTerm::Reference { target: NodeRef::Admitted(key) }) => {
+            BindingValue::Leaf(LeafTerm::Reference {
+                target: NodeRef::Admitted(key),
+            }) => {
                 operands.push(PathSegment::Node(key.clone()));
             }
-            BindingValue::Leaf(LeafTerm::Literal { ty: NodeRef::Admitted(ty), value }) => {
+            BindingValue::Leaf(LeafTerm::Literal {
+                ty: NodeRef::Admitted(ty),
+                value,
+            }) => {
                 operands.push(PathSegment::Text(binding.name.clone()));
                 operands.push(PathSegment::Node(ty.clone()));
                 operands.push(PathSegment::Text(literal_operand_text(value)));

@@ -15,8 +15,8 @@ use quire_checked::node::{AuthoredBound, EndSide};
 use std::collections::{BTreeMap, BTreeSet};
 
 use quire_exact::{
-    BoundedQuantityType, CarriedQuantityType, EffectiveId, Integer, NodeKey, QuantityCarrier, UnitDomain, UnitId,
-    ValueType,
+    BoundedQuantityType, CarriedQuantityType, EffectiveId, Integer, NodeKey, QuantityCarrier,
+    UnitDomain, UnitId, ValueType,
 };
 
 use super::{
@@ -2699,10 +2699,16 @@ impl<'a> Lowering<'a> {
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         let (Some(min), Some(max)) = (bounded.min(), bounded.max()) else {
-            return Err(refuse(location, CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)));
+            return Err(refuse(
+                location,
+                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
+            ));
         };
         if bounded.unit().domain() != UnitDomain::Declared || min.magnitude() > max.magnitude() {
-            return Err(refuse(location, CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)));
+            return Err(refuse(
+                location,
+                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
+            ));
         }
         let unit = self.quantity_type(bounded.unit().clone(), location)?;
         let min = self.rational_literal(min.magnitude(), location)?;

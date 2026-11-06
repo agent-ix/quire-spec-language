@@ -69,6 +69,13 @@ fn package() -> CheckedPackage {
 }
 
 pub(super) fn package_with(functions: &str) -> Result<CheckedPackage, Vec<CheckRefusal>> {
+    package_with_aliases(functions, |_| {})
+}
+
+fn package_with_aliases(
+    functions: &str,
+    configure: impl FnOnce(&mut PackageDeclarations),
+) -> Result<CheckedPackage, Vec<CheckRefusal>> {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n{functions}"
@@ -82,7 +89,7 @@ pub(super) fn package_with(functions: &str) -> Result<CheckedPackage, Vec<CheckR
     .expect("S1 reads the unit");
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let declarations = PackageDeclarations::assemble(
+    let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         "fixture".to_owned(),
         unit,
@@ -90,6 +97,7 @@ pub(super) fn package_with(functions: &str) -> Result<CheckedPackage, Vec<CheckR
         Vec::new(),
     )
     .expect("the assembler builds the declarations");
+    configure(&mut declarations);
     declarations
         .check(CheckingLimits::default())
         .map(CheckedPackage::link)
@@ -466,4 +474,81 @@ fn a_carried_quantity_exponent_expression_is_not_admitted() {
     )
     .expect("S1 reads the unit");
     assert!(!parsed.is_admissible(), "the unsupported exponent refuses");
+}
+
+fn bounded_package() -> CheckedPackage {
+    use quire_exact::{BoundedQuantityType, Integer, PathSegment, Quantity, Rational, ValueType};
+    package_with_aliases(
+        "dimension Length; unit m : Length = rational(1, 1); \
+         unit cm : Length = rational(1, 100) * m; \
+         function sum using v(a: Bounded, b: Bounded): Quantity<m> pure { a + b } \
+         function sum_value using v(): Quantity<m> pure { sum(1 m, 2 m) } \
+         function less using v(a: Bounded, b: Quantity<cm>): Boolean pure { a < b } \
+         function less_value using v(): Boolean pure { less(1 m, 150 cm) } \
+         function to_cm using v(a: Bounded): Quantity<cm> pure { convert<Quantity<cm>>(a) } \
+         function converted_value using v(): Quantity<cm> pure { to_cm(1.5 m) }",
+        |declarations| {
+            let unit = declarations
+                .types
+                .units()
+                .ids()
+                .find(|id| {
+                    id.declared_key().is_some_and(|key| {
+                        key.path().last() == Some(&PathSegment::Text("m".into()))
+                    })
+                })
+                .expect("source metre unit");
+            let endpoint = |magnitude| {
+                Quantity::new(
+                    Rational::from_integer(Integer::from(magnitude)),
+                    unit.clone(),
+                )
+            };
+            declarations.aliases.push((
+                "Bounded".into(),
+                ValueType::BoundedQuantity(std::sync::Arc::new(
+                    BoundedQuantityType::new(
+                        unit.clone(),
+                        Some(endpoint(0_i64)),
+                        Some(endpoint(2_i64)),
+                    )
+                    .expect("bounded source unit"),
+                )),
+            ));
+        },
+    )
+    .expect("bounded quantity functions check")
+}
+
+#[trace("TC-413", "FR-093-AC-61")]
+#[test]
+fn bounded_quantities_evaluate_add_comparison_and_conversion_from_their_interval() {
+    let package = bounded_package();
+    assert!(truth(&package, "less_value"));
+    for (name, expected) in [("sum_value", "3/1"), ("converted_value", "150/1")] {
+        let evaluation = package
+            .call(
+                &QualifiedName::unqualified(name).expect("function name"),
+                vec![],
+                &ObjectEnvironment::default(),
+                &mut Meter::new(UNLIMITED),
+            )
+            .expect("bounded quantity call runs");
+        match evaluation.outcome {
+            FamilyOutcome::Evaluated(Outcome::Completed(Value::Quantity(value))) => {
+                assert_eq!(value.magnitude().to_string(), expected)
+            }
+            other => panic!("completed exact quantity, got {other:?}"),
+        }
+    }
+}
+
+#[trace("TC-413", "FR-092-AC-28")]
+#[test]
+#[ignore = "IR-1345: native bounded_quantity reader admission is pending"]
+fn bounded_quantity_emission_round_trips_through_the_native_reader() {
+    let package = bounded_package();
+    let emitted = qsl_package::emit_checked(&package)
+        .expect("bounded quantity package emits and native reader admits it");
+    assert!(!emitted.package().bytes().is_empty());
 }
