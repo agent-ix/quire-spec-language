@@ -541,7 +541,7 @@ fn witness_json(
     use super::super::DeepValue;
     enum Task<'a> {
         Read(&'a Value),
-        Finish(&'a Value, usize),
+        Finish(&'a Value, usize, Option<String>),
     }
     let mut tasks = vec![Task::Read(value)];
     let mut values = Vec::<DeepValue>::new();
@@ -549,6 +549,14 @@ fn witness_json(
         match task {
             Task::Read(value) => {
                 let kind = text(&value["kind"], pointer)?;
+                // Tuple/union identity was read before their components by
+                // the owner adapter. Preserve that refusal order while
+                // moving the recursive walk onto the explicit stack.
+                let declaration = if matches!(kind, "tuple" | "union") {
+                    Some(node_text(&value["declaration"], pointer, graph)?)
+                } else {
+                    None
+                };
                 let children = match kind {
                     "quantity" => vec![&value["magnitude"]],
                     "option" => {
@@ -579,10 +587,10 @@ fn witness_json(
                         continue;
                     }
                 };
-                tasks.push(Task::Finish(value, children.len()));
+                tasks.push(Task::Finish(value, children.len(), declaration));
                 tasks.extend(children.into_iter().rev().map(Task::Read));
             }
-            Task::Finish(value, count) => {
+            Task::Finish(value, count, declaration) => {
                 let start = values
                     .len()
                     .checked_sub(count)
@@ -648,7 +656,9 @@ fn witness_json(
                         ])
                     }
                     "tuple" | "union" => {
-                        let name = node_text(&value["declaration"], pointer, graph)?;
+                        let name = declaration.ok_or_else(|| {
+                            Failure::decode(pointer, "missing witness declaration")
+                        })?;
                         let components =
                             Value::Array(children.map(DeepValue::into_inner).collect());
                         let mut members = serde_json::Map::new();
