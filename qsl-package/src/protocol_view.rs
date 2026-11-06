@@ -79,6 +79,12 @@ pub enum ViewRefusal {
         /// The node id asked for.
         node: CheckedNodeId,
     },
+    /// The node is absent from the package, or is not a compensation.
+    #[error("the package holds no compensation node {node:?}")]
+    NotACompensation {
+        /// The node id asked for.
+        node: CheckedNodeId,
+    },
     /// The node lacks a member its layout states.
     #[error("the node {node:?} carries no {member}")]
     MissingMember {
@@ -411,7 +417,9 @@ pub(crate) fn integer(term: &CheckedTerm) -> Option<u64> {
             value_kind: LiteralKind::Integer,
             value: Value::String(digits),
             ..
-        } => digits.parse().ok(),
+        } if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) => {
+            digits.parse().ok()
+        }
         _ => None,
     }
 }
@@ -615,6 +623,44 @@ fn optional_text<'n>(node: &'n Node, name: &'static str) -> Result<Option<&'n st
     optional(node, name)?
         .map(|term| text(term).ok_or_else(|| malformed(&node.node_id, name)))
         .transpose()
+}
+
+/// The retry bound of the compensation node `compensation`: the `maximum`
+/// member of its `attempts` group, a `u64` of at least one that counts the
+/// initial attempt (FR-381 `maximum_attempts`).
+///
+/// # Errors
+///
+/// [`ViewRefusal::NotACompensation`] for an absent node or a node that is not
+/// a compensation, [`ViewRefusal::MissingMember`] naming `attempts.maximum`
+/// when the group lacks it, [`ViewRefusal::MalformedMember`] naming
+/// `attempts.maximum` when it is not an integer or is zero.
+pub fn attempts_maximum(
+    package: &CheckedPackageV2,
+    compensation: &CheckedNodeId,
+) -> Result<u64, ViewRefusal> {
+    attempts_over(&package.graph().nodes, compensation)
+}
+
+/// [`attempts_maximum`] over the graph nodes themselves.
+pub(crate) fn attempts_over(
+    nodes: &[CheckedSemanticNodeV2],
+    compensation: &CheckedNodeId,
+) -> Result<u64, ViewRefusal> {
+    let node = Index::of(nodes)
+        .nodes
+        .get(compensation)
+        .copied()
+        .filter(|node| has_form(node, WireTag::Protocol, WireForm::Compensation))
+        .ok_or_else(|| ViewRefusal::NotACompensation {
+            node: compensation.clone(),
+        })?;
+    let group = required(node, "attempts")?;
+    let maximum =
+        group_member(group, "maximum").ok_or_else(|| missing(compensation, "attempts.maximum"))?;
+    integer(maximum)
+        .filter(|count| *count >= 1)
+        .ok_or_else(|| malformed(compensation, "attempts.maximum"))
 }
 
 /// The causal relation of the protocol clause `protocol`, derived from its
