@@ -940,8 +940,7 @@ mod depth_tests {
                 "the native collection form and order survive"
             );
         }
-        let mut unknown_declaration = declaration.clone();
-        unknown_declaration["ordinal"] = json!(99);
+        let unknown_declaration = serde_json::Value::Null;
         let expected = super::node(&unknown_declaration, "/value", &graph)
             .err()
             .unwrap();
