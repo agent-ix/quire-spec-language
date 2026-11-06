@@ -490,10 +490,9 @@ fn a_supply_for_an_introduced_binder_is_refused_as_unknown() {
         binders: binders.clone().into_iter().collect(),
         observation: None,
     };
-    assert!(
-        bare.evaluate_protocol_slot(&slot, &given, &mut meter)
-            .is_ok()
-    );
+    assert!(bare
+        .evaluate_protocol_slot(&slot, &given, &mut meter)
+        .is_ok());
     binders.push((
         graph.key(&introduced.node_id).expect("key"),
         SuppliedValue::Value(int(1)).into(),
