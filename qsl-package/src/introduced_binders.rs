@@ -314,6 +314,7 @@ mod tests {
             );
         });
         found.sort();
+        found.dedup();
         found
     }
 
@@ -354,5 +355,53 @@ mod tests {
             "case",
         );
         assert_eq!(found, vec!["outer", "s"]);
+    }
+
+    /// A binder the body never reads has no reference in the term, yet its
+    /// node can be a dependency of the application that introduces it. It is
+    /// introduced, so it is no source, also under an enclosing application.
+    #[trace("FR-390-AC-68", "TC-1071")]
+    #[test]
+    fn an_unread_binder_listed_as_a_dependency_is_not_a_source() {
+        let count = |name: &str, dependencies: &[&str], source: &str, bound: &str, body: Value| {
+            node(
+                name,
+                "expression",
+                "collection",
+                dependencies,
+                json!({
+                    "term": "application",
+                    "operator": "collection",
+                    "operation": {"identity": "quire.op.collection.count", "laws": [], "leaves": [], "member": null, "mode": null},
+                    "arguments": [
+                        reference(source),
+                        {"term": "binding", "name": bound, "value": body},
+                    ],
+                    "result_type": id("type"),
+                }),
+            )
+        };
+        let truth =
+            json!({"term": "literal", "type": id("type"), "value": true, "value_kind": "boolean"});
+        let found = sources(
+            vec![
+                count("alone", &["s", "unread"], "s", "unread", truth.clone()),
+                parameter("s", "s"),
+                parameter("unread", "unread"),
+            ],
+            "alone",
+        );
+        assert_eq!(found, vec!["s"]);
+        // Nested: the outer body is the inner application, which lists `unread`.
+        let found = sources(
+            vec![
+                count("outer", &["s", "inner"], "s", "a", reference("inner")),
+                count("inner", &["s", "unread"], "s", "unread", truth),
+                parameter("s", "s"),
+                parameter("unread", "unread"),
+            ],
+            "outer",
+        );
+        assert_eq!(found, vec!["s"]);
     }
 }

@@ -65,6 +65,7 @@ pub(crate) enum WireForm {
     Formula,
     TemporalClause,
     ProtocolClause,
+    Compensation,
 }
 
 impl WireForm {
@@ -94,6 +95,7 @@ impl WireForm {
             "formula" => Self::Formula,
             "temporal_clause" => Self::TemporalClause,
             "protocol_clause" => Self::ProtocolClause,
+            "compensation" => Self::Compensation,
             _ => return None,
         })
     }
