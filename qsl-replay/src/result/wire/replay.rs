@@ -524,7 +524,7 @@ mod tests {
             let supplied = &wire["supplied"];
             assert_eq!(supplied["phase"], "conversion");
             assert_eq!(supplied["parameter"], 3);
-            assert_eq!(supplied["event"], "witness.preflight");
+            assert_eq!(supplied["event"], "witness-preflight");
             assert_eq!(supplied["consumed"], "17");
             assert_eq!(
                 supplied["locus"],
