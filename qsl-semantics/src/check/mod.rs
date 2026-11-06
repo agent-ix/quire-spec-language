@@ -825,15 +825,6 @@ pub struct CheckedGraph {
             Vec<quire_exact::EffectiveId>,
         ),
     >,
-    /// Every admitted population declaration and its original/effective members,
-    /// independently of the canonical-member lookup used by query positions.
-    selected_population_catalog: BTreeMap<
-        quire_checked::key::DeclarationKey,
-        (
-            Vec<quire_checked::key::DeclarationKey>,
-            Vec<quire_exact::EffectiveId>,
-        ),
-    >,
     /// QSpec FR-322: the `model_root` key of each selection, in the same order.
     model_roots: Vec<quire_exact::NodeKey>,
     /// FR-110: the header-selectable layers the unit's header profiles
@@ -1004,7 +995,6 @@ impl DebugWith for CheckedGraph {
             selected_tuple_declaration_rows,
             operation_effects,
             protocol_population_types,
-            selected_population_catalog,
             model_roots,
             header_layers,
             time_sources,
@@ -1113,7 +1103,6 @@ impl DebugWith for CheckedGraph {
                 "protocol_population_types",
                 &NodeMap(protocol_population_types.iter(), table),
             )
-            .field("selected_population_catalog", &selected_population_catalog)
             .field("model_roots", &NodeList(model_roots.iter(), table))
             .field("header_layers", &header_layers)
             .field("time_sources", &Seq(time_sources, table))
@@ -2658,11 +2647,6 @@ impl PackageDeclarations {
                 let node = crate::model::key::population_node_key(population.key).ok()?;
                 Some((node, (population.key.clone(), population.members)))
             })
-            .collect();
-        let selected_population_catalog = models
-            .iter()
-            .flat_map(AdmittedModel::population_catalog)
-            .map(|(key, originals, effective)| (key.clone(), (originals.to_vec(), effective)))
             .collect();
         let declaration_keys = models
             .iter()
@@ -7101,7 +7085,6 @@ impl PackageDeclarations {
             selected_tuple_declaration_rows: self.selected_tuple_declaration_rows,
             operation_effects,
             protocol_population_types,
-            selected_population_catalog,
             model_roots,
             header_layers,
             time_sources: self.time_sources,
@@ -7926,25 +7909,6 @@ impl CheckedGraph {
         self.protocol_population_types
             .get(node)
             .map(|(declaration, members)| (declaration, members.as_slice()))
-    }
-
-    /// Every selected population's original declaration and member declarations,
-    /// paired with the checking stage's normalized effective TYPE identities.
-    /// This includes declarations no source expression reads.
-    pub fn selected_population_catalog(
-        &self,
-    ) -> impl Iterator<
-        Item = (
-            &quire_checked::key::DeclarationKey,
-            &[quire_checked::key::DeclarationKey],
-            &[quire_exact::EffectiveId],
-        ),
-    > {
-        self.selected_population_catalog
-            .iter()
-            .map(|(declaration, (originals, members))| {
-                (declaration, originals.as_slice(), members.as_slice())
-            })
     }
 
     /// The identity of the domain package the model `model` selects, where

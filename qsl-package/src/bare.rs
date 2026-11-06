@@ -23,8 +23,7 @@ use serde::{Deserialize, Serialize};
 use crate::checked_v2::wire_graph;
 
 mod carried;
-use carried::{PopulationCatalogJson, SourceRecordJson};
-pub use carried::{SelectedPopulation, SelectedPopulationCatalog, SelectedPopulationMember};
+use carried::SourceRecordJson;
 
 /// The format of `identities.json` (FR-531 "The identity file").
 pub const IDENTITIES_FORMAT: &str = "quire.checked-handoff.identities/2";
@@ -120,7 +119,6 @@ pub struct ReadIdentityRows {
     declarations: Vec<SelectedExactDeclarationRow>,
     fields: Vec<SelectedExactFieldRow>,
     source_records: Vec<SelectedSourceRecordRow>,
-    selected_populations: Vec<SelectedPopulationCatalog>,
 }
 
 /// Why an identity file was not read: a closed set, naming what it found.
@@ -169,9 +167,6 @@ pub enum IdentityMember {
     /// The required final-emission source-record rows.
     #[error("`source_records`")]
     SourceRecords,
-    /// The required original selected-population catalogs.
-    #[error("`selected_populations`")]
-    SelectedPopulations,
     /// A declaration row's `form`.
     #[error("`form`")]
     Form,
@@ -195,7 +190,6 @@ struct File {
     declarations: Vec<DeclarationJson>,
     fields: Vec<FieldJson>,
     source_records: Vec<SourceRecordJson>,
-    selected_populations: Vec<PopulationCatalogJson>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -286,7 +280,6 @@ impl<'de> serde::de::Visitor<'de> for TopVisitor<'_> {
         let mut declarations: Option<Vec<DeclarationJson>> = None;
         let mut fields: Option<Vec<FieldJson>> = None;
         let mut source_records: Option<Vec<SourceRecordJson>> = None;
-        let mut selected_populations: Option<Vec<PopulationCatalogJson>> = None;
         while let Some(key) = map.next_key::<String>()? {
             match key.as_str() {
                 "format" => {
@@ -325,42 +318,20 @@ impl<'de> serde::de::Visitor<'de> for TopVisitor<'_> {
                         self.problem.set(Some(IdentityMember::SourceRecords));
                     })?);
                 }
-                "selected_populations" => {
-                    if selected_populations.is_some() {
-                        return Err(self.fail(IdentityMember::Repeated("selected_populations")));
-                    }
-                    selected_populations = Some(map.next_value().inspect_err(|_: &A::Error| {
-                        self.problem.set(Some(IdentityMember::SelectedPopulations));
-                    })?);
-                }
                 other => return Err(self.fail(IdentityMember::Unknown(other.to_owned()))),
             }
         }
-        match (
-            format,
-            declarations,
-            fields,
-            source_records,
-            selected_populations,
-        ) {
-            (
-                Some(format),
-                Some(declarations),
-                Some(fields),
-                Some(source_records),
-                Some(selected_populations),
-            ) => Ok(File {
+        match (format, declarations, fields, source_records) {
+            (Some(format), Some(declarations), Some(fields), Some(source_records)) => Ok(File {
                 format,
                 declarations,
                 fields,
                 source_records,
-                selected_populations,
             }),
-            (None, _, _, _, _) => Err(self.fail(IdentityMember::Format)),
-            (_, None, _, _, _) => Err(self.fail(IdentityMember::Declarations)),
-            (_, _, None, _, _) => Err(self.fail(IdentityMember::Fields)),
-            (_, _, _, None, _) => Err(self.fail(IdentityMember::SourceRecords)),
-            (_, _, _, _, None) => Err(self.fail(IdentityMember::SelectedPopulations)),
+            (None, _, _, _) => Err(self.fail(IdentityMember::Format)),
+            (_, None, _, _) => Err(self.fail(IdentityMember::Declarations)),
+            (_, _, None, _) => Err(self.fail(IdentityMember::Fields)),
+            (_, _, _, None) => Err(self.fail(IdentityMember::SourceRecords)),
         }
     }
 }
@@ -386,11 +357,6 @@ fn form_spelling(form: SelectedExactDeclarationForm) -> &'static str {
 #[ix_trace_rs::string_edge]
 fn is_identities_format(format: &str) -> bool {
     format == IDENTITIES_FORMAT
-}
-
-#[ix_trace_rs::string_edge]
-pub(crate) fn is_model_root(node: &quire_contract_model::CheckedSemanticNodeV2) -> bool {
-    node.node_tag.as_ref() == "model" && node.semantic_form.as_ref() == "model_root"
 }
 
 /// Whether `kind` spells a declared unit identity.
@@ -492,12 +458,6 @@ impl ReadIdentityRows {
     /// Original source-record producer rows, with final graph references.
     pub fn source_records(&self) -> &[SelectedSourceRecordRow] {
         &self.source_records
-    }
-
-    /// Every selected model's original population claims. Native catalog
-    /// validation remains separate from this carrier's format read.
-    pub fn selected_populations(&self) -> &[SelectedPopulationCatalog] {
-        &self.selected_populations
     }
 
     /// Read `identities_json`, joining its rows to `package`.
@@ -631,33 +591,11 @@ impl ReadIdentityRows {
             .into_iter()
             .map(SourceRecordJson::row)
             .collect::<Result<Vec<_>, _>>()?;
-        let selected_populations = file
-            .selected_populations
-            .into_iter()
-            .enumerate()
-            .map(|(index, row)| {
-                let row = row.row()?;
-                if package
-                    .graph()
-                    .nodes
-                    .iter()
-                    .find(|node| node.node_id == row.model_root)
-                    .is_none_or(|node| !is_model_root(node))
-                {
-                    return Err(IdentityFileRefusal::Unjoined {
-                        member: IdentityMember::SelectedPopulations,
-                        index,
-                    });
-                }
-                Ok(row)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
         let rows = Self {
             package: package.name().to_owned(),
             declarations,
             fields,
             source_records,
-            selected_populations,
         };
         rows.join(package)
             .map_err(|error| IdentityFileRefusal::Native(Box::new(error)))?;
@@ -670,14 +608,12 @@ impl ReadIdentityRows {
         declarations: Vec<SelectedExactDeclarationRow>,
         fields: Vec<SelectedExactFieldRow>,
         source_records: Vec<SelectedSourceRecordRow>,
-        selected_populations: Vec<SelectedPopulationCatalog>,
     ) -> Self {
         Self {
             package: package.name().to_owned(),
             declarations,
             fields,
             source_records,
-            selected_populations,
         }
     }
 
@@ -786,11 +722,6 @@ impl ReadIdentityRows {
                 .iter()
                 .map(SourceRecordJson::of)
                 .collect::<Result<_, _>>()?,
-            selected_populations: self
-                .selected_populations
-                .iter()
-                .map(PopulationCatalogJson::of)
-                .collect(),
         };
         let mut bytes =
             serde_json::to_vec_pretty(&file).map_err(|_| malformed(IdentityMember::File))?;

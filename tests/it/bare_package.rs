@@ -294,107 +294,7 @@ fn a_handoff_directory_gives_a_bare_package_and_an_identity_file() {
     assert_eq!(files["identities.json"], second["identities.json"]);
 }
 
-#[trace("TC-1331", "FR-531-AC-21", "FR-517-AC-23")]
-#[test]
-fn the_identity_handoff_retains_unused_populations_and_every_selected_root() {
-    let holder = tempfile::tempdir().unwrap();
-    let source = holder.path().join("unit.native");
-    let model = holder.path().join("orders.json");
-    let text = population_fixture::SOURCE.replace(
-        "model M = \"test/orders\";",
-        "model M = \"test/orders\";\nmodel Extra = \"agent-ix/checked-handoff\";",
-    );
-    std::fs::write(&source, &text).unwrap();
-    let mut document = population_fixture::document_ep();
-    let mut empty = document["populations"][0].clone();
-    empty["identity"] = serde_json::json!(population_fixture::model::id("emptySpare"));
-    empty["displayName"] = serde_json::json!("emptySpare");
-    empty["members"] = serde_json::json!([]);
-    empty["origin"] = population_fixture::model::origin("emptySpare");
-    document["populations"].as_array_mut().unwrap().push(empty);
-    std::fs::write(&model, serde_json::to_vec(&document).unwrap()).unwrap();
-    let ordinary = request("event_position", Corpus::None);
-    let asked = quire_spec_language::checked_handoff::CheckedHandoffRequest {
-        emit: quire_spec_language::emit_checked_v2::Request {
-            source,
-            package_name: "population-handoff".into(),
-            models: vec![model, ordinary.emit.models[0].clone()],
-            libraries: Vec::new(),
-            execution_points: None,
-            temporal_selections: Vec::new(),
-            out: None,
-        },
-        corpus: Corpus::None,
-    };
-    let out = holder.path().join("handoff");
-    write(&asked, &out).expect("the genuine two-model handoff is written");
-    let files = tree(&out);
-    let package = admitted(&files["checked-package.json"], &evidence(&asked).unwrap());
-    let rows = ReadIdentityRows::read(&files["identities.json"], &package)
-        .expect("the required catalogs read");
-    let catalogs = rows.selected_populations();
-    assert_eq!(
-        catalogs.len(),
-        2,
-        "even the unused selected model has a root catalog"
-    );
-    let extra = catalogs
-        .iter()
-        .find(|catalog| catalog.selected_document.as_ref() == "agent-ix/checked-handoff")
-        .unwrap();
-    assert!(extra.populations.is_empty());
-    let orders = catalogs
-        .iter()
-        .find(|catalog| catalog.selected_document.as_ref() == "test/orders")
-        .unwrap();
-    assert_eq!(orders.populations.len(), 5);
-    let empty = orders
-        .populations
-        .iter()
-        .find(|population| population.original.node().ends_with("emptySpare"))
-        .expect("an unused admitted empty population retains its original declaration");
-    assert!(empty.members.is_empty());
-    let unused = orders
-        .populations
-        .iter()
-        .find(|population| population.original.node().ends_with("otherSpare"))
-        .expect("an unused original population is retained");
-    assert_eq!(unused.members.len(), 1);
-    let member = &unused.members[0];
-    assert!(member.original.node().ends_with("Other"));
-    assert_eq!(
-        member.effective_type.owner_chain(),
-        vec![member.original.clone()]
-    );
-    for catalog in catalogs {
-        assert!(package
-            .graph()
-            .nodes
-            .iter()
-            .any(|node| node.node_id == catalog.model_root));
-        assert!(catalog
-            .populations
-            .windows(2)
-            .all(|pair| pair[0].original < pair[1].original));
-        for population in &catalog.populations {
-            assert!(population.members.iter().all(|member| member
-                .effective_type
-                .owner_chain()
-                .len()
-                == 1));
-        }
-    }
-    assert_eq!(rows.to_bytes(&package).unwrap(), files["identities.json"]);
-    let second = holder.path().join("second");
-    write(&asked, &second).unwrap();
-    assert_eq!(tree(&second)["identities.json"], files["identities.json"]);
-    assert!(
-        !text.contains("otherSpare"),
-        "the source does not select the unused population"
-    );
-}
-
-#[trace("TC-1331", "FR-531-AC-19", "FR-531-AC-20", "FR-517-AC-23")]
+#[trace("TC-1331", "FR-531-AC-19", "FR-517-AC-23")]
 #[test]
 fn a_public_record_projection_requires_its_original_carried_native_witness() {
     let holder = tempfile::tempdir().unwrap();
@@ -502,7 +402,6 @@ fn a_public_record_projection_requires_its_original_carried_native_witness() {
         rows.declarations().to_vec(),
         rows.fields().to_vec(),
         Vec::new(),
-        rows.selected_populations().to_vec(),
     );
     let bare = BarePackage::new(&package).with_supply(qsl_package::BareSupply {
         identities: &missing,

@@ -617,8 +617,6 @@ pub struct Emission {
     /// The checking stage's selected record-field rows, retained from the same
     /// acquisition.
     pub(crate) selected_exact_field_rows: Vec<quire_contract_model::SelectedExactFieldRow>,
-    /// Original selected populations, bound to these final model-root IDs.
-    pub(crate) selected_population_catalogs: Vec<crate::SelectedPopulationCatalog>,
     /// Exact QSL identity witnesses for emitted equality occurrences.
     pub(crate) equality_producer_identity_rows: Vec<EqualityProducerEmissionRow>,
     /// Per-fact equality witnesses joined to final structural node ids.
@@ -852,7 +850,6 @@ impl DebugWith for Emission {
             selected_source_collection_rows,
             selected_exact_declaration_rows,
             selected_exact_field_rows,
-            selected_population_catalogs,
             equality_producer_identity_rows,
             equality_fact_witness_rows,
             wire_nodes,
@@ -903,7 +900,6 @@ impl DebugWith for Emission {
                 selected_exact_declaration_rows,
             )
             .field("selected_exact_field_rows", selected_exact_field_rows)
-            .field("selected_population_catalogs", selected_population_catalogs)
             .field(
                 "equality_producer_identity_rows",
                 equality_producer_identity_rows,
@@ -1256,41 +1252,17 @@ impl Emission {
         &self.selected_exact_field_rows
     }
 
-    /// Original populations and normalized member types for every final selected
-    /// model root, including populations not reached by expressions.
-    pub fn selected_population_catalogs(&self) -> &[crate::SelectedPopulationCatalog] {
-        &self.selected_population_catalogs
-    }
-
     /// The required identity handoff facts from this final emission. This
     /// preserves original opaque source keys separately from graph references.
     ///
     /// # Errors
     ///
     /// The native typed stage-row refusal when declaration or field claims do
-    /// not join the admitted package, or a malformed catalog when these bytes'
-    /// final model roots lack their retained producer catalogs. Whole-witness
-    /// validation and semantic population validation are separate native reads.
+    /// not join the admitted package.
     pub fn identity_rows(
         &self,
         package: &CheckedPackageV2,
     ) -> Result<crate::ReadIdentityRows, crate::IdentityFileRefusal> {
-        let roots: BTreeSet<_> = self
-            .wire_nodes
-            .iter()
-            .filter(|node| crate::bare::is_model_root(node))
-            .map(|node| &node.node_id)
-            .collect();
-        let carried: BTreeSet<_> = self
-            .selected_population_catalogs
-            .iter()
-            .map(|row| &row.model_root)
-            .collect();
-        if roots != carried || carried.len() != self.selected_population_catalogs.len() {
-            return Err(crate::IdentityFileRefusal::Malformed {
-                member: crate::IdentityMember::SelectedPopulations,
-            });
-        }
         let joined = qsl_semantics::model::intake::selected_exact_identities_from_rows(
             package,
             &self.selected_exact_declaration_rows,
@@ -1326,7 +1298,6 @@ impl Emission {
             joined.declaration_rows().cloned().collect(),
             joined.field_rows().to_vec(),
             records,
-            self.selected_population_catalogs.clone(),
         ))
     }
 
@@ -5121,62 +5092,6 @@ fn timed_body_operands(
     Ok(())
 }
 
-/// Retain every selected population from checking, bound to this emission's
-/// final model-root references. Missing normalized member authority refuses
-/// emission rather than dropping part of a population.
-fn selected_population_catalogs(
-    graph: &qsl_semantics::check::CheckedGraph,
-    emitted: &std::collections::HashMap<NodeKey, CheckedNodeId>,
-) -> Result<Vec<crate::SelectedPopulationCatalog>, EmitRefusal> {
-    graph
-        .model_roots()
-        .map(|(selection, root)| {
-            let model_root = emitted
-                .get(&root)
-                .cloned()
-                .ok_or(EmitRefusal::SourceMapInvariant)?;
-            let mut populations = graph
-                .selected_population_catalog()
-                .filter(|(declaration, _, _)| declaration.package == selection.identity)
-                .map(|(declaration, originals, effective)| {
-                    if originals.len() != effective.len() {
-                        return Err(EmitRefusal::SourceMapInvariant);
-                    }
-                    let members = originals
-                        .iter()
-                        .zip(effective)
-                        .map(|(original, effective_type)| {
-                            if effective_type.owner_chain().len() != 1 {
-                                return Err(EmitRefusal::SourceMapInvariant);
-                            }
-                            Ok(crate::SelectedPopulationMember {
-                                original: quire_exact::OriginalDeclarationKey::new(
-                                    &original.package,
-                                    &original.node,
-                                ),
-                                effective_type: effective_type.clone(),
-                            })
-                        })
-                        .collect::<Result<Vec<_>, EmitRefusal>>()?;
-                    Ok(crate::SelectedPopulation {
-                        original: quire_exact::OriginalDeclarationKey::new(
-                            &declaration.package,
-                            &declaration.node,
-                        ),
-                        members,
-                    })
-                })
-                .collect::<Result<Vec<_>, EmitRefusal>>()?;
-            populations.sort_by(|left, right| left.original.cmp(&right.original));
-            Ok(crate::SelectedPopulationCatalog {
-                model_root,
-                selected_document: selection.identity.as_str().into(),
-                populations,
-            })
-        })
-        .collect()
-}
-
 /// QSpec FR-322 `model_root`, FR-322-AC-132 and AC-134: append one self-typed
 /// root and generated source-map entry per selected domain package, in
 /// selection order. The placeholder region is the checked unit's first byte.
@@ -5412,7 +5327,6 @@ pub fn emit_timed_models(
         selected_source_collection_rows: Vec::new(),
         selected_exact_declaration_rows: Vec::new(),
         selected_exact_field_rows: Vec::new(),
-        selected_population_catalogs: Vec::new(),
         equality_producer_identity_rows: Vec::new(),
         equality_fact_witness_rows: Vec::new(),
         wire_nodes: semantic_graph.nodes,
@@ -6335,7 +6249,6 @@ fn emit_package_inner(
     let selected_source_record_rows = source_record_rows(graph, &emitted_node_ids)?;
     let selected_source_tuple_rows = source_tuple_rows(graph, &emitted_node_ids)?;
     let selected_source_collection_rows = source_collection_rows(graph, &emitted_node_ids)?;
-    let selected_population_catalogs = selected_population_catalogs(graph, &emitted_node_ids)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
@@ -6397,7 +6310,6 @@ fn emit_package_inner(
         selected_source_collection_rows,
         selected_exact_declaration_rows: graph.selected_exact_declaration_rows().to_vec(),
         selected_exact_field_rows: graph.selected_exact_field_rows().to_vec(),
-        selected_population_catalogs,
         equality_producer_identity_rows,
         equality_fact_witness_rows,
         wire_nodes: semantic_graph.nodes,

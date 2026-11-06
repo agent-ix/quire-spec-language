@@ -2,41 +2,11 @@
 //! Required final producer facts in the identities/2 carrier (FR-531).
 
 use quire_contract_model::{CheckedNodeId, SelectedSourceRecordMemberRow, SelectedSourceRecordRow};
-use quire_exact::{EffectiveId, OriginalDeclarationKey, Presence};
+use quire_exact::Presence;
 use serde::{Deserialize, Serialize};
 
-use super::{effective_id, EffectiveJson, IdentityFileRefusal, IdentityMember, LinkJson};
+use super::{IdentityFileRefusal, IdentityMember};
 use crate::equality_file::{OriginalNodeKey, OriginalValueType};
-
-/// One selected model's original population catalog, bound to its final root.
-/// These are producer claims; native catalog validation is a separate IR read.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SelectedPopulationCatalog {
-    /// The selected model's final emitted root.
-    pub model_root: CheckedNodeId,
-    /// The selected domain document's identity.
-    pub selected_document: Box<str>,
-    /// Every population, including declarations unused by expressions.
-    pub populations: Vec<SelectedPopulation>,
-}
-
-/// A genuine selected population declaration and all its members.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SelectedPopulation {
-    /// The population's original declaration identity.
-    pub original: OriginalDeclarationKey,
-    /// Its declared members in producer order, without dropping aliases.
-    pub members: Vec<SelectedPopulationMember>,
-}
-
-/// A population member's original declaration and normalized effective type.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SelectedPopulationMember {
-    /// Original member type declaration, retained separately from normalization.
-    pub original: OriginalDeclarationKey,
-    /// Genuine normalized effective TYPE identity, with no owner.
-    pub effective_type: EffectiveId,
-}
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -128,105 +98,6 @@ impl SourceRecordJson {
                         },
                         type_node: member.type_node,
                         value_type: member.value_type.value().map_err(|_| malformed())?,
-                    })
-                })
-                .collect::<Result<_, IdentityFileRefusal>>()?,
-        })
-    }
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct PopulationCatalogJson {
-    model_root: CheckedNodeId,
-    selected_document: String,
-    populations: Vec<PopulationJson>,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct PopulationJson {
-    original: LinkJson,
-    members: Vec<PopulationMemberJson>,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct PopulationMemberJson {
-    original: LinkJson,
-    effective_type: EffectiveJson,
-}
-
-fn original_json(original: &OriginalDeclarationKey) -> LinkJson {
-    LinkJson {
-        package: original.package().to_owned(),
-        node: original.node().to_owned(),
-    }
-}
-
-impl PopulationCatalogJson {
-    pub(super) fn of(row: &SelectedPopulationCatalog) -> Self {
-        Self {
-            model_root: row.model_root.clone(),
-            selected_document: row.selected_document.to_string(),
-            populations: row
-                .populations
-                .iter()
-                .map(|population| PopulationJson {
-                    original: original_json(&population.original),
-                    members: population
-                        .members
-                        .iter()
-                        .map(|member| PopulationMemberJson {
-                            original: original_json(&member.original),
-                            effective_type: EffectiveJson {
-                                chain: member
-                                    .effective_type
-                                    .owner_chain()
-                                    .iter()
-                                    .map(original_json)
-                                    .collect(),
-                            },
-                        })
-                        .collect(),
-                })
-                .collect(),
-        }
-    }
-
-    pub(super) fn row(self) -> Result<SelectedPopulationCatalog, IdentityFileRefusal> {
-        let malformed = |member| IdentityFileRefusal::Malformed { member };
-        Ok(SelectedPopulationCatalog {
-            model_root: self.model_root,
-            selected_document: self.selected_document.into(),
-            populations: self
-                .populations
-                .into_iter()
-                .map(|population| {
-                    Ok(SelectedPopulation {
-                        original: OriginalDeclarationKey::new(
-                            population.original.package,
-                            population.original.node,
-                        ),
-                        members: population
-                            .members
-                            .into_iter()
-                            .map(|member| {
-                                if member.effective_type.chain.len() != 1 {
-                                    return Err(malformed(IdentityMember::SelectedPopulations));
-                                }
-                                Ok(SelectedPopulationMember {
-                                    original: OriginalDeclarationKey::new(
-                                        member.original.package,
-                                        member.original.node,
-                                    ),
-                                    effective_type: effective_id(
-                                        &member.effective_type,
-                                        &malformed,
-                                    )?,
-                                })
-                            })
-                            .collect::<Result<_, IdentityFileRefusal>>()?,
                     })
                 })
                 .collect::<Result<_, IdentityFileRefusal>>()?,

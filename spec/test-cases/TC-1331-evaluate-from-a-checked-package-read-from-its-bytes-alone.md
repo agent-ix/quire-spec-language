@@ -12,7 +12,7 @@ relationships:
 
 ## Description
 
-Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-21. **R** is the package of FR-517; the test crate depends on `quire-contract-model`, `qsl-package` and `qsl-eval` only.
+Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-20. **R** is the package of FR-517; the test crate depends on `quire-contract-model`, `qsl-package` and `qsl-eval` only.
 
 ## Test Procedure
 
@@ -37,9 +37,8 @@ Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-21. **R** is the pa
 | 17 | 18 | rows with a `carried_quantity` fact value type over each carrier, a `bounded_quantity` with and without bounds, a `map` with and without a bound, and the example of "Value encodings"; a bound in another unit; an unknown carrier tag | write then read returns equal rows, byte-identical rewrite, the example value-type subtree as JSON, members in order; `Malformed` for the last two |
 | 18 | 19 | a genuine final source-record emission, including renamed members and nested opaque types | required `/2` rows round-trip unchanged; native IR record join and `source_record_view` equal the producer row |
 | 19 | 20 | old format; missing required arrays; repeated/unknown members; malformed or over-depth opaque key, including an isolated deep-key writer/reader control; stale/foreign/missing/conflicting record rows | typed parser/native row refusal; an empty supplied record set refuses at the actual native request and maps to public `MissingTypeRepresentation`, with no structural-key success fallback |
-| 20 | 21 | multiple selected roots, unused nonempty and empty populations, normalized effective population member types, no snapshot input | complete ordered original catalog round-trips unchanged, effective TYPE owners are absent; a required carrier request with missing or foreign final-root catalog bindings refuses, while temporal-only emission and genuinely model-free carriers remain usable |
 
-Tag the test `#[trace("TC-1331", "FR-531-AC-1", ..., "FR-531-AC-21")]`.
+Tag the test `#[trace("TC-1331", "FR-531-AC-1", ..., "FR-531-AC-20")]`.
 
 ## Expected Results
 

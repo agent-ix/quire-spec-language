@@ -55,3 +55,35 @@ Review followed Rust API, implementation, wire, test and safety guidance. No ven
 Reviewed fixed head 91c68d1df71f04254349acdf0d7d095663368425 and main merge e1e2909b5 without source edits or Cargo runs. Author confined logs record 35 tests passing, including all seven equality codec controls, genuine empty population round trip and isolated deep-key reader/writer refusals. Exact 32-key success and 33-key refusal are checked through the original NodeKey and Composite ValueType entry points. Scoped Quire validation is grammar-clean. Relative to merged main, QSL-1718 bare_slots changes remain only the two constructor argument migrations; its assertions and behavior are preserved. Driver adoption remains pending and the lead final gate has not run.
 
 Round 1 current verdict: PASS for this method; no unresolved findings.
+
+## Re-review — rebased fix for the duplicate population carrier
+
+The high finding on the PR was that QSL copied selected-population data already
+owned by checked IR into a second producer catalog and `/2` identity-file
+member. The fix removes `SelectedPopulationCatalog` and its wire representation,
+emission retention/rekeying, reader parsing/accessor, and the corresponding
+duplicate requirements. Identity handoff `/2` retains only QSL-owned
+declaration, field, and source-record rows. Checked package IR remains the
+source of selected-population data. The emitted/read identity rows still join
+source-record witnesses through native IR.
+
+I reviewed the current rebased diff after the removal. No remaining duplicate
+population carrier or dependent reference was found. The change stays within
+the PR's existing identity-handoff scope, adds no lockfile edits, and preserves
+the existing `/2` source-record contract. The earlier catalog-specific
+population-completeness findings no longer apply because the identity carrier
+no longer represents that catalog.
+
+### Review evidence
+
+- Focused qsl-package writer test: 1 passed.
+- Focused qsl root bytes-reader test with `--all-features`: 1 passed.
+- qsl-eval bare-slot integration tests: 12 passed.
+- `cargo clippy --locked --workspace --all-targets --no-default-features -- -D warnings`: passed.
+- `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings`: passed.
+- `cargo run --locked -p xtask -- string-edge`: no unmarked, unlisted comparison or match found.
+- `cargo check --locked --workspace --all-targets`: passed.
+- `cargo fmt --all --check` and `git diff --check`: passed.
+
+Re-review verdict: **PASS**. The high duplicate-carrier finding is fixed; no
+new blocker was found in this review round.

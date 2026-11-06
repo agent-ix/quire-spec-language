@@ -1342,28 +1342,6 @@ impl AdmittedModel {
             })
     }
 
-    /// Every admitted population declaration, including empty populations and
-    /// declarations that cannot name a canonical population query position.
-    pub(crate) fn population_catalog(
-        &self,
-    ) -> impl Iterator<Item = (&DeclarationKey, &[DeclarationKey], Vec<EffectiveId>)> {
-        self.records.values().filter_map(|record| {
-            let DomainPackageRecord::Population(population) = record else {
-                return None;
-            };
-            let members = population
-                .member_types
-                .iter()
-                .filter_map(|member| {
-                    self.types
-                        .iter()
-                        .find_map(|(id, declared)| (declared == member).then_some(id.clone()))
-                })
-                .collect();
-            Some((&population.key, population.member_types.as_slice(), members))
-        })
-    }
-
     /// FR-150: each object type of this package that a `symmetric`
     /// population covers, with the least such population's declaration key.
     /// A population covers a type as in [`Self::populations_of`]: a member
