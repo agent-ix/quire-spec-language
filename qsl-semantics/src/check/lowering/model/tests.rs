@@ -1048,6 +1048,7 @@ fn a_redefining_candidates_clauses_key_once_under_its_own_owner() {
 
 mod quantities {
     use super::*;
+    mod bounded;
     use crate::value::nominal_payload::NominalPayload;
     use crate::value::semantic_node::{NodeOwner, OwnerSelection, OwnerSubject};
     use crate::value::unit::{admit_unit_graph, DimensionPreimage, UnitPreimage};

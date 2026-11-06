@@ -180,12 +180,13 @@ fn read_emission(emission: &Emission) -> (Value, Box<CheckedPackageV2>) {
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }
-    let CheckedPackageDispatchResult::AdmittedV2(admitted) = read_checked_package(
+    let result = read_checked_package(
         emission.package.bytes(),
         CheckedPackageReadLimits::bounded(),
         &evidence,
-    ) else {
-        panic!("IR admits the emitted package");
+    );
+    let CheckedPackageDispatchResult::AdmittedV2(admitted) = result else {
+        panic!("IR admits the emitted package: {result:?}");
     };
     (wire, admitted)
 }
@@ -798,4 +799,124 @@ fn tc_440_an_unbounded_application_record_requires_a_bound_in_ir() {
         matches!(outer, CompleteLoweringRecordV2::RequiresBound { .. }),
         "IR requires a bound for the unbounded outer `+`: {outer:?}"
     );
+}
+
+#[trace("TC-413", "FR-092-AC-30")]
+#[test]
+fn bounded_quantity_emission_round_trips_with_exact_bounds_and_dependencies() {
+    use quire_exact::{BoundedQuantityType, Quantity, Rational, UnitId};
+    let (units, keys) = velocity_units();
+    let unit = UnitId::declared(keys["metre"].clone());
+    let endpoint =
+        |value| Quantity::new(Rational::from_integer(Integer::from(value)), unit.clone());
+    let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
+        BoundedQuantityType::new(unit.clone(), Some(endpoint(0_i64)), Some(endpoint(20_i64)))
+            .expect("nominal bounds"),
+    ));
+    let types = TypeEnvironment::new([record(40, "Bounded", vec![("distance", bounded)])], [])
+        .expect("record types admit")
+        .with_units(units);
+    let (wire, _, omitted) = emit_and_read(types);
+    assert!(
+        omitted.is_empty(),
+        "the complete bounded declaration must emit"
+    );
+    let node = nodes(&wire)
+        .iter()
+        .find(|node| node["semantic_form"] == "bounded_quantity")
+        .expect("bounded quantity wire node");
+    let members = node["body"]["members"].as_array().expect("bindings");
+    assert_eq!(
+        members
+            .iter()
+            .map(|member| member["name"].as_str().expect("name"))
+            .collect::<Vec<_>>(),
+        ["unit", "min", "max"]
+    );
+    assert_eq!(members[1]["value"]["value"], json!("0"));
+    assert_eq!(members[2]["value"]["value"], json!("20"));
+    assert_eq!(node["semantic_type"], node["node_id"]);
+    let mut dependencies = vec![
+        members[0]["value"]["target"].clone(),
+        members[1]["value"]["type"].clone(),
+    ];
+    dependencies.sort_by_key(wire_id);
+    assert_eq!(node["dependencies"], json!(dependencies));
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"]
+        .as_array()
+        .expect("features")
+    {
+        evidence.support_feature(feature.as_str().expect("feature word"));
+    }
+    for (min, max, update_identity, suffix) in [
+        ("2/4", "1", true, "/body/members/1/value"),
+        ("8", "7", true, ""),
+        ("0", "19", false, ""),
+    ] {
+        let mut bad = wire.clone();
+        let bad_node = bad["semantic_graph"]["nodes"]
+            .as_array_mut()
+            .expect("graph")
+            .iter_mut()
+            .find(|node| node["semantic_form"] == "bounded_quantity")
+            .expect("bounded node");
+        bad_node["body"]["members"][1]["value"]["value"] = json!(min);
+        bad_node["body"]["members"][2]["value"]["value"] = json!(max);
+        if update_identity {
+            let old = bad_node["node_id"].clone();
+            let mut new = old.clone();
+            new["path"][5] = json!(min);
+            new["path"][8] = json!(max);
+            replace_bounded_identity(&mut bad, &old, &new);
+        }
+        let graph = bad["semantic_graph"]["nodes"]
+            .as_array_mut()
+            .expect("graph");
+        graph.sort_by_key(|node| wire_id(&node["node_id"]));
+        let position = graph
+            .iter()
+            .position(|node| node["semantic_form"] == "bounded_quantity")
+            .expect("bounded node");
+        let expected_path = format!("/semantic_graph/nodes/{position}{suffix}");
+        let bytes = serde_json::to_vec(&bad).expect("wire JSON");
+        let CheckedPackageDispatchResult::Refused(refusal) =
+            read_checked_package(&bytes, CheckedPackageReadLimits::bounded(), &evidence)
+        else {
+            panic!("noncanonical, reversed or path-disagreeing endpoint must refuse");
+        };
+        assert_eq!(
+            refusal.code,
+            quire_contract_model::CheckedPackageRefusalCode::InvalidPackage
+        );
+        assert_eq!(
+            refusal.cause,
+            Some(quire_contract_model::CheckedPackageRefusalCause::InvalidDerivedShape)
+        );
+        assert_eq!(
+            refusal
+                .loci
+                .first()
+                .and_then(|locus| locus.path.as_ref())
+                .map(|path| path.as_str()),
+            Some(expected_path.as_str())
+        );
+    }
+}
+
+/// Re-key the entire fixture, including nested identities and every reference.
+fn replace_bounded_identity(value: &mut Value, old: &Value, new: &Value) {
+    if value == old {
+        *value = new.clone();
+        return;
+    }
+    match value {
+        Value::Array(values) => values
+            .iter_mut()
+            .for_each(|value| replace_bounded_identity(value, old, new)),
+        Value::Object(members) => members
+            .values_mut()
+            .for_each(|value| replace_bounded_identity(value, old, new)),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
 }

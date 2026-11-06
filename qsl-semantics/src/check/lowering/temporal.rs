@@ -735,7 +735,7 @@ impl Lowering<'_> {
     }
 
     /// An exact rational literal typed at the builtin `Rational` node.
-    fn rational_literal(
+    pub(super) fn rational_literal(
         &mut self,
         value: &Rational,
         location: &Location,
