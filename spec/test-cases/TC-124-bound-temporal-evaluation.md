@@ -25,7 +25,7 @@ finite population; group 3 generates obligation and eviction schedules from a
 declared finite model. No randomized campaign, fuzzing result or mutation-adequacy
 score is claimed.
 
-The checked-package successor controls for the temporal counters are the FR-523 tests in `qsl-eval/tests/it/` (TC-1318); the legacy controls above remain until QSL-858 deletes `src/temporal`.
+The checked-package successor controls for the temporal counters are the temporal evidence counter tests in `qsl-eval/tests/it/`; the legacy controls above remain until the legacy temporal module is removed.
 
 ## Test Procedure
 
