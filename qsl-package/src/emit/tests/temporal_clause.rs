@@ -609,9 +609,11 @@ fn a_substituted_definition_identity_refuses_emission_at_the_definition_field() 
             "the constructor names the definition the clock alternative selects"
         );
         let package = CheckedPackage::link(graph);
-        let emission =
-            crate::emit::emit_checked_with_temporal_selections(&package, &[selected.clone()])
-                .expect("the selection that names the clause's own law emits");
+        let emission = crate::emit::emit_checked_with_temporal_selections(
+            &package,
+            std::slice::from_ref(&selected),
+        )
+        .expect("the selection that names the clause's own law emits");
         assert_eq!(
             emission.temporal_rows.profile_selections().len(),
             1,
