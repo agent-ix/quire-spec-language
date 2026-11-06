@@ -183,15 +183,24 @@ The adapter reads the request from those members and FR-071 stays unchanged:
 
 A `replay-request` file without `package`, whose `package` is not a
 checked-package document, or whose `contract_version` is another value, is a
-`corpus-decode` `tool-failure`. QSpec FR-336's mapping rows for `package` and
-`dependencies` and FR-323's `package.checked_package`, `package.sources` and
-`package.dependencies` members name members the schema does not have (a
-`checked_package` member of the dependency entry among them); the schema is
-followed. A dependency entry is `{identity, sources}` (FR-071): it has no
-`package_id` member, so the request is constructible from the corpus and the
-recompile identifies the dependency package by identity (FR-098). QSpec
-FR-323's `package_id` member of a dependency entry is the QSpec owner's
-prose conflict, reported there.
+`corpus-decode` `tool-failure`. The adapter retains the whole raw package as a
+flat canonical document, not a package-name wrapper. It requires the genuine
+selected artifact, model and dependency evidence and the caller's finite native
+read limits; the native checked-package reader admits the complete package.
+Its typed refusal keeps the native cause and prefixes its package-relative
+pointer with `/package`. No request is returned after a failed admission.
+
+The in-process `ReplayRequest::decode` phase remains a bounded input decoder;
+it retains the complete raw package and does not claim native admission from
+reading its name or lock. In-process replay admits that same complete package
+after the existing source/dependency checks and recompilation, using evidence
+from that recompilation's admitted models and closure, before evaluation.
+
+A dependency entry is `{identity, sources}` with the schema's optional
+`refinement_internals`; absence means no supplied list. It has no
+`package_id` or `checked_package` member. The adapter retains a supplied internal
+list, and the dependency recompile remains responsible for consuming it.
+
 An obligation's nullable `model` retains the public owner's exact optional
 identity: `null` becomes `None`, and a string becomes that exact model identity.
 No model identity is synthesized for a function obligation. A nonempty
@@ -216,6 +225,13 @@ The decoder refuses, as the consumer of QSpec FR-336-AC-8, a
 `bytes_path` that is absent, not listed as `kind: bytes` in the vector, absolute
 or parent-traversing, and a `stage_limits` key that names no FR-255 setting,
 each before the request is constructed.
+
+The published provision-path schema permits an omitted `authority`. The
+adapter retains that absence rather than choosing an authority from a package,
+dependency or path. When construction of the typed replay provision needs the
+absent authority, it returns a typed replay-input refusal at that provision-path
+locus; this schema-valid omission is not a `corpus-decode` schema defect. A
+present authority is carried unchanged.
 
 ### Settlement
 
