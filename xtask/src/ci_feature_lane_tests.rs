@@ -594,18 +594,6 @@ fn clean_and_core_tooling_retain_their_own_target_and_features() {
                     "--target-dir",
                     "caller target/clean"
                 ],
-                &[
-                    "run",
-                    "--locked",
-                    "--no-default-features",
-                    "--",
-                    "parse",
-                    "agent-ix",
-                    "test:parent",
-                    "fixture",
-                    "fixture:1",
-                    "tests/fixtures/spine-compile.native"
-                ],
                 &["run", "--package", "xtask", "--", "string-edge"],
                 &["run", "--package", "xtask", "--", "route-lint"],
                 &["run", "--package", "xtask", "--", "checked-input"],
