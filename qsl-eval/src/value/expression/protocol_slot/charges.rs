@@ -34,7 +34,7 @@ impl ChargeAmounts {
         }
     }
 
-    fn absorb(&mut self, kind: LimitKind, amount: u64) {
+    pub(crate) fn absorb(&mut self, kind: LimitKind, amount: u64) {
         let held = &mut self.amounts[position(kind)];
         *held = match kind {
             // Interval sums never exceed the meter's checked global totals, so
@@ -49,6 +49,15 @@ impl ChargeAmounts {
             | LimitKind::UnitEdges
             | LimitKind::ValueOccurrences => (*held).max(amount),
         };
+    }
+
+    /// Snapshot all ten global consumed counters of a meter.
+    pub(crate) fn from_meter(meter: &Meter) -> Self {
+        let mut amounts = Self::default();
+        for kind in LimitKind::ALL {
+            amounts.absorb(kind, meter.consumed(kind));
+        }
+        amounts
     }
 
     fn combine(&mut self, other: &Self) {

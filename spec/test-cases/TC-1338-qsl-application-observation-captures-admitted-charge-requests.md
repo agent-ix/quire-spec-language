@@ -16,7 +16,7 @@ evaluation. The expected charge trace is fixed by the test fixture and the
 evaluator's actual charge calls; it does not read `Meter`'s optional
 diagnostic log.
 
-Scope: FR-090-AC-23.
+Scope: FR-090-AC-23, FR-090-AC-24, FR-090-AC-25.
 
 ## Test Procedure
 
@@ -31,7 +31,18 @@ Scope: FR-090-AC-23.
    evaluation, and the meter's final counter totals. Do not read or compare
    against the meter's diagnostic or test-support charge log.
 
-Tag the tests `#[trace("TC-1338", "FR-090-AC-23")]`.
+5. Exercise separate event and size-request capacities across nested machine
+   steps, including a denied boundary and an event with several size entries.
+   Compare the evaluation and final totals with an adequately sized capture.
+6. Supply an unread caller capture, both complete and truncated. Exercise
+   successful calls, early incomplete calls and input failures, then explicitly
+   enable capture for a consecutive call.
+7. Precharge a shared meter above the evaluation's size requests and compare
+   global totals with the complete ledger's interval amounts. Exercise more
+   than 4096 admitted events using explicit sufficient capacities.
+
+Tag tests with pairs such as `#[trace("TC-1338", "FR-090-AC-23")]`, using
+AC-24 and AC-25 for bounded capture and ownership respectively.
 
 ## Expected Results
 
@@ -46,3 +57,12 @@ Tag the tests `#[trace("TC-1338", "FR-090-AC-23")]`.
 - In every step, the ledger records are captured by QSL at the actual
   `Meter::charge` call boundary; the test-support log's capacity or contents
   do not determine the result.
+- Capacity exhaustion returns a typed partial ledger, preserves whole events,
+  and never changes the actual evaluation or final counters. Prefix interval
+  amounts are explicitly partial. Failed operations retain their checked
+  location even though they have no completed-application value.
+- The displaced capture is returned intact, capture is disabled after every
+  return, and subsequent capture uses explicitly supplied fresh capacities.
+- Interval sizes are maxima of the interval's actual admitted requests rather
+  than differences between global high-water counters. Work and result units
+  are sums. Exact amounts, duplicate requests and reservations are retained.

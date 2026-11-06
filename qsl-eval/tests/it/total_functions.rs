@@ -3,7 +3,7 @@
 //! evaluator boundary (FR-146).
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{ApplicationObservation, CheckedPackageEvaluation, QualifiedName};
+use qsl_eval::value::{ApplicationObservationOptions, CheckedPackageEvaluation, QualifiedName};
 use qsl_forms::{Accumulation, BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::selection::ProfileSelection;
 use qsl_package::CheckedPackage;
@@ -664,29 +664,25 @@ fn call_observation_is_recorded_only_after_the_callee_returns() {
             .check(CheckingLimits::default())
             .expect("the nested calls are admitted"),
     );
-    let mut observed = Vec::new();
-    let mut unavailable_imported_call = false;
-    let mut function_evaluations = 0;
-    let mut function_case_limit_reached = false;
     let mut meter = Meter::new(UNLIMITED);
-    let result = package
-        .call_observing_applications(
-            &QualifiedName::unqualified("subject").unwrap(),
-            vec![Value::Integer(integer(3))],
-            &ObjectEnvironment::default(),
-            &mut meter,
-            ApplicationObservation {
-                observed: &mut observed,
-                unavailable_imported_call: &mut unavailable_imported_call,
-                function_case_limit: u64::MAX,
-                function_evaluations: &mut function_evaluations,
-                function_case_limit_reached: &mut function_case_limit_reached,
-            },
-        )
-        .expect("the call evaluates");
+    let result = package.call_observing_applications(
+        &QualifiedName::unqualified("subject").unwrap(),
+        vec![Value::Integer(integer(3))],
+        &ObjectEnvironment::default(),
+        &mut meter,
+        ApplicationObservationOptions {
+            function_case_limit: u64::MAX,
+            max_events: 1000,
+            max_size_requests: 1000,
+        },
+    );
+    let observed = &result.observed;
 
     assert_eq!(
-        format!("{:?}", evaluated(result)),
+        format!(
+            "{:?}",
+            evaluated(result.evaluation.expect("the call evaluates"))
+        ),
         format!("{:?}", Outcome::Completed(Value::Integer(integer(106))))
     );
     let observed_values: Vec<_> = observed
