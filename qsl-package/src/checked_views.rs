@@ -26,8 +26,8 @@ pub use predicate::{
 #[cfg(test)]
 pub(crate) use subject::temporal_subject_within;
 pub use subject::{
-    activation_relation, temporal_subject, Activation, ClauseOccurrence, FormulaNodeUse,
-    FormulaOperation, OperatorDirection, OperatorUse, TemporalSubjectView,
+    activation_relation, temporal_subject, Activation, ArenaHandle, ClauseOccurrence,
+    FormulaNodeUse, FormulaOperation, OperatorDirection, OperatorUse, TemporalSubjectView,
 };
 
 /// Why a view was not read: a closed set, so a caller branches on the
@@ -54,4 +54,12 @@ pub enum ViewRefusal {
     /// The selected leaf's semantic type is not the `boolean` node.
     #[error("the leaf is not a Boolean term")]
     LeafNotBoolean,
+    /// The occurrence key names no occurrence the view's declaration holds
+    /// (FR-515-AC-30).
+    #[error("the occurrence is not declared by the view")]
+    OccurrenceNotDeclared,
+    /// The arena handle is no handle the view's relation declares
+    /// (FR-515-AC-30).
+    #[error("the arena handle is not declared by the view")]
+    ArenaHandleNotDeclared,
 }

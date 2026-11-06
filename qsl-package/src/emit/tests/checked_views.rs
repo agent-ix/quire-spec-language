@@ -1246,7 +1246,7 @@ fn a_shared_operand_reads_the_span_inside_its_own_clause() {
 /// parent, so a package of `n` formula nodes lists more than `n` applications,
 /// and an expansion past the budget refuses `FormulaTooLarge` rather than
 /// growing without bound.
-#[trace("FR-515-AC-3", "TC-1310")]
+#[trace("FR-515-AC-3", "FR-515-AC-31", "TC-1310")]
 #[test]
 fn a_formula_whose_expansion_exceeds_the_budget_is_refused() {
     let atom = format!("holds({SHARED_OPERAND})");
@@ -1354,4 +1354,156 @@ fn a_sub_term_of_the_activation_guard_is_a_clause_leaf() {
             Some(ViewRefusal::LeafNotInClause)
         );
     }
+}
+
+/// Two structurally equal clauses `Alpha` and `Beta` (one shared node, two
+/// occurrences) and the same source built twice.
+fn twin_source() -> String {
+    let body = "eventually[3,*] holds(c.versionNumber <= 1)";
+    unit(
+        INFINITE,
+        &format!(
+            "{}\n{}",
+            clause("Alpha", "t", "on origin", body),
+            clause("Beta", "t", "on origin", body)
+        ),
+    )
+}
+
+/// FR-515-AC-29 (TC-1310): every authored occurrence has its own handle,
+/// `occurrence_of` returns the key `arena_of` was given, two equal clauses
+/// that share a node keep both keys and both handles, and a second build of
+/// the same source gives the same keys and handles.
+#[trace("FR-515-AC-29")]
+#[test]
+fn every_occurrence_has_a_distinct_handle_that_reads_back_its_key() {
+    let package = admit(&compile(&twin_source()));
+    let id = only_clause(&package);
+    let view = temporal_subject(&package, &id).unwrap();
+    let [first, second] = view.occurrences() else {
+        panic!("two occurrences: {:?}", view.occurrences());
+    };
+    let (first_handle, second_handle) = (
+        view.arena_of(first).unwrap(),
+        view.arena_of(second).unwrap(),
+    );
+    assert_ne!(first_handle, second_handle);
+    assert_ne!(first.ordinal, second.ordinal);
+    assert_eq!(view.occurrence_of(first_handle.clone()).unwrap(), *first);
+    assert_eq!(view.occurrence_of(second_handle.clone()).unwrap(), *second);
+    assert_eq!(first.node, second.node, "one shared node keeps both keys");
+
+    let again = admit(&compile(&twin_source()));
+    let again_view = temporal_subject(&again, &only_clause(&again)).unwrap();
+    assert_eq!(again_view.occurrences(), view.occurrences());
+    assert_eq!(again_view.arena_of(first).unwrap(), first_handle);
+    assert_eq!(again_view.arena_of(second).unwrap(), second_handle);
+    assert_eq!(again_view.occurrence_of(second_handle).unwrap(), *second);
+
+    let single = admit(&compile(&unit(
+        INFINITE,
+        &clause(
+            "Due",
+            "t",
+            "on origin",
+            "eventually[3,*] holds(c.versionNumber <= 1)",
+        ),
+    )));
+    let single_view = temporal_subject(&single, &only_clause(&single)).unwrap();
+    let [only] = single_view.occurrences() else {
+        panic!("one occurrence");
+    };
+    let handle = single_view.arena_of(only).unwrap();
+    assert_eq!(single_view.occurrence_of(handle).unwrap(), *only);
+}
+
+/// FR-515-AC-30 (TC-1310): a key the declaration does not hold, and a handle
+/// no row declares, are refused with the named variant and return no row.
+#[trace("FR-515-AC-30")]
+#[test]
+fn an_undeclared_key_or_handle_is_refused() {
+    let package = admit(&compile(&twin_source()));
+    let id = only_clause(&package);
+    let view = temporal_subject(&package, &id).unwrap();
+    let last = view.occurrences().iter().map(|o| o.ordinal).max().unwrap();
+    let past = ClauseOccurrence {
+        node: id.clone(),
+        role: CheckedOccurrenceRole::Claim,
+        ordinal: last + 1,
+    };
+    assert_eq!(
+        view.arena_of(&past),
+        Err(ViewRefusal::OccurrenceNotDeclared)
+    );
+    let wrong_role = ClauseOccurrence {
+        role: CheckedOccurrenceRole::Declaration,
+        ..view.occurrences()[0].clone()
+    };
+    assert_eq!(
+        view.arena_of(&wrong_role),
+        Err(ViewRefusal::OccurrenceNotDeclared)
+    );
+
+    // Two distinct clauses: the key of the other declaration is refused, and
+    // so is the handle the other declaration's view made.
+    let body = |bound: u32| format!("eventually[{bound},*] holds(c.versionNumber <= 1)");
+    let distinct = admit(&compile(&unit(
+        INFINITE,
+        &format!(
+            "{}\n{}",
+            clause("Alpha", "t", "on origin", &body(3)),
+            clause("Beta", "t", "on origin", &body(4))
+        ),
+    )));
+    let [left_id, right_id] = clause_ids(&distinct).try_into().expect("two clauses");
+    let left = temporal_subject(&distinct, &left_id).unwrap();
+    let right = temporal_subject(&distinct, &right_id).unwrap();
+    assert_eq!(
+        left.arena_of(&right.occurrences()[0]),
+        Err(ViewRefusal::OccurrenceNotDeclared)
+    );
+    let foreign = right.arena_of(&right.occurrences()[0]).unwrap();
+    assert_eq!(
+        left.occurrence_of(foreign),
+        Err(ViewRefusal::ArenaHandleNotDeclared)
+    );
+
+    // A handle past the last row of the same declaration: the shared node of
+    // `twin_source` built with one occurrence has one row, so the second
+    // occurrence's handle is one past it.
+    let one = admit(&compile(&unit(
+        INFINITE,
+        &clause("Alpha", "t", "on origin", &body(3)),
+    )));
+    let one_view = temporal_subject(&one, &only_clause(&one)).unwrap();
+    assert_eq!(one_view.occurrences().len(), 1);
+    let second = view.arena_of(&view.occurrences()[1]).unwrap();
+    assert_eq!(
+        one_view.occurrence_of(second),
+        Err(ViewRefusal::ArenaHandleNotDeclared),
+        "slot one is past the single row of the same declaration"
+    );
+}
+
+/// FR-515-AC-31 (TC-1310, inspection): the relation and the other owner reads
+/// take no budget, limit or receipt parameter and return none. The explicit
+/// budget of `a_formula_whose_expansion_exceeds_the_budget_is_refused` is the
+/// test-only entry to the same walk the default bounds.
+#[trace("FR-515-AC-31")]
+#[test]
+fn the_owner_reads_take_no_budget_and_return_no_receipt() {
+    use crate::checked_views::{
+        mapping_support, ArenaHandle, Classification, Closure, MappingRefusal,
+    };
+    let package = admit(&compile(&twin_source()));
+    let id = only_clause(&package);
+    // Each call below passes exactly the parameters the requirement lists and
+    // binds a bare `Result` with no receipt in it.
+    let view = temporal_subject(&package, &id).expect("the view");
+    let key = view.occurrences()[0].clone();
+    let handle: Result<ArenaHandle, ViewRefusal> = view.arena_of(&key);
+    let back: Result<ClauseOccurrence, ViewRefusal> = view.occurrence_of(handle.expect("declared"));
+    assert_eq!(back, Ok(key));
+    let support: Result<Classification, MappingRefusal> = mapping_support(&view, Closure::Complete);
+    assert!(support.is_ok());
 }

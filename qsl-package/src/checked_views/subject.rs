@@ -132,6 +132,17 @@ pub struct ClauseOccurrence {
     pub ordinal: u64,
 }
 
+/// The arena handle of one occurrence of a [`TemporalSubjectView`]'s
+/// declaration (FR-515-AC-29). It is opaque and only the view's
+/// [`TemporalSubjectView::arena_of`] makes one: it names the declaration node
+/// and the slot of the occurrence in the view's occurrence order, and is
+/// derived from no formula bytes, digest or hash.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArenaHandle {
+    declaration: CheckedNodeId,
+    slot: usize,
+}
+
 /// How a clause is activated, read from its activation argument.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Activation {
@@ -323,6 +334,43 @@ impl<'p> TemporalSubjectView<'p> {
                 row.declaration == *self.declaration && row.occurrence == occurrence.ordinal
             })
             .map(|row| row.name.as_ref())
+    }
+
+    /// The arena handle of `occurrence`, the one handle the view's
+    /// declaration-to-arena relation holds for it (FR-515-AC-29). The key is
+    /// a lookup key, accepted only when it equals an occurrence the view
+    /// declares.
+    ///
+    /// # Errors
+    ///
+    /// [`ViewRefusal::OccurrenceNotDeclared`] for a key the declaration does
+    /// not hold.
+    pub fn arena_of(&self, occurrence: &ClauseOccurrence) -> Result<ArenaHandle, ViewRefusal> {
+        let slot = self
+            .occurrences
+            .iter()
+            .position(|declared| declared == occurrence)
+            .ok_or(ViewRefusal::OccurrenceNotDeclared)?;
+        Ok(ArenaHandle {
+            declaration: self.declaration.clone(),
+            slot,
+        })
+    }
+
+    /// The occurrence `handle` is the arena handle of (FR-515-AC-29).
+    ///
+    /// # Errors
+    ///
+    /// [`ViewRefusal::ArenaHandleNotDeclared`] for a handle no row of this
+    /// view declares.
+    pub fn occurrence_of(&self, handle: ArenaHandle) -> Result<ClauseOccurrence, ViewRefusal> {
+        if handle.declaration != *self.declaration {
+            return Err(ViewRefusal::ArenaHandleNotDeclared);
+        }
+        self.occurrences
+            .get(handle.slot)
+            .cloned()
+            .ok_or(ViewRefusal::ArenaHandleNotDeclared)
     }
 
     /// The `value`/`parameter` node the clause is `over`.
