@@ -25,7 +25,7 @@ declares an operation instead of the receiver's static type, and a
 correspondence left caller-supplied.
 
 Scope: FR-094-AC-1, FR-094-AC-2, FR-094-AC-3, FR-094-AC-4, FR-094-AC-7 (its
-`Reference` and `DeclarationKey` cases), FR-094-CON-1, FR-094-CON-2.
+`Reference` and `DeclarationKey` cases), FR-094-AC-14, FR-094-CON-1, FR-094-CON-2.
 
 ## Test Procedure
 
@@ -55,7 +55,14 @@ with `M::Order`, `M::Invoice` and `M::Sub` resolving to its object types.
 8. Scan the model-declaration-node `match` for a `_` arm, and scan every
    model-owned preimage for an owner of kind `source` or `definition`.
 
-Tag the tests `#[trace("FR-094-AC-n", "TC-417")]` with the AC each backs.
+9. Compile TC-1070's genuine standard E and E-P documents through the normal
+   handoff writer, strictly read the packages and read their required identity
+   files. Project selected type declarations using the public native reader.
+   E-P includes Other and the unused-population member Elsewhere. Compare
+   original identities, owners and complete native facts, then omit and foreign
+   a real object witness and request the same projection.
+
+Tag the tests `#[trace("TC-417", "FR-094-AC-n")]` with the AC each backs.
 
 ## Expected Results
 
@@ -76,3 +83,8 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-417")]` with the AC each backs.
 - Step 7: each of the four refuses as an internal fault naming that value,
   and yields no key.
 - Step 8: no `_` arm, and no `source` or `definition` owner.
+- Step 9: both complete native projections succeed. Every selected ordinary
+  object occurs once with its original identity and selecting-alias provenance;
+  model members and the unused population introduce no missing object. Missing
+  or foreign witness controls return their native typed refusal and no partial
+  result. Driver-side adoption remains a separate downstream qualification.
