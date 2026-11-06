@@ -77,6 +77,7 @@ fn query_model_with_denominator(maximum: u32, denominator: u32) -> NativeModel {
         json!({"name":"wrongTotal","type":{"kind":"scalar","name":"WrongTotal"}}),
         json!({"name":"nonzeroTotal","type":{"kind":"scalar","name":"NonzeroTotal"}}),
         json!({"name":"rationalTotal","type":{"kind":"scalar","name":"RationalTotal"}}),
+        json!({"name":"positiveRationalTotal","type":{"kind":"scalar","name":"PositiveRationalTotal"}}),
         json!({"name":"integralTotal","type":{"kind":"scalar","name":"IntegralTotal"}}),
         json!({"name":"fractionTotal","type":{"kind":"scalar","name":"FractionTotal"}}),
         json!({"name":"wideFractionTotal","type":{"kind":"scalar","name":"WideFractionTotal"}}),
@@ -738,7 +739,7 @@ fn rational_sum_proves_fractional_prefixes_or_refuses_an_insufficient_total() {
     inspect(
         &fractional,
         "predicate EmptyPositive using S (input: M::Node): Boolean {
-        sum<M::PositiveRationalTotal>(part in filter(input.fractions: false): part) = rational(0,1)
+        sum<M::PositiveRationalTotal>(part in filter(candidate in input.fractions: false): part) = input.positiveRationalTotal
     }",
         &["EmptyPositive"],
         handler(),
@@ -747,7 +748,7 @@ fn rational_sum_proves_fractional_prefixes_or_refuses_an_insufficient_total() {
                 report,
                 "EmptyPositive",
                 ir::DefinednessObligationKind::CheckedRange,
-                "sum<M::PositiveRationalTotal>(part in filter(input.fractions: false): part)",
+                "sum<M::PositiveRationalTotal>(part in filter(candidate in input.fractions: false): part)",
             );
         },
     );

@@ -2300,16 +2300,19 @@ fn numeric_sum_families_emit_their_identities_and_modes() {
     let dir = tempfile::tempdir().unwrap();
     let request = unit_request(
         dir.path(),
-        "type R = Rational[-10, 10; 1, 1];\n\
+        "type I = Int[-10, 10];\n\
+         type R = Rational[-10, 10; 1, 1];\n\
          type D = Decimal[-100, 100; 0, 0; nearest-even];\n\
          type F32 = Float32[nearest-even];\n\
          type F64 = Float64[toward-zero];\n\
+         function ints using v(): Sequence<I>[1, 1] pure { sequence[1] }\n\
          function rs using v(): Sequence<R>[1, 1] pure { sequence[rational(1,1)] }\n\
          function ds using v(): Sequence<D>[1, 1] pure { sequence[decimal(1,0)] }\n\
          function f32s using v(): Sequence<F32>[1, 1] pure { sequence[float32(bits: 0x3f800000)] }\n\
          function f64s using v(): Sequence<F64>[1, 1] pure { sequence[float64(bits: 0x3ff0000000000000)] }\n\
          invariant Bounded using v on M::Workflow at current {\n\
-         sum<R>(part in rs(): part) >= rational(0,1)\n\
+         sum<I>(part in ints(): part) >= 0\n\
+         and sum<R>(part in rs(): part) >= rational(0,1)\n\
          and sum<D>(part in ds(): part) >= decimal(0,0)\n\
          and sum<F32>(part in f32s(): part) = float32(bits: 0x3f800000)\n\
          and sum<F64>(part in f64s(): part) = float64(bits: 0x3ff0000000000000)\n\
@@ -2326,6 +2329,7 @@ fn numeric_sum_families_emit_their_identities_and_modes() {
         .filter_map(|node| node["body"].get("operation"))
         .collect();
     for identity in [
+        "quire.op.collection.sum.integer",
         "quire.op.collection.sum.rational",
         "quire.op.collection.sum.decimal",
         "quire.op.collection.sum.float32",

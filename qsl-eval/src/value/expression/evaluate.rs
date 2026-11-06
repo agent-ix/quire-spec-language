@@ -4170,7 +4170,10 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                         let total = match iteration.accumulator.take() {
                             None => {
                                 if !node.value_type().admits(&Value::Rational(summand.clone())) {
-                                    return Err(Stop::Undefined(Undefined::SumOutOfDomain).into());
+                                    return Err(Halt::Located(Box::new(LocatedStop {
+                                        stop: Stop::Undefined(Undefined::SumOutOfDomain),
+                                        location: node.at(*body).location().cloned(),
+                                    })));
                                 }
                                 summand
                             }
@@ -4197,7 +4200,10 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                         let total = match iteration.accumulator.take() {
                             None => {
                                 if !target.contains(&summand) {
-                                    return Err(Stop::Undefined(Undefined::SumOutOfDomain).into());
+                                    return Err(Halt::Located(Box::new(LocatedStop {
+                                        stop: Stop::Undefined(Undefined::SumOutOfDomain),
+                                        location: node.at(*body).location().cloned(),
+                                    })));
                                 }
                                 summand
                             }

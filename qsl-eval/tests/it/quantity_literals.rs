@@ -14,7 +14,7 @@ use qsl_semantics::model::domain_package::{
 use qsl_semantics::model::intake::SelectedModels;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::FamilyOutcome;
-use quire_exact::{Meter, Outcome, ScalarLimits, Value};
+use quire_exact::{Meter, Outcome, ScalarLimits, Value, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::loss::ValueLoss;
 
@@ -148,15 +148,17 @@ fn a_quantity_sum_evaluates_to_its_magnitude_in_the_same_unit() {
 #[test]
 fn numeric_sums_keep_their_family_and_empty_identity() {
     let package = package_with(
-        "type R = Rational[-100, 100; 1, 100];\n\
-         type D = Decimal[-100, 100; 0, 2; nearest-even];\n\
+        "type R = Rational[-100, 100; 1, 1];\n\
+         type RP = Rational[-3, 3; 1, 1];\n\
+         type D = Decimal[-100, 100; 0, 0; nearest-even];\n\
+         type DP = Decimal[-3, 3; 0, 0; nearest-even];\n\
          type F = Float32[nearest-even];\n\
          type G = Float64[nearest-even];\n\
          dimension Currency;\n\
          unit U : Currency = rational(1, 1);\n\
          type Q = Quantity<U>;\n\
-         function r_items using v(): Sequence<R>[0, 2] pure { sequence[rational(2, 1), rational(3, 1)] }\n\
-         function d_items using v(): Sequence<D>[0, 2] pure { sequence[decimal(2, 0), decimal(3, 0)] }\n\
+         function r_items using v(): Sequence<RP>[0, 2] pure { sequence[rational(2, 1), rational(3, 1)] }\n\
+         function d_items using v(): Sequence<DP>[0, 2] pure { sequence[decimal(2, 0), decimal(3, 0)] }\n\
          function f_items using v(): Sequence<F>[0, 2] pure { sequence[float32(bits: 0x40000000), float32(bits: 0x40400000)] }\n\
          function g_items using v(): Sequence<G>[0, 2] pure { sequence[float64(bits: 0x4000000000000000), float64(bits: 0x4008000000000000)] }\n\
          function q_items using v(): Sequence<Q>[0, 2] pure { sequence[2 U, 3 U] }\n\
@@ -192,6 +194,228 @@ fn numeric_sums_keep_their_family_and_empty_identity() {
     ] {
         assert!(truth(&package, name), "{name}");
     }
+}
+
+fn sum_expression() -> qsl_forms::Expression {
+    qsl_forms::Expression::sum(
+        qsl_forms::DeclaredName {
+            name: "N".into(),
+            span: qsl_foundation::Span { start: 0, end: 0 },
+        },
+        "part",
+        qsl_forms::Expression::name("items"),
+        qsl_forms::Expression::name("part"),
+    )
+}
+
+fn sum_source(element: ValueType) -> ValueType {
+    ValueType::collection(quire_exact::CollectionType::new(
+        quire_exact::CollectionKind::Sequence,
+        element,
+        Some(quire_exact::CardinalityBound::new(0, 2).unwrap()),
+    ))
+}
+
+fn run_numeric_sum(
+    package: &CheckedPackage,
+    source: &ValueType,
+    values: Vec<Value>,
+) -> (
+    quire_eval::Evaluation,
+    quire_semantic_value::location::Location,
+    quire_semantic_value::location::Location,
+) {
+    let checked = package
+        .graph()
+        .check_expression(
+            vec![("items".into(), source.clone())],
+            &sum_expression(),
+            None,
+            quire_semantic_value::checking::CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .unwrap();
+    let ValueType::Collection(collection_type) = source else {
+        panic!("a collection source");
+    };
+    let supplied =
+        quire_exact::form_collection(collection_type, values, &mut Meter::new(UNLIMITED))
+            .unwrap()
+            .completed()
+            .unwrap();
+    let evaluation = package
+        .evaluate(
+            &checked,
+            vec![supplied],
+            &ObjectEnvironment::default(),
+            &mut Meter::new(UNLIMITED),
+        )
+        .unwrap();
+    (
+        evaluation,
+        checked.root().location().clone(),
+        checked.root().children()[1].location().clone(),
+    )
+}
+
+#[trace("TC-1312", "FR-517-AC-20")]
+#[test]
+fn numeric_sum_rejects_cross_family_float_width_and_unit_mismatches() {
+    for declarations in [
+        "type N = Rational[-10,10;1,1]; type S = Decimal[-10,10;0,0;exact];
+         function items using v(): Sequence<S>[0,1] pure { sequence[] }
+         function total using v(): N pure { sum<N>(part in items(): part) }",
+        "type N = Float32[nearest-even]; type S = Float64[nearest-even];
+         function items using v(): Sequence<S>[0,1] pure { sequence[] }
+         function total using v(): N pure { sum<N>(part in items(): part) }",
+        "dimension C; unit U : C = rational(1,1); unit V : C = rational(2,1) * U;
+         type N = Quantity<U>; type S = Quantity<V>;
+         function items using v(): Sequence<S>[0,1] pure { sequence[] }
+         function total using v(): N pure { sum<N>(part in items(): part) }",
+    ] {
+        let errors = package_with(declarations).expect_err("incompatible summand refuses");
+        assert!(
+            errors.iter().any(|error| matches!(
+                error.cause,
+                CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+            )),
+            "{errors:?}"
+        );
+    }
+}
+
+#[trace("TC-1312", "FR-517-AC-20")]
+#[test]
+fn rational_and_decimal_sum_domains_refuse_unsafe_linked_prefixes_and_locate_runtime_stops() {
+    let interval =
+        |low: i64, high: i64| quire_exact::IntegerInterval::new(low.into(), high.into()).unwrap();
+    let rational_source = sum_source(ValueType::Rational(
+        quire_exact::RationalDomain::new(interval(-10, 10), interval(1, 1)).unwrap(),
+    ));
+    let decimal_source = sum_source(ValueType::Decimal(
+        quire_exact::DecimalType::new(
+            (-10_i64).into(),
+            10_i64.into(),
+            0,
+            0,
+            quire_exact::RoundingMode::Exact,
+        )
+        .unwrap(),
+    ));
+    for (declaration, source, decimal) in [
+        ("type N = Rational[1,3;1,1];", rational_source, false),
+        ("type N = Decimal[1,3;0,0;exact];", decimal_source, true),
+    ] {
+        let package = package_with(declaration).unwrap();
+        let refused = package
+            .graph()
+            .check_expression(
+                vec![("items".into(), source.clone())],
+                &sum_expression(),
+                None,
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
+            .unwrap_err();
+        assert!(
+            matches!(
+                refused.cause,
+                CheckCause::Unproved(qsl_semantics::check::Obligation::Range { .. })
+            ),
+            "{refused:?}"
+        );
+        for (numbers, seed) in [(vec![5_i64, 0], true), (vec![2, 2], false), (vec![], false)] {
+            let values = numbers
+                .into_iter()
+                .map(|number| {
+                    if decimal {
+                        Value::Decimal(quire_exact::Decimal::new(number.into(), 0))
+                    } else {
+                        Value::Rational(quire_exact::Rational::from_integer(number.into()))
+                    }
+                })
+                .collect();
+            let (evaluation, sum, summand) = run_numeric_sum(&package, &source, values);
+            assert!(
+                matches!(
+                    evaluation.outcome,
+                    FamilyOutcome::Evaluated(Outcome::Undefined(
+                        quire_exact::Undefined::SumOutOfDomain
+                    ))
+                ),
+                "{:?}",
+                evaluation.outcome
+            );
+            assert_eq!(
+                evaluation.location.as_ref(),
+                Some(if seed { &summand } else { &sum })
+            );
+        }
+    }
+}
+
+#[trace("TC-1312", "FR-517-AC-20")]
+#[test]
+fn numeric_sum_records_decimal_rounding_and_ieee_inexact_at_the_sum() {
+    let decimal_package = package_with("type N = Decimal[-100,100;1,1;nearest-even];").unwrap();
+    let decimal_source = sum_source(ValueType::Decimal(
+        quire_exact::DecimalType::new(
+            (-100_i64).into(),
+            100_i64.into(),
+            1,
+            2,
+            quire_exact::RoundingMode::NearestEven,
+        )
+        .unwrap(),
+    ));
+    let (decimal, sum, _) = run_numeric_sum(
+        &decimal_package,
+        &decimal_source,
+        vec![
+            Value::Decimal(quire_exact::Decimal::new(1_i64.into(), 1)),
+            Value::Decimal(quire_exact::Decimal::new(15_i64.into(), 2)),
+        ],
+    );
+    assert!(
+        matches!(decimal.outcome, FamilyOutcome::Evaluated(Outcome::Completed(
+        Value::Decimal(ref value)
+    )) if value.numerically_equal(&quire_exact::Decimal::new(2_i64.into(), 1))),
+        "{:?}",
+        decimal.outcome
+    );
+    assert_eq!(decimal.losses.len(), 1, "{:?}", decimal.losses);
+    assert!(matches!(decimal.losses[0].loss, ValueLoss::Decimal(_)));
+    assert_eq!(decimal.losses[0].location, sum);
+
+    let float_package = package_with("type N = Float32[nearest-even];").unwrap();
+    let float_source = sum_source(ValueType::Float(quire_exact::FloatType::new(
+        quire_exact::IeeeWidth::Binary32,
+        quire_exact::RoundingMode::NearestEven,
+    )));
+    let (float, sum, _) = run_numeric_sum(
+        &float_package,
+        &float_source,
+        vec![
+            Value::Float(quire_exact::IeeeValue::binary32(0x3f800000)),
+            Value::Float(quire_exact::IeeeValue::binary32(0x33800000)),
+        ],
+    );
+    assert!(
+        matches!(float.outcome, FamilyOutcome::Evaluated(Outcome::Completed(
+        Value::Float(value)
+    )) if value == quire_exact::IeeeValue::binary32(0x3f800000)),
+        "{:?}",
+        float.outcome
+    );
+    assert_eq!(float.losses.len(), 1, "{:?}", float.losses);
+    let ValueLoss::IeeeFlags(flags) = &float.losses[0].loss else {
+        panic!("IEEE flags, not {:?}", float.losses);
+    };
+    assert_eq!(
+        flags.iter().collect::<Vec<_>>(),
+        [quire_exact::IeeeFlag::Inexact]
+    );
+    assert_eq!(float.losses[0].location, sum);
 }
 
 /// FR-091-AC-72: the checked package-unit conversion is evaluated with the
