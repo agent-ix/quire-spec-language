@@ -585,7 +585,7 @@ fn bounded_quantities_evaluate_add_comparison_and_conversion_from_their_interval
             &QualifiedName::unqualified("less").expect("function name"),
             vec![
                 quantity(1_i64, 1_i64, metre.clone()),
-                quantity(150_i64, 1_i64, centimetre),
+                quantity(150_i64, 1_i64, centimetre.clone()),
             ],
             &ObjectEnvironment::default(),
             &mut Meter::new(UNLIMITED),
@@ -599,7 +599,7 @@ fn bounded_quantities_evaluate_add_comparison_and_conversion_from_their_interval
         "bounded comparison: {:?}",
         less.outcome
     );
-    for (name, arguments, expected) in [
+    for (name, arguments, expected, expected_unit) in [
         (
             "add_bound",
             vec![
@@ -607,8 +607,14 @@ fn bounded_quantities_evaluate_add_comparison_and_conversion_from_their_interval
                 quantity(2_i64, 1_i64, metre.clone()),
             ],
             "3/1",
+            metre.clone(),
         ),
-        ("to_cm", vec![quantity(3_i64, 2_i64, metre)], "150/1"),
+        (
+            "to_cm",
+            vec![quantity(3_i64, 2_i64, metre)],
+            "150/1",
+            centimetre,
+        ),
     ] {
         let evaluation = package
             .call(
@@ -620,7 +626,8 @@ fn bounded_quantities_evaluate_add_comparison_and_conversion_from_their_interval
             .expect("bounded quantity call runs");
         match evaluation.outcome {
             FamilyOutcome::Evaluated(Outcome::Completed(Value::Quantity(value))) => {
-                assert_eq!(value.magnitude().to_string(), expected)
+                assert_eq!(value.magnitude().to_string(), expected);
+                assert_eq!(value.unit(), &expected_unit);
             }
             other => panic!("completed exact quantity, got {other:?}"),
         }
