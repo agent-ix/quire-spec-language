@@ -508,7 +508,18 @@ mod tests {
                 None,
                 &WitnessCheck::Agrees(None),
                 Vec::new(),
-                ScalarLimits::zero(),
+                ScalarLimits {
+                    integer_bits: 0,
+                    decimal_digits: 0,
+                    scale_expansion: 0,
+                    text_input_bytes: 0,
+                    text_scalars: 0,
+                    normalized_scalars: 0,
+                    unit_edges: 0,
+                    value_occurrences: 0,
+                    work_units: 0,
+                    result_units: 0,
+                },
             ))
             .with_pre_call(Box::new(stop));
             let encoded = result.to_function_json().unwrap();
