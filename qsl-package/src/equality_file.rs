@@ -347,7 +347,7 @@ impl TypeKeys for Joins {
 
 // A node identity uses an object and a path array at each nesting level.
 // Bound both bridges before recursive serde work; the shared text codec itself
-// traverses and releases opaque identities iteratively, without a JSON Value.
+// traverses opaque identities iteratively, without constructing a JSON Value.
 const ORIGINAL_KEY_NESTING_LIMIT: usize = 32;
 
 struct OriginalKeys;
