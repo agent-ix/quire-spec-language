@@ -9,13 +9,11 @@ use serde_json::{json, Value};
 const U: &str = "ix://quire/unit/U";
 const MODEL: &str = "agent-ix/checked-handoff";
 
-/// Add one declaration to the real recipe model. Its only unit reference is
+/// Add one declaration to the real recipe model with its own unit aliases
+/// (`Amount`, `Total`) taken back to integers. Its only unit reference is
 /// the position under test; no source expression, alias or other field names U.
 fn model(position: &str) -> Value {
-    let mut model: Value = serde_json::from_slice(include_bytes!(
-        "../../examples/checked-handoff/model.semantic-ir.json"
-    ))
-    .unwrap();
+    let mut model = super::checked_handoff::integer_model();
     let identity = format!("ix://{MODEL}/UnusedType");
     let origin = json!({"generated": {"generatorIdentity": identity,
         "generatorVersion": "1.0.0", "inputIdentities": [identity]}});

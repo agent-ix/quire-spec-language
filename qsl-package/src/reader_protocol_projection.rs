@@ -2391,7 +2391,14 @@ pub(crate) fn node_value_type(
         error.code,
         Code::UnsupportedExactType | Code::UnresolvedSelectedDeclaration
     );
+    // IR names the first failing type node inside the requested type. A
+    // scalar failure types the requested node only when that node is the
+    // scalar itself or has it as its semantic type; a record whose member
+    // names the scalar is not that scalar (a `Recovery` whose `receipts` are
+    // quantities of a source-owned unit is no quantity).
+    let own = index.node(id).map(|node| &node.semantic_type);
     let at = error.at.as_deref();
+    let scalar_at = at.filter(|failed| *failed == id || own == Some(failed));
     let selected = |declaration: &CheckedNodeId| {
         index
             .identities
@@ -2410,7 +2417,7 @@ pub(crate) fn node_value_type(
     match error.form.as_deref().and_then(split_tag_form) {
         Some((WireTag::ScalarType, WireForm::Text)) if unresolved => {
             index
-                .node(at.ok_or_else(|| fault("reader-string-type-node-is-admitted"))?)
+                .node(scalar_at.ok_or(TypeError::Unsupported)?)
                 .filter(|node| has_form(node, WireTag::ScalarType, WireForm::Text))
                 .ok_or_else(|| fault("reader-string-type-has-checked-form"))?;
             Ok(ValueType::String)
@@ -2436,7 +2443,7 @@ pub(crate) fn node_value_type(
             Ok(ValueType::Composite(key))
         }
         Some((WireTag::ScalarType, WireForm::Unit)) if unresolved => {
-            let declaration = at.ok_or_else(|| fault("reader-unit-has-exact-identity"))?;
+            let declaration = scalar_at.ok_or(TypeError::Unsupported)?;
             let unit = match selected(declaration) {
                 Some(Identity::DeclaredUnit(unit)) => Some(unit.clone()),
                 _ => structural(declaration, WireTag::ScalarType, WireForm::Unit)
@@ -2446,7 +2453,7 @@ pub(crate) fn node_value_type(
             Ok(ValueType::Quantity(unit))
         }
         Some((WireTag::ScalarType, WireForm::CompoundUnit)) if unresolved => {
-            let unit_node = at.ok_or_else(|| fault("reader-compound-unit-type-has-node"))?;
+            let unit_node = scalar_at.ok_or(TypeError::Unsupported)?;
             let unit = crate::checked_v2::compound_unit(index.admitted, unit_node)
                 .ok_or_else(|| fault("reader-compound-unit-has-exact-identity"))?;
             Ok(ValueType::Quantity(unit))
