@@ -481,8 +481,8 @@ fn bounded_package() -> CheckedPackage {
     package_with_aliases(
         "dimension Length; unit m : Length = rational(1, 1); \
          unit cm : Length = rational(1, 100) * m; \
-         function sum using v(a: Bounded, b: Bounded): Quantity<m> pure { a + b } \
-         function sum_value using v(): Quantity<m> pure { sum(1 m, 2 m) } \
+         function add_bound using v(a: Bounded, b: Bounded): Quantity<m> pure { a + b } \
+         function sum_value using v(): Quantity<m> pure { add_bound(1 m, 2 m) } \
          function less using v(a: Bounded, b: Quantity<cm>): Boolean pure { a < convert<Quantity<m>>(b) } \
          function less_value using v(): Boolean pure { less(1 m, 150 cm) } \
          function to_cm using v(a: Bounded): Quantity<cm> pure { convert<Quantity<cm>>(a) } \
