@@ -2254,25 +2254,12 @@ fn write_unit(body: &str) -> Result<(), Error> {
 
 /// FR-517-AC-16 (QSL-1558): the refusals that keep the unit `U` off R's
 /// `Amount` and `Total`. A unit-typed operation parameter compared with a
-/// unit literal is written and admitted; the model alias is not a source type name; and `sum`
-/// refuses a quantity summand.
+/// unit literal is written and admitted; `sum` still refuses a quantity summand.
 #[trace("FR-517-AC-16", "TC-1312")]
 #[test]
 fn the_unit_on_amount_and_total_is_refused_where_the_spine_stops() {
     write_unit("pre BeforeApply using v on M::Workflow::apply { amount >= 1 U }")
         .expect("a unit-typed parameter against a unit literal is written");
-
-    let error = write_unit(
-        "invariant Bounded using v on M::Workflow at current {\n    \
-         sum<M::Total>(receipt in self.receipts: receipt) <= self.total\n}",
-    )
-    .unwrap_err();
-    assert_eq!(error.code(), ErrorCode::Compile);
-    let detail = format!("{error:?}");
-    assert!(
-        detail.contains("UnresolvedTypeName { name: \"M::Total\" }"),
-        "{detail}"
-    );
 
     let error = write_unit(
         "type Cash = Quantity<U>;\n\
@@ -2287,6 +2274,64 @@ fn the_unit_on_amount_and_total_is_refused_where_the_spine_stops() {
             && detail.contains("IllTyped(TypeMismatch)"),
         "{detail}"
     );
+}
+
+/// Model aliases keep their admitted unit type when used as source names.
+/// The capture is emitted with U's exact node; the quantity sum reaches its
+/// existing type-checking boundary after the alias name has resolved.
+#[trace("TC-1312", "FR-517-AC-19")]
+#[test]
+fn model_alias_names_resolve_for_captures_and_quantity_sums() {
+    let dir = tempfile::tempdir().unwrap();
+    let request = unit_request(
+        dir.path(),
+        "protocol Flow using p over (view: M::Workflow) on origin {\n\
+         capture targetFull: M::Total = view.total;\n\
+         role Service on M::Workflow;\n\
+         run sequence Main { }\n\
+         finish End as (outcome: Boolean) { true };\n\
+         }",
+    );
+    let source = std::fs::read_to_string(&request.emit.source).unwrap();
+    std::fs::write(
+        &request.emit.source,
+        source.replace(
+            "profile v = \"quire.model.complete/v1\";",
+            "profile v = \"quire.model.complete/v1\";\n\
+             profile p = \"quire.protocol.finite-global/v1\";",
+        ),
+    )
+    .unwrap();
+    let out = dir.path().join("handoff");
+    write(&request, &out).expect("the model-alias capture checks and the real IR reader admits it");
+    let wire: Value = serde_json::from_slice(&tree(&out)["checked-package.json"]).unwrap();
+    let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
+    let unit = nodes
+        .iter()
+        .find(|node| node["declaration"]["qualified_name"] == serde_json::json!(["U"]))
+        .expect("the selected alias's nominal unit");
+    let capture = nodes
+        .iter()
+        .find(|node| {
+            node["semantic_form"] == "parameter"
+                && node["body"]["members"][0]["value"]["value"] == "targetFull"
+        })
+        .expect("the authentic targetFull capture binder");
+    assert_eq!(capture["semantic_type"], unit["node_id"]);
+
+    let error = write_unit(
+        "invariant Bounded using v on M::Workflow at current {\n    \
+         sum<M::Total>(receipt in self.receipts: receipt) <= self.total\n}",
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), ErrorCode::Compile);
+    let detail = format!("{error:?}");
+    assert!(
+        detail.contains("StateClause { clause: \"Bounded\"")
+            && detail.contains("IllTyped(TypeMismatch)"),
+        "name resolution reaches the pending quantity-sum boundary: {detail}"
+    );
+    assert!(!detail.contains("UnresolvedTypeName"), "{detail}");
 }
 
 /// Model type references root U without an expression reading a quantity.
