@@ -859,9 +859,11 @@ fn the_subject_occurrence_selects_the_emitted_clause_claim_after_the_writer_reke
 fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them() {
     use quire_contract_model::{ExactTypeProjectionErrorCode, SelectedExactIdentities};
 
-    let extra = "tuple Pair(Integer, Boolean);\n\
+    let extra = "enum Color { RED, BLUE }\n\
+        tuple Pair(Integer, Boolean);\n\
         tuple Triple(Pair, Option<Integer>, Boolean);\n\
-        function hold using v(t: Triple): Boolean pure { true }";
+        record Holder { cs: Sequence<Color>[0, 2]; }\n\
+        function hold using v(t: Triple, b: Holder): Boolean pure { true }";
     let unit = unit_source(ROOT_SHAPES[0], extra, true, "on origin");
     let root = root_of(&unit, "C", &target()).expect("the plan root");
     let package = admitted(&root);
@@ -880,6 +882,49 @@ fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them(
             .expect("the tuple projects");
         assert_eq!(projected.source_tuple_view(), Some(row));
     }
+    // The enum and collection rows follow the same rekey.
+    let enum_rows = root.emission.selected_source_enum_rows();
+    let color = enum_rows
+        .iter()
+        .find(|row| {
+            row.declaration
+                .qualified_declaration
+                .last()
+                .map(AsRef::as_ref)
+                == Some("Color")
+        })
+        .expect("Color's row");
+    let joined = SelectedExactIdentities::empty()
+        .with_source_enum_rows(&package, enum_rows.clone(), 10_000_000)
+        .expect("IR joins the retained source enum rows");
+    let projected = package
+        .project_exact_type(&color.declaration.structural_node, &joined, 10_000_000)
+        .expect("the enum projects");
+    assert_eq!(
+        projected.value_type(),
+        &quire_exact::ValueType::Enum(color.declaration.shape.clone())
+    );
+    let collection = root
+        .emission
+        .selected_source_collection_rows()
+        .iter()
+        .find(|row| row.element_node == color.declaration.structural_node)
+        .expect("the Sequence<Color> row");
+    let base = package
+        .graph()
+        .nodes
+        .iter()
+        .find(|node| node.node_id == collection.base_node)
+        .expect("the collection node is admitted");
+    let quire_contract_model::CheckedTerm::Aggregate { members } = &base.body else {
+        panic!("a collection body is an aggregate");
+    };
+    assert_eq!(
+        members,
+        &[quire_contract_model::CheckedTerm::Reference {
+            target: collection.element_node.clone()
+        }]
+    );
     let triple = rows
         .iter()
         .find(|row| row.qualified_declaration.last().map(AsRef::as_ref) == Some("Triple"))

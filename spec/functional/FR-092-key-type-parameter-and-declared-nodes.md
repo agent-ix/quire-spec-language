@@ -79,10 +79,16 @@ nodes one IR `SelectedEnumMemberRow`. A declaration row holds the node's
 emitted structural id, its source owner's authority and identity, its
 qualified declaration segments and its node key. A member row holds the
 member node's emitted id, the same source owner, the declaration's emitted id
-and qualified declaration segments, the exact case and the member's node key.
-`check` produces these rows from the admitted enum it lowered, never from
-package bytes, decoded nodes or display names. A model-owned variant type
-carries the model enum rows instead, and no source enum row. An enum node
+and qualified declaration segments, the exact case, the member's node key
+and the variant the enum's shape holds at that case's rank. The declaration
+row also holds the enum's checked `EnumShape`: its ordered flag and the
+canonical `VariantId` sequence, which is declaration order for an ordered
+enum and case-identifier byte order otherwise. `check` produces these rows from the admitted enum it lowered, never from
+package bytes, decoded nodes or display names, and a consumer never derives
+a variant from a key. The replay facade `AdmittedEnum` exposes the same shape
+and each case's variant. `Emission` also assembles each declaration with its
+cases in canonical order as IR's complete source enum row. A model-owned
+variant type carries the model enum rows instead, and no source enum row. An enum node
 that is not emitted has no row. A collection type is structural and has no
 declaration row. Each list holds its rows in ascending order of their node
 keys; the order carries no other meaning.
@@ -157,22 +163,6 @@ no declared tuple joins to, a tuple whose references disagree with its
 declaration in count, and a position whose type node is not emitted, are
 writer faults, not a row with a missing entry. Rows are written in ascending
 order of their tuple nodes' keys; the order carries no other meaning.
-
-### Source enum shape rows
-
-For each source enum declaration node it emits, the `Emission` SHALL carry
-one `SelectedSourceEnumShapeRow` beside the declaration and member rows. The
-row holds the declaration's emitted structural id and key, the checked
-`EnumShape` of the declaration (its ordered flag and the canonical
-`VariantId` sequence, which is declaration order for an ordered enum and
-case-identifier byte order otherwise), and one entry per case in that
-order: the exact case name, the case's emitted member node id and member key,
-and the variant the shape holds at that case's rank. `check` reads the shape
-from the admitted enum binding, so a consumer never derives a variant from a
-key. The replay facade `AdmittedEnum` exposes the same shape and each case's
-variant. A declaration bound twice has one row. A declaration that is not
-emitted has no row, and a case whose member node is not emitted is a writer
-fault. Rows are written in ascending order of their declarations' keys.
 
 ### Source collection rows
 
@@ -295,7 +285,7 @@ missing profile selections retain FR-383 and FR-218's refusals.
 | FR-092-AC-20 | Emitting a unit that declares `union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }` and constructs `Shape::Rect(2, 3)` gives one `SelectedSourceUnionRow`. Its structural id names the emitted `composite_type`/`union` node; its source authority and identity equal that node's source owner; its qualified declaration is `["Shape"]`; its type handle is the checked declaration's key and its settled key is the key of the node it names. Its members are `Empty`, `Circle` and `Rect` in declaration order, each the sealed `UnionMember` the check minted, with payload types `[]`, `[Integer]` and `[Integer, Integer]` and payload node ids equal to the references in the union node's member bindings. For a recursive union the payload node of an optional self-reference is the emitted `option` node naming the union node. IR's `with_source_union_rows` accepts the row against the package read back and `project_exact_type` of the union node returns `Composite` of the type handle, while the same node with no row refuses `UnavailableIdentityWitness` and a row that misorders its members or drops a payload node refuses `MismatchedIdentityWitness`. A unit with no source union, and a unit with a model variant type, has no union row, and every emitted union node has exactly one row. | Test (TC-1021) |
 | FR-092-AC-21 | Emitting a unit that declares `record Point { x: Integer; y: Integer; }` and `record Tagged { p: Point; note: Boolean?; maybe: Option<Integer>; }` gives one `SelectedSourceRecordRow` per record. `Tagged`'s row names the emitted `composite_type`/`record` node; its source authority and identity equal that node's source owner; its qualified declaration is `["Tagged"]`; its record key is the checked declaration's key. Its members are `p`, `note` and `maybe` in declaration order with equal declared and binding names, presence `Required`, `Optional` and `Required`, field types `Composite(Point)`, `Boolean` and `Option<Integer>`, and type node ids equal to the targets of the node's bindings; `p`'s type node is `Point`'s row node. For a recursive record each member type node that reaches the record shares the record node's recursion group. A binding list whose count disagrees with the declaration, a type node that is not emitted, and an emitted source record node that no declared record joins to are writer faults; a binding whose name differs from the declared name keeps both names. A unit with no source record, a tuple or union unit, and a unit whose records are model-owned has no source record row, and every emitted source record node has exactly one row. | Test (TC-1021) |
 | FR-092-AC-22 | Emitting a unit that declares `tuple Pair(Integer, Boolean);` and `tuple Triple(Pair, Option<Integer>, Boolean);` gives one `SelectedSourceTupleRow` per tuple. `Triple`'s row names the emitted `composite_type`/`tuple` node; its source authority and identity equal that node's source owner; its qualified declaration is `["Triple"]`; its type handle is the checked declaration's key. Its positions have ordinals 0, 1 and 2 with checked types `Composite(Pair)`, `Option<Integer>` and `Boolean`, and type node ids equal to the node's references in order; position 0's type node is `Pair`'s row node. IR's `with_source_tuple_rows` accepts the rows against the package read back and `project_exact_type` of the tuple node returns `Composite` of the type handle with the complete view, while the same node with no row refuses `UnavailableIdentityWitness` and a row that permutes, drops or adds a position, renumbers an ordinal or re-points a type node refuses `MismatchedIdentityWitness`. A position list that disagrees with the declaration in count, a type node that is not emitted, and an emitted source tuple node that no declared tuple joins to are writer faults; a position the writer re-pointed is named by its final type node. A unit with no source tuple has no tuple row, and every emitted source tuple node has exactly one row. | Test (TC-1021) |
-| FR-092-AC-23 | Emitting a unit that declares `enum Status { READY, DONE }` and `ordered enum Level { LOW, MID, HIGH }` gives one `SelectedSourceEnumShapeRow` per enum. `Status`'s shape is unordered with its variants in case-name byte order `DONE`, `READY`; `Level`'s is ordered with `LOW`, `MID`, `HIGH`. Each row's shape equals the admitted binding's shape, each case's variant is the shape's variant at that rank, the declaration id equals the declaration row's id and each case's node id equals the matching member row's id. A shape with a variant reordered or removed, or with the other ordered flag, is not equal to the row's shape. A case whose member node is not emitted is a writer fault. `AdmittedEnum` exposes the same shape and each case's variant. Collection types have no source row. | Test (TC-1021) |
+| FR-092-AC-23 | Emitting a unit that declares `enum Status { READY, DONE }` and `ordered enum Level { LOW, MID, HIGH }` gives one declaration row and one member row per case for each enum. `Status`'s shape is unordered with its variants in case-name byte order `DONE`, `READY`; `Level`'s is ordered with `LOW`, `MID`, `HIGH`. Each declaration row's shape equals the admitted binding's shape, each member row's variant is the shape's variant at its rank, and the complete source enum row lists the cases in that order. IR's `with_source_enum_rows` accepts the rows and `project_exact_type` of the declaration returns `Enum` of the shape with the complete view, while a row whose cases are reordered or missing, whose variants are swapped, whose ordered flag is flipped or whose shape is short refuses, and the node with no row refuses `UnavailableIdentityWitness`. A case whose member node is not emitted is a writer fault. `AdmittedEnum` exposes the same shape and each case's variant. | Test (TC-1021) |
 | FR-092-AC-24 | Emitting a unit that declares `record R { xs: Sequence<Integer>[0, 3]; s: Set<Boolean>; }` gives one `SelectedSourceCollectionRow` per collection type node. The bounded sequence's row names its emitted `collection_bounds` node, typed by its emitted `sequence` composite node, which references the `integer` element node the row names, with the checked `Sequence<Integer>[0, 3]`; the set's row has equal structural and base nodes, a `set` composite and a `boolean` element. `R`'s source record row binds each field to its collection row's node. A value type that is not a collection, a base that does not reference exactly the row's element and an unemitted node are writer faults; a re-pointed element or a bound typed by another node than its collection is followed or refused from the final nodes. A unit with no collection has none. | Test (TC-1021) |
 | FR-092-AC-25 | With `dimension L; dimension N = L / L; unit m : L = rational(1, 1); unit one : N = rational(1, 1);`, checked and replay-admitted dimension nodes remain distinct: `L` has `base=true` and empty base terms, while `N` has `base=false` and empty derived terms. Their checked payloads and v2 preimages preserve those values; replay reports `L.is_base()` true and `N.is_base()` false. The units reference their respective dimensions and only `one` is dimensionless. | Test (TC-483) |
 

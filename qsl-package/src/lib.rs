@@ -90,9 +90,8 @@ pub use emit::{
     emit_monitor_plan_over, emit_package, emit_package_with_temporal_selections, emit_timed_models,
     Emission, EmitRefusal, MonitorPlanWire, OmissionCause, OmittedNode, ProtocolEmission,
     ProtocolEmissionAggregate, ProtocolEmissionResult, SelectedSourceCollectionRow,
-    SelectedSourceEnumShapeCaseRow, SelectedSourceEnumShapeRow, SelectedSourceRecordMemberRow,
-    SelectedSourceRecordRow, TemporalBindingRows, TemporalClauseRef, TemporalClockSelection,
-    TemporalRows, TimedOrderFault,
+    SelectedSourceRecordMemberRow, SelectedSourceRecordRow, TemporalBindingRows, TemporalClauseRef,
+    TemporalClockSelection, TemporalRows, TimedOrderFault,
 };
 #[cfg(feature = "std")]
 pub use equality_file::{

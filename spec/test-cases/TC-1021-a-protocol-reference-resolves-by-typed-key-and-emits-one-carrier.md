@@ -57,9 +57,10 @@ Catches an implementation that binds by name and looks it up again at emission, 
     an unemitted node, or has no declaration, and re-point a position in the
     final tuple node.
 13. Emit a unit that declares `enum Status { READY, DONE }` and
-    `ordered enum Level { LOW, MID, HIGH }`. Compare each shape row with the
-    admitted binding's shape, rebuild each shape with a variant reordered,
-    removed or the ordered flag flipped, and omit one case's member node.
+    `ordered enum Level { LOW, MID, HIGH }`. Read the package back through IR,
+    join the source enum rows, project each declaration, and join rows with
+    reordered or missing cases, swapped variants, a flipped ordered flag or a
+    short shape. Omit one case's member node.
 14. Emit a unit that declares `record R { xs: Sequence<Integer>[0, 3]; s: Set<Boolean>; }`,
     then a unit with no collection. Join each collection row with a wrong
     element reference, a map in place of the collection type and an unemitted
@@ -119,9 +120,10 @@ Catches an implementation that binds by name and looks it up again at emission, 
   gives no tuple row. The short list, the unemitted node and the missing
   declaration are writer faults, and a re-pointed position is named by its
   final type node.
-- Step 13 gives one `SelectedSourceEnumShapeRow` per enum, as FR-092-AC-23
-  states. A reordered or removed variant and a flipped ordered flag do not
-  equal the row's shape. The omitted case node is a writer fault.
+- Step 13 gives the declaration and member rows FR-092-AC-23 states. IR joins
+  them and projects `Enum` of the shape; every disagreeing row refuses and the
+  unjoined declaration refuses `UnavailableIdentityWitness`. The omitted case
+  node is a writer fault.
 - Step 14 gives one `SelectedSourceCollectionRow` per collection node, as
   FR-092-AC-24 states. The wrong element, the map and the unemitted node are
   writer faults, the re-pointed element is followed and the mistyped bound is

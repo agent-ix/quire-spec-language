@@ -279,9 +279,10 @@ const ENUMS: &str = "enum Status { READY, DONE }\n\
 
 #[trace("FR-092-AC-23", "TC-1021")]
 #[test]
-fn a_source_enum_emits_its_checked_variant_shape_with_final_node_ids() {
+fn a_source_enum_carries_its_checked_shape_and_ir_joins_it() {
     let (package, emission, wire) = emitted(ENUMS);
-    let rows = emission.selected_source_enum_shape_rows();
+    let admitted = admit_bytes(&emission, &wire);
+    let rows = emission.selected_source_enum_rows();
     assert_eq!(rows.len(), 2);
     for (name, ordered, cases) in [
         ("Status", false, ["DONE", "READY"].as_slice()),
@@ -296,68 +297,150 @@ fn a_source_enum_emits_its_checked_variant_shape_with_final_node_ids() {
             .expect("the binding");
         let row = rows
             .iter()
-            .find(|row| row.declaration_key == binding.declaration.key())
+            .find(|row| row.declaration.node_key == binding.declaration.key())
             .unwrap_or_else(|| panic!("{name} has a row"));
-        assert_eq!(row.shape, binding.shape());
-        assert_eq!(row.shape.is_ordered(), ordered);
-        let names: Vec<&str> = row.cases.iter().map(|c| c.case.as_ref()).collect();
+        let shape = &row.declaration.shape;
+        assert_eq!(*shape, binding.shape());
+        assert_eq!(shape.is_ordered(), ordered);
+        let names: Vec<&str> = row.members.iter().map(|m| m.case.as_ref()).collect();
         assert_eq!(names, cases, "canonical order");
-        let variants: Vec<_> = row.cases.iter().map(|c| c.variant.clone()).collect();
-        let shaped: Vec<_> = row.shape.variants().cloned().collect();
-        assert_eq!(variants, shaped);
-        let declaration = node_with_id(&wire, &row.structural_node);
-        assert_eq!(declaration["semantic_form"], json!("enum"));
-        for case in &row.cases {
-            let node = node_with_id(&wire, &case.structural_node);
-            assert_eq!(node["body"]["value"], json!(case.case.as_ref()));
-            assert_eq!(node["semantic_type"], id_json(&row.structural_node));
-            assert_eq!(
-                node_id_of(&wire, &case.member_key),
-                id_json(&case.structural_node)
-            );
+        let variants: Vec<_> = row.members.iter().map(|m| m.variant.clone()).collect();
+        assert_eq!(variants, shape.variants().cloned().collect::<Vec<_>>());
+        for member in &row.members {
+            let node = node_with_id(&wire, &member.structural_node);
+            assert_eq!(node["body"]["value"], json!(member.case.as_ref()));
+            assert_eq!(member.declaration_node, row.declaration.structural_node);
         }
+
+        let joined = SelectedExactIdentities::empty()
+            .with_source_enum_rows(&admitted, rows.clone(), 10_000)
+            .expect("IR joins the emitted enum rows");
+        let projected = admitted
+            .project_exact_type(&row.declaration.structural_node, &joined, 10_000)
+            .expect("the enum projects");
+        assert_eq!(projected.value_type(), &ValueType::Enum(shape.clone()));
+        assert_eq!(projected.source_enum_view(), Some(row));
     }
 }
 
 #[trace("FR-092-AC-23", "TC-1021")]
 #[test]
-fn a_reordered_or_missing_variant_is_not_the_checked_shape() {
-    let (package, emission, _) = emitted(ENUMS);
-    let row = emission
-        .selected_source_enum_shape_rows()
-        .iter()
-        .find(|row| row.cases.len() == 3)
+fn ir_refuses_an_enum_row_with_a_reordered_or_missing_variant_or_flipped_flag() {
+    let (_, emission, wire) = emitted(ENUMS);
+    let admitted = admit_bytes(&emission, &wire);
+    let level = emission
+        .selected_source_enum_rows()
+        .into_iter()
+        .find(|row| row.members.len() == 3)
         .expect("Level");
-    let variants: Vec<_> = row.cases.iter().map(|c| c.variant.clone()).collect();
-    let rebuilt = |order: &[usize]| {
-        quire_exact::EnumShape::new(true, order.iter().map(|i| variants[*i].clone()))
-    };
-    assert_eq!(rebuilt(&[0, 1, 2]), row.shape);
-    assert_ne!(rebuilt(&[1, 0, 2]), row.shape, "a reordered variant");
-    assert_ne!(rebuilt(&[0, 2]), row.shape, "a missing variant");
-    assert_ne!(
-        quire_exact::EnumShape::new(false, variants.clone()),
-        row.shape,
-        "the ordered flag is part of the shape"
+    let mut reordered = level.clone();
+    reordered.members.swap(0, 1);
+    let mut missing = level.clone();
+    missing.members.pop();
+    let mut swapped_variants = level.clone();
+    let first = swapped_variants.members[0].variant.clone();
+    swapped_variants.members[0].variant = swapped_variants.members[1].variant.clone();
+    swapped_variants.members[1].variant = first;
+    let mut flipped = level.clone();
+    let variants = level.declaration.shape.variants().cloned();
+    flipped.declaration.shape = quire_exact::EnumShape::new(false, variants);
+    let mut short_shape = level.clone();
+    short_shape.declaration.shape =
+        quire_exact::EnumShape::new(true, level.declaration.shape.variants().take(2).cloned());
+    for bad in [reordered, missing, swapped_variants, flipped, short_shape] {
+        SelectedExactIdentities::empty()
+            .with_source_enum_rows(&admitted, [bad], 10_000)
+            .expect_err("a row that disagrees with the admitted enum is refused");
+    }
+    let refusal = admitted
+        .project_exact_type(
+            &level.declaration.structural_node,
+            &SelectedExactIdentities::empty(),
+            10_000,
+        )
+        .expect_err("no row, no projection");
+    assert_eq!(
+        refusal.code,
+        ExactTypeProjectionErrorCode::UnavailableIdentityWitness
     );
+}
 
-    // A shape whose variant count disagrees with the cases is a writer fault.
-    let emitted: HashMap<NodeKey, CheckedNodeId> = package
+#[trace("FR-092-AC-23", "TC-1021")]
+#[test]
+fn an_enum_case_node_that_was_not_emitted_is_a_writer_fault() {
+    let (package, emission, _) = emitted(ENUMS);
+    let emitted_ids: HashMap<NodeKey, CheckedNodeId> = package
         .graph()
         .semantic_graph()
         .nodes()
         .map(|node| (node.key(), node_id(node.key())))
         .collect();
-    let all =
-        crate::emit::source_enum_shape_rows(package.graph(), &emitted).expect("every enum joins");
-    assert_eq!(all.len(), 2);
-    let mut missing_case = emitted.clone();
-    missing_case.remove(&row.cases[1].member_key);
+    let (declarations, members) =
+        crate::emit::source_enum_rows(package.graph(), &emitted_ids).expect("every enum joins");
     assert_eq!(
-        crate::emit::source_enum_shape_rows(package.graph(), &missing_case),
-        Err(EmitRefusal::SourceMapInvariant),
-        "a case node that was not emitted"
+        declarations.len(),
+        emission.selected_enum_declaration_rows().len()
     );
+    assert_eq!(members.len(), emission.selected_enum_member_rows().len());
+    let mut missing = emitted_ids;
+    missing.remove(&members[0].member_key);
+    assert_eq!(
+        crate::emit::source_enum_rows(package.graph(), &missing),
+        Err(EmitRefusal::SourceMapInvariant)
+    );
+}
+
+const NESTED: &str = "enum Color { RED, BLUE }\n\
+    tuple Inner(Color, Integer);\n\
+    record Rec { kids: Sequence<Rec>[0, 2]; pair: Inner; grid: Sequence<Sequence<Color>>; }\n\
+    function f using v(r: Rec): Boolean pure { true }\n";
+
+#[trace("FR-092-AC-22", "FR-092-AC-23", "FR-092-AC-24", "TC-1021")]
+#[test]
+fn nested_enum_tuple_and_collection_elements_are_paired_with_their_final_nodes() {
+    let (package, emission, wire) = emitted(NESTED);
+    let enum_row = &emission.selected_source_enum_rows()[0];
+    let color = enum_row.declaration.structural_node.clone();
+    let inner = row_of(&package, &emission, "Inner");
+    assert_eq!(inner.positions[0].type_node, color);
+    assert_eq!(
+        inner.positions[0].value_type,
+        ValueType::Enum(enum_row.declaration.shape.clone())
+    );
+    let rec = super::source_record_rows::row_of(&package, &emission, "Rec");
+    assert_eq!(rec.members[1].type_node, inner.structural_node);
+
+    let rows = emission.selected_source_collection_rows();
+    assert_eq!(rows.len(), 3);
+    let element_of = |row: &crate::SelectedSourceCollectionRow| match &row.value_type {
+        ValueType::Collection(collection) => collection.element().clone(),
+        other => panic!("a collection row holds {other:?}"),
+    };
+    let find = |want: &dyn Fn(&ValueType) -> bool| {
+        rows.iter()
+            .find(|row| want(&element_of(row)))
+            .expect("the collection row")
+    };
+    let kids = find(
+        &|e| matches!(e, ValueType::Composite(key) if *key == declaration(&package, "Rec").key()),
+    );
+    let inner_grid = find(&|e| matches!(e, ValueType::Enum(_)));
+    let outer_grid = find(&|e| matches!(e, ValueType::Collection(_)));
+    assert_eq!(
+        kids.element_node, rec.structural_node,
+        "a recursive element"
+    );
+    assert_eq!(inner_grid.element_node, color, "an enum element");
+    assert_eq!(outer_grid.element_node, inner_grid.structural_node);
+    assert_eq!(rec.members[0].type_node, kids.structural_node);
+    assert_eq!(rec.members[2].type_node, outer_grid.structural_node);
+    for row in rows {
+        let base = node_with_id(&wire, &row.base_node);
+        assert_eq!(
+            base["body"]["members"][0]["target"],
+            id_json(&row.element_node)
+        );
+    }
 }
 
 const COLLECTIONS: &str = "record R { xs: Sequence<Integer>[0, 3]; s: Set<Boolean>; }\n\

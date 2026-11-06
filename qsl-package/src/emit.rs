@@ -504,35 +504,6 @@ pub struct SelectedSourceRecordMemberRow {
     pub value_type: quire_exact::ValueType,
 }
 
-/// One source-owned enum's checked variant shape, joined to the final
-/// emitted declaration and case nodes (FR-092 "Source enum shape rows"). IR
-/// carries the QSL-issued [`quire_exact::EnumShape`] and derives no variant
-/// from a key.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SelectedSourceEnumShapeRow {
-    /// The enum declaration's emitted node.
-    pub structural_node: CheckedNodeId,
-    /// The checked declaration's key, which every enum type of it carries.
-    pub declaration_key: NodeKey,
-    /// The checked shape: the ordered flag and the canonical variant sequence.
-    pub shape: quire_exact::EnumShape,
-    /// Every case in the shape's canonical order.
-    pub cases: Vec<SelectedSourceEnumShapeCaseRow>,
-}
-
-/// One case of a [`SelectedSourceEnumShapeRow`].
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SelectedSourceEnumShapeCaseRow {
-    /// The exact case name.
-    pub case: Box<str>,
-    /// The case's emitted member node.
-    pub structural_node: CheckedNodeId,
-    /// The case's checked member key.
-    pub member_key: NodeKey,
-    /// The checked variant the shape holds at this case's rank.
-    pub variant: quire_exact::VariantId,
-}
-
 /// One collection type node the package carries, paired with the checker's
 /// collection type (FR-092 "Source collection rows"). A collection is
 /// anonymous, so the row has a node and no declaration or source owner.
@@ -593,13 +564,11 @@ pub struct Emission {
     /// QSL-stage declaration and ordered position witnesses for emitted
     /// source-owned tuples (FR-092 "Source tuple identity rows").
     pub(crate) selected_source_tuple_rows: Vec<quire_contract_model::SelectedSourceTupleRow>,
-    /// QSL-stage checked variant shapes of emitted source-owned enums.
-    pub(crate) selected_source_enum_shape_rows: Vec<SelectedSourceEnumShapeRow>,
     /// QSL-stage collection type facts for emitted collection nodes.
     pub(crate) selected_source_collection_rows: Vec<SelectedSourceCollectionRow>,
     /// The checking stage's selected model declaration rows (record, object,
     /// declared unit), retained from the acquisition these bytes were
-    /// emitted from. A collection type is structural and has no row.
+    /// emitted from. A collection type is structural and has no declaration row.
     pub(crate) selected_exact_declaration_rows:
         Vec<quire_contract_model::SelectedExactDeclarationRow>,
     /// The checking stage's selected record-field rows, retained from the same
@@ -834,7 +803,6 @@ impl DebugWith for Emission {
             selected_source_union_rows,
             selected_source_record_rows,
             selected_source_tuple_rows,
-            selected_source_enum_shape_rows,
             selected_source_collection_rows,
             selected_exact_declaration_rows,
             selected_exact_field_rows,
@@ -875,10 +843,6 @@ impl DebugWith for Emission {
             .field("selected_source_union_rows", selected_source_union_rows)
             .field("selected_source_record_rows", selected_source_record_rows)
             .field("selected_source_tuple_rows", selected_source_tuple_rows)
-            .field(
-                "selected_source_enum_shape_rows",
-                selected_source_enum_shape_rows,
-            )
             .field(
                 "selected_source_collection_rows",
                 selected_source_collection_rows,
@@ -1192,10 +1156,26 @@ impl Emission {
         &self.selected_source_tuple_rows
     }
 
-    /// Source-owned enum shape rows carried by this emission, ascending by
-    /// the declarations' keys.
-    pub fn selected_source_enum_shape_rows(&self) -> &[SelectedSourceEnumShapeRow] {
-        &self.selected_source_enum_shape_rows
+    /// Complete source enum rows in the form IR's `with_source_enum_rows`
+    /// joins: each declaration with its cases in the shape's canonical
+    /// order, assembled from the declaration and member rows.
+    pub fn selected_source_enum_rows(&self) -> Vec<quire_contract_model::SelectedSourceEnumRow> {
+        self.selected_enum_declaration_rows
+            .iter()
+            .map(|declaration| {
+                let mut members: Vec<_> = self
+                    .selected_enum_member_rows
+                    .iter()
+                    .filter(|member| member.declaration_node == declaration.structural_node)
+                    .cloned()
+                    .collect();
+                members.sort_by_key(|member| declaration.shape.rank(&member.variant));
+                quire_contract_model::SelectedSourceEnumRow {
+                    declaration: declaration.clone(),
+                    members,
+                }
+            })
+            .collect()
     }
 
     /// Collection type rows carried by this emission, ascending by the
@@ -5245,7 +5225,6 @@ pub fn emit_timed_models(
         selected_source_union_rows: Vec::new(),
         selected_source_record_rows: Vec::new(),
         selected_source_tuple_rows: Vec::new(),
-        selected_source_enum_shape_rows: Vec::new(),
         selected_source_collection_rows: Vec::new(),
         selected_exact_declaration_rows: Vec::new(),
         selected_exact_field_rows: Vec::new(),
@@ -6164,12 +6143,8 @@ fn emit_package_inner(
             ))
         })
         .collect();
-    let selected_source_enum_shape_rows = source_enum_shape_rows(graph, &emitted_node_ids)?;
-    let (selected_enum_declaration_rows, selected_enum_member_rows) = source_enum_rows(
-        graph.semantic_graph(),
-        &emitted_node_ids,
-        &selected_source_enum_shape_rows,
-    )?;
+    let (selected_enum_declaration_rows, selected_enum_member_rows) =
+        source_enum_rows(graph, &emitted_node_ids)?;
     let selected_source_union_rows = source_union_rows(graph, &emitted_node_ids)?;
     let selected_source_record_rows = source_record_rows(graph, &emitted_node_ids)?;
     let selected_source_tuple_rows = source_tuple_rows(graph, &emitted_node_ids)?;
@@ -6231,7 +6206,6 @@ fn emit_package_inner(
         selected_source_union_rows,
         selected_source_record_rows,
         selected_source_tuple_rows,
-        selected_source_enum_shape_rows,
         selected_source_collection_rows,
         selected_exact_declaration_rows: graph.selected_exact_declaration_rows().to_vec(),
         selected_exact_field_rows: graph.selected_exact_field_rows().to_vec(),
@@ -6248,16 +6222,15 @@ fn emit_package_inner(
 }
 
 /// FR-092 "Source enum identity rows": one declaration row per emitted
-/// source-owned enum and one member row per emitted case, joined to the
-/// final structural ids. A member's declaration is its `semantic_type`, so an
-/// emitted member whose declaration is not emitted is a writer fault. Each row
-/// carries the checked `EnumShape` and the case's variant, read from the
-/// source enum shape rows, so a declaration or case with no shape row is a
-/// writer fault.
-fn source_enum_rows(
-    graph: &qsl_semantics::check::SemanticGraph,
+/// source-owned enum and one member row per emitted case, joined to the final
+/// structural ids. The declaration row holds the admitted binding's checked
+/// `EnumShape` and each member row the shape's variant at its case's rank,
+/// read from the binding and never rebuilt from keys. A declaration bound
+/// twice is one row; an emitted declaration whose case node is not emitted
+/// is a writer fault.
+pub(crate) fn source_enum_rows(
+    graph: &CheckedGraph,
     emitted: &HashMap<NodeKey, CheckedNodeId>,
-    shapes: &[SelectedSourceEnumShapeRow],
 ) -> Result<
     (
         Vec<quire_contract_model::SelectedEnumDeclarationRow>,
@@ -6265,54 +6238,60 @@ fn source_enum_rows(
     ),
     EmitRefusal,
 > {
-    let declaration_rows = graph
-        .source_enum_declarations()
-        .filter_map(|(key, declaration)| Some((key, declaration, emitted.get(key)?)))
-        .map(|(key, declaration, structural_node)| {
-            let shape = shapes
-                .iter()
-                .find(|row| &row.declaration_key == key)
+    let semantic = graph.semantic_graph();
+    let mut declarations = std::collections::BTreeMap::new();
+    let mut members = std::collections::BTreeMap::new();
+    for binding in graph.scope().enums() {
+        let key = binding.declaration.key();
+        let Some(structural_node) = emitted.get(&key) else {
+            continue;
+        };
+        if declarations.contains_key(&key) {
+            continue;
+        }
+        let declaration = semantic
+            .source_enum_declaration(&key)
+            .ok_or(EmitRefusal::SourceMapInvariant)?;
+        let shape = binding.shape();
+        let variants: Vec<quire_exact::VariantId> = shape.variants().cloned().collect();
+        if variants.len() != binding.members.len() {
+            return Err(EmitRefusal::SourceMapInvariant);
+        }
+        for (member, variant) in binding.members.iter().zip(variants) {
+            let member_key = member.member();
+            let node = emitted
+                .get(&member_key)
                 .ok_or(EmitRefusal::SourceMapInvariant)?;
-            Ok(quire_contract_model::SelectedEnumDeclarationRow::new(
+            members.insert(
+                member_key.clone(),
+                quire_contract_model::SelectedEnumMemberRow::new(
+                    node.clone(),
+                    declaration.owner.authority(),
+                    declaration.owner.identity(),
+                    structural_node.clone(),
+                    declaration.qualified_declaration.clone(),
+                    member.case(),
+                    member_key,
+                    variant,
+                ),
+            );
+        }
+        declarations.insert(
+            key.clone(),
+            quire_contract_model::SelectedEnumDeclarationRow::new(
                 structural_node.clone(),
                 declaration.owner.authority(),
                 declaration.owner.identity(),
                 declaration.qualified_declaration.clone(),
-                key.clone(),
-                shape.shape.clone(),
-            ))
-        })
-        .collect::<Result<_, EmitRefusal>>()?;
-    let member_rows = graph
-        .source_enum_members()
-        .filter_map(|(key, member)| Some((key, member, emitted.get(key)?)))
-        .map(|(key, member, structural_node)| {
-            let declaration = graph
-                .source_enum_declaration(&member.declaration_key)
-                .ok_or(EmitRefusal::SourceMapInvariant)?;
-            let declaration_node = emitted
-                .get(&member.declaration_key)
-                .ok_or(EmitRefusal::SourceMapInvariant)?;
-            let variant = shapes
-                .iter()
-                .filter(|row| row.declaration_key == member.declaration_key)
-                .flat_map(|row| row.cases.iter())
-                .find(|case| &case.member_key == key)
-                .map(|case| case.variant.clone())
-                .ok_or(EmitRefusal::SourceMapInvariant)?;
-            Ok(quire_contract_model::SelectedEnumMemberRow::new(
-                structural_node.clone(),
-                declaration.owner.authority(),
-                declaration.owner.identity(),
-                declaration_node.clone(),
-                declaration.qualified_declaration.clone(),
-                member.case.clone(),
-                key.clone(),
-                variant,
-            ))
-        })
-        .collect::<Result<_, EmitRefusal>>()?;
-    Ok((declaration_rows, member_rows))
+                key,
+                shape,
+            ),
+        );
+    }
+    Ok((
+        declarations.into_values().collect(),
+        members.into_values().collect(),
+    ))
 }
 
 /// FR-092 "Source union identity rows": one row per emitted source-owned
@@ -6559,61 +6538,6 @@ fn tuple_position_rows(
             })
         })
         .collect()
-}
-
-/// FR-092 "Source enum shape rows": one row per emitted source-owned enum
-/// declaration, holding the checked `EnumShape` and each case's variant,
-/// joined to the final declaration and case node ids. A declaration bound
-/// twice is one row. A declaration or case node that was not emitted has no
-/// row, and a case whose shape variant disagrees with its rank is a writer
-/// fault.
-fn source_enum_shape_rows(
-    graph: &CheckedGraph,
-    emitted: &HashMap<NodeKey, CheckedNodeId>,
-) -> Result<Vec<SelectedSourceEnumShapeRow>, EmitRefusal> {
-    let mut rows: std::collections::BTreeMap<NodeKey, SelectedSourceEnumShapeRow> =
-        std::collections::BTreeMap::new();
-    for binding in graph.scope().enums() {
-        let declaration_key = binding.declaration.key();
-        let Some(structural_node) = emitted.get(&declaration_key) else {
-            continue;
-        };
-        if rows.contains_key(&declaration_key) {
-            continue;
-        }
-        let shape = binding.shape();
-        let variants: Vec<quire_exact::VariantId> = shape.variants().cloned().collect();
-        if variants.len() != binding.members.len() {
-            return Err(EmitRefusal::SourceMapInvariant);
-        }
-        let cases = binding
-            .members
-            .iter()
-            .zip(variants)
-            .map(|(member, variant)| {
-                let member_key = member.member();
-                Ok(SelectedSourceEnumShapeCaseRow {
-                    case: member.case().into(),
-                    structural_node: emitted
-                        .get(&member_key)
-                        .cloned()
-                        .ok_or(EmitRefusal::SourceMapInvariant)?,
-                    member_key,
-                    variant,
-                })
-            })
-            .collect::<Result<Vec<_>, EmitRefusal>>()?;
-        rows.insert(
-            declaration_key.clone(),
-            SelectedSourceEnumShapeRow {
-                structural_node: structural_node.clone(),
-                declaration_key,
-                shape,
-                cases,
-            },
-        );
-    }
-    Ok(rows.into_values().collect())
 }
 
 /// FR-092 "Source collection rows": one row per emitted collection type node,
