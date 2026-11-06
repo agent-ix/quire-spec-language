@@ -335,8 +335,6 @@ pub(crate) struct NamedPopulationRecord<'m> {
     pub(crate) canonical: EffectiveId,
     /// Its declared member types the package admits.
     pub(crate) members: Vec<EffectiveId>,
-    /// Each member's original declaration before effective-type normalization.
-    pub(crate) original_members: &'m [DeclarationKey],
     /// The unit's authored bound on it.
     pub(crate) bound: Option<&'m AuthoredBound>,
 }
@@ -1339,10 +1337,31 @@ impl AdmittedModel {
                     ordinal,
                     canonical,
                     members,
-                    original_members: &record.member_types,
                     bound: self.population_bounds.get(&record.key),
                 })
             })
+    }
+
+    /// Every admitted population declaration, including empty populations and
+    /// declarations that cannot name a canonical population query position.
+    pub(crate) fn population_catalog(
+        &self,
+    ) -> impl Iterator<Item = (&DeclarationKey, &[DeclarationKey], Vec<EffectiveId>)> {
+        self.records.values().filter_map(|record| {
+            let DomainPackageRecord::Population(population) = record else {
+                return None;
+            };
+            let members = population
+                .member_types
+                .iter()
+                .filter_map(|member| {
+                    self.types
+                        .iter()
+                        .find_map(|(id, declared)| (declared == member).then_some(id.clone()))
+                })
+                .collect();
+            Some((&population.key, population.member_types.as_slice(), members))
+        })
     }
 
     /// FR-150: each object type of this package that a `symmetric`

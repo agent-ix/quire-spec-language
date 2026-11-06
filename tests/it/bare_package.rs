@@ -305,11 +305,14 @@ fn the_identity_handoff_retains_unused_populations_and_every_selected_root() {
         "model M = \"test/orders\";\nmodel Extra = \"agent-ix/checked-handoff\";",
     );
     std::fs::write(&source, &text).unwrap();
-    std::fs::write(
-        &model,
-        serde_json::to_vec(&population_fixture::document_ep()).unwrap(),
-    )
-    .unwrap();
+    let mut document = population_fixture::document_ep();
+    let mut empty = document["populations"][0].clone();
+    empty["identity"] = serde_json::json!(population_fixture::model::id("emptySpare"));
+    empty["displayName"] = serde_json::json!("emptySpare");
+    empty["members"] = serde_json::json!([]);
+    empty["origin"] = population_fixture::model::origin("emptySpare");
+    document["populations"].as_array_mut().unwrap().push(empty);
+    std::fs::write(&model, serde_json::to_vec(&document).unwrap()).unwrap();
     let ordinary = request("event_position", Corpus::None);
     let asked = quire_spec_language::checked_handoff::CheckedHandoffRequest {
         emit: quire_spec_language::emit_checked_v2::Request {
@@ -344,7 +347,13 @@ fn the_identity_handoff_retains_unused_populations_and_every_selected_root() {
         .iter()
         .find(|catalog| catalog.selected_document.as_ref() == "test/orders")
         .unwrap();
-    assert_eq!(orders.populations.len(), 4);
+    assert_eq!(orders.populations.len(), 5);
+    let empty = orders
+        .populations
+        .iter()
+        .find(|population| population.original.node().ends_with("emptySpare"))
+        .expect("an unused admitted empty population retains its original declaration");
+    assert!(empty.members.is_empty());
     let unused = orders
         .populations
         .iter()
@@ -368,7 +377,6 @@ fn the_identity_handoff_retains_unused_populations_and_every_selected_root() {
             .windows(2)
             .all(|pair| pair[0].original < pair[1].original));
         for population in &catalog.populations {
-            assert!(!population.members.is_empty());
             assert!(population.members.iter().all(|member| member
                 .effective_type
                 .owner_chain()

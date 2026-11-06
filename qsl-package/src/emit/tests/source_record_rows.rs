@@ -414,6 +414,82 @@ fn required_source_record_rows_refuse_missing_fields_and_stale_native_bindings()
     );
 }
 
+#[trace("TC-1331", "FR-531-AC-20")]
+#[test]
+fn required_identity_handoff_refuses_deep_original_keys_without_stack_growth() {
+    const CHILD: &str = "QSL1760_DEEP_IDENTITY_CHILD";
+    const TEST: &str = "emit::tests::source_record_rows::required_identity_handoff_refuses_deep_original_keys_without_stack_growth";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", TEST, "--nocapture"])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "isolated deep-key control failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    let (_, emission, wire) = emitted(RECORDS);
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        evidence.support_feature(feature.as_str().unwrap());
+    }
+    let CheckedPackageV2ReadResult::Admitted(package) = CheckedPackageV2::read(
+        emission.package().bytes(),
+        CheckedPackageReadLimits::bounded(),
+        &evidence,
+    ) else {
+        panic!("the genuine record package admits");
+    };
+    let rows = emission.identity_rows(&package).unwrap();
+    let mut key = NodeKey::new(
+        "deep-original",
+        vec![quire_exact::PathSegment::Text("leaf".into())],
+        0,
+    )
+    .unwrap();
+    for ordinal in 1..2000 {
+        key = NodeKey::new(
+            "deep-original",
+            vec![quire_exact::PathSegment::Node(key)],
+            ordinal,
+        )
+        .unwrap();
+    }
+    let good = String::from_utf8(rows.to_bytes(&package).unwrap()).unwrap();
+    let original =
+        qsl_foundation::node_wire::node_key_to_text(&rows.source_records()[0].record_key).unwrap();
+    let deep = qsl_foundation::node_wire::node_key_to_text(&key).unwrap();
+    assert!(good.contains(&original));
+    let input = good.replace(&original, &deep);
+    assert!(
+        matches!(
+            crate::ReadIdentityRows::read(input.as_bytes(), &package),
+            Err(crate::IdentityFileRefusal::Malformed { .. })
+        ),
+        "a deeply nested input returns a typed refusal"
+    );
+    let mut source_records = rows.source_records().to_vec();
+    source_records[0].record_key = key;
+    let carried = crate::ReadIdentityRows::of_rows(
+        &package,
+        rows.declarations().to_vec(),
+        rows.fields().to_vec(),
+        source_records,
+        rows.selected_populations().to_vec(),
+    );
+    assert_eq!(
+        carried.to_bytes(&package),
+        Err(crate::IdentityFileRefusal::Malformed {
+            member: crate::IdentityMember::SourceRecords
+        }),
+        "the public writer refuses before recursive serialization or drop"
+    );
+}
+
 #[trace("TC-1331", "FR-531-AC-21", "FR-517-AC-23")]
 #[test]
 fn required_identity_handoff_refuses_missing_or_foreign_final_root_catalogs() {

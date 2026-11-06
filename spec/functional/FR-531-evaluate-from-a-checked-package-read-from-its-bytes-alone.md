@@ -264,8 +264,14 @@ NodeKey inside it (composite, enum variant owner, declared or compound unit) is
 this original-value shape, rather than a graph reference. Integers and rational
 components remain canonical decimal text; presence is `required` or `optional`.
 
+Each original key SHALL contain at most 32 nested node-key objects, counting the
+outer key. The writer SHALL check this limit iteratively before recursive JSON
+work and the reader SHALL refuse a key above it as `Malformed` at
+`source_records`. The bridges use the shared iterative node text codec and SHALL
+NOT construct or recursively discard an unbounded intermediate JSON value.
+
 Each catalog is issued from the selected model's admitted population declarations
-before any snapshot admission, including unused populations and every member.
+before any snapshot admission, including unused and empty populations and every member.
 `original` is `{ "package", "node" }` for the genuine declaration. A member's
 `effective_type` is the `EffectiveId` encoding below for its genuine normalized
 effective type, with no owner for an effective type; aliases retain their original
@@ -716,8 +722,8 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-18 | For a row whose fact value type is each of a `carried_quantity` over a decimal carrier, over an integer carrier and over a rational carrier, a `bounded_quantity` with both bounds and with `min` and `max` null, and a `map` with a bound and without one (including the example of "Value encodings"), `ReadEqualityRows::to_bytes` followed by `ReadEqualityRows::read` returns equal rows, a second write is byte-identical, and the value-type subtree the writer emits for the example, parsed as JSON, equals the example's JSON value with its members in the stated order (members compared in order, not as a set); a `bounded_quantity` whose bound is in another unit than `unit`, and a `carried_quantity` carrier tagged other than `decimal`, `integer` or `rational`, return `Malformed`. | Test (TC-1331) |
 
 | FR-531-AC-19 | An authentic final emission with a source record round-trips its original opaque record key, source owner, final structural/type IDs, ordered original member identities, final admitted names, presence and exact value types, including nested opaque identities. The bytes-only read joins it through native IR and `source_record_view` equals the original row; no healthy source record succeeds by structural-key substitution. | Test |
-| FR-531-AC-20 | A file with `/1`, absent `source_records` or `selected_populations`, an unknown/repeated member, malformed opaque key/type, foreign structural/type node, stale admitted name or conflicting record row refuses with the named typed format/shape/native-join condition and no partial identity read. With a supplied empty record-row list, an actual request for that record preserves native `UnavailableIdentityWitness`, never succeeding by structural-key substitution. Whole-witness completeness is not asserted by this carrier read. | Test |
-| FR-531-AC-21 | A handoff containing multiple selected roots, an unused population and normalized effective member types round-trips every original population/member declaration and its genuine normalized effective TYPE identity with no owner, in deterministic producer order. The population catalog is acquired without a snapshot and includes declarations no source expression reaches. | Test |
+| FR-531-AC-20 | A file with `/1`, absent `source_records` or `selected_populations`, an unknown/repeated member, malformed or over-depth opaque key/type, foreign structural/type node, stale admitted name or conflicting record row refuses with the named typed format/shape/native-join condition and no partial identity read. With a supplied empty record-row list, an actual request for that record preserves native `UnavailableIdentityWitness`, never succeeding by structural-key substitution. Whole-witness completeness is not asserted by this carrier read. | Test |
+| FR-531-AC-21 | A handoff containing multiple selected roots, unused nonempty and empty populations and normalized effective member types round-trips every original population/member declaration and its genuine normalized effective TYPE identity with no owner, in deterministic producer order. The population catalog is acquired without a snapshot and includes declarations no source expression reaches. | Test |
 
 ## Dependencies
 

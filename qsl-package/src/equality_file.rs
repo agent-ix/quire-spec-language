@@ -345,18 +345,77 @@ impl TypeKeys for Joins {
     }
 }
 
+// A node identity uses an object and a path array at each nesting level.
+// Bound both bridges before recursive serde work; the shared text codec itself
+// traverses and releases opaque identities iteratively, without a JSON Value.
+const ORIGINAL_KEY_NESTING_LIMIT: usize = 32;
+
 struct OriginalKeys;
+
+fn original_key_depth(key: &NodeKey) -> Result<(), Bad> {
+    let mut stack = Vec::new();
+    stack
+        .try_reserve_exact(ORIGINAL_KEY_NESTING_LIMIT)
+        .map_err(|_| Bad::Malformed("original node identity depth storage".into()))?;
+    stack.push(key.view().path());
+    while let Some(top) = stack.last_mut() {
+        match top.next() {
+            Some(quire_exact::PathSegmentView::Node(view)) => {
+                if stack.len() == ORIGINAL_KEY_NESTING_LIMIT {
+                    return malformed("original node identity nesting limit");
+                }
+                stack.push(view.path());
+            }
+            Some(quire_exact::PathSegmentView::Text(_)) => {}
+            None => {
+                stack.pop();
+            }
+        }
+    }
+    Ok(())
+}
+
+fn original_json_depth(json: &Json) -> Result<(), Bad> {
+    let mut pending = vec![(json, 1_usize)];
+    while let Some((value, depth)) = pending.pop() {
+        let children = match value {
+            Json::Array(items) => {
+                if depth > 2 * ORIGINAL_KEY_NESTING_LIMIT {
+                    return malformed("original node identity nesting limit");
+                }
+                pending
+                    .try_reserve(items.len())
+                    .map_err(|_| Bad::Malformed("original node identity depth storage".into()))?;
+                pending.extend(items.iter().map(|item| (item, depth + 1)));
+                continue;
+            }
+            Json::Object(members) => members,
+            _ => continue,
+        };
+        if depth > 2 * ORIGINAL_KEY_NESTING_LIMIT {
+            return malformed("original node identity nesting limit");
+        }
+        pending
+            .try_reserve(children.len())
+            .map_err(|_| Bad::Malformed("original node identity depth storage".into()))?;
+        pending.extend(children.iter().map(|(_, value)| (value, depth + 1)));
+    }
+    Ok(())
+}
 
 impl TypeKeys for OriginalKeys {
     fn write_key(&self, key: &NodeKey) -> Result<Json, Bad> {
-        let value = qsl_foundation::node_wire::node_key_to_json(key)
+        original_key_depth(key)?;
+        let text = qsl_foundation::node_wire::node_key_to_text(key)
             .map_err(|_| Bad::Malformed("an original node identity".into()))?;
-        of(&value)
+        serde_json::from_str(&text).map_err(|_| Bad::Malformed("an original node identity".into()))
     }
 
     fn read_key(&self, json: &Json) -> Result<NodeKey, Bad> {
-        let value: serde_json::Value = to(json, "an original node identity")?;
-        qsl_foundation::node_wire::node_key_from_json(&value)
+        original_json_depth(json)?;
+        let text = serde_json::to_string(json)
+            .map_err(|_| Bad::Malformed("an original node identity".into()))?;
+        qsl_foundation::node_wire::node_key_from_text(&text)
             .map_err(|_| Bad::Malformed("an original node identity".into()))
     }
 }
@@ -1806,6 +1865,35 @@ mod tests {
             bad.value().is_err(),
             "a malformed scale must not clamp to an accepted type"
         );
+    }
+
+    #[trace("TC-1331", "FR-531-AC-19", "FR-531-AC-20")]
+    #[test]
+    fn original_identity_nesting_has_the_same_finite_write_and_read_boundary() {
+        let mut key = NodeKey::new(
+            "original",
+            vec![quire_exact::PathSegment::Text("leaf".into())],
+            0,
+        )
+        .unwrap();
+        for ordinal in 1..ORIGINAL_KEY_NESTING_LIMIT {
+            key = NodeKey::new(
+                "original",
+                vec![quire_exact::PathSegment::Node(key)],
+                ordinal as u64,
+            )
+            .unwrap();
+        }
+        let encoded = OriginalNodeKey::of(&key).expect("the documented nesting bound encodes");
+        assert_eq!(encoded.key().unwrap(), key);
+        let value = OriginalValueType::of(&ValueType::Composite(key.clone())).unwrap();
+        assert_eq!(value.value().unwrap(), ValueType::Composite(key.clone()));
+        let over = NodeKey::new("original", vec![quire_exact::PathSegment::Node(key)], 0).unwrap();
+        assert!(OriginalNodeKey::of(&over).is_err());
+        assert!(OriginalValueType::of(&ValueType::Composite(over.clone())).is_err());
+        let text = qsl_foundation::node_wire::node_key_to_text(&over).unwrap();
+        let parsed: OriginalNodeKey = serde_json::from_str(&text).unwrap();
+        assert!(parsed.key().is_err());
     }
 
     /// FR-531-AC-17: a row of every fact tag, every value-type tag, every

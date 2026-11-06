@@ -823,7 +823,15 @@ pub struct CheckedGraph {
         (
             quire_checked::key::DeclarationKey,
             Vec<quire_exact::EffectiveId>,
+        ),
+    >,
+    /// Every admitted population declaration and its original/effective members,
+    /// independently of the canonical-member lookup used by query positions.
+    selected_population_catalog: BTreeMap<
+        quire_checked::key::DeclarationKey,
+        (
             Vec<quire_checked::key::DeclarationKey>,
+            Vec<quire_exact::EffectiveId>,
         ),
     >,
     /// QSpec FR-322: the `model_root` key of each selection, in the same order.
@@ -996,6 +1004,7 @@ impl DebugWith for CheckedGraph {
             selected_tuple_declaration_rows,
             operation_effects,
             protocol_population_types,
+            selected_population_catalog,
             model_roots,
             header_layers,
             time_sources,
@@ -1104,6 +1113,7 @@ impl DebugWith for CheckedGraph {
                 "protocol_population_types",
                 &NodeMap(protocol_population_types.iter(), table),
             )
+            .field("selected_population_catalog", &selected_population_catalog)
             .field("model_roots", &NodeList(model_roots.iter(), table))
             .field("header_layers", &header_layers)
             .field("time_sources", &Seq(time_sources, table))
@@ -2646,15 +2656,13 @@ impl PackageDeclarations {
             .flat_map(AdmittedModel::named_populations)
             .filter_map(|population| {
                 let node = crate::model::key::population_node_key(population.key).ok()?;
-                Some((
-                    node,
-                    (
-                        population.key.clone(),
-                        population.members,
-                        population.original_members.to_vec(),
-                    ),
-                ))
+                Some((node, (population.key.clone(), population.members)))
             })
+            .collect();
+        let selected_population_catalog = models
+            .iter()
+            .flat_map(AdmittedModel::population_catalog)
+            .map(|(key, originals, effective)| (key.clone(), (originals.to_vec(), effective)))
             .collect();
         let declaration_keys = models
             .iter()
@@ -7093,6 +7101,7 @@ impl PackageDeclarations {
             selected_tuple_declaration_rows: self.selected_tuple_declaration_rows,
             operation_effects,
             protocol_population_types,
+            selected_population_catalog,
             model_roots,
             header_layers,
             time_sources: self.time_sources,
@@ -7916,7 +7925,7 @@ impl CheckedGraph {
     )> {
         self.protocol_population_types
             .get(node)
-            .map(|(declaration, members, _)| (declaration, members.as_slice()))
+            .map(|(declaration, members)| (declaration, members.as_slice()))
     }
 
     /// Every selected population's original declaration and member declarations,
@@ -7931,9 +7940,9 @@ impl CheckedGraph {
             &[quire_exact::EffectiveId],
         ),
     > {
-        self.protocol_population_types
-            .values()
-            .map(|(declaration, members, originals)| {
+        self.selected_population_catalog
+            .iter()
+            .map(|(declaration, (originals, members))| {
                 (declaration, originals.as_slice(), members.as_slice())
             })
     }
@@ -9076,10 +9085,10 @@ mod tests {
         let second = quire_checked::key::DeclarationKey::fixture("second_population");
         graph
             .protocol_population_types
-            .insert(root.clone(), (first.clone(), Vec::new(), Vec::new()));
+            .insert(root.clone(), (first.clone(), Vec::new()));
         graph
             .protocol_population_types
-            .insert(leaf.clone(), (second.clone(), Vec::new(), Vec::new()));
+            .insert(leaf.clone(), (second.clone(), Vec::new()));
         graph.model_roots.extend([root, leaf]);
         let text = format!("{graph:?}");
         let field = text
