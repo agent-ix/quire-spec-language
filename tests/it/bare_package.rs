@@ -394,10 +394,10 @@ fn a_public_record_projection_requires_its_original_carried_native_witness() {
     let model = holder.path().join("model.json");
     let text = population_fixture::SOURCE.replace(
         "model M = \"test/orders\";",
-        "model M = \"test/orders\";\nrecord Pair { first: Integer; second: Integer; }",
+        "model M = \"test/orders\";\nrecord Pair { x: Integer; y: Integer; }",
     ).replace(
         "on each (opened: M::Tick) when (opened.ready) {",
-        "on each (opened: M::Tick) when (opened.ready) {\n  capture kept: Pair = Pair{ first: 1, second: 2 };\n  capture fieldRead: Integer = (Pair{ first: 1, second: 2 }).first;",
+        "on each (opened: M::Tick) when (opened.ready) {\n  capture kept: Pair = Pair{ x: 1, y: 2 };\n  capture fieldRead: Integer = (Pair{ x: 1, y: 2 }).x;",
     );
     std::fs::write(&source, text).unwrap();
     std::fs::write(

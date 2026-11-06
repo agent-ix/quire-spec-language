@@ -780,15 +780,18 @@ const CARRIERS: &[(&str, &[&str])] = &[
 
 fn carrier_from(json: &Json) -> Result<QuantityCarrier, Bad> {
     let (tag, m) = json.tagged(CARRIERS)?;
-    let scale =
-        |json: &Json| u64::from(u32::try_from(json.int().unwrap_or(u64::MAX)).unwrap_or(u32::MAX));
+    let scale = |json: &Json| -> Result<u64, Bad> {
+        u32::try_from(json.int()?)
+            .map(u64::from)
+            .or_else(|_| malformed("a decimal scale"))
+    };
     Ok(match tag {
         "decimal" => QuantityCarrier::Decimal(
             DecimalType::new(
                 integer(m[0])?,
                 integer(m[1])?,
-                scale(m[2]),
-                scale(m[3]),
+                scale(m[2])?,
+                scale(m[3])?,
                 unspelled(&ROUNDINGS, m[4])?,
             )
             .or_else(|_| malformed("a decimal carrier"))?,
@@ -1743,7 +1746,42 @@ mod tests {
             )
             .unwrap(),
         );
-        for wanted in every_value_type(&keys) {
+        let unit = UnitId::declared(keys["U"].clone());
+        let mut types = every_value_type(&keys);
+        types.extend([
+            ValueType::CarriedQuantity(
+                CarriedQuantityType::new(
+                    unit.clone(),
+                    QuantityCarrier::Decimal(
+                        DecimalType::new(0.into(), 20.into(), 0, 2, RoundingMode::Exact).unwrap(),
+                    ),
+                )
+                .into(),
+            ),
+            ValueType::BoundedQuantity(
+                BoundedQuantityType::new(
+                    unit.clone(),
+                    Some(Quantity::new(
+                        Rational::new(0.into(), 1.into()).unwrap(),
+                        unit.clone(),
+                    )),
+                    Some(Quantity::new(
+                        Rational::new(5.into(), 1.into()).unwrap(),
+                        unit,
+                    )),
+                )
+                .unwrap()
+                .into(),
+            ),
+            ValueType::Map(
+                MapType::new(
+                    ValueType::Composite(keys["V"].clone()),
+                    Some(CardinalityBound::new(0, 2).unwrap()),
+                )
+                .into(),
+            ),
+        ]);
+        for wanted in types {
             let wire = OriginalValueType::of(&wanted).expect("the Exact type encodes");
             let bytes = serde_json::to_vec(&wire).unwrap();
             let read: OriginalValueType = serde_json::from_slice(&bytes).unwrap();
@@ -1762,6 +1800,11 @@ mod tests {
         bad["node"]["extra"] = json!(true);
         let decoded: OriginalValueType = serde_json::from_value(bad).unwrap();
         assert!(decoded.value().is_err());
+        let bad: OriginalValueType = serde_json::from_value(json!({"kind":"carried_quantity", "unit":{"kind":"declared", "node": qsl_foundation::node_wire::node_key_to_json(&keys["U"]).unwrap()}, "carrier":{"kind":"decimal","lower":"0","upper":"5","min_scale":"not-a-number","max_scale":4294967295_u64,"rounding":"exact"}})).unwrap();
+        assert!(
+            bad.value().is_err(),
+            "a malformed scale must not clamp to an accepted type"
+        );
     }
 
     /// FR-531-AC-17: a row of every fact tag, every value-type tag, every

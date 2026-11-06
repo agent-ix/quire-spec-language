@@ -1264,6 +1264,11 @@ impl Emission {
 
     /// The required identity handoff facts from this final emission. This
     /// preserves original opaque source keys separately from graph references.
+    ///
+    /// # Errors
+    ///
+    /// The native typed stage-row refusal when declaration or field claims do
+    /// not join the admitted package. Whole-witness validation is separate.
     pub fn identity_rows(
         &self,
         package: &CheckedPackageV2,
