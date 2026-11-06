@@ -112,11 +112,14 @@ enum Fixture {
     /// TC-1202: [`SCHEDULABILITY_UNIT`], a task set with a schedulability and a
     /// response claim.
     Schedulability,
+    /// TC-1021: a record with `Map<Text, T>` fields, built as the checker
+    /// declares it because source text spells no map.
+    MapRecord,
 }
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 30] = [
+    const ALL: [Self; 31] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -147,6 +150,7 @@ impl Fixture {
         Self::Hybrid,
         Self::StepRelation,
         Self::Schedulability,
+        Self::MapRecord,
     ];
 }
 
@@ -357,6 +361,7 @@ impl Fixture {
             Self::Tc416Functions => whole(package(vec![both(), nb(), h(), f(), t()])),
             Self::RecursiveF => whole(recursive_f()),
             Self::Tree => whole(tree()),
+            Self::MapRecord => whole(super::source_tuple_rows::map_record_package()),
             Self::DeclaredTypes => whole(declared_types(Vec::new(), Vec::new())),
             Self::SpineCompile => Emitted::placed(spine_compile_package(), Vec::new()),
             Self::SpineModel => Emitted::placed(
@@ -628,6 +633,7 @@ fn rows() -> Vec<Row> {
         row(K::ScalarType(S::CompoundUnit), F::QuantityAndT),
         row(K::CompositeType(C::Option), F::ConfigVersion),
         row(K::CompositeType(C::Sequence), F::Tree),
+        row(K::CompositeType(C::Map), F::MapRecord),
         row(K::CompositeType(C::Set), F::FormsUnit),
         row(K::CompositeType(C::Bag), F::FormsUnit),
         row(K::CompositeType(C::OrderedSet), F::FormsUnit),
@@ -720,6 +726,10 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         "lowering's record_form maps only object types, systems interfaces, record value types and variant types to model nodes";
     const NO_TAG: &str = "lowering builds no node of this tag";
     &[
+        (
+            K::ScalarType(ScalarTypeForm::BoundedQuantity),
+            "lowering refuses a bounded quantity type: no checked type node carries one",
+        ),
         (
             K::CompositeType(CompositeTypeForm::Alias),
             "an alias resolves to its target type's node",

@@ -6711,6 +6711,16 @@ fn derived_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
                 MemberTerm::Leaf(LeafTerm::Reference {
                     target: NodeRef::Admitted(key),
                 }) => Some(PathSegment::Node(key.clone())),
+                // A map names its key node then its value node, bound as
+                // `key` and `value` (IR's reader checks both operands).
+                MemberTerm::Binding(binding) if content.semantic_form == "map" => {
+                    match &binding.value {
+                        BindingValue::Leaf(LeafTerm::Reference {
+                            target: NodeRef::Admitted(key),
+                        }) => Some(PathSegment::Node(key.clone())),
+                        _ => None,
+                    }
+                }
                 _ => None,
             })
             .collect(),
