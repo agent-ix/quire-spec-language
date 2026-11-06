@@ -29,10 +29,11 @@ Scope: FR-094-AC-1, FR-094-AC-2, FR-094-AC-3, FR-094-AC-4, FR-094-AC-7 (its
 
 ## Test Procedure
 
-Every fixture admits the domain package `acme/orders` that FR-094's Vector index
+Steps 1–8 admit the domain package `acme/orders` that FR-094's Vector index
 vectors section describes, at version `1.0.0` unless a step says otherwise,
 with `M::Order`, `M::Invoice` and `M::Sub` resolving to its object types.
 `Sub` has supertype `Order`, inherits `total` and redefines `size`.
+Step 9 uses TC-1070's standard E and E-P documents for `test/orders`.
 
 1. Check `function g using v(r: Reference<M::Order>, s: Reference<M::Invoice>): Boolean pure { true }`.
    Read the type nodes of `r` and `s`, their model nodes, and the model
