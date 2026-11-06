@@ -36,3 +36,16 @@ Ticket: QSL-1778. Planless, diff-scoped gap analysis. Plan completion: not asses
 ## Evidence and limits
 
 Manual AC-to-test check; Quoin matrix unavailable (timed out). `grep -rn QSL_OWNER_REPORT` finds only the test itself. Tests in the file use `CheckedSubject::new(...).unwrap()` throughout and no test expects `BindingMismatch(Revision)` or `SupportNotInTrace` from `evaluate_v2`.
+
+## Dispositions
+
+Round 1, current head `5ed40a131`. Original review rows unchanged.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | still-open | The environment-dependent comparison was removed, but replacement runs with_inputs twice in the same test executable. That constructs independent package/evidence values; it does not compare independently compiled binaries as TC-144 row11 explicitly requires. Preserve or wire actual two-build byte comparison in the one final gate, without another worktree. |
+| FND-002 | still-open | New test covers foreign occurrence, request occurrence mismatch and evaluate_v2 revision/anchor refusal. It still omits the separately listed foreign clause and admitted row position beyond the shorter request; source-map refusal feasibility also has no disposition. Complete reachable controls or justify unreachable branches explicitly. |
+
+## Disposition evidence
+
+Static review in the sole existing ticket worktree, no build/clone/worktree created. Existing coder receipts considered but not represented as reviewer reruns. Final gate remains the lead's next stage after every open finding is resolved.

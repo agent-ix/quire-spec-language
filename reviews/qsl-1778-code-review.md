@@ -77,3 +77,35 @@ FAIL within the stated scope.
 FND-001: Replace field 10 of otherwise valid report bytes by `[17, 0, 0, 0, 0, 0, 0, 0, 0]`, adjusting the field length. The parser accepts it because its only completeness condition is `previous == 17`. Original reports have no further identity check; corrections compare this invented input identity with the predecessor and treat it as changed. Require complete valid identity members and check encoded evaluation input against the supplied subject/request/observation authority before granting correction authority. Add malformed identity and invented changed-input controls; reusing the owner identity encoder avoids a second definition.
 
 FND-002: Add a suitable TC artifact covering native AC15-18 and native AC12 controls, or correctly extend an owning TC, then use paired TC/FR attributes. Existing TC-144 explicitly excludes `src/temporal`, so simply attaching TC-144 without updating its scope would misrepresent the test binding.
+
+## Dispositions
+
+Round 1, reviewed head `9718b750a`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Complete canonical members and evidence-owner request/observation identity equality; malformed and foreign canonical identities refuse. |
+| FND-002 | fixed | All nine native owner tests now pair TC-144 with criteria; owning procedure includes the native API. |
+| FND-003 | still-open | Two newly added tests still omit TC-144; add the owning TC id. |
+
+## Disposition evidence (round 1)
+
+Disposition round 1 at 9718b750a in the original QSL-1778 worktree only. Static inspection of b80fec47d..9718b750a, no reviewer build or final gate. Canonical parsing now requires all 17 members; payload authority is checked by the existing evidence-owner identity_of encoder shared with evaluation. native_request is shared by evaluation and reading, binding observation/revision and admitted rows without executing temporal positions. The foreign canonical identity control transplants a revised observation identity onto unchanged original bytes and original observation, and must refuse UnknownTag. The coder mutation log /tmp/QSL-1778-fix-canonical-mutation.log shows this control failing at its intended assertion when comparison is disabled; restored log shows nine tests passing. All nine tests now have TC-144 plus criterion tags; TC-144 explicitly includes native owner report procedures 10-13.
+
+Original findings and original verdict are unchanged historical records. Current disposition: both original code-review findings fixed; no new defect in the fix diff. The separate later SR-20261105101067 gap review on Linear is outside this artifact set and remains for the lead to reconcile before merge. The original computed-matrix limitation remains.
+
+## Additional round 1 head reconciliation
+
+Final adopted head `5ed40a131` adds peer fixes after `9718b750a`. Both original findings remain fixed. Two newly added tests omit TC ids; this is a new finding in SR-15208990. The peer review SR-20261105101066/67 is now included in this disposition pass, not superseded. No extra worktree, clone or build was created.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-003 | low | Two tests added by the peer fix omit TC ids from their trace attributes, reintroducing the paired TC/criterion metadata violation. | tests/it/native_owner_report.rs:877,904 | implementation-bug-despite-evidence |
+
+## Round 1 new-finding disposition
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-003 | still-open | Add TC-144 to reader_refuses_a_result_identity_of_another_clause_or_occurrence and subject_and_evaluation_refuse_foreign_occurrence_revision_and_anchor. |

@@ -93,3 +93,21 @@ Row 9's first step keeps the correspondence unchanged and changes only the evide
   9 in `qsl-eval/tests/it`.
 - Native report rows 10 to 13 carry paired TC-144 and FR-052-AC-12/15/16/17/18
   tags in `tests/it/native_owner_report.rs` for the criteria they assert.
+
+The local two-build lane is
+`cargo test -p quire-spec-language --features checked-handoff --test it native_owner_report::native_report_independent_build_bytes -- --exact --ignored --nocapture`.
+Run it under the same build lock and resource envelope as other Cargo checks.
+It recompiles the root integration executable twice with distinct Rust crate
+metadata, reusing dependencies in this worktree's sole `target` directory.
+Each compiled executable runs the exact report fixture and writes its owner
+bytes; the lane requires the two byte strings to be equal. Reconstructing
+inputs twice within one executable is an additional control, not this lane.
+
+The native subject refusal control also supplies a genuine temporal clause from
+another checked package and an admitted valuation relation whose position 1 is
+outside a shortened one-position request. Both must refuse without a report.
+The missing-source-map arm is defensive for admitted `CheckedPackageV2` values:
+their reader requires the source-map key set to equal the semantic graph's
+occurrence key set, while `TemporalSubjectView::arena_of` accepts only such a
+declared occurrence. Removing a source-map row therefore fails package
+admission before a `CheckedSubject` can be constructed.

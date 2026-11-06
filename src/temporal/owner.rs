@@ -483,23 +483,14 @@ fn row_key(row: &ValuationRow) -> Result<Vec<u8>, ReportRefusal> {
     let mut writer = Writer::new();
     // Checked node identities and occurrence records have deterministic owner
     // serialization; they are length-delimited identity members, not artifacts.
-    writer.field(
-        1,
-        &encoded(&row.subject.node)?,
-    );
-    writer.field(
-        2,
-        &encoded(&row.subject.role)?,
-    );
+    writer.field(1, &encoded(&row.subject.node)?);
+    writer.field(2, &encoded(&row.subject.role)?);
     writer.field(3, &row.subject.ordinal.to_le_bytes());
     writer.field(4, &count_bytes(row.position));
     writer.field(5, row.anchor.as_bytes());
     writer.field(6, row.capture_instance.as_bytes());
     writer.field(7, row.revision.as_bytes());
-    writer.field(
-        8,
-        &encoded(&row.operand)?,
-    );
+    writer.field(8, &encoded(&row.operand)?);
     Ok(writer.finish())
 }
 fn truth_tag(value: Option<Truth>) -> u8 {

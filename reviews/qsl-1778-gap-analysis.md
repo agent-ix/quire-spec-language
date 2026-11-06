@@ -72,3 +72,22 @@ scope:
 ## Verdict
 
 CONDITIONAL within the stated scope.
+
+## Dispositions
+
+Round 1, reviewed head `9718b750a`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+
+No defect findings in this artifact required disposition; placeholder is not a finding.
+
+## Disposition evidence (round 1)
+
+Disposition round 1 at 9718b750a in the original QSL-1778 worktree only. Static inspection of b80fec47d..9718b750a, no reviewer build or final gate. Canonical parsing now requires all 17 members; payload authority is checked by the existing evidence-owner identity_of encoder shared with evaluation. native_request is shared by evaluation and reading, binding observation/revision and admitted rows without executing temporal positions. The foreign canonical identity control transplants a revised observation identity onto unchanged original bytes and original observation, and must refuse UnknownTag. The coder mutation log /tmp/QSL-1778-fix-canonical-mutation.log shows this control failing at its intended assertion when comparison is disabled; restored log shows nine tests passing. All nine tests now have TC-144 plus criterion tags; TC-144 explicitly includes native owner report procedures 10-13.
+
+Original findings and original verdict are unchanged historical records. Current disposition: both original code-review findings fixed; no new defect in the fix diff. The separate later SR-20261105101067 gap review on Linear is outside this artifact set and remains for the lead to reconcile before merge. The original computed-matrix limitation remains.
+
+## Additional round 1 head reconciliation
+
+Final adopted head `5ed40a131` adds peer fixes after `9718b750a`. Both original findings remain fixed. Two newly added tests omit TC ids; this is a new finding in SR-15208990. The peer review SR-20261105101066/67 is now included in this disposition pass, not superseded. No extra worktree, clone or build was created.

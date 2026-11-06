@@ -42,3 +42,19 @@ Sound: the codec's strict framing (fixed member order, length prefix, trailing-b
 ## Evidence and limits
 
 Built only through locked-build.sh with the shared target, jobs 4, debug 0. `cargo check --test it` (default features) fails with 23 E0433 in tests/it/native_owner_report.rs. `cargo test --features checked-handoff --test it native_owner_report`: 9 PR tests pass. A local, uncommitted probe test (removed) confirmed FND-002 (`foreign identity admitted: true`) and FND-003 (`forged truth admitted: Ok(Some(False))`). No full gate run.
+
+## Dispositions
+
+Round 1, current head `5ed40a131`. Original review rows unchanged.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Feature gating now matches the two required sibling modules; static inspection, no new compile. |
+| FND-002 | fixed | Shared evidence-owner canonical encoder validates all identity members against actual request, observation and checked subject. |
+| FND-003 | rejected | FR-052 evaluation-input prohibition does not require a non-evaluating decoder to authenticate a known truth tag; see full reason in comment. |
+| FND-004 | fixed | The same fallible encoded helper is used throughout row_key; no serialization expect remains. Closed checked identity/role values expose no caller-supplied serializer, and the declared closed refusal enum is retained. |
+| FND-005 | fixed | Fixed-size array prevents silent zip truncation; PACKAGE_VERSION is one constant. Typed CheckedPackageV2 admits only v2, so no dynamic alternative package version exists; byte-version mismatch remains meaningfully refused. |
+
+## Disposition evidence
+
+Static review in the sole existing ticket worktree, no build/clone/worktree created. Existing coder receipts considered but not represented as reviewer reruns. Final gate remains the lead's next stage after every open finding is resolved.

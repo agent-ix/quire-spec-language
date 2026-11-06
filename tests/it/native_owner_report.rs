@@ -8,8 +8,8 @@ use qsl_eval::temporal::evidence::{EvidencePackage, Truth};
 use qsl_package::checked_views::temporal_subject;
 use quire_spec_language::temporal::{
     evaluate_v2, BindingDimension, CheckedSubject, ClockBinding, Closure, Completeness, Execution,
-    NativeReportError, ObservationRef, Position, Report, ReportRefusal, Trace, ValuationEvidence, ValuationInstance,
-    ValuationRow, EVENT_POSITION,
+    NativeReportError, ObservationRef, Position, Report, ReportRefusal, Trace, ValuationEvidence,
+    ValuationInstance, ValuationRow, EVENT_POSITION,
 };
 
 fn with_subject(check: impl FnOnce(&CheckedSubject, &ObservationRef, &[ValuationRow])) {
@@ -848,8 +848,7 @@ fn native_report_two_build_bytes() {
             *first.borrow_mut() = bytes;
         },
     );
-    // A second, fully independent build of the package, evidence and request
-    // must encode to identical bytes.
+    // Reconstructing the inputs in this executable must preserve their bytes.
     with_inputs(
         true,
         false,
@@ -864,9 +863,103 @@ fn native_report_two_build_bytes() {
             assert_eq!(report.to_owner_bytes(), *first.borrow());
         },
     );
+    if let Some(output) = std::env::var_os("QSL_OWNER_REPORT_OUTPUT") {
+        std::fs::write(output, &*first.borrow()).expect("write the compiled fixture's owner bytes");
+    }
 }
 
-#[trace("FR-052-AC-12")]
+#[trace("TC-144", "FR-052-AC-17")]
+#[test]
+#[ignore = "local two-build lane: run explicitly under the shared build lock"]
+fn native_report_independent_build_bytes() {
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let target = workspace.join("target");
+    let holder = tempfile::tempdir().expect("owner report build outputs");
+    let mut outputs = Vec::new();
+    for metadata in ["qsl_owner_report_one", "qsl_owner_report_two"] {
+        // Only this test executable receives the distinct metadata. Dependencies
+        // stay cached in the ticket's one target directory.
+        let build = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+            .current_dir(workspace)
+            .env("CARGO_TARGET_DIR", &target)
+            .args([
+                "rustc",
+                "--locked",
+                "-p",
+                "quire-spec-language",
+                "--features",
+                "checked-handoff",
+                "--test",
+                "it",
+                "--message-format=json",
+                "--",
+                "-C",
+                &format!("metadata={metadata}"),
+            ])
+            .output()
+            .expect("compile the independent fixture executable");
+        assert!(
+            build.status.success(),
+            "fixture compilation failed: {}\n{}",
+            String::from_utf8_lossy(&build.stdout),
+            String::from_utf8_lossy(&build.stderr)
+        );
+        let messages: Vec<serde_json::Value> = String::from_utf8(build.stdout)
+            .expect("Cargo JSON is UTF-8")
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("Cargo emits a JSON message"))
+            .filter(|message: &serde_json::Value| {
+                message["reason"] == "compiler-artifact"
+                    && message["target"]["name"] == "it"
+                    && message["target"]["src_path"]
+                        == workspace.join("tests/it/main.rs").to_str().unwrap()
+            })
+            .collect();
+        assert_eq!(
+            messages.len(),
+            1,
+            "one root integration executable was built"
+        );
+        assert_eq!(messages[0]["fresh"], false, "each executable is recompiled");
+        let executable = PathBuf::from(
+            messages[0]["executable"]
+                .as_str()
+                .expect("Cargo names the compiled test executable"),
+        );
+        assert!(executable.starts_with(&target));
+        let output = holder.path().join(metadata);
+        let run = Command::new(&executable)
+            .args([
+                "native_owner_report::native_report_two_build_bytes",
+                "--exact",
+            ])
+            .env("QSL_OWNER_REPORT_OUTPUT", &output)
+            .output()
+            .expect("run the independently compiled fixture");
+        assert!(
+            run.status.success(),
+            "compiled fixture failed: {}\n{}",
+            String::from_utf8_lossy(&run.stdout),
+            String::from_utf8_lossy(&run.stderr)
+        );
+        let bytes = std::fs::read(output).expect("the exact fixture wrote owner bytes");
+        assert!(!bytes.is_empty());
+        println!(
+            "{metadata}: recompiled fixture produced {} owner bytes",
+            bytes.len()
+        );
+        outputs.push(bytes);
+    }
+    assert_eq!(
+        outputs[0], outputs[1],
+        "independent builds preserve owner bytes"
+    );
+}
+
+#[trace("TC-144", "FR-052-AC-12")]
 #[test]
 fn reader_refuses_a_result_identity_of_another_clause_or_occurrence() {
     with_subject(|subject, observation, _| {
@@ -895,13 +988,25 @@ fn reader_refuses_a_result_identity_of_another_clause_or_occurrence() {
     });
 }
 
-#[trace("FR-052-AC-9", "FR-052-AC-15")]
+#[trace("TC-144", "FR-052-AC-9", "FR-052-AC-15")]
 #[test]
 fn subject_and_evaluation_refuse_foreign_occurrence_revision_and_anchor() {
     with_inputs(
         true,
         false,
         |package, occurrence, evidence, request, observation, _| {
+            let twins = super::temporal_package_route::twins();
+            let read = twins.read(&twins.emission);
+            let bare = qsl_package::BarePackage::new(read.admitted());
+            let engine = EvidencePackage::from_package(&bare).unwrap();
+            let view =
+                temporal_subject(read.admitted(), &engine.rows().names()[0].declaration).unwrap();
+            let foreign_clause = &view.occurrences()[0];
+            assert!(temporal_subject(package, &foreign_clause.node).is_err());
+            assert!(matches!(
+                CheckedSubject::new(package, foreign_clause, evidence, request),
+                Err(ReportRefusal::BindingMismatch(BindingDimension::Clause))
+            ));
             let mut foreign = occurrence.clone();
             foreign.ordinal += 1000;
             assert!(matches!(
@@ -916,6 +1021,16 @@ fn subject_and_evaluation_refuse_foreign_occurrence_revision_and_anchor() {
             assert!(matches!(
                 CheckedSubject::new(package, occurrence, evidence, &other),
                 Err(ReportRefusal::BindingMismatch(BindingDimension::Occurrence))
+            ));
+            let mut shorter = request.clone();
+            shorter.positions.truncate(1);
+            assert!(evidence
+                .rows()
+                .iter()
+                .any(|row| row.position >= shorter.positions.len()));
+            assert!(matches!(
+                CheckedSubject::new(package, occurrence, evidence, &shorter),
+                Err(ReportRefusal::SupportNotInTrace)
             ));
             let subject = CheckedSubject::new(package, occurrence, evidence, request).unwrap();
             let stale = ObservationRef {
