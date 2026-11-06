@@ -326,8 +326,19 @@ fn compile_refusal(refusal: &qsl_replay::ReplayRefusal) -> Result<Execution, Fai
             refusal.to_string(),
         ),
     };
-    let actual =
+    let mut actual =
         serde_json::to_value(diagnostic).map_err(|error| Failure::decode("", error.to_string()))?;
+    let fields = match refusal {
+        qsl_replay::ReplayRefusal::Recompile(refusal)
+        | qsl_replay::ReplayRefusal::RecompileWithProtocolResults { refusal, .. } => {
+            refusal.fields()
+        }
+        _ => None,
+    };
+    if let Some(fields) = fields {
+        actual["fields"] =
+            serde_json::to_value(fields).map_err(|error| Failure::decode("", error.to_string()))?;
+    }
     Ok(Execution {
         actual,
         bytes: None,
@@ -412,15 +423,18 @@ fn front_end_failure(failure: spine::FrontEndFailure) -> Result<Execution, Failu
             front_end_failure(StageFailure::Refused(*refusal))
         }
         StageFailure::Refused(refusal) => {
+            let fields = refusal.fields();
             let result = Err(Box::new(spine::RunRefusal::Compile(refusal)));
-            from_document(OutcomeDocument::from_run(&result), None)
+            let mut execution = from_document(OutcomeDocument::from_run(&result), None)?;
+            if let Some(fields) = fields {
+                execution.actual["fields"] = serde_json::to_value(fields)
+                    .map_err(|error| Failure::decode("", error.to_string()))?;
+            }
+            Ok(execution)
         }
-        StageFailure::Limit(limit) | StageFailure::LimitWithPayload(limit, _) => {
-            let result = Err(Box::new(spine::RunRefusal::Compile(Box::new(
-                spine::CompileRefusal::Limit(limit),
-            ))));
-            from_document(OutcomeDocument::from_run(&result), None)
-        }
+        StageFailure::Limit(limit) | StageFailure::LimitWithPayload(limit, _) => front_end_failure(
+            StageFailure::Refused(Box::new(spine::CompileRefusal::Limit(limit))),
+        ),
         StageFailure::Cancelled(cause) => from_document(
             OutcomeDocument::from_run(&Err(Box::new(spine::RunRefusal::Cancelled(cause)))),
             None,

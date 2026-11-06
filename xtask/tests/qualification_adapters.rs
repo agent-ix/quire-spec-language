@@ -442,16 +442,17 @@ fn compiler_limits_preserve_the_stage_setting_and_refusal_partition() {
             .code,
         0
     );
-    let one_short =
-        report(&fixture.execute(&["--limit", &format!("emit.output_bytes={}", exact - 1)]));
+    let one_short_execution =
+        fixture.execute(&["--limit", &format!("emit.output_bytes={}", exact - 1)]);
+    assert!(one_short_execution.outputs.is_empty());
+    let one_short = report(&one_short_execution);
     assert_eq!(
         one_short["capabilities"][0]["outcome"], "incomplete",
         "{one_short}"
     );
-    assert!(
-        serde_json::to_string(&one_short["capabilities"][0]["vectors"][0]["actual"])
-            .unwrap()
-            .contains("emit.output_bytes")
+    assert_eq!(
+        one_short["capabilities"][0]["vectors"][0]["actual"]["fields"]["setting"],
+        "emit.output_bytes"
     );
     let mut runtime = Fixture::new(
         "runtime",
@@ -463,15 +464,24 @@ fn compiler_limits_preserve_the_stage_setting_and_refusal_partition() {
         json!([{"kind":"integer", "decimal":"1"},{"kind":"integer", "decimal":"2"}]),
         json!({}),
     );
-    let runtime_limit = report(&runtime.execute(&["--limit", "emit.output_bytes=0"]));
+    let runtime_limited =
+        runtime.execute(&["--limit", &format!("emit.output_bytes={}", exact - 1)]);
+    assert!(runtime_limited.outputs.is_empty());
+    let runtime_limit = report(&runtime_limited);
     assert_eq!(
         runtime_limit["capabilities"][0]["outcome"], "incomplete",
         "{runtime_limit}"
     );
-    assert!(
-        serde_json::to_string(&runtime_limit["capabilities"][0]["vectors"][0]["actual"])
-            .unwrap()
-            .contains("emit.output_bytes")
+    assert_eq!(
+        runtime_limit["capabilities"][0]["vectors"][0]["actual"]["fields"]["setting"],
+        "emit.output_bytes"
+    );
+    assert_eq!(
+        runtime
+            .execute(&["--limit", &format!("emit.output_bytes={exact}")])
+            .outcome
+            .code,
+        0
     );
     assert_eq!(runtime.execute(&[]).outcome.code, 0);
 }
