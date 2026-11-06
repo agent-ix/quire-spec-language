@@ -731,6 +731,7 @@ pub(super) struct RetainedRows {
     pub(super) selected_source_union_rows: Vec<quire_contract_model::SelectedSourceUnionRow>,
     pub(super) selected_source_record_rows: Vec<super::SelectedSourceRecordRow>,
     pub(super) selected_source_tuple_rows: Vec<quire_contract_model::SelectedSourceTupleRow>,
+    pub(super) selected_model_enum_shape_rows: Vec<super::SelectedModelEnumShapeRow>,
     pub(super) selected_source_collection_rows: Vec<super::SelectedSourceCollectionRow>,
     pub(super) selected_exact_declaration_rows:
         Vec<quire_contract_model::SelectedExactDeclarationRow>,
@@ -955,6 +956,28 @@ pub(super) fn carry_rows(
             rekey.id(type_node);
         }
     }
+    let mut model_enum_shapes = retained.selected_model_enum_shape_rows.clone();
+    for row in &mut model_enum_shapes {
+        let super::SelectedModelEnumShapeRow {
+            structural_node,
+            node_key: _,
+            selected_document: _,
+            original_identity: _,
+            shape: _,
+            cases,
+        } = row;
+        rekey.id(structural_node);
+        for case in cases {
+            let super::SelectedModelEnumShapeCaseRow {
+                case: _,
+                structural_node,
+                member_key: _,
+                member_original_identity: _,
+                variant: _,
+            } = case;
+            rekey.id(structural_node);
+        }
+    }
     let mut source_collections = retained.selected_source_collection_rows.clone();
     for row in &mut source_collections {
         let super::SelectedSourceCollectionRow {
@@ -1068,6 +1091,7 @@ pub(super) fn carry_rows(
         selected_source_union_rows: source_unions,
         selected_source_record_rows: source_records,
         selected_source_tuple_rows: source_tuples,
+        selected_model_enum_shape_rows: model_enum_shapes,
         selected_source_collection_rows: source_collections,
         selected_exact_declaration_rows: exact_declarations,
         selected_exact_field_rows: exact_fields,
@@ -1257,6 +1281,7 @@ fn finish(
         selected_source_union_rows: rows.selected_source_union_rows,
         selected_source_record_rows: rows.selected_source_record_rows,
         selected_source_tuple_rows: rows.selected_source_tuple_rows,
+        selected_model_enum_shape_rows: rows.selected_model_enum_shape_rows,
         selected_source_collection_rows: rows.selected_source_collection_rows,
         selected_exact_declaration_rows: rows.selected_exact_declaration_rows,
         selected_exact_field_rows: rows.selected_exact_field_rows,

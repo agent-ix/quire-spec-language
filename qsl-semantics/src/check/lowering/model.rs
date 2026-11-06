@@ -300,6 +300,9 @@ pub struct SelectedModelEnumDeclaration {
     pub selected_document: Box<str>,
     /// The original enum declaration identity in that document.
     pub original_identity: Box<str>,
+    /// The checker's canonical shape of the variant type: its cases'
+    /// variants in canonical order (never derived from a node key).
+    pub shape: quire_exact::EnumShape,
 }
 
 /// Selected model member facts retained for one lowered enum case node.
@@ -315,6 +318,8 @@ pub struct SelectedModelEnumMember {
     pub member_original_identity: Box<str>,
     /// The selected case label.
     pub case: Box<str>,
+    /// The checker's variant at this case's canonical rank in the shape.
+    pub variant: quire_exact::VariantId,
 }
 
 /// One population of an admitted package as FR-391 names it
@@ -2348,6 +2353,7 @@ impl<'a> Lowering<'a> {
             SelectedModelEnumDeclaration {
                 selected_document: selected_document.clone(),
                 original_identity: enum_original_identity.clone(),
+                shape: variant.shape(),
             },
         );
         for (member, member_original_identity) in
@@ -2362,6 +2368,7 @@ impl<'a> Lowering<'a> {
                     enum_original_identity: enum_original_identity.clone(),
                     member_original_identity,
                     case: member.case().into(),
+                    variant: member.variant(),
                 },
             );
         }

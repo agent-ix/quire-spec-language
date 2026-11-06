@@ -38,6 +38,12 @@ conformance vectors from its checkout; no QSpec fixture is copied here.
    caller handle supplied to composite construction never becomes `Point`'s
    node id.
 8. Inspect node-form and type-form matches for catch-all arms.
+9. Emit a unit holding `Quantity<m, Decimal[-100, 100; 2, 2; exact]>`,
+   `Quantity<m, Int[-2, 2]>` and `Quantity<m, Int[-2, 2; nearest-even]>`
+   parameters (FR-092-AC-27). Inspect each carried node's and the decimal
+   carrier's structural path against QSpec's `dec_cents` and `q_dec`
+   vectors, read the package with the IR v2 reader, then truncate a carried
+   node's path and read again.
 
 ## Expected Results
 
@@ -49,3 +55,7 @@ ids; recursive references retain their targets and group membership.
 Optional-field syntax distinguishes the two record shapes and equivalent
 rational values reduce equally. No catch-all match arm is present. No
 preimage byte, digest, or obsolete T/D/G/L/E/P vector is an oracle.
+
+Step 9: each carried path holds unit, carrier, `"rounding"`, text type and mode in
+that order, the decimal carrier repeats its equal scale text, the reader admits
+the package and refuses the truncated path (FR-092-AC-27).

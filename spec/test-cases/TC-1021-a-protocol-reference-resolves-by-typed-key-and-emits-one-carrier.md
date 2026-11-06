@@ -65,6 +65,10 @@ Catches an implementation that binds by name and looks it up again at emission, 
     then a unit with no collection. Join each collection row with a wrong
     element reference, a map in place of the collection type and an unemitted
     node, and follow a re-pointed element and a bound typed by another node.
+15. Emit a unit that selects a domain model with a variant type of cases
+    `Beta` and `Alpha`. Inspect the `SelectedModelEnumShapeRow`, compare its
+    shape with the checked variant type's, and reorder, remove or add a
+    variant in a copy of the shape.
 
 ## Expected Results
 
@@ -129,3 +133,6 @@ Catches an implementation that binds by name and looks it up again at emission, 
   writer faults, the re-pointed element is followed and the mistyped bound is
   refused. The unit with no collection gives none.
 - Assertions compare typed fields, causes and keys, never message text.
+- Step 15 gives one `SelectedModelEnumShapeRow` with the variants in case-name
+  byte order and the ids of the model enum rows, as FR-092-AC-26 states; each
+  altered shape differs from the row's.
