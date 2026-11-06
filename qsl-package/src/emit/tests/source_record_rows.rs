@@ -459,7 +459,8 @@ fn required_identity_handoff_refuses_deep_original_keys_without_stack_growth() {
         )
         .unwrap();
     }
-    let good = String::from_utf8(rows.to_bytes(&package).unwrap()).unwrap();
+    let shallow: Value = serde_json::from_slice(&rows.to_bytes(&package).unwrap()).unwrap();
+    let good = serde_json::to_string(&shallow).unwrap();
     let original =
         qsl_foundation::node_wire::node_key_to_text(&rows.source_records()[0].record_key).unwrap();
     let deep = qsl_foundation::node_wire::node_key_to_text(&key).unwrap();
