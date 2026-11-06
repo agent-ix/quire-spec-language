@@ -8,7 +8,9 @@ use qsl_eval::temporal::evidence::{
 use qsl_eval::temporal::Valuation;
 use qsl_package::checked_views::{temporal_subject, ClauseOccurrence};
 use qsl_package::BarePackage;
-use quire_contract_model::CheckedPackageV2;
+use quire_contract_model::{
+    CheckedNodeId, CheckedOccurrence, CheckedPackageV2, CheckedSourceMapEntry,
+};
 use quire_exact::Meter;
 
 use super::owner_codec::{BindingDimension, Reader, ReportRefusal, Writer};
@@ -31,6 +33,7 @@ pub struct CheckedSubject<'a> {
     evidence: &'a ValuationEvidence,
     request: &'a EvidenceRequest,
     binding: Vec<Vec<u8>>,
+    checked: ReportSubject,
 }
 
 impl<'a> CheckedSubject<'a> {
@@ -69,12 +72,28 @@ impl<'a> CheckedSubject<'a> {
                 return Err(ReportRefusal::SupportNotInTrace);
             }
         }
+        let source_map = package
+            .source_map()
+            .iter()
+            .find(|entry| {
+                entry.node_id == occurrence.node
+                    && entry.role == occurrence.role
+                    && entry.ordinal == occurrence.ordinal
+            })
+            .ok_or(ReportRefusal::BindingMismatch(BindingDimension::SourceMap))?;
+        let checked = ReportSubject {
+            package_identity: package.name().to_owned(),
+            package_version: "quire.checked-package/v2".to_owned(),
+            clause: occurrence.node.clone(),
+            occurrence: selected.clone(),
+            source_map: source_map.clone(),
+        };
         let binding = vec![
             package.name().as_bytes().to_vec(),
             b"quire.checked-package/v2".to_vec(),
             encoded(&occurrence.node)?,
             encoded(&selected)?,
-            encoded(view.source_span())?,
+            encoded(source_map)?,
         ];
         Ok(Self {
             package,
@@ -82,6 +101,7 @@ impl<'a> CheckedSubject<'a> {
             evidence,
             request,
             binding,
+            checked,
         })
     }
 
@@ -191,9 +211,25 @@ pub struct ReportSupport {
     pub row: ValuationRow,
 }
 
+/// The actual checked subject a native report was computed for.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReportSubject {
+    /// Exact checked package identity.
+    pub package_identity: String,
+    /// Checked package format version.
+    pub package_version: String,
+    /// Checked clause identity.
+    pub clause: CheckedNodeId,
+    /// Selected declaration occurrence.
+    pub occurrence: CheckedOccurrence,
+    /// The selected occurrence's exact source-map entry.
+    pub source_map: CheckedSourceMapEntry,
+}
+
 /// An immutable native report. Only evaluation and strict reading construct it.
 #[derive(Clone, Debug)]
 pub struct Report {
+    checked: ReportSubject,
     binding: Vec<Vec<u8>>,
     observation: ObservationRef,
     outcome: ReportOutcome,
@@ -220,6 +256,10 @@ impl PartialEq for Report {
 impl Eq for Report {}
 
 impl Report {
+    /// The package, checked clause, occurrence and source correspondence.
+    pub fn subject(&self) -> &ReportSubject {
+        &self.checked
+    }
     /// The computed outcome class.
     pub fn outcome(&self) -> ReportOutcome {
         self.outcome
@@ -279,6 +319,7 @@ impl Report {
             let mut row = Writer::new();
             row.field(1, &entry.position.to_le_bytes());
             row.field(2, &row_key(&entry.row));
+            row.field(3, &[u8::from(entry.row.value)]);
             support.field(2, &row.finish());
         }
         writer.field(9, &support.finish());
@@ -342,12 +383,18 @@ impl Report {
             let mut entry = Reader::new(rows.field(2)?)?;
             let position = read_u64(entry.field(1)?)?;
             let key = entry.field(2)?;
+            let value = match entry.field(3)? {
+                [0] => false,
+                [1] => true,
+                _ => return Err(ReportRefusal::UnknownTag),
+            };
             let row = subject
                 .evidence
                 .rows()
                 .iter()
                 .find(|row| {
                     u64::try_from(row.position) == Ok(position)
+                        && row.value == value
                         && row_key(row) == key
                         && row.revision == observation.revision
                         && row.position < subject.request.positions.len()
@@ -375,6 +422,7 @@ impl Report {
             return Err(ReportRefusal::InvalidPredecessor);
         }
         Ok(Self {
+            checked: subject.checked.clone(),
             binding: subject.binding.clone(),
             observation: observation.clone(),
             outcome,
@@ -568,6 +616,7 @@ pub fn evaluate_v2(
         }
     }
     Ok(Report {
+        checked: subject.checked.clone(),
         binding: subject.binding.clone(),
         observation: observation.clone(),
         outcome,

@@ -555,23 +555,16 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         root.dev.iter().any(|dependency| dependency == "qsl-route"),
         "the root crate's tests name qsl-route through a dev dependency"
     );
-    // ADR-011 §7.3 X-8: no shipped root-crate module calls layer
-    // 5 yet, so the root crate names `qsl-eval` in neither `[dependencies]`
-    // nor `[build-dependencies]`. Its tests evaluate checked packages through
-    // `qsl-eval` (`call_requirements_items`), so a dev dependency is
-    // admitted. This comes out when the layer-6 `command`/`replay` caller
-    // makes the normal edge real.
-    for (kind, dependencies) in [("normal", &root.normal), ("build", &root.build)] {
-        assert!(
-            !dependencies
-                .iter()
-                .any(|dependency| dependency == "qsl-eval"),
-            "the root crate has a {kind} dependency on qsl-eval, which no root-crate code calls"
-        );
-    }
+    // The native temporal report adapter now calls layer 5 directly.
     assert!(
-        root.dev.iter().any(|dependency| dependency == "qsl-eval"),
-        "the root crate's tests name qsl-eval through a dev dependency"
+        root.normal
+            .iter()
+            .any(|dependency| dependency == "qsl-eval"),
+        "native reports evaluate through the existing layer-5 owner"
+    );
+    assert!(
+        !root.build.iter().any(|dependency| dependency == "qsl-eval"),
+        "no build script evaluates temporal evidence"
     );
 }
 

@@ -386,8 +386,18 @@ fn correction_keeps_direct_predecessor_immutable_and_rejects_stale_or_foreign_id
             correction.relation = Relation::Superseding(original_identity.clone());
             let revised_subject =
                 CheckedSubject::new(package, occurrence, evidence, &correction).unwrap();
-            assert!(matches!(evaluate_v2(&revised_subject, observation, &mut super::temporal_package_route::unlimited()), Err(quire_spec_language::temporal::NativeReportError::Evaluation(_))));
-            let revised_observation = ObservationRef { reference: "observation:opaque:revised".into(), ..observation.clone() };
+            assert!(matches!(
+                evaluate_v2(
+                    &revised_subject,
+                    observation,
+                    &mut super::temporal_package_route::unlimited()
+                ),
+                Err(quire_spec_language::temporal::NativeReportError::Evaluation(_))
+            ));
+            let revised_observation = ObservationRef {
+                reference: "observation:opaque:revised".into(),
+                ..observation.clone()
+            };
             let revised = evaluate_v2(
                 &revised_subject,
                 &revised_observation,
@@ -398,8 +408,12 @@ fn correction_keeps_direct_predecessor_immutable_and_rejects_stale_or_foreign_id
             assert_ne!(revised.result_identity(), original.result_identity());
             assert_eq!(original.to_owner_bytes(), original_bytes);
             assert_eq!(
-                Report::from_owner_bytes(&revised.to_owner_bytes(), &revised_subject, &revised_observation)
-                    .unwrap(),
+                Report::from_owner_bytes(
+                    &revised.to_owner_bytes(),
+                    &revised_subject,
+                    &revised_observation
+                )
+                .unwrap(),
                 revised
             );
             // Once the revision is current, the earlier result is no longer direct.
@@ -416,7 +430,7 @@ fn correction_keeps_direct_predecessor_immutable_and_rejects_stale_or_foreign_id
                 ))
             ));
             assert_eq!(
-                Report::from_owner_bytes(&revised.to_owner_bytes(), &stale, observation),
+                Report::from_owner_bytes(&revised.to_owner_bytes(), &stale, &revised_observation),
                 Err(ReportRefusal::InvalidPredecessor)
             );
             // A predecessor known in the ledger under another trigger grants no authority.
@@ -479,7 +493,10 @@ fn reader_rejects_a_correction_self_edge_and_original_with_invented_predecessor(
             correction.relation = Relation::Superseding(identity);
             let revised_subject =
                 CheckedSubject::new(package, occurrence, evidence, &correction).unwrap();
-            let revised_observation = ObservationRef { reference: "observation:opaque:revised".into(), ..observation.clone() };
+            let revised_observation = ObservationRef {
+                reference: "observation:opaque:revised".into(),
+                ..observation.clone()
+            };
             let revised = evaluate_v2(
                 &revised_subject,
                 &revised_observation,
@@ -505,6 +522,254 @@ fn reader_rejects_a_correction_self_edge_and_original_with_invented_predecessor(
                 Report::from_owner_bytes(&bytes, &subject, &revised_observation),
                 Err(ReportRefusal::InvalidPredecessor)
             );
+        },
+    );
+}
+
+fn refuse_cross_binding_predecessor(
+    package: &quire_contract_model::CheckedPackageV2,
+    first: &qsl_package::checked_views::ClauseOccurrence,
+    second: &qsl_package::checked_views::ClauseOccurrence,
+) {
+    use qsl_eval::temporal::evidence::{ObligationKey, Relation};
+    let bare = qsl_package::BarePackage::new(package);
+    let engine = EvidencePackage::from_package(&bare).unwrap();
+    let request =
+        super::temporal_package_route::request(&engine, &first.node, Some(first.ordinal), 1);
+    let view = temporal_subject(package, &first.node).unwrap();
+    let trace = Trace {
+        clock: ClockBinding {
+            name: "events".into(),
+            profile_identity: EVENT_POSITION.into(),
+            parameters: BTreeMap::new(),
+        },
+        positions: vec![Position {
+            coordinate: 0,
+            order: None,
+            valuations: BTreeMap::new(),
+            instance_valuations: BTreeMap::new(),
+        }],
+        anchor: "obs0".into(),
+        triggers: Vec::new(),
+        trigger_evidence: quire_spec_language::temporal::Evidence::Admitted,
+        trigger_scope: Closure::Closed,
+        decision_scope: Closure::Closed,
+        surrounding_execution: Closure::Closed,
+        execution: Execution::Completed,
+        completeness: Completeness::Complete,
+        authoritative_origin: true,
+        watermark: 100,
+        evicted: Vec::new(),
+    };
+    let rows = vec![ValuationRow {
+        subject: first.clone(),
+        position: 0,
+        anchor: "obs0".into(),
+        capture_instance: "origin:o1".into(),
+        revision: "revision:7".into(),
+        operand: view.predicate_leaves()[0].clone(),
+        value: true,
+    }];
+    let evidence = ValuationEvidence::admit(
+        &view,
+        &trace,
+        ValuationInstance {
+            anchor: "obs0",
+            capture_instance: "origin:o1",
+        },
+        "revision:7",
+        rows,
+    )
+    .unwrap();
+    let subject = CheckedSubject::new(package, first, &evidence, &request).unwrap();
+    let observation = ObservationRef {
+        reference: "opaque".into(),
+        revision: "revision:7".into(),
+    };
+    let original = evaluate_v2(
+        &subject,
+        &observation,
+        &mut super::temporal_package_route::unlimited(),
+    )
+    .unwrap();
+    let unchanged = original.to_owner_bytes();
+    let selected = qsl_package::CheckedOccurrence {
+        role: first.role.clone(),
+        ordinal: first.ordinal,
+    };
+    let key = ObligationKey::new(
+        first.node.package.clone(),
+        serde_json::to_vec(&(&first.node, selected)).unwrap(),
+        first.ordinal,
+    );
+    let identity = original
+        .ledger()
+        .unwrap()
+        .result(&key, request.trigger.as_ref())
+        .unwrap()
+        .result_identity()
+        .clone();
+    let second_view = temporal_subject(package, &second.node).unwrap();
+    let second_evidence = ValuationEvidence::admit(
+        &second_view,
+        &trace,
+        ValuationInstance {
+            anchor: "obs0",
+            capture_instance: "origin:o1",
+        },
+        "revision:7",
+        Vec::new(),
+    )
+    .unwrap();
+    let mut correction =
+        super::temporal_package_route::request(&engine, &second.node, Some(second.ordinal), 1);
+    let second_subject =
+        CheckedSubject::new(package, second, &second_evidence, &correction).unwrap();
+    let second_report = evaluate_v2(
+        &second_subject,
+        &observation,
+        &mut super::temporal_package_route::unlimited(),
+    )
+    .unwrap();
+    assert_eq!(second_report.truth(), None);
+    assert_eq!(
+        second_report.outcome(),
+        quire_spec_language::temporal::ReportOutcome::Missing
+    );
+    assert_eq!(second_report.subject().clause, second.node);
+    assert_eq!(second_report.subject().occurrence.ordinal, second.ordinal);
+    if first.node == second.node {
+        assert_eq!(original.subject().clause, second_report.subject().clause);
+        assert_ne!(
+            original.subject().occurrence,
+            second_report.subject().occurrence
+        );
+    }
+    assert_eq!(
+        Report::from_owner_bytes(&original.to_owner_bytes(), &subject, &observation).unwrap(),
+        original
+    );
+    assert_eq!(
+        Report::from_owner_bytes(
+            &second_report.to_owner_bytes(),
+            &second_subject,
+            &observation
+        )
+        .unwrap(),
+        second_report
+    );
+    correction.ledger = original.ledger().cloned();
+    correction.relation = Relation::Superseding(identity);
+    let foreign = CheckedSubject::new(package, second, &second_evidence, &correction).unwrap();
+    assert!(matches!(
+        evaluate_v2(
+            &foreign,
+            &observation,
+            &mut super::temporal_package_route::unlimited()
+        ),
+        Err(quire_spec_language::temporal::NativeReportError::Report(
+            ReportRefusal::InvalidPredecessor
+        ))
+    ));
+    assert_eq!(original.to_owner_bytes(), unchanged);
+}
+
+#[trace("FR-052-AC-12", "FR-052-AC-15")]
+#[test]
+fn another_clause_and_another_occurrence_cannot_borrow_predecessor_authority() {
+    let (package, _) = super::checked_views::recipe_package("event_position");
+    let bare = qsl_package::BarePackage::new(&package);
+    let engine = EvidencePackage::from_package(&bare).unwrap();
+    let first = &engine
+        .rows()
+        .names()
+        .iter()
+        .find(|name| &*name.name == "Due")
+        .unwrap()
+        .declaration;
+    let second = &engine
+        .rows()
+        .names()
+        .iter()
+        .find(|name| &*name.name == "DueLate")
+        .unwrap()
+        .declaration;
+    let first_view = temporal_subject(&package, first).unwrap();
+    let second_view = temporal_subject(&package, second).unwrap();
+    assert_ne!(first, second);
+    refuse_cross_binding_predecessor(
+        &package,
+        &first_view.occurrences()[0],
+        &second_view.occurrences()[0],
+    );
+
+    let twins = super::temporal_package_route::twins();
+    let read = twins.read(&twins.emission);
+    let package = read.admitted();
+    let bare = qsl_package::BarePackage::new(package);
+    let engine = EvidencePackage::from_package(&bare).unwrap();
+    let node = &engine.rows().names()[0].declaration;
+    let view = temporal_subject(package, node).unwrap();
+    assert_eq!(view.occurrences().len(), 2);
+    assert_eq!(view.occurrences()[0].node, view.occurrences()[1].node);
+    assert_ne!(view.occurrences()[0].ordinal, view.occurrences()[1].ordinal);
+    refuse_cross_binding_predecessor(package, &view.occurrences()[0], &view.occurrences()[1]);
+}
+
+#[trace("FR-052-AC-15", "FR-052-AC-17")]
+#[test]
+fn native_report_two_build_bytes() {
+    with_inputs(
+        true,
+        false,
+        |package, occurrence, evidence, request, observation, rows| {
+            let subject = CheckedSubject::new(package, occurrence, evidence, request).unwrap();
+            let report = evaluate_v2(
+                &subject,
+                observation,
+                &mut super::temporal_package_route::unlimited(),
+            )
+            .unwrap();
+            assert_eq!(report.truth(), Some(Truth::True));
+            assert_eq!(
+                report
+                    .support()
+                    .iter()
+                    .map(|entry| &entry.row)
+                    .collect::<Vec<_>>(),
+                rows.iter().collect::<Vec<_>>()
+            );
+            assert_eq!(report.subject().package_identity, package.name());
+            assert_eq!(report.subject().package_version, "quire.checked-package/v2");
+            assert_eq!(report.subject().clause, occurrence.node);
+            assert_eq!(report.subject().occurrence.role, occurrence.role);
+            assert_eq!(report.subject().occurrence.ordinal, occurrence.ordinal);
+            let source = package
+                .source_map()
+                .iter()
+                .find(|entry| {
+                    entry.node_id == occurrence.node
+                        && entry.role == occurrence.role
+                        && entry.ordinal == occurrence.ordinal
+                })
+                .unwrap();
+            assert_eq!(&report.subject().source_map, source);
+            assert_eq!(report.observation(), observation);
+            let bytes = report.to_owner_bytes();
+            assert_eq!(
+                Report::from_owner_bytes(&bytes, &subject, observation).unwrap(),
+                report
+            );
+            if let Some(previous) = std::env::var_os("QSL_OWNER_REPORT_PREVIOUS") {
+                assert_eq!(
+                    bytes,
+                    std::fs::read(previous).expect("first build's owner bytes"),
+                    "independently built evaluators must emit identical bytes"
+                );
+            }
+            if let Some(output) = std::env::var_os("QSL_OWNER_REPORT_OUTPUT") {
+                std::fs::write(output, &bytes).expect("write this build's owner bytes");
+            }
         },
     );
 }
