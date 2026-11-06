@@ -34,6 +34,11 @@ fn bounded_quantity_identity_retains_both_exact_endpoints_and_unit() {
             rational(-3, 2),
             rational(7, 4),
         ),
+        value_type(
+            UnitId::declared(node_key(METRE)),
+            rational(0, 1),
+            rational(20, 1),
+        ),
     ];
     let (keys, graph) = lower(&[], units(), |lowering| {
         types.each_ref().map(|ty| {
@@ -80,6 +85,13 @@ fn bounded_quantity_identity_retains_both_exact_endpoints_and_unit() {
             PathSegment::Text("7/4".into()),
         ]
     );
+    let integer_path = keys[5].path();
+    assert_eq!(
+        integer_path[4], integer_path[7],
+        "both exact bounds retain their rational type"
+    );
+    assert_eq!(integer_path[5], PathSegment::Text("0".into()));
+    assert_eq!(integer_path[8], PathSegment::Text("20".into()));
 }
 
 #[trace("TC-413", "FR-092-AC-28")]
@@ -122,11 +134,15 @@ fn bounded_quantity_add_and_less_than_preserve_operand_types() {
     );
     let package = check_declarations(PackageDeclarations {
         types: TypeEnvironment::default().with_units(units()),
-        aliases: vec![("Bounded".into(), ty), ("Length".into(), quantity(METRE))],
+        aliases: vec![
+            ("Bounded".into(), ty.clone()),
+            ("Alias".into(), ty),
+            ("Length".into(), quantity(METRE)),
+        ],
         functions: vec![
             function(
                 "add",
-                &[("a", named("Bounded")), ("b", named("Bounded"))],
+                &[("a", named("Bounded")), ("b", named("Alias"))],
                 named("Length"),
                 Expression::binary(BinaryOperator::Add, name("a"), name("b")),
             ),
