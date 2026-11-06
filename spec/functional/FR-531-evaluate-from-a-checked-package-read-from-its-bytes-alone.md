@@ -225,9 +225,57 @@ equal inputs.
 
 | Member | Content |
 | --- | --- |
-| `format` | the string `quire.checked-handoff.identities/1` |
+| `format` | the string `quire.checked-handoff.identities/2` |
 | `declarations` | the unit's `SelectedExactDeclarationRow` values in the order the emitter holds them; each is an object `{ "structural_node", "selected_document", "form", "original_identity", "exact_identity" }` with `structural_node` the wire node id string, `form` one of `record_value_type`, `object_type`, `union`, `declared_unit`, and `exact_identity` a tagged object `{ "kind": "record" \| "object" \| "union" \| "declared_unit", "value": <value> }` whose `value` is a node reference for `record` and `union`, an `EffectiveId` for `object` and a `UnitId` for `declared_unit`, each as the value encodings below state |
 | `fields` | the unit's `SelectedExactFieldRow` values in emitter order; each is `{ "record_node", "selected_document", "record_original_identity", "field_original_identity", "member_id" }` |
+| `source_records` | every final emission's source-owned record row, in final row order: `{ "structural_node", "source_authority", "source_identity", "qualified_declaration", "record_key", "members" }`; each ordered member is `{ "original_member_identity", "admitted_name", "presence", "type_node", "value_type" }` |
+| `selected_populations` | one catalog for every selected model root, including roots with no populations: `{ "model_root", "selected_document", "populations" }`, in selected-model order; each population is `{ "original", "members" }` in original declaration-key order; each member is `{ "original", "effective_type" }` in the admitted population's member order |
+
+All five members are required. The reader SHALL reject `/1`, an absent member,
+an unknown or repeated member and a malformed row; it SHALL NOT supply an empty
+default, read a legacy variant or silently omit a row that cannot be represented.
+An empty `source_records` or `populations` array means the corresponding admitted
+producer set is actually empty. QSL-1762's selected object closure uses the same
+declaration/field families and population catalogs; it introduces no second
+handoff format change.
+
+The writer SHALL acquire source-record rows from the same final `Emission` as
+`checked-package.json`, retaining its final structural and member type IDs,
+source owner, original declaration segments, original record key, original member
+identities, final admitted names, presence and exact value types in order. A
+rewritten monitor-root row therefore keeps the producer's original record key
+while carrying the final renamed bindings. The writer SHALL NOT substitute an
+emitted structural node key for an original opaque record key.
+
+The new rows distinguish **graph references** (`structural_node`, `type_node`,
+`model_root`) from **original opaque values**. `record_key` is the shared
+`qsl_foundation::node_wire` shape `{ "package", "path", "ordinal" }`, whose path
+contains text or nested node-key objects. It preserves the producer key as a
+value, never as a graph index or a key inferred from a name. A source member's
+`value_type` uses the equality file's complete value-type grammar, except every
+NodeKey inside it (composite, enum variant owner, declared or compound unit) is
+this original-value shape, rather than a graph reference. Integers and rational
+components remain canonical decimal text; presence is `required` or `optional`.
+
+Each catalog is issued from the selected model's admitted population declarations
+before any snapshot admission, including unused populations and every member.
+`original` is `{ "package", "node" }` for the genuine declaration. A member's
+`effective_type` is the `EffectiveId` encoding below for its genuine normalized
+effective type, with no owner for an effective type; aliases retain their original
+member declaration separately from that normalized type. The final emission
+binds the catalog to its `model_root` and selected document. Snapshot provenance,
+display names, only a canonical member, or only populations reached by an
+expression SHALL NOT replace this catalog.
+
+The bytes reader SHALL retain these original producer values and join each source
+record through Contract IR's `with_source_record_rows` before exposing its Exact
+record type. A healthy carried row SHALL use `source_record_view`; the legacy
+`UnavailableIdentityWitness` structural-key substitution is not success for a
+carried source record. Missing, stale, foreign or conflicting record rows return
+a typed identity refusal with no partial read result. The catalog's native
+selected-document/completeness validation belongs to IR-1358, and whole-witness
+validate/rebind belongs to IR-1360; the carrier SHALL NOT introduce a QSL mirror
+validator or claim that record-row joining qualifies either larger supplier.
 
 Value encodings. A **node reference** (a `NodeKey`) is the wire node id string the
 package spells that node with (`CheckedNodeId`, as `structural_node` does); the
@@ -634,7 +682,7 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-5 | Over a `BarePackage` with no supply, a protocol-slot call refuses `MissingIdentityWitness`; with rows of another package, `ForeignIdentityWitness`; with rows of the package naming no admitted identity, `UnknownIdentityWitness`; rows of another package are `ForeignIdentityWitness` also when they name no admitted identity. Each is `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, and the meter untouched. A temporal evidence call over the same `BarePackage` with no supply returns its result; and `read_checked_package` over bytes whose lock selects a dependency the evidence does not supply refuses `MissingImport`, so no `BarePackage` exists for it and no dependency refusal is defined. | Test (TC-1331) |
 | FR-531-AC-6 | Over a package whose `temporal_bindings` rows are absent, the call returns `activation = Unavailable` with the `Missing` non-value for the clock row; over a lock with no `profile_selections` row for the clause, `clause-unreadable` with reason `profile-selection`; over a lock whose row names a definition no profile of the evaluator, `clause-unreadable` with reason `profile-unknown`; over a row naming an infinite-trace profile, the `not-finite-window-profile` temporal refusal. Each has the charges FR-516 gives its counterpart over a source. | Test (TC-1331) |
 | FR-531-AC-7 | No result of the bare route holds, in its canonical bytes or its fields, a clause name, a source label or a source span: over **R**, the encoded `EvidenceResult` and `ProtocolSlotEvaluation` values do not contain the unit's `source:` labels or a byte region of the source map, and a clause name appears only as the `temporal_clause_names` row of its occurrence gives it, identically on every route. Identity is spelled as the "What the bytes do not carry" list states, and the progress binding of a result holds `package.name()`. | Test (TC-1331) |
-| FR-531-AC-8 | The handoff directory of **R** holds `identities.json` with `format` `quire.checked-handoff.identities/1`; `ReadIdentityRows::read` over it and the package gives a slot call that evaluates; the file equals, byte for byte, the encoding above of the in-process unit's rows, and two writes of equal requests give equal files; omitting the file from a `BareSupply` makes the slot call refuse `MissingIdentityWitness` while the temporal call is unaffected. | Test (TC-1331) |
+| FR-531-AC-8 | The handoff directory of **R** holds required `identities.json` with `format` `quire.checked-handoff.identities/2`; `ReadIdentityRows::read` over it and the package gives a slot call that evaluates; the file equals, byte for byte, the encoding above of the in-process unit's rows, and two writes of equal requests give equal files; omitting the file from a `BareSupply` makes the slot call refuse `MissingIdentityWitness` while the temporal call is unaffected. | Test (TC-1331) |
 | FR-531-AC-12 | `ReadIdentityRows::read` over a file that is not JSON, one with an unknown or repeated member, one with another `format`, one with a row whose `structural_node` the package does not hold and one whose `form` does not match its identity returns `Malformed`, `Malformed`, `Format`, `Unjoined` and `Unjoined` respectively, naming the member, the format string or the first row, and returns no rows. | Test (TC-1331) |
 | FR-531-AC-13 | The identity file of **R** encodes every identity as the "Value encodings" state: a node reference is the wire node id string of the package, an `EffectiveId` has the `chain` list root first, a `MemberId` has `owner` and `member`, and a declared `UnitId` has `kind` `declared` and a `node` reference; `read` returns rows equal to the writer's, a unit with `kind` other than `declared` returns `Malformed`, a declared unit whose node reference the package does not hold returns `Unjoined`, and a `declared_unit` row whose `exact_identity` has another `kind` returns `Unjoined`. A forged row that passes the joins is accepted by `read` and the slot call over it evaluates against the admitted nodes, so the test records that `read` makes no claim of authority. | Test (TC-1331) |
 | FR-531-AC-9 | For each public method of `EvidencePackage` and each method of the `CheckedPackageEvaluation` trait, enumerated by a test that reads those two items' declarations in the crate source with `syn` and compares the names to the first column of the inventory table, the table has exactly one row: available from the bare package, or listed as not carried with a reason; a method added to either type without a row fails the test. | Test (TC-1331) |
@@ -645,6 +693,10 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-16 | A slot call on TC-1070 fixture E's `Refund` retry relation refuses `MissingEqualityWitness` over a supply with `equality: None`, `ForeignEqualityWitness` with rows of another package and `UnknownEqualityWitness` with rows of the package from which the row of the retry relation's application is removed, each as `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, `CallAdmissionLocus::Package` and the meter untouched; `Refund`'s `trigger.guard`, whose walk holds no equality application, over the same supply evaluates. | Test (TC-1331) |
 | FR-531-AC-17 | The encoding of the rows of "The equality file" vector equals the vector's bytes exactly; `ReadEqualityRows::read` over those bytes and a package that holds the node `["E"]` and `["U"]` returns rows equal to the input rows; for a row of every fact tag, every value-type tag, every owner kind and a compound unit id in a fact row, writing then reading returns equal rows and a second write is byte-identical; a checked rational whose numerator is spelled `+1`, `01` or `-0`, or whose denominator is `0` or `-2`, returns `Malformed`; a compound unit id in a `source_units` row returns `Malformed`. | Test (TC-1331) |
 | FR-531-AC-18 | For a row whose fact value type is each of a `carried_quantity` over a decimal carrier, over an integer carrier and over a rational carrier, a `bounded_quantity` with both bounds and with `min` and `max` null, and a `map` with a bound and without one (including the example of "Value encodings"), `ReadEqualityRows::to_bytes` followed by `ReadEqualityRows::read` returns equal rows, a second write is byte-identical, and the value-type subtree the writer emits for the example, parsed as JSON, equals the example's JSON value with its members in the stated order (members compared in order, not as a set); a `bounded_quantity` whose bound is in another unit than `unit`, and a `carried_quantity` carrier tagged other than `decimal`, `integer` or `rational`, return `Malformed`. | Test (TC-1331) |
+
+| FR-531-AC-19 | An authentic final emission with a source record round-trips its original opaque record key, source owner, final structural/type IDs, ordered original member identities, final admitted names, presence and exact value types, including nested opaque identities. The bytes-only read joins it through native IR and `source_record_view` equals the original row; no healthy source record succeeds by structural-key substitution. | Test |
+| FR-531-AC-20 | A file with `/1`, absent `source_records` or `selected_populations`, an unknown/repeated member, malformed opaque key/type, foreign structural/type node, stale admitted name, conflicting record row or missing required source-record row refuses with the named typed format/shape/native-join condition and no partial identity read. Empty arrays succeed only for genuinely empty corresponding producer sets. | Test |
+| FR-531-AC-21 | A handoff containing multiple selected roots, an unused population and an alias-normalized member type round-trips every original population/member declaration and its genuine normalized effective TYPE identity with no owner, in deterministic producer order. The population catalog is unchanged by replacing a snapshot or by whether an expression reaches the population. | Test |
 
 ## Dependencies
 
