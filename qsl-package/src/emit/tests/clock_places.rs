@@ -294,7 +294,6 @@ fn a_clock_place_reads_back() {
 /// collection `Sequence<ix://quire/native/Clock>`.
 #[trace("TC-685")]
 #[test]
-#[ignore = "IR-1083 (validate symbolic timed slots, SL-01..05): the pinned IR renders a collection field row without its collection and refuses malformed-clock-place"]
 fn a_template_slot_place_reads_back() {
     let typed = read_back(&clocked_document())
         .unwrap_or_else(|failure| panic!("the I2 read admits the template places: {failure}"));
