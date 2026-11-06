@@ -63,3 +63,7 @@ Round 1 at b7bb37969.
 | FND-001 | fixed | A genuine public function Witness replay now asserts the witnessed arm and false value, explicit record:null with key presence, a true-result verdict disagreement with exact code-owned values, and a genuine undefined operation's source regions/no-value disagreement. Incorrect oracle record, region and disagreement members fail qualification. The original demand for Some(record) is rejected per the Clarification: ADR-031 SW-7 makes it unreachable for function replay. No fabricated record or state-envelope rerouting was added. |
 
 Current verdict: PASS for the original scoped coverage finding. The new corpus deep-boundary defect is recorded once as code-review FND-003. Historical focused fix tests were compiling at disposition; no independent build or full gate was run.
+
+### Round 2
+
+At 680b86859 the original Witness coverage disposition remains fixed. New corpus lifecycle controls exercise the formerly open boundary through an actual formatter result, both expected-value and refusal-detail oracles, a schema-invalid deep disposition, exact retained report values and repeated stdout. New schema-guard controls compare the original published branches with the guarded form, preserve ambiguous oneOf rejection, and admit/refuse genuine 192-level witnesses. No new scoped gap was found. Current verdict: PASS for scoped coverage; the computed matrix remains unavailable as previously recorded, and no whole-ticket completion claim is made.

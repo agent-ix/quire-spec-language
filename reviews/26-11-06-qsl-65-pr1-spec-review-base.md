@@ -39,3 +39,7 @@ Changed FR-350 and TC-1325 validation exit 0 is recorded in spec-validation.log.
 ## Dispositions
 
 Round 1 at b7bb37969. No original specification defects required disposition. The amended procedure grounds field retention in the existing observation owner and limits the witness-record claim to the reachable function result's absence. No new spec defect was found. Current verdict: PASS.
+
+### Round 2
+
+At 680b86859 the FR-350 corpus lifecycle paragraph and TC-875 additions define the actual deep-oracle behavior, failure partition and decoded duplicate-name refusal. The controls target schema-valid mismatches and schema-invalid disposition without normalizing supplied scalar facts or adding a new nesting ceiling. Existing ownership and explicitly open AC-6/refinement scope remain unchanged. No new specification defect was found. Current verdict: PASS.

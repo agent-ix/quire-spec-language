@@ -65,10 +65,21 @@ Round 1 at b7bb37969. Production fixes and the declaration-refusal precedence co
 | FND-002 | fixed | Replay documents use the shared iterative canonical reader without scalar normalization, guarded deep JSON release, an explicit-stack witness conversion and the extracted existing owner byte reader. Tests cover 1,000 levels on a 512-KiB stack and a deeply malformed published witness. Tuple/union declaration lookup retains its former refusal precedence. The newly exposed corpus preflight boundary is FND-003 below. |
 | FND-003 | still-open | Deep corpus expected values are newly admitted by the shared parser but still reach recursive preflight serialization, typed decoding and raw value handling outside the vector fault guard. |
 
+### Round 2
+
+Source 680b86859 was reviewed in the same worktree without builds or source edits.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-003 | fixed | Corpus canonicalization now uses the shared parsed arena over original bytes. Expected value/refusal details decode through RawValue into DeepValue, with iterative clone, equality, ordinary-JSON serialization and release; VectorReport.actual is guarded too. Schema failure messages retain paths without recursively displaying the payload. Real formatter controls carry 50,000-level value and refusal-detail oracles through failed settlement, exact report retention, repeated output and release on a 512-KiB stack; invalid-disposition deep input returns QualificationRefusal. |
+
+
 ## New findings (disposition pass 1)
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-003 | medium | The shared iterative parser now admits deeply nested corpus oracle values, but corpus preflight immediately canonicalizes the raw serde_json::Value through recursive Serialize outside the vector fault guard, then deserializes, clones and reports raw Expected values. A canonical schema-valid corpus with a deeply nested expected.value can therefore stack-abort instead of refusing or reporting failure. Keep the corpus boundary depth-safe as well, or preserve its prior bounded preflight distinctly from the deep replay-document route; do not leave newly admitted trees to recursive canonicalization/drop. | xtask/src/qualification.rs:354-375; xtask/src/qualification.rs:750-759 |
 
-Current verdict: CONDITIONAL and not mergeable while FND-003 remains open. QSpec ValueDisposition.value imposes no schema nesting ceiling; 50,000 singleton arrays fit in about 100 KiB. The serde_json_canonicalizer owner implementation invokes value.serialize directly, and this preflight occurs before execute_vector's catch_unwind. This is a reachable schema-valid mismatching oracle, not a hypothetical future native result shape. No reproducer build was run under the lead's no-duplicate-build instruction.
+Round 1 verdict: CONDITIONAL and not mergeable while FND-003 remains open. QSpec ValueDisposition.value imposes no schema nesting ceiling; 50,000 singleton arrays fit in about 100 KiB. The serde_json_canonicalizer owner implementation invokes value.serialize directly, and this preflight occurs before execute_vector's catch_unwind. This is a reachable schema-valid mismatching oracle, not a hypothetical future native result shape. No reproducer build was run under the lead's no-duplicate-build instruction.
+
+Current verdict: PASS for the reviewed delta; review-mergeable at 680b86859 pending the required combined-tree final gate. The original population and replay-document findings remain fixed. The published WitnessValue guard transformation keeps every original branch intact behind constraints it already implies, retains oneOf rather than anyOf, and has valid/malformed deep and ambiguity controls. No new finding arose. Historical focused evidence is coder-owned; no independent build was run. Untouched baseline scanner failures are not silently waived or converted into a full-repository gate claim.
