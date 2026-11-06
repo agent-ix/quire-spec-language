@@ -765,6 +765,20 @@ fn assert_case_arm_union(
         "the arm binder is no source"
     );
     let bare = recipe.bare();
+    for declaration in source.graph().scope().types().composites() {
+        let quire_semantic_value::declaration::CompositeShape::Union(members) = declaration.shape()
+        else {
+            continue;
+        };
+        let row = recipe.identities.source_unions().iter()
+            .find(|row| row.type_handle == declaration.key())
+            .expect("every authored union, including an unrelated unsupported union, has its genuine carrier row");
+        assert_eq!(row.members.len(), members.len());
+        for (carried, declared) in row.members.iter().zip(members) {
+            assert_eq!(Some(&carried.member), declared.member());
+            assert_eq!(carried.payload.as_slice(), declared.positions());
+        }
+    }
     let world = bare.world().expect("the admitted source unions project");
     for declaration in source.graph().scope().types().composites() {
         if matches!(
