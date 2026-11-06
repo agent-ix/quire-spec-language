@@ -105,7 +105,9 @@ impl<'a> CheckedSubject<'a> {
         })
     }
 
-    fn predecessor(&self) -> Result<Option<&[u8]>, ReportRefusal> {
+    fn predecessor_entry(
+        &self,
+    ) -> Result<Option<&qsl_eval::temporal::evidence::ResultEntry>, ReportRefusal> {
         let identity = match &self.request.relation {
             Relation::Original => return Ok(None),
             Relation::Superseding(identity) | Relation::Invalidating(identity) => identity,
@@ -129,7 +131,12 @@ impl<'a> CheckedSubject<'a> {
         if latest.result_identity() != identity {
             return Err(ReportRefusal::InvalidPredecessor);
         }
-        Ok(Some(identity.as_bytes()))
+        Ok(Some(latest))
+    }
+    fn predecessor(&self) -> Result<Option<&[u8]>, ReportRefusal> {
+        Ok(self
+            .predecessor_entry()?
+            .map(|entry| entry.result_identity().as_bytes()))
     }
 }
 
@@ -404,6 +411,9 @@ impl Report {
         }
         rows.finish()?;
         let identity = reader.field(10)?.to_vec();
+        let input_identity =
+            qsl_eval::temporal::evidence::ResultIdentity::input_identity_from_bytes(&identity)
+                .ok_or(ReportRefusal::UnknownTag)?;
         let mut previous = Reader::new(reader.field(11)?)?;
         let predecessor = match previous.field(1)? {
             [0] => None,
@@ -412,6 +422,12 @@ impl Report {
         };
         previous.finish()?;
         reader.finish()?;
+        if subject
+            .predecessor_entry()?
+            .is_some_and(|previous| previous.input_identity() == &input_identity)
+        {
+            return Err(ReportRefusal::InvalidPredecessor);
+        }
         if predecessor.as_deref() != subject.predecessor()?
             || predecessor.as_deref() == Some(&identity)
         {
