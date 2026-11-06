@@ -228,10 +228,22 @@ identity-preimage spellings.
 | `Map<Text, V>` | `composite_type` / `map` | itself | `key` binding referencing the unbounded Text scalar node, then `value` binding referencing `V` (QSpec FR-322 "Derived type forms and forwarding") |
 | bounded map `Map<Text, V>[min,max]` | `bounded_domain` / `collection_bounds` | `Map<Text, V>` | `min`, `max` bindings |
 | `Quantity<u, C>` | `scalar_type` / `carried_quantity` | itself | `unit`, `carrier` and `rounding` bindings; its structural path is `[scalar_type, carried_quantity, U, C, "rounding", T, mode]` with `U` the unit node, `C` the carrier node, `T` the text type of the `rounding` literal and `mode` its rounding mode (QSpec FR-322 "Derived type forms and forwarding") |
+| `Quantity<u>[min,max]` with both endpoints and nominal unit `u` | `scalar_type` / `bounded_quantity` | itself | `unit = reference(U)`, `min = literal(R,min)`, `max = literal(R,max)` in that order; `R` is the rational scalar type, and the endpoints are reduced exact rational magnitudes in `U`, inclusive with `min <= max` |
 | declared record | `composite_type` / `record` | itself | fields in declaration order; an optional field has an `optional` group |
 | declared tuple | `composite_type` / `tuple` | itself | element references in position order |
 
-The type of a bounded form is its `bounded_domain` node, not its base. A
+The type of a bounded numeric or collection form is its `bounded_domain`
+node, not its base; a bounded quantity is the self-typed scalar above. Its
+structural path SHALL be `["scalar_type", "bounded_quantity", U, "min", R,
+min, "max", R, max]`, using QSpec FR-322's canonical exact endpoint spelling.
+Its dependencies SHALL be exactly `U` and `R` in ascending node-id order;
+it has no declaration, owner or recursion group. Equal bounds through an
+alias share the node; changing either endpoint or unit changes its identity.
+This form SHALL retain the magnitude interval directly, without projecting
+it into a numerator/denominator carrier (QSpec FR-322-AC-384). The form
+defines neither a missing endpoint nor a compound-unit operand: those
+checked types retain a typed unsupported refusal rather than an invented
+endpoint or a different wire form. A
 source declaration supplies its name and owner; a caller-supplied handle is
 not a node id. Type construction and expression lowering walk arbitrary
 nesting with an explicit heap stack bounded by the stage's node, byte and
@@ -323,6 +335,7 @@ missing profile selections retain FR-383 and FR-218's refusals.
 | FR-092-AC-27 | `Quantity<m, Decimal[-100, 100; 2, 2; exact]>`, `Quantity<m, Int[-2, 2]>` and `Quantity<m, Int[-2, 2; nearest-even]>` lower to `carried_quantity` nodes whose structural paths hold the unit node, the carrier node, `"rounding"`, the text type node and the mode in that order, and the `Decimal[-100, 100; 2, 2; exact]` carrier's `decimal_range` path repeats its equal `scale_min` and `scale_max` text, as QSpec's `dec_cents` vector does; a repeated operand node is written once. The checked-package reader admits each package, and a carried node whose path is truncated is refused `invalid_package`/`invalid-derived-shape`. | Test (TC-413) |
 | FR-092-AC-28 | `Map<Text, Boolean>`, `Map<Text, Int[0, 9]>` and `Map<Text, Boolean>[1, 4]` lower to self-typed `composite_type`/`map` nodes whose bodies are the `key` binding, a reference to the bare Text scalar node, then the `value` binding, a reference to the value type's node; the two `Map<Text, Boolean>` types are one node and the `Int[0, 9]` map is another, and the bounded map's `collection_bounds` domain is typed by the `Map<Text, Boolean>` node. Emitting a checked package whose declared `record R { m: Map<Text, Boolean>[1, 4]; n: Map<Text, Int[0, 9]>; }` (source text spells no map, so the checker's declaration API declares it) gives one `SelectedSourceCollectionRow` per map whose checked type is the `ValueType::Map`, whose element node is the value node and whose key node is the Text node, and a sequence's row has no key node. The retained-row carry re-keys a row's key node with its other nodes. A `Map` channel `carries` that is bounded lowers to a `bounded_domain` as any bounded carrier does. A map row with no key node, a key node on a collection row, a base that does not reference the key then the value, and an unemitted key are writer faults; a re-pointed key or value is followed from the final nodes. | Test (TC-1021) |
 | FR-092-AC-29 | The emitter writes the checked payload's `base` value as the explicit `base` field of every source `dimension` node body on the checked-package wire, and never derives it from empty terms. With `dimension L; dimension N = L / L; dimension M = L * L;` and units over each, the emitted body of `L` has `base=true` and no terms, that of `N` has `base=false` and no terms, and that of `M` has `base=false` and one term; IR's strict V2 reader admits the package and reports `dimension_base()` equal to each written value. | Test (TC-483) |
+| FR-092-AC-30 | A checked `Quantity<m>[-3/2,7/4]` emits exactly the self-typed `bounded_quantity` body, path and sorted dependency set above. An alias and equivalent reduced endpoints share its identity; changing `m` to `cm` or either endpoint gives a distinct node. Bounds `[0,20]` use exact rational endpoint literals. Missing endpoints or a compound unit refuse without an invented bound or carrier. QSpec BQ-01..BQ-06 govern the emitted shape and reader refusal controls. | Test (TC-413) |
 
 
 ## Dependencies

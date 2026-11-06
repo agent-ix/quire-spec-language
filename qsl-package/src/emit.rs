@@ -23,7 +23,7 @@ use quire_contract_model::{
     CheckedPackageV2, CheckedRational, CheckedRefinementStepRowRegion, CheckedScopedDeletion,
     CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2, CheckedSemanticNodeV2,
     CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CheckedTerm, DimensionTerm,
-    LiteralKind, NominalBody, ProtocolForm, StateForm, ValueForm,
+    LiteralKind, NominalBody, ProtocolForm, ScalarTypeForm, StateForm, ValueForm,
 };
 use serde::Deserialize;
 
@@ -1637,6 +1637,13 @@ impl<'g> Candidate<'g> {
         // Rule 3: a `bounded_domain` node depends on the type it bounds.
         if node.node_tag() == NodeTag::BoundedDomain {
             dependencies.insert(type_key.clone());
+        }
+        // QSpec FR-322-AC-384: a `bounded_quantity` depends on its unit and on
+        // the rational type of its exact endpoints.
+        if CheckedNodeKind::decode(ir_tag(node.node_tag()), node.semantic_form())
+            == Some(CheckedNodeKind::ScalarType(ScalarTypeForm::BoundedQuantity))
+        {
+            dependencies.extend(annotations.iter().cloned());
         }
         if CheckedNodeKind::decode(ir_tag(node.node_tag()), node.semantic_form())
             == Some(CheckedNodeKind::Value(ValueForm::EnumValue))

@@ -45,6 +45,10 @@ use quire_eval::{
     PreconditionFailure, ProtocolReferenceUnsupported, ReferenceUnresolved, StateModelUndefined,
 };
 use quire_exact::{
+    admit_quantity_result, compare_text, BoundedQuantityType, ComparisonOperator,
+    QuantityResultInterval,
+};
+use quire_exact::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_to_exact, IeeeComparison,
     IeeeFlags, IeeeOperation, IeeeValue, IeeeWidth,
 };
@@ -53,7 +57,6 @@ use quire_exact::{
     CompositeValue, FieldValue, ObjectReference, OptionValue, Quantity, UnionValue, Value,
     ValueType,
 };
-use quire_exact::{compare_text, ComparisonOperator};
 use quire_exact::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
     retain_boolean, ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands,
@@ -287,6 +290,19 @@ fn completed(evaluation: Evaluation) -> Result<Value, Box<Evaluation>> {
             ..evaluation
         })),
     }
+}
+
+/// The inclusive exact result interval of a bounded quantity type; a type
+/// with an open endpoint never reaches evaluation, as `check` refuses it.
+fn bounded_result_interval(bounded: &BoundedQuantityType) -> Result<QuantityResultInterval, Halt> {
+    let (Some(min), Some(max)) = (bounded.min(), bounded.max()) else {
+        return Err(invariant("bounded-quantity-result-endpoints-expected"));
+    };
+    Ok(QuantityResultInterval::new(
+        bounded.unit().clone(),
+        min.magnitude().clone(),
+        max.magnitude().clone(),
+    ))
 }
 
 /// A QSL-owned invariant at its detecting producer (FR-090).
@@ -3091,7 +3107,29 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     };
                     Value::Quantity(Quantity::new(magnitude, unit_id))
                 } else {
-                    operand_value(self.world.types(), operand, &value, &self.units, self.meter)?
+                    let converted = operand_value(
+                        self.world.types(),
+                        operand,
+                        &value,
+                        &self.units,
+                        self.meter,
+                    )?;
+                    // QSpec FR-322-AC-384: a bounded result checks the exact
+                    // converted magnitude against both inclusive endpoints.
+                    match (target_type, converted) {
+                        (ValueType::BoundedQuantity(bounded), Value::Quantity(quantity)) => {
+                            let interval = bounded_result_interval(bounded)?;
+                            let admitted = admit_quantity_result(quantity, &interval, self.meter)
+                                .map_err(|_| {
+                                invariant("bounded-quantity-result-unit-mismatch")
+                            })?;
+                            Value::Quantity(outcome_into_stop(admitted)?)
+                        }
+                        (ValueType::BoundedQuantity(_), _) => {
+                            return Err(invariant("bounded-quantity-conversion-quantity-expected"));
+                        }
+                        (_, converted) => converted,
+                    }
                 }
             }
             NodeKind::IeeeToRational(_, domain) => {
