@@ -944,12 +944,16 @@ mod depth_tests {
         let expected = super::node(&unknown_declaration, "/value", &graph)
             .err()
             .unwrap();
-        let tuple = json!({"kind":"tuple", "declaration":unknown_declaration, "components":[{"kind":"unknown"}]});
-        let refused = super::witness(&tuple, "/value", &graph).err().unwrap();
-        assert_eq!(
-            refused.message, expected.message,
-            "tuple declaration still refuses before child intake"
-        );
+        for value in [
+            json!({"kind":"tuple", "declaration":unknown_declaration, "components":[{"kind":"unknown"}]}),
+            json!({"kind":"union", "declaration":unknown_declaration, "member":"Arm", "components":[{"kind":"unknown"}]}),
+        ] {
+            let refused = super::witness(&value, "/value", &graph).err().unwrap();
+            assert_eq!(
+                refused.message, expected.message,
+                "tuple and union declarations still refuse before child intake"
+            );
+        }
         let mut record = record;
         record["declaration"] = unknown_declaration;
         record["fields"][0]["slot"]["value"] = json!({"kind":"unknown"});
