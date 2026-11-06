@@ -269,6 +269,8 @@ pub struct NonValue {
 /// A fact reference inside a decision support.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SupportRef {
+    /// The ordinal of the position in the admitted request trace.
+    pub position: usize,
     /// The observation the fact was read from.
     pub observation: EvidenceRef,
     /// The atom's node index.

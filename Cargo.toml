@@ -100,13 +100,15 @@ thiserror = "2.0.20"
 unicode-normalization = "0.1.25"
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 
+qsl-eval = { path = "qsl-eval" }
+quire-eval = { workspace = true }
+
 [dev-dependencies]
 serde_json_canonicalizer = "0.3.2"
 # TC-1308 evaluates collection results from the S3/S4 checked package through
 # the evaluator trait without routing them through FR-100's scalar-only run
 # result carrier.
-qsl-eval = { path = "qsl-eval" }
-# FR-515-AC-20, FR-516-AC-32: `Emission::with_package_bytes` presents the twin
+ # FR-515-AC-20, FR-516-AC-32: `Emission::with_package_bytes` presents the twin
 # package no emitter produces. Only this dev-dependency enables it.
 qsl-package = { path = "qsl-package", features = ["test-support"] }
 quire-eval = { workspace = true }

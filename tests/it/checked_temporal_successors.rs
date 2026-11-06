@@ -559,7 +559,7 @@ fn checked_temporal_zero_width_previous_and_duals_are_preserved() {
             &origin_trace(),
             temporal::Limits::default(),
         );
-        let truth = |report: &temporal::Report| match &report.result().unwrap()[0] {
+        let truth = |report: &temporal::ArtifactReport| match &report.result().unwrap()[0] {
             temporal::Obligation::Assessed(assessment) => assessment.truth,
             other => panic!("dual formula has a result: {other:?}"),
         };

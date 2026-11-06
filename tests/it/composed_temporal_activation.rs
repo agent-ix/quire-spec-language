@@ -80,7 +80,7 @@ fn delivered(triggers: Vec<Trigger>) -> Trace {
 
 /// Every obligation of a report that did not stop for a whole-declaration
 /// reason.
-fn obligations(report: &temporal::Report) -> &[Obligation] {
+fn obligations(report: &temporal::ArtifactReport) -> &[Obligation] {
     report
         .result()
         .unwrap_or_else(|error| panic!("evaluation stopped: {error:?}"))

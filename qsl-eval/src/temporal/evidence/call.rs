@@ -1775,14 +1775,16 @@ fn evaluate(
     }
     for pair in &evaluation.support {
         // A pair at a silent sample names no observed fact.
-        let Some(observation) = trace
-            .supplied_index(pair.position)
-            .and_then(|index| request.positions.get(index))
-            .map(|position| position.observation.clone())
-        else {
+        let Some((position, observation)) = trace.supplied_index(pair.position).and_then(|index| {
+            request
+                .positions
+                .get(index)
+                .map(|position| (index, position.observation.clone()))
+        }) else {
             continue;
         };
         outcome.support.push(SupportRef {
+            position,
             observation,
             atom: facts
                 .subject
