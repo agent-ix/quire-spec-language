@@ -169,7 +169,7 @@ fn a_timed_clause_over_a_model_joins_the_timed_model_root_and_time_source() {
     let read = read_checked_package_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence_for(&wire),
     );
     assert!(read.is_ok(), "the I2 read admits the no-row Timed clause");
@@ -262,7 +262,7 @@ fn the_reader_refuses_a_supplied_row_for_a_timed_clause_at_the_row() {
     let refusal = match read_v2(
         &serde_json::to_vec(&supplied).unwrap(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence_for(&wire),
     ) {
         Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => *refusal,
@@ -279,7 +279,7 @@ fn the_reader_refuses_a_supplied_row_for_a_timed_clause_at_the_row() {
     assert!(read_checked_package_v2(
         emission.package.bytes(),
         library(),
-        V2ReadLimits::default(),
+        V2ReadLimits::fixture(),
         &evidence_for(&wire),
     )
     .is_ok());
