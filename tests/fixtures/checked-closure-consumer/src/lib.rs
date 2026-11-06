@@ -106,11 +106,6 @@ pub fn run() {
         FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(ref n))) if n.to_u64() == Some(7)));
 }
 
-#[cfg(not(test))]
-fn main() {
-    run();
-}
-
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;

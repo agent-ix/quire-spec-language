@@ -28,6 +28,8 @@
 
 const TEST_PACKAGE_NAME: &str = "root-integration-tests";
 
+mod no_binary;
+
 #[cfg(feature = "checked-handoff")]
 mod selected_object_closure;
 
@@ -40,8 +42,6 @@ mod call_replay_context_items;
 mod call_requirements_items;
 mod checked_temporal_successors;
 mod clause_kind_canonical;
-mod cli;
-mod compile_command;
 mod compiled_protocol_v2;
 mod complete_cst;
 mod complete_editor;
@@ -144,7 +144,6 @@ mod seam5_retired;
 mod source_inventory;
 mod source_map;
 mod spine_deletion_boundaries;
-mod spine_run;
 mod temporal_negotiation;
 #[cfg(feature = "checked-handoff")]
 mod temporal_package_route;

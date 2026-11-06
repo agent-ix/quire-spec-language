@@ -3,7 +3,7 @@
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/k8DVhuYBR2)
 
 QSL (Quire Specification Language) is a formal language for rules about a
-system's data and behavior. This repository contains its compiler, `quire-spec`,
+system's data and behavior. This repository contains its compiler library,
 and its reference evaluator.
 
 The compiler checks a rule against a domain model and writes a checked package.
@@ -219,7 +219,7 @@ Install Rust at or above the `rust-version` in `Cargo.toml`. No other tools or s
 ```sh
 git clone https://github.com/agent-ix/quire-spec-language
 cd quire-spec-language
-cargo build --locked --bin quire-spec
+cargo build --locked --workspace
 ```
 
 **Format.** `format` prints the formatted source and leaves the file unchanged.
@@ -227,7 +227,7 @@ The four arguments before the path are the source identity (authority, id,
 revision namespace, revision). Every diagnostic carries them.
 
 ```sh
-target/debug/quire-spec format agent-ix test:spine fixture fixture:1 tests/fixtures/spine-compile.native
+quire format agent-ix test:spine fixture fixture:1 tests/fixtures/spine-compile.native
 ```
 
 **Run a rule against data.** The ConfigVersion example writes one directory per
@@ -239,7 +239,7 @@ that checks one rule for the object keyed `child`:
 cargo run --locked --example config_version_fixtures -- /tmp/config-version
 for case in healthy-parent violating-parent dangling-parent incomplete-population; do
   examples/config-version/requests.sh /tmp/config-version/$case ParentOrder
-  target/debug/quire-spec run /tmp/config-version/$case/run.json; echo "exit $?"
+  quire run /tmp/config-version/$case/run.json; echo "exit $?"
 done
 ```
 
@@ -259,7 +259,7 @@ only `1-draft` sources and prints the checked package as
 including `0-draft`, is refused with `unknown_edition`:
 
 ```sh
-target/debug/quire-spec compile /tmp/config-version/healthy-parent/compile.json > package.json
+quire compile /tmp/config-version/healthy-parent/compile.json > package.json
 ```
 
 **Emit package bytes from a source file.** `compile` needs a request file with
@@ -271,7 +271,7 @@ source's `model` declarations select with `--model`, and each imported library
 as `--library <identity>=<file>`. The bytes go to stdout, or to `--out <path>`.
 Every failure (usage, unreadable file, write failure, refusal) writes no
 bytes, prints a diagnostic on stderr that tells them apart, and exits with the
-refusal category's code 20, as `quire-spec` does; a producer refusal whose
+refusal category's code 20, as `quire` does; a producer refusal whose
 catalog code is in another category (for example incomplete) exits with that
 category's code (22). The emitted bytes embed the source path exactly as given
 (the `source:<path>` label feeds the source labels and the
@@ -336,8 +336,8 @@ and incomplete runs. `run` can also evaluate one pure function;
 | `handoff-writer` | Writes the compiled-protocol handoff files that protocol tools consume. |
 | `population-fixtures` | Writes the population fixtures used by the admission tests. |
 
-`quire-spec` is the compiler's own command line. The planned main entry point
-is `quire` from quire-driver (private), which runs QSL, Contract IR and the
+QSL builds no command line of its own. `quire` from quire-driver (private)
+serves parse, format, run and compile, running QSL, Contract IR and the
 backends as one tool.
 
 ## The Quire ecosystem
@@ -395,7 +395,7 @@ layers below it; `make arch-lint` enforces this.
 | `qsl-source` | Reads rules from Quire Markdown; its `quire-extraction` feature is enabled by `qsl-replay/quire-extraction`. |
 | `qsl-string-edge` | The FR-064 string-edge scanner (library and `qsl-string-edge` command) that QSL's `xtask string-edge` and consumer repositories run; see [`qsl-string-edge/README.md`](qsl-string-edge/README.md). |
 | `qsl-walk-grow`, `qsl-bench` | Deep-recursion stack growth, benchmarks. |
-| root crate | The `quire-spec` binary and the library facade. |
+| root crate | The library facade. |
 | `xtask`, `tools/arch-lint` | Repository checks: dependency direction, API surface, qualification and refinement. |
 
 Other directories:
