@@ -156,6 +156,13 @@ not under a caller budget.
 package the view was read from (the check quire-protocol made by comparing
 `package_digest()` values).
 
+The view SHALL also expose the opaque admitted-package binding issued by
+`CheckedPackageV2`'s owner, without replacing it with a QSL carrier. FR-527
+retains this owner capability in its owned classification after the view's
+borrow ends. Its owner-defined admission membership is distinct from this
+view's borrow-location check: a package clone retains the original admission,
+whereas a new strict read of equal bytes receives a different admission.
+
 ### The checked predicate
 
 | Retired accessor of `ValidatedCheckedPredicate` | Successor |

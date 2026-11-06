@@ -88,14 +88,22 @@ The retained subject holds the clause's name as FR-515's `name()` reads it from
 the `temporal_clause_names` row: `Some(name)` for a node with one occurrence and
 `None` for a node with several, whose occurrence names FR-515's `name_of` returns.
 
-`AuthenticatedSelection` holds the package identity, the clause's
+`AuthenticatedSelection` holds the package identity, the admitted-package
+binding issued by the `CheckedPackageV2` owner, the clause's
 `CheckedNodeId` and the definition artifact the clause's `profile_selections`
 row selects. The lock row is `{role, definition: {authority, identity}}`: it has
 no separate revision member, the namespaced revision is the `/vN` suffix of the
 definition identity (`quire.temporal.fixed-sample.false-extension/v1`), and the
 definition artifact's identity is the `authority` and `identity` pair of the
 row. `AuthenticatedSelection` holds no clock parameter map. It has no public
-constructor.
+constructor. The binding is the owner's opaque admission capability, retained
+directly from the checked package through `TemporalSubjectView`; QSL SHALL NOT
+reconstruct it from a package name, source bytes, graph equality or an address.
+An owned classification retains that capability after the subject borrow ends.
+Its owner membership check accepts the original admitted package and clones
+that retain the original immutable admitted buffers, and rejects a separately
+admitted package, even when its bytes, name and complete semantic content are
+equal. Content equality alone grants no classification authority.
 
 `Unmatched` dimensions are `InfiniteTrace`, `FiniteWindow`, `MixedDirection` and
 `TimedProfile`: the three FR-045 rows that accumulate or exclude, and the timed
@@ -139,6 +147,11 @@ view names a definition identity that is none of the five temporal profiles the
   match a TL formula.
 - The classifier SHALL retain `selection` on every result, supported or not.
 - `selection` SHALL be constructible only by the classifier.
+- The classifier SHALL retain the owner's admitted-package binding in
+  `selection` on supported and unsupported results. Comparing classifications
+  SHALL include that binding. The classifier's public selection API SHALL
+  expose the binding and delegate its package-membership check to its owner;
+  it SHALL NOT substitute a QSL identity carrier or a package-name check.
 - The classifier SHALL give the same disposition to the same clause whatever the
   package's route. The two routes are the IR reader applied to the bytes the
   unit's emitter returns in process, and the IR reader applied to the bytes of
@@ -175,7 +188,7 @@ view names a definition identity that is none of the five temporal profiles the
 | FR-527-AC-12 | Changing `surrounding` changes the target of FR-045's future rows and nothing else. | Test (TC-1322) |
 | FR-527-AC-13 | Every result's `selection` holds the package identity, the clause, and the definition `authority` and `identity` (the `/vN` suffix being the revision) equal to the values the test reads from the lock's `profile_selections` row, and holds no clock parameter map. | Test (TC-1322) |
 | FR-527-AC-14 | A compile-fail test that constructs `AuthenticatedSelection` outside the classifier fails to compile. | Test (TC-1322) |
-| FR-527-AC-15 | The classification of each temporal clause of each of **R**'s three packages, from the reader applied to the bytes the unit's emitter returns without a file, equals the classification from the reader applied to the bytes of the written handoff tree. | Test (TC-1322) |
+| FR-527-AC-15 | For each temporal clause of each of **R**'s three packages, the reader applied to the unit emitter's bytes and the reader applied to the handoff tree's bytes produce equal support, retained subject, package name, clause and definition artifact. Each classification belongs only to its own admission and clones retaining that admission; their independently issued bindings are unequal. | Test (TC-1322) |
 | FR-527-AC-16 | A view whose profile row names a definition identity outside the five admitted temporal profiles returns `NoProfileSelection`. | Test (TC-1322) |
 | FR-527-AC-17 | A node that is not a temporal clause is refused by `temporal_subject` with `UnresolvedClause`. | Test (TC-1322) |
 | FR-527-AC-18 | A unit that selects a temporal profile outside the five admitted identities is refused at check with FR-110's `UnsupportedSelection`, so no clause node exists for `mapping_support` to classify. | Test (TC-1322) |
@@ -186,6 +199,7 @@ view names a definition identity that is none of the five temporal profiles the
 | FR-527-AC-23 | A timed clause holding a past and a future operator returns `Unsupported` naming `TimedProfile` and `MixedDirection`. | Test (TC-1322) |
 | FR-527-AC-24 | Over a package whose clause `Gamma` has one occurrence, a supported result and an unsupported result (AC-22's timed clause named `Delta`, with one occurrence) hold the retained name `Some("Gamma")` and `Some("Delta")` respectively, each equal to `name()` of the view; over FR-337-AC-16's package of the two structurally equal clauses `Alpha` and `Beta`, the result holds `None`, equal to `name()` of the view. | Test (TC-1322) |
 | FR-527-AC-25 | The signature of `mapping_support` takes no budget, limit or receipt parameter and returns none; `MappingRefusal` holds no work-limit variant; over a view built at the FR-515 work-unit default exactly, it returns the same classification on a second call, and a view one expansion past that default is refused at view construction (`ViewRefusal::FormulaTooLarge`), never by `mapping_support`. | Test; Inspection |
+| FR-527-AC-26 | For a supported and an unsupported clause, classify the same producer bytes admitted twice independently: package names, content, disposition and retained clause facts are equal, but each selection's owner binding accepts its original admission and its unchanged clone, refuses the other admission, and makes the classifications unequal. Moving the original package preserves binding membership. Dropping the source package and subject borrow does not prevent an owned selection from retaining and comparing its owner binding. | Test (TC-1322) |
 
 ## Dependencies
 
