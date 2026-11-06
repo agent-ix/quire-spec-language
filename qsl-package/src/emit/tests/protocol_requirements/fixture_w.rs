@@ -1198,10 +1198,8 @@ pub(in crate::emit::tests) fn tc134_selections(
     selections.sort_by(|left, right| left.0.cmp(&right.0));
     selections
         .into_iter()
-        .map(|(_, span)| crate::emit::TemporalClockSelection {
-            source: source.clone(),
-            declaration_span: span,
-            clock: tc134_clock(),
+        .map(|(_, span)| {
+            crate::emit::TemporalClockSelection::new(source.clone(), span, tc134_clock())
         })
         .collect()
 }
@@ -1533,6 +1531,23 @@ fn tc134_explicit_temporal_declaration_refuses_each_unfit_clock_selection() {
         ),
         "a compensation clock of another kind than its profile refuses"
     );
+    let mut substituted = selections.clone();
+    substituted[at].definition = quire_contract_model::CheckedArtifactRef {
+        authority: "agent-ix".into(),
+        identity: "quire.temporal.fixed-sample.false-extension/v1".into(),
+    };
+    let refusal = emit(&substituted)
+        .expect_err("a compensation naming another profile's definition identity refuses");
+    assert!(
+        matches!(
+            &refusal,
+            R::InvalidTemporalClockValue { span, field, .. }
+                if *span == first && *field == "definition"
+        ),
+        "{refusal:?}"
+    );
+    assert_eq!(refusal.code(), qsl_foundation::Code::InvalidPackage);
+    assert_eq!(refusal.cause(), Some("invalid-value"));
 }
 
 /// FR-508: a protocol profile is not an admissible compensation profile.

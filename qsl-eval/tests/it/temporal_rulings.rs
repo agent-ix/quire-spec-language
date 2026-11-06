@@ -833,6 +833,7 @@ fn the_request_has_no_supplied_result_member_and_only_the_evaluator_writes_entri
         decision_closure: _,
         surrounding_progress: _,
         surrounding_closure: _,
+        native_valuations: _,
         execution: _,
         completeness: _,
         authoritative_origin: _,

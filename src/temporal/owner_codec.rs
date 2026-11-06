@@ -24,8 +24,11 @@ pub enum BindingDimension {
 }
 
 /// A strict owner report admission failure. No failure carries a partial report.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ReportRefusal {
+    /// Native capture-type admission consumed the caller's finite allowance.
+    #[error("native owner report admission exhausted its budget: {0}")]
+    NativeBudget(Box<qsl_package::ExactTypeProjectionError>),
     /// The format identifier or version is unsupported.
     #[error("unsupported owner report format or version")]
     UnsupportedVersion,

@@ -218,13 +218,13 @@ fn state_graph_identity_readback_uses_the_explicit_temporal_selection() {
     let claim = world.claim("ReachesTwo");
     let mut selections = crate::fill::tcb_01_event_position_selection(&world.package);
     let hyper = &world.package.graph().hyper_clauses()[0];
-    selections.push(qsl_package::TemporalClockSelection {
-        source: world.package.graph().source().clone(),
-        declaration_span: hyper.span(),
-        clock: qsl_package::ClockConfiguration::EventPosition {
+    selections.push(qsl_package::TemporalClockSelection::new(
+        world.package.graph().source().clone(),
+        hyper.span(),
+        qsl_package::ClockConfiguration::EventPosition {
             sequence_authority: "test-hyper-events".into(),
         },
-    });
+    ));
 
     let without_selection = StateGraphIdentity::resolve(
         &world.package,

@@ -725,11 +725,11 @@ fn temporal_clock_selections(
                 }
                 _ => return None,
             };
-            Some(TemporalClockSelection {
-                source: parsed.source().reference().clone(),
-                declaration_span: form.span(),
+            Some(TemporalClockSelection::new(
+                parsed.source().reference().clone(),
+                form.span(),
                 clock,
-            })
+            ))
         })
         .collect()
 }
@@ -4665,13 +4665,13 @@ fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
         .find(|form| matches!(form.form(), qsl_forms::DeclarationForm::Temporal(_)))
         .map(qsl_forms::ParsedForm::span)
         .expect("the clause form");
-    let selections = [qsl_package::TemporalClockSelection {
-        source: parsed.source().reference().clone(),
-        declaration_span: span,
-        clock: qsl_package::ClockConfiguration::TimestampedEvent {
+    let selections = [qsl_package::TemporalClockSelection::new(
+        parsed.source().reference().clone(),
+        span,
+        qsl_package::ClockConfiguration::TimestampedEvent {
             timestamp_unit: millisecond.as_str().into(),
         },
-    }];
+    )];
     let models = select(&parsed, &packages, limits.model, &cancel)
         .expect("I1 admits the package")
         .into_value();

@@ -112,11 +112,7 @@ fn selections(
                         .map(|template| template.span)
                 })
                 .expect("a clause or template of that name");
-            TemporalClockSelection {
-                source: unit.source().reference().clone(),
-                declaration_span: span,
-                clock: clock.clone(),
-            }
+            TemporalClockSelection::new(unit.source().reference().clone(), span, clock.clone())
         })
         .collect()
 }
@@ -919,12 +915,14 @@ pub(super) fn same_named_clauses() -> Built {
         .temporal_clauses()
         .iter()
         .enumerate()
-        .map(|(index, node)| TemporalClockSelection {
-            source: unit.source().reference().clone(),
-            declaration_span: node.clause().span(),
-            clock: ClockConfiguration::EventPosition {
-                sequence_authority: format!("authority-{index}").into(),
-            },
+        .map(|(index, node)| {
+            TemporalClockSelection::new(
+                unit.source().reference().clone(),
+                node.clause().span(),
+                ClockConfiguration::EventPosition {
+                    sequence_authority: format!("authority-{index}").into(),
+                },
+            )
         })
         .collect();
     let emission = qsl_package::emit_checked_with_temporal_selections(
@@ -948,7 +946,11 @@ fn twins_pair_their_rows_by_key_over_the_bytes_only_route() {
     let built = twins();
     let read = built.read(&built.emission);
     let bare = qsl_package::BarePackage::new(read.admitted());
-    let back = EvidencePackage::from_package(&bare).expect("the bare package");
+    let back = EvidencePackage::from_package(
+        &bare,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("the bare package");
     let [node] = clause_ids(&back).try_into().expect("one shared node");
 
     let view = back.temporal_subject(&node).expect("the twins read");
@@ -1060,7 +1062,11 @@ fn each_clause_pairs_with_its_own_clock_row_over_the_bytes_only_route() {
     )
     .expect("the emission");
     let bare = qsl_package::BarePackage::new(read.admitted());
-    let back = EvidencePackage::from_package(&bare).expect("the bare package");
+    let back = EvidencePackage::from_package(
+        &bare,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("the bare package");
     let ids = clause_ids(&emitted);
     assert_eq!(ids.len(), 2, "two nodes");
     for package in [&emitted, &back] {

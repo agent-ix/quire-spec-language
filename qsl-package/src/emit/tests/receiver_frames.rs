@@ -503,7 +503,6 @@ fn ledger_operation_effects_read_back_with_selected_type_projection() {
             &identities,
             emission.selected_tuple_declaration_rows(),
             emission.selected_source_unit_rows(),
-            10_000,
             &mut quire_contract_model::NativeJoinBudget::new(10_000_000, 10_000_000),
         )
         .expect("the selected type declaration projection succeeds");

@@ -46,7 +46,7 @@ use quire_eval::{
 };
 use quire_exact::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_to_exact, IeeeComparison,
-    IeeeFlags, IeeeOperation,
+    IeeeFlags, IeeeOperation, IeeeValue, IeeeWidth,
 };
 use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue,
@@ -475,6 +475,24 @@ fn sum_domain(value_type: &ValueType) -> Option<&IntegerInterval> {
         ValueType::Int(domain) => Some(domain),
         _ => None,
     }
+}
+
+/// The empty sum of the numeric family of `N`: its additive zero (FR-145).
+fn sum_zero(value_type: &ValueType) -> Result<Value, Halt> {
+    Ok(match value_type {
+        ValueType::Integer | ValueType::Int(_) => Value::Integer(Integer::zero()),
+        ValueType::Rational(_) => Value::Rational(Rational::from_integer(Integer::zero())),
+        ValueType::Decimal(_) => Value::Decimal(Decimal::new(Integer::zero(), 0)),
+        ValueType::Float(float) => Value::Float(match float.width() {
+            IeeeWidth::Binary32 => IeeeValue::binary32(0),
+            IeeeWidth::Binary64 => IeeeValue::binary64(0),
+        }),
+        ValueType::Quantity(unit) => Value::Quantity(quire_exact::Quantity::new(
+            Rational::from_integer(Integer::zero()),
+            unit.clone(),
+        )),
+        _ => return Err(invariant("sum-family-invalid")),
+    })
 }
 
 /// A scalar retain: `collection.result-retain` with one result unit.
@@ -1588,6 +1606,103 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             loss,
         });
         Ok(())
+    }
+
+    /// One step of `sum<N>` (FR-145): the first summand seeds the running
+    /// total with no addition, and each later one is added by the family of
+    /// `N`. A seed or total outside `N`'s domain is the located undefined
+    /// outcome, never the family's membership refusal.
+    fn sum_step(
+        &mut self,
+        node: N,
+        body: N,
+        total: Option<Value>,
+        summand: Value,
+    ) -> Result<Value, Halt> {
+        let value_type = node.value_type();
+        let Some(total) = total else {
+            if !value_type.admits(&summand) {
+                return Err(Halt::Located(Box::new(LocatedStop {
+                    stop: Stop::Undefined(Undefined::SumOutOfDomain),
+                    location: body.location().cloned(),
+                })));
+            }
+            return Ok(summand);
+        };
+        let out_of_domain = || Halt::from(Stop::Undefined(Undefined::SumOutOfDomain));
+        match (value_type, total, summand) {
+            (
+                ValueType::Integer | ValueType::Int(_),
+                Value::Integer(total),
+                Value::Integer(summand),
+            ) => {
+                match outcome_into_stop(evaluate_integer_arithmetic(
+                    IntegerArithmetic::Add(&total, &summand),
+                    sum_domain(value_type),
+                    self.meter,
+                )) {
+                    Err(Stop::Refused(Refusal::IntegerOutOfDomain { .. })) => Err(out_of_domain()),
+                    other => Ok(Value::Integer(other?)),
+                }
+            }
+            (ValueType::Rational(domain), Value::Rational(total), Value::Rational(summand)) => {
+                match outcome_into_stop(evaluate_rational_arithmetic(
+                    RationalArithmetic::Add(&total, &summand),
+                    Some(domain),
+                    self.meter,
+                )) {
+                    Err(Stop::Refused(Refusal::RationalOutOfDomain { .. })) => Err(out_of_domain()),
+                    other => Ok(Value::Rational(other?)),
+                }
+            }
+            (ValueType::Decimal(target), Value::Decimal(total), Value::Decimal(summand)) => {
+                match outcome_into_stop(evaluate_decimal(
+                    DecimalOperation::Add(&total, &summand),
+                    target,
+                    self.meter,
+                )) {
+                    Err(Stop::Refused(Refusal::DecimalOutOfDomain { .. })) => Err(out_of_domain()),
+                    other => {
+                        let result = other?;
+                        if let Some(loss) = result.loss() {
+                            self.record(node, ValueLoss::Decimal(loss.clone()))?;
+                        }
+                        Ok(Value::Decimal(result.value().clone()))
+                    }
+                }
+            }
+            (ValueType::Float(float), Value::Float(total), Value::Float(summand)) => {
+                if !self.world.has_ieee_profile() {
+                    return Err(invariant("ieee-profile-unresolved"));
+                }
+                let result = outcome_into_stop(
+                    evaluate_ieee(
+                        IeeeOperation::Add(total, summand),
+                        float.rounding(),
+                        self.meter,
+                    )
+                    .map_err(|_| invariant("ieee-operation-rejected"))?,
+                )?;
+                if result.flags() != IeeeFlags::EMPTY {
+                    self.record(node, ValueLoss::IeeeFlags(result.flags()))?;
+                }
+                Ok(Value::Float(result.value()))
+            }
+            (ValueType::Quantity(_), Value::Quantity(total), Value::Quantity(summand)) => {
+                let (Some(left), Some(right)) =
+                    (self.units.resolve(&total), self.units.resolve(&summand))
+                else {
+                    return Err(unresolved_unit());
+                };
+                let (outcome, unit) =
+                    evaluate_quantity_unit(QuantityOperation::Add(left, right), self.meter)
+                        .map_err(|_| invariant("quantity-operation-rejected"))?;
+                let quantity = outcome_into_stop(outcome)?;
+                self.units.form(unit);
+                Ok(Value::Quantity(quantity))
+            }
+            _ => Err(invariant("sum-accumulator-value-invalid")),
+        }
     }
 
     /// Evaluate a decimal operation into `target`, recording its loss.
@@ -4126,42 +4241,10 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     }
                     (Visit::Forall, Value::Boolean(holds)) => !holds,
                     (Visit::Exists, Value::Boolean(holds)) => holds,
-                    (Visit::Sum, Value::Integer(summand)) => {
-                        // FR-096: a seed or running total outside `N`'s domain
-                        // leaves the fold with no value in `N`: undefined,
-                        // never refused, and no charge follows the decision.
-                        let domain = sum_domain(node.value_type());
+                    (Visit::Sum, summand) => {
+                        let total = iteration.accumulator.take();
                         iteration.accumulator =
-                            Some(Value::Integer(match iteration.accumulator.take() {
-                                None => {
-                                    if domain.is_some_and(|domain| !domain.contains(&summand)) {
-                                        return Err(Halt::Located(Box::new(LocatedStop {
-                                            stop: Stop::Undefined(Undefined::SumOutOfDomain),
-                                            location: node.at(*body).location().cloned(),
-                                        })));
-                                    }
-                                    summand
-                                }
-                                Some(Value::Integer(total)) => {
-                                    match outcome_into_stop(evaluate_integer_arithmetic(
-                                        IntegerArithmetic::Add(&total, &summand),
-                                        domain,
-                                        self.meter,
-                                    )) {
-                                        // Only the running total's membership
-                                        // decision can refuse this addition.
-                                        Err(Stop::Refused(Refusal::IntegerOutOfDomain {
-                                            ..
-                                        })) => {
-                                            return Err(
-                                                Stop::Undefined(Undefined::SumOutOfDomain).into()
-                                            )
-                                        }
-                                        other => other?,
-                                    }
-                                }
-                                Some(_) => return Err(invariant("sum-accumulator-value-invalid")),
-                            }));
+                            Some(self.sum_step(node, node.at(*body), total, summand)?);
                         false
                     }
                     (Visit::Count, Value::Boolean(holds)) => {
@@ -4702,18 +4785,15 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     // the empty sum's seed `0` is still undecided (FR-145).
                     let total = match iteration.accumulator {
                         None => {
-                            let zero = Integer::zero();
-                            if sum_domain(node.value_type())
-                                .is_some_and(|domain| !domain.contains(&zero))
-                            {
+                            let zero = sum_zero(node.value_type())?;
+                            if !node.value_type().admits(&zero) {
                                 return Err(Stop::Undefined(Undefined::SumOutOfDomain).into());
                             }
                             zero
                         }
-                        Some(Value::Integer(total)) => total,
-                        Some(_) => return Err(invariant("sum-accumulator-value-invalid")),
+                        Some(total) => total,
                     };
-                    retain_scalar(Value::Integer(total), self.meter)?
+                    retain_scalar(total, self.meter)?
                 }
                 Visit::Only => iteration
                     .results

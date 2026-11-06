@@ -699,6 +699,16 @@ follows.
   joined identities into the `BarePackage`, and every later selection, world,
   projection and temporal call borrows them. A `BarePackage` is therefore
   neither `Copy` nor `Clone`, and no call re-joins or copies the identities.
+- **Exact projection shares the admission budget.** The source evaluation view
+  and supplied bare package retain the owner `ExactTypeProjection` answers
+  needed by their protocol world and slots under that same native budget.
+  Unsupported owner answers remain available to the reading stage; a denied
+  native charge refuses admission. Subsequent world, slot and capture reads
+  borrow these answers and never create a replacement allowance. A bytes-only
+  temporal evidence entry without a supply takes the caller's native budget
+  explicitly for its capture projections, as do native report admission and
+  evaluation entries. These native charges remain separate from the scalar
+  evaluator's `Meter`.
 - **Witness defects keep their stage.** A missing, foreign or structurally
   unknown identity witness is not refused by `with_supply`; it is held and
   refused, with the order FR-390 states, by the call that reads the identities
