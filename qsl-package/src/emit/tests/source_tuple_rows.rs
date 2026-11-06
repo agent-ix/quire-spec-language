@@ -720,19 +720,15 @@ fn a_map_row_follows_its_final_key_and_value_nodes() {
 /// `n: Map<Text, Int[0, 9]>`, and a function over `R`. Source text spells no
 /// map, so the record is declared as the checker declares it, over the
 /// declaration API the emitter tests share.
-fn map_record_package() -> CheckedPackage {
+pub(super) fn map_record_package() -> CheckedPackage {
     use qsl_forms::TypeForm;
     use quire_exact::{CardinalityBound, MapType, Presence};
     use quire_semantic_value::declaration::{
         CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
     };
 
-    let handle = NodeKey::new(
-        "fixture",
-        vec![quire_exact::PathSegment::Text("R".into())],
-        0,
-    )
-    .expect("a well formed key");
+    let handle = NodeKey::new("pkg", vec![quire_exact::PathSegment::Text("R".into())], 0)
+        .expect("a well formed key");
     let map = |values, bound: Option<(u64, u64)>| {
         ValueType::map(MapType::new(
             values,
@@ -770,6 +766,7 @@ fn map_record_package() -> CheckedPackage {
         None,
         qsl_forms::Expression::boolean(true),
     )];
+    declarations.package_name = "pkg".to_owned();
     declarations.types = TypeEnvironment::new([record], []).expect("R is admitted");
     let graph = declarations
         .check(CheckingLimits::default())
@@ -786,16 +783,8 @@ fn map_record_package() -> CheckedPackage {
 fn a_record_with_map_fields_emits_map_rows_and_carries_their_key_nodes() {
     let package = map_record_package();
     // The record is built in code, not read from a source unit, so every
-    // occurrence is placed at the fixture unit. The locked IR vocabulary has
-    // no `composite_type`/`map` form yet (IR-1356), so the emitter would omit
-    // the map nodes; the decode probe admits that one form so the rows the
-    // writer produces for it are checked.
-    let admits_map = |tag: CheckedNodeTag, form: &str| {
-        (tag == CheckedNodeTag::CompositeType && form == "map")
-            || CheckedNodeKind::decode(tag, form).is_some()
-    };
-    let emission = crate::emit::emit_package_decoding(&package, whole_unit, &admits_map)
-        .expect("the package emits");
+    // occurrence is placed at the fixture unit.
+    let emission = crate::emit::emit_package(&package, whole_unit).expect("the package emits");
     assert_eq!(emission.omitted, []);
     let wire = wire(&emission);
     let rows = emission.selected_source_collection_rows();
