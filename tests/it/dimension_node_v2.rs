@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-1339: base versus derived dimension identity from source text, through
+//! TC-483: base versus derived dimension identity from source text, through
 //! assembly, admission, lowering and the replay facade (FR-091-AC-73,
-//! FR-094-AC-14).
+//! FR-093-AC-60).
 
 use ix_trace_rs::trace;
 use qsl_foundation::Setting;
@@ -20,11 +20,11 @@ const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
     unit m2 : M = rational(1, 1);\n\
     function f using v(a: Quantity<m>, b: Quantity<one>, c: Quantity<m2>): Boolean pure { true }\n";
 
-/// FR-091-AC-73 and FR-094-AC-14 (TC-1339): `dimension N = L / L;` stays a
+/// FR-091-AC-73 and FR-093-AC-60 (TC-483): `dimension N = L / L;` stays a
 /// derived dimension with no terms in the lowered `dimension` node's payload
 /// and in the replay facade, while `L` is base and `M = L * L` is derived
 /// with one term.
-#[trace("FR-091-AC-73", "FR-094-AC-14", "TC-1339")]
+#[trace("FR-091-AC-73", "FR-092-AC-25", "FR-093-AC-60", "TC-483")]
 #[test]
 fn an_empty_derived_dimension_stays_derived_through_lowering_and_replay() {
     let limits: StageLimits = [(Setting::S1InputBytes, 1 << 20)].into_iter().collect();

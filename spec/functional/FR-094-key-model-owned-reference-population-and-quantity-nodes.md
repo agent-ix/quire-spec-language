@@ -309,10 +309,7 @@ domain:
   identity], 0}`): the qualified
   name as `declaration`, with a `declaration` occurrence at the declared
   name, an empty `aggregate` body, a unit typed by its dimension and a
-  dimension self-typed. A dimension node keeps whether its dimension is
-  base or derived, so a derived dimension whose terms cancel (`dimension N = L /
-  L;`) lowers to a derived `dimension` node with no terms, never to a base
-  dimension. A compound unit's root units are built the same
+  dimension self-typed. A compound unit's root units are built the same
   way. No node carries a nominal identity preimage, and none is recomputed
   or compared.
 - **Compound unit.** The type node is `scalar_type` / `compound_unit`, its own
@@ -437,7 +434,6 @@ QSpec's `unit-metre` and `unit-second` nominal nodes.
 | FR-094-AC-11 | With FR-093-AC-36's units, the quotient `a / 3 ms` over `a: Quantity<m>` has one `scalar_type`/`compound_unit` node, with no `declaration` and no `owner`, whose body is an `aggregate` of two terms in ascending root-unit node-key order: `unit` the `m` node with `exponent` the integer literal `1`, and `unit` the `s` node with `exponent` the integer literal `-1`. The quotient `d / 3 ms` over `d: Quantity<ms>` has a `compound_unit` node whose body is `aggregate{[]}`, and `d / 3 s` and `d / rational(-3, 1) ms` have that same node, and `a / rational(-3, 1) ms` has the node of `a / 3 ms`. Neither node is the `m` unit node, and the node of `a / 3 ms` is the node of `a / 0.5 s`. | Test (TC-419) |
 | FR-094-AC-12 | **Withdrawn.** The fixed QSpec vector key and `nominal_identity_preimage` oracle for the dimension-equivalence node was superseded by QSpec FR-322 structural node identity; the node's non-identity behavior is retained in FR-094-AC-13. | Withdrawn |
 | FR-094-AC-13 | With a unit declaring `model R = "acme/rpc" …` and `model F = "acme/flow" …`, each package declaring base dimension `Time` and a root unit of it (`s`; flow's `ms` is `1/1000` of its root), and `dimension R::Time ~ F::Time by 1 R::s = 1000 F::ms;`, the checked graph holds one `scalar_type`/`dimension_equivalence` node with no `declaration`, self-typed, relating the two package `Time` nodes in ascending node-key order with `root_scale` `1/1`, whose `dependencies` are exactly those two nodes and whose one occurrence has role `anchor` and ordinal 0; `dimension F::Time ~ R::Time by 1000 F::ms = 1 R::s;` in its place gives the same node; with `acme/clock` as a third package (root `ms`), `dimension R::Time ~ G::Time by 1 R::s = 1000 G::ms;` gives the node with `root_scale` `1000/1` and `dimension G::Time ~ R::Time by 1000 G::ms = 1 R::s;` the same node; a second declaration `dimension R::Time ~ Time by 1 R::s = 1 s;` over a source `Time` gives a second node with ordinal 1; the package `Time` nodes are the nodes they are with no equivalence; the equivalence node is emitted though no quantity type names either dimension; and IR's checked-package/v2 reader admits the package and derives the classes the declarations give, refusing `invalid_semantic_graph` the same package with a `root_scale` of `0/1`, `-1/1`, `2000/2` or none, or with the ratios of its base pairs not multiplying to one. | Test (TC-419) |
-| FR-094-AC-14 | Base versus derived dimension nodes (QSL-1738). With `dimension L; dimension N = L / L; dimension M = L * L;` and a root unit of each, a function with a `Quantity` parameter of each unit lowers three `dimension` nodes: `L`'s payload is base with no terms, `N`'s is derived with no terms, and `M`'s is derived with the one term `L` to the power 2. Replay's `AdmittedDimension::is_base` is true for `L` and false for `N` and `M`. | Test (TC-1339) |
 
 A check with two admitted versions of one domain package
 identity refuses as an internal fault.

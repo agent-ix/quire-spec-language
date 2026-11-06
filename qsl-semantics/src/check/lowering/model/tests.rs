@@ -1242,11 +1242,11 @@ mod quantities {
         assert_ne!(keys[2], node_key(METRE));
     }
 
-    /// FR-094-AC-14 (TC-1339): a derived dimension with no terms lowers to a
+    /// FR-093-AC-60 (TC-483): a derived dimension with no terms lowers to a
     /// `dimension` node whose payload is derived, beside a base dimension
     /// whose payload is base, and a derived dimension with a term stays
     /// derived.
-    #[trace("FR-094-AC-14", "TC-1339")]
+    #[trace("FR-092-AC-25", "FR-093-AC-60", "TC-483")]
     #[test]
     fn an_empty_derived_dimension_lowers_to_a_derived_dimension_node() {
         let derived = |terms: Vec<(NodeKey, Integer)>| {

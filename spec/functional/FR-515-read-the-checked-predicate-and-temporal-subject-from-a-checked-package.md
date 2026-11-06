@@ -61,6 +61,15 @@ the reader. This requirement states only what QSL returns from an admitted
 package. The views select no truth, hold no evaluation callback and assert no
 observation or result state (the FR-051-AC-6 history text, kept).
 
+For the checked-package native evaluation route, QSL SHALL expose the exact
+relation from each checked temporal declaration to its native evaluation arena
+entry and each declaration occurrence. Each relation row names the checked
+`CheckedNodeId`, the native arena handle assigned while constructing the native
+package view, and the authored occurrence key. The relation SHALL NOT be
+reconstructed from formula bytes, a digest, or a hash. Structurally equal
+declarations may share a checked node and native formula, while each authored
+occurrence remains separately addressable by its `{ role, ordinal }` key.
+
 ## Inputs
 
 - A `&quire_contract_model::CheckedPackageV2` returned by
@@ -84,7 +93,7 @@ pub fn checked_predicate<'p>(package: &'p CheckedPackageV2, selection: &Predicat
 ```
 
 Both views borrow the package, have no public constructor and no method that
-evaluates. `ViewRefusal` (shared with FR-519) is a closed enum; the variants of this requirement are:
+evaluates. `ViewRefusal` here is the closed, `Copy`, payload-free enum of `qsl_package::checked_views`, a different type from FR-519's `ViewRefusal` of `qsl_package::protocol_view` (which carries payloads); the variants of this requirement are:
 
 - `UnresolvedClause`: FR-337's `clause-root-unresolved` lookup refusal, reused;
 - `LeafNotInClause`: the leaf is no term the clause reads (it is reachable
@@ -92,6 +101,35 @@ evaluates. `ViewRefusal` (shared with FR-519) is a closed enum; the variants of 
 - `LeafHasNoSource`: the leaf is a term of the clause, and the package source
   map holds no entry for it;
 - `LeafNotBoolean`: the leaf's semantic type is not the `boolean` node.
+
+For native evaluation, the checked-package evaluation view SHALL expose a
+read-only declaration-to-arena relation: for every occurrence of a declaration,
+`arena_of(&ClauseOccurrence) -> Result<ArenaHandle, ViewRefusal>` and
+`occurrence_of(ArenaHandle) -> Result<ClauseOccurrence, ViewRefusal>`. The
+relation is built from the admitted package and is the only source of arena
+handles: a caller-supplied occurrence key or handle is a lookup key, not an
+assertion, and SHALL be accepted only when it equals a row the view itself
+declares. QSL does not authenticate the caller; the check is equality with a
+declared row. A key naming no declared occurrence refuses
+`ViewRefusal::OccurrenceNotDeclared`, and a handle that is no declared row's
+handle refuses `ViewRefusal::ArenaHandleNotDeclared`. Both are new payload-free
+variants of the `checked_views` enum, which stays `Copy`; the caller already
+holds the offending key or handle, so the refusal does not carry it, and it
+returns no partial row. FR-519's `ViewRefusal` gains neither variant.
+
+`temporal_subject` and `mapping_support` (FR-527) take no caller work budget and
+return no work receipt. Their owner work, namely building the view and
+enumerating or classifying its rows, is bounded by one owner default: the
+checked-package reader's work-unit limit (`CheckedPackageReadLimits` work, the
+`i2.work_units` default of FR-255, whose reader limit FR-264 passes to IR's checked-package reader), counted as one visit per formula application
+expanded in pre-order, where a node shared by several parents counts once per
+parent. An expansion past that default refuses `ViewRefusal::FormulaTooLarge`, an
+existing variant of the `checked_views` enum, and leaves no partial view. A consumer
+that meters its own work, such as the Contract IR bridge requirement FR-350
+(a Contract IR requirement, unrelated to this repository's FR-350), therefore
+meters only its own visits and does not charge this owner work to its caller.
+This is the QSL-1734 ruling: owner work is accounted under the owner default,
+not under a caller budget.
 
 ## Behavior
 
@@ -299,6 +337,9 @@ need no `BarePackage`.
 | FR-515-AC-26 | Over a read package with two clauses of one name, and over one with two name rows pairing to one clause, `from_read` returns `PackageMismatch::AmbiguousName` in each; `from_emission` over the two-clauses-of-one-name package pairs by `clause` position and constructs. | Test (TC-1310) |
 | FR-515-AC-27 | Over an `Emission` whose `profile_selections` do not match the package, `from_emission` returns `PackageMismatch::ProfileSelections`. | Test (TC-1310) |
 | FR-515-AC-28 | Over an `Emission` whose `temporal_bindings` rows do not match the package, `from_emission` returns `PackageMismatch::Bindings`. | Test (TC-1310) |
+| FR-515-AC-29 | For each temporal declaration in an admitted `CheckedPackageV2`, `arena_of` returns for every authored occurrence keyed by `{ role, ordinal }` a distinct handle, and `occurrence_of` of that handle returns the same key; two structurally equal declarations sharing a checked node retain both keys and both handles; the keys and handles equal those of the package built a second time from the same source, and none is derived from formula bytes, a digest or a hash. | Test |
+| FR-515-AC-30 | `arena_of` over an occurrence key the declaration does not hold (ordinal one past the last, and a key of another declaration) refuses `ViewRefusal::OccurrenceNotDeclared`, and `occurrence_of` over a handle no row declares (a handle of another package's view, and one past the last handle) refuses `ViewRefusal::ArenaHandleNotDeclared`; neither returns a row. | Test |
+| FR-515-AC-31 | The signatures of `temporal_subject`, `arena_of`, `occurrence_of` and `mapping_support` take no budget, limit or receipt parameter and return none. A clause whose pre-order expansion equals the reader's work-unit default builds its view and the one with a single further expansion refuses `ViewRefusal::FormulaTooLarge` with no partial view, so the owner default, not an unbounded walk, bounds the work. | Test; Inspection |
 
 ## Dependencies
 

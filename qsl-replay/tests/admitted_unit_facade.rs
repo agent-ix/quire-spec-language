@@ -52,6 +52,35 @@ fn unit_identity() -> SourceIdentity {
     SourceIdentity::new("a", "u")
 }
 
+/// A dimensionless derived declaration remains derived through replay.
+#[trace("FR-091-AC-73", "FR-092-AC-25", "FR-093-AC-60", "TC-483")]
+#[test]
+fn replay_preserves_empty_derived_dimension_identity() {
+    let text = format!(
+        "{HEADER}dimension L;\n\
+         dimension N = L / L;\n\
+         unit m : L = rational(1, 1);\n\
+         unit one : N = rational(1, 1);\n\
+         function dimensions using v(l: Quantity<m>, n: Quantity<one>): Boolean pure {{ true }}\n"
+    );
+    let admitted = admit(&text, &DependencyInput::default());
+    let context = admitted.context();
+    let dimension = |name: &str| {
+        context
+            .dimensions()
+            .find(|d| d.qualified_name().last().map(|n| n.as_str()) == Some(name))
+            .expect("the dimension is listed")
+    };
+    let length = dimension("L");
+    let derived = dimension("N");
+    assert!(length.is_base());
+    assert!(length.terms().is_empty());
+    assert!(!derived.is_base());
+    assert!(derived.terms().is_empty());
+    assert_eq!(unit_named(&admitted, "m").dimension(), length.node());
+    assert_eq!(unit_named(&admitted, "one").dimension(), derived.node());
+}
+
 fn limits() -> StageLimits {
     [(Setting::S1InputBytes, 1 << 20)].into_iter().collect()
 }

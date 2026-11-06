@@ -554,7 +554,7 @@ fn stale_keys_and_foreign_owners_refuse_admission() {
 
 /// The v2 dimension preimage keeps an empty derived map distinct from a base
 /// dimension, while v1 retains its empty-means-base interpretation.
-#[trace("QSpec-TC-187", "FR-091-AC-73", "TC-1339")]
+#[trace("QSpec-TC-187")]
 #[test]
 fn dimension_node_v2_admits_an_empty_derived_dimension() {
     let mut nodes = Nodes::default();
@@ -582,7 +582,7 @@ fn dimension_node_v2_admits_an_empty_derived_dimension() {
         .is_dimensionless());
 }
 
-#[trace("QSpec-TC-187", "FR-091-AC-73", "TC-1339")]
+#[trace("QSpec-TC-187")]
 #[test]
 fn dimension_node_versioned_base_field_is_canonical() {
     let mut legacy_with_base = base_dimension("example-model", "Length");

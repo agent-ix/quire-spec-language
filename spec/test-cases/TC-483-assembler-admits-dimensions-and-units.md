@@ -22,7 +22,7 @@ This catches: unnormalized or unsorted terms; an unreduced scale or offset
 unit name read as a type; `UnitGraph::admit` reached only from tests; and a
 topology error reported as a reader's `invalid_semantic_graph`.
 
-Scope: FR-091-AC-33 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-50, FR-091-AC-55, FR-091-AC-60, FR-091-AC-62 to FR-091-AC-64, FR-091-AC-67, FR-091-AC-68, FR-091-AC-71, FR-091-AC-72, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37, FR-093-AC-43, FR-093-AC-44, FR-093-AC-46.
+Scope: FR-091-AC-33 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-50, FR-091-AC-55, FR-091-AC-60, FR-091-AC-62 to FR-091-AC-64, FR-091-AC-67, FR-091-AC-68, FR-091-AC-71, FR-091-AC-72, FR-091-AC-73, FR-092-AC-25, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37, FR-093-AC-43, FR-093-AC-44, FR-093-AC-46, FR-093-AC-60.
 
 ## Test Procedure
 
@@ -74,6 +74,7 @@ form and read `units`; repeat with source-owner identity `w` and the same requir
     assemble FR-091-AC-72's `tick` and `tock` units, check and evaluate `k1`
     for `d` = `2 tick`, and assemble each of its refused units in its own unit
     beside the base declarations alone.
+18. Check, lower and replay the source `dimension L; dimension N = L / L; unit m : L = rational(1, 1); unit one : N = rational(1, 1);`. Read the checked dimension payloads and replay-admitted dimensions, their `base` flags and terms, and the dimension ids referenced by both units.
 
 Tag the tests with the AC ids they back and `TC-483`.
 
@@ -136,3 +137,4 @@ Tag the tests with the AC ids they back and `TC-483`.
   `k1` is `true`; `bad` refuses row 3 carrying `bad`, `s`, `M::Rate` and
   `Time`; `r2` row 4 carrying `us` and `r2`; `z` row 1 with scale `0`; the
   `M::ghost` target row 2 with the name as written.
+- Step 18: `L` and `N` remain distinct nodes through assembly, checking, lowering and replay; `L` is base with `base=true`, while `N` is derived with `base=false` and no normalized terms. Both units reference their declared dimension, and only `one` is dimensionless.
