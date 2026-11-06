@@ -4994,7 +4994,20 @@ impl<'a> Lowering<'a> {
                                 "quire.op.collection.sum.quantity",
                                 Some(OperationMode::Rounding(quire_exact::RoundingMode::Exact)),
                             ),
-                            _ => {
+                            ValueType::Boolean
+                            | ValueType::CarriedQuantity(_)
+                            | ValueType::Text(_)
+                            | ValueType::String
+                            | ValueType::Uuid
+                            | ValueType::Timestamp
+                            | ValueType::Enum(_)
+                            | ValueType::Option(_)
+                            | ValueType::Composite(_)
+                            | ValueType::Collection(_)
+                            | ValueType::Map(_)
+                            | ValueType::BoundedQuantity(_)
+                            | ValueType::Reference(_)
+                            | ValueType::Population(_) => {
                                 return Err(refuse(
                                     node.location(),
                                     CheckCause::UnsupportedFeature {

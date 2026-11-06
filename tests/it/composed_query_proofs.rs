@@ -744,12 +744,14 @@ fn rational_sum_proves_fractional_prefixes_or_refuses_an_insufficient_total() {
         &["EmptyPositive"],
         handler(),
         |report| {
-            unproved(
-                report,
-                "EmptyPositive",
-                ir::DefinednessObligationKind::CheckedRange,
-                "sum<M::PositiveRationalTotal>(part in filter(candidate in input.fractions: false): part)",
+            let at = id(report.types(), "EmptyPositive");
+            assert_eq!(
+                report.types().disposition(at),
+                Some(TypeDisposition::Refused)
             );
+            assert!(report.types().declaration(at).unwrap().causes().iter().any(
+                |cause| cause.kind == TypeCause::InvalidAggregateDomain
+            ));
         },
     );
 }
