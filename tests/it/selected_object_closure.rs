@@ -5,8 +5,8 @@ use ix_trace_rs::trace;
 use qsl_package::ReadIdentityRows;
 use quire_contract_model::{
     CheckedNodeOwner, CheckedOccurrenceRole, CheckedOperationEffect, CheckedOperationEffectOrigin,
-    CheckedPackageV2, ExactTypeProjectionErrorCode, SelectedExactIdentities, SelectedExactIdentity,
-    SelectedTypeDeclarations,
+    CheckedPackageEvidence, CheckedPackageV2, ExactTypeProjectionErrorCode,
+    SelectedExactIdentities, SelectedExactIdentity, SelectedTypeDeclarations,
 };
 use quire_exact::{Presence, ValueType};
 use quire_spec_language::checked_handoff::{evidence, write, CheckedHandoffRequest, Corpus};
@@ -20,6 +20,8 @@ struct Fixture {
     _directory: tempfile::TempDir,
     package: Box<CheckedPackageV2>,
     rows: ReadIdentityRows,
+    bytes: Vec<u8>,
+    evidence: CheckedPackageEvidence,
 }
 
 fn fixture(document: &Value) -> Fixture {
@@ -48,16 +50,17 @@ fn fixture_with_source(document: &Value, source_text: &str) -> Fixture {
     let output = directory.path().join("handoff");
     write(&request, &output).expect("the genuine handoff writes");
     let files = tree(&output);
-    let package = admitted(
-        &files["checked-package.json"],
-        &evidence(&request).expect("evidence"),
-    );
+    let evidence = evidence(&request).expect("evidence");
+    let bytes = files["checked-package.json"].clone();
+    let package = admitted(&bytes, &evidence);
     let rows = ReadIdentityRows::read(&files["identities.json"], &package)
         .expect("the required identity carrier joins the admitted package");
     Fixture {
         _directory: directory,
         package,
         rows,
+        bytes,
+        evidence,
     }
 }
 
@@ -315,4 +318,51 @@ fn selected_object_closure_refuses_missing_and_foreign_object_witnesses() {
         refusal.code,
         ExactTypeProjectionErrorCode::MismatchedIdentityWitness
     );
+}
+
+#[trace("TC-417", "FR-094-AC-14")]
+#[test]
+fn selected_object_closure_refuses_a_model_reference_whose_object_node_is_absent() {
+    let fixture = fixture(&tc1070::document_ep());
+    let other = fixture
+        .rows
+        .declarations()
+        .iter()
+        .find(|row| row.original_identity.as_ref() == tc1070::model::id("Other"))
+        .expect("Other has its real emitted declaration");
+    let other_json = serde_json::to_value(&other.structural_node).expect("node reference");
+    let mut package: Value = serde_json::from_slice(&fixture.bytes).expect("original package");
+    let nodes = package["semantic_graph"]["nodes"]
+        .as_array_mut()
+        .expect("nodes");
+    let before = nodes.len();
+    nodes.retain(|node| node["node_id"] != other_json);
+    assert_eq!(nodes.len() + 1, before, "remove only the actual Other node");
+    package["source_map"]
+        .as_array_mut()
+        .expect("source map")
+        .retain(|entry| entry["node_id"] != other_json);
+    let package = admitted(
+        &serde_json::to_vec(&package).expect("changed package"),
+        &fixture.evidence,
+    );
+    let identities = SelectedExactIdentities::from_stage_rows(
+        &package,
+        fixture
+            .rows
+            .declarations()
+            .iter()
+            .filter(|row| row.structural_node != other.structural_node)
+            .cloned(),
+        fixture.rows.fields().iter().cloned(),
+    )
+    .expect("only the remaining genuine declaration rows are supplied");
+    let refusal = package
+        .project_selected_type_declarations(&identities, &[], &[], 100_000)
+        .expect_err("retained model references cannot invent their absent object declaration");
+    assert_eq!(
+        refusal.code,
+        ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
+    );
+    assert_eq!(refusal.form.as_ref(), "selected_document_type");
 }
