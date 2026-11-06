@@ -642,6 +642,7 @@ fn a_substituted_definition_identity_refuses_emission_at_the_definition_field() 
         let emission = crate::emit::emit_checked_with_temporal_selections(
             &package,
             std::slice::from_ref(&selected),
+            crate::EmitLimits::fixture(),
         )
         .expect("the selection that names the clause's own law emits");
         assert_eq!(
@@ -678,9 +679,12 @@ fn a_substituted_definition_identity_refuses_emission_at_the_definition_field() 
         ] {
             let mut substituted = selected.clone();
             substituted.definition = definition;
-            let refusal =
-                crate::emit::emit_checked_with_temporal_selections(&package, &[substituted])
-                    .expect_err("a substituted definition identity cannot produce a package");
+            let refusal = crate::emit::emit_checked_with_temporal_selections(
+                &package,
+                &[substituted],
+                crate::EmitLimits::fixture(),
+            )
+            .expect_err("a substituted definition identity cannot produce a package");
             assert!(
                 matches!(
                     &refusal,

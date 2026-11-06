@@ -933,14 +933,19 @@ fn a_substituted_hyper_clause_definition_identity_refuses_at_the_definition_fiel
         },
     );
     let package = CheckedPackage::link(graph);
-    crate::emit::emit_checked_with_temporal_selections(&package, std::slice::from_ref(&selected))
-        .expect("the selection that names the clause's own law emits");
+    crate::emit::emit_checked_with_temporal_selections(
+        &package,
+        std::slice::from_ref(&selected),
+        crate::EmitLimits::fixture(),
+    )
+    .expect("the selection that names the clause's own law emits");
 
     let mut substituted = selected;
     substituted.definition.identity = "quire.temporal.fixed-sample.false-extension/v1".into();
     let refusal = crate::emit::emit_checked_with_temporal_selections(
         &package,
         std::slice::from_ref(&substituted),
+        crate::EmitLimits::fixture(),
     )
     .expect_err("a substituted definition identity cannot produce a package");
     assert!(
