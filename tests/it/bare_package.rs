@@ -397,7 +397,7 @@ fn a_public_record_projection_requires_its_original_carried_native_witness() {
         "model M = \"test/orders\";\nrecord Pair { x: Integer; y: Integer; }",
     ).replace(
         "on each (opened: M::Tick) when (opened.ready) {",
-        "on each (opened: M::Tick) when (opened.ready) {\n  capture kept: Pair = Pair{ x: 1, y: 2 };\n  capture fieldRead: Integer = (Pair{ x: 1, y: 2 }).x;",
+        "on each (opened: M::Tick) when (opened.ready) {\n  capture kept: Pair = Pair{ x: 1, y: 2 };\n  capture fieldRead: Integer = kept.x;",
     );
     std::fs::write(&source, text).unwrap();
     std::fs::write(
@@ -442,7 +442,6 @@ fn a_public_record_projection_requires_its_original_carried_native_witness() {
         .iter()
         .find(|node| {
             node.node_tag.as_ref() == "protocol"
-                && node.semantic_form.as_ref() == "protocol"
                 && node.declaration.as_ref().is_some_and(|declaration| {
                     declaration
                         .qualified_name
@@ -479,6 +478,16 @@ fn a_public_record_projection_requires_its_original_carried_native_witness() {
     assert_eq!(
         projected_field.value_type(projected_field.root()),
         Some(&quire_exact::ValueType::Integer)
+    );
+    assert!(
+        matches!(
+            projected_field.kind(projected_field.root()),
+            Some(quire_checked::node::NodeKind::Field {
+                optional: false,
+                ..
+            })
+        ),
+        "the observable capture binder retains the native source-record field read"
     );
     let missing = ReadIdentityRows::of_rows(
         &package,

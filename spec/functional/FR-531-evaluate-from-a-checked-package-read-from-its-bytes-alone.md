@@ -274,6 +274,15 @@ binds the catalog to its `model_root` and selected document. Snapshot provenance
 display names, only a canonical member, or only populations reached by an
 expression SHALL NOT replace this catalog.
 
+When identity-carrier acquisition is requested, its writer SHALL compare the
+exact final model-root bindings with the retained producer catalogs, not only
+their counts. A producer path that retained no catalogs for its model roots
+SHALL refuse that request as a malformed `selected_populations` carrier; it
+SHALL NOT invent an empty supplier. This does not stop a temporal-only emission
+whose caller requested no identity carrier, and genuinely model-free emission
+may carry an empty catalog list. This is required-carrier coverage, not the
+native semantic population validation owned by IR-1358.
+
 The bytes reader SHALL retain these original producer values and join each source
 record through Contract IR's `with_source_record_rows` before exposing its Exact
 record type. A healthy carried row SHALL use `source_record_view`; the legacy

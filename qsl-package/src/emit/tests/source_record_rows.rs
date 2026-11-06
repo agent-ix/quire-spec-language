@@ -285,6 +285,10 @@ fn required_identity_handoff_preserves_original_record_keys_and_native_views() {
     let read =
         crate::ReadIdentityRows::read(&bytes, &package).expect("native joins accept the rows");
     assert_eq!(read, rows);
+    assert!(
+        read.selected_populations().is_empty(),
+        "a genuinely model-free emission needs no catalog"
+    );
     assert_eq!(read.to_bytes(&package).unwrap(), bytes);
     drop(rows);
     drop(emission);
@@ -408,6 +412,31 @@ fn required_source_record_rows_refuse_missing_fields_and_stale_native_bindings()
         refusal.code,
         quire_contract_model::ExactTypeProjectionErrorCode::UnavailableIdentityWitness
     );
+}
+
+#[trace("TC-1331", "FR-531-AC-21", "FR-517-AC-23")]
+#[test]
+fn required_identity_handoff_refuses_missing_or_foreign_final_root_catalogs() {
+    let (emission, _, read) = super::child_composite::emit_unit(super::child_composite::UNIT);
+    let Read::Verified { admitted, .. } = read else {
+        panic!("the genuine model fixture admits");
+    };
+    assert!(!emission.selected_population_catalogs().is_empty());
+    emission
+        .identity_rows(&admitted)
+        .expect("normal emission retains its exact root catalogs");
+    let mut foreign = emission.clone();
+    foreign.selected_population_catalogs[0].model_root.package = "different-final-package".into();
+    assert_eq!(
+        foreign.identity_rows(&admitted),
+        Err(crate::IdentityFileRefusal::Malformed {
+            member: crate::IdentityMember::SelectedPopulations
+        })
+    );
+    let special = crate::emit::emit_timed_models(&admitted, &[])
+        .expect("the genuine special writer can still emit its temporal-only output");
+    assert!(!special.package().bytes().is_empty());
+    assert_eq!(special.identity_rows(&admitted), Err(crate::IdentityFileRefusal::Malformed { member: crate::IdentityMember::SelectedPopulations }), "requesting a required carrier must not turn absent producer catalogs into an empty supplier");
 }
 
 /// The declared fields, node bindings and emitted ids of `Tagged`.

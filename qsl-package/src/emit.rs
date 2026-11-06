@@ -1268,11 +1268,29 @@ impl Emission {
     /// # Errors
     ///
     /// The native typed stage-row refusal when declaration or field claims do
-    /// not join the admitted package. Whole-witness validation is separate.
+    /// not join the admitted package, or a malformed catalog when these bytes'
+    /// final model roots lack their retained producer catalogs. Whole-witness
+    /// validation and semantic population validation are separate native reads.
     pub fn identity_rows(
         &self,
         package: &CheckedPackageV2,
     ) -> Result<crate::ReadIdentityRows, crate::IdentityFileRefusal> {
+        let roots: BTreeSet<_> = self
+            .wire_nodes
+            .iter()
+            .filter(|node| crate::bare::is_model_root(node))
+            .map(|node| &node.node_id)
+            .collect();
+        let carried: BTreeSet<_> = self
+            .selected_population_catalogs
+            .iter()
+            .map(|row| &row.model_root)
+            .collect();
+        if roots != carried || carried.len() != self.selected_population_catalogs.len() {
+            return Err(crate::IdentityFileRefusal::Malformed {
+                member: crate::IdentityMember::SelectedPopulations,
+            });
+        }
         let joined = qsl_semantics::model::intake::selected_exact_identities_from_rows(
             package,
             &self.selected_exact_declaration_rows,

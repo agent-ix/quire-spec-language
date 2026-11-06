@@ -389,7 +389,7 @@ fn is_identities_format(format: &str) -> bool {
 }
 
 #[ix_trace_rs::string_edge]
-fn is_model_root(node: &quire_contract_model::CheckedSemanticNodeV2) -> bool {
+pub(crate) fn is_model_root(node: &quire_contract_model::CheckedSemanticNodeV2) -> bool {
     node.node_tag.as_ref() == "model" && node.semantic_form.as_ref() == "model_root"
 }
 
