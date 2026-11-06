@@ -36,3 +36,13 @@ CONDITIONAL; not mergeable until FND-001 is resolved. Preserve provenance by pro
 ## Coverage
 
 Static review of production changes, callers and tests. Historical coder compile and all-target Clippy logs pass; focused tests were still compiling at review time. No independent build or final gate run. The retained BTreeMap bookkeeping overhead is not charged by NativeJoinBudget; this review makes no complete cache-allocation storage claim. Full graph preprojection changes admission work to a bounded whole-pass charge; native denials precede later projection reads as stated by the edited spec. No further concrete defect was established in that ordering.
+
+## Dispositions
+
+Round 1 at 809901290.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Public capture_value_types projects each initializer through self.package with the explicit caller NativeJoinBudget; caller maps are no longer an accepted type. EvidencePackage reads only its private retained projection map. |
+
+Current verdict: PASS; review-mergeable pending the single final gate. The compile-fail E0308 documentation control names the rejected foreign-map call; historical confined all-target compile passes.

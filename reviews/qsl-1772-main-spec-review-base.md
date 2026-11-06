@@ -28,3 +28,7 @@ PASS. No new requirement statement, acceptance criterion, relationship edge, dom
 ## Coverage
 
 Base checklist: scope, consistency, stated ownership, failure conditions and existing acceptance coverage. Explanatory text does not claim complete new cache-overhead storage charging. Code-review provenance finding remains independent of this normative consistency verdict.
+
+## Dispositions
+
+Round 1 at 809901290: no original findings to disposition. Reviewed the public owner-authoritative capture API and private evidence cache adjustment. No new finding. Scoped review-mergeable pending the single final gate; computed matrix limitation remains recorded.
