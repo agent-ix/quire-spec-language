@@ -6547,7 +6547,7 @@ fn is_compound_unit(content: &NodeContent) -> bool {
 /// key). A `reference`, `option` or collection type names its target; a
 /// compound unit names each `(unit, exponent)` term. A value, expression,
 /// temporal, hybrid or bounded-domain node names, in first-occurrence order
-/// and without repeats, what its body walks: binding names, a literal's type
+/// and without repeats (a decimal range keeps a repeated text, so equal bounds repeat), what its body walks: binding names, a literal's type
 /// node and text, referenced nodes, an application's operation identity, a
 /// fairness member's declaration and name, its laws' definition identities,
 /// its operator and result type, and last the node's semantic type. Every
@@ -6664,8 +6664,75 @@ fn derived_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
                 })
                 .collect()
         }
+        NodeTag::ScalarType if is_carried_quantity(content) => carried_quantity_operands(aggregate),
         _ => Vec::new(),
     }
+}
+
+/// Whether `content` is a `bounded_domain`/`decimal_range` node, whose path
+/// repeats a text operand (QSpec's `dec_cents` vector).
+#[ix_trace_rs::string_edge]
+fn is_decimal_range(content: &NodeContent) -> bool {
+    content.node_tag == NodeTag::BoundedDomain && content.semantic_form == "decimal_range"
+}
+
+/// Whether `content` is a `carried_quantity` scalar type (the FR-322 wire
+/// spelling the node was built with).
+#[ix_trace_rs::string_edge]
+fn is_carried_quantity(content: &NodeContent) -> bool {
+    content.semantic_form == "carried_quantity"
+}
+
+/// QSpec FR-322 "Derived type forms and forwarding": the operands of a
+/// `scalar_type`/`carried_quantity` path are `[U's node_id, C's node_id,
+/// "rounding", T's node_id, "<mode>"]`, read from the node's `unit`,
+/// `carrier` and `rounding` bindings, `T` the text type of the `rounding`
+/// literal. A binding the body lacks contributes no operand, so a truncated
+/// body gives the truncated path the strict reader refuses.
+fn carried_quantity_operands(aggregate: &AggregateTerm) -> Vec<quire_exact::PathSegment> {
+    use quire_exact::PathSegment;
+    let mut unit = None;
+    let mut carrier = None;
+    let mut rounding = None;
+    for member in &aggregate.members {
+        let MemberTerm::Binding(binding) = member else {
+            continue;
+        };
+        let BindingValue::Leaf(leaf) = &binding.value else {
+            continue;
+        };
+        match (binding.name.as_str(), leaf) {
+            (
+                "unit",
+                LeafTerm::Reference {
+                    target: NodeRef::Admitted(key),
+                },
+            ) => unit = Some(key),
+            (
+                "carrier",
+                LeafTerm::Reference {
+                    target: NodeRef::Admitted(key),
+                },
+            ) => carrier = Some(key),
+            (
+                "rounding",
+                LeafTerm::Literal {
+                    ty: NodeRef::Admitted(text),
+                    value,
+                },
+            ) => rounding = Some((text, literal_operand_text(value))),
+            _ => {}
+        }
+    }
+    let mut operands = Vec::with_capacity(5);
+    operands.extend(unit.map(|key| PathSegment::Node(key.clone())));
+    operands.extend(carrier.map(|key| PathSegment::Node(key.clone())));
+    if let Some((text, mode)) = rounding {
+        operands.push(PathSegment::Text("rounding".to_owned()));
+        operands.push(PathSegment::Node(text.clone()));
+        operands.push(PathSegment::Text(mode));
+    }
+    operands
 }
 
 /// The body-walk operands of [`derived_operands`].
@@ -6674,10 +6741,16 @@ fn walked_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
     struct Walk {
         seen: HashSet<PathSegment>,
         operands: Vec<PathSegment>,
+        /// Whether a repeated text operand is kept: a decimal range's path
+        /// repeats a bound's text where two bounds are equal (`scale_min` and
+        /// `scale_max` of QSpec's `dec_cents`), so only a repeated node is
+        /// dropped.
+        keep_text_repeats: bool,
     }
     impl Walk {
         fn push(&mut self, segment: PathSegment) {
-            if self.seen.insert(segment.clone()) {
+            let repeatable = self.keep_text_repeats && matches!(segment, PathSegment::Text(_));
+            if repeatable || self.seen.insert(segment.clone()) {
                 self.operands.push(segment);
             }
         }
@@ -6756,6 +6829,7 @@ fn walked_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
     let mut walk = Walk {
         seen: HashSet::new(),
         operands: Vec::new(),
+        keep_text_repeats: is_decimal_range(content),
     };
     match &content.body {
         BodyTerm::Leaf(leaf) => walk.leaf(leaf),

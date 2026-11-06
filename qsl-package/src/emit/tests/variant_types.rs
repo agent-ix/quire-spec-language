@@ -46,6 +46,14 @@ pub(super) fn emitted_enums(unit_body: &str) -> Emission {
 }
 
 fn emit_unit(unit_body: &str) -> Emitted {
+    let (graph, document) = checked_unit(unit_body);
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    emitted_from(emission, document)
+}
+
+/// The checked graph of `unit_body` over the `Tier` and `Odd` model enums,
+/// with the domain document it selects.
+fn checked_unit(unit_body: &str) -> (qsl_semantics::check::CheckedGraph, Vec<u8>) {
     let document = serde_json::to_vec(&fixture::with_types(vec![fixture::variant_type(
         "Odd", &ODD_CASES,
     )]))
@@ -62,7 +70,10 @@ fn emit_unit(unit_body: &str) -> Emitted {
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
-    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    (graph, document)
+}
+
+fn emitted_from(emission: Emission, document: Vec<u8>) -> Emitted {
     assert_eq!(emission.omitted, []);
     let wire = wire(&emission);
     let mut evidence = CheckedPackageEvidence::new();
@@ -524,4 +535,108 @@ fn an_empty_case_name_is_refused_by_the_reader() {
         node["body"]["value"] = json!("");
     });
     assert!(matches!(emptied, Read::Refused(_)), "{emptied:?}");
+}
+
+/// FR-092-AC-26 (TC-1021): each emitted model enum has one shape row whose
+/// declaration and case ids are the model enum rows' final ids, whose cases
+/// are in the shape's canonical (case-name byte) order and whose variants are
+/// the shape's at their rank; an altered shape is not the row's shape.
+#[trace("FR-092-AC-26", "TC-1021")]
+#[test]
+fn a_model_enum_shape_row_pairs_the_checked_shape_with_the_final_node_ids() {
+    use quire_exact::{EnumShape, VariantId};
+
+    let emitted = emit_unit(
+        "function pick using v(t: M::Tier): M::Tier pure { t }\n\
+         function oddPick using v(t: M::Odd): M::Odd pure { t }",
+    );
+    let Read::Verified { .. } = emitted.read(emitted.emission.package.bytes()) else {
+        panic!("the emitted model enums are admitted")
+    };
+    let rows = emitted.emission.selected_model_enum_shape_rows();
+    assert_eq!(rows.len(), 2, "one shape row per model enum");
+    let declarations = emitted.emission.selected_model_enum_declaration_rows();
+    let members = emitted.emission.selected_model_enum_member_rows();
+    for (name, expected) in [
+        ("Tier", vec!["Gold", "Standard"]),
+        ("Odd", ODD_CASES.to_vec()),
+    ] {
+        let row = rows
+            .iter()
+            .find(|row| row.original_identity.as_ref() == fixture::id(name).as_str())
+            .unwrap_or_else(|| panic!("{name} has a shape row"));
+        let declaration = declarations
+            .iter()
+            .find(|declaration| declaration.node_key == row.node_key)
+            .expect("the declaration row of the shape row");
+        assert_eq!(row.structural_node, declaration.structural_node);
+        assert_eq!(row.selected_document, declaration.selected_document);
+        let cases: Vec<&str> = row.cases.iter().map(|case| case.case.as_ref()).collect();
+        assert_eq!(cases, expected, "{name}: cases in canonical order");
+        let variants: Vec<VariantId> = row.shape.variants().cloned().collect();
+        assert_eq!(variants.len(), expected.len());
+        assert!(!row.shape.is_ordered(), "a variant type is unordered");
+        for (rank, case) in row.cases.iter().enumerate() {
+            assert_eq!(case.variant, variants[rank], "{name}: variant at rank");
+            let member = members
+                .iter()
+                .find(|member| member.member_key == case.member_key)
+                .expect("the member row of the case");
+            assert_eq!(case.structural_node, member.structural_node);
+            assert_eq!(member.declaration_node, row.structural_node);
+            assert_eq!(
+                case.member_original_identity,
+                member.member_original_identity
+            );
+        }
+        // Adverse: a reordered, a missing and an extra variant each differ.
+        let mut reordered = variants.clone();
+        reordered.reverse();
+        assert_ne!(row.shape, EnumShape::new(false, reordered));
+        assert_ne!(
+            row.shape,
+            EnumShape::new(false, variants[1..].iter().cloned())
+        );
+        assert_ne!(
+            row.shape,
+            EnumShape::new(false, variants.iter().cloned().chain([variants[0].clone()]))
+        );
+        assert_eq!(row.shape, EnumShape::new(false, variants));
+    }
+}
+
+/// FR-092-AC-26 (TC-1021): a model enum shape row is a writer fault when a
+/// case's member node is not emitted, and a declaration that is not emitted
+/// has no row.
+#[trace("FR-092-AC-26", "TC-1021")]
+#[test]
+fn a_model_enum_shape_row_refuses_an_unemitted_case_and_skips_an_unemitted_declaration() {
+    let unit = "function oddPick using v(t: M::Odd): M::Odd pure { t }";
+    let (graph, _) = checked_unit(unit);
+    let emission = emit_unit(unit).emission;
+    let mut ids: HashMap<NodeKey, CheckedNodeId> = HashMap::new();
+    for row in emission.selected_model_enum_declaration_rows() {
+        ids.insert(row.node_key.clone(), row.structural_node.clone());
+    }
+    for row in emission.selected_model_enum_member_rows() {
+        ids.insert(row.member_key.clone(), row.structural_node.clone());
+    }
+    let rows = super::super::model_enum_shape_rows(&graph, &ids).expect("complete ids give rows");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].cases.len(), ODD_CASES.len());
+
+    let dropped = rows[0].cases[1].member_key.clone();
+    let mut missing = ids.clone();
+    missing.remove(&dropped);
+    assert!(
+        super::super::model_enum_shape_rows(&graph, &missing).is_err(),
+        "a case with no emitted node is a writer fault"
+    );
+
+    let mut undeclared = ids;
+    undeclared.remove(&rows[0].node_key);
+    assert_eq!(
+        super::super::model_enum_shape_rows(&graph, &undeclared).expect("no declaration, no row"),
+        []
+    );
 }

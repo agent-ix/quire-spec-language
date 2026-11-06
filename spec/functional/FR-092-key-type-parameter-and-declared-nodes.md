@@ -164,6 +164,24 @@ declaration in count, and a position whose type node is not emitted, are
 writer faults, not a row with a missing entry. Rows are written in ascending
 order of their tuple nodes' keys; the order carries no other meaning.
 
+### Model enum shape rows
+
+For each model-owned enum (a variant type of a selected domain model) whose
+declaration node it emits, the `Emission` SHALL carry one
+`SelectedModelEnumShapeRow` beside the model enum declaration and member
+rows. The row holds the declaration's emitted structural id and key, the
+selected document and the declaration's original model identity, the checked
+`EnumShape` of the variant type (unordered, with the cases' variants in
+ascending byte order of the case names), and one entry per case in that
+order: the case label, the case's emitted member node id and member key, the
+case's original model identity and the variant the shape holds at that case's
+rank. `check` reads the shape and variants from the checked variant type, so
+a consumer never derives a variant from a key. A declaration that is not
+emitted has no row. A case set that differs from the shape, a case whose
+variant is not the shape's at its rank and a case whose member node is not
+emitted are writer faults. Rows are written in ascending order of their
+declarations' keys.
+
 ### Source collection rows
 
 A collection type is structural: it has no declaration, owner or declaration
@@ -197,6 +215,7 @@ identity-preimage spellings.
 | `Option<T>` | `composite_type` / `option` | itself | reference to `T` |
 | a collection `K<T>` | `composite_type` / collection form | itself | reference to `T` |
 | bounded collection `K<T>[min,max]` | `bounded_domain` / `collection_bounds` | `K<T>` | `min`, `max` bindings |
+| `Quantity<u, C>` | `scalar_type` / `carried_quantity` | itself | `unit`, `carrier` and `rounding` bindings; its structural path is `[scalar_type, carried_quantity, U, C, "rounding", T, mode]` with `U` the unit node, `C` the carrier node, `T` the text type of the `rounding` literal and `mode` its rounding mode (QSpec FR-322 "Derived type forms and forwarding") |
 | declared record | `composite_type` / `record` | itself | fields in declaration order; an optional field has an `optional` group |
 | declared tuple | `composite_type` / `tuple` | itself | element references in position order |
 
@@ -288,6 +307,9 @@ missing profile selections retain FR-383 and FR-218's refusals.
 | FR-092-AC-23 | Emitting a unit that declares `enum Status { READY, DONE }` and `ordered enum Level { LOW, MID, HIGH }` gives one declaration row and one member row per case for each enum. `Status`'s shape is unordered with its variants in case-name byte order `DONE`, `READY`; `Level`'s is ordered with `LOW`, `MID`, `HIGH`. Each declaration row's shape equals the admitted binding's shape, each member row's variant is the shape's variant at its rank, and the complete source enum row lists the cases in that order. IR's `with_source_enum_rows` accepts the rows and `project_exact_type` of the declaration returns `Enum` of the shape with the complete view, while a row whose cases are reordered or missing, whose variants are swapped, whose ordered flag is flipped or whose shape is short refuses, and the node with no row refuses `UnavailableIdentityWitness`. A case whose member node is not emitted is a writer fault. `AdmittedEnum` exposes the same shape and each case's variant. | Test (TC-1021) |
 | FR-092-AC-24 | Emitting a unit that declares `record R { xs: Sequence<Integer>[0, 3]; s: Set<Boolean>; }` gives one `SelectedSourceCollectionRow` per collection type node. The bounded sequence's row names its emitted `collection_bounds` node, typed by its emitted `sequence` composite node, which references the `integer` element node the row names, with the checked `Sequence<Integer>[0, 3]`; the set's row has equal structural and base nodes, a `set` composite and a `boolean` element. `R`'s source record row binds each field to its collection row's node. A value type that is not a collection, a base that does not reference exactly the row's element and an unemitted node are writer faults; a re-pointed element or a bound typed by another node than its collection is followed or refused from the final nodes. A unit with no collection has none. | Test (TC-1021) |
 | FR-092-AC-25 | With `dimension L; dimension N = L / L; unit m : L = rational(1, 1); unit one : N = rational(1, 1);`, checked and replay-admitted dimension nodes remain distinct: `L` has `base=true` and empty base terms, while `N` has `base=false` and empty derived terms. Their checked payloads and v2 preimages preserve those values; replay reports `L.is_base()` true and `N.is_base()` false. The units reference their respective dimensions and only `one` is dimensionless. | Test (TC-483) |
+| FR-092-AC-26 | Emitting a unit that selects a domain model with a variant type of cases `Beta` and `Alpha` gives one `SelectedModelEnumShapeRow` for it. Its shape is unordered with the variants in case-name byte order `Alpha`, `Beta`, each case's variant is the shape's variant at that rank, the declaration id equals the model enum declaration row's id and each case's node id and original identity equal the matching member row's. A shape with a variant reordered, removed or added is not equal to the row's shape. A declaration whose case set differs from its shape, or a case whose variant is not at its rank, is a writer fault. | Test (TC-1021) |
+| FR-092-AC-27 | `Quantity<m, Decimal[-100, 100; 2, 2; exact]>`, `Quantity<m, Int[-2, 2]>` and `Quantity<m, Int[-2, 2; nearest-even]>` lower to `carried_quantity` nodes whose structural paths hold the unit node, the carrier node, `"rounding"`, the text type node and the mode in that order, and the `Decimal[-100, 100; 2, 2; exact]` carrier's `decimal_range` path repeats its equal `scale_min` and `scale_max` text, as QSpec's `dec_cents` vector does; a repeated operand node is written once. The checked-package reader admits each package, and a carried node whose path is truncated is refused `invalid_package`/`invalid-derived-shape`. | Test (TC-413) |
+
 
 ## Dependencies
 

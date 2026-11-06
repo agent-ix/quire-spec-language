@@ -504,6 +504,42 @@ pub struct SelectedSourceRecordMemberRow {
     pub value_type: quire_exact::ValueType,
 }
 
+/// One model-owned enum (a variant type of a selected domain model)'s checked
+/// variant shape, joined to the final emitted declaration and case nodes
+/// (FR-092 "Model enum shape rows"). It carries the checker's
+/// [`quire_exact::EnumShape`] and each case's [`quire_exact::VariantId`] with
+/// the original model identities, and derives no variant from a node key.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedModelEnumShapeRow {
+    /// The variant type declaration's emitted node.
+    pub structural_node: CheckedNodeId,
+    /// The checked declaration's key, which every enum type of it carries.
+    pub node_key: NodeKey,
+    /// The selected domain model document.
+    pub selected_document: Box<str>,
+    /// The declaration's original IR identity in that document.
+    pub original_identity: Box<str>,
+    /// The checked shape: the ordered flag and the canonical variant sequence.
+    pub shape: quire_exact::EnumShape,
+    /// Every case in the shape's canonical order.
+    pub cases: Vec<SelectedModelEnumShapeCaseRow>,
+}
+
+/// One case of a [`SelectedModelEnumShapeRow`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedModelEnumShapeCaseRow {
+    /// The selected case label.
+    pub case: Box<str>,
+    /// The case's emitted member node.
+    pub structural_node: CheckedNodeId,
+    /// The case's checked member key.
+    pub member_key: NodeKey,
+    /// The case's original IR identity in the selected document.
+    pub member_original_identity: Box<str>,
+    /// The checked variant the shape holds at this case's rank.
+    pub variant: quire_exact::VariantId,
+}
+
 /// One collection type node the package carries, paired with the checker's
 /// collection type (FR-092 "Source collection rows"). A collection is
 /// anonymous, so the row has a node and no declaration or source owner.
@@ -564,6 +600,8 @@ pub struct Emission {
     /// QSL-stage declaration and ordered position witnesses for emitted
     /// source-owned tuples (FR-092 "Source tuple identity rows").
     pub(crate) selected_source_tuple_rows: Vec<quire_contract_model::SelectedSourceTupleRow>,
+    /// QSL-stage checked variant shapes of emitted model-owned enums.
+    pub(crate) selected_model_enum_shape_rows: Vec<SelectedModelEnumShapeRow>,
     /// QSL-stage collection type facts for emitted collection nodes.
     pub(crate) selected_source_collection_rows: Vec<SelectedSourceCollectionRow>,
     /// The checking stage's selected model declaration rows (record, object,
@@ -803,6 +841,7 @@ impl DebugWith for Emission {
             selected_source_union_rows,
             selected_source_record_rows,
             selected_source_tuple_rows,
+            selected_model_enum_shape_rows,
             selected_source_collection_rows,
             selected_exact_declaration_rows,
             selected_exact_field_rows,
@@ -843,6 +882,10 @@ impl DebugWith for Emission {
             .field("selected_source_union_rows", selected_source_union_rows)
             .field("selected_source_record_rows", selected_source_record_rows)
             .field("selected_source_tuple_rows", selected_source_tuple_rows)
+            .field(
+                "selected_model_enum_shape_rows",
+                selected_model_enum_shape_rows,
+            )
             .field(
                 "selected_source_collection_rows",
                 selected_source_collection_rows,
@@ -1176,6 +1219,12 @@ impl Emission {
                 }
             })
             .collect()
+    }
+
+    /// The model-owned enum shape rows (FR-092 "Model enum shape rows"), in
+    /// ascending declaration-key order.
+    pub fn selected_model_enum_shape_rows(&self) -> &[SelectedModelEnumShapeRow] {
+        &self.selected_model_enum_shape_rows
     }
 
     /// Collection type rows carried by this emission, ascending by the
@@ -5225,6 +5274,7 @@ pub fn emit_timed_models(
         selected_source_union_rows: Vec::new(),
         selected_source_record_rows: Vec::new(),
         selected_source_tuple_rows: Vec::new(),
+        selected_model_enum_shape_rows: Vec::new(),
         selected_source_collection_rows: Vec::new(),
         selected_exact_declaration_rows: Vec::new(),
         selected_exact_field_rows: Vec::new(),
@@ -6145,6 +6195,7 @@ fn emit_package_inner(
         .collect();
     let (selected_enum_declaration_rows, selected_enum_member_rows) =
         source_enum_rows(graph, &emitted_node_ids)?;
+    let selected_model_enum_shape_rows = model_enum_shape_rows(graph, &emitted_node_ids)?;
     let selected_source_union_rows = source_union_rows(graph, &emitted_node_ids)?;
     let selected_source_record_rows = source_record_rows(graph, &emitted_node_ids)?;
     let selected_source_tuple_rows = source_tuple_rows(graph, &emitted_node_ids)?;
@@ -6206,6 +6257,7 @@ fn emit_package_inner(
         selected_source_union_rows,
         selected_source_record_rows,
         selected_source_tuple_rows,
+        selected_model_enum_shape_rows,
         selected_source_collection_rows,
         selected_exact_declaration_rows: graph.selected_exact_declaration_rows().to_vec(),
         selected_exact_field_rows: graph.selected_exact_field_rows().to_vec(),
@@ -6538,6 +6590,68 @@ fn tuple_position_rows(
             })
         })
         .collect()
+}
+
+
+/// FR-092 "Model enum shape rows": one row per emitted model-owned enum
+/// declaration, holding the checker's `EnumShape` and each case's variant,
+/// joined to the final declaration and case node ids, cases in the shape's
+/// canonical order. A declaration whose case set differs from its shape, a
+/// case whose variant is not at its rank, or a case node that was not emitted
+/// is a writer fault.
+fn model_enum_shape_rows(
+    graph: &CheckedGraph,
+    emitted: &HashMap<NodeKey, CheckedNodeId>,
+) -> Result<Vec<SelectedModelEnumShapeRow>, EmitRefusal> {
+    let semantic = graph.semantic_graph();
+    let mut rows = Vec::new();
+    for (key, declaration) in semantic.selected_model_enum_declarations() {
+        let Some(structural_node) = emitted.get(key) else {
+            continue;
+        };
+        let variants: Vec<quire_exact::VariantId> = declaration.shape.variants().cloned().collect();
+        let mut members: Vec<_> = semantic
+            .selected_model_enum_members()
+            .filter(|(_, member)| &member.declaration_key == key)
+            .collect();
+        if members.len() != variants.len() {
+            return Err(EmitRefusal::SourceMapInvariant);
+        }
+        members.sort_by_key(|(_, member)| {
+            variants
+                .iter()
+                .position(|variant| variant == &member.variant)
+                .unwrap_or(usize::MAX)
+        });
+        let cases = members
+            .into_iter()
+            .zip(&variants)
+            .map(|((member_key, member), variant)| {
+                if &member.variant != variant {
+                    return Err(EmitRefusal::SourceMapInvariant);
+                }
+                Ok(SelectedModelEnumShapeCaseRow {
+                    case: member.case.clone(),
+                    structural_node: emitted
+                        .get(member_key)
+                        .cloned()
+                        .ok_or(EmitRefusal::SourceMapInvariant)?,
+                    member_key: member_key.clone(),
+                    member_original_identity: member.member_original_identity.clone(),
+                    variant: variant.clone(),
+                })
+            })
+            .collect::<Result<Vec<_>, EmitRefusal>>()?;
+        rows.push(SelectedModelEnumShapeRow {
+            structural_node: structural_node.clone(),
+            node_key: key.clone(),
+            selected_document: declaration.selected_document.clone(),
+            original_identity: declaration.original_identity.clone(),
+            shape: declaration.shape.clone(),
+            cases,
+        });
+    }
+    Ok(rows)
 }
 
 /// FR-092 "Source collection rows": one row per emitted collection type node,
