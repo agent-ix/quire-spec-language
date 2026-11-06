@@ -1616,11 +1616,13 @@ fn a_zero_or_non_integer_maximum_refuses_malformed_member() {
     let integer = quire_contract_model::LiteralKind::Integer;
     let target = id.clone();
     let reference = move |term: &mut CheckedTerm| *term = CheckedTerm::reference(target.clone());
-    let malformed: [&dyn Fn(&mut CheckedTerm); 4] = [
+    let malformed: [&dyn Fn(&mut CheckedTerm); 6] = [
         &set(integer, "0"),
         &set(quire_contract_model::LiteralKind::Text, "3"),
         &reference,
         &set(integer, "18446744073709551616"),
+        &set(integer, "+3"),
+        &set(integer, ""),
     ];
     for change in malformed {
         let nodes = nodes_with_maximum(package, &id, Some(change));

@@ -417,7 +417,9 @@ pub(crate) fn integer(term: &CheckedTerm) -> Option<u64> {
             value_kind: LiteralKind::Integer,
             value: Value::String(digits),
             ..
-        } => digits.parse().ok(),
+        } if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) => {
+            digits.parse().ok()
+        }
         _ => None,
     }
 }
