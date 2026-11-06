@@ -21,6 +21,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-499
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-381
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-520
+    type: references
 ---
 # FR-519: Publish the protocol read surface the quire-protocol link layer imports
 
@@ -59,13 +63,15 @@ QSL's functions here take `&CheckedPackageV2`.
 ## Inputs
 
 A `&CheckedPackageV2` and the `CheckedNodeId` of a `protocol`/`protocol_clause`
-node.
+node; for the attempts maximum, the `CheckedNodeId` of a compensation node.
 
 ## Outputs
 
 In `qsl_package::protocol_view` (std only):
 
 ```rust
+pub fn attempts_maximum(package: &CheckedPackageV2, compensation: &CheckedNodeId)
+    -> Result<u64, ViewRefusal>;
 pub fn causal_relation(package: &CheckedPackageV2, protocol: &CheckedNodeId)
     -> Result<CausalRelation, ViewRefusal>;
 pub fn protocol_view<'p>(package: &'p CheckedPackageV2, protocol: &CheckedNodeId)
@@ -93,6 +99,17 @@ its roles, channels, queues, controls in layout order, compensations,
 `requirements` (temporal clauses), `terminal` and `scheduling` when present, and
 the FR-449 activation rows (`protocol_activation_relation`).
 
+`attempts_maximum` returns the value of the `maximum` member of the `attempts`
+group of the compensation node `compensation`, the retry bound FR-381 checks as
+`maximum_attempts`: a `u64` of at least one, counting the initial attempt, held in
+the integer encoding of QSpec FR-322. It refuses with `ViewRefusal`, and returns
+no value, when `compensation` is absent from the package or names a node that is
+not a compensation (`ViewRefusal::NotACompensation`, naming the id), when the
+node's `attempts` group lacks `maximum` (`MissingMember` naming
+`attempts.maximum`), and when `maximum` is not an integer or is zero
+(`MalformedMember` naming `attempts.maximum`). FR-520-AC-4 compares the retry
+bound it reads through this function, so the two requirements state one value.
+
 ## Behavior
 
 ### The record-to-node map
@@ -103,9 +120,9 @@ function** when QSL's `protocol_view` module returns its successor, or it is
 reads directly and QSL publishes no view for it. The view functions are
 `protocol_view`, `causal_relation`, `control_operation`, `operation_identity`,
 `binder`, `locus`, `delivery`, `queue_capacity`, `owner_model`, `declaration`,
-`temporal_binding`, `dependency`, `source` and `selection`. `protocol_view`,
-`causal_relation` and `binder` take an admitted package; the others take the
-node, lock or source map they read.
+`temporal_binding`, `dependency`, `source`, `selection` and `attempts_maximum`.
+`protocol_view`, `causal_relation`, `binder` and `attempts_maximum` take an
+admitted package; the others take the node, lock or source map they read.
 
 | `wire` record used by quire-protocol | Successor | Disposition |
 | --- | --- | --- |
@@ -134,7 +151,8 @@ node, lock or source map they read.
    handoff's files, then `Selection::check` (FR-517); no second reader.
 2. A typed link view over `CheckedPackageV2` nodes that replaces `wire::Package`
    in `src/link/mod.rs`, importing `causal_relation` and `protocol_view` and
-   mirroring neither.
+   mirroring neither, and reading a compensation's retry bound only through
+   `attempts_maximum`, never from the compensation node body.
 3. Its own refusals stay its own: zero-progress iteration, duplicate role
    authorities, conflicting channel premises, and the others its module
    documentation lists as "this module refuses, because A does not".
@@ -156,6 +174,10 @@ node, lock or source map they read.
 | FR-519-AC-11 | For **R**, the `semantic_type` nodes and the literal and reference terms that stand for `Type`, `Value` and `Number` records are read through `CheckedPackageV2::term` and equal the values the checked clause holds in memory, with numbers in the FR-322 encoding. | Test (TC-1314) |
 | FR-519-AC-12 | For the model of TC-1054 (TC-1046's fixture with the populations `orders` and `people`; **R** of FR-517 declares no population), the population declaration node of the emitted package, selected from the `CheckedPackageV2` by its node id, equals the node the checked clause holds in memory. | Test (TC-1314) |
 | FR-519-AC-13 | `qsl_package::protocol_view` exports no item for a window binding; a compile-fail `use` of `qsl_package::protocol_view::Window` fails to resolve. | Test (TC-1314) |
+| FR-519-AC-14 | For **R** of FR-517, `attempts_maximum` returns 3 for the `Full` compensation and 3 for the `Partial` compensation, each equal to the count the checked clause holds in memory; a compensation whose authored count is 1 returns 1 and one whose count is 18446744073709551615 returns that value. | Test (TC-1314) |
+| FR-519-AC-15 | With `maximum` removed from the `attempts` group of the compensation node, `attempts_maximum` refuses with `ViewRefusal::MissingMember` naming `attempts.maximum` and returns no value. An admitted package never lacks the member (FR-383-AC-8), so the removal is made on a copy of the node the function reads and not on an admitted package. | Test (TC-1314) |
+| FR-519-AC-16 | For an id absent from the package, or naming a role, a control or any other node that is not a compensation, `attempts_maximum` refuses with `ViewRefusal::NotACompensation` naming the id and returns no value. | Test (TC-1314) |
+| FR-519-AC-17 | With a `maximum` member that is not an integer, or is zero (FR-381-AC-7 admits only a count of at least one), `attempts_maximum` refuses with `ViewRefusal::MalformedMember` naming `attempts.maximum` and returns no value; the malformed value is set on a copy of the node the function reads, as in FR-519-AC-15. | Test (TC-1314) |
 
 ## Dependencies
 

@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the causal relation, the protocol view and the record-to-node map.
-Scope: FR-519-AC-1 to FR-519-AC-13, AC-7 retired. **R** is the package of FR-517, except for row 12.
+Scope: FR-519-AC-1 to FR-519-AC-17, AC-7 retired. **R** is the package of FR-517, except for row 12.
 
 ## Test Procedure
 
@@ -30,8 +30,12 @@ Scope: FR-519-AC-1 to FR-519-AC-13, AC-7 retired. **R** is the package of FR-517
 | 11 | 11 | read `R`'s `semantic_type` nodes and literal and reference terms through `CheckedPackageV2::term` | equal to the in-memory values; numbers in the FR-322 encoding |
 | 12 | 12 | select the population declaration node from the package of TC-1054's model by node id (**R** of FR-517 declares no population) | equal to the in-memory node |
 | 13 | 13 | compile-fail `use qsl_package::protocol_view::Window` | does not resolve |
+| 14 | 14 | `attempts_maximum` over **R** for `Full` and `Partial`; over fixtures the test authors with `attempts 1` and `attempts 18446744073709551615` (**R** has neither; its authored value is 3); compare FR-520-AC-4 row 5 of TC-1315, which reads the same bound | 3 and 3, equal to the in-memory counts; 1; 18446744073709551615 |
+| 15 | 15 | `attempts_maximum` over a copy of the `Full` node with `maximum` removed from its `attempts` group | `ViewRefusal::MissingMember` naming `attempts.maximum`; no value |
+| 16 | 16 | `attempts_maximum` with an id absent from the package, a role id and a control id | `ViewRefusal::NotACompensation` naming the id, each time; no value |
+| 17 | 17 | `attempts_maximum` over a copy of the `Full` node with `maximum` set to zero, and to a non-integer term | `ViewRefusal::MalformedMember` naming `attempts.maximum`, each time; no value |
 
-Tag the test `#[trace("FR-519-AC-1", ..., "FR-519-AC-13", "TC-1314")]`; row 1 also carries FR-383-AC-16.
+Tag the test `#[trace("FR-519-AC-1", ..., "FR-519-AC-17", "TC-1314")]`; row 1 also carries FR-383-AC-16.
 
 ## Expected Results
 
