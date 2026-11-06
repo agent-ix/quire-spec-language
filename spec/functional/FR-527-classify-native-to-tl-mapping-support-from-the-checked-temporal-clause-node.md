@@ -69,6 +69,13 @@ surrounding: Closure) -> Result<Classification, MappingRefusal>`.
   stays until the Contract IR repoint (IR-1005), which maps the legacy value to
   this one. The function takes no decision-scope closure.
 
+`mapping_support` is a QSL owner classifier over its checked view. Constructing
+the view and performing classification are excluded from FR-350 component
+work counters because this API accepts no caller budget or receipt; FR-350
+accounts only the component work it owns. This exclusion does not change any
+FR-045 classification result or claim that the owner work was charged to the
+caller.
+
 ## Outputs
 
 `Classification`: the disposition `Supported { target, total_sample_valuation,
@@ -176,6 +183,7 @@ view names a definition identity that is none of the five temporal profiles the
 | FR-527-AC-22 | A clause selected under `quire.temporal.timed/v1` returns `Unsupported` naming `TimedProfile` and no TL target. | Test (TC-1322) |
 | FR-527-AC-23 | A timed clause holding a past and a future operator returns `Unsupported` naming `TimedProfile` and `MixedDirection`. | Test (TC-1322) |
 | FR-527-AC-24 | Over a package whose clause `Gamma` has one occurrence, a supported result and an unsupported result (AC-22's timed clause named `Delta`, with one occurrence) hold the retained name `Some("Gamma")` and `Some("Delta")` respectively, each equal to `name()` of the view; over FR-337-AC-16's package of the two structurally equal clauses `Alpha` and `Beta`, the result holds `None`, equal to `name()` of the view. | Test (TC-1322) |
+| FR-527-AC-25 | Calling `mapping_support` performs no caller-budget or receipt operation and leaves FR-350 component counters unchanged; it returns the same classification for the same checked view and `surrounding` value. | Test |
 
 ## Dependencies
 

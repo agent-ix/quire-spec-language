@@ -50,6 +50,16 @@ separate native-temporal request/result document. The typed request and result
 that carry them for quire-protocol are FR-516's; they are Rust values with no
 document, schema or QSL-computed content digest (the observation owner's
 identifiers on `EvidenceRef` are opaque and echoed).
+For the QSL-owned native `Report` route, the report SHALL bind the exact checked
+declaration occurrence, admitted observation reference, and FR-043 outcome.
+Its owner reader SHALL admit only a complete, supported report representation
+whose binding agrees with the checked subject and observation reference. This
+native report contract is distinct from FR-516's quire-protocol request/result
+types. QSL treats the observation owner's reference as opaque: it neither
+defines its revision/capture-provenance shape nor derives identity from bytes,
+hashes, or digests. QSL's direct-predecessor rule in AC-12 applies to a
+correction relation carried by this native route; it grants no authority over
+an IR bridge join's predecessor or supersession lineage.
 FR-043 owns temporal meaning; FR-044 owns activation and captures. The retired
 M-6d request/result API criteria remain historical and do not retire these
 behaviors.
@@ -64,6 +74,8 @@ behaviors.
 | FR-052-AC-12 | Where the route accepts a correction relation, a valid correction names its exact direct predecessor and changed evaluation input; self, non-direct, cross-obligation or identity-mismatched predecessors refuse, and the predecessor result remains unchanged. | Test |
 | FR-052-AC-13 | Where the route carries a progress ledger, a regressing watermark or a conflicting completeness revision under one binding is refused as FR-502 states, leaves the retained progress and every earlier result unchanged, and a foreign clock, clause, package or profile settles nothing for the binding (the spine successor of FR-043-AC-12). | Test (TC-144, TC-1296) |
 | FR-052-AC-14 | A checked temporal obligation selected under the timestamped-event finite-window profile is evaluated as FR-501 states and is never refused for its profile. | Test (TC-144, TC-1295) |
+| FR-052-AC-15 | A native `Report` read by its QSL owner reader retains the exact checked declaration occurrence, the same opaque observation reference admitted for evaluation, and the FR-043 truth, settlement, support, and typed outcome; the reader refuses a missing or mismatched binding or an unsupported report representation without returning a partial report. | Test |
+| FR-052-AC-16 | A native correction with an exact direct predecessor is admitted only when the predecessor belongs to the same checked declaration occurrence and the changed evaluation input is identified; self, non-direct, cross-occurrence, or mismatched predecessors refuse and leave predecessor content unchanged. This criterion does not authorize or specify bridge predecessor/supersession lineage owned by IR. | Test |
 
 ## Dependencies
 

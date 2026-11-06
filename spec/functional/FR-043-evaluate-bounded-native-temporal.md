@@ -109,6 +109,16 @@ so a contradicting assertion is refused rather than absorbed. Evaluation without
 a ledger stands on the trace's own assertions alone and detects no contradiction
 across calls.
 
+On the checked-package native route, valuation evidence is admitted against the
+`CheckedPackageV2` declaration-to-arena relation and its occurrence keys from
+FR-515. The evaluator SHALL retain one evidence row for every admitted
+`holds`-valuation input, including repeated rows; it SHALL NOT collapse
+valuation evidence into a map keyed only by leaf or declaration. Each row is
+associated with the exact declaration occurrence and checked `holds` operand
+it values. Observation admission, revision, and immutable capture provenance
+remain the observation owner's authority; QSL consumes only evidence admitted
+by that owner and does not define or reproduce its provenance shape.
+
 Caller-configured limits arrive as explicit values under
 [NFR-008](../non-functional/NFR-008-bound-temporal-evaluation.md). The evaluator
 consumes no ambient clock, installed default profile, file ordering, ingestion
@@ -298,6 +308,8 @@ closure combination, and SHALL refuse any one-axis substitution.
 | FR-043-AC-12 | A regressing watermark or a conflicting completeness revision under one binding returns a typed contradiction refusal without rolling back progress, restamping closure or rewriting an earlier result; a foreign clock, subject or binding cannot settle the obligation. | Test (TC-122, TC-1277) |
 | FR-043-AC-13 | Repeated evaluation with identical inputs reproduces one result identity; a changed profile, clock binding, declared period, epoch, unit, sequence authority or ceiling yields a distinct result identity and the earlier result is neither reused nor rewritten. | Test (TC-122, TC-1277); Analysis |
 | FR-043-AC-14 | Through `temporal::evaluate_v2` over a strict `/2` package whose declarations bind a fixed-sample (`epoch` 0, `period` 1, `unit` `ms`), an event-position (`sequence_authority` `seq`) and a timestamped-event (`timestamp_unit` `ns`) configuration, a trace with the exact profile, clock name and parameters evaluates and its report retains the package identity and version, declaration, definition identity and revision, clock name and parameter map. Each single change refuses `Refusal::Binding` before any position is visited, with no truth and no authenticated binding: another profile (`Profile`), another clock name (`Clock`), a missing or extra parameter key (`ClockParameters`), `epoch` 1 (`Epoch`), `period` 2 (`SamplePeriod`), `unit` `s` (`ClockUnit`), `sequence_authority` `other` (`SequenceAuthority`) and `timestamp_unit` `us` (`TimestampUnit`). Through the temporal `/1` `evaluate`, the profile and clock-name mutations refuse `Refusal::Binding` (`Profile`, `Clock`) as they do under `/2`; the parameter mutations (the key set, `epoch`, `period`, `unit`, `sequence_authority` and `timestamp_unit`) are not refused, and every `/1` result retains no authenticated binding. | Test (TC-122, TC-1277) |
+| FR-043-AC-15 | For two occurrences of one checked temporal declaration that share a checked node and formula, evaluation retains distinct valuation-evidence rows under their respective occurrence keys; repeating a `holds` valuation input retains each row, and the output rows equal the admitted inputs in multiplicity and occurrence association. | Test |
+| FR-043-AC-16 | A valuation row naming an absent declaration occurrence, a `holds` operand outside that declaration's checked formula, or evidence not admitted by the observation owner is refused before evaluation and yields no truth or partial support; omitting a required row is incomplete, never false. | Test |
 
 ## Dependencies
 

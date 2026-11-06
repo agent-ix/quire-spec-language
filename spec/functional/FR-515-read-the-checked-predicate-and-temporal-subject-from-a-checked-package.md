@@ -61,6 +61,15 @@ the reader. This requirement states only what QSL returns from an admitted
 package. The views select no truth, hold no evaluation callback and assert no
 observation or result state (the FR-051-AC-6 history text, kept).
 
+For the checked-package native evaluation route, QSL SHALL expose the exact
+relation from each checked temporal declaration to its native evaluation arena
+entry and each declaration occurrence. Each relation row names the checked
+`CheckedNodeId`, the native arena handle assigned while constructing the native
+package view, and the authored occurrence key. The relation SHALL NOT be
+reconstructed from formula bytes, a digest, or a hash. Structurally equal
+declarations may share a checked node and native formula, while each authored
+occurrence remains separately addressable by its `{ role, ordinal }` key.
+
 ## Inputs
 
 - A `&quire_contract_model::CheckedPackageV2` returned by
@@ -92,6 +101,14 @@ evaluates. `ViewRefusal` (shared with FR-519) is a closed enum; the variants of 
 - `LeafHasNoSource`: the leaf is a term of the clause, and the package source
   map holds no entry for it;
 - `LeafNotBoolean`: the leaf's semantic type is not the `boolean` node.
+
+For native evaluation, the checked-package evaluation view SHALL expose a
+read-only declaration-to-arena relation and the occurrence key for every
+occurrence of that declaration. A caller SHALL obtain this relation from the
+admitted checked package; no caller-supplied arena handle or derived identity
+is accepted. Building the view and reading its occurrence rows is QSL owner
+work, excluded from FR-350 component work counters; these read APIs take no
+caller work budget or receipt.
 
 ## Behavior
 
@@ -299,6 +316,8 @@ need no `BarePackage`.
 | FR-515-AC-26 | Over a read package with two clauses of one name, and over one with two name rows pairing to one clause, `from_read` returns `PackageMismatch::AmbiguousName` in each; `from_emission` over the two-clauses-of-one-name package pairs by `clause` position and constructs. | Test (TC-1310) |
 | FR-515-AC-27 | Over an `Emission` whose `profile_selections` do not match the package, `from_emission` returns `PackageMismatch::ProfileSelections`. | Test (TC-1310) |
 | FR-515-AC-28 | Over an `Emission` whose `temporal_bindings` rows do not match the package, `from_emission` returns `PackageMismatch::Bindings`. | Test (TC-1310) |
+| FR-515-AC-29 | For each temporal declaration in an admitted `CheckedPackageV2`, the native evaluation view returns a relation row carrying its `CheckedNodeId`, assigned native arena handle, and every authored occurrence keyed by `{ role, ordinal }`; two structurally equal declarations sharing a checked node retain both occurrence keys, and no arena handle or occurrence key is derived from formula bytes, a digest, or a hash. | Test |
+| FR-515-AC-30 | Calling `temporal_subject` and enumerating its occurrence rows performs no caller-budget or receipt operation, and FR-350 component counters remain unchanged; the QSL owner view/classification work is accounted outside those component counters. | Test |
 
 ## Dependencies
 
