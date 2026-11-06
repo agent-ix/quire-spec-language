@@ -194,7 +194,7 @@ pub enum Error {
     /// joining the selected identities (FR-358). IR's own refusal; not an
     /// unnameable value.
     #[error("the native join budget was consumed: {0}")]
-    NativeJoinExhausted(Box<quire_contract_model::ExactTypeProjectionError>),
+    NativeJoinExhausted(Box<qsl_package::NativeJoinLimitError>),
 }
 
 impl Error {
@@ -315,7 +315,7 @@ pub fn write_with(
     let mut budget = request.native_join.budget();
     files.insert(
         "identities.json",
-        identity_file(&compiled, &package, &mut budget)?,
+        identity_file(&compiled, &package, &mut budget, request.native_join)?,
     )?;
     files.insert(
         "equality.json",
@@ -349,6 +349,7 @@ fn identity_file(
     compiled: &Compiled,
     package: &quire_contract_model::CheckedPackageV2,
     budget: &mut quire_contract_model::NativeJoinBudget,
+    limits: qsl_package::NativeJoinLimits,
 ) -> Result<Vec<u8>, Error> {
     let unnameable = |what: String| Error::Unnameable { what };
     compiled
@@ -359,7 +360,10 @@ fn identity_file(
             qsl_package::IdentityFileRefusal::Native(native)
                 if qsl_semantics::model::intake::is_native_budget_denial(&native) =>
             {
-                Error::NativeJoinExhausted(native)
+                match limits.refusal(native, budget) {
+                    Some(denial) => Error::NativeJoinExhausted(Box::new(denial)),
+                    None => unnameable("native budget denial has no unpaid charge".to_owned()),
+                }
             }
             other => unnameable(format!("identity file: {other}")),
         })?

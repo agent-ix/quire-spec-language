@@ -98,6 +98,8 @@ pub use emit::{
 pub use equality_file::{
     EqualityFileRefusal, EqualityWitnessRefusal, ReadEqualityRows, EQUALITY_FORMAT,
 };
+#[cfg(feature = "std")]
+pub use evaluation_view::NativeJoinLimitError;
 pub use evaluation_view::{
     AdmittedEvaluationView, AdmittedProtocolObservation, ProtocolSource, SelectedProtocolTerm,
     TermHandle, ViewFailure,

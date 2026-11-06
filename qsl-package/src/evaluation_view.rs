@@ -410,6 +410,28 @@ impl SelectedProtocolTerm<'_, '_> {
     }
 }
 
+/// A native denial with the stage's original ceiling and attempted charge.
+#[cfg(feature = "std")]
+#[derive(Debug, thiserror::Error)]
+#[error("{limit}: {native}")]
+pub struct NativeJoinLimitError {
+    /// The native refusal, including its structural locus and admitted work.
+    pub native: Box<quire_contract_model::ExactTypeProjectionError>,
+    /// The stage limit with its configured bound and attempted total.
+    pub limit: qsl_foundation::diagnostic::LimitExceeded,
+}
+
+#[cfg(feature = "std")]
+impl quire_semantic_value::catalog::CatalogCoded for NativeJoinLimitError {
+    fn catalog_code(&self) -> CatalogCode {
+        self.limit.catalog_code()
+    }
+
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        self.limit.catalog_fields()
+    }
+}
+
 /// Why an admitted package could not expose its evaluation view.
 #[derive(Debug)]
 pub enum ViewFailure {
@@ -424,7 +446,8 @@ pub enum ViewFailure {
     /// The read's native join work or storage ceiling was consumed while the
     /// view joined the selected identities (FR-358); no view exists. IR's own
     /// refusal, not a fault and not an empty identity set.
-    Exhausted(Box<quire_contract_model::ExactTypeProjectionError>),
+    #[cfg(feature = "std")]
+    Exhausted(Box<NativeJoinLimitError>),
 }
 
 /// The successful, immutable current-snapshot authority for protocol slots.
