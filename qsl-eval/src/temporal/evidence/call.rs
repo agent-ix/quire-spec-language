@@ -564,7 +564,9 @@ fn encode_captures(mut encoder: MemberEncoder, captures: &[CaptureFact]) -> Memb
 }
 
 fn encode_trace(subject: &ResolvedSubject<'_>, request: &EvidenceRequest) -> Vec<u8> {
-    let mut encoder = MemberEncoder::new().u64(request.positions.len() as u64);
+    let mut encoder = MemberEncoder::new()
+        .bytes(&request.native_valuations)
+        .u64(request.positions.len() as u64);
     // The listing is the order of an event-position or fixed-sample trace;
     // a timestamped trace has the canonical order of FR-501.
     let ordered = if subject.facts.profile() == TemporalProfile::TimestampedEventFiniteWindow {

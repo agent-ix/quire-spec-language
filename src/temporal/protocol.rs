@@ -7,7 +7,9 @@ use std::collections::BTreeSet;
 use crate::protocol_artifact::{v3, wire::Handle};
 use qsl_package::CheckedPackage;
 
-use super::{evaluate_checked_with_progress_v2, Ledger, Limits, Obligation, Report, Trace, Usage};
+use super::{
+    evaluate_checked_with_progress_v2, ArtifactReport, Ledger, Limits, Obligation, Trace, Usage,
+};
 
 /// An opaque semantic-trigger identity supplied by the observation owner.
 ///
@@ -110,7 +112,7 @@ pub struct ProtocolEvaluation {
     predecessor: Option<ProtocolEvaluationId>,
     selection: ProtocolSelection,
     anchor: String,
-    report: Report,
+    report: ArtifactReport,
     settled_siblings: Vec<Obligation>,
     completed_siblings: Vec<Obligation>,
 }
@@ -139,7 +141,7 @@ impl ProtocolEvaluation {
 
     /// The temporal report produced by QSL from the checked declaration and
     /// supplied evidence.
-    pub fn report(&self) -> &Report {
+    pub fn report(&self) -> &ArtifactReport {
         &self.report
     }
 
@@ -342,7 +344,7 @@ impl ProtocolLedger {
                 predecessor: None,
                 selection,
                 anchor,
-                report: Report {
+                report: ArtifactReport {
                     result: Err(super::Error::Exhausted(exhaustion)),
                     limits,
                     usage: Usage::default(),
@@ -528,7 +530,7 @@ fn evaluate_siblings(
     ledger: &mut Ledger,
     mut trace: Trace,
     limits: Limits,
-) -> (Report, Vec<Obligation>, Vec<Obligation>) {
+) -> (ArtifactReport, Vec<Obligation>, Vec<Obligation>) {
     let effective = limits.bounded();
     if trace.triggers.len() <= 1 || trace.trigger_evidence != super::Evidence::Admitted {
         return (
@@ -621,7 +623,7 @@ fn evaluate_siblings(
                 }),
         );
         (
-            Report {
+            ArtifactReport {
                 result: Err(error),
                 limits: effective,
                 usage: accumulated,
@@ -633,7 +635,7 @@ fn evaluate_siblings(
         )
     } else {
         (
-            Report {
+            ArtifactReport {
                 result: Ok(obligations),
                 limits: effective,
                 usage: accumulated,
@@ -646,7 +648,7 @@ fn evaluate_siblings(
     }
 }
 
-fn remap_report_instance(report: &mut Report, instance: usize) {
+fn remap_report_instance(report: &mut ArtifactReport, instance: usize) {
     match &mut report.result {
         Ok(obligations) => {
             for obligation in obligations {

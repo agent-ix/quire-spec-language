@@ -135,6 +135,9 @@ pub enum Relation {
 /// ```
 #[derive(Clone, Debug)]
 pub struct EvidenceRequest {
+    /// Ordered native valuation relation identity, populated by the native owner.
+    /// Empty for calls outside that route; never interpreted as truth.
+    pub native_valuations: Vec<u8>,
     /// The instance the call assesses among the resolved ones.
     pub trigger: Option<SemanticTriggerIdentity>,
     /// The correspondence evidence.

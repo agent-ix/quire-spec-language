@@ -500,6 +500,17 @@ pub fn evaluate_v2(
     let bare = BarePackage::new(subject.package);
     let package = qsl_eval::temporal::evidence::EvidencePackage::from_package(&bare)?;
     let mut request = subject.request.clone();
+    request.correspondence.identity = observation.reference.clone();
+    request.correspondence.authority_revision = observation.revision.clone();
+    let mut native = Writer::new();
+    for row in subject.evidence.rows() {
+        let mut entry = Writer::new();
+        entry.field(1, &row_key(row));
+        entry.field(2, &[u8::from(row.value)]);
+        native.field(1, &entry.finish());
+    }
+    request.native_valuations = native.finish();
+    let operands = qsl_eval::temporal::evidence::native_atom_operands(&view);
     request.occurrence = Some(qsl_package::CheckedOccurrence {
         role: subject.occurrence.role.clone(),
         ordinal: subject.occurrence.ordinal,
@@ -511,7 +522,10 @@ pub fn evaluate_v2(
         position.instance_aggregate_samples.clear();
     }
     for (position, input) in request.positions.iter_mut().enumerate() {
-        for (atom, operand) in view.predicate_leaves().iter().enumerate() {
+        for (atom, operand) in operands.iter().enumerate() {
+            let Some(operand) = operand else {
+                continue;
+            };
             let valuation = match subject
                 .evidence
                 .value_of(subject.occurrence, position, operand)
@@ -536,9 +550,9 @@ pub fn evaluate_v2(
     let mut support = Vec::new();
     for used in &result.support {
         let atom = usize::try_from(used.atom).map_err(|_| ReportRefusal::SupportNotInTrace)?;
-        let operand = view
-            .predicate_leaves()
+        let operand = operands
             .get(atom)
+            .and_then(Option::as_ref)
             .ok_or(ReportRefusal::SupportNotInTrace)?;
         for row in subject
             .evidence
@@ -557,7 +571,11 @@ pub fn evaluate_v2(
         binding: subject.binding.clone(),
         observation: observation.clone(),
         outcome,
-        truth: result.truth,
+        truth: if outcome == ReportOutcome::Evaluated {
+            result.truth
+        } else {
+            None
+        },
         settlement: result.settlement,
         support,
         identity: result.result_identity.as_bytes().to_vec(),
