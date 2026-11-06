@@ -1117,6 +1117,97 @@ mod quantities {
         .expect("the unit nodes admit")
     }
 
+    /// Synthetic normalized-contract provenance: public model intake refuses a
+    /// unit payload (FR-056-AC-25). This fixture covers the defensive Variant
+    /// record arm through production normalization and lowering, without
+    /// claiming that intake admits that source form.
+    #[trace("FR-094-AC-15", "TC-419")]
+    #[test]
+    fn a_normalized_variant_payload_alone_roots_its_unit() {
+        use crate::model::domain_package::{EnumRecord, VariantRecord};
+
+        let mut package = acme();
+        package.records.extend([
+            DomainPackageRecord::Enum(EnumRecord {
+                key: key("UnusedChoice"),
+                name: "UnusedChoice".to_owned(),
+                members: vec!["Measured".to_owned()],
+            }),
+            DomainPackageRecord::Variant(VariantRecord {
+                key: key("variant/UnusedChoice-Measured"),
+                owner: key("UnusedChoice"),
+                case: "Measured".to_owned(),
+                payload_type: Some(ValueTypeRef::Unit("metre".to_owned())),
+            }),
+        ]);
+        assert_normalized_model_unit_root(package);
+    }
+
+    /// Synthetic normalized-contract provenance: public Map intake currently
+    /// refuses in its original-provenance pass. Exercise its collector arm
+    /// through real normalization without claiming public Map admission.
+    #[trace("FR-094-AC-15", "TC-419")]
+    #[test]
+    fn a_normalized_map_value_alone_roots_its_unit() {
+        use crate::model::domain_package::MapTypeRecord;
+
+        let mut package = acme();
+        package
+            .records
+            .push(DomainPackageRecord::MapType(MapTypeRecord {
+                key: key("UnusedMap"),
+                values: ValueTypeRef::Unit("metre".to_owned()),
+            }));
+        assert_normalized_model_unit_root(package);
+    }
+
+    fn assert_normalized_model_unit_root(package: DomainPackage) {
+        let admitted = admitted_package("1.0.0", package);
+        let (_, graph) = lower(&[admitted.model], units(), |lowering| {
+            lowering
+                .model_type_unit_nodes(&BTreeMap::from([(
+                    "metre".to_owned(),
+                    UnitId::declared(node_key(METRE)),
+                )]))
+                .expect("the normalized record's unit root lowers");
+        });
+        let unit = graph
+            .node(node_key(METRE))
+            .expect("the model record roots metre");
+        let dimension = graph.node(node_key(LENGTH)).expect("its dimension closure");
+        assert_eq!(unit.semantic_form(), "unit");
+        assert_eq!(dimension.semantic_form(), "dimension");
+        assert_eq!(unit.semantic_type(), Some(dimension.key()));
+        let NominalPayload::Unit(payload) = unit.nominal_payload().expect("nominal unit facts")
+        else {
+            panic!("a unit retains its nominal payload");
+        };
+        assert_eq!(payload.dimension(), &dimension.key());
+        assert_eq!(payload.target(), None);
+        assert_eq!(
+            unit.owner(),
+            Some(&crate::check::node_key::Owner::Source(
+                crate::check::SourceOwner::from(&fixture_source())
+            ))
+        );
+        assert_eq!(
+            graph
+                .nodes()
+                .map(SemanticNode::key)
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([node_key(METRE), node_key(LENGTH)]),
+            "only the unit and its complete nominal closure are emitted"
+        );
+        assert!(
+            graph.node(node_key(SECOND)).is_none(),
+            "the unused unit stays absent"
+        );
+        assert!(
+            graph.node(node_key(TIME)).is_none(),
+            "its dimension stays absent"
+        );
+    }
+
     fn quantity(hex: &str) -> ValueType {
         ValueType::Quantity(UnitId::declared(node_key(hex)))
     }

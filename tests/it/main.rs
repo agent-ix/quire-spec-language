@@ -99,6 +99,8 @@ mod located_json;
 #[cfg(feature = "checked-handoff")]
 mod mapping_support;
 mod model_source;
+#[cfg(feature = "checked-handoff")]
+mod model_type_unit_roots;
 mod name_resolution_confinement;
 mod native_boundaries;
 mod native_checking;
