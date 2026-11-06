@@ -32,3 +32,25 @@ One low specification inconsistency requires correction.
 ## Coverage
 
 Reviewed the frozen child feature only against its QSL-1760 base; the parent carrier/codec was not re-reviewed. No Cargo commands, builds, tests, gates, locks or source edits were run. Author evidence in /tmp/qsl1762-logs/focused.log records focused Clippy, four native handoff controls and thirty model-lowering controls passing; old-root-red.log records UnresolvedSelectedDeclaration / selected_document_type / work 123 after removing the object-root call, followed by restored green evidence. Parent QSL-1760 fixes and fresh-main reconciliation are still pending for this child and require this same reviewer's follow-up. The lead owns the one final scoped gate. Normal downstream driver adoption is explicitly unqualified. No applicable active AssuranceProfile was found. The installed matrix CLI has repository scope only and no criterion filter; scoped computed coverage is unavailable, so active tags and assertions were checked manually without running a global census. Plan completion: not assessed. Exact reviewer model metadata is unavailable in this harness; comments identify it as unknown rather than inventing a model name.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | TC-417 now restricts the original premise to steps 1–8 and states step 9 uses TC-1070 test/orders. |
+
+### After excerpt (round 1)
+
+```text
+Steps 1–8 admit the domain package `acme/orders` that FR-094's Vector index
+vectors section describes, at version `1.0.0` unless a step says otherwise,
+with `M::Order`, `M::Invoice` and `M::Sub` resolving to its object types.
+`Sub` has supertype `Order`, inherits `total` and redefines `size`.
+Step 9 uses TC-1070's standard E and E-P documents for `test/orders`.
+```
+
+## Parent-base reconciliation (disposition round 1)
+
+The seven original feature commits remain patch-identical after the rebase. The additional fix scopes TC-417's `acme/orders` premise to steps 1–8 and explicitly names step 9's `test/orders` E/E-P documents. Source inspection confirms the same ordinary-object root helper still calls the existing `model_node`, preserves first-alias provenance and deduplicates original declarations; the parent catalog and key-bridge fixes introduce no competing object-root or identity path. No child manifest, lock, schema version or CI change appears. The latest parent differs from the rebased parent only by review-artifact custody. The parent review is not repeated here.
+
+Reconciled author logs `/tmp/qsl1762-logs/reconciled-focused.log` and `reconciled-docs.log` record Clippy, four native E/E-P handoff controls, thirty-one model-lowering controls, formatting and document validation passing. The reviewer inspected that evidence but ran no builds, tests or gates. Both changed documents are grammar-clean on reviewer validation. No new findings were found in reconciliation. The scoped feature review is PASS after the fixed disposition; the lead's one final scoped gate and normal downstream driver adoption remain outstanding.
