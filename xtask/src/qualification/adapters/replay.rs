@@ -139,6 +139,9 @@ fn optional<T>(
     }
 }
 
+/// Read the closed corpus request encoding into the public request carrier;
+/// package, target and semantic admission remain with the native request reader.
+#[ix_trace_rs::string_edge]
 fn decode(value: &Value, inputs: &Inputs<'_>, root: &Path) -> Result<ReplayRequestWire, Failure> {
     let package = &value["package"];
     let graph = qsl_replay::WireGraph::of_package_value(package)
@@ -427,6 +430,9 @@ fn decode(value: &Value, inputs: &Inputs<'_>, root: &Path) -> Result<ReplayReque
     })
 }
 
+/// Decode corpus domain/bound tags directly into native DomainKey, DomainKind
+/// and FiniteBound; their owner constructors decide validity.
+#[ix_trace_rs::string_edge]
 fn declared_domain(
     value: &Value,
     pointer: &str,
@@ -485,28 +491,105 @@ fn integer(value: &Value, pointer: &str) -> Result<Integer, Failure> {
         .map_err(|error| Failure::decode(pointer, format!("{error}")))
 }
 
+/// Transient corpus grammar tag. It carries no semantic value or identity;
+/// the owner codec admits the completed native wire after iterative assembly.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum WitnessForm {
+    Boolean,
+    Integer,
+    ExactInteger,
+    Enum,
+    Text,
+    String,
+    Uuid,
+    Timestamp,
+    Rational,
+    Decimal,
+    Float32,
+    Float64,
+    Reference,
+    Quantity,
+    Option,
+    Record,
+    Tuple,
+    Union,
+    Collection(quire_exact::CollectionKind),
+}
+
+/// Read the corpus witness discriminator once. Subsequent traversal and
+/// encoding use this typed parser state, then the native owner codec.
+#[ix_trace_rs::string_edge]
+fn witness_form(value: &Value, pointer: &str) -> Result<WitnessForm, Failure> {
+    use quire_exact::CollectionKind;
+    Ok(match text(&value["kind"], pointer)? {
+        "boolean" => WitnessForm::Boolean,
+        "integer" => WitnessForm::Integer,
+        "exact_integer" => WitnessForm::ExactInteger,
+        "enum" => WitnessForm::Enum,
+        "text" => WitnessForm::Text,
+        "string" => WitnessForm::String,
+        "uuid" => WitnessForm::Uuid,
+        "timestamp" => WitnessForm::Timestamp,
+        "rational" => WitnessForm::Rational,
+        "decimal" => WitnessForm::Decimal,
+        "float32" => WitnessForm::Float32,
+        "float64" => WitnessForm::Float64,
+        "reference" => WitnessForm::Reference,
+        "quantity" => WitnessForm::Quantity,
+        "option" => WitnessForm::Option,
+        "record" => WitnessForm::Record,
+        "tuple" => WitnessForm::Tuple,
+        "union" => WitnessForm::Union,
+        "sequence" => WitnessForm::Collection(CollectionKind::Sequence),
+        "ordered_set" => WitnessForm::Collection(CollectionKind::OrderedSet),
+        "set" => WitnessForm::Collection(CollectionKind::Set),
+        "bag" => WitnessForm::Collection(CollectionKind::Bag),
+        _ => return Err(Failure::decode(pointer, "unknown witness value")),
+    })
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum SlotForm {
+    Present,
+    Absent,
+    Null,
+}
+
+/// Read a record slot's corpus tag once, retaining it until its child has
+/// converted; semantic presence still belongs to the native witness reader.
+#[ix_trace_rs::string_edge]
+fn slot_form(value: &Value, pointer: &str) -> Result<SlotForm, Failure> {
+    Ok(match text(&value["kind"], pointer)? {
+        "present" => SlotForm::Present,
+        "absent" => SlotForm::Absent,
+        "null" => SlotForm::Null,
+        _ => return Err(Failure::decode(pointer, "unknown slot")),
+    })
+}
+
 fn witness(
     value: &Value,
     pointer: &str,
     graph: &qsl_replay::WireGraph,
 ) -> Result<WitnessValue, Failure> {
-    match text(&value["kind"], pointer)? {
-        "boolean" => {
+    let form = witness_form(value, pointer)?;
+    match form {
+        WitnessForm::Boolean => {
             Ok(WitnessValue::Boolean(value["value"].as_bool().ok_or_else(
                 || Failure::decode(pointer, "expected a Boolean"),
             )?))
         }
-        "integer" => Ok(WitnessValue::Integer(
+        WitnessForm::Integer => Ok(WitnessValue::Integer(
             text(&value["decimal"], pointer)?
                 .parse()
                 .map_err(|_| Failure::decode(pointer, "integer outside i128"))?,
         )),
-        "exact_integer" => Ok(WitnessValue::ExactInteger(integer(
+        WitnessForm::ExactInteger => Ok(WitnessValue::ExactInteger(integer(
             &value["decimal"],
             pointer,
         )?)),
         _ => {
-            let typed = witness_json(value, pointer, graph)?;
+            let typed = witness_json(value, pointer, graph, form)?;
             let bytes = quire_canonical::to_vec(&*typed, quire_canonical::Limits::new(u64::MAX))
                 .map_err(|error| Failure::decode(pointer, error.to_string()))?;
             WitnessValue::from_wire_bytes(&bytes)
@@ -537,74 +620,87 @@ fn witness_json(
     value: &Value,
     pointer: &str,
     graph: &qsl_replay::WireGraph,
+    form: WitnessForm,
 ) -> Result<super::super::DeepValue, Failure> {
     use super::super::DeepValue;
     enum Task<'a> {
         Read(&'a Value),
-        Finish(&'a Value, usize, Option<String>),
+        Parsed(&'a Value, WitnessForm),
+        Finish(&'a Value, usize, Option<String>, WitnessForm, Vec<SlotForm>),
     }
-    let mut tasks = vec![Task::Read(value)];
+    let mut tasks = vec![Task::Parsed(value, form)];
     let mut values = Vec::<DeepValue>::new();
     while let Some(task) = tasks.pop() {
         match task {
             Task::Read(value) => {
-                let kind = text(&value["kind"], pointer)?;
+                tasks.push(Task::Parsed(value, witness_form(value, pointer)?));
+                continue;
+            }
+            Task::Parsed(value, form) => {
+                let mut slots = Vec::new();
                 // Tuple/union identity was read before their components by
                 // the owner adapter. Preserve that refusal order while
                 // moving the recursive walk onto the explicit stack.
-                let declaration = if matches!(kind, "tuple" | "union") {
+                let declaration = if matches!(form, WitnessForm::Tuple | WitnessForm::Union) {
                     Some(node_text(&value["declaration"], pointer, graph)?)
                 } else {
                     None
                 };
-                let children = match kind {
-                    "quantity" => vec![&value["magnitude"]],
-                    "option" => {
+                let children = match form {
+                    WitnessForm::Quantity => vec![&value["magnitude"]],
+                    WitnessForm::Option => {
                         if value["value"].is_null() {
                             Vec::new()
                         } else {
                             vec![&value["value"]]
                         }
                     }
-                    "record" => {
+                    WitnessForm::Record => {
                         let mut children = Vec::new();
                         for field in array(&value["fields"], pointer)? {
                             let slot = &field["slot"];
-                            match text(&slot["kind"], pointer)? {
-                                "present" => children.push(&slot["value"]),
-                                "absent" | "null" => {}
-                                _ => return Err(Failure::decode(pointer, "unknown slot")),
+                            let form = slot_form(slot, pointer)?;
+                            if form == SlotForm::Present {
+                                children.push(&slot["value"]);
                             }
+                            slots.push(form);
                         }
                         children
                     }
-                    "tuple" | "union" => array(&value["components"], pointer)?.iter().collect(),
-                    "sequence" | "ordered_set" | "set" | "bag" => {
+                    WitnessForm::Tuple | WitnessForm::Union => {
+                        array(&value["components"], pointer)?.iter().collect()
+                    }
+                    WitnessForm::Collection(_) => {
                         array(&value["elements"], pointer)?.iter().collect()
                     }
                     _ => {
-                        values.push(DeepValue::new(witness_leaf(value, pointer, graph)?));
+                        values.push(DeepValue::new(witness_leaf(value, pointer, graph, form)?));
                         continue;
                     }
                 };
-                tasks.push(Task::Finish(value, children.len(), declaration));
+                tasks.push(Task::Finish(
+                    value,
+                    children.len(),
+                    declaration,
+                    form,
+                    slots,
+                ));
                 tasks.extend(children.into_iter().rev().map(Task::Read));
             }
-            Task::Finish(value, count, declaration) => {
+            Task::Finish(value, count, declaration, form, slots) => {
                 let start = values
                     .len()
                     .checked_sub(count)
                     .ok_or_else(|| Failure::decode(pointer, "missing witness children"))?;
                 let mut children = values.split_off(start).into_iter();
-                let kind = text(&value["kind"], pointer)?;
                 let next = |children: &mut std::vec::IntoIter<DeepValue>| {
                     children
                         .next()
                         .map(DeepValue::into_inner)
                         .ok_or_else(|| Failure::decode(pointer, "missing witness child"))
                 };
-                let converted = match kind {
-                    "quantity" => {
+                let converted = match form {
+                    WitnessForm::Quantity => {
                         let mut magnitude = DeepValue::new(next(&mut children)?);
                         let unit = format!(
                             "{{\"declared\":{}}}",
@@ -617,7 +713,7 @@ fn witness_json(
                             .insert("unit".to_owned(), Value::String(unit));
                         magnitude.into_inner()
                     }
-                    "option" => wire_object([
+                    WitnessForm::Option => wire_object([
                         ("type", json!("option")),
                         (
                             "value",
@@ -628,16 +724,14 @@ fn witness_json(
                             },
                         ),
                     ]),
-                    "record" => {
+                    WitnessForm::Record => {
                         let name = node_text(&value["declaration"], pointer, graph)?;
                         let mut fields = Vec::new();
-                        for field in array(&value["fields"], pointer)? {
-                            let slot = &field["slot"];
-                            let converted = match text(&slot["kind"], pointer)? {
-                                "present" => next(&mut children)?,
-                                "absent" => json!({"type":"absent"}),
-                                "null" => json!({"type":"null"}),
-                                _ => return Err(Failure::decode(pointer, "unknown slot")),
+                        for (field, slot) in array(&value["fields"], pointer)?.iter().zip(slots) {
+                            let converted = match slot {
+                                SlotForm::Present => next(&mut children)?,
+                                SlotForm::Absent => json!({"type":"absent"}),
+                                SlotForm::Null => json!({"type":"null"}),
                             };
                             fields.push(DeepValue::new(wire_object([
                                 ("name", field["name"].clone()),
@@ -655,23 +749,38 @@ fn witness_json(
                             ),
                         ])
                     }
-                    "tuple" | "union" => {
+                    WitnessForm::Tuple | WitnessForm::Union => {
                         let name = declaration.ok_or_else(|| {
                             Failure::decode(pointer, "missing witness declaration")
                         })?;
                         let components =
                             Value::Array(children.map(DeepValue::into_inner).collect());
                         let mut members = serde_json::Map::new();
-                        members.insert("type".into(), json!(kind));
+                        members.insert(
+                            "type".into(),
+                            json!(if form == WitnessForm::Union {
+                                "union"
+                            } else {
+                                "tuple"
+                            }),
+                        );
                         members.insert("name".into(), Value::String(name));
-                        if kind == "union" {
+                        if form == WitnessForm::Union {
                             members.insert("member".into(), value["member"].clone());
                         }
                         members.insert("components".into(), components);
                         Value::Object(members)
                     }
-                    "sequence" | "ordered_set" | "set" | "bag" => wire_object([
-                        ("type", json!(kind.replace('_', "-"))),
+                    WitnessForm::Collection(kind) => wire_object([
+                        (
+                            "type",
+                            json!(match kind {
+                                quire_exact::CollectionKind::Sequence => "sequence",
+                                quire_exact::CollectionKind::OrderedSet => "ordered-set",
+                                quire_exact::CollectionKind::Set => "set",
+                                quire_exact::CollectionKind::Bag => "bag",
+                            }),
+                        ),
                         (
                             "elements",
                             Value::Array(children.map(DeepValue::into_inner).collect()),
@@ -692,30 +801,34 @@ fn witness_leaf(
     value: &Value,
     pointer: &str,
     graph: &qsl_replay::WireGraph,
+    form: WitnessForm,
 ) -> Result<Value, Failure> {
-    let kind = text(&value["kind"], pointer)?;
-    Ok(match kind {
-        "boolean" => json!({"type":"boolean", "value":value["value"]}),
-        "integer" | "exact_integer" => json!({"type":"integer", "value":value["decimal"]}),
-        "enum" => {
+    Ok(match form {
+        WitnessForm::Boolean => json!({"type":"boolean", "value":value["value"]}),
+        WitnessForm::Integer | WitnessForm::ExactInteger => {
+            json!({"type":"integer", "value":value["decimal"]})
+        }
+        WitnessForm::Enum => {
             json!({"type":"enum", "name":node_text(&value["declaration"], pointer, graph)?, "member":value["member"]})
         }
-        "text" => json!({"type":"text", "value":value["value"]}),
-        "string" | "uuid" => json!({"kind":kind,"text":value["value"]}),
-        "timestamp" => json!({"kind":"timestamp","nanoseconds":value["decimal"]}),
-        "rational" => {
+        WitnessForm::Text => json!({"type":"text", "value":value["value"]}),
+        WitnessForm::String | WitnessForm::Uuid => {
+            json!({"kind":if form == WitnessForm::String { "string" } else { "uuid" },"text":value["value"]})
+        }
+        WitnessForm::Timestamp => json!({"kind":"timestamp","nanoseconds":value["decimal"]}),
+        WitnessForm::Rational => {
             json!({"type":"rational","numerator":value["numerator"],"denominator":value["denominator"]})
         }
-        "decimal" => {
+        WitnessForm::Decimal => {
             json!({"type":"decimal","coefficient":value["coefficient"],"scale":value["scale"]})
         }
-        "float32" => {
+        WitnessForm::Float32 => {
             json!({"type":"float32", "bits":format!("{:08x}", u32::try_from(unsigned(&value["bits"], pointer)?).map_err(|_| Failure::decode(pointer,"float bits outside u32"))?)})
         }
-        "float64" => {
+        WitnessForm::Float64 => {
             json!({"type":"float64", "bits":format!("{:016x}", unsigned(&value["bits"], pointer)?)})
         }
-        "reference" => {
+        WitnessForm::Reference => {
             let type_node = node(&value["object_type"], pointer, graph)?;
             let path = super::super::DeepValue::new(
                 node_key_to_json(&type_node)
@@ -744,6 +857,109 @@ fn replay_value(result: &qsl_replay::ReplayResult) -> Result<Value, Failure> {
 #[cfg(test)]
 mod depth_tests {
     use ix_trace_rs::trace;
+
+    #[trace("TC-1325", "FR-350-AC-11")]
+    #[test]
+    fn typed_wire_states_retain_slots_collections_and_declaration_refusal_order() {
+        use qsl_replay::{WitnessSlot, WitnessValue};
+        use serde_json::json;
+        // A structural codec fixture, not a claim about a checked declaration.
+        // The executor still owns declaration-kind and value-type admission.
+        let key = quire_exact::NodeKey::new(
+            "fixture",
+            vec![quire_exact::PathSegment::Text("shape".into())],
+            0,
+        )
+        .unwrap();
+        let id = qsl_semantics::check::wire_id::structural_id(&key);
+        let graph = qsl_replay::WireGraph::new([&id]).unwrap();
+        let declaration = graph.wire_value(&key).unwrap();
+        let record = json!({"kind":"record", "declaration":declaration, "fields":[
+            {"name":"held", "slot":{"kind":"present", "value":{"kind":"boolean", "value":true}}},
+            {"name":"omitted", "slot":{"kind":"absent"}},
+            {"name":"nullish", "slot":{"kind":"null"}}
+        ]});
+        let native = super::witness(&record, "/value", &graph)
+            .unwrap_or_else(|failure| panic!("{}", failure.message));
+        let WitnessValue::Record {
+            declaration: actual,
+            fields,
+        } = native
+        else {
+            panic!("record form is retained")
+        };
+        assert_eq!(actual, key);
+        assert_eq!(
+            fields
+                .iter()
+                .map(|field| field.name.as_str())
+                .collect::<Vec<_>>(),
+            ["held", "omitted", "nullish"]
+        );
+        assert!(matches!(
+            fields[0].slot,
+            WitnessSlot::Present(WitnessValue::Boolean(true))
+        ));
+        assert!(matches!(fields[1].slot, WitnessSlot::Absent));
+        assert!(matches!(fields[2].slot, WitnessSlot::Null));
+        for (tag, expected) in [
+            (
+                "sequence",
+                WitnessValue::Sequence(vec![
+                    WitnessValue::Boolean(false),
+                    WitnessValue::Boolean(true),
+                ]),
+            ),
+            (
+                "ordered_set",
+                WitnessValue::OrderedSet(vec![
+                    WitnessValue::Boolean(false),
+                    WitnessValue::Boolean(true),
+                ]),
+            ),
+            (
+                "set",
+                WitnessValue::Set(vec![
+                    WitnessValue::Boolean(false),
+                    WitnessValue::Boolean(true),
+                ]),
+            ),
+            (
+                "bag",
+                WitnessValue::Bag(vec![
+                    WitnessValue::Boolean(false),
+                    WitnessValue::Boolean(true),
+                ]),
+            ),
+        ] {
+            let value = json!({"kind":tag,"elements":[{"kind":"boolean","value":false},{"kind":"boolean","value":true}]});
+            let actual = super::witness(&value, "/value", &graph)
+                .unwrap_or_else(|failure| panic!("{}", failure.message));
+            assert!(
+                actual == expected,
+                "the native collection form and order survive"
+            );
+        }
+        let mut unknown_declaration = declaration.clone();
+        unknown_declaration["ordinal"] = json!(99);
+        let expected = super::node(&unknown_declaration, "/value", &graph)
+            .err()
+            .unwrap();
+        let tuple = json!({"kind":"tuple", "declaration":unknown_declaration, "components":[{"kind":"unknown"}]});
+        let refused = super::witness(&tuple, "/value", &graph).err().unwrap();
+        assert_eq!(
+            refused.message, expected.message,
+            "tuple declaration still refuses before child intake"
+        );
+        let mut record = record;
+        record["declaration"] = unknown_declaration;
+        record["fields"][0]["slot"]["value"] = json!({"kind":"unknown"});
+        let refused = super::witness(&record, "/value", &graph).err().unwrap();
+        assert_eq!(
+            refused.message, "unknown witness value",
+            "record declaration remains after its children"
+        );
+    }
 
     #[trace("TC-1325", "FR-350-AC-11")]
     #[test]

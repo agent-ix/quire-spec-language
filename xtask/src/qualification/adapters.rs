@@ -53,6 +53,7 @@ impl Schemas {
 /// already requires. Each original arm implies its guard, so this preserves
 /// oneOf's accepted documents and multiplicity while avoiding traversal of
 /// unrelated collection arms when a deep value has an invalid leaf.
+#[ix_trace_rs::string_edge]
 fn guard_witness_alternatives(corpus: &mut Value) -> usize {
     let Some(alternatives) = corpus
         .pointer_mut("/$defs/WitnessValue/oneOf")
@@ -548,8 +549,8 @@ fn run(
             .collect::<Vec<_>>();
         let required = array(&call_input["arguments"], "/arguments")?
             .iter()
-            .filter(|argument| argument["kind"] == "population")
-            .map(|argument| text(&argument["name"], "/arguments").map(str::to_owned))
+            .filter_map(|argument| required_population_name(argument).transpose())
+            .map(|name| name.map(str::to_owned))
             .collect::<Result<Vec<_>, _>>()?;
         objects = match observation::admit_trace_snapshot(
             &models,
@@ -730,6 +731,20 @@ fn admission_failure(failure: observation::AdmissionFailure) -> Result<Execution
     }
 }
 
+/// Read only the corpus argument tag needed by snapshot completeness admission.
+/// Runtime execution receives the owner's admitted population binding later.
+#[ix_trace_rs::string_edge]
+fn required_population_name(argument: &Value) -> Result<Option<&str>, Failure> {
+    if text(&argument["kind"], "/arguments")? == "population" {
+        text(&argument["name"], "/arguments").map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
+/// Decode a corpus CallInput value into the native Value vocabulary. Reference
+/// and population identities resolve only through the already admitted owners.
+#[ix_trace_rs::string_edge]
 fn call_value(
     value: &Value,
     objects: &qsl_replay::ObjectEnvironment,

@@ -84,6 +84,8 @@ enum Operation {
 }
 
 impl<'de> Deserialize<'de> for Operation {
+    /// Decode the corpus's open operation name once; dispatch uses Operation.
+    #[ix_trace_rs::string_edge]
     fn deserialize<D: serde::Deserializer<'de>>(
         deserializer: D,
     ) -> std::result::Result<Self, D::Error> {
@@ -236,6 +238,9 @@ impl<'de> Deserialize<'de> for Expected {
                 formatter.write_str("a closed expected disposition")
             }
 
+            /// Read closed corpus disposition/member spellings into Expected;
+            /// code/cause values remain independent oracle data, not classifications.
+            #[ix_trace_rs::string_edge]
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
