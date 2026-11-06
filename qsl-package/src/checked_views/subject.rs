@@ -295,6 +295,36 @@ impl<'p> TemporalSubjectView<'p> {
         &self.occurrences
     }
 
+    /// The declared temporal-clause name for a uniquely named occurrence.
+    /// A view with several occurrences has no single name; a missing
+    /// `temporal_clause_names` row remains absent rather than being inferred.
+    pub fn name(&self) -> Option<&str> {
+        let [occurrence] = self.occurrences.as_slice() else {
+            return None;
+        };
+        self.name_of(occurrence)
+    }
+
+    /// The declared temporal-clause name for this exact occurrence. The
+    /// declaration, claim role and producer-assigned ordinal all participate
+    /// in the lookup; an occurrence from another node or an absent ordinal
+    /// has no name.
+    pub fn name_of(&self, occurrence: &ClauseOccurrence) -> Option<&str> {
+        if occurrence.node != *self.declaration
+            || occurrence.role != CheckedOccurrenceRole::Claim
+            || !self.occurrences.contains(occurrence)
+        {
+            return None;
+        }
+        self.package
+            .temporal_clause_names()?
+            .iter()
+            .find(|row| {
+                row.declaration == *self.declaration && row.occurrence == occurrence.ordinal
+            })
+            .map(|row| row.name.as_ref())
+    }
+
     /// The `value`/`parameter` node the clause is `over`.
     pub fn over(&self) -> &'p CheckedNodeId {
         self.over

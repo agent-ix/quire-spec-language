@@ -44,20 +44,30 @@ fn clauses(package: &CheckedPackageV2) -> Vec<CheckedNodeId> {
         .collect()
 }
 
-/// The package of the one clause `Due` with `body` under `profile`.
+/// The package of the one named clause with `body` under `profile`.
+fn package_of_named(profile: &str, name: &str, body: &str) -> std::sync::Arc<CheckedPackageV2> {
+    admit(&compile(&unit(profile, &declared(name, body))))
+}
+
 fn package_of(profile: &str, body: &str) -> std::sync::Arc<CheckedPackageV2> {
-    admit(&compile(&unit(profile, &declared("Due", body))))
+    package_of_named(profile, "Due", body)
 }
 
 /// The classification of the one clause with `body` under `profile`.
 fn classify(profile: &str, body: &str, surrounding: Closure) -> Classification {
-    let package = package_of(profile, body);
+    classify_named(profile, "Due", body, surrounding)
+}
+
+fn classify_named(profile: &str, name: &str, body: &str, surrounding: Closure) -> Classification {
+    let package = package_of_named(profile, name, body);
     let [id] = clauses(&package)[..]
         .to_vec()
         .try_into()
         .expect("one clause");
     let view = temporal_subject(&package, &id).expect("the clause reads");
-    mapping_support(&view, surrounding).expect("the clause classifies")
+    let classified = mapping_support(&view, surrounding).expect("the clause classifies");
+    assert_eq!(classified.retained.name.as_deref(), view.name());
+    classified
 }
 
 fn supported(target: Target, total_sample_valuation: bool) -> Support {
@@ -644,10 +654,14 @@ fn a_profile_outside_the_admitted_identities_is_refused_at_check() {
 /// `quire.temporal.timed/v1` over the `Braking` hybrid model, read by the I2
 /// reader, classified under both closures.
 fn timed_classifications(body: &str) -> Vec<Classification> {
+    timed_classifications_named("SlowEnough", body)
+}
+
+fn timed_classifications_named(name: &str, body: &str) -> Vec<Classification> {
     let (emission, _wire) = super::hybrid::compile(&format!(
         "{}{}",
         super::hybrid::braking(super::hybrid::FLOW),
-        super::hybrid::slow_enough("t", body)
+        super::hybrid::slow_enough_named(name, "t", body)
     ));
     let Read::Verified { admitted, .. } = read_v2(
         emission.package.bytes(),
@@ -668,6 +682,7 @@ fn timed_classifications(body: &str) -> Vec<Classification> {
             let classified = mapping_support(&view, surrounding).expect("classifies");
             assert_eq!(classified.retained.declaration, id);
             assert_eq!(classified.retained.profile, *view.profile());
+            assert_eq!(classified.retained.name.as_deref(), view.name());
             assert_eq!(classified.selection().definition_identity(), TIMED);
             classified
         })
@@ -699,26 +714,36 @@ fn a_timed_clause_that_mixes_directions_names_both_dimensions() {
     }
 }
 
-/// The clause name a classification retains. The checked package carries no
-/// clause name until IR-1278, so the view has no `name()` and `Retained` holds
-/// none; this becomes `classified.retained.name` and `view.name()` when it
-/// lands.
-fn retained_name(_classified: &Classification) -> String {
-    unimplemented!("IR-1278: the checked package carries no temporal clause name")
-}
-
-/// FR-527-AC-24 (TC-1322 row 24): with a reader that implements IR-1278, an
-/// unsupported result and a supported result hold the clause's name equal to
-/// `name()` of the view.
+/// FR-527-AC-24 (TC-1322 row 24): supported and unsupported results retain the
+/// view's unique name; a shared declaration has no single retained name.
 #[trace("FR-527-AC-24", "TC-1322")]
 #[test]
-#[ignore = "IR-1278: the checked package carries no temporal clause name until the reader admits one"]
 fn a_result_retains_the_name_the_view_reads() {
-    for (profile, body) in [
-        (INFINITE, "always holds(c.versionNumber = 1)"),
-        (EVENT, FUTURE),
-    ] {
-        let classified = classify(profile, body, Closure::Complete);
-        assert_eq!(retained_name(&classified), "Due");
-    }
+    let supported = classify_named(
+        INFINITE,
+        "Gamma",
+        "always holds(c.versionNumber = 1)",
+        Closure::Complete,
+    );
+    assert_eq!(supported.retained.name.as_deref(), Some("Gamma"));
+
+    let [unsupported, _] = timed_classifications_named("Delta", "always[0,10] holds(h.v < 30)")
+        .try_into()
+        .expect("both closures classify");
+    assert_eq!(unsupported.retained.name.as_deref(), Some("Delta"));
+    assert!(matches!(unsupported.support, Support::Unsupported { .. }));
+
+    let body = "always holds(c.versionNumber = 1)";
+    let shared = admit(&compile(&unit(
+        INFINITE,
+        &format!("{} {}", declared("Alpha", body), declared("Beta", body)),
+    )));
+    let [id] = clauses(&shared)[..]
+        .to_vec()
+        .try_into()
+        .expect("one shared node");
+    let view = temporal_subject(&shared, &id).expect("shared view");
+    let classified = mapping_support(&view, Closure::Complete).expect("classifies");
+    assert_eq!(classified.retained.name, None);
+    assert_eq!(classified.retained.name.as_deref(), view.name());
 }
