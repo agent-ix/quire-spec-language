@@ -4136,9 +4136,9 @@ fn read_rational_value_type(
 }
 
 /// Parse a scalar bound exactly in `i128::MIN..=i128::MAX` (FR-056).
-/// Public Semantic IR validation first requires canonical integer strings
-/// under FCD FR-144; the internal JSON-integer branch below does not authorize
-/// numeric operands on that wire. `Err` names `keyword` and the written value.
+/// The caller admits safe JSON integers through ±2^53 or canonical signed-64
+/// decimal strings under QSpec FR-154 / TC-981. `Err` names `keyword` and the
+/// written value.
 fn bound_operand(operand: &Value, keyword: &str) -> Result<i128, String> {
     if let Some(number) = operand.as_i64() {
         return Ok(i128::from(number));
