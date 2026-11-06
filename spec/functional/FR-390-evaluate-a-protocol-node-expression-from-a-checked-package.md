@@ -669,7 +669,28 @@ check with its one record:
    protocol, registration or activation capture the expression reads is such a
    binder, so its captured value is a source. A capture slot's own binder is not
    a source of that slot. The closure is static, so a read that a short-circuit
-   would skip still makes its binder a source.
+   would skip still makes its binder a source. A binder the expression
+   introduces itself is not a source: the binder of a `let` (the binder is
+   in scope in its body, not in the bound value), of a collection query
+   (`map`, `filter`, `forall`, `exists`, `count`, `sum`; the binder is in scope
+   in its body, not in its source collection) and of a `case` arm (in scope in
+   the arm's body). The wire identifies it by structure: an application of one of
+   those operations holds a `binding` of the introduced name (for a `case` arm,
+   an aggregate of the arm's binder references), and a `value`/`parameter`
+   node reached through that scope is the introduced binder when its name is the
+   bound name (for a `case` arm, when it is one of the arm's binder
+   references). Sibling scopes of one name share the one binder node, as the
+   two `sum` queries of a `Partial` recovery predicate do. A node reached
+   outside every such scope is a source. The checker refuses a binder whose name is already readable
+   (`AmbiguousName`), so a source and an introduced binder of one slot never share
+   a name, and a scope never nests another of the same name. A binder level is the count of binders readable where its construct is
+   entered (FR-383), relative to the slot, so no level orders or identifies an
+   introduced binder. A binder the body never reads is introduced and is no
+   source, also when the application lists its node among its dependencies. A
+   `case` arm binder is not a source either; the contract reader does not yet admit
+   an arm binder in a protocol slot (`BinderScope`), so a valid package holds none.
+   A key supplied for an introduced binder is a key that is no
+   source of the slot and is refused under rule 4.
 4. If one binder key is supplied twice, then admission SHALL refuse
    `invalid_runtime_input`/`duplicate-member` naming the binder. If a supplied
    key is not a source of the slot, which includes a binder the expression does
@@ -860,6 +881,7 @@ value; check 6 does not apply to it.
 | FR-390-AC-65 | For every slot of TC-1070 fixtures E, E-C and L the source route's selected descriptor and the bytes route's agree on the triple (node, member, index), the root node key and the origin; the bytes route's descriptor carries no span, and in fixture L `Decide.visible[0]` and `Decide.cases.guard[1]`, which share the root `got.ready`, select distinct origins. | Test (TC-1070) |
 | FR-390-AC-66 | The bytes route reports `MissingIdentityWitness`, `ForeignIdentityWitness`, `UnknownIdentityWitness` and the three equality-witness reasons as `CallAdmissionLocus::Package`, and the in-process reader view reports the same three as the `Package` locus of `UnsupportedView`; neither reports a `Node` or `Binder` locus for them. | Test (TC-1070) |
 | FR-390-AC-67 | View creation reports the first unsupported projection by package identity, then locus (`Package` before `Node`), then node key, then reason. A package with a `MissingTypeRepresentation` at a `Node` locus and a `ForeignIdentityWitness` reports `ForeignIdentityWitness`; with `MissingLiteralProjection` at a `Node` locus and `MissingEqualityWitness` reports `MissingEqualityWitness`; with `ForeignIdentityWitness` and `MissingEqualityWitness` (both `Package`) reports `ForeignIdentityWitness`, the reason order breaking the tie; with `MissingIdentityWitness` and `MissingEqualityWitness` reports `MissingIdentityWitness`. The three equality-witness reasons never co-occur over one supply: over a slot that reaches an equality application, a supply with no equality rows reports `MissingEqualityWitness` alone; rows of another package report `ForeignEqualityWitness` alone, also when those rows hold no row of the application; and the package's own rows with the row of the reached application removed report `UnknownEqualityWitness` alone. The equality-witness reasons are at the `Package` locus and charge nothing. | Test (TC-1070) |
+| FR-390-AC-68 | Over recipe **R**'s `Full` recovery predicate (`sum(receipt in recovered.receipts: receipt) = target and not activated`), the slot lists the sources `target`, `activated` and `recovered` and not `receipt`, on the bare route; the same holds with the `sum` replaced by a `let` binder bound to it, with two nested collection queries of distinct names, with each of `forall`, `exists`, `filter` and `map`, and with a binder the body never reads (alone and nested), none of those binders being a source. A `case` arm binder is not a source either; the contract reader does not yet admit an arm binder in a protocol slot (`BinderScope`), so a valid package holds none and the walk over arm binders is tested on the terms. A supply that adds a key for the introduced binder refuses `invalid_runtime_input`/`unknown-member` before any charge, and the predicate evaluates to the value its text states over a supply of the three sources. A query binder named as a readable source is refused by the checker as `AmbiguousName`. | Test (TC-1071, TC-1333) |
 
 ## Dependencies
 

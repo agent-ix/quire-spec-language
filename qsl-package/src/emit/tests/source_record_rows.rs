@@ -35,7 +35,7 @@ fn declaration<'p>(package: &'p CheckedPackage, name: &str) -> &'p CompositeDecl
 }
 
 /// The row of the record named `name`.
-fn row_of<'e>(
+pub(super) fn row_of<'e>(
     package: &CheckedPackage,
     emission: &'e Emission,
     name: &str,

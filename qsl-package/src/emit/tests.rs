@@ -85,6 +85,7 @@ mod selected_model_rows;
 mod source_enum_rows;
 mod source_map_debug;
 mod source_record_rows;
+mod source_tuple_rows;
 mod source_union_rows;
 mod state_graph_claim;
 mod state_transition;

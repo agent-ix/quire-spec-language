@@ -37,6 +37,8 @@ mod equality_file;
 pub mod evaluation_view;
 mod export;
 #[cfg(feature = "std")]
+mod introduced_binders;
+#[cfg(feature = "std")]
 pub mod number;
 #[cfg(feature = "std")]
 mod protocol_activation;
@@ -87,7 +89,8 @@ pub use emit::{
     emit_checked_with_temporal_selections, emit_checked_with_temporal_selections_and_cancel,
     emit_monitor_plan_over, emit_package, emit_package_with_temporal_selections, emit_timed_models,
     Emission, EmitRefusal, MonitorPlanWire, OmissionCause, OmittedNode, ProtocolEmission,
-    ProtocolEmissionAggregate, ProtocolEmissionResult, SelectedSourceRecordMemberRow,
+    ProtocolEmissionAggregate, ProtocolEmissionResult, SelectedSourceCollectionRow,
+    SelectedSourceEnumShapeCaseRow, SelectedSourceEnumShapeRow, SelectedSourceRecordMemberRow,
     SelectedSourceRecordRow, TemporalBindingRows, TemporalClauseRef, TemporalClockSelection,
     TemporalRows, TimedOrderFault,
 };
