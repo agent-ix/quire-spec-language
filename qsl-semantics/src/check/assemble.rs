@@ -1264,8 +1264,7 @@ struct ModelTypes {
     objects: Vec<ObjectTypeDeclaration>,
     composites: Vec<CompositeDeclaration>,
     variant_types: Vec<VariantTypeDeclaration>,
-    /// Each scalar type's `alias::T` name and its `Int[lower, upper]`, text
-    /// or native type.
+    /// Each scalar or alias type's `alias::T` name and its admitted kernel type.
     scalars: Vec<(String, ValueType)>,
     model_records: ModelRecords,
     relationships: Vec<RelationshipDeclaration>,
@@ -1275,8 +1274,8 @@ struct ModelTypes {
 
 impl ModelTypes {
     /// Every type name these declarations bind, each `first::T`, by member
-    /// `T`: composites, object types, variant types and scalar types, in the
-    /// order the package's names bind them.
+    /// `T`: composites, object types, variant types, scalar types and aliases,
+    /// in the order the package's names bind them.
     fn package_names(&self, first: &str) -> PackageNames {
         let composites = self.composites.iter().map(|declaration| {
             (
