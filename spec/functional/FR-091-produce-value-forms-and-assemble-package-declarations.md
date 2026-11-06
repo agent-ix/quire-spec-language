@@ -817,6 +817,12 @@ The resolution `match` has one explicit arm per type-form head:
   one of these spellings;
 - a qualified name that names exactly one alias form of the unit resolves to
   that alias's resolved type;
+- a qualified name `M::T` that names an admitted alias type of the model
+  selected as `M` SHALL resolve through that alias's admitted target by the
+  same model value-type mapping used for model members. Alias chains retain
+  their existing cycle refusal and nominal unit identity. The alias's
+  `min`/`max` constraints SHALL remain selected-model member bounds
+  (FR-230), not be dropped or applied to every value of the underlying unit;
 - a qualified name that names exactly one record or tuple form of the unit
   resolves to `ValueType::Composite` of that declaration's key;
 - a qualified name that names exactly one enum form of the unit resolves to

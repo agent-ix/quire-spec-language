@@ -1264,8 +1264,7 @@ struct ModelTypes {
     objects: Vec<ObjectTypeDeclaration>,
     composites: Vec<CompositeDeclaration>,
     variant_types: Vec<VariantTypeDeclaration>,
-    /// Each scalar type's `alias::T` name and its `Int[lower, upper]`, text
-    /// or native type.
+    /// Each scalar or alias type's `alias::T` name and its admitted kernel type.
     scalars: Vec<(String, ValueType)>,
     model_records: ModelRecords,
     relationships: Vec<RelationshipDeclaration>,
@@ -1275,8 +1274,8 @@ struct ModelTypes {
 
 impl ModelTypes {
     /// Every type name these declarations bind, each `first::T`, by member
-    /// `T`: composites, object types, variant types and scalar types, in the
-    /// order the package's names bind them.
+    /// `T`: composites, object types, variant types, scalar types and aliases,
+    /// in the order the package's names bind them.
     fn package_names(&self, first: &str) -> PackageNames {
         let composites = self.composites.iter().map(|declaration| {
             (
@@ -1911,8 +1910,9 @@ fn model_object_types(
         }
     }
     let relationships = relationship_declarations(package, identities, &declarations);
-    // A scalar type is a declared type name too; one with no kernel type is
-    // not nameable and is left out.
+    // Scalar and alias types are declared type names too. Resolve an alias
+    // through its admitted target, just as a member typed by it is resolved;
+    // model constraints retain their separate member-bound authority.
     let one_one = Multiplicity {
         lower: 1,
         upper: Some(1),
@@ -1922,7 +1922,12 @@ fn model_object_types(
     let scalars: Vec<(String, ValueType)> = package
         .records
         .iter()
-        .filter(|record| matches!(record, DomainPackageRecord::ScalarType(_)))
+        .filter(|record| {
+            matches!(
+                record,
+                DomainPackageRecord::ScalarType(_) | DomainPackageRecord::AliasType(_)
+            )
+        })
         .filter_map(|record| {
             let key = record.key();
             let artifact = type_identity_segment(&key.package, &key.node)?;
@@ -4605,8 +4610,8 @@ impl PackageDeclarations {
             .iter()
             .zip(resolved)
             .filter_map(|(alias, value_type)| Some((alias.name.name.clone(), value_type?)))
-            // A model scalar is named like an alias: it has a type and no
-            // declaration identity.
+            // A model scalar or alias is named by its resolved type; no
+            // additional declaration identity is minted here.
             .chain(model_scalars)
             .collect();
         package.alias_names = selections

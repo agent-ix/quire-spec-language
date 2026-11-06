@@ -317,6 +317,86 @@ fn bounded_document(on_alias: Vec<Value>, on_type: Vec<Value>) -> Vec<u8> {
     serde_json::to_vec(&document).expect("JSON")
 }
 
+/// Resolving a model alias as a source type preserves the exact nominal
+/// target and the model's separate alias-bound authority. Its endpoints
+/// remain inclusive and its bounds do not leak to a raw unit-typed member.
+#[trace("TC-1312", "FR-517-AC-19")]
+#[test]
+fn source_model_alias_names_preserve_nominal_units_and_member_bounds() {
+    use qsl_semantics::model::state::StateModel;
+    use quire_exact::{Integer, Quantity, Rational, Value};
+
+    let document = bounded_document(
+        vec![
+            bound("D", "min", "2", &node("D")),
+            bound("D", "max", "5", &node("D")),
+        ],
+        Vec::new(),
+    );
+    let graph = admit_and_assemble_with_body(
+        &document,
+        &format!("{UNITS}function keep using v(d: Config::D): Config::D pure {{ d }}\n"),
+    )
+    .expect("the admitted model alias resolves in both type positions")
+    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .expect("the function checks with the alias's admitted target");
+    let semantic = graph.semantic_graph();
+    let named = |name: &str| {
+        semantic.nodes().find(|node| {
+            node.declaration()
+                .is_some_and(|path| path.len() == 1 && path[0].as_str() == name)
+        })
+    };
+    let unit = named("ms").expect("the original ms node").key();
+    let function = named("keep").expect("the source function");
+    let parameter = semantic
+        .node(function.function_parameters().expect("parameters")[0].clone())
+        .expect("the parameter node");
+    assert_eq!(parameter.semantic_type(), Some(unit.clone()));
+    let body = semantic
+        .node(function.function_body().expect("the function body"))
+        .expect("the checked body node");
+    assert_eq!(body.semantic_type(), Some(unit.clone()));
+
+    let (_, packages) = config_unit(&document);
+    let model = StateModel::new(
+        graph.model_selections(),
+        graph.scope().types(),
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the same selected model");
+    let bounds = model.member_bounds();
+    let on_d: Vec<_> = bounds
+        .iter()
+        .filter(|bound| bound.member.node == node("ConfigVersion/d"))
+        .collect();
+    assert_eq!(on_d.len(), 2);
+    let unit = quire_exact::UnitId::declared(unit);
+    let quantity = |magnitude: i64| {
+        Value::Quantity(Quantity::new(
+            Rational::new(Integer::from(magnitude), Integer::from(1_i64)).unwrap(),
+            unit.clone(),
+        ))
+    };
+    for (keyword, endpoint, outside) in [("min", 2, 1), ("max", 5, 6)] {
+        let retained = on_d
+            .iter()
+            .find(|bound| bound.keyword() == keyword)
+            .expect("each original alias constraint");
+        assert_eq!(retained.constraint.node, node(&format!("D/{keyword}")));
+        assert_eq!(retained.canonical_bound(), endpoint.to_string());
+        assert!(retained.admits(&quantity(endpoint)));
+        assert!(!retained.admits(&quantity(outside)));
+    }
+    assert!(
+        bounds
+            .iter()
+            .all(|bound| bound.member.node != node("ConfigVersion/a")),
+        "a raw ms member does not inherit D's min/max"
+    );
+}
+
 /// Part of FR-230-AC-26 (TC-685) and QSpec FR-154-AC-29, the intake and
 /// run-time halves of "Unit bounds": a `min` `"5"` on the alias `D` of `ms`
 /// and a `max` `"3"` on `ms` itself (on `ConfigVersion`) are admitted; the
