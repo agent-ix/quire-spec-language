@@ -33,7 +33,9 @@ use super::refusal::{
 use crate::model::clause_observation::Observation;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CollectionType, Value, ValueType};
-use quire_exact::{Integer, IntegerInterval};
+use quire_exact::{
+    DecimalType, Integer, IntegerInterval, NonZeroInteger, Rational, RationalDomain,
+};
 use quire_semantic_value::declaration::{EqualityOperator, FieldRef};
 use quire_semantic_value::location::Location;
 
@@ -291,6 +293,110 @@ fn declared(value_type: &ValueType) -> Interval {
         ValueType::Int(domain) => Interval::of_domain(domain),
         _ => Interval::unbounded(),
     }
+}
+
+fn rational_sum_prefixes(
+    summand: &RationalDomain,
+    result: &RationalDomain,
+    size: &Interval,
+) -> Option<Interval> {
+    let maximum = match &size.upper {
+        End::Finite(maximum) => maximum,
+        End::PositiveInfinity | End::NegativeInfinity => return None,
+    };
+    let minimum = match &size.lower {
+        End::Finite(minimum) => minimum,
+        End::PositiveInfinity | End::NegativeInfinity => return None,
+    };
+    if maximum.is_zero() {
+        let zero = Rational::from_integer(Integer::zero());
+        return result
+            .contains(&zero)
+            .then(|| Interval::point(&Integer::zero()));
+    }
+    if maximum == &Integer::one() {
+        let empty_prefix_is_admitted =
+            minimum > &Integer::zero() || result.contains(&Rational::from_integer(Integer::zero()));
+        return (empty_prefix_is_admitted && result.contains_domain(summand))
+            .then(|| Interval::of_domain(summand.numerator()));
+    }
+    let summand_denominator = summand.denominator().upper();
+    let scale = if summand_denominator <= &Integer::one() {
+        Integer::one()
+    } else if summand_denominator <= &Integer::from(2_u64) {
+        Integer::from(2_u64)
+    } else {
+        return None;
+    };
+    if result.denominator().lower() > &Integer::one() || result.denominator().upper() < &scale {
+        return None;
+    }
+
+    // At common denominator 1 or 2, adding any number of summands cannot
+    // introduce a new denominator. Scale each numerator endpoint exactly,
+    // then use the existing all-prefix interval calculation.
+    let mut magnitude = Integer::zero();
+    for numerator in [summand.numerator().lower(), summand.numerator().upper()] {
+        for denominator in [summand.denominator().lower(), summand.denominator().upper()] {
+            let denominator = NonZeroInteger::try_from(denominator).ok()?;
+            let scaled = numerator.mul(&scale).div_rem_truncating(denominator).0;
+            magnitude = magnitude.max(scaled.abs());
+        }
+    }
+    let maximum_numerator = magnitude.mul(maximum);
+    let possible = Interval {
+        lower: End::Finite(maximum_numerator.neg()),
+        upper: End::Finite(maximum_numerator),
+    };
+    let required_numerator = Interval::of_domain(result.numerator());
+    possible.within(&required_numerator).then_some(possible)
+}
+
+fn decimal_sum_prefixes(
+    summand: &DecimalType,
+    result: &DecimalType,
+    size: &Interval,
+) -> Option<Interval> {
+    let maximum = match &size.upper {
+        End::Finite(maximum) => maximum,
+        End::PositiveInfinity | End::NegativeInfinity => return None,
+    };
+    let minimum = match &size.lower {
+        End::Finite(minimum) => minimum,
+        End::PositiveInfinity | End::NegativeInfinity => return None,
+    };
+    if maximum <= &Integer::one() && same_decimal_type(summand, result) {
+        let zero = quire_exact::Decimal::new(Integer::zero(), result.min_scale());
+        let empty_prefix_is_admitted = minimum > &Integer::zero() || result.contains(&zero);
+        return empty_prefix_is_admitted.then(|| Interval {
+            lower: End::Finite(summand.lower().clone()),
+            upper: End::Finite(summand.upper().clone()),
+        });
+    }
+    if summand.min_scale() != summand.max_scale()
+        || result.min_scale() != result.max_scale()
+        || summand.max_scale() != result.max_scale()
+    {
+        return None;
+    }
+    let coefficients = Interval {
+        lower: End::Finite(summand.lower().clone()),
+        upper: End::Finite(summand.upper().clone()),
+    };
+    let possible = prefix_sums(&coefficients, size);
+    let required = Interval {
+        lower: End::Finite(result.lower().clone()),
+        upper: End::Finite(result.upper().clone()),
+    };
+    possible.within(&required).then_some(possible)
+}
+
+fn same_decimal_type(left: &DecimalType, right: &DecimalType) -> bool {
+    left.lower() == right.lower()
+        && left.upper() == right.upper()
+        && left.min_scale() == right.min_scale()
+        && left.max_scale() == right.max_scale()
+        && left.rounding() == right.rounding()
 }
 
 fn cardinality(collection: &CollectionType) -> Interval {
@@ -1192,25 +1298,55 @@ impl<'a> Definedness<'a> {
                 body,
                 ..
             } => {
-                let ValueType::Int(domain) = node.value_type() else {
-                    return Ok(());
-                };
                 let size = match node.at(*source).value_type() {
                     ValueType::Collection(collection) => cardinality(collection),
                     _ => Interval::unbounded(),
                 };
-                let proved = prefix_sums(&self.interval(node.at(*body), facts), &size);
-                let required = Interval::of_domain(domain);
-                if proved.within(&required) {
-                    Ok(())
-                } else {
-                    Err(Self::refuse(
-                        node,
-                        Obligation::Range {
-                            required: Box::new(required.proved()),
-                            proved: Box::new(proved.proved()),
-                        },
-                    ))
+                match (node.value_type(), node.at(*body).value_type()) {
+                    (ValueType::Int(domain), _) => {
+                        let required = Interval::of_domain(domain);
+                        let proved = prefix_sums(&self.interval(node.at(*body), facts), &size);
+                        if proved.within(&required) {
+                            Ok(())
+                        } else {
+                            Err(Self::refuse(
+                                node,
+                                Obligation::Range {
+                                    required: Box::new(required.proved()),
+                                    proved: Box::new(proved.proved()),
+                                },
+                            ))
+                        }
+                    }
+                    (ValueType::Rational(result), ValueType::Rational(summand)) => {
+                        if rational_sum_prefixes(summand, result, &size).is_some() {
+                            Ok(())
+                        } else {
+                            Err(Self::refuse(
+                                node,
+                                Obligation::Range {
+                                    required: Box::new(ProvedInterval::default()),
+                                    proved: Box::new(ProvedInterval::default()),
+                                },
+                            ))
+                        }
+                    }
+                    (ValueType::Decimal(result), ValueType::Decimal(summand)) => {
+                        if decimal_sum_prefixes(summand, result, &size).is_some() {
+                            Ok(())
+                        } else {
+                            Err(Self::refuse(
+                                node,
+                                Obligation::Range {
+                                    required: Box::new(ProvedInterval::default()),
+                                    proved: Box::new(ProvedInterval::default()),
+                                },
+                            ))
+                        }
+                    }
+                    // These result families have no additional bounded
+                    // definedness domain in this proof system.
+                    _ => Ok(()),
                 }
             }
             NodeKind::Value(operand) => match self.stable_path(node.at(*operand), facts) {

@@ -5006,6 +5006,11 @@ impl<'a> Lowering<'a> {
                         (
                             Operator::Collection,
                             Operation {
+                                laws: if matches!(node.value_type(), ValueType::Float(_)) {
+                                    vec![self.law(LawRole::IeeeProfile, node.location())?]
+                                } else {
+                                    Vec::new()
+                                },
                                 member: Some(
                                     self.type_argument(node.value_type(), node.location())?,
                                 ),

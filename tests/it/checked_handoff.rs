@@ -2292,6 +2292,82 @@ fn a_quantity_sum_checks_lowers_and_is_admitted() {
     );
 }
 
+/// FR-517-AC-20 (QSL-1692): numeric family sums retain their catalogued
+/// operation identities and the result type's pinned rounding modes.
+#[trace("TC-1312", "FR-517-AC-20")]
+#[test]
+fn numeric_sum_families_emit_their_identities_and_modes() {
+    let dir = tempfile::tempdir().unwrap();
+    let request = unit_request(
+        dir.path(),
+        "type R = Rational[-10, 10; 1, 1];\n\
+         type D = Decimal[-100, 100; 0, 0; nearest-even];\n\
+         type F32 = Float32[nearest-even];\n\
+         type F64 = Float64[toward-zero];\n\
+         function rs using v(): Sequence<R>[1, 1] pure { sequence[rational(1,1)] }\n\
+         function ds using v(): Sequence<D>[1, 1] pure { sequence[decimal(1,0)] }\n\
+         function f32s using v(): Sequence<F32>[1, 1] pure { sequence[float32(bits: 0x3f800000)] }\n\
+         function f64s using v(): Sequence<F64>[1, 1] pure { sequence[float64(bits: 0x3ff0000000000000)] }\n\
+         invariant Bounded using v on M::Workflow at current {\n\
+         sum<R>(part in rs(): part) >= rational(0,1)\n\
+         and sum<D>(part in ds(): part) >= decimal(0,0)\n\
+         and sum<F32>(part in f32s(): part) = float32(bits: 0x3f800000)\n\
+         and sum<F64>(part in f64s(): part) = float64(bits: 0x3ff0000000000000)\n\
+         }",
+    );
+    let out = dir.path().join("handoff");
+    write(&request, &out).expect("numeric family sums are written and admitted");
+    let files = tree(&out);
+    let package: Value = serde_json::from_slice(&files["checked-package.json"]).unwrap();
+    let operations: Vec<_> = package["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|node| node["body"].get("operation"))
+        .collect();
+    for identity in [
+        "quire.op.collection.sum.rational",
+        "quire.op.collection.sum.decimal",
+        "quire.op.collection.sum.float32",
+        "quire.op.collection.sum.float64",
+    ] {
+        assert!(
+            operations
+                .iter()
+                .any(|operation| operation["identity"] == identity),
+            "missing emitted operation identity {identity}: {operations:?}"
+        );
+    }
+    for (identity, mode) in [
+        ("quire.op.collection.sum.decimal", "nearest-even"),
+        ("quire.op.collection.sum.float32", "nearest-even"),
+        ("quire.op.collection.sum.float64", "toward-zero"),
+    ] {
+        assert!(
+            operations.iter().any(|operation| {
+                operation["identity"] == identity
+                    && operation["mode"] == serde_json::json!({"kind":"rounding", "value":mode})
+            }),
+            "missing {mode} mode for {identity}: {operations:?}"
+        );
+    }
+    assert!(operations.iter().any(|operation| {
+        operation["identity"] == "quire.op.collection.sum.rational" && operation["mode"].is_null()
+    }));
+    for identity in [
+        "quire.op.collection.sum.float32",
+        "quire.op.collection.sum.float64",
+    ] {
+        assert!(operations.iter().any(|operation| {
+            operation["identity"] == identity
+                && operation["laws"].as_array().unwrap().iter().any(|law| {
+                    law["role"] == "ieee_profile"
+                        && law["definition"]["identity"] == "quire.value.ieee754-2019-default/v1"
+                })
+        }));
+    }
+}
+
 /// Model aliases keep their admitted unit type when used as source names.
 /// The capture and quantity sum are emitted with U's exact node.
 #[trace("TC-1312", "FR-517-AC-19")]
