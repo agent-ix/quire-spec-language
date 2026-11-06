@@ -883,6 +883,16 @@ fn formula_nodes_counts_distinct_reachable_nodes() {
         ClauseWork::of_shapes(&overflow, 0),
         Err(ReachFault::Overflow)
     );
+    // The same holds for past reach, which adds into `history_span`.
+    let past_overflow = [
+        shape(Some(1), None, NodeReach::Past(u64::MAX)),
+        shape(Some(2), None, NodeReach::Past(1)),
+        atom,
+    ];
+    assert_eq!(
+        ClauseWork::of_shapes(&past_overflow, 0),
+        Err(ReachFault::Overflow)
+    );
     // The checker's own arena: one node per source occurrence.
     let built = fixture(
         EVENT_PROFILE,
@@ -1127,4 +1137,70 @@ fn a_formula_nested_one_hundred_thousand_deep_evaluates_on_a_small_stack() {
         .expect("evaluation does not overflow a 512 KiB stack");
     // An even number of negations over a true atom is true.
     assert_eq!(outcome, TemporalOutcome::Holds);
+}
+
+/// NFR-008-AC-4: a formula nested 100,000 deep under a bounded `always` is
+/// evaluated over two positions on a 512 KiB stack. The `and` makes each
+/// position's walk branch, and the quantifier repeats the walk once per
+/// position of its window, so the traversal needs no recursion in formula
+/// depth. An even number of negations holds and an odd number is violated at
+/// the first position, so the walk computes the value rather than settling
+/// it early. Every (node, position) is visited once and charged one work
+/// unit.
+#[trace("NFR-008-AC-4", "TC-124")]
+#[test]
+fn deep_branching_quantification_evaluates_on_a_small_stack() {
+    const DEPTH: usize = 100_000;
+    let run = |negations: usize| {
+        let body = format!(
+            "always[0,1] {}(holds(c.level = 3) and true)",
+            "not ".repeat(negations)
+        );
+        std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(move || {
+                let limits = qsl_cst::Limits::default()
+                    .with_tokens(DEPTH * 4 + 64)
+                    .with_nodes(DEPTH * 4 + 64)
+                    .with_work_units(usize::MAX);
+                let built = fixture_within(EVENT_PROFILE, "c: Counter", "on origin", &body, limits);
+                std::thread::Builder::new()
+                    .stack_size(512 * 1024)
+                    .spawn(move || {
+                        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+                        let outcome = evaluate(
+                            &built.clause,
+                            TemporalTrace::Finite { len: 2 },
+                            &mut AlwaysTrue,
+                            &mut meter,
+                        )
+                        .expect("the trace is readable");
+                        let work = meter.consumed(LimitKind::WorkUnits);
+                        drop(built);
+                        (outcome, work)
+                    })
+                    .expect("an evaluation thread")
+                    .join()
+                    .expect("evaluation does not overflow a 512 KiB stack")
+            })
+            .expect("a build thread")
+            .join()
+            .expect("the deep clause checks")
+    };
+    let (outcome, work) = run(DEPTH);
+    assert_eq!(outcome, TemporalOutcome::Holds);
+    let (odd, odd_work) = run(DEPTH + 1);
+    assert!(
+        matches!(odd, TemporalOutcome::Violated { .. }),
+        "an odd number of negations over a true atom is false: {odd:?}"
+    );
+    // The counts are measured: the even walk charges one unit per visited
+    // (operator node, position) over both positions (2 * 100,002 for the
+    // negations, the `and` and its atom, plus the `always` root), and the odd
+    // walk stops at position 0 and charges about half. They differ from the
+    // 200,008 the retired evaluator charged for this shape because the two
+    // evaluators count different nodes (here the constant `true` operand is
+    // not a visit).
+    assert_eq!(work, 200_005);
+    assert_eq!(odd_work, 100_005);
 }

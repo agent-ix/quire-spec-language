@@ -1218,9 +1218,6 @@ fn declaration(package: &v2::AdmittedPackage, name: &str) -> usize {
         .expect("authored temporal declaration")
 }
 
-#[path = "checked_temporal_limits_v2.rs"]
-mod checked_temporal_limits_v2;
-
 #[test]
 fn initialized_compensation_capture_graph_refuses_foreign_and_recursive_initializers() {
     with_v2_inputs(
