@@ -798,3 +798,64 @@ fn tc_440_an_unbounded_application_record_requires_a_bound_in_ir() {
         "IR requires a bound for the unbounded outer `+`: {outer:?}"
     );
 }
+
+#[trace("TC-413", "FR-092-AC-28")]
+#[test]
+#[ignore = "IR-1345: native bounded_quantity reader admission is pending"]
+fn bounded_quantity_emission_round_trips_with_exact_bounds_and_dependencies() {
+    use quire_exact::{BoundedQuantityType, Quantity, Rational, UnitId};
+    let (units, keys) = velocity_units();
+    let unit = UnitId::declared(keys["metre"].clone());
+    let endpoint =
+        |value| Quantity::new(Rational::from_integer(Integer::from(value)), unit.clone());
+    let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
+        BoundedQuantityType::new(unit.clone(), Some(endpoint(0_i64)), Some(endpoint(20_i64)))
+            .expect("nominal bounds"),
+    ));
+    let types = TypeEnvironment::new([record(40, "Bounded", vec![("distance", bounded)])], [])
+        .expect("record types admit")
+        .with_units(units);
+    let (wire, _, omitted) = emit_and_read(types);
+    assert!(
+        omitted.is_empty(),
+        "the complete bounded declaration must emit"
+    );
+    let node = nodes(&wire)
+        .iter()
+        .find(|node| node["semantic_form"] == "bounded_quantity")
+        .expect("bounded quantity wire node");
+    let members = node["body"]["members"].as_array().expect("bindings");
+    assert_eq!(
+        members
+            .iter()
+            .map(|member| member["name"].as_str().expect("name"))
+            .collect::<Vec<_>>(),
+        ["unit", "min", "max"]
+    );
+    assert_eq!(members[1]["value"]["value"], json!("0"));
+    assert_eq!(members[2]["value"]["value"], json!("20"));
+    assert_eq!(node["semantic_type"], node["node_id"]);
+    let mut dependencies = vec![
+        members[0]["value"]["target"].clone(),
+        members[1]["value"]["type"].clone(),
+    ];
+    dependencies.sort_by_key(|value| wire_id(value));
+    assert_eq!(node["dependencies"], json!(dependencies));
+    let mut bad = wire.clone();
+    let bad_node = bad["semantic_graph"]["nodes"]
+        .as_array_mut()
+        .expect("graph")
+        .iter_mut()
+        .find(|node| node["semantic_form"] == "bounded_quantity")
+        .expect("bounded node");
+    bad_node["body"]["members"][1]["value"]["value"] = json!("2/2");
+    let bytes = serde_json::to_vec(&bad).expect("wire JSON");
+    let evidence = CheckedPackageEvidence::new();
+    assert!(
+        !matches!(
+            read_checked_package(&bytes, CheckedPackageReadLimits::bounded(), &evidence),
+            CheckedPackageDispatchResult::AdmittedV2(_)
+        ),
+        "noncanonical endpoint must refuse"
+    );
+}

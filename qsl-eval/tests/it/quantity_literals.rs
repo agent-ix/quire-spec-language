@@ -542,13 +542,3 @@ fn bounded_quantities_evaluate_add_comparison_and_conversion_from_their_interval
         }
     }
 }
-
-#[trace("TC-413", "FR-092-AC-28")]
-#[test]
-#[ignore = "IR-1345: native bounded_quantity reader admission is pending"]
-fn bounded_quantity_emission_round_trips_through_the_native_reader() {
-    let package = bounded_package();
-    let emitted = qsl_package::emit_checked(&package)
-        .expect("bounded quantity package emits and native reader admits it");
-    assert!(!emitted.package().bytes().is_empty());
-}
