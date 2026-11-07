@@ -225,7 +225,7 @@ fn unit_queries_over_duplicate_items_evaluate_on_the_checked_route() {
         let called = unit
             .package()
             .call(
-                &QualifiedName::unqualified(&format!("query{index}")).expect("an identifier"),
+                &QualifiedName::unqualified(format!("query{index}")).expect("an identifier"),
                 Vec::new(),
                 &ObjectEnvironment::default(),
                 &mut Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED),
