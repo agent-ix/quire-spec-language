@@ -123,6 +123,12 @@ fn quantity_replay() -> Replay {
     )
 }
 
+/// The bounded Rational fixture (FR-505-AC-5): `Item` also holding `level` of
+/// `Rational[-3, 7; 1, 12]`.
+fn rational_replay() -> Replay {
+    replay_of(fixture::rational_document(), rational_fields())
+}
+
 fn replay_of(document: Value, base: Vec<(String, Value)>) -> Replay {
     replay_with(document, base, "")
 }
@@ -2807,4 +2813,87 @@ fn a_defective_magnitude_refuses_at_the_path_magnitude() {
             ObservationLimits::default(),
         )
         .expect("a Quantity magnitude has no declared bound");
+}
+
+// ---------------------------------------------------------------------------
+// FR-505-AC-5 (TC-1300 rows 21 to 23): a bounded Rational value type
+// ---------------------------------------------------------------------------
+
+fn rational_fields() -> Vec<(String, Value)> {
+    let mut fields = base_fields();
+    fields.push(("level".to_owned(), ratio("0", "1")));
+    fields
+}
+
+fn rational_object(numerator: &str, denominator: &str) -> Value {
+    json!({"kind": "rational", "numerator": numerator, "denominator": denominator})
+}
+
+/// The refusal record of the Rational fixture where `level` holds `value`.
+fn refused_level(
+    replay: &Replay,
+    value: Value,
+) -> qsl_semantics::model::observation::AdmissionRecord {
+    record_of(replay.admit(
+        &with(rational_fields(), "level", value),
+        ObservationLimits::default(),
+    ))
+}
+
+/// FR-505-AC-5 (TC-1300 rows 21 and 22): a snapshot supplying `7/12`, `-3/1`
+/// and `0/1` to a `Ratio` field is admitted unchanged, and `2/4` is admitted
+/// as its normalized value `1/2` (FR-106-AC-55); `8/1`, `16/2` (normalized
+/// `8/1`), `1/13` and `-4/1` each refuse `invalid_runtime_input`/`invalid-value`
+/// at `level`, naming `Rational[-3, 7; 1, 12]` and the normalized pair, and no
+/// value is rounded. The unit-bearing sentence and the `float64` object are
+/// not carried yet (the unit table of a model document, and FR-106-AC-57's
+/// float payloads), so the test is not tagged with the criterion.
+#[trace("TC-1300")]
+#[test]
+fn a_bounded_rational_member_admits_its_normalized_value_or_refuses_the_pair() {
+    let replay = rational_replay();
+    for (numerator, denominator, admitted) in [
+        ("7", "12", "7/12"),
+        ("-3", "1", "-3/1"),
+        ("0", "1", "0/1"),
+        ("2", "4", "1/2"),
+    ] {
+        let found = replay
+            .admit(
+                &with(
+                    rational_fields(),
+                    "level",
+                    rational_object(numerator, denominator),
+                ),
+                ObservationLimits::default(),
+            )
+            .unwrap_or_else(|failure| panic!("{numerator}/{denominator} admits: {failure:?}"));
+        let Datum::Rational(value) = replay.value(&found, "level") else {
+            panic!("{numerator}/{denominator}: a Rational");
+        };
+        assert_eq!(value.to_string(), admitted, "{numerator}/{denominator}");
+    }
+    for (numerator, denominator, normalized) in [
+        ("8", "1", "8/1"),
+        ("16", "2", "8/1"),
+        ("1", "13", "1/13"),
+        ("-4", "1", "-4/1"),
+    ] {
+        let record = refused_level(&replay, rational_object(numerator, denominator));
+        assert_eq!(record.catalog.code(), Code::InvalidRuntimeInput.as_str());
+        assert_eq!(record.catalog.cause(), "invalid-value");
+        assert_eq!(
+            record.fields.get("field").map(String::as_str),
+            Some("level")
+        );
+        assert_eq!(
+            record.fields.get("expected").map(String::as_str),
+            Some("Rational[-3, 7; 1, 12]")
+        );
+        assert_eq!(
+            record.fields.get("actual").map(String::as_str),
+            Some(normalized),
+            "{numerator}/{denominator}"
+        );
+    }
 }

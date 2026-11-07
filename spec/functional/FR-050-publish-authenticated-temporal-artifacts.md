@@ -73,21 +73,17 @@ admitted view while retaining the same constructor-private native authority as
 FR-042's producer. Its enclosing `Report<AdmissionV2>` SHALL expose effective
 limits and usage exactly once, following the existing FR-042 report pattern.
 
-The public L5 entry point that remains is
-`temporal::mapping_support_v2(&protocol_artifact::v2::AdmittedPackage, declaration, closure)`.
 The strict `/2` and checked evaluation entry points
 (`temporal::evaluate_artifact_v2`, `evaluate_with_progress_v2`,
-`evaluate_checked_v2`, `evaluate_checked_with_progress_v2` and
-`mapping_support_checked_v2`) and the `/1` entry points
-(`temporal::evaluate`, `evaluate_with_progress`, `mapping_support`) are retired
-(QSL-858 PR 1). Their successors authenticate the profile, clock name and
-complete parameter map before any position is visited and retain the exact
+`evaluate_checked_v2`, `evaluate_checked_with_progress_v2`,
+`mapping_support_checked_v2`), the `/1` entry points (`temporal::evaluate`,
+`evaluate_with_progress`, `mapping_support`) and `mapping_support_v2` are retired
+(QSL-858 PR 1 and PR 2). Their successors authenticate the profile, clock name
+and complete parameter map before any position is visited and retain the exact
 selected definition identity and typed clock configuration in the report
 (FR-522), retain progress under the clause and binding identity (FR-502), and
-classify mapping support from the checked clause (FR-527). The kept
-`mapping_support_v2` SHALL retain the declaration and the definition selection
-the admitted binding names and SHALL NOT claim to authenticate trace parameters
-because it takes no trace.
+classify mapping support from the checked clause (FR-527), which takes no trace
+and so claims no parameter-map authentication.
 
 The strict reader's `v2::Expected` SHALL contain the complete inherited
 FR-042 `Expected` selections plus an independently supplied complete table of
@@ -183,11 +179,6 @@ source-locus and declaration selection join before the same trace comparison.
 The checked S3 formula remains the only evaluation source; the admitted `/2`
 view supplies authenticated definition and clock evidence, never a reconstructed
 formula or caller-authored truth.
-
-`mapping_support_v2` takes no runtime trace. It SHALL require the declaration's
-admitted binding to select the same definition/profile before classifying the
-requested surrounding-execution closure; it SHALL NOT claim to authenticate a
-parameter map that is not an input to mapping classification.
 
 The progress ledger identity SHALL include the declaration, definition
 identity/revision and exact clock configuration (FR-502, FR-522). Progress

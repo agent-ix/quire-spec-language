@@ -1828,6 +1828,17 @@ impl OutcomeDocument {
                     None,
                     refusal.to_string(),
                 )]),
+                RunRefusal::SourceNotSupplied { .. } => Self::new(
+                    Operation::Execute,
+                    Some(OutcomeStage::S6a),
+                    refusal.category(),
+                )
+                .with_diagnostics(vec![OutcomeDiagnostic::new(
+                    Some("missing-member"),
+                    refusal.code().as_str(),
+                    None,
+                    refusal.to_string(),
+                )]),
                 RunRefusal::MissingDeclaration { .. }
                 | RunRefusal::UnsupportedResult { .. }
                 | RunRefusal::UnknownParameter { .. }

@@ -94,7 +94,6 @@ mod linking;
 mod located_json;
 #[cfg(feature = "checked-handoff")]
 mod mapping_support;
-mod mapping_support_v2;
 mod model_source;
 #[cfg(feature = "checked-handoff")]
 mod model_type_unit_roots;
@@ -136,3 +135,5 @@ mod union_nodes;
 mod v2_refusal_code_bridge;
 #[cfg(feature = "checked-handoff")]
 mod valuation_evidence;
+
+mod compound_quantity_types;

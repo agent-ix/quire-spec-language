@@ -8,8 +8,8 @@ use qsl_eval::temporal::evidence::{EvidencePackage, Truth};
 use qsl_package::checked_views::temporal_subject;
 use quire_spec_language::temporal::{
     evaluate_v2, BindingDimension, CheckedSubject, ClockBinding, Closure, Completeness, Execution,
-    NativeReportError, ObservationRef, Position, Report, ReportRefusal, Trace, ValuationEvidence,
-    ValuationInstance, ValuationRow, EVENT_POSITION,
+    MissingValuation, NativeReportError, ObservationRef, Position, Report, ReportRefusal, Trace,
+    ValuationEvidence, ValuationInstance, ValuationRow, EVENT_POSITION,
 };
 
 fn with_subject(check: impl FnOnce(&CheckedSubject, &ObservationRef, &[ValuationRow])) {
@@ -36,20 +36,19 @@ pub(super) fn with_inputs(
         &[ValuationRow],
     ),
 ) {
-    let rows: Vec<_> = [0, 0, 0, 1]
+    let rows: Vec<(usize, bool)> = [0, 0, 0, 1]
         .into_iter()
         .filter(|position| !missing || *position == 0)
         .map(|position| (position, value))
         .collect();
-    with_row_values(&rows, false, check);
+    with_rows(&rows, &BTreeMap::new(), check);
 }
 
-/// [`with_inputs`] over exactly the `(position, value)` rows, in admission
-/// order. `legacy_false` also sets the trace positions' legacy leaf-handle
-/// map to the operand false at every position.
-fn with_row_values(
-    row_values: &[(usize, bool)],
-    legacy_false: bool,
+/// [`with_inputs`] over the given `(position, value)` rows for the clause's one
+/// operand, with `legacy` set as the trace's legacy leaf-handle map at position 0.
+fn with_rows(
+    values: &[(usize, bool)],
+    legacy: &BTreeMap<u32, bool>,
     check: impl FnOnce(
         &quire_contract_model::CheckedPackageV2,
         &qsl_package::checked_views::ClauseOccurrence,
@@ -78,7 +77,7 @@ fn with_row_values(
     let operand = &view.predicate_leaves()[0];
     let request =
         super::temporal_package_route::request(&engine, node, Some(occurrence.ordinal), 2);
-    let rows: Vec<_> = row_values
+    let rows: Vec<_> = values
         .iter()
         .map(|&(position, value)| ValuationRow {
             subject: occurrence.clone(),
@@ -100,8 +99,8 @@ fn with_row_values(
             .map(|coordinate| Position {
                 coordinate,
                 order: None,
-                valuations: if legacy_false {
-                    (0..64).map(|leaf| (leaf, false)).collect()
+                valuations: if coordinate == 0 {
+                    legacy.clone()
                 } else {
                     BTreeMap::new()
                 },
@@ -130,7 +129,7 @@ fn with_row_values(
         "revision:7",
         rows.clone(),
     )
-    .expect("every row occurrence admitted");
+    .expect("all four row occurrences admitted");
     let observation = ObservationRef {
         reference: "observation:opaque".into(),
         revision: "revision:7".into(),
@@ -446,68 +445,6 @@ fn opposite_and_missing_valuations_are_computed_from_admitted_rows() {
                     .all(|entry| evidence.rows().contains(&entry.row)));
             },
         );
-    }
-}
-
-/// On the checked-package route `evaluate_v2` reads the retained rows alone.
-/// This is part of FR-043-AC-17 only: the located `Incomplete` the AC requires
-/// of disagreeing and missing rows is not yet reported (QSL-1780), so the test
-/// does not claim the AC. Two identical rows valuing the operand true at
-/// position 0 and one at position 1 give truth `true`, basis `closed-scope`
-/// and support at positions 0 and 1; a true and a false row at position 0
-/// give a missing valuation with no truth, and so does no row at position 0,
-/// never `false`. The trace positions' legacy leaf-handle map, set false at
-/// every position, changes none of the results.
-#[trace("TC-144")]
-#[test]
-fn evaluation_reads_the_retained_rows_alone() {
-    use qsl_eval::temporal::evidence::Settlement;
-    use quire_spec_language::temporal::ReportOutcome;
-    type Case = (&'static [(usize, bool)], Option<Truth>, ReportOutcome);
-    let cases: [Case; 3] = [
-        (
-            &[(0, true), (0, true), (1, true)],
-            Some(Truth::True),
-            ReportOutcome::Evaluated,
-        ),
-        (
-            &[(0, true), (0, false), (1, true)],
-            None,
-            ReportOutcome::Missing,
-        ),
-        (&[(1, true)], None, ReportOutcome::Missing),
-    ];
-    for legacy_false in [false, true] {
-        for (rows, truth, outcome) in cases {
-            with_row_values(
-                rows,
-                legacy_false,
-                |package, occurrence, evidence, request, observation, _| {
-                    let subject =
-                        CheckedSubject::new(package, occurrence, evidence, request).unwrap();
-                    let report = evaluate_v2(
-                        &subject,
-                        observation,
-                        &mut super::temporal_package_route::unlimited(),
-                        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
-                    )
-                    .unwrap();
-                    assert_eq!(report.truth(), truth, "{rows:?} {legacy_false}");
-                    assert_eq!(report.outcome(), outcome, "{rows:?} {legacy_false}");
-                    if truth.is_some() {
-                        assert_eq!(report.settlement(), Some(Settlement::ClosedScope));
-                        let mut positions: Vec<_> = report
-                            .support()
-                            .iter()
-                            .map(|entry| entry.position)
-                            .collect();
-                        positions.dedup();
-                        assert_eq!(positions, [0, 1]);
-                        assert_eq!(report.support().len(), 3);
-                    }
-                },
-            );
-        }
     }
 }
 
@@ -1323,4 +1260,70 @@ fn subject_and_evaluation_refuse_foreign_occurrence_revision_and_anchor() {
             ));
         },
     );
+}
+
+/// FR-043-AC-17: over `always[0,1] holds(p)` activated at position 0 with a
+/// closed-complete scope of two positions and a row valuing `p` true at
+/// position 1, the report is read from the retained rows alone. Two identical
+/// rows valuing `p` true at position 0 give truth `true`, settled by the closed
+/// scope, with decision support at positions 0 and 1; a true and a false row at
+/// position 0 give no truth and the missing outcome; no row at position 0 gives
+/// the same. Setting the trace's legacy leaf-handle map to `p` false at
+/// position 0 changes none of the three results.
+#[trace("TC-144", "FR-043-AC-17")]
+#[test]
+fn the_retained_rows_alone_decide_the_report() {
+    use qsl_eval::temporal::evidence::Settlement;
+    use quire_spec_language::temporal::ReportOutcome;
+    type Rows = &'static [(usize, bool)];
+    let cases: [(Rows, Option<Truth>); 3] = [
+        (&[(0, true), (0, true), (1, true)], Some(Truth::True)),
+        (&[(0, true), (0, false), (1, true)], None),
+        (&[(1, true)], None),
+    ];
+    for legacy in [BTreeMap::new(), BTreeMap::from([(0_u32, false)])] {
+        for (rows, expected) in cases {
+            with_rows(
+                rows,
+                &legacy,
+                |package, occurrence, evidence, request, observation, _| {
+                    let subject =
+                        CheckedSubject::new(package, occurrence, evidence, request).unwrap();
+                    let report = evaluate_v2(
+                        &subject,
+                        observation,
+                        &mut super::temporal_package_route::unlimited(),
+                        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+                    )
+                    .unwrap();
+                    assert_eq!(report.truth(), expected, "{rows:?}");
+                    if expected.is_some() {
+                        assert_eq!(report.outcome(), ReportOutcome::Evaluated);
+                        assert_eq!(report.settlement(), Some(Settlement::ClosedScope));
+                        let mut positions: Vec<u64> = report
+                            .support()
+                            .iter()
+                            .map(|entry| entry.position)
+                            .collect();
+                        positions.dedup();
+                        assert_eq!(positions, [0, 1], "{rows:?}: decision support");
+                    } else {
+                        assert_eq!(report.outcome(), ReportOutcome::Missing, "{rows:?}");
+                        // The retained rows locate the missing valuation at the
+                        // occurrence, the operand and position 0, never `false`.
+                        let operand = evidence.rows()[0].operand.clone();
+                        assert_eq!(
+                            evidence.value_of(occurrence, 0, &operand),
+                            Err(MissingValuation {
+                                subject: occurrence.clone(),
+                                position: 0,
+                                operand,
+                            }),
+                            "{rows:?}"
+                        );
+                    }
+                },
+            );
+        }
+    }
 }

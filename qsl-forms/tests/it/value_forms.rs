@@ -1621,3 +1621,108 @@ fn a_power_exponent_other_than_one_signed_integer_literal_refuses_at_that_token(
         assert_eq!(at, expected, "{written}");
     }
 }
+
+#[trace("TC-483", "FR-091-AC-74")]
+#[test]
+fn compound_quantity_type_forms_retain_named_factors_exponents_and_spans() {
+    let (text, unit) =
+        build("function f using v(q: Quantity<kg*m^2*s^-2>): Quantity<kg*m^2*s^-2> pure { q }");
+    let declaration = function(unit.forms()[0].form());
+    for form in [&declaration.parameters[0].1, &declaration.result] {
+        assert_eq!(form.head, TypeFormHead::Builtin(BuiltinType::Quantity));
+        let [argument] = form.arguments.as_slice() else {
+            panic!("one unit argument")
+        };
+        let TypeFormHead::UnitExpression(terms) = &argument.head else {
+            panic!("typed unit expression: {argument:?}")
+        };
+        assert_eq!(terms.len(), 3);
+        for (term, name, exponent) in [
+            (&terms[0], "kg", None),
+            (&terms[1], "m", Some("2")),
+            (&terms[2], "s", Some("-2")),
+        ] {
+            assert_eq!(term.name.name, name);
+            assert_eq!(&text[term.name.span.start..term.name.span.end], name);
+            assert_eq!(
+                term.exponent
+                    .as_ref()
+                    .map(|(n, _)| n.to_string())
+                    .as_deref(),
+                exponent
+            );
+            if let Some((value, span)) = &term.exponent {
+                assert_eq!(&text[span.start..span.end], value.to_string());
+            }
+        }
+        assert_eq!(argument.clone(), *argument);
+        assert!(format!("{argument:?}").contains("UnitExpression"));
+    }
+    let (_, unit) =
+        build("function f using v(q: Quantity<M::kg^1, Int[0, 10]>): Quantity<kg> pure { q }");
+    let declaration = function(unit.forms()[0].form());
+    assert_eq!(declaration.parameters[0].1.arguments.len(), 2);
+    assert!(
+        matches!(&declaration.parameters[0].1.arguments[0].head, TypeFormHead::UnitExpression(terms) if terms[0].name.name == "M::kg" && terms[0].exponent.as_ref().unwrap().0 == Integer::from(1_i64))
+    );
+    assert!(
+        matches!(&declaration.result.arguments[0].head, TypeFormHead::Name(name) if name.name == "kg")
+    );
+}
+
+#[trace("TC-483", "FR-091-AC-75")]
+#[test]
+fn malformed_compound_quantity_type_expressions_refuse_as_syntax() {
+    for expression in [
+        "",
+        "kg*",
+        "kg**m",
+        "m^",
+        "m^n",
+        "m^1.5",
+        "m/ s",
+        "(m)",
+        "m^^2",
+        "m^-",
+        "m^2*",
+        "m,",
+        "m^2, Int[0, 10], Boolean",
+    ] {
+        let (_, parsed) = parse(&format!("type Q = Quantity<{expression}>;"));
+        assert!(!parsed.is_admissible(), "{expression}");
+        assert!(
+            parsed
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code == Code::InvalidSyntax),
+            "{expression}: {:?}",
+            parsed.diagnostics()
+        );
+    }
+}
+
+#[trace("TC-483", "FR-091-AC-75")]
+#[test]
+fn compound_quantity_type_products_remain_subject_to_the_existing_syntax_node_ceiling() {
+    let declaration = format!("type Q = Quantity<{}>;", vec!["m^2"; 64].join("*"));
+    let (text, parsed) = admissible(&declaration);
+    let nodes = parsed.cst().nodes().len();
+    let refusal = qsl_cst::parse(
+        SourceIdentity::new("a", "u"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default().with_nodes(nodes - 1),
+    )
+    .expect_err("no partial compound type at the node ceiling");
+    assert_eq!(
+        refusal.limit(),
+        Some(SyntaxLimit::Nodes { bound: nodes - 1 })
+    );
+    let unit = build_unit(&parsed).expect("the product builds at the admitted ceiling");
+    let DeclarationForm::Alias(alias) = unit.forms()[0].form() else {
+        panic!("alias")
+    };
+    assert!(
+        matches!(&alias.target.arguments[0].head, TypeFormHead::UnitExpression(terms) if terms.len() == 64)
+    );
+}
