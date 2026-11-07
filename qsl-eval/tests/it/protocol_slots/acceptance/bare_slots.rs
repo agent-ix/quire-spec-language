@@ -703,7 +703,7 @@ fn assert_pristine(meter: &Meter) {
 /// The in-process reader view's `UnsupportedView` half of FR-390-AC-66 is not
 /// asserted here; the `Package` locus of `UnsupportedView` is covered by the
 /// qsl-package order test and the remainder is open.
-#[trace("TC-1333", "TC-1331", "FR-533-AC-15", "FR-531-AC-5")]
+#[trace("TC-1333", "TC-1331", "FR-533-AC-15", "FR-531-AC-5", "FR-390-AC-66")]
 #[test]
 fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
     let package = fixture();
