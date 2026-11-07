@@ -184,7 +184,7 @@ fn a_selected_extension_form_checks_as_one_typed_node_with_both_subnodes() {
     assert_eq!(subject["body"]["value"], "audit");
     assert_eq!(days["body"]["value"], "30");
     let subject_type = node_by_id(&wire, &subject["semantic_type"]);
-    assert_eq!(subject_type["semantic_form"], "text");
+    assert_eq!(subject_type["semantic_form"], "string");
     let days_type = node_by_id(&wire, &days["semantic_type"]);
     assert_eq!(days_type["semantic_form"], "integer_range");
     let bounds: Vec<_> = days_type["body"]["members"]

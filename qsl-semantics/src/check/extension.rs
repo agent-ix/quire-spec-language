@@ -21,7 +21,8 @@ use qsl_forms::{
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::Span;
-use quire_exact::{IntegerInterval, ValueType};
+use quire_checked::node::{CheckedLiteral, NodeKind};
+use quire_exact::{IntegerInterval, Value, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::{Location, Origin};
 
@@ -343,12 +344,24 @@ impl Builder<'_, '_, '_> {
             }
             Err(refusal) => return Err(refusal),
         };
+        let literal_range = std::cell::Cell::new(None);
         let mut used = *self.nodes;
         let mut typer = Self::typer(self.input, &mut used, self.cx);
         typer.check_declared_type(&expected, &location)?;
         let checked = typer.check_as(&clause.value.expression, &expected, &location);
         let slot_names = typer.slot_names().to_vec();
         drop(typer);
+        // The core admits an integer into a narrower `Int[..]` under a range
+        // obligation; a literal's range is known, so a literal outside the
+        // declared range is a type mismatch here.
+        let checked = checked.and_then(|body| match literal_outside(&body, &expected) {
+            Some(actual) => Err(CheckRefusal::ill_typed(
+                &location,
+                quire_exact::IllTypedCause::TypeMismatch,
+            ))
+            .inspect_err(|_| literal_range.set(Some(actual))),
+            None => Ok(body),
+        });
         match checked {
             Ok(body) => {
                 *self.nodes = used;
@@ -363,7 +376,9 @@ impl Builder<'_, '_, '_> {
                 cause: CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
                 ..
             }) => {
-                let actual = self.actual_type(clause, &location);
+                let actual = literal_range
+                    .take()
+                    .unwrap_or_else(|| self.actual_type(clause, &location));
                 Err(refusal(
                     self.index,
                     ExtensionCause::TypeMismatch {
@@ -483,6 +498,23 @@ fn spelling(value_type: &ValueType) -> String {
         ValueType::Reference(_) => "Reference".to_owned(),
         ValueType::Population(_) => "Population".to_owned(),
     }
+}
+
+/// The spelling of the integer literal `body` is when its range lies outside
+/// the declared integer type `expected`.
+fn literal_outside(body: &CheckedBody, expected: &ValueType) -> Option<String> {
+    let ValueType::Int(target) = expected else {
+        return None;
+    };
+    let root = body.root();
+    let NodeKind::Coerce(operand, _) = root.kind() else {
+        return None;
+    };
+    let NodeKind::Literal(CheckedLiteral(Value::Integer(value))) = root.at(*operand).kind() else {
+        return None;
+    };
+    let inside = *target.lower() <= *value && *value <= *target.upper();
+    (!inside).then(|| format!("Int[{value}, {value}]"))
 }
 
 fn integer_spelling(interval: &IntegerInterval) -> String {
