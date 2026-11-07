@@ -78,7 +78,8 @@ impl StatisticalRecord {
             | TerminalValue::Unsupported(_)
             | TerminalValue::Incomplete(_)
             | TerminalValue::Inconclusive(_)
-            | TerminalValue::Failed => None,
+            | TerminalValue::Failed
+            | TerminalValue::ToolFailed(_) => None,
         }
     }
 

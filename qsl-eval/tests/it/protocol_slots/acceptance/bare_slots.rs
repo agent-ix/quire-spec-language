@@ -793,6 +793,7 @@ fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
         conflicting,
         rows.fields().to_vec(),
         rows.source_records().to_vec(),
+        rows.source_unions().to_vec(),
     );
     let unknown = BarePackage::new(v2)
         .with_supply(
@@ -918,6 +919,7 @@ fn the_call_reports_identity_then_equality_then_node_refusals() {
         rows.declarations().to_vec(),
         Vec::new(),
         rows.source_records().to_vec(),
+        rows.source_unions().to_vec(),
     );
     let no_fields = |equality| {
         BarePackage::new(v2)

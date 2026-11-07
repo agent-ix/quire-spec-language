@@ -32,10 +32,18 @@ pub(super) fn field_key(
     let owner = view_of(views, attribute.owner())
         .and_then(|view| view.declaration_key(attribute.owner()))
         .ok_or_else(|| fault("state-field-owner-unresolved"))?;
-    Ok(DeclarationKey {
+    Ok(field_key_of(owner, attribute))
+}
+
+/// The same original field key when the caller already resolved its owner.
+pub(super) fn field_key_of(
+    owner: &DeclarationKey,
+    attribute: EffectiveAttribute<'_>,
+) -> DeclarationKey {
+    DeclarationKey {
         package: owner.package.clone(),
         node: format!("{}/{}", owner.node, attribute.field().name()),
-    })
+    }
 }
 
 /// FR-120 "Initial states": FR-106 check 1, check 3 (`current`, anchored by

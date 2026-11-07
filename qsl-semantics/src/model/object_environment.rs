@@ -471,6 +471,18 @@ impl ObjectEnvironment {
     pub fn resolve_population(&self, population_id: PopulationId) -> Option<&PopulationBinding> {
         self.populations.get(&population_id).map(Arc::as_ref)
     }
+
+    /// The binding already admitted for an exact population declaration
+    /// identity. This reads the recorded correspondence; it creates no id.
+    pub fn population_binding(&self, identity: &str) -> Option<&PopulationBinding> {
+        let provenance = self
+            .population_node(identity)
+            .and_then(|node| self.population_provenance(node))?;
+        self.populations
+            .values()
+            .find(|binding| binding.population_key() == provenance.declaration())
+            .map(Arc::as_ref)
+    }
 }
 
 /// One read an evaluation made of an observation: a field of an object, or

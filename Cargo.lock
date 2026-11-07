@@ -1662,7 +1662,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#429c8f507d3edcb96e144d10af22046ed160ebc1"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#b4a9a967f453822ec813f6994e37f4530d9a1f3e"
 dependencies = [
  "ix-trace-rs",
  "jsonschema 0.17.1",
@@ -1735,7 +1735,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#585286d9225de92ce0812cb21b19e0008dcaaf4f"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#a16416bf014df3c067f8b1640f224c2e3c4bb5e1"
 dependencies = [
  "quire-canonical",
  "quire-exact",
@@ -2684,6 +2684,9 @@ dependencies = [
  "qsl-route",
  "qsl-semantics",
  "qsl-string-edge",
+ "quire-canonical",
+ "quire-exact",
+ "quire-semantic-value",
  "serde",
  "serde_json",
  "serde_json_canonicalizer",
