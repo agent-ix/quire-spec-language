@@ -364,6 +364,7 @@ fn holder(env: &TypeEnvironment, universe: &str, identity: &str) -> Value {
 
 #[trace("QSpec-TC-189", "QSpec-FR-144-AC-4")]
 #[trace("QSpec-TC-189", "QSpec-FR-144-AC-6")]
+#[trace("TC-1339", "FR-534-AC-1")]
 #[test]
 fn c06_reference_holders_are_keyed_and_ieee_elements_are_ineligible() {
     let env = holder_environment();

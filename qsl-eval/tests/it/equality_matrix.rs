@@ -2153,6 +2153,7 @@ fn e27_structural_mismatch_and_cardinality_short_circuit_pair_counts() {
 }
 
 #[trace("QSpec-TC-194", "QSpec-FR-149-AC-9")]
+#[trace("TC-1339", "FR-534-AC-1")]
 #[test]
 fn e28_equality_on_ieee_bearing_types_is_operator_ineligible() {
     let env = TypeEnvironment::new(
