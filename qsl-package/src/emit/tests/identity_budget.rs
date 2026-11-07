@@ -355,15 +355,21 @@ function e3 using v(s: State, g: Integer): State pure { s }\n";
     let packages =
         qsl_semantics::model::intake::package_input([document, record_document.as_slice()])
             .expect("both actual domain packages");
-    let body = format!(
-        "model M = {:?};\n{}\n{}",
-        child_composite::fixture::PACKAGE,
-        child_composite::UNIT,
-        body
-    );
-    let source = clock_places::clocked_unit(&body).replace(
-        "profile t = \"quire.temporal.complete/v1\";\n",
-        "profile t = \"quire.temporal.complete/v1\";\nprofile tt = \"quire.temporal.timed/v1\";\n",
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+profile v = \"quire.model.complete/v1\";\n\
+profile tt = \"quire.temporal.timed/v1\";\n\
+model Config = {config:?};\n\
+model M = {records:?};\n\
+dimension Time;\n\
+unit ms : Time = rational(1, 1);\n\
+time Config dense unit ms;\n\
+function occurredAt using v(e: M::OrderPlaced): Integer pure {{ e.occurred_at }}\n\
+function fromExpress using v(e: M::ExpressOrderPlaced): Integer pure {{ occurredAt(e) }}\n\
+function fromRush using v(e: M::RushOrderPlaced): Integer pure {{ occurredAt(e) }}\n\
+{body}",
+        config = config_version_unit::PACKAGE_IDENTITY,
+        records = child_composite::fixture::PACKAGE,
     );
     let graph = assemble_with_models(source.as_bytes(), &packages)
         .expect("author unit")
