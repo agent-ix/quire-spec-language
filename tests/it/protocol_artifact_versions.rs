@@ -9,7 +9,7 @@ use crate::support::protocol_artifact::Fixture;
 
 use ix_trace_rs::trace;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
-use quire_spec_language::number::NumberWire;
+use quire_spec_language::number::{NumberComponent, NumberError, NumberWire};
 use quire_spec_language::protocol_artifact::{
     self as artifact, v2, v3, wire as w, Dimension, Error, Invalid, Limits, Unsupported,
 };
@@ -975,9 +975,21 @@ fn a_v3_package_with_no_event_control_admits_an_empty_mapping_and_no_other_reade
             column: json_error_column(&bytes, "activation_mappings")
         }
     );
-    assert!(read_v1(&fixture, &bytes).result().is_err());
+    assert_eq!(
+        refusal(&read_v1(&fixture, &bytes)),
+        &Error::Json {
+            line: 1,
+            column: json_error_column(&bytes, "temporal_bindings")
+        }
+    );
     let v2_bytes = v2_bytes(&fixture);
-    assert!(read_v3(&fixture, &base, &v2_bytes, &[]).result().is_err());
+    assert_eq!(
+        refusal(&read_v3(&fixture, &base, &v2_bytes, &[])),
+        &Error::Json {
+            line: 1,
+            column: v2_bytes.len()
+        }
+    );
 }
 
 /// Byte offset just past the first `"<key>"` in `bytes`.
@@ -1149,7 +1161,7 @@ fn v2_read_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
 }
 
 #[test]
-#[trace("TC-121", "FR-042-AC-4")]
+#[trace("TC-121")]
 fn a_binder_initializer_from_another_declaration_or_grouping_itself_is_refused() {
     let fixture = Fixture::families();
     // Declaration 1 is a predicate whose `prior` binder is initialized by value 1.
@@ -1291,7 +1303,7 @@ fn a_v3_event_control_mapped_to_a_temporal_declaration_is_admitted_exactly() {
 /// before the compensation's own members are validated, so the authored
 /// compensation only has to name the capture and retry values.
 #[test]
-#[trace("TC-121", "FR-042-AC-4")]
+#[trace("TC-121")]
 fn a_compensation_capture_or_retry_with_a_foreign_owner_or_a_cycle_is_refused_by_the_value_graph() {
     let (fixture, at) = Fixture::compensated();
     let base = fixture.offered(&fixture.package);
@@ -1359,5 +1371,104 @@ fn a_compensation_capture_or_retry_with_a_foreign_owner_or_a_cycle_is_refused_by
         let mut offered = fixture.package.clone();
         mutate(&mut offered);
         assert_eq!(refusal(&fixture.offered(&offered)), &expected, "{name}");
+    }
+}
+
+const HALF: &str = r#""period":{"kind":"rational","numerator":"1","denominator":"2"}"#;
+
+/// The `/2` and `/3` readers' result for `clock` offered as the (identical)
+/// expected selection, with `edit` applied to the serialized text first.
+fn clock_refusals(
+    fixture: &Fixture,
+    profile: R,
+    clock: v2::wire::ClockConfiguration,
+    edit: impl Fn(&str) -> String,
+) -> (Error, Error) {
+    let base = profiled(fixture, profile, clock);
+    let text = |bytes: Vec<u8>| edit(std::str::from_utf8(&bytes).unwrap());
+    let v2_text = text(serde_json::to_vec(&base).unwrap());
+    let v2_error = refusal(&read_rows(fixture, v2_text.as_bytes(), &rows(&base))).clone();
+    let v3_text = text(serde_json::to_vec(&v3_package(&base, &[])).unwrap());
+    let v3_error = refusal(&read_v3(fixture, &base, v3_text.as_bytes(), &[])).clone();
+    (v2_error, v3_error)
+}
+
+#[test]
+#[trace("TC-138", "TC-150", "FR-050-AC-3")]
+fn the_readers_refuse_a_period_that_is_not_a_positive_reduced_in_range_rational() {
+    let fixture = Fixture::families();
+    let numeric = |error| Error::Numeric(error);
+    let cases = [
+        (
+            r#""period":{"kind":"integer","decimal":"0"}"#,
+            Error::Invalid(Invalid::NumericDomain),
+        ),
+        (
+            r#""period":{"kind":"integer","decimal":"-1"}"#,
+            Error::Invalid(Invalid::NumericDomain),
+        ),
+        (
+            r#""period":{"kind":"rational","numerator":"-1","denominator":"2"}"#,
+            Error::Invalid(Invalid::NumericDomain),
+        ),
+        (
+            r#""period":{"kind":"rational","numerator":"2","denominator":"4"}"#,
+            numeric(NumberError::UnreducedRational),
+        ),
+        (
+            r#""period":{"kind":"rational","numerator":"9223372036854775808","denominator":"1"}"#,
+            numeric(NumberError::ComponentOutOfRange {
+                component: NumberComponent::Numerator,
+            }),
+        ),
+    ];
+    for (period, expected) in cases {
+        let (v2_error, v3_error) = clock_refusals(
+            &fixture,
+            R::FixedSample,
+            sample("0", half(), "second"),
+            |text| {
+                assert!(
+                    text.contains(HALF),
+                    "the serialized period is spelled as expected"
+                );
+                text.replacen(HALF, period, 1)
+            },
+        );
+        assert_eq!(v2_error, expected, "/2 {period}");
+        assert_eq!(v3_error, expected, "/3 {period}");
+    }
+}
+
+#[test]
+#[trace("TC-138", "TC-150", "FR-050-AC-3")]
+fn the_readers_refuse_an_overlong_clock_name_on_its_own_field() {
+    let fixture = Fixture::families();
+    let long = "x".repeat(4097);
+    let cases = [
+        (
+            R::EventPosition,
+            v2::wire::ClockConfiguration::EventPosition {
+                sequence_authority: long.clone(),
+            },
+            v2::ClockField::SequenceAuthority,
+        ),
+        (
+            R::FixedSample,
+            sample("0", half(), &long),
+            v2::ClockField::Unit,
+        ),
+        (
+            R::TimestampedWindow,
+            v2::wire::ClockConfiguration::TimestampedEvent {
+                timestamp_unit: long.clone(),
+            },
+            v2::ClockField::TimestampUnit,
+        ),
+    ];
+    for (profile, clock, field) in cases {
+        let (v2_error, v3_error) = clock_refusals(&fixture, profile, clock, str::to_owned);
+        assert_eq!(v2_error, clock_refusal(field), "/2 {field:?}");
+        assert_eq!(v3_error, clock_refusal(field), "/3 {field:?}");
     }
 }
