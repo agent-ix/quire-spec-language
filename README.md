@@ -402,8 +402,7 @@ Other directories:
   stage design.
 - [`docs/`](docs/): reference pages, including the
   [library notes](docs/library-notes.md),
-  [diagnostic codes](docs/native-error-codes.md),
-  [compiled protocol wire format](docs/compiled-protocol-v2.md).
+  [diagnostic codes](docs/native-error-codes.md).
 
 ## Contributing
 

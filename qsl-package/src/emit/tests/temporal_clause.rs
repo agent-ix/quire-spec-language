@@ -457,7 +457,7 @@ fn three_temporal_bindings_observe_s3_input_byte_bounds() {
 
 /// FR-322-AC-294: the compatibility entry point cannot invent a selection
 /// for a profile whose checked declarations require clock configuration.
-#[trace("TC-134", "FR-322-AC-294")]
+#[trace("TC-134", "TC-138", "FR-322-AC-294", "FR-050-AC-2")]
 #[test]
 fn configured_temporal_clause_without_selection_refuses_emission() {
     let source_text = unit(
@@ -506,7 +506,14 @@ fn configured_temporal_clause_without_selection_refuses_emission() {
 
 /// FR-322-AC-294: configuration shape is checked against the selected law,
 /// and selections cannot be duplicated or moved to a different source locus.
-#[trace("TC-134", "TC-1308", "FR-322-AC-294", "FR-513-AC-9")]
+#[trace(
+    "TC-134",
+    "TC-138",
+    "TC-1308",
+    "FR-322-AC-294",
+    "FR-513-AC-9",
+    "FR-050-AC-2"
+)]
 #[test]
 fn temporal_clock_selections_are_unique_locus_bound_and_profile_typed() {
     let graph = check_graph(&unit(

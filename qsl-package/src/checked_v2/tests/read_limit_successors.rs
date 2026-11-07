@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-521 row 11 (QSL-838): the retained-path successor of each dimension of
-//! the legacy `protocol_artifact::work::Limits`. The legacy bound is a
-//! `Limits` field charged by the compiled-protocol wire; the retained bound is
+//! the deleted compiled-protocol reader's work limits. The retired bound was a
+//! limit charged by the compiled-protocol wire; the retained bound is
 //! the `i2.*` ceiling of [`V2ReadLimits`] that the I2 reader charges over the
 //! same package. Each ceiling is exercised at zero allowance, at the exact
 //! measured usage and one unit short, and the refusal names the ceiling's

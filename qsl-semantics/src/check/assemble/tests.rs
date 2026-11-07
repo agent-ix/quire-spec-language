@@ -1583,6 +1583,36 @@ fn zero_one_required_gives_the_bounded_collection_not_option() {
     assert_eq!(declaration.presence(), Presence::Required);
 }
 
+/// FR-016-AC-10's `present(x.f)` clause, retired with the root domain checker:
+/// a required `[0, 1]` field is a bounded collection (the test above), not an
+/// `Option`, so `present` over a value of that type refuses
+/// `ill_typed`/`type-mismatch` while `present` over an `Option` checks.
+#[trace("TC-443", "FR-056-AC-10")]
+#[test]
+fn present_over_a_zero_one_collection_refuses_ill_typed() {
+    let check = |declarations: &str| {
+        let text = text(
+            &PROFILE_V.replace("quire.value.complete", "quire.model.complete"),
+            declarations,
+        );
+        assemble_as("a", "u", &text)
+            .expect("the unit assembles")
+            .check(CheckingLimits::default())
+    };
+    let refusals =
+        check("function f using v(x: Sequence<Integer>[0, 1]): Boolean pure { present(x) }")
+            .expect_err("a bounded collection has no presence");
+    assert!(
+        refusals.iter().any(|refusal| matches!(
+            refusal.cause,
+            CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+        )),
+        "{refusals:?}"
+    );
+    check("function g using v(x: Option<Integer>): Boolean pure { present(x) }")
+        .expect("`present` over an Option checks");
+}
+
 #[trace("TC-443", "FR-056-AC-10")]
 #[test]
 fn zero_five_required_gives_the_bounded_collection() {
@@ -3541,10 +3571,10 @@ fn quantity_literal_refusals_carry_their_codes_and_locations() {
             "ill_typed/type-mismatch",
         ),
         (
-            "function m using v(d: Quantity<ms>): Boolean pure { d = -3 ms }",
+            "function m using v(b: Boolean): Boolean pure { -b }",
             default,
-            "-3 ms",
-            "ill_typed/operator-ineligible",
+            "b",
+            "ill_typed/type-mismatch",
         ),
         (
             "function g using v(): Boolean pure { f(3 ghost) }",

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// FR-046-AC-3 on the admitted bytes route (FR-531, FR-533): recipe R without
-// the unit `U`, read with the integer model of the checked-handoff tests,
+// FR-046-AC-3 on the admitted bytes route (FR-531, FR-533): recipe R with
+// the unit `U`, read with the model of the checked-handoff tests,
 // whose two `recover` slots host the duplicate-preserving sequence queries
 // over the Collection member `receipts` of `M::Recovery` (Amount 1..20,
 // at most 5 receipts, Total 0..100, Count 0..5). Over the receipts [2,2,3]
@@ -12,9 +12,11 @@ profile p = "quire.protocol.finite-global/v1";
 profile t = "quire.temporal.event-position.false-extension/v1";
 import "agent-ix/checked-handoff-library" as L;
 model M = "agent-ix/checked-handoff";
+dimension Money;
+unit U : Money = rational(1, 1);
 type Count = Int[0, 5];
 
-pre BeforeApply using v on M::Workflow::apply { amount >= 1 }
+pre BeforeApply using v on M::Workflow::apply { amount >= 1 U }
 post AfterApply using v on M::Workflow::apply { result }
 
 temporal Due using t over (view: M::Workflow) clock "events" on origin {
@@ -42,17 +44,17 @@ protocol Flow using p over (view: M::Workflow) on origin {
         within [0,30]; attempts 3 of M::Attempt;
         retry (earlierFull: M::Attempt, laterFull: M::Attempt) {
             earlierFull.tally < 3 and laterFull.tally = earlierFull.tally + 1
-            and targetFull >= 0 and not activatedFull
+            and targetFull >= 0 U and not activatedFull
         };
         commit Main::Committed;
         recover (recoveredFull: M::Recovery) {
-            size(filter(x in recoveredFull.receipts: x = 2)) = 2
-            and sum<M::Total>(y in filter(x in recoveredFull.receipts: x = 2): y) = 4
-            and size(map(x in recoveredFull.receipts: x = 2)) = 3
-            and count<Count>(b in map(x in recoveredFull.receipts: x = 2): b) = 2
+            size(filter(x in recoveredFull.receipts: x = 2 U)) = 2
+            and sum<M::Total>(y in filter(x in recoveredFull.receipts: x = 2 U): y) = 4 U
+            and size(map(x in recoveredFull.receipts: x = 2 U)) = 3
+            and count<Count>(b in map(x in recoveredFull.receipts: x = 2 U): b) = 2
             and size(recoveredFull.receipts) = 3
-            and count<Count>(x in recoveredFull.receipts: x = 2) = 2
-            and sum<M::Total>(x in recoveredFull.receipts: x) = 7
+            and count<Count>(x in recoveredFull.receipts: x = 2 U) = 2
+            and sum<M::Total>(x in recoveredFull.receipts: x) = 7 U
         };
     }
 
@@ -69,12 +71,12 @@ protocol Flow using p over (view: M::Workflow) on origin {
         within [0,30]; attempts 3 of M::Attempt;
         retry (earlierPartial: M::Attempt, laterPartial: M::Attempt) {
             earlierPartial.tally < 3 and laterPartial.tally = earlierPartial.tally + 1
-            and targetPartial >= 0 and not activatedPartial
+            and targetPartial >= 0 U and not activatedPartial
         };
         commit never;
         recover (recoveredPartial: M::Recovery) {
-            size(filter(x in recoveredPartial.receipts: x = 2)) = 1
-            or sum<M::Total>(x in recoveredPartial.receipts: x) = 5
+            size(filter(x in recoveredPartial.receipts: x = 2 U)) = 1
+            or sum<M::Total>(x in recoveredPartial.receipts: x) = 5 U
         };
     }
 
