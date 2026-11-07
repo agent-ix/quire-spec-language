@@ -1026,3 +1026,125 @@ fn the_actual_combined_checked_unit_retains_its_source_and_time_facts() {
         declaration
     );
 }
+
+/// Model-step order encodes original checked facts, rather than one opaque ID.
+#[trace("TC-1081", "FR-251-AC-48")]
+#[test]
+fn model_step_order_is_a_complete_canonical_value_with_exact_encoding_limits() {
+    use qsl_analyze::monitor_root::ModelStepOrderRefusalCode;
+    use qsl_semantics::check::wire_id::structural_id;
+    let root = root_of(&authored(ROOT_SHAPES[0]), "C", &target()).unwrap();
+    let order = root
+        .model_step_order(quire_canonical::Limits::new(1 << 20))
+        .unwrap();
+    let source = &root.checked_unit().package().graph().time_sources()[0];
+    let expected = serde_json::json!({
+        "kind": "model-step",
+        "model": structural_id(&source.model_node),
+        "unit": structural_id(&source.unit_node),
+        "dimension": structural_id(&source.time_dimension),
+        "source": {"kind": "dense"},
+    });
+    let actual: serde_json::Value = serde_json::from_slice(order.bytes()).unwrap();
+    assert_eq!(actual, expected);
+    let size = u64::try_from(order.bytes().len()).unwrap();
+    assert_eq!(
+        root.model_step_order(quire_canonical::Limits::new(size))
+            .unwrap(),
+        order
+    );
+    let error = root
+        .model_step_order(quire_canonical::Limits::new(size - 1))
+        .unwrap_err();
+    assert_eq!(error.code, ModelStepOrderRefusalCode::Encoding);
+    assert!(matches!(
+        error.encoding,
+        Some(quire_canonical::Error::Limit(_))
+    ));
+    let clone = order.clone();
+    drop(root);
+    assert_eq!(clone.bytes(), order.bytes());
+}
+
+#[trace("TC-1081", "FR-251-AC-48")]
+#[test]
+fn model_step_order_retains_digital_operation_and_period_and_distinguishes_sources() {
+    use qsl_semantics::check::wire_id::structural_id;
+    let dense = authored(ROOT_SHAPES[0]);
+    let units = [
+        dense.clone(),
+        dense.replace("time M dense unit ms;", "time M dense unit s;"),
+        dense.replace(
+            "time M dense unit ms;",
+            "time M tick M::ConfigVersion::attemptUpdate period 1 ms unit ms;",
+        ),
+        dense.replace(
+            "time M dense unit ms;",
+            "time M tick M::ConfigVersion::attemptUpdate period 2 ms unit ms;",
+        ),
+    ];
+    let mut values = Vec::new();
+    for (index, unit) in units.iter().enumerate() {
+        let root = root_of(unit, "C", &target()).unwrap();
+        let order = root
+            .model_step_order(quire_canonical::Limits::new(1 << 20))
+            .unwrap();
+        let source = &root.checked_unit().package().graph().time_sources()[0];
+        let value: serde_json::Value = serde_json::from_slice(order.bytes()).unwrap();
+        assert_eq!(
+            value["model"],
+            serde_json::to_value(structural_id(&source.model_node)).unwrap()
+        );
+        assert_eq!(
+            value["unit"],
+            serde_json::to_value(structural_id(&source.unit_node)).unwrap()
+        );
+        assert_eq!(
+            value["dimension"],
+            serde_json::to_value(structural_id(&source.time_dimension)).unwrap()
+        );
+        if index >= 2 {
+            let operation = source
+                .tick_operation_anchor
+                .as_ref()
+                .expect("checked digital operation");
+            assert_eq!(
+                value["source"],
+                serde_json::json!({
+                    "kind": "tick", "operation": structural_id(operation),
+                    "period": {"numerator": (index - 1).to_string(), "denominator": "1"},
+                })
+            );
+        } else {
+            assert_eq!(value["source"], serde_json::json!({"kind": "dense"}));
+        }
+        values.push(order);
+    }
+    for (index, value) in values.iter().enumerate() {
+        for other in &values[index + 1..] {
+            assert_ne!(
+                value, other,
+                "source kind, unit and period remain order-value components"
+            );
+        }
+    }
+}
+
+#[trace("TC-1081", "FR-251-AC-46")]
+#[test]
+fn a_foreign_plan_cannot_select_order_from_the_retained_checked_owner() {
+    use qsl_analyze::monitor_root::ModelStepOrderRefusalCode;
+    let mut root = root_of(&authored(ROOT_SHAPES[0]), "C", &target()).unwrap();
+    let foreign = root_of(
+        &authored("eventually[0 ms, 3 ms] holds(c.versionNumber = 3)"),
+        "C",
+        &target(),
+    )
+    .unwrap();
+    root.plan = foreign.plan;
+    let error = root
+        .model_step_order(quire_canonical::Limits::new(1 << 20))
+        .unwrap_err();
+    assert_eq!(error.code, ModelStepOrderRefusalCode::MissingClause);
+    assert!(error.encoding.is_none());
+}

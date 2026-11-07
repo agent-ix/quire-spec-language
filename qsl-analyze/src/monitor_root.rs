@@ -35,6 +35,9 @@ use quire_exact::Cancel;
 use crate::monitor_entries::{names, render, spec_from_plan, WIRE_FIELD_NAMES};
 use crate::monitor_plan::produce;
 
+mod order;
+pub use order::{ModelStepOrder, ModelStepOrderRefusal, ModelStepOrderRefusalCode};
+
 /// The authored unit and the selection the plan root is written for.
 #[derive(Clone, Copy, Debug)]
 pub struct PlanRootRequest<'a> {
