@@ -90,8 +90,9 @@ pub fn compile_package<'a>(
 /// Compile through the public facade with the exact owner-admitted `div`/`rem` law.
 ///
 /// The selection is admitted by [`crate::admit_integer_division`], retained by
-/// checking and emitted on the division applications. It never changes `mod`'s
-/// Euclidean semantics. Omitting a demanded law through [`compile_package`]
+/// checking and emitted on this unit's division applications. It does not
+/// substitute a law for separately owned imported libraries, and never changes
+/// `mod`'s Euclidean semantics. Omitting a demanded law through [`compile_package`]
 /// retains the checker's typed missing-selection refusal.
 #[allow(
     clippy::too_many_arguments,

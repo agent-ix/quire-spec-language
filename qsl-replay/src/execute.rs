@@ -1176,34 +1176,6 @@ pub fn replay_with_cancel_and_temporal_selections(
     replay_limits: ReplayLimits,
     cancel: &Cancel,
 ) -> Result<ReplayResult, ReplayRefusal> {
-    replay_with_owner_selections(wire, temporal_selections, None, replay_limits, cancel)
-}
-
-/// Replay with the exact owner-admitted division law used to compile the request.
-/// The existing replay identity checks reject a request naming another checked
-/// application; the selection is neither inferred from nor added to the wire.
-pub fn replay_with_integer_division(
-    wire: ReplayRequestWire,
-    integer_division: &quire_checked::integer_division::AdmittedIntegerDivision,
-    replay_limits: ReplayLimits,
-) -> Result<ReplayResult, ReplayRefusal> {
-    replay_with_owner_selections(
-        wire,
-        &[],
-        Some(*integer_division),
-        replay_limits,
-        &Cancel::new(),
-    )
-}
-
-#[deny(clippy::wildcard_enum_match_arm)]
-fn replay_with_owner_selections(
-    wire: ReplayRequestWire,
-    temporal_selections: &[qsl_package::TemporalClockSelection],
-    integer_division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
-    replay_limits: ReplayLimits,
-    cancel: &Cancel,
-) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
     if matches!(request.source(), ReplaySource::ModelGraph(_)) {
         return Err(ReplayRefusal::WrongModelGraphEntry);
@@ -1704,15 +1676,6 @@ pub(crate) fn recompile_with_temporal_selections(
     limits: &CallerLimits,
     temporal_selections: &[qsl_package::TemporalClockSelection],
 ) -> Result<Recompiled, ReplayRefusal> {
-    recompile_with_owner_selections(request, limits, temporal_selections, None)
-}
-
-fn recompile_with_owner_selections(
-    request: &ReplayRequest,
-    limits: &CallerLimits,
-    temporal_selections: &[qsl_package::TemporalClockSelection],
-    integer_division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
-) -> Result<Recompiled, ReplayRefusal> {
     // Rule 1: strictly ascending identities, before anything is built.
     for (index, pair) in request.dependencies().windows(2).enumerate() {
         if let [before, entry] = pair {
@@ -1806,7 +1769,6 @@ fn recompile_with_owner_selections(
         &packages,
         &dependencies,
         temporal_selections,
-        integer_division,
         limits.spine,
     )?;
     // Rule 6: every entry names a selection of the recompiled closure.
@@ -1920,7 +1882,6 @@ fn run_spine_units(
     packages: &qsl_semantics::model::intake::PackageInput,
     dependencies: &DependencyInput,
     temporal_selections: &[qsl_package::TemporalClockSelection],
-    integer_division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
     limits: SpineLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
     #[cfg(test)]
@@ -1975,7 +1936,6 @@ fn run_spine_units(
             temporal_selections,
             continue_protocol_refusals: true,
             refinement_internals: None,
-            integer_division,
         },
         limits,
         &cancel,
