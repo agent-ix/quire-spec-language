@@ -157,6 +157,36 @@ impl ModelSpellings {
         self.package(unit, alias)?.units.get(member).cloned()
     }
 
+    /// The unit `name` written bare in `unit` (the primary unit when `None`),
+    /// when no unit of the compiling unit declares it: the one unit of that
+    /// name the packages the unit selects declare in their own documents
+    /// (FR-505-AC-9). Two different units of the name leave it unresolved.
+    pub(crate) fn declared_unit(
+        &self,
+        unit: Option<&RawSourceRef>,
+        name: &str,
+    ) -> Option<quire_exact::UnitId> {
+        if name.contains("::") {
+            return None;
+        }
+        let aliases = self.units.get(unit.or(self.primary.as_ref())?)?;
+        let mut found: Option<&quire_exact::UnitId> = None;
+        for index in aliases.values() {
+            let Some(held) = self
+                .packages
+                .get(*index)
+                .and_then(|package| package.units.get(name))
+            else {
+                continue;
+            };
+            match found {
+                Some(other) if other != held => return None,
+                _ => found = Some(held),
+            }
+        }
+        found.cloned()
+    }
+
     /// The package `unit` (the primary unit when `None`) binds its model
     /// alias `alias` to; `None` when the unit binds no admitted model alias
     /// `alias`.

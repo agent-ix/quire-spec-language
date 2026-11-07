@@ -1189,7 +1189,12 @@ impl TypeNames for UnitNames<'_> {
     fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
         match self.spellings.spelled(self.unit, name) {
             Spelled::Model(_) => self.spellings.unit(self.unit, name),
-            Spelled::Other => self.names.units.get(name).cloned(),
+            Spelled::Other => self
+                .names
+                .units
+                .get(name)
+                .cloned()
+                .or_else(|| self.spellings.declared_unit(self.unit, name)),
         }
     }
 }
@@ -3725,12 +3730,18 @@ impl PackageDeclarations {
                     })
                     .collect(),
             );
+            // A type of the package resolves its `unit` against the units of
+            // the package's own document first, then the unit's declarations.
+            let mut package_units = model_units.clone();
+            if let Some(admitted_model) = admitted.last() {
+                package_units.extend(super::check::model_unit_ids(admitted_model));
+            }
             match model_object_types(
                 &selection.alias,
                 model,
                 selection.span,
                 &mut operations,
-                &model_units,
+                &package_units,
             ) {
                 Ok(types) => {
                     model_spellings.set_names(package, types.package_names(&selection.alias));

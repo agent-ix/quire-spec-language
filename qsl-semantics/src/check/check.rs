@@ -1183,6 +1183,23 @@ fn unit_ids_by_name(
         .collect()
 }
 
+/// The units a domain package declares in its own document, by their authored
+/// name: the unit table a type of that package resolves its `unit` against
+/// (FR-505-AC-7, AC-9), whether or not the compiling unit declares a unit of
+/// the same name.
+pub(crate) fn model_unit_ids(
+    model: &crate::check::AdmittedModel,
+) -> BTreeMap<String, quire_exact::UnitId> {
+    model
+        .units
+        .iter()
+        .filter_map(|unit| {
+            let key = crate::check::assemble::package_unit_key(model, unit)?;
+            Some((unit.name.clone(), quire_exact::UnitId::declared(key)))
+        })
+        .collect()
+}
+
 /// The units `graph` declares by their declared name (QSpec FR-142
 /// "Quantity type reference": the unit namespace `Quantity<u>` looks up).
 pub(crate) fn declared_unit_ids(
@@ -1542,7 +1559,12 @@ impl Scope {
     ) -> Option<quire_exact::UnitId> {
         match self.model_spellings.spelled(source, name) {
             Spelled::Model(_) => self.model_spellings.unit(source, name),
-            Spelled::Other => self.index.units.get(name).cloned(),
+            Spelled::Other => self
+                .index
+                .units
+                .get(name)
+                .cloned()
+                .or_else(|| self.model_spellings.declared_unit(source, name)),
         }
     }
 

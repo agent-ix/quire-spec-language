@@ -2607,11 +2607,15 @@ impl<'a> Lowering<'a> {
     /// in the admitted record table, so each direct reference is inspected once.
     pub(in crate::check) fn model_type_unit_nodes(
         &mut self,
-        units: &BTreeMap<String, UnitId>,
+        declared: &BTreeMap<String, UnitId>,
     ) -> Result<(), CheckRefusal> {
         use crate::model::domain_package::{ScalarValueDomain, ValueTypeRef};
 
         for model in self.models {
+            // A type of the package names its units in the package's own
+            // document first (FR-505-AC-7, AC-9).
+            let mut units = declared.clone();
+            units.extend(crate::check::check::model_unit_ids(model));
             let location =
                 type_declaration(model.alias.as_deref().unwrap_or(&model.selection.identity));
             for (key, record) in &model.records {

@@ -395,10 +395,8 @@ fn source_refusals(declarations: &str) -> Result<(), Vec<(Code, Option<String>)>
 /// FR-505-AC-9 (TC-1300 row 20): a source `Rational[..]` whose numerator
 /// bounds are inverted or whose denominator may be zero, as a function
 /// parameter type and as the carrier of `Quantity<m, ..>`, refuses
-/// `ill_typed` once at the type; the consistent bounds check. This is the
-/// source-form half of FR-505-AC-9; the unit-bearing `convert` half is not
-/// carried by the spine yet, so the test is not tagged with the criterion.
-#[trace("TC-1300")]
+/// `ill_typed` once at the type; the consistent bounds check.
+#[trace("FR-505-AC-9", "TC-1300")]
 #[test]
 fn inconsistent_source_rational_bounds_refuse_ill_typed_at_the_type() {
     const UNITS: &str = "dimension Length;\nunit m : Length = rational(1, 1);\n";
@@ -444,20 +442,34 @@ fn with_length_units(document: &[u8]) -> Vec<u8> {
     serde_json::to_vec(&value).expect("fixture encoding")
 }
 
-/// TC-1300 row 19, first half (FR-505-AC-9): over a unit-bearing `Ratio`, a
-/// comparison, an ordering and a sum of two members refuse
-/// `ill_typed`/`type-mismatch`. The `convert<Quantity<m>>` half is not
-/// carried by the spine yet, so this test is not tagged FR-505-AC-9.
-#[trace("TC-1300")]
+/// FR-505-AC-9 (TC-1300 row 19): over a unit-bearing `Ratio` whose unit `m` is
+/// declared in the type's own model document, which also declares an object
+/// type `Config` with a member `m` (the compiling unit's alias for the model is
+/// also `Config`), two fields `a` and `b` of `Ratio`: the invariants
+/// `self.a = self.b`, `self.a < self.b` and `self.a + self.b = self.a` each
+/// refuse `ill_typed`/`type-mismatch`, while
+/// `convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b)` and the same
+/// with `<` check. `m` is the document's unit; the `Config::m` spelling names
+/// the same unit through the model alias.
+#[trace("FR-505-AC-9", "TC-1300")]
 #[test]
-fn unit_bearing_rational_members_do_not_compare_or_add_directly() {
+fn unit_bearing_rational_members_compare_only_through_convert() {
     let ratio = identity("Ratio");
+    let config = wire_type(
+        &identity("Config"),
+        "object_type",
+        json!({"supertypes": [], "operations": [],
+            "fields": [wire_field(&identity("Config/m"), "m", &ratio, "optional", 0)]}),
+    );
     let document = with_length_units(&document(
-        vec![rational_type(
-            "Ratio",
-            ratio_constraints(&ratio),
-            Some("ix://quire/unit/m"),
-        )],
+        vec![
+            rational_type(
+                "Ratio",
+                ratio_constraints(&ratio),
+                Some("ix://quire/unit/m"),
+            ),
+            config,
+        ],
         Vec::new(),
         &[("a", &ratio), ("b", &ratio)],
     ));
@@ -466,14 +478,22 @@ fn unit_bearing_rational_members_do_not_compare_or_add_directly() {
         "self.a < self.b",
         "self.a + self.b = self.a",
     ] {
-        let body = format!(
-            "dimension Length;\nunit m : Length = rational(1, 1);\n\
-             invariant I using v on Config::ConfigVersion at current {{ {clause} }}\n"
-        );
+        let body =
+            format!("invariant I using v on Config::ConfigVersion at current {{ {clause} }}\n");
         assert_eq!(
             assemble(&document, &body).map(|_| ()),
             Err(vec![(Code::IllTyped, Some("type-mismatch".to_owned()))]),
             "{clause}"
         );
+    }
+    for clause in [
+        "convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b)",
+        "convert<Quantity<m>>(self.a) < convert<Quantity<m>>(self.b)",
+        "convert<Quantity<Config::m>>(self.a) = convert<Quantity<Config::m>>(self.b)",
+        "convert<Quantity<m>>(self.a) = 1 Config::m",
+    ] {
+        let body =
+            format!("invariant I using v on Config::ConfigVersion at current {{ {clause} }}\n");
+        assert_eq!(assemble(&document, &body).map(|_| ()), Ok(()), "{clause}");
     }
 }
