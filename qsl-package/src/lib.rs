@@ -47,6 +47,8 @@ pub mod protocol_artifact_v1;
 pub mod protocol_artifact_v2;
 #[cfg(feature = "std")]
 mod protocol_occurrence;
+#[cfg(feature = "std")]
+mod protocol_occurrence_key;
 mod protocol_selection;
 #[cfg(feature = "std")]
 pub mod protocol_view;
@@ -112,6 +114,8 @@ pub use protocol_occurrence::{
     RepeatDimension, RoleLifetime, RoleReplication, RoleSlot, RuntimeBindingRequirement,
     SubjectKind,
 };
+#[cfg(feature = "std")]
+pub use protocol_occurrence_key::{OccurrenceKey, OccurrenceKeyError, WorkflowInstanceIdentity};
 pub use protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
 pub use quire_contract_model::{CheckedBindingNameKind, CheckedLiteralValue, CheckedTerm};
 #[cfg(feature = "std")]

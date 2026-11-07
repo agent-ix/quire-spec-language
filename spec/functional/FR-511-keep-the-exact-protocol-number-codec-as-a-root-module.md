@@ -44,7 +44,7 @@ Evidence:
    protocol-artifact consumers still import the compatibility path until
    QSL-1501 repoints the external consumer.
 3. The consumers are: inside `protocol_artifact`, `wire.rs`, `v2`, `v3`,
-   `models.rs`, `validate.rs`, `occurrence.rs`, `native/metadata.rs` and the
+   `models.rs`, `validate.rs`, `native/metadata.rs` and the
    native emission modules (all kept until QSL-1501, FR-513); outside it,
    `src/temporal/formula.rs:802` (kept by the QSL-858 ruling until luna
    repoints IR-358), the spine vector suite

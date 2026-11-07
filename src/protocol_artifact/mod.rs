@@ -32,7 +32,6 @@ mod encoding;
 mod intake;
 mod models;
 pub mod native;
-mod occurrence;
 mod recovery;
 pub mod v2;
 pub mod v3;
@@ -44,11 +43,6 @@ mod work;
 pub use domain::{AdmittedDomainPackage, DOMAIN_PACKAGE_REVISION_NAMESPACE};
 pub use encoding::encode_candidate;
 pub use intake::read;
-pub use occurrence::{
-    occurrence_key_schema, AdmittedProtocolView, NodeOccurrenceSchema, NodeRole, OccurrenceKey,
-    OccurrenceKeyError, OccurrenceKeySchema, RepeatOrdinalSchema, RoleSlotSchema,
-    WorkflowInstanceIdentity,
-};
 pub use work::{Accumulation, Dimension, Exhaustion, Limits, Usage, ACCOUNTING_VERSION};
 
 use crate::native_model::NativeModel;

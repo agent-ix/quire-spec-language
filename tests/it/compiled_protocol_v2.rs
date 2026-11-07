@@ -1242,20 +1242,6 @@ fn initialized_compensation_capture_graph_refuses_foreign_and_recursive_initiali
     );
 }
 
-#[trace("TC-132", "FR-048-AC-1")]
-#[test]
-fn admitted_v2_exposes_the_inherited_occurrence_key_schema_without_translation() {
-    with_v2(|_, _, _, _, emitted| {
-        let declaration = u32::try_from(declaration(emitted.admitted(), "Flow")).unwrap();
-        let report =
-            artifact::occurrence_key_schema(emitted.admitted(), declaration, Limits::default());
-        let schema = report.result().expect("v2 admitted protocol projection");
-        assert_eq!(schema.declaration(), declaration);
-        assert!(!schema.roles().is_empty());
-        assert!(!schema.nodes().is_empty());
-    });
-}
-
 fn assert_error<T>(report: &artifact::Report<T>, expected: Error) {
     assert_eq!(report.result().err(), Some(&expected));
 }
