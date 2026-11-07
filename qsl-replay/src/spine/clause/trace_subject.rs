@@ -573,7 +573,7 @@ fn map_outcome(outcome: TemporalOutcome, undefined_atom: Option<usize>) -> super
         TemporalOutcome::Incomplete(incomplete) => TemporalVerdict::Incomplete(incomplete),
         TemporalOutcome::WindowLimitReached(reached) => TemporalVerdict::WindowLimitReached {
             limit: "max_window_values",
-            value: reached.value,
+            value: reached.limit,
             setting: reached.setting,
         },
     }
