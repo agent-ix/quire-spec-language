@@ -6,14 +6,19 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::diagnostic::{Code, StageFailure, Staged};
-use qsl_foundation::SourceIdentity;
-use qsl_package::CheckedPackage;
+use qsl_foundation::diagnostic::{Code, LimitExceeded, StageFailure, Staged};
+use qsl_foundation::source::Source;
+use qsl_foundation::{Setting, SourceIdentity};
+use qsl_package::{CheckedPackage, TemporalClockSelection};
 use qsl_replay::spine::{
-    run_package_temporal, ClauseDisposition, ClauseRunReport, OverObject, PackageTemporalRequest,
-    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TraceInput,
+    authenticate_emission, authenticate_package_trace, name_clause_atom, run_package_temporal,
+    run_package_trace_subject, AuthenticationFailure, ClauseDisposition, ClauseRunReport,
+    OverObject, PackageAuthentication, PackageTemporalRequest, PackageTraceSubjectRequest,
+    RunRefusal, SpineLimits, TemporalIndeterminateReason, TemporalTraceRefusal,
+    TemporalUndefinedCause, TemporalVerdict, TraceInput,
 };
 use qsl_replay::{ClauseRunNotAnItem, OutcomeDocument, OutcomeItem, OutcomeStage};
+use qsl_semantics::check::TemporalClauseNode;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::PackageInput;
 use qsl_semantics::model::observation::{
@@ -21,8 +26,8 @@ use qsl_semantics::model::observation::{
     ObservationLimits,
 };
 use quire_canonical::{Node, NodeRef};
-use quire_exact::{Cancel, ScalarLimits};
-use quire_semantic_value::catalog::{CatalogCode, Category, InternalFault};
+use quire_exact::{Cancel, ScalarLimits, Value, ValueType};
+use quire_semantic_value::catalog::{CatalogCode, CatalogCoded, Category, InternalFault};
 
 /// The format member of a trace document.
 pub const TRACE_FORMAT: &str = "quire.monitor-trace/1";
@@ -33,32 +38,62 @@ pub const TRACE_FORMAT: &str = "quire.monitor-trace/1";
 pub struct MonitorClause {
     /// The clause's declared name.
     pub name: String,
-    /// The object the clause's `over` parameter names.
-    pub over: OverObject,
+    /// The object the clause's `over` parameter names for a clause over a
+    /// model subject; absent for a clause over a declared record trace
+    /// subject, which FR-330's trace-subject route binds to each sample.
+    pub over: Option<OverObject>,
+}
+
+/// The trace a `monitor` request supplies (FR-283 Inputs).
+#[derive(Clone, Debug)]
+pub enum MonitorTrace<'a> {
+    /// The bytes of a `quire.monitor-trace/1` trace document.
+    Document(&'a [u8]),
+    /// A library caller's FR-330 trace, read as FR-330's `Temporal`
+    /// selection reads it.
+    Typed(&'a TraceInput),
+    /// A declared record type and its non-empty finite sequence of record
+    /// samples, FR-330's trace-subject route input.
+    Samples {
+        /// The declared record type of the samples.
+        subject: ValueType,
+        /// The samples, in trace-position order.
+        samples: &'a [Value],
+    },
 }
 
 /// A `monitor` request (FR-283 Inputs).
 pub struct MonitorRequest<'a> {
     /// The selected clauses, in request order.
     pub clauses: Vec<MonitorClause>,
-    /// The bytes of a `quire.monitor-trace/1` trace document.
-    pub trace: &'a [u8],
-    /// The snapshot documents the trace's positions name.
+    /// The trace to check.
+    pub trace: MonitorTrace<'a>,
+    /// The snapshot documents a `Document` or `Typed` trace's positions name.
     pub snapshots: &'a DocumentProvision,
     /// The domain package bytes admission reads.
     pub packages: &'a PackageInput,
+    /// The unit's and each library's source the package was checked from:
+    /// a refused condition's locus and a named atom are rendered from them.
+    pub sources: &'a [Source],
+    /// The FR-050 clock configurations the package is emitted with to
+    /// authenticate a `Progressed` or `Timestamped` trace's binding; empty
+    /// for a request with no such trace.
+    pub temporal_selections: &'a [TemporalClockSelection],
 }
 
 /// The limits a `monitor` request takes (FR-283 Inputs).
 #[derive(Clone, Copy, Debug)]
 pub struct MonitorLimits {
-    /// The observation limits; `document_bytes` also bounds the trace
-    /// document.
+    /// The observation limits; `document_bytes`, `objects_per_document` and
+    /// `values_per_document` also bound a trace document.
     pub observation: ObservationLimits,
     /// The model-normalization limits admission takes.
     pub normalization: ModelNormalizationLimits,
     /// The evaluator's accounting limits.
     pub accounting: ScalarLimits,
+    /// FR-194's window limit, `monitor.max_window_values`, of every window
+    /// aggregate a `Samples` run reads.
+    pub max_window_values: u64,
 }
 
 /// What a clause run reports (FR-283 Outputs table).
@@ -98,6 +133,9 @@ pub struct MonitorRecord {
     pub verdict: MonitorVerdict,
     /// The O-16 category.
     pub category: Category,
+    /// The source text of the atom a `InsufficientData` or `Indeterminate`
+    /// record names.
+    atom: Option<String>,
     report: ClauseRunReport,
 }
 
@@ -106,6 +144,12 @@ impl MonitorRecord {
     /// `decisive`, cause and usage.
     pub fn report(&self) -> &ClauseRunReport {
         &self.report
+    }
+
+    /// The atom an `InsufficientData` or `Indeterminate` record names, by the
+    /// source text of its condition.
+    pub fn atom(&self) -> Option<&str> {
+        self.atom.as_deref()
     }
 
     /// The counterexample of a `Violated` or `Undefined` record
@@ -170,13 +214,15 @@ pub enum MonitorRefusal {
         failure: Box<AdmissionFailure>,
     },
     /// FR-330 refused a selected clause at stage `admit` for a reason that is
-    /// not one position's FR-106 admission: a bounded-profile clause over a
-    /// lasso, an `over` that resolves to no object, or a profile and trace
-    /// shape that do not fit.
+    /// not one position's FR-106 admission, or `monitor`'s own subject check
+    /// or emission refused it: a bounded-profile clause over a lasso, an
+    /// `over` that resolves to no object, a profile and trace shape that do
+    /// not fit, a binding that differs from the clause's rows, or a clause
+    /// with no clock selection.
     ClauseRefused {
         /// The selected clause's name.
         clause: String,
-        /// FR-330's refusal.
+        /// The refusal.
         failure: Box<AdmissionFailure>,
     },
     /// A selected clause names no temporal clause of the package.
@@ -184,98 +230,393 @@ pub enum MonitorRefusal {
         /// The selected name.
         name: String,
     },
+    /// A refused condition's locus, or a record's named atom, names a source
+    /// that `sources` does not hold, or whose bytes do not hold the region's
+    /// span on UTF-8 boundaries: `invalid_runtime_input`/`missing-member`
+    /// naming `sources`.
+    SourceNotSupplied {
+        /// The selected clause whose record needs the source.
+        clause: String,
+        /// The source the region names.
+        source: SourceIdentity,
+    },
 }
+
+type Failure = StageFailure<MonitorRefusal>;
 
 /// FR-283: check `request.trace` against each selected clause of `package`.
 ///
 /// # Errors
 ///
 /// [`StageFailure::Refused`] for a trace document defect, a position whose
-/// admission fails, a clause FR-330 refuses at stage `admit` or an unknown
-/// clause; [`StageFailure::Cancelled`] when `cancel` is cancelled;
-/// [`StageFailure::Fault`] when admission or the evaluator faults.
+/// admission fails, a clause refused at stage `admit`, an unknown clause or
+/// a source the request does not supply; [`StageFailure::Cancelled`] when
+/// `cancel` is cancelled; [`StageFailure::Fault`] when admission or the
+/// evaluator faults.
 pub fn monitor(
     package: &CheckedPackage,
     request: &MonitorRequest<'_>,
     limits: &MonitorLimits,
     cancel: &Cancel,
-) -> Result<Staged<MonitorOutcome>, StageFailure<MonitorRefusal>> {
-    let trace = read_trace(request.trace, limits.observation.document_bytes).map_err(|defect| {
-        let (record, pointer) = *defect;
-        let record = Box::new(record);
-        StageFailure::Refused(MonitorRefusal::TraceDocument { record, pointer })
-    })?;
-    let input = trace.input();
-
-    // FR-283 Behavior: every position is admitted, in position order, before
-    // any clause is evaluated, so an unknown clause name or an earlier
-    // clause's verdict never hides an admission failure.
-    for clause in &request.clauses {
-        if let Some(cause) = cancel.cause() {
-            return Err(StageFailure::Cancelled(cause));
+) -> Result<Staged<MonitorOutcome>, Failure> {
+    let document;
+    let input = match &request.trace {
+        MonitorTrace::Document(bytes) => {
+            document = read_trace(bytes, limits.observation)
+                .map_err(|defect| {
+                    let (record, pointer) = *defect;
+                    let record = Box::new(record);
+                    StageFailure::Refused(MonitorRefusal::TraceDocument { record, pointer })
+                })?
+                .into_input();
+            Some(&document)
         }
-        admit_positions(package, request, limits, &trace, clause)?;
-    }
-
+        MonitorTrace::Typed(input) => Some(*input),
+        MonitorTrace::Samples { .. } => None,
+    };
+    let runs = Runs {
+        package,
+        request,
+        limits,
+        cancel,
+    };
     let mut records = Vec::with_capacity(request.clauses.len());
-    for clause in &request.clauses {
-        if let Some(cause) = cancel.cause() {
-            return Err(StageFailure::Cancelled(cause));
+    match input {
+        Some(input) => {
+            let authentication = runs.authentication(input)?;
+            runs.admit_positions(input)?;
+            for clause in &request.clauses {
+                let report = runs.trace_run(clause, input, authentication.as_ref())?;
+                records.push(runs.record_of(clause, report)?);
+            }
         }
-        let report = run_package_temporal(&PackageTemporalRequest {
-            package,
-            packages: request.packages,
-            model_limits: limits.normalization,
-            snapshots: request.snapshots,
-            observation_limits: limits.observation,
-            accounting: limits.accounting,
-            name: &clause.name,
-            trace: &input,
-            over: &clause.over,
-        });
-        records.push(record_of(clause, report)?);
+        None => {
+            for clause in &request.clauses {
+                let report = runs.samples_run(clause)?;
+                records.push(runs.record_of(clause, report)?);
+            }
+        }
     }
     Ok(Staged::new(MonitorOutcome { records }))
 }
 
-/// The record of `clause`'s run, or the whole-request failure the run's
-/// disposition stands for.
-fn record_of(
-    clause: &MonitorClause,
-    report: ClauseRunReport,
-) -> Result<MonitorRecord, StageFailure<MonitorRefusal>> {
-    let verdict = verdict_of(&clause.name, &report.disposition)?;
-    Ok(MonitorRecord {
-        clause: clause.name.clone(),
-        verdict,
-        category: report.category(),
-        report,
+/// One request's inputs, shared by the stages of [`monitor`].
+struct Runs<'a> {
+    package: &'a CheckedPackage,
+    request: &'a MonitorRequest<'a>,
+    limits: &'a MonitorLimits,
+    cancel: &'a Cancel,
+}
+
+impl Runs<'_> {
+    fn cancelled(&self) -> Result<(), Failure> {
+        match self.cancel.cause() {
+            Some(cause) => Err(StageFailure::Cancelled(cause)),
+            None => Ok(()),
+        }
+    }
+
+    /// The temporal clause named `name`, when the package declares it.
+    fn node(&self, name: &str) -> Option<&TemporalClauseNode> {
+        self.package
+            .graph()
+            .temporal_clauses()
+            .iter()
+            .find(|node| node.clause().name() == name)
+    }
+
+    /// FR-522: emit the package with `temporal_selections` and authenticate a
+    /// `Progressed` or `Timestamped` trace's binding for every selected
+    /// clause, before any position is admitted.
+    fn authentication(&self, input: &TraceInput) -> Result<Option<PackageAuthentication>, Failure> {
+        if !matches!(
+            input,
+            TraceInput::Progressed { .. } | TraceInput::Timestamped { .. }
+        ) {
+            return Ok(None);
+        }
+        let authentication = authenticate_emission(
+            self.package,
+            self.request.temporal_selections,
+            self.request.packages,
+            &SpineLimits::default(),
+            self.cancel,
+        )
+        .map_err(|failure| self.emission_failure(failure))?;
+        for clause in &self.request.clauses {
+            if let Err(disposition) = authenticate_package_trace(
+                self.package,
+                &clause.name,
+                input,
+                authentication.temporal(),
+            ) {
+                return Err(
+                    request_failure(&clause.name, &disposition).unwrap_or_else(|| {
+                        StageFailure::Fault(InternalFault::new(
+                            "monitor",
+                            "trace-authentication-refuses-at-admit",
+                        ))
+                    }),
+                );
+            }
+        }
+        Ok(Some(authentication))
+    }
+
+    /// The whole-request failure an emission failure stands for.
+    fn emission_failure(&self, failure: AuthenticationFailure) -> Failure {
+        match failure {
+            AuthenticationFailure::Cancelled(cause) => StageFailure::Cancelled(cause),
+            AuthenticationFailure::MissingSelection {
+                clause: Some(clause),
+            } if self
+                .request
+                .clauses
+                .iter()
+                .any(|selected| selected.name == clause) =>
+            {
+                StageFailure::Refused(MonitorRefusal::ClauseRefused {
+                    clause,
+                    failure: Box::new(refused(
+                        Code::MissingDeclaration,
+                        "missing-selection",
+                        BTreeMap::new(),
+                    )),
+                })
+            }
+            AuthenticationFailure::MissingSelection { .. } => StageFailure::Fault(
+                InternalFault::new("monitor", "selections-cover-every-temporal-declaration"),
+            ),
+            AuthenticationFailure::Refused(_) => StageFailure::Fault(InternalFault::new(
+                "monitor",
+                "selections-fit-the-checked-package",
+            )),
+            AuthenticationFailure::Fault(fault) => StageFailure::Fault(fault),
+        }
+    }
+
+    /// FR-283 Behavior: every position of a `Document` or `Typed` trace is
+    /// admitted, in position order, before any clause is evaluated, so an
+    /// earlier clause's verdict never hides an admission failure.
+    fn admit_positions(&self, input: &TraceInput) -> Result<(), Failure> {
+        let graph = self.package.graph();
+        for clause in &self.request.clauses {
+            // A clause the package does not declare admits nothing here: its
+            // run reports the missing name.
+            let Some(node) = self.node(&clause.name) else {
+                continue;
+            };
+            let named = node.named_populations();
+            for (position, document) in input.documents().enumerate() {
+                self.cancelled()?;
+                let admitted = admit_trace_snapshot(
+                    graph.model_selections(),
+                    graph.scope().types(),
+                    self.request.packages,
+                    self.limits.normalization,
+                    self.request.snapshots,
+                    document,
+                    self.limits.observation,
+                    &named,
+                );
+                match admitted {
+                    Ok(_) => {}
+                    Err(AdmissionFailure::Fault(fault)) => return Err(StageFailure::Fault(fault)),
+                    Err(failure) => {
+                        return Err(StageFailure::Refused(MonitorRefusal::Admission {
+                            position,
+                            failure: Box::new(failure),
+                        }))
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `monitor`'s own subject check of `clause` against the trace shape
+    /// (FR-283 Behavior), before FR-330 admits the clause.
+    fn subject_check(&self, clause: &MonitorClause, samples: bool) -> Result<(), Failure> {
+        let Some(node) = self.node(&clause.name) else {
+            return Err(StageFailure::Refused(MonitorRefusal::UnknownClause {
+                name: clause.name.clone(),
+            }));
+        };
+        let model_subject = matches!(node.clause().over().1, ValueType::Reference(_));
+        let cause = if samples {
+            (clause.over.is_some() || model_subject)
+                .then_some(("invalid-value", Code::InvalidRuntimeInput))
+        } else if !model_subject {
+            Some(("invalid-value", Code::InvalidRuntimeInput))
+        } else if clause.over.is_none() {
+            Some(("wrong-role-mapping", Code::InvalidRuntimeInput))
+        } else {
+            None
+        };
+        match cause {
+            Some((cause, code)) => Err(StageFailure::Refused(MonitorRefusal::ClauseRefused {
+                clause: clause.name.clone(),
+                failure: Box::new(refused(code, cause, BTreeMap::new())),
+            })),
+            None => Ok(()),
+        }
+    }
+
+    /// One clause over a `Document` or `Typed` trace.
+    fn trace_run(
+        &self,
+        clause: &MonitorClause,
+        input: &TraceInput,
+        authentication: Option<&PackageAuthentication>,
+    ) -> Result<ClauseRunReport, Failure> {
+        self.cancelled()?;
+        self.subject_check(clause, false)?;
+        let Some(over) = clause.over.as_ref() else {
+            return Err(StageFailure::Fault(InternalFault::new(
+                "monitor",
+                "model-subject-clause-has-an-over",
+            )));
+        };
+        let report = run_package_temporal(&PackageTemporalRequest {
+            package: self.package,
+            packages: self.request.packages,
+            model_limits: self.limits.normalization,
+            snapshots: self.request.snapshots,
+            observation_limits: self.limits.observation,
+            accounting: self.limits.accounting,
+            name: &clause.name,
+            trace: input,
+            over,
+            sources: self.request.sources,
+            authentication: authentication.map(PackageAuthentication::temporal),
+            cancel: self.cancel,
+        });
+        self.cancelled()?;
+        Ok(report)
+    }
+
+    /// One clause over a `Samples` trace.
+    fn samples_run(&self, clause: &MonitorClause) -> Result<ClauseRunReport, Failure> {
+        let MonitorTrace::Samples { subject, samples } = &self.request.trace else {
+            return Err(StageFailure::Fault(InternalFault::new(
+                "monitor",
+                "samples-run-has-a-samples-trace",
+            )));
+        };
+        self.cancelled()?;
+        self.subject_check(clause, true)?;
+        let report = run_package_trace_subject(&PackageTraceSubjectRequest {
+            package: self.package,
+            sources: self.request.sources,
+            packages: self.request.packages,
+            model_limits: self.limits.normalization,
+            name: &clause.name,
+            subject,
+            samples,
+            accounting: self.limits.accounting,
+            max_window_values: self.limits.max_window_values,
+            cancel: self.cancel,
+        });
+        self.cancelled()?;
+        Ok(report)
+    }
+
+    /// The record of `clause`'s run, or the whole-request failure the run's
+    /// disposition stands for.
+    fn record_of(
+        &self,
+        clause: &MonitorClause,
+        report: ClauseRunReport,
+    ) -> Result<MonitorRecord, Failure> {
+        let verdict = verdict_of(&clause.name, &report.disposition)?;
+        let atom = self.named_atom(clause, &report.disposition)?;
+        Ok(MonitorRecord {
+            clause: clause.name.clone(),
+            verdict,
+            category: report.category(),
+            atom,
+            report,
+        })
+    }
+
+    /// The atom a record names, by the source text of its condition, read
+    /// from `sources` (FR-283 Behavior).
+    fn named_atom(
+        &self,
+        clause: &MonitorClause,
+        disposition: &ClauseDisposition,
+    ) -> Result<Option<String>, Failure> {
+        let ClauseDisposition::Temporal(verdict) = disposition else {
+            return Ok(None);
+        };
+        match verdict {
+            TemporalVerdict::Indeterminate {
+                reason:
+                    TemporalIndeterminateReason::MissingValuation { atom, .. }
+                    | TemporalIndeterminateReason::ConflictingValuation { atom, .. },
+                ..
+            } => Ok(Some(atom.clone())),
+            TemporalVerdict::Undefined {
+                cause: TemporalUndefinedCause::InsufficientData { atom, .. },
+                ..
+            } => match name_clause_atom(self.package, self.request.sources, &clause.name, *atom) {
+                Ok(name) => Ok(Some(name)),
+                Err(refusal) => Err(match *refusal {
+                    RunRefusal::SourceNotSupplied { reference } => {
+                        StageFailure::Refused(MonitorRefusal::SourceNotSupplied {
+                            clause: clause.name.clone(),
+                            source: reference,
+                        })
+                    }
+                    RunRefusal::Fault(fault) => StageFailure::Fault(fault),
+                    _ => StageFailure::Fault(InternalFault::new(
+                        "monitor",
+                        "atom-naming-refuses-with-a-source-or-fault",
+                    )),
+                }),
+            },
+            _ => Ok(None),
+        }
+    }
+}
+
+/// The whole-request failure `disposition` stands for, when it stands for
+/// one.
+fn request_failure(clause: &str, disposition: &ClauseDisposition) -> Option<Failure> {
+    use ClauseDisposition as D;
+    Some(match disposition {
+        D::EvaluateFault(fault) => StageFailure::Fault(fault.clone()),
+        // Every position admitted before the run, so this is FR-330's own
+        // admit-stage refusal of the clause, or a fault of admission itself.
+        D::Admit(AdmissionFailure::Fault(fault)) => StageFailure::Fault(fault.clone()),
+        D::Admit(failure) => StageFailure::Refused(MonitorRefusal::ClauseRefused {
+            clause: clause.to_owned(),
+            failure: Box::new(failure.clone()),
+        }),
+        D::ArgumentRefusal(refusal) => match refusal.as_ref() {
+            RunRefusal::SourceNotSupplied { reference } => {
+                StageFailure::Refused(MonitorRefusal::SourceNotSupplied {
+                    clause: clause.to_owned(),
+                    source: reference.clone(),
+                })
+            }
+            _ => return None,
+        },
+        D::TemporalRefusal(TemporalTraceRefusal::Fault(fault)) => {
+            StageFailure::Fault(fault.clone())
+        }
+        _ => return None,
     })
 }
 
 /// The verdict `disposition` stands for, or the whole-request failure.
-fn verdict_of(
-    clause: &str,
-    disposition: &ClauseDisposition,
-) -> Result<MonitorVerdict, StageFailure<MonitorRefusal>> {
+fn verdict_of(clause: &str, disposition: &ClauseDisposition) -> Result<MonitorVerdict, Failure> {
     use ClauseDisposition as D;
     use TemporalVerdict as V;
-    let verdict = match disposition {
-        D::EvaluateFault(fault) => return Err(StageFailure::Fault(fault.clone())),
-        D::MissingName { name } => {
-            return Err(StageFailure::Refused(MonitorRefusal::UnknownClause {
-                name: name.clone(),
-            }))
-        }
-        // Every position admitted before the run, so this is FR-330's own
-        // admit-stage refusal of the clause, or a fault of admission itself.
-        D::Admit(AdmissionFailure::Fault(fault)) => return Err(StageFailure::Fault(fault.clone())),
-        D::Admit(failure) => {
-            return Err(StageFailure::Refused(MonitorRefusal::ClauseRefused {
-                clause: clause.to_owned(),
-                failure: Box::new(failure.clone()),
-            }))
-        }
+    if let Some(failure) = request_failure(clause, disposition) {
+        return Err(failure);
+    }
+    Ok(match disposition {
         D::Temporal(verdict) => match verdict {
             V::Holds => MonitorVerdict::Tested,
             V::Violated { .. } => MonitorVerdict::Violated,
@@ -294,9 +635,6 @@ fn verdict_of(
             }
             V::WindowLimitReached { .. } => MonitorVerdict::WindowLimitReached,
         },
-        D::TemporalRefusal(TemporalTraceRefusal::Fault(fault)) => {
-            return Err(StageFailure::Fault(fault.clone()))
-        }
         D::TemporalRefusal(_) => MonitorVerdict::TraceRefused,
         D::Evaluate(_) | D::ArgumentRefusal(_) => MonitorVerdict::ConditionRefused,
         other => {
@@ -308,52 +646,21 @@ fn verdict_of(
                 },
             )))
         }
-    };
-    Ok(verdict)
+    })
 }
 
-/// Admit every trace position as `clause` reads it, in position order. A
-/// clause the package does not declare admits nothing here: its run reports
-/// the missing name.
-fn admit_positions(
-    package: &CheckedPackage,
-    request: &MonitorRequest<'_>,
-    limits: &MonitorLimits,
-    trace: &TraceDocument,
-    clause: &MonitorClause,
-) -> Result<(), StageFailure<MonitorRefusal>> {
-    let graph = package.graph();
-    let Some(node) = graph
-        .temporal_clauses()
-        .iter()
-        .find(|node| node.clause().name() == clause.name)
-    else {
-        return Ok(());
-    };
-    let named = node.named_populations();
-    for (position, document) in trace.positions().enumerate() {
-        let admitted = admit_trace_snapshot(
-            graph.model_selections(),
-            graph.scope().types(),
-            request.packages,
-            limits.normalization,
-            request.snapshots,
-            document,
-            limits.observation,
-            &named,
-        );
-        match admitted {
-            Ok(_) => {}
-            Err(AdmissionFailure::Fault(fault)) => return Err(StageFailure::Fault(fault)),
-            Err(failure) => {
-                return Err(StageFailure::Refused(MonitorRefusal::Admission {
-                    position,
-                    failure: Box::new(failure),
-                }))
-            }
-        }
-    }
-    Ok(())
+/// A refused admission failure with `code` and `cause`.
+fn refused(
+    code: Code,
+    cause: &'static str,
+    fields: BTreeMap<&'static str, String>,
+) -> AdmissionFailure {
+    AdmissionFailure::Refused(Box::new(AdmissionRecord {
+        catalog: CatalogCode::new(code.as_str(), cause),
+        fields,
+        path: Vec::new(),
+        kernel: None,
+    }))
 }
 
 /// A trace document read: its prefix and, for a lasso, its loop.
@@ -363,18 +670,14 @@ struct TraceDocument {
 }
 
 impl TraceDocument {
-    fn input(&self) -> TraceInput {
-        match &self.repeat {
-            None => TraceInput::Finite(self.prefix.clone()),
+    fn into_input(self) -> TraceInput {
+        match self.repeat {
+            None => TraceInput::Finite(self.prefix),
             Some(repeat) => TraceInput::Lasso {
-                prefix: self.prefix.clone(),
-                repeat: repeat.clone(),
+                prefix: self.prefix,
+                repeat,
             },
         }
-    }
-
-    fn positions(&self) -> impl Iterator<Item = &DocumentRef> {
-        self.prefix.iter().chain(self.repeat.iter().flatten())
     }
 }
 
@@ -396,21 +699,68 @@ fn defect(code: Code, cause: &'static str, field: Option<&str>, pointer: &str) -
     ))
 }
 
+/// A limit defect of the trace document: `stage_limit_exceeded` with the
+/// limit's cause and its `kind`, `bound`, `actual` and `setting` fields.
+fn limit_defect(limit: &LimitExceeded) -> Defect {
+    let mut found = defect(
+        Code::StageLimitExceeded,
+        limit.kind().catalog_cause(),
+        None,
+        "",
+    );
+    if let Some(fields) = limit.catalog_fields() {
+        found.0.fields.extend(fields);
+    }
+    found
+}
+
+/// Charge every object and value form of the document, nested ones included,
+/// against `observation.objects` and `observation.values` (FR-106).
+fn charge_document(root: NodeRef<'_>, limits: ObservationLimits) -> Result<(), Defect> {
+    let (mut objects, mut values) = (0_u64, 0_u64);
+    let mut pending = vec![root];
+    while let Some(node) = pending.pop() {
+        values = values.saturating_add(1);
+        if values > limits.values_per_document {
+            return Err(limit_defect(&LimitExceeded::new(
+                Setting::ObservationValues,
+                limits.values_per_document,
+                u128::from(values),
+            )));
+        }
+        match node.node() {
+            Node::Object(members) => {
+                objects = objects.saturating_add(1);
+                if objects > limits.objects_per_document {
+                    return Err(limit_defect(&LimitExceeded::new(
+                        Setting::ObservationObjects,
+                        limits.objects_per_document,
+                        u128::from(objects),
+                    )));
+                }
+                pending.extend(members.map(|(_, member)| member));
+            }
+            Node::Array(items) => pending.extend(items),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 /// Read a trace document under FR-283 "Trace document", at its first defect.
-fn read_trace(bytes: &[u8], input_bytes: u64) -> Result<TraceDocument, Defect> {
+fn read_trace(bytes: &[u8], limits: ObservationLimits) -> Result<TraceDocument, Defect> {
+    let input_bytes = limits.document_bytes;
     let actual = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
     if actual > input_bytes {
-        let mut record = defect(Code::StageLimitExceeded, "input-bytes-exceeded", None, "").0;
-        record.fields.extend([
-            ("kind", "input-bytes-exceeded".to_owned()),
-            ("bound", input_bytes.to_string()),
-            ("actual", actual.to_string()),
-            ("setting", "observation.input_bytes".to_owned()),
-        ]);
-        return Err(Box::new((record, String::new())));
+        return Err(limit_defect(&LimitExceeded::new(
+            Setting::ObservationInputBytes,
+            input_bytes,
+            u128::from(actual),
+        )));
     }
     let document = quire_canonical::read(bytes, input_bytes)
         .map_err(|_| defect(Code::InvalidRuntimeInput, "invalid-value", None, ""))?;
+    charge_document(document.root(), limits)?;
     let root = document.root();
     let Node::Object(members) = root.node() else {
         return Err(defect(
@@ -545,6 +895,19 @@ fn read_ref(item: NodeRef<'_>, pointer: &str) -> Result<DocumentRef, Defect> {
         }
     };
     let labels = SourceIdentity::new(label("authority")?, label("identity")?);
+    if let Node::Object(members) = identity.node() {
+        if let Some((unknown, _)) = members
+            .into_iter()
+            .find(|(name, _)| !["authority", "identity"].contains(name))
+        {
+            return Err(defect(
+                Code::InvalidRuntimeInput,
+                "unknown-member",
+                Some(unknown),
+                &identity_pointer,
+            ));
+        }
+    }
     if let Some(blank) = labels.first_blank_label() {
         let mut found = defect(
             Code::InvalidSourceIdentity,

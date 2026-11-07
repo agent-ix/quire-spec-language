@@ -28,9 +28,13 @@ use qsl_semantics::model::observation::{
 use quire_exact::{Cancel, Identifier, Meter, ScalarLimits, Value, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 
+mod package_authentication;
 mod progress;
 mod temporal;
 mod trace_subject;
+pub use package_authentication::{
+    authenticate_emission, AuthenticationFailure, PackageAuthentication,
+};
 pub use progress::{
     ContradictedDimension, LedgerBinding, ObservedPosition, ProgressAssertion, ProgressClosure,
     ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressLedgerEntry,
@@ -38,12 +42,16 @@ pub use progress::{
 };
 use temporal::TemporalRun;
 pub use temporal::{
-    admit_progress, run_package_temporal, FiniteWindowAssessment, FiniteWindowPremises,
-    FiniteWindowReport, FiniteWindowSupport, OverObject, PackageTemporalRequest, ProgressRefusal,
-    TimestampedCover, TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey,
-    TimestampedWindow, TraceBinding, TraceInput,
+    admit_progress, authenticate_package_trace, name_clause_atom, run_package_temporal,
+    FiniteWindowAssessment, FiniteWindowPremises, FiniteWindowReport, FiniteWindowSupport,
+    OverObject, PackageTemporalRequest, ProgressRefusal, TemporalAuthentication, TimestampedCover,
+    TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey, TimestampedWindow,
+    TraceBinding, TraceInput,
 };
-pub use trace_subject::{run_trace_subject_clause, TraceSubjectClauseRequest};
+pub use trace_subject::{
+    run_package_trace_subject, run_trace_subject_clause, PackageTraceSubjectRequest,
+    TraceSubjectClauseRequest,
+};
 
 use super::call::{convert_call_failure, convert_outcome, select};
 pub use super::call::{CallOutcome, CallValue, RunRefusal};
@@ -1220,10 +1228,11 @@ pub fn run_clause_with_temporal_selections(
                     trace,
                     over,
                     ledger: ledger.as_ref(),
-                    authentication: Some(temporal::Authentication {
+                    authentication: Some(temporal::TemporalAuthentication {
                         clock_rows: emitted.temporal_binding_rows(),
                         admitted_package,
                     }),
+                    cancel: None,
                 },
             ))
         }

@@ -139,17 +139,89 @@ pub fn run_trace_subject_clause(
         sources: &sources,
         progress_capacity: request.limits.progress.covered_positions,
     };
+    Ok(run_subject(
+        &run,
+        &request.name,
+        &request.subject,
+        &request.samples,
+        DEFAULT_MAX_WINDOW_VALUES,
+        None,
+    ))
+}
+
+/// Inputs for the non-model trace-subject clause route over a checked
+/// package the caller already holds (FR-283 `Samples`).
+pub struct PackageTraceSubjectRequest<'a> {
+    /// The checked package the clause is declared in.
+    pub package: &'a qsl_package::CheckedPackage,
+    /// The unit's and each library's source the package was checked from.
+    pub sources: &'a [qsl_foundation::source::Source],
+    /// FR-056's package input.
+    pub packages: &'a qsl_semantics::model::intake::PackageInput,
+    /// The limits the domain packages are re-normalized under.
+    pub model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits,
+    /// The selected temporal clause.
+    pub name: &'a str,
+    /// The caller's declared record type for the samples.
+    pub subject: &'a ValueType,
+    /// Ordered samples, one record for each event position.
+    pub samples: &'a [Value],
+    /// Evaluation accounting limits.
+    pub accounting: ScalarLimits,
+    /// FR-194's window limit, `monitor.max_window_values`.
+    pub max_window_values: u64,
+    /// The caller's handle, polled at every charge of the run's meter.
+    pub cancel: &'a Cancel,
+}
+
+/// Run one temporal clause on a closed finite event-position trace of record
+/// samples over a checked package, without compiling a unit again.
+pub fn run_package_trace_subject(request: &PackageTraceSubjectRequest<'_>) -> ClauseRunReport {
+    let empty = DocumentProvision::default();
+    let run = CompiledRun {
+        packages: request.packages,
+        model_limits: request.model_limits,
+        provisions: Provisions {
+            snapshots: &empty,
+            invocations: &empty,
+        },
+        observation_limits: ObservationLimits::default(),
+        accounting: request.accounting,
+        package: request.package,
+        sources: request.sources,
+        progress_capacity: 0,
+    };
+    run_subject(
+        &run,
+        request.name,
+        request.subject,
+        request.samples,
+        request.max_window_values,
+        Some(request.cancel),
+    )
+}
+
+/// FR-330-AC-17: the trace-subject evaluation of `name` over `samples`.
+fn run_subject(
+    run: &CompiledRun<'_>,
+    name: &str,
+    subject: &ValueType,
+    samples: &[Value],
+    max_window_values: u64,
+    cancel: Option<&Cancel>,
+) -> ClauseRunReport {
+    let package = run.package;
     let Some(node) = package
         .graph()
         .temporal_clauses()
         .iter()
-        .find(|node| node.clause().name() == request.name)
+        .find(|node| node.clause().name() == name)
     else {
-        return Ok(run.report(ClauseDisposition::MissingName {
-            name: request.name.clone(),
-        }));
+        return run.report(ClauseDisposition::MissingName {
+            name: name.to_owned(),
+        });
     };
-    let record_type = match &request.subject {
+    let record_type = match subject {
         ValueType::Composite(key) => package
             .graph()
             .scope()
@@ -158,31 +230,35 @@ pub fn run_trace_subject_clause(
             .is_some_and(|declaration| matches!(declaration.shape(), CompositeShape::Record(_))),
         _ => false,
     };
-    let matches_subject = request.subject == node.clause().over().1;
+    let matches_subject = *subject == node.clause().over().1;
     let profile_supported = node.clause().profile() == TemporalProfile::EventPositionFalseExtension;
-    if request.samples.is_empty() || !record_type || !matches_subject || !profile_supported {
-        return Ok(run.report(refuse("invalid-value", BTreeMap::new())));
+    if samples.is_empty() || !record_type || !matches_subject || !profile_supported {
+        return run.report(refuse("invalid-value", BTreeMap::new()));
     }
-    for sample in &request.samples {
+    for sample in samples {
         if !package
             .graph()
             .scope()
             .types()
-            .admits(&request.subject, sample)
+            .admits(subject, sample)
             .is_ok_and(|admitted| admitted)
         {
-            return Ok(run.report(refuse("invalid-value", BTreeMap::new())));
+            return run.report(refuse("invalid-value", BTreeMap::new()));
         }
     }
-    let len = match u64::try_from(request.samples.len()) {
+    let len = match u64::try_from(samples.len()) {
         Ok(len) => len,
-        Err(_) => return Ok(run.report(refuse("invalid-value", BTreeMap::new()))),
+        Err(_) => return run.report(refuse("invalid-value", BTreeMap::new())),
     };
-    let mut meter = Meter::new(request.accounting);
+    let mut meter = Meter::new(run.accounting);
+    if let Some(cancel) = cancel {
+        meter = meter.with_cancel(cancel.clone());
+    }
     let mut letters = TraceSubjectLetters {
         package,
         node,
-        samples: &request.samples,
+        samples,
+        max_window_values,
         trace: WindowTrace::positions(len),
         captures: Vec::new(),
         atom_values: BTreeMap::new(),
@@ -215,7 +291,7 @@ pub fn run_trace_subject_clause(
     if let Some((atom, position)) = decisive {
         let atom = u64::try_from(atom).ok();
         let Some(atom) = atom else {
-            return Ok(report);
+            return report;
         };
         let occurrence =
             OccurrenceKey::new(node.identity(), Origin::new(Role::new("expression"), atom));
@@ -228,7 +304,7 @@ pub fn run_trace_subject_clause(
             },
         ));
     }
-    Ok(report)
+    report
 }
 
 fn decisive_aggregate(
@@ -525,6 +601,8 @@ struct TraceSubjectLetters<'a> {
     package: &'a qsl_package::CheckedPackage,
     node: &'a TemporalClauseNode,
     samples: &'a [Value],
+    /// FR-194's window limit.
+    max_window_values: u64,
     trace: WindowTrace,
     captures: Vec<Value>,
     atom_values: BTreeMap<(usize, u64), Option<bool>>,
@@ -631,7 +709,7 @@ impl TemporalLetters for TraceSubjectLetters<'_> {
             let reading = aggregate.evaluate(
                 &self.trace,
                 &mut source,
-                DEFAULT_MAX_WINDOW_VALUES,
+                self.max_window_values,
                 position,
                 meter,
             )?;

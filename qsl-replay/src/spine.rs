@@ -192,19 +192,22 @@ pub use call::{
 
 pub(crate) mod clause;
 pub use clause::{
-    admit_progress, run_clause, run_clause_with_temporal_selections, run_package_temporal,
-    run_trace_subject_clause, temporal_batch_exit_code, temporal_batch_outcome,
-    AuthenticatedTemporalSelection, ClauseArgument, ClauseArgumentValue, ClauseDisposition,
-    ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource,
-    ClauseRunStage, ConsequentEventRefusal, ConsequentSourceEvent, ConsequentSourceEvents,
-    ConsequentState, ContradictedDimension, FiniteWindowAssessment, FiniteWindowPremises,
-    FiniteWindowReport, FiniteWindowSupport, LedgerBinding, ObservedPosition, OperationName,
-    OverObject, PackageTemporalRequest, ProgressAssertion, ProgressClosure, ProgressCompleteness,
-    ProgressContradiction, ProgressLedger, ProgressLedgerEntry, ProgressLimitReached,
-    ProgressLowerBoundary, ProgressRefusal, ProgressValue, TemporalIndeterminateReason,
-    TemporalPositionRefusal, TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict,
-    TemporalWindowRefusal, TimestampedCover, TimestampedMissingValuation, TimestampedObservation,
-    TimestampedOrderKey, TimestampedWindow, TraceBinding, TraceInput, TraceSubjectClauseRequest,
+    admit_progress, authenticate_emission, authenticate_package_trace, name_clause_atom,
+    run_clause, run_clause_with_temporal_selections, run_package_temporal,
+    run_package_trace_subject, run_trace_subject_clause, temporal_batch_exit_code,
+    temporal_batch_outcome, AuthenticatedTemporalSelection, AuthenticationFailure, ClauseArgument,
+    ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest,
+    ClauseRunSelection, ClauseRunSource, ClauseRunStage, ConsequentEventRefusal,
+    ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState, ContradictedDimension,
+    FiniteWindowAssessment, FiniteWindowPremises, FiniteWindowReport, FiniteWindowSupport,
+    LedgerBinding, ObservedPosition, OperationName, OverObject, PackageAuthentication,
+    PackageTemporalRequest, PackageTraceSubjectRequest, ProgressAssertion, ProgressClosure,
+    ProgressCompleteness, ProgressContradiction, ProgressLedger, ProgressLedgerEntry,
+    ProgressLimitReached, ProgressLowerBoundary, ProgressRefusal, ProgressValue,
+    TemporalAuthentication, TemporalIndeterminateReason, TemporalPositionRefusal,
+    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
+    TimestampedCover, TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey,
+    TimestampedWindow, TraceBinding, TraceInput, TraceSubjectClauseRequest,
 };
 mod refinement;
 pub use refinement::{
