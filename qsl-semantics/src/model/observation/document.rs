@@ -1539,7 +1539,15 @@ fn admit_native(
             let magnitude = native
                 .object("magnitude")
                 .ok_or_else(|| wrong("magnitude"))?;
-            let magnitude = rational_in_domain(domain, quantity_magnitude(magnitude)?)?;
+            // A Rational slot refuses a Decimal object (FR-106-AC-56), so its
+            // unit-bearing form takes only a Rational magnitude.
+            let at =
+                |record: AdmissionRecord| record.at(vec![PathStep::Field("magnitude".to_owned())]);
+            let magnitude = match native_payload(magnitude).map_err(at)? {
+                NativeKind::Rational => rational_payload(magnitude).map_err(at)?,
+                _ => return Err(wrong("magnitude")),
+            };
+            let magnitude = rational_in_domain(domain, magnitude)?;
             Ok(Value::Quantity(quire_exact::Quantity::new(
                 magnitude,
                 carried.unit().clone(),

@@ -157,6 +157,14 @@ impl ModelSpellings {
         self.package(unit, alias)?.units.get(member).cloned()
     }
 
+    /// The ids of every unit the selected packages declare.
+    pub(crate) fn package_unit_ids(&self) -> Vec<quire_exact::UnitId> {
+        self.packages
+            .iter()
+            .flat_map(|package| package.units.values().cloned())
+            .collect()
+    }
+
     /// The unit `name` written bare in `unit` (the primary unit when `None`),
     /// when no unit of the compiling unit declares it: the one unit of that
     /// name the packages the unit selects declare in their own documents

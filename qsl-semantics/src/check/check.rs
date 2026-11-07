@@ -1164,13 +1164,17 @@ impl FormedUnits {
 }
 
 /// The units `graph` declares by their declared name, read from `declared`,
-/// the table built over the same graph.
+/// the table built over the same graph, leaving out the units of a selected
+/// package (`packages`), which a bare name reaches only when exactly one
+/// package declares it ([`ModelSpellings::declared_unit`]).
 fn unit_ids_by_name(
     graph: &quire_semantic_value::unit::UnitGraph,
     declared: &quire_semantic_value::quantity::UnitTable,
+    packages: &[quire_exact::UnitId],
 ) -> BTreeMap<String, quire_exact::UnitId> {
     graph
         .units()
+        .filter(|unit| !packages.contains(&unit.id()))
         .filter_map(|unit| {
             let name = declared
                 .nominal_node(&unit.key())
@@ -1218,10 +1222,12 @@ pub(crate) fn package_unit_ids(
 /// "Quantity type reference": the unit namespace `Quantity<u>` looks up).
 pub(crate) fn declared_unit_ids(
     graph: &quire_semantic_value::unit::UnitGraph,
+    packages: &[quire_exact::UnitId],
 ) -> BTreeMap<String, quire_exact::UnitId> {
     unit_ids_by_name(
         graph,
         &quire_semantic_value::quantity::UnitTable::declared(graph),
+        packages,
     )
 }
 
@@ -1556,7 +1562,10 @@ impl Scope {
             return self;
         }
         let declared = quire_semantic_value::quantity::UnitTable::declared(graph);
-        self.index.units.extend(unit_ids_by_name(graph, &declared));
+        let packages = self.model_spellings.package_unit_ids();
+        self.index
+            .units
+            .extend(unit_ids_by_name(graph, &declared, &packages));
         let mut units = self.types.units().clone();
         units.append(declared);
         self.types = std::mem::take(&mut self.types).with_units(units);

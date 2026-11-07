@@ -518,14 +518,14 @@ fn unit_bearing_rational_comparisons_refuse_a_wrong_unit() {
     }
 }
 
-/// A source unit `m` declared beside the model document's `m` is not an
-/// ambiguity: the compiling unit's own declaration takes the bare name and the
-/// same clause checks with and without it (the order is observable at lowering,
-/// see `model_type_unit_roots`; the checker does not dimension-check
-/// `convert`, so no clause here separates the two units).
+/// A source unit `m` of another dimension takes the name from the model
+/// document's `m` (the compiling unit's own unit wins), so the document's
+/// `Ratio` carries the source `m` (Time): `convert<Quantity<cm>>(self.a)`,
+/// a conversion to the document's Length unit, checks without the source `m`
+/// and is refused `ill_typed`/`type-mismatch` with it.
 #[trace("TC-1300")]
 #[test]
-fn a_source_unit_named_like_the_document_unit_is_not_ambiguous() {
+fn a_source_unit_named_like_the_document_unit_wins_the_name() {
     let ratio = identity("Ratio");
     let document = with_length_units(&document(
         vec![rational_type(
@@ -537,8 +537,74 @@ fn a_source_unit_named_like_the_document_unit_is_not_ambiguous() {
         &[("a", &ratio), ("b", &ratio)],
     ));
     let clause = "invariant I using v on Config::ConfigVersion at current { \
-        convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b) }\n";
+        convert<Quantity<cm>>(self.a) = 100 cm }\n";
     assert_eq!(assemble(&document, clause).map(|_| ()), Ok(()));
     let shadowed = format!("dimension Time;\nunit m : Time = rational(1, 1);\n{clause}");
-    assert_eq!(assemble(&document, &shadowed).map(|_| ()), Ok(()));
+    assert_eq!(
+        assemble(&document, &shadowed).map(|_| ()),
+        Err(vec![(Code::IllTyped, Some("type-mismatch".to_owned()))])
+    );
+}
+
+/// Two selected models that each declare a unit `x` leave the bare name `x`
+/// unresolved (`UnresolvedTypeName`, the refusal of a name no unit holds): no
+/// model is picked silently. The qualified spellings `A::x` and `B::x` each
+/// resolve, and a bare name only one model declares resolves.
+#[cfg(feature = "test-support")]
+#[trace("TC-1300")]
+#[test]
+fn a_bare_unit_name_declared_by_two_models_is_refused() {
+    use crate::timed_declarations::{assemble_selected_as, time_package};
+    use qsl_semantics::check::AssemblyCause;
+    let both = [
+        (
+            "A",
+            "acme/a",
+            time_package("acme/a", false, &[("x", None, "1")]),
+        ),
+        (
+            "B",
+            "acme/b",
+            time_package("acme/b", false, &[("x", None, "1")]),
+        ),
+    ];
+    let one = [
+        (
+            "A",
+            "acme/a",
+            time_package("acme/a", false, &[("x", None, "1")]),
+        ),
+        (
+            "B",
+            "acme/b",
+            time_package("acme/b", false, &[("y", None, "1")]),
+        ),
+    ];
+    let outcome = |packages: &[(&str, &str, Vec<u8>)], unit: &str| {
+        assemble_selected_as(
+            ("test", "fr-505-two-units"),
+            packages,
+            &format!("function f using v(d: Quantity<{unit}>): Boolean pure {{ d = d }}"),
+        )
+        .1
+        .map(|_| ())
+        .map_err(|refusal| {
+            refusal
+                .errors
+                .into_iter()
+                .map(|error| error.cause)
+                .collect::<Vec<_>>()
+        })
+    };
+    assert_eq!(
+        outcome(&both, "x"),
+        Err(vec![AssemblyCause::UnresolvedTypeName {
+            name: "x".to_owned()
+        }])
+    );
+    for unit in ["A::x", "B::x"] {
+        assert_eq!(outcome(&both, unit), Ok(()), "{unit}");
+    }
+    assert_eq!(outcome(&one, "x"), Ok(()));
+    assert_eq!(outcome(&one, "y"), Ok(()));
 }

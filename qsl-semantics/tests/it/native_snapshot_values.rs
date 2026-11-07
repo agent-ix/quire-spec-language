@@ -2934,4 +2934,44 @@ fn a_unit_bearing_rational_member_admits_its_quantity_or_refuses_the_pair() {
         record.fields.get("actual").map(String::as_str),
         Some("1/13")
     );
+
+    // A second out-of-bound pair: `-4/1` is below the numerator bound.
+    let record = record_of(replay.admit(
+        &with(rational_fields(), "metered", ms(ratio("-8", "2"))),
+        ObservationLimits::default(),
+    ));
+    assert_eq!(record.catalog.cause(), "invalid-value");
+    assert_eq!(
+        record.fields.get("actual").map(String::as_str),
+        Some("-4/1")
+    );
+    // The value's unit must be the slot's unit.
+    let wrong_unit = json!({"kind": "quantity", "unit": "s", "magnitude": ratio("1", "4")});
+    let record = record_of(replay.admit(
+        &with(rational_fields(), "metered", wrong_unit),
+        ObservationLimits::default(),
+    ));
+    assert_eq!(record.catalog.code(), Code::InvalidRuntimeInput.as_str());
+    assert_eq!(record.catalog.cause(), "wrong-value-kind");
+    assert_eq!(
+        record.fields.get("member").map(String::as_str),
+        Some("unit")
+    );
+    // As in a plain Rational slot, a Decimal magnitude is refused
+    // (FR-106-AC-56).
+    for (slot, value) in [
+        ("level", half_as_decimal()),
+        ("metered", ms(half_as_decimal())),
+    ] {
+        let record = record_of(replay.admit(
+            &with(rational_fields(), slot, value),
+            ObservationLimits::default(),
+        ));
+        assert_eq!(
+            record.catalog.code(),
+            Code::InvalidRuntimeInput.as_str(),
+            "{slot}"
+        );
+        assert_eq!(record.catalog.cause(), "wrong-value-kind", "{slot}");
+    }
 }
