@@ -49,7 +49,12 @@ a new bytes-route call: the `recovery.predicate` slots of
 unit-free variant with the integer model, written to a handoff directory and
 evaluated by `BarePackage::evaluate_protocol_slot` (FR-531, FR-533). The one
 binder each slot reads is a `M::Recovery` record whose Collection member
-`receipts` carries the items.
+`receipts` carries the items. `Full` is one conjunction: filter(amount=2) has size 2 and
+sum 4, map(amount=2) has size 3 and count 2 of true, size is 3,
+`count<Count>(amount=2)` is 2 and `sum<M::Total>` is 7. `Partial` holds the
+values a deduplicating query gives: filter size 1 or sum 5. The size, count and
+sum values are those of the expected results below; the filter sum and the
+Boolean map are checks specific to this host.
 
 | Row | AC | Input | Expected |
 | --- | --- | --- | --- |
