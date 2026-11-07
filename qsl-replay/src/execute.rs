@@ -1192,8 +1192,7 @@ pub fn replay_with_cancel_and_temporal_selections(
         request.accounting_limits(),
         replay_limits,
     )?;
-    let compiled =
-        recompile_with_owner_selections(&request, &caller, temporal_selections, integer_division)?;
+    let compiled = recompile_with_temporal_selections(&request, &caller, temporal_selections)?;
     if let ReplaySource::ObservedTemporal(_) = request.source() {
         return replay_observed_temporal(request, compiled, caller, cancel);
     }
