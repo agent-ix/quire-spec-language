@@ -691,7 +691,9 @@ impl ReplayRequestRefusal {
     /// other refusal.
     pub fn pointer(&self) -> Option<&str> {
         match self {
-            Self::PackageMember { pointer, .. } | Self::MissingProvisionAuthority { pointer } => Some(pointer),
+            Self::PackageMember { pointer, .. } | Self::MissingProvisionAuthority { pointer } => {
+                Some(pointer)
+            }
             Self::MissingReplayTarget => Some("/replay"),
             Self::MissingOccurrenceKey => Some("/replay/occurrence_key"),
             Self::ConflictingReplayTarget { members } => {
@@ -715,10 +717,12 @@ impl ReplayRequestRefusal {
 /// caller-declared number a request could understate to launder an
 /// oversized byte provision past the bound (B3).
 fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
-    wire.package.bytes().len() + wire.profile_selections
-        .iter()
-        .map(|p| p.profile().len() + p.value().len())
-        .sum::<usize>()
+    wire.package.bytes().len()
+        + wire
+            .profile_selections
+            .iter()
+            .map(|p| p.profile().len() + p.value().len())
+            .sum::<usize>()
         + wire
             .stage_limits
             .keys()
@@ -825,7 +829,11 @@ impl ReplayRequest {
 
         // Only past this point does decoding touch the package reference or
         // the byte provision.
-        let package::Descriptor { name: package_name, sources, refinement_internals } = wire.package.descriptor()?;
+        let package::Descriptor {
+            name: package_name,
+            sources,
+            refinement_internals,
+        } = wire.package.descriptor()?;
         let sources = sources
             .into_iter()
             .map(DefinitionSourceRef::from_wire)
@@ -843,7 +851,11 @@ impl ReplayRequest {
                     .into_iter()
                     .map(DefinitionSourceRef::from_wire)
                     .collect::<Vec<_>>();
-                Ok::<_, ReplayRequestRefusal>(DependencyEntry { identity, sources, refinement_internals: entry.refinement_internals })
+                Ok::<_, ReplayRequestRefusal>(DependencyEntry {
+                    identity,
+                    sources,
+                    refinement_internals: entry.refinement_internals,
+                })
             })
             .collect::<Result<Vec<_>, _>>()?;
 

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Complete raw checked-package input retained until native admission.
 
+use super::{PackageMemberCause, ReplayRequestRefusal};
+use crate::identity::SourceRefWire;
 use quire_canonical::{Document, Node, NodeRef, ReadError};
+use quire_contract_model::CheckedRefinementInternal;
 use quire_contract_model::{
     read_checked_package, CheckedPackageDispatchResult, CheckedPackageEvidence,
     CheckedPackageIncomplete, CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageV2,
 };
-use quire_contract_model::CheckedRefinementInternal;
-use super::{PackageMemberCause, ReplayRequestRefusal};
-use crate::identity::SourceRefWire;
 
 /// A complete raw checked-package document, without an admission claim.
 ///
@@ -36,9 +36,14 @@ impl ReplayPackage {
         let mut retained = Vec::new();
         retained
             .try_reserve(bytes.len())
-            .map_err(|_| ReadError::Allocation { requested: bytes.len() })?;
+            .map_err(|_| ReadError::Allocation {
+                requested: bytes.len(),
+            })?;
         retained.extend_from_slice(bytes);
-        Ok(Self { document, bytes: retained })
+        Ok(Self {
+            document,
+            bytes: retained,
+        })
     }
 
     /// The entire original document, including every graph and sidecar member.
@@ -79,15 +84,27 @@ impl ReplayPackage {
             .map(|(index, source)| {
                 let pointer = format!("/package/lock/sources/{index}");
                 Ok((
-                    string(required(source, "authority", &pointer)?, &format!("{pointer}/authority"))?.to_owned(),
-                    string(required(source, "identity", &pointer)?, &format!("{pointer}/identity"))?.to_owned(),
+                    string(
+                        required(source, "authority", &pointer)?,
+                        &format!("{pointer}/authority"),
+                    )?
+                    .to_owned(),
+                    string(
+                        required(source, "identity", &pointer)?,
+                        &format!("{pointer}/identity"),
+                    )?
+                    .to_owned(),
                 ))
             })
             .collect::<Result<Vec<_>, ReplayRequestRefusal>>()?;
         let refinement_internals = member(lock, "refinement_internals")
             .map(|rows| read_internals(rows, "/package/lock/refinement_internals"))
             .transpose()?;
-        Ok(Descriptor { name, sources, refinement_internals })
+        Ok(Descriptor {
+            name,
+            sources,
+            refinement_internals,
+        })
     }
 }
 
@@ -101,32 +118,58 @@ fn read_internals(
     value: NodeRef<'_>,
     pointer: &str,
 ) -> Result<Vec<CheckedRefinementInternal>, ReplayRequestRefusal> {
-    array(value, pointer)?.enumerate().map(|(index, row)| {
-        let pointer = format!("{pointer}/{index}");
-        let refinement = string(required(row, "refinement", &pointer)?, &format!("{pointer}/refinement"))?.into();
-        let internal = array(required(row, "internal", &pointer)?, &format!("{pointer}/internal"))?
+    array(value, pointer)?
+        .enumerate()
+        .map(|(index, row)| {
+            let pointer = format!("{pointer}/{index}");
+            let refinement = string(
+                required(row, "refinement", &pointer)?,
+                &format!("{pointer}/refinement"),
+            )?
+            .into();
+            let internal = array(
+                required(row, "internal", &pointer)?,
+                &format!("{pointer}/internal"),
+            )?
             .enumerate()
-            .map(|(index, value)| string(value, &format!("{pointer}/internal/{index}")).map(Into::into))
+            .map(|(index, value)| {
+                string(value, &format!("{pointer}/internal/{index}")).map(Into::into)
+            })
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(CheckedRefinementInternal { refinement, internal })
-    }).collect()
+            Ok(CheckedRefinementInternal {
+                refinement,
+                internal,
+            })
+        })
+        .collect()
 }
 
-fn required<'document>(value: NodeRef<'document>, key: &str, pointer: &str) -> Result<NodeRef<'document>, ReplayRequestRefusal> {
+fn required<'document>(
+    value: NodeRef<'document>,
+    key: &str,
+    pointer: &str,
+) -> Result<NodeRef<'document>, ReplayRequestRefusal> {
     if !matches!(value.node(), Node::Object(_)) {
         return Err(field_refusal(pointer, PackageMemberCause::WrongKind));
     }
-    member(value, key).ok_or_else(|| field_refusal(&format!("{pointer}/{key}"), PackageMemberCause::Missing))
+    member(value, key)
+        .ok_or_else(|| field_refusal(&format!("{pointer}/{key}"), PackageMemberCause::Missing))
 }
 
-fn string<'document>(value: NodeRef<'document>, pointer: &str) -> Result<&'document str, ReplayRequestRefusal> {
+fn string<'document>(
+    value: NodeRef<'document>,
+    pointer: &str,
+) -> Result<&'document str, ReplayRequestRefusal> {
     match value.node() {
         Node::String(text) => Ok(text),
         _ => Err(field_refusal(pointer, PackageMemberCause::WrongKind)),
     }
 }
 
-fn array<'document>(value: NodeRef<'document>, pointer: &str) -> Result<quire_canonical::Items<'document>, ReplayRequestRefusal> {
+fn array<'document>(
+    value: NodeRef<'document>,
+    pointer: &str,
+) -> Result<quire_canonical::Items<'document>, ReplayRequestRefusal> {
     match value.node() {
         Node::Array(values) => Ok(values),
         _ => Err(field_refusal(pointer, PackageMemberCause::WrongKind)),
@@ -134,7 +177,10 @@ fn array<'document>(value: NodeRef<'document>, pointer: &str) -> Result<quire_ca
 }
 
 fn field_refusal(pointer: &str, cause: PackageMemberCause) -> ReplayRequestRefusal {
-    ReplayRequestRefusal::PackageMember { pointer: pointer.to_owned(), cause }
+    ReplayRequestRefusal::PackageMember {
+        pointer: pointer.to_owned(),
+        cause,
+    }
 }
 
 /// The native refusal or resource stop while admitting a replay's package.
@@ -149,6 +195,22 @@ pub enum ReplayPackageAdmissionRefusal {
 }
 
 impl ReplayPackageAdmissionRefusal {
+    /// The QSL catalog mapping of the native reader's typed result.
+    pub fn code(&self) -> qsl_foundation::Code {
+        match self {
+            Self::Refused(refusal) => qsl_package::checked_package_refusal_code(refusal.code),
+            Self::Incomplete(_) => qsl_foundation::Code::StageLimitExceeded,
+        }
+    }
+
+    /// The native reader's cause, without rewriting its vocabulary.
+    pub fn cause(&self) -> Option<&'static str> {
+        match self {
+            Self::Refused(refusal) => refusal.cause.map(|cause| cause.as_str()),
+            Self::Incomplete(_) => None,
+        }
+    }
+
     /// The primary native pointer prefixed with the request's package member.
     pub fn pointer(&self) -> String {
         let path = match self {
@@ -159,9 +221,17 @@ impl ReplayPackageAdmissionRefusal {
     }
 }
 
-pub(super) fn member<'document>(value: NodeRef<'document>, name: &str) -> Option<NodeRef<'document>> {
-    let Node::Object(members) = value.node() else { return None };
-    members.into_iter().find(|(key, _)| *key == name).map(|(_, value)| value)
+pub(super) fn member<'document>(
+    value: NodeRef<'document>,
+    name: &str,
+) -> Option<NodeRef<'document>> {
+    let Node::Object(members) = value.node() else {
+        return None;
+    };
+    members
+        .into_iter()
+        .find(|(key, _)| *key == name)
+        .map(|(_, value)| value)
 }
 
 fn package_pointer(native: Option<&str>) -> String {

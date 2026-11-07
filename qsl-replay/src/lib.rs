@@ -416,8 +416,8 @@ pub use qsl_semantics::model::domain_package::DomainPackageRef;
 pub use quire_exact::{EmptyInterval, Incomplete, Integer, IntegerInterval};
 pub use request::{
     ByteProvision, DependencyEntry, DependencyEntryWire, PackageMemberCause, ReplayPackage,
-    ReplayPackageAdmissionRefusal, ReplayRequest, ReplayRequestRefusal,
-    ReplayRequestWire, StageLimitNameRefusal, StageLimits, StateEnvironment,
+    ReplayPackageAdmissionRefusal, ReplayRequest, ReplayRequestRefusal, ReplayRequestWire,
+    StageLimitNameRefusal, StageLimits, StateEnvironment,
 };
 pub use result::{
     read_bounded, CauseCodecError, DisagreementCause, EvaluatedValue, HybridTraceDisagreement,

@@ -1880,6 +1880,7 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::ObservedTemporalRefusal(qsl_eval::temporal::TemporalRefusal::Fault(_))
         | ReplayRefusal::Admission(AdmissionFailure::Fault(_)) => None,
         ReplayRefusal::Request(_)
+        | ReplayRefusal::Package(_)
         | ReplayRefusal::DomainPackages(_)
         | ReplayRefusal::LimitAboveReader(_)
         | ReplayRefusal::SourceCount(_)

@@ -634,6 +634,7 @@ impl From<ReplayRefusal> for AdmittedRefusal {
             // broken invariant, not a caller error. Each is named so that a
             // new variant forces a decision.
             ReplayRefusal::Request(_)
+            | ReplayRefusal::Package(_)
             | ReplayRefusal::DomainPackages(_)
             | ReplayRefusal::SourceCount(_)
             | ReplayRefusal::PackageSources(_)

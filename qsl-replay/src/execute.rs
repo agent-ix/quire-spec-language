@@ -139,6 +139,9 @@ pub enum ReplayRefusal {
     /// bound.
     #[error(transparent)]
     Request(#[from] ReplayRequestRefusal),
+    /// The complete offered checked package failed native admission after recompilation.
+    #[error(transparent)]
+    Package(#[from] crate::ReplayPackageAdmissionRefusal),
     /// The request's S1 source limit is above the reader limit: the request
     /// asks for more than the reader allows, which is invalid input
     /// (`invalid-request`, exit 20), not an exhausted limit.
@@ -540,6 +543,7 @@ impl ReplayRefusal {
     pub fn code(&self) -> Code {
         match self {
             Self::Request(refusal) => refusal.code(),
+            Self::Package(refusal) => refusal.code(),
             Self::LimitAboveReader(_) => Code::InvalidRequest,
             Self::SourceCount(_) => Code::InvalidRequest,
             Self::PackageSources(_) => Code::InvalidPackage,
@@ -608,6 +612,7 @@ impl ReplayRefusal {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::Request(refusal) => refusal.cause(),
+            Self::Package(refusal) => refusal.cause(),
             Self::Recompile(refusal) => refusal.cause(),
             Self::RecompileWithProtocolResults { refusal, .. } => refusal.cause(),
             Self::DomainPackages(refusal) => Some(refusal.cause.as_str()),
@@ -687,6 +692,7 @@ impl ReplayRefusal {
     pub fn pointer(&self) -> Option<Cow<'static, str>> {
         match self {
             Self::Request(refusal) => refusal.pointer().map(Cow::Borrowed),
+            Self::Package(refusal) => Some(Cow::Owned(refusal.pointer())),
             Self::WrongReplayTarget { target, .. } => {
                 Some(Cow::Borrowed(target.member().pointer()))
             }
@@ -1743,6 +1749,18 @@ pub(crate) fn recompile_with_temporal_selections(
                 .map_err(ReplayRefusal::DependencyInput)
         },
     )?;
+    let supplied_internals = request
+        .dependencies()
+        .iter()
+        .filter_map(|entry| {
+            entry.refinement_internals().map(|rows| {
+                internals_value(rows).map(|value| (entry.identity().as_str().to_owned(), value))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let dependencies = dependencies
+        .with_refinement_internals(supplied_internals)
+        .map_err(ReplayRefusal::DependencyInput)?;
     for source in &sources {
         dependencies
             .check_unit_owner(&labels(source))
@@ -1769,6 +1787,7 @@ pub(crate) fn recompile_with_temporal_selections(
         &dependencies,
         temporal_selections,
         limits.spine,
+        request.refinement_internals(),
     )?;
     // Rule 6: every entry names a selection of the recompiled closure.
     let selections = compiled.checked.package().dependency_selections();
@@ -1781,7 +1800,21 @@ pub(crate) fn recompile_with_temporal_selections(
             ));
         }
     }
+    request
+        .package()
+        .admit(compiled.emitted.evidence(), limits.spine.imports.for_ir())?;
     Ok(compiled)
+}
+
+fn internals_value(
+    rows: &[quire_contract_model::CheckedRefinementInternal],
+) -> Result<serde_json::Value, ReplayRefusal> {
+    serde_json::to_value(rows).map_err(|_| {
+        ReplayRefusal::Fault(InternalFault::new(
+            "replay",
+            "typed-refinement-internals-serialize",
+        ))
+    })
 }
 
 /// I1's package input: every domain package document the provision carries,
@@ -1882,6 +1915,7 @@ fn run_spine_units(
     dependencies: &DependencyInput,
     temporal_selections: &[qsl_package::TemporalClockSelection],
     limits: SpineLimits,
+    refinement_internals: Option<&[quire_contract_model::CheckedRefinementInternal]>,
 ) -> Result<Recompiled, ReplayRefusal> {
     #[cfg(test)]
     SPINE_RUNS.with(|runs| runs.set(runs.get() + 1));
@@ -1934,7 +1968,7 @@ fn run_spine_units(
         spine::UnitCheckOptions {
             temporal_selections,
             continue_protocol_refusals: true,
-            refinement_internals: None,
+            refinement_internals: refinement_internals.map(internals_value).transpose()?,
         },
         limits,
         &cancel,
