@@ -51,7 +51,6 @@ pub(super) fn checked_protocol_locations(
 ) -> Result<Vec<CheckedProtocolSemanticLocation>, EmitRefusal> {
     let mut slots = Vec::new();
     let mut roots = HashSet::new();
-    let mut names = HashSet::new();
     for protocol in graph.protocols() {
         // A refused protocol writes no node, so none of its slots is
         // emitted (FR-503).
@@ -63,12 +62,7 @@ pub(super) fn checked_protocol_locations(
             continue;
         }
         for body in slot_bodies(protocol) {
-            // Two `related` ends that collapse with their records share a
-            // site name and write their rows once.
-            let named = graph
-                .protocol_slot_origin(body.root().location())
-                .is_none_or(|name| names.insert(name));
-            if roots.insert(body.root().location()) && named {
+            if roots.insert(body.root().location()) {
                 slots.push(body);
             }
         }
@@ -91,7 +85,6 @@ pub(super) fn slot_rows(
     pending: &mut Vec<PendingRow>,
 ) -> Result<(), EmitRefusal> {
     let positions = walk(body);
-    let site = graph.protocol_slot_origin(body.root().location());
     // The application each position names, so a position below it at
     // the same location (an implicit coercion's operand) names another.
     let mut claimed: Vec<Option<&NodeKey>> = Vec::with_capacity(positions.len());
@@ -146,8 +139,7 @@ pub(super) fn slot_rows(
             .copied()
             .ok_or_else(|| refusal(application))?;
         *seen += 1;
-        let (origin_name, location) =
-            wire_location(at, site).ok_or_else(|| refusal(application))?;
+        let (origin_name, location) = wire_location(at).ok_or_else(|| refusal(application))?;
         pending.push(PendingRow {
             application: emitted_node_ids
                 .get(application)
@@ -369,12 +361,9 @@ fn term_application<'c>(
 /// slot's site name: every slot expression is located under a
 /// type-declaration origin named by its site (FR-383), never under a
 /// `protocol_attempt` origin.
-fn wire_location(
-    location: &Location,
-    site: Option<&str>,
-) -> Option<(String, CheckedProtocolLocation)> {
+fn wire_location(location: &Location) -> Option<(String, CheckedProtocolLocation)> {
     let name = match &location.origin {
-        Origin::TypeDeclaration { name } => site.unwrap_or(name).to_owned(),
+        Origin::TypeDeclaration { name } => name.clone(),
         Origin::Body { .. }
         | Origin::Measure { .. }
         | Origin::Expression

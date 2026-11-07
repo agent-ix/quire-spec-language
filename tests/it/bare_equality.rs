@@ -611,6 +611,100 @@ fn related_calls_are_named_by_record_position() {
     ));
 }
 
+/// FR-533-AC-21 (vectors): QSpec's published protocol-location vectors
+/// `PL-04-case-guard`, `PL-04b-case-guard-shared`, `PL-05-related-end` and
+/// `PL-05b-related-end-shared` carry the origin names `protocol_site` builds
+/// for a case guard and a `related` end.
+#[trace("FR-533-AC-21", "FR-383-AC-63", "TC-1333", "TC-1063")]
+#[test]
+fn the_published_pl_04_and_pl_05_vectors_carry_the_names_the_checker_builds() {
+    use qsl_semantics::check::{protocol_site, ProtocolSite, RelatedSide};
+    let qspec =
+        std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR must name a quire-specification checkout");
+    let vectors: Value = serde_json::from_slice(
+        &std::fs::read(
+            Path::new(&qspec).join("proposals/checked-package-v2/checked-term-data-vectors.json"),
+        )
+        .expect("the published vectors"),
+    )
+    .expect("json");
+    let path = ["Main".to_owned(), "Pick".to_owned()];
+    let got = ["Main".to_owned(), "Got".to_owned()];
+    let want = [
+        (
+            "PL-04-case-guard",
+            protocol_site("Handshake", ProtocolSite::CaseGuard(&path, "yes")),
+        ),
+        (
+            "PL-04b-case-guard-shared",
+            protocol_site("Handshake", ProtocolSite::CaseGuard(&path, "no")),
+        ),
+        (
+            "PL-05-related-end",
+            protocol_site(
+                "Handshake",
+                ProtocolSite::RelatedEnd(&got, 0, RelatedSide::From),
+            ),
+        ),
+        (
+            "PL-05b-related-end-shared",
+            protocol_site(
+                "Handshake",
+                ProtocolSite::RelatedEnd(&got, 1, RelatedSide::From),
+            ),
+        ),
+    ];
+    let rows = vectors["positive"]["protocol_locations"]
+        .as_array()
+        .expect("rows");
+    for (id, name) in want {
+        let row = rows.iter().find(|row| row["id"] == id).expect("vector");
+        assert_eq!(origin_name(row), name, "{id}");
+    }
+}
+
+/// FR-383-AC-63: `related` records that collapse onto one emitted record
+/// share one position, so their ends write the rows of that position once:
+/// the package of two identical clauses holds the rows of the package of one.
+#[trace("FR-383-AC-63", "TC-1063")]
+#[test]
+fn related_records_that_collapse_write_their_rows_once() {
+    let source = |clauses: &str| {
+        tc1070::SOURCE
+            .replace("profile S = \"quire.state.graph/v1\";", "profile S = \"quire.state.graph/v1\";\nprofile v = \"quire.value.complete/v1\";")
+            .replace("model M = \"test/orders\";", "model M = \"test/orders\";\nfunction identityRef using v(x: M::Node): M::Node pure { x }")
+            .replace("related by Owns (view, view)", clauses)
+    };
+    let rows_of = |source: &str| {
+        let (_holder, request, files) = handoff(source);
+        let package = read(&request, &files["checked-package.json"]);
+        let mut rows: Vec<(String, usize)> = Vec::new();
+        for row in &package
+            .checked_term_data()
+            .expect("term data")
+            .protocol_locations
+        {
+            if let quire_contract_model::CheckedProtocolLocationOrigin::TypeDeclaration { name } =
+                &row.location.origin
+            {
+                if name.contains(" related ") {
+                    match rows.iter_mut().find(|(held, _)| held == &**name) {
+                        Some((_, count)) => *count += 1,
+                        None => rows.push((name.to_string(), 1)),
+                    }
+                }
+            }
+        }
+        rows.sort();
+        rows
+    };
+    let once = "related by Owns (identityRef(view), identityRef(view))";
+    let twice = format!("{once} {once}");
+    let single = rows_of(&source(once));
+    assert_eq!(single.len(), 2, "{single:?}");
+    assert_eq!(rows_of(&source(&twice)), single);
+}
+
 /// FR-533-AC-13 (related half): two records of one relationship whose `from`
 /// ends are one call application and whose `to` ends differ each pair with
 /// their own end, `related.from[0]` under `related 0 from` and

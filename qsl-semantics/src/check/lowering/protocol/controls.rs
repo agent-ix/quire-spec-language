@@ -915,10 +915,10 @@ impl Lowering<'_> {
                 position += 1;
             }
             for (end, side) in ends.iter().zip([RelatedSide::From, RelatedSide::To]) {
-                self.name_expression_site(
-                    end,
+                self.related_renames.push((
+                    (*end).clone(),
                     protocol_site(protocol, ProtocolSite::RelatedEnd(path, position, side)),
-                );
+                ));
             }
         }
         records.dedup_by(|left, right| left.0 == right.0);

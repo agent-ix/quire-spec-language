@@ -5991,7 +5991,8 @@ impl PackageDeclarations {
             model_correspondence,
             identities,
             binders,
-            lowered_protocol_members,
+            mut lowered_protocol_members,
+            lowered_related_renames,
         ) = (
             lowered.graph,
             lowered.equality_producer_data,
@@ -6001,7 +6002,53 @@ impl PackageDeclarations {
             lowered.functions,
             lowered.binders,
             lowered.protocol_members,
+            lowered.related_renames,
         );
+        // QSpec FR-322-AC-388: a `related` end is named by its record's
+        // position in the emitted array, which lowering fixed by sorting and
+        // collapsing the records. Locate the end under that name now, in its
+        // checked body, its recorded occurrences and its expression
+        // bindings, so every route reads one `Location`.
+        let related_renames: BTreeMap<String, String> = lowered_related_renames
+            .into_iter()
+            .filter_map(|(location, name)| match location.origin {
+                Origin::TypeDeclaration { name: held } => Some((held, name)),
+                _ => None,
+            })
+            .collect();
+        if !related_renames.is_empty() {
+            let moved = |location: &Location| match &location.origin {
+                Origin::TypeDeclaration { name } => related_renames.get(name).map(|renamed| {
+                    Location::at(
+                        Origin::TypeDeclaration {
+                            name: renamed.clone(),
+                        },
+                        &location.path(),
+                    )
+                }),
+                _ => None,
+            };
+            occurrences.relocate(moved);
+            for checked in &mut checked_protocols {
+                for related in &mut checked.slots.related {
+                    for end in &mut related.ends {
+                        end.relocate(moved);
+                    }
+                }
+            }
+            for members in lowered_protocol_members.values_mut() {
+                for expression in &mut members.expressions {
+                    if let Some(location) = moved(&expression.location) {
+                        expression.location = location;
+                    }
+                }
+            }
+            for (held, renamed) in &related_renames {
+                if let Some(spans) = site_spans.remove(held) {
+                    site_spans.entry(renamed.clone()).or_insert(spans);
+                }
+            }
+        }
         // FR-218: bind each already-checked predicate join to its function
         // node key after the function declarations have been lowered.
         for checked_index in protocol_places.iter().flatten().copied() {
@@ -8354,22 +8401,6 @@ impl CheckedGraph {
     /// bodies; evaluation resolves those from this graph's checked protocol.
     pub fn protocol_node_keys(&self, name: &str) -> Option<&CheckedProtocolNodeKeys> {
         self.protocol_node_keys.get(name)
-    }
-
-    /// The type-declaration origin name that keys the `protocol_locations`
-    /// rows of the protocol slot expression rooted at `location`: the site
-    /// name built from the emitted control node where FR-383 builds it so
-    /// (a `related` end), else the name of the checker's location.
-    pub fn protocol_slot_origin<'g>(&'g self, location: &'g Location) -> Option<&'g str> {
-        self.protocol_node_keys
-            .values()
-            .flat_map(|keys| &keys.expressions)
-            .find(|expression| expression.location == *location)
-            .and_then(|expression| expression.site.as_deref())
-            .or(match &location.origin {
-                Origin::TypeDeclaration { name } => Some(name),
-                _ => None,
-            })
     }
 
     /// FR-115 (ADR-017 PF-3): the operation `model::object::operation`

@@ -895,6 +895,11 @@ pub(crate) struct Lowered {
     /// The S4 identities of each protocol's clause and emitted members,
     /// retained for FR-390's checked-body selector.
     pub(crate) protocol_members: BTreeMap<String, protocol::AdmittedProtocolMembers>,
+    /// The slot expressions whose site name is built from the emitted control
+    /// node: each `related` end's root location as the checker gave it, and
+    /// the name its record's position in the emitted array gives it
+    /// (QSpec FR-322-AC-388). `check` relocates the end under that name.
+    pub(crate) related_renames: Vec<(Location, String)>,
     /// QSL equality facts retained by the checked equality application's key
     /// and source occurrence. Structural keys can be reused by distinct
     /// occurrences whose authored conversion decisions differ.
@@ -1050,6 +1055,8 @@ pub(crate) struct Lowering<'a> {
     /// Exact source-parameter mapping for each protocol expression body.
     protocol_expression_binders:
         BTreeMap<String, Vec<crate::check::protocol_clause::CheckedProtocolExpressionBindings>>,
+    /// See [`Lowered::related_renames`].
+    related_renames: Vec<(Location, String)>,
     /// The protocol whose S4 bodies are being lowered, when any.
     active_protocol: Option<String>,
 }
@@ -2060,6 +2067,7 @@ impl<'a> Lowering<'a> {
             refused_temporals: BTreeSet::new(),
             protocol_binder_keys: BTreeMap::new(),
             protocol_expression_binders: BTreeMap::new(),
+            related_renames: Vec::new(),
             active_protocol: None,
             unsettled_protocols: Vec::new(),
         }
@@ -2164,6 +2172,7 @@ impl<'a> Lowering<'a> {
             // Ranked first, so collecting compares each key with one neighbour.
             composites,
             protocol_members,
+            related_renames: self.related_renames,
             equality_producer_data: self.equality_producer_data,
             equality_producer_identities: self.equality_producer_identities,
             dispatch_producer_decisions: self.dispatch_producer_decisions,
@@ -4138,23 +4147,6 @@ impl<'a> Lowering<'a> {
         })
     }
 
-    /// Record `site` as the wire site name of the active protocol's
-    /// expressions rooted at `location`.
-    pub(super) fn name_expression_site(&mut self, location: &Location, site: String) {
-        let Some(protocol) = &self.active_protocol else {
-            return;
-        };
-        for expression in self
-            .protocol_expression_binders
-            .get_mut(protocol)
-            .into_iter()
-            .flatten()
-            .filter(|expression| expression.location == *location)
-        {
-            expression.site = Some(site.clone());
-        }
-    }
-
     /// Lower checked `root` and return the term that names it: a reference
     /// to its node, or to its binder's parameter node for a local read.
     ///
@@ -4193,7 +4185,6 @@ impl<'a> Lowering<'a> {
                     crate::check::protocol_clause::CheckedProtocolExpressionBindings {
                         location: root.location().clone(),
                         binders: expression_binders,
-                        site: None,
                     },
                 );
         }

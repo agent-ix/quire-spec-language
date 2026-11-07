@@ -1207,7 +1207,7 @@ impl AdmittedPackageRead<'_> {
             for body in crate::emit::protocol_locations::slot_bodies(protocol) {
                 let location = body.root().location();
                 let (Some(origin), Some(root)) = (
-                    crate::protocol_selection::slot_origin(graph, body),
+                    crate::protocol_selection::slot_origin(body),
                     crate::protocol_selection::root_node(self.source, body),
                 ) else {
                     continue;

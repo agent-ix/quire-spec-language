@@ -257,7 +257,6 @@ fn compensation_retry(compensation: &CheckedRetry) -> Vec<(String, ValueType)> {
 /// decoded from arbitrary text.
 #[ix_trace_rs::string_edge]
 fn run_body<'a>(
-    package: &'a CheckedPackage,
     protocol: &'a CheckedProtocol,
     node: ProtocolNodeId,
     member: &str,
@@ -366,8 +365,11 @@ fn run_body<'a>(
                 .filter(|related| related.node == node)
                 .flat_map(|related| &related.ends)
                 .find(|body| {
-                    package.graph().protocol_slot_origin(body.root().location())
-                        == Some(site.as_str())
+                    matches!(
+                        &body.root().location().origin,
+                        quire_semantic_value::location::Origin::TypeDeclaration { name }
+                            if *name == site
+                    )
                 })?;
             Some((body, slots))
         }
@@ -701,8 +703,7 @@ pub(crate) fn select<'a>(
         Node::Terminal => return Err(absent()),
         Node::Role(_) | Node::Channel(_) => return Err(absent()),
         Node::Run(node) => {
-            let Some((body, frame)) = run_body(package, protocol, node, &slot.member, slot.index)
-            else {
+            let Some((body, frame)) = run_body(protocol, node, &slot.member, slot.index) else {
                 return Err(absent());
             };
             (body, frame)
@@ -778,9 +779,9 @@ pub(crate) fn root_node(package: &CheckedPackage, body: &CheckedBody) -> Option<
 /// The type-declaration origin name (FR-383's site name) a slot expression
 /// is located under, which keys its `protocol_locations` rows.
 #[cfg(feature = "std")]
-pub(crate) fn slot_origin<'g>(
-    graph: &'g qsl_semantics::check::CheckedGraph,
-    body: &'g CheckedBody,
-) -> Option<&'g str> {
-    graph.protocol_slot_origin(body.root().location())
+pub(crate) fn slot_origin(body: &CheckedBody) -> Option<&str> {
+    match &body.root().location().origin {
+        quire_semantic_value::location::Origin::TypeDeclaration { name } => Some(name),
+        _ => None,
+    }
 }
