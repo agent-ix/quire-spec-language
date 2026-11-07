@@ -11,12 +11,47 @@ pub enum NativeJoinFailure {
     /// The admitted equality reader refused its work or storage charge.
     #[error(transparent)]
     Equality(#[from] Box<quire_contract_model::AdmittedEqualityReadError>),
+    /// A resource denial with its owner error and original configured ceiling.
+    #[error(transparent)]
+    Limit(Box<crate::NativeJoinLimitError>),
 }
 
 impl NativeJoinFailure {
+    /// Attach the stage diagnostic using the same caller budget that refused.
+    /// Semantic refusals remain unchanged. Already attached diagnostics are
+    /// retained, so a later budget use cannot rewrite their attempted count.
+    pub fn with_budget(self, budget: &quire_contract_model::NativeJoinBudget) -> Self {
+        if matches!(self, Self::Limit(_)) {
+            return self;
+        }
+        match crate::NativeJoinLimits::from_budget(budget).refusal(self.clone(), budget) {
+            Some(error) => Self::Limit(Box::new(error)),
+            None => self,
+        }
+    }
+
+    /// The original owner refusal, without the stage diagnostic envelope.
+    #[must_use]
+    pub fn native(&self) -> &Self {
+        match self {
+            Self::Limit(error) => error.native.native(),
+            native => native,
+        }
+    }
+
+    /// The stage diagnostic attached at admission, if this was a resource denial.
+    #[must_use]
+    pub fn limit(&self) -> Option<&qsl_foundation::diagnostic::LimitExceeded> {
+        match self {
+            Self::Limit(error) => Some(&error.limit),
+            Self::Projection(_) | Self::Equality(_) => None,
+        }
+    }
+
     /// The stage setting for an actual resource denial, otherwise `None`.
     pub fn setting(&self) -> Option<qsl_foundation::Setting> {
         match self {
+            Self::Limit(error) => error.native.setting(),
             Self::Projection(error) => qsl_semantics::model::intake::native_budget_setting(error),
             Self::Equality(error) => match error.code {
                 quire_contract_model::AdmittedEqualityReadErrorCode::WorkLimit => {

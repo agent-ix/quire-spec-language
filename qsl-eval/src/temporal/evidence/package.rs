@@ -125,7 +125,7 @@ pub enum PackageMismatch {
     /// package joined the source's selected identities (FR-358). IR's own
     /// refusal; the identities are neither empty nor unknown.
     #[error("the native join budget was consumed: {0}")]
-    Exhausted(Box<qsl_package::ExactTypeProjectionError>),
+    Exhausted(Box<qsl_package::NativeJoinFailure>),
 }
 
 /// The source a route that holds one keeps for the cross-check of FR-515:
@@ -312,7 +312,9 @@ impl<'p> EvidencePackage<'p> {
             Some(Err(refusal))
                 if qsl_semantics::model::intake::is_native_budget_denial(&refusal) =>
             {
-                return Err(PackageMismatch::Exhausted(Box::new(refusal)));
+                return Err(PackageMismatch::Exhausted(Box::new(
+                    qsl_package::NativeJoinFailure::from(refusal).with_budget(budget),
+                )));
             }
             Some(Err(_)) | None => SelectedExactIdentities::empty(),
         };
@@ -349,7 +351,9 @@ impl<'p> EvidencePackage<'p> {
                     Err(denial)
                         if qsl_semantics::model::intake::is_native_budget_denial(&denial) =>
                     {
-                        return Err(PackageMismatch::Exhausted(Box::new(denial)));
+                        return Err(PackageMismatch::Exhausted(Box::new(
+                            qsl_package::NativeJoinFailure::from(denial).with_budget(budget),
+                        )));
                     }
                     projection => projection,
                 };

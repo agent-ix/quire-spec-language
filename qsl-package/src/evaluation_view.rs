@@ -412,7 +412,7 @@ impl SelectedProtocolTerm<'_, '_> {
 
 /// A native denial with the stage's original ceiling and attempted charge.
 #[cfg(feature = "std")]
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("{limit}: {native}")]
 pub struct NativeJoinLimitError {
     /// The native refusal, including its structural locus and admitted work.

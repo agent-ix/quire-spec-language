@@ -102,7 +102,9 @@ impl<'p> BarePackage<'p> {
     /// `ExhaustedStorage` for identity/type projection, or its `WorkLimit` or
     /// `StorageLimit` for equality admission. No package is returned when
     /// `budget` runs out; the denial is never an unknown witness, a fault or
-    /// an empty identity set.
+    /// an empty identity set. Resource denials carry a
+    /// [`crate::NativeJoinFailure::Limit`] diagnostic with the original owner
+    /// error, caller-configured ceiling, setting and cumulative attempted charge.
     pub fn with_supply(
         mut self,
         supply: BareSupply<'p>,
@@ -111,7 +113,9 @@ impl<'p> BarePackage<'p> {
         self.joined = match supply.identities.selected(self.package, budget) {
             Ok(identities) => Some(Ok(identities)),
             Err(IdentityJoinFailure::Witness(defect)) => Some(Err(defect)),
-            Err(IdentityJoinFailure::Exhausted(denial)) => return Err((*denial).into()),
+            Err(IdentityJoinFailure::Exhausted(denial)) => {
+                return Err(crate::NativeJoinFailure::from(*denial).with_budget(budget))
+            }
         };
         self.supply = Some(supply);
         if let Some(Ok(identities)) = &self.joined {
@@ -121,7 +125,9 @@ impl<'p> BarePackage<'p> {
                     .project_exact_type(&node.node_id, identities, budget);
                 if let Err(denial) = &projection {
                     if qsl_semantics::model::intake::is_native_budget_denial(denial) {
-                        return Err(denial.clone().into());
+                        return Err(
+                            crate::NativeJoinFailure::from(denial.clone()).with_budget(budget)
+                        );
                     }
                 }
                 self.projections.insert(node.node_id.clone(), projection);
@@ -134,7 +140,8 @@ impl<'p> BarePackage<'p> {
                     equality: self.supply.as_ref().and_then(|supply| supply.equality),
                 },
                 budget,
-            )?;
+            )
+            .map_err(|failure| failure.with_budget(budget))?;
         }
         Ok(self)
     }
