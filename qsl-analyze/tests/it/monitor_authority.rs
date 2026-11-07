@@ -8,7 +8,6 @@ use qsl_analyze::monitor_root::{
     AdmittedPlanAuthority, PlanAuthorityLimits, PlanAuthorityRefusal, PlanAuthorityRefusalCode,
     PlanAuthoritySelection, PlanRoot, ProgressSelectionRefusalCode,
 };
-use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::TimeSourceKind;
 use quire_exact::{Origin, Role};
 use quire_observation::authority::{self, progress, SubjectSelection};
