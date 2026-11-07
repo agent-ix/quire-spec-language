@@ -350,7 +350,14 @@ pub fn emit_monitor_plan_over(
         evidence,
     )
     .map_err(|_| invariant("the base package does not read back"))?;
-    emit_monitor_plan(&read.into_value().admitted, retained, plan, emit)
+    let base = read.into_value().admitted;
+    let mut emission = emit_monitor_plan(&base, retained, plan, emit)?;
+    let mut evidence = evidence.clone();
+    for feature in &base.lock().required_features {
+        evidence.support_feature(feature.clone());
+    }
+    emission.evidence = evidence;
+    Ok(emission)
 }
 
 /// Write the plan root and entries onto the admitted package `base`.
