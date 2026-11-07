@@ -83,7 +83,7 @@ successor is green, as FR-499's rows state; there is no permanent keep). No crit
 
 ## Dependencies
 
-- **Upstream:** FR-493-AC-5, the deletion table (QSL-858), planner rulings 5,
+- **Upstream:** FR-493-AC-5, planner rulings 5,
   8 and 9 on QSL-858. The FR-015-AC-5 row is covered by the spine port delivered under QSL-1682.
 - **Same-spelled foreign owner (FR-513-AC-12):** the criterion as first written listed a
   same-spelled name of another owner among the guard atoms refused with the

@@ -256,4 +256,4 @@ leave TL formula/request/result admission and evaluation with their TL owners.
 
 ## References
 
-- Linear QSL-1504; deletion-table rows B27, B28, B29, B30.
+- Linear QSL-1504.

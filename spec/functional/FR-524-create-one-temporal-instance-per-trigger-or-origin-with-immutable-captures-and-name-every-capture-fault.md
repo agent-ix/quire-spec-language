@@ -338,4 +338,4 @@ No output holds a truth value.
 
 ## References
 
-- Linear QSL-1503; deletion-table rows B17, B18, B20, B21, B22.
+- Linear QSL-1503.
