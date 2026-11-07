@@ -26,7 +26,7 @@ An owned LinkedPackage from link_native, a CheckBindings value containing its
 exact FormalSource and complete authored clause/requirement/execution-point
 correspondence, and caller-configured CheckLimits. No runtime sample participates
 in type inference or proof. The concrete contract and proof abstraction are
-defined in [native-model-checking.md](../../docs/native-model-checking.md).
+defined by this requirement's criteria.
 Source spans and formal positions are derived from the linked unit's own
 `Source` bytes; `CheckBindings` carries no separate source to compare.
 

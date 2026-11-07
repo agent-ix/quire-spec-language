@@ -27,7 +27,7 @@ Native-model admission checked operation roles and frame inventories
 object; an operation is unique by (context, name); its parameters and result
 are distinct declarations and every Input has a role; the frame's fields are
 unique actual object fields; created and deleted objects are unique mapped
-objects. The deletion table lists these as UNKNOWN on the spine. FR-103
+objects. The retired deletion table listed these as UNKNOWN on the spine. FR-103
 resolves each frame entry (missing name, wrong meaning) but states nothing
 about repeats. This requirement states each legacy rule as the spine rule the
 wire allows, and records which are satisfied by construction or by the IR

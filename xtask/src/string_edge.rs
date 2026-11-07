@@ -375,7 +375,6 @@ mod tests {
     #[test]
     fn real_adr010_sites_are_refused_as_allow_list_entries() {
         let sites = [
-            ("src", "src/protocol_artifact/mod.rs", "clock_binding_name"),
             // A real named-`const NAME: &str` site
             // (`identity == NARROW`, `qsl-semantics/src/check/claims.rs`),
             // not a string literal -- the const-resolving detector is what

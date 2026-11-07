@@ -159,3 +159,33 @@ fn the_native_model_module_is_absent() {
         assert_absent(root, &forbidden);
     }
 }
+
+/// FR-499-AC-2, AC-3 and FR-515-AC-9: the compiled-protocol readers are
+/// deleted, so no root source declares or names `protocol_artifact` (its
+/// `wire`, `checked_predicate` and `temporal_subject` paths included), the
+/// registry has no finite-global protocol definition, and no root source
+/// names `DeclarationKind::Protocol`, `Family::Protocol`,
+/// `RegisteredDefinition::Protocol` or `crate::temporal`.
+#[trace("FR-499-AC-2", "FR-499-AC-3", "FR-515-AC-9", "TC-1293", "TC-1310")]
+#[test]
+fn no_root_source_names_the_deleted_protocol_reader_or_protocol_definition() {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"));
+    assert!(!workspace.join("src/protocol_artifact").exists());
+    assert!(!workspace.join("src/protocol_artifact.rs").exists());
+    // Assembled so that this file does not name the symbols it forbids.
+    let forbidden = [
+        ["protocol", "_artifact"].concat(),
+        ["DeclarationKind::", "Protocol"].concat(),
+        ["Family::", "Protocol"].concat(),
+        ["RegisteredDefinition::", "Protocol"].concat(),
+        ["crate::", "temporal"].concat(),
+    ];
+    let forbidden: Vec<&str> = forbidden.iter().map(String::as_str).collect();
+    assert_absent(&workspace.join("src"), &forbidden);
+    assert!(
+        quire_spec_language::linking::definition_source::RegisteredDefinition::all()
+            .iter()
+            .all(|definition| definition.identity() != "quire.protocol.finite-global/v1"),
+        "the registry names no finite-global protocol definition"
+    );
+}

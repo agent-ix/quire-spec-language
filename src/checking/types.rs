@@ -20,7 +20,7 @@ pub struct DomainType<'a> {
 
 /// What a domain type's field names, for a field access.
 #[derive(Clone, Debug)]
-pub(crate) enum DomainField<'a> {
+pub enum DomainField<'a> {
     /// The field's value, typed.
     Typed(NativeType<'a>),
     /// The type declares no field of that name.
@@ -84,7 +84,7 @@ impl<'a> DomainType<'a> {
     }
 
     /// The type of this type's field `name`.
-    pub(crate) fn field(&self, name: &str) -> DomainField<'a> {
+    pub fn field(&self, name: &str) -> DomainField<'a> {
         let Some(member) = self.package.member(self.declaration.key, name) else {
             return DomainField::Missing;
         };
