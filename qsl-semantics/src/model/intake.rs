@@ -4566,10 +4566,13 @@ pub(super) fn read_variant_type(
     node: &str,
     at: &str,
     shape: Option<&str>,
-    type_meanings: &HashMap<&str, &str>,
-    unbounded_rationals: &std::collections::BTreeSet<String>,
+    types: &TypeSets<'_, '_>,
     records: &mut Vec<DomainPackageRecord>,
 ) -> Result<(), Refusals> {
+    let TypeSets {
+        meanings: type_meanings,
+        unbounded_rationals,
+    } = types;
     let ctx = NodeCtx::new(type_value, at);
     let mut refusals = Vec::new();
     if shape != Some("enumeration") {
@@ -4727,10 +4730,13 @@ pub(super) fn read_tuple_value_type(
     node: &str,
     at: &str,
     shape: Option<&str>,
-    type_meanings: &HashMap<&str, &str>,
-    unbounded_rationals: &std::collections::BTreeSet<String>,
+    types: &TypeSets<'_, '_>,
     records: &mut Vec<DomainPackageRecord>,
 ) -> Result<(), Refusals> {
+    let TypeSets {
+        meanings: type_meanings,
+        unbounded_rationals,
+    } = types;
     let ctx = NodeCtx::new(type_value, at);
     let mut refusals = Vec::new();
     if shape != Some("tuple") {
@@ -4858,6 +4864,14 @@ pub(super) fn read_tuple_value_type(
     }));
     records.extend(position_records);
     Ok(())
+}
+
+/// What a tuple or variant reader needs to know of the document's other types.
+pub(super) struct TypeSets<'a, 'm> {
+    /// Each type identity's meaning.
+    pub(super) meanings: &'a HashMap<&'m str, &'m str>,
+    /// The unbounded `Rational` value types (FR-505).
+    pub(super) unbounded_rationals: &'a std::collections::BTreeSet<String>,
 }
 
 /// Whether `value_type` names the unbounded `Rational`: a Rational value type
@@ -6596,6 +6610,7 @@ mod tests {
             shapes: &shapes,
             type_meanings: &type_meanings,
             rational_types: &rational_types,
+            unbounded_rationals: &std::collections::BTreeSet::new(),
             semantic: None,
             semantic_members: &semantic_members,
         };
@@ -6926,8 +6941,10 @@ mod tests {
             "ix://acme/orders/Pair",
             "types[0]",
             Some("tuple"),
-            &HashMap::new(),
-            &std::collections::BTreeSet::new(),
+            &TypeSets {
+                meanings: &HashMap::new(),
+                unbounded_rationals: &std::collections::BTreeSet::new(),
+            },
             &mut records,
         )
         .expect("the closed, ordered tuple form is admitted");
