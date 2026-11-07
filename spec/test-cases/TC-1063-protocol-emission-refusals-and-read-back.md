@@ -104,8 +104,8 @@ as passing. The test is traced `TC-1063` and `FR-383-AC-20`.
 | L4 | fixtures E, L and E-C emitted | every row of every slot that holds an application is under a type-declaration origin whose `name` is that slot's site name (AC-39) |
 | L4b | fixtures E, L and E-C emitted | no two slots have the same site name (AC-40) |
 | L4c | fixtures E, L and E-C emitted | no row has a `protocol_attempt` origin (AC-41) |
-| L4d | fixture L emitted; its variant whose `Got` ends call one identity function | case guards under `... Decide case yes guard` and `... case no guard`, `visible[0]` under `... decision 2641..2650` and no other `decision` origin; the variant's ends under `... Got related 0 from` and `... related 0 to` (AC-63) |
 | L4a | Inspection of the emitter | no row derived from a source region, node order or operand position, and none defaulted (AC-42) |
+| L4d | fixture L emitted; its variant whose `Got` ends call one identity function | case guards under `... Decide case yes guard` and `... case no guard`, `visible[0]` under `... decision 2641..2650` and no other `decision` origin; the variant's ends under `... Got related 0 from` and `... related 0 to` (AC-63) |
 | L5 | row L1's package with the retry-origin `earlier.tally` row of `Refund` keyed to occurrence 1 removed | admitted by the reader (AC-43) |
 | L6 | row L1's package with the occurrence-1 retry-origin `earlier.tally` row's `term_ordinal` changed from 0 to 1 | refused `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` (AC-44) |
 | L6a | row L1's package with the occurrence-1 retry-origin `earlier.tally` row rekeyed to occurrence 0 at `term_ordinal` 2 | refused `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` (AC-45) |
