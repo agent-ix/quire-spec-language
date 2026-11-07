@@ -67,7 +67,7 @@ fn refusal<T>(report: &artifact::Report<T>) -> &Error {
 #[trace("TC-138", "TC-150", "FR-050-AC-4")]
 fn each_reader_admits_its_own_version_and_keeps_the_package_it_read() {
     let fixture = Fixture::new();
-    let v1 = read_v1(&fixture, &fixture.candidate().bytes());
+    let v1 = read_v1(&fixture, fixture.candidate().bytes());
     assert_eq!(
         v1.result().expect("the /1 reader admits /1").package(),
         &fixture.package
