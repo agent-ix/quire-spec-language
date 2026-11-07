@@ -85,8 +85,10 @@ fn spine_crates_do_not_import_the_retained_root_frontend_or_protocol_reader() {
 
 /// TC-1027 steps 2 and 3: after the composed lane is deleted, no source under
 /// the root crate or any layer crate names its entry points or types, and none
-/// of its source directories exist.
-#[trace("FR-362-AC-6", "FR-499-AC-5")]
+/// of its source directories exist. The composed parser was the only parser
+/// besides `qsl_cst::parse` that admitted a profile line with a version or
+/// digest, so its absence is FR-362-AC-2's by-absence check.
+#[trace("FR-362-AC-2", "FR-362-AC-6", "FR-499-AC-5")]
 #[test]
 fn no_source_names_the_composed_lane() {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -120,40 +122,5 @@ fn no_source_names_the_composed_lane() {
             .join("src")
             .join(format!("{directory}/composed.rs"));
         assert!(!file.exists(), "{} still exists", file.display());
-    }
-}
-
-/// FR-362-AC-2 by absence: with the composed parser gone, the root parser,
-/// the only remaining one in this crate, refuses a profile line that carries a
-/// version or a digest.
-#[trace("FR-362-AC-2", "FR-499-AC-5")]
-#[test]
-fn the_root_parser_admits_no_profile_line_with_version_or_digest() {
-    use qsl_foundation::SourceIdentity;
-    use quire_spec_language::{parse, Limits};
-    let identity = || SourceIdentity {
-        authority: "test".into(),
-        identity: "test:profile".into(),
-    };
-    let accepted = "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\";\ninvariant T on M::Thing at current { true }\n";
-    assert!(parse(
-        identity(),
-        "a.native",
-        accepted.as_bytes(),
-        Limits::default()
-    )
-    .is_ok());
-    for profile in [
-        "profile \"state-finite/0-draft\" version \"1\";",
-        "profile \"state-finite/0-draft\" digest \"sha256:00\";",
-        "profile P = \"state-finite/0-draft\" version \"1\" digest \"sha256:00\";",
-    ] {
-        let text = format!(
-            "language \"ix:native\" edition \"0-draft\";\n{profile}\nmodel M = \"test/model\";\ninvariant T on M::Thing at current {{ true }}\n"
-        );
-        assert!(
-            parse(identity(), "b.native", text.as_bytes(), Limits::default()).is_err(),
-            "{profile} must be refused"
-        );
     }
 }
