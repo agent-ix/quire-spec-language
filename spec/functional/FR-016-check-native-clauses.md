@@ -94,7 +94,7 @@ does not lower their execution semantics. Unsupported shapes and input validatio
 requirements remain explicit. A checked package is not an IR executable package
 and contains no healthy/violating assessment of an unsupplied population.
 
-**QSL-499 disposition:** the native 0-draft carrier of the retired acceptance criteria below (`native_model`, `model_source`, `located_json`, `link_native` and the native `checking` pipeline) is deleted under ADR-011, ADR-033 and FR-499. Each retired criterion is retained as migration history and is not an active acceptance obligation; its behavior is owned by FR-104 (state clauses), FR-172 (hyper and relation clauses) and FR-096 (stage limits and refusal loci), checked by the qsl-semantics suites tagged with those requirements.
+**QSL-499 disposition:** the native 0-draft carrier of the retired acceptance criteria below (`native_model`, `model_source`, `located_json`, `link_native` and the native `checking` pipeline) is deleted under ADR-011, ADR-033 and FR-499. Each retired criterion is retained as migration history and is not an active acceptance obligation; its behavior is owned by FR-104 (state clauses), FR-172 (hyper and relation clauses) and FR-096 (stage limits and refusal loci), with FR-091 and FR-495 owning the unreachable-branch behavior of FR-016-AC-7, checked by the qsl-semantics suites tagged with those requirements.
 
 ## Acceptance Criteria
 
