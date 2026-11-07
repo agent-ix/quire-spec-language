@@ -113,6 +113,7 @@ mod protocol_number_root_module;
 mod replay_multi_source;
 mod request_builder;
 mod requirement_item_proof_bounds;
+mod retained_criteria_matrix;
 mod retired_mapped_extraction;
 mod retired_native_runtime;
 mod seam5_retired;

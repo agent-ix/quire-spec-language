@@ -577,6 +577,8 @@ pub struct AnalyzeItem<'a> {
     disposition: Disposition,
     diagnostic: Option<Diagnostic>,
     work: Option<Work<'a>>,
+    /// The caller's requiredness for this request index (FR-507-AC-5).
+    required: bool,
 }
 
 impl<'a> AnalyzeItem<'a> {
@@ -598,6 +600,7 @@ impl<'a> AnalyzeItem<'a> {
             disposition: Disposition::Supported(Candidate::new(BackendId::new(backend))),
             diagnostic: None,
             work: Some(Box::new(move |cancel, _| work(cancel))),
+            required: false,
         }
     }
 
@@ -619,6 +622,7 @@ impl<'a> AnalyzeItem<'a> {
             disposition: Disposition::Supported(Candidate::new(BackendId::new(backend))),
             diagnostic: None,
             work: Some(Box::new(work)),
+            required: false,
         }
     }
 
@@ -638,6 +642,7 @@ impl<'a> AnalyzeItem<'a> {
             disposition: Disposition::Unsupported,
             diagnostic: Some(unsupported_kind(kind)),
             work: None,
+            required: false,
         }
     }
 
@@ -673,6 +678,25 @@ impl<'a> AnalyzeItem<'a> {
     ) -> Self {
         self.family = crate::claim_family::claim_family(package, item_kind, claim);
         self
+    }
+
+    /// This item with the caller's requiredness for its request index. The
+    /// item's identity and position are unchanged; an item is optional until
+    /// this says otherwise.
+    #[must_use]
+    pub fn required(mut self, required: bool) -> Self {
+        self.required = required;
+        self
+    }
+
+    /// The caller's requiredness for this item's request index, to be read
+    /// before the item is consumed by [`analyze_items`] and joined to its
+    /// records by [`aggregate`].
+    pub fn requirement(&self) -> RequestRequirement {
+        RequestRequirement {
+            index: self.index,
+            required: self.required,
+        }
     }
 
     /// This item with the disposition the caller's negotiation settled it
@@ -825,6 +849,85 @@ pub fn analyze_items(
         .collect()
 }
 
+/// The caller's requiredness for one request index.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RequestRequirement {
+    /// The request index.
+    pub index: RequestIndex,
+    /// Whether complete aggregate success needs this item.
+    pub required: bool,
+}
+
+/// Whether complete aggregate success remains attainable (FR-507-AC-5).
+/// Complete success itself is a downstream result and is never granted here.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Aggregate {
+    /// Every required request index settled an FR-331 terminal record.
+    Attainable,
+    /// A required request index settled no terminal record (it was refused by
+    /// a disposition, for example `invalid_capability`/`inapplicable-kind`),
+    /// so complete success is out of reach. Names the first such index.
+    Unavailable {
+        /// The first required request index with no terminal record.
+        request_index: RequestIndex,
+    },
+}
+
+/// A request index the join of records to requirements cannot account for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum AggregateGap {
+    /// The same request index appears twice, among requirements or records.
+    #[error("request index {0:?} appears more than once")]
+    Duplicate(RequestIndex),
+    /// A requirement has no record.
+    #[error("request index {0:?} has no record")]
+    Missing(RequestIndex),
+    /// A record has no requirement.
+    #[error("request index {0:?} was not requested")]
+    Unexpected(RequestIndex),
+}
+
+/// Join `records` to the caller's `requirements` by request index and derive
+/// aggregate availability from the settled records, not from any
+/// pre-analysis disposition (FR-507-AC-5). An optional item never makes the
+/// aggregate unavailable. A duplicate, missing or unexpected index yields no
+/// aggregate.
+pub fn aggregate(
+    requirements: &[RequestRequirement],
+    records: &[AnalyzeRecord],
+) -> Result<Aggregate, AggregateGap> {
+    let mut required = std::collections::BTreeMap::new();
+    for requirement in requirements {
+        if required
+            .insert(requirement.index, requirement.required)
+            .is_some()
+        {
+            return Err(AggregateGap::Duplicate(requirement.index));
+        }
+    }
+    let mut settled = std::collections::BTreeMap::new();
+    for record in records {
+        if !required.contains_key(&record.request_index) {
+            return Err(AggregateGap::Unexpected(record.request_index));
+        }
+        if settled
+            .insert(record.request_index, record.terminal().is_some())
+            .is_some()
+        {
+            return Err(AggregateGap::Duplicate(record.request_index));
+        }
+    }
+    if let Some(index) = required.keys().find(|index| !settled.contains_key(index)) {
+        return Err(AggregateGap::Missing(*index));
+    }
+    Ok(required
+        .iter()
+        .find(|(index, needed)| **needed && !settled[*index])
+        .map_or(Aggregate::Attainable, |(index, _)| Aggregate::Unavailable {
+            request_index: *index,
+        }))
+}
+
 /// Analyze the negotiated items over one admitted checked-package subject
 /// (FR-281). The binding is admitted before any engine item runs.
 pub fn analyze(
@@ -954,6 +1057,7 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
         disposition,
         diagnostic,
         work,
+        required: _,
     } = item;
     let record = |settlement| AnalyzeRecord {
         request_index: index,
@@ -1398,42 +1502,51 @@ mod tests {
         }
     }
 
+    /// Items 0 (`operation-contract`, supported) and 1 (`finite-replay`,
+    /// inapplicable to a state claim), with item 1's requiredness set.
+    fn aggregate_pair<'a>(
+        calls: &'a std::cell::Cell<u32>,
+        second_required: bool,
+    ) -> Vec<AnalyzeItem<'a>> {
+        let work = move |_: &Cancel| {
+            calls.set(calls.get() + 1);
+            EngineReport::Refused(Refusal::Failed(CatalogCode::new(
+                "runtime_invariant",
+                "established-invariant-broken",
+            )))
+        };
+        vec![
+            AnalyzeItem::new(
+                RequestIndex::new(0),
+                Capability::OperationContract,
+                Some(DeclarationFamily::StateModel),
+                Mode::Bounded,
+                "test-all",
+                work,
+            )
+            .required(true),
+            AnalyzeItem::new(
+                RequestIndex::new(1),
+                Capability::FiniteReplay,
+                Some(DeclarationFamily::StateModel),
+                Mode::Bounded,
+                "test-all",
+                work,
+            )
+            .required(second_required),
+        ]
+    }
+
     #[trace("TC-1302", "FR-507-AC-5")]
     #[test]
     fn an_inapplicable_required_item_keeps_its_position_and_skips_engine_work() {
         let calls = std::cell::Cell::new(0);
-        let supported = AnalyzeItem::new(
-            RequestIndex::new(0),
-            Capability::OperationContract,
-            Some(DeclarationFamily::StateModel),
-            Mode::Bounded,
-            "test-all",
-            |_| {
-                calls.set(calls.get() + 1);
-                EngineReport::Refused(Refusal::Failed(CatalogCode::new(
-                    "runtime_invariant",
-                    "established-invariant-broken",
-                )))
-            },
-        );
-        let inapplicable = AnalyzeItem::new(
-            RequestIndex::new(1),
-            Capability::FiniteReplay,
-            Some(DeclarationFamily::StateModel),
-            Mode::Bounded,
-            "test-all",
-            |_| {
-                calls.set(calls.get() + 1);
-                EngineReport::Refused(Refusal::Failed(CatalogCode::new(
-                    "runtime_invariant",
-                    "established-invariant-broken",
-                )))
-            },
-        );
+        let items = aggregate_pair(&calls, true);
+        let requirements: Vec<_> = items.iter().map(AnalyzeItem::requirement).collect();
         let mut engines = Engines::default();
         engines.with(engine_all("test-all")).expect("one engine");
 
-        let records = analyze_items(&engines, vec![supported, inapplicable], &Cancel::new());
+        let records = analyze_items(&engines, items, &Cancel::new());
 
         assert_eq!(records.len(), 2);
         assert_eq!(records[0].request_index, RequestIndex::new(0));
@@ -1451,6 +1564,56 @@ mod tests {
             Some(CatalogCode::new("invalid_capability", "inapplicable-kind"))
         );
         assert_eq!(calls.get(), 1);
+        assert_eq!(
+            aggregate(&requirements, &records),
+            Ok(Aggregate::Unavailable {
+                request_index: RequestIndex::new(1)
+            })
+        );
+    }
+
+    #[trace("TC-1302", "FR-507-AC-5")]
+    #[test]
+    fn an_inapplicable_optional_item_leaves_the_aggregate_attainable() {
+        let calls = std::cell::Cell::new(0);
+        let items = aggregate_pair(&calls, false);
+        let requirements: Vec<_> = items.iter().map(AnalyzeItem::requirement).collect();
+        let mut engines = Engines::default();
+        engines.with(engine_all("test-all")).expect("one engine");
+
+        let records = analyze_items(&engines, items, &Cancel::new());
+
+        assert_eq!(calls.get(), 1);
+        assert_eq!(
+            aggregate(&requirements, &records),
+            Ok(Aggregate::Attainable)
+        );
+    }
+
+    #[trace("TC-1302", "FR-507-AC-5")]
+    #[test]
+    fn the_aggregate_rejects_duplicate_missing_and_unexpected_indices() {
+        let calls = std::cell::Cell::new(0);
+        let items = aggregate_pair(&calls, false);
+        let requirements: Vec<_> = items.iter().map(AnalyzeItem::requirement).collect();
+        let mut engines = Engines::default();
+        engines.with(engine_all("test-all")).expect("one engine");
+        let mut records = analyze_items(&engines, items, &Cancel::new());
+        let last = records.pop().expect("two records");
+
+        assert_eq!(
+            aggregate(&requirements, &records),
+            Err(AggregateGap::Missing(RequestIndex::new(1)))
+        );
+        assert_eq!(
+            aggregate(&requirements[..1], &[records.remove(0), last]),
+            Err(AggregateGap::Unexpected(RequestIndex::new(1)))
+        );
+        let doubled = [requirements[0], requirements[0]];
+        assert_eq!(
+            aggregate(&doubled, &[]),
+            Err(AggregateGap::Duplicate(RequestIndex::new(0)))
+        );
     }
 
     #[trace("TC-1302", "FR-507-AC-3")]
