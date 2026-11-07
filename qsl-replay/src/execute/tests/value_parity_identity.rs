@@ -52,7 +52,12 @@ fn retained_request(source: &str, function: &str, value: i64) -> ReplayRequestWi
         name(&[function]),
         input(located.site.parameters[0].1.clone(), value),
     );
-    assert_eq!(wire.package.descriptor().unwrap().name, "fixture");
+    assert_eq!(
+        ReplayRequest::decode(wire.clone(), ReplayLimits::default())
+            .unwrap()
+            .package_name(),
+        "fixture"
+    );
     wire.replay_target =
         crate::RequestTargetWire::function(name(&[function]), located.site.declaration.clone());
     if let Some(parity) = &located.site.value_parity {
@@ -427,7 +432,9 @@ fn tc_1252_the_supplied_ceilings_bind_into_the_claim() {
 /// its byte provision consistent so the request still decodes.
 fn make_unrecompilable(wire: &mut ReplayRequestWire) {
     let bytes = b"this is not a unit";
-    let (authority, identity) = wire.package.descriptor().unwrap().sources[0].clone();
+    let request = ReplayRequest::decode(wire.clone(), ReplayLimits::default()).unwrap();
+    let source = &request.sources()[0];
+    let (authority, identity) = (source.authority().to_owned(), source.identity().to_owned());
     wire.byte_provision = vec![(authority, identity, bytes.to_vec())];
 }
 

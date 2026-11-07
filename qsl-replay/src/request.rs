@@ -972,7 +972,7 @@ pub(crate) fn mutate_raw_package(
     let bytes = serde_json::to_vec(&value).unwrap();
     let document = quire_canonical::read(&bytes, u64::MAX).unwrap();
     let bytes =
-        quire_canonical::to_vec(&document.root(), quire_canonical::Limits::default()).unwrap();
+        quire_canonical::to_vec(&document.root(), quire_canonical::Limits::new(u64::MAX)).unwrap();
     ReplayPackage::read(&bytes, u64::MAX).unwrap()
 }
 

@@ -77,8 +77,11 @@ fn with_sources(bytes: &[u8], sources: Vec<(String, String)>) -> qsl_replay::Rep
     );
     let encoded = serde_json::to_vec(&package).unwrap();
     let document = quire_canonical::read(&encoded, ReplayLimits::default().input_bytes).unwrap();
-    let bytes =
-        quire_canonical::to_vec(&document.root(), quire_canonical::Limits::default()).unwrap();
+    let bytes = quire_canonical::to_vec(
+        &document.root(),
+        quire_canonical::Limits::new(ReplayLimits::default().input_bytes),
+    )
+    .unwrap();
     qsl_replay::ReplayPackage::read(&bytes, ReplayLimits::default().input_bytes).unwrap()
 }
 

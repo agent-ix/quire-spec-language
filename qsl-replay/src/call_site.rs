@@ -1050,13 +1050,13 @@ mod tests {
             std::iter::empty::<&[u8]>(),
             &DependencyInput::default(),
             crate::StageLimits::default(),
-            ReplayLimits::default(),
+            crate::ReplayLimits::default(),
         )
         .expect("actual source package");
         ReplayRequestWire {
             package: crate::ReplayPackage::read(
                 package.bytes(),
-                ReplayLimits::default().input_bytes,
+                crate::ReplayLimits::default().input_bytes,
             )
             .unwrap(),
             profile_selections: vec![],
@@ -1100,7 +1100,7 @@ mod tests {
                 value: crate::witness::WitnessValue::Integer(3),
             }],
         );
-        let result = crate::replay(request, crate::ReplayLimits::default());
+        let result = crate::replay(request, crate::crate::ReplayLimits::default());
         assert!(
             result.is_ok(),
             "call_site's node id for x must be the one replay accepts: {result:?}"
