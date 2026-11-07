@@ -141,7 +141,7 @@ an alias of the slot under which the source route finds its `protocol_locations`
 rows; the two routes name one slot by one triple, and the origin they pair rows
 under is a consequence of the slot, not a second identity.
 
-A site name with no span (every slot kind but a `visible` entry) is built from the
+A site name with no span (every slot kind but a `visible` entry and a `repeat` guard, which keeps its span-named `decision` origin) is built from the
 node as FR-383's registry states, and the bytes route builds it that way. A case
 guard `cases.guard[i]` is named by the label of the case at position `i` of the
 node's `cases` (`protocol <P> run <path> case <label> guard`), and a `related` end
@@ -149,7 +149,7 @@ node's `cases` (`protocol <P> run <path> case <label> guard`), and a `related` e
 (`protocol <P> run <path> related <i> from`, `... related <i> to`; QSpec
 FR-322-AC-388). A slot whose root holds an application and whose built name has no
 row refuses `MissingLocationProjection` at the `Node` locus of the root
-(FR-390-AC-35). A `visible` entry, the one span-named slot, has its origin resolved
+(FR-390-AC-35). A `visible` entry or `repeat` guard, the span-named slots, has its origin resolved
 from the package as follows, and the resolution is a function of the package bytes
 alone:
 

@@ -118,7 +118,7 @@ mod layer;
 mod lowering;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
-pub use lowering::{protocol_site, ProtocolSite};
+pub use lowering::{protocol_site, ProtocolSite, RelatedSide};
 mod hybrid;
 mod hyper_clause;
 mod node_key;
@@ -5991,7 +5991,8 @@ impl PackageDeclarations {
             model_correspondence,
             identities,
             binders,
-            lowered_protocol_members,
+            mut lowered_protocol_members,
+            lowered_related_renames,
         ) = (
             lowered.graph,
             lowered.equality_producer_data,
@@ -6001,7 +6002,53 @@ impl PackageDeclarations {
             lowered.functions,
             lowered.binders,
             lowered.protocol_members,
+            lowered.related_renames,
         );
+        // QSpec FR-322-AC-388: a `related` end is named by its record's
+        // position in the emitted array, which lowering fixed by sorting and
+        // collapsing the records. Locate the end under that name now, in its
+        // checked body, its recorded occurrences and its expression
+        // bindings, so every route reads one `Location`.
+        let related_renames: BTreeMap<String, String> = lowered_related_renames
+            .into_iter()
+            .filter_map(|(location, name)| match location.origin {
+                Origin::TypeDeclaration { name: held } => Some((held, name)),
+                _ => None,
+            })
+            .collect();
+        if !related_renames.is_empty() {
+            let moved = |location: &Location| match &location.origin {
+                Origin::TypeDeclaration { name } => related_renames.get(name).map(|renamed| {
+                    Location::at(
+                        Origin::TypeDeclaration {
+                            name: renamed.clone(),
+                        },
+                        &location.path(),
+                    )
+                }),
+                _ => None,
+            };
+            occurrences.relocate(moved);
+            for checked in &mut checked_protocols {
+                for related in &mut checked.slots.related {
+                    for end in &mut related.ends {
+                        end.relocate(moved);
+                    }
+                }
+            }
+            for members in lowered_protocol_members.values_mut() {
+                for expression in &mut members.expressions {
+                    if let Some(location) = moved(&expression.location) {
+                        expression.location = location;
+                    }
+                }
+            }
+            for (held, renamed) in &related_renames {
+                if let Some(spans) = site_spans.remove(held) {
+                    site_spans.entry(renamed.clone()).or_insert(spans);
+                }
+            }
+        }
         // FR-218: bind each already-checked predicate join to its function
         // node key after the function declarations have been lowered.
         for checked_index in protocol_places.iter().flatten().copied() {
@@ -8970,11 +9017,7 @@ fn register_protocol_sites(
         .map(|choice| {
             (
                 choice.declaration,
-                choice
-                    .visible
-                    .iter()
-                    .chain(choice.cases.iter().map(|case| &case.guard))
-                    .collect::<Vec<_>>(),
+                choice.visible.iter().collect::<Vec<_>>(),
             )
         })
         .chain(protocol.repeats.iter().map(|repeat| {
@@ -9007,6 +9050,23 @@ fn register_protocol_sites(
                     entry.spans.clone(),
                 );
             }
+        }
+    }
+    for choice in &protocol.choices {
+        let Some(control) = checked
+            .controls
+            .control(protocol_clause::ProtocolNodeId(choice.declaration))
+        else {
+            continue;
+        };
+        for case in &choice.cases {
+            site_spans.insert(
+                protocol_site(
+                    name,
+                    ProtocolSite::CaseGuard(&control.path, &case.name.name),
+                ),
+                case.guard.spans.clone(),
+            );
         }
     }
     let Some((finish, finish_name)) = &checked.finish else {
