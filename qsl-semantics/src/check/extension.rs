@@ -11,9 +11,7 @@
 //!
 //! A clause's type is a core `type-ref`, read by the production a function
 //! parameter's type uses. A type that names a node kind of the catalog is
-//! refused `unsupported_construct`/`not-yet-implemented` (QSpec FR-467
-//! "Members" names the node-kind alternative, and neither it nor FR-354 says
-//! what source expression denotes another extension's node).
+//! checked as that node kind's declaration reference.
 
 use qsl_forms::{
     parse_type_text, BuiltinType, ClauseKind, ExprNode, ExpressionForm, ExtensionClauseForm,
@@ -316,6 +314,8 @@ fn refuse_cycles(forms: &[ExtensionForm], checked: &mut Checked) {
 enum ClauseType {
     /// A core type, with the bare scalar node a scalar word is typed at.
     Value(ValueType, Option<&'static str>),
+    /// A bare `Rational` or `Decimal` word, with its bare scalar node.
+    Unbounded(&'static str, &'static str),
     /// A node kind of a held extension.
     NodeKind(String),
     /// A spelling outside the v1 set.
@@ -459,6 +459,22 @@ impl Builder<'_, '_, '_> {
             ClauseType::NodeKind(node_kind) => {
                 return self.node_kind_clause(clause, &node_kind, &location, span)
             }
+            ClauseType::Unbounded(word, scalar) => {
+                match self.unbounded_type(clause, word, &location) {
+                    Ok(inferred) => (inferred, Some(scalar)),
+                    Err(actual) => {
+                        return Err(refusal(
+                            self.index,
+                            ExtensionCause::TypeMismatch {
+                                clause: clause.name.name.clone(),
+                                span,
+                                expected: production_clause.type_ref.clone(),
+                                actual,
+                            },
+                        ))
+                    }
+                }
+            }
             ClauseType::Unsupported => {
                 let actual = self.actual_type(clause, &location);
                 return Err(refusal(
@@ -524,6 +540,55 @@ impl Builder<'_, '_, '_> {
         }
     }
 
+    /// The type a bare `Rational` or `Decimal` clause value has: the words
+    /// are unbounded, so the value's own inferred type stands as the
+    /// expected type, provided it is of that scalar. `Err` carries the
+    /// value's actual spelling.
+    fn unbounded_type(
+        &mut self,
+        clause: &ExtensionClauseForm,
+        word: &str,
+        location: &Location,
+    ) -> Result<ValueType, String> {
+        // A `rational(n, d)` or `decimal(c, s)` literal takes its type from
+        // an expected domain, so the domain it needs stands as its own.
+        let hint = match self.value_root(clause) {
+            ExprNode::Rational(numerator, denominator) if word == "Rational" => Some(format!(
+                "Rational[-{n}, {n}; 1, {d}]",
+                n = numerator.abs(),
+                d = denominator.abs().max(quire_exact::Integer::from(1_i64)),
+            )),
+            ExprNode::DecimalValue { coefficient, scale } if word == "Decimal" => Some(format!(
+                "Decimal[-{c}, {c}; 0, {scale}; nearest-even]",
+                c = coefficient.abs(),
+            )),
+            _ => None,
+        };
+        if let Some(spelling) = hint {
+            return parse_type_text(&spelling)
+                .ok()
+                .and_then(|form| {
+                    resolve_type_form(&self.input.scope.in_source(None), &form, location).ok()
+                })
+                .ok_or_else(|| "unknown".to_owned());
+        }
+        let mut used = *self.nodes;
+        let mut typer = Self::typer(self.input, &mut used, self.cx);
+        let inferred = typer
+            .infer(&clause.value.expression, None, location)
+            .map(|body| body.root().value_type().clone());
+        match inferred {
+            Ok(value_type @ ValueType::Rational(_)) if word == "Rational" => Ok(value_type),
+            Ok(value_type @ ValueType::Decimal(_)) if word == "Decimal" => Ok(value_type),
+            Ok(other) => Err(spelling(&other)),
+            Err(_) => Err("unknown".to_owned()),
+        }
+    }
+
+    fn value_root<'c>(&self, clause: &'c ExtensionClauseForm) -> &'c ExprNode {
+        clause.value.expression.root().node()
+    }
+
     /// The type the clause value has on its own, in the core's spelling.
     fn actual_type(&mut self, clause: &ExtensionClauseForm, location: &Location) -> String {
         let mut used = *self.nodes;
@@ -546,24 +611,11 @@ impl Builder<'_, '_, '_> {
             return ClauseType::Value(value_type, scalar);
         }
         // IR's reader matches `Rational` and `Decimal` as scalar words too;
-        // the core has no unbounded type of either, so the widest bounds
-        // stand for them and the subnode is typed at the bare scalar.
-        let wide = match type_ref {
-            "Rational" => Some((
-                "Rational[-1000000000000000000, 1000000000000000000; 1, 1000000000000000000]",
-                "rational",
-            )),
-            "Decimal" => Some(("Decimal[-1000000, 1000000; 0, 6; nearest-even]", "decimal")),
-            _ => None,
-        };
-        if let Some((spelling, scalar)) = wide {
-            let resolved = parse_type_text(spelling).ok().and_then(|form| {
-                resolve_type_form(&self.input.scope.in_source(None), &form, location).ok()
-            });
-            return match resolved {
-                Some(value_type) => ClauseType::Value(value_type, Some(scalar)),
-                None => ClauseType::Unsupported,
-            };
+        // bare, they are unbounded and the value's own type stands.
+        match type_ref {
+            "Rational" => return ClauseType::Unbounded("Rational", "rational"),
+            "Decimal" => return ClauseType::Unbounded("Decimal", "decimal"),
+            _ => {}
         }
         let Ok(form) = parse_type_text(type_ref) else {
             return ClauseType::Unsupported;
@@ -691,7 +743,7 @@ fn spelling(value_type: &ValueType) -> String {
 /// The checked type of a scalar word, matched lexically as Contract IR's
 /// reader matches it, and the bare scalar node a word the checked type does
 /// not distinguish is typed at. `Rational` and `Decimal` name no unbounded
-/// core type to check against and are not read.
+/// core type and are read apart, as [`ClauseType::Unbounded`].
 #[ix_trace_rs::string_edge]
 fn scalar_word(word: &str) -> Option<(ValueType, Option<&'static str>)> {
     let float = |width| ValueType::Float(FloatType::new(width, RoundingMode::Exact));
@@ -718,10 +770,20 @@ fn literal_outside(body: &CheckedBody, expected: &ValueType) -> Option<String> {
     let NodeKind::Coerce(operand, _) = root.kind() else {
         return None;
     };
-    let NodeKind::Literal(CheckedLiteral(Value::Integer(value))) = root.at(*operand).kind() else {
-        return None;
+    // A literal, or a literal under unary negation (`days: -1`).
+    let mut node = root.at(*operand);
+    let mut negated = false;
+    let magnitude = loop {
+        let inner = match node.kind() {
+            NodeKind::Literal(CheckedLiteral(Value::Integer(value))) => break value.clone(),
+            NodeKind::Negate(inner) => *inner,
+            _ => return None,
+        };
+        negated = !negated;
+        node = node.at(inner);
     };
-    let inside = *target.lower() <= *value && *value <= *target.upper();
+    let value = if negated { magnitude.neg() } else { magnitude };
+    let inside = *target.lower() <= value && value <= *target.upper();
     (!inside).then(|| format!("Int[{value}, {value}]"))
 }
 

@@ -75,10 +75,13 @@ pub fn parse_type_text(text: &str) -> Result<TypeForm, ClauseTextRefusal> {
     let mut forms = forms.into_iter();
     match (forms.next(), forms.next()) {
         (Some(parsed), None) => match parsed.into_form() {
-            DeclarationForm::Function(function) => match function.parameters.into_iter().next() {
-                Some((_, value_type)) => Ok(value_type),
-                None => Err(ClauseTextRefusal::NotOneExpression),
-            },
+            DeclarationForm::Function(function) => {
+                let mut parameters = function.parameters.into_iter();
+                match (parameters.next(), parameters.next()) {
+                    (Some((_, value_type)), None) => Ok(value_type),
+                    _ => Err(ClauseTextRefusal::NotOneExpression),
+                }
+            }
             _ => Err(ClauseTextRefusal::NotOneExpression),
         },
         _ => Err(ClauseTextRefusal::NotOneExpression),

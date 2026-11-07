@@ -116,6 +116,18 @@ pub struct HeldExtensions {
 }
 
 impl HeldExtensions {
+    /// The extensions held by any of `sets`, one entry per definition.
+    pub fn union<'a>(sets: impl IntoIterator<Item = &'a HeldExtensions>) -> Self {
+        let mut held = BTreeMap::new();
+        for set in sets {
+            for (definition, extension) in &set.held {
+                held.entry(definition.clone())
+                    .or_insert_with(|| extension.clone());
+            }
+        }
+        Self { held }
+    }
+
     /// The held extension `definition` names, if it was selected and passed
     /// validation.
     pub fn get(&self, definition: &DefinitionRef) -> Option<&HeldExtension> {
@@ -209,7 +221,7 @@ pub enum MissingMember {
         keyword: String,
     },
     /// A schema member that is not exactly the FR-467 shape: a member the
-    /// shape lacks or does not name.
+    /// shape lacks.
     SchemaShape(String),
 }
 
@@ -247,6 +259,8 @@ pub enum ConflictWith {
 pub enum ExtensionCause {
     /// `invalid_package`: FR-467 rule 1.
     MissingMember,
+    /// `invalid_package`: a member FR-467 does not name.
+    UnknownMember,
     /// `invalid_package`: FR-467 rule 2.
     ConflictingDefinition,
     /// `invalid_package`: FR-467 rule 3.
@@ -266,6 +280,7 @@ impl ExtensionCause {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::MissingMember => "missing-member",
+            Self::UnknownMember => "unknown-member",
             Self::ConflictingDefinition => "conflicting-definition",
             Self::DefinitionCycle => "definition-cycle",
             Self::UnsupportedSelection => "unsupported-selection",
@@ -277,9 +292,10 @@ impl ExtensionCause {
     /// The code the cause is catalogued under.
     pub fn code(self) -> Code {
         match self {
-            Self::MissingMember | Self::ConflictingDefinition | Self::DefinitionCycle => {
-                Code::InvalidPackage
-            }
+            Self::MissingMember
+            | Self::UnknownMember
+            | Self::ConflictingDefinition
+            | Self::DefinitionCycle => Code::InvalidPackage,
             Self::UnsupportedSelection => Code::UnknownProfile,
             Self::MissingSelection => Code::MissingImport,
             Self::ConflictingAuthority => Code::AmbiguousDeclaration,
@@ -318,6 +334,14 @@ pub enum ExtensionRefusal {
         /// What is missing.
         member: MissingMember,
     },
+    /// A schema member FR-467 does not name.
+    #[error("extension {definition:?} has an unknown member: {detail}")]
+    UnknownMember {
+        /// The definition.
+        definition: DefinitionRef,
+        /// The reader's description of the member.
+        detail: String,
+    },
     /// Rule 2: a leading keyword or node kind collides.
     #[error("extension {definition:?} {kind:?} `{name}` collides with {with:?}")]
     ConflictingDefinition {
@@ -343,6 +367,7 @@ impl ExtensionRefusal {
             Self::MissingDependency { .. } => ExtensionCause::MissingSelection,
             Self::ConflictingAuthority { .. } => ExtensionCause::ConflictingAuthority,
             Self::MissingMember { .. } => ExtensionCause::MissingMember,
+            Self::UnknownMember { .. } => ExtensionCause::UnknownMember,
             Self::ConflictingDefinition { .. } => ExtensionCause::ConflictingDefinition,
             Self::DefinitionCycle(_) => ExtensionCause::DefinitionCycle,
         }
@@ -374,11 +399,22 @@ impl DefinitionCatalog {
                     definition: definition.exact().clone(),
                     member,
                 })?;
-            let checked =
-                strict_definition(definition).map_err(|error| ExtensionRefusal::MissingMember {
-                    definition: definition.exact().clone(),
-                    member: MissingMember::SchemaShape(error.to_string()),
-                })?;
+            let checked = strict_definition(definition).map_err(|error| {
+                let message = error.to_string();
+                // `deny_unknown_fields` is the one failure that is not a
+                // lacking member.
+                if message.starts_with("unknown field") {
+                    ExtensionRefusal::UnknownMember {
+                        definition: definition.exact().clone(),
+                        detail: message,
+                    }
+                } else {
+                    ExtensionRefusal::MissingMember {
+                        definition: definition.exact().clone(),
+                        member: MissingMember::SchemaShape(message),
+                    }
+                }
+            })?;
             held.push(HeldExtension {
                 definition: definition.exact().clone(),
                 productions,

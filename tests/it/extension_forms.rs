@@ -223,6 +223,8 @@ fn a_clause_value_of_the_wrong_type_refuses_ill_typed_naming_the_clause_and_both
     assert_eq!(clause, "days");
     assert_eq!(expected, "Int[1, 3650]");
     assert_eq!(actual, "Text");
+    assert_eq!(refusal.code(), Code::IllTyped);
+    assert_eq!(refusal.cause(), Some("type-mismatch"));
     let source = format!("{HEADER}{declaration}\n");
     let at = source.find("\"thirty\"").expect("the value");
     assert_eq!((span.start, span.end), (at, at + "\"thirty\"".len()));
@@ -356,7 +358,12 @@ fn the_declared_name_and_clause_values_enter_the_ids_and_the_span_enters_none() 
 #[trace("TC-882", "FR-354-AC-2")]
 #[test]
 fn an_integer_outside_the_declared_range_refuses_naming_the_clause_and_both_ranges() {
-    for (days, actual) in [("0", "Int[0, 0]"), ("3651", "Int[3651, 3651]")] {
+    for (days, actual) in [
+        ("0", "Int[0, 0]"),
+        ("3651", "Int[3651, 3651]"),
+        ("-1", "Int[-1, -1]"),
+        ("-3651", "Int[-3651, -3651]"),
+    ] {
         let declaration = format!("retention Audit {{ subject: \"audit\", days: {days} }}");
         let refusal = compile(&held("retention"), &declaration).expect_err("out of range");
         let ExtensionCause::TypeMismatch {
@@ -387,6 +394,99 @@ fn a_type_spelling_outside_the_v1_reader_refuses_naming_the_spelling() {
     };
     assert_eq!(clause, "days");
     assert_eq!(expected, "Sequence<Integer>");
+}
+
+#[trace("TC-882", "FR-354-AC-2")]
+#[test]
+fn a_type_spelling_with_trailing_text_refuses_naming_the_spelling() {
+    let spelling = "Int[1, 3650], y: Boolean";
+    let refusal = compile(&held_typed("retention", spelling), FORM).expect_err("trailing text");
+    let ExtensionCause::TypeMismatch { expected, .. } = refusal_cause(&refusal) else {
+        panic!("expected a type mismatch, got {refusal:?}");
+    };
+    assert_eq!(expected, spelling);
+}
+
+/// Two units of one package, each parsed against the extension `catalog`
+/// holds, through S1 to S4.
+fn compile_two_units(
+    catalog: &DefinitionCatalog,
+    sources: [&str; 2],
+) -> Result<(), Box<CompileRefusal>> {
+    let limits = SpineLimits::default();
+    let cancel = Cancel::new();
+    let refusal = |failure| {
+        qsl_replay::spine::refusal_or_fault(failure)
+            .unwrap_or_else(|fault| panic!("the front end faulted: {fault:?}"))
+    };
+    let identities = [
+        SourceIdentity::new("test", "extension-forms:u1"),
+        SourceIdentity::new("test", "extension-forms:u2"),
+    ];
+    let mut parsed = Vec::new();
+    for (identity, text) in identities.iter().zip(sources) {
+        parsed.push(
+            parse_selecting_extensions(
+                &ParseRequest {
+                    source: identity,
+                    path: identity.identity.as_str(),
+                    bytes: format!("{HEADER}{text}\n").as_bytes(),
+                },
+                ProfileCatalogInput {
+                    catalog,
+                    limits: CatalogLimits::default(),
+                },
+                limits.source,
+                &cancel,
+            )
+            .map_err(refusal)?
+            .into_value(),
+        );
+    }
+    let dependencies = DependencyInput::default();
+    let admitted = qsl_replay::spine::admit_parsed_unit_list(parsed, &dependencies)?;
+    let models = qsl_replay::spine::select_units(
+        &admitted,
+        &qsl_semantics::model::intake::PackageInput::default(),
+        limits.model,
+        limits.source,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
+    qsl_replay::spine::check_units(
+        &admitted,
+        "extension-forms".to_owned(),
+        &models,
+        &dependencies,
+        limits,
+        &cancel,
+    )
+    .map_err(refusal)?;
+    Ok(())
+}
+
+#[trace("TC-882", "FR-354-AC-1")]
+#[test]
+fn a_multi_unit_package_checks_each_units_extension_forms() {
+    let catalog = held("retention");
+    compile_two_units(
+        &catalog,
+        [FORM, "retention Other { subject: \"o\", days: 5 }"],
+    )
+    .expect("both units' forms admit");
+    let refusal = compile_two_units(
+        &catalog,
+        [FORM, "retention Other { subject: \"o\", days: \"five\" }"],
+    )
+    .expect_err("the second unit's form is checked, not unheld");
+    assert!(
+        matches!(
+            refusal_cause(&refusal),
+            ExtensionCause::TypeMismatch { clause, .. } if clause == "days"
+        ),
+        "{refusal:?}"
+    );
 }
 
 /// An extension of `agent-ix`/`identity` with one clause-less `keyword` form.
@@ -655,6 +755,14 @@ fn an_extension_form_and_a_record_of_one_name_refuse_ambiguous_name() {
     .expect_err("one name, two declarations");
     assert_eq!(refusal.code(), Code::AmbiguousDeclaration);
     assert_eq!(refusal.cause(), Some("ambiguous-name"));
+    // The same refusal whichever declaration comes first.
+    let reversed = compile(
+        &node_kind_catalog(),
+        &format!("record Audit {{ n: Integer; }}\n{FORM}"),
+    )
+    .expect_err("one name, two declarations");
+    assert_eq!(reversed.code(), Code::AmbiguousDeclaration);
+    assert_eq!(reversed.cause(), Some("ambiguous-name"));
 }
 
 fn extension_causes(refusal: &CompileRefusal) -> Vec<&ExtensionCause> {
@@ -677,7 +785,7 @@ fn refusal_cause_first(refusal: &CompileRefusal) -> &ExtensionCause {
 #[trace("TC-884", "FR-354-AC-3")]
 #[test]
 fn the_core_vocabulary_holds_every_keyword_s2_dispatches_on_and_every_node_tag() {
-    let vocabulary = core_vocabulary("1-draft");
+    let vocabulary = core_vocabulary();
     let keywords: Vec<_> = qsl_forms::leading_keywords().collect();
     assert!(!keywords.is_empty());
     for keyword in keywords {
@@ -753,5 +861,34 @@ fn rational_and_decimal_are_bare_clause_words() {
             .unwrap()
             .len(),
         2
+    );
+}
+
+#[trace("TC-882", "FR-354-AC-7")]
+#[test]
+fn bare_rational_and_decimal_are_unbounded_and_still_refuse_another_type() {
+    let clauses = [("q", "Rational"), ("d", "Decimal")];
+    compile(
+        &scalar_extension(&clauses),
+        "retention F { q: rational(1, 3000000000000000000000), d: decimal(15000000, 1) }",
+    )
+    .expect("a bare word has no bound to exceed");
+    let refusal = compile(
+        &scalar_extension(&clauses),
+        "retention F { q: true, d: decimal(1, 1) }",
+    )
+    .expect_err("Boolean is not a Rational");
+    let ExtensionCause::TypeMismatch {
+        clause,
+        expected,
+        actual,
+        ..
+    } = refusal_cause(&refusal)
+    else {
+        panic!("expected a type mismatch, got {refusal:?}");
+    };
+    assert_eq!(
+        (clause.as_str(), expected.as_str(), actual.as_str()),
+        ("q", "Rational", "Boolean")
     );
 }
