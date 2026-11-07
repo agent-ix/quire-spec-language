@@ -22,7 +22,7 @@ use super::syntax::{
     ExactValueForm, ExactValueKind, ExprId, ExprNode, Expression, ExpressionBuilder,
     FieldInitializer, FunctionDeclaration, NameForm, PopulationForm, QuantityForm, RatioNumberForm,
     RatioNumberKind, RatioTermForm, RecordFieldForm, RecordForm, StepLabelForm, StringLiteral,
-    TermOperator, TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
+    TermOperator, TupleForm, TypeForm, TypeFormHead, UnitForm, UnitTermForm, UsingAlias,
 };
 use qsl_cst::{CstElement, CstNode, CstToken, LosslessCst, Production, TokenClass, TokenKind};
 use qsl_foundation::Span;
@@ -684,7 +684,7 @@ fn type_head(cst: &LosslessCst, node: &CstNode) -> Result<TypeForm, FormsRefusal
                 )),
                 _ => return Err(unexpected(term)),
             };
-            terms.push(crate::UnitTermForm {
+            terms.push(UnitTermForm {
                 name: name_form(cst, only(&parts, Production::QualifiedName, term)?)?,
                 exponent,
             });
