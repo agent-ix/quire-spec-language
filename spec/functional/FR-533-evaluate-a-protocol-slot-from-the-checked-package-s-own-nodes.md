@@ -179,6 +179,14 @@ named by their place in the node, so two cases whose guards are one expression,
 or two ends that are one expression, each pair with their own case's or end's
 rows whatever the label order of the cases or the sorted order of the records,
 and the two routes give both slots equal `Location` values (FR-533-AC-13).
+A record's position exists only after lowering, so the checker locates a
+`related` end provisionally and lowering re-locates its checked term to the
+position name before `check` returns (FR-383 "Protocol term locations"). The
+in-process route therefore reads the `Location` of an application-rooted
+`related` end under `... related <i> from` or `... related <i> to` from the
+checked package, the bytes route reads it from the rows of that origin, and the
+two are equal; neither route returns a provisional span-named origin
+(FR-533-AC-21).
 
 In TC-1070 fixture L, `Decide` is a `choice` with one visible entry and two cases:
 `case yes when { got.ready }` (written first) and `case no when { not got.ready }`
@@ -320,6 +328,7 @@ FR-520-AC-11 states.
 | FR-533-AC-18 | The equality witness of a slot call is decided over the equality applications the slot's walk reaches, that is the applications of the slot walk (FR-383) and, at each call in it, those of the called function's body walked the same way, transitively; a function body is the one place a valid package's dependency closure and the walk differ. In a unit compiled from source in which `trigger.guard` of a copy of fixture E calls a function whose body holds an `==` application, over a supply whose equality rows are omitted, `trigger.guard` refuses `MissingEqualityWitness` at `CallAdmissionLocus::Package` with the meter untouched, and over the rows the unit's handoff writes it evaluates to the in-process route's value and charge log; a slot of the same unit that calls no function holding `==` evaluates with the rows omitted. | Test (TC-1333) |
 | FR-533-AC-19 | The bare route evaluates **R**'s recovery predicates, whose `sum` comprehension reads the Collection member `receipts` of the record `Recovery`: `Full` (`sum(receipt in recovered.receipts: receipt) = target and not activated`) is true for receipts [2,3], target 5, not activated, and false for target 6, for activated, and holds for no receipts and target 0; `Partial` (`0 < sum(...) and sum(...) < target`) is true for receipts [1,2] and [4] with target 5, false for no receipts and for [5]. A `recovered` supply that is no `Recovery` record and a supply that omits `target` refuse as `CallFailure::Admission`. | Test (TC-1333) |
 | FR-533-AC-20 | A strictly admitted variant of **R** constructs `Shape::Circle(sum<M::Total>(receipt in recoveredFull.receipts: receipt))` and matches `Circle(r)` in `Full`'s recovery predicate. Matching, mismatching, empty and activated supplies produce the source route's Boolean values and ordered charges. The bare environment preserves the source union's original type handle, sealed declaration/member identities, member order and payload types; changing the payload changes the predicate, while adding an unrelated union leaves it unchanged. Missing required type projections refuse `MissingTypeRepresentation` before any charge. With `tuple Pair(Boolean, Boolean); union Unrelated { Other, Payload(Pair) }`, a slot that never reads `Unrelated` retains its value and ordered charges, while constructing and matching `Unrelated::Other` refuses `MissingTypeRepresentation` without charging or faulting. | Test (TC-1333) |
+| FR-533-AC-21 | Over the compiled two-record variant of fixture L (TC-1063 row L4e, FR-383-AC-64), in each source order of its two clauses, the in-process route and the bytes route give `Got.related.from[0]`, `Got.related.from[1]` and the `to` end that is a call equal values, equal charge logs and equal projected-root read `Location` values, that of `related.from[i]` being under `protocol Pipeline run Main Got related <i> from` and that of the call `to` end under `... related <k> to`, `k` its record's emitted position; the two `from` ends' `Location` values differ, and neither route returns a `Location` under a `related <start> <end>` origin. | Test (TC-1333) |
 
 ## Dependencies
 
@@ -351,8 +360,13 @@ FR-520-AC-11 states.
   names a case guard by its case label and a `related` end by its record position,
   in place of a source span. QSL writes those names (FR-383-AC-63) and the bytes
   route builds them ("Slot naming on the bytes route"), which closes FR-533-AC-13.
-  QSL-1706 tracks the code. The vectors of FR-533-AC-13 are on package copies
-  because no compiled unit can hold the condition.
+  A `related` end's name is fixed after lowering, by re-locating the end's checked
+  term (FR-383 "Protocol term locations", FR-383-AC-64, FR-533-AC-21); until that
+  code lands the source route keeps the provisional span-named origin for an
+  application-rooted end and FR-533-AC-13's `related` half and FR-533-AC-21 are
+  unmet. QSL-1706 tracks the code. The case-guard vectors of FR-533-AC-13 are on package
+  copies because no compiled unit holds two case guards with one walk; the
+  `related` half also holds on a compiled unit (FR-533-AC-21).
 - **Observation admission:** the type environment of FR-533's observation admission
   (the composites and object types an observation and a supply are admitted against)
   is built from the package's `model_root` nodes, the selected record views and the
