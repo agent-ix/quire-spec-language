@@ -21,8 +21,9 @@ from an integration test that names only `qsl_replay` crate-root items.
    document and assert its stage, code and message.
 2. Over a genuine decisive-witness record, change and remove the format
    identifier, set the basis to `maybe`, remove it, contradict the basis and
-   witness in both directions, add an unknown top-level and an unknown
-   disposition member, and malform the command-error shape. Assert the exact
+   witness in both directions, remove `usage` and the witness `index`, add a
+   witness to a non-witness record, an extra witness member, a `temporal`
+   disposition, an unknown top-level and an unknown disposition member, and malform the command-error shape. Assert the exact
    refusal variant and member named in FR-535-AC-2.
 3. Read the same valid document with `max_input_bytes` one below its length,
    and with a small `max_working_bytes`. Assert the input-byte limit and

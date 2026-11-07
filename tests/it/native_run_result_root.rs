@@ -149,6 +149,42 @@ fn tc_1340_root_api_refuses_invalid_documents() {
         matches!(refusal(&value), NativeRunReadError::MalformedMember { member, .. } if member == "disposition")
     );
 
+    // NR-06/NR-07 remainder.
+    let mut value = valid.clone();
+    value.as_object_mut().unwrap().remove("usage");
+    assert!(
+        matches!(refusal(&value), NativeRunReadError::MalformedMember { member, .. } if member == ".")
+    );
+    let mut value = valid.clone();
+    value["witness"].as_object_mut().unwrap().remove("index");
+    assert!(
+        matches!(refusal(&value), NativeRunReadError::Witness(error) if format!("{error:?}") == "MissingIndex")
+    );
+    let mut value = valid.clone();
+    value["witness"]["extra"] = json!(1);
+    assert!(
+        matches!(refusal(&value), NativeRunReadError::MalformedMember { member, .. } if member == "witness.extra")
+    );
+    let mut value = valid.clone();
+    value["disposition"]["temporal"] = json!({"kind": "holds"});
+    assert!(matches!(
+        refusal(&value),
+        NativeRunReadError::Invalid {
+            member: "witness",
+            ..
+        }
+    ));
+    let mut closed: Value =
+        serde_json::from_slice(&write_clause_run_result(&report()).unwrap()).unwrap();
+    closed["witness"] = valid["witness"].clone();
+    assert!(matches!(
+        refusal(&closed),
+        NativeRunReadError::Invalid {
+            member: "witness",
+            ..
+        }
+    ));
+
     // The malformed command-error shape.
     let mut malformed = command_error();
     malformed["details"] = json!({"phase": "profile"});
