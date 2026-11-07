@@ -143,11 +143,14 @@ pub(super) fn check_time_source_fields(
 #[cfg(test)]
 mod tests;
 
+mod charge;
+
 use qsl_foundation::SourceIdentity;
 use qsl_replay::MonitorSubject;
 use quire_contract_model::{
-    read_checked_package, CheckedPackageDispatchResult, CheckedPackageIncomplete,
-    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageV2,
+    read_checked_package, AdmissionBinding, CheckedPackageDispatchResult, CheckedPackageIncomplete,
+    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageV2, NativeJoinBudget,
+    NativeJoinCharge, NativeJoinDeniedCharge, NativeJoinLocus,
 };
 use quire_observation::authority::Limits as ProgressLimits;
 
@@ -169,9 +172,10 @@ pub struct PlanAuthoritySelection<'a> {
     pub observation_source: &'a Identity,
 }
 
-/// Caller-owned finite bounds for strict reading and both canonical values.
+/// Additional owner structural validation caps, passed through unchanged.
+/// These caps neither account for preparation nor replenish its native budget.
 #[derive(Clone, Copy, Debug)]
-pub struct PlanAuthorityLimits {
+pub struct PlanAuthorityValidationCaps {
     /// Bounds for admitting this final emission through the original IR reader.
     pub read: CheckedPackageReadLimits,
     /// Bounds for the canonical model-step order value.
@@ -201,6 +205,10 @@ pub enum PlanAuthorityRefusalCode {
     ReadRefused,
     /// The original strict package reader exhausted a caller bound.
     ReadIncomplete,
+    /// The caller's actual shared native preparation budget denied a charge.
+    Budget,
+    /// A paid temporary container could not reserve storage.
+    Allocation,
 }
 
 impl PlanAuthorityRefusalCode {
@@ -216,6 +224,8 @@ impl PlanAuthorityRefusalCode {
             Self::Progress,
             Self::ReadRefused,
             Self::ReadIncomplete,
+            Self::Budget,
+            Self::Allocation,
         ]
     }
 
@@ -231,6 +241,8 @@ impl PlanAuthorityRefusalCode {
             Self::Progress => "progress",
             Self::ReadRefused => "read_refused",
             Self::ReadIncomplete => "read_incomplete",
+            Self::Budget => "budget",
+            Self::Allocation => "allocation",
         }
     }
 
@@ -273,6 +285,21 @@ pub enum PlanAuthorityRefusal {
     /// The original strict reader exhausted its bound.
     #[error("the final emission read was incomplete: {0:?}")]
     ReadIncomplete(Box<CheckedPackageIncomplete>),
+    /// Original fixed-size native denial metadata; constructing this allocates nothing.
+    #[error("shared native preparation budget denied {denied:?}")]
+    Budget {
+        /// The original denied kind and full attempted amount.
+        denied: NativeJoinDeniedCharge,
+        /// The owner's original non-owning first-unpaid location.
+        locus: Option<NativeJoinLocus>,
+        /// The original configured limit for the denied resource.
+        configured_bound: u64,
+        /// All consumption admitted before this refusal.
+        consumed: NativeJoinCharge,
+    },
+    /// A previously paid temporary container reserve failed.
+    #[error(transparent)]
+    Allocation(#[from] std::collections::TryReserveError),
 }
 
 impl From<ModelStepOrderRefusal> for PlanAuthorityRefusal {
@@ -300,6 +327,8 @@ impl PlanAuthorityRefusal {
             Self::Progress(_) => PlanAuthorityRefusalCode::Progress,
             Self::ReadRefused(_) => PlanAuthorityRefusalCode::ReadRefused,
             Self::ReadIncomplete(_) => PlanAuthorityRefusalCode::ReadIncomplete,
+            Self::Budget { .. } => PlanAuthorityRefusalCode::Budget,
+            Self::Allocation(_) => PlanAuthorityRefusalCode::Allocation,
         }
     }
 }
@@ -344,6 +373,12 @@ impl AdmittedPlanAuthority {
         &self.package
     }
 
+    /// Clone the original IR admission capability of this emitting package.
+    /// A preparation caller accounts for the retained handle before acquiring it.
+    pub fn admission_binding(&self) -> AdmissionBinding {
+        self.package.admission_binding()
+    }
+
     /// The complete QSL-admitted canonical model-step order VALUE.
     pub fn admitted_order(&self) -> &[u8] {
         self.order.bytes()
@@ -370,13 +405,21 @@ impl PlanRoot {
         self,
         selection: PlanAuthoritySelection<'_>,
         progress: Option<progress::View>,
-        limits: PlanAuthorityLimits,
+        validation: PlanAuthorityValidationCaps,
+        budget: &mut NativeJoinBudget,
+        locus: NativeJoinLocus,
     ) -> Result<AdmittedPlanAuthority, PlanAuthorityRefusal> {
+        budget.resume();
+        let mut charge = charge::Charge { budget, locus };
+        charge.work(1)?;
         let progress = progress.ok_or(PlanAuthorityRefusal::MissingProgress)?;
-        if selection.source != self.checked_unit().source().identity() {
+        let original_source = self.checked_unit().source().identity();
+        if !charge.text(&selection.source.authority, &original_source.authority)?
+            || !charge.text(&selection.source.identity, &original_source.identity)?
+        {
             return Err(PlanAuthorityRefusal::Source);
         }
-        if selection.claim != self.plan().subject() {
+        if !charge.subject(selection.claim, self.plan().subject())? {
             return Err(PlanAuthorityRefusal::Claim);
         }
         let (_, source) = selected_time_source(&self)?;
@@ -429,7 +472,7 @@ impl PlanRoot {
             .ok_or(PlanAuthorityRefusal::FinalEmission)?;
         let package = match read_checked_package(
             self.emission().package().bytes(),
-            limits.read,
+            validation.read,
             self.emission().evidence(),
         ) {
             CheckedPackageDispatchResult::AdmittedV2(package) => package,
@@ -455,8 +498,8 @@ impl PlanRoot {
                 return Err(PlanAuthorityRefusal::FinalEmission);
             }
         }
-        let order = self.model_step_order(limits.order)?;
-        let progress_value = progress.association_canonical_bytes(limits.progress)?;
+        let order = self.model_step_order(validation.order)?;
+        let progress_value = progress.association_canonical_bytes(validation.progress)?;
         Ok(AdmittedPlanAuthority {
             root: self,
             package,

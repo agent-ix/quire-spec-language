@@ -5,8 +5,8 @@ mod observation;
 
 use ix_trace_rs::trace;
 use qsl_analyze::monitor_root::{
-    AdmittedPlanAuthority, PlanAuthorityLimits, PlanAuthorityRefusal, PlanAuthorityRefusalCode,
-    PlanAuthoritySelection, PlanRoot, ProgressSelectionRefusalCode,
+    AdmittedPlanAuthority, PlanAuthorityRefusal, PlanAuthorityRefusalCode, PlanAuthoritySelection,
+    PlanAuthorityValidationCaps, PlanRoot, ProgressSelectionRefusalCode,
 };
 use qsl_semantics::check::TimeSourceKind;
 use quire_exact::{Origin, Role};
@@ -14,14 +14,25 @@ use quire_observation::authority::{self, progress, SubjectSelection};
 
 use crate::monitor_root::{authored, root_of, target, LIMITS};
 
+fn native_budget() -> quire_contract_model::NativeJoinBudget {
+    quire_contract_model::NativeJoinBudget::new(100_000_000, 100_000_000)
+}
+
+fn native_locus() -> quire_contract_model::NativeJoinLocus {
+    quire_contract_model::NativeJoinLocus {
+        source: quire_contract_model::NativeJoinLocusSource::ReachedRow(37),
+        form: "qsl_authority_selection",
+    }
+}
+
 fn tick_root() -> PlanRoot {
     let text = authored("always (holds(c.versionNumber = 2) implies eventually[0 ms, 3 ms] holds(c.versionNumber = 3))")
         .replace("time M dense unit ms;", "time M tick M::ConfigVersion::attemptUpdate period 2 ms unit ms;");
     root_of(&text, "C", &target()).unwrap()
 }
 
-fn limits() -> PlanAuthorityLimits {
-    PlanAuthorityLimits {
+fn limits() -> PlanAuthorityValidationCaps {
+    PlanAuthorityValidationCaps {
         read: LIMITS,
         order: quire_canonical::Limits::new(1 << 20),
         progress: authority::Limits::owner_max(),
@@ -64,7 +75,7 @@ fn admit(
     root: PlanRoot,
     progress: Option<progress::View>,
     subject: &SubjectSelection,
-    limits: PlanAuthorityLimits,
+    limits: PlanAuthorityValidationCaps,
 ) -> Result<AdmittedPlanAuthority, PlanAuthorityRefusal> {
     let source = root.checked_unit().source().identity().clone();
     let claim = root.plan().subject().clone();
@@ -78,6 +89,8 @@ fn admit(
         },
         progress,
         limits,
+        &mut native_budget(),
+        native_locus(),
     )
 }
 
@@ -138,7 +151,7 @@ fn genuine_tick_authority_retains_complete_original_values_and_same_emission() {
             .clause(),
         declaration
     );
-    let binding = context.admitted_package().admission_binding();
+    let binding = context.admission_binding();
     assert!(context.admitted_package().clone().retains(&binding));
     let independent = match quire_contract_model::read_checked_package(
         context.root().emission().package().bytes(),
@@ -321,6 +334,8 @@ fn independent_source_subject_clock_and_foreign_emission_selections_refuse() {
             },
             Some(view),
             limits(),
+            &mut native_budget(),
+            native_locus(),
         );
         let error = result.unwrap_err();
         assert_eq!(error.code(), expected, "control {control}");
@@ -352,6 +367,8 @@ fn independent_source_subject_clock_and_foreign_emission_selections_refuse() {
             },
             Some(view),
             limits(),
+            &mut native_budget(),
+            native_locus(),
         )
         .unwrap_err();
     assert!(matches!(
@@ -472,11 +489,123 @@ fn changing_only_the_independent_checked_claim_node_role_or_ordinal_refuses_clai
                 },
                 Some(view),
                 limits(),
+                &mut native_budget(),
+                native_locus(),
             )
             .unwrap_err();
         assert!(
             matches!(error, PlanAuthorityRefusal::Claim),
             "control {control}: {error:?}"
         );
+    }
+}
+
+/// Selection-prefix evidence only; complete materialization accounting also
+/// requires the owner canonical preflight and retained association interfaces.
+#[trace("TC-1081", "FR-251-AC-49")]
+#[test]
+fn selection_prefix_pays_source_comparison_before_inspection_and_keeps_prior_charges() {
+    use quire_contract_model::{NativeJoinBudget, NativeJoinChargeKind};
+    for one_short in [false, true] {
+        let root = tick_root();
+        let (view, subject) = observation::admitted(Some(vec![row(&root)]));
+        let mut source = root.checked_unit().source().identity().clone();
+        source.authority = "other".to_owned();
+        let claim = root.plan().subject().clone();
+        // Eleven units belong to an earlier preparation phase; three cover
+        // this call's entry check and the first unequal byte pair.
+        let mut budget = NativeJoinBudget::new(if one_short { 13 } else { 14 }, 100);
+        let locus = native_locus();
+        budget
+            .accounted_charge(NativeJoinChargeKind::Work, 11, locus)
+            .unwrap();
+        let error = root
+            .admit_authority(
+                PlanAuthoritySelection {
+                    source: &source,
+                    claim: &claim,
+                    observation_subject: &subject,
+                    observation_clock: &observation::clock(),
+                    observation_source: &observation::source(),
+                },
+                Some(view),
+                limits(),
+                &mut budget,
+                locus,
+            )
+            .unwrap_err();
+        if one_short {
+            match error {
+                PlanAuthorityRefusal::Budget {
+                    denied,
+                    locus: first,
+                    configured_bound,
+                    consumed,
+                } => {
+                    assert_eq!(denied.kind, NativeJoinChargeKind::Work);
+                    assert_eq!(denied.amount, 2);
+                    assert_eq!(configured_bound, 13);
+                    assert_eq!(first, Some(locus));
+                    assert_eq!(consumed.work, 12);
+                    assert_eq!(budget.consumed(), consumed);
+                    assert_eq!(budget.first_unpaid(), Some(denied));
+                }
+                other => panic!("wrong shared-budget refusal: {other:?}"),
+            }
+        } else {
+            assert!(matches!(error, PlanAuthorityRefusal::Source));
+            assert_eq!(budget.consumed().work, 14);
+            assert_eq!(budget.first_unpaid(), None);
+        }
+        assert_eq!(budget.consumed().storage, 0);
+    }
+}
+
+#[trace("TC-1081", "FR-251-AC-49")]
+#[test]
+fn selection_prefix_denies_zero_remaining_storage_before_owning_a_walk_stack() {
+    use quire_contract_model::{NativeJoinBudget, NativeJoinChargeKind};
+    for prior_storage in [0, 3] {
+        let root = tick_root();
+        let (view, subject) = observation::admitted(Some(vec![row(&root)]));
+        let source = root.checked_unit().source().identity().clone();
+        let claim = root.plan().subject().clone();
+        let mut budget = NativeJoinBudget::new(10_000, prior_storage);
+        let locus = native_locus();
+        budget
+            .accounted_charge(NativeJoinChargeKind::Storage, prior_storage.into(), locus)
+            .unwrap();
+        let error = root
+            .admit_authority(
+                PlanAuthoritySelection {
+                    source: &source,
+                    claim: &claim,
+                    observation_subject: &subject,
+                    observation_clock: &observation::clock(),
+                    observation_source: &observation::source(),
+                },
+                Some(view),
+                limits(),
+                &mut budget,
+                locus,
+            )
+            .unwrap_err();
+        match error {
+            PlanAuthorityRefusal::Budget {
+                denied,
+                locus: first,
+                configured_bound,
+                consumed,
+            } => {
+                assert_eq!(denied.kind, NativeJoinChargeKind::Storage);
+                assert_eq!(denied.amount, 1);
+                assert_eq!(first, Some(locus));
+                assert_eq!(configured_bound, prior_storage);
+                assert_eq!(consumed.storage, prior_storage);
+                assert_eq!(budget.consumed(), consumed);
+                assert_eq!(budget.first_unpaid(), Some(denied));
+            }
+            other => panic!("walk storage was not precharged: {other:?}"),
+        }
     }
 }
