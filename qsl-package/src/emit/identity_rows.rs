@@ -68,6 +68,23 @@ impl Emission {
         package: &quire_contract_model::CheckedPackageV2,
         budget: &mut NativeJoinBudget,
     ) -> Result<ReadIdentityRows, IdentityFileRefusal> {
+        let (declarations, fields) = self.identity_input_rows(budget)?;
+        let joined =
+            SelectedExactIdentities::from_stage_rows(package, declarations, fields, budget)
+                .map_err(|error| match budget.first_unpaid() {
+                    Some(denied) => {
+                        IdentityFileRefusal::Rows(NativeRowError::exhausted(denied, budget))
+                    }
+                    None => IdentityFileRefusal::Native(Box::new(error)),
+                })?;
+        self.identity_output_rows(package, &joined, budget)
+    }
+
+    pub(super) fn identity_input_rows(
+        &self,
+        budget: &mut NativeJoinBudget,
+    ) -> Result<(Vec<SelectedExactDeclarationRow>, Vec<SelectedExactFieldRow>), IdentityFileRefusal>
+    {
         let locus = charge::start(budget, "identity_rows")?;
         // The native reader peeks at its owned input iterator. Build that
         // input only after accounting for each producer-owned copy.
@@ -96,15 +113,15 @@ impl Emission {
             field(budget, locus, row)?;
             fields.push(row.clone());
         }
-        let joined =
-            SelectedExactIdentities::from_stage_rows(package, declarations, fields, budget)
-                .map_err(|error| match budget.first_unpaid() {
-                    Some(denied) => {
-                        IdentityFileRefusal::Rows(NativeRowError::exhausted(denied, budget))
-                    }
-                    None => IdentityFileRefusal::Native(Box::new(error)),
-                })?;
+        Ok((declarations, fields))
+    }
 
+    pub(super) fn identity_output_rows(
+        &self,
+        package: &quire_contract_model::CheckedPackageV2,
+        joined: &SelectedExactIdentities,
+        budget: &mut NativeJoinBudget,
+    ) -> Result<ReadIdentityRows, IdentityFileRefusal> {
         let locus = package_locus("identity_declaration_output");
         let count = joined.declaration_rows().count();
         charge::items(budget, locus, count)?;
