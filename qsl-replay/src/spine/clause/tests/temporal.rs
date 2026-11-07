@@ -1270,6 +1270,7 @@ fn observed_replay_request(
         &dependencies,
         &execution_points,
         &temporal_selections,
+        None,
         crate::spine::SpineLimits::default(),
     )
     .expect("the temporal fixture compiles with its explicit clock selection");
@@ -4682,7 +4683,6 @@ fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
         &selections,
         &models,
         &DependencyInput::default(),
-        None,
         limits,
         &cancel,
     )
