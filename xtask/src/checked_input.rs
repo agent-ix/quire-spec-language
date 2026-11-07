@@ -1199,12 +1199,24 @@ mod tests {
             let named = format!("PackageDeclarations::{entry}");
             assert_eq!(
                 planted(ROUTE_PLANT, &path),
-                vec![finding(ROUTE_PLANT, 2, Rule::Reconstruction, "plant", &named)],
+                vec![finding(
+                    ROUTE_PLANT,
+                    2,
+                    Rule::Reconstruction,
+                    "plant",
+                    &named
+                )],
                 "{entry} path"
             );
             assert_eq!(
                 planted(EVAL_PLANT, &call),
-                vec![finding(EVAL_PLANT, 3, Rule::Reconstruction, "plant", &named)],
+                vec![finding(
+                    EVAL_PLANT,
+                    3,
+                    Rule::Reconstruction,
+                    "plant",
+                    &named
+                )],
                 "{entry} call"
             );
         }
