@@ -319,12 +319,13 @@ fn integer(
     value: &Integer,
 ) -> Result<(), NativeRowError> {
     work(budget, locus, 1)?;
-    if value.magnitude_bits() > 128 {
+    let footprint = value.copy_footprint();
+    if footprint.bytes != 0 {
         charge(
             budget,
             locus,
             NativeJoinChargeKind::Storage,
-            1_u128.saturating_add(u128::from(value.magnitude_bits()).div_ceil(8)),
+            1_u128.saturating_add(footprint.bytes as u128),
         )?;
     }
     Ok(())
@@ -417,19 +418,28 @@ mod integer_budget_tests {
             "-170141183460469231731687303715884105728",
             "170141183460469231731687303715884105728",
             "-170141183460469231731687303715884105729",
+            "340282366920938463463374607431768211457",
+            "-340282366920938463463374607431768211457",
         ] {
             let value: Integer = spelling.parse().expect("exact signed boundary");
-            let mut budget = NativeJoinBudget::new(1_000_000, 1_000_000);
-            start(&mut budget, LOCUS.form).expect("fresh phase");
-            integer(&mut budget, LOCUS, &value).expect("copy precharge");
-            let mut copied = None;
-            let allocations = allocation_counter::measure(|| copied = Some(value.clone()));
-            assert_eq!(copied.expect("real owned copy"), value);
-            assert_eq!(
+            for value in [value.clone(), value.try_clone().expect("cold owned digits")] {
+                let footprint = value.copy_footprint();
+                let mut budget = NativeJoinBudget::new(1_000_000, 1_000_000);
+                start(&mut budget, LOCUS.form).expect("fresh phase");
+                integer(&mut budget, LOCUS, &value).expect("copy precharge");
+                let mut copied = None;
+                let allocations = allocation_counter::measure(|| copied = Some(value.clone()));
+                assert_eq!(copied.expect("real owned copy"), value);
+                assert_eq!(
+                    allocations.bytes_total as u128, footprint.bytes as u128,
+                    "actual copy payload agrees with owner footprint"
+                );
+                assert_eq!(
                 budget.consumed().storage > 0,
                 allocations.count_total > 0,
                 "owned storage must follow the actual signed integer representation: {spelling}"
             );
+            }
         }
     }
 
