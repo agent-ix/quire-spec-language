@@ -176,7 +176,7 @@ fn absent_progress_and_owner_absent_association_keep_original_typed_refusals() {
 #[trace("TC-1081", "FR-251-AC-46")]
 #[test]
 fn independently_admitted_wrong_claims_and_time_facts_refuse_without_context() {
-    for control in 0..12 {
+    for control in 0..13 {
         let root = tick_root();
         let mut selected = row(&root);
         let expected = match control {
@@ -242,10 +242,8 @@ fn independently_admitted_wrong_claims_and_time_facts_refuse_without_context() {
                         10 => {
                             *operation_node = selected.model_node.clone();
                         }
-                        _ => {
-                            *period_numerator = "3".to_owned();
-                            *period_denominator = "2".to_owned();
-                        }
+                        11 => *period_numerator = "3".to_owned(),
+                        _ => *period_denominator = "2".to_owned(),
                     },
                     progress::TimeSource::Dense => panic!("genuine tick source"),
                 }
