@@ -47,9 +47,10 @@ its inputs, and which source-side reads go away with it.
 A `BarePackage` with its `BareSupply` (FR-531), whose identity rows and, for a package
 with an equality application, equality rows come from the handoff directory; a `ProtocolSlot`, a
 `ProtocolSupply` and a `Meter` (FR-390), unchanged. The observation of a supply
-is admitted by the bare view's `admit_protocol_observation`, which takes the
-caller's domain package documents, snapshots and limits as it does on the source
-route.
+is admitted by `BarePackage::admit_protocol_observation`, which takes the
+caller's domain package documents, snapshots and limits as the source route's
+`AdmittedEvaluationView::admit_protocol_observation` does ("Observation
+admission").
 
 ## Outputs
 
@@ -88,7 +89,7 @@ the other environment with the same membership, field reads and result value.
 | binders: node key, level, name, `ValueType` | the admitted binder nodes the slot reads, less the binders its expression introduces itself (`let`, collection query, `case` arm; FR-390 rule 3), and the kernel `ValueType` projected from them (FR-390 "Typed projection admission") | the source frame of the checked body |
 | the expression evaluated | the admitted term, read as FR-400 `NodeRead` through `TermHandle` | the source `CheckedBody` |
 | the read location of a binder and of each visit | the `Location` of the admitted node and the `protocol_locations` rows (FR-390) | the source package's occurrence list |
-| the observation's model selection and type environment | the package's `model_root` nodes and the caller's domain package documents | `graph().model_selections()` and `graph().scope().types()` |
+| the observation's model selection, population types and type environment | the package's `model_root` selections (`selected_model_packages`), its selected-model population catalog (`selected_model_population_catalog`) and its selected object declarations (`project_selected_type_declarations`), with the caller's domain package documents ("Observation admission") | `graph().model_selections()`, `graph().protocol_population_types()` and `graph().scope().types()` |
 | callee and dispatch candidates | the admitted callable and dispatch projection nodes, within the admitted closure | the source package's dispatch tables |
 | the presence and shape of record members, and the value type of a slot's root | the wire projection of the selected record: every member's type and presence, including a Collection member (plain or nested) and an Option member | the checked source record type (`scope().types().composite`) |
 
@@ -292,6 +293,99 @@ no positive case for an optional member typed by an Option or for an Option nest
 an Option through aliases; such a shape is an unmet dependency, not a scope reduction
 (FR-390).
 
+### Observation admission
+
+`BarePackage::admit_protocol_observation(model, packages, model_limits, snapshots,
+selected, limits)` takes the parameters of the source route's
+`AdmittedEvaluationView::admit_protocol_observation` and returns
+`ObservationAdmission` of an admitted protocol observation. It reads the package,
+the supply joined by `with_supply` and the caller's domain package documents
+(FR-531: they stay a caller input), and no `CheckedPackage`. The admitted
+observation is bound to the `BarePackage` value that admitted it, as the source
+route's is bound to its `AdmittedEvaluationView`; it exposes no `CheckedPackage`
+and no `AdmittedEvaluationView`.
+
+The bare route derives the three source-side facts of observation admission from
+the package as follows:
+
+| Fact | Source route | Bare route |
+| --- | --- | --- |
+| model selections | `graph().model_selections()` | `CheckedPackageV2::selected_model_packages()`, each identity as a `DomainPackageRef`; both lists are in ascending identity order |
+| population types of a population node | `graph().protocol_population_types(node)` | `CheckedPackageV2::selected_model_population_catalog`: for each selected root and each of its populations, the node key `population_node_key` gives for the declaration key `{ package: <the root's model identity>, node: <the population's original identity> }`, that declaration key, and the population's members' `normalized_type_identity` values; every population of the selected documents is listed, including one no slot reads |
+| type environment | `graph().scope().types()` | the bare world's composites (FR-533 "Types the bytes cannot project") and one `ObjectTypeDeclaration` for each object of `project_selected_type_declarations(identities, [], source_unit_rows, budget).objects()`: key `effective_id()`, name `original_identity()`, attributes the object's `declared_fields()` in their selected order as `FieldDeclaration(name, value_type, presence)`, and supertypes `supertypes()` |
+
+The joined identities are the supply's (FR-531), and `source_unit_rows` are the
+source-unit rows of the supply's equality rows, empty when it has none. An
+object declaration counts as represented for the closure of the bare world, so
+a record whose member is a reference to a declared object type (fixture E-P's
+`Receipt` and `PeerBundle`, TC-1070) is retained. The bare world a slot call
+evaluates against and the environment its supply is admitted against are this
+one environment. The bare route reconstructs no declaration from a name, a node
+key or the caller's documents, and parses no node key.
+
+`with_supply` computes the object declarations and the population catalog once,
+after the joins it already makes, in that order, under the native budget it
+takes. The catalog's work and entries allowances are the budget's unconsumed
+work and storage at that point. An exhausted allowance is the caller's
+`NativeJoinFailure`, as for the other joins of `with_supply`: IR's work or
+storage denial for the declaration projection, and
+`NativeJoinFailure::PopulationCatalog` carrying the setting (`i2.work_units` for
+the catalog's work allowance, `i2.native_join_storage` for its entries) and the
+stage limit diagnostic for the catalog. Any other refusal of either read is
+retained, does not fail `with_supply`, and affects no slot call whose supply names
+no object reference.
+
+Admission runs these steps in order and stops at the first refusal:
+
+1. A `model` whose identity is not among the package's model selections refuses
+   `ObservationAdmission::Refused` with `invalid_model_binding`/
+   `wrong-model-selection`, no fields, an empty path and no kernel record, the
+   record the source route gives. This step reads the package alone, so it holds
+   also for a `BarePackage` with no supply.
+2. A missing, foreign or unknown identity witness refuses
+   `unknown_required_feature`/`unsupported-feature` with the fields `package`
+   (the package name) and `reason` (the witness reason's name, FR-390), as the
+   slot call reports it.
+3. A retained refusal of the declaration projection or of the catalog, or a bare
+   environment that `TypeEnvironment::new` does not admit with its object
+   declarations, refuses `unknown_required_feature`/`unsupported-feature` with
+   `package` and `reason` `missing-type-representation`, never an
+   `InternalFault`.
+4. Otherwise admission is `admit_current_snapshot` over `[model]`, the bare
+   environment and the caller's documents, snapshots and limits, the call the
+   source route makes, and its `Admitted`, `Refused`, `Incomplete` and `Fault`
+   results are returned as the source route returns them, with the same
+   `AdmissionUsage`. A snapshot object whose type the bare environment does not
+   declare refuses as step 3 states, never as an `InternalFault`.
+
+Supply admission (FR-390) on the bare route runs the checks and the order of the
+source route, with the bare host answering its four questions from the facts
+above: the binder types from the bare environment; the population types of a
+population node from the catalog, `None` for a node no selected population has;
+whether the package holds a model selection from `selected_model_packages`; and
+whether an observation is this package's by the binding above, so an observation
+admitted by another `BarePackage` value, by a `BarePackage` over another package
+or through a source view is refused `invalid_model_binding`/
+`wrong-model-selection` at the `Binder` locus, as the source route refuses an
+observation of another view. Supply admission charges no meter counter
+(FR-533-AC-10).
+
+The result is a function of the package, its identity and equality rows, the
+caller's documents, snapshots and limits, and the native budget: IR returns the
+selections and the catalog's roots, populations and members in ascending
+identity order and the objects in structural identity order, and the environment
+is keyed by identity, so two admissions over equal inputs give equal results.
+Observations admitted by two `BarePackage` values over one package are not
+interchangeable, as two source views' are not.
+
+Contract IR's whole-package declaration projection refuses a selected document
+that declares a variant (enum) type or a model-owned unit, and it guarantees a
+declaration for every ordinary record and object type of a selected document but
+not for a state machine, process or systems interface. A package selecting such a
+model refuses at step 3, or at step 4 for a snapshot object of such a type, where
+the source route admits it. That is an unmet dependency on Contract IR, not a
+scope reduction (FR-390), and the bare route does not substitute a declaration.
+
 ### Equivalence
 
 For one package, one slot, one supply and one meter limit set, the bare route and
@@ -312,8 +406,8 @@ FR-520-AC-11 states.
 | FR-533-AC-2 | For each outcome row of FR-520's map (true and false guard, retry relation and recovery predicate; an unavailable binder; a wrongly typed value; an unsupported construct; a meter one below measured usage), the bare route produces the successor outcome, and the exact-usage and one-below vectors of FR-390-AC-9 hold for **R**'s `retry.relation` over the `BarePackage`. The `BareSupply` of the bare route carries the equality rows read from the handoff directory's `equality.json`, which every slot with an equality application (the integer `=` of `Refund`'s retry relation and recovery predicate included) needs. | Test (TC-1333) |
 | FR-533-AC-3 | A `BarePackage` whose package was read in a run in which the source unit was never compiled evaluates AC-1's slots with the results of AC-1; and over a package read from **R**'s bytes, a `BarePackage` evaluation of slot A returns the same result when the in-process `CheckedPackage` held beside it in the test is replaced by the checked package of another unit that has the same protocol node ids but a different expression at slot A, because the bare route reads no `CheckedPackage` (the in-process route's result changes with that replacement, the bare route's does not). | Test (TC-1333) |
 | FR-533-AC-4 | A call-graph search from `qsl_eval::bare::BarePackage::evaluate_protocol_slot` finds that no function reachable from it takes or reads a `CheckedPackage`, `CheckedBody`, `AdmittedPackageRead::source` or a source `Graph`, that `protocol_selection::select` over a source is not called on the bare route, and that the bare route's `NodeKind` match has no wildcard arm. | Inspection (TC-1333) |
-| FR-533-AC-5 | A bare observation admission over the domain package documents of **R**'s model admits the snapshot that the source route admits, with equal `AdmissionUsage`; a model selection the package does not hold refuses `invalid_model_binding`/`wrong-model-selection` as FR-390-AC-21 states, with equal records on both routes. | Test (TC-1333) |
-| FR-533-AC-6 | Over a package whose `model_root` nodes select a model other than the supply's, the bare slot call refuses before any charge with the record the source route gives for the same mismatch. | Test (TC-1333) |
+| FR-533-AC-5 | Over the handoff of TC-1070 fixture E-P, with the same domain package documents (`M` and `N`), snapshot and limits on both routes: (a) for the observation state of each of TC-1070 rows 34 to 46, `BarePackage::admit_protocol_observation` and the source route's `admit_protocol_observation` return the same `ObservationAdmission` variant; for `Admitted` they have equal `AdmissionUsage`, equal `populations()` maps, equal `environment().references()` and, for every admitted object, equal values of every attribute; for any other variant, equal records; (b) each of those rows' slot calls, with its supplied value and occurrence metadata and the observation its route admitted, returns on the bare route the source route's result, value, refusal record, locus and charge log, including row 40's `wrong-model-selection` for `N::externalOthers` and row 41's `wrong-value-kind` for `M::elsewhereNodes`, whose population no slot reads; (c) the bare host's population types for `nodes`, `otherNodes`, `otherSpare` and `elsewhereNodes` equal `protocol_population_types` in declaration and member set, and the bare environment's `attributes` and `conforms` for `Node`, `Other` and `Elsewhere` equal the source environment's; (d) a `model` the package does not select (`N`) refuses `invalid_model_binding`/`wrong-model-selection` with no fields, an empty path and no kernel record on both routes, and the bare route gives that record also for a `BarePackage` with no supply. | Test (TC-1333) |
+| FR-533-AC-6 | Two packages are compiled from fixture E-P's source, one selecting E-P's model and one a copy of that document under another identity with the source's `model` declaration renamed to it. An observation admitted by the first package's bare route, supplied with TC-1070 row 35's value and metadata to the second package's bare slot call, is refused as `CallFailure::Admission` at the `Binder` locus of `forward`, with the record the source route gives for the same pair of packages and the same supply, and does not evaluate. Over the first package, an observation admitted by one `BarePackage` value and supplied with row 35's value and metadata to the slot call of another `BarePackage` value over the same bytes refuses `invalid_model_binding`/`wrong-model-selection` at the `Binder` locus of `forward`, as the source route does for an observation admitted through another view of one package, while the same supply with the observation of the slot call's own `BarePackage` evaluates to 5. Each refusal leaves the meter byte-identical. | Test (TC-1333) |
 | FR-533-AC-7 | The bare route evaluates a slot whose binder type is a record with a plain Collection member, a record with a plain Option member and a record with an Optional Collection member to the ordered charge log of the source route and to the same record value, and each binder's value type equals the source route's. Model record fields use original selected declaration-key order on both routes, including a model whose authored field order opposes its original-key order. The same value is supplied unchanged across environments; rebuilding it by display name is not parity evidence. A slot whose binder record Contract IR cannot project (its identity rows hold no field rows) refuses with `ViewFailure::Unsupported` and `MissingTypeRepresentation` at the `Node` locus of the binder, carrying `unknown_required_feature`/`unsupported-feature`, no partial value and no charge. No value of a different type is substituted. | Test (TC-1333) |
 | FR-533-AC-8 | A binder unavailable and read returns `Unavailable` naming the binder and the read, with the location the package's rows give (FR-390-AC-32), equal to the in-process route's; where the wire carries no leaf location the bare result is `None` while the in-process result keeps its source location, and the test records that difference as the unmet parity of "Names and locations". | Test (TC-1333) |
 | FR-533-AC-9 | Three slot calls over one `Meter` on the bare route leave a charge log that, per FR-520-AC-7, equals the sum on fresh meters for `work_units` and `result_units` and the maximum for the other eight counters, and equals the log of the same three calls on the source route. | Test (TC-1333) |
@@ -329,6 +423,7 @@ FR-520-AC-11 states.
 | FR-533-AC-19 | The bare route evaluates **R**'s recovery predicates, whose `sum` comprehension reads the Collection member `receipts` of the record `Recovery`: `Full` (`sum(receipt in recovered.receipts: receipt) = target and not activated`) is true for receipts [2,3], target 5, not activated, and false for target 6, for activated, and holds for no receipts and target 0; `Partial` (`0 < sum(...) and sum(...) < target`) is true for receipts [1,2] and [4] with target 5, false for no receipts and for [5]. A `recovered` supply that is no `Recovery` record and a supply that omits `target` refuse as `CallFailure::Admission`. **R**'s `Amount` and `Total` are quantities of the source-owned unit `U` (FR-517-AC-13): receipts and targets are supplied as quantities of `U`, and a package whose source-unit rows select a unit whose definition its nodes do not give refuses the identity witness (`Identity(Unknown)`). | Test (TC-1333) |
 | FR-533-AC-20 | A strictly admitted variant of **R** constructs `Shape::Circle(sum<M::Total>(receipt in recoveredFull.receipts: receipt))` and matches `Circle(r)` in `Full`'s recovery predicate. Matching, mismatching, empty and activated supplies produce the source route's Boolean values and ordered charges. The bare environment preserves the source union's original type handle, sealed declaration/member identities, member order and payload types; changing the payload changes the predicate, while adding an unrelated union leaves it unchanged. Missing required type projections refuse `MissingTypeRepresentation` before any charge. With `tuple Pair(Boolean, Boolean); union Unrelated { Other, Payload(Pair) }`, a slot that never reads `Unrelated` retains its value and ordered charges, while constructing and matching `Unrelated::Other` refuses `MissingTypeRepresentation` without charging or faulting. | Test (TC-1333) |
 | FR-533-AC-21 | Over the compiled two-record variant of fixture L (TC-1063 row L4e, FR-383-AC-64), in each source order of its two clauses, the in-process route and the bytes route give `Got.related.from[0]`, `Got.related.from[1]` and the `to` end that is a call equal values, equal charge logs and equal projected-root read `Location` values, that of `related.from[i]` being under `protocol Pipeline run Main Got related <i> from` and that of the call `to` end under `... related <k> to`, `k` its record's emitted position; the two `from` ends' `Location` values differ, and neither route returns a `Location` under a `related <start> <end>` origin. | Test (TC-1333) |
+| FR-533-AC-22 | Over a copy of fixture E-P's model that adds one variant (enum) type no slot reads, `with_supply` succeeds, `Refund.trigger.guard` evaluates to the source route's value and charge log, and `admit_protocol_observation` for `M` refuses `unknown_required_feature`/`unsupported-feature` with `package` the package name and `reason` `missing-type-representation`, not an `InternalFault`, where the source route admits the same snapshot (the unmet dependency of "Observation admission"). Over fixture E-P, a native budget that pays every earlier join of `with_supply` and the declaration projection but not the population catalog makes `with_supply` return `NativeJoinFailure::PopulationCatalog` with its setting and stage limit diagnostic, and no `BarePackage`. | Test (TC-1333) |
 
 ## Dependencies
 
@@ -367,13 +462,14 @@ FR-520-AC-11 states.
   unmet. QSL-1706 tracks the code. The case-guard vectors of FR-533-AC-13 are on package
   copies because no compiled unit holds two case guards with one walk; the
   `related` half also holds on a compiled unit (FR-533-AC-21).
-- **Observation admission:** the type environment of FR-533's observation admission
-  (the composites and object types an observation and a supply are admitted against)
-  is built from the package's `model_root` nodes, the selected record views and the
-  caller's domain package documents. Whether that suffices to give the keys on which
-  `admits` and `conforms` agree with the source route is being measured; FR-533-AC-5
-  and the supply admission of FR-390-AC-21 on the bare route are gated on that
-  measurement, and no rule is given here before it.
+- **Observation admission:** Contract IR gives the three reads "Observation
+  admission" takes: `selected_model_packages`, `selected_model_population_catalog`
+  (IR-1358) and `project_selected_type_declarations`, and the identity handoff
+  carries the selected object closure those reads need (QSL-1760, QSL-1762).
+  FR-533-AC-5, AC-6 and AC-22 need no further upstream change. A selected document
+  with a variant type or a model-owned unit, and a state machine, process or systems
+  interface object, wait on Contract IR's declaration projection (FR-533-AC-22
+  records the refusal meanwhile).
 - **Enum equality fixture:** FR-533-AC-16 covers no enum equality slot, because no
   fixture of the TC-1070, TC-1289 or TC-1290 family defines an enum-typed slot, and
   the equality file encodes `enum_member` facts that only such a slot exercises.
