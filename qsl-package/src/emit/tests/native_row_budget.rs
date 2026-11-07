@@ -29,7 +29,7 @@ fn emission() -> Emission {
 fn mixed_emission() -> Emission {
     super::variant_types::emitted_enums(&format!(
         "{ROWS}\nfunction tier using v(a: M::Tier): Boolean pure {{ a = M::Tier::Gold }}\n\
-         function accounts using v(a: M::Account, b: M::Account): Boolean pure {{ a = b }}"
+         profile g = \"quire.model.complete/v1\"; function accounts using g(a: M::Account, b: M::Account): Boolean pure {{ a = b }}"
     ))
 }
 
@@ -300,7 +300,7 @@ fn adapters_preserve_an_earlier_owner_denial_and_maps_never_lose_their_keys() {
     assert_eq!(budget.consumed(), NativeJoinCharge::default());
 
     let map_package = mixed_collection_package();
-    let maps = emit_checked(&map_package).expect("real source map emission");
+    let maps = emit_package(&map_package, whole_unit).expect("real source map emission");
     assert!(maps
         .selected_source_collection_rows()
         .iter()
@@ -623,5 +623,6 @@ fn cold_integer_emission() -> Emission {
     let graph = declarations
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("typed Exact interval checks: {refusals:?}"));
-    emit_checked(&CheckedPackage::link(graph)).expect("genuine checked numeric emission")
+    emit_package(&CheckedPackage::link(graph), whole_unit)
+        .expect("genuine checked numeric emission")
 }
