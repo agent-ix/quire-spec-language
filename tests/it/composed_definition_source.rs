@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
-use quire_spec_language::linking::composed::definition_source::RegisteredDefinition;
+use quire_spec_language::linking::definition_source::RegisteredDefinition;
 
 use RegisteredDefinition::{
     Diagnostics, Edition, EventPosition, FixedSample, ObservationBinding, Package, Progress,

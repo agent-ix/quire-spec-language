@@ -32,7 +32,7 @@ use quire_contract_model::{CheckedNodeId, SourceIdentity};
 use super::composed::work::Dimension;
 use super::composed::{Exhaustion, Obligation, ObligationKind, Site, TypeDisposition, TypeReport};
 use crate::formal_source::FormalSource;
-use crate::linking::composed::DeclarationId;
+use crate::linking::declaration_id::DeclarationId;
 
 fn declaration(id: DeclarationId) -> SourceDeclarationHandle {
     SourceDeclarationHandle(id.index())

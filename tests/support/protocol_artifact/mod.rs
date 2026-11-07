@@ -7,7 +7,7 @@ use crate::support::native_rule_model;
 use qsl_foundation::{Source, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::formal_source::FormalSource;
-use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
+use quire_spec_language::linking::definition_source::RegisteredDefinition as R;
 use quire_spec_language::model_source::{self, ModelSourceLimits};
 use quire_spec_language::native_model::{ModelLimits, NativeModel};
 use quire_spec_language::number::{NumberWire, NUMERIC_PROFILE};

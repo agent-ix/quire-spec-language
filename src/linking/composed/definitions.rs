@@ -8,17 +8,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::binding_work::{Dimension, Exhaustion, Work};
-use super::definition_source::RegisteredDefinition;
-use super::{DeclarationId, SyntaxNamespace, UnitId};
+use super::{SyntaxNamespace, UnitId};
+use crate::linking::declaration_id::DeclarationId;
+use crate::linking::definition_source::{RegisteredDefinition, Selection};
 use crate::syntax::composed::{ControlKind, DeclarationKind, ProtocolRequirement};
 use qsl_foundation::Spanned;
-
-/// Immutable definition selection: the registered definition's identity alone.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Selection {
-    /// Exact registered definition identity, distinct from an alias or file path.
-    pub identity: String,
-}
 
 /// One explicitly supplied definition; metadata grants no interpretation.
 #[derive(Clone, Debug)]

@@ -14,7 +14,12 @@
 //! inputs. Recognition alone establishes no model binding, type checking or
 //! execution.
 
-use super::definitions::Selection;
+/// Immutable definition selection: the registered definition's identity alone.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Selection {
+    /// Exact registered definition identity, distinct from an alias or file path.
+    pub identity: String,
+}
 
 /// A compiler-known interpretation, unavailable through caller-defined metadata.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
