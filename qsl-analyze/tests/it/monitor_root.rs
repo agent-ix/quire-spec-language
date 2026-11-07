@@ -1100,9 +1100,17 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
         )
         .expect("IR admits and projects converted authentic model shapes");
     assert_eq!(closure.model_enums(), model_shapes.as_slice());
-    assert!(closure.exact_types().iter().any(|projection| {
-        projection.value_type() == &quire_exact::ValueType::Enum(model_shapes[0].shape.clone())
-    }));
+    let projected = package
+        .project_exact_type(
+            &model_shapes[0].structural_node,
+            closure.identities(),
+            &mut budget,
+        )
+        .expect("the joined authentic model enum projects through native IR");
+    assert_eq!(
+        projected.value_type(),
+        &quire_exact::ValueType::Enum(model_shapes[0].shape.clone())
+    );
     assert!(budget.consumed().work > prefix.work);
     assert!(budget.consumed().storage > prefix.storage);
 }
