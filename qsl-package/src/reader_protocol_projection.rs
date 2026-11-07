@@ -28,7 +28,7 @@ use quire_exact::{
 };
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{
-    CheckedEquality, EqualityOperand, EqualityOperator, FieldRef,
+    CheckedEquality, EqualityOperand, EqualityOperator, FieldRef, TypeEnvironment,
 };
 use quire_semantic_value::location::{Location, Origin};
 
@@ -48,6 +48,14 @@ pub struct ReaderProtocolProjection {
 }
 
 impl ReaderProtocolProjection {
+    /// Resolve runtime representations against the closed declarations. A
+    /// native-authenticated reference needs no object population environment.
+    pub(crate) fn has_unrepresented_types(&self, types: &TypeEnvironment) -> bool {
+        self.nodes
+            .iter()
+            .any(|node| types.runtime_type(&node.value_type).is_none())
+    }
+
     /// Index of the selected root node.
     pub fn root(&self) -> usize {
         self.root
@@ -1235,11 +1243,12 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         context: Context,
         locals: &BTreeMap<CheckedNodeId, usize>,
     ) -> Result<(NodeKind<usize, CheckedLiteral>, Vec<usize>), BuildError> {
-        let union_key = self
-            .index
-            .graph
-            .key(&node.semantic_type)
-            .map_err(|_| fault("reader-union-value-has-declaration-key"))?;
+        // A sealed member can only be interpreted against the original
+        // union declaration carried by the selected type projection.
+        let ValueType::Composite(union_key) = &self.value_type(&node.semantic_type)? else {
+            return Err(fault("reader-union-value-has-declaration-key").into());
+        };
+        let union_key = union_key.clone();
         let union_node = self
             .index
             .node(&node.semantic_type)
@@ -1890,9 +1899,8 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         let declaration = declaration.clone();
         let union_node = self
             .index
-            .ids
-            .get(&declaration)
-            .and_then(|id| self.index.node(id))
+            .node(scrutinee_id)
+            .and_then(|scrutinee| self.index.node(&scrutinee.semantic_type))
             .filter(|candidate| has_form(candidate, WireTag::CompositeType, WireForm::Union))
             .ok_or_else(|| fault("reader-union-case-declaration-is-admitted"))?;
         let CheckedTerm::Aggregate {
@@ -2431,17 +2439,6 @@ pub(crate) fn node_value_type(
             .ok_or_else(|| fault("reader-record-type-has-exact-identity"))?;
             Ok(ValueType::Composite(key))
         }
-        Some((WireTag::CompositeType, WireForm::Union))
-            if error.code == Code::UnavailableIdentityWitness =>
-        {
-            let declaration = at.ok_or_else(|| fault("reader-union-type-error-has-node"))?;
-            let key = match selected(declaration) {
-                Some(Identity::Union(key)) => Some(key.clone()),
-                _ => structural(declaration, WireTag::CompositeType, WireForm::Union),
-            }
-            .ok_or_else(|| fault("reader-union-type-has-exact-identity"))?;
-            Ok(ValueType::Composite(key))
-        }
         Some((WireTag::ScalarType, WireForm::Unit)) if unresolved => {
             let declaration = scalar_at.ok_or(TypeError::Unsupported)?;
             let unit = match selected(declaration) {
@@ -2841,6 +2838,43 @@ mod order_tests {
 
     fn key(name: &str) -> NodeKey {
         NodeKey::new("pkg", vec![PathSegment::Text(name.to_owned())], 0).expect("a key")
+    }
+
+    /// Representation admission preserves opaque references and still checks
+    /// every later nested composite in the same projected arena.
+    #[trace("TC-1333", "FR-533-AC-20")]
+    #[test]
+    fn a_reference_does_not_mask_an_unrepresented_composite_in_the_same_projection() {
+        let types = TypeEnvironment::new(Vec::new(), Vec::new()).expect("an empty closed world");
+        let reference = ValueType::Reference(quire_exact::EffectiveId::new(
+            None,
+            quire_exact::OriginalDeclarationKey::new("model", "Node"),
+        ));
+        let nested = |value_type| {
+            ValueType::option(ValueType::map(quire_exact::MapType::new(value_type, None)))
+        };
+        let mut projection = ReaderProtocolProjection {
+            nodes: vec![ReaderProjectedNode::leaf(
+                NodeKind::Local(0),
+                nested(reference),
+            )],
+            functions: Vec::new(),
+            root: 0,
+            frame_slots: 2,
+            locals: BTreeMap::new(),
+        };
+        assert!(
+            !projection.has_unrepresented_types(&types),
+            "a reference's native identity does not require an object declaration in the bare value environment"
+        );
+        projection.nodes.push(ReaderProjectedNode::leaf(
+            NodeKind::Local(1),
+            nested(ValueType::Composite(key("missing"))),
+        ));
+        assert!(
+            projection.has_unrepresented_types(&types),
+            "accepting the earlier reference must not hide a later unrepresented composite under wrappers"
+        );
     }
 
     fn node(package: &str, node: &str, reason: UnsupportedReason) -> UnsupportedView {

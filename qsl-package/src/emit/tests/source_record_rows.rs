@@ -316,7 +316,7 @@ fn required_identity_handoff_preserves_original_record_keys_and_native_views() {
         );
     }
     let encoded: Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(encoded["format"], "quire.checked-handoff.identities/2");
+    assert_eq!(encoded["format"], "quire.checked-handoff.identities/3");
     assert!(encoded["source_records"][0]["record_key"]["path"].is_array());
     let tagged = read
         .source_records()
@@ -523,6 +523,7 @@ fn required_identity_handoff_refuses_deep_original_keys_without_stack_growth() {
         rows.declarations().to_vec(),
         rows.fields().to_vec(),
         source_records,
+        rows.source_unions().to_vec(),
     );
     assert_eq!(
         carried.to_bytes(&package),
