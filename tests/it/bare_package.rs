@@ -1895,7 +1895,7 @@ fn opaque_caller_budgets_preserve_original_bounds_after_prior_joins() {
             };
             assert_eq!(native.configured_bound, Some(bound));
             let diagnostic = error.limit().expect("admission attaches stage diagnostic");
-            assert_eq!(diagnostic.setting().map(|s| s.name()), Some(setting));
+            assert_eq!(diagnostic.setting().name(), setting);
             assert_eq!(diagnostic.configured_bound(), bound);
             let unpaid = budget
                 .first_unpaid()

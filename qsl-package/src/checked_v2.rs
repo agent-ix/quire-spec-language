@@ -176,8 +176,9 @@ impl NativeJoinLimits {
         Self::new(budget.work_limit(), budget.storage_limit())
     }
 
-    /// Map an exhausted native join using this pass's original ceilings and
-    /// the budget's first unpaid charge.
+    /// Map an exhausted native join using the owner budget's original ceilings
+    /// and first unpaid charge. The budget remains authoritative even if these
+    /// detached limits came from another pass.
     /// Returns `None` for a non-budget error or a budget without a recorded
     /// unpaid charge. `native` and `budget` must come from the same pass.
     pub fn refusal(

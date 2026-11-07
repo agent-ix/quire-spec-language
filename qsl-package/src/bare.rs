@@ -102,7 +102,9 @@ impl<'p> BarePackage<'p> {
     /// `ExhaustedStorage` for identity/type projection, or its `WorkLimit` or
     /// `StorageLimit` for equality admission. No package is returned when
     /// `budget` runs out; the denial is never an unknown witness, a fault or
-    /// an empty identity set.
+    /// an empty identity set. Resource denials carry a
+    /// [`crate::NativeJoinFailure::Limit`] diagnostic with the original owner
+    /// error, caller-configured ceiling, setting and cumulative attempted charge.
     pub fn with_supply(
         mut self,
         supply: BareSupply<'p>,
