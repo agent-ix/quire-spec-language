@@ -16,13 +16,13 @@
 //! what source expression denotes another extension's node).
 
 use qsl_forms::{
-    parse_type_text, ClauseKind, ExpressionForm, ExtensionClauseForm, ExtensionForm, TypeForm,
+    parse_type_text, BuiltinType, TypeFormHead, ClauseKind, ExpressionForm, ExtensionClauseForm, ExtensionForm, TypeForm,
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::Span;
 use quire_checked::node::{CheckedLiteral, NodeKind};
-use quire_exact::{IntegerInterval, Value, ValueType};
+use quire_exact::{FloatType, IeeeWidth, IntegerInterval, RoundingMode, Value, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::{Location, Origin};
 
@@ -145,6 +145,10 @@ pub(crate) fn extension_clause_location(index: usize, clause: usize) -> Location
 pub(crate) struct CheckedClause {
     pub(crate) name: String,
     pub(crate) expected: ValueType,
+    /// The bare scalar type node the clause's subnode is typed at when the
+    /// schema spells a scalar word the checked type does not distinguish
+    /// (`Text`, checked as the native string).
+    pub(crate) scalar: Option<&'static str>,
     pub(crate) body: CheckedBody,
     pub(crate) slot_names: Vec<String>,
 }
@@ -325,13 +329,13 @@ impl Builder<'_, '_, '_> {
             .ok_or_else(|| self.order_fault(clause))?;
         let location = extension_clause_location(self.index, written);
         let span = root_span(&clause.value);
-        let expected = match self.expected_type(
+        let (expected, scalar) = match self.expected_type(
             &production_clause.type_ref,
             &location,
             &clause.name.name,
             span,
         ) {
-            Ok(Some(expected)) => expected,
+            Ok(Some((expected, scalar))) => (expected, scalar),
             Ok(None) => {
                 return Err(refusal(
                     self.index,
@@ -368,6 +372,7 @@ impl Builder<'_, '_, '_> {
                 Ok(CheckedClause {
                     name: clause.name.name.clone(),
                     expected,
+                    scalar,
                     body,
                     slot_names,
                 })
@@ -403,15 +408,26 @@ impl Builder<'_, '_, '_> {
         }
     }
 
-    /// The core type a `type-ref` spelling denotes, or `None` when the
-    /// spelling names a node kind of the catalog.
+    /// The core type a `type-ref` spelling denotes, with the bare scalar
+    /// node it is typed at when the spelling is a scalar word the checked
+    /// type does not distinguish, or `None` when the spelling names a node
+    /// kind of the catalog.
+    ///
+    /// Read in this order (FR-354 "Clause checking"): a scalar word is that
+    /// scalar and never a record or node-kind name; any other spelling is
+    /// the core `TypeReference` production, of which only `Int[lo, hi]`
+    /// (no rounding mode) and a record-type name are supported; anything
+    /// else refuses naming the spelling.
     fn expected_type(
         &self,
         type_ref: &str,
         location: &Location,
         clause: &str,
         span: Span,
-    ) -> Result<Option<ValueType>, CheckRefusal> {
+    ) -> Result<Option<(ValueType, Option<&'static str>)>, CheckRefusal> {
+        if let Some(read) = scalar_word(type_ref) {
+            return Ok(Some(read));
+        }
         if self
             .input
             .held
@@ -421,8 +437,6 @@ impl Builder<'_, '_, '_> {
         {
             return Ok(None);
         }
-        // v1 reads the ten scalar spellings, `Int[lo, hi]` and a record-type
-        // name; any other spelling refuses naming itself.
         let unsupported = || {
             refusal(
                 self.index,
@@ -435,19 +449,18 @@ impl Builder<'_, '_, '_> {
             )
         };
         let form: TypeForm = parse_type_text(type_ref).map_err(|_| unsupported())?;
+        let supported = match &form.head {
+            TypeFormHead::Builtin(BuiltinType::Int) => form.bounds.len() == 2,
+            TypeFormHead::Name(_) => form.arguments.is_empty() && form.bounds.is_empty(),
+            _ => false,
+        };
+        if !supported {
+            return Err(unsupported());
+        }
         let resolved = resolve_type_form(&self.input.scope.in_source(None), &form, location)
             .map_err(|_| unsupported())?;
         match resolved {
-            ValueType::Boolean
-            | ValueType::Integer
-            | ValueType::Int(_)
-            | ValueType::Rational(_)
-            | ValueType::Decimal(_)
-            | ValueType::Float(_)
-            | ValueType::String
-            | ValueType::Uuid
-            | ValueType::Timestamp
-            | ValueType::Composite(_) => Ok(Some(resolved)),
+            ValueType::Int(_) | ValueType::Composite(_) => Ok(Some((resolved, None))),
             _ => Err(unsupported()),
         }
     }
@@ -487,7 +500,7 @@ fn spelling(value_type: &ValueType) -> String {
             "Quantity".to_owned()
         }
         ValueType::Text(_) => "Text".to_owned(),
-        ValueType::String => "String".to_owned(),
+        ValueType::String => "Text".to_owned(),
         ValueType::Uuid => "UUID".to_owned(),
         ValueType::Timestamp => "Timestamp".to_owned(),
         ValueType::Map(_) => "Map".to_owned(),
@@ -498,6 +511,26 @@ fn spelling(value_type: &ValueType) -> String {
         ValueType::Reference(_) => "Reference".to_owned(),
         ValueType::Population(_) => "Population".to_owned(),
     }
+}
+
+/// The checked type of a scalar word, matched lexically as Contract IR's
+/// reader matches it, and the bare scalar node a word the checked type does
+/// not distinguish is typed at. `Rational` and `Decimal` name no unbounded
+/// core type to check against and are not read.
+#[ix_trace_rs::string_edge]
+fn scalar_word(word: &str) -> Option<(ValueType, Option<&'static str>)> {
+    let float = |width| ValueType::Float(FloatType::new(width, RoundingMode::Exact));
+    Some(match word {
+        "Boolean" => (ValueType::Boolean, None),
+        "Integer" => (ValueType::Integer, None),
+        "Float32" => (float(IeeeWidth::Binary32), None),
+        "Float64" => (float(IeeeWidth::Binary64), None),
+        "Text" => (ValueType::String, Some("text")),
+        "String" => (ValueType::String, None),
+        "UUID" => (ValueType::Uuid, None),
+        "Timestamp" => (ValueType::Timestamp, None),
+        _ => return None,
+    })
 }
 
 /// The spelling of the integer literal `body` is when its range lies outside

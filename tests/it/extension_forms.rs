@@ -37,7 +37,7 @@ fn held_typed(node_kind: &str, days_type: &str) -> HeldExtensions {
         ]},
         "typed_node_schema": {"nodes": [
             {"keyword": "retention", "node_kind": node_kind, "clauses": [
-                {"name": "subject", "type": "String"},
+                {"name": "subject", "type": "Text"},
                 {"name": "days", "type": days_type}
             ]}
         ]}
@@ -178,13 +178,13 @@ fn a_selected_extension_form_checks_as_one_typed_node_with_both_subnodes() {
     let names: Vec<_> = clauses.iter().map(|clause| &clause["name"]).collect();
     assert_eq!(names, ["subject", "days"]);
     // Each clause is a reference to a literal subnode typed as the schema
-    // types it: `String` and `Int[1, 3650]`.
+    // types it: `Text` and `Int[1, 3650]`.
     let subject = node_by_id(&wire, &clauses[0]["value"]["target"]);
     let days = node_by_id(&wire, &clauses[1]["value"]["target"]);
     assert_eq!(subject["body"]["value"], "audit");
     assert_eq!(days["body"]["value"], "30");
     let subject_type = node_by_id(&wire, &subject["semantic_type"]);
-    assert_eq!(subject_type["semantic_form"], "string");
+    assert_eq!(subject_type["semantic_form"], "text");
     let days_type = node_by_id(&wire, &days["semantic_type"]);
     assert_eq!(days_type["semantic_form"], "integer_range");
     let bounds: Vec<_> = days_type["body"]["members"]
@@ -213,7 +213,7 @@ fn a_clause_value_of_the_wrong_type_refuses_ill_typed_naming_the_clause_and_both
     };
     assert_eq!(clause, "days");
     assert_eq!(expected, "Int[1, 3650]");
-    assert_eq!(actual, "String");
+    assert_eq!(actual, "Text");
     let source = format!("{HEADER}{declaration}\n");
     let at = source.find("\"thirty\"").expect("the value");
     assert_eq!((span.start, span.end), (at, at + "\"thirty\"".len()));
@@ -354,7 +354,7 @@ fn an_integer_outside_the_declared_range_refuses_naming_the_clause_and_both_rang
 #[trace("TC-882", "FR-354-AC-2")]
 #[test]
 fn a_type_spelling_outside_the_v1_reader_refuses_naming_the_spelling() {
-    let refusal = compile(&held_typed("retention", "Text"), FORM).expect_err("unsupported");
+    let refusal = compile(&held_typed("retention", "Sequence<Integer>"), FORM).expect_err("unsupported");
     let ExtensionCause::TypeMismatch {
         clause, expected, ..
     } = refusal_cause(&refusal)
@@ -362,5 +362,5 @@ fn a_type_spelling_outside_the_v1_reader_refuses_naming_the_spelling() {
         panic!("expected a type mismatch, got {refusal:?}");
     };
     assert_eq!(clause, "days");
-    assert_eq!(expected, "Text");
+    assert_eq!(expected, "Sequence<Integer>");
 }

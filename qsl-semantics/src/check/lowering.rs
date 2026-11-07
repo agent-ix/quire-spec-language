@@ -6215,10 +6215,11 @@ impl<'a> Lowering<'a> {
     /// quantity or absent option, the enum member's nominal node for an
     /// enum member.
     fn literal(&mut self, node: CheckedNode<'_>, value: &Value) -> Result<LeafTerm, CheckRefusal> {
-        self.literal_as(node, value, node.value_type())
+        self.literal_as(node, value, node.value_type(), None)
     }
 
-    /// [`Self::literal`] typed at the node of `declared`, which a literal
+    /// [`Self::literal`] typed at the bare `scalar` type node when one is
+    /// given, else at the node of `declared`, which a literal
     /// admitted into a declared type (an extension clause's `Int[1, 3650]`)
     /// carries instead of the narrower type of the value alone.
     fn literal_as(
@@ -6226,6 +6227,7 @@ impl<'a> Lowering<'a> {
         node: CheckedNode<'_>,
         value: &Value,
         declared: &ValueType,
+        scalar: Option<&'static str>,
     ) -> Result<LeafTerm, CheckRefusal> {
         let literal = match value {
             Value::Boolean(value) => LiteralValue::Boolean(*value),
@@ -6279,7 +6281,10 @@ impl<'a> Lowering<'a> {
             Value::Timestamp(value) => LiteralValue::Timestamp(*value),
             Value::String(value) => LiteralValue::String(value.clone()),
         };
-        let semantic_type = self.type_ref(declared, node.location())?;
+        let semantic_type = match scalar {
+            Some(form) => NodeRef::from(self.scalar(form, node.location())?),
+            None => self.type_ref(declared, node.location())?,
+        };
         self.value_node(
             node,
             "literal",

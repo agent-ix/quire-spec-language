@@ -19,7 +19,7 @@ use super::{identifiers, require_admitted, Binders, Lowering};
 use crate::check::extension::{extension_location, CheckedClause, CheckedExtensionForm};
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::CheckedNode;
-use crate::check::node_key::{BodyTerm, ExtensionClauseTerm, ExtensionTerm, NodeTag};
+use crate::check::node_key::{BodyTerm, ExtensionClauseTerm, ExtensionTerm, NodeRef, NodeTag};
 use crate::check::refusal::{CheckRefusal, KeyFault};
 
 /// One checked extension form, as lowering reads it.
@@ -70,11 +70,14 @@ impl Lowering<'_> {
         clause: &CheckedClause,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
-        let expected = self.type_ref(&clause.expected, location)?;
+        let expected = match clause.scalar {
+            Some(form) => NodeRef::from(self.scalar(form, location)?),
+            None => self.type_ref(&clause.expected, location)?,
+        };
         self.record(expected, OccurrenceRole::Type, location.clone());
         let root = clause.body.root();
         let term = match literal_of(root) {
-            Some((node, value)) => self.literal_as(node, value, &clause.expected)?,
+            Some((node, value)) => self.literal_as(node, value, &clause.expected, clause.scalar)?,
             None => {
                 let mut binders = Binders::new(&clause.slot_names, &[]);
                 self.expression(root, &mut binders)?
