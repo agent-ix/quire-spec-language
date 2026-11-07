@@ -3,7 +3,7 @@
 
 /// Declaration handle local to one namespace, not a cross-package identity.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct DeclarationId(pub(crate) usize);
+pub struct DeclarationId(pub(super) usize);
 
 impl DeclarationId {
     /// Index into this namespace's declarations(), not a unit's AST.
