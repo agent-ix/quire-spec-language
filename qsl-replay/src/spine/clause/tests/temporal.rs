@@ -222,6 +222,12 @@ enum Unit {
     /// `Safety`: FR-328-AC-1's `always holds(c.value <= 1)` under
     /// infinite-trace.
     Safety,
+    /// FR-330-AC-13's `Implies`, `Until`, `Past` and `Negated` over the
+    /// infinite-trace profile, `on origin`.
+    Descent,
+    /// FR-330-AC-14/15's `Each`, `PastEnd` and `Between`, over the
+    /// event-position false-extension profile, `on origin`.
+    DescentBounded,
     /// `Decisive`: FR-283-AC-10's `forall` over a collection, built inside
     /// the atom from `c.value`, and `Plain`, an atom no quantifier decides,
     /// each activated at every position under the bounded profile.
@@ -241,7 +247,7 @@ impl Unit {
             Self::Bounded | Self::RenamedTwin => {
                 "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
             }
-            Self::Infinite | Self::Safety | Self::RefusingInfinite => {
+            Self::Infinite | Self::Safety | Self::Descent | Self::RefusingInfinite => {
                 "profile t = \"quire.temporal.infinite-trace/v1\";\n"
             }
             Self::Undefined
@@ -249,6 +255,7 @@ impl Unit {
             | Self::Guarded
             | Self::GuardUndefined
             | Self::Decisive
+            | Self::DescentBounded
             | Self::Refusing => {
                 "profile t = \"quire.temporal.event-position.false-extension/v1\";\n"
             }
@@ -416,6 +423,26 @@ impl Unit {
             Self::Safety => {
                 "temporal Safety using t over (c: Counters::Counter) clock \"model-steps\" \
                  on origin { always holds(c.value <= 1) }\n"
+            }
+            Self::Descent => {
+                "temporal Implies using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { always (holds(c.value = 1) implies eventually[0,1] holds(c.value = 3)) }\n\
+                 temporal Until using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { holds(c.value <= 1) until holds(c.value = 9) }\n\
+                 temporal Past using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { always (holds(c.value = 0) implies once[1,1] holds(c.value = 9)) }\n\
+                 temporal Negated using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { always not holds(c.value = 2) }\n\
+                 temporal Wrap using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { always (holds(c.value = 1) implies eventually[1,1] holds(c.value = 1)) }\n"
+            }
+            Self::DescentBounded => {
+                "temporal Each using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { always[0,2] holds(c.value <= 1) }\n\
+                 temporal PastEnd using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { always[0,3] holds(c.value <= 2) }\n\
+                 temporal Between using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { holds(c.value = 1) until[1,2] holds(c.value = 3) }\n"
             }
             Self::Refusing => concat!(
                 "type Zero = Int[0, 0];\n",
@@ -1270,6 +1297,7 @@ fn observed_replay_request(
         &dependencies,
         &execution_points,
         &temporal_selections,
+        None,
         crate::spine::SpineLimits::default(),
     )
     .expect("the temporal fixture compiles with its explicit clock selection");
@@ -1679,7 +1707,7 @@ fn a_temporal_refusal_takes_its_category_from_its_catalog_code() {
 
 /// FR-501-AC-1/2 (TC-1295): timestamp distances select a sparse finite
 /// window, and a closed window does not synthesize a false tail.
-#[trace("TC-1295", "FR-501-AC-1", "FR-501-AC-2")]
+#[trace("TC-1295", "FR-501-AC-1", "FR-501-AC-2", "FR-043-AC-2", "FR-043-AC-4")]
 #[test]
 fn timestamped_windows_use_ticks_and_close_without_false_extension() {
     let outside = report(timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5)));
@@ -1735,7 +1763,7 @@ fn timestamped_windows_use_ticks_and_close_without_false_extension() {
 
 /// FR-501-AC-3 (TC-1295): an open future window remains pending until its
 /// deadline, while a witness already inside it is decisive.
-#[trace("TC-1295", "FR-501-AC-3")]
+#[trace("TC-1295", "FR-501-AC-3", "FR-043-AC-11")]
 #[test]
 fn timestamped_windows_pending_and_decisive_witnesses() {
     let pending = report(timestamped(&[0, 1], &[0, 0], 1, Some(1)));
@@ -2043,7 +2071,7 @@ fn timestamped_counter_cover_uses_half_open_boundary_rules() {
 /// FR-501-AC-4 (TC-1295): an unresolved atom reading is a possibility, a
 /// later witness can settle around it, and differing same-stamp readings are
 /// reported as conflicting valuation.
-#[trace("TC-1295", "FR-501-AC-4")]
+#[trace("TC-1295", "FR-501-AC-4", "FR-043-AC-7")]
 #[test]
 fn timestamped_missing_and_conflicting_atom_readings_are_indeterminate() {
     fn missing(values: &[i64], watermark: u64) -> ClauseRunReport {
@@ -2251,7 +2279,7 @@ fn timestamped_window_charges_exact_visits_and_stops_on_the_denied_visit() {
 /// FR-501-AC-7/18 (TC-1295): order-sensitive operators require comparable
 /// authority-scoped keys for equal stamps; insertion order does not decide
 /// an ordered reading.
-#[trace("TC-1295", "FR-501-AC-7")]
+#[trace("TC-1295", "FR-501-AC-7", "FR-043-AC-5")]
 #[test]
 fn order_sensitive_equal_stamps_require_one_authority_and_sort_by_key() {
     fn until_request(values: &[i64]) -> ClauseRunRequest {
@@ -2313,7 +2341,7 @@ fn order_sensitive_equal_stamps_require_one_authority_and_sort_by_key() {
 
 /// FR-501-AC-8 (TC-1295): a past window before a history cutoff is
 /// indeterminate only when the represented history does not decide it.
-#[trace("TC-1295", "FR-501-AC-8")]
+#[trace("TC-1295", "FR-501-AC-8", "FR-043-AC-9")]
 #[test]
 fn timestamped_past_windows_respect_history_cutoff() {
     fn once(values: &[i64], authoritative_origin: bool) -> ClauseRunReport {
@@ -2557,7 +2585,7 @@ fn timestamped_report_gives_basis_and_decision_support() {
 /// FR-501-AC-15 (TC-1295 row 29): scope closure, surrounding-execution
 /// closure, assessment disposition and input completeness stay four
 /// independent fields.
-#[trace("TC-1295", "FR-501-AC-15")]
+#[trace("TC-1295", "FR-501-AC-15", "FR-043-AC-10")]
 #[test]
 fn timestamped_report_keeps_four_independent_dimensions() {
     use crate::spine::FiniteWindowAssessment as Assessment;
@@ -2629,7 +2657,7 @@ fn timestamped_report_keeps_four_independent_dimensions() {
 
 /// FR-501-AC-16 (TC-1295 row 30): one result identity per input; each input
 /// changed alone gives a distinct identity.
-#[trace("TC-1295", "FR-501-AC-16")]
+#[trace("TC-1295", "FR-501-AC-16", "FR-043-AC-13")]
 #[test]
 fn timestamped_result_identity_follows_every_input() {
     let base = || {
@@ -3235,7 +3263,7 @@ fn with_clause_body(mut request: ClauseRunRequest, body: &str) -> ClauseRunReque
 /// valuation absent at one position settles a clause that does not depend on
 /// it (`p or not p`), and a history cutoff is `MissingHistory` only when the
 /// history present does not already decide.
-#[trace("TC-1295", "FR-501-AC-4")]
+#[trace("TC-1295", "FR-501-AC-4", "FR-043-AC-7")]
 #[trace("TC-1295", "FR-501-AC-8")]
 #[test]
 fn timestamped_possibility_lift_settles_independent_of_an_absent_valuation() {
@@ -3393,7 +3421,7 @@ fn timestamped_requests_run_twice_give_equal_reports() {
 
 /// FR-501 "Established window": the watermark settles an activation at exactly
 /// its deadline and not one tick before.
-#[trace("TC-1295", "FR-501-AC-3")]
+#[trace("TC-1295", "FR-501-AC-3", "FR-043-AC-11")]
 #[test]
 fn timestamped_watermark_at_the_deadline_settles() {
     let at_deadline = report(timestamped(&[0, 1], &[0, 0], 5, Some(5)));
@@ -3528,7 +3556,7 @@ fn a_request_without_a_ledger_evaluates_its_trace_and_returns_none() {
     assert_eq!(outcome(&report), &TemporalVerdict::Violated { at: 0 });
 }
 
-#[trace("FR-502-AC-1", "FR-502-AC-6", "FR-330-AC-9", "TC-1296")]
+#[trace("FR-502-AC-1", "FR-502-AC-6", "FR-330-AC-9", "TC-1296", "FR-043-AC-12")]
 #[test]
 fn run_clause_returns_the_updated_ledger_and_preserves_it_on_regression() {
     let first = report(with_progress(
@@ -3731,9 +3759,8 @@ fn a_position_of_another_identity_inside_the_retained_extent_is_refused() {
 /// FR-502-AC-11: the report of a request refused by FR-502 returns the ledger
 /// the request supplied, equal to it: a watermark regression returns the
 /// retained ledger, and a request that outgrows `progress.covered_positions`
-/// returns the empty ledger it carried. The no-ledger half of the AC is
-/// unreachable: `run_clause` admits progress only against a supplied ledger,
-/// so no FR-502 refusal exists for a request that supplied none.
+/// returns the empty ledger it carried. A request that supplied no ledger and
+/// is stopped (here by an exhausted evaluation meter) returns none.
 #[trace("FR-502-AC-11", "TC-1296")]
 #[test]
 fn a_refused_request_returns_the_ledger_it_supplied() {
@@ -3763,6 +3790,12 @@ fn a_refused_request_returns_the_ledger_it_supplied() {
     let limited = report(request);
     assert_eq!(limited.disposition.category(), Category::Incomplete);
     assert_eq!(limited.ledger, Some(empty));
+
+    let mut unledgered = finite(Unit::Bounded, "Bounded", &[0, 1, 2]);
+    unledgered.accounting = default_accounting(0);
+    let stopped = report(unledgered);
+    assert_eq!(stopped.disposition.category(), Category::Incomplete);
+    assert_eq!(stopped.ledger, None);
 }
 
 /// FR-522-AC-14: the `Finite` and `Lasso` traces carry no `TraceBinding`, and
@@ -4477,8 +4510,9 @@ fn a_temporal_violation_carries_its_decisive_information() {
 /// The decisive record of an atom no quantifier decides: element `false`,
 /// no quantifier, no index and the empty path at the root of the observation
 /// `identity`.
-fn assert_undecided(report: &ClauseRunReport, identity: &str) {
+fn assert_undecided(report: &ClauseRunReport, identity: &str, position: u64) {
     let decisive = report.decisive.as_ref().expect("a decisive record");
+    assert_eq!(decisive.position, Some(position));
     assert_eq!(decisive.quantifier, None);
     assert_eq!(decisive.index, None);
     assert!(matches!(
@@ -4502,7 +4536,7 @@ fn assert_undecided(report: &ClauseRunReport, identity: &str) {
 fn only_a_temporal_violation_carries_decisive_information() {
     let bounded = report(finite(Unit::Bounded, "Bounded", &[0, 1, 2]));
     assert_eq!(outcome(&bounded), &TemporalVerdict::Violated { at: 0 });
-    assert_undecided(&bounded, "counter-0");
+    assert_undecided(&bounded, "counter-0", 0);
 
     let pending = report(finite(Unit::Infinite, "Reaches", &[0, 1, 2]));
     assert_eq!(outcome(&pending), &TemporalVerdict::Pending);
@@ -4517,14 +4551,20 @@ fn only_a_temporal_violation_carries_decisive_information() {
     assert!(item_json("Undefined", &undefined).get("decisive").is_none());
 }
 
-/// FR-330-AC-12: a lasso, a progressed and a timestamped violation each
-/// read the deciding atom at the observation of the violating position.
-#[trace("TC-840", "FR-330-AC-12")]
+/// FR-330-AC-12, AC-14: a lasso and a progressed violation each read the
+/// deciding atom over the observation at the decisive position, and a
+/// timestamped violation carries no `decisive`.
+#[trace("TC-840", "FR-330-AC-12", "FR-330-AC-14")]
 #[test]
-fn every_trace_shape_reads_decisive_information_at_its_violating_observation() {
+fn every_trace_shape_reads_decisive_information_at_its_decisive_observation() {
     let looped = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1]));
     assert_eq!(outcome(&looped), &TemporalVerdict::Violated { at: 0 });
-    assert_undecided(&looped, "counter-0");
+    assert_undecided(&looped, "counter-0", 0);
+
+    // AC-14: prefix 0 and loop 1, 2, `always holds(c.value <= 1)`.
+    let wrapped = report(lasso(Unit::Safety, "Safety", 1, &[0, 1, 2]));
+    assert_eq!(outcome(&wrapped), &TemporalVerdict::Violated { at: 0 });
+    assert_undecided(&wrapped, "counter-2", 2);
 
     let progressed = report(with_progress(
         finite(Unit::Bounded, "Bounded", &[0, 1, 2]),
@@ -4533,11 +4573,116 @@ fn every_trace_shape_reads_decisive_information_at_its_violating_observation() {
         &crate::spine::ProgressLedger::new(),
     ));
     assert_eq!(outcome(&progressed), &TemporalVerdict::Violated { at: 0 });
-    assert_undecided(&progressed, "counter-0");
+    assert_undecided(&progressed, "counter-0", 0);
+
+    let progressed_each = report(with_progress(
+        finite(Unit::DescentBounded, "Each", &[0, 1, 2]),
+        100,
+        crate::spine::ProgressCompleteness::Complete { through: 100 },
+        &crate::spine::ProgressLedger::new(),
+    ));
+    assert_eq!(
+        outcome(&progressed_each),
+        &TemporalVerdict::Violated { at: 0 }
+    );
+    assert_undecided(&progressed_each, "counter-2", 2);
 
     let timestamped = report(timestamped(&[0, 1], &[0, 0], 5, Some(5)));
     assert_eq!(outcome(&timestamped), &TemporalVerdict::Violated { at: 0 });
-    assert_undecided(&timestamped, "counter-0");
+    assert!(timestamped.decisive.is_none());
+}
+
+/// FR-330-AC-12: the infinite-trace `always holds(c.value <= 1)` over
+/// `c.value` 0, 1, 2 is violated at position 0 with the decisive atom read
+/// at position 2.
+#[trace("TC-840", "FR-330-AC-12")]
+#[test]
+fn a_violation_reports_the_decisive_position_not_the_activation() {
+    let safety = report(finite(Unit::Safety, "Safety", &[0, 1, 2]));
+    assert_eq!(outcome(&safety), &TemporalVerdict::Violated { at: 0 });
+    assert_undecided(&safety, "counter-2", 2);
+}
+
+/// FR-330-AC-13: the descent into an implication's consequent, an `until`'s
+/// first failing left operand, and the clauses with no decisive atom.
+#[trace("TC-840", "FR-330-AC-13")]
+#[test]
+fn the_decisive_atom_descends_by_operator() {
+    let trace = [0, 1, 2];
+    let implies = report(finite(Unit::Descent, "Implies", &trace));
+    assert_eq!(outcome(&implies), &TemporalVerdict::Violated { at: 0 });
+    assert_undecided(&implies, "counter-1", 1);
+
+    // An unbounded `until` is outside FR-328's safety fragment, so a finite
+    // prefix leaves it pending; a lasso settles it.
+    let pending = report(finite(Unit::Descent, "Until", &trace));
+    assert_eq!(outcome(&pending), &TemporalVerdict::Pending);
+    let until = report(lasso(Unit::Descent, "Until", 1, &trace));
+    assert_eq!(outcome(&until), &TemporalVerdict::Violated { at: 0 });
+    assert_undecided(&until, "counter-2", 2);
+
+    for clause in ["Past", "Negated"] {
+        let none = report(finite(Unit::Descent, clause, &trace));
+        assert_eq!(
+            outcome(&none),
+            &TemporalVerdict::Violated { at: 0 },
+            "{clause}"
+        );
+        assert!(none.decisive.is_none(), "{clause}");
+    }
+}
+
+/// FR-330 "The decisive atom": over a lasso whose descent crosses the loop's
+/// closing edge, `decisive.position` is the in-trace position, not the
+/// unrolled one. With an empty prefix and loop 0, 1 the `eventually[1,1]` of
+/// the activation at 1 reads the unrolled position 2, which is position 0.
+#[trace("TC-840", "FR-330-AC-12")]
+#[test]
+fn a_lasso_decisive_position_is_the_in_trace_position() {
+    let wrapped = report(lasso(Unit::Descent, "Wrap", 0, &[0, 1]));
+    assert_eq!(outcome(&wrapped), &TemporalVerdict::Violated { at: 0 });
+    assert_undecided(&wrapped, "counter-0", 0);
+}
+
+/// FR-330-AC-15: a violation only past the last position has no decisive
+/// atom, and the left operand of a bounded `until` is not required at the
+/// anchor.
+#[trace("TC-840", "FR-330-AC-15")]
+#[test]
+fn a_false_extension_position_is_no_decisive_atom() {
+    let trace = [0, 1, 2];
+    let past_end = report(finite(Unit::DescentBounded, "PastEnd", &trace));
+    assert_eq!(outcome(&past_end), &TemporalVerdict::Violated { at: 0 });
+    assert!(past_end.decisive.is_none());
+
+    let between = report(finite(Unit::DescentBounded, "Between", &trace));
+    assert_eq!(outcome(&between), &TemporalVerdict::Violated { at: 0 });
+    assert_undecided(&between, "counter-2", 2);
+}
+
+/// FR-330-AC-12: a decisive search that cannot finish within the run's work
+/// budget is the run's own `incomplete`, never a violation without its
+/// decisive record.
+#[trace("TC-840", "FR-330-AC-12")]
+#[test]
+fn a_decisive_search_the_budget_stops_is_incomplete() {
+    let mut stopped = 0;
+    for ceiling in 0..60 {
+        let mut request = finite(Unit::Safety, "Safety", &[0, 1, 2]);
+        request.accounting.work_units = ceiling;
+        let run = report(request);
+        match outcome(&run) {
+            TemporalVerdict::Violated { at: 0 } => {
+                assert_undecided(&run, "counter-2", 2);
+            }
+            _ => {
+                assert_eq!(run.disposition.category(), Category::Incomplete);
+                assert!(run.decisive.is_none());
+                stopped += 1;
+            }
+        }
+    }
+    assert!(stopped > 0);
 }
 
 /// A lasso position past its prefix reads the observation it wraps to in
@@ -4564,44 +4709,6 @@ fn a_lasso_position_wraps_into_its_loop() {
     };
     assert_eq!(observation_slot(&empty, 0), Some(0));
     assert_eq!(observation_slot(&empty, 1), None);
-}
-
-/// FR-330-AC-12: the deciding atom is the first that evaluates false. The
-/// search passes atoms that are not false and stops at the first that is
-/// false or fails: a failure there gives no record, never a later atom's.
-#[trace("TC-840", "FR-330-AC-12")]
-#[test]
-fn the_decisive_search_stops_at_the_first_false_or_failed_atom() {
-    use crate::spine::clause::temporal::first_false_atom;
-    use std::ops::ControlFlow;
-    let readings = |readings: Vec<ControlFlow<Option<u8>>>| {
-        let mut read = Vec::new();
-        let found = first_false_atom(readings.into_iter().enumerate(), |(atom, reading)| {
-            read.push(atom);
-            reading
-        });
-        (found, read)
-    };
-    assert_eq!(
-        readings(vec![
-            ControlFlow::Continue(()),
-            ControlFlow::Break(Some(1)),
-            ControlFlow::Break(Some(2)),
-        ]),
-        (Some(1), vec![0, 1])
-    );
-    assert_eq!(
-        readings(vec![
-            ControlFlow::Continue(()),
-            ControlFlow::Break(None),
-            ControlFlow::Break(Some(2)),
-        ]),
-        (None, vec![0, 1])
-    );
-    assert_eq!(
-        readings(vec![ControlFlow::Continue(()), ControlFlow::Continue(())]),
-        (None, vec![0, 1])
-    );
 }
 
 /// FR-337 "Aggregate formula emission" item 7 through the spine: the clock

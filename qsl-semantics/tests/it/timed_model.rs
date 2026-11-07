@@ -13,7 +13,7 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::intake::meaning;
 use quire_checked::node::NodeKind;
-use quire_exact::{Integer, Rational};
+use quire_exact::{Integer, Rational, ValueType};
 use serde_json::{json, Value};
 
 use crate::model_operations::{
@@ -287,75 +287,210 @@ fn rpc_checks_to_its_clocks_guards_resets_and_invariants() {
     );
 }
 
-/// FR-230-AC-58 / TC-1334: S3 has no ambient named-population scope for a
-/// time invariant or `urgent when`, while ordinary state-clause population
-/// scope and self-only timed predicates remain available. Each population
-/// form FR-230 names is refused: a quantifier domain, `allInstances`,
-/// `lookup` and `count`/`sum`.
-#[trace("TC-1334", "FR-230-AC-58")]
-#[test]
-fn timed_predicates_refuse_named_populations_without_restricting_state_clauses() {
-    for predicate in [
-        "time invariant HasCalls when { forall(c in Config::calls : true) } { self.x <= 1 ms }\n",
-        "urgent CallsExist when { exists(c in Config::calls : true) };\n",
-        "time invariant AllCalls when { \
-         exists(c in allInstances<Config::Call>(Config::calls) : true) } { self.x <= 1 ms }\n",
-        "urgent Known when { present(lookup<Config::Call>(Config::calls, self) absent empty) };\n",
-        "time invariant Counted when { \
-         count<Config::VersionNumber>(c in Config::calls : true) > 0 } { self.x <= 1 ms }\n",
-        "urgent Summed when { sum<Config::VersionNumber>(c in Config::calls : c.n) > 0 };\n",
-    ] {
-        let body = format!("{}{}", rpc("time Config dense unit ms;"), predicate);
-        let (cause, text) = refused(&rpc_document(&["x"]), &body);
-        assert_eq!(
-            (cause.code(), cause.tag(), text.as_str()),
-            (
-                Code::UnsupportedConstruct,
-                "not-yet-implemented",
-                "Config::calls"
-            ),
-            "the population reference is refused and no TimedModel is produced"
-        );
-        let TemporalCause::TimedPredicate { cause, .. } = cause else {
-            panic!("the named population refusal belongs to the timed predicate: {cause:?}");
-        };
-        assert!(
-            matches!(
-                &*cause,
-                CheckCause::PopulationFormNotChecked {
-                    what: "timed predicate population scope"
-                }
-            ),
-            "the refusal identifies the missing timed-predicate scope: {cause:?}"
-        );
+/// The nodes of `node` and below, in pre-order.
+fn descendants(node: CheckedNode<'_>) -> Vec<CheckedNode<'_>> {
+    let mut out = vec![node];
+    for child in node.children() {
+        out.extend(descendants(child));
     }
+    out
+}
 
-    // Two population references: the first, in source order, is reported.
-    let first = "exists(c in Config::calls : true)";
-    let body = format!(
-        "{}time invariant Two when {{ {first} and \
-         present(lookup<Config::Call>(Config::calls, self) absent empty) }} {{ self.x <= 1 ms }}\n",
-        rpc("time Config dense unit ms;"),
+/// A second model alias `Other` of the unit, selecting a package that
+/// declares the population `jobs`: the unit text and its check.
+fn check_with_other(body: &str) -> (String, Result<CheckedGraph, Vec<CheckRefusal>>) {
+    let config = rpc_document(&["x"]);
+    // The `Call` package under another identity, with its population named
+    // `jobs` and no clock, so that `Other` needs no time source.
+    let mut jobs: Value = serde_json::from_str(
+        &String::from_utf8(rpc_document(&[]))
+            .expect("JSON")
+            .replace("example/config-version", "example/jobs")
+            .replace("/calls", "/jobs"),
+    )
+    .expect("JSON");
+    for operation in jobs["types"][1]["operations"]
+        .as_array_mut()
+        .expect("operations")
+    {
+        operation["frame"]["modifies"]
+            .as_array_mut()
+            .expect("modifies")
+            .retain(|field| !field.as_str().is_some_and(|field| field.ends_with("/x")));
+    }
+    let jobs = jobs.to_string().into_bytes();
+    let packages =
+        qsl_semantics::model::intake::package_input([config.as_slice(), jobs.as_slice()])
+            .expect("both packages admit");
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
+         {TEMPORAL}\
+         model Config = {PACKAGE:?};\n\
+         model Other = \"example/jobs\";\n\
+         {body}\n"
     );
-    let document = rpc_document(&["x"]);
-    let refusals = check(&document, &body).expect_err("the named population is refused");
+    let built = crate::model_operations::parse_and_build(&unit);
+    let models = qsl_semantics::model::intake::admit_unit(
+        &built.selections().models,
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .expect("I1 admits both packages")
+    .with_parsed_operation_clauses(|text| {
+        qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
+    })
+    .expect("kept clauses parse");
+    let raw = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("test", "tc-1334"),
+        "unit.native",
+        unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 admits the unit")
+    .source()
+    .reference()
+    .clone();
+    let checked = qsl_semantics::check::PackageDeclarations::assemble(
+        raw,
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("the unit assembles")
+    .with_unwritten_timed_members()
+    .check(quire_semantic_value::checking::CheckingLimits::default());
+    (unit, checked)
+}
+
+/// The code, tag and located text of the one refusal of `checked`.
+fn located(
+    unit: &str,
+    checked: Result<CheckedGraph, Vec<CheckRefusal>>,
+) -> (Code, &'static str, String) {
+    let refusals = checked.expect_err("refused, so no TimedModel");
     let [refusal] = refusals.as_slice() else {
         panic!("one refusal expected: {refusals:?}");
     };
     let CheckCause::Temporal(cause) = &refusal.cause else {
         panic!("a timed refusal expected: {refusal:?}");
     };
-    let (text, _) = config_unit_with_profiles(&document, TEMPORAL, &body);
-    let expected = text.find(first).expect("the first quantifier") + "exists(c in ".len();
+    let span = cause.span();
+    (
+        cause.code(),
+        cause.tag(),
+        unit[span.start..span.end].to_owned(),
+    )
+}
+
+/// FR-230-AC-58 / TC-1334: a time invariant or `urgent when` predicate names
+/// the timed model's own population, typed `Population<Call>` with a
+/// `Set<Reference<Call>>` domain, read at `current`, with `calls` its only
+/// population domain; another alias's population, a population as an
+/// operand and a population-quantified time invariant body refuse.
+#[trace("TC-1334", "FR-230-AC-58")]
+#[test]
+fn timed_predicates_name_the_models_own_population() {
+    for predicate in [
+        "time invariant HasCalls when { forall(c in Config::calls : c.inflight) } { self.x <= 1 ms }\n",
+        "urgent CallsExist when { exists(c in Config::calls : c.waiting) };\n",
+        "time invariant AllCalls when { \
+         exists(c in allInstances<Config::Call>(Config::calls) : c.inflight) } { self.x <= 1 ms }\n",
+        "urgent Known when { present(lookup<Config::Call>(Config::calls, self) absent empty) };\n",
+        "time invariant Counted when { count(c in Config::calls where c.waiting) < 2 } { self.x <= 1 ms }\n",
+        "urgent Summed when { sum(c in Config::calls : c.n) > 0 };\n",
+        "urgent Both when { exists(c in Config::calls : c.waiting) and \
+         present(lookup<Config::Call>(Config::calls, self) absent empty) };\n",
+    ] {
+        let body = format!("{}{}", rpc("time Config dense unit ms;"), predicate);
+        let graph = check(&rpc_document(&["x"]), &body)
+            .unwrap_or_else(|refusals| panic!("`{predicate}` checks: {refusals:?}"));
+        let model = timed(&graph);
+        let alternatives = if predicate.starts_with("urgent") {
+            match model.urgency().last() {
+                Some(qsl_semantics::check::Urgency::When { alternatives, .. }) => alternatives,
+                other => panic!("an `urgent when`: {other:?}"),
+            }
+        } else {
+            model.invariants().last().expect("an invariant").alternatives()
+        };
+        let [alternative] = alternatives else {
+            panic!("one alternative");
+        };
+        let nodes = descendants(alternative.predicate().body());
+        let reads: Vec<_> = nodes
+            .iter()
+            .filter_map(|node| match node.kind() {
+                NodeKind::NamedPopulation { population, .. } => {
+                    Some((population.node.clone(), node.value_type().clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(!reads.is_empty(), "`{predicate}` reads the population");
+        for (population, value_type) in &reads {
+            assert!(population.ends_with("/calls"), "{population}");
+            assert!(
+                matches!(value_type, ValueType::Population(_)),
+                "the operand is a Population<Call>: {value_type:?}"
+            );
+        }
+        for node in &nodes {
+            if let ValueType::Collection(collection) = node.value_type() {
+                if matches!(node.kind(), NodeKind::AllInstances { .. }) {
+                    assert!(
+                        matches!(collection.element(), ValueType::Reference(_)),
+                        "allInstances is a Set<Reference<Call>>"
+                    );
+                }
+            }
+        }
+    }
+
+    let (text, checked) = check_with_other(&format!(
+        "{}urgent Elsewhere when {{ exists(j in Other::jobs : true) }};\n",
+        rpc("time Config dense unit ms;")
+    ));
     assert_eq!(
-        (
-            cause.span().start,
-            &text[cause.span().start..cause.span().end]
-        ),
-        (expected, "Config::calls"),
-        "the first population reference is reported, not the last"
+        located(&text, checked),
+        (Code::MissingDeclaration, "missing-name", "jobs".to_owned()),
+        "another alias's population is missing at its second segment"
     );
 
+    for (predicate, expected) in [
+        (
+            "urgent Missing when { exists(c in Config::nothing : true) };\n",
+            (Code::MissingDeclaration, "missing-name", "nothing"),
+        ),
+        (
+            "urgent Operand when { Config::calls = Config::calls };\n",
+            (Code::IllTyped, "operator-ineligible", "Config::calls"),
+        ),
+        (
+            "time invariant Body when { true } { forall(c in Config::calls : c.x <= 3 ms) }\n",
+            (Code::InvalidTimedModel, "time-invariant-shape", ""),
+        ),
+    ] {
+        let body = format!("{}{}", rpc("time Config dense unit ms;"), predicate);
+        let (text, _) = config_unit_with_profiles(&rpc_document(&["x"]), TEMPORAL, &body);
+        let refusals = check(&rpc_document(&["x"]), &body).expect_err("refused, no TimedModel");
+        let [refusal] = refusals.as_slice() else {
+            panic!("one refusal expected for `{predicate}`: {refusals:?}");
+        };
+        let CheckCause::Temporal(cause) = &refusal.cause else {
+            panic!("a timed refusal expected: {refusal:?}");
+        };
+        let (code, tag) = (cause.code(), cause.tag());
+        let span = cause.span();
+        let first = text[span.start..span.end].to_owned();
+        assert_eq!((code, tag), (expected.0, expected.1), "`{predicate}`");
+        if !expected.2.is_empty() {
+            assert_eq!(first, expected.2, "`{predicate}` is located at its name");
+        }
+    }
+
+    // Self-only predicates and a population-reading precondition still check.
     let body = format!(
         "{}{}{}",
         rpc("time Config dense unit ms;"),
@@ -364,10 +499,113 @@ fn timed_predicates_refuse_named_populations_without_restricting_state_clauses()
         "pre UsesCalls using v on Config::Call::reply { forall(c in Config::calls : true) }\n"
     );
     let graph = check(&rpc_document(&["x"]), &body)
-        .expect("self-only timed predicates and a population-reading precondition remain admitted");
+        .expect("self-only timed predicates and a population-reading precondition check");
     let model = timed(&graph);
     assert_eq!(model.invariants().len(), 3);
     assert_eq!(model.urgency().len(), 1);
+}
+
+/// FR-230-AC-61 / TC-1334: a time invariant or `urgent when` in a model
+/// whose populations cover no object type refuses `missing-name`, and one
+/// covering `Call` by two populations or two object types refuses
+/// `ambiguous-name`, at the declaration whether or not it names a
+/// population.
+#[trace("TC-1334", "FR-230-AC-61")]
+#[test]
+fn a_timed_model_without_exactly_one_population_refuses() {
+    let boolean = "ix://quire/native/Boolean";
+    let archive = format!("ix://{PACKAGE}/archive");
+    let server = format!("ix://{PACKAGE}/Server");
+    let servers = format!("ix://{PACKAGE}/servers");
+    let variants = |document: Vec<u8>| {
+        let json: Value = serde_json::from_slice(&document).expect("JSON");
+        let mut none = json.clone();
+        none["populations"] = json!([]);
+        let mut two_populations = json.clone();
+        let mut second = json["populations"][0].clone();
+        second["identity"] = json!(archive);
+        second["displayName"] = json!(archive);
+        second["origin"]["generated"]["generatorIdentity"] = json!(archive);
+        second["origin"]["generated"]["inputIdentities"] = json!([archive]);
+        two_populations["populations"]
+            .as_array_mut()
+            .expect("populations")
+            .push(second);
+        let mut two_types = json;
+        let mut population = two_types["populations"][0].clone();
+        population["identity"] = json!(servers);
+        population["displayName"] = json!(servers);
+        population["members"] = json!([server]);
+        population["origin"]["generated"]["generatorIdentity"] = json!(servers);
+        population["origin"]["generated"]["inputIdentities"] = json!([servers]);
+        two_types["populations"]
+            .as_array_mut()
+            .expect("populations")
+            .push(population);
+        two_types["types"]
+            .as_array_mut()
+            .expect("types")
+            .push(wire_type(
+                &server,
+                "object_type",
+                json!({
+                    "supertypes": [],
+                    "fields": [wire_field(&format!("{server}/x"), "x", boolean, "required", 1)],
+                    "operations": [],
+                    "relationships": [],
+                }),
+            ));
+        [
+            ("none", none, Code::MissingDeclaration, "missing-name"),
+            (
+                "two populations",
+                two_populations,
+                Code::AmbiguousDeclaration,
+                "ambiguous-name",
+            ),
+            (
+                "two object types",
+                two_types,
+                Code::AmbiguousDeclaration,
+                "ambiguous-name",
+            ),
+        ]
+    };
+    for declaration in [
+        "time invariant D when { true } { self.x <= 1 ms }",
+        "urgent D when { exists(c in Config::calls : true) };",
+    ] {
+        let body = format!("{UNITS}time Config dense unit ms;\n{declaration}\n");
+        let (text, _) = config_unit_with_profiles(&rpc_document(&["x"]), TEMPORAL, &body);
+        for (case, document, code, tag) in variants(rpc_document(&["x"])) {
+            let refusals = check(&document.to_string().into_bytes(), &body)
+                .expect_err("refused, so no TimedModel");
+            let [refusal] = refusals.as_slice() else {
+                panic!("one refusal for {case}: {refusals:?}");
+            };
+            let CheckCause::Temporal(cause) = &refusal.cause else {
+                panic!("a timed refusal for {case}: {refusal:?}");
+            };
+            let span = cause.span();
+            assert_eq!(
+                (cause.code(), cause.tag()),
+                (code, tag),
+                "{case}: `{declaration}`"
+            );
+            // Two object types are refused earlier, at the model's `time`
+            // declaration, which names an ambiguous timed model.
+            let expected = if case == "two object types" {
+                "Config"
+            } else {
+                declaration
+            };
+            assert_eq!(
+                &text[span.start..span.end],
+                expected,
+                "{case}: `{declaration}`"
+            );
+        }
+    }
 }
 
 /// Part of FR-230-AC-1 (TC-685): under `time dense unit s`, `reply`'s bound

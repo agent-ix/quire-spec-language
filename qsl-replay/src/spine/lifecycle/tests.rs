@@ -2206,6 +2206,7 @@ fn a_continued_protocol_refusal_has_no_subject_or_partial_reference_rows() {
     let checked = super::check_for_continuation(
         &parsed,
         super::ContinuationInputs {
+            integer_division: None,
             package_name: "fixture".to_owned(),
             execution_points: &BTreeMap::new(),
             temporal_selections: &[],

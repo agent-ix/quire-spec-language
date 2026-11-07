@@ -1631,6 +1631,7 @@ pub(crate) fn check_units_with_options(
             limits,
             cancel,
             temporal_selections: options.temporal_selections,
+            integer_division: None,
             active: Vec::new(),
             compiled: BTreeMap::new(),
             import_edges: 0,
@@ -1802,6 +1803,7 @@ pub fn check_with_execution_points_and_refinement_internals(
         execution_points,
         refinement_internals,
         &[],
+        None,
         models,
         dependencies,
         limits,
@@ -1832,6 +1834,7 @@ pub fn check_with_temporal_selections_and_execution_points(
         execution_points,
         None,
         temporal_selections,
+        None,
         models,
         dependencies,
         limits,
@@ -1848,6 +1851,8 @@ pub(crate) struct ContinuationInputs<'a> {
     pub(crate) execution_points: &'a super::StateClauseExecutionPoints,
     /// Explicit clock selections for configured temporal clauses.
     pub(crate) temporal_selections: &'a [qsl_package::TemporalClockSelection],
+    /// The semantic owner's admitted law for this compile's unit.
+    pub(crate) integer_division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
 }
 
 /// S3 continuation for the compiler: keep an attributable protocol refusal
@@ -1866,6 +1871,7 @@ pub(crate) fn check_for_continuation(
         inputs.execution_points,
         None,
         inputs.temporal_selections,
+        inputs.integer_division,
         models,
         dependencies,
         limits,
@@ -1884,6 +1890,7 @@ fn check_with_context_and_temporal_selections(
     execution_points: &super::StateClauseExecutionPoints,
     refinement_internals: Option<serde_json::Value>,
     temporal_selections: &[qsl_package::TemporalClockSelection],
+    integer_division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
     models: &AdmittedModels,
     dependencies: &DependencyInput,
     limits: SpineLimits,
@@ -1913,6 +1920,7 @@ fn check_with_context_and_temporal_selections(
             limits,
             cancel,
             temporal_selections,
+            integer_division,
             active: Vec::new(),
             compiled: BTreeMap::new(),
             import_edges: 0,
@@ -3157,6 +3165,7 @@ struct Resolution<'a> {
     limits: SpineLimits,
     cancel: &'a Cancel,
     temporal_selections: &'a [qsl_package::TemporalClockSelection],
+    integer_division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
     /// The libraries whose compile is in progress, outermost first.
     active: Vec<LibraryName>,
     /// Each library whose compile completed. A library is compiled at most
@@ -3507,6 +3516,9 @@ impl<'a> Resolution<'a> {
                 refusal,
             })
         })?;
+        if frame.raw == self.continuation_source {
+            declarations.integer_division = self.integer_division;
+        }
         if let Some(value) = frame.refinement_internals.clone() {
             declarations = declarations.with_refinement_internals(value);
         }

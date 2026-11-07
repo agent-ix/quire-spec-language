@@ -91,6 +91,13 @@ pub(crate) fn collection_document() -> Value {
     build_with(Flavor::Collections)
 }
 
+/// The package document with the bounded Rational value type `Ratio`
+/// (`Rational[-3, 7; 1, 12]`) and `Item` also holding, after its other fields,
+/// `level: Ratio` (FR-505-AC-5, TC-1300 rows 21 and 22).
+pub(crate) fn rational_document() -> Value {
+    build_with(Flavor::Rational)
+}
+
 /// The package document with `Item` also holding, after its other fields,
 /// the Quantity field of FR-106-AC-59 (TC-1171): `reach: Quantity<ms>` (its
 /// unit is `ix://quire/unit/ms`, which the replay's source unit declares).
@@ -105,6 +112,7 @@ enum Flavor {
     Text,
     Collections,
     Quantity,
+    Rational,
 }
 
 /// A field of `Item` called `name` of `type_ref`, with the multiplicity of a
@@ -216,6 +224,38 @@ fn build_with(flavor: Flavor) -> Value {
             .expect("Item has fields")
             .extend([variants::field("Item", "reach", &ms)]);
     }
+    if flavor == Flavor::Rational {
+        let rational_type = |name: &str| {
+            let constraint = |keyword: &str, value: i64| {
+                json!({
+                    "identity": id(&format!("constraint/{name}/{keyword}")),
+                    "keyword": keyword,
+                    "operands": {"value": value},
+                    "appliesTo": id(name),
+                    "diagnosticCode": format!("rational.{keyword}"),
+                    "origin": base::origin(&format!("constraint/{name}/{keyword}")),
+                })
+            };
+            base::declaration(
+                name,
+                "scalar",
+                json!({
+                    "scalar": "rational",
+                    "constraints": [
+                        constraint("minNumerator", -3),
+                        constraint("maxNumerator", 7),
+                        constraint("minDenominator", 1),
+                        constraint("maxDenominator", 12),
+                    ],
+                }),
+            )
+        };
+        types.push(rational_type("Ratio"));
+        item["fields"]
+            .as_array_mut()
+            .expect("Item has fields")
+            .extend([variants::field("Item", "level", &id("Ratio"))]);
+    }
     if text {
         let (title, tag, code) = (id("Title"), id("Tag"), id("Code"));
         item["fields"]
@@ -250,7 +290,7 @@ fn build_with(flavor: Flavor) -> Value {
     }
     types.push(item);
     let mut document = variants::package(types, true);
-    if text {
+    if text || flavor == Flavor::Rational {
         // A value type carrying a `scalar` is a record-shaped construct
         // (the `value` construct is the `target` alias).
         let scalar = json!({

@@ -167,7 +167,7 @@ fn the_deadline_position_participates_and_the_next_does_not() {
 /// TC-1299 rows 7 and 8: an incomplete input applies no false extension even
 /// in a closed scope; the same watermark with complete input reads the silent
 /// samples as false.
-#[trace("TC-1299", "FR-504-AC-4")]
+#[trace("TC-1299", "FR-504-AC-4", "FR-043-AC-8")]
 #[test]
 fn an_incomplete_input_applies_no_false_extension() {
     let incomplete = Progressed::new(Unit::FixedAlways, &[1], 5, ProgressCompleteness::Incomplete)
@@ -408,7 +408,7 @@ fn fixed_sample(
 /// in the order `ClockParameters`, `Epoch`, `SamplePeriod`, `ClockUnit` for a
 /// fixed-sample clause and `SequenceAuthority` for an event-position one, and
 /// a clock name that differs with a parameter is reported as `Clock`.
-#[trace("TC-1317", "FR-522-AC-3")]
+#[trace("TC-1317", "FR-522-AC-3", "FR-043-AC-3")]
 #[trace("TC-1317", "FR-522-AC-4")]
 #[trace("TC-1317", "FR-522-AC-5")]
 #[trace("TC-1317", "FR-522-AC-6")]
@@ -630,7 +630,7 @@ fn silent_samples_anchor_no_on_each_activation() {
 /// unsettled fixed-sample obligation is `Pending` with deadline `anchor +
 /// reach` until `W` reaches it, and `Indeterminate` from there when the input
 /// stays incomplete.
-#[trace("TC-1299", "FR-504-AC-1", "FR-504-AC-4")]
+#[trace("TC-1299", "FR-504-AC-1", "FR-504-AC-4", "FR-043-AC-8")]
 #[test]
 fn an_open_fixed_sample_obligation_is_indeterminate_once_the_watermark_reaches_the_deadline() {
     let before = Progressed::new(

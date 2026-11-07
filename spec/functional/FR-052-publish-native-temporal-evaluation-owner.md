@@ -51,107 +51,12 @@ that carry them for quire-protocol are FR-516's; they are Rust values with no
 document, schema or QSL-computed content digest (the observation owner's
 identifiers on `EvidenceRef` are opaque and echoed).
 
-For the QSL-owned native `Report` route (the value `temporal::evaluate_v2`
-returns), the following hold.
-
-*Binding.* The report SHALL carry the checked subject it was evaluated for: the
-package identity and version, the clause `CheckedNodeId`, the declaration
-occurrence key `{ role, ordinal }` (FR-515), and the clause's source-map entry
-(FR-515 `source_span`). It SHALL carry the one opaque observation reference and
-revision reference the evaluation was given (FR-043), and the FR-043 truth,
-settlement, support and typed outcome. QSL treats the observation owner's
-references as opaque: it defines no revision or capture-provenance shape and
-derives no identity from bytes, hashes or digests.
-
-*Decision-support identities.* The report SHALL carry its support as a
-trace-index relation: for each support entry, the admitted trace position
-ordinal and the FR-043 valuation-evidence row key (subject, position, anchor,
-capture instance, revision, operand) it rests on, in the order FR-043 evaluates
-them. Every support entry SHALL name a row present in the evidence the
-evaluation admitted, and a repeated row appears as often as FR-043 retained it.
-A support position index with no row, or a row the evaluation did not admit,
-cannot occur in a report.
-
-*Owner representation.* The report SHALL be immutable, with no mutator, and its
-owner representation SHALL be `Report::to_owner_bytes(&self) -> Vec<u8>` and
-`Report::from_owner_bytes(bytes: &[u8], subject: &CheckedSubject,
-observation: &ObservationRef, budget: &mut NativeJoinBudget) -> Result<Report, ReportRefusal>`. The bytes are a
-deterministic, self-delimiting encoding: a format tag and version, then the
-binding, the outcome, the support relation and the optional predecessor in a
-fixed order, each variable-length member length-prefixed and each enumeration
-carried as a closed tag. The encoding carries no hash, digest or QSL-computed
-content identity. The reader is the only constructor of a `Report` other than
-the evaluator, and it SHALL admit strictly: it refuses an unknown format tag or
-version (`UnsupportedVersion`), a truncated input (`Truncated`), bytes after the
-last member (`TrailingBytes`), an unknown enumeration tag (`UnknownTag`), a
-member out of order or repeated (`OutOfOrder`), a binding that differs from the
-supplied subject or observation reference in any dimension
-(`BindingMismatch`, naming the dimension), and a support entry whose row is not
-in the relation or whose position ordinal is not a position of the report
-(`SupportNotInTrace`). `ReportRefusal` is a closed enum and a refusal returns no
-partial report. Writing then reading a report returns an equal report.
-
-*Predecessor.* A report on a correction carries its direct predecessor's
-FR-043 result identity (FR-043-AC-13) and the complete exact owner representation
-of that predecessor. `CheckedSubject::with_predecessor` supplies the actual
-prior owner `Report` and explicit finite `ReportPredecessorLimits`; the evaluator
-and strict reader SHALL reject a correction with no supplied report, a report
-whose checked binding differs, or a report whose identity is not the request
-ledger's direct predecessor. The owner bytes SHALL use report format version 2;
-version 1 is refused `UnsupportedVersion`, with no inferred full-value authority.
-The reader compares the complete retained predecessor bytes with the supplied
-actual report, including its outcome, truth, settlement, support, subject,
-observation and predecessor relation. Equal request/result identities alone do
-not establish equality. The reader also applies the predecessor rule of AC-12. QSL's rule applies only to a correction relation
-carried by this native route; it grants no authority over an IR bridge join's
-predecessor or supersession lineage, which Contract IR owns.
-
-The native `CheckedSubject` binds an actual checked-package occurrence, its
-admitted valuation relation and the evaluation request. The strict reader uses
-that relation as its support authority and the request ledger as its direct
-predecessor identity authority. The actual supplied owner report establishes the
-complete value, and a decoded report grants no next-call ledger authority. The native evaluator invokes the existing checked-package
-temporal evidence engine; the retired artifact evaluator is named
-`evaluate_artifact_v2`. This native report contract is distinct from FR-516's
-quire-protocol request/result types.
-
-The reader SHALL require every result-identity member in canonical order and
-compare its bytes with the evidence owner's encoding of the supplied checked
-subject, observation and evaluation request, retaining the encoded original
-meter ceiling. An incomplete or request-mismatched identity refuses
-`UnknownTag`; it cannot establish changed-input predecessor authority. This
-check encodes identity members without evaluating temporal positions.
-
-`Report::predecessor_owner_bytes` SHALL expose the exact retained complete prior
-owner value. `Report::validate_predecessor` SHALL compare a supplied actual report
-with that value without running temporal evaluation, an IR reader, or a bridge
-join. It SHALL return `InvalidPredecessor` for a different complete report even
-if request/result identity is equal. Clones and moves preserve this relation.
-Retained predecessor representations are flat byte values, not recursively owned
-`Report` chains; encoding, comparison, cloning and dropping have bounded stack
-use. Each encoding copies the retained predecessor bytes once rather than
-recursively reconstructing prior reports.
-
-The new full-predecessor operations SHALL charge `ReportPredecessorLimits.work`
-for the initial report visit, each binding and support-row visit, every encoded
-byte, the identity and binding comparison bytes, supplied predecessor comparison
-bytes, and each retained-byte copy before that work. They SHALL charge
-`ReportPredecessorLimits.storage` for every temporary row/support/predecessor frame and final encoded buffer,
-including their handles, and retained bytes plus one shared-buffer handle before
-allocation. Bytes copied through multiple encoder frames are charged on each
-copy.
-`Report::to_owner_bytes_bounded` SHALL expose the same canonical owner
-representation and admitted usage after charging every temporary/final frame
-before allocation; a first excess charge returns no bytes. The existing
-`to_owner_bytes` convenience representation has no operation-limit parameter.
-Validation without retention charges only its encoding buffers, not a retained
-shared snapshot. A first excess
-charge SHALL return `PredecessorLimit {resource, limit, actual}` with the original
-ceiling and full attempted cumulative charge, and no partial admitted relation.
-`validate_predecessor` returns the admitted work/storage usage on success. These
-are the native report owner's limits; the same caller `NativeJoinBudget` remains
-threaded through all existing IR admission operations without replacement or
-reset. It is not used as an unimplemented generic report-byte counter.
+The QSL-owned native owner-report route (`temporal::evaluate_v2`, its `Report`
+and the `Report::to_owner_bytes` / `Report::from_owner_bytes` flat-bytes
+carrier) is not part of this requirement. Its binding, support, predecessor and
+limit obligations are specified on the spine evidence result by FR-526 ("Result
+subject and support", "Predecessor authority" and "Lineage limit"); its byte
+carrier is retired below.
 
 FR-043 owns temporal meaning; FR-044 owns activation and captures. The retired
 M-6d request/result API criteria remain historical and do not retire these
@@ -164,16 +69,29 @@ behaviors.
 | FR-052-AC-9 | For a checked temporal obligation, the Layer-4 evaluation result's truth, settlement and support equal the FR-043 evaluation of the same selected obligation and admitted evidence; no input permits caller-supplied truth, settlement or support to determine that result. | Test |
 | FR-052-AC-10 | For each independent activation, capture, anchor, profile/clock, progress, closure, execution and completeness fact present on the route, the result retains that fact distinctly; missing required evidence yields a typed non-truth outcome and never a false/default/closed/complete value. | Test |
 | FR-052-AC-11 | Missing, inconsistent, unsupported or over-budget evidence produces the corresponding typed outcome with no partial truth, while an independently settled sibling retains its FR-043 result. | Test |
-| FR-052-AC-12 | Where the route accepts a correction relation, a valid correction names its exact direct predecessor and changed evaluation input; self, non-direct, cross-obligation, cross-occurrence (a predecessor of another declaration occurrence of the same checked declaration) or identity-mismatched predecessors refuse, and the predecessor result remains unchanged; on the native `Report` route the predecessor is named by FR-043 result identity. This criterion does not authorize bridge predecessor or supersession lineage, which Contract IR owns. | Test |
+| FR-052-AC-12 | Where the route accepts a correction relation, a valid correction names its exact direct predecessor and changed evaluation input; self, non-direct, cross-obligation, cross-occurrence (a predecessor of another declaration occurrence of the same checked declaration) or identity-mismatched predecessors refuse, and the predecessor result remains unchanged. This criterion does not authorize bridge predecessor or supersession lineage, which Contract IR owns. | Test |
 | FR-052-AC-13 | Where the route carries a progress ledger, a regressing watermark or a conflicting completeness revision under one binding is refused as FR-502 states, leaves the retained progress and every earlier result unchanged, and a foreign clock, clause, package or profile settles nothing for the binding (the spine successor of FR-043-AC-12). | Test (TC-144, TC-1296) |
 | FR-052-AC-14 | A checked temporal obligation selected under the timestamped-event finite-window profile is evaluated as FR-501 states and is never refused for its profile. | Test (TC-144, TC-1295) |
-| FR-052-AC-15 | An evaluation through `temporal::evaluate_v2` returns a `Report` whose subject (package identity and version, clause `CheckedNodeId`, occurrence key, source-map entry), observation and revision references, truth, settlement, support and typed outcome equal those of the evaluation; two occurrences of one declaration sharing a node return reports differing in the occurrence key. | Test |
-| FR-052-AC-16 | Every support entry of a report names a trace position ordinal and a valuation-evidence row key present in the admitted evidence; for an evaluation with three identical rows at one position and one row at another, the support relation lists the rows with that multiplicity, and no support entry exists for a position or row the evaluation did not admit. | Test |
-| FR-052-AC-17 | `from_owner_bytes(to_owner_bytes(r), subject, observation)` returns a report equal to `r`, including support multiplicity and predecessor, and `to_owner_bytes` is byte-identical across two calls and two builds of the same evaluation. | Test |
-| FR-052-AC-18 | Each single mutation of valid owner bytes is refused with the named `ReportRefusal` and returns no report: an unknown version or format tag (`UnsupportedVersion`), a prefix of the bytes (`Truncated`), one appended byte (`TrailingBytes`), an unknown outcome tag (`UnknownTag`), two members swapped (`OutOfOrder`), a different supplied subject, occurrence key or observation reference (`BindingMismatch` naming the dimension), and a support entry naming a row or position the report does not hold (`SupportNotInTrace`). | Test |
-| FR-052-AC-19 | A genuine correction requires the actual full direct predecessor report; its retained predecessor owner bytes equal the complete prior report bytes, and non-evaluating validation accepts clones/moves of that value. A different full outcome/support value with equal request/result identity, a skipped or cross-binding report, and a missing actual predecessor refuse. Strict reading rejects mutated predecessor value bytes and unsupported old format rather than inferring authority from labels. | Test |
-| FR-052-AC-20 | Full-predecessor issuance, reading and validation charge their stated native-owner work/storage limits before inspection or allocation; exact measured limits admit, one less returns the original typed resource/ceiling/attempt with no partial relation, and existing caller NativeJoinBudget consumption is never reset. | Test |
-| FR-052-AC-21 | Repeated native corrections retain complete prior representations as flat bytes; clone, compare, encode and drop do not recursively traverse or own Report chains, and work/copies of retained predecessor bytes are explicitly charged. | Test |
+
+## Retired and moved criteria
+
+FR-052-AC-17, AC-18 and AC-21 are retired with the native owner-report flat-bytes
+carrier (`Report::to_owner_bytes`, `Report::to_owner_bytes_bounded`,
+`Report::from_owner_bytes`, `ReportRefusal`, `Report::predecessor_owner_bytes`
+and `Report::validate_predecessor`). AC-17 stated that carrier's encode/decode
+round trip and byte determinism, AC-18 its strict-reader refusals, and AC-21 its
+flat retained predecessor bytes. The one AC-18 case that is not about bytes, a
+binding that differs from the selected subject or occurrence, is already the
+spine's: FR-522's `binding-mismatch` and FR-516-AC-32 and AC-33. They exist only for that carrier, which is
+deleted; the spine evidence result is a Rust value with no owner byte
+representation, so no successor criterion is needed.
+
+FR-052-AC-15, AC-16, AC-19 and AC-20 are moved to the spine evidence result
+without narrowing: AC-15 (checked subject, observation and revision references)
+to FR-526-AC-20 and AC-21, AC-16 (support positions and evidence rows) to
+FR-526-AC-22 and AC-23, AC-19 (predecessor chaining) to FR-526-AC-24 to AC-26,
+and AC-20 (predecessor limits) to FR-526-AC-27 and AC-28, on FR-523's existing
+`lineage` counter.
 
 ## Dependencies
 
@@ -181,4 +99,5 @@ behaviors.
 - [FR-044](./FR-044-activate-temporal-obligations.md) owns activation identity, guards and immutable captures.
 - [FR-390](./FR-390-evaluate-checked-protocol-slots.md) owns checked-package protocol-slot evaluation.
 - [FR-449](./FR-449-derive-protocol-obligation-activation-bindings.md) owns checked-package activation mapping.
+- [FR-526](./FR-526-chain-a-temporal-evidence-result-to-its-direct-predecessor-and-refuse-a-relation-that-changes-nothing.md) carries the moved subject, support, predecessor and limit criteria.
 - [FR-051](./FR-051-publish-checked-native-handoffs.md) is historical context for the retired native temporal subject handoff.

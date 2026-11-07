@@ -22,7 +22,8 @@ use serde_json::json;
 
 use crate::temporal_activation::{
     activated, call, claim, delivery, env, event_env, expect_refusal, fault_of, fixed_env, id,
-    input, origin, position, request, run, unlimited, Env, EACH, GUARDED, ONE_CAPTURE,
+    input, origin, position, request, run, try_env_under, unlimited, Env, EACH, GUARDED,
+    ONE_CAPTURE,
 };
 
 fn each() -> (Env, u64) {
@@ -394,7 +395,13 @@ fn execution_is_carried_into_unknown_and_changes_nothing_else() {
     );
 }
 
-#[trace("FR-524-AC-28", "FR-524-AC-31", "FR-524-AC-12", "TC-1319")]
+#[trace(
+    "FR-524-AC-28",
+    "FR-524-AC-31",
+    "FR-524-AC-12",
+    "TC-1319",
+    "FR-044-AC-4"
+)]
 #[test]
 fn trigger_evidence_and_capture_faults_reach_the_call() {
     let (env, p) = each();
@@ -717,7 +724,7 @@ fn a_shared_meter_one_unit_short_stops_the_second_instance_naming_it() {
     assert_eq!(replay.result_identity, one.result_identity);
 }
 
-#[trace("FR-516-AC-14", "TC-1311")]
+#[trace("FR-516-AC-14", "NFR-008-AC-2", "TC-1311")]
 #[test]
 fn a_sibling_clause_keeps_its_result_after_a_counter_stop() {
     let (env, p) = each();
@@ -1374,6 +1381,118 @@ fn the_spec_vector_of_silent_samples_measures_its_exact_usage() {
     // each), and three materialization charges, one per silent sample, that
     // `admit_progressed` makes before any position is evaluated.
     assert_eq!(meter.admitted_charges().len(), 13);
+}
+
+/// FR-043-AC-1 over both false-extension profiles (event-position and
+/// fixed-sample): with the scope closed and complete through 3, a `holds` atom
+/// that is false is false past closure bare, grouped and under a connective,
+/// settled by the closed scope, while a temporal constant keeps its authored
+/// value in the same three forms: the constant and the atom are not folded.
+#[trace("FR-327-AC-8", "FR-523-AC-21", "FR-043-AC-1", "TC-1311")]
+#[test]
+fn a_closed_scope_separates_an_atom_from_a_constant_in_both_false_extension_profiles() {
+    use qsl_eval::temporal::evidence::Settlement;
+    type Build = fn(&str, &str) -> Env;
+    let profiles: [(&str, Build); 2] = [("event-position", event_env), ("fixed-sample", fixed_env)];
+    for (profile, build) in profiles {
+        for (body, atom_form) in [
+            ("always[0, 3] holds(p)", true),
+            ("always[0, 3] (holds(p))", true),
+            ("true and always[0, 3] holds(p)", true),
+            ("always[0, 3] true", false),
+            ("always[0, 3] (true)", false),
+            ("true and always[0, 3] true", false),
+        ] {
+            let env = build("on origin", body);
+            let p = if atom_form { env.atom("p") } else { 0 };
+            let mut asked = exact_silent_request(&env, p);
+            if !atom_form {
+                asked.positions[0].valuations.clear();
+            }
+            let result = call(&env, &env.subject(&[]), &asked)
+                .unwrap_or_else(|_| panic!("{profile} {body}: a result"));
+            let expected = if atom_form { Truth::False } else { Truth::True };
+            assert_eq!(result.truth, Some(expected), "{profile} {body}");
+            assert_eq!(
+                result.settlement,
+                Some(Settlement::ClosedScope),
+                "{profile} {body}: settled by the closed scope"
+            );
+        }
+    }
+}
+
+/// NFR-008-AC-1, sweep: over the declared population of eight operators, three
+/// profiles, nesting depths one through four and four interval bound pairs
+/// (384 authored clauses), no case wraps, saturates or narrows: every call is an
+/// `Ok` result that either carries a truth or reports a typed limit stop. The
+/// sweep asserts no per-case value, because which composition a nested formula
+/// performs depends on the offsets its trace reaches.
+#[trace("FR-523-AC-16", "NFR-008-AC-1", "TC-1318")]
+#[test]
+fn the_declared_population_never_wraps_or_saturates() {
+    const OPERATORS: [(&str, &str); 8] = [
+        ("eventually", "eventually{i} {a}"),
+        ("always", "always{i} {a}"),
+        ("once", "once{i} {a}"),
+        ("historically", "historically{i} {a}"),
+        ("until", "({a} until{i} {a})"),
+        ("release", "({a} release{i} {a})"),
+        ("since", "({a} since{i} {a})"),
+        ("triggered", "({a} triggered{i} {a})"),
+    ];
+    let bounds = [
+        (0, i64::MAX),
+        (1, i64::MAX),
+        (i64::MAX - 1, i64::MAX),
+        (0, i64::MAX / 2),
+    ];
+    let (mut cases, mut valued, mut stopped) = (0usize, 0usize, 0usize);
+    for (name, template) in OPERATORS {
+        for profile in ["event-position", "fixed-sample", "finite-window"] {
+            for depth in 1..=4usize {
+                for (lower, upper) in bounds {
+                    cases += 1;
+                    let interval = format!("[{lower}, {upper}]");
+                    let mut body = "holds(p)".to_owned();
+                    for _ in 0..depth {
+                        body = template.replace("{i}", &interval).replace("{a}", &body);
+                    }
+                    let label = format!("{name} depth {depth} {interval} under {profile}");
+                    // A limit reached by the S3 check is a typed stop before any
+                    // position is visited.
+                    let Ok(env) = try_env_under(profile, "on origin", &body) else {
+                        stopped += 1;
+                        continue;
+                    };
+                    let p = env.atom("p");
+                    let mut asked = exact_silent_request(&env, p);
+                    asked.positions[0].valuations.insert(p, Valuation::True);
+                    match call(&env, &env.subject(&[]), &asked) {
+                        Ok(result) if result.truth.is_some() => valued += 1,
+                        Ok(result) => {
+                            assert!(
+                                matches!(
+                                    result.incomplete,
+                                    Some(EvidenceIncomplete::Limit(_))
+                                        | Some(EvidenceIncomplete::Meter { .. })
+                                ) || result.non_value.is_some()
+                                    || result.indeterminate.is_some(),
+                                "{label}: neither a truth nor a typed stop: {result:?}"
+                            );
+                            stopped += 1;
+                        }
+                        Err(_) => panic!("{label}: a refusal, not a result"),
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(cases, 8 * 3 * 4 * 4, "the declared population is 384 cases");
+    assert!(
+        valued > 0 && stopped > 0,
+        "the population reaches both the valued and the stopped regime: {valued} / {stopped}"
+    );
 }
 
 #[trace("FR-516-AC-27", "FR-516-AC-44", "TC-1311")]

@@ -29,7 +29,7 @@
 use std::collections::{HashMap, HashSet};
 
 use qsl_semantics::check::{
-    Activation, CaptureSite, CheckedFormula, CheckedTemporalClause, TemporalProfile,
+    Activation, CaptureSite, CheckedFormula, CheckedTemporalClause, FormulaNodeId, TemporalProfile,
 };
 use quire_exact::{Charge, ChargePoint, Incomplete, Meter};
 use quire_semantic_value::catalog::InternalFault;
@@ -379,6 +379,66 @@ pub(super) fn run<L: TemporalLetters>(
     source: &mut L,
     meter: &mut Meter,
 ) -> Result<TemporalOutcome, TemporalRefusal> {
+    run_seeking(clause, trace, goal, false, source, meter).0
+}
+
+/// The decisive atom of a violation (FR-330 "The decisive atom"), found by
+/// the descent over the values the run itself computed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DecisiveAtom {
+    /// The `holds` atom's formula node.
+    pub atom: FormulaNodeId,
+    /// The position the atom is read at.
+    pub position: TemporalPosition,
+}
+
+/// Why the descent to the decisive atom stopped before it found one.
+#[derive(Debug)]
+pub enum DecisiveStop {
+    /// The descent's visits exhausted the run's meter.
+    Incomplete(Incomplete),
+    /// The descent broke an evaluator invariant.
+    Fault(InternalFault),
+}
+
+/// What the descent found: the atom, or none when the violation has no
+/// decisive atom (FR-330).
+pub type DecisiveSearch = Result<Option<DecisiveAtom>, DecisiveStop>;
+
+/// [`run`], which, when `seek` is set and the clause is violated, also
+/// descends to the violation's decisive atom with the same evaluator and
+/// meter, so the descent's visits are the run's work.
+pub(super) fn run_seeking<L: TemporalLetters>(
+    clause: Subject<'_>,
+    trace: TemporalTrace,
+    goal: Goal,
+    seek: bool,
+    source: &mut L,
+    meter: &mut Meter,
+) -> (
+    Result<TemporalOutcome, TemporalRefusal>,
+    Option<DecisiveSearch>,
+) {
+    let mut decisive = None;
+    let outcome = run_goal(
+        clause,
+        trace,
+        goal,
+        seek.then_some(&mut decisive),
+        source,
+        meter,
+    );
+    (outcome, decisive)
+}
+
+fn run_goal<L: TemporalLetters>(
+    clause: Subject<'_>,
+    trace: TemporalTrace,
+    goal: Goal,
+    decisive: Option<&mut Option<DecisiveSearch>>,
+    source: &mut L,
+    meter: &mut Meter,
+) -> Result<TemporalOutcome, TemporalRefusal> {
     let no_progress = clause.profile.is_bounded()
         && matches!(trace, TemporalTrace::Lasso { .. })
         && loop_without_progress(trace, &*source);
@@ -414,8 +474,15 @@ pub(super) fn run<L: TemporalLetters>(
     } else {
         None
     };
-    let evaluation = Evaluator::new(clause, plan, shape, steps, meter)
-        .and_then(|mut evaluator| evaluator.execute(clause, goal, source));
+    let seek = decisive.is_some();
+    let evaluation = Evaluator::new(clause, plan, shape, steps, meter).and_then(|mut evaluator| {
+        evaluator.seek = seek;
+        let outcome = evaluator.execute(clause, goal, source);
+        if let Some(slot) = decisive {
+            *slot = evaluator.decisive.take();
+        }
+        outcome
+    });
     match evaluation {
         Ok(outcome) => Ok(outcome),
         Err(Stop::Incomplete(incomplete)) => Ok(TemporalOutcome::Incomplete(incomplete)),
@@ -552,6 +619,10 @@ struct Evaluator<'a> {
     /// The first represented position the letter does not supply.
     unknown_from: Option<u64>,
     memo: HashMap<(usize, i128), Tri>,
+    /// Whether a violation descends to its decisive atom.
+    seek: bool,
+    /// The descent's result, set when `seek` and the clause is violated.
+    decisive: Option<DecisiveSearch>,
 }
 
 impl<'a> Evaluator<'a> {
@@ -596,6 +667,8 @@ impl<'a> Evaluator<'a> {
             insufficient_positions: HashSet::new(),
             unknown_from: None,
             memo: HashMap::new(),
+            seek: false,
+            decisive: None,
         })
     }
 
@@ -826,6 +899,9 @@ impl<'a> Evaluator<'a> {
                     Tri::True => {}
                     Tri::False => {
                         let at = u64::try_from(position).map_err(|_| fault("position-in-u64"))?;
+                        if self.seek {
+                            self.decisive = Some(self.descend(position));
+                        }
                         return Ok(TemporalOutcome::Violated {
                             at: TemporalPosition::new(at),
                         });
@@ -849,6 +925,107 @@ impl<'a> Evaluator<'a> {
             Mode::Closed | Mode::Lasso if every_activation_true => Ok(TemporalOutcome::Holds),
             Mode::Closed | Mode::Lasso => Err(fault("definite-trace-read-unknown").into()),
         }
+    }
+
+    /// FR-330 "The decisive atom": descend from the root, false at the
+    /// failing activation `at`, always into an operand that is false at the
+    /// position it is visited at, to the `holds` atom that decides it. `None`
+    /// when the descent meets `not`, a constant, a position before the trace
+    /// or one past a false-extended trace.
+    fn descend(&mut self, at: i128) -> DecisiveSearch {
+        self.descend_from(at).map_err(|stop| match stop {
+            Stop::Incomplete(incomplete) => DecisiveStop::Incomplete(incomplete),
+            Stop::Fault(internal) => DecisiveStop::Fault(internal),
+            Stop::ConditionRefused(_) | Stop::WindowLimit(_) | Stop::Window(_) => {
+                DecisiveStop::Fault(fault("decisive-descent-reads-no-letter"))
+            }
+        })
+    }
+
+    fn descend_from(&mut self, at: i128) -> Result<Option<DecisiveAtom>, Stop> {
+        let mut node = self.plan.root;
+        let mut at = at;
+        loop {
+            match slot(&self.plan.nodes, node)? {
+                Node::Constant(_) | Node::Not(_) => return Ok(None),
+                Node::Atom => return self.decisive_atom(node, at),
+                Node::And(left, right) => {
+                    node = if self.solve(left, at)? == Tri::False {
+                        left
+                    } else {
+                        right
+                    };
+                }
+                Node::Or(left, _) => node = left,
+                Node::Implies(_, right) => node = right,
+                Node::Scan(scan) => match self.descend_scan(scan, at)? {
+                    Some((operand, position)) => {
+                        node = operand;
+                        at = position;
+                    }
+                    None => return Ok(None),
+                },
+            }
+        }
+    }
+
+    /// The atom `node` read at `q`, when `q` is a position of the trace: a
+    /// position before 0 and a false-extension position have no observation.
+    /// Over a lasso the position is the in-trace one `q` reads (FR-330).
+    fn decisive_atom(&self, node: usize, q: i128) -> Result<Option<DecisiveAtom>, Stop> {
+        if q < 0 {
+            return Ok(None);
+        }
+        Ok(match self.geometry.site(self.geometry.canon(q))? {
+            Site::Sentinel => None,
+            Site::Real(position) => Some(DecisiveAtom {
+                atom: self
+                    .formula
+                    .node_id(node)
+                    .ok_or_else(|| fault("atom-has-node-id"))?,
+                position: TemporalPosition::new(position),
+            }),
+        })
+    }
+
+    /// The operand and position `scan` at `p` descends into, over its
+    /// eligible positions in order (a past operator takes the nearest first).
+    fn descend_scan(&mut self, scan: Scan, p: i128) -> Result<Option<(usize, i128)>, Stop> {
+        let run = self.window(scan, p)?;
+        let mut first = None;
+        for index in 0..run.len {
+            let q = run.at(index)?;
+            if !self.represents(q) {
+                self.charge()?;
+            }
+            first.get_or_insert(q);
+            match (scan.guard, scan.dual) {
+                // `eventually`, `once`: every eligible position is false.
+                (None, false) => break,
+                // `always`, `historically`, `release`, `triggered`: the least
+                // eligible position where the witness is false.
+                (None, true) | (Some(_), true) => {
+                    if self.solve(scan.witness, q)? == Tri::False {
+                        return Ok(Some((scan.witness, q)));
+                    }
+                }
+                // `until`, `since`: the least position where both operands
+                // are false.
+                (Some(guard), false) => {
+                    if self.solve(guard, q)? == Tri::False
+                        && self.solve(scan.witness, q)? == Tri::False
+                    {
+                        return Ok(Some((guard, q)));
+                    }
+                }
+            }
+        }
+        // Eventually/once, and until/since with no such position, descend
+        // into the witness at the least eligible position.
+        if scan.dual {
+            return Err(fault("a-false-dual-scan-has-a-false-witness").into());
+        }
+        Ok(first.map(|q| (scan.witness, q)))
     }
 
     /// The letter of `node` at `q`.

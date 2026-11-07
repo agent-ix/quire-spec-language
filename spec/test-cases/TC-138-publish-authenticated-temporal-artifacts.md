@@ -34,8 +34,8 @@ and use empty and over-byte-limit names. Exercise zero, negative, unreduced and
 component-overflow periods plus a changed epoch or unit. Require each mutation
 to reach its owning selection or semantic validation for the altered values.
 
-Exercise `mapping_support_v2` without a trace and require its admitted
-definition/profile binding before formula classification. For progress, attempt
+Exercise `mapping_support` (FR-527) without a trace and require the clause's
+profile selection before formula classification. For progress, attempt
 to reuse ledger entries across `/1`, another `/2` artifact and a changed clock
 configuration before repeating with the exact authenticated package selection.
 

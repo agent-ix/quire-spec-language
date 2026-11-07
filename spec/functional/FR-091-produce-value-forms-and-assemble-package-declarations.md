@@ -743,6 +743,37 @@ semantic content of QSpec's `dimension-equivalence-rpc-flow-time`
 identity: "example"}` and the keys of QSpec's `model-dimension-acme-rpc-time`,
 `model-dimension-acme-flow-time` and `model-dimension-acme-clock-time`.
 
+### Compound units in quantity type references
+
+In a complete-V1 `Quantity<U>` or `Quantity<U, C>` type reference, S1 SHALL
+accept `U` as a product of qualified unit names, each optionally followed by
+`^` and a `signed-int` literal. For example, `kg*m^2*s^-2` has three factors
+with exponents `1`, `2` and `-2`. S2 SHALL retain every factor's qualified
+name, signed exponent and source span as syntax, without substituting a
+declared unit name or minting a semantic identity. The carrier comma and the
+closing `>` delimit the unit expression; the existing named-unit and carrier
+forms keep their meaning.
+
+The assembler SHALL resolve every written factor in the existing unit
+namespace, including a factor with exponent zero. A dimension or type name
+does not become a unit name in this position. An unresolved factor SHALL keep
+the existing `missing_declaration`/`missing-name` refusal at that factor.
+The checker SHALL form the compound unit with the existing quantity
+product/power normalization and admission rules (QSpec FR-142), preserving
+its exact canonical root-unit identities and integer exponents. Repeated
+factors combine, zero exponents drop and the resulting terms use the owner's
+canonical order. A product or an explicit power SHALL retain the compound
+identity arm even when it normalizes to one term or no terms; a bare
+`Quantity<kg>` remains the declared-unit type. Equal dimensions do not rename
+the compound to a declared unit such as `J`.
+
+S1 SHALL refuse an empty unit expression, a missing factor or exponent, and a
+non-integer exponent as `invalid_syntax` at the offending source position.
+Existing source-integer admission and S1/S2/S3 ceilings SHALL remain in force;
+an exponent SHALL NOT be truncated or wrapped to fit an implementation type.
+This source form uses the existing checked `compound_unit` representation
+(QSpec FR-322); it introduces no synthetic unit declaration or new wire form.
+
 ### Predicates
 
 A predicate is a function whose declaration kind is `Predicate`. The
@@ -1251,6 +1282,8 @@ every checker of the language.
 | FR-091-AC-70 | `Text("é")` and `Text("\u00e9")` at one `Text[..]` slot check to values that hold the same payload bytes `c3 a9` and compare equal to each other and to the runtime payload bytes `c3 a9`, whichever side the literal is on (QSpec FR-141, TC-186 T06b); each carries its own quoted spelling, `"é"` and `"\u00e9"`, as source-literal provenance, and two literals written with one spelling carry equal provenance, under a scalar profile and a normalizing one and for the escapes `\u000a` and `\n`, `\/` and `/`, and a surrogate pair and the raw scalar. `Expression::String` holds the quoted spelling beside the decoded text, and two spellings of one text build equal forms (equality is the decoded text's), lower to one literal node and are one data literal where a guard deduplicates its literals. | Test (TC-1052, QSpec TC-186) |
 | FR-091-AC-71 | Topology error fields (QSL-1601; QSpec FR-142-AC-15 to AC-17, TC-187 U06, U11a to U11f, U11n, U11o, U11p, U11w, U11x and U11z3). Each refusal of FR-091-AC-35, AC-46 and AC-47 carries the fields of the "Topology error fields" table as values: row 1's `z` with its scale `0`; row 2's `u` with the target name `ghost`; row 3's `s`, its target `r` and the dimension nodes `T` (of `s`) and `L` (of `r`); row 4's `L` with `r` and `q` in source order; row 5's root `r` with scale `2` and offset `0`; and row 6's edges `y -> x`, `x -> y`. `dimension L; dimension D = L * K; unit m : L = rational(1, 1);` refuses `missing_declaration`/`missing-name` at `D` carrying the owning dimension `D` and the term `K` (U11p); `dimension A = B * K; dimension B = A;` refuses the same carrying `A` and `K`, before the cycle (U11w); `dimension L; unit m : L = rational(1, 1); dimension E = D; dimension D = L * K;` refuses at `D` carrying `D` and `K`, not at `E`, and the same unit with `unit e : E = rational(0, 1);` added refuses row 1, `invalid_package`/`invalid-value`, at `e` carrying scale `0`, because `E`'s turn comes first and its unit rows run (U11x); `dimension A = B; dimension B = A ^ 2; unit a : A = rational(1, 1);` refuses `invalid_package`/`definition-cycle` at `A` carrying the edges `A -> B`, `B -> A` (U11n); `dimension L; dimension D = D * L; unit m : L = rational(1, 1);` refuses `definition-cycle` at `D` carrying `D -> D` (U11o); `dimension E = A; unit e : E = rational(0, 1); dimension A = B; dimension B = A;` refuses row 1 at `e` carrying scale `0`, and without `unit e` refuses `definition-cycle` at `A` carrying `A -> B`, `B -> A` (U11z3). The base-dimension refusals of FR-091-AC-55 (U11y, U11z1) carry `L`'s FCD identity and `m2`. | Test (TC-483) |
 | FR-091-AC-73 | Base and derived dimension identity is independent of normalized terms (QSL-1738; QSpec FR-142-AC-15 to AC-19, TC-187 U11g3). In `dimension L; dimension N = L / L; unit m : L = rational(1, 1); unit one : N = rational(1, 1);`, assembly admits both distinct named dimension nodes; `L` is base with its base-dimension term, while `N` is derived with an empty normalized term map and is dimensionless. Unit `m` retains dimension `L`; unit `one` retains dimension `N` and is dimensionless. Semantic admission preserves the same base flags and node identities; it does not infer that `N` is base from its empty terms. | Test (TC-483) |
+| FR-091-AC-74 | Over admitted canonical roots `kg`, `m` and `s`, parse and check parameter, result and conversion-target types `Quantity<kg*m^2*s^-2>`. Parsed forms retain the three qualified unit factors, exponents `1`, `2`, `-2` and their source spans. The checked type has the exact compound identity whose canonical terms name those roots with those exponents; `Quantity<s^-2*kg*m*m>` resolves to that same compound identity. `Quantity<kg>` remains declared, while `Quantity<kg^1>` and `Quantity<kg*m^0>` are the same one-term compound identity, distinct from declared `kg`; `Quantity<m*m^-1>` is the empty compound. `Quantity<J>` remains a distinct declared identity when `J` has the same base-dimension map. The existing named-unit carrier `Quantity<kg, Int[0, 10]>` still parses and checks without changing its carrier or unit. | Test |
+| FR-091-AC-75 | `Quantity<>`, `Quantity<kg*>`, `Quantity<kg**m>`, `Quantity<m^>`, `Quantity<m^n>` and `Quantity<m^1.5>` refuse typed `invalid_syntax` at their malformed unit expression. `Quantity<kg*ghost^2>` and `Quantity<ghost^0>` refuse `missing_declaration`/`missing-name` naming `ghost` at its own span, and a dimension-only factor refuses the same unit-namespace lookup. Existing source-integer and stage ceilings apply to long products and large exponents, with a typed refusal or limit stop and no truncated exponent or authoritative partial compound type. | Test |
 
 ## Dependencies
 

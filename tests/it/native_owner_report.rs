@@ -8,8 +8,8 @@ use qsl_eval::temporal::evidence::{EvidencePackage, Truth};
 use qsl_package::checked_views::temporal_subject;
 use quire_spec_language::temporal::{
     evaluate_v2, BindingDimension, CheckedSubject, ClockBinding, Closure, Completeness, Execution,
-    NativeReportError, ObservationRef, Position, Report, ReportRefusal, Trace, ValuationEvidence,
-    ValuationInstance, ValuationRow, EVENT_POSITION,
+    MissingValuation, NativeReportError, ObservationRef, Position, Report, ReportRefusal, Trace,
+    ValuationEvidence, ValuationInstance, ValuationRow, EVENT_POSITION,
 };
 
 fn with_subject(check: impl FnOnce(&CheckedSubject, &ObservationRef, &[ValuationRow])) {
@@ -27,6 +27,28 @@ fn with_subject(check: impl FnOnce(&CheckedSubject, &ObservationRef, &[Valuation
 pub(super) fn with_inputs(
     value: bool,
     missing: bool,
+    check: impl FnOnce(
+        &quire_contract_model::CheckedPackageV2,
+        &qsl_package::checked_views::ClauseOccurrence,
+        &ValuationEvidence,
+        &qsl_eval::temporal::evidence::EvidenceRequest,
+        &ObservationRef,
+        &[ValuationRow],
+    ),
+) {
+    let rows: Vec<(usize, bool)> = [0, 0, 0, 1]
+        .into_iter()
+        .filter(|position| !missing || *position == 0)
+        .map(|position| (position, value))
+        .collect();
+    with_rows(&rows, &BTreeMap::new(), check);
+}
+
+/// [`with_inputs`] over the given `(position, value)` rows for the clause's one
+/// operand, with `legacy` set as the trace's legacy leaf-handle map at position 0.
+fn with_rows(
+    values: &[(usize, bool)],
+    legacy: &BTreeMap<u32, bool>,
     check: impl FnOnce(
         &quire_contract_model::CheckedPackageV2,
         &qsl_package::checked_views::ClauseOccurrence,
@@ -55,10 +77,9 @@ pub(super) fn with_inputs(
     let operand = &view.predicate_leaves()[0];
     let request =
         super::temporal_package_route::request(&engine, node, Some(occurrence.ordinal), 2);
-    let rows: Vec<_> = [0, 0, 0, 1]
-        .into_iter()
-        .filter(|position| !missing || *position == 0)
-        .map(|position| ValuationRow {
+    let rows: Vec<_> = values
+        .iter()
+        .map(|&(position, value)| ValuationRow {
             subject: occurrence.clone(),
             position,
             anchor: "obs0".into(),
@@ -78,7 +99,11 @@ pub(super) fn with_inputs(
             .map(|coordinate| Position {
                 coordinate,
                 order: None,
-                valuations: BTreeMap::new(),
+                valuations: if coordinate == 0 {
+                    legacy.clone()
+                } else {
+                    BTreeMap::new()
+                },
                 instance_valuations: BTreeMap::new(),
             })
             .collect(),
@@ -1235,4 +1260,70 @@ fn subject_and_evaluation_refuse_foreign_occurrence_revision_and_anchor() {
             ));
         },
     );
+}
+
+/// FR-043-AC-17: over `always[0,1] holds(p)` activated at position 0 with a
+/// closed-complete scope of two positions and a row valuing `p` true at
+/// position 1, the report is read from the retained rows alone. Two identical
+/// rows valuing `p` true at position 0 give truth `true`, settled by the closed
+/// scope, with decision support at positions 0 and 1; a true and a false row at
+/// position 0 give no truth and the missing outcome; no row at position 0 gives
+/// the same. Setting the trace's legacy leaf-handle map to `p` false at
+/// position 0 changes none of the three results.
+#[trace("TC-144", "FR-043-AC-17")]
+#[test]
+fn the_retained_rows_alone_decide_the_report() {
+    use qsl_eval::temporal::evidence::Settlement;
+    use quire_spec_language::temporal::ReportOutcome;
+    type Rows = &'static [(usize, bool)];
+    let cases: [(Rows, Option<Truth>); 3] = [
+        (&[(0, true), (0, true), (1, true)], Some(Truth::True)),
+        (&[(0, true), (0, false), (1, true)], None),
+        (&[(1, true)], None),
+    ];
+    for legacy in [BTreeMap::new(), BTreeMap::from([(0_u32, false)])] {
+        for (rows, expected) in cases {
+            with_rows(
+                rows,
+                &legacy,
+                |package, occurrence, evidence, request, observation, _| {
+                    let subject =
+                        CheckedSubject::new(package, occurrence, evidence, request).unwrap();
+                    let report = evaluate_v2(
+                        &subject,
+                        observation,
+                        &mut super::temporal_package_route::unlimited(),
+                        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+                    )
+                    .unwrap();
+                    assert_eq!(report.truth(), expected, "{rows:?}");
+                    if expected.is_some() {
+                        assert_eq!(report.outcome(), ReportOutcome::Evaluated);
+                        assert_eq!(report.settlement(), Some(Settlement::ClosedScope));
+                        let mut positions: Vec<u64> = report
+                            .support()
+                            .iter()
+                            .map(|entry| entry.position)
+                            .collect();
+                        positions.dedup();
+                        assert_eq!(positions, [0, 1], "{rows:?}: decision support");
+                    } else {
+                        assert_eq!(report.outcome(), ReportOutcome::Missing, "{rows:?}");
+                        // The retained rows locate the missing valuation at the
+                        // occurrence, the operand and position 0, never `false`.
+                        let operand = evidence.rows()[0].operand.clone();
+                        assert_eq!(
+                            evidence.value_of(occurrence, 0, &operand),
+                            Err(MissingValuation {
+                                subject: occurrence.clone(),
+                                position: 0,
+                                operand,
+                            }),
+                            "{rows:?}"
+                        );
+                    }
+                },
+            );
+        }
+    }
 }

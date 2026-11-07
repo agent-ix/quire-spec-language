@@ -2226,6 +2226,14 @@ impl NamedScope {
         }
     }
 
+    /// This scope narrowed to the populations of the model alias `alias`:
+    /// a population of another alias is then missing at its second segment.
+    pub(crate) fn of_alias(mut self, alias: &str) -> Self {
+        self.populations
+            .retain(|population| alias_of(&population.name) == Some(alias));
+        self
+    }
+
     /// The population `name` spells, when it spells one.
     pub(crate) fn named(&self, name: &str) -> Option<&NamedPopulation> {
         self.populations
@@ -2282,7 +2290,7 @@ pub(crate) struct StateContext {
 
 /// A meter that admits no charge: the first charge of an operation is denied,
 /// so an operation typed against it computes nothing (`Typer::power`).
-const NO_CHARGE: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
+pub(super) const NO_CHARGE: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
     integer_bits: 0,
     decimal_digits: 0,
     scale_expansion: 0,

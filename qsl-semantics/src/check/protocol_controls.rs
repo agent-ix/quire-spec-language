@@ -231,6 +231,7 @@ fn check_channel(
                 TypeFormHead::Name(name) => name.name.clone(),
                 TypeFormHead::Builtin(_)
                 | TypeFormHead::Collection(_)
+                | TypeFormHead::UnitExpression(_)
                 | TypeFormHead::Population => String::new(),
             };
             refusals.push((
