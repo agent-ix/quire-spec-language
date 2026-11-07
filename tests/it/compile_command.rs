@@ -1,29 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-027: CLI compilation of `1-draft` sources through the spine.
+//! FR-027: `command::compile` in process over of `1-draft` sources through the spine.
 
+use crate::command_harness::{compile, run_file, Output};
 use ix_trace_rs::trace;
 use serde_json::{json, Value};
-use std::{
-    path::Path,
-    process::{Command, Output},
-};
-
-fn compile(directory: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-        .arg("compile")
-        .arg(directory.join("compile.json"))
-        .current_dir(directory.parent().unwrap())
-        .output()
-        .unwrap()
-}
-
-fn compile_with_args(directory: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-        .args(args)
-        .current_dir(directory)
-        .output()
-        .unwrap()
-}
+use std::path::Path;
 
 fn compile_in_process(
     directory: &Path,
@@ -378,11 +359,12 @@ fn compile_accepts_a_multi_unit_program_array() {
     assert_eq!(failure["details"]["maximum"], 8_388_608, "{failure}");
 }
 
-/// FR-287-AC-4 (TC-1262 step 2): the compile CLI enforces fixed request and
-/// dependent-byte ceilings and rejects run-only limit options.
+/// FR-027-AC-3 / FR-026-AC-4 (TC-105, TC-104): `compile` enforces fixed request
+/// and dependent-byte ceilings and offers no option to raise them. The
+/// rejection of limit options is the driver's (FR-287-AC-4).
 #[test]
-#[trace("TC-1262", "FR-287-AC-4", "FR-287-AC-5")]
-fn compile_cli_uses_fixed_byte_ceilings_and_rejects_limit_options() {
+#[trace("TC-105", "FR-027-AC-3", "TC-104", "FR-026-AC-4")]
+fn compile_uses_fixed_byte_ceilings() {
     let program = std::fs::read(SPINE_FIXTURE).unwrap();
 
     let request_directory = tempfile::tempdir().unwrap();
@@ -412,15 +394,6 @@ fn compile_cli_uses_fixed_byte_ceilings_and_rejects_limit_options() {
     assert_eq!(failure["details"]["limit"], "dependent_bytes", "{failure}");
     assert_eq!(failure["details"]["maximum"], 8_388_608, "{failure}");
     assert!(failure["details"].get("option").is_none(), "{failure}");
-
-    let no_files = tempfile::tempdir().unwrap();
-    let output = compile_with_args(
-        no_files.path(),
-        &["compile", "missing.json", "--dependent-bytes", "10000000"],
-    );
-    assert_eq!(output.status.code(), Some(20));
-    assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("usage: quire-spec"));
 }
 
 /// Rewrite `compile.json` under `directory` through `change` and run `compile`.
@@ -440,47 +413,6 @@ fn refusal(output: &Output, exit: i32, code: &str, label: &str) -> Value {
     let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(failure["code"], code, "{label}: {failure}");
     failure
-}
-
-/// FR-027-AC-3 (TC-105): `compile` checks its arity before opening a request.
-#[test]
-#[trace("TC-105", "FR-027-AC-3")]
-fn compile_arity_is_checked_before_opening_any_request() {
-    for arguments in [vec!["compile"], vec!["compile", "missing.json", "extra"]] {
-        let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-            .args(arguments)
-            .output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(20));
-        assert!(output.stdout.is_empty());
-        assert_eq!(
-            std::str::from_utf8(&output.stderr).unwrap(),
-            "usage: quire-spec compile <request-file>\n"
-        );
-    }
-}
-
-/// FR-027-AC-3 (TC-105): a package write that fails is a tool failure, exit 30.
-#[cfg(target_os = "linux")]
-#[test]
-#[trace("TC-105", "FR-027-AC-3")]
-fn failed_artifact_output_is_a_tool_failure_exit() {
-    let directory = tempfile::tempdir().unwrap();
-    spine_request(directory.path(), &std::fs::read(SPINE_FIXTURE).unwrap());
-    let full = std::fs::OpenOptions::new()
-        .write(true)
-        .open("/dev/full")
-        .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-        .arg("compile")
-        .arg(directory.path().join("compile.json"))
-        .stdout(std::process::Stdio::from(full))
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(30));
-    assert!(std::str::from_utf8(&output.stderr)
-        .unwrap()
-        .starts_with("output failed:"));
 }
 
 /// FR-027-AC-3 (TC-105, TC-104, FR-026-AC-4): a compile request selecting more
@@ -559,35 +491,12 @@ fn clause_run_file_count_refusal_names_the_observations_group() {
         serde_json::to_vec(&request).unwrap(),
     )
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-        .arg("run")
-        .arg(directory.path().join("request.json"))
-        .output()
-        .unwrap();
+    let output = run_file(&directory.path().join("request.json"));
     let failure = refusal(&output, 22, "resource_exhausted", "observations");
     assert_eq!(
         failure["details"],
         json!({"limit":"selected files","category":"observations",
             "requested":64,"remaining":63,"maximum":64})
-    );
-}
-
-/// FR-010-AC-3 (TC-015): the native `lower` command is retired; it is an
-/// unknown command that exits 20 without reading its operand.
-#[test]
-#[trace("TC-015", "FR-010-AC-3")]
-fn lower_is_an_unknown_command() {
-    let directory = tempfile::tempdir().unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-        .args(["lower", "missing.json"])
-        .current_dir(directory.path())
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(20));
-    assert!(output.stdout.is_empty());
-    assert_eq!(
-        std::str::from_utf8(&output.stderr).unwrap(),
-        "unknown command: lower\n"
     );
 }
 

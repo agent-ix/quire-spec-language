@@ -557,7 +557,7 @@ fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
 }
 
 #[test]
-#[trace("TC-915", "NFR-013-AC-3")]
+#[trace("TC-915", "NFR-013-AC-3", "FR-042-AC-15", "FR-050-AC-8")]
 fn clean_and_core_tooling_retain_their_own_target_and_features() {
     let recipe = Recipe::new();
     assert_eq!(
@@ -583,16 +583,16 @@ fn clean_and_core_tooling_retain_their_own_target_and_features() {
                     "caller target/clean"
                 ],
                 &[
-                    "run",
+                    "check",
                     "--locked",
+                    "-p",
+                    "quire-spec-language",
+                    "--lib",
                     "--no-default-features",
-                    "--",
-                    "parse",
-                    "agent-ix",
-                    "test:parent",
-                    "fixture",
-                    "fixture:1",
-                    "tests/fixtures/spine-compile.native"
+                    "--features",
+                    "handoff-writer",
+                    "--target-dir",
+                    "caller target/clean"
                 ],
                 &["run", "--package", "xtask", "--", "string-edge"],
                 &["run", "--package", "xtask", "--", "route-lint"],

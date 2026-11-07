@@ -75,7 +75,9 @@ built from a `FormalSourceError` (a `to_ir` coordinate-mapping failure) keeps
 the `source_map` phase from its origin and can still populate `upstream`, so
 `source_map` is not one of the phases that always leaves both fields null.
 Resource exhaustion is incomplete, never false. This
-six-code contract is carried by the `quire-spec` binary. On FR-301's six-code contract, `quire-spec` exits 0 for a
+six-code contract is FR-301's, and the `quire` driver (quire-driver) carries it
+to a process exit status; QSL's `command` API returns each outcome with the
+code FR-285 gives its category. On that contract the driver exits 0 for a
 successful parse or a completed-true run predicate; 10 for a completed-false
 run predicate, a logical violation, not a tool defect; 20 for malformed
 requests, invalid command usage, request syntax, identifier and I/O failures

@@ -28,6 +28,11 @@
 
 const TEST_PACKAGE_NAME: &str = "root-integration-tests";
 
+mod command_harness;
+mod compile_command;
+mod no_binary;
+mod parse_operation;
+
 #[cfg(feature = "checked-handoff")]
 mod selected_object_closure;
 
@@ -40,8 +45,6 @@ mod call_replay_context_items;
 mod call_requirements_items;
 mod checked_temporal_successors;
 mod clause_kind_canonical;
-mod cli;
-mod compile_command;
 mod compiled_protocol_v2;
 mod complete_cst;
 mod complete_editor;

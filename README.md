@@ -3,7 +3,7 @@
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/k8DVhuYBR2)
 
 QSL (Quire Specification Language) is a formal language for rules about a
-system's data and behavior. This repository contains its compiler, `quire-spec`,
+system's data and behavior. This repository contains its compiler library,
 and its reference evaluator.
 
 The compiler checks a rule against a domain model and writes a checked package.
@@ -219,29 +219,43 @@ Install Rust at or above the `rust-version` in `Cargo.toml`. No other tools or s
 ```sh
 git clone https://github.com/agent-ix/quire-spec-language
 cd quire-spec-language
-cargo build --locked --bin quire-spec
+cargo build --locked --workspace
 ```
 
-**Format.** `format` prints the formatted source and leaves the file unchanged.
-The four arguments before the path are the source identity (authority, id,
-revision namespace, revision). Every diagnostic carries them.
+QSL builds no executable. The `quire` command line is in
+[quire-driver](https://github.com/agent-ix/quire-driver), whose verbs call the
+library API described here.
 
-```sh
-target/debug/quire-spec format agent-ix test:spine fixture fixture:1 tests/fixtures/spine-compile.native
-```
+**Format.** `qsl_cst::format::format` takes an admissible parsed source and
+returns the formatted source; it leaves the file unchanged. Parse the bytes
+with `qsl_cst::parse`, which takes the source identity (authority and id)
+that every diagnostic carries.
 
 **Run a rule against data.** The ConfigVersion example writes one directory per
 case, holding the unit from [A first rule](#a-first-rule), its domain model and
-a snapshot of `ConfigVersion` objects. `requests.sh` writes a `run.json` request
-that checks one rule for the object keyed `child`:
+a snapshot of `ConfigVersion` objects. `requests.sh` writes a `run.json`
+`native-run/1` request that checks one rule for the object keyed `child`, and
+`quire_spec_language::command::run` executes it:
 
 ```sh
 cargo run --locked --example config_version_fixtures -- /tmp/config-version
-for case in healthy-parent violating-parent dangling-parent incomplete-population; do
-  examples/config-version/requests.sh /tmp/config-version/$case ParentOrder
-  target/debug/quire-spec run /tmp/config-version/$case/run.json; echo "exit $?"
-done
+examples/config-version/requests.sh /tmp/config-version/healthy-parent ParentOrder
 ```
+
+```rust
+use quire_spec_language::command;
+
+let result = command::run(std::path::Path::new("/tmp/config-version/healthy-parent/run.json"))?;
+// `result.value` is the JSON result document; `result.exit_code` is the code
+// FR-285 gives its category.
+println!("exit {}", result.exit_code);
+```
+
+`command::run_with_limits` takes the request-file and dependent-file byte
+ceilings, and a refusal is a `RunError` whose `category().exit_code()` is the
+code and whose `value()` is the refusal envelope. The test
+`walkthrough_requests_reproduce_the_documented_exit_codes` in
+`tests/it/config_version_spine.rs` runs every case below this way:
 
 | Case | Data | Outcome | Exit |
 | --- | --- | --- | --- |
@@ -251,15 +265,16 @@ done
 | `incomplete-population` | the snapshot's population is not complete | incomplete | 22 |
 
 `requests.sh /tmp/config-version/cycle NoCycle` checks the other invariant; the
-`cycle` case breaks it (exit 10). Each result is one JSON document on stdout.
+`cycle` case breaks it (exit 10).
 
-**Compile a rule.** `requests.sh` also writes `compile.json`. `compile` accepts
-only `1-draft` sources and prints the checked package as
-`quire.checked-package/v2` JSON; a source that declares any other edition,
-including `0-draft`, is refused with `unknown_edition`:
+**Compile a rule.** `requests.sh` also writes `compile.json`, a `native-compile/1`
+request. `command::compile` accepts only `1-draft` sources and returns the
+checked package as `quire.checked-package/v2` bytes; a source that declares any
+other edition, including `0-draft`, is refused with `unknown_edition`:
 
-```sh
-target/debug/quire-spec compile /tmp/config-version/healthy-parent/compile.json > package.json
+```rust
+let package: Vec<u8> =
+    command::compile(std::path::Path::new("/tmp/config-version/healthy-parent/compile.json"))?;
 ```
 
 **Emit package bytes from a source file.** `compile` needs a request file with
@@ -271,7 +286,7 @@ source's `model` declarations select with `--model`, and each imported library
 as `--library <identity>=<file>`. The bytes go to stdout, or to `--out <path>`.
 Every failure (usage, unreadable file, write failure, refusal) writes no
 bytes, prints a diagnostic on stderr that tells them apart, and exits with the
-refusal category's code 20, as `quire-spec` does; a producer refusal whose
+refusal category's code 20, as the `quire` driver does; a producer refusal whose
 catalog code is in another category (for example incomplete) exits with that
 category's code (22). The emitted bytes embed the source path exactly as given
 (the `source:<path>` label feeds the source labels and the
@@ -335,8 +350,8 @@ and incomplete runs. `run` can also evaluate one pure function;
 | `qsl-replay/quire-extraction` | Enables QSL's replay library to read rules from Quire Markdown spec artifacts, with locations mapped to the document. |
 | `population-fixtures` | Writes the population fixtures used by the admission tests. |
 
-`quire-spec` is the compiler's own command line. The planned main entry point
-is `quire` from quire-driver (private), which runs QSL, Contract IR and the
+QSL builds no command line of its own. `quire` from quire-driver (private)
+serves parse, format, run and compile, running QSL, Contract IR and the
 backends as one tool.
 
 ## The Quire ecosystem
@@ -377,7 +392,7 @@ layers below it; `make arch-lint` enforces this.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/layers-dark.svg">
-  <img alt="The QSL workspace in layers, bottom to top: the shared no_std libraries quire-exact, quire-semantic-value, quire-walk and quire-canonical; qsl-foundation; qsl-cst; qsl-forms; qsl-semantics; qsl-package; then qsl-eval and qsl-route; and at the top qsl-replay, qsl-analyze and the quire-spec command line." src="docs/images/layers-light.svg">
+  <img alt="The QSL workspace in layers, bottom to top: the shared no_std libraries quire-exact, quire-semantic-value, quire-walk and quire-canonical; qsl-foundation; qsl-cst; qsl-forms; qsl-semantics; qsl-package; then qsl-eval and qsl-route; and at the top qsl-replay, qsl-analyze and the quire-driver command line." src="docs/images/layers-light.svg">
 </picture>
 
 | Crate | Contents |
@@ -394,7 +409,7 @@ layers below it; `make arch-lint` enforces this.
 | `qsl-source` | Reads rules from Quire Markdown; its `quire-extraction` feature is enabled by `qsl-replay/quire-extraction`. |
 | `qsl-string-edge` | The FR-064 string-edge scanner (library and `qsl-string-edge` command) that QSL's `xtask string-edge` and consumer repositories run; see [`qsl-string-edge/README.md`](qsl-string-edge/README.md). |
 | `qsl-walk-grow`, `qsl-bench` | Deep-recursion stack growth, benchmarks. |
-| root crate | The `quire-spec` binary and the library facade. |
+| root crate | The library facade. |
 | `xtask`, `tools/arch-lint` | Repository checks: dependency direction, API surface, qualification and refinement. |
 
 Other directories:

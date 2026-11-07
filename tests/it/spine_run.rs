@@ -1,20 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-100: CLI `run` routes a `1-draft` program through the spine.
+//! FR-100: `command::run` in process routes a `1-draft` program through the spine.
 
+use crate::command_harness::{run_file, Output};
 use ix_trace_rs::trace;
 use serde_json::{json, Value};
-use std::{
-    path::Path,
-    process::{Command, Output},
-};
+use std::path::Path;
 
+/// `command::run` in process over `<directory>/request.json`.
 fn run(directory: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-        .arg("run")
-        .arg(directory.join("request.json"))
-        .current_dir(directory.parent().unwrap())
-        .output()
-        .unwrap()
+    run_file(&directory.join("request.json"))
 }
 
 /// The `seven`/`px` fixture (FR-027-AC-5), reused here since `seven` is

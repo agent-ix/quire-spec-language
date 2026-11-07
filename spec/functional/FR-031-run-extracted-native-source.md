@@ -29,7 +29,7 @@ under the body's own identity, then the clause run. The report shall name
 the original document and the body, and shall carry the extraction record
 below. QSL has two entries to this run, and both are present in every build
 in which `qsl-replay` is built with its feature `quire-extraction` (for the
-`quire-spec` command, `--features qsl-replay/quire-extraction`; ADR-011
+`run` command, `--features qsl-replay/quire-extraction`; ADR-011
 §7.3 X-4):
 
 - in process, `qsl_replay::spine::run_clause` with an I3 extracted source;

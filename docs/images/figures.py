@@ -103,7 +103,7 @@ def hero():
     f.box(0, 40, 170, 56, "code", "rule in .native", "ParentOrder")
     f.box(0, 116, 170, 56, "code", "rule in Markdown", "```ix:native fence")
     f.box(0, 210, 170, 56, "ink", "domain model", "config-version")
-    f.box(214, 116, 140, 56, "logic", "quire-spec", "parse · check")
+    f.box(214, 116, 140, 56, "logic", "QSL library", "parse · check")
     f.box(398, 116, 150, 56, "model", "checked package", "exact identity")
     f.line([(170, 68), (190, 68), (190, 144), (211, 144)], "code")
     f.line([(170, 144), (211, 144)], "code")
@@ -342,7 +342,7 @@ def ecosystem(here="quire-spec-language"):
 
 LAYERS = [
     ("COMMAND LINE", [("qsl-replay", "replay counterexamples"), ("qsl-analyze", "model checking"),
-                      ("quire-spec", "the binary")]),
+                      ("quire-driver", "the command line")]),
     ("EXECUTE", [("qsl-eval", "reference evaluator"), ("qsl-route", "backend routing")]),
     ("PACKAGE", [("qsl-package", "checked-package/v2")]),
     ("CHECK", [("qsl-semantics", "names · types · definedness")]),
@@ -363,7 +363,7 @@ def layers():
         "The QSL workspace in layers, bottom to top: the shared no_std libraries quire-exact, "
         "quire-semantic-value, quire-walk and quire-canonical; qsl-foundation; qsl-cst; qsl-forms; qsl-semantics; "
         "qsl-package; then qsl-eval and qsl-route; and at the top qsl-replay, qsl-analyze and the "
-        "quire-spec command line.",
+        "quire-driver command line.",
     )
     left, step = 130, 60
     for i, (band, crates) in enumerate(LAYERS):
