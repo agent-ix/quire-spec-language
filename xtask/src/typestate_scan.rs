@@ -708,7 +708,7 @@ mod tests {
 
     /// Every item allowed to hand back an owned stage-output type, by
     /// (file, `Self` type, name), and why.
-    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 17] = [
+    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 16] = [
         // S3: the checker.
         (
             S3_CONSTRUCTOR.file,
