@@ -90,12 +90,12 @@ pub use admitted::{
     AdmittedUnionMember, AdmittedUnit,
 };
 pub use application::{
-    acquire_checked_closure, ApplicationBeginRefusal, ApplicationEnvironment, ApplicationRegistry,
-    CallableLookupRefusal, CallableSelection, CheckedApplicationProgress,
-    CheckedApplicationSession, CheckedClosureCompilation, CheckedClosureHandle,
-    ClosureOwnerRefusal, NestedCallOccurrence, NestedCallSite, NestedCallSiteRefusal,
-    NominalDeclaration, NominalDeclarationForm, NominalDeclarationMember,
-    NominalDeclarationRefusal, SelectionRefusal,
+    acquire_checked_closure, acquire_checked_closure_with_integer_division,
+    ApplicationBeginRefusal, ApplicationEnvironment, ApplicationRegistry, CallableLookupRefusal,
+    CallableSelection, CheckedApplicationProgress, CheckedApplicationSession,
+    CheckedClosureCompilation, CheckedClosureHandle, ClosureOwnerRefusal, NestedCallOccurrence,
+    NestedCallSite, NestedCallSiteRefusal, NominalDeclaration, NominalDeclarationForm,
+    NominalDeclarationMember, NominalDeclarationRefusal, SelectionRefusal,
 };
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
 pub use call_replay_context::{run_with_replay_context, CallReplayContext, RunWithReplayContext};

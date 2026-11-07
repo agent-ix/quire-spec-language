@@ -290,7 +290,7 @@ fn recompile_unit_with_temporal_selections_and_execution_points<'a>(
     clippy::too_many_arguments,
     reason = "compile inputs and owner-admitted selections"
 )]
-fn recompile_with_integer_division<'a>(
+pub(crate) fn recompile_with_integer_division<'a>(
     unit: CompileUnit<'_>,
     packages: impl IntoIterator<Item = &'a [u8]>,
     dependencies: &DependencyInput,
