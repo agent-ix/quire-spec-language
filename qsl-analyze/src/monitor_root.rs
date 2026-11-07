@@ -38,6 +38,10 @@ use crate::monitor_plan::produce;
 mod order;
 mod progress;
 pub use order::{ModelStepOrder, ModelStepOrderRefusal, ModelStepOrderRefusalCode};
+pub use progress::{
+    AdmittedPlanAuthority, PlanAuthorityLimits, PlanAuthorityRefusal, PlanAuthorityRefusalCode,
+    PlanAuthoritySelection, ProgressSelectionRefusalCode,
+};
 
 /// The authored unit and the selection the plan root is written for.
 #[derive(Clone, Copy, Debug)]

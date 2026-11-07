@@ -1,0 +1,396 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! FR-251 same-emission authority through genuine observation-owner admission.
+
+mod observation;
+
+use ix_trace_rs::trace;
+use qsl_analyze::monitor_root::{
+    AdmittedPlanAuthority, PlanAuthorityLimits, PlanAuthorityRefusal, PlanAuthorityRefusalCode,
+    PlanAuthoritySelection, PlanRoot, ProgressSelectionRefusalCode,
+};
+use qsl_foundation::SourceIdentity;
+use qsl_semantics::check::TimeSourceKind;
+use quire_exact::{Origin, Role};
+use quire_observation::authority::{self, progress, SubjectSelection};
+
+use crate::monitor_root::{authored, root_of, target, LIMITS};
+
+fn tick_root() -> PlanRoot {
+    let text = authored("always (holds(c.versionNumber = 2) implies eventually[0 ms, 3 ms] holds(c.versionNumber = 3))")
+        .replace("time M dense unit ms;", "time M tick M::ConfigVersion::attemptUpdate period 2 ms unit ms;");
+    root_of(&text, "C", &target()).unwrap()
+}
+
+fn limits() -> PlanAuthorityLimits {
+    PlanAuthorityLimits {
+        read: LIMITS,
+        order: quire_canonical::Limits::new(1 << 20),
+        progress: authority::Limits::owner_max(),
+    }
+}
+
+fn node(key: quire_exact::NodeKey) -> progress::NodeIdentity {
+    progress::NodeIdentity::from_key(key, authority::Limits::owner_max()).unwrap()
+}
+
+fn row(root: &PlanRoot) -> progress::AssociationRow {
+    let source = &root.checked_unit().package().graph().time_sources()[0];
+    let claim = root.plan().subject();
+    progress::AssociationRow {
+        model: source.model.clone(),
+        model_node: node(source.model_node.clone()),
+        claim: progress::ClaimOccurrence::new(
+            node(claim.clause_node().clone()),
+            claim.occurrence().origin(),
+        ),
+        source: match &source.source {
+            TimeSourceKind::Dense => progress::TimeSource::Dense,
+            TimeSourceKind::Tick { operation, period } => progress::TimeSource::Tick {
+                operation: operation.clone(),
+                operation_node: node(source.tick_operation_anchor.as_ref().unwrap().clone()),
+                period_numerator: period.numerator().to_string(),
+                period_denominator: period.denominator().to_string(),
+            },
+        },
+        unit: source.unit.clone(),
+        unit_node: node(source.unit_node.clone()),
+        time_dimension: node(source.time_dimension.clone()),
+        observation_source: observation::source().as_str().to_owned(),
+        observation_clock: "clock:monitor-events".to_owned(),
+        observation_revision: "1".to_owned(),
+    }
+}
+
+fn admit(
+    root: PlanRoot,
+    progress: Option<progress::View>,
+    subject: &SubjectSelection,
+    limits: PlanAuthorityLimits,
+) -> Result<AdmittedPlanAuthority, PlanAuthorityRefusal> {
+    let source = root.checked_unit().source().identity().clone();
+    let claim = root.plan().subject().clone();
+    root.admit_authority(
+        PlanAuthoritySelection {
+            source: &source,
+            claim: &claim,
+            observation_subject: subject,
+            observation_clock: &observation::clock(),
+            observation_source: &observation::source(),
+        },
+        progress,
+        limits,
+    )
+}
+
+#[trace("TC-1081", "FR-251-AC-45", "FR-251-AC-47", "FR-251-AC-48")]
+#[test]
+fn genuine_tick_authority_retains_complete_original_values_and_same_emission() {
+    let root = tick_root();
+    let original_row = row(&root);
+    let (progress, subject) = observation::admitted(Some(vec![original_row.clone()]));
+    let expected_progress = progress
+        .association_canonical_bytes(authority::Limits::owner_max())
+        .unwrap();
+    let expected_order = root.model_step_order(limits().order).unwrap();
+    let original_package_bytes = root.emission().package().bytes().to_vec();
+    let original_plan = root.plan().clone();
+    let original_obligations = root.obligations().clone();
+    let original_source = root.checked_unit().source().identity().clone();
+    let complete_association = serde_json::to_value(progress.association().unwrap()).unwrap();
+    let context = admit(root, Some(progress), &subject, limits()).unwrap();
+    drop(subject);
+    assert_eq!(context.admitted_order(), expected_order.bytes());
+    assert_eq!(context.progress_context(), expected_progress);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(context.progress_context()).unwrap(),
+        complete_association
+    );
+    assert_ne!(context.progress_context(), context.progress().bytes());
+    assert_eq!(
+        context.progress().association().unwrap().rows(),
+        &[original_row]
+    );
+    assert_eq!(context.root().plan(), &original_plan);
+    assert_eq!(context.root().obligations(), &original_obligations);
+    assert_eq!(
+        context.root().checked_unit().source().identity(),
+        &original_source
+    );
+    assert_eq!(
+        context.root().emission().package().bytes(),
+        original_package_bytes
+    );
+    let selection = context.root().plan().subject();
+    let declaration = context
+        .root()
+        .emission()
+        .temporal_binding_rows()
+        .declaration(
+            selection.clause_node(),
+            selection.occurrence().origin().ordinal(),
+        )
+        .unwrap();
+    assert_eq!(
+        context
+            .admitted_package()
+            .monitor_plans()
+            .next()
+            .unwrap()
+            .clause(),
+        declaration
+    );
+    let binding = context.admitted_package().admission_binding();
+    assert!(context.admitted_package().clone().retains(&binding));
+    let independent = crate::monitor_root::read_back(
+        context.root().emission().package().bytes(),
+        context.root().emission().evidence(),
+    );
+    assert!(
+        !independent.retains(&binding),
+        "equal-byte independent reads cannot replace the retained admission"
+    );
+}
+
+#[trace("TC-1081", "FR-251-AC-46")]
+#[test]
+fn absent_progress_and_owner_absent_association_keep_original_typed_refusals() {
+    let root = tick_root();
+    let (_, subject) = observation::admitted(None);
+    assert_eq!(
+        admit(root, None, &subject, limits()).unwrap_err().code(),
+        PlanAuthorityRefusalCode::MissingProgress
+    );
+    let root = tick_root();
+    let (view, subject) = observation::admitted(None);
+    match admit(root, Some(view), &subject, limits()).unwrap_err() {
+        PlanAuthorityRefusal::Progress(error) => {
+            assert_eq!(error.code(), authority::ErrorCode::MissingPremise)
+        }
+        other => panic!("wrong refusal {other:?}"),
+    }
+}
+
+#[trace("TC-1081", "FR-251-AC-46")]
+#[test]
+fn independently_admitted_wrong_claims_and_time_facts_refuse_without_context() {
+    for control in 0..12 {
+        let root = tick_root();
+        let mut selected = row(&root);
+        let expected = match control {
+            0 => {
+                selected.model.push_str("_other");
+                ProgressSelectionRefusalCode::Model
+            }
+            1 => {
+                selected.unit = "s".to_owned();
+                ProgressSelectionRefusalCode::Unit
+            }
+            2 => {
+                selected.model_node = selected.unit_node.clone();
+                ProgressSelectionRefusalCode::Node
+            }
+            3 => {
+                selected.unit_node = selected.model_node.clone();
+                ProgressSelectionRefusalCode::Node
+            }
+            4 => {
+                selected.time_dimension = selected.unit_node.clone();
+                ProgressSelectionRefusalCode::Node
+            }
+            5 => {
+                selected.claim = progress::ClaimOccurrence::new(
+                    selected.model_node.clone(),
+                    selected.claim.occurrence(),
+                );
+                ProgressSelectionRefusalCode::Claim
+            }
+            6 => {
+                selected.claim = progress::ClaimOccurrence::new(
+                    selected.claim.clause_node().clone(),
+                    &Origin::new(Role::new("other"), selected.claim.ordinal()),
+                );
+                ProgressSelectionRefusalCode::Claim
+            }
+            7 => {
+                selected.claim = progress::ClaimOccurrence::new(
+                    selected.claim.clause_node().clone(),
+                    &Origin::new(
+                        Role::new(selected.claim.role()),
+                        selected.claim.ordinal() + 1,
+                    ),
+                );
+                ProgressSelectionRefusalCode::Claim
+            }
+            8 => {
+                selected.source = progress::TimeSource::Dense;
+                ProgressSelectionRefusalCode::TimeSource
+            }
+            _ => {
+                match &mut selected.source {
+                    progress::TimeSource::Tick {
+                        operation,
+                        operation_node,
+                        period_numerator,
+                        period_denominator,
+                    } => match control {
+                        9 => {
+                            operation.push_str("_other");
+                        }
+                        10 => {
+                            *operation_node = selected.model_node.clone();
+                        }
+                        _ => {
+                            *period_numerator = "3".to_owned();
+                            *period_denominator = "2".to_owned();
+                        }
+                    },
+                    progress::TimeSource::Dense => panic!("genuine tick source"),
+                }
+                if control == 10 {
+                    ProgressSelectionRefusalCode::Node
+                } else {
+                    ProgressSelectionRefusalCode::TimeSource
+                }
+            }
+        };
+        let (view, subject) = observation::admitted(Some(vec![selected]));
+        match admit(root, Some(view), &subject, limits()).unwrap_err() {
+            PlanAuthorityRefusal::Selection(code) => {
+                assert_eq!(code, expected, "control {control}")
+            }
+            other => panic!("control {control}: {other:?}"),
+        }
+    }
+}
+
+#[trace("TC-1081", "FR-251-AC-46")]
+#[test]
+fn independent_source_subject_clock_and_foreign_emission_selections_refuse() {
+    for control in 0..7 {
+        let root = tick_root();
+        let (view, subject) = observation::admitted(Some(vec![row(&root)]));
+        let mut source = root.checked_unit().source().identity().clone();
+        let mut expected_subject = subject.clone();
+        let mut clock = observation::clock();
+        let mut observation_source = observation::source();
+        let claim = root.plan().subject().clone();
+        let expected = match control {
+            0 => {
+                source.authority.push_str("_other");
+                PlanAuthorityRefusalCode::Source
+            }
+            1 => {
+                source.identity.push_str("_other");
+                PlanAuthorityRefusalCode::Source
+            }
+            2 => {
+                expected_subject.scope_identity = observation::id("window:other");
+                PlanAuthorityRefusalCode::Selection
+            }
+            3 => {
+                expected_subject.population_identity = observation::id("population:other");
+                PlanAuthorityRefusalCode::Selection
+            }
+            4 => {
+                clock = authority::clock::Selection::new(
+                    observation::id("clock:other"),
+                    observation::id("1"),
+                );
+                PlanAuthorityRefusalCode::Selection
+            }
+            5 => {
+                clock = authority::clock::Selection::new(
+                    observation::id("clock:monitor-events"),
+                    observation::id("2"),
+                );
+                PlanAuthorityRefusalCode::Selection
+            }
+            _ => {
+                observation_source = observation::id("source:other");
+                PlanAuthorityRefusalCode::Selection
+            }
+        };
+        let result = root.admit_authority(
+            PlanAuthoritySelection {
+                source: &source,
+                claim: &claim,
+                observation_subject: &expected_subject,
+                observation_clock: &clock,
+                observation_source: &observation_source,
+            },
+            Some(view),
+            limits(),
+        );
+        assert_eq!(result.unwrap_err().code(), expected, "control {control}");
+    }
+    let original = tick_root();
+    let (view, subject) = observation::admitted(Some(vec![row(&original)]));
+    let foreign = root_of(
+        &authored("eventually[0 ms, 5 ms] holds(c.versionNumber = 3)"),
+        "C",
+        &target(),
+    )
+    .unwrap();
+    let source = original.checked_unit().source().identity().clone();
+    let claim = original.plan().subject().clone();
+    let error = foreign
+        .admit_authority(
+            PlanAuthoritySelection {
+                source: &source,
+                claim: &claim,
+                observation_subject: &subject,
+                observation_clock: &observation::clock(),
+                observation_source: &observation::source(),
+            },
+            Some(view),
+            limits(),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        PlanAuthorityRefusal::Claim | PlanAuthorityRefusal::Selection(_)
+    ));
+}
+
+#[trace("TC-1081", "FR-251-AC-46", "FR-251-AC-48")]
+#[test]
+fn exact_canonical_bounds_succeed_and_one_short_preserves_owner_failures() {
+    let root = tick_root();
+    let (view, subject) = observation::admitted(Some(vec![row(&root)]));
+    let progress_size = view
+        .association_canonical_bytes(limits().progress)
+        .unwrap()
+        .len();
+    let order_size = root.model_step_order(limits().order).unwrap().bytes().len() as u64;
+    let mut exact = limits();
+    exact.progress.max_output_bytes = progress_size;
+    exact.order = quire_canonical::Limits::new(order_size);
+    assert_eq!(
+        admit(root, Some(view), &subject, exact)
+            .unwrap()
+            .progress_context()
+            .len(),
+        progress_size
+    );
+    for progress_short in [false, true] {
+        let root = tick_root();
+        let (view, subject) = observation::admitted(Some(vec![row(&root)]));
+        let mut short = exact;
+        if progress_short {
+            short.progress.max_output_bytes -= 1;
+        } else {
+            short.order = quire_canonical::Limits::new(order_size - 1);
+        }
+        let error = admit(root, Some(view), &subject, short).unwrap_err();
+        if progress_short {
+            match error {
+                PlanAuthorityRefusal::Progress(owner) => {
+                    assert_eq!(owner.code(), authority::ErrorCode::ResourceIncomplete)
+                }
+                other => panic!("wrong owner {other:?}"),
+            }
+        } else {
+            assert!(matches!(error, PlanAuthorityRefusal::Order(_)));
+        }
+    }
+}

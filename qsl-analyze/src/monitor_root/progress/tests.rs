@@ -10,7 +10,7 @@ use quire_exact::Cancel;
 
 use super::*;
 
-fn checked_source(digital: bool) -> ModelTimeSource {
+fn checked_source(digital: bool) -> (ModelTimeSource, progress::ClaimOccurrence) {
     let packages = package_input([include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../examples/config-version/model.semantic-ir.json"
@@ -66,28 +66,54 @@ fn checked_source(digital: bool) -> ModelTimeSource {
     .unwrap()
     .into_value();
     assert_eq!(unit.package().graph().time_sources().len(), 1);
-    unit.package().graph().time_sources()[0].clone()
+    let graph = unit.package().graph();
+    let clause = &graph.temporal_clauses()[0];
+    (
+        graph.time_sources()[0].clone(),
+        progress::ClaimOccurrence::new(
+            progress::NodeIdentity::from_key(
+                clause.identity(),
+                quire_observation::authority::Limits::owner_max(),
+            )
+            .unwrap(),
+            clause.claim(),
+        ),
+    )
 }
 
-fn row(source: &ModelTimeSource) -> progress::AssociationRow {
+fn row(source: &ModelTimeSource, claim: progress::ClaimOccurrence) -> progress::AssociationRow {
     progress::AssociationRow {
         model: source.model.clone(),
-        // These are actual checker values, not fabricated 64-hex identities.
-        // This row is a component input, not an admitted owner association.
-        model_node: source.model_node.to_string(),
-        claim: "unselected component row".to_owned(),
+        model_node: progress::NodeIdentity::from_key(
+            source.model_node.clone(),
+            quire_observation::authority::Limits::owner_max(),
+        )
+        .unwrap(),
+        claim,
         source: match &source.source {
             TimeSourceKind::Dense => progress::TimeSource::Dense,
             TimeSourceKind::Tick { operation, period } => progress::TimeSource::Tick {
                 operation: operation.clone(),
-                operation_node: source.tick_operation_anchor.as_ref().unwrap().to_string(),
+                operation_node: progress::NodeIdentity::from_key(
+                    source.tick_operation_anchor.as_ref().unwrap().clone(),
+                    quire_observation::authority::Limits::owner_max(),
+                )
+                .unwrap(),
                 period_numerator: period.numerator().to_string(),
                 period_denominator: period.denominator().to_string(),
             },
         },
         unit: source.unit.clone(),
-        unit_node: source.unit_node.to_string(),
-        time_dimension: source.time_dimension.to_string(),
+        unit_node: progress::NodeIdentity::from_key(
+            source.unit_node.clone(),
+            quire_observation::authority::Limits::owner_max(),
+        )
+        .unwrap(),
+        time_dimension: progress::NodeIdentity::from_key(
+            source.time_dimension.clone(),
+            quire_observation::authority::Limits::owner_max(),
+        )
+        .unwrap(),
         observation_source: "source:events".to_owned(),
         observation_clock: "clock:events".to_owned(),
         observation_revision: "1".to_owned(),
@@ -100,8 +126,8 @@ fn source_field_component_checks_use_original_checked_dense_and_tick_facts() {
     let selected_source = Identity::new("source:events");
     let clock = clock::Selection::new(Identity::new("clock:events"), Identity::new("1"));
     for digital in [false, true] {
-        let source = checked_source(digital);
-        let original = row(&source);
+        let (source, claim) = checked_source(digital);
+        let original = row(&source, claim);
         assert_eq!(
             check_time_source_fields(&source, &original, &selected_source, &clock),
             Ok(())
@@ -113,7 +139,7 @@ fn source_field_component_checks_use_original_checked_dense_and_tick_facts() {
                     r.model.push_str("_foreign");
                     r
                 },
-                SelectionRefusal::Model,
+                ProgressSelectionRefusalCode::Model,
             ),
             (
                 {
@@ -121,7 +147,7 @@ fn source_field_component_checks_use_original_checked_dense_and_tick_facts() {
                     r.unit = "s".to_owned();
                     r
                 },
-                SelectionRefusal::Unit,
+                ProgressSelectionRefusalCode::Unit,
             ),
             (
                 {
@@ -129,7 +155,7 @@ fn source_field_component_checks_use_original_checked_dense_and_tick_facts() {
                     r.observation_source.push_str("_foreign");
                     r
                 },
-                SelectionRefusal::Source,
+                ProgressSelectionRefusalCode::Source,
             ),
             (
                 {
@@ -137,7 +163,7 @@ fn source_field_component_checks_use_original_checked_dense_and_tick_facts() {
                     r.observation_clock.push_str("_foreign");
                     r
                 },
-                SelectionRefusal::Clock,
+                ProgressSelectionRefusalCode::Clock,
             ),
             (
                 {
@@ -145,7 +171,7 @@ fn source_field_component_checks_use_original_checked_dense_and_tick_facts() {
                     r.observation_revision = "2".to_owned();
                     r
                 },
-                SelectionRefusal::Clock,
+                ProgressSelectionRefusalCode::Clock,
             ),
         ] {
             assert_eq!(
@@ -157,11 +183,14 @@ fn source_field_component_checks_use_original_checked_dense_and_tick_facts() {
         changed_kind.source = if digital {
             progress::TimeSource::Dense
         } else {
-            row(&checked_source(true)).source
+            {
+                let (source, claim) = checked_source(true);
+                row(&source, claim).source
+            }
         };
         assert_eq!(
             check_time_source_fields(&source, &changed_kind, &selected_source, &clock),
-            Err(SelectionRefusal::TimeSource)
+            Err(ProgressSelectionRefusalCode::TimeSource)
         );
         if digital {
             for field in 0..3 {
@@ -181,7 +210,7 @@ fn source_field_component_checks_use_original_checked_dense_and_tick_facts() {
                 }
                 assert_eq!(
                     check_time_source_fields(&source, &changed, &selected_source, &clock),
-                    Err(SelectionRefusal::TimeSource)
+                    Err(ProgressSelectionRefusalCode::TimeSource)
                 );
             }
         }

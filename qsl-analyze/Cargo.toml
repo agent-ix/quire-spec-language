@@ -30,6 +30,8 @@ qsl-route = { path = "../qsl-route" }
 quire-checked = { workspace = true }
 quire-semantic-value = { workspace = true }
 quire-canonical = { workspace = true }
+# Strict admission authenticates the plan root final clause binding.
+quire-contract-model = { workspace = true }
 # The observation owner admits progress associations independently of QSL.
 quire-observation = { git = "https://github.com/agent-ix/quire-observation", branch = "main" }
 quire-exact = { workspace = true }
@@ -64,8 +66,6 @@ qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
 # replay tests use to change or misplace a send record (FR-217-AC-5/AC-6).
 qsl-eval = { path = "../qsl-eval", features = ["test-support"] }
 quire-eval = { workspace = true }
-# The strict reader the plan-root tests read the emitted package back through.
-quire-contract-model = { workspace = true }
 serde_json = "1.0.151"
 # FR-159-AC-5 validates EN-1's manifest entry against QSpec's backend-provider
 # schema, read in place from `$QSPEC_DIR`.
