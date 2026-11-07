@@ -712,6 +712,8 @@ pub(crate) struct Machine<'a, 'm, N> {
     /// Completed operator occurrences and their values, when a caller needs
     /// expression-level evidence (FR-484 scalar-operation obligations).
     observed_applications: Option<&'m mut Vec<(Location, Value)>>,
+    /// Capture drained at every actual machine step, including failed steps.
+    operation_capture: Option<&'m mut super::OperationCapture>,
     /// Whether this checked package calls a dependency whose body is absent.
     /// Only the ValueValidity observer interprets that typed refusal.
     unavailable_imported_call: Option<&'m mut bool>,
@@ -843,10 +845,11 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         objects: &'a ObjectEnvironment,
         meter: &'m mut Meter,
         dispatch_tables: &'a [DispatchTable],
-        observation: super::ApplicationObservation<'m>,
+        observation: super::ApplicationObserver<'m>,
     ) -> Self {
         let mut machine = Self::new(scope, graph, objects, meter, dispatch_tables);
         machine.observed_applications = Some(observation.observed);
+        machine.operation_capture = Some(observation.capture);
         machine.unavailable_imported_call = Some(observation.unavailable_imported_call);
         machine.function_case_limit = Some(observation.function_case_limit);
         machine.function_evaluations = Some(observation.function_evaluations);
@@ -933,6 +936,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             family,
             meter,
             observed_applications: None,
+            operation_capture: None,
             unavailable_imported_call: None,
             function_case_limit: None,
             function_evaluations: None,
@@ -1225,6 +1229,9 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 owners.begin_step();
             }
             let stepped = self.step(task);
+            if let Some(capture) = self.operation_capture.as_deref_mut() {
+                capture.drain(self.meter, located.location());
+            }
             self.route_step_charges()?;
             if let Err(halt) = stepped {
                 let located = self.imported.first().copied().unwrap_or(located);

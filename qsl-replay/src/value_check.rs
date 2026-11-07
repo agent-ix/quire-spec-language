@@ -33,7 +33,7 @@
 //!   site, holds when the occurrence completed, and is not decisive when the
 //!   call path never reached it.
 
-use qsl_eval::value::{ApplicationObservation, CheckedPackageEvaluation, QualifiedName};
+use qsl_eval::value::{ApplicationObservationOptions, CheckedPackageEvaluation, QualifiedName};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{Capability, NodeTag};
@@ -375,24 +375,24 @@ impl<'p> ValueTarget<'p> {
         }
         let mut meter = Meter::new(self.limits.0).with_cancel(cancel.clone());
         let objects = ObjectEnvironment::default().with_unresolved_references();
-        let mut observed = Vec::new();
-        let mut unavailable_imported_call = false;
-        let mut function_evaluations = 0;
-        let mut function_case_limit_reached = false;
         let call = self.package.call_observing_applications(
             &self.name,
             assignment.to_vec(),
             &objects,
             &mut meter,
-            ApplicationObservation {
-                observed: &mut observed,
-                unavailable_imported_call: &mut unavailable_imported_call,
+            ApplicationObservationOptions {
                 function_case_limit,
-                function_evaluations: &mut function_evaluations,
-                function_case_limit_reached: &mut function_case_limit_reached,
+                // ValueValidity consumes completed applications, not an event
+                // ledger. Zero capacities explicitly request no retained events.
+                max_events: 0,
+                max_size_requests: 0,
             },
         );
-        let evaluation = match call {
+        let observed = call.observed;
+        let unavailable_imported_call = call.unavailable_imported_call;
+        let function_evaluations = call.function_evaluations;
+        let function_case_limit_reached = call.function_case_limit_reached;
+        let evaluation = match call.evaluation {
             Ok(evaluation) => evaluation,
             Err(CallFailure::Fault(_)) if function_case_limit_reached => {
                 return Ok((Verdict::CaseLimit, function_evaluations));
