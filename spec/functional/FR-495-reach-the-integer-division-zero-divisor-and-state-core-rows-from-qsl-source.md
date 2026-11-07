@@ -75,7 +75,7 @@ the finite-backend negotiation of an integer division over unbounded operands
 
 ### Public compile-facade division selection
 
-The QSL public compile facade SHALL accept the caller's owner-admitted integer
+The existing QSL public compile facade SHALL accept the caller's owner-admitted integer
 division selection and carry it unchanged into package declarations, checking
 and lowering.
 
@@ -85,11 +85,12 @@ law, or infer a law from operator spelling or operand values.
 The selected `div`/`rem` profile and its original owner definition reference
 SHALL agree with the emitted operation's law binding.
 
-The independent checked-package reader and replay route SHALL retain that
-binding.
+The existing source-backed checking, emission and CG agreement path SHALL
+retain the supplied admitted capability and its exact owner law binding.
 
-When a retained operation's binding conflicts with the admitted selection, the
-independent reader SHALL return the native typed mismatch refusal.
+When a source-backed operation's definition binding is foreign to or conflicts
+with the admitted selection, the native admission boundary SHALL return its
+typed mismatch refusal before CG or source-backed execution.
 
 When `div` or `rem` demands a selection that is absent, the facade SHALL return
 the existing typed `MissingSelection` for the `IntegerDivision` role at the
@@ -101,9 +102,13 @@ admission boundary SHALL retain its distinct native refusal.
 When a program contains no `div` or `rem`, the facade SHALL NOT require an
 integer division selection, including for a `mod`-only program.
 
-The same law applies to source and byte-based execution. Bounded operands and
-the existing range/nonzero obligations remain authoritative; providing a law
-proves no new bound and does not authorize a CG-side result-bound workaround.
+This obligation supplies the admitted law to CG and the source-backed
+IR-1391 agreement cells through the existing compile facade. A new byte-only
+execution surface is outside this scope. Existing CG intake may strict-read
+the original emitted checked-package bytes; that is not a requirement for a
+new QSL execution entry over bytes alone. Bounded operands and the existing
+range/nonzero obligations remain authoritative. Providing a law proves no new
+bound and does not authorize a CG-side result-bound workaround.
 
 ### Scalar operation behavior
 
@@ -207,7 +212,7 @@ proves no new bound and does not authorize a CG-side result-bound workaround.
 | FR-495-AC-5 | With a cvc5 provider registered, QSpec TC-192 DIV-14's holding obligation settles `proved` and its violated obligation settles `refuted` through the FR-349 route, and the `refuted` counterexample replays through the QSL complete-V1 executor to the violation (FR-098); a lock with no provider reports DIV-14 pending on the provider and never `proved` or `refuted`; Z3 absent leaves cvc5's verdict settled with the absent-cross-check warning. | Test (TC-1284) |
 | FR-495-AC-6 | Under a header profile `quire.state.core/v1` alone, an `invariant`, `pre` or `post` clause body over a model object type that states `7 / 3 = rational(7, 3)` refuses `ill_typed`/`type-mismatch` at the `/` operator, because the integer operands are never implicitly converted to a rational (QSpec FR-044 and TC-192 DIV-18: no ambient integer-to-rational conversion), and the same body refuses the same way when no rational type is expected; under `quire.value.complete/v1` the same body checks with the rational type expected (result 7/3) and refuses `ill_typed`/`type-mismatch` when no rational type is expected. This is the state-only subcase of QSpec TC-192 DIV-18's slash row. | Test (TC-1284) |
 | FR-495-AC-7 | Finite-backend negotiation (QSL-1485; QSpec FR-147-AC-3, AC-8). Under `quire.value.complete/v1` and each of the three division definitions, `function q using v(a: Integer, b: Integer): Integer pure { if b != 0 then a div b else 0 }` checks, and its `div` application has one `value-validity` requirement record whose extent is `Unbounded` over the parameter nodes of `a` and `b` (domain kind integer); the same with `rem` and with `mod`. First, in a locked run with a cvc5 provider registered beside a test descriptor advertising (`value-validity`, `bounded`) whose disposition for the item is `requires-bound`, the bounded descriptor's item is written with `finite_bound_available` true and settles `requires-bound`, no harness is emitted for it, S6a evaluates nothing, and the request names `a` and `b` as `Integer`, not as any `Int[..]`. Then, in a locked run with the bounded descriptor alone and no SMT provider registered, each item settles the same `requires-bound` disposition with the same request. | Test (TC-1284) |
-| FR-495-AC-8 | Through the public `qsl-replay` compile facade, compile genuine bounded-operand `div` and `rem` functions with each owner-admitted Euclidean, Floor and Truncating selection. The checked nodes and emitted `operation.laws` retain that exact owner law; source execution and independently read checked-package execution agree with QSpec TC-192 at positive and negative operands, including negative-divisor controls that distinguish the laws. Missing demanded selection returns typed `MissingSelection(IntegerDivision)` at the operator; conflicting/unknown owner definitions and a mismatched emitted binding retain typed owner refusals. A non-division and a `mod`-only control compile without a division selection. No test assigns a private declarations field, invents a law string or substitutes CG behavior for this public-facade path. | Test |
+| FR-495-AC-8 | Through the existing public `qsl-replay` compile facade, compile genuine bounded-operand `div` and `rem` functions with each owner-admitted Euclidean, Floor and Truncating selection. The supplied capability, checked nodes and emitted `operation.laws` retain that exact owner law into CG; the existing source-backed QSL/CG agreement path matches QSpec TC-192 at positive and negative operands, including negative-divisor controls that distinguish the laws. This obligation supplies the admitted law to CG/source-backed IR-1391 agreement; a new byte-only execution surface is outside this scope. Missing demanded selection returns typed `MissingSelection(IntegerDivision)` at the operator; unknown, foreign or conflicting definition bindings retain native typed refusals before execution. A non-division and a `mod`-only control compile without a division selection. No test assigns a private declarations field, invents a law string or substitutes CG behavior for the public-facade selection. | Test |
 
 
 ## Dependencies
