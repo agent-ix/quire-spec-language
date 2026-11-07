@@ -48,7 +48,7 @@ fn rational(value: &CheckedRational) -> Option<Rational> {
 
 /// The preimage owner of a source-owned node; only a source owns a unit or
 /// dimension the bare route reads.
-fn owner(package: &CheckedPackageV2, owner: Option<&CheckedNodeOwner>) -> Option<NodeOwner> {
+fn owner(package_name: &str, owner: Option<&CheckedNodeOwner>) -> Option<NodeOwner> {
     match owner? {
         CheckedNodeOwner::Source {
             authority,
@@ -56,7 +56,7 @@ fn owner(package: &CheckedPackageV2, owner: Option<&CheckedNodeOwner>) -> Option
         } => Some(NodeOwner::Source(OwnerSubject::new(
             &**authority,
             &**identity,
-            package.name(),
+            package_name,
         ))),
         CheckedNodeOwner::ModelRoot { .. } | CheckedNodeOwner::Model { .. } => None,
     }
@@ -122,8 +122,8 @@ pub(crate) fn read_unit_table(
             ));
         }
         terms.sort_by(|left, right| left.0.cmp(&right.0));
-        let owner = owner(package, dimension.node.owner.as_ref())
-            .ok_or(Read(NominalReadCode::UnsupportedForm))?;
+        // A dimension no selected source owns is not in the owner selection.
+        let owner = owner(package.name(), dimension.node.owner.as_ref()).ok_or(Graph)?;
         let qualified = name(dimension.node.declaration.as_ref()).ok_or(Graph)?;
         let preimage = if dimension.base {
             DimensionPreimage::new(owner, qualified, terms)
@@ -135,7 +135,7 @@ pub(crate) fn read_unit_table(
     }
     let mut units = Vec::new();
     for unit in &read.units {
-        let owner = owner(package, unit.node.owner.as_ref()).ok_or(Graph)?;
+        let owner = owner(package.name(), unit.node.owner.as_ref()).ok_or(Graph)?;
         let target = unit.target.map(|target| key(&target.node_id)).transpose()?;
         let preimage = UnitPreimage::new(
             owner,
@@ -183,7 +183,7 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
 
-    fn owner(identity: &str) -> NodeOwner {
+    fn source_owner(identity: &str) -> NodeOwner {
         NodeOwner::Source(OwnerSubject::new("a", identity, "pkg"))
     }
 
@@ -210,7 +210,7 @@ mod tests {
     #[trace("TC-1333", "FR-533-AC-19")]
     #[test]
     fn a_unit_of_an_unselected_owner_is_no_unit_graph() {
-        let owned = owner("u");
+        let owned = source_owner("u");
         let (dimension, dimension_key, unit, unit_key) = money(&owned);
         let parts = || {
             (
@@ -222,9 +222,39 @@ mod tests {
         assert!(admit(dimensions, units, &OwnerSelection::new([owned.clone()])).is_ok());
         let (dimensions, units) = parts();
         assert_eq!(
-            admit(dimensions, units, &OwnerSelection::new([owner("other")])).unwrap_err(),
+            admit(
+                dimensions,
+                units,
+                &OwnerSelection::new([source_owner("other")])
+            )
+            .unwrap_err(),
             UnitDefinitionRefusal::Graph
         );
+    }
+
+    /// FR-533-AC-19: only a source owns a unit or dimension the bare route
+    /// reads; a node of a model owner has no owner in the selection, so a
+    /// dimension (or unit) it owns is refused as no unit graph.
+    #[trace("TC-1333", "FR-533-AC-19")]
+    #[test]
+    fn a_node_no_source_owns_has_no_selectable_owner() {
+        let source = CheckedNodeOwner::Source {
+            authority: "a".into(),
+            identity: "u".into(),
+        };
+        assert_eq!(owner("pkg", Some(&source)), Some(self::source_owner("u")));
+        for other in [
+            CheckedNodeOwner::ModelRoot {
+                identity: "m".into(),
+            },
+            CheckedNodeOwner::Model {
+                identity: "m".into(),
+                node: "n".into(),
+            },
+        ] {
+            assert_eq!(owner("pkg", Some(&other)), None);
+        }
+        assert_eq!(owner("pkg", None), None);
     }
 
     /// FR-533-AC-19: a conversion spelled unreduced is refused, not normalised.
