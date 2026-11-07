@@ -1060,10 +1060,12 @@ fn model_step_order_is_a_complete_canonical_value_with_exact_encoding_limits() {
         .model_step_order(quire_canonical::Limits::new(size - 1))
         .unwrap_err();
     assert_eq!(error.code, ModelStepOrderRefusalCode::Encoding);
-    assert!(matches!(
-        error.encoding,
-        Some(quire_canonical::Error::Limit(_))
-    ));
+    let Some(quire_canonical::Error::Limit(limit)) = error.encoding else {
+        panic!("the original native canonical limit is retained");
+    };
+    assert_eq!(limit.kind, quire_canonical::LimitKind::CanonicalBytes);
+    assert_eq!(limit.bound, size - 1);
+    assert_eq!(limit.required, size);
     let clone = order.clone();
     drop(root);
     assert_eq!(clone.bytes(), order.bytes());
