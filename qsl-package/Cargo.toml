@@ -60,6 +60,7 @@ serde_json = { version = "1.0.151", optional = true }
 thiserror = { version = "2.0.20", default-features = false, optional = true }
 
 [dev-dependencies]
+allocation-counter = "0.8.1"
 # The emitter's tests build a one-function `PackageDeclarations`, whose
 # declarations are layer-2 parsed forms. Layer 2 is below this crate, so the
 # edge closes no cycle; TC-390 admits it in this table only.

@@ -198,6 +198,7 @@ impl NativeJoinLimits {
         let bound = match native.native() {
             crate::NativeJoinFailure::Projection(error) => error.configured_bound.unwrap_or(bound),
             crate::NativeJoinFailure::Equality(_) | crate::NativeJoinFailure::Limit(_) => bound,
+            crate::NativeJoinFailure::Rows(error) => error.configured_bound().unwrap_or(bound),
         };
         let actual = u128::from(consumed).saturating_add(unpaid.amount);
         Some(crate::NativeJoinLimitError {
@@ -1148,6 +1149,12 @@ impl AdmittedPackageRead<'_> {
             .emission
             .identity_rows(&self.read.admitted, &mut budget)
             .map_err(|refusal| match refusal {
+                crate::IdentityFileRefusal::Rows(rows) => {
+                    match limits.native_join_limits().refusal(rows, &budget) {
+                        Some(denial) => ViewFailure::Exhausted(Box::new(denial)),
+                        None => fault(),
+                    }
+                }
                 crate::IdentityFileRefusal::Native(native)
                     if qsl_semantics::model::intake::is_native_budget_denial(&native) =>
                 {

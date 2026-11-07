@@ -1312,12 +1312,14 @@ fn finish(
         selected_source_collection_rows: rows.selected_source_collection_rows,
         selected_exact_declaration_rows: rows.selected_exact_declaration_rows,
         selected_exact_field_rows: rows.selected_exact_field_rows,
+        identity_row_selection: super::identity_rows::IdentityRowSelection::default(),
         equality_producer_identity_rows: rows.equality_producer_identity_rows,
         equality_fact_witness_rows: rows.equality_fact_witness_rows,
         wire_nodes: semantic_graph.nodes,
         temporal_binding_rows: rows.temporal_binding_rows,
         temporal_rows: rows.temporal_rows,
-    })
+    }
+    .with_identity_row_selection())
 }
 
 /// The node a `binding` term named `name` references, or `None` for any other

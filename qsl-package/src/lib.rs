@@ -39,6 +39,8 @@ mod export;
 #[cfg(feature = "std")]
 mod introduced_binders;
 #[cfg(feature = "std")]
+mod native_row;
+#[cfg(feature = "std")]
 pub mod number;
 #[cfg(feature = "std")]
 mod protocol_activation;
@@ -107,6 +109,8 @@ pub use evaluation_view::{
     TermHandle, ViewFailure,
 };
 pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
+#[cfg(feature = "std")]
+pub use native_row::{NativeRowError, NativeRowErrorCode};
 #[cfg(feature = "std")]
 pub use protocol_occurrence::{
     protocol_occurrence_schemas_from_read, CompensationEntry, ControlEntry, ControlOperator,

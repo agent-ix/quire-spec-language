@@ -250,6 +250,9 @@ pub enum IdentityFileRefusal {
     /// IR refused the original producer rows at its typed structural locus.
     #[error("the identity file has an invalid native witness: {0:?}")]
     Native(Box<quire_contract_model::ExactTypeProjectionError>),
+    /// An allocation-free producer adapter denial with the original budget locus.
+    #[error(transparent)]
+    Rows(#[from] crate::NativeRowError),
 }
 
 /// The member of an identity file a refusal names (FR-531 "The identity file").
