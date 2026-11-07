@@ -989,12 +989,17 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
     declaration["kind"]["name"] = json!("tier");
     declaration.as_object_mut().unwrap().remove("scalar");
     declaration["constraints"] = json!([]);
-    declaration["variants"] = json!([{
-        "identity": format!("ix://{}/variant/Tier-Gold", domain.package),
-        "name": "Gold",
-        "origin": {"source": {"sourceIdentity": document["source"]["identity"],
-            "path": "fixture.qspec", "startLine": 1, "startColumn": 1}}
-    }]);
+    declaration["variants"] = ["Gold", "Standard"]
+        .into_iter()
+        .map(|case| {
+            json!({
+                "identity": format!("ix://{}/variant/Tier-{case}", domain.package),
+                "name": case,
+                "origin": {"source": {"sourceIdentity": document["source"]["identity"],
+                    "path": "fixture.qspec", "startLine": 1, "startColumn": 1}}
+            })
+        })
+        .collect();
     document["types"].as_array_mut().unwrap().push(declaration);
     let mut field = document["types"][1]["fields"][0].clone();
     field["identity"] = json!(format!("ix://{}/ConfigVersion/tier", domain.package));
