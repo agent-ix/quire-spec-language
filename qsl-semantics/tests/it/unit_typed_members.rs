@@ -250,8 +250,9 @@ fn quantity_types_check_in_every_position_over_the_one_unit_node() {
     };
     assert_eq!(
         error.cause,
-        AssemblyCause::UnresolvedTypeName {
-            name: "Time".to_owned()
+        AssemblyCause::UnresolvedUnitName {
+            name: "Time".to_owned(),
+            packages: Vec::new(),
         }
     );
     assert_eq!(error.cause.code(), Code::MissingDeclaration);

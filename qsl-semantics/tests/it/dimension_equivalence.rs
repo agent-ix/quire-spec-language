@@ -243,6 +243,20 @@ fn dimension_equivalences_are_decided_by_fr_142_steps() {
         );
     }
 
+    // A bare unit name of a `by` clause that the unit does not declare is an
+    // unresolved unit name, even though two selected packages declare `ms`.
+    assert_eq!(
+        refused("dimension R::Time ~ F::Time by 1 R::s = 1 ms;"),
+        (
+            AssemblyCause::UnresolvedUnitName {
+                name: "ms".to_owned(),
+                packages: vec!["acme/flow".to_owned(), "acme/clock".to_owned()],
+            },
+            "missing_declaration/missing-name".to_owned(),
+            "ms".to_owned()
+        )
+    );
+
     let cycle = |name: &str| AssemblyCause::QuantityCycle {
         edges: vec![(name.to_owned(), name.to_owned())],
     };

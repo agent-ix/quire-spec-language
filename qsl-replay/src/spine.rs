@@ -817,6 +817,20 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
     let message = match &first.cause {
         AssemblyCause::EmptyUnitList => "the package has no source units".to_owned(),
         AssemblyCause::UnresolvedTypeName { name } => format!("no declaration is named `{name}`"),
+        AssemblyCause::UnresolvedUnitName { name, packages } => {
+            if packages.is_empty() {
+                format!("no unit is named `{name}`")
+            } else {
+                let spellings = packages
+                    .iter()
+                    .map(|package| format!("`{package}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "no unit of this unit is named `{name}`; the selected packages {spellings} each declare one, reached as `Alias::{name}`"
+                )
+            }
+        }
         AssemblyCause::ImportedTypeName { name } => {
             format!("`{name}` names an imported declaration, which stands only as a callee")
         }

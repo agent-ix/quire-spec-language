@@ -447,7 +447,7 @@ fn with_length_units(document: &[u8]) -> Vec<u8> {
 /// type, two fields `a` and `b` of `Ratio`: the invariants
 /// `self.a = self.b`, `self.a < self.b` and `self.a + self.b = self.a` each
 /// refuse `ill_typed`/`type-mismatch`, while
-/// `convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b)` and the same
+/// `convert<Quantity<Config::m>>(self.a) = convert<Quantity<Config::m>>(self.b)` and the same
 /// with `<` check. `m` is the document's unit.
 #[trace("FR-505-AC-9", "TC-1300")]
 #[test]
@@ -476,10 +476,10 @@ fn unit_bearing_rational_members_compare_only_through_convert() {
         );
     }
     for clause in [
-        "convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b)",
-        "convert<Quantity<m>>(self.a) < convert<Quantity<m>>(self.b)",
-        "convert<Quantity<m>>(self.a) = 1 m",
-        "convert<Quantity<cm>>(self.a) = 100 cm",
+        "convert<Quantity<Config::m>>(self.a) = convert<Quantity<Config::m>>(self.b)",
+        "convert<Quantity<Config::m>>(self.a) < convert<Quantity<Config::m>>(self.b)",
+        "convert<Quantity<Config::m>>(self.a) = 1 Config::m",
+        "convert<Quantity<Config::cm>>(self.a) = 100 Config::cm",
     ] {
         let body =
             format!("invariant I using v on Config::ConfigVersion at current {{ {clause} }}\n");
@@ -504,9 +504,9 @@ fn unit_bearing_rational_comparisons_refuse_a_wrong_unit() {
         &[("a", &ratio), ("b", &ratio)],
     ));
     for clause in [
-        "convert<Quantity<m>>(self.a) = convert<Quantity<cm>>(self.b)",
-        "convert<Quantity<m>>(self.a) = 1 cm",
-        "convert<Quantity<m>>(self.a) = self.b",
+        "convert<Quantity<Config::m>>(self.a) = convert<Quantity<Config::cm>>(self.b)",
+        "convert<Quantity<Config::m>>(self.a) = 1 Config::cm",
+        "convert<Quantity<Config::m>>(self.a) = self.b",
     ] {
         let body =
             format!("invariant I using v on Config::ConfigVersion at current {{ {clause} }}\n");
@@ -518,9 +518,50 @@ fn unit_bearing_rational_comparisons_refuse_a_wrong_unit() {
     }
 }
 
+/// FR-505-AC-9 (TC-1300 row 19): over the same document, the bare
+/// `convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b)` names a unit
+/// the compiling unit does not declare, so it refuses `missing_declaration`/
+/// `missing-name` with `UnresolvedUnitName` naming the document's package,
+/// while `Config::m` names the document's unit.
+#[trace("FR-505-AC-9", "TC-1300")]
+#[test]
+fn a_bare_unit_name_never_reaches_the_document_unit() {
+    use qsl_semantics::check::AssemblyCause;
+    let ratio = identity("Ratio");
+    let document = with_length_units(&document(
+        vec![rational_type(
+            "Ratio",
+            ratio_constraints(&ratio),
+            Some("ix://quire/unit/m"),
+        )],
+        Vec::new(),
+        &[("a", &ratio), ("b", &ratio)],
+    ));
+    let body = "invariant I using v on Config::ConfigVersion at current { \
+        convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b) }\n";
+    let expected = AssemblyCause::UnresolvedUnitName {
+        name: "m".to_owned(),
+        packages: vec![PACKAGE_IDENTITY.to_owned()],
+    };
+    let refusal = admit_and_assemble_with_body(&document, body)
+        .map(|_| ())
+        .expect_err("the bare unit name refuses at assembly");
+    let causes: Vec<_> = refusal.errors.iter().map(|error| &error.cause).collect();
+    assert_eq!(causes, vec![&expected, &expected]);
+    assert_eq!(expected.code(), Code::MissingDeclaration);
+    assert_eq!(expected.catalog_code().cause(), "missing-name");
+    let first = &refusal.errors[0].span;
+    let (text, _) = crate::model_operations::config_unit_with_profiles(&document, "", body);
+    assert_eq!(&text[first.start..first.end], "m");
+    assert_eq!(
+        first.start,
+        text.find("Quantity<m>").unwrap() + "Quantity<".len()
+    );
+}
+
 /// A source unit `m` of another dimension takes the name from the model
 /// document's `m` (the compiling unit's own unit wins), so the document's
-/// `Ratio` carries the source `m` (Time): `convert<Quantity<cm>>(self.a)`,
+/// `Ratio` carries the source `m` (Time): `convert<Quantity<Config::cm>>(self.a)`,
 /// a conversion to the document's Length unit, checks without the source `m`
 /// and is refused `ill_typed`/`type-mismatch` with it.
 #[trace("TC-1300")]
@@ -537,7 +578,7 @@ fn a_source_unit_named_like_the_document_unit_wins_the_name() {
         &[("a", &ratio), ("b", &ratio)],
     ));
     let clause = "invariant I using v on Config::ConfigVersion at current { \
-        convert<Quantity<cm>>(self.a) = 100 cm }\n";
+        convert<Quantity<Config::cm>>(self.a) = 100 Config::cm }\n";
     assert_eq!(assemble(&document, clause).map(|_| ()), Ok(()));
     let shadowed = format!("dimension Time;\nunit m : Time = rational(1, 1);\n{clause}");
     assert_eq!(
@@ -546,65 +587,197 @@ fn a_source_unit_named_like_the_document_unit_wins_the_name() {
     );
 }
 
-/// Two selected models that each declare a unit `x` leave the bare name `x`
-/// unresolved (`UnresolvedTypeName`, the refusal of a name no unit holds): no
-/// model is picked silently. The qualified spellings `A::x` and `B::x` each
-/// resolve, and a bare name only one model declares resolves.
+/// The unit selecting `packages` with the source `body` after a source `Time`,
+/// assembled and then checked: the assembly causes, else the check causes.
 #[cfg(feature = "test-support")]
-#[trace("TC-1300")]
+fn unit_name_causes(
+    packages: &[(&str, &str, Vec<u8>)],
+    body: &str,
+) -> Result<
+    (),
+    (
+        Vec<qsl_semantics::check::AssemblyCause>,
+        Vec<qsl_semantics::check::CheckCause>,
+    ),
+> {
+    use crate::timed_declarations::assemble_selected_as;
+    let assembled = assemble_selected_as(("test", "fr-505-two-units"), packages, body)
+        .1
+        .map_err(|refusal| {
+            (
+                refusal
+                    .errors
+                    .into_iter()
+                    .map(|error| error.cause)
+                    .collect::<Vec<_>>(),
+                Vec::new(),
+            )
+        })?;
+    assembled
+        .check(CheckingLimits::default())
+        .map(|_| ())
+        .map_err(|refusals| {
+            (
+                Vec::new(),
+                refusals.into_iter().map(|refusal| refusal.cause).collect(),
+            )
+        })
+}
+
+/// FR-505-AC-12 (TC-1300 row 28, FR-091-AC-21): two selected models that each
+/// declare a unit `x` leave the bare name `x` unresolved: it refuses
+/// `missing_declaration`/`missing-name` once through `UnresolvedUnitName`
+/// naming both packages in selection order, and no package is picked. `A::x`
+/// and `B::x` resolve. With `acme/b` declaring `y`, the cause names `acme/a`
+/// alone, and a name no package declares names none.
+#[cfg(feature = "test-support")]
+#[trace("FR-505-AC-12", "TC-1300", "FR-091-AC-21")]
 #[test]
 fn a_bare_unit_name_declared_by_two_models_is_refused() {
-    use crate::timed_declarations::{assemble_selected_as, time_package};
     use qsl_semantics::check::AssemblyCause;
-    let both = [
+    let package = |alias, identity, unit| {
         (
-            "A",
-            "acme/a",
-            time_package("acme/a", false, &[("x", None, "1")]),
-        ),
-        (
-            "B",
-            "acme/b",
-            time_package("acme/b", false, &[("x", None, "1")]),
-        ),
-    ];
-    let one = [
-        (
-            "A",
-            "acme/a",
-            time_package("acme/a", false, &[("x", None, "1")]),
-        ),
-        (
-            "B",
-            "acme/b",
-            time_package("acme/b", false, &[("y", None, "1")]),
-        ),
-    ];
-    let outcome = |packages: &[(&str, &str, Vec<u8>)], unit: &str| {
-        assemble_selected_as(
-            ("test", "fr-505-two-units"),
+            alias,
+            identity,
+            crate::timed_declarations::time_package(identity, false, &[(unit, None, "1")]),
+        )
+    };
+    let both = [package("A", "acme/a", "x"), package("B", "acme/b", "x")];
+    let one = [package("A", "acme/a", "x"), package("B", "acme/b", "y")];
+    let refusal = |packages: &[(&str, &str, Vec<u8>)], unit: &str| {
+        unit_name_causes(
             packages,
             &format!("function f using v(d: Quantity<{unit}>): Boolean pure {{ d = d }}"),
         )
-        .1
-        .map(|_| ())
-        .map_err(|refusal| {
-            refusal
-                .errors
-                .into_iter()
-                .map(|error| error.cause)
-                .collect::<Vec<_>>()
-        })
     };
-    assert_eq!(
-        outcome(&both, "x"),
-        Err(vec![AssemblyCause::UnresolvedTypeName {
-            name: "x".to_owned()
-        }])
-    );
+    let unresolved = |name: &str, packages: &[&str]| {
+        Err((
+            vec![AssemblyCause::UnresolvedUnitName {
+                name: name.to_owned(),
+                packages: packages
+                    .iter()
+                    .map(|package| (*package).to_owned())
+                    .collect(),
+            }],
+            Vec::new(),
+        ))
+    };
+    assert_eq!(refusal(&both, "x"), unresolved("x", &["acme/a", "acme/b"]));
     for unit in ["A::x", "B::x"] {
-        assert_eq!(outcome(&both, unit), Ok(()), "{unit}");
+        assert_eq!(refusal(&both, unit), Ok(()), "{unit}");
     }
-    assert_eq!(outcome(&one, "x"), Ok(()));
-    assert_eq!(outcome(&one, "y"), Ok(()));
+    assert_eq!(refusal(&one, "x"), unresolved("x", &["acme/a"]));
+    assert_eq!(refusal(&one, "nosuch"), unresolved("nosuch", &[]));
+    assert_eq!(refusal(&one, "y"), unresolved("y", &["acme/b"]));
+    let cause = AssemblyCause::UnresolvedUnitName {
+        name: "x".to_owned(),
+        packages: vec!["acme/a".to_owned()],
+    };
+    assert_eq!(cause.code(), Code::MissingDeclaration);
+    assert_eq!(cause.catalog_code().cause(), "missing-name");
+}
+
+/// FR-505-AC-12 (TC-1300 row 28): the quantity literal `1 x` and the target of
+/// `convert<Quantity<x>>(1 A::x)` refuse the same way at `x`, the literal as the
+/// check phase's `UnresolvedUnitName` and the target as the assembler's; the qualified spellings check.
+#[cfg(feature = "test-support")]
+#[trace("FR-505-AC-12", "TC-1300")]
+#[test]
+fn a_bare_unit_name_in_a_literal_or_a_convert_target_is_refused() {
+    use qsl_semantics::check::CheckCause;
+    let package = |alias, identity| {
+        (
+            alias,
+            identity,
+            crate::timed_declarations::time_package(identity, false, &[("x", None, "1")]),
+        )
+    };
+    let both = [package("A", "acme/a"), package("B", "acme/b")];
+    let names = vec!["acme/a".to_owned(), "acme/b".to_owned()];
+    assert_eq!(
+        unit_name_causes(
+            &both,
+            "function f using v(d: Quantity<A::x>): Boolean pure { d = 1 x }"
+        ),
+        Err((
+            Vec::new(),
+            vec![CheckCause::UnresolvedUnitName {
+                name: "x".to_owned(),
+                packages: names.clone()
+            }]
+        ))
+    );
+    assert_eq!(
+        unit_name_causes(
+            &both,
+            "function f using v(d: Quantity<A::x>): Boolean pure { convert<Quantity<x>>(1 A::x) = d }"
+        ),
+        Err((
+            vec![qsl_semantics::check::AssemblyCause::UnresolvedUnitName {
+                name: "x".to_owned(),
+                packages: names
+            }],
+            Vec::new()
+        ))
+    );
+    for body in [
+        "function f using v(d: Quantity<A::x>): Boolean pure { d = 1 A::x }",
+        "function f using v(d: Quantity<A::x>): Boolean pure { convert<Quantity<A::x>>(1 A::x) = d }",
+    ] {
+        assert_eq!(unit_name_causes(&both, body), Ok(()), "{body}");
+    }
+}
+
+/// FR-505-AC-12 (TC-1300 row 28): a unit the compiling unit declares takes the
+/// bare name, whatever its dimension, with no refusal; and a value type of
+/// `acme/a` over `ix://quire/unit/x`, beside `acme/b`'s `x`, types its members
+/// over `acme/a`'s own `x`.
+#[cfg(feature = "test-support")]
+#[trace("FR-505-AC-12", "TC-1300")]
+#[test]
+fn a_source_unit_takes_the_bare_name_and_a_document_keeps_its_own() {
+    let package = |alias, identity| {
+        (
+            alias,
+            identity,
+            crate::timed_declarations::time_package(identity, false, &[("x", None, "1")]),
+        )
+    };
+    let both = [package("A", "acme/a"), package("B", "acme/b")];
+    let source = "dimension L;\nunit x : L = rational(1, 1);\n\
+        function f using v(d: Quantity<x>): Boolean pure { d = 1 x }";
+    assert_eq!(unit_name_causes(&both, source), Ok(()));
+
+    let mut a = serde_json::from_slice::<Value>(&crate::timed_declarations::time_package(
+        "acme/a",
+        false,
+        &[("x", None, "1")],
+    ))
+    .expect("fixture JSON");
+    let seconds: Value = serde_json::from_str(
+        &serde_json::to_string(&wire_type(
+            "ix://acme/a/Seconds",
+            "value_type",
+            json!({"scalar": "rational", "unit": "ix://quire/unit/x"}),
+        ))
+        .expect("fixture encoding")
+        .replace("example/config-version", "acme/a"),
+    )
+    .expect("fixture JSON");
+    a["types"].as_array_mut().expect("types").push(seconds);
+    let selected = [
+        (
+            "A",
+            "acme/a",
+            serde_json::to_vec(&a).expect("fixture encoding"),
+        ),
+        package("B", "acme/b"),
+    ];
+    assert_eq!(
+        unit_name_causes(
+            &selected,
+            "function g using v(d: Quantity<A::x>): Boolean pure { d = d }"
+        ),
+        Ok(())
+    );
 }

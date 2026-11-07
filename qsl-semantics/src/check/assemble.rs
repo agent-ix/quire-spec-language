@@ -270,6 +270,17 @@ pub enum AssemblyCause {
         /// The name as written.
         name: String,
     },
+    /// A bare unit name that the compiling unit does not declare (FR-505-AC-12).
+    /// It never resolves to a unit of a selected package, even when exactly
+    /// one declares it.
+    UnresolvedUnitName {
+        /// The name as written.
+        name: String,
+        /// The identities of every selected package that declares a unit of
+        /// that name, in the order the unit's `model` declarations select
+        /// them; empty when none does.
+        packages: Vec<String>,
+    },
     /// A qualified type name names more than one declaration of the unit
     /// (ADR-013 O-11).
     AmbiguousTypeName {
@@ -588,6 +599,7 @@ impl AssemblyCause {
         match self {
             Self::EmptyUnitList => Code::InvalidPackage,
             Self::UnresolvedTypeName { .. }
+            | Self::UnresolvedUnitName { .. }
             | Self::UndeclaredAlias { .. }
             | Self::UnresolvedOperation { .. }
             | Self::UnresolvedTerminalModel { .. }
@@ -683,6 +695,7 @@ impl AssemblyCause {
         let cause = match self {
             Self::EmptyUnitList => "established-invariant-broken",
             Self::UnresolvedTypeName { .. }
+            | Self::UnresolvedUnitName { .. }
             | Self::UnresolvedOperation { .. }
             | Self::UnresolvedTerminalModel { .. }
             | Self::UnresolvedTerminalState { .. }
@@ -1190,13 +1203,12 @@ impl TypeNames for UnitNames<'_> {
     fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
         match self.spellings.spelled(self.unit, name) {
             Spelled::Model(_) => self.spellings.unit(self.unit, name),
-            Spelled::Other => self
-                .names
-                .units
-                .get(name)
-                .cloned()
-                .or_else(|| self.spellings.declared_unit(self.unit, name)),
+            Spelled::Other => self.names.units.get(name).cloned(),
         }
+    }
+
+    fn unit_packages(&self, name: &str) -> Vec<String> {
+        self.spellings.declaring_packages(self.unit, name)
     }
 }
 
@@ -2950,6 +2962,9 @@ fn resolution_error(unit: &Unit, error: TypeFormError) -> AssemblyError {
         TypeFormFault::MissingQualifiedName(name) => {
             AssemblyCause::UnresolvedTypeName { name: name.name }
         }
+        TypeFormFault::UnresolvedUnitName { name, packages } => {
+            AssemblyCause::UnresolvedUnitName { name, packages }
+        }
         TypeFormFault::AmbiguousName(name) => AssemblyCause::AmbiguousTypeName {
             candidates: unit.candidates(&name),
             native: native_scalar_named(&name).is_some(),
@@ -3767,7 +3782,7 @@ impl PackageDeclarations {
             })
             .unwrap_or_default();
         // The units of the selected packages, which a bare unit name reaches
-        // only through `ModelSpellings::declared_unit`.
+        // only as `Alias::name`.
         let package_unit_ids: Vec<quire_exact::UnitId> = imported
             .units
             .values()
