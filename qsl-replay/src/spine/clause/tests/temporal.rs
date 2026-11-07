@@ -5131,9 +5131,10 @@ fn the_item_path_passes_the_clock_selections_to_the_reemit() {
     item_path_reemits_in(super::receiver_frames::fixture::PACKAGE);
 }
 
-/// QSL-1662, QSpec FR-370-AC-20: the same path with the unit compiled in a
-/// library other than the model package that owns the time units.
-#[trace("TC-1267", "FR-370-AC-20")]
+/// QSL-1662: the same path with the unit compiled in a library other than the
+/// model package that owns the time units. The owning package itself is
+/// asserted by the identity-path test (QSpec FR-370-AC-20).
+#[trace("TC-1267", "FR-337-AC-15")]
 #[test]
 fn the_item_path_places_the_clock_unit_in_the_owning_package() {
     item_path_reemits_in(OTHER_LIBRARY);
@@ -5198,9 +5199,10 @@ fn the_closure_path_passes_the_clock_selections_to_the_reemit() {
     closure_path_reemits_in(super::receiver_frames::fixture::PACKAGE);
 }
 
-/// QSL-1662, QSpec FR-370-AC-20: the same path with the unit compiled in a
-/// library other than the model package that owns the time units.
-#[trace("TC-1267", "FR-370-AC-20")]
+/// QSL-1662: the same path with the unit compiled in a library other than the
+/// model package that owns the time units. The owning package itself is
+/// asserted by the identity-path test (QSpec FR-370-AC-20).
+#[trace("TC-1267", "FR-337-AC-15")]
 #[test]
 fn the_closure_path_places_the_clock_unit_in_the_owning_package() {
     closure_path_reemits_in(OTHER_LIBRARY);
@@ -5213,7 +5215,7 @@ const OTHER_LIBRARY: &str = "acme/orders";
 /// `past[0 M::s, 300000 M::ms]` under a clock in `M::ms`, in a library other
 /// than the model package that owns the time units, re-emits with both bounds
 /// typed by the model's own `ms` node and reads back.
-#[trace("TC-1267", "FR-337-AC-15")]
+#[trace("TC-1267", "FR-370-AC-20")]
 #[test]
 fn the_identity_path_places_the_clock_unit_in_its_owning_package() {
     use crate::model_check::identity::ClauseIdentity;
