@@ -695,18 +695,7 @@ Rust numeric codec and bounded Serde writer. Failure leaves
 the partial compilation report intact but returns no accepted full-package
 artifact.
 
-The Rust path is `checking::composed::proofs::discharge` →
-`protocol_artifact::native::admit` → `native::emit`. Admission borrows the actual
-proof report and independent `native::Selections`: original formal sources,
-exact source/dependency references and bytes, admitted models, contract, baseline
-and producer. Each selected source retains its opaque external artifact identity
-separately from the native/formal revision. The caller explicitly selects
-namespaces for formal-source, requirement and registered-definition revisions;
-a registered definition's semantic revision comes from its actual registered
-bytes, not the source artifact's revision label. Successful admission owns a
-private `FamilyAdmission`; `emit` takes that type and returns `EmittedPackage`
-bytes under a fresh invocation's limits. An arbitrary
-`wire::Package`, reader result or proof witness cannot be passed as this authority.
+This crate holds the `/1` reader and the typed candidate encoder; the former `protocol_artifact::native` emitter is deleted.
 
 The implemented path preserves original expression/control arenas, declaration
 owners, lexical binder identities and evaluation anchors across predicate,
@@ -730,9 +719,7 @@ original identities and dependencies. General symbolic choice/visibility proofs
 and absent authoritative producer exports still refuse explicitly. Runtime
 recovery remains a consumer judgment. These are remaining implementation obligations,
 not a reduced language specification. The caller retains the upstream compilation
-reports when family admission refuses; no partial package is emitted. A successful
-native emission followed by independent `read` is compiler-to-reader evidence;
-the actual `quire-protocol` consumer handoff remains separately required.
+reports when family admission refuses; no partial package is emitted. The actual `quire-protocol` consumer handoff remains separately required.
 
 Channel delivery bounds are per-send cardinalities, not elapsed time. The native
 adapter retains separate message, send, receive and delivery requirements and

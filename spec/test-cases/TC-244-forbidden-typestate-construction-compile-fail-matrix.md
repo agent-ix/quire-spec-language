@@ -35,8 +35,7 @@ a typo, a stale import, an unrelated error — and proves nothing about the
 specific forbidden path a row names. Each row below states the exact
 `rustc` code the doctest must fail with, following this repository's own
 precedent of code-qualified `compile_fail` attributes (`src/temporal/mapping.rs:121`
-is `compile_fail,E0451`; `src/package.rs:188,195` and
-`src/protocol_artifact/native/mod.rs:98` are `compile_fail,E0308`).
+is `compile_fail,E0451`; `src/package.rs:188,195` are `compile_fail,E0308`).
 `src/temporal/mapping.rs:121`, not `src/package.rs:188`, is this test's own
 precedent for the private-field-construction rows (1, 2, 6; `E0451`), since
 `src/package.rs:188` is an `E0308` type-mismatch case, not a privacy case.
