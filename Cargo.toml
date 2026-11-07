@@ -38,11 +38,6 @@ description = "Native finite-state specification syntax and source diagnostics"
 
 [features]
 default = []
-# `protocol_artifact::handoff::{write_v1, write_v2}`, the complete
-# compiled-protocol handoff producer a downstream crate calls in-process. It
-# embeds the authored `examples/protocol-handoff/` recipe inputs, so the
-# default build leaves it out. It adds no dependency.
-handoff-writer = []
 # `checked_handoff`, the writer of the checked-package handoff directory (the
 # package, its selection sidecar and the adverse mutation corpus) a downstream
 # crate reads back through Contract IR's reader. It adds no dependency.
@@ -146,16 +141,6 @@ quire-exact = { workspace = true, features = ["test-support"] }
 # review round 2, L5 dropped the "extra-traits" feature that used to exist
 # solely to put `Debug` on `syn::Type` for that string search.
 syn = { version = "2.0.119", features = ["full", "visit"] }
-
-[[example]]
-name = "native_protocol_handoff"
-required-features = ["handoff-writer"]
-test = true
-
-[[example]]
-name = "native_protocol_v2_handoff"
-required-features = ["handoff-writer"]
-test = true
 
 [[example]]
 name = "population_v2_fixtures"

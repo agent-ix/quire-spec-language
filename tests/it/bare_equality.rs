@@ -1240,3 +1240,187 @@ fn a_package_refusal_found_after_a_node_refusal_in_the_walk_is_reported_first() 
     let empty = ReadEqualityRows::read(&empty_file(), &package).expect("empty rows read");
     assert_eq!(project(Some(&empty)), Err("equality Unknown".to_owned()));
 }
+
+/// Repeated real equality-slot selection and projection borrow the decisions
+/// retained by exact-budget bytes admission without charging another native read.
+#[trace("TC-1331", "FR-531-AC-28")]
+#[test]
+fn equality_slots_reuse_the_decisions_retained_by_exact_budget_admission() {
+    use quire_contract_model::NativeJoinBudget;
+    let (_holder, request, files) = handoff(tc1070::SOURCE);
+    let package = read(&request, &files["checked-package.json"]);
+    let identities = ReadIdentityRows::read(
+        &files["identities.json"],
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("original identities");
+    let equality =
+        ReadEqualityRows::read(&files["equality.json"], &package).expect("original equality");
+    let supply = BareSupply {
+        identities: &identities,
+        equality: Some(&equality),
+    };
+    let mut measure = NativeJoinBudget::new(1 << 30, 1 << 30);
+    BarePackage::new(&package)
+        .with_supply(supply, &mut measure)
+        .expect("measure complete entry");
+    let need = measure.consumed();
+    let mut exact = NativeJoinBudget::new(need.work, need.storage);
+    let bare = BarePackage::new(&package)
+        .with_supply(supply, &mut exact)
+        .expect("exact budget admits");
+    let descriptor = ProtocolSlotDescriptor::new(
+        node_key(&package, "Refunds", "Refund"),
+        "retry.relation",
+        None,
+    );
+    let slot = bare
+        .select_protocol_slot(&descriptor)
+        .expect("the equality-bearing retry relation");
+    let projection = bare
+        .project_protocol_slot(&slot)
+        .expect("real slot projection");
+    fn equality_positions(projection: &qsl_package::ReaderProtocolProjection) -> Vec<usize> {
+        let mut pending = vec![projection.root()];
+        let mut positions = Vec::new();
+        while let Some(index) = pending.pop() {
+            if matches!(
+                projection.kind(index),
+                Some(quire_checked::node::NodeKind::Equality(..))
+            ) {
+                positions.push(index);
+            }
+            pending.extend(projection.children(index).expect("projected node children"));
+        }
+        positions
+    }
+    assert_eq!(
+        projection.value_type(projection.root()),
+        Some(&quire_exact::ValueType::Boolean)
+    );
+    let positions = equality_positions(&projection);
+    let [position] = positions.as_slice() else {
+        panic!("the authored retry conjunction has exactly one equality")
+    };
+    let original_location = projection
+        .location(*position)
+        .expect("the equality has its original protocol location")
+        .clone();
+    let quire_semantic_value::location::Origin::TypeDeclaration {
+        name: original_origin,
+    } = &original_location.origin
+    else {
+        panic!("authored protocol type-declaration origin")
+    };
+    let semantic_row = package.checked_term_data().expect("original native term data").protocol_locations.iter().find(|row| {
+        matches!(&row.location.origin, quire_contract_model::CheckedProtocolLocationOrigin::TypeDeclaration { name } if name.as_ref() == original_origin)
+            && row.location.path.iter().map(|ordinal| match ordinal {
+                quire_contract_model::CheckedKeyOrdinal::Safe(value) => usize::try_from(*value).expect("small authored child index"),
+                quire_contract_model::CheckedKeyOrdinal::BeyondSafe(_) => panic!("fixture child indices are small"),
+            }).collect::<Vec<_>>() == original_location.path()
+    }).expect("original protocol occurrence at the equality's authored origin and path");
+    let row = equality
+        .applications()
+        .iter()
+        .find(|row| row.application == semantic_row.application)
+        .expect("that original protocol application has an authentic equality owner row");
+    let decision = package
+        .admitted_equality(
+            &row.application,
+            &row.occurrence,
+            equality.applications(),
+            equality.facts(),
+            equality.source_units(),
+            &mut NativeJoinBudget::new(1 << 30, 1 << 30),
+        )
+        .expect("independent original owner decision");
+    assert_eq!(decision.location(), &row.location);
+    let expected = Box::new(
+        quire_semantic_value::declaration::CheckedEquality::from_admitted_decision(&decision),
+    );
+    let Some(quire_checked::node::NodeKind::Equality(operator, actual, _, _)) =
+        projection.kind(*position)
+    else {
+        unreachable!("the equality position was found")
+    };
+    assert_eq!(
+        *operator,
+        quire_semantic_value::declaration::EqualityOperator::Equal
+    );
+    assert_eq!(actual, &expected);
+    let world = bare.world().expect("original admitted record declarations");
+    let protocol_slot = qsl_eval::value::ProtocolSlot {
+        node: descriptor.node().clone(),
+        member: "retry.relation".to_owned(),
+        index: None,
+    };
+    for (later, expected_value) in [(2_i64, true), (3_i64, false)] {
+        let selected = bare
+            .select_protocol_slot(&descriptor)
+            .expect("selection reuses admission");
+        assert_eq!(selected.root(), slot.root());
+        assert_eq!(selected.origin(), slot.origin());
+        let repeated = bare
+            .project_protocol_slot(&selected)
+            .expect("projection reuses admission");
+        assert_eq!(repeated.root(), projection.root());
+        assert_eq!(
+            repeated.value_type(repeated.root()),
+            Some(&quire_exact::ValueType::Boolean)
+        );
+        let positions = equality_positions(&repeated);
+        let [position] = positions.as_slice() else {
+            panic!("still exactly the authored equality")
+        };
+        assert_eq!(repeated.location(*position), Some(&original_location));
+        let Some(quire_checked::node::NodeKind::Equality(operator, actual, _, _)) =
+            repeated.kind(*position)
+        else {
+            unreachable!("located equality")
+        };
+        assert_eq!(
+            *operator,
+            quire_semantic_value::declaration::EqualityOperator::Equal
+        );
+        assert_eq!(actual, &expected);
+        let given = supply_of(
+            &selected,
+            vec![
+                (
+                    "earlier",
+                    record(
+                        world.types(),
+                        "Attempt",
+                        vec![("tally", quire_exact::Value::Integer(1_i64.into()))],
+                    ),
+                ),
+                (
+                    "later",
+                    record(
+                        world.types(),
+                        "Attempt",
+                        vec![("tally", quire_exact::Value::Integer(later.into()))],
+                    ),
+                ),
+                ("target", quire_exact::Value::Integer(5_i64.into())),
+                ("activated", quire_exact::Value::Boolean(false)),
+            ],
+        );
+        let mut meter = quire_exact::Meter::new(UNLIMITED);
+        let value = completed(
+            qsl_eval::value::CheckedPackageEvaluation::evaluate_protocol_slot(
+                &bare,
+                &protocol_slot,
+                &given,
+                &mut meter,
+            ),
+        );
+        assert!(
+            is_boolean(&value, expected_value),
+            "the authored equality changes the conjunction: {value:?}"
+        );
+        assert_eq!(exact.consumed(), need);
+        assert_eq!(exact.first_unpaid(), None);
+    }
+}

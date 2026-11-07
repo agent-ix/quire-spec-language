@@ -175,10 +175,11 @@ impl NativeJoinLimits {
     /// unpaid charge. `native` and `budget` must come from the same pass.
     pub fn refusal(
         self,
-        native: Box<quire_contract_model::ExactTypeProjectionError>,
+        native: impl Into<crate::NativeJoinFailure>,
         budget: &quire_contract_model::NativeJoinBudget,
     ) -> Option<crate::NativeJoinLimitError> {
-        let setting = qsl_semantics::model::intake::native_budget_setting(&native)?;
+        let native = native.into();
+        let setting = native.setting()?;
         let unpaid = budget.first_unpaid()?;
         let (bound, consumed) = match unpaid.kind {
             quire_contract_model::NativeJoinChargeKind::Work => (self.work, budget.consumed().work),
@@ -1161,7 +1162,6 @@ impl AdmittedPackageRead<'_> {
             &self.emission,
             self.emission.package.name(),
             self.slot_requests(),
-            limits.work,
             identities,
             &mut budget,
         )

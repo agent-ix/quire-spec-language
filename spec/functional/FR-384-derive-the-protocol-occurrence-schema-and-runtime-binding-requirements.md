@@ -31,7 +31,10 @@ node. The derivation reads the nodes only, so the schema and the requirements
 derived from the in-process checked package equal those derived from the
 package read back through QSL's I2 reader. A package fabricates no workflow
 instance, role instance, repeat ordinal, delivery or clock observation, and
-compiling needs none of them (QSpec FR-465 "Runtime subjects").
+compiling needs none of them (QSpec FR-465 "Runtime subjects"). A runtime
+supplies its concrete values to the schema's key binder, which validates them
+against the schema and retains them as one occurrence key without storing any
+of them in the schema or the package.
 
 ## Use case
 
@@ -42,7 +45,10 @@ has, and which bindings (a workflow instance, a role instance per role, a
 message, a delivery, an operation attempt) a runtime must supply. Two
 protocols that share a provider, a model or a local name must give distinct
 schema identities. The assessor reads all of it from the package and supplies
-the concrete instances itself.
+the concrete instances itself. Two later workflows, O1 and O2, share one
+external payment provider and run the same protocol: each builds its own
+occurrence keys from its workflow identity and one ordinal for each repeat
+domain, and the two sets of keys never collapse.
 
 ## Semantic authority and boundary
 
@@ -89,6 +95,21 @@ the `protocol_clause` node). A record holds no authority and no contract: the
 package lock's `binding_contract` selection supplies both (QSpec FR-465
 "Runtime subjects"), so the record has no member for either.
 
+`WorkflowInstanceIdentity`: a caller-owned UTF-8 text of 1 to 4096 bytes,
+retained as given and never interpreted.
+
+`OccurrenceKey`: the schema's protocol key, the caller's workflow identity, a
+control entry's key and owner, and the caller's ordinals, one for each repeat
+dimension of that entry, outermost first. The key borrows the caller's
+identity and ordinals.
+
+`OccurrenceKeyError`, the typed refusal of the key binder:
+`EmptyWorkflowIdentity`; `WorkflowIdentityTooLong` with the offered byte count;
+`UnknownNode` with the offered control key; `WrongRole` with the entry's owner
+and the offered owner; `RepeatCount` with the expected and the offered ordinal
+count; `RepeatOrdinal` with the outer-to-inner dimension index and the refused
+ordinal.
+
 ## Behavior
 
 ### Occurrence schema
@@ -118,6 +139,38 @@ package lock's `binding_contract` selection supplies both (QSpec FR-465
   roles, channels or compensations in another order, or reformatting the
   source, gives the same schema. Two protocols that name a role, a control or
   a model alike give distinct node keys, so their schema entries are distinct.
+
+### Runtime key binding
+
+- `ProtocolOccurrenceSchema::bind` SHALL take a `WorkflowInstanceIdentity`, a
+  control key, a `ControlOwner` and a slice of ordinals, and return one
+  `OccurrenceKey` or the first refusal in this order: the control key is no
+  entry of this schema (`UnknownNode`: this covers an absent key and the key of
+  a control of another protocol, whose node key is distinct even when the
+  control's name is the same); the owner differs from the entry's owner
+  (`WrongRole`, a structural entry and a role-owned entry included); the
+  ordinal count differs from the entry's dimension count (`RepeatCount`,
+  missing and surplus alike); an ordinal lies outside its dimension
+  (`RepeatOrdinal`). An `Iteration` dimension admits the integers from 0 up to
+  but excluding its maximum, so a maximum of 0 admits none and a missing
+  maximum admits every non-negative integer; an `Exhaustion` dimension admits
+  exactly its value.
+- `WorkflowInstanceIdentity::new` SHALL refuse the empty text and a text over
+  4096 bytes, and accept every length between.
+- `bind` SHALL NOT default, generate, order or read any identity or ordinal from
+  the schema or the package: a key holds exactly what the caller offered. Two
+  keys that differ only in workflow identity, or only in one ordinal, are
+  unequal.
+- A schema exists only for a `protocol_clause` node, so no node of another
+  family can be bound against: the derivation returns one schema for each
+  protocol clause and none for any other node.
+- The derivation is bounded by the package it reads. A package is read within
+  the I2 ceilings (`i2.nodes`, `i2.occurrences`, `i2.edges`; FR-513-AC-10), a
+  schema holds one entry for each role, control and compensation node of its
+  protocol, and the control tree is walked iteratively, visiting each control
+  once. A control tree of any depth or with a reference cycle therefore ends
+  with one entry for each control, and a reference to a node the package does
+  not hold is refused as `UnknownNode` of the derivation (`OccurrenceRefusal`).
 
 ### Runtime binding requirements
 
@@ -161,6 +214,10 @@ package lock's `binding_contract` selection supplies both (QSpec FR-465
 | FR-384-AC-8 | A `Full` and a `Partial` template for one effect give two compensation entries and two sets of `compensation`, `compensation-attempt` and `compensation-effect` requirements, each naming its own template's key. | Test (TC-1064) |
 | FR-384-AC-9 | In **W**, each role slot holds the selected model type node it is `on`, equally in process and after the I2 read: `Fulfillment` holds `Shipment`, `Orders` holds `OrderView` and `Payments` holds `Payment`, and each is an emitted `object_type` node of the selected package, and none holds a `model_member`. | Test (TC-1064) |
 | FR-384-AC-10 | Over FR-383-AC-62's unit, the role slot of `Outlet` holds the node of `Sys` and the `model_member` `{package, node}` of `pump_out`, that of `Inlet` the node of `Sys` and the `model_member` of `tank_in`, and those of `Operator` and the whole-model role hold none; the slots from the in-process package equal those from the package read back through the I2 reader. | Test (TC-1064) |
+| FR-384-AC-11 | In **W**, the keys of two workflows `O1` and `O2` for `Polled` with the same ordinal `[0]` are unequal and each returns its own workflow identity, the control, the owner and the ordinals it was given; the same workflow with ordinal `[2]` is a third key. In **W** with a `repeat` inside a `repeat`, the ordinals `[2, 1]` bind and `[3, 1]` and `[2, 2]` are refused at dimensions 0 and 1; a `repeat` of `max 0` refuses ordinal 0 and a `repeat` with no maximum admits 0 and an integer beyond 64 bits and refuses -1; `Limit` admits exactly its exhaustion value 3 and refuses 2 and 4. | Test (TC-1064) |
+| FR-384-AC-12 | A workflow identity of 0 bytes is refused as `EmptyWorkflowIdentity`; 1 byte and 4096 bytes are accepted and returned unchanged; 4097 bytes is refused as `WorkflowIdentityTooLong` naming 4097. | Test (TC-1064) |
+| FR-384-AC-13 | Binding refuses, each with its typed cause: a control key absent from the schema and the `Charge` control key of the other protocol (`UnknownNode`, naming the offered key); a swapped role, a structural owner for a role-owned entry and a role owner for a structural entry (`WrongRole`, naming both owners); no ordinal and two ordinals for an entry with one dimension, and one ordinal for an entry with none (`RepeatCount`, naming both counts); an out-of-range ordinal (`RepeatOrdinal`, naming its dimension and value). The refused call yields no key. | Test (TC-1064) |
+| FR-384-AC-14 | **W**, which also holds model type nodes, yields exactly one schema, keyed by its `protocol_clause` node, and no node of any other family yields one; each schema holds one entry for each role, control and compensation node of the read package; a control chain of 10 000 nested sequences yields 10 000 entries and a control reference cycle yields each control once; a role that names a node the package does not hold is refused as `UnknownNode` naming the protocol. The I2 node ceiling that bounds the package is exercised at zero, exact and one-short by FR-521's row 11 tests. | Test (TC-1064) |
 
 ## Dependencies
 

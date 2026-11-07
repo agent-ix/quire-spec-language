@@ -38,10 +38,10 @@ pub use progress::{
 };
 use temporal::TemporalRun;
 pub use temporal::{
-    admit_progress, FiniteWindowAssessment, FiniteWindowPremises, FiniteWindowReport,
-    FiniteWindowSupport, OverObject, ProgressRefusal, TimestampedCover,
-    TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey, TimestampedWindow,
-    TraceBinding, TraceInput,
+    admit_progress, run_package_temporal, FiniteWindowAssessment, FiniteWindowPremises,
+    FiniteWindowReport, FiniteWindowSupport, OverObject, PackageTemporalRequest, ProgressRefusal,
+    TimestampedCover, TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey,
+    TimestampedWindow, TraceBinding, TraceInput,
 };
 pub use trace_subject::{run_trace_subject_clause, TraceSubjectClauseRequest};
 
@@ -1220,8 +1220,10 @@ pub fn run_clause_with_temporal_selections(
                     trace,
                     over,
                     ledger: ledger.as_ref(),
-                    clock_rows: emitted.temporal_binding_rows(),
-                    admitted_package,
+                    authentication: Some(temporal::Authentication {
+                        clock_rows: emitted.temporal_binding_rows(),
+                        admitted_package,
+                    }),
                 },
             ))
         }

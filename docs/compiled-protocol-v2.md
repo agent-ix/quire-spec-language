@@ -164,10 +164,6 @@ progress.
 A consumer handoff names the final published compiler implementation
 that retains this contract and names the exact public surface it consumes:
 
-- `protocol_artifact::handoff::{PUBLISHED_OFFER_FILE,
-  PUBLISHED_SELECTION_FILE,
-  PUBLISHED_MUTATION_MANIFEST_FILE,
-  MUTATION_MANIFEST_FORMAT}`;
 - `protocol_artifact::v2::{Expected, ExpectedDefinition, ExpectedTemporal,
   AdmittedPackage, read, encode_candidate}` and
   `protocol_artifact::v2::wire::{Package, TemporalBinding,
@@ -207,75 +203,38 @@ same-meaning recanonicalized producer input, exact limits, and the L5 adapters.
 These fixtures demonstrate A's producer and reader boundary only; they do not
 claim that B admitted the artifact or completed an ecosystem acceptance run.
 
-### Concrete release producer
+### Checked-package handoff directory
 
-The release-capable handoff uses four authored source units and the same actual
-model as the established `/1` recipe. Its v2-only temporal source selects
-`Due`, `DueSample` and `DueTimestamp` under the exact EventPosition,
-FixedSample and TimestampedWindow definitions, with three separately published
-original clock-input files. The historical `/1` recipe and bytes are unchanged.
-Build and run it into a new directory:
-
-```console
-CARGO_PROFILE_RELEASE_STRIP=symbols cargo run --locked --offline --release --features handoff-writer --example native_protocol_v2_handoff -- /tmp/quire-native-v2-handoff
-```
-
-The producer calls `native::admit_v2` with the real parser/linker/type/proof
-report and exact `native::Selections`, constructs the external version-2
-`ArtifactRef` only after emission, and calls `v2::read` with an independently
-constructed `v2::Expected` before creating the output directory. The default
-`protocol_artifact::Limits` and `quire.protocol.artifact-work/1` accounting
-identity are recorded in the sidecar. Any `Report` error remains the public
-typed `Allocation`, `Json`, `Numeric`, `Invalid`, `Unsupported` or `Incomplete`
-refusal with its report limits, usage and source locus; no partial admission is
-written.
-
-The repository commits no instance of this directory. A consumer's build or
-test calls `protocol_artifact::handoff::write_v2` to generate it into a
-directory the consumer chooses. TC-138 decodes both interchange files of a
-freshly written instance with the published record types. The public
-`protocol_artifact::handoff`
-constants name its four consumer-facing members and the
-mutation-corpus format; downstream Rust consumers import those values rather
-than discovering them through an environment variable or shadow vocabulary.
+The directory a downstream crate reads is written by the checked-handoff route,
+not by a `/2` release producer. `checked_handoff::write` (feature
+`checked-handoff`) compiles a complete-V1 unit in process through
+`emit_checked_v2`, reads the emitted package back through Contract IR's reader
+and writes a new directory. The legacy handoff writer, its
+`handoff-writer` feature, its two examples and the `examples/protocol-handoff/`
+recipe inputs are retired (FR-517-AC-10).
 
 The directory contains:
 
-- `compiled-protocol-v2.json`: the raw canonical bytes;
-- `expected-v2.json`: inherited independent reader selectors, exact temporal
-  source/declaration/definition/configuration selectors and selected limits;
-- `event-clock.json`, `sample-clock.json` and `timestamp-clock.json`: the
-  original deliberately noncanonical configuration bytes and their selected
-  identities; their parsed typed values emit
-  canonical package members, so an input recanonicalization changes the input
-  artifact instead of becoming a vacuous byte comparison;
-- `mutations/manifest.json`: `quire.protocol.v2-mutations/1`, naming the base
-  offer, external reference, independent selection and every emitted mutation's
-  input operation and expected stable refusal code. The release producer replays
-  every generated case through `v2::read` and refuses to publish the directory
-  if any actual code differs;
-- `mutations/*.json` and `mutations/*.bin`: header,
-  binding-index/inventory, declaration, definition identity/revision/artifact reference,
-  every clock-alternative/member, malformed-member and original-definition-byte
-  substitutions;
-- the four original `.native` files and `model-source.json`; and
-- `dependencies/*.bin`: every exact original definition, rule, model package
-  and contract selected by the invocation, with paths, identities, direct
-  prerequisites in `expected-v2.json`.
+- `checked-package.json`: the emitted checked package;
+- `selection.json`: the selection sidecar (`checked_handoff::Selection`),
+  derived from the in-process checked unit and the request, never from the
+  emitted bytes;
+- `inventory.json`: the inventory of the unit;
+- the exact input bytes and the model artifacts the sidecar names; and
+- `mutations/manifest.json` and `mutations/*.json`, when the request asks for
+  the adverse corpus: the base package, the sidecar and every mutation with its
+  expected refusal. Every verdict on a package comes from
+  `read_checked_package` and `Selection::check`.
 
-`expected-v2.json` and `mutations/manifest.json` are the two interchange files a
-consumer decodes, so their record shapes are published as
-`protocol_artifact::handoff::{SelectionV2, MutationManifest}` and the records
-they contain. A consumer decodes those types instead of re-declaring its own
-copy, which is how the producer and the consumer stay in agreement about the
-files. The published records are inert data: decoding one admits nothing, and a
-consumer still constructs the borrowed `Expected`/`ExpectedV2` reader inputs
-itself. `MutationCase::expected_refusal_code` is an `Error::code()` spelling.
+The repository commits no instance of this directory. A consumer's build or
+test calls `checked_handoff::write` to generate it into a directory the
+consumer chooses, then parses the package and compares it with the sidecar
+through `Selection::check` against the borrowed
+`quire_contract_model::CheckedPackageV2` surface, with no copy of the format.
 
-The focused release-recipe control is the test
-`stripped_release_v2_producer_writes_the_independently_read_handoff` in
-[`examples/native_protocol_v2_handoff.rs`](../examples/native_protocol_v2_handoff.rs).
-The non-release mutation controls remain in
+The executable recipe is the `checked-handoff` integration suite
+[`tests/it/checked_handoff.rs`](../tests/it/checked_handoff.rs). The mutation
+controls for the `/2` reader remain in
 [`tests/compiled_protocol_v2.rs`](../tests/it/compiled_protocol_v2.rs), including
 cross-version, every temporal selection family, artifact-reference and
 same-meaning recanonicalized-input substitutions. These controls qualify A's

@@ -83,9 +83,8 @@ Measured on main when this was written.
   `population-fixtures` writer. `qsl-bench` and tests in `qsl-eval`,
   `qsl-forms`, `qsl-semantics`, `qsl-replay` and the root crate call
   `build_unit` or `assemble` directly.
-- **Callers of the type path.** The `handoff-writer` producer
-  (`src/protocol_artifact/handoff/writer.rs`) and the root
-  `tests/it/composed_*.rs` files. Nothing outside tests calls both paths on one
+- **Callers of the type path.** The root `tests/it/composed_*.rs` files (the
+  retired `handoff-writer` producer was the other caller). Nothing outside tests calls both paths on one
   source, and the spine does not run the type path.
 - **Two `CheckedUnit` types.** `spine::CheckedUnit` holds a checked package
   and its sources. The root crate's `checking::source_inventory::CheckedUnit`
