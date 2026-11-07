@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify protocol-slot evaluation from a bare package and its equality with the source routes. Scope: FR-533-AC-1 to FR-533-AC-20. **R** is the package of FR-517.
+Verify protocol-slot evaluation from a bare package and its equality with the source routes. Scope: FR-533-AC-1 to FR-533-AC-21. **R** is the package of FR-517.
 
 ## Test Procedure
 
@@ -36,8 +36,9 @@ Verify protocol-slot evaluation from a bare package and its equality with the so
 | 18 | 18 | a unit compiled from source in which `trigger.guard` of a copy of fixture E calls a function whose body holds `==`; equality rows omitted, then the rows its handoff writes; a slot that calls no such function, rows omitted | `trigger.guard` refuses `MissingEqualityWitness` at `Package`, meter untouched, then evaluates equal to the in-process route; the other slot evaluates |
 | 19 | 19 | **R**'s `Full` and `Partial` `recovery.predicate` over the bare route, with supplies that differ in receipts, target and activation; `Full` with its sum inside `Shape::Circle` and a `Circle(r)` case arm, over matching, mismatching, empty and activated supplies; a `recovered` supply that is an integer; a supply without `target` | the values FR-533-AC-19 states; the case-arm package is strictly admitted, `r` is not a source on either route, and its Boolean outcomes and ordered charge logs equal the source route's; both malformed supplies refuse as `CallFailure::Admission` |
 | 20 | 20 | Strictly admitted **R** with the source `Shape` union constructed and matched in `Full`'s recovery predicate; vary receipts, target and activation, then add an unrelated union; compare the bare and source type environments | Equal Boolean values and ordered charges; original union type handle, sealed member/declaration identities, ordered members and positional payload types agree; missing required projections refuse before any charge; an unused union with an unrepresented tuple payload leaves the ordinary slot unchanged, while selecting even its nullary variant refuses before charging |
+| 21 | 21 | fixture L's two-record variant of FR-383-AC-64, compiled in each source order of its two clauses, on the in-process and bare routes | `Got.related.from[0]`, `from[1]` and the call `to` end: equal values, charge logs and projected-root read `Location` on both routes; `from[i]` under `related <i> from`, the call `to` end under `related <k> to` with `k` its record's emitted position; the two `from` `Location` values differ; no `Location` under a `related <start> <end>` origin on either route |
 
-Tag the test `#[trace("FR-533-AC-1", ..., "FR-533-AC-20", "TC-1333")]`; rows 1 and 2 also carry FR-390-AC-11 and FR-520-AC-9.
+Tag the test `#[trace("FR-533-AC-1", ..., "FR-533-AC-21", "TC-1333")]`; rows 1 and 2 also carry FR-390-AC-11 and FR-520-AC-9.
 
 ## Expected Results
 

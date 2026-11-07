@@ -251,7 +251,37 @@ and of a `related` end is built from the emitted control node: the case's label,
 and the record's position in the `related` list as the emitter writes it (Order,
 sets and collapse), so that two case guards, or two `related` ends, whose
 expressions are one graph node have distinct names and each pairs with its own
-case or end (QSpec FR-322-AC-388). A `repeat`'s
+case or end (QSpec FR-322-AC-388).
+
+A case's label is known where the checker locates the guard, so the checker
+locates a case guard at its final name. A record's position is not: it depends
+on the canonical bytes of the relationship node and of both ends, which exist
+only once lowering has built those nodes. The checker SHALL therefore locate
+each `related` end at a *provisional site*, `protocol <P> run <path> related
+<start> <end>` with the end's source span, and lowering SHALL fix the name:
+
+- WHEN lowering writes a control's `related` records sorted and collapsed, it
+  SHALL give each written record its zero-based position `k` and SHALL replace,
+  in every `Location` of the checked term of that record's first end, the
+  provisional origin by `protocol <P> run <path> related <k> from`, and in every
+  `Location` of its second end's term by `... related <k> to`. The replacement
+  changes the origin `name` only; each `Location`'s child-index path, each
+  occurrence and each source-map row are kept.
+- Two `related by` clauses that collapse into one record are one record `k`. The
+  ends of the clause written first are the record's ends; the ends of each later
+  repeat are re-located to the same two names, and the emitter writes rows for
+  the record's ends only, so no origin holds rows of two clauses.
+- The re-location is part of `check`: the checked package that `check` returns,
+  the in-process route that evaluates over it (FR-390), and the
+  `protocol_locations` rows the emitter writes all carry the position name. No
+  provisional site name is held by a checked package, written to a row, or
+  returned in an evaluation's `Location` on either route. A check refusal raised
+  while the checker types an end, before lowering, keeps the provisional site,
+  because no record position exists for a unit that does not check.
+
+The `Location` of an application-rooted `related` end is therefore the
+position-named one on the source route as well as the bytes route, which is the
+exact parity of FR-533-AC-13. A `repeat`'s
 `proof.invariant` and `proof.variant` are not slots (FR-390), and the emitter
 writes no row for them.
 
@@ -613,6 +643,7 @@ refusal changes no other protocol's result (see "Per-protocol results").
 | FR-383-AC-61 | In fixture E the checked package records exactly two `expression` occurrences of the `earlier.tally` application of `Refund`'s retry relation, ordinal 0 at its term in `earlier.tally < 3` and ordinal 1 at its term in `earlier.tally + 1`, and exactly two of `target >= 0`, ordinal 0 at its term in the trigger guard and ordinal 1 at its term in the retry relation; and in fixture E-C's `Tried` and `Picked` controls exactly two of `order >= 0`, ordinal 0 at the `Tried` constraint and ordinal 1 at the `Picked` constraint (declaration order, although `Picked` sorts first by origin name); so each position of an application in a slot's walk has an occurrence of its own. | Test (TC-1063) |
 | FR-383-AC-62 | Over a unit that imports a model package `M` in which the component `Sys` owns two Ports, `pump_out` (direction out) and `tank_in` (direction in), and holds `role Outlet on M::pump_out;`, `role Inlet on M::tank_in;`, `role Operator on M::Sys;` and a role on the whole model `M` emits `Outlet` and `Inlet` with a `model_member` Group holding the `package` identity of `M` and the declaration identity of their own Port, and a `model` reference to the node of `Sys`, so the two roles have different node ids; `Operator` and the whole-model role emit no third argument and the same bytes they emitted before the argument existed. After the I2 read, the typed role read back holds the same `package` and `node` as the checked role's selected Port key (`CheckedRole.model_member`). | Test (TC-1062) |
 | FR-383-AC-63 | In fixture L (TC-1070) the rows of `Decide`'s case guards are under `protocol Pipeline run Main Decide case yes guard` and `... case no guard`, the rows of `Decide.visible[0]` under `... decision 2641..2650`, and no row is under any other `decision` origin; in the variant of fixture L whose two `related` ends of `Got` are one identity-function call, the ends' rows are under `protocol Pipeline run Main Got related 0 from` and `... related 0 to`. | Test (TC-1063) |
+| FR-383-AC-64 | In the two-record variant of fixture L, whose `Got` holds `related by Owns (same(view), view)` and `related by Owns (same(view), same(view))` with `same` the pure reference-valued identity function, compiled once in each source order of the two clauses: the shared `same(view)` call of the two `from` ends has its rows under `protocol Pipeline run Main Got related 0 from` and `... related 1 from`, the `to` end that is a call has its rows under `... related <k> to` where `k` is the emitted position of its record, and the record whose `to` end is the reference `view` has no `to` row; in both orders the record holding each `to` end has the same emitted position and each origin holds rows of one end only; the checked package holds no `Location` and the `protocol_locations` array holds no row under a `related <start> <end>` origin; and a third compile that writes the second clause twice gives the same origins and the same number of rows under each as the compile without the repeat. | Test (TC-1063) |
 ## Dependencies
 
 - FR-383-AC-15 rests on QSpec FR-322 "Operand index segments" (QSL-1695): inside a node every operand is an operand slot `{"operand": k}` into the document's required `semantic_graph.operand_rows`, numbered by first occurrence in the node's serialization, and only ids outside nodes keep `{"node": i}`. A node's bytes therefore hold no graph index of its own graph, so adding a node ahead of an operand a protocol reaches changes no protocol node's bytes, only `operand_rows`; node equality across documents is equality of resolved structural keys (each operand slot replaced by the key of the node it names). The path-stability gate (STD-653) is closed by that wire form.
