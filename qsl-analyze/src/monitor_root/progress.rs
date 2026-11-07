@@ -263,16 +263,28 @@ pub enum PlanAuthorityRefusal {
     FinalEmission,
     /// The original QSL order admission refused.
     #[error(transparent)]
-    Order(#[from] ModelStepOrderRefusal),
+    Order(#[from] Box<ModelStepOrderRefusal>),
     /// The original observation owner refused.
     #[error(transparent)]
-    Progress(#[from] quire_observation::authority::Error),
+    Progress(#[from] Box<quire_observation::authority::Error>),
     /// The original strict reader refused the final package.
     #[error("the final emission was refused by the strict reader: {0:?}")]
     ReadRefused(Box<CheckedPackageRefusal>),
     /// The original strict reader exhausted its bound.
     #[error("the final emission read was incomplete: {0:?}")]
     ReadIncomplete(Box<CheckedPackageIncomplete>),
+}
+
+impl From<ModelStepOrderRefusal> for PlanAuthorityRefusal {
+    fn from(error: ModelStepOrderRefusal) -> Self {
+        Self::Order(Box::new(error))
+    }
+}
+
+impl From<quire_observation::authority::Error> for PlanAuthorityRefusal {
+    fn from(error: quire_observation::authority::Error) -> Self {
+        Self::Progress(Box::new(error))
+    }
 }
 
 impl PlanAuthorityRefusal {
