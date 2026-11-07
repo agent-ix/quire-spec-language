@@ -3,16 +3,18 @@
 
 use std::collections::BTreeMap;
 
-use crate::support::native_rule_model;
-use qsl_foundation::{Source, SourceIdentity};
-use quire_contract_model as ir;
-use quire_spec_language::formal_source::FormalSource;
+use qsl_semantics::model::accounting::{Meter, ModelNormalizationLimits};
+use qsl_semantics::model::admitted::AdmittedPackage;
+use qsl_semantics::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
+    NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord, PopulationRecord,
+    ValueTypeRef, DOMAIN_PACKAGE_PROFILE,
+};
+use quire_checked::key::DeclarationKey;
+use quire_exact::Presence;
 use quire_spec_language::linking::definition_source::RegisteredDefinition as R;
-use quire_spec_language::model_source::{self, ModelSourceLimits};
-use quire_spec_language::native_model::{ModelLimits, NativeModel};
 use quire_spec_language::number::{NumberWire, NUMERIC_PROFILE};
 use quire_spec_language::protocol_artifact::{self as artifact, wire as w};
-use serde_json::json;
 
 /// Indices into declaration 0 of the authored compensation's graph members.
 pub struct CompensationHandles {
@@ -24,10 +26,78 @@ pub struct CompensationHandles {
 
 pub struct Fixture {
     pub package: w::Package,
-    pub model: NativeModel,
+    /// The admitted domain package the package's one model selects.
+    pub domain: AdmittedPackage,
     pub dependency_bytes: Vec<Vec<u8>>,
-    pub foreign_source: w::ArtifactRef,
-    pub foreign_formal: w::Formal,
+}
+
+/// Identity of the domain package every fixture selects.
+const DOMAIN: &str = "acme/orders";
+
+/// The document the model dependency carries; it admits under [`DOMAIN`].
+const DOMAIN_DOCUMENT: &[u8] = include_bytes!("../../fixtures/spine-model.semantic-ir.json");
+
+fn domain_key(node: &str) -> DeclarationKey {
+    DeclarationKey {
+        package: DOMAIN.to_owned(),
+        node: format!("ix://{DOMAIN}/{node}"),
+    }
+}
+
+/// An object type `Node` with a Boolean field `signed`, an operation `step`
+/// and a population `nodes` covering it.
+fn domain_package() -> AdmittedPackage {
+    let node = domain_key("Node");
+    let records = vec![
+        DomainPackageRecord::ObjectType(ObjectTypeRecord {
+            key: node.clone(),
+            interface_features: None,
+            abstract_type: false,
+            supertypes: Vec::new(),
+        }),
+        DomainPackageRecord::FieldMember(FieldMemberRecord {
+            key: domain_key("Node/signed"),
+            owner: node.clone(),
+            value_type: ValueTypeRef::Native(NativeValueType::Boolean),
+            multiplicity: Multiplicity {
+                lower: 1,
+                upper: Some(1),
+                ordered: false,
+                unique: false,
+            },
+            presence: Presence::Required,
+            subsets: Vec::new(),
+            redefines: None,
+            position: 0,
+        }),
+        DomainPackageRecord::OperationMember(OperationMemberRecord {
+            key: domain_key("Node/step"),
+            owner: node.clone(),
+            parameters: Vec::new(),
+            result: None,
+            effect: OperationEffect::default(),
+            requires: Vec::new(),
+            ensures: Vec::new(),
+            has_body: false,
+            redefines: None,
+        }),
+        DomainPackageRecord::Population(PopulationRecord {
+            key: domain_key("nodes"),
+            member_types: vec![node],
+            extent: Extent::Closed,
+            symmetric: false,
+        }),
+    ];
+    AdmittedPackage::admit(
+        DomainPackage::new(
+            DomainPackageRef {
+                identity: DOMAIN.to_owned(),
+            },
+            records,
+        ),
+        &mut Meter::new(ModelNormalizationLimits::UNLIMITED),
+    )
+    .expect("the fixture domain package admits")
 }
 
 fn revision(value: &str) -> w::Revision {
@@ -71,31 +141,7 @@ impl Fixture {
     }
 
     fn with_definitions(additional: &[R]) -> Self {
-        let model_source = Source::read(
-            SourceIdentity {
-                authority: "test".into(),
-                identity: "test:rule-model".into(),
-            },
-            "native-rule-model.json",
-            native_rule_model::fixture().as_bytes(),
-            qsl_foundation::source::MAX_SOURCE_BYTES,
-        )
-        .unwrap();
-        let model_source = FormalSource::new(
-            model_source,
-            ir::SourceIdentity::new(
-                ir::SourceDocumentId::new("RuleModelSource").unwrap(),
-                ir::SourceRevision::new(1).unwrap(),
-            ),
-        );
-        let model = model_source::read(
-            model_source,
-            model_source::FORMAT,
-            ModelSourceLimits::default(),
-        )
-        .unwrap()
-        .admit(ModelLimits::default())
-        .unwrap();
+        let domain = domain_package();
         let mut registry = vec![
             R::Edition,
             R::StateCore,
@@ -148,13 +194,13 @@ impl Fixture {
         let model_ref = reference(
             w::ArtifactKind::ModelPackage,
             "rule-model",
-            model.profile().as_str(),
+            DOMAIN_PACKAGE_PROFILE,
             "1",
         );
         for (key, selected, bytes) in [
             ("contract", contract.clone(), contract_bytes.as_slice()),
             ("baseline", baseline.clone(), baseline_bytes.as_slice()),
-            ("model", model_ref.clone(), model.artifact_bytes()),
+            ("model", model_ref.clone(), DOMAIN_DOCUMENT),
         ] {
             inputs.insert(key.into(), (selected, bytes.to_vec()));
         }
@@ -210,10 +256,7 @@ impl Fixture {
                 text.push_str(&format!("profile {alias} = \"{}\";\n", selected.identity()));
             }
         }
-        text.push_str(&format!(
-            "model M = \"{}\";\n",
-            model.environment().owner().package().as_str()
-        ));
+        text.push_str(&format!("model M = \"{}\";\n", DOMAIN));
         text.push_str("// Unicode café / and escaped control: \t\nprotocol Demo using P over (view: M::Node) on origin {\n  run check Good using S { true };\n  finish Closed as (closed: M::Node) { true };\n}\n");
         let source = w::Source {
             artifact: reference(
@@ -258,20 +301,20 @@ impl Fixture {
             origin: w::Origin::Independent {},
             operation: w::ValueOperation::Boolean { value: true },
         };
-        let foreign_source = reference(
-            w::ArtifactKind::Source,
-            "rule-model-source",
-            "native-rule-model",
-            "1",
-        );
-        let foreign_formal = w::Formal {
-            document: "RuleModelSource".into(),
-            revision: revision("1"),
+        let domain_locus = w::ForeignLocus {
+            source: model_ref.clone(),
+            formal: w::Formal {
+                document: DOMAIN.into(),
+                revision: w::Revision {
+                    namespace: artifact::DOMAIN_PACKAGE_REVISION_NAMESPACE.into(),
+                    value: DOMAIN.into(),
+                },
+            },
+            span: w::Span {
+                start: 0,
+                end: DOMAIN_DOCUMENT.len() as u32,
+            },
         };
-        let object_span = model
-            .source()
-            .to_native(&model.roles().objects[0].source)
-            .unwrap();
         let object = w::ExportRef {
             model: 0,
             export: 0,
@@ -421,44 +464,30 @@ impl Fixture {
             definitions,
             models: vec![w::Model {
                 artifact: dependency("model"),
-                profile: model.profile().as_str().into(),
+                profile: DOMAIN_PACKAGE_PROFILE.into(),
                 exports: vec![
                     w::Export {
                         kind: w::ExportKind::Object,
                         path: vec!["Node".into()],
-                        locus: w::ForeignLocus {
-                            source: foreign_source.clone(),
-                            formal: foreign_formal.clone(),
-                            span: w::Span {
-                                start: object_span.start as u32,
-                                end: object_span.end as u32,
-                            },
-                        },
+                        locus: domain_locus.clone(),
                     },
                     w::Export {
                         kind: w::ExportKind::Population,
                         path: vec!["Node".into(), "nodes".into()],
-                        locus: w::ForeignLocus {
-                            source: foreign_source.clone(),
-                            formal: foreign_formal.clone(),
-                            span: w::Span {
-                                start: object_span.start as u32,
-                                end: object_span.end as u32,
-                            },
-                        },
+                        locus: domain_locus,
                     },
                 ],
-                domain_package: w::Nullable(None),
+                domain_package: w::Nullable(Some(w::DomainPackage {
+                    identity: DOMAIN.into(),
+                })),
             }],
             types: vec![w::Type::Object { export: object }, w::Type::Boolean {}],
             declarations: vec![declaration],
         };
         Self {
             package,
-            model,
+            domain,
             dependency_bytes: inputs.into_iter().map(|(_, (_, bytes))| bytes).collect(),
-            foreign_source,
-            foreign_formal,
         }
     }
 
@@ -533,48 +562,24 @@ impl Fixture {
     }
 
     fn enrich_exports(&mut self) {
-        let foreign = |source: &ir::SourceSpan| {
-            let span = self.model.source().to_native(source).unwrap();
-            w::ForeignLocus {
-                source: self.foreign_source.clone(),
-                formal: self.foreign_formal.clone(),
-                span: w::Span {
-                    start: span.start as u32,
-                    end: span.end as u32,
-                },
-            }
-        };
+        let locus = self.package.models[0].exports[0].locus.clone();
         let exports = &mut self.package.models[0].exports;
-        for scalar in &self.model.roles().scalars {
-            if ["Signed", "Count", "Version", "ObjectId"].contains(&scalar.name.as_str()) {
-                exports.push(w::Export {
-                    kind: w::ExportKind::Scalar,
-                    path: vec![scalar.name.as_str().to_owned()],
-                    locus: foreign(&scalar.source),
-                });
-            }
+        for (kind, path) in [
+            (
+                w::ExportKind::Field,
+                vec!["Node".to_owned(), "signed".to_owned()],
+            ),
+            (
+                w::ExportKind::Operation,
+                vec!["Node".to_owned(), "step".to_owned()],
+            ),
+        ] {
+            exports.push(w::Export {
+                kind,
+                path,
+                locus: locus.clone(),
+            });
         }
-        for declaration in self.model.environment().types() {
-            if let ir::TypeDeclaration::Record { declaration } = declaration {
-                if declaration.name().as_str() == "Node" {
-                    for field in declaration.fields() {
-                        if ["signed", "items"].contains(&field.name().as_str()) {
-                            exports.push(w::Export {
-                                kind: w::ExportKind::Field,
-                                path: vec!["Node".into(), field.name().as_str().to_owned()],
-                                locus: foreign(field.source()),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        let operation = &self.model.roles().operations[0];
-        exports.push(w::Export {
-            kind: w::ExportKind::Operation,
-            path: vec!["Node".into(), "step".into()],
-            locus: foreign(&operation.source),
-        });
         exports.sort_by(|a, b| (a.kind.as_str(), &a.path).cmp(&(b.kind.as_str(), &b.path)));
         let object = self.export(w::ExportKind::Object, &["Node"]);
         self.package.types[0] = w::Type::Object {
@@ -621,27 +626,18 @@ impl Fixture {
     pub fn families() -> Self {
         let mut fixture = Self::with_definitions(&[R::EventPosition]);
         fixture.enrich_exports();
-        fixture.package.types.push(w::Type::Scalar {
-            export: fixture.export(w::ExportKind::Scalar, &["Signed"]),
-            unit: w::Nullable(None),
-            representation: w::Representation::Integer {
-                minimum: integer(-10),
-                maximum: integer(10),
-            },
-        });
-        const PREDICATE: &str = "predicate Advance using Q (x: M::Signed): Boolean { let prior: M::Signed = 1 in if true then (prior + 1 <= 10) else -x <= 10 }";
+        const PREDICATE: &str = "predicate Advance using Q (x: Boolean): Boolean { let prior: Boolean = true in (prior) }";
         let mut predicate = fixture.append("Advance", PREDICATE, R::StateQueries);
         predicate.anchors[0].kind = w::AnchorKind::Predicate;
         predicate.binders = vec![
-            binder(1, &predicate, "x", w::BinderKind::Parameter, 2),
-            binder(1, &predicate, "prior", w::BinderKind::Let, 2),
+            binder(1, &predicate, "x", w::BinderKind::Parameter, 1),
+            binder(1, &predicate, "prior", w::BinderKind::Let, 1),
         ];
         predicate.binders[1].initializer = w::Nullable(Some(owned(1, 1)));
         let base = predicate.locus.span.start as usize;
         let at = |text: &str| base + PREDICATE.find(text).unwrap();
         let h = |index| owned(1, index);
-        let body = "let prior: M::Signed = 1 in if true then (prior + 1 <= 10) else -x <= 10";
-        let conditional = "if true then (prior + 1 <= 10) else -x <= 10";
+        let body = "let prior: Boolean = true in (prior)";
         predicate.values = vec![
             value(
                 1,
@@ -657,112 +653,23 @@ impl Fixture {
             value(
                 1,
                 &predicate,
-                (at("= 1") + 2, 1),
-                2,
-                w::ValueOperation::Number { value: number(1) },
-            ),
-            value(
-                1,
-                &predicate,
-                (at(conditional), conditional.len()),
-                1,
-                w::ValueOperation::If {
-                    condition: h(3),
-                    then_value: h(4),
-                    else_value: h(11),
-                },
-            ),
-            value(
-                1,
-                &predicate,
-                (at("true"), 4),
+                (at("= true") + 2, 4),
                 1,
                 w::ValueOperation::Boolean { value: true },
             ),
             value(
                 1,
                 &predicate,
-                (at("(prior + 1 <= 10)"), 17),
+                (at("(prior)"), 7),
                 1,
-                w::ValueOperation::Group { value: h(7) },
+                w::ValueOperation::Group { value: h(3) },
             ),
             value(
                 1,
                 &predicate,
-                (at("prior + 1"), 5),
-                2,
+                (at("(prior)") + 1, 5),
+                1,
                 w::ValueOperation::Read { binder: h(1) },
-            ),
-            value(
-                1,
-                &predicate,
-                (at("prior + 1"), 9),
-                2,
-                w::ValueOperation::Binary {
-                    operator: w::Binary::Add,
-                    left: h(5),
-                    right: h(8),
-                },
-            ),
-            value(
-                1,
-                &predicate,
-                (at("prior + 1 <= 10"), 15),
-                1,
-                w::ValueOperation::Binary {
-                    operator: w::Binary::LessEqual,
-                    left: h(6),
-                    right: h(9),
-                },
-            ),
-            value(
-                1,
-                &predicate,
-                (at("prior + 1") + 8, 1),
-                2,
-                w::ValueOperation::Number { value: number(1) },
-            ),
-            value(
-                1,
-                &predicate,
-                (at("prior + 1 <= 10") + 13, 2),
-                2,
-                w::ValueOperation::Number { value: number(10) },
-            ),
-            value(
-                1,
-                &predicate,
-                (at("-x"), 2),
-                2,
-                w::ValueOperation::Unary {
-                    operator: w::Unary::Negate,
-                    value: h(12),
-                },
-            ),
-            value(
-                1,
-                &predicate,
-                (at("-x <= 10"), 8),
-                1,
-                w::ValueOperation::Binary {
-                    operator: w::Binary::LessEqual,
-                    left: h(10),
-                    right: h(13),
-                },
-            ),
-            value(
-                1,
-                &predicate,
-                (at("-x") + 1, 1),
-                2,
-                w::ValueOperation::Read { binder: h(0) },
-            ),
-            value(
-                1,
-                &predicate,
-                (at("-x <= 10") + 6, 2),
-                2,
-                w::ValueOperation::Number { value: number(10) },
             ),
         ];
         identify(&mut predicate.values);
@@ -848,57 +755,6 @@ impl Fixture {
             root: owned(3, 0),
         };
         fixture.package.declarations.push(temporal);
-        fixture.package.types.push(w::Type::Scalar {
-            export: fixture.export(w::ExportKind::Scalar, &["ObjectId"]),
-            unit: w::Nullable(None),
-            representation: w::Representation::Text {
-                maximum_scalars: integer(256),
-            },
-        });
-        const TEXT: &str =
-            "predicate Label using Q (label: M::ObjectId): Boolean { label = \"é\" }";
-        let mut text = fixture.append("Label", TEXT, R::StateQueries);
-        text.anchors[0].kind = w::AnchorKind::Predicate;
-        text.binders
-            .push(binder(4, &text, "label", w::BinderKind::Parameter, 3));
-        let base = text.locus.span.start as usize;
-        let at = base + TEXT.find("label =").unwrap();
-        text.values = vec![
-            value(
-                4,
-                &text,
-                (at, 5),
-                3,
-                w::ValueOperation::Read {
-                    binder: owned(4, 0),
-                },
-            ),
-            value(
-                4,
-                &text,
-                (at, "label = \"é\"".len()),
-                1,
-                w::ValueOperation::Binary {
-                    operator: w::Binary::Equal,
-                    left: owned(4, 0),
-                    right: owned(4, 2),
-                },
-            ),
-            value(
-                4,
-                &text,
-                (base + TEXT.find("\"é\"").unwrap(), 4),
-                3,
-                w::ValueOperation::Text { value: "é".into() },
-            ),
-        ];
-        identify(&mut text.values);
-        text.body = w::Body::Predicate {
-            parameters: vec![owned(4, 0)],
-            result: 1,
-            root: owned(4, 1),
-        };
-        fixture.package.declarations.push(text);
         fixture.package.features.declarations = [
             "declaration.predicate",
             "family.protocol",
@@ -952,7 +808,7 @@ impl Fixture {
                 owner,
                 declaration,
                 (at(&selected), selected.len()),
-                2,
+                1,
                 w::ValueOperation::Field {
                     base: h(1),
                     field: self.export(w::ExportKind::Field, &["Node", "signed"]),
@@ -1576,167 +1432,6 @@ impl Fixture {
         fixture
     }
 
-    /// Two separate branch-label scopes retain repeated nested control names.
-    /// The records and original text are authored reader inputs, not emission.
-    pub fn branched() -> Self {
-        const CHECK: &str = "check Same using S { true };";
-        const SEQUENCE: &str = "sequence Nested { check Same using S { true }; }";
-        const PARALLEL: &str = "parallel Both {\n    branch left sequence Nested { check Same using S { true }; }\n    branch right sequence Nested { check Same using S { true }; }\n  } join all [left,right];";
-        const FINISH: &str = "finish Closed as (closed: M::Node) { true };";
-        let mut fixture = Self::new();
-        let start = fixture.package.declarations[0].locus.span.start as usize;
-        let source = &mut fixture.package.sources[0];
-        source.text.truncate(start);
-        source.text.push_str(&format!("protocol Demo using P over (view: M::Node) on origin {{\n  run {PARALLEL}\n  {FINISH}\n}}\n"));
-        let locus = |at: usize, length: usize| w::Locus {
-            source: 0,
-            span: w::Span {
-                start: at as u32,
-                end: (at + length) as u32,
-            },
-        };
-        let original = locus(start, source.text.len() - start);
-        let sequences: Vec<_> = source
-            .text
-            .match_indices(SEQUENCE)
-            .map(|(at, _)| locus(at, SEQUENCE.len()))
-            .collect();
-        let checks: Vec<_> = source
-            .text
-            .match_indices(CHECK)
-            .map(|(at, _)| locus(at, CHECK.len()))
-            .collect();
-        assert_eq!((sequences.len(), checks.len()), (2, 2));
-        let declaration = &mut fixture.package.declarations[0];
-        declaration.locus = original.clone();
-        declaration.scopes[0].locus = original.clone();
-        for anchor in &mut declaration.anchors {
-            anchor.locus = original.clone();
-        }
-        for binder in &mut declaration.binders {
-            binder.locus = original.clone();
-        }
-        for binding in &mut declaration.bindings {
-            binding.locus = original.clone();
-        }
-        let boolean = declaration.values[0].clone();
-        let profile = boolean.profile;
-        declaration.values = source
-            .text
-            .match_indices("true")
-            .enumerate()
-            .map(|(index, (at, _))| {
-                let mut value = boolean.clone();
-                value.original_expression = index as u32;
-                value.locus = locus(at, 4);
-                value.anchor = handle(if index == 2 { 2 } else { 1 });
-                value
-            })
-            .collect();
-        assert_eq!(declaration.values.len(), 3);
-        let w::Body::Protocol {
-            controls,
-            causal_edges,
-            finish,
-            ..
-        } = &mut declaration.body
-        else {
-            unreachable!()
-        };
-        finish.locus = locus(source.text.find(FINISH).unwrap(), FINISH.len());
-        finish.constraint = handle(2);
-        let branches = [("left", 1, &sequences[0]), ("right", 3, &sequences[1])]
-            .into_iter()
-            .map(|(label, index, selected)| {
-                let at = source.text.find(&format!("branch {label} ")).unwrap();
-                w::Branch {
-                    label: label.into(),
-                    body: handle(index),
-                    locus: locus(at, selected.span.end as usize - at),
-                }
-            })
-            .collect();
-        // Source order is outer-before-inner; the original parser arena allocates
-        // each completed child before its enclosing sequence/parallel node.
-        *controls = vec![
-            w::Control {
-                name: "Both".into(),
-                original_node: 4,
-                locus: locus(source.text.find(PARALLEL).unwrap(), PARALLEL.len()),
-                operation: w::ControlOperation::Parallel {
-                    branches,
-                    join: vec![0, 1],
-                },
-            },
-            w::Control {
-                name: "Nested".into(),
-                original_node: 1,
-                locus: sequences[0].clone(),
-                operation: w::ControlOperation::Sequence {
-                    children: vec![handle(2)],
-                },
-            },
-            w::Control {
-                name: "Same".into(),
-                original_node: 0,
-                locus: checks[0].clone(),
-                operation: w::ControlOperation::Check {
-                    profile,
-                    value: handle(0),
-                },
-            },
-            w::Control {
-                name: "Nested".into(),
-                original_node: 3,
-                locus: sequences[1].clone(),
-                operation: w::ControlOperation::Sequence {
-                    children: vec![handle(4)],
-                },
-            },
-            w::Control {
-                name: "Same".into(),
-                original_node: 2,
-                locus: checks[1].clone(),
-                operation: w::ControlOperation::Check {
-                    profile,
-                    value: handle(1),
-                },
-            },
-        ];
-        let edge = |owner, kind, from, from_port, to, to_port| w::CausalEdge {
-            kind,
-            owner: handle(owner),
-            from: w::Endpoint {
-                node: handle(from),
-                port: from_port,
-            },
-            to: w::Endpoint {
-                node: handle(to),
-                port: to_port,
-            },
-            maximum: w::Nullable(None),
-        };
-        use w::{
-            EdgeKind::{Branch, Join, Sequence},
-            Port::{Enter, Exit},
-        };
-        // Independently expanded from the normative Parallel/Sequence/Check rows,
-        // in (owner,kind,from-node,from-port,to-node,to-port) order.
-        *causal_edges = vec![
-            edge(0, Branch, 0, Enter, 1, Enter),
-            edge(0, Branch, 0, Enter, 3, Enter),
-            edge(0, Join, 1, Exit, 0, Exit),
-            edge(0, Join, 3, Exit, 0, Exit),
-            edge(1, Sequence, 1, Enter, 2, Enter),
-            edge(1, Sequence, 2, Exit, 1, Exit),
-            edge(2, Sequence, 2, Enter, 2, Exit),
-            edge(3, Sequence, 3, Enter, 4, Enter),
-            edge(3, Sequence, 4, Exit, 3, Exit),
-            edge(4, Sequence, 4, Enter, 4, Exit),
-        ];
-        fixture
-    }
-
     pub fn selected_artifact() -> w::ArtifactRef {
         reference(
             w::ArtifactKind::LinkedPackage,
@@ -1808,15 +1503,9 @@ impl Fixture {
                 },
             )
             .collect();
-        let foreign = artifact::ExpectedForeignSource {
-            artifact: &self.foreign_source,
-            formal: &self.foreign_formal,
-            bytes: self.model.source().source().text().as_bytes(),
-        };
-        let models = [artifact::AdmittedModel {
+        let domains = [artifact::AdmittedDomainPackage {
             artifact: &self.package.dependencies[self.package.models[0].artifact as usize].artifact,
-            model: &self.model,
-            source: &foreign,
+            package: &self.domain,
         }];
         let expected = artifact::Expected {
             artifact: selected,
@@ -1826,8 +1515,7 @@ impl Fixture {
             language: &self.package.language,
             sources: &sources,
             dependencies: &dependencies,
-            models: &models,
-            domain_packages: &[],
+            domain_packages: &domains,
         };
         then(&expected)
     }
@@ -1842,23 +1530,6 @@ impl Fixture {
             artifact::Limits::default(),
         )
     }
-
-    pub fn json(&self) -> serde_json::Value {
-        serde_json::to_value(&self.package).unwrap()
-    }
-
-    pub fn raw(&self, value: &serde_json::Value) -> artifact::Report<artifact::AdmittedPackage> {
-        let bytes = serde_json::to_vec(value).unwrap();
-        self.read(
-            &bytes,
-            &Self::selected_artifact(),
-            artifact::Limits::default(),
-        )
-    }
-}
-
-pub fn rational(numerator: &str, denominator: &str) -> serde_json::Value {
-    json!({"kind":"rational", "numerator":numerator, "denominator":denominator})
 }
 
 pub fn owned(declaration: u32, index: u32) -> w::Handle {
@@ -1866,11 +1537,6 @@ pub fn owned(declaration: u32, index: u32) -> w::Handle {
 }
 pub fn integer(value: i64) -> w::Integer {
     w::Integer(NumberWire::Integer {
-        decimal: value.to_string(),
-    })
-}
-fn number(value: i64) -> w::Number {
-    w::Number(NumberWire::Integer {
         decimal: value.to_string(),
     })
 }

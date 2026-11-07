@@ -5,24 +5,13 @@ use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
 use crate::checking::DomainType;
 use crate::linking::definition_source::RegisteredDefinition;
-use crate::native_model::ObjectRole;
 
-use super::{
-    ir, local_value, reference_target, reserve_formal, same_model, target, w, Dimension,
-    DomainTarget, Error, Invalid, NativeType, ScalarSite, Target, View, Work,
-};
+use super::{local_value, target, w, Dimension, DomainTarget, Error, Invalid, View, Work};
 
 /// A population input: model index, object record name (native) or object
 /// artifact id (domain), and anchor index.
 type RoleKey<'a> = (u32, &'a str, u32);
 type Pair = (Option<u32>, Option<u32>);
-
-struct Pending<'p, 'a> {
-    model: u32,
-    name: &'a ir::SymbolName,
-    anchor: u32,
-    locus: &'p w::Locus,
-}
 
 /// A domain type a binder or anchored value carries, at a model and anchor.
 struct DomainSeed<'p, 'a> {
@@ -30,24 +19,6 @@ struct DomainSeed<'p, 'a> {
     ty: DomainType<'a>,
     anchor: u32,
     locus: &'p w::Locus,
-}
-
-/// The object a population binding names: a native object role, or a
-/// domain object type.
-enum Population<'a> {
-    Native(&'a ObjectRole),
-    Domain(DomainType<'a>),
-}
-
-impl<'a> Population<'a> {
-    /// The pair key's object name: the role's record, or the domain type's
-    /// artifact id.
-    fn name(&self) -> &'a str {
-        match self {
-            Self::Native(role) => role.record.as_str(),
-            Self::Domain(ty) => ty.artifact_id(),
-        }
-    }
 }
 
 pub(super) struct Validation<'p, 'v, 'a> {
@@ -88,10 +59,7 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
 
     pub fn value(&self, value: &w::Value, work: &mut Work) -> Result<(), Error> {
         let w::ValueOperation::Reaches {
-            start,
-            target: end,
-            edge,
-            universe,
+            start, target: end, ..
         } = &value.operation
         else {
             return Ok(());
@@ -104,65 +72,9 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
         {
             return Err(Error::Invalid(Invalid::Type));
         }
-        let (model, role) = match self.ty(start.value_type, work)? {
-            w::Type::Object { export } => {
-                let (_, Target::Object(role, _)) = target(self.views, export, work)? else {
-                    return Err(Error::Invalid(Invalid::Type));
-                };
-                (export.model, role)
-            }
-            w::Type::Reference {
-                export,
-                object,
-                universe,
-            } => {
-                let (_, role) = reference_target(self.views, export, object, universe, work)?;
-                (export.model, role)
-            }
-            _ => return Err(Error::Invalid(Invalid::Type)),
-        };
-        let (_, Target::Population(population)) = target(self.views, universe, work)? else {
-            return Err(Error::Invalid(Invalid::Type));
-        };
-        let (view, Target::Field(record, field)) = target(self.views, edge, work)? else {
-            return Err(Error::Invalid(Invalid::Type));
-        };
-        work.bytes(record.name().as_str().len())?;
-        if model != universe.model
-            || model != edge.model
-            || !std::ptr::eq(role, population)
-            || record.name() != &role.record
-        {
-            return Err(Error::Invalid(Invalid::Type));
-        }
-        reserve_formal(field.value_type(), work)?;
-        work.bytes(
-            record
-                .name()
-                .as_str()
-                .len()
-                .saturating_add(field.name().as_str().len()),
-        )?;
-        work.charge(Dimension::Entries, 1)?;
-        let site = ScalarSite::Field {
-            record: record.name().clone(),
-            field: field.name().clone(),
-        };
-        let native = view
-            .catalog()?
-            .formal(field.value_type(), &site)
-            .ok_or(Error::Invalid(Invalid::Type))?;
-        let leaf = match &native {
-            NativeType::Option(value) => value.as_ref(),
-            NativeType::Sequence { element, .. } => element.as_ref(),
-            value => value,
-        };
-        if !matches!(leaf, NativeType::Reference { model, role: target }
-            if same_model(view.model()?, model) && std::ptr::eq(role, *target))
-        {
-            return Err(Error::Invalid(Invalid::Type));
-        }
-        Ok(())
+        // Reachability is defined over native object roles; a domain-package
+        // model exports none, so no wire type reaches here validly.
+        Err(Error::Invalid(Invalid::Type))
     }
 
     pub fn bindings(&self, work: &mut Work) -> Result<(), Error> {
@@ -173,23 +85,22 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
                 (w::BindingKind::Population, Some(export)) => Some(export),
                 (w::BindingKind::Population, None) => return Err(Error::Invalid(Invalid::Binding)),
                 (w::BindingKind::Closure, Some(export)) => matches!(
-                    target(self.views, export, work)?.1,
-                    Target::Population(_) | Target::Domain(DomainTarget::Population(_))
+                    target(self.views, export, work)?,
+                    DomainTarget::Population(_)
                 )
                 .then_some(export),
                 _ => None,
             };
             let Some(export) = population else { continue };
             work.locus = Some(binding.locus.clone());
-            let object_name = match target(self.views, export, work)?.1 {
-                Target::Population(role) => Population::Native(role),
+            let object_name = match target(self.views, export, work)? {
                 // The model's exports hold a population export only for a
                 // declaration covering the object type, so a declared export
                 // already names a covering declaration. FR-153: an object
                 // type more than one declaration covers binds none of them.
-                Target::Domain(DomainTarget::Population(object)) => {
+                DomainTarget::Population(object) => {
                     crate::protocol_artifact::domain::population(&object, work)?;
-                    Population::Domain(object)
+                    object
                 }
                 _ => return Err(Error::Invalid(Invalid::Binding)),
             };
@@ -212,13 +123,8 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
             let w::Type::Object { export: object } = self.ty(ty, work)? else {
                 return Err(Error::Invalid(Invalid::Binding));
             };
-            let same_object = match (target(self.views, object, work)?.1, &object_name) {
-                (Target::Object(actual, _), Population::Native(role)) => {
-                    std::ptr::eq(actual, *role)
-                }
-                (Target::Domain(DomainTarget::Type(actual)), Population::Domain(expected)) => {
-                    super::same_domain_type(&actual, expected, work)?
-                }
+            let same_object = match target(self.views, object, work)? {
+                DomainTarget::Type(actual) => super::same_domain_type(&actual, &object_name, work)?,
                 _ => false,
             };
             if object.model != export.model || !same_object {
@@ -240,7 +146,7 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
                     return Err(Error::Invalid(Invalid::Binding));
                 }
             }
-            let name = object_name.name();
+            let name = object_name.artifact_id();
             work.bytes(name.len())?;
             let key = (export.model, name, binding.anchor.index);
             let pair = match pairs.entry(key) {
@@ -312,7 +218,6 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
     }
 
     fn required(&self, pairs: &BTreeMap<RoleKey<'a>, Pair>, work: &mut Work) -> Result<(), Error> {
-        let mut records = Vec::new();
         let mut domains = Vec::new();
         for binder in &self.declaration.binders {
             work.visit()?;
@@ -325,7 +230,7 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
                     binder.value_type,
                     &binder.anchor,
                     &binder.locus,
-                    (&mut records, &mut domains),
+                    &mut domains,
                     work,
                 )?;
             }
@@ -334,13 +239,7 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
             work.visit()?;
             if let w::Origin::Anchor { anchor } = &value.origin {
                 work.locus = Some(value.locus.clone());
-                self.seed(
-                    value.value_type,
-                    anchor,
-                    &value.locus,
-                    (&mut records, &mut domains),
-                    work,
-                )?;
+                self.seed(value.value_type, anchor, &value.locus, &mut domains, work)?;
             }
         }
         let mut seen = BTreeSet::new();
@@ -362,75 +261,6 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
                 }
                 if seen.insert(key) {
                     work.charge(Dimension::Entries, 1)?;
-                }
-            }
-        }
-        while let Some(Pending {
-            model,
-            name,
-            anchor,
-            locus,
-        }) = records.pop()
-        {
-            work.locus = Some(locus.clone());
-            work.visit()?;
-            work.bytes(name.as_str().len())?;
-            let view = self
-                .views
-                .get(model as usize)
-                .ok_or(Error::Invalid(Invalid::Reference))?;
-            let ty = view
-                .catalog()?
-                .record_type(name)
-                .ok_or(Error::Invalid(Invalid::Type))?;
-            let record = match ty {
-                NativeType::Object { role, .. } | NativeType::Reference { role, .. } => {
-                    work.bytes(role.record.as_str().len())?;
-                    if !pairs.contains_key(&(model, role.record.as_str(), anchor)) {
-                        return Err(Error::Invalid(Invalid::Binding));
-                    }
-                    &role.record
-                }
-                NativeType::Record { declaration, .. } => declaration.name(),
-                _ => return Err(Error::Invalid(Invalid::Type)),
-            };
-            work.bytes(record.as_str().len())?;
-            if !seen.insert((model, record.as_str(), anchor)) {
-                continue;
-            }
-            work.charge(Dimension::Entries, 1)?;
-            let declaration = view
-                .catalog()?
-                .records
-                .get(record)
-                .ok_or(Error::Invalid(Invalid::Type))?;
-            for field in declaration.fields() {
-                work.visit()?;
-                let mut ty = field.value_type();
-                let mut depth = 0;
-                loop {
-                    work.visit()?;
-                    depth += 1;
-                    work.charge(Dimension::Depth, depth)?;
-                    match ty {
-                        ir::ValueType::Option { value } => ty = value,
-                        ir::ValueType::Collection { value } => ty = value.element(),
-                        ir::ValueType::Record { name } => {
-                            work.charge(Dimension::Entries, 1)?;
-                            records.push(Pending {
-                                model,
-                                name,
-                                anchor,
-                                locus,
-                            });
-                            break;
-                        }
-                        ir::ValueType::Boolean
-                        | ir::ValueType::Integer { .. }
-                        | ir::ValueType::Rational { .. }
-                        | ir::ValueType::Text
-                        | ir::ValueType::Enum { .. } => break,
-                    }
                 }
             }
         }
@@ -459,7 +289,7 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
         mut ty: u32,
         anchor: &w::Handle,
         locus: &'p w::Locus,
-        (records, domains): (&mut Vec<Pending<'p, 'a>>, &mut Vec<DomainSeed<'p, 'a>>),
+        domains: &mut Vec<DomainSeed<'p, 'a>>,
         work: &mut Work,
     ) -> Result<(), Error> {
         self.anchor(anchor, work)?;
@@ -473,28 +303,15 @@ impl<'p, 'a> Validation<'p, '_, 'a> {
                 w::Type::Record { export }
                 | w::Type::Object { export }
                 | w::Type::Reference { export, .. } => {
-                    let (_, selected) = target(self.views, export, work)?;
-                    let name = match selected {
-                        Target::Record(record) => record.name(),
-                        Target::Object(role, _) | Target::Reference(role) => &role.record,
-                        // A domain type needs the population input of every
-                        // domain object type it reaches.
-                        Target::Domain(DomainTarget::Type(ty)) => {
-                            work.charge(Dimension::Entries, 1)?;
-                            domains.push(DomainSeed {
-                                model: export.model,
-                                ty,
-                                anchor: anchor.index,
-                                locus,
-                            });
-                            return Ok(());
-                        }
-                        _ => return Err(Error::Invalid(Invalid::Type)),
+                    // A domain type needs the population input of every
+                    // domain object type it reaches.
+                    let DomainTarget::Type(ty) = target(self.views, export, work)? else {
+                        return Err(Error::Invalid(Invalid::Type));
                     };
                     work.charge(Dimension::Entries, 1)?;
-                    records.push(Pending {
+                    domains.push(DomainSeed {
                         model: export.model,
-                        name,
+                        ty,
                         anchor: anchor.index,
                         locus,
                     });

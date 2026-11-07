@@ -72,14 +72,16 @@ ModelDraft establishes source-derived declaration input; only successful admissi
 establishes NativeModel. The profile does not parse native-state-model/1 artifact
 bytes or add another formal-model authority. No producer process or I/O is required.
 
+**QSL-499 disposition:** the native 0-draft carrier of the retired acceptance criteria below (`native_model`, `model_source`, `located_json`, `link_native` and the native `checking` pipeline) is deleted under ADR-011, ADR-033 and FR-499. Each retired criterion is retained as migration history and is not an active acceptance obligation; its behavior is owned by FR-056 and FR-154 (model package and Semantic IR intake with located refusals and intake limits).
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-025-AC-1 | The existing rule-model source produces the same admitted model bytes and declaration/role loci through the public frontend. | Test (TC-101) |
-| FR-025-AC-2 | All admitted source types and role forms retain their existing meaning; repeated names in different declarations and Unicode/escaped text preserve their actual occurrences. | Test (TC-101) |
-| FR-025-AC-3 | Unknown profiles, malformed/unknown/duplicate fields, duplicate scalar declarations, unknown scalar uses and native admission failures retain source and distinct typed causes without partial success; owned/foreign raw occurrences refuse. | Test (TC-102) |
-| FR-025-AC-4 | Caller-configured source, entry-category and admission limits below an input's size return incomplete naming the limit in force, and a source larger than each default (2 MiB, 20,000 entries) is admitted once that limit is raised to fit it; exhausted entry groups stop before their values or later operations decode, and fresh requests can succeed. | Test (TC-102) |
+| FR-025-AC-1 | **RETIRED in QSL-499; historical only.** The existing rule-model source produces the same admitted model bytes and declaration/role loci through the public frontend. | Test (TC-101) |
+| FR-025-AC-2 | **RETIRED in QSL-499; historical only.** All admitted source types and role forms retain their existing meaning; repeated names in different declarations and Unicode/escaped text preserve their actual occurrences. | Test (TC-101) |
+| FR-025-AC-3 | **RETIRED in QSL-499; historical only.** Unknown profiles, malformed/unknown/duplicate fields, duplicate scalar declarations, unknown scalar uses and native admission failures retain source and distinct typed causes without partial success; owned/foreign raw occurrences refuse. | Test (TC-102) |
+| FR-025-AC-4 | **RETIRED in QSL-499; historical only.** Caller-configured source, entry-category and admission limits below an input's size return incomplete naming the limit in force, and a source larger than each default (2 MiB, 20,000 entries) is admitted once that limit is raised to fit it; exhausted entry groups stop before their values or later operations decode, and fresh requests can succeed. | Test (TC-102) |
 
 ## Dependencies
 

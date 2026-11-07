@@ -495,7 +495,6 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         super::validate::package(&package, &registered, &mut work)?;
         super::models::validate(
             &package,
-            expected.models,
             expected.domain_packages,
             expected.dependencies,
             &mut work,
