@@ -24,14 +24,14 @@ impl Emission {
         package: &CheckedPackageV2,
         application: &quire_contract_model::CheckedNodeId,
         occurrence: &quire_contract_model::CheckedOccurrence,
-        work_limit: u64,
+        budget: &mut quire_contract_model::NativeJoinBudget,
     ) -> Result<AdmittedEqualityDecision, quire_contract_model::AdmittedEqualityReadError> {
         self.admitted_equality_from(
             &self.equality_rows(),
             package,
             application,
             occurrence,
-            work_limit,
+            budget,
         )
     }
 
@@ -43,7 +43,7 @@ impl Emission {
         package: &CheckedPackageV2,
         application: &quire_contract_model::CheckedNodeId,
         occurrence: &quire_contract_model::CheckedOccurrence,
-        work_limit: u64,
+        budget: &mut quire_contract_model::NativeJoinBudget,
     ) -> Result<AdmittedEqualityDecision, quire_contract_model::AdmittedEqualityReadError> {
         package.admitted_equality(
             application,
@@ -51,7 +51,7 @@ impl Emission {
             &rows.application_rows,
             &rows.fact_rows,
             self.selected_source_unit_rows(),
-            work_limit,
+            budget,
         )
     }
 

@@ -19,7 +19,7 @@ use quire_semantic_value::catalog::InternalFault;
 
 use crate::bare::{BarePackage, IdentityWitnessRefusal};
 use crate::checked_v2::wire_graph;
-use crate::equality_file::{EqualityWitnessRefusal, ReadEqualityRows};
+use crate::equality_file::EqualityWitnessRefusal;
 use crate::protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
 use crate::protocol_view::{
     argument, control_operation, group_member, integer, reference, text, ControlOperation,
@@ -419,7 +419,7 @@ impl<'p> BarePackage<'p> {
         descriptor: &ProtocolSlotDescriptor,
     ) -> Result<BareSlot, BareSelectionFailure> {
         let package = self.package();
-        let (supply, identities) = self.witness()?;
+        let (_supply, identities) = self.witness()?;
         let graph = wire_graph(package).map_err(|_| fault("bare-package-has-structural-keys"))?;
         let nodes: BTreeMap<&CheckedNodeId, &Node> = package
             .graph()
@@ -450,8 +450,7 @@ impl<'p> BarePackage<'p> {
         let walker = BareWalker::new(
             package,
             identities,
-            supply.equality,
-            package_work_limit(),
+            self.equality_decisions(),
             self.exact_type_projections(),
         )
         .map_err(SlotSelectionFailure::Fault)?;
@@ -482,7 +481,7 @@ impl<'p> BarePackage<'p> {
                         found.insert(&parameter.node_id);
                     },
                 );
-                check_equality(package, supply.equality, &reached(&nodes, root))?;
+                check_equality(self.equality_decisions(), &reached(&nodes, root))?;
                 let mut sources = Vec::with_capacity(found.len());
                 for id in found {
                     let binder = nodes
@@ -637,12 +636,11 @@ impl<'p> BarePackage<'p> {
         &self,
         slot: &BareSlot,
     ) -> Result<ReaderProtocolProjection, BareSelectionFailure> {
-        let (supply, identities) = self.witness()?;
+        let (_supply, identities) = self.witness()?;
         let walker = BareWalker::new(
             self.package(),
             identities,
-            supply.equality,
-            package_work_limit(),
+            self.equality_decisions(),
             self.exact_type_projections(),
         )
         .map_err(SlotSelectionFailure::Fault)?;
@@ -684,12 +682,6 @@ fn ordered_candidates<'a>(
     spanned.into_iter().map(|(_, name)| name).collect()
 }
 
-/// The owner reader work bound for equality decisions and slot walks.
-/// Exact types were already projected under the supply entry's native budget.
-pub(crate) fn package_work_limit() -> u64 {
-    quire_contract_model::CheckedPackageReadLimits::bounded().work
-}
-
 /// The nodes the slot's walk can visit from `root`: every node reachable by
 /// reference from the root's term, through called functions as well (the span
 /// walk enters them; the binder search of FR-390 rule 3 stops there). A node
@@ -715,29 +707,13 @@ fn reached<'n>(
 /// application (FR-531 "Refusals"): decided over the nodes the walk reaches before any node
 /// is projected, so a `Package` refusal precedes a `Node` one (FR-390-AC-67).
 fn check_equality(
-    package: &CheckedPackageV2,
-    equality: Option<&ReadEqualityRows>,
+    decisions: &crate::reader_protocol_projection::EqualityDecisions,
     closure: &BTreeSet<&CheckedNodeId>,
 ) -> Result<(), BareSelectionFailure> {
-    let held: BTreeSet<&CheckedNodeId> = package
-        .checked_term_data()
-        .map(|data| {
-            data.equality_decisions
-                .iter()
-                .map(|decision| &decision.application)
-                .collect()
-        })
-        .unwrap_or_default();
-    let used: Vec<&&CheckedNodeId> = closure.iter().filter(|id| held.contains(**id)).collect();
-    if used.is_empty() {
-        return Ok(());
-    }
-    let rows = equality.ok_or(BareSelectionFailure::Equality(
-        EqualityWitnessRefusal::Missing,
-    ))?;
-    for application in used {
-        rows.decision(package, application, package_work_limit())
-            .map_err(BareSelectionFailure::Equality)?;
+    for application in closure {
+        if let Some(Err(refusal)) = decisions.get(*application) {
+            return Err(BareSelectionFailure::Equality(*refusal));
+        }
     }
     Ok(())
 }

@@ -416,7 +416,7 @@ impl SelectedProtocolTerm<'_, '_> {
 #[error("{limit}: {native}")]
 pub struct NativeJoinLimitError {
     /// The native refusal, including its structural locus and admitted work.
-    pub native: Box<quire_contract_model::ExactTypeProjectionError>,
+    pub native: crate::NativeJoinFailure,
     /// The stage limit with its configured bound and attempted total.
     pub limit: qsl_foundation::diagnostic::LimitExceeded,
 }

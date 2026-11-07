@@ -393,7 +393,7 @@ pub struct MissingLocation {
 pub(crate) enum PackageRefusal {
     Unsupported(UnsupportedView),
     Fault(InternalFault),
-    Exhausted(Box<quire_contract_model::ExactTypeProjectionError>),
+    Exhausted(crate::NativeJoinFailure),
 }
 
 /// One slot to project: its root, origin name and binders in local-slot order.
@@ -411,7 +411,6 @@ pub(crate) fn project_package(
     emission: &crate::Emission,
     package: &str,
     requests: Vec<SlotRequest>,
-    work_limit: u64,
     identities: quire_contract_model::SelectedExactIdentities,
     budget: &mut quire_contract_model::NativeJoinBudget,
 ) -> Result<ReaderProtocolSlots, PackageRefusal> {
@@ -420,16 +419,18 @@ pub(crate) fn project_package(
         let projection = admitted.project_exact_type(&node.node_id, &identities, budget);
         if let Err(denial) = &projection {
             if qsl_semantics::model::intake::is_native_budget_denial(denial) {
-                return Err(PackageRefusal::Exhausted(Box::new(denial.clone())));
+                return Err(PackageRefusal::Exhausted(denial.clone().into()));
             }
         }
         projections.insert(node.node_id.clone(), projection);
     }
+    let equality =
+        admit_equality_decisions(admitted, ProjectionSource::Source { emission }, budget)
+            .map_err(PackageRefusal::Exhausted)?;
     let index = WireIndex::new(
-        ProjectionSource::Source { emission },
+        std::borrow::Cow::Owned(equality),
         std::borrow::Cow::Owned(identities),
         admitted,
-        work_limit,
         std::borrow::Cow::Owned(projections),
     )
     .map_err(PackageRefusal::Fault)?;
@@ -544,17 +545,73 @@ type ExactProjections = BTreeMap<
     >,
 >;
 
+/// Equality decisions admitted once under the caller's shared native allowance.
+pub(crate) type EqualityDecisions = BTreeMap<
+    CheckedNodeId,
+    Result<quire_semantic_value::declaration::AdmittedEqualityDecision, EqualityWitnessRefusal>,
+>;
+
+pub(crate) fn admit_equality_decisions(
+    admitted: &CheckedPackageV2,
+    source: ProjectionSource<'_>,
+    budget: &mut quire_contract_model::NativeJoinBudget,
+) -> Result<EqualityDecisions, crate::NativeJoinFailure> {
+    let mut decisions = BTreeMap::new();
+    let rows = match &source {
+        ProjectionSource::Source { emission } => Some(emission.equality_rows()),
+        _ => None,
+    };
+    let Some(data) = admitted.checked_term_data() else {
+        return Ok(decisions);
+    };
+    for decision in &data.equality_decisions {
+        let result = match &source {
+            ProjectionSource::Source { emission } => {
+                let result = emission.admitted_equality_from(
+                    rows.as_ref().expect("source rows were retained"),
+                    admitted,
+                    &decision.application,
+                    &decision.occurrence,
+                    budget,
+                );
+                match result {
+                    Ok(value) => Ok(value),
+                    Err(error)
+                        if matches!(
+                            error.code,
+                            quire_contract_model::AdmittedEqualityReadErrorCode::WorkLimit
+                                | quire_contract_model::AdmittedEqualityReadErrorCode::StorageLimit
+                        ) =>
+                    {
+                        return Err(crate::NativeJoinFailure::Equality(Box::new(error)))
+                    }
+                    Err(_) => Err(EqualityWitnessRefusal::Unknown),
+                }
+            }
+            ProjectionSource::Bytes { equality: None } => Err(EqualityWitnessRefusal::Missing),
+            ProjectionSource::Bytes {
+                equality: Some(rows),
+            } => match rows.decision(admitted, &decision.application, budget) {
+                Ok(value) => Ok(value),
+                Err(crate::equality_file::EqualityDecisionFailure::Witness(error)) => Err(error),
+                Err(crate::equality_file::EqualityDecisionFailure::Exhausted(error)) => {
+                    return Err(crate::NativeJoinFailure::Equality(error))
+                }
+            },
+        };
+        decisions.insert(decision.application.clone(), result);
+    }
+    Ok(decisions)
+}
+
 struct WireIndex<'wire> {
-    source: ProjectionSource<'wire>,
+    equality: std::borrow::Cow<'wire, EqualityDecisions>,
     projections: std::borrow::Cow<'wire, ExactProjections>,
     admitted: &'wire CheckedPackageV2,
     nodes: BTreeMap<&'wire CheckedNodeId, &'wire CheckedSemanticNodeV2>,
     ids: BTreeMap<NodeKey, &'wire CheckedNodeId>,
     graph: WireGraph,
     identities: std::borrow::Cow<'wire, quire_contract_model::SelectedExactIdentities>,
-    /// The producer's equality rows, rejoined once on the first equality.
-    equality_rows: std::cell::OnceCell<crate::emit::equality_reader::EqualityRows>,
-    work_limit: u64,
 }
 
 /// What the projection reads beside the admitted package.
@@ -571,10 +628,9 @@ pub(crate) enum ProjectionSource<'wire> {
 
 impl<'wire> WireIndex<'wire> {
     fn new(
-        source: ProjectionSource<'wire>,
+        equality: std::borrow::Cow<'wire, EqualityDecisions>,
         identities: std::borrow::Cow<'wire, quire_contract_model::SelectedExactIdentities>,
         admitted: &'wire CheckedPackageV2,
-        work_limit: u64,
         projections: std::borrow::Cow<'wire, ExactProjections>,
     ) -> Result<Self, InternalFault> {
         let graph = crate::checked_v2::wire_graph(admitted)
@@ -589,15 +645,13 @@ impl<'wire> WireIndex<'wire> {
             ids.insert(key, &node.node_id);
         }
         Ok(Self {
-            source,
+            equality,
             projections,
             admitted,
             nodes,
             ids,
             graph,
             identities,
-            equality_rows: std::cell::OnceCell::new(),
-            work_limit,
         })
     }
 
@@ -613,23 +667,12 @@ impl<'wire> WireIndex<'wire> {
         admitted: &CheckedPackageV2,
         id: &CheckedNodeId,
     ) -> Result<quire_semantic_value::declaration::AdmittedEqualityDecision, BuildError> {
-        match &self.source {
-            ProjectionSource::Source { emission } => {
-                let row = emission
-                    .equality_producer_identity_rows()
-                    .iter()
-                    .find(|row| row.checked_node() == id)
-                    .ok_or_else(|| fault("reader-equality-has-producer-identity-row"))?;
-                let rows = self.equality_rows.get_or_init(|| emission.equality_rows());
-                emission
-                    .admitted_equality_from(rows, admitted, id, row.occurrence(), self.work_limit)
-                    .map_err(|_| fault("reader-equality-decision-is-admitted").into())
-            }
-            ProjectionSource::Bytes { equality, .. } => equality
-                .ok_or(BuildError::Equality(EqualityWitnessRefusal::Missing))?
-                .decision(admitted, id, self.work_limit)
-                .map_err(BuildError::Equality),
-        }
+        let _ = admitted;
+        self.equality
+            .get(id)
+            .cloned()
+            .unwrap_or(Err(EqualityWitnessRefusal::Unknown))
+            .map_err(BuildError::Equality)
     }
 
     /// The equality-witness refusal of
@@ -862,16 +905,14 @@ impl<'wire> BareWalker<'wire> {
     pub(crate) fn new(
         admitted: &'wire CheckedPackageV2,
         identities: &'wire quire_contract_model::SelectedExactIdentities,
-        equality: Option<&'wire ReadEqualityRows>,
-        work_limit: u64,
+        equality: &'wire EqualityDecisions,
         projections: &'wire ExactProjections,
     ) -> Result<Self, InternalFault> {
         Ok(Self {
             index: WireIndex::new(
-                ProjectionSource::Bytes { equality },
+                std::borrow::Cow::Borrowed(equality),
                 std::borrow::Cow::Borrowed(identities),
                 admitted,
-                work_limit,
                 std::borrow::Cow::Borrowed(projections),
             )?,
         })
