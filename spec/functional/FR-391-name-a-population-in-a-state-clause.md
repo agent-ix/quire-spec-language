@@ -27,6 +27,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-153
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-230
+    type: references
 ---
 # FR-391: Name a domain-package population in a state clause or a holds atom
 
@@ -63,14 +65,13 @@ result. A function body is not a population position: a function names a
 population only through a `Population<T>[N]` parameter, so no population is
 ambient in a function.
 
-A timed model's `time invariant when` and `urgent when` predicates are not
-yet population positions. They read one model state object as `self`
-(FR-230), and S3 does not yet give them a domain-package population binding;
-that scope is deferred to QSL-1659. Until then, a declared named population
-used in `allInstances`, `lookup`, a quantifier domain or a population form in
-either predicate is refused as a construct S3 does not check yet; the timed
-model is not emitted. This deferral does not remove the population scope of a
-unit-level state clause or a `holds` atom.
+The data predicate of a timed model's `time invariant when` and `urgent when`
+is a population position, read at `current` like a unit-level invariant. It
+reads the timed model's state object as `self` (FR-230 "Time invariants and
+urgency"), and the one population of such a model is its context population,
+so naming it adds no second domain. A time invariant's body is not a
+population position: it stays a conjunction of upper bounds on clocks of
+`self` (FR-230).
 
 Inside a refinement declaration FR-139 governs population names and forms;
 in a population position FR-391 does, with the typing and evaluation of the
@@ -182,7 +183,7 @@ read as a domain, `forall(o in M::counters : o.v < 2)`, means the same.
 ### Evaluation
 
 - The `ProtocolClause` evaluator SHALL evaluate `allInstances`, `lookup` and
-  a population domain in a state clause (FR-107), in a `holds` atom and in the predicate of a `terminal when` declaration (FR-124), reading the population named by the operand
+  a population domain in a state clause (FR-107), in a `holds` atom, in the predicate of a `terminal when` declaration (FR-124) and in the data predicate of a `time invariant when` or an `urgent when` (FR-230, at the discrete state's observation), reading the population named by the operand
   term's declaration key from the snapshot of the clause's observation: the
   `pre` snapshot for `pre` and the `post` snapshot for `post` (a `current`
   invariant reads the current snapshot), and under `pre(e)` the `pre`
@@ -200,7 +201,7 @@ read as a domain, `forall(o in M::counters : o.v < 2)`, means the same.
 ### Requirements
 
 - The named population SHALL be a domain of the clause's requirement record
-  (FR-104, "Requirements"; for a `holds` atom, of its temporal clause's record; for a `terminal when` predicate, of the model subject's deadlock-freedom item, FR-124), keyed as FR-104 keys it. A clause that names its
+  (FR-104, "Requirements"; for a `holds` atom, of its temporal clause's record; for a `terminal when` predicate, of the model subject's deadlock-freedom item, FR-124; for a `time invariant when` or `urgent when` predicate, the model subject's population root of FR-120 "Bounds", which the context population already is), keyed as FR-104 keys it. A clause that names its
   context population adds no second domain. A clause that names a different
   population adds that one, so a bound on it (FR-380) makes it a bounded
   domain.
@@ -231,6 +232,7 @@ read as a domain, `forall(o in M::counters : o.v < 2)`, means the same.
 
 - FR-106 (required populations) and FR-107 (clause evaluation), which this requirement amends; FR-084 (population binding and query results), FR-091 (`Name` forms), FR-093 and
   FR-094 (lowering and type nodes), FR-104 (state clause checking and the
-  requirement record), FR-380 (the authored bound).
+  requirement record), FR-380 (the authored bound); FR-230 (the timed
+  predicates whose population scope this requirement gives).
 - QSpec FR-153 and `shared-grammar.md` (`qualified-name` primary,
   `allInstances<T>(p)`).
