@@ -4,6 +4,9 @@
 //! over one compiled unit holding the `Counter` model, a `Reading` record
 //! trace subject and their temporal clauses.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
+
 use ix_trace_rs::trace;
 use qsl_analyze::monitor::{
     monitor, MonitorClause, MonitorLimits, MonitorOutcome, MonitorRecord, MonitorRefusal,
@@ -650,11 +653,10 @@ fn reading_sample(key: &quire_exact::NodeKey, level: i64) -> Value {
     )
 }
 
-/// TC-757: a handle cancelled from a second thread DURING a `Samples`
+/// TC-757: a handle cancelled by its own charge observer DURING a `Samples`
 /// evaluation stops it at a meter charge: `monitor` returns
-/// `Cancelled(Requested)` in a fraction of the time the same request takes
-/// uncancelled, so the poll is inside the evaluation and not only before or
-/// after it.
+/// `Cancelled(Requested)` at exactly the charge that cancelled it, so the poll
+/// is inside the evaluation and not only before or after it.
 #[trace("TC-757")]
 #[test]
 fn a_handle_cancelled_during_a_samples_evaluation_stops_it() {
@@ -683,31 +685,45 @@ fn a_handle_cancelled_during_a_samples_evaluation_stops_it() {
             cancel,
         )
     };
-    let started = std::time::Instant::now();
-    let completed = run(&Cancel::new())
-        .expect("the uncancelled request completes")
-        .into_value();
-    let uncancelled = started.elapsed();
-    assert_eq!(only(&completed).verdict, MonitorVerdict::Tested);
-
-    let cancel = Cancel::new();
-    let started = std::time::Instant::now();
-    let result = std::thread::scope(|scope| {
-        let handle = cancel.clone();
-        scope.spawn(move || {
-            std::thread::sleep(uncancelled / 10);
-            handle.cancel(CancelCause::Requested);
+    // A handle that counts every meter charge made under it and cancels at
+    // the `at`-th, so the stop point is a charge count, never a duration.
+    let counting = |at: Option<u64>| {
+        let charges = Arc::new(AtomicU64::new(0));
+        let slot: Arc<OnceLock<Cancel>> = Arc::new(OnceLock::new());
+        let (count, handle) = (Arc::clone(&charges), Arc::clone(&slot));
+        let cancel = Cancel::observing(move || {
+            let seen = count.fetch_add(1, Ordering::SeqCst) + 1;
+            if Some(seen) == at {
+                if let Some(cancel) = handle.get() {
+                    cancel.cancel(CancelCause::Requested);
+                }
+            }
         });
-        run(&cancel)
-    });
-    let cancelled = started.elapsed();
+        slot.set(cancel.clone()).expect("the slot is set once");
+        (cancel, charges)
+    };
+    let (live, total) = counting(None);
+    let completed = run(&live)
+        .expect("the uncounted request completes")
+        .into_value();
+    assert_eq!(only(&completed).verdict, MonitorVerdict::Tested);
+    let total = total.load(Ordering::SeqCst);
+    assert!(
+        total > 100,
+        "the evaluation charges the meter {total} times"
+    );
+
+    let at = total / 2;
+    let (cancel, charges) = counting(Some(at));
+    let result = run(&cancel);
     assert!(
         matches!(result, Err(StageFailure::Cancelled(CancelCause::Requested))),
         "{result:?}"
     );
-    assert!(
-        cancelled < uncancelled / 2,
-        "cancelled after {cancelled:?}, uncancelled {uncancelled:?}"
+    assert_eq!(
+        charges.load(Ordering::SeqCst),
+        at,
+        "the evaluation stopped at the charge that saw the cancellation"
     );
 }
 
@@ -1073,24 +1089,36 @@ fn domain_packages_the_strict_read_refuses_are_request_refusals() {
         .expect("one package")
         .clone();
 
+    // Each supplied-document defect of a unit with no library dependency
+    // reaches the strict read: the emission evidence holds no domain package
+    // document to conflict with (a map holds one document per identity), and
+    // the closure of a package with no `dependency_selections` is empty, so
+    // `Conflict` and `Closure` have no input through this API.
     let missing = qsl_semantics::model::intake::PackageInput::default();
-    let mut altered = world.documents.packages.clone();
-    altered
+    let mut truncated = world.documents.packages.clone();
+    truncated
         .get_mut(&identity)
         .expect("the package is supplied")
         .truncate(1);
-    for (name, packages) in [("missing", missing), ("altered", altered)] {
-        let (clause, code, cause, fields) =
-            request_defect(window_run(&world, &trace, &selections, &packages));
+    let mut another = world.documents.packages.clone();
+    another.insert(identity, document(true));
+    for (name, packages) in [
+        ("missing", missing),
+        ("truncated", truncated),
+        ("another document", another),
+    ] {
         assert_eq!(
-            (clause.as_str(), code.as_str(), cause.as_str()),
-            ("Window", "invalid_runtime_input", "invalid-value"),
+            request_defect(window_run(&world, &trace, &selections, &packages)),
+            (
+                "Window".to_owned(),
+                "invalid_runtime_input".to_owned(),
+                "invalid-value".to_owned(),
+                std::collections::BTreeMap::from([
+                    ("member", "packages".to_owned()),
+                    ("stage", "strict-read".to_owned()),
+                ])
+            ),
             "{name}"
-        );
-        assert_eq!(fields["member"], "packages", "{name}");
-        assert!(
-            ["conflict", "closure", "strict-read"].contains(&fields["stage"].as_str()),
-            "{name}: {fields:?}"
         );
     }
 }
