@@ -4,7 +4,7 @@
 use qsl_semantics::check::wire_id::structural_id;
 use qsl_semantics::check::{ModelTimeSource, TemporalClauseNode, TimeSourceKind};
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};
-use quire_exact::NodeKey;
+use quire_exact::{NodeKey, Rational};
 
 use super::PlanRoot;
 
@@ -101,23 +101,40 @@ impl PlanRoot {
         if sources.next().is_some() {
             return Err(refuse(ModelStepOrderRefusalCode::MissingTimeSource));
         }
-        if matches!(source.source, TimeSourceKind::Tick { .. })
-            && source.tick_operation_anchor.is_none()
-        {
-            return Err(refuse(ModelStepOrderRefusalCode::MissingTickOperation));
-        }
-        let bytes = quire_canonical::to_vec(&OrderValue(source), limits).map_err(|encoding| {
-            ModelStepOrderRefusal {
-                code: ModelStepOrderRefusalCode::Encoding,
-                encoding: Some(encoding),
-            }
-        })?;
+        let kind = match &source.source {
+            TimeSourceKind::Dense => SourceEncoding::Dense,
+            TimeSourceKind::Tick { period, .. } => SourceEncoding::Tick {
+                operation: source
+                    .tick_operation_anchor
+                    .as_ref()
+                    .ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingTickOperation))?,
+                period,
+            },
+        };
+        let bytes =
+            quire_canonical::to_vec(&OrderValue { source, kind }, limits).map_err(|encoding| {
+                ModelStepOrderRefusal {
+                    code: ModelStepOrderRefusalCode::Encoding,
+                    encoding: Some(encoding),
+                }
+            })?;
         Ok(ModelStepOrder { bytes })
     }
 }
 
 /// A borrowed encoding of existing checked facts, with no second model carrier.
-struct OrderValue<'a>(&'a ModelTimeSource);
+struct OrderValue<'a> {
+    source: &'a ModelTimeSource,
+    kind: SourceEncoding<'a>,
+}
+
+enum SourceEncoding<'a> {
+    Dense,
+    Tick {
+        operation: &'a NodeKey,
+        period: &'a Rational,
+    },
+}
 
 fn node<S: Sink + ?Sized>(writer: &mut Writer<'_, S>, key: &NodeKey) -> Result<(), Error> {
     structural_id(key).encode_into(writer)
@@ -125,7 +142,7 @@ fn node<S: Sink + ?Sized>(writer: &mut Writer<'_, S>, key: &NodeKey) -> Result<(
 
 impl Encode for OrderValue<'_> {
     fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
-        let source = self.0;
+        let source = self.source;
         writer.begin_object()?;
         writer.name("kind")?;
         writer.string("model-step")?;
@@ -137,23 +154,16 @@ impl Encode for OrderValue<'_> {
         node(writer, &source.time_dimension)?;
         writer.name("source")?;
         writer.begin_object()?;
-        match &source.source {
-            TimeSourceKind::Dense => {
+        match &self.kind {
+            SourceEncoding::Dense => {
                 writer.name("kind")?;
                 writer.string("dense")?;
             }
-            TimeSourceKind::Tick { period, .. } => {
+            SourceEncoding::Tick { operation, period } => {
                 writer.name("kind")?;
                 writer.string("tick")?;
                 writer.name("operation")?;
-                // The selected source was checked for this anchor before encoding.
-                if let Some(operation) = &source.tick_operation_anchor {
-                    node(writer, operation)?;
-                } else {
-                    return Err(Error::Protocol(
-                        quire_canonical::ProtocolViolation::Incomplete,
-                    ));
-                }
+                node(writer, operation)?;
                 writer.name("period")?;
                 writer.begin_object()?;
                 writer.name("numerator")?;
