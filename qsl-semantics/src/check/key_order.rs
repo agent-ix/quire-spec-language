@@ -39,6 +39,22 @@ pub(crate) fn sorted_by_key<T>(items: Vec<T>, key: impl Fn(&T) -> &NodeKey) -> V
     keyed.into_iter().map(|(_, item)| item).collect()
 }
 
+/// Whether every key of `subset` equals some key of `superset`, in time
+/// independent of how deep the keys nest: both are ranked once, equal keys
+/// sharing a class, so no comparison of two keys walks a shared chain
+/// (FR-356-AC-5).
+pub fn node_keys_within<'a>(
+    subset: impl IntoIterator<Item = &'a NodeKey>,
+    superset: impl IntoIterator<Item = &'a NodeKey>,
+) -> bool {
+    let mut ranking = Ranking::new();
+    let present: std::collections::HashSet<usize> =
+        superset.into_iter().map(|key| ranking.class(key)).collect();
+    subset
+        .into_iter()
+        .all(|key| present.contains(&ranking.class(key)))
+}
+
 /// No tree link.
 const NIL: usize = usize::MAX;
 
@@ -53,7 +69,8 @@ struct Shape {
 /// classes in a treap ordered by `NodeKey` order. A class's in-order
 /// position is its rank; two classes are ordered by walking each to the root.
 struct Ranking {
-    ids: HashMap<NodeKey, usize>,
+    /// Each key allocation reached, by [`identity`], and its shape.
+    ids: HashMap<usize, usize>,
     shapes: Vec<Shape>,
     /// Each shape's class.
     class_of: Vec<usize>,
@@ -72,6 +89,17 @@ struct Frame {
     key: NodeKey,
     children: Vec<NodeKey>,
     next: usize,
+    /// The shape of each nested key already done, in path order.
+    built: Vec<usize>,
+}
+
+/// What tells one key allocation from another: the address of its package
+/// name, which clones of a key share and distinct allocations do not. An
+/// empty package name has no allocation to tell, so such a key is never
+/// remembered.
+fn identity(key: &NodeKey) -> Option<usize> {
+    let package = key.package();
+    (!package.is_empty()).then(|| package.as_ptr() as usize)
 }
 
 impl Ranking {
@@ -90,37 +118,55 @@ impl Ranking {
         }
     }
 
+    /// The shape already built for this very key allocation, if any. Keys
+    /// are told apart by allocation, never by comparing them: two equal
+    /// keys built apart get two shapes that [`Self::insert`] then puts in
+    /// one class by their children's classes, so no step walks a chain.
+    fn built(&self, key: &NodeKey) -> Option<usize> {
+        self.ids.get(&identity(key)?).copied()
+    }
+
     /// The class of `key`, ranking it and every nested key not reached yet.
     /// The walk is an explicit stack: nesting depth is unbounded.
     fn class(&mut self, key: &NodeKey) -> usize {
-        if let Some(&id) = self.ids.get(key) {
+        if let Some(id) = self.built(key) {
             return self.class_of[id];
         }
         let mut stack = vec![Frame::new(key.clone())];
-        while let Some(frame) = stack.last_mut() {
+        loop {
+            let Some(frame) = stack.last_mut() else {
+                return 0;
+            };
             if let Some(child) = frame.children.get(frame.next) {
                 frame.next += 1;
-                if !self.ids.contains_key(child) {
-                    let child = child.clone();
-                    stack.push(Frame::new(child));
+                match self.built(child) {
+                    Some(id) => frame.built.push(id),
+                    None => {
+                        let child = child.clone();
+                        stack.push(Frame::new(child));
+                    }
                 }
                 continue;
             }
             let Some(frame) = stack.pop() else {
-                break;
+                return 0;
             };
             // Every child was reached before its parent is popped.
-            let children = frame.children.iter().map(|child| self.ids[child]).collect();
             let id = self.shapes.len();
             self.shapes.push(Shape {
                 key: frame.key.clone(),
-                children,
+                children: frame.built,
             });
-            self.ids.insert(frame.key, id);
+            if let Some(identity) = identity(&frame.key) {
+                self.ids.insert(identity, id);
+            }
             let class = self.insert(id);
             self.class_of.push(class);
+            match stack.last_mut() {
+                Some(parent) => parent.built.push(id),
+                None => return class,
+            }
         }
-        self.class_of[self.ids[key]]
     }
 
     /// Place shape `id`, whose children are all placed, in the treap: the
@@ -306,6 +352,7 @@ impl Frame {
             key,
             children,
             next: 0,
+            built: Vec::new(),
         }
     }
 }
@@ -322,6 +369,29 @@ fn mix(value: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ix_trace_rs::trace;
+
+    /// A chain of `depth` nested keys, built apart on every call.
+    fn chain(depth: usize, package: &str) -> NodeKey {
+        let mut key = NodeKey::new(package, vec![text("leaf")], 0).unwrap();
+        for _ in 0..depth {
+            key = NodeKey::new(package, vec![PathSegment::Node(key)], 0).unwrap();
+        }
+        key
+    }
+
+    /// FR-356-AC-5: equal chains built apart are one class, and a chain of another
+    /// package or depth is not in the set.
+    #[trace("TC-902", "FR-356-AC-5")]
+    #[test]
+    fn keys_built_apart_are_within_when_equal_and_not_when_package_or_depth_differs() {
+        let (one, two) = (chain(1_000, "p"), chain(1_000, "p"));
+        let other = chain(1_000, "q");
+        assert!(node_keys_within([&one], [&two]));
+        assert!(!node_keys_within([&one, &other], [&two]));
+        assert!(node_keys_within([&two], [&two, &other]));
+        assert!(!node_keys_within([&chain(999, "p")], [&two]));
+    }
 
     fn text(value: &str) -> PathSegment {
         PathSegment::Text(value.to_owned())
