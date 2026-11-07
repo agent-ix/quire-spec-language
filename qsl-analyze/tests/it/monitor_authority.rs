@@ -609,3 +609,53 @@ fn selection_prefix_denies_zero_remaining_storage_before_owning_a_walk_stack() {
         }
     }
 }
+
+#[trace("TC-1081", "FR-251-AC-49")]
+#[test]
+fn selection_prefix_composes_two_attempts_without_restoring_spent_work() {
+    use quire_contract_model::{NativeJoinBudget, NativeJoinChargeKind};
+    let locus = native_locus();
+    let mut budget = NativeJoinBudget::new(5, 100);
+    for attempt in 0..2 {
+        let root = tick_root();
+        let (view, subject) = observation::admitted(Some(vec![row(&root)]));
+        let mut source = root.checked_unit().source().identity().clone();
+        source.authority = "other".to_owned();
+        let claim = root.plan().subject().clone();
+        let error = root
+            .admit_authority(
+                PlanAuthoritySelection {
+                    source: &source,
+                    claim: &claim,
+                    observation_subject: &subject,
+                    observation_clock: &observation::clock(),
+                    observation_source: &observation::source(),
+                },
+                Some(view),
+                limits(),
+                &mut budget,
+                locus,
+            )
+            .unwrap_err();
+        if attempt == 0 {
+            assert!(matches!(error, PlanAuthorityRefusal::Source));
+            assert_eq!(budget.consumed().work, 3);
+        } else {
+            match error {
+                PlanAuthorityRefusal::Budget {
+                    denied,
+                    configured_bound,
+                    consumed,
+                    locus: first,
+                } => {
+                    assert_eq!(denied.kind, NativeJoinChargeKind::Work);
+                    assert_eq!(denied.amount, 2);
+                    assert_eq!(configured_bound, 5);
+                    assert_eq!(consumed.work, 4);
+                    assert_eq!(first, Some(locus));
+                }
+                other => panic!("second attempt restored an allowance: {other:?}"),
+            }
+        }
+    }
+}
