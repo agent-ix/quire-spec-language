@@ -33,20 +33,13 @@ pub(super) fn execute(
     let package =
         qsl_replay::ReplayPackage::read(raw_package.get().as_bytes(), limits.replay.input_bytes)
             .map_err(|error| Failure::decode("/package", error.to_string()))?;
-    for (index, provision) in array(&value["byte_provision"], "/byte_provision")?
-        .iter()
-        .enumerate()
-    {
-        if provision.get("authority").is_none() {
-            let result = Err(qsl_replay::ReplayRefusal::Request(
-                qsl_replay::ReplayRequestRefusal::MissingProvisionAuthority {
-                    pointer: format!("/byte_provision/{index}/authority"),
-                },
-            ));
+    let mut request = match decode(&value, inputs, root, package)? {
+        Ok(request) => request,
+        Err(refusal) => {
+            let result = Err(qsl_replay::ReplayRefusal::Request(refusal));
             return from_document(qsl_replay::OutcomeDocument::from_replay(&result), None);
         }
-    }
-    let mut request = decode(&value, inputs, root, package)?;
+    };
     if let Some((path, error)) = inputs.unreadable_bytes.first() {
         return Err(Failure::io(path, error));
     }
@@ -152,7 +145,7 @@ fn decode(
     inputs: &Inputs<'_>,
     root: &Path,
     raw_package: qsl_replay::ReplayPackage,
-) -> Result<ReplayRequestWire, Failure> {
+) -> Result<Result<ReplayRequestWire, qsl_replay::ReplayRequestRefusal>, Failure> {
     let package = &value["package"];
     let graph = qsl_replay::WireGraph::of_package_value(package)
         .map_err(|message| Failure::decode("/package", message))?;
@@ -305,6 +298,7 @@ fn decode(
         .and_then(|ordinal| u32::try_from(ordinal).ok())
         .ok_or_else(|| Failure::decode("/obligation_identity/ordinal", "ordinal outside u32"))?;
     let mut byte_provision = Vec::new();
+    let mut missing_authority = None;
     for (index, provision) in array(&value["byte_provision"], "/byte_provision")?
         .iter()
         .enumerate()
@@ -335,19 +329,21 @@ fn decode(
         if !resolved.starts_with(root) {
             return Err(Failure::decode(&pointer, "byte path escapes the corpus"));
         }
-        byte_provision.push((
-            text(
-                &provision["authority"],
-                &format!("/byte_provision/{index}/authority"),
-            )?
-            .to_owned(),
-            text(
-                &provision["identity"],
-                &format!("/byte_provision/{index}/identity"),
-            )?
-            .to_owned(),
-            bytes,
-        ));
+        match provision.get("authority") {
+            Some(authority) => byte_provision.push((
+                text(authority, &format!("/byte_provision/{index}/authority"))?.to_owned(),
+                text(
+                    &provision["identity"],
+                    &format!("/byte_provision/{index}/identity"),
+                )?
+                .to_owned(),
+                bytes,
+            )),
+            None => {
+                missing_authority
+                    .get_or_insert_with(|| format!("/byte_provision/{index}/authority"));
+            }
+        }
     }
     let dependencies = array(&value["dependencies"], "/dependencies")?
         .iter()
@@ -394,7 +390,12 @@ fn decode(
             ))
         })
         .collect::<Result<_, Failure>>()?;
-    Ok(ReplayRequestWire {
+    if let Some(pointer) = missing_authority {
+        return Ok(Err(
+            qsl_replay::ReplayRequestRefusal::MissingProvisionAuthority { pointer },
+        ));
+    }
+    Ok(Ok(ReplayRequestWire {
         package: raw_package,
         profile_selections: array(&value["profile_selections"], "/profile_selections")?
             .iter()
@@ -447,7 +448,7 @@ fn decode(
             })
             .map(|(_, bytes)| bytes.clone())
             .collect(),
-    })
+    }))
 }
 
 /// Decode corpus domain/bound tags directly into native DomainKey, DomainKind
