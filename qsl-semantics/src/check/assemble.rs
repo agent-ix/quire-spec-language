@@ -50,6 +50,7 @@ use quire_semantic_value::catalog::CatalogCode;
 use super::check::{
     EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignature, VariantTypeDeclaration,
 };
+use super::check::{UntypedKind, UntypedMember};
 use super::layer::LayerAdmission;
 use super::lowering::{model_declaration_key, strongly_connected, AdmittedModel};
 use super::model_gate::{self, ModelGateRefusal};
@@ -718,6 +719,7 @@ impl AssemblyCause {
                 TopologyFault::TwoRoots => "conflicting-definition",
                 TopologyFault::TargetCycle => "definition-cycle",
             },
+            Self::IllFormedBounds(TypeFormFault::UnitArithmetic(_)) => "operator-ineligible",
             Self::IllFormedBounds(_) | Self::OverNotObjectType { .. } => "type-mismatch",
             Self::ImportedTypeName { .. } => "operator-ineligible",
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
@@ -1133,6 +1135,7 @@ impl Unit {
 /// model alias instead ([`ModelSpellings`]).
 #[derive(Default)]
 struct Names {
+    unit_table: std::cell::RefCell<quire_semantic_value::quantity::UnitTable>,
     types: BTreeMap<String, Vec<ValueType>>,
     /// The unit's declared units by name, for `Quantity<u>`.
     units: BTreeMap<String, quire_exact::UnitId>,
@@ -1170,10 +1173,29 @@ impl TypeNames for UnitNames<'_> {
         self.spellings.object_type(self.unit, name)
     }
 
+    fn unit_value(
+        &self,
+        id: quire_exact::UnitId,
+    ) -> Option<quire_semantic_value::quantity::QuantityUnit> {
+        self.names.unit_table.borrow().get(id).cloned()
+    }
+
+    fn retain_unit(
+        &self,
+        unit: quire_semantic_value::quantity::QuantityUnit,
+    ) -> Result<quire_exact::UnitId, quire_semantic_value::semantic_node::IdentityRefusal> {
+        self.names.unit_table.borrow_mut().insert(unit)
+    }
+
     fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
         match self.spellings.spelled(self.unit, name) {
             Spelled::Model(_) => self.spellings.unit(self.unit, name),
-            Spelled::Other => self.names.units.get(name).cloned(),
+            Spelled::Other => self
+                .names
+                .units
+                .get(name)
+                .cloned()
+                .or_else(|| self.spellings.declared_unit(self.unit, name)),
         }
     }
 }
@@ -1268,6 +1290,8 @@ struct ModelTypes {
     scalars: Vec<(String, ValueType)>,
     model_records: ModelRecords,
     relationships: Vec<RelationshipDeclaration>,
+    /// The members declared with no checked type (FR-056-AC-43).
+    untyped_members: Vec<UntypedMember>,
     /// Each record value type's and event type's composite declaration node.
     handles: BTreeMap<DeclarationKey, NodeKey>,
 }
@@ -1381,6 +1405,8 @@ fn model_object_types(
     }
     let mut fields: BTreeMap<&DeclarationKey, Vec<FieldDeclaration>> = BTreeMap::new();
     let mut operations: BTreeMap<&DeclarationKey, Vec<OperationDeclaration>> = BTreeMap::new();
+    let mut untyped: BTreeMap<&DeclarationKey, Vec<UntypedEntry>> = BTreeMap::new();
+    let mut untyped_members = Vec::new();
     let mut meaning_handles = BTreeMap::<DeclarationKey, NodeKey>::new();
     for record in &package.records {
         if matches!(
@@ -1449,6 +1475,17 @@ fn model_object_types(
                     units,
                 ) {
                     Ok(declaration) => fields.entry(&field.owner).or_default().push(declaration),
+                    Err(Unmapped::Untyped(locus)) => {
+                        if let Some(name) = member_identity_name(&field.owner.node, &field.key.node)
+                        {
+                            untyped.entry(&field.owner).or_default().push((
+                                name.to_owned(),
+                                UntypedKind::Field,
+                                locus,
+                                Vec::new(),
+                            ));
+                        }
+                    }
                     Err(Unmapped::Unsupported) => errors.push(unsupported(&field.key.node)),
                     Err(Unmapped::Broken) => errors.push(broken(&field.key.node)),
                     Err(Unmapped::Float(width)) => {
@@ -1486,11 +1523,26 @@ fn model_object_types(
                     &variant_shapes,
                     units,
                 ) {
-                    Ok(declaration) => operations
-                        .entry(&operation.owner)
-                        .or_default()
-                        .push(declaration),
-                    Err(Unmapped::Unsupported) => errors.push(unsupported(&operation.key.node)),
+                    Ok((declaration, untyped_at)) => {
+                        if let (Some((locus, parameters)), Some(name)) = (
+                            untyped_at,
+                            member_identity_name(&operation.owner.node, &operation.key.node),
+                        ) {
+                            untyped.entry(&operation.owner).or_default().push((
+                                name.to_owned(),
+                                UntypedKind::Operation,
+                                locus,
+                                parameters,
+                            ));
+                        }
+                        operations
+                            .entry(&operation.owner)
+                            .or_default()
+                            .push(declaration)
+                    }
+                    Err(Unmapped::Unsupported | Unmapped::Untyped(_)) => {
+                        errors.push(unsupported(&operation.key.node))
+                    }
                     Err(Unmapped::Broken) => errors.push(broken(&operation.key.node)),
                     Err(Unmapped::Float(width)) => {
                         errors.push(error(AssemblyCause::FloatingType {
@@ -1614,6 +1666,16 @@ fn model_object_types(
         if let Some(declared) = operations.remove(key) {
             table.declare(identity.clone(), declared);
         }
+        for (name, kind, locus, parameters) in untyped.remove(key).unwrap_or_default() {
+            untyped_members.push(UntypedMember {
+                owner: identity.clone(),
+                owner_name: artifact.to_owned(),
+                name,
+                kind,
+                locus,
+                parameters,
+            });
+        }
         declarations.push(
             ObjectTypeDeclaration::new(
                 identity.clone(),
@@ -1699,7 +1761,9 @@ fn model_object_types(
                     field.value_type().clone(),
                     field.presence(),
                 )),
-                Err(Unmapped::Unsupported) => errors.push(unsupported(&field.key.node)),
+                Err(Unmapped::Unsupported | Unmapped::Untyped(_)) => {
+                    errors.push(unsupported(&field.key.node))
+                }
                 Err(Unmapped::Broken) => errors.push(broken(&field.key.node)),
                 Err(Unmapped::Float(width)) => errors.push(error(AssemblyCause::FloatingType {
                     width,
@@ -1786,7 +1850,7 @@ fn model_object_types(
                 units,
             ) {
                 Ok(value_type) => elements.push(value_type),
-                Err(Unmapped::Unsupported | Unmapped::InDefinition) => {
+                Err(Unmapped::Unsupported | Unmapped::Untyped(_) | Unmapped::InDefinition) => {
                     errors.push(unsupported(&position.key.node))
                 }
                 Err(Unmapped::Broken) => errors.push(broken(&position.key.node)),
@@ -1858,7 +1922,9 @@ fn model_object_types(
                     units,
                 ) {
                     Ok(value_type) => payload.push(value_type),
-                    Err(Unmapped::Unsupported) => errors.push(unsupported(&case.key.node)),
+                    Err(Unmapped::Unsupported | Unmapped::Untyped(_)) => {
+                        errors.push(unsupported(&case.key.node))
+                    }
                     Err(Unmapped::Broken) => errors.push(broken(&case.key.node)),
                     Err(Unmapped::Float(width)) => {
                         errors.push(error(AssemblyCause::FloatingType {
@@ -1952,6 +2018,7 @@ fn model_object_types(
             scalars,
             model_records,
             relationships,
+            untyped_members,
             handles: meaning_handles,
         })
     } else {
@@ -2109,6 +2176,9 @@ enum Unmapped {
         member_identity: String,
         member_path: String,
     },
+    /// A bare native `Text`, `Rational` or `Decimal`, which has no checked
+    /// type (FR-056-AC-43); the callers name where it was written.
+    Untyped(String),
     /// A key the admitted view does not resolve: a broken invariant of I1.
     Broken,
     /// A unit reference of an alias or sequence the member is typed by
@@ -2191,10 +2261,10 @@ fn model_value_type(
             // element types. Preserve them in intake; do not coerce either to
             // text or an integer during assembly.
             NativeValueType::String => ValueType::String,
-            // Intake refuses these: their domain parameters have no Semantic
-            // IR spelling, so no unparameterized kernel type stands for them.
+            // Bare, these have no checked type: the member is admitted and
+            // refused where used (FR-056-AC-43).
             NativeValueType::Rational | NativeValueType::Decimal | NativeValueType::Text => {
-                return Err(Unmapped::Unsupported)
+                return Err(Unmapped::Untyped(String::new()))
             }
         },
         ValueTypeRef::Unit(name) => ValueType::Quantity(
@@ -2235,8 +2305,10 @@ fn model_value_type(
                         QuantityCarrier::Rational(domain.clone()),
                     ))
                 }
+                // FR-505-AC-6: a Rational value type with no constraints
+                // has no checked type, as a bare native Rational has none.
                 ScalarValueDomain::Rational { domain: None, .. } => {
-                    return Err(Unmapped::Unsupported)
+                    return Err(Unmapped::Untyped(String::new()))
                 }
                 ScalarValueDomain::Native(NativeValueType::Uuid) => ValueType::Uuid,
                 ScalarValueDomain::Native(NativeValueType::Timestamp) => ValueType::Timestamp,
@@ -2382,6 +2454,7 @@ fn model_field(
             member_identity: field.key.node.clone(),
             member_path: "Field.typeRef".to_owned(),
         },
+        Unmapped::Untyped(_) => Unmapped::Untyped("Field.typeRef".to_owned()),
         error => error,
     })?;
     let declaration = FieldDeclaration::new(name, value_type, field.presence);
@@ -2402,6 +2475,13 @@ fn model_field(
 /// field rule), and its effect frame carried unchanged -- I1 already
 /// resolved every key it names against the whole domain package
 /// (`resolve_effect`), so the assembler does no further resolution over it.
+/// One member of no checked type: its name, kind, the locus of its type
+/// reference and, for an operation, each untyped parameter with its locus.
+type UntypedEntry = (String, UntypedKind, String, Vec<(String, String)>);
+
+/// An operation's first untyped locus and its untyped parameters.
+type UntypedOperation = (String, Vec<(String, String)>);
+
 fn model_operation(
     operation: &OperationMemberRecord,
     records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
@@ -2409,9 +2489,13 @@ fn model_operation(
     meaning_handles: &BTreeMap<DeclarationKey, NodeKey>,
     variant_shapes: &BTreeMap<&DeclarationKey, EnumShape>,
     units: &BTreeMap<String, quire_exact::UnitId>,
-) -> Result<OperationDeclaration, Unmapped> {
+) -> Result<(OperationDeclaration, Option<UntypedOperation>), Unmapped> {
     let name =
         member_identity_name(&operation.owner.node, &operation.key.node).ok_or(Unmapped::Broken)?;
+    // The first parameter or result of no checked type (FR-056-AC-43): the
+    // operation is declared without it and refused where it is used.
+    let mut untyped_locus: Option<String> = None;
+    let mut untyped_parameters: Vec<(String, String)> = Vec::new();
     // A single `Clock`, directly or through aliases, is a place.
     let clock = |value_type: &ValueTypeRef, multiplicity: Multiplicity| {
         multiplicity.upper == Some(1)
@@ -2452,8 +2536,18 @@ fn model_operation(
                 member_identity: parameter.key.node.clone(),
                 member_path: format!("Operation.params[{index}].typeRef"),
             },
+            Unmapped::Untyped(_) => Unmapped::Untyped(format!("Operation.params[{index}].typeRef")),
             error => error,
-        })?;
+        });
+        let value_type = match value_type {
+            Ok(value_type) => value_type,
+            Err(Unmapped::Untyped(locus)) => {
+                untyped_parameters.push((parameter_name.to_owned(), locus.clone()));
+                untyped_locus.get_or_insert(locus);
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         parameters.push((parameter_name.to_owned(), value_type));
     }
     let clock_result = operation
@@ -2485,14 +2579,24 @@ fn model_operation(
                     member_identity: operation.key.node.clone(),
                     member_path: "Operation.returns.typeRef".to_owned(),
                 },
+                Unmapped::Untyped(_) => Unmapped::Untyped("Operation.returns.typeRef".to_owned()),
                 error => error,
             })
         })
-        .transpose()?;
-    Ok(
+        .transpose();
+    let result = match result {
+        Ok(result) => result,
+        Err(Unmapped::Untyped(locus)) => {
+            untyped_locus.get_or_insert(locus);
+            None
+        }
+        Err(error) => return Err(error),
+    };
+    Ok((
         OperationDeclaration::new(name, parameters, result, operation.effect.clone())
             .with_clocks(clock_parameters, clock_result),
-    )
+        untyped_locus.map(|locus| (locus, untyped_parameters)),
+    ))
 }
 
 /// FR-103: each kept `requires`/`ensures` clause the driver parsed for
@@ -2719,6 +2823,7 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
 /// rounding mode must be spellable (FR-091-OQ-4: floating types are admitted).
 fn check_names(
     unit: &Unit,
+    names: &Names,
     spellings: &ModelSpellings,
     source: Option<&RawSourceRef>,
     imports: &BTreeMap<String, AdmittedImport>,
@@ -2745,21 +2850,10 @@ fn check_names(
                 span: form.span,
             }),
             TypeFormHead::Builtin(BuiltinType::Quantity) => {
-                for target in &form.arguments {
-                    if let TypeFormHead::Name(name) = &target.head {
-                        if !unit
-                            .units
-                            .iter()
-                            .any(|declared| declared.name.name == name.name)
-                            && spellings.unit(source, &name.name).is_none()
-                        {
-                            errors.push(AssemblyError {
-                                cause: AssemblyCause::UnresolvedTypeName {
-                                    name: name.name.clone(),
-                                },
-                                span: target.span,
-                            });
-                        }
+                if let Some(target) = form.arguments.first() {
+                    let scope = names.in_unit(spellings, source);
+                    if let Err(error) = super::type_form::quantity_unit(&scope, target) {
+                        errors.push(resolution_error(unit, error));
                     }
                 }
             }
@@ -2769,7 +2863,8 @@ fn check_names(
                         TypeFormHead::Name(name) => name,
                         TypeFormHead::Builtin(_)
                         | TypeFormHead::Collection(_)
-                        | TypeFormHead::Population => continue,
+                        | TypeFormHead::Population
+                        | TypeFormHead::UnitExpression(_) => continue,
                     };
                     if spellings.object_type(source, &name.name).is_none() {
                         errors.push(AssemblyError {
@@ -2825,7 +2920,8 @@ fn check_names(
                 | BuiltinType::Option,
             )
             | TypeFormHead::Collection(_)
-            | TypeFormHead::Population => stack.extend(&form.arguments),
+            | TypeFormHead::Population
+            | TypeFormHead::UnitExpression(_) => stack.extend(&form.arguments),
         }
     }
 }
@@ -2865,7 +2961,11 @@ fn resolution_error(unit: &Unit, error: TypeFormError) -> AssemblyError {
         | TypeFormFault::DenominatorBelowOne
         | TypeFormFault::MalformedDecimal
         | TypeFormFault::EmptyTextBounds
-        | TypeFormFault::EmptyCardinality) => AssemblyCause::IllFormedBounds(fault),
+        | TypeFormFault::EmptyCardinality
+        | TypeFormFault::UnitArithmetic(_)) => AssemblyCause::IllFormedBounds(fault),
+        TypeFormFault::UnitIdentity(cause) => {
+            AssemblyCause::handle(NodeKeyRefusal::Identity(cause))
+        }
         TypeFormFault::ClockNotChecked => AssemblyCause::TimedNotChecked(TimedConstruct::Clock),
     };
     AssemblyError {
@@ -3634,12 +3734,6 @@ impl PackageDeclarations {
             &package_name,
             limits,
         );
-        let model_units = quantity_result
-            .as_ref()
-            .ok()
-            .map(|quantities| super::check::declared_unit_ids(&quantities.graph))
-            .unwrap_or_default();
-
         // Each `model` declaration's admitted domain package, and its
         // object types by name.
         let mut admitted = Vec::with_capacity(selections.models.len());
@@ -3649,6 +3743,7 @@ impl PackageDeclarations {
         let mut model_scalars = Vec::new();
         let mut model_records = ModelRecords::default();
         let mut model_relationships = Vec::new();
+        let mut model_untyped_members = Vec::new();
         let mut operations = OperationTable::default();
         let mut object_spans = BTreeMap::new();
         let mut operation_clauses = Vec::new();
@@ -3670,6 +3765,18 @@ impl PackageDeclarations {
                     .map(|unit| (unit.key(), unit.id()))
                     .collect()
             })
+            .unwrap_or_default();
+        // The units of the selected packages, which a bare unit name reaches
+        // only through `ModelSpellings::declared_unit`.
+        let package_unit_ids: Vec<quire_exact::UnitId> = imported
+            .units
+            .values()
+            .filter_map(|imported_unit| graph_unit_ids.get(&imported_unit.key).cloned())
+            .collect();
+        let model_units = quantity_result
+            .as_ref()
+            .ok()
+            .map(|quantities| super::check::declared_unit_ids(&quantities.graph, &package_unit_ids))
             .unwrap_or_default();
         for (selection, source_unit) in selections.models.iter().zip(&model_selection_units) {
             let unit_source = sources.get(*source_unit).unwrap_or(&source);
@@ -3713,12 +3820,21 @@ impl PackageDeclarations {
                     })
                     .collect(),
             );
+            // A type of the package names a unit the compiling unit declares,
+            // or else a unit the package's own document declares
+            // (FR-505-AC-7, AC-9).
+            let package_units = match admitted.last() {
+                Some(admitted_model) => {
+                    super::check::package_unit_ids(&model_units, admitted_model)
+                }
+                None => model_units.clone(),
+            };
             match model_object_types(
                 &selection.alias,
                 model,
                 selection.span,
                 &mut operations,
-                &model_units,
+                &package_units,
             ) {
                 Ok(types) => {
                     model_spellings.set_names(package, types.package_names(&selection.alias));
@@ -3731,6 +3847,7 @@ impl PackageDeclarations {
                     model_scalars.extend(types.scalars);
                     model_records.extend(types.model_records);
                     model_relationships.extend(types.relationships);
+                    model_untyped_members.extend(types.untyped_members);
                     let handles = types.handles;
                     match operation_clause_declarations(&selection.alias, model, &operations) {
                         Ok(resolved) => operation_clauses.extend(resolved),
@@ -4057,11 +4174,30 @@ impl PackageDeclarations {
             }
         };
 
+        let mut names = Names {
+            unit_table: std::cell::RefCell::new(
+                quantities
+                    .as_ref()
+                    .map(|assembled| {
+                        quire_semantic_value::quantity::UnitTable::declared(&assembled.graph)
+                    })
+                    .unwrap_or_default(),
+            ),
+            units: quantities
+                .as_ref()
+                .map(|assembled| {
+                    super::check::declared_unit_ids(&assembled.graph, &package_unit_ids)
+                })
+                .unwrap_or_default(),
+            ..Names::default()
+        };
+
         // Every type form names declarations of the unit or admitted model
         // object and record/event types.
         for alias in &unit.aliases {
             check_names(
                 &unit,
+                &names,
                 &model_spellings,
                 source_owners.get(&alias.name.name),
                 &qualified,
@@ -4075,6 +4211,7 @@ impl PackageDeclarations {
                     for field in fields {
                         check_names(
                             &unit,
+                            &names,
                             &model_spellings,
                             source_owners.get(&composite.name.name),
                             &qualified,
@@ -4087,6 +4224,7 @@ impl PackageDeclarations {
                     for element in elements {
                         check_names(
                             &unit,
+                            &names,
                             &model_spellings,
                             source_owners.get(&composite.name.name),
                             &qualified,
@@ -4099,6 +4237,7 @@ impl PackageDeclarations {
                     for payload in members.iter().flat_map(|member| &member.payload) {
                         check_names(
                             &unit,
+                            &names,
                             &model_spellings,
                             source_owners.get(&composite.name.name),
                             &qualified,
@@ -4113,6 +4252,7 @@ impl PackageDeclarations {
             for form in signature_type_forms(function) {
                 check_names(
                     &unit,
+                    &names,
                     &model_spellings,
                     source_owners.get(&function.name),
                     &qualified,
@@ -4123,6 +4263,7 @@ impl PackageDeclarations {
             for form in body_type_forms(function) {
                 check_names(
                     &unit,
+                    &names,
                     &model_spellings,
                     source_owners.get(&function.name),
                     &qualified,
@@ -4135,6 +4276,7 @@ impl PackageDeclarations {
             for form in expression_type_forms([&body.body]) {
                 check_names(
                     &unit,
+                    &names,
                     &model_spellings,
                     source_owners.get(&body.label.name),
                     &qualified,
@@ -4151,6 +4293,7 @@ impl PackageDeclarations {
             for form in expression_type_forms(operands) {
                 check_names(
                     &unit,
+                    &names,
                     &model_spellings,
                     source_owners.get(&claim.name.name),
                     &qualified,
@@ -4163,6 +4306,7 @@ impl PackageDeclarations {
             for form in expression_type_forms([&clause.body]) {
                 check_names(
                     &unit,
+                    &names,
                     &model_spellings,
                     source_owners.get(&clause.name.name),
                     &qualified,
@@ -4176,13 +4320,6 @@ impl PackageDeclarations {
         }
 
         // Each declared record and tuple's handle, over the unit's owner.
-        let mut names = Names {
-            units: quantities
-                .as_ref()
-                .map(|assembled| super::check::declared_unit_ids(&assembled.graph))
-                .unwrap_or_default(),
-            ..Names::default()
-        };
         // Each enum, admitted under the unit's owner: its declaration key
         // and its members' keys are minted here (FB-13).
         let mut enums = Vec::with_capacity(unit.enums.len());
@@ -4595,7 +4732,9 @@ impl PackageDeclarations {
         package.sources = sources;
         package.source_owners = source_owners;
         package.execution_point_keys = execution_points.keys().cloned().collect();
-        package.types = types;
+        let mut type_units = types.units().clone();
+        type_units.append(names.unit_table.into_inner());
+        package.types = types.with_units(type_units);
         package.operations = operations;
         package.operation_clauses = operation_clauses;
         package.type_invariants = type_invariants;
@@ -4957,6 +5096,7 @@ impl PackageDeclarations {
         package.declared_type_spans = declared_type_spans;
         package.model_records = model_records;
         package.relationships = Relationships::new(model_relationships);
+        package.untyped_members = model_untyped_members;
         package.imports = qualified;
         Ok(package)
     }

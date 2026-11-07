@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 
 use super::value_graph::ValueGraph;
 use super::{intake, wire::*, work::Work, Dimension, Error, Invalid, Unsupported};
-use crate::linking::composed::definition_source::RegisteredDefinition as Registered;
+use crate::linking::definition_source::RegisteredDefinition as Registered;
 use crate::number::{NumberWire, ProtocolNumber};
 
 type Result<T = ()> = std::result::Result<T, Error>;

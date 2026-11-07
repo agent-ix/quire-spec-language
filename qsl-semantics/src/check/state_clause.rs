@@ -898,10 +898,68 @@ pub(crate) fn check_clause(
     check_clause_in(form, input, cx, None)
 }
 
+/// [`check_clause`] in a population position (FR-391) that names exactly
+/// the populations of `named`: a timed model's predicate names its own
+/// model's population (FR-230-AC-58).
+pub(crate) fn check_clause_named(
+    form: &ClauseView<'_>,
+    input: &ClauseDeclarations<'_>,
+    cx: &mut CheckContext<'_, Scope>,
+    named: super::check::NamedScope,
+) -> Result<TypedStateClause, CheckRefusal> {
+    check_clause_in(form, input, cx, Some(named))
+}
+
 /// [`check_clause`] in a population position (FR-391) when `named` is
 /// given: the body may name the populations of `named`, each a domain of
 /// the clause's record.
 fn check_clause_in(
+    form: &ClauseView<'_>,
+    input: &ClauseDeclarations<'_>,
+    cx: &mut CheckContext<'_, Scope>,
+    named: Option<super::check::NamedScope>,
+) -> Result<TypedStateClause, CheckRefusal> {
+    check_clause_typed(form, input, cx, named).map_err(|refusal| {
+        // FR-056-AC-43: a clause naming a parameter of its operation that has
+        // no checked type reaches an untyped member, not a missing name.
+        let CheckCause::MissingName(name) = &refusal.cause else {
+            return refusal;
+        };
+        let Some(operation) = form.operation.as_ref() else {
+            return refusal;
+        };
+        let (declaring, operation_name) = operation_reference(operation);
+        let untyped = input
+            .scope
+            .untyped_member(
+                &declaring,
+                &operation_name,
+                super::check::UntypedKind::Operation,
+            )
+            .and_then(|member| {
+                let (_, locus) = member
+                    .parameters
+                    .iter()
+                    .find(|(parameter, _)| parameter == name)?;
+                Some(CheckCause::UntypedMember(Box::new(
+                    super::refusal::UntypedMemberRefusal {
+                        owner: member.owner_name.clone(),
+                        member: member.name.clone(),
+                        locus: locus.clone(),
+                    },
+                )))
+            });
+        match untyped {
+            Some(cause) => CheckRefusal {
+                location: refusal.location,
+                cause,
+            },
+            None => refusal,
+        }
+    })
+}
+
+fn check_clause_typed(
     form: &ClauseView<'_>,
     input: &ClauseDeclarations<'_>,
     cx: &mut CheckContext<'_, Scope>,

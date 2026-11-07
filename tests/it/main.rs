@@ -38,7 +38,6 @@ mod abstraction_relation_inert;
 mod assessment_artifact_kinds;
 mod call_replay_context_items;
 mod call_requirements_items;
-mod checked_temporal_successors;
 mod clause_kind_canonical;
 mod cli;
 mod compile_command;
@@ -57,11 +56,6 @@ mod composed_proofs;
 mod composed_query_proofs;
 mod composed_scopes;
 mod composed_syntax;
-mod composed_temporal_activation;
-mod composed_temporal_evaluation;
-mod composed_temporal_limits;
-mod composed_temporal_mapping;
-mod composed_temporal_mapping_v2;
 mod composed_type_pipeline;
 mod composed_types;
 mod config_version_spine;
@@ -92,6 +86,7 @@ mod checked_handoff;
 mod checked_handoff_healthy;
 #[cfg(feature = "checked-handoff")]
 mod checked_views;
+mod compound_quantity_types;
 mod fairness_item_path;
 mod hybrid_request_items;
 mod layer_crate_reexports;
@@ -106,17 +101,14 @@ mod model_type_unit_roots;
 mod name_resolution_confinement;
 mod native_boundaries;
 mod native_checking;
-#[cfg(feature = "checked-handoff")]
-mod native_full_predecessor;
 mod native_linking;
 mod native_model;
 mod native_model_profiles;
 mod native_model_qualification;
-#[cfg(feature = "checked-handoff")]
-mod native_owner_report;
 mod nesting_levels;
 mod parser;
 mod protocol_artifact;
+mod protocol_artifact_versions;
 mod protocol_number_root_module;
 mod replay_multi_source;
 mod request_builder;
@@ -133,9 +125,10 @@ mod temporal_negotiation;
 mod temporal_package_route;
 #[cfg(feature = "checked-handoff")]
 mod temporal_package_route_formula;
+#[cfg(feature = "checked-handoff")]
+mod temporal_result_evidence;
+mod temporal_v1_retired;
 mod text_enum_identity;
 mod unbounded_declarations;
 mod union_nodes;
 mod v2_refusal_code_bridge;
-#[cfg(feature = "checked-handoff")]
-mod valuation_evidence;

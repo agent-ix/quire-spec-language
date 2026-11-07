@@ -32,7 +32,7 @@ use super::refusal::{
 };
 use crate::model::clause_observation::Observation;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
-use quire_exact::{CollectionType, Value, ValueType};
+use quire_exact::{CollectionType, QuantityCarrier, Value, ValueType};
 use quire_exact::{
     DecimalType, Integer, IntegerInterval, NonZeroInteger, Rational, RationalDomain,
 };
@@ -1046,6 +1046,23 @@ impl<'a> Definedness<'a> {
         self.stable_path(path, facts)
     }
 
+    /// A carried decimal or rational sum is proved when its prefix totals
+    /// are (QSpec FR-142 "Carried quantity sum").
+    fn carried_prefixes(
+        node: CheckedNode<'_>,
+        proved: Option<Interval>,
+    ) -> Result<(), CheckRefusal> {
+        proved.map(|_| ()).ok_or_else(|| {
+            Self::refuse(
+                node,
+                Obligation::Range {
+                    required: Box::new(ProvedInterval::default()),
+                    proved: Box::new(ProvedInterval::default()),
+                },
+            )
+        })
+    }
+
     fn refuse(node: CheckedNode<'_>, obligation: Obligation) -> CheckRefusal {
         CheckRefusal {
             location: node.location().clone(),
@@ -1344,6 +1361,35 @@ impl<'a> Definedness<'a> {
                             ))
                         }
                     }
+                    // QSpec FR-142 "Carried quantity sum": every running total
+                    // and the empty sum's zero lie in the carrier. The summand
+                    // has the very carried type, so its members are the
+                    // carrier's.
+                    (ValueType::CarriedQuantity(carried), _) => match carried.carrier() {
+                        QuantityCarrier::Integer { domain, .. } => {
+                            let required = Interval::of_domain(domain);
+                            let proved = prefix_sums(&required, &size);
+                            if proved.within(&required) {
+                                Ok(())
+                            } else {
+                                Err(Self::refuse(
+                                    node,
+                                    Obligation::Range {
+                                        required: Box::new(required.proved()),
+                                        proved: Box::new(proved.proved()),
+                                    },
+                                ))
+                            }
+                        }
+                        QuantityCarrier::Decimal(carrier) => Self::carried_prefixes(
+                            node,
+                            decimal_sum_prefixes(carrier, carrier, &size),
+                        ),
+                        QuantityCarrier::Rational(carrier) => Self::carried_prefixes(
+                            node,
+                            rational_sum_prefixes(carrier, carrier, &size),
+                        ),
+                    },
                     // These result families have no additional bounded
                     // definedness domain in this proof system.
                     _ => Ok(()),

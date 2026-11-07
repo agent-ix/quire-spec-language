@@ -957,6 +957,17 @@ pub(super) fn type_fault_class(fault: &super::type_form::TypeFormFault) -> (Code
             (Code::MissingDeclaration, "missing-name")
         }
         F::AmbiguousName(_) => (Code::AmbiguousDeclaration, "ambiguous-name"),
+        F::UnitArithmetic(_) => (Code::IllTyped, "operator-ineligible"),
+        F::UnitIdentity(IdentityRefusal::InputBytes { .. }) => (
+            Code::StageLimitExceeded,
+            Setting::IdentityInputBytes.kind().catalog_cause(),
+        ),
+        F::UnitIdentity(IdentityRefusal::Allocation { .. }) => {
+            (Code::ResourceExhausted, "allocation-failed")
+        }
+        F::UnitIdentity(IdentityRefusal::NonCanonical) => {
+            (Code::RuntimeInvariant, "established-invariant-broken")
+        }
         F::Malformed
         | F::EmptyInterval
         | F::IntegerOutsideI128(_)
@@ -2611,6 +2622,10 @@ pub enum NavigationBound {
 /// The typed cause of a checking refusal.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CheckCause {
+    /// The owner's declared-type traversal could not allocate its native request.
+    TypeCheckAllocation(quire_semantic_value::declaration::StorageRequest),
+    /// The owner's declared-type traversal could not represent its native request.
+    TypeCheckCapacity(quire_semantic_value::declaration::StorageRequest),
     /// A value operator prohibited by the declaration's selected profile.
     ProfileProhibitedOperator(qsl_forms::BinaryOperator),
     /// A typed equality whose operand families exceed its selected layer.
@@ -2643,6 +2658,10 @@ pub enum CheckCause {
         /// The span of the whole declaration.
         span: Span,
     },
+    /// A use of a member the model declares with no checked type (a bare
+    /// native `Text`, `Rational` or `Decimal`, FR-056-AC-43), naming the
+    /// owner and the declaration locus of its type reference.
+    UntypedMember(Box<UntypedMemberRefusal>),
     /// An `abstraction` declaration's name or binding refused (FR-304).
     Abstraction(Box<super::abstraction::AbstractionRefusal>),
     /// A refinement declaration's checking refused (FR-135 to FR-137).
@@ -3229,6 +3248,66 @@ pub enum InvalidDispatchDeclaration {
 }
 
 impl CheckCause {
+    fn type_check_failure(&self) -> Option<&Self> {
+        let mut current = self;
+        loop {
+            current = match current {
+                Self::TypeCheckAllocation(_) | Self::TypeCheckCapacity(_) => return Some(current),
+                Self::StateModel(refusal) => &refusal.cause,
+                Self::TypeInvariant(refusal) => &refusal.cause,
+                Self::Terminal(refusal) => &refusal.cause,
+                Self::Refinement(refusal) => match &refusal.cause {
+                    super::refinement::RefinementCause::Check(cause) => cause,
+                    _ => return None,
+                },
+                Self::StateGraph(cause) => match cause.as_ref() {
+                    StateGraphCause::Predicate { cause, .. } => cause,
+                    _ => return None,
+                },
+                Self::ProtocolAnchor(cause) => match cause.as_ref() {
+                    ProtocolAnchorCause::KeyClause { cause, .. }
+                    | ProtocolAnchorCause::SlotClause { cause, .. } => cause,
+                    _ => return None,
+                },
+                Self::Temporal(cause) => {
+                    let mut temporal = cause.as_ref();
+                    loop {
+                        match temporal {
+                            TemporalCause::TimedPredicate { cause, .. } => break cause,
+                            TemporalCause::Multiple { causes } => temporal = causes.first()?,
+                            _ => return None,
+                        }
+                    }
+                }
+                _ => return None,
+            };
+        }
+    }
+
+    /// The checking stage of a declared-type traversal storage failure.
+    pub fn type_check_stage(&self) -> Option<CheckingStage> {
+        self.type_check_failure().map(|_| CheckingStage::Typing)
+    }
+
+    /// Catalog fields for an owner's declared-type storage failure, in its
+    /// native unit; these requests are not configured limits.
+    pub fn type_check_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
+        use quire_semantic_value::declaration::StorageUnit;
+        let (field, request) = match self.type_check_failure()? {
+            Self::TypeCheckAllocation(request) => ("requested", request),
+            Self::TypeCheckCapacity(request) => ("upstream", request),
+            _ => return None,
+        };
+        let unit = match request.unit() {
+            StorageUnit::Bytes => "bytes",
+            StorageUnit::AdditionalElements => "additional-elements",
+        };
+        Some(std::collections::BTreeMap::from([(
+            field,
+            format!("{unit}:{}", request.amount()),
+        )]))
+    }
+
     /// This cause without the type-level invariant it was found in (FR-366):
     /// a reader that classifies a cause by its kind (a reached limit, an
     /// internal fault, a denied dispatch link) reads through the wrapper.
@@ -3285,6 +3364,7 @@ impl CheckCause {
             Self::ProfileProhibitedOperator(_) | Self::LayerEquality { .. } => {
                 Code::UnsupportedConstruct
             }
+            Self::UntypedMember(_) => Code::IllTyped,
             Self::StateModel(cause) => cause.cause.code(),
             Self::TypeInvariant(cause) => cause.cause.code(),
             Self::Terminal(cause) => cause.cause.code(),
@@ -3297,6 +3377,7 @@ impl CheckCause {
             Self::ModelConformance(failure) => failure.code,
             Self::ModelIncomplete(_) => Code::ResourceExhausted,
             Self::TypeAdmission { code, .. } => *code,
+            Self::TypeCheckAllocation(_) | Self::TypeCheckCapacity(_) => Code::ResourceExhausted,
             Self::IllTyped(_)
             | Self::IdentityObservingForm(_)
             | Self::NonBooleanRoot
@@ -3359,6 +3440,7 @@ impl CheckCause {
     /// The closed cause tag, where the code has one.
     pub fn cause(&self) -> Option<&'static str> {
         match self {
+            Self::UntypedMember(_) => Some("operator-ineligible"),
             Self::StateModel(cause) => cause.cause.cause(),
             Self::TypeInvariant(cause) => cause.cause.cause(),
             Self::Terminal(cause) => cause.cause.cause(),
@@ -3374,6 +3456,8 @@ impl CheckCause {
             // charge is an insufficient next charge, never a stage limit.
             Self::ModelIncomplete(_) => Some("insufficient-next-charge"),
             Self::TypeAdmission { cause, .. } => Some(cause),
+            Self::TypeCheckAllocation(_) => Some("allocation-failed"),
+            Self::TypeCheckCapacity(_) => Some("reservation-size-overflow"),
             Self::IllTyped(cause) => cause.tag(),
             Self::WrongSnapshot(cause) => Some(cause.as_str()),
             Self::NonBooleanRoot => Some("non-boolean-root"),
@@ -3490,6 +3574,19 @@ pub struct CheckRefusal {
     pub cause: CheckCause,
 }
 
+/// A member with no checked type used in a clause (FR-056-AC-43): the object
+/// type that declares it, the member, and where its type reference is written.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct UntypedMemberRefusal {
+    /// The declaring object type's name.
+    pub owner: String,
+    /// The field or operation name.
+    pub member: String,
+    /// The locus of the type reference: `Field.typeRef`,
+    /// `Operation.params[i].typeRef` or `Operation.returns.typeRef`.
+    pub locus: String,
+}
+
 /// Refusals owned by one protocol declaration while the rest of the unit
 /// continues checking (FR-383 per-protocol results).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -3505,6 +3602,22 @@ pub struct ProtocolCheckRefusal {
 }
 
 impl CheckRefusal {
+    pub(crate) fn from_type_check(
+        location: &Location,
+        failure: quire_semantic_value::declaration::TypeCheckError,
+    ) -> Self {
+        use quire_semantic_value::declaration::TypeCheckError;
+        let cause = match failure {
+            TypeCheckError::Refused(refusal) => return Self::from_ill_typed(location, refusal),
+            TypeCheckError::Allocation(request) => CheckCause::TypeCheckAllocation(request),
+            TypeCheckError::Capacity(request) => CheckCause::TypeCheckCapacity(request),
+        };
+        Self {
+            location: location.clone(),
+            cause,
+        }
+    }
+
     pub(crate) fn ill_typed(location: &Location, cause: IllTypedCause) -> Self {
         Self {
             location: location.clone(),

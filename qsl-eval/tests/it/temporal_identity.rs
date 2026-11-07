@@ -86,7 +86,7 @@ fn identity_of(env: &Env, asked: &EvidenceRequest) -> String {
 /// is evaluated, and its result's `authenticated` holds the package, the
 /// declaration, the profile definition, the clock name and the clock
 /// configuration of the lock and the `temporal_bindings` row.
-#[trace("FR-522-AC-9", "TC-1317")]
+#[trace("FR-522-AC-9", "TC-1317", "FR-043-AC-14")]
 #[test]
 fn an_agreeing_request_is_evaluated_and_reports_the_rows_it_agreed_with() {
     for (kind, env) in kinds() {
@@ -214,7 +214,13 @@ fn a_differing_binding_is_an_admission_error_that_charges_nothing() {
 /// FR-522-AC-15 and AC-16: evaluating one request of each of the three
 /// clause kinds twice gives one `result_identity` per request, and the three
 /// identities are pairwise distinct.
-#[trace("FR-522-AC-15", "FR-522-AC-16", "TC-1317")]
+#[trace(
+    "FR-522-AC-15",
+    "FR-522-AC-16",
+    "TC-1317",
+    "FR-043-AC-2",
+    "FR-043-AC-13"
+)]
 #[test]
 fn a_request_has_one_result_identity_and_the_three_clause_kinds_have_three() {
     let identities: Vec<(&str, String)> = kinds()

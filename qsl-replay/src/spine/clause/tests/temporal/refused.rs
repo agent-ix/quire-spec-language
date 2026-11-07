@@ -130,6 +130,7 @@ fn a_checked_invariant_refused_condition_reports_the_internal_failure() {
         result: Err(qsl_eval::temporal::TemporalRefusal::ConditionRefused { at }),
         stopped: Some(qsl_eval::temporal::HoldsStop::Refused { at, evaluation }),
         undefined: None,
+        decisive: None,
     };
     let (disposition, refused_at) = crate::spine::clause::temporal::observed_disposition(
         observed.stopped,

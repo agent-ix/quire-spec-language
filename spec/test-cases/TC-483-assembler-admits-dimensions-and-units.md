@@ -22,7 +22,7 @@ This catches: unnormalized or unsorted terms; an unreduced scale or offset
 unit name read as a type; `UnitGraph::admit` reached only from tests; and a
 topology error reported as a reader's `invalid_semantic_graph`.
 
-Scope: FR-091-AC-33 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-50, FR-091-AC-55, FR-091-AC-60, FR-091-AC-62 to FR-091-AC-64, FR-091-AC-67, FR-091-AC-68, FR-091-AC-71, FR-091-AC-72, FR-091-AC-73, FR-092-AC-25, FR-092-AC-29, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37, FR-093-AC-43, FR-093-AC-44, FR-093-AC-46, FR-093-AC-60.
+Scope: FR-091-AC-33 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-50, FR-091-AC-55, FR-091-AC-60, FR-091-AC-62 to FR-091-AC-64, FR-091-AC-67, FR-091-AC-68, FR-091-AC-71, FR-091-AC-72, FR-091-AC-73 to FR-091-AC-75, FR-092-AC-25, FR-092-AC-29, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37, FR-093-AC-43, FR-093-AC-44, FR-093-AC-46, FR-093-AC-60.
 
 ## Test Procedure
 
@@ -76,6 +76,19 @@ form and read `units`; repeat with source-owner identity `w` and the same requir
     beside the base declarations alone.
 18. Check, lower and replay the source `dimension L; dimension N = L / L; unit m : L = rational(1, 1); unit one : N = rational(1, 1);`. Read the checked dimension payloads and replay-admitted dimensions, their `base` flags and terms, and the dimension ids referenced by both units.
 19. Emit `dimension L; dimension N = L / L; dimension M = L * L;` with a unit over each, read the emitted checked-package wire bodies of the three dimension nodes and read the package with IR's V2 reader (FR-092-AC-29).
+20. Declare canonical roots `kg`, `m` and `s` of base dimensions `Mass`,
+    `Length` and `Time`, and a declared root `J` of a distinct derived
+    dimension with terms `Mass * Length^2 * Time^-2`. Parse and check an
+    identity function whose parameter and result are
+    `Quantity<kg*m^2*s^-2>`, and a function from `Quantity<J>` whose body is
+    `convert<Quantity<kg*m^2*s^-2>>(q)`. Inspect the unit factors, exponents
+    and source spans in the parsed forms and the actual checked compound
+    unit identity. Repeat the type with `s^-2*kg*m*m`, `kg^1`, `kg*m^0`
+    and `m*m^-1`; inspect bare `Quantity<kg>` and the existing carrier
+    `Quantity<kg, Int[0, 10]>` as controls. Parse and check each malformed
+    or unknown-factor type of FR-091-AC-75 separately, including an unknown
+    zero-power factor. Repeat a product under the existing source/type
+    ceilings and an exponent outside the existing admitted integer range.
 
 Tag the tests with the AC ids they back and `TC-483`.
 
@@ -140,3 +153,16 @@ Tag the tests with the AC ids they back and `TC-483`.
   `M::ghost` target row 2 with the name as written.
 - Step 18: `L` and `N` remain distinct nodes through assembly, checking, lowering and replay; `L` is base with `base=true`, while `N` is derived with `base=false` and no normalized terms. Both units reference their declared dimension, and only `one` is dimensionless.
 - Step 19: the wire body of `L` has `base=true` with no terms, `N` has `base=false` with no terms and `M` has `base=false` with one term; IR admits the package and its `dimension_base()` equals the written value for each node.
+- Step 20: parsed forms retain factors `kg`, `m`, `s`, exact exponents
+  `1`, `2`, `-2` and each source span; the identity function and explicit
+  conversion target check as that compound type. Reordering and combining
+  factors preserves its actual canonical identity. Bare `kg` remains
+  declared; `kg^1` and `kg*m^0` are the same one-term compound, distinct
+  from declared `kg`; cancellation yields the empty compound. Declared `J`
+  is not substituted for a compound with the same base-dimension map.
+  The named-unit carrier is unchanged. Malformed expressions refuse typed
+  `invalid_syntax`, unknown factors refuse `missing_declaration`/`missing-name`
+  at the unknown name, and source/type/integer ceilings stop through their
+  existing typed path without a truncated exponent or partial authoritative
+  type. These source/check observations do not by themselves qualify U25's
+  downstream generated-runtime agreement.

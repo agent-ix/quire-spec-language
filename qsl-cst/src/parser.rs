@@ -28,12 +28,11 @@ struct Significant {
 
 impl Significant {
     /// FR-035-AC-7: whether this token can name a function or predicate or
-    /// select its profile alias. A spelling the recognizer classes as
-    /// [`Kind::Unsupported`] (`helper`, `rec`, `cast`, `Tuple`) has an
-    /// identifier's shape but is reserved, so those positions refuse it at
-    /// its own span.
+    /// select its profile alias. `helper`, `rec`, `cast` and `Tuple` are
+    /// ordinary identifiers under `1-draft` (QSpec FR-339-AC-5), so every
+    /// identifier-shaped spelling can.
     fn names(&self) -> bool {
-        crate::token::identifier_spelling(&self.spelling) && self.kind != Some(Kind::Unsupported)
+        crate::token::identifier_spelling(&self.spelling)
     }
 }
 
@@ -171,13 +170,7 @@ pub(super) fn parse(
                         },
                         span.start,
                         span.end,
-                        match significant.get(failure.position) {
-                            Some(token) if token.kind == Some(Kind::Unsupported) => format!(
-                                "`{}` is a reserved spelling; expected {expected}",
-                                token.spelling
-                            ),
-                            _ => format!("expected {expected}"),
-                        },
+                        format!("expected {expected}"),
                     ));
                     recoveries.push(Recovery {
                         kind: if failure.position == significant.len() {
@@ -737,6 +730,10 @@ fn scan(
         let spelling = &source.text()[range.clone()];
         let (class, kind) = match result {
             Ok(Kind::Comment) => (TokenClass::Comment, Some(Kind::Comment)),
+            // QSpec FR-339-AC-5: `helper`, `rec`, `cast` and `Tuple`, which
+            // the recognizer holds unsupported for the historical grammar,
+            // are ordinary identifiers under `1-draft`.
+            Ok(Kind::Unsupported) => (TokenClass::Token, Some(Kind::Identifier(spelling.into()))),
             Ok(kind) => (TokenClass::Token, Some(kind)),
             Err(reason) => {
                 // The string token pattern admits no raw control character, so a

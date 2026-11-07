@@ -51,6 +51,15 @@ impl Built {
         }
     }
 
+    /// This unit with its emission's package bytes replaced by `wire`.
+    pub(super) fn with_wire(self, wire: &Value) -> Built {
+        let bytes = serde_json::to_vec(wire).expect("the wire encodes");
+        Built {
+            emission: self.emission.clone().with_package_bytes(bytes),
+            ..self
+        }
+    }
+
     pub(super) fn read(&self, emission: &Emission) -> AdmittedPackageRead<'_> {
         self.try_read(emission)
             .expect("the reader admits the emission")
@@ -206,7 +215,6 @@ pub(super) fn request(
         .and_then(|found| found.clock)
         .expect("a clocked clause");
     EvidenceRequest {
-        native_valuations: Vec::new(),
         trigger: Some(id("o1")),
         correspondence: EvidenceRef::named("corr"),
         positions: (0..ticks)

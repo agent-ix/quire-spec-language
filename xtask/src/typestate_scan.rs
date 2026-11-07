@@ -591,6 +591,20 @@ pub const S3_CONSTRUCTOR: StageConstructor = StageConstructor {
     name: "check",
 };
 
+/// Every S3 entry point on [`S3_CONSTRUCTOR`]'s receiver, TC-244's
+/// constructor table rows for the checker: the strict check, the same under
+/// a caller's cancel handle, the per-protocol-results forms (FR-383), the
+/// unit-level continuation form (FR-503) and the one check all of them
+/// delegate to. CK-4 flags a stage-entry crate calling any of them.
+pub const S3_ENTRY_NAMES: [&str; 6] = [
+    S3_CONSTRUCTOR.name,
+    "check_with_cancel",
+    "check_with_protocol_results",
+    "check_with_protocol_results_and_cancel",
+    "check_with_protocol_continuation_and_cancel",
+    "check_retaining_protocols",
+];
+
 /// The layer crates ADR-011 §6.1 places the canonical stage types in:
 /// layer 3 `qsl-semantics`, layer 4 `qsl-package`, layer 5 `qsl-eval` and
 /// layer 6 `qsl-replay`.
@@ -661,10 +675,7 @@ mod tests {
 
     /// The root-crate namesakes FR-087-AC-8 and AC-10 name: lane-private
     /// types that retire with their lanes, not second definitions.
-    const LANE_PRIVATE_NAMESAKES: [(&str, &str); 2] = [
-        ("CheckedPackage", "src/checking.rs"),
-        ("EmittedPackage", "src/protocol_artifact/native/mod.rs"),
-    ];
+    const LANE_PRIVATE_NAMESAKES: [(&str, &str); 1] = [("CheckedPackage", "src/checking.rs")];
 
     /// FR-087-AC-1 (TC-243 steps 1-3) and ADR-013 T-1: each stage-output
     /// type has one definition in the layer crates, in the file that owns
@@ -711,22 +722,18 @@ mod tests {
 
     /// Every item allowed to hand back an owned stage-output type, by
     /// (file, `Self` type, name), and why.
-    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 17] = [
-        // S3: the checker.
+    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 16] = [
+        // S3: the checker, every entry point of `S3_ENTRY_NAMES`.
         (
             S3_CONSTRUCTOR.file,
             Some(S3_CONSTRUCTOR.receiver),
             S3_CONSTRUCTOR.name,
         ),
-        // S3 under a caller's cancel handle.
         (
             S3_CONSTRUCTOR.file,
             Some(S3_CONSTRUCTOR.receiver),
             "check_with_cancel",
         ),
-        // S3 keeping per-protocol results (FR-383), with and without a
-        // caller's cancel handle, continuing past a unit-level state-clause
-        // refusal (FR-503), and the one check all S3 entries delegate to.
         (
             S3_CONSTRUCTOR.file,
             Some(S3_CONSTRUCTOR.receiver),
@@ -793,8 +800,6 @@ mod tests {
             Some("Resolution"),
             "check_frame",
         ),
-        // Lane-private: the native-v1 emitter's own `EmittedPackage`.
-        ("src/protocol_artifact/native/mod.rs", None, "emit"),
     ];
 
     fn stage_returners(items: &Items) -> BTreeSet<(String, Option<String>, String)> {
@@ -865,9 +870,9 @@ mod tests {
     }
 
     /// FR-087-AC-8 and AC-10 (TC-247 steps 1-3, 6 and 7; step 4 by field
-    /// name only): the two `EmittedPackage`s are at the two named paths
-    /// with no field name in common; no root-crate file imports a
-    /// canonical and a lane-private namesake together.
+    /// name only): the one `EmittedPackage` is the canonical one in
+    /// `qsl-package` (the native-v1 namesake is deleted); no root-crate file
+    /// imports a canonical and a lane-private namesake together.
     #[trace("TC-247", "FR-087-AC-8", "FR-087-AC-10")]
     #[test]
     fn tc_247_namesakes_stay_distinct_and_never_share_a_scope() {
@@ -875,20 +880,7 @@ mod tests {
         let emitted: Vec<&Struct> = items.structs_named("EmittedPackage").collect();
         let mut files: Vec<&str> = emitted.iter().map(|item| item.file.as_str()).collect();
         files.sort_unstable();
-        assert_eq!(
-            files,
-            [
-                "qsl-package/src/checked.rs",
-                "src/protocol_artifact/native/mod.rs"
-            ]
-        );
-        let field_names = |item: &Struct| -> BTreeSet<Option<String>> {
-            item.fields.iter().map(|field| field.name.clone()).collect()
-        };
-        assert!(
-            field_names(emitted[0]).is_disjoint(&field_names(emitted[1])),
-            "the two EmittedPackages share a field"
-        );
+        assert_eq!(files, ["qsl-package/src/checked.rs"]);
 
         let root_uses = || {
             items
@@ -905,7 +897,7 @@ mod tests {
         for item in root_uses().filter(|item| imports_canonical(item)) {
             let same_file_lane_import = root_uses().any(|other| {
                 other.file == item.file
-                    && (other.names.contains("checking") || other.names.contains("native"))
+                    && other.names.contains("checking")
                     && (other.names.contains("CheckedPackage")
                         || other.names.contains("EmittedPackage")
                         || other.names.contains("*"))

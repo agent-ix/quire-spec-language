@@ -28,7 +28,7 @@ use qsl_semantics::check::{Activation, CheckedFormula, FormulaNode, TemporalProf
 use quire_eval::CallFailure;
 use quire_exact::Meter;
 
-use super::call::{evaluate_temporal_evidence, refusal, select_occurrence};
+use super::call::{evaluate_temporal_evidence, fault, refusal, select_occurrence};
 use super::request::{
     ActivationRow, EvidenceRequest, EvidenceResult, EvidenceSubject, SubjectOccurrence,
 };
@@ -470,23 +470,30 @@ impl<'p> EvidencePackage<'p> {
             )
         };
         let view = self.temporal_subject(clause).map_err(|_| unresolved())?;
-        let held: Vec<(CheckedOccurrence, Option<&TemporalBinding>)> = view
+        let occurrences: Vec<SubjectOccurrence<'_>> = view
             .occurrences()
             .iter()
             .map(|found| {
-                (
-                    CheckedOccurrence {
+                let source_map = self
+                    .package
+                    .source_map()
+                    .iter()
+                    .find(|entry| {
+                        entry.node_id == found.node
+                            && entry.role == found.role
+                            && entry.ordinal == found.ordinal
+                    })
+                    .ok_or_else(|| fault("admitted-occurrence-has-a-source-map-entry"))?;
+                Ok(SubjectOccurrence {
+                    occurrence: CheckedOccurrence {
                         role: found.role.clone(),
                         ordinal: found.ordinal,
                     },
-                    self.clock_of(found),
-                )
+                    clock: self.clock_of(found),
+                    source_map,
+                })
             })
-            .collect();
-        let occurrences: Vec<SubjectOccurrence<'_>> = held
-            .into_iter()
-            .map(|(occurrence, clock)| SubjectOccurrence { occurrence, clock })
-            .collect();
+            .collect::<Result<_, CallFailure>>()?;
         let chosen = select_occurrence(&occurrences, occurrence)?;
         let ordinal = chosen.occurrence.ordinal;
         let clock_name: Box<str> = chosen
@@ -558,6 +565,7 @@ impl<'p> EvidencePackage<'p> {
         );
         let key = view.declaration_key().ok_or_else(unresolved)?;
         Ok(EvidenceSubject {
+            package_identity: self.package.name().to_owned(),
             declaration: &named.declaration,
             profile: profile_row,
             occurrences,

@@ -10,7 +10,6 @@ use qsl_foundation::{Source, SourceIdentity};
 use qsl_semantics::check::Capability;
 use quire_spec_language::linking::composed::binding::{self, Disposition as BindingDisposition};
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
-use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::linking::composed::definitions::{Artifact, Inventory, RuleInput};
 use quire_spec_language::linking::composed::models::{ImportRefusal, ModelInput};
 use quire_spec_language::linking::composed::requests::{
@@ -22,6 +21,7 @@ use quire_spec_language::linking::composed::subject::{
 use quire_spec_language::linking::composed::{
     admit_namespace, ExpectedSource, NamespaceReport, SourceInventory, WorkLimits,
 };
+use quire_spec_language::linking::definition_source::RegisteredDefinition as R;
 use quire_spec_language::native_model::NativeModel;
 use quire_spec_language::Limits;
 use serde_json::Value;

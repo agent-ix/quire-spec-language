@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! ADR-013 T-1 (FR-087): the S4 in-process checked-package
 //! typestate ([`CheckedPackage`]) and its packaged wire counterpart
-//! ([`EmittedPackage`]). Both are distinct from
-//! `protocol_artifact::native::EmittedPackage` (SEAM-3, unrelated:
-//! FR-087-AC-8/TC-247) and from `checking::CheckedPackage<'a>`
+//! ([`EmittedPackage`]). `CheckedPackage` is distinct from
+//! `checking::CheckedPackage<'a>`
 //! (lane-private, ADR-013 §6: O-15's canonical owner is this module's
 //! `CheckedPackage`, not that one).
 //!
@@ -793,11 +792,7 @@ fn unify(
 }
 
 /// S4 wire output (ADR-013 T-1): canonical checked-package/v2 bytes and
-/// the manifest package name. Distinct from `protocol_artifact::native::EmittedPackage`
-/// (SEAM-3, unrelated: FR-087-AC-8/TC-247) -- two separate types under two
-/// separate module paths, with no shared field, method or re-export, and
-/// with no `pub use`/glob anywhere that would place both names in one import
-/// scope.
+/// the manifest package name (FR-087-AC-8/TC-247: the only `EmittedPackage`).
 ///
 /// A caller cannot supply a forged name or bytes: both fields are private,
 /// and this type's own (`pub(super)`) constructor is crate-local --

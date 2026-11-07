@@ -77,6 +77,17 @@ pub enum TypeFormHead {
     /// A qualified name that `check` resolves against a declared alias,
     /// record or tuple, enum or model object type.
     Name(NameForm),
+    /// A product or explicit power in a quantity type, in source order.
+    UnitExpression(Vec<UnitTermForm>),
+}
+
+/// One named factor in a quantity type's unit expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnitTermForm {
+    /// The unit's qualified source name and span.
+    pub name: NameForm,
+    /// The explicit signed exponent and its span, if written.
+    pub exponent: Option<(Integer, Span)>,
 }
 
 /// A declared type as spelled in source (ADR-011 §1's stage table:
@@ -85,7 +96,8 @@ pub enum TypeFormHead {
 /// syntax").
 ///
 /// It carries no `ValueType` and no `NodeKey` (FR-091-AC-11). [`Self::head`]
-/// is a builtin keyword, a kernel collection kind, `Population` or a name.
+/// is a builtin keyword, a kernel collection kind, `Population`, a name,
+/// or the unit expression of a `Quantity` argument.
 /// [`Self::arguments`] are this same syntactic type recursively (an element,
 /// payload, or carried-quantity carrier). [`Self::bounds`] are declared bound
 /// or extent literals,

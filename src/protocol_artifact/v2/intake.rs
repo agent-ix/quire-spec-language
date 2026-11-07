@@ -10,6 +10,13 @@ use crate::number::{NumberWire, ProtocolNumber, NUMERIC_PROFILE};
 use crate::protocol_artifact::{self as artifact, work::Work};
 use crate::protocol_artifact::{Candidate, Dimension, Error, Invalid, Limits, Report, Unsupported};
 
+/// Exact registered identity of the event-position profile.
+const EVENT_POSITION: &str = "quire.temporal.event-position.false-extension/v1";
+/// Exact registered identity of the fixed-sample profile.
+const FIXED_SAMPLE: &str = "quire.temporal.fixed-sample.false-extension/v1";
+/// Exact registered identity of the timestamped finite-window profile.
+const TIMESTAMPED_WINDOW: &str = "quire.temporal.timestamped-event.finite-window/v1";
+
 #[ix_trace_rs::string_edge]
 fn headers(
     package: &wire::Package,
@@ -151,16 +158,13 @@ pub(in crate::protocol_artifact) fn clock(
     work: &mut Work,
 ) -> Result<(), Error> {
     match (profile, clock) {
-        (
-            crate::temporal::EVENT_POSITION,
-            wire::ClockConfiguration::EventPosition { sequence_authority },
-        ) => {
+        (EVENT_POSITION, wire::ClockConfiguration::EventPosition { sequence_authority }) => {
             work.bytes(sequence_authority.len())?;
             artifact::intake::name(sequence_authority)
                 .map_err(|_| Error::V2(Refusal::Clock(ClockField::SequenceAuthority)))
         }
         (
-            crate::temporal::FIXED_SAMPLE,
+            FIXED_SAMPLE,
             wire::ClockConfiguration::FixedSample {
                 epoch,
                 period,
@@ -173,20 +177,14 @@ pub(in crate::protocol_artifact) fn clock(
             work.bytes(unit.len())?;
             artifact::intake::name(unit).map_err(|_| Error::V2(Refusal::Clock(ClockField::Unit)))
         }
-        (
-            crate::temporal::TIMESTAMPED_WINDOW,
-            wire::ClockConfiguration::TimestampedEvent { timestamp_unit },
-        ) => {
+        (TIMESTAMPED_WINDOW, wire::ClockConfiguration::TimestampedEvent { timestamp_unit }) => {
             work.bytes(timestamp_unit.len())?;
             artifact::intake::name(timestamp_unit)
                 .map_err(|_| Error::V2(Refusal::Clock(ClockField::TimestampUnit)))
         }
-        (
-            crate::temporal::EVENT_POSITION
-            | crate::temporal::FIXED_SAMPLE
-            | crate::temporal::TIMESTAMPED_WINDOW,
-            _,
-        ) => Err(Error::V2(Refusal::Clock(ClockField::Alternative))),
+        (EVENT_POSITION | FIXED_SAMPLE | TIMESTAMPED_WINDOW, _) => {
+            Err(Error::V2(Refusal::Clock(ClockField::Alternative)))
+        }
         _ => Err(Error::Unsupported(Unsupported::Profile)),
     }
 }
@@ -353,12 +351,10 @@ fn temporal(
             .and_then(artifact::clock_binding_name)
             .ok_or(Error::Invalid(Invalid::Reference))?;
         // The typed `clock_name` field must agree with the inherited
-        // `v1` binding's legacy `clock:` spelling. `ClockNames::of_v2`
-        // (evaluation and request derivation) reads `clock_name` alone and
-        // never parses the legacy name; this admission check is the one
-        // remaining reader of the `clock:` prefix on the v2 path, run once
-        // here to refuse a producer offering two disagreeing facts rather
-        // than trust the typed field unchecked.
+        // `v1` binding's legacy `clock:` spelling; this admission
+        // check is the one reader of the `clock:` prefix on the v2 path, run
+        // once here to refuse a producer offering two disagreeing facts
+        // rather than trust the typed field unchecked.
         if binding.clock_name != expected_clock_name {
             return Err(Error::V2(Refusal::ClockName));
         }
@@ -509,7 +505,6 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
             return Err(Error::Invalid(Invalid::Canonical));
         }
         Ok(AdmittedPackage {
-            clocks: super::super::ClockNames::of_v2(&package),
             package,
             artifact: Some(artifact::intake::retained_reference(
                 expected.inherited.artifact,

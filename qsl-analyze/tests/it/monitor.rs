@@ -6,7 +6,7 @@
 use ix_trace_rs::trace;
 use qsl_analyze::monitor::{
     monitor, MonitorClause, MonitorLimits, MonitorOutcome, MonitorRefusal, MonitorRequest,
-    MonitorVerdict, TRACE_FORMAT,
+    MonitorTrace, MonitorVerdict, TRACE_FORMAT,
 };
 use qsl_foundation::diagnostic::StageFailure;
 use qsl_package::CheckedPackage;
@@ -111,20 +111,23 @@ impl World {
                 .iter()
                 .map(|name| MonitorClause {
                     name: (*name).to_owned(),
-                    over: OverObject {
+                    over: Some(OverObject {
                         population: "ix://test/counter/counters".to_owned(),
                         key: key.to_owned(),
-                    },
+                    }),
                 })
                 .collect(),
-            trace,
+            trace: MonitorTrace::Document(trace),
             snapshots: &self.documents.snapshots,
             packages: &self.documents.packages,
+            sources: &[],
+            temporal_selections: &[],
         };
         let limits = MonitorLimits {
             observation: ObservationLimits::default(),
             normalization: ModelNormalizationLimits::default(),
             accounting,
+            max_window_values: qsl_eval::temporal::DEFAULT_MAX_WINDOW_VALUES,
         };
         monitor(&self.package, &request, &limits, cancel).map(|staged| staged.into_value())
     }
@@ -429,13 +432,16 @@ fn a_defective_trace_document_is_refused_at_its_first_defect() {
         observation: ObservationLimits::default(),
         normalization: ModelNormalizationLimits::default(),
         accounting: UNLIMITED,
+        max_window_values: qsl_eval::temporal::DEFAULT_MAX_WINDOW_VALUES,
     };
     limits.observation.document_bytes = u64::try_from(bytes.len()).expect("small") - 1;
     let request = MonitorRequest {
         clauses: vec![],
-        trace: &bytes,
+        trace: MonitorTrace::Document(&bytes),
         snapshots: &world.documents.snapshots,
         packages: &world.documents.packages,
+        sources: &[],
+        temporal_selections: &[],
     };
     let Err(StageFailure::Refused(MonitorRefusal::TraceDocument { record, .. })) =
         monitor(&world.package, &request, &limits, &Cancel::new())
@@ -486,6 +492,38 @@ fn a_bounded_eventually_is_tested_or_violated_over_the_counter_trace() {
         short.report().disposition,
         ClauseDisposition::Temporal(TemporalVerdict::Violated { at: 0 })
     ));
+}
+
+/// FR-283-AC-10: `always p` over the `Counter` trace 0, 1, 2 is violated at
+/// position 0 with a `decisive` beside the counterexample at position 2, no
+/// quantifier and no index, element `false` and the empty path at the
+/// observation's root.
+#[trace("TC-765", "FR-283-AC-10")]
+#[test]
+fn a_violation_carries_the_decisive_position_of_its_atom() {
+    let mut world = world(&[("P", "", ALWAYS_SMALL)]);
+    let outcome = world.finite(&["P"], &[0, 1, 2]);
+    let [record] = outcome.records.as_slice() else {
+        panic!("one record");
+    };
+    let report = record.report();
+    assert!(matches!(
+        report.disposition,
+        ClauseDisposition::Temporal(TemporalVerdict::Violated { at: 0 })
+    ));
+    assert_eq!(
+        report
+            .counterexample
+            .as_ref()
+            .map(|counterexample| counterexample.trace_position.index()),
+        Some(0)
+    );
+    let decisive = report.decisive.as_ref().expect("a decisive record");
+    assert_eq!(decisive.position, Some(2));
+    assert_eq!(decisive.quantifier, None);
+    assert_eq!(decisive.index, None);
+    assert!(decisive.value_path.steps.is_empty());
+    assert!(report.witness.is_none());
 }
 
 /// FR-283-AC-14: each record renders through `OutcomeItem::from_clause_run`,
