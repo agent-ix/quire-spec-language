@@ -1305,7 +1305,8 @@ fn a_compensation_capture_or_retry_with_a_foreign_owner_or_a_cycle_is_refused_by
     };
     let owner = Error::Invalid(Invalid::Owner);
     let cycle = Error::Invalid(Invalid::Cycle);
-    let cases: Vec<(&str, Box<dyn Fn(&mut w::Package)>, Error)> = vec![
+    type Mutation = Box<dyn Fn(&mut w::Package)>;
+    let cases: Vec<(&str, Mutation, Error)> = vec![
         (
             "a capture initializer owned by another declaration",
             Box::new(move |p| {

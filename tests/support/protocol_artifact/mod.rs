@@ -17,7 +17,6 @@ use serde_json::json;
 /// Indices into declaration 0 of the authored compensation's graph members.
 pub struct CompensationHandles {
     pub registered: u32,
-    pub activated: u32,
     pub registered_initializer: u32,
     pub activated_initializer: u32,
     pub retry: u32,
@@ -1481,7 +1480,6 @@ impl Fixture {
             fixture,
             CompensationHandles {
                 registered: first_binder,
-                activated: first_binder + 1,
                 registered_initializer: first,
                 activated_initializer: first + 1,
                 retry,
