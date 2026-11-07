@@ -24,6 +24,8 @@ mod bare;
 #[cfg(feature = "std")]
 mod bare_slot;
 #[cfg(feature = "std")]
+mod bare_units;
+#[cfg(feature = "std")]
 mod bare_world;
 mod checked;
 #[cfg(feature = "std")]

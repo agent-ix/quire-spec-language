@@ -14,6 +14,10 @@ pub enum NativeJoinFailure {
     /// A resource denial with its owner error and original configured ceiling.
     #[error(transparent)]
     Limit(Box<crate::NativeJoinLimitError>),
+    /// The read of the package's unit definitions ran out of the native
+    /// work or storage allowance (FR-533); IR's nominal read names no setting.
+    #[error("the unit definition read exhausted the native join budget")]
+    UnitDefinitions,
 }
 
 impl NativeJoinFailure {
@@ -44,13 +48,14 @@ impl NativeJoinFailure {
     pub fn limit(&self) -> Option<&qsl_foundation::diagnostic::LimitExceeded> {
         match self {
             Self::Limit(error) => Some(&error.limit),
-            Self::Projection(_) | Self::Equality(_) => None,
+            Self::Projection(_) | Self::Equality(_) | Self::UnitDefinitions => None,
         }
     }
 
     /// The stage setting for an actual resource denial, otherwise `None`.
     pub fn setting(&self) -> Option<qsl_foundation::Setting> {
         match self {
+            Self::UnitDefinitions => None,
             Self::Limit(error) => error.native.setting(),
             Self::Projection(error) => qsl_semantics::model::intake::native_budget_setting(error),
             Self::Equality(error) => match error.code {
