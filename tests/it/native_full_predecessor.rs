@@ -12,6 +12,54 @@ use quire_spec_language::temporal::{
 
 const AMPLE: ReportPredecessorLimits = ReportPredecessorLimits::new(1 << 30, 1 << 30);
 
+#[trace("TC-144", "FR-052-AC-12", "FR-052-AC-20")]
+#[test]
+fn original_request_and_lineage_refusals_precede_new_snapshot_work() {
+    super::native_owner_report::with_inputs(
+        true,
+        false,
+        |package, occurrence, evidence, request, observation, _| {
+            let original = evaluate(
+                &CheckedSubject::new(package, occurrence, evidence, request).unwrap(),
+                observation,
+            );
+            let mut correction = after(request, occurrence, &original);
+            let no_snapshot_work = ReportPredecessorLimits::new(0, 0);
+            let subject = CheckedSubject::new(package, occurrence, evidence, &correction)
+                .unwrap()
+                .with_predecessor(&original, no_snapshot_work);
+            let foreign_revision = ObservationRef {
+                revision: "foreign-observation-revision".into(),
+                ..observation.clone()
+            };
+            assert!(matches!(
+                evaluate_v2(&subject, &foreign_revision, &mut meter(), &mut budget()),
+                Err(NativeReportError::Report(ReportRefusal::BindingMismatch(
+                    BindingDimension::Revision
+                )))
+            ));
+            let revised_observation = ObservationRef {
+                reference: "observation:lineage-before-snapshot".into(),
+                ..observation.clone()
+            };
+            let revised = evaluate(
+                &CheckedSubject::new(package, occurrence, evidence, &correction)
+                    .unwrap()
+                    .with_predecessor(&original, AMPLE),
+                &revised_observation,
+            );
+            correction.ledger = revised.ledger().cloned();
+            let stale = CheckedSubject::new(package, occurrence, evidence, &correction)
+                .unwrap()
+                .with_predecessor(&original, no_snapshot_work);
+            assert!(matches!(
+                evaluate_v2(&stale, &revised_observation, &mut meter(), &mut budget()),
+                Err(NativeReportError::Report(ReportRefusal::InvalidPredecessor))
+            ));
+        },
+    );
+}
+
 #[trace("TC-144", "FR-052-AC-19", "FR-052-AC-20")]
 #[test]
 fn strict_read_charges_full_prior_comparison_at_exact_limits_and_refuses_legacy_authority() {
