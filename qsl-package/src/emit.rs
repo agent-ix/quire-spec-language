@@ -1347,6 +1347,7 @@ impl Emission {
             joined.declaration_rows().cloned().collect(),
             joined.field_rows().to_vec(),
             records,
+            self.selected_source_union_rows.clone(),
         ))
     }
 
