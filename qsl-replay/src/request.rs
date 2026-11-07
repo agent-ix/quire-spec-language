@@ -591,6 +591,32 @@ pub enum PackageMemberCause {
     WrongKind,
 }
 
+impl PackageMemberCause {
+    /// The stable structural-input cause spelling.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Missing => "missing-member",
+            Self::WrongKind => "wrong-value-kind",
+        }
+    }
+
+    /// Every structural-input cause in catalog order.
+    #[must_use]
+    pub fn all() -> &'static [Self] {
+        &[Self::Missing, Self::WrongKind]
+    }
+
+    /// Resolve only a catalogued spelling.
+    #[must_use]
+    pub fn from_code(code: &str) -> Option<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .find(|cause| cause.as_str() == code)
+    }
+}
+
 fn join_members(members: &[TargetMember]) -> String {
     members
         .iter()
@@ -671,10 +697,7 @@ impl ReplayRequestRefusal {
     /// rule 1); `None` for every other refusal, whose text names its own.
     pub fn cause(&self) -> Option<&'static str> {
         match self {
-            Self::PackageMember { cause, .. } => Some(match cause {
-                PackageMemberCause::Missing => "missing-member",
-                PackageMemberCause::WrongKind => "wrong-value-kind",
-            }),
+            Self::PackageMember { cause, .. } => Some(cause.as_str()),
             Self::MissingProvisionAuthority { .. } => Some("missing-member"),
             Self::MissingReplayTarget | Self::MissingOccurrenceKey => Some("missing-member"),
             Self::ConflictingReplayTarget { .. } => Some("invalid-value"),

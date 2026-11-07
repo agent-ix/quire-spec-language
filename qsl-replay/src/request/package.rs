@@ -56,11 +56,13 @@ impl ReplayPackage {
     }
 
     /// The entire original document, including every graph and sidecar member.
+    #[must_use]
     pub fn document(&self) -> &Document {
         &self.document
     }
 
     /// The original bytes passed to the native checked-package reader.
+    #[must_use]
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
@@ -234,6 +236,7 @@ impl ReplayPackageAdmissionRefusal {
     }
 
     /// The QSL catalog mapping of the native reader's typed result.
+    #[must_use]
     pub fn code(&self) -> qsl_foundation::Code {
         match self {
             Self::Refused { refusal, .. } => {
@@ -245,6 +248,7 @@ impl ReplayPackageAdmissionRefusal {
     }
 
     /// The native reader's cause, without rewriting its vocabulary.
+    #[must_use]
     pub fn cause(&self) -> Option<&str> {
         match self {
             Self::Refused { cause, .. } => cause.as_deref(),
@@ -254,6 +258,7 @@ impl ReplayPackageAdmissionRefusal {
     }
 
     /// The primary native pointer prefixed with the request's package member.
+    #[must_use]
     pub fn pointer(&self) -> String {
         let path = match self {
             Self::Refused { refusal, .. } | Self::Catalog { refusal } => {
