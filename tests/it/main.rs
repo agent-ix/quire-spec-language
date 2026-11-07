@@ -133,7 +133,6 @@ mod native_query_emission;
 mod native_refund_emission;
 mod native_split_shipment_emission;
 mod nesting_levels;
-mod occurrence_key_schema;
 mod parser;
 mod protocol_artifact;
 mod protocol_number_root_module;

@@ -15,13 +15,18 @@ control entries with their owners and repeat dimensions and the compensation
 entries, that the binding requirements are a function of the operators, that
 neither is carried by any node or fabricates an instance, and that the
 derivation is the same from the in-process package and from the read-back
-package. Scope: FR-384-AC-1 to FR-384-AC-10.
+package. Scope: FR-384-AC-1 to FR-384-AC-14. It is also the retained owner of
+FR-048-AC-1's runtime occurrence-key binding: the O1/O2 keys, the workflow
+identity bounds and the key refusals.
 
 Catches an owner invented for a `sequence`, an `Exhaustion` dimension missing
 for the exhausted arm, a `repeat` with no maximum given a fabricated bound,
 two same-named roles of different protocols sharing a schema entry, a binding
 requirement written into a node, an authority guessed when the package selects
-none, and a schema that depends on the source order.
+none, a schema that depends on the source order, two workflows that collapse into one
+key, a workflow identity accepted at 0 or 4097 bytes, a role swap or a surplus
+ordinal accepted into a key, an ordinal outside a repeat domain, and a control
+tree that overruns on depth or loops on a cycle.
 
 Fixture **W** is TC-1061's.
 
@@ -41,6 +46,10 @@ Fixture **W** is TC-1061's.
 | 10 | **W** with a second template `Partial` for `Applied` | two compensation entries, and two sets of `compensation`, `compensation-attempt` and `compensation-effect` requirements, each naming its own template key |
 | 11 | **W**, in process and read back through the I2 reader | each role slot holds its selected model type node: `Fulfillment` holds `Shipment`, `Orders` holds `OrderView`, `Payments` holds `Payment`; each is an emitted `object_type` node, none holds a `model_member` |
 | 12 | FR-383-AC-62's unit, in process and read back through the I2 reader | `Outlet` and `Inlet` hold the node of `Sys` and the `model_member` `{package, node}` of `pump_out` and `tank_in` respectively; `Operator` and the whole-model role hold none; in-process and read-back slots are equal |
+| 13 | **W**: `Polled` with workflows `O1` and `O2`, then with ordinal 2; **W** with a `repeat` inside a `repeat`; a `repeat` of `max 0`; a `repeat` with no maximum; `Limit` | `O1` and `O2` keys are unequal and each returns its supplied values; `[2, 1]` binds, `[3, 1]` and `[2, 2]` refuse at dimensions 0 and 1; ordinal 0 refuses for `max 0`; 0 and an integer beyond 64 bits bind and -1 refuses for no maximum; `Limit` binds at 3 and refuses 2 and 4 |
+| 14 | workflow identities of 0, 1, 4096 and 4097 bytes | `EmptyWorkflowIdentity`; accepted; accepted and returned unchanged; `WorkflowIdentityTooLong` naming 4097 |
+| 15 | **W** and the two-protocol unit of row 6: an absent control key; the other protocol's `Charge`; a swapped role, a structural and a role owner exchanged; zero, one and two ordinals; an out-of-range ordinal | `UnknownNode` naming the key; `UnknownNode`; `WrongRole` naming both owners; `RepeatCount` naming expected and offered; `RepeatOrdinal` naming the dimension and value; no key |
+| 16 | **W**; a chain of 10 000 nested sequences; a two-control reference cycle; a role naming an absent node | one schema keyed by the clause and none for a model type node, entries equal to the role, control and compensation nodes; 10 000 entries; each control once; `UnknownNode` naming the protocol |
 
 ## Expected Results
 

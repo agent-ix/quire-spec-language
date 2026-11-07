@@ -1129,4 +1129,87 @@ mod tests {
             Some(WireIdError::NoGraph { index: 7 }.to_string())
         );
     }
+
+    fn clause(roles: Vec<Term>, run: &str) -> Raw {
+        Raw {
+            key: key("P"),
+            form: ProtocolForm::ProtocolClause,
+            operator: None,
+            path: vec!["P".to_owned()],
+            args: vec![
+                ("roles".to_owned(), Term::List(roles)),
+                ("run".to_owned(), Term::Ref(key(run))),
+                ("compensations".to_owned(), Term::List(Vec::new())),
+                ("finish".to_owned(), Term::Ref(key("Fin"))),
+            ],
+        }
+    }
+
+    fn sequence(name: &str, children: &[&str]) -> Raw {
+        let children = children.iter().map(|child| Term::Ref(key(child))).collect();
+        control(
+            name,
+            ControlOperator::Sequence,
+            vec![("children", Term::List(children))],
+        )
+    }
+
+    fn entries(nodes: &[Raw]) -> Vec<ControlEntry> {
+        let mut derived = derive(nodes).expect("a derivable protocol");
+        assert_eq!(derived.len(), 1);
+        derived.remove(0).schema.controls
+    }
+
+    /// The walk is iterative and visits each control once: a chain of 10 000
+    /// nested sequences gives 10 000 entries, and a reference cycle gives each
+    /// control once (FR-384-AC-14).
+    #[trace("FR-384-AC-14", "FR-048-AC-1", "TC-1064", "TC-132")]
+    #[test]
+    fn a_deep_control_chain_and_a_reference_cycle_each_give_one_entry_per_control() {
+        const DEPTH: usize = 10_000;
+        let name = |index: usize| format!("S{index}");
+        let mut nodes = vec![clause(Vec::new(), "S0")];
+        for index in 0..DEPTH - 1 {
+            nodes.push(sequence(&name(index), &[&name(index + 1)]));
+        }
+        nodes.push(control(
+            &name(DEPTH - 1),
+            ControlOperator::Check,
+            Vec::new(),
+        ));
+        nodes.push(control("Fin", ControlOperator::Check, Vec::new()));
+        let chain = entries(&nodes);
+        assert_eq!(chain.len(), DEPTH);
+        assert!(chain.iter().all(|entry| entry.dimensions.is_empty()));
+
+        let cycle = [
+            clause(Vec::new(), "A"),
+            sequence("A", &["B"]),
+            sequence("B", &["A"]),
+            control("Fin", ControlOperator::Check, Vec::new()),
+        ];
+        assert_eq!(
+            entries(&cycle)
+                .iter()
+                .map(|entry| entry.path.clone())
+                .collect::<Vec<_>>(),
+            [vec!["A".to_owned()], vec!["B".to_owned()]]
+        );
+    }
+
+    /// A reference to a node the package does not hold is refused with the
+    /// protocol that holds it (FR-384-AC-14).
+    #[trace("FR-384-AC-14", "FR-048-AC-1", "TC-1064", "TC-132")]
+    #[test]
+    fn a_role_naming_an_absent_node_is_refused_as_an_unknown_node_of_the_protocol() {
+        let nodes = [
+            clause(vec![Term::Ref(key("Ghost"))], "Main"),
+            control("Main", ControlOperator::Check, Vec::new()),
+            control("Fin", ControlOperator::Check, Vec::new()),
+        ];
+        assert_eq!(
+            derive(&nodes).err(),
+            Some(OccurrenceRefusal::UnknownNode { node: key("P") })
+        );
+    }
 }

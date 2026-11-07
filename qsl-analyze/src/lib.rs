@@ -27,6 +27,7 @@ pub mod contract_check;
 pub mod exact_probabilistic;
 pub mod external_provider;
 pub mod model_check;
+pub mod monitor;
 pub mod monitor_entries;
 pub mod monitor_plan;
 pub mod monitor_root;

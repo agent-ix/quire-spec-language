@@ -21,9 +21,9 @@ use super::evaluate::{Machine, World};
 use super::protocol_slot::{resolve, ProtocolSlot, ProtocolSlotEvaluation, ProtocolSupply};
 use super::slot_supply::{admit_slot_supply, AdmittedSupply, SlotHost, SourceView};
 use super::{
-    unsupported_projection, ApplicationObservation, CheckedPackageEvaluation, ClauseEvaluation,
-    ClauseSetEvaluation, FrameEvaluation, QualifiedName, Separation, SuppliedRun,
-    ValueInvariantEvaluation,
+    unsupported_projection, ApplicationObservation, ApplicationObservationOptions,
+    CheckedPackageEvaluation, ClauseEvaluation, ClauseSetEvaluation, FrameEvaluation,
+    QualifiedName, Separation, SuppliedRun, ValueInvariantEvaluation,
 };
 
 /// A selection or projection refusal as the call reports it (FR-533
@@ -205,10 +205,21 @@ impl CheckedPackageEvaluation for BarePackage<'_> {
         _function: &QualifiedName,
         _arguments: Vec<Value>,
         _objects: &ObjectEnvironment,
-        _meter: &mut Meter,
-        _observation: ApplicationObservation<'_>,
-    ) -> Result<Evaluation, CallFailure> {
-        Err(unmet(self, SOURCE_DECLARATION))
+        meter: &mut Meter,
+        options: ApplicationObservationOptions,
+    ) -> ApplicationObservation {
+        let displaced_capture = meter.disable_charge_capture();
+        let capture = super::OperationCapture::new(options);
+        ApplicationObservation {
+            evaluation: Err(unmet(self, SOURCE_DECLARATION)),
+            observed: Vec::new(),
+            unavailable_imported_call: false,
+            function_evaluations: 0,
+            function_case_limit_reached: false,
+            meter_totals: super::ChargeAmounts::from_meter(meter),
+            ledger: capture.finish(meter),
+            displaced_capture,
+        }
     }
 
     fn call_supplied(
