@@ -106,6 +106,8 @@ mod model_type_unit_roots;
 mod name_resolution_confinement;
 mod native_boundaries;
 mod native_checking;
+#[cfg(feature = "checked-handoff")]
+mod native_full_predecessor;
 mod native_linking;
 mod native_model;
 mod native_model_profiles;

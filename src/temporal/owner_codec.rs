@@ -3,6 +3,7 @@
 
 const FORMAT: &[u8; 4] = b"QSLR";
 const VERSION: u8 = 1;
+const REPORT_VERSION: u8 = 2;
 
 /// The binding member that differs from the reader's supplied authority.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -53,6 +54,16 @@ pub enum ReportRefusal {
     /// A correction does not name its valid direct predecessor.
     #[error("invalid owner report predecessor")]
     InvalidPredecessor,
+    /// A full-predecessor operation exceeds its explicit caller limit.
+    #[error("owner predecessor {resource:?} limit {limit} exceeded by {actual}")]
+    PredecessorLimit {
+        /// The exhausted owner resource.
+        resource: super::owner::ReportPredecessorResource,
+        /// Original caller ceiling.
+        limit: u64,
+        /// Complete attempted cumulative charge.
+        actual: u128,
+    },
 }
 
 /// Writes a format header followed by tagged, length-delimited fields.
@@ -62,8 +73,16 @@ pub(super) struct Writer {
 
 impl Writer {
     pub(super) fn new() -> Self {
+        Self::version(VERSION)
+    }
+
+    pub(super) fn report() -> Self {
+        Self::version(REPORT_VERSION)
+    }
+
+    fn version(version: u8) -> Self {
         let mut bytes = FORMAT.to_vec();
-        bytes.push(VERSION);
+        bytes.push(version);
         Self { bytes }
     }
 
@@ -92,8 +111,16 @@ pub(super) struct Reader<'a> {
 
 impl<'a> Reader<'a> {
     pub(super) fn new(bytes: &'a [u8]) -> Result<Self, ReportRefusal> {
+        Self::version(bytes, VERSION)
+    }
+
+    pub(super) fn report(bytes: &'a [u8]) -> Result<Self, ReportRefusal> {
+        Self::version(bytes, REPORT_VERSION)
+    }
+
+    fn version(bytes: &'a [u8], version: u8) -> Result<Self, ReportRefusal> {
         let header = bytes.get(..5).ok_or(ReportRefusal::Truncated)?;
-        if header.get(..4) != Some(FORMAT.as_slice()) || header.get(4) != Some(&VERSION) {
+        if header.get(..4) != Some(FORMAT.as_slice()) || header.get(4) != Some(&version) {
             return Err(ReportRefusal::UnsupportedVersion);
         }
         Ok(Self {

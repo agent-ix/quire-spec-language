@@ -9,7 +9,7 @@ relationships:
 
 ## Description
 
-Verify FR-052-AC-9 to FR-052-AC-18 on the Layer-4 checked-package routes. Each
+Verify FR-052-AC-9 to FR-052-AC-21 on the Layer-4 checked-package routes. Each
 row is verified on the entry point that carries its
 input:
 
@@ -23,7 +23,7 @@ input:
   FR-526) exist only there; `run_clause` has no trigger or relation input;
 - the native owner report route, `temporal::evaluate_v2` and
   `Report::from_owner_bytes`, over a `CheckedSubject` holding an admitted
-  duplicate-preserving valuation relation, for rows 10 to 13.
+  duplicate-preserving valuation relation, for rows 10 to 16.
 
 The tests exercise those routes and do not call the retired artifact
 request/result API. The native report controls in `tests/it/native_owner_report.rs`
@@ -78,6 +78,11 @@ Row 9's first step keeps the correspondence unchanged and changes only the evide
 | 11 | round-trip the native report through owner bytes, repeat evaluation and encoding, and compare independently compiled test binaries | Equal reports and byte-identical owner output, including support and predecessor (FR-052-AC-17) |
 | 12 | mutate native owner framing, version, enumeration, member order, binding or support; replace its identity by a lone empty occurrence member, omit or empty a required identity member, truncate a member, or borrow the well-framed canonical identity of another observation | Named typed refusals, no report; malformed or request-mismatched identity refuses `UnknownTag`; no invented identity grants changed-input correction authority (FR-052-AC-18) |
 | 13 | native report correction naming its exact direct predecessor with changed evidence/observation; then stale, self, cross-clause, cross-occurrence, original-with-predecessor and unchanged-input controls, including unchanged input with fabricated or foreign canonical identity | Valid correction preserves the predecessor bytes and names its identity; invalid lineage refuses `InvalidPredecessor`, malformed or foreign identity refuses `UnknownTag`, and no previous report changes (FR-052-AC-12) |
+
+| 14 | Native correction with the actual prior Report and explicit finite ReportPredecessorLimits; then same identity but a different genuine complete report, a missing actual prior, skipped/cross-binding report, a clone and a moved actual prior | Complete prior owner bytes are retained; only the actual full predecessor validates without evaluation. Different complete values refuse InvalidPredecessor, while clones/moves preserve acceptance (FR-052-AC-19) |
+| 15 | Strict-read the full native correction against its actual prior Report, then mutate only the complete prior value, use owner format version 1, and run issuance/read/validation at exact and one-short native report-owner work/storage bounds | Exact byte roundtrip and bounded admission; altered complete prior refuses InvalidPredecessor, old format refuses UnsupportedVersion, one-short returns typed PredecessorLimit with original ceiling/attempt and no partial relation. Existing IR budget consumption is preserved (FR-052-AC-19/20) |
+| 16 | A sequence of genuine native corrections with actual full predecessors, under finite owner limits; clone/encode/compare/drop on a small-stack thread | Flat prior owner representations remain exact and have bounded stack use, with all retained-byte work/storage charged (FR-052-AC-21) |
+
 
 
 ## Expected Results
