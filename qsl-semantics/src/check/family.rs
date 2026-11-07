@@ -1824,6 +1824,20 @@ impl<S> OccurrenceMap<S> {
         Ok(Origin::new(role.kernel_role(), ordinal))
     }
 
+    /// Replace every recorded span for which `relocate` returns a new one,
+    /// keeping each occurrence's ordinal.
+    pub(crate) fn relocate(&mut self, relocate: impl Fn(&S) -> Option<S>) {
+        for roles in self.spans.values_mut() {
+            for spans in roles.values_mut() {
+                for (_, span) in &mut spans.0 {
+                    if let Some(moved) = relocate(span) {
+                        *span = moved;
+                    }
+                }
+            }
+        }
+    }
+
     /// Renumber the `role` occurrences of each node of `nodes` into
     /// ascending order of `position` of their spans, keeping the recorded
     /// order among equal positions (FR-380: a population node's `Type`

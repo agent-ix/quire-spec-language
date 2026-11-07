@@ -1294,17 +1294,15 @@ replacement (#219 for M-6b, #224 for M-6c to M-6e). This per-lane reading of
 
 #### Deletion order of the remaining old-architecture units
 
-The row-level status of every behavior in the units below is
-[docs/deletion-table.md](../../docs/deletion-table.md) (D-S2, 2026-11-04). Each
-row maps to a green successor test, to a named open ticket, to a keep, to a
-retirement under a cited ruling, or to the list of rows with no successor that
-the owner decides. FR-499 owns the dispositions and the per-unit tables;
-FR-521 owns the quire-protocol gate. This section fixes the order in which the
-units delete and what each step waits for. A unit deletes only when every one
-of its rows is green (or PARTIAL/PORT with its owning ticket closed and the row
-updated to green, FR-499), kept, or retired under a cited ruling, and its gate
-below is closed. A row with no successor blocks its unit until the owner supplies a
-port ticket or a sunset ruling.
+FR-499 owns the dispositions and the per-unit tables; FR-521 owns the
+quire-protocol gate. The evidence that a behavior is carried is its tagged,
+passing successor test as `quire matrix` computes it, never a maintained list.
+This section fixes the order in which the units delete and what each step
+waits for. A unit deletes only when every behavior FR-499 lists for it is
+COVERED by a passing tagged test (or PARTIAL/PORT with its owning ticket
+closed), kept, or retired under a cited ruling, and its gate below is closed. A
+behavior with no successor blocks its unit until the owner supplies a port
+ticket or a sunset ruling.
 
 | Step | Unit (ticket) | Deletes after | Gate that must be closed |
 |---|---|---|---|

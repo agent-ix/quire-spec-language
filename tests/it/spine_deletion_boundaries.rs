@@ -124,3 +124,38 @@ fn no_source_names_the_composed_lane() {
         assert!(!file.exists(), "{} still exists", file.display());
     }
 }
+
+/// FR-499-AC-4 (TC-1293): after QSL-499, `src/native_model` is absent and no
+/// workspace source names the root crate's `native_model` module. TC-469's
+/// spine corpus (`config_version_spine.rs`) is the other half of the criterion.
+#[trace("FR-499-AC-4", "TC-1293")]
+#[test]
+fn the_native_model_module_is_absent() {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for path in ["src/native_model", "src/native_model.rs"] {
+        assert!(
+            !workspace.join(path).exists(),
+            "{path} still exists after QSL-499"
+        );
+    }
+    let mut roots = vec![workspace.join("src"), workspace.join("tests")];
+    for entry in std::fs::read_dir(workspace).expect("read the workspace") {
+        let path = entry.expect("directory entry").path();
+        let is_layer = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("qsl-"));
+        if is_layer && path.join("src").is_dir() {
+            roots.push(path.join("src"));
+        }
+    }
+    // Assembled so that this file does not name the paths it forbids.
+    let forbidden = [
+        ["crate::", "native_model"].concat(),
+        ["quire_spec_language::", "native_model"].concat(),
+    ];
+    let forbidden: Vec<&str> = forbidden.iter().map(String::as_str).collect();
+    for root in &roots {
+        assert_absent(root, &forbidden);
+    }
+}

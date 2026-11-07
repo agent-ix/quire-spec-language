@@ -832,13 +832,12 @@ mod tests {
     /// FR-087-AC-1's constructor half and FR-087-AC-2 (TC-244 step 0): in
     /// the QSL crates, the only items returning an owned `CheckedGraph`,
     /// `CheckedPackage`, `EmittedPackage` or
-    /// `ImportView` (the lane-private `checking::CheckedPackage` included)
-    /// are the named stage constructors; a `From` impl, decoder or other
+    /// `ImportView` are the named stage constructors; a `From` impl, decoder or other
     /// conversion into one fails here. Out-parameters are not seen.
     #[trace("TC-244", "FR-087-AC-2", "TC-243", "FR-087-AC-1")]
     #[test]
     fn tc_244_only_the_named_stage_constructors_return_stage_types() {
-        let mut expected: BTreeSet<(String, Option<String>, String)> = STAGE_CONSTRUCTORS
+        let expected: BTreeSet<(String, Option<String>, String)> = STAGE_CONSTRUCTORS
             .iter()
             .map(|(file, self_type, name)| {
                 (
@@ -848,8 +847,6 @@ mod tests {
                 )
             })
             .collect();
-        // The lane-private checker returns its own `checking::CheckedPackage`.
-        expected.insert(("src/checking.rs".to_owned(), None, "check".to_owned()));
         assert_eq!(stage_returners(&qsl_items()), expected);
     }
 

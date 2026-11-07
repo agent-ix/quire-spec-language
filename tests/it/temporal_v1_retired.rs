@@ -4,7 +4,7 @@
 //! retired v1 entry point or result type.
 //!
 //! This guards reintroduction. It does not check the per-row COVERED status
-//! FR-499-AC-1 asks of a deleting change; that is the deletion table's.
+//! FR-499-AC-1 asks of a deleting change; `quire matrix` computes that.
 //!
 //! The mapping classification (`Classification`, `mapping_support_v2`) and the
 //! native owner-report route (its report, valuation evidence and refusal types)
