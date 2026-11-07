@@ -169,35 +169,3 @@ pub enum Eviction {
         capture: usize,
     },
 }
-
-impl Trace {
-    /// Positions ordered by clock coordinate, then by admitted order key where
-    /// one authority supplies both. Insertion order is never consulted.
-    pub(super) fn ordered(&self) -> Vec<usize> {
-        let mut indices: Vec<usize> = (0..self.positions.len()).collect();
-        indices.sort_by(|left, right| {
-            let (left, right) = (&self.positions[*left], &self.positions[*right]);
-            left.coordinate.cmp(&right.coordinate).then_with(|| {
-                match (left.order.as_ref(), right.order.as_ref()) {
-                    (Some(left), Some(right)) if left.authority == right.authority => {
-                        left.key.cmp(&right.key)
-                    }
-                    _ => std::cmp::Ordering::Equal,
-                }
-            })
-        });
-        indices
-    }
-
-    /// Whether two positions at one coordinate carry a usable admitted order.
-    /// Missing keys on either side, or keys from different authorities, do not.
-    pub(super) fn comparable(&self, left: usize, right: usize) -> bool {
-        match (
-            self.positions[left].order.as_ref(),
-            self.positions[right].order.as_ref(),
-        ) {
-            (Some(left), Some(right)) => left.authority == right.authority,
-            _ => false,
-        }
-    }
-}

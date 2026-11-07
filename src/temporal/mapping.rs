@@ -12,13 +12,10 @@
 //! and no correspondence record: the emission half of the bridge remains blocked
 //! on `quire-contract-ir#63`, `quire-contract-ir#64` and actual TL capability.
 //!
-//! A classification made through a strict version-2 package also retains the
-//! authenticated definition selection it was made against. One made through a
-//! version-1 package retains none, so the two are never mistaken for each other.
+//! A classification made through a strict version-2 package retains the
+//! authenticated definition selection it was made against.
 
 use crate::protocol_artifact::wire as w;
-use qsl_semantics::check::{Activation as CheckedActivation, TemporalProfile};
-use quire_exact::NodeKey;
 
 use super::profile::Profile;
 use super::result::Subject;
@@ -165,8 +162,7 @@ impl AuthenticatedSelection {
 /// One classification request: its disposition, and everything the request
 /// retains from the native declaration it was made against.
 ///
-/// `support` and `retained` stay public fields for the existing version-1
-/// callers, so they are plain data a caller may copy or change. Only the
+/// `support` and `retained` stay public fields, so they are plain data a caller may copy or change. Only the
 /// authenticated selection has private fields. It vouches for the declaration
 /// and definition it names, and a consumer that needs the disposition bound to
 /// that evidence re-classifies from the package the
@@ -178,45 +174,6 @@ pub struct Classification {
     /// The retained native subject, profile and activation record.
     pub retained: Retained,
     authenticated: Option<AuthenticatedSelection>,
-}
-
-/// Mapping classification whose retained selection is sourced from S3's
-/// checked clause node rather than a protocol artifact declaration.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedClassification {
-    /// The FR-045 disposition.
-    pub support: Support,
-    /// Exact checked declaration selection retained by the classification.
-    pub retained: CheckedRetained,
-}
-
-/// FR-045 classification made from checked nodes after authenticating the
-/// matching strict `/2` source selection and its definition/clock binding.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedClassificationV2 {
-    /// The FR-045 disposition derived from checked operators.
-    pub support: Support,
-    /// Exact checked declaration retained by the classification.
-    pub retained: CheckedRetained,
-    /// The admitted definition selection that was authenticated.
-    pub authenticated: AuthenticatedSelection,
-    /// Exact clock name selected by the admitted package.
-    pub clock_name: String,
-    /// Exact clock configuration selected by the admitted package.
-    pub clock: crate::protocol_artifact::v2::wire::ClockConfiguration,
-}
-
-/// Checked declaration facts retained by FR-045.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedRetained {
-    /// The declaration's temporal-clause node identity.
-    pub identity: NodeKey,
-    /// The checked source name.
-    pub name: String,
-    /// The exact profile selected by checking.
-    pub profile: TemporalProfile,
-    /// The checked activation shape.
-    pub activation: CheckedActivation,
 }
 
 impl Classification {
@@ -233,8 +190,7 @@ impl Classification {
     }
 
     /// The definition selection a strict version-2 entry point authenticated
-    /// before classifying. `None` for a version-1 classification, which
-    /// authenticates nothing.
+    /// before classifying.
     pub fn authenticated(&self) -> Option<&AuthenticatedSelection> {
         self.authenticated.as_ref()
     }

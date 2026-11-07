@@ -193,7 +193,6 @@ pub fn admit_v2(
         };
         let candidate = artifact::encoding::candidate(&package, &mut work)?;
         let admitted = v2::AdmittedPackage {
-            clocks: artifact::ClockNames::of_v2(&package),
             package,
             // The caller publishes the artifact identity; none is invented here.
             artifact: None,
