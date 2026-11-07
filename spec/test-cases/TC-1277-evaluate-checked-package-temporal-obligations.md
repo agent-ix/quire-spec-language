@@ -78,6 +78,19 @@ independently of the evaluator's output.
     authentication of a mutated binding before evaluation is FR-522's
     (`temporal_evidence`, `temporal_identity`).
 
+11. Through `evaluate_temporal_evidence` (FR-516), run the cases of
+    FR-043-AC-15, AC-16 and AC-17: the twin occurrences of FR-516-AC-32 under
+    equal positions and valuations, and one atom valued at positions 0 and 1
+    with either value withdrawn; a request whose `occurrence` names no
+    occurrence and one with a stray atom key; and `on origin always[0,1]
+    holds(p)` with `p` true at position 0 and then unvalued there. Require
+    the subjects to differ only in `occurrence`, each withdrawn value to give
+    a missing valuation at its position and atom, `occurrence-unknown` and
+    `valuation-atom-unknown` with an empty charge log, and `True` with
+    `ClosedScope` and support at 0 and 1, then no truth and a missing
+    valuation at position 0, never `false`. Tag the tests with the criterion
+    they assert and `TC-1277`.
+
 ## Expected Results
 
 Every checked temporal evaluation derives truth, settlement, support, retained

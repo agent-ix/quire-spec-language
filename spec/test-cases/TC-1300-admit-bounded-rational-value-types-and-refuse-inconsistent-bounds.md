@@ -14,7 +14,7 @@ Verify the Rational value type of FR-505: the shared `rational_range` node,
 the unbounded empty-constraint case, the ordered reader refusals, alias,
 parameter and foreign-constraint restatement, value admission, the unchanged
 bare native, tuple positions and variant payloads, the unit-bearing carried quantity and its comparison through
-`convert<Quantity<u>>`. Scope: FR-505-AC-1 to FR-505-AC-10. The QSpec vectors
+`convert<Quantity<u>>`. Scope: FR-505-AC-1 to FR-505-AC-11. The QSpec vectors
 are TC-981 `RV-01` to `RV-12`, referenced by row id and never copied.
 
 ## Test Procedure
@@ -52,6 +52,7 @@ Each row below mutates `R0` as stated and admits it.
 | 20 | a source function parameter typed `Rational[8, 7; 1, 12]`; one typed `Rational[0, 7; 0, 12]`; the types `Quantity<m, Rational[8, 7; 1, 12]>` and `Quantity<m, Rational[0, 7; 0, 12]>` | each `ill_typed` at the `Rational[..]` type |
 | 24 | add tuple type `P` with position `p0` typed `Ratio` and variant type `V` with case `c` whose `payloadType` is `Ratio` | admitted; `p0` and `c`'s payload type `Rational[-3, 7; 1, 12]`, naming row 1's node |
 | 25 | row 24 with `Ratio`'s `constraints` empty | `p0` `invalid_model_binding`/`malformed-declaration` at the position; `c` `unsupported_construct`/`declaration-form` at `Variant.payloadType`; both at stage `package_read`; `level` admitted with no checked type |
+| 26 | row 19's model document; the compiling unit also declares its own `dimension Length;` and `unit m : Length = rational(1, 1);`; then the same without the source `m` | `Ratio`'s members typed over the source `m` unit node (`SourceOwner`), not the model document's `m` node; without the source `m`, over the model document's `m` node (`ModelOwner`) |
 
 Value rows, as `level` in a snapshot:
 
@@ -61,7 +62,7 @@ Value rows, as `level` in a snapshot:
 | 22 | row 1 | `8/1`, `16/2`, `1/13`, `-4/1`; `float64` object of `0.5` | the first four each `invalid_runtime_input`/`invalid-value` at the member path naming `Rational[-3, 7; 1, 12]` and the normalized pair (`16/2` as `8/1`); the float `invalid_runtime_input`/`wrong-value-kind` naming `kind` |
 | 23 | row 16 | `1/4`; `1/13` | `1/4 m` admitted; `1/13` refuses as row 22 |
 
-Tag the test `#[trace("FR-505-AC-1", "FR-505-AC-2", "FR-505-AC-3", "FR-505-AC-4", "FR-505-AC-5", "FR-505-AC-6", "FR-505-AC-7", "FR-505-AC-8", "FR-505-AC-9", "FR-505-AC-10", "TC-1300")]`.
+Tag the test `#[trace("FR-505-AC-1", "FR-505-AC-2", "FR-505-AC-3", "FR-505-AC-4", "FR-505-AC-5", "FR-505-AC-6", "FR-505-AC-7", "FR-505-AC-8", "FR-505-AC-9", "FR-505-AC-10", "FR-505-AC-11", "TC-1300")]`.
 
 ## Expected Results
 

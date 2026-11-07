@@ -67,6 +67,7 @@ infinite-trace unless a step names another profile.
    units. Compare omitted and explicit `min_count 1`, reformat the source,
    mutate each aggregate binding, and read the emitted formula node and
    source map.
+9. Compile FR-337-AC-29's unit as package `acme/orders` selecting `acme/rpc`, with the clock in `ix://acme/rpc/unit/ms` given to S3 and the emitter, and read the aggregate's bounds and every node with path `["scalar_type", "unit", "ix://acme/rpc/unit/ms"]`.
 
 Tag the tests `#[trace("TC-1267", "FR-337-AC-n")]`, and the test of AC-8's later-capture mutation also `"FR-524-AC-23"`.
 
@@ -121,3 +122,4 @@ Tag the tests `#[trace("TC-1267", "FR-337-AC-n")]`, and the test of AC-8's later
   `LimitExceeded(S3RationalBits)` at `255 s` under a ceiling of 16; and
   a `duration` window whose unit node is not the clock's
   `["scalar_type", "unit", timestamp_unit]` node refuses the emission.
+- Step 9: both bounds' `type` is `{package: "acme/rpc", path: ["scalar_type", "unit", "ix://acme/rpc/unit/ms"], ordinal: 0}` with the `acme/rpc` `ModelOwner`; exactly one node has that path; the clause node's `node_id.package` is `acme/orders`.
