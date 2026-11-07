@@ -15,7 +15,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{wire as w, work::Work, Dimension, Error, Invalid, Unsupported};
 use crate::checking::DomainType;
-use crate::linking::composed::models::BoundDeclaration;
 use qsl_semantics::model::admitted::{AdmittedPackage, Declaration};
 use qsl_semantics::model::domain_package::{
     DomainPackageRecord, DomainPackageRef, PopulationRecord, ValueTypeRef,
@@ -269,18 +268,6 @@ fn structural_index(value: usize) -> Result<u32, Error> {
     u32::try_from(value).map_err(|_| Error::Invalid(Invalid::StructuralInteger))
 }
 
-/// `Model.domain_package` for `selection`.
-pub(super) fn naming(
-    selection: &DomainPackageRef,
-    work: &mut Work,
-) -> Result<w::DomainPackage, Error> {
-    work.charge(Dimension::Entries, 1)?;
-    work.bytes(selection.identity.len())?;
-    Ok(w::DomainPackage {
-        identity: selection.identity.clone(),
-    })
-}
-
 /// Whether `bytes` are the selected package's document: FR-154 admission of
 /// `bytes` under the selection's own identity, read under the caller's
 /// `intake` limit.
@@ -409,22 +396,6 @@ pub(super) fn reached_objects<'a>(
         }
     }
     Ok(reached)
-}
-
-/// The owning type and name of a bound domain operation, `None` when
-/// `bound` is not an operation member.
-pub(super) fn operation<'a>(
-    bound: &BoundDeclaration<'a>,
-) -> Result<Option<(DomainType<'a>, &'a str)>, Error> {
-    let Some((owner, name)) = bound.operation() else {
-        return Ok(None);
-    };
-    let package = bound.package();
-    let owner = package
-        .declaration_by_key(owner)
-        .and_then(|owner| DomainType::new(package, owner))
-        .ok_or(Error::Invalid(Invalid::Model))?;
-    Ok(Some((owner, name)))
 }
 
 #[cfg(test)]

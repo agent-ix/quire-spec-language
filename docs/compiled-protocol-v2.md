@@ -117,43 +117,20 @@ closed-JSON shape error and dotted codes under
 `Refusal::code()` and keeps its established `v2.` spelling. Codes are
 append-only and are never message-derived.
 
-The constructor-private compiler entry point is:
-
-```rust,ignore
-protocol_artifact::native::admit_v2(proofs, selected, temporal, limits)
-    -> Report<AdmissionV2>
-```
-
-The selected `temporal` input is a complete `native::TemporalSelection` table
-keyed by exact source artifact and declaration byte span. Each record includes
-the expected definition identity/revision/artifact and one typed clock
-configuration. The producer matches those selections to the proof report rather
-than accepting a same-named declaration or shape. `AdmissionV2` exposes
-canonical bytes and a strict admitted view, never a freely
-constructible external artifact authority token. Its enclosing `Report` owns
-usage and effective limits. L3/L4 add no native `state` evaluator: the artifact-graph `state::evaluate_v2`
+This crate holds the `/2` readers and the typed candidate encoder; it has no entry point that produces `/2` bytes (the former `protocol_artifact::native` emitter is deleted). L3/L4 add no native `state` evaluator: the artifact-graph `state::evaluate_v2`
 path and its `state::Refusal::UnpublishedArtifact` were retired under FR-049
 (ADR-011 §7.3 M-6c, FR-405 item 1). A strictly read v2 package is evaluated
 through the checked-term entry points of `qsl-eval`
 (`CheckedPackageEvaluation::{call, evaluate, evaluate_protocol_slot}` and the
 checked-family functions), with the package identity established by its
-compile/read path; no caller-supplied artifact identity can be substituted. L5 adds `temporal::evaluate_v2`,
-`evaluate_with_progress_v2` and `mapping_support_v2` over the v2 admitted type;
-the existing `/1` signatures remain unchanged. The v2 trace-evaluation entry
-points compare the trace's profile, revision,
+compile/read path; no caller-supplied artifact identity can be substituted. The retired L5 entry points compared the trace's profile, revision,
 binding name and exact parameter map before visiting positions. Event-position
 uses only `sequence_authority`; fixed-sample uses exactly `epoch`, `period` and
 `unit`, with the numbers encoded as compact canonical FR-038 Number JSON;
 timestamped-event uses only `timestamp_unit`. L5 does not interpret clock
 progress during artifact admission.
 
-`mapping_support_v2(package, declaration, closure)` has no trace input; it
-checks the declaration's authenticated definition/profile binding before using
-the existing surrounding-execution-closure classifier and makes no parameter-map
-claim. Its `Classification::authenticated()` accessor returns the
-`AuthenticatedSelection` containing the selected package reference, declaration,
-definition identity/revision and definition artifact reference. Version-1 classification
-returns `None`; neither path authenticates clock parameters without a trace.
+Mapping classification over a `/2` package (`mapping_support_v2`) is retired; the checked-clause classifier (FR-527) replaces it.
 `evaluate_with_progress_v2` keys retained progress by the admitted package
 reference, declaration, definition identity/revision and exact clock configuration,
 so another artifact, `/1` evaluation or changed clock selection cannot lend it
@@ -168,20 +145,8 @@ that retains this contract and names the exact public surface it consumes:
   AdmittedPackage, read, encode_candidate}` and
   `protocol_artifact::v2::wire::{Package, TemporalBinding,
   ClockConfiguration}`;
-- `protocol_artifact::native::{TemporalSelection, AdmissionV2, admit_v2}`;
 - the `qsl-eval` checked-term entry points
-  `CheckedPackageEvaluation::{call, evaluate, evaluate_protocol_slot}`; and
-- `temporal::{AuthenticatedSelection, Classification, evaluate_v2,
-  evaluate_with_progress_v2, mapping_support_v2}`.
-
-The producing caller supplies the actual parser/linker/proof report plus the
-complete `native::Selections`: original native source and model artifacts,
-unreconstructed dependency bytes and their exact artifact identities, and a
-complete temporal selection table. `admit_v2` returns a
-`Report<AdmissionV2>`. The report, not `AdmissionV2`, owns the effective limits,
-usage and typed refusal. On success `AdmissionV2::bytes()` exposes the raw
-canonical `/2` payload, while `admitted()` exposes
-only the constructor-private local view.
+  `CheckedPackageEvaluation::{call, evaluate, evaluate_protocol_slot}`.
 
 The external linked-package `ArtifactRef` is a separate consumer-authorized
 identity selection. Its version is `2`; A does not mint consumer authority by
@@ -194,14 +159,11 @@ resource-incomplete or invalid/unsupported refusal without a partial admitted
 package.
 
 The executable recipe is
-[`tests/compiled_protocol_v2.rs`](../tests/it/compiled_protocol_v2.rs), supported by
-[`tests/support/native_protocol/mod.rs`](../tests/support/native_protocol/mod.rs).
-It starts with real native compilation, reconstructs reader expectations from
-the original inputs rather than emitted wire, and covers cross-version offers,
-selection/configuration substitutions,
-same-meaning recanonicalized producer input, exact limits, and the L5 adapters.
-These fixtures demonstrate A's producer and reader boundary only; they do not
-claim that B admitted the artifact or completed an ecosystem acceptance run.
+[`tests/protocol_artifact_versions.rs`](../tests/it/protocol_artifact_versions.rs).
+It authors a `/2` package, reconstructs the reader expectations independently
+from it rather than from the offered wire, and covers cross-version offers,
+selection/configuration substitutions, exact limits and the `/3` activation
+mapping refusals.
 
 ### Checked-package handoff directory
 

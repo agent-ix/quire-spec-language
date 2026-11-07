@@ -1584,6 +1584,7 @@ dependencies = [
  "qsl-cst",
  "qsl-forms",
  "qsl-foundation",
+ "qsv-failing-allocator",
  "quire-canonical",
  "quire-checked",
  "quire-contract-model",
@@ -1631,9 +1632,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "qsv-failing-allocator"
+version = "0.0.0"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#f9b3afd689f45126c79102e51e8ed23c6a6de38a"
+
+[[package]]
 name = "quire-canonical"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/quire-canonical?branch=main#35987f1dea33edf13bdf8e6a39153a802503f5a0"
+source = "git+https://github.com/agent-ix/quire-canonical?branch=main#13d0fe0cfff4cc1592e8d78a4ee3f45cfdbbc91e"
 dependencies = [
  "quire-canonical-derive",
  "ryu-js",
@@ -1646,7 +1652,7 @@ dependencies = [
 [[package]]
 name = "quire-canonical-derive"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/quire-canonical?branch=main#35987f1dea33edf13bdf8e6a39153a802503f5a0"
+source = "git+https://github.com/agent-ix/quire-canonical?branch=main#13d0fe0cfff4cc1592e8d78a4ee3f45cfdbbc91e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1742,7 +1748,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#a16416bf014df3c067f8b1640f224c2e3c4bb5e1"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#f9b3afd689f45126c79102e51e8ed23c6a6de38a"
 dependencies = [
  "quire-canonical",
  "quire-exact",

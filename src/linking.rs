@@ -3,6 +3,8 @@
 //! Linking establishes names and provenance, not typing or evaluability.
 
 pub mod composed;
+pub mod declaration_id;
+pub mod definition_source;
 mod native;
 
 use std::collections::BTreeSet;

@@ -31,7 +31,6 @@ mod domain;
 mod encoding;
 mod intake;
 mod models;
-pub mod native;
 mod recovery;
 pub mod v2;
 pub mod v3;

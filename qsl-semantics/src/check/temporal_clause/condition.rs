@@ -135,12 +135,36 @@ impl TypedAggregate {
 /// index, typed over the clause's `over` parameter. `input.nodes_used` is
 /// the package's running node total before the clause, and the total after
 /// it is returned.
+///
+/// The refusals are in report order: an aggregate value refused as a carried
+/// quantity (FR-194-AC-12) is followed by the refusal of its threshold.
 pub(crate) fn check_conditions(
     clause: usize,
     form: &qsl_forms::TemporalClauseForm,
     checked: &CheckedTemporalClause,
     input: &ClauseDeclarations<'_>,
     cx: &mut CheckContext<'_, Scope>,
+) -> Result<(TypedConditions, u64), Vec<CheckRefusal>> {
+    let mut refused = Vec::new();
+    match check_conditions_into(clause, form, checked, input, cx, &mut refused) {
+        Ok(typed) if refused.is_empty() => Ok(typed),
+        Ok(_) => Err(refused),
+        Err(first) => {
+            refused.push(first);
+            Err(refused)
+        }
+    }
+}
+
+/// [`check_conditions`], pushing a refusal that precedes the one it returns
+/// onto `refused`.
+fn check_conditions_into(
+    clause: usize,
+    form: &qsl_forms::TemporalClauseForm,
+    checked: &CheckedTemporalClause,
+    input: &ClauseDeclarations<'_>,
+    cx: &mut CheckContext<'_, Scope>,
+    refused: &mut Vec<CheckRefusal>,
 ) -> Result<(TypedConditions, u64), CheckRefusal> {
     let mut nodes = input.nodes_used;
     let mut conditions = TypedConditions::default();
@@ -238,19 +262,36 @@ pub(crate) fn check_conditions(
                     .map(|value| typed(Goal::Any, value, AggregatePart::Value))
                     .transpose()?;
                 // QSpec FR-370 "Window aggregate atom": a value is of
-                // family `integer`, `rational` or `quantity`.
-                if value
+                // family `integer`, `rational` or `quantity`. A carried
+                // quantity is none of them (QSL FR-194-AC-12): the value is
+                // refused, and its threshold is still checked against the
+                // carried quantity's `Quantity<u>`, so a refusal at the
+                // threshold follows the one at the value.
+                let value_refusal = value
                     .as_ref()
                     .is_some_and(|value| family(value.body.root().value_type()).is_none())
-                {
-                    return Err(CheckRefusal {
+                    .then(|| CheckRefusal {
                         location: at(AggregatePart::Value),
                         cause: CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
                     });
+                let aggregate_value_type =
+                    value
+                        .as_ref()
+                        .map(|value| match value.body.root().value_type() {
+                            ValueType::CarriedQuantity(carried) => {
+                                ValueType::Quantity(carried.unit().clone())
+                            }
+                            other => other.clone(),
+                        });
+                if let Some(refusal) = value_refusal {
+                    if aggregate_value_type
+                        .as_ref()
+                        .is_none_or(|value_type| family(value_type).is_none())
+                    {
+                        return Err(refusal);
+                    }
+                    refused.push(refusal);
                 }
-                let aggregate_value_type = value
-                    .as_ref()
-                    .map(|value| value.body.root().value_type().clone());
                 let filter = atom
                     .term
                     .filter

@@ -1086,6 +1086,16 @@ pub(crate) fn admitted_step_relation_key(
     .map_err(|refusal| fault(location, KeyFault::ModelRootKey(refusal.to_string())))
 }
 
+/// The rounding mode of a carried quantity: its carrier's, `exact` for a
+/// rational carrier (QSpec FR-142 "Carried quantity").
+fn carrier_rounding(carried: &quire_exact::CarriedQuantityType) -> quire_exact::RoundingMode {
+    match carried.carrier() {
+        quire_exact::QuantityCarrier::Decimal(decimal) => decimal.rounding(),
+        quire_exact::QuantityCarrier::Integer { rounding, .. } => *rounding,
+        quire_exact::QuantityCarrier::Rational(_) => quire_exact::RoundingMode::Exact,
+    }
+}
+
 /// The original identity of a model variant whose owner path is
 /// `model/variant_type/<identity>`, `None` for any other owner path.
 #[ix_trace_rs::string_edge]
@@ -4891,13 +4901,7 @@ impl<'a> Lowering<'a> {
                     // FR-093 / FR-497 quantity conversions carry the target
                     // carrier's mode, or exact for an uncarried Quantity.
                     let rounding = if let ValueType::CarriedQuantity(carried) = &target {
-                        match carried.carrier() {
-                            quire_exact::QuantityCarrier::Decimal(decimal) => decimal.rounding(),
-                            quire_exact::QuantityCarrier::Integer { rounding, .. } => *rounding,
-                            quire_exact::QuantityCarrier::Rational(_) => {
-                                quire_exact::RoundingMode::Exact
-                            }
-                        }
+                        carrier_rounding(carried)
                     } else {
                         quire_exact::RoundingMode::Exact
                     };
@@ -4997,12 +5001,18 @@ impl<'a> Lowering<'a> {
                                 None,
                                 Some(quire_exact::RoundingMode::Exact),
                             ),
+                            // FR-322 "Carried-quantity sum": the mode is the
+                            // carrier's, which the summand and result pin.
+                            ValueType::CarriedQuantity(carried) => (
+                                "quire.op.collection.sum.carried_quantity",
+                                None,
+                                Some(carrier_rounding(carried)),
+                            ),
                             ValueType::Integer | ValueType::Int(_) => {
                                 ("quire.op.collection.sum.integer", None, None)
                             }
                             // Typing admits no other total (FR-145).
                             ValueType::Boolean
-                            | ValueType::CarriedQuantity(_)
                             | ValueType::BoundedQuantity(_)
                             | ValueType::Text(_)
                             | ValueType::String

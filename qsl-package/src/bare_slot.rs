@@ -477,6 +477,7 @@ impl<'p> BarePackage<'p> {
                     &CheckedTerm::Reference {
                         target: root.clone(),
                     },
+                    None,
                     &mut |parameter| {
                         found.insert(&parameter.node_id);
                     },

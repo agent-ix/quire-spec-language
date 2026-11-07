@@ -8,13 +8,13 @@ use qsl_foundation::{Source, SourceIdentity, Span};
 use quire_spec_language::linking::composed::binding_work::{
     Dimension, Limits as BindingLimits, Work, ACCOUNTING_VERSION,
 };
-use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::linking::composed::definitions::{
     self, Artifact, Cause, Inventory, RuleInput,
 };
 use quire_spec_language::linking::composed::{
     admit_namespace, ExpectedSource, SourceInventory, WorkLimits,
 };
+use quire_spec_language::linking::definition_source::RegisteredDefinition as R;
 use quire_spec_language::Limits;
 
 fn definitions() -> Vec<Artifact<'static>> {

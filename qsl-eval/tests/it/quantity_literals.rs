@@ -413,10 +413,10 @@ fn a_carried_quantity_is_not_an_arithmetic_operand() {
     );
 }
 
-/// FR-497-AC-6 (TC-1287): a carried quantity is not an element of a sum. A
-/// `sum` over carried elements refuses during checking as a type mismatch,
-/// with no package to evaluate, while the same elements converted back to
-/// `Quantity<m>` check.
+/// FR-497-AC-6 (TC-1287): a carried quantity is not an element of a sum whose
+/// total is not that very carried type. A `sum` of carried elements into an
+/// `Integer` refuses during checking as a type mismatch, with no package to
+/// evaluate, while the same elements converted back to `Quantity<m>` check.
 #[trace("FR-497-AC-6", "TC-1287", "QSpec-TC-187", "QSpec-FR-142-AC-30")]
 #[test]
 fn a_carried_quantity_is_not_a_summand() {

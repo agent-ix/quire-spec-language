@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::linking::composed::definition_source::RegisteredDefinition;
+use crate::linking::definition_source::RegisteredDefinition;
 
 use super::*;
 

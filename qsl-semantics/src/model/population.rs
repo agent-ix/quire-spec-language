@@ -412,7 +412,7 @@ impl AdmissionCharge {
 /// fixed-size state: the limits, the two counters and the number of admitted
 /// charges, and owns no heap memory; the const assertion below this type
 /// holds that in every production build. The ordered charge log
-/// ([`AdmissionMeter::admitted_charges`]) exists only under the
+/// (`AdmissionMeter::admitted_charges`) exists only under the
 /// `test-support` feature, which only a dev-dependency may enable.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdmissionMeter {

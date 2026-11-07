@@ -14,8 +14,9 @@ use quire_spec_language::linking::composed::scopes::{
     ScopeReport, StructuralKind, SymbolKind,
 };
 use quire_spec_language::linking::composed::{
-    admit_namespace, DeclarationId, ExpectedSource, SourceInventory, SyntaxNamespace, WorkLimits,
+    admit_namespace, ExpectedSource, SourceInventory, SyntaxNamespace, WorkLimits,
 };
+use quire_spec_language::linking::declaration_id::DeclarationId;
 use quire_spec_language::Limits;
 
 const HEADER: &str =

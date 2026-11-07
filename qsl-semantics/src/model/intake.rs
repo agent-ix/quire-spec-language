@@ -2525,35 +2525,6 @@ fn malformed_frame_entry(
     }
 }
 
-/// A native value type whose required parameters
-/// `agent-ix-semantic-ir`'s own constraint keyword vocabulary
-/// (`min`/`max`/`exclusiveMin`/`exclusiveMax`/`minLength`/`maxLength`/
-/// `pattern`/`enumValues`/`nonEmpty`/`unique`/`format`) cannot express, no
-/// matter what a producer's own field-level constraints supply -- names
-/// which parameters are missing.
-fn unsupported_native_parameters(
-    value: &Value,
-    at: &str,
-    native: NativeValueType,
-    missing: &[&str],
-) -> ModelRefusal {
-    let node = node_identity_label(value, at);
-    let what = format!("typeRef:ix://quire/native/{}", native.as_str());
-    ModelRefusal {
-        code: Code::UnsupportedConstruct,
-        cause: ModelRefusalCause::UnsupportedDeclarationForm {
-            node,
-            what: what.clone(),
-            member: MemberPath::from_document_location(at).name("typeRef"),
-        },
-        detail: format!(
-            "{at}: typeRef: native value type {:?} requires parameter(s) {} that agent-ix-semantic-ir's constraint vocabulary cannot express",
-            native.as_str(),
-            missing.join(", ")
-        ),
-    }
-}
-
 /// One IR node under reading: its own JSON value and dotted document path.
 /// Every read helper reports a malformed-declaration/declaration-form
 /// refusal against `value`'s own `identity`/`origin`, so a nested check
@@ -3237,12 +3208,6 @@ fn read_value_type_ref(
                 &ctx.at,
                 MemberPath::from_document_location(&ctx.at).child("textProfile"),
                 "textProfile",
-            ));
-        }
-        let missing = native.unsupported_parameters();
-        if !missing.is_empty() {
-            return Err(unsupported_native_parameters(
-                ctx.value, &ctx.at, native, missing,
             ));
         }
         return Ok(ValueTypeRef::Native(native));
@@ -4588,9 +4553,13 @@ pub(super) fn read_variant_type(
     node: &str,
     at: &str,
     shape: Option<&str>,
-    type_meanings: &HashMap<&str, &str>,
+    types: &TypeSets<'_, '_>,
     records: &mut Vec<DomainPackageRecord>,
 ) -> Result<(), Refusals> {
+    let TypeSets {
+        meanings: type_meanings,
+        unbounded_rationals,
+    } = types;
     let ctx = NodeCtx::new(type_value, at);
     let mut refusals = Vec::new();
     if shape != Some("enumeration") {
@@ -4674,7 +4643,8 @@ pub(super) fn read_variant_type(
                     let case_ctx = NodeCtx::new(case, case_at.clone());
                     match read_value_type_ref(package, &case_ctx, type_ref, true) {
                         Ok(value_type)
-                            if variant_payload_is_value_type(&value_type, type_meanings) =>
+                            if variant_payload_is_value_type(&value_type, type_meanings)
+                                && !names_unbounded_rational(&value_type, unbounded_rationals) =>
                         {
                             Some(value_type)
                         }
@@ -4747,9 +4717,13 @@ pub(super) fn read_tuple_value_type(
     node: &str,
     at: &str,
     shape: Option<&str>,
-    type_meanings: &HashMap<&str, &str>,
+    types: &TypeSets<'_, '_>,
     records: &mut Vec<DomainPackageRecord>,
 ) -> Result<(), Refusals> {
+    let TypeSets {
+        meanings: type_meanings,
+        unbounded_rationals,
+    } = types;
     let ctx = NodeCtx::new(type_value, at);
     let mut refusals = Vec::new();
     if shape != Some("tuple") {
@@ -4837,6 +4811,11 @@ pub(super) fn read_tuple_value_type(
         };
         let supported = match &value_type {
             ValueTypeRef::Clock => false,
+            ValueTypeRef::Package(_)
+                if names_unbounded_rational(&value_type, unbounded_rationals) =>
+            {
+                false
+            }
             ValueTypeRef::Native(_) | ValueTypeRef::Unit(_) => true,
             ValueTypeRef::Package(key) => {
                 type_meanings.get(key.node.as_str()).is_none_or(|meaning| {
@@ -4872,6 +4851,23 @@ pub(super) fn read_tuple_value_type(
     }));
     records.extend(position_records);
     Ok(())
+}
+
+/// What a tuple or variant reader needs to know of the document's other types.
+pub(super) struct TypeSets<'a, 'm> {
+    /// Each type identity's meaning.
+    pub(super) meanings: &'a HashMap<&'m str, &'m str>,
+    /// The unbounded `Rational` value types (FR-505).
+    pub(super) unbounded_rationals: &'a std::collections::BTreeSet<String>,
+}
+
+/// Whether `value_type` names the unbounded `Rational`: a Rational value type
+/// with empty `constraints`, or an alias reaching one (FR-505).
+fn names_unbounded_rational(
+    value_type: &ValueTypeRef,
+    unbounded_rationals: &std::collections::BTreeSet<String>,
+) -> bool {
+    matches!(value_type, ValueTypeRef::Package(key) if unbounded_rationals.contains(&key.node))
 }
 
 /// Whether `payload_type` resolves to an admitted model or native value type.
@@ -5055,6 +5051,10 @@ struct TypeNodeReader<'a> {
     shapes: &'a HashMap<(String, String), String>,
     type_meanings: &'a HashMap<&'a str, &'a str>,
     rational_types: &'a std::collections::BTreeSet<String>,
+    /// Rational value types with empty `constraints`, and the aliases that
+    /// reach them: the unbounded `Rational`, which a tuple position or a
+    /// variant payload cannot carry (FR-505).
+    unbounded_rationals: &'a std::collections::BTreeSet<String>,
     semantic: Option<&'a agent_ix_semantic_ir::rules::Document<'a>>,
     semantic_members: &'a HashMap<&'a str, &'a agent_ix_semantic_ir::json::Json>,
 }
@@ -5072,6 +5072,7 @@ fn read_type_node(
         shapes,
         type_meanings,
         rational_types,
+        unbounded_rationals,
         semantic,
         semantic_members,
     } = reader;
@@ -5297,6 +5298,7 @@ fn read_type_node(
             node,
             at,
             meanings_by_node: type_meanings,
+            unbounded_rationals,
             construct_shape: shapes
                 .get(&(module.to_owned(), name.to_owned()))
                 .map(String::as_str),
@@ -6261,6 +6263,34 @@ fn read_nodes_partial(
         }
         rational_types.extend(newly_resolved);
     }
+    let mut unbounded_rationals: std::collections::BTreeSet<String> = types
+        .iter()
+        .filter(|type_value| type_value.get("scalar").and_then(Value::as_str) == Some("rational"))
+        .filter(|type_value| {
+            type_value
+                .get("constraints")
+                .and_then(Value::as_array)
+                .is_none_or(Vec::is_empty)
+        })
+        .filter_map(|type_value| type_value.get("identity")?.as_str().map(str::to_owned))
+        .collect();
+    loop {
+        let reached: Vec<String> = types
+            .iter()
+            .filter(|type_value| {
+                type_value
+                    .get("target")
+                    .and_then(Value::as_str)
+                    .is_some_and(|target| unbounded_rationals.contains(target))
+            })
+            .filter_map(|type_value| type_value.get("identity")?.as_str().map(str::to_owned))
+            .filter(|identity| !unbounded_rationals.contains(identity))
+            .collect();
+        if reached.is_empty() {
+            break;
+        }
+        unbounded_rationals.extend(reached);
+    }
     let mut nodes: Vec<DocumentNode<'_>> = Vec::with_capacity(types.len() + populations.len());
     for (position, type_value) in types.iter().enumerate() {
         let at = format!("$.types[{position}]");
@@ -6296,6 +6326,7 @@ fn read_nodes_partial(
                         shapes: &shapes,
                         type_meanings: &type_meanings,
                         rational_types: &rational_types,
+                        unbounded_rationals: &unbounded_rationals,
                         semantic,
                         semantic_members: &semantic_members,
                     },
@@ -6566,6 +6597,7 @@ mod tests {
             shapes: &shapes,
             type_meanings: &type_meanings,
             rational_types: &rational_types,
+            unbounded_rationals: &std::collections::BTreeSet::new(),
             semantic: None,
             semantic_members: &semantic_members,
         };
@@ -6896,7 +6928,10 @@ mod tests {
             "ix://acme/orders/Pair",
             "types[0]",
             Some("tuple"),
-            &HashMap::new(),
+            &TypeSets {
+                meanings: &HashMap::new(),
+                unbounded_rationals: &std::collections::BTreeSet::new(),
+            },
             &mut records,
         )
         .expect("the closed, ordered tuple form is admitted");
@@ -8039,32 +8074,35 @@ mod tests {
         assert_eq!(resolved, ValueTypeRef::Native(NativeValueType::Uuid));
     }
 
-    /// H3: `Rational`/`Decimal`/`Text` are parameterized in shared-grammar.md,
-    /// and `agent-ix-semantic-ir`'s own constraint keyword vocabulary has no
-    /// `dmin`/`dmax`/`profile` keyword at all -- so these refuse
-    /// unconditionally, naming which parameters are unexpressable, never
-    /// resolving to a made-up declaration.
-    /// PR #200 review R2-4/R3-3: untagged, not re-traced -- see
-    /// `resolves_a_known_native_type_ref`'s own doc comment (no local
-    /// FR-151-AC/FR-152-AC row exists to tag against, and FR-152-AC-4 is
-    /// the binder's `check_connection`, not intake's typeRef reading).
-    /// Also a direct `read_value_type_ref` test, not AC-3's kind/meaning
-    /// subject.
+    /// FR-056-AC-43, FR-505-AC-6 (TC-897 step 3, TC-1300): a bare
+    /// `ix://quire/native/Text`, `Rational` or `Decimal` `typeRef` resolves to
+    /// the native name, declaring no node: the member has no checked type and
+    /// is refused where used. Read below the semantic-IR validator, whose
+    /// pinned native set names no `Rational`, so this is the Rational case's
+    /// only intake-level assertion until the validator carries it.
+    #[trace("TC-897")]
     #[test]
-    fn refuses_a_parameterized_native_type_as_unsupported() {
+    fn admits_a_bare_native_text_rational_or_decimal_with_no_checked_type() {
         let node = serde_json::json!({"identity": "ix://acme/orders/Widget/amount"});
         let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
-        let refusal = read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Decimal", false)
-            .expect_err(
-                "Decimal requires dmin/dmax, which the constraint vocabulary cannot express",
-            );
-        assert_eq!(refusal.code, Code::UnsupportedConstruct);
-        assert_eq!(refusal.cause.as_str(), "declaration-form");
-        assert!(
-            refusal.detail.contains("dmin") && refusal.detail.contains("dmax"),
-            "the detail names the missing parameters: {:?}",
-            refusal.detail
-        );
+        for (name, native) in [
+            ("Text", NativeValueType::Text),
+            ("Rational", NativeValueType::Rational),
+            ("Decimal", NativeValueType::Decimal),
+        ] {
+            let resolved = read_value_type_ref(
+                "acme/orders",
+                &ctx,
+                &format!("ix://quire/native/{name}"),
+                false,
+            )
+            .unwrap_or_else(|refusal| panic!("{name} resolves: {refusal:?}"));
+            assert_eq!(resolved, ValueTypeRef::Native(native), "{name}");
+        }
+        let unknown =
+            read_value_type_ref("acme/orders", &ctx, "ix://quire/native/UnknownText", false)
+                .expect_err("an undeclared native name refuses");
+        assert_eq!(unknown.code, Code::InvalidModelBinding);
     }
 
     // `read_records`'s own two hand-rolled `unsupported_at` refusals -- a
@@ -8845,6 +8883,107 @@ mod tests {
             ModelRefusalCause::IntakeMalformedDeclaration { member, .. }
                 if member.to_string() == "TypeDefinition.constraints[1].operands"
         ));
+    }
+
+    /// The refusal of one defective `Ratio`, as its code, the exact member
+    /// path it names and the full detail.
+    fn ratio_refusal(constraints: Vec<Value>) -> (Code, String, String) {
+        let refusal = read_ratio(constraints, None).expect_err("a defective Ratio refuses");
+        let member = match &refusal.cause {
+            ModelRefusalCause::IntakeMalformedDeclaration { member, .. }
+            | ModelRefusalCause::UnsupportedDeclarationForm { member, .. } => member.to_string(),
+            other => panic!("not an intake refusal of a member: {other:?}"),
+        };
+        (refusal.code, member, refusal.detail)
+    }
+
+    fn with_foreign_applies_to(mut constraint: Value) -> Value {
+        constraint["appliesTo"] = serde_json::json!("ix://acme/orders/Other");
+        constraint
+    }
+
+    /// FR-505-AC-8 (TC-1300 row 11): when a `Ratio` carries two defects only
+    /// the earlier defect row is reported, once.
+    #[trace("FR-505-AC-8", "TC-1300")]
+    #[test]
+    fn two_rational_defects_report_only_the_earlier_row() {
+        let min_length = || rational_constraint("minLength", serde_json::json!(0));
+        let max_numerator = |value: Value| rational_constraint("maxNumerator", value);
+        let complete = |skip: &str| -> Vec<Value> {
+            [
+                ("minNumerator", -3),
+                ("maxNumerator", 7),
+                ("minDenominator", 1),
+                ("maxDenominator", 12),
+            ]
+            .into_iter()
+            .filter(|(keyword, _)| *keyword != skip)
+            .map(|(keyword, value)| rational_constraint(keyword, serde_json::json!(value)))
+            .collect()
+        };
+        let report = |constraints: Vec<Value>| ratio_refusal(constraints);
+
+        // minLength with maxNumerator given twice: minLength.
+        let mut constraints = complete("");
+        constraints.push(min_length());
+        constraints.push(max_numerator(serde_json::json!(6)));
+        let (code, member, detail) = report(constraints);
+        assert_eq!(code, Code::UnsupportedConstruct, "{detail}");
+        assert_eq!(member, "TypeDefinition.constraints[4].keyword");
+        assert!(detail.contains("minLength"), "{detail}");
+
+        // A foreign appliesTo with maxNumerator given twice: the appliesTo.
+        let mut constraints = complete("");
+        constraints.push(with_foreign_applies_to(max_numerator(serde_json::json!(6))));
+        constraints.push(max_numerator(serde_json::json!(5)));
+        let (code, member, detail) = report(constraints);
+        assert_eq!(code, Code::InvalidModelBinding, "{detail}");
+        assert_eq!(member, "TypeDefinition.constraints[4].appliesTo");
+
+        // minLength with a foreign appliesTo: minLength.
+        let mut constraints = complete("");
+        constraints.push(with_foreign_applies_to(min_length()));
+        constraints.push(with_foreign_applies_to(max_numerator(serde_json::json!(6))));
+        let (code, member, detail) = report(constraints);
+        assert_eq!(code, Code::UnsupportedConstruct, "{detail}");
+        assert_eq!(member, "TypeDefinition.constraints[4].keyword");
+        assert!(detail.contains("minLength"), "{detail}");
+
+        // maxNumerator twice with minDenominator removed: the repeated keyword.
+        let mut constraints = complete("minDenominator");
+        constraints.push(max_numerator(serde_json::json!(6)));
+        let (code, member, detail) = report(constraints);
+        assert_eq!(code, Code::InvalidModelBinding, "{detail}");
+        assert_eq!(member, "TypeDefinition.constraints[3].keyword");
+        assert!(detail.contains("maxNumerator"), "{detail}");
+
+        // minDenominator removed with maxNumerator 1.5: the missing keyword.
+        let mut constraints = complete("minDenominator");
+        constraints[1] = max_numerator(serde_json::json!(1.5));
+        let (code, member, detail) = report(constraints);
+        assert_eq!(code, Code::InvalidModelBinding, "{detail}");
+        assert_eq!(member, "TypeDefinition.constraints");
+        assert!(detail.contains("minDenominator: missing"), "{detail}");
+
+        // maxNumerator 1.5 with minNumerator 8: the operand.
+        let mut constraints = complete("");
+        constraints[0] = rational_constraint("minNumerator", serde_json::json!(8));
+        constraints[1] = max_numerator(serde_json::json!(1.5));
+        let (code, member, detail) = report(constraints);
+        assert_eq!(code, Code::InvalidModelBinding, "{detail}");
+        assert_eq!(member, "TypeDefinition.constraints[1].operands");
+
+        // maxDenominator 0.5 listed first with maxNumerator 1.5: maxNumerator.
+        let constraints = vec![
+            rational_constraint("maxDenominator", serde_json::json!(0.5)),
+            max_numerator(serde_json::json!(1.5)),
+            rational_constraint("minNumerator", serde_json::json!(-3)),
+            rational_constraint("minDenominator", serde_json::json!(1)),
+        ];
+        let (code, member, detail) = report(constraints);
+        assert_eq!(code, Code::InvalidModelBinding, "{detail}");
+        assert_eq!(member, "TypeDefinition.constraints[1].operands");
+        assert!(detail.contains("maxNumerator"), "{detail}");
     }
 
     /// FR-505-AC-4/7: package-wide binding checks refuse member-level

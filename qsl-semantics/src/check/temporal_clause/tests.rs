@@ -470,6 +470,186 @@ fn package_admits(text: &str) {
     assert_eq!(graph.temporal_clauses().len(), 1, "{text}");
 }
 
+/// FR-194-AC-12 (TC-629): a carried aggregate value is refused
+/// `ill_typed`/`type-mismatch` at the value before any charge, its threshold
+/// is still checked against `Quantity<u>` and reported after it, a carried
+/// threshold is refused, and the value converted back to `Quantity<u>` checks.
+#[trace("TC-629", "FR-194-AC-12")]
+#[test]
+fn a_carried_aggregate_value_or_threshold_is_refused_at_the_carried_expression() {
+    use crate::check::lowering::{temporal_location, AggregatePart, TemporalSite};
+    let carried = |formula: &str| {
+        source(&[EVENT], "Quantity<m>", formula).replace(
+            "temporal C using",
+            "dimension Length;\nunit m : Length = rational(1, 1);\n\
+             dimension Time;\nunit s : Time = rational(1, 1);\n\
+             type Lc = Quantity<m, Int[-5, 5]>;\ntemporal C using",
+        )
+    };
+    let at = |part| temporal_location(0, TemporalSite::Aggregate(0, part));
+    let refused = |text: &str| {
+        assemble(text)
+            .check(CheckingLimits::default())
+            .expect_err("the carried expression is refused at S3")
+            .into_iter()
+            .map(|refusal| {
+                (
+                    refusal.cause.code(),
+                    refusal.cause.cause().map(str::to_owned),
+                    refusal.location,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    for kind in ["sum of", "min of", "max of", "quantile 0.5 of"] {
+        assert_eq!(
+            refused(&carried(&format!(
+                "{kind} convert<Lc>(c) over past[0,2] <= 5 m"
+            ))),
+            [(
+                Code::IllTyped,
+                Some("type-mismatch".to_owned()),
+                at(AggregatePart::Value)
+            )],
+            "{kind}"
+        );
+        assert_eq!(
+            refused(&carried(&format!(
+                "{kind} convert<Lc>(c) over past[0,2] <= 5 s"
+            ))),
+            [
+                (
+                    Code::IllTyped,
+                    Some("type-mismatch".to_owned()),
+                    at(AggregatePart::Value)
+                ),
+                (
+                    Code::IllTyped,
+                    Some("unit-mismatch".to_owned()),
+                    at(AggregatePart::Threshold)
+                ),
+            ],
+            "{kind}"
+        );
+    }
+    assert_eq!(
+        refused(&carried("sum of c over past[0,2] <= convert<Lc>(5 m)")),
+        [(
+            Code::IllTyped,
+            Some("type-mismatch".to_owned()),
+            at(AggregatePart::Threshold)
+        )]
+    );
+    package_admits(&carried(
+        "sum of convert<Quantity<m>>(convert<Lc>(c)) over past[0,2] <= 5 m",
+    ));
+}
+
+/// FR-194-AC-11 (TC-629): over an event field `Quantity<M::ms>` of a selected
+/// domain package, `sum`, `min`, `max` and `quantile` keep the package unit,
+/// a threshold in the package's `ps` converts into it, and a threshold in a
+/// unit of the source's own `Time` is a unit mismatch at the threshold. (The
+/// package units carry names the source does not, `pms` and `ps`: the
+/// hand-built package model resolves an unqualified unit name to its own.)
+#[trace("TC-629", "FR-194-AC-11")]
+#[test]
+fn a_window_aggregate_over_a_package_unit_keeps_that_unit() {
+    use crate::check::lowering::{temporal_location, AggregatePart, TemporalSite};
+    use crate::model::domain_package::{
+        DomainPackage, DomainPackageRef, PackageDimensionRecord, PackageUnitRecord,
+    };
+    use crate::model::intake::SelectedModels;
+    use quire_checked::key::DeclarationKey;
+
+    let time = DeclarationKey::fixture("dimension/PTime");
+    let (s, ms) = (
+        DeclarationKey::fixture("unit/ps"),
+        DeclarationKey::fixture("unit/pms"),
+    );
+    let mut model = DomainPackage::new(DomainPackageRef::fixture("rpc"), vec![]);
+    model.dimensions.push(PackageDimensionRecord {
+        key: time.clone(),
+        name: "PTime".to_owned(),
+        base: true,
+        terms: vec![],
+    });
+    for (key, name, target, scale) in [(s.clone(), "ps", None, "1"), (ms, "pms", Some(s), "1/1000")]
+    {
+        model.units.push(PackageUnitRecord {
+            key,
+            name: name.to_owned(),
+            dimension: time.clone(),
+            target,
+            scale: scale.to_owned(),
+            offset: "0".to_owned(),
+        });
+    }
+    let package = |formula: &str| {
+        let text = source(&[EVENT], "E", formula)
+            .replace("over (c: E)", "over (e: E)")
+            .replace(
+                "record Counter",
+                "model M = \"test/orders\";\n\
+             dimension Time;\nunit s : Time = rational(1, 1);\n\
+             unit ms : Time = rational(1, 1000) * s;\n\
+             record E { latency: Quantity<M::pms>; }\n\
+record Counter",
+            );
+        let parsed = qsl_cst::parse(
+            SourceIdentity::new("a", "u"),
+            "unit.native",
+            text.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the unit");
+        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+        let selected = SelectedModels::fixture(
+            "M",
+            Span { start: 0, end: 1 },
+            model.clone(),
+            crate::model::accounting::ModelNormalizationLimits::UNLIMITED,
+        )
+        .expect("the package model admits");
+        PackageDeclarations::assemble(
+            parsed.source().reference().clone(),
+            "fixture".to_owned(),
+            unit,
+            selected,
+            Vec::new(),
+        )
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+    };
+    for formula in [
+        "sum of e.latency over past[0,2] <= 1 M::ps",
+        "min of e.latency over past[0,2] <= 1 M::pms",
+        "max of e.latency over past[0,2] <= 1 M::pms",
+        "quantile 0.5 of e.latency over past[0,2] <= 1 M::pms",
+        "sum of e.latency where holds(e.latency > 9 M::pms) over past[0,2] min_count 0 = 0 M::pms",
+    ] {
+        package(formula).unwrap_or_else(|refusals| panic!("{formula}: {refusals:?}"));
+    }
+    for threshold in ["10 ms", "10 s"] {
+        let Err(refusals) = package(&format!("sum of e.latency over past[0,2] <= {threshold}"))
+        else {
+            panic!("`{threshold}`, of the source's own Time, is another dimension");
+        };
+        assert_eq!(refusals.len(), 1, "{threshold}: {refusals:?}");
+        assert_eq!(refusals[0].cause.code(), Code::IllTyped, "{threshold}");
+        assert_eq!(
+            refusals[0].cause.cause(),
+            Some("unit-mismatch"),
+            "{threshold}"
+        );
+        assert_eq!(
+            refusals[0].location,
+            temporal_location(0, TemporalSite::Aggregate(0, AggregatePart::Threshold)),
+            "{threshold}"
+        );
+    }
+}
+
 /// FR-194-AC-4 (TC-629): aggregate atoms and their expressions are checked
 /// at S3, and a clause whose atoms check is admitted into the package.
 #[trace("TC-629", "FR-194-AC-4", "FR-194-AC-7", "FR-194-AC-8", "FR-194-AC-10")]

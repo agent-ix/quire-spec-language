@@ -132,9 +132,9 @@ pub use reader_protocol_projection::{
 pub use quire_contract_model::{
     CheckedArtifactRef, CheckedIntervalEnd, CheckedNodeId, CheckedOccurrence,
     CheckedOccurrenceRole, CheckedOperationInterval, CheckedOperationRational, CheckedPackageV2,
-    CheckedSelection, ClockConfiguration, ClockExactNumber, ExactTypeProjection,
-    ExactTypeProjectionError, ExactTypeProjectionErrorCode, NativeJoinBudget,
-    SelectedExactIdentities, TemporalBinding,
+    CheckedSelection, CheckedSourceMapEntry, ClockConfiguration, ClockExactNumber,
+    ExactTypeProjection, ExactTypeProjectionError, ExactTypeProjectionErrorCode, NativeJoinBudget,
+    SelectedExactIdentities, TemporalBinding, CHECKED_PACKAGE_V2,
 };
 
 // The FR-105-AC-6 fault-injection seam. Public only under

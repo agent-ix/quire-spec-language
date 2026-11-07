@@ -8,9 +8,10 @@ pub mod work;
 
 use super::NativeType;
 use crate::formal_source::FormalSource;
-use crate::linking::composed::definition_source::RegisteredDefinition;
 use crate::linking::composed::scopes::{Anchor, BinderId};
-use crate::linking::composed::{binding, DeclarationId, UnitId};
+use crate::linking::composed::{binding, UnitId};
+use crate::linking::declaration_id::DeclarationId;
+use crate::linking::definition_source::RegisteredDefinition;
 use crate::syntax::ExprId;
 use qsl_foundation::Span;
 

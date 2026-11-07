@@ -19,7 +19,7 @@ use serde_json::json;
 
 use crate::temporal_activation::{
     call, claim, delivery, env, event_env, expect_refusal, fixed_env, id, node, origin, position,
-    request, unlimited, Env, EACH, ONE_CAPTURE,
+    request, source_map, unlimited, Env, EACH, ONE_CAPTURE,
 };
 
 fn interval(value: serde_json::Value) -> Option<CheckedOperationInterval> {
@@ -242,7 +242,14 @@ fn an_unreadable_formula_graph_is_refused_before_anything_is_charged() {
         .facts
         .clone()
         .with_formula(ClauseFormula::of_graph(&numbered(readable)));
-    assert!(evaluate_temporal_evidence(&subject, &asked, &mut unlimited()).is_ok());
+    // The readable formula is not the clause's own, so the request's atom
+    // keys name none of its atoms: the twin reads it with no valuation.
+    let mut unvalued = asked.clone();
+    for position in &mut unvalued.positions {
+        position.valuations.clear();
+        position.instance_valuations.clear();
+    }
+    assert!(evaluate_temporal_evidence(&subject, &unvalued, &mut unlimited()).is_ok());
     for (what, graph, fault) in unreadable {
         let formula = ClauseFormula::of_graph(&numbered(graph));
         assert_eq!(formula.work(), Err(fault), "{what}");
@@ -268,7 +275,7 @@ fn an_unreadable_formula_graph_is_refused_before_anything_is_charged() {
         .facts
         .clone()
         .with_formula(ClauseFormula::of_graph(&numbered(overflow)));
-    let result = evaluate_temporal_evidence(&subject, &asked, &mut unlimited())
+    let result = evaluate_temporal_evidence(&subject, &unvalued, &mut unlimited())
         .expect("an overflowing sum is a result");
     assert_eq!(result.activation, ActivationState::Unavailable);
     assert_eq!(result.truth, None);
@@ -402,15 +409,18 @@ fn each_cause_refuses_with_nothing_charged_and_its_unmet_twin_is_evaluated() {
         "clock": {"kind": "timestamped_event", "timestamp_unit": "ms"},
     }))
     .expect("a row");
+    let maps = [source_map(0), source_map(1)];
     let mut twins = each.subject(&[]);
     twins.occurrences = vec![
         SubjectOccurrence {
             occurrence: claim(0),
             clock: Some(&row),
+            source_map: &maps[0],
         },
         SubjectOccurrence {
             occurrence: claim(1),
             clock: Some(&row),
+            source_map: &maps[1],
         },
     ];
     let mut selected = delivered("t1");

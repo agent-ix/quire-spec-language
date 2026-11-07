@@ -36,8 +36,9 @@ classification to construct and validate the TL correspondence.
 
 QSpec FR-095 owns the correspondence contract and directs QSL FR-045 to
 classify its support table. This QSL requirement owns the table's classification
-and target mapping, `mapping_support_v2`, and the authenticated native
-classification that Contract IR FR-350 consumes. A supported classification
+and target mapping, `mapping_support` over the checked clause (FR-527), and the
+authenticated native classification that Contract IR FR-350 consumes. The
+legacy `temporal::mapping_support_v2` is retired (QSL-858 PR 2). A supported classification
 names outstanding premises; it does not claim that a formula, valuation request
 or correspondence record has been emitted. Contract IR owns that construction
 and the result join. Neither QSL nor Contract IR owns the TL or native evaluator.

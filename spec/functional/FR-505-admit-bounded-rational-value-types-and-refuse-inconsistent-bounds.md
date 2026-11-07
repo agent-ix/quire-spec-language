@@ -58,11 +58,16 @@ reader, checker and lowering realize it and invents none.
 - Optionally a `unit` member on the value type, a unit reference
   `ix://quire/unit/<name>` of the form a unit `typeRef` takes (QSpec FR-154):
   the legacy rational scalar carried an authored unit (dimensionless or one
-  named unit), which this requirement keeps. A unit resolves against the unit
-  table of the document that declares it, source or model document alike, so
-  intake checks the value type's `unit`, and the checker resolves the `m` of
-  `convert<Quantity<m>>` over its members, against that model document's own
-  units; a config name such as `Config::m` is never a unit.
+  named unit), which this requirement keeps. A unit name resolves against
+  the package's unit table, which holds the compiling unit's units and the
+  model document's own units: when the compiling unit and the model document
+  each declare a unit of one name, the compiling unit's unit of that name
+  takes the name, and the model document fills names the source lacks, as
+  TC-419 step 8's source-owned unit nodes show. Intake checks the value
+  type's `unit`, and the checker resolves the `m` of `convert<Quantity<m>>`
+  over its members, against that table, so a model document's unit is
+  reached only where the source declares no unit of that name; a config
+  name such as `Config::m` is never a unit.
 - Fields, parameters, results, aliases, option `inner`, sequence `items`, map
   `values`, tuple positions and variant payloads whose `typeRef`, `target` or
   member names that value type.
@@ -216,6 +221,7 @@ reader, checker and lowering realize it and invents none.
 | FR-505-AC-8 | When two defects of `Ratio` are present only the earlier row is reported: `minLength` with `maxNumerator` given twice reports `minLength`; a foreign `appliesTo` with `maxNumerator` given twice reports the `appliesTo`; `minLength` with a foreign `appliesTo` reports `minLength`; `maxNumerator` given twice with `minDenominator` removed reports the repeated keyword; `minDenominator` removed with `maxNumerator` `1.5` reports the missing keyword; `maxNumerator` `1.5` with `minNumerator` 8 reports the operand; `maxDenominator` `0.5` (listed first) with `maxNumerator` `1.5` reports `maxNumerator`, in keyword order. | Test (TC-1300) |
 | FR-505-AC-9 | Over AC-7's units declared in `Ratio`'s model document, which also declares a config `Config` with a member `m`, so that `m` resolves against that document's own units and never to the config name `Config::m`, two fields `a` and `b` typed by `Ratio` with `unit` `ix://quire/unit/m`: the invariants `self.a = self.b`, `self.a < self.b` and `self.a + self.b = self.a` each refuse `ill_typed`/`type-mismatch` at the expression, while `convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b)` and `convert<Quantity<m>>(self.a) < convert<Quantity<m>>(self.b)` check. The source types `Rational[8, 7; 1, 12]` and `Rational[0, 7; 0, 12]` refuse `ill_typed` at the type as a function parameter type and as the carrier of `Quantity<m, ..>`. | Test (TC-1300) |
 | FR-505-AC-10 | A tuple type `P` with position `p0` typed `Ratio` and a variant type `V` with case `c` whose `payloadType` is `Ratio` admit, and `p0` and `c`'s payload have the type `Rational[-3, 7; 1, 12]` and name AC-1's `rational_range` node; with `Ratio`'s `constraints` empty, `p0` refuses `invalid_model_binding`/`malformed-declaration` at the position and `c` refuses `unsupported_construct`/`declaration-form` at `Variant.payloadType`, each at stage `package_read`, while a field typed the unconstrained `Ratio` admits with no checked type. | Test (TC-1300) |
+| FR-505-AC-11 | Over AC-9's model document (its own `dimension Length`, `m` and `cm`), with the compiling unit also declaring its own `dimension Length;` and `unit m : Length = rational(1, 1);`, `Ratio` with `unit` `ix://quire/unit/m` types its members over the compiling unit's `m` unit node, the one whose owner is a `SourceOwner`, not the model document's `m` node; with the source `m` removed the members are typed over the model document's `m` node, whose owner is a `ModelOwner`. | Test (TC-1300) |
 
 ## Dependencies
 

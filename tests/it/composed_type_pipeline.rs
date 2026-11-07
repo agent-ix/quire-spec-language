@@ -12,7 +12,7 @@ use quire_spec_language::checking::composed::{
 use quire_spec_language::checking::NativeType;
 use quire_spec_language::linking::composed::binding::Disposition as BindingDisposition;
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
-use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
+use quire_spec_language::linking::definition_source::RegisteredDefinition as R;
 use quire_spec_language::native_model::NativeModel;
 
 fn ecosystem(model: &NativeModel, predicate: &str) -> Vec<Source> {

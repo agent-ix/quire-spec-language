@@ -91,6 +91,13 @@ pub(crate) fn collection_document() -> Value {
     build_with(Flavor::Collections)
 }
 
+/// The package document with the bounded Rational value type `Ratio`
+/// (`Rational[-3, 7; 1, 12]`) and `Item` also holding, after its other fields,
+/// `level: Ratio` (FR-505-AC-5, TC-1300 rows 21 and 22).
+pub(crate) fn rational_document() -> Value {
+    build_with(Flavor::Rational)
+}
+
 /// The package document with `Item` also holding, after its other fields,
 /// the Quantity field of FR-106-AC-59 (TC-1171): `reach: Quantity<ms>` (its
 /// unit is `ix://quire/unit/ms`, which the replay's source unit declares).
@@ -99,12 +106,22 @@ pub(crate) fn quantity_document() -> Value {
     build_with(Flavor::Quantity)
 }
 
+/// The package document with `Item` also holding, after its other fields, the
+/// members of no checked type of FR-056-AC-43: `memo` (`Text`), `amount` and
+/// `amounts` (`Decimal`, `[0, 3]`), the operation `scale(by: Decimal): Integer`
+/// and `peek(): Text`, every `typeRef` under `ix://quire/native/`.
+pub(crate) fn bare_native_document() -> Value {
+    build_with(Flavor::BareNative)
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Flavor {
     Plain,
     Text,
     Collections,
     Quantity,
+    Rational,
+    BareNative,
 }
 
 /// A field of `Item` called `name` of `type_ref`, with the multiplicity of a
@@ -216,6 +233,78 @@ fn build_with(flavor: Flavor) -> Value {
             .expect("Item has fields")
             .extend([variants::field("Item", "reach", &ms)]);
     }
+    if flavor == Flavor::BareNative {
+        let decimal = |mut member: Value| {
+            member["decimal"] = json!({"precision": 5, "scale": 2});
+            member
+        };
+        item["fields"]
+            .as_array_mut()
+            .expect("Item has fields")
+            .extend([
+                variants::field("Item", "memo", &type_ref("Text")),
+                decimal(variants::field("Item", "amount", &type_ref("Decimal"))),
+                decimal(collection_field(
+                    "amounts",
+                    &type_ref("Decimal"),
+                    false,
+                    false,
+                    3,
+                )),
+            ]);
+        let mut scale = variants::operation_with(
+            "Item",
+            "scale",
+            &[("by", type_ref("Decimal"))],
+            &type_ref("Integer"),
+        );
+        scale["params"][0] = decimal(scale["params"][0].clone());
+        let peek = variants::operation_with("Item", "peek", &[], &type_ref("Text"));
+        item["operations"]
+            .as_array_mut()
+            .expect("Item has operations")
+            .extend([scale, peek]);
+    }
+    if flavor == Flavor::Rational {
+        let rational_type = |name: &str| {
+            let constraint = |keyword: &str, value: i64| {
+                json!({
+                    "identity": id(&format!("constraint/{name}/{keyword}")),
+                    "keyword": keyword,
+                    "operands": {"value": value},
+                    "appliesTo": id(name),
+                    "diagnosticCode": format!("rational.{keyword}"),
+                    "origin": base::origin(&format!("constraint/{name}/{keyword}")),
+                })
+            };
+            base::declaration(
+                name,
+                "scalar",
+                json!({
+                    "scalar": "rational",
+                    "constraints": [
+                        constraint("minNumerator", -3),
+                        constraint("maxNumerator", 7),
+                        constraint("minDenominator", 1),
+                        constraint("maxDenominator", 12),
+                    ],
+                }),
+            )
+        };
+        types.push(rational_type("Ratio"));
+        // The same bounds carrying the unit `ms` the document declares
+        // (FR-505-AC-5's unit sentence).
+        let mut metered = rational_type("RatioMs");
+        metered["unit"] = json!("ix://quire/unit/ms");
+        types.push(metered);
+        item["fields"]
+            .as_array_mut()
+            .expect("Item has fields")
+            .extend([
+                variants::field("Item", "level", &id("Ratio")),
+                variants::field("Item", "metered", &id("RatioMs")),
+            ]);
+    }
     if text {
         let (title, tag, code) = (id("Title"), id("Tag"), id("Code"));
         item["fields"]
@@ -250,7 +339,7 @@ fn build_with(flavor: Flavor) -> Value {
     }
     types.push(item);
     let mut document = variants::package(types, true);
-    if text {
+    if text || flavor == Flavor::Rational {
         // A value type carrying a `scalar` is a record-shaped construct
         // (the `value` construct is the `target` alias).
         let scalar = json!({
@@ -265,6 +354,18 @@ fn build_with(flavor: Flavor) -> Value {
             .as_array_mut()
             .expect("constructs")
             .push(scalar);
+    }
+    if flavor == Flavor::Rational {
+        let origin = base::origin("dimension/Time");
+        document["dimensions"] = json!([{
+            "identity": id("dimension/Time"), "name": "Time",
+            "base": true, "terms": [], "origin": origin
+        }]);
+        document["units"] = json!([{
+            "identity": id("unit/ms"), "name": "ms",
+            "dimension": id("dimension/Time"), "scale": "1", "offset": "0",
+            "origin": base::origin("unit/ms")
+        }]);
     }
     if collections {
         document["constructs"]

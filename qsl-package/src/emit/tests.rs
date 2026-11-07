@@ -915,6 +915,71 @@ fn a_float_sum_carries_the_ieee_law_and_its_rounding_mode() {
     );
 }
 
+/// FR-517-AC-20, FR-093-AC-20: `sum<N>` over a carried quantity lowers to
+/// `quire.op.collection.sum.carried_quantity` carrying the carrier's rounding
+/// mode and no law (QSpec FR-322 "Carried-quantity sum"). IR's reader does not
+/// yet read the identity's `carried_member` constraint, so the wire is
+/// inspected without a read-back.
+#[trace("FR-517-AC-20", "FR-093-AC-20", "TC-416")]
+#[test]
+fn a_carried_sum_lowers_to_its_identity_with_the_carriers_rounding_mode() {
+    let text = "language \"ix:native\" edition \"1-draft\";\n\
+        profile v = \"quire.value.complete/v1\";\n\
+        dimension Length;\nunit m : Length = rational(1, 1);\n\
+        type Li = Quantity<m, Int[-5, 5]>;\n\
+        type Ld = Quantity<m, Decimal[-500, 500; 2, 2; nearest-even]>;\n\
+        type Lr = Quantity<m, Rational[-3, 7; 1, 12]>;\n\
+        function li using v(s: Sequence<Li>[0, 1]): Li pure { sum<Li>(x in s: x) }\n\
+        function ld using v(s: Sequence<Ld>[0, 1]): Ld pure { sum<Ld>(x in s: x) }\n\
+        function lr using v(s: Sequence<Lr>[0, 1]): Lr pure { sum<Lr>(x in s: x) }\n";
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "pkg".to_owned(),
+        unit,
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("the assembler builds the declarations");
+    let package = CheckedPackage::link(
+        declarations
+            .check(CheckingLimits::default())
+            .expect("the carried sums check"),
+    );
+    let wire = wire(&emit(&package));
+    let mut modes: Vec<String> = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| {
+            node["body"]["operation"]["identity"]
+                == json!("quire.op.collection.sum.carried_quantity")
+        })
+        .map(|node| {
+            let operation = &node["body"]["operation"];
+            assert_eq!(operation["laws"], json!([]));
+            operation["mode"].to_string()
+        })
+        .collect();
+    modes.sort();
+    assert_eq!(
+        modes,
+        [
+            json!({"kind": "rounding", "value": "exact"}).to_string(),
+            json!({"kind": "rounding", "value": "exact"}).to_string(),
+            json!({"kind": "rounding", "value": "nearest-even"}).to_string(),
+        ]
+    );
+}
+
 /// An emitted v2 artifact identical except that one `application` argument is
 /// an inline `application` term is refused as `malformed_wire`, and no limit
 /// is reported.
@@ -2819,11 +2884,16 @@ fn assemble_with_models(
     unit: &[u8],
     packages: &qsl_semantics::model::intake::PackageInput,
 ) -> Result<PackageDeclarations, String> {
+    // S1's size and work limits are raised to fit a unit past their defaults.
+    let mut limits = qsl_cst::Limits::default();
+    limits.source_bytes = limits.source_bytes.max(unit.len());
+    limits.tokens = limits.tokens.max(unit.len());
+    limits.nodes = limits.nodes.max(unit.len().saturating_mul(16));
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model"),
         "program.native",
         unit,
-        qsl_cst::Limits::default(),
+        limits,
     )
     .expect("S1 admits the unit");
     assert_eq!(parsed.diagnostics(), []);

@@ -4,7 +4,7 @@
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
 use crate::checking::DomainType;
-use crate::linking::composed::definition_source::RegisteredDefinition;
+use crate::linking::definition_source::RegisteredDefinition;
 use crate::native_model::ObjectRole;
 
 use super::{

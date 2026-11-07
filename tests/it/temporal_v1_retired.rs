@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-1293: the v1 temporal evaluator files are absent from `src/temporal`, and
-//! no `.rs` file in any workspace source root (the root crate's `src/`,
+//! TC-1293: the root crate has no `temporal` module, and no `.rs` file in any workspace source root (the root crate's `src/`,
 //! `tests/`, `examples/`, and every workspace member's directory) names a
 //! retired v1 entry point or result type.
 //!
 //! This guards reintroduction. It does not check the per-row COVERED status
 //! FR-499-AC-1 asks of a deleting change; that is the deletion table's.
 //!
-//! The kept FR-521 row-5 surface (`Closure`, `Completeness`, `Execution`,
-//! `Evidence`, `Position`, `OrderKey`, `Classification`, `mapping_support_v2`,
-//! `evaluate_v2`, `Trace`, `Report`) is not named by the scan. Each retired
-//! name is built from two separately-quoted halves so this file's own source
-//! needs no exemption from its own scan.
+//! The mapping classification (`Classification`, `mapping_support_v2`) and the
+//! native owner-report route (its report, valuation evidence and refusal types)
+//! are retired with the module; their successors are the evidence call's result
+//! (FR-526) and the checked views (FR-527). Each retired name is built from two
+//! separately-quoted halves so this file's own source needs no exemption from
+//! its own scan.
 //!
 //! Names that other crates legitimately define (`Limits`, `Ledger`,
 //! `Obligation`, `evaluate`, ...) are matched where the root crate's `temporal`
@@ -29,6 +29,9 @@ fn unique_names() -> Vec<String> {
         ["mapping_support", "_checked"].concat(),
         ["Protocol", "Ledger"].concat(),
         ["Artifact", "Report"].concat(),
+        ["Valuation", "Evidence"].concat(),
+        ["Report", "Refusal"].concat(),
+        ["Native", "ReportError"].concat(),
     ]
 }
 
@@ -60,21 +63,20 @@ fn module_members() -> Vec<String> {
         ["LimitDimen", "sion"],
         ["Checked", "Classification"],
         ["ProtocolEval", "uation"],
+        ["mapping_support_", "v2"],
+        ["Classif", "ication"],
+        ["Profi", "le"],
+        ["Dimen", "sion"],
+        ["Sub", "ject"],
     ]
     .into_iter()
     .map(|halves| halves.concat())
     .collect()
 }
 
-/// The retired files of `src/temporal`.
-fn banned_files() -> [&'static str; 5] {
-    [
-        "src/temporal/activation.rs",
-        "src/temporal/budget.rs",
-        "src/temporal/formula.rs",
-        "src/temporal/progress.rs",
-        "src/temporal/protocol.rs",
-    ]
+/// The retired module of the root crate.
+fn banned_files() -> [&'static str; 2] {
+    ["src/temporal.rs", "src/temporal"]
 }
 
 /// The identifiers that follow each `temporal::` in `contents`: the next
@@ -149,17 +151,13 @@ fn files_under(root: &Path, out: &mut Vec<PathBuf>) {
 
 #[trace("TC-1293")]
 #[test]
-fn the_retired_v1_temporal_evaluator_files_are_absent() {
+fn the_root_crates_temporal_module_is_absent() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let present: Vec<&str> = banned_files()
         .into_iter()
         .filter(|file| manifest_dir.join(file).exists())
         .collect();
     assert!(present.is_empty(), "retired files still exist: {present:?}");
-    assert!(
-        manifest_dir.join("src/temporal/owner.rs").is_file(),
-        "the kept FR-521 row-5 owner report is the file this scan must not reach"
-    );
 }
 
 #[trace("TC-1293")]
