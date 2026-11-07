@@ -2822,6 +2822,7 @@ fn a_defective_magnitude_refuses_at_the_path_magnitude() {
 fn rational_fields() -> Vec<(String, Value)> {
     let mut fields = base_fields();
     fields.push(("level".to_owned(), ratio("0", "1")));
+    fields.push(("metered".to_owned(), ms(ratio("0", "1"))));
     fields
 }
 
@@ -2845,9 +2846,10 @@ fn refused_level(
 /// as its normalized value `1/2` (FR-106-AC-55); `8/1`, `16/2` (normalized
 /// `8/1`), `1/13` and `-4/1` each refuse `invalid_runtime_input`/`invalid-value`
 /// at `level`, naming `Rational[-3, 7; 1, 12]` and the normalized pair, and no
-/// value is rounded. The unit-bearing sentence and the `float64` object are
-/// not carried yet (the unit table of a model document, and FR-106-AC-57's
-/// float payloads), so the test is not tagged with the criterion.
+/// value is rounded. The unit-bearing sentence is
+/// `a_unit_bearing_rational_member_admits_its_quantity_or_refuses_the_pair`;
+/// the `float64` object (FR-106-AC-57's float payloads, QSL-1068) is not
+/// carried yet, so the criterion is not tagged.
 #[trace("TC-1300")]
 #[test]
 fn a_bounded_rational_member_admits_its_normalized_value_or_refuses_the_pair() {
@@ -2894,6 +2896,92 @@ fn a_bounded_rational_member_admits_its_normalized_value_or_refuses_the_pair() {
             record.fields.get("actual").map(String::as_str),
             Some(normalized),
             "{numerator}/{denominator}"
+        );
+    }
+}
+
+/// FR-505-AC-5 (TC-1300 row 23), the unit sentence: over a bounded Rational
+/// value type that carries the unit `ms`, a snapshot Quantity of `ms` whose
+/// magnitude is `2/4` admits as `1/2 ms` (FR-106-AC-55), and `1/13` refuses
+/// `invalid_runtime_input`/`invalid-value` at `metered`, naming
+/// `Rational[-3, 7; 1, 12]` and the normalized pair.
+#[trace("TC-1300")]
+#[test]
+fn a_unit_bearing_rational_member_admits_its_quantity_or_refuses_the_pair() {
+    let replay = rational_replay();
+    let found = replay
+        .admit(
+            &with(rational_fields(), "metered", ms(ratio("2", "4"))),
+            ObservationLimits::default(),
+        )
+        .unwrap_or_else(|failure| panic!("2/4 ms admits: {failure:?}"));
+    assert_eq!(magnitude_of(&replay.value(&found, "metered")), "1/2");
+    let record = record_of(replay.admit(
+        &with(rational_fields(), "metered", ms(ratio("1", "13"))),
+        ObservationLimits::default(),
+    ));
+    assert_eq!(record.catalog.code(), Code::InvalidRuntimeInput.as_str());
+    assert_eq!(record.catalog.cause(), "invalid-value");
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("metered")
+    );
+    assert_eq!(
+        record.fields.get("expected").map(String::as_str),
+        Some("Rational[-3, 7; 1, 12]")
+    );
+    assert_eq!(
+        record.fields.get("actual").map(String::as_str),
+        Some("1/13")
+    );
+
+    // A second out-of-bound pair: `-4/1` is below the numerator bound.
+    let record = record_of(replay.admit(
+        &with(rational_fields(), "metered", ms(ratio("-8", "2"))),
+        ObservationLimits::default(),
+    ));
+    assert_eq!(record.catalog.cause(), "invalid-value");
+    assert_eq!(
+        record.fields.get("actual").map(String::as_str),
+        Some("-4/1")
+    );
+    // The value's unit must be the slot's unit.
+    let wrong_unit = json!({"kind": "quantity", "unit": "s", "magnitude": ratio("1", "4")});
+    let record = record_of(replay.admit(
+        &with(rational_fields(), "metered", wrong_unit),
+        ObservationLimits::default(),
+    ));
+    assert_eq!(record.catalog.code(), Code::InvalidRuntimeInput.as_str());
+    assert_eq!(record.catalog.cause(), "wrong-value-kind");
+    assert_eq!(
+        record.fields.get("member").map(String::as_str),
+        Some("unit")
+    );
+    // As in a plain Rational slot, a Decimal magnitude is refused
+    // (FR-106-AC-56).
+    for (slot, value) in [
+        ("level", half_as_decimal()),
+        ("metered", ms(half_as_decimal())),
+    ] {
+        let record = record_of(replay.admit(
+            &with(rational_fields(), slot, value),
+            ObservationLimits::default(),
+        ));
+        assert_eq!(
+            record.catalog.code(),
+            Code::InvalidRuntimeInput.as_str(),
+            "{slot}"
+        );
+        assert_eq!(record.catalog.cause(), "wrong-value-kind", "{slot}");
+        assert_eq!(
+            record.fields.get("field").map(String::as_str),
+            Some(slot),
+            "{slot}"
+        );
+        assert_eq!(
+            record.fields.get("member").map(String::as_str),
+            (slot == "metered").then_some("magnitude"),
+            "{slot}"
         );
     }
 }

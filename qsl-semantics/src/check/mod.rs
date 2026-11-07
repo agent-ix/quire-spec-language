@@ -2268,6 +2268,7 @@ impl PackageDeclarations {
         // Carry that selection into S3 so the inherited-edge rule is
         // confined to a package with an admitted model.
         let complete_model = !self.models.is_empty();
+        let package_unit_ids = self.model_spellings.package_unit_ids();
         let scope = Scope::new(
             self.types,
             self.operations,
@@ -5855,7 +5856,8 @@ impl PackageDeclarations {
         }
         // FR-094: selected model type references root their named units even
         // when no expression reaches a unit-typed member.
-        if let Err(refusal) = lowering.model_type_unit_nodes(&check::declared_unit_ids(&self.units))
+        if let Err(refusal) = lowering
+            .model_type_unit_nodes(&check::declared_unit_ids(&self.units, &package_unit_ids))
         {
             refusals.push(refusal);
         }
