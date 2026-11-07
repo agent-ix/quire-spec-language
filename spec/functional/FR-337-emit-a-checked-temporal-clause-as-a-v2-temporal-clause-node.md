@@ -613,7 +613,17 @@ ceiling SHALL bound each bound's converted value as well as its written
 magnitude, and a converted value past it SHALL be refused
 `LimitExceeded(S3RationalBits)` at the bound. A model-owned clock unit node and its dimension are written
 by the emitter, with an empty body, the model owner and a `generated`
-occurrence at the clause, as a timed source's are. Without a selected
+occurrence at the clause, as a timed source's are. The clock unit node is
+the unit's one model-owned node, and its `node_id.package` is the identity of
+the domain package that declares `T` (QSpec FR-322 "Structural node
+identity"), not the clause node's package: in a unit compiled as package
+`acme/orders` with `model M = "acme/rpc"`, a window under a clock in `M::ms`
+types both bounds by the node `{package: "acme/rpc", path: ["scalar_type",
+"unit", "ix://acme/rpc/unit/ms"], ordinal: 0}`. The emitter SHALL NOT write a
+second `scalar_type`/`unit` node, in the clause's package or any other, to
+stand for the clock unit, so the bounds and every other quantity of that
+unit name one node; a reader matches the bounds' `type` against the clock
+unit by path, as QSpec FR-370-AC-20 states. Without a selected
 clock, or when no time unit has the clock unit node, S3 converts both
 bounds to the lower bound's written unit. The emitter SHALL refuse a clause
 whose `duration` window's unit node is not the clock unit node with
@@ -627,6 +637,10 @@ certificate closure) re-emit a supplied checked package with clock
 selections but do not re-run S3 with them, so a package checked without
 the clock whose bound unit differs from the clock unit is refused
 `InvalidTemporalClockValue`; the result is a refusal, never a wrong verdict.
+The Contract IR reader QSL locks still builds the clock unit's node id from
+the clause node's package, so a model-unit window reads back only from a
+package named after its model until the reader matches by path as QSpec
+FR-370-AC-20 states.
 
 The bindings are inputs of the node's structural identity, so a change of any
 binding changes the formula node, and an omitted `min_count` and `min_count 1`
