@@ -49,12 +49,12 @@ Paths are under `qsl-package/src/emit/tests/` (QP) and
 | AC-7 reader verifies canonical bytes, mutation refusal | FR-383-AC-19 and AC-20 (`QP/protocol_compensation.rs:91`, `QP/protocol_controls.rs:521,543,573`, `qsl-package/src/checked_v2/tests/protocol_corpus.rs:8`); AC-21 untagged | PARTIAL for the new wire; legacy `/1` reader KEEP until FR-521 row 7 is green |
 | AC-8 partial, unsupported, incomplete keep independent results | FR-042-AC-8 is retired as historical; per-protocol independence is kept by FR-383-AC-18, AC-28, AC-29 and TC-1297 (spec PR #2131); the unsupported owner case is FR-383-AC-27 (`QP/owner_model.rs:342`) | PARTIAL until #2131 merges and its tests are tagged |
 | AC-9 work-limit vectors per dimension | FR-383-AC-24 (`QP/protocol_recursion.rs:237`), AC-25 (`QP/large_cycle.rs:7`, `protocol_recursion.rs:395`); FR-390-AC-9 (`EV/protocol_slots.rs:711`, `EV/acceptance.rs:1307,1448`), AC-10 (`EV/acceptance.rs:1495`); AC-21 untagged | PARTIAL: emit-side source, dependency, table, reference and canonical-output dimensions have no per-dimension zero/exact/one-short test; QSL-1510 |
-| AC-10 handoff consumed by quire-protocol (IT-001) | Successor: FR-517, FR-518 (the handoff from real source and the adverse corpus on the checked-package route); today quire-protocol runs the legacy writer and never reads a checked package | Test (TC-1312, TC-1313); KEEP the legacy writer until FR-521 row 2 is green |
+| AC-10 handoff consumed by quire-protocol (IT-001) | Successor: FR-517, FR-518 (the handoff from real source and the adverse corpus on the checked-package route); today quire-protocol runs the legacy writer and never reads a checked package | Test (TC-1312, TC-1313); the legacy writer is deleted by QSL-840 now that FR-521 row 2 is green |
 | AC-11 domain-package identity round trip | FR-056-AC-9; FR-383-AC-26 (`QP/owner_model.rs:213,233,381`); AC-23 untagged | PARTIAL |
 | AC-12 explicit null domain package | FR-383-AC-23 untagged; `owner_model.rs:119` is tagged AC-1 and AC-26 | PARTIAL: QSL-1510 |
 | AC-13 population and closure pairs, operation export, `Unsupported::Export` | FR-380; `qsl-package/src/protocol_activation.rs:14` is source with no tests; `QP/protocol_graph.rs:178` tests channel premises | PORT: pair read-back has no test (QSL-1510) |
 | AC-14 domain parameter and `result` binders | FR-383-AC-10 (`QP/protocol_controls.rs:457`), FR-390-AC-1, AC-23 | PARTIAL |
-| AC-15 `write_v1`, `write_v2` handoff directory | Successor: FR-517, FR-518 (in process, deterministic, new directory only, feature without a new dependency) | Test (TC-1312, TC-1313); KEEP the legacy writer until FR-521 row 2 is green |
+| AC-15 `write_v1`, `write_v2` handoff directory | Successor: FR-517, FR-518 (in process, deterministic, new directory only, feature without a new dependency) | Test (TC-1312, TC-1313); the legacy writer is deleted by QSL-840 now that FR-521 row 2 is green |
 
 ## Deletion staging per legacy file
 

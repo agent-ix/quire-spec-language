@@ -50,12 +50,8 @@ Evidence:
    repoints IR-358), the spine vector suite
    `qsl-package/tests/protocol_number.rs` and root compatibility test
    `tests/it/protocol_number_root_module.rs`,
-   `native_choice_emission.rs`, `native_refund_emission.rs`,
-   `native_owned_attempt_progress.rs`, `native_split_shipment_emission.rs`,
-   `native_query_emission.rs`, `native_payment_retry_emission.rs`,
-   `native_protocol_emission.rs`, `native_compensation_emission.rs` and
-   `native_numeric_domain_emission.rs`, `tests/support/protocol_artifact/mod.rs`,
-   `examples/native_protocol_handoff.rs`, and quire-protocol, which imports
+   `tests/support/protocol_artifact/mod.rs`,
+   and quire-protocol, which imports
    `quire_spec_language::protocol_artifact::ProtocolNumber` (its
    `src/assessment.rs:22`) until QSL-1501 repoints it.
 4. The codec depends on nothing in `protocol_artifact` except its module path.

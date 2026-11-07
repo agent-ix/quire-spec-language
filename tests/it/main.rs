@@ -36,21 +36,9 @@ pub(crate) mod support;
 
 mod abstraction_relation_inert;
 mod assessment_artifact_kinds;
-#[cfg(feature = "checked-handoff")]
-mod bare_equality;
-#[cfg(feature = "checked-handoff")]
-mod bare_package;
-#[cfg(feature = "checked-handoff")]
-mod bare_recovery_binder;
 mod call_replay_context_items;
 mod call_requirements_items;
-#[cfg(feature = "checked-handoff")]
-mod checked_handoff;
-#[cfg(feature = "checked-handoff")]
-mod checked_handoff_healthy;
 mod checked_temporal_successors;
-#[cfg(feature = "checked-handoff")]
-mod checked_views;
 mod clause_kind_canonical;
 mod cli;
 mod compile_command;
@@ -83,10 +71,28 @@ mod dispatch_emission;
 mod emit_checked_v2;
 mod evaluate_reads_no_display_strings;
 mod exact_decimals;
-mod fairness_item_path;
 mod family_outcome_layering;
 mod formal_source;
 mod formatter_identity;
+mod producer_unit_identity;
+mod quantity_power_v2;
+mod retired_checked_views_paths;
+mod string_edge_marker;
+mod value_parity_profile_selections;
+// The handoff writer is behind its feature; the all-features lane runs this.
+#[cfg(feature = "checked-handoff")]
+mod bare_equality;
+#[cfg(feature = "checked-handoff")]
+mod bare_package;
+#[cfg(feature = "checked-handoff")]
+mod bare_recovery_binder;
+#[cfg(feature = "checked-handoff")]
+mod checked_handoff;
+#[cfg(feature = "checked-handoff")]
+mod checked_handoff_healthy;
+#[cfg(feature = "checked-handoff")]
+mod checked_views;
+mod fairness_item_path;
 mod hybrid_request_items;
 mod layer_crate_reexports;
 mod limit_name_patterns;
@@ -108,14 +114,11 @@ mod native_model_qualification;
 mod native_owner_report;
 mod nesting_levels;
 mod parser;
-mod producer_unit_identity;
 mod protocol_artifact;
 mod protocol_number_root_module;
-mod quantity_power_v2;
 mod replay_multi_source;
 mod request_builder;
 mod requirement_item_proof_bounds;
-mod retired_checked_views_paths;
 mod retired_mapped_extraction;
 mod retired_native_runtime;
 mod seam5_retired;
@@ -123,7 +126,6 @@ mod source_inventory;
 mod source_map;
 mod spine_deletion_boundaries;
 mod spine_run;
-mod string_edge_marker;
 mod temporal_negotiation;
 #[cfg(feature = "checked-handoff")]
 mod temporal_package_route;
@@ -135,4 +137,3 @@ mod union_nodes;
 mod v2_refusal_code_bridge;
 #[cfg(feature = "checked-handoff")]
 mod valuation_evidence;
-mod value_parity_profile_selections;
