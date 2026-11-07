@@ -651,13 +651,20 @@ impl<'p> BarePackage<'p> {
             .iter()
             .map(|source| source.binder().clone())
             .collect();
-        walker
+        let projection = walker
             .project(slot.root(), slot.origin(), &binders)
             .map_err(|failure| match failure {
                 WalkFailure::Unsupported(view) => BareSelectionFailure::Unsupported(Box::new(view)),
                 WalkFailure::Equality(refusal) => BareSelectionFailure::Equality(refusal),
                 WalkFailure::Fault(failure) => SlotSelectionFailure::Fault(failure).into(),
-            })
+            })?;
+        let world = self.world()?;
+        if projection.has_unrepresented_types(world.types()) {
+            return Err(BareSelectionFailure::Unsupported(Box::new(
+                UnsupportedView::missing_type(self.package().name(), slot.root().clone()),
+            )));
+        }
+        Ok(projection)
     }
 }
 
