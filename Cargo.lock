@@ -1632,7 +1632,7 @@ source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#f9b3a
 [[package]]
 name = "quire-canonical"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/quire-canonical?branch=main#13d0fe0cfff4cc1592e8d78a4ee3f45cfdbbc91e"
+source = "git+https://github.com/agent-ix/quire-canonical?branch=main#288c94c01fa65dcab47aa3b9ad0e37ea44fed90a"
 dependencies = [
  "quire-canonical-derive",
  "ryu-js",
@@ -1645,7 +1645,7 @@ dependencies = [
 [[package]]
 name = "quire-canonical-derive"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/quire-canonical?branch=main#13d0fe0cfff4cc1592e8d78a4ee3f45cfdbbc91e"
+source = "git+https://github.com/agent-ix/quire-canonical?branch=main#288c94c01fa65dcab47aa3b9ad0e37ea44fed90a"
 dependencies = [
  "proc-macro2",
  "quote",

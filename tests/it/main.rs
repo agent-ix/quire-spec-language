@@ -83,6 +83,7 @@ mod mapping_support;
 mod model_type_unit_roots;
 mod name_resolution_confinement;
 mod native_boundaries;
+mod native_run_result_root;
 mod nesting_levels;
 mod parser;
 mod protocol_number_root_module;

@@ -8,7 +8,9 @@ use qsl_foundation::diagnostic::Code;
 use qsl_foundation::diagnostic::Locus;
 use qsl_foundation::wire_format::WireFormat;
 use qsl_foundation::LocatedSpan;
-use quire_canonical::{Document, Encode, Limits, Node, NodeRef, Sink, Writer};
+use quire_canonical::{
+    Document, Encode, Limits, Node, NodeRef, Reservation, ReservationDenied, Sink, Writer,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
@@ -76,9 +78,19 @@ pub enum NativeRunReadError {
         #[source]
         source: serde_json::Error,
     },
-    /// The canonical JSON reader refused the document.
+    /// The canonical JSON reader refused the document, including an encoded
+    /// input longer than [`NativeRunLimits::max_input_bytes`].
     #[error("invalid native run result: {0}")]
     Read(#[from] quire_canonical::ReadError),
+    /// Decoding would take the working heap past
+    /// [`NativeRunLimits::max_working_bytes`]. No partial result exists.
+    #[error("native run result needs {required} working bytes, over the bound of {bound}")]
+    WorkingBytes {
+        /// The caller's working-byte bound.
+        bound: u64,
+        /// The cumulative working bytes including the refused growth.
+        required: u64,
+    },
     /// A report member contradicts another report member.
     #[error("invalid member {member}: {reason}")]
     Invalid {
@@ -90,6 +102,112 @@ pub enum NativeRunReadError {
     /// The typed separating record is malformed.
     #[error("invalid member witness: {0}")]
     Witness(#[from] crate::result::CauseCodecError),
+}
+
+/// FR-535: the caller's two independent bounds on reading one `/2` document.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct NativeRunLimits {
+    /// The longest encoded document read; a longer one is refused before any
+    /// of it is parsed.
+    pub max_input_bytes: u64,
+    /// The cumulative heap the read may grow, in the unit of
+    /// [`quire_canonical::Reservation`]: the shared reader's tree, the
+    /// writer heap and canonical copy of each re-encoded member, and the
+    /// canonical length of each envelope decoded into typed records.
+    pub max_working_bytes: u64,
+}
+
+impl NativeRunLimits {
+    /// No bound on either provision.
+    pub const UNBOUNDED: Self = Self {
+        max_input_bytes: u64::MAX,
+        max_working_bytes: u64::MAX,
+    };
+}
+
+/// A cumulative working-byte budget shared by every growth of one read.
+struct WorkingBudget {
+    bound: u64,
+    charged: u64,
+    refused: Option<u64>,
+}
+
+impl WorkingBudget {
+    fn new(bound: u64) -> Self {
+        Self {
+            bound,
+            charged: 0,
+            refused: None,
+        }
+    }
+
+    fn charge(&mut self, bytes: u64) -> Result<(), NativeRunReadError> {
+        self.reserve(usize::try_from(bytes).unwrap_or(usize::MAX))
+            .map_err(|_| self.denied())
+    }
+
+    fn denied(&self) -> NativeRunReadError {
+        NativeRunReadError::WorkingBytes {
+            bound: self.bound,
+            required: self.refused.unwrap_or(u64::MAX),
+        }
+    }
+
+    /// The refusal for a failed canonical copy: the working bound when it
+    /// denied the growth, the member fault otherwise.
+    fn copy_failure(&self, member: &'static str, reason: &'static str) -> NativeRunReadError {
+        if self.refused.is_some() {
+            self.denied()
+        } else {
+            NativeRunReadError::Invalid { member, reason }
+        }
+    }
+
+    /// The canonical bytes of `value`, the exact length charged before the
+    /// output buffer exists.
+    fn canonical<T: Encode + ?Sized>(
+        &mut self,
+        value: &T,
+    ) -> Result<Vec<u8>, quire_canonical::Error> {
+        let mut count = ByteCount(0);
+        quire_canonical::encode_with_reservation(
+            &mut count,
+            value,
+            Limits::new(u64::MAX),
+            &mut *self,
+        )?;
+        self.reserve(usize::try_from(count.0).unwrap_or(usize::MAX))
+            .map_err(|_| quire_canonical::Error::ReservationDenied {
+                requested: usize::try_from(count.0).unwrap_or(usize::MAX),
+            })?;
+        quire_canonical::to_vec(value, Limits::new(u64::MAX))
+    }
+}
+
+impl Reservation for WorkingBudget {
+    fn reserve(&mut self, bytes: usize) -> Result<(), ReservationDenied> {
+        let total = self
+            .charged
+            .saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
+        if total > self.bound {
+            self.refused = Some(total);
+            return Err(ReservationDenied);
+        }
+        self.charged = total;
+        Ok(())
+    }
+}
+
+/// A sink that only counts the canonical bytes it is given.
+struct ByteCount(u64);
+
+impl Sink for ByteCount {
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), quire_canonical::Error> {
+        self.0 = self
+            .0
+            .saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+        Ok(())
+    }
 }
 
 /// The two closed result variants of the same `/2` reader.
@@ -1559,7 +1677,26 @@ impl Encode for WitnessSplice<'_> {
 /// command-error shape. No other format is inferred from its payload.
 #[ix_trace_rs::string_edge]
 pub fn read_native_run_result(bytes: &[u8]) -> Result<NativeRunResult, NativeRunReadError> {
-    let tree = quire_canonical::read(bytes, u64::MAX)?;
+    read_native_run_result_bounded(bytes, NativeRunLimits::UNBOUNDED)
+}
+
+/// FR-535: [`read_native_run_result`] under the caller's encoded-input and
+/// working-byte bounds. An over-long input is refused before it is decoded;
+/// a growth past the working bound is refused before it happens, with no
+/// partial result.
+#[ix_trace_rs::string_edge]
+pub fn read_native_run_result_bounded(
+    bytes: &[u8],
+    limits: NativeRunLimits,
+) -> Result<NativeRunResult, NativeRunReadError> {
+    let mut budget = WorkingBudget::new(limits.max_working_bytes);
+    let tree =
+        match quire_canonical::read_with_reservation(bytes, limits.max_input_bytes, &mut budget) {
+            Err(quire_canonical::ReadError::ReservationDenied { .. }) => {
+                return Err(budget.denied())
+            }
+            other => other?,
+        };
     let root = tree.root();
     let format = root
         .get("format")
@@ -1587,23 +1724,21 @@ pub fn read_native_run_result(bytes: &[u8]) -> Result<NativeRunResult, NativeRun
             document: &tree,
             element: RefCell::new(None),
         };
-        let shallow = quire_canonical::to_vec(&splice, Limits::new(u64::MAX)).map_err(|_| {
-            NativeRunReadError::Invalid {
-                member: "witness",
-                reason: "cannot traverse witness document",
-            }
-        })?;
+        let shallow = budget
+            .canonical(&splice)
+            .map_err(|_| budget.copy_failure("witness", "cannot traverse witness document"))?;
+        budget.charge(u64::try_from(shallow.len()).unwrap_or(u64::MAX))?;
         let document: ClauseRead = read_typed(&shallow)?;
         let deciding_element = splice
             .element
             .into_inner()
             .map(|node| {
                 crate::result::validate_state_element(node).map_err(NativeRunReadError::Witness)?;
-                quire_canonical::to_vec(&node, Limits::new(u64::MAX)).map_err(|_| {
-                    NativeRunReadError::Invalid {
-                        member: "witness.deciding_element",
-                        reason: "cannot retain canonical deciding element",
-                    }
+                budget.canonical(&node).map_err(|_| {
+                    budget.copy_failure(
+                        "witness.deciding_element",
+                        "cannot retain canonical deciding element",
+                    )
                 })
             })
             .transpose()?;
@@ -1683,11 +1818,10 @@ pub fn read_native_run_result(bytes: &[u8]) -> Result<NativeRunResult, NativeRun
             None,
         ))))
     } else {
-        let shallow = quire_canonical::to_vec(&DetailSplice(&tree), Limits::new(u64::MAX))
-            .map_err(|_| NativeRunReadError::Invalid {
-                member: "details",
-                reason: "cannot traverse command-error document",
-            })?;
+        let shallow = budget.canonical(&DetailSplice(&tree)).map_err(|_| {
+            budget.copy_failure("details", "cannot traverse command-error document")
+        })?;
+        budget.charge(u64::try_from(shallow.len()).unwrap_or(u64::MAX))?;
         let document: CommandErrorRead = read_typed(&shallow)?;
         if document.format != format {
             return Err(NativeRunReadError::UnsupportedFormat(document.format));
