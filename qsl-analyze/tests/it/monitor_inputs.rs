@@ -1090,10 +1090,8 @@ fn domain_packages_the_strict_read_refuses_are_request_refusals() {
         .clone();
 
     // Each supplied-document defect of a unit with no library dependency
-    // reaches the strict read: the emission evidence holds no domain package
-    // document to conflict with (a map holds one document per identity), and
-    // the closure of a package with no `dependency_selections` is empty, so
-    // `Conflict` and `Closure` have no input through this API.
+    // reaches the strict read: the closure of a package with no
+    // `dependency_selections` is empty, so `Closure` has no input here.
     let missing = qsl_semantics::model::intake::PackageInput::default();
     let mut truncated = world.documents.packages.clone();
     truncated
