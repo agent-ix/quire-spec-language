@@ -16,7 +16,11 @@ relationships:
 
 The composed linker performed no backend negotiation in its request-report path: it recorded requested capability pairs as data only, took no `Backend` parameter and produced no `UnsupportedCapability` or `UnsupportedFamily` disposition. This is ADR-010 OBS-003 as resolved by ADR-012 §10: candidates and routing live only in the registry (FR-075), and dispositions live only in `quire-contract-codegen`'s `negotiate_*`.
 
-**QSL-499 disposition:** the composed linker and its `requests::report` function are deleted under ADR-011, ADR-033 and FR-499, so the criteria below are retained as migration history and are not active acceptance obligations. The behavior is owned by FR-057: its admission entry point takes no registry or backend parameter, admitted pairs and static meaning do not depend on registered backends, a pair keeps its declaration, kind, `required` flag and request index, and `absent-kind` and `unknown-kind` remain admission-time refusals (FR-057-AC-4, AC-5; TC-155).
+**QSL-499 disposition:** the composed linker and its `requests::report` function are deleted under ADR-011, ADR-033 and FR-499, so the criteria below are retained as migration history and are not active acceptance obligations. The behavior is owned by FR-057: its admission entry point takes no registry or backend parameter, admitted pairs and static meaning do not depend on registered backends, a pair keeps its declaration, kind, `required` flag and request index, and `absent-kind` and `unknown-kind` remain admission-time refusals (FR-057-AC-4, AC-5).
+
+## Behavior
+
+The behavior, now owned by FR-057's admission, is that requested pairs are recorded as data (declaration, capability kind, `required` flag, request index) with no backend parameter, no backend-dependent per-pair disposition and no compatibility path for the pre-canonical four-kind label enum; `absent-kind` and `unknown-kind` remain admission-time refusals produced without reading backend state. The criteria below are historical. FR-057-AC-4 and AC-5 are the owning requirement; the unknown-kind half of FR-057-AC-5 has no tagged test yet, and that coverage gap is not claimed as covered.
 
 ## Acceptance Criteria
 
