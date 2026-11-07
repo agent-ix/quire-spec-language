@@ -179,6 +179,19 @@ fn bare_admission_retains_equality_and_reports_its_denial_after_projection() {
             panic!("actual equality cause after identity/type prefix")
         };
         assert_eq!(native.code, code);
+        let diagnostic = error
+            .limit()
+            .expect("bare entry retains the stage diagnostic");
+        let (bound, consumed) = if kind == NativeJoinChargeKind::Work {
+            (work, budget.consumed().work)
+        } else {
+            (storage, budget.consumed().storage)
+        };
+        assert_eq!(diagnostic.configured_bound(), bound);
+        assert_eq!(
+            diagnostic.actual(),
+            u128::from(consumed) + budget.first_unpaid().expect("unpaid").amount
+        );
         assert_eq!(native.consumed_work, budget.consumed().work);
         assert!(budget.consumed().work > 0 && budget.consumed().storage > 0);
         assert_eq!(budget.first_unpaid().expect("first unpaid").kind, kind);
