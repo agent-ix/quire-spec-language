@@ -147,7 +147,7 @@ fn every_result_names_the_checked_subject_it_was_evaluated_for() {
 /// positions, valuations and correspondence, each with its own occurrence's
 /// clock row, selecting occurrences 3 and 7 return subjects that agree in
 /// package identity, version and clause and differ in occurrence.
-#[trace("FR-526-AC-21", "FR-043-AC-15", "TC-1321")]
+#[trace("FR-526-AC-21", "TC-1321")]
 #[test]
 fn twin_occurrences_return_subjects_that_differ_only_in_occurrence() {
     let built = twins();
@@ -249,9 +249,20 @@ fn no_support_entry_names_a_pair_without_an_admitted_valuation() {
     let package = read_back(&read);
     let [clause] = clause_ids(&package).try_into().expect("one clause");
     let mut asked = both_request(&package, &clause);
+    // With `b` valued the verdict rests on the pair (position 0, `b`) ...
+    let (valued, _) = run(&package, &clause, &asked);
+    let valued = valued.expect("a result");
+    assert_eq!(valued.truth, Some(Truth::True));
+    assert!(valued
+        .support
+        .iter()
+        .any(|entry| entry.position == 0 && entry.atom == 1));
+    // ... and with it withdrawn the same decision still names the pair the
+    // evaluator's support rule selects, so only the admission filter removes it.
     asked.positions[0].valuations.remove(&1);
     let (result, _) = run(&package, &clause, &asked);
     let result = result.expect("a result");
+    assert_eq!(result.truth, None);
     assert!(result
         .support
         .iter()
@@ -266,4 +277,29 @@ fn no_support_entry_names_a_pair_without_an_admitted_valuation() {
     let (result, _) = run(&package, &clause, &missing);
     let result = result.expect("a result");
     assert_support_is_admitted(&missing, &result);
+}
+
+/// A package whose source map lacks an occurrence's entry is never admitted,
+/// so no subject read finds an occurrence without one: the reader refuses it
+/// as `InvalidSourceMap` at `/source_map`.
+#[trace("FR-526-AC-20", "TC-1321")]
+#[test]
+fn a_package_without_an_occurrences_source_map_entry_is_not_admitted() {
+    let built = both();
+    let mut wire: serde_json::Value =
+        serde_json::from_slice(built.emission.package().bytes()).expect("JSON");
+    let before = wire["source_map"].as_array().expect("entries").len();
+    wire["source_map"]
+        .as_array_mut()
+        .expect("entries")
+        .retain(|entry| entry["role"] != "claim");
+    assert!(wire["source_map"].as_array().expect("entries").len() < before);
+    let mutated = built.with_wire(&wire);
+    let refused = mutated
+        .try_read(&mutated.emission)
+        .err()
+        .expect("the reader refuses");
+    let shown = format!("{refused:?}");
+    assert!(shown.contains("InvalidSourceMap"), "{shown}");
+    assert!(shown.contains("/source_map"), "{shown}");
 }

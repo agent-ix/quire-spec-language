@@ -28,7 +28,7 @@ use qsl_semantics::check::{Activation, CheckedFormula, FormulaNode, TemporalProf
 use quire_eval::CallFailure;
 use quire_exact::Meter;
 
-use super::call::{evaluate_temporal_evidence, refusal, select_occurrence};
+use super::call::{evaluate_temporal_evidence, fault, refusal, select_occurrence};
 use super::request::{
     ActivationRow, EvidenceRequest, EvidenceResult, EvidenceSubject, SubjectOccurrence,
 };
@@ -483,7 +483,7 @@ impl<'p> EvidencePackage<'p> {
                             && entry.role == found.role
                             && entry.ordinal == found.ordinal
                     })
-                    .ok_or_else(|| unreadable("source-map"))?;
+                    .ok_or_else(|| fault("admitted-occurrence-has-a-source-map-entry"))?;
                 Ok(SubjectOccurrence {
                     occurrence: CheckedOccurrence {
                         role: found.role.clone(),

@@ -418,6 +418,37 @@ fn admit_aggregate_samples(
     Ok(())
 }
 
+/// Refuse a valuation keyed by an atom the clause's formula does not have,
+/// before the call charges any work (FR-043-AC-16 `OperandNotInFormula`, on
+/// the request's atom keys). Such a key is never read, so admitting it would
+/// let it change `input_identity` without meaning anything.
+fn admit_valuation_atoms(
+    formula: &crate::temporal::facts::ClauseFormula,
+    request: &EvidenceRequest,
+) -> Result<(), CallFailure> {
+    for supplied in &request.positions {
+        let shared = supplied.valuations.keys().map(|atom| ("valuations", atom));
+        let bound = supplied
+            .instance_valuations
+            .values()
+            .flat_map(|valuations| valuations.keys())
+            .map(|atom| ("instance_valuations", atom));
+        for (member, atom) in shared.chain(bound) {
+            if !formula.has_atom(*atom) {
+                return Err(refusal(
+                    "valuation-atom-unknown",
+                    member,
+                    &[
+                        ("atom", atom.to_string()),
+                        ("position", supplied.position.to_string()),
+                    ],
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// FR-502 as the call applies it: the contradiction is a refusal and the
 /// progress ledger the caller holds is then unchanged.
 /// What the call's progress assertion became (FR-502).
@@ -1495,6 +1526,7 @@ fn assess(
             ));
         }
     }
+    admit_valuation_atoms(facts.subject.facts.formula(), request)?;
     let mut call = CallMeter::new(request.limits, meter);
     let prepared = Prepared {
         scope,

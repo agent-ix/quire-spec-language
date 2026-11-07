@@ -242,7 +242,14 @@ fn an_unreadable_formula_graph_is_refused_before_anything_is_charged() {
         .facts
         .clone()
         .with_formula(ClauseFormula::of_graph(&numbered(readable)));
-    assert!(evaluate_temporal_evidence(&subject, &asked, &mut unlimited()).is_ok());
+    // The readable formula is not the clause's own, so the request's atom
+    // keys name none of its atoms: the twin reads it with no valuation.
+    let mut unvalued = asked.clone();
+    for position in &mut unvalued.positions {
+        position.valuations.clear();
+        position.instance_valuations.clear();
+    }
+    assert!(evaluate_temporal_evidence(&subject, &unvalued, &mut unlimited()).is_ok());
     for (what, graph, fault) in unreadable {
         let formula = ClauseFormula::of_graph(&numbered(graph));
         assert_eq!(formula.work(), Err(fault), "{what}");
@@ -268,7 +275,7 @@ fn an_unreadable_formula_graph_is_refused_before_anything_is_charged() {
         .facts
         .clone()
         .with_formula(ClauseFormula::of_graph(&numbered(overflow)));
-    let result = evaluate_temporal_evidence(&subject, &asked, &mut unlimited())
+    let result = evaluate_temporal_evidence(&subject, &unvalued, &mut unlimited())
         .expect("an overflowing sum is a result");
     assert_eq!(result.activation, ActivationState::Unavailable);
     assert_eq!(result.truth, None);

@@ -281,7 +281,6 @@ fn an_empty_identity_is_refused_and_one_byte_changes_the_result_identity() {
     "FR-502-AC-12",
     "FR-526-AC-9",
     "FR-524-AC-19",
-    "FR-043-AC-15",
     "TC-1296",
     "TC-1321",
     "TC-1319"
@@ -377,13 +376,22 @@ fn a_cloned_or_moved_ledger_gives_the_same_admission_as_the_ledger_itself() {
         let mut asked = asking(&env, p, Valuation::False);
         asked.relation = Relation::Superseding(identity.clone());
         asked.ledger = Some(ledger);
-        format!("{:?}", run(&env, &asked).expect("a result"))
+        run(&env, &asked)
     };
-    let cloned = carrying(r1.ledger.clone());
-    let itself = carrying(r1.ledger.clone());
-    let moved = carrying(r1.ledger);
+    // The ledger as the call returned it, a clone of a copy of the whole
+    // result, and the ledger moved out of the result.
+    let copy = r1.clone();
+    assert_eq!(copy.ledger, r1.ledger);
+    let itself = format!("{:?}", carrying(r1.ledger.clone()).expect("a result"));
+    let cloned = format!("{:?}", carrying(copy.ledger.clone()).expect("a result"));
+    let moved = format!("{:?}", carrying(r1.ledger).expect("a result"));
     assert_eq!(cloned, itself);
     assert_eq!(moved, itself);
+    // The comparison can fail: another ledger gives another admission.
+    expect_refusal(
+        carrying(qsl_eval::temporal::evidence::EvidenceLedger::default()),
+        "predecessor-unknown",
+    );
 }
 
 /// FR-526-AC-27 (TC-1321 row 27): a `Superseding(r1)` request with changed
@@ -509,7 +517,7 @@ fn a_lineage_stop_keeps_every_charge_an_earlier_call_made_on_the_meter() {
 /// admits at most one valuation per position and atom, so a true row beside a
 /// false row for one operand has no request form. The request carries no
 /// leaf-handle map to set.
-#[trace("TC-144", "FR-043-AC-17", "FR-043-AC-16")]
+#[trace("TC-144", "FR-043-AC-17")]
 #[test]
 fn the_requests_valuations_alone_decide_an_always_clause() {
     use qsl_eval::temporal::evidence::{Indeterminate, Settlement};
@@ -546,4 +554,79 @@ fn the_requests_valuations_alone_decide_an_always_clause() {
             also_held_by: Vec::new(),
         })
     );
+}
+
+/// FR-043-AC-16 `OperandNotInFormula` on the request's atom keys: a valuation
+/// keyed by an atom the clause's formula does not have is refused
+/// `invalid_runtime_input` / `invalid-value` with cause `valuation-atom-unknown`
+/// at member `valuations` (`instance_valuations` for an instance's own map),
+/// naming the atom index and the position's stamp, before any charge; a stray
+/// key beside valid keys refuses too, and the same request without it is
+/// accepted.
+#[trace("TC-144")]
+#[test]
+fn a_valuation_keyed_by_an_atom_the_formula_lacks_is_refused_before_any_charge() {
+    let (env, p) = setup();
+    let subject = env.subject(&[]);
+    let stray = 99_u64;
+    let refused = |asked: &EvidenceRequest| {
+        let mut meter = unlimited();
+        let failure =
+            evaluate_temporal_evidence(&subject, asked, &mut meter).expect_err("a refusal");
+        assert!(meter.admitted_charges().is_empty());
+        let CallFailure::Admission(failure) = failure else {
+            panic!("an admission refusal, not {failure:?}");
+        };
+        let quire_eval::CallAdmissionFailure::Refused(record) = *failure else {
+            panic!("a refusal");
+        };
+        (
+            record.record.catalog,
+            record.locus.clone(),
+            record.record.fields.clone(),
+        )
+    };
+    let named = |member: &str, at: &str| {
+        (
+            quire_semantic_value::catalog::CatalogCode::new(
+                "invalid_runtime_input",
+                "invalid-value",
+            ),
+            quire_eval::CallAdmissionLocus::Member {
+                name: member.to_owned(),
+                index: None,
+            },
+            std::collections::BTreeMap::from([
+                ("cause", "valuation-atom-unknown".to_owned()),
+                ("atom", stray.to_string()),
+                ("position", at.to_owned()),
+            ]),
+        )
+    };
+
+    let valid = asking(&env, p, Valuation::True);
+    assert!(run(&env, &valid).is_ok());
+
+    // Beside valid keys, at the second position.
+    let mut shared = valid.clone();
+    shared.positions[1]
+        .valuations
+        .insert(stray, Valuation::True);
+    assert_eq!(refused(&shared), named("valuations", "1"));
+
+    // Alone at the first position of a request whose other keys are valid.
+    let mut first = valid.clone();
+    first.positions[0]
+        .valuations
+        .insert(stray, Valuation::False);
+    assert_eq!(refused(&first), named("valuations", "0"));
+
+    // In an instance's own map.
+    let mut bound = valid.clone();
+    bound.positions[1]
+        .instance_valuations
+        .entry(id("t1"))
+        .or_default()
+        .insert(stray, Valuation::True);
+    assert_eq!(refused(&bound), named("instance_valuations", "1"));
 }

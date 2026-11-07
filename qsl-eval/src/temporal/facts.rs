@@ -245,6 +245,11 @@ impl ClauseFormula {
         self.atom_of.get(node).copied().flatten()
     }
 
+    /// Whether `index` is the atom index of one of this formula's atoms.
+    pub fn has_atom(&self, index: u64) -> bool {
+        self.atom_of.iter().flatten().any(|atom| *atom == index)
+    }
+
     /// The number of atoms.
     pub fn atom_count(&self) -> usize {
         self.atom_of.iter().flatten().count()

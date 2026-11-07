@@ -1002,7 +1002,7 @@ fn every_evidence_member_changes_the_result_identity() {
     }
 }
 
-#[trace("FR-516-AC-32", "FR-516-AC-33", "FR-043-AC-16", "TC-1311")]
+#[trace("FR-516-AC-32", "FR-516-AC-33", "TC-1311")]
 #[test]
 fn twins_pair_their_clock_rows_by_key_and_an_absent_or_unknown_selector_is_refused() {
     use qsl_eval::temporal::evidence::TraceBinding;
@@ -1497,7 +1497,7 @@ fn the_declared_population_never_wraps_or_saturates() {
     );
 }
 
-#[trace("FR-516-AC-27", "FR-516-AC-44", "TC-1311")]
+#[trace("FR-516-AC-27", "FR-516-AC-44", "FR-526-AC-23", "TC-1321", "TC-1311")]
 #[test]
 fn a_support_pair_at_a_silent_sample_names_no_observed_fact_and_is_skipped() {
     // `eventually[0, 3] holds(p)` false everywhere: flipping any one of the
