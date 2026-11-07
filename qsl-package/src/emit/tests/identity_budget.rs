@@ -358,6 +358,7 @@ function e3 using v(s: State, g: Integer): State pure { s }\n";
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
 profile v = \"quire.model.complete/v1\";\n\
+profile t = \"quire.temporal.complete/v1\";\n\
 profile tt = \"quire.temporal.timed/v1\";\n\
 model Config = {config:?};\n\
 model M = {records:?};\n\
