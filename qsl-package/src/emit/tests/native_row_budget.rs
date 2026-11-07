@@ -542,7 +542,8 @@ fn cold_integer_payloads_refuse_inside_the_real_equality_adapter_without_allocat
     // observer reaches its numeric copy precharge rather than an earlier path
     // string. Each probe uses a separate copy; none warms the final input.
     let storage = (0..need.storage)
-        .filter(|storage| {
+        .rev()
+        .find(|storage| {
             let candidate = emission.clone();
             let mut budget = NativeJoinBudget::new(need.work, *storage);
             candidate
@@ -551,7 +552,6 @@ fn cold_integer_payloads_refuse_inside_the_real_equality_adapter_without_allocat
                 .locus()
                 == Some(locus)
         })
-        .last()
         .expect("an owned charge in the retained integer row");
     let cold = emission.clone();
     let mut budget = NativeJoinBudget::new(need.work, storage);
@@ -569,11 +569,19 @@ fn cold_integer_payloads_refuse_inside_the_real_equality_adapter_without_allocat
     assert_eq!(error.configured_bound(), Some(storage));
     assert_eq!(error.denied(), budget.first_unpaid());
     let mut exact = NativeJoinBudget::new(need.work, need.storage);
+    let fresh = emission.clone();
+    let mut copied = None;
+    let admitted = allocation_counter::measure(|| {
+        copied = Some(fresh.equality_witness(&package, &mut exact));
+    });
+    assert!(
+        admitted.count_total > 0,
+        "successful owned adapter materialization is observed"
+    );
     assert_eq!(
-        emission
-            .clone()
-            .equality_witness(&package, &mut exact)
-            .expect("cold payloads copy at their exact full allowance"),
+        copied
+            .expect("real adapter ran")
+            .expect("cold payloads copy at exact full allowance"),
         expected
     );
 }
