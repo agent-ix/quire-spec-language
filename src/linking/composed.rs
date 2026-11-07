@@ -6,7 +6,6 @@
 mod arena;
 pub mod binding;
 pub mod binding_work;
-pub mod definition_source;
 pub mod definitions;
 mod dependencies;
 mod inventory;
@@ -18,6 +17,7 @@ mod work;
 
 use std::collections::BTreeMap;
 
+use crate::linking::declaration_id::DeclarationId;
 use crate::syntax::composed::{ComposedUnit, Declaration, NativeUnit};
 use crate::Limits;
 use qsl_foundation::{Diagnostic, Source, SourceIdentity, Spanned};
@@ -114,17 +114,6 @@ pub struct UnitId(pub(super) usize);
 
 impl UnitId {
     /// Index into this namespace's units(), not the supplied source slice.
-    pub fn index(self) -> usize {
-        self.0
-    }
-}
-
-/// Declaration handle local to one namespace, not a cross-package identity.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct DeclarationId(pub(super) usize);
-
-impl DeclarationId {
-    /// Index into this namespace's declarations(), not a unit's AST.
     pub fn index(self) -> usize {
         self.0
     }
