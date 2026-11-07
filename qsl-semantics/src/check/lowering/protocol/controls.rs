@@ -34,8 +34,8 @@ use quire_exact::{Integer, NodeKey};
 
 use super::super::{fault, Binder, Binders, Lowering, NodeRef};
 use super::{
-    checked_slot_names, empty_group, identifier, member, protocol_location, sorted, ProtocolInput,
-    ProtocolSite,
+    checked_slot_names, empty_group, identifier, member, protocol_location, protocol_site, sorted,
+    ProtocolInput, ProtocolSite, RelatedSide,
 };
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::CheckedBody;
@@ -882,6 +882,7 @@ impl Lowering<'_> {
                 })
             };
             let order = (relationship.clone(), canonical(&from)?, canonical(&to)?);
+            let ends = related.ends.each_ref().map(|end| end.root().location());
             records.push((
                 order,
                 TupleMember::Group(GroupTerm::new(vec![
@@ -889,14 +890,42 @@ impl Lowering<'_> {
                     member("from", from),
                     member("to", to),
                 ])),
+                ends,
             ));
         }
         records.sort_by(|left, right| left.0.cmp(&right.0));
+        // Each end is named by its record's position in the emitted array;
+        // a record that collapses into an equal one takes that one's
+        // position (QSpec FR-322-AC-388).
+        let path = &controls
+            .protocol
+            .checked
+            .controls
+            .control(node)
+            .ok_or_else(unchecked)?
+            .path;
+        let protocol = &controls.protocol.form.name.name;
+        let mut position = 0;
+        for (index, (order, _, ends)) in records.iter().enumerate() {
+            if index > 0
+                && records
+                    .get(index - 1)
+                    .is_some_and(|(held, _, _)| held != order)
+            {
+                position += 1;
+            }
+            for (end, side) in ends.iter().zip([RelatedSide::From, RelatedSide::To]) {
+                self.name_expression_site(
+                    end,
+                    protocol_site(protocol, ProtocolSite::RelatedEnd(path, position, side)),
+                );
+            }
+        }
         records.dedup_by(|left, right| left.0 == right.0);
         Ok(MemberTerm::binding(
             "related",
             BindingValue::Tuple(TupleTerm::new(
-                records.into_iter().map(|(_, record)| record).collect(),
+                records.into_iter().map(|(_, record, _)| record).collect(),
             )),
         ))
     }

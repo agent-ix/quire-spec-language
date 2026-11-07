@@ -4,9 +4,8 @@ use crate::wire_form::{is_expression_role, WireForm};
 use crate::CheckedPackage;
 use alloc::{borrow::ToOwned, string::String, vec, vec::Vec};
 use qsl_semantics::check::{
-    BindingValue, BodyTerm, CaptureOwner, CheckedActivation, CheckedBody, CheckedLifetime,
-    CheckedOrdering, CheckedProtocol, CheckedRetry, CheckedSlots, GroupMember, LeafTerm,
-    MemberTerm, ProtocolNodeId, TupleMember,
+    protocol_site, CaptureOwner, CheckedActivation, CheckedBody, CheckedLifetime, CheckedOrdering,
+    CheckedProtocol, CheckedRetry, CheckedSlots, ProtocolNodeId, ProtocolSite, RelatedSide,
 };
 use quire_exact::{NodeKey, ValueType};
 use quire_semantic_value::catalog::InternalFault;
@@ -347,44 +346,19 @@ fn run_body<'a>(
             slots,
         )),
         ("send" | "receive" | "attempt" | "effect" | "event", "related.from" | "related.to") => {
-            // The emitted records are canonically sorted and deduplicated.
-            // Select their checked expression identity before locating its
-            // executable body; source declaration order is not a slot index.
-            let keys = package.graph().protocol_node_keys(&protocol.name)?;
-            let control = package
-                .graph()
-                .semantic_graph()
-                .node(keys.nodes.get(&node)?.clone())?;
-            let BodyTerm::Application(application) = control.body() else {
-                return None;
-            };
-            let records = application
-                .arguments
-                .iter()
-                .find_map(|argument| match argument {
-                    MemberTerm::Binding(binding) if binding.name == "related" => {
-                        match &binding.value {
-                            BindingValue::Tuple(records) => Some(records),
-                            _ => None,
-                        }
-                    }
-                    _ => None,
-                })?;
-            let TupleMember::Group(record) = records.members.get(index?)? else {
-                return None;
-            };
-            let end = if member == "related.from" {
-                "from"
+            // The emitted records are canonically sorted and deduplicated, and
+            // an end is named by its record's position in that array, so the
+            // checked expression is the one located under that name; source
+            // declaration order is not a slot index (QSpec FR-322-AC-388).
+            let side = if member == "related.from" {
+                RelatedSide::From
             } else {
-                "to"
+                RelatedSide::To
             };
-            let target = record.members.iter().find_map(|entry| match entry {
-                GroupMember::Binding(binding) if binding.name == end => match &binding.value {
-                    LeafTerm::Reference { target } => target.admitted(),
-                    _ => None,
-                },
-                _ => None,
-            })?;
+            let site = protocol_site(
+                &protocol.name,
+                ProtocolSite::RelatedEnd(&protocol.controls.control(node)?.path, index?, side),
+            );
             let body = protocol
                 .slots
                 .related
@@ -392,14 +366,8 @@ fn run_body<'a>(
                 .filter(|related| related.node == node)
                 .flat_map(|related| &related.ends)
                 .find(|body| {
-                    package
-                        .graph()
-                        .occurrences()
-                        .any(|(key, origin, location)| {
-                            key == *target
-                                && origin.role().as_str() == "expression"
-                                && location == body.root().location()
-                        })
+                    package.graph().protocol_slot_origin(body.root().location())
+                        == Some(site.as_str())
                 })?;
             Some((body, slots))
         }
@@ -810,9 +778,9 @@ pub(crate) fn root_node(package: &CheckedPackage, body: &CheckedBody) -> Option<
 /// The type-declaration origin name (FR-383's site name) a slot expression
 /// is located under, which keys its `protocol_locations` rows.
 #[cfg(feature = "std")]
-pub(crate) fn slot_origin(body: &CheckedBody) -> Option<&str> {
-    match &body.root().location().origin {
-        quire_semantic_value::location::Origin::TypeDeclaration { name } => Some(name),
-        _ => None,
-    }
+pub(crate) fn slot_origin<'g>(
+    graph: &'g qsl_semantics::check::CheckedGraph,
+    body: &'g CheckedBody,
+) -> Option<&'g str> {
+    graph.protocol_slot_origin(body.root().location())
 }

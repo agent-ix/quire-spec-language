@@ -4849,7 +4849,13 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
         assert_eq!(got, expected, "{}", parity.name);
         assert_eq!(chosen.frame_len(), got.len());
         // The site name the source selector locates the slot under.
-        let source_origin = format!("{:?}", source.checked_body().root().location().origin);
+        let source_origin = format!(
+            "TypeDeclaration {{ name: {:?} }}",
+            package
+                .graph()
+                .protocol_slot_origin(source.checked_body().root().location())
+                .expect("a protocol slot is located under a site name")
+        );
         // A slot whose root holds rows has exactly one origin, never none.
         assert!(
             !row_origins.contains(&source_origin) || chosen.origin().is_some(),
@@ -4994,7 +5000,8 @@ fn the_bare_selection_refuses_as_the_source_selection_does() {
 /// FR-533-AC-11: over TC-1070 fixture L the bare route selects the visible
 /// entry and both case guards of `Decide` by (control node, member, index)
 /// alone, each with the one origin the table of "Slot naming on the bytes
-/// route" gives, and the `related` ends of `Got` (leaf references) have none.
+/// route" gives (the case guards named by label), and the `related` ends of
+/// `Got` (leaf references) have none.
 #[trace("FR-533-AC-11", "FR-533-AC-12", "TC-1333")]
 #[test]
 fn the_bare_route_names_fixture_l_decision_slots_by_node_member_and_index() {
@@ -5025,10 +5032,19 @@ fn the_bare_route_names_fixture_l_decision_slots_by_node_member_and_index() {
         .origin()
         .map(str::to_owned)
     };
-    let name = |span: &str| format!("protocol Pipeline run Main Decide decision {span}");
-    assert_eq!(origin("Decide", "visible", 0), Some(name("2641..2650")));
-    assert_eq!(origin("Decide", "cases.guard", 0), Some(name("2735..2748")));
-    assert_eq!(origin("Decide", "cases.guard", 1), Some(name("2676..2685")));
+    let name = |tail: &str| format!("protocol Pipeline run Main Decide {tail}");
+    assert_eq!(
+        origin("Decide", "visible", 0),
+        Some(name("decision 2641..2650"))
+    );
+    assert_eq!(
+        origin("Decide", "cases.guard", 0),
+        Some(name("case no guard"))
+    );
+    assert_eq!(
+        origin("Decide", "cases.guard", 1),
+        Some(name("case yes guard"))
+    );
     assert_eq!(origin("Got", "related.from", 0), None);
     assert_eq!(origin("Got", "related.to", 0), None);
 }

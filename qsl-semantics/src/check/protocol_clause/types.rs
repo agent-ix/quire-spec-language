@@ -157,9 +157,14 @@ pub struct CheckedProtocolExpressionBindings {
     pub location: quire_semantic_value::location::Location,
     /// Its parameter identities in local-slot order.
     pub binders: Vec<CheckedProtocolBinderKey>,
+    /// The site name its `protocol_locations` rows are written under when
+    /// it is built from the emitted control node, not from the location: a
+    /// `related` end, named by its record's position in the emitted array
+    /// (QSpec FR-322-AC-388).
+    pub site: Option<String>,
 }
 
-qsl_foundation::debug_with_struct!(CheckedProtocolExpressionBindings, "CheckedProtocolExpressionBindings" { location: plain, binders: with });
+qsl_foundation::debug_with_struct!(CheckedProtocolExpressionBindings, "CheckedProtocolExpressionBindings" { location: plain, binders: with, site: plain });
 
 /// One protocol `attempt` FR-114's own S3 binding checked: its resolved
 /// operation (already resolved by the FR-091 assembler, `AttemptDeclaration`
