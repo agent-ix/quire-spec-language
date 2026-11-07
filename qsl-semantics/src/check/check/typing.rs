@@ -1148,7 +1148,12 @@ impl<'a> Typer<'a> {
                         cause: if quantity.unit.is_qualified() {
                             CheckCause::MissingQualifiedName(quantity.unit.clone())
                         } else {
-                            CheckCause::MissingName(quantity.unit.name.clone())
+                            CheckCause::UnresolvedUnitName {
+                                name: quantity.unit.name.clone(),
+                                packages: self
+                                    .scope
+                                    .unit_packages(self.source_owner.as_ref(), &quantity.unit.name),
+                            }
                         },
                     });
                 };
