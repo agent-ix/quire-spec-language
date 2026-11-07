@@ -12,7 +12,7 @@ relationships:
 
 Verify that the executable monitor plan of FR-251 is self-sufficient, that admission refuses any plan not derived from the selected clause and target, that built monitors do not share state, that executing the plan agrees with QSL's reference evaluator, and that every build, admission and execution fault is a typed non-verdict result.
 
-Scope: FR-251-AC-4 to FR-251-AC-12, FR-251-AC-14, FR-251-AC-15, FR-251-AC-17, FR-251-AC-19, FR-251-AC-21, FR-251-AC-23 to FR-251-AC-25, FR-251-AC-27 to FR-251-AC-30, FR-251-AC-32 to FR-251-AC-39, FR-251-AC-41, FR-251-AC-42, FR-251-AC-43 and FR-251-AC-44.
+Scope: FR-251-AC-4 to FR-251-AC-12, FR-251-AC-14, FR-251-AC-15, FR-251-AC-17, FR-251-AC-19, FR-251-AC-21, FR-251-AC-23 to FR-251-AC-25, FR-251-AC-27 to FR-251-AC-30, FR-251-AC-32 to FR-251-AC-39, FR-251-AC-41, FR-251-AC-42, FR-251-AC-43 through FR-251-AC-48.
 
 ## Test Procedure
 
@@ -46,6 +46,10 @@ Fixtures: the deadline claim of FR-251-AC-1 on a 20-bit 1 MHz counter with its a
 26. Write the plan-root package over an emission holding rows of every kind (selected model declaration and field, source-unit, model enum declaration and member, tuple declaration, operation-member, equality producer and fact, temporal binding, omitted nodes) with a rename of every node id those rows name, and read every id field of every returned row; write the plan-root package of a unit that selects a model, and read the returned `Emission`'s rows and join its exact rows to the package read back through IR.
 27. Write the plan-root package over a unit with two temporal clauses once for each clause, read it back through the strict reader, and select each subject's clause node and claim ordinal through the returned `Emission`'s temporal binding rows; repeat through a row carry that renames a clause declaration, which no current writer path does; select an ordinal the package does not hold for each clause and a clause node it does not hold (AC-43).
 28. Write the plan-root package of AC-1's unit, read it back through the strict reader, and join the returned `Emission`'s source record rows of `Instance`, `Activation` and `LimitReached` through Contract IR's source record join; repeat with each renamed member's `admitted_name` set to its declared field name (AC-44).
+29. Produce a tick-monitor plan from genuine authored source and an independently derived and strict-read observation-owner progress association. Through the public handoff compare the complete canonical model-step order and owner association VALUE with their original owner values; compare the original source, structural clause node, claim role/ordinal, selected subject and checked model-time facts. Join through the same final emission temporal binding rows and compare its clause binding with the strict reader declaration. Drop temporary compilation inputs and repeat public reads of values and capabilities alongside the plan and obligations. Exercise owner-permitted clone and writer-rename behavior while retaining all old witness rows (AC-45).
+30. Independently remove the checked order premise and progress association; substitute a foreign emission; change the original source, structural clause node, claim role and ordinal, selected subject, observation source, clock identity/revision, model, structural model/unit/dimension/digital-operation node, unit, dense/tick kind, digital operation and exact period. Substitute the complete order and association values and the full authority document bytes. Invoke public admission and assert each typed refusal with no partial admitted context. Encode the genuine owner association at its exact observed byte length and one byte less; inspect the original owner resource refusal. Do not fabricate an admitted authority, encode a structural node as a digest, or infer association from labels, clock configuration or numeric positions (AC-46).
+31. Drop the original authored source, model documents and request inputs after producing a plan root. Read its retained combined checked unit through the public API; compare the authored source prefix, generated entry names, original selected clause key, model object key, dense source kind and millisecond unit. Separately join the final clause through the emission retained rows, without treating original checker keys as final renamed identities or progress authority (AC-47).
+32. Read the public canonical model-step order value from genuine dense and digital model-time roots. Compare the entire object with the checked model, unit and dimension identities; for digital time compare the checked operation anchor and exact period. Change source kind, time-source unit and digital period independently. Encode at the exact observed byte length and one byte less; inspect the original canonical limit refusal. The plan-root accessors preserve immutable ownership of the original plan, obligations and emission (AC-48).
 
 Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 
@@ -79,3 +83,22 @@ Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 - Step 26: every row kind is carried and non-empty where the acquisition had rows; each node id in each row equals the renamed id, and a row naming no renamed node is unchanged; the declaration and field rows equal the unit's acquisition rows, the source-unit and equality rows each name a node of the package, and the IR join accepts the exact rows.
 - Step 27: each selection returns the declaration the plan root's `clause` binding names and the declaration of the `temporal_clause_names` row of that ordinal, never the other clause's; after the rename the selection returns the renamed id and no id absent from the package; the absent ordinal and an absent clause node each select nothing.
 - Step 28: the rows name `origin` and `value` at the renamed members and keep `origin_tick` and `amount` as declared names; the join succeeds and projects each record; each row with a declared name as `admitted_name` is refused with `MismatchedIdentityWitness`.
+- Step 29: both complete owner values retain the original structural/source/claim components; the same-emission temporal join equals the plan-root and strict-reader declaration. The values and capabilities survive temporary input destruction, follow the owner clone/rename contract and retain every older witness row.
+- Step 30: each independently changed or missing selection returns its typed refusal and no partial context. Exact canonical-association byte bounds succeed; one byte less preserves the owner resource refusal. No digest, label, full authority document, clock configuration, matching index or second emission supplies missing authority.
+- Step 31: the original combined checked unit retains all compared source/time facts after input destruction; the separate final-emission selection equals the strict reader clause. This is component retention evidence and grants no admitted order/progress claim.
+- Step 32: the complete canonical values retain every specified component; source kind, unit and period changes give unequal values. Exact-length encoding succeeds; one less returns Encoding with the native canonical byte limit. The returned plan, obligations and emission remain immutable.
+
+## Qualification boundary
+
+The procedure defines required future evidence; this specification change grants
+no implementation or qualification credit. Positive joint-authority steps remain
+planned until the observation owner supplies the structural node and original
+claim-occurrence association contract (IR-1390). An owner API that accepts only
+64-hex node strings does not admit QSL's complete structural identities; no
+conversion to a fabricated digest or claim string is permitted.
+
+Component controls independently change the observation source, clock identity,
+clock revision, model, unit, dense/tick kind, operation, period numerator and
+denominator against genuine checked source facts. These controls provide no
+positive joint-authority credit until the original structural node and claim
+occurrence comparisons and owner-issued association test also pass.
