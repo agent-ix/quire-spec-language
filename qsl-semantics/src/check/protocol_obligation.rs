@@ -1187,6 +1187,7 @@ impl Checker<'_, '_> {
                         TypeFormHead::Name(written) => Some(written.name.clone()),
                         TypeFormHead::Builtin(_)
                         | TypeFormHead::Collection(_)
+                        | TypeFormHead::UnitExpression(_)
                         | TypeFormHead::Population => None,
                     },
                     span: record.span,

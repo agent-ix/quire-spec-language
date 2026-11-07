@@ -442,16 +442,12 @@ fn source_and_types(g: &mut Grammar) {
                 opt(s(vec![x("["), uint(), x(","), uint(), x("]")])),
             ]),
             s(vec![x("Reference"), x("<"), r(P::QualifiedName), x(">")]),
-            c(vec![
-                s(vec![x("Quantity"), x("<"), r(P::QualifiedName), x(">")]),
-                s(vec![
-                    x("Quantity"),
-                    x("<"),
-                    r(P::QualifiedName),
-                    x(","),
-                    r(P::TypeReference),
-                    x(">"),
-                ]),
+            s(vec![
+                x("Quantity"),
+                x("<"),
+                r(P::UnitExpression),
+                opt(s(vec![x(","), r(P::TypeReference)])),
+                x(">"),
             ]),
             s(vec![
                 x("Population"),
@@ -473,6 +469,13 @@ fn source_and_types(g: &mut Grammar) {
         s(vec![
             r(P::QualifiedName),
             opt(s(vec![x("^"), r(P::SignedInteger)])),
+        ]),
+    );
+    g.insert(
+        P::UnitExpression,
+        s(vec![
+            r(P::DimensionTerm),
+            star(s(vec![x("*"), r(P::DimensionTerm)])),
         ]),
     );
     g.insert(

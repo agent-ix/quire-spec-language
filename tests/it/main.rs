@@ -135,3 +135,5 @@ mod union_nodes;
 mod v2_refusal_code_bridge;
 #[cfg(feature = "checked-handoff")]
 mod valuation_evidence;
+
+mod compound_quantity_types;

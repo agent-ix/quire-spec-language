@@ -957,6 +957,17 @@ pub(super) fn type_fault_class(fault: &super::type_form::TypeFormFault) -> (Code
             (Code::MissingDeclaration, "missing-name")
         }
         F::AmbiguousName(_) => (Code::AmbiguousDeclaration, "ambiguous-name"),
+        F::UnitArithmetic(_) => (Code::IllTyped, "operator-ineligible"),
+        F::UnitIdentity(IdentityRefusal::InputBytes { .. }) => (
+            Code::StageLimitExceeded,
+            Setting::IdentityInputBytes.kind().catalog_cause(),
+        ),
+        F::UnitIdentity(IdentityRefusal::Allocation { .. }) => {
+            (Code::ResourceExhausted, "allocation-failed")
+        }
+        F::UnitIdentity(IdentityRefusal::NonCanonical) => {
+            (Code::RuntimeInvariant, "established-invariant-broken")
+        }
         F::Malformed
         | F::EmptyInterval
         | F::IntegerOutsideI128(_)

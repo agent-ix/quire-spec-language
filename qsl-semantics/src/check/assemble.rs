@@ -718,6 +718,7 @@ impl AssemblyCause {
                 TopologyFault::TwoRoots => "conflicting-definition",
                 TopologyFault::TargetCycle => "definition-cycle",
             },
+            Self::IllFormedBounds(TypeFormFault::UnitArithmetic(_)) => "operator-ineligible",
             Self::IllFormedBounds(_) | Self::OverNotObjectType { .. } => "type-mismatch",
             Self::ImportedTypeName { .. } => "operator-ineligible",
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
@@ -1133,6 +1134,7 @@ impl Unit {
 /// model alias instead ([`ModelSpellings`]).
 #[derive(Default)]
 struct Names {
+    unit_table: std::cell::RefCell<quire_semantic_value::quantity::UnitTable>,
     types: BTreeMap<String, Vec<ValueType>>,
     /// The unit's declared units by name, for `Quantity<u>`.
     units: BTreeMap<String, quire_exact::UnitId>,
@@ -1168,6 +1170,20 @@ impl TypeNames for UnitNames<'_> {
 
     fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
         self.spellings.object_type(self.unit, name)
+    }
+
+    fn unit_value(
+        &self,
+        id: quire_exact::UnitId,
+    ) -> Option<quire_semantic_value::quantity::QuantityUnit> {
+        self.names.unit_table.borrow().get(id).cloned()
+    }
+
+    fn retain_unit(
+        &self,
+        unit: quire_semantic_value::quantity::QuantityUnit,
+    ) -> Result<quire_exact::UnitId, quire_semantic_value::semantic_node::IdentityRefusal> {
+        self.names.unit_table.borrow_mut().insert(unit)
     }
 
     fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
@@ -2719,6 +2735,7 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
 /// rounding mode must be spellable (FR-091-OQ-4: floating types are admitted).
 fn check_names(
     unit: &Unit,
+    names: &Names,
     spellings: &ModelSpellings,
     source: Option<&RawSourceRef>,
     imports: &BTreeMap<String, AdmittedImport>,
@@ -2745,21 +2762,10 @@ fn check_names(
                 span: form.span,
             }),
             TypeFormHead::Builtin(BuiltinType::Quantity) => {
-                for target in &form.arguments {
-                    if let TypeFormHead::Name(name) = &target.head {
-                        if !unit
-                            .units
-                            .iter()
-                            .any(|declared| declared.name.name == name.name)
-                            && spellings.unit(source, &name.name).is_none()
-                        {
-                            errors.push(AssemblyError {
-                                cause: AssemblyCause::UnresolvedTypeName {
-                                    name: name.name.clone(),
-                                },
-                                span: target.span,
-                            });
-                        }
+                if let Some(target) = form.arguments.first() {
+                    let scope = names.in_unit(spellings, source);
+                    if let Err(error) = super::type_form::quantity_unit(&scope, target) {
+                        errors.push(resolution_error(unit, error));
                     }
                 }
             }
@@ -2769,7 +2775,8 @@ fn check_names(
                         TypeFormHead::Name(name) => name,
                         TypeFormHead::Builtin(_)
                         | TypeFormHead::Collection(_)
-                        | TypeFormHead::Population => continue,
+                        | TypeFormHead::Population
+                        | TypeFormHead::UnitExpression(_) => continue,
                     };
                     if spellings.object_type(source, &name.name).is_none() {
                         errors.push(AssemblyError {
@@ -2825,7 +2832,8 @@ fn check_names(
                 | BuiltinType::Option,
             )
             | TypeFormHead::Collection(_)
-            | TypeFormHead::Population => stack.extend(&form.arguments),
+            | TypeFormHead::Population
+            | TypeFormHead::UnitExpression(_) => stack.extend(&form.arguments),
         }
     }
 }
@@ -2865,7 +2873,11 @@ fn resolution_error(unit: &Unit, error: TypeFormError) -> AssemblyError {
         | TypeFormFault::DenominatorBelowOne
         | TypeFormFault::MalformedDecimal
         | TypeFormFault::EmptyTextBounds
-        | TypeFormFault::EmptyCardinality) => AssemblyCause::IllFormedBounds(fault),
+        | TypeFormFault::EmptyCardinality
+        | TypeFormFault::UnitArithmetic(_)) => AssemblyCause::IllFormedBounds(fault),
+        TypeFormFault::UnitIdentity(cause) => {
+            AssemblyCause::handle(NodeKeyRefusal::Identity(cause))
+        }
         TypeFormFault::ClockNotChecked => AssemblyCause::TimedNotChecked(TimedConstruct::Clock),
     };
     AssemblyError {
@@ -4057,11 +4069,28 @@ impl PackageDeclarations {
             }
         };
 
+        let mut names = Names {
+            unit_table: std::cell::RefCell::new(
+                quantities
+                    .as_ref()
+                    .map(|assembled| {
+                        quire_semantic_value::quantity::UnitTable::declared(&assembled.graph)
+                    })
+                    .unwrap_or_default(),
+            ),
+            units: quantities
+                .as_ref()
+                .map(|assembled| super::check::declared_unit_ids(&assembled.graph))
+                .unwrap_or_default(),
+            ..Names::default()
+        };
+
         // Every type form names declarations of the unit or admitted model
         // object and record/event types.
         for alias in &unit.aliases {
             check_names(
                 &unit,
+                &names,
                 &model_spellings,
                 source_owners.get(&alias.name.name),
                 &qualified,
@@ -4075,6 +4104,7 @@ impl PackageDeclarations {
                     for field in fields {
                         check_names(
                             &unit,
+                            &names,
                             &model_spellings,
                             source_owners.get(&composite.name.name),
                             &qualified,
@@ -4087,6 +4117,7 @@ impl PackageDeclarations {
                     for element in elements {
                         check_names(
                             &unit,
+                            &names,
                             &model_spellings,
                             source_owners.get(&composite.name.name),
                             &qualified,
@@ -4099,6 +4130,7 @@ impl PackageDeclarations {
                     for payload in members.iter().flat_map(|member| &member.payload) {
                         check_names(
                             &unit,
+                            &names,
                             &model_spellings,
                             source_owners.get(&composite.name.name),
                             &qualified,
@@ -4113,6 +4145,7 @@ impl PackageDeclarations {
             for form in signature_type_forms(function) {
                 check_names(
                     &unit,
+                    &names,
                     &model_spellings,
                     source_owners.get(&function.name),
                     &qualified,
@@ -4123,6 +4156,7 @@ impl PackageDeclarations {
             for form in body_type_forms(function) {
                 check_names(
                     &unit,
+                    &names,
                     &model_spellings,
                     source_owners.get(&function.name),
                     &qualified,
@@ -4135,6 +4169,7 @@ impl PackageDeclarations {
             for form in expression_type_forms([&body.body]) {
                 check_names(
                     &unit,
+                    &names,
                     &model_spellings,
                     source_owners.get(&body.label.name),
                     &qualified,
@@ -4151,6 +4186,7 @@ impl PackageDeclarations {
             for form in expression_type_forms(operands) {
                 check_names(
                     &unit,
+                    &names,
                     &model_spellings,
                     source_owners.get(&claim.name.name),
                     &qualified,
@@ -4163,6 +4199,7 @@ impl PackageDeclarations {
             for form in expression_type_forms([&clause.body]) {
                 check_names(
                     &unit,
+                    &names,
                     &model_spellings,
                     source_owners.get(&clause.name.name),
                     &qualified,
@@ -4176,13 +4213,6 @@ impl PackageDeclarations {
         }
 
         // Each declared record and tuple's handle, over the unit's owner.
-        let mut names = Names {
-            units: quantities
-                .as_ref()
-                .map(|assembled| super::check::declared_unit_ids(&assembled.graph))
-                .unwrap_or_default(),
-            ..Names::default()
-        };
         // Each enum, admitted under the unit's owner: its declaration key
         // and its members' keys are minted here (FB-13).
         let mut enums = Vec::with_capacity(unit.enums.len());
@@ -4595,7 +4625,9 @@ impl PackageDeclarations {
         package.sources = sources;
         package.source_owners = source_owners;
         package.execution_point_keys = execution_points.keys().cloned().collect();
-        package.types = types;
+        let mut type_units = types.units().clone();
+        type_units.append(names.unit_table.into_inner());
+        package.types = types.with_units(type_units);
         package.operations = operations;
         package.operation_clauses = operation_clauses;
         package.type_invariants = type_invariants;

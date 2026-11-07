@@ -101,8 +101,8 @@ pub use syntax::{
     TemporalOperatorForm, TemporalOperatorUse, TermOperator, TerminalDeclarationForm,
     TerminalDeclarationKind, TimeInvariantBoundForm, TimeInvariantForm, TimeSourceForm,
     TimeSourceSyntax, TimedIntervalForm, TimedUpper, TransitionForm, TreeRefusal, TupleForm,
-    TypeForm, TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UrgentForm, UrgentTarget,
-    UsingAlias, WeightedDelayForm, WeightedValueForm, WeightingForm, WorkloadForm,
+    TypeForm, TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UnitTermForm, UrgentForm,
+    UrgentTarget, UsingAlias, WeightedDelayForm, WeightedValueForm, WeightingForm, WorkloadForm,
     WorkloadWeightForm,
 };
 
