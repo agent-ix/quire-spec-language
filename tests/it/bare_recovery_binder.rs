@@ -1114,7 +1114,7 @@ impl Recipe {
 /// the equality file's source-unit rows. A supply whose rows select no source
 /// unit holds no `Recovery` and the slot that reads it is refused rather than
 /// evaluated over a record of another shape or a unit it cannot resolve.
-#[trace("FR-533-AC-19", "TC-1333")]
+#[trace("TC-1333", "FR-533-AC-19")]
 #[test]
 fn a_supply_without_the_source_unit_rows_leaves_recovery_unrepresented() {
     let recipe = recipe();
@@ -1139,35 +1139,134 @@ fn a_supply_without_the_source_unit_rows_leaves_recovery_unrepresented() {
     );
 }
 
+impl Recipe {
+    /// The refusal the bare route gives `rows` as the source-unit rows of its
+    /// equality file: the supply's, the world's, or `None` when the world holds.
+    fn refusal_over(
+        &self,
+        rows: Vec<quire_contract_model::SelectedSourceUnitRow>,
+    ) -> Option<String> {
+        let equality = self.equality_with(rows);
+        match self.bare_over(&equality) {
+            Err(refusal) => Some(format!("{refusal:?}")),
+            Ok(bare) => bare.world().err().map(|refusal| format!("{refusal:?}")),
+        }
+    }
+
+    /// R's one source-unit row.
+    fn unit_row(&self) -> quire_contract_model::SelectedSourceUnitRow {
+        let [row] = self.equality.source_units() else {
+            panic!("R declares one source unit");
+        };
+        row.clone()
+    }
+}
+
 /// FR-533 "Types the bytes cannot project": a source-unit row that names a
 /// unit identity the package's unit node does not carry (here the identity of
-/// a protocol node) gives no unit table, so the bare world refuses and the
-/// bare route never evaluates a quantity of a unit it cannot resolve.
-#[trace("FR-533-AC-19", "TC-1333")]
+/// a protocol node) gives no unit table. The identity witness is unknown, so
+/// the bare route never evaluates a quantity of a unit it cannot resolve.
+#[trace("TC-1333", "FR-533-AC-19")]
 #[test]
 fn a_source_unit_row_naming_no_defined_unit_refuses_the_bare_route() {
     let recipe = recipe();
-    let [row] = recipe.equality.source_units() else {
-        panic!("R declares one source unit");
-    };
-    let node = recipe.compensation("Full");
+    let row = recipe.unit_row();
     let foreign = quire_contract_model::SelectedSourceUnitRow::new(
         row.structural_node.clone(),
         row.source_authority.clone(),
         row.source_identity.clone(),
         row.qualified_declaration.clone(),
-        quire_exact::UnitId::Declared(node),
+        quire_exact::UnitId::Declared(recipe.compensation("Full")),
     );
-    let equality = recipe.equality_with(vec![foreign]);
-    let refused = match recipe.bare_over(&equality) {
-        Err(refusal) => format!("{refusal:?}"),
-        Ok(bare) => match bare.world() {
-            Err(refusal) => format!("{refusal:?}"),
-            Ok(_) => panic!("the world holds a unit the package does not define"),
-        },
+    let refused = recipe.refusal_over(vec![foreign]).expect("a refusal");
+    assert!(refused.contains("Identity(Unknown)"), "{refused}");
+}
+
+/// FR-533 "Types the bytes cannot project": a source-unit row whose node is no
+/// unit of the package (a protocol node) is not joined by Contract IR, so no
+/// unit table is built from it.
+#[trace("TC-1333", "FR-533-AC-19")]
+#[test]
+fn a_source_unit_row_naming_no_unit_node_refuses_the_bare_route() {
+    let recipe = recipe();
+    let row = recipe.unit_row();
+    let protocol = recipe
+        .package
+        .graph()
+        .nodes
+        .iter()
+        .find(|node| &*node.semantic_form == "compensation")
+        .expect("a compensation node")
+        .node_id
+        .clone();
+    let wrong = quire_contract_model::SelectedSourceUnitRow::new(
+        protocol,
+        row.source_authority.clone(),
+        row.source_identity.clone(),
+        row.qualified_declaration.clone(),
+        row.unit_id.clone(),
+    );
+    let refused = recipe.refusal_over(vec![wrong]).expect("a refusal");
+    assert!(refused.contains("Identity(Unknown)"), "{refused}");
+}
+
+/// FR-533 "Types the bytes cannot project": a source-unit row selected twice
+/// is a competing witness Contract IR refuses.
+#[trace("TC-1333", "FR-533-AC-19")]
+#[test]
+fn a_repeated_source_unit_row_refuses_the_bare_route() {
+    let recipe = recipe();
+    let row = recipe.unit_row();
+    let refused = recipe
+        .refusal_over(vec![row.clone(), row])
+        .expect("a refusal");
+    assert!(refused.contains("Identity(Unknown)"), "{refused}");
+}
+
+/// FR-533 / FR-358: the unit definition read is charged to the caller's one
+/// native allowance. A work allowance that pays the identity join but not the
+/// unit read is a `UnitDefinitions` denial carrying the stage diagnostic and
+/// the `i2.work_units` setting, never an unknown witness.
+#[trace("TC-1333", "FR-533-AC-19")]
+#[test]
+fn the_unit_definition_read_is_charged_to_the_native_budget() {
+    let recipe = recipe();
+    let attempt = |work: u64| {
+        let mut budget = qsl_package::NativeJoinLimits::new(work, u64::MAX).budget();
+        BarePackage::new(&recipe.package)
+            .with_supply(
+                BareSupply {
+                    identities: &recipe.identities,
+                    equality: Some(&recipe.equality),
+                },
+                &mut budget,
+            )
+            .map(|_| ())
     };
-    assert!(
-        refused.contains("bare-unit-definitions-are-a-unit-graph"),
-        "{refused}"
-    );
+    // The least allowance the whole supply needs.
+    let (mut low, mut high) = (0_u64, u64::MAX / 2);
+    while low < high {
+        let middle = low + (high - low) / 2;
+        if attempt(middle).is_ok() {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    let denial = (0..low)
+        .rev()
+        .find_map(|work| match attempt(work) {
+            Err(failure)
+                if matches!(
+                    failure.native(),
+                    qsl_package::NativeJoinFailure::UnitDefinitions { .. }
+                ) =>
+            {
+                Some(failure)
+            }
+            _ => None,
+        })
+        .expect("an allowance pays the join but not the unit read");
+    assert_eq!(denial.setting(), Some(qsl_foundation::Setting::I2WorkUnits));
+    assert!(denial.limit().is_some(), "{denial:?}");
 }

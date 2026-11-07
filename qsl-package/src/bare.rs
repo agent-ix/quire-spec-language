@@ -66,10 +66,9 @@ pub struct BarePackage<'p> {
     joined: Option<Result<SelectedExactIdentities, IdentityWitnessRefusal>>,
     projections: BTreeMap<CheckedNodeId, Result<ExactTypeProjection, ExactTypeProjectionError>>,
     equality: crate::reader_protocol_projection::EqualityDecisions,
-    /// The source-owned units' definitions the supply's equality rows select,
-    /// or why they are no unit table (FR-533).
-    pub(crate) units:
-        Result<quire_semantic_value::quantity::UnitTable, crate::bare_units::UnitDefinitionRefusal>,
+    /// The source-owned units' definitions the supply's equality rows select
+    /// (FR-533), empty when the rows select none.
+    pub(crate) units: quire_semantic_value::quantity::UnitTable,
 }
 
 /// What a protocol-slot call reads beside the package (FR-531).
@@ -91,7 +90,60 @@ impl<'p> BarePackage<'p> {
             joined: None,
             projections: BTreeMap::new(),
             equality: BTreeMap::new(),
-            units: Ok(quire_semantic_value::quantity::UnitTable::default()),
+            units: quire_semantic_value::quantity::UnitTable::default(),
+        }
+    }
+
+    /// `identities` extended with the source-owned units the equality rows
+    /// select (FR-533): IR joins the rows, then the units' definitions are
+    /// read from the package's nodes. Rows IR does not join, or definitions
+    /// that are no unit graph, are an unknown identity witness; an exhausted
+    /// native allowance is the caller's, never a defect of the rows.
+    fn join_source_units(
+        &self,
+        identities: SelectedExactIdentities,
+        equality: Option<&crate::equality_file::ReadEqualityRows>,
+        budget: &mut NativeJoinBudget,
+    ) -> Result<
+        (
+            Result<SelectedExactIdentities, IdentityWitnessRefusal>,
+            quire_semantic_value::quantity::UnitTable,
+        ),
+        crate::NativeJoinFailure,
+    > {
+        let none = quire_semantic_value::quantity::UnitTable::default();
+        // Another package's rows are the equality stage's refusal to report.
+        let Some(equality) = equality.filter(|equality| {
+            equality.package_name() == self.package.name() && !equality.source_units().is_empty()
+        }) else {
+            return Ok((Ok(identities), none));
+        };
+        let extended = match identities.with_admitted_type_rows(
+            self.package,
+            &[],
+            equality.source_units(),
+            budget,
+        ) {
+            Ok(extended) => extended,
+            Err(denial) if qsl_semantics::model::intake::is_native_budget_denial(&denial) => {
+                return Err(crate::NativeJoinFailure::from(denial).with_budget(budget))
+            }
+            Err(_) => return Ok((Err(IdentityWitnessRefusal::Unknown), none)),
+        };
+        match crate::bare_units::read_unit_table(self.package, equality.source_units(), budget) {
+            Ok(units) => Ok((Ok(extended), units)),
+            Err(crate::bare_units::UnitDefinitionRefusal::Read(
+                quire_contract_model::nominal_reads::NominalReadCode::LimitReached,
+            )) => {
+                let setting = match budget.first_unpaid().map(|charge| charge.kind) {
+                    Some(quire_contract_model::NativeJoinChargeKind::Storage) => {
+                        qsl_foundation::Setting::I2NativeJoinStorage
+                    }
+                    _ => qsl_foundation::Setting::I2WorkUnits,
+                };
+                Err(crate::NativeJoinFailure::UnitDefinitions { setting }.with_budget(budget))
+            }
+            Err(_) => Ok((Err(IdentityWitnessRefusal::Unknown), none)),
         }
     }
 
@@ -116,55 +168,18 @@ impl<'p> BarePackage<'p> {
         budget: &mut NativeJoinBudget,
     ) -> Result<Self, crate::NativeJoinFailure> {
         self.joined = match supply.identities.selected(self.package, budget) {
-            Ok(identities) => match supply.equality {
-                // The equality file carries the source-owned unit rows; the
-                // identity join admits only model-owned units (FR-533).
-                Some(equality)
-                    if equality.package_name() == self.package.name()
-                        && !equality.source_units().is_empty() =>
-                {
-                    match identities.with_admitted_type_rows(
-                        self.package,
-                        &[],
-                        equality.source_units(),
-                        budget,
-                    ) {
-                        Ok(extended) => Some(Ok(extended)),
-                        Err(denial)
-                            if qsl_semantics::model::intake::is_native_budget_denial(&denial) =>
-                        {
-                            return Err(crate::NativeJoinFailure::from(denial).with_budget(budget))
-                        }
-                        // Rows that do not join are the equality stage's refusal
-                        // to report, in FR-390's order.
-                        Err(_) => Some(Ok(identities)),
-                    }
-                }
-                _ => Some(Ok(identities)),
-            },
+            Ok(identities) => {
+                let (joined, units) =
+                    self.join_source_units(identities, supply.equality, budget)?;
+                self.units = units;
+                Some(joined)
+            }
             Err(IdentityJoinFailure::Witness(defect)) => Some(Err(defect)),
             Err(IdentityJoinFailure::Exhausted(denial)) => {
                 return Err(crate::NativeJoinFailure::from(*denial).with_budget(budget))
             }
         };
         self.supply = Some(supply);
-        if let (Some(Ok(_)), Some(equality)) = (
-            &self.joined,
-            supply
-                .equality
-                .filter(|equality| equality.package_name() == self.package.name()),
-        ) {
-            self.units = match crate::bare_units::read_unit_table(
-                self.package,
-                equality.source_units(),
-                budget,
-            ) {
-                Err(crate::bare_units::UnitDefinitionRefusal::Read(
-                    quire_contract_model::nominal_reads::NominalReadCode::LimitReached,
-                )) => return Err(crate::NativeJoinFailure::UnitDefinitions),
-                other => other,
-            };
-        }
         if let Some(Ok(identities)) = &self.joined {
             for node in &self.package.graph().nodes {
                 let projection = self
