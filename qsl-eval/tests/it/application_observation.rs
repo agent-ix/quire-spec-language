@@ -39,10 +39,13 @@ fn options() -> ApplicationObservationOptions {
 }
 
 fn package(source: &str) -> CheckedPackage {
-    package_with(source, |_| {})
+    package_with(source, |_| Default::default())
 }
 
-fn package_with(source: &str, configure: impl FnOnce(&mut PackageDeclarations)) -> CheckedPackage {
+fn package_with(
+    source: &str,
+    models: impl FnOnce(&qsl_forms::ParsedUnit) -> qsl_semantics::model::intake::SelectedModels,
+) -> CheckedPackage {
     let source = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n{source}");
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("a", "u"),
@@ -53,18 +56,18 @@ fn package_with(source: &str, configure: impl FnOnce(&mut PackageDeclarations)) 
     .expect("source parses");
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     let unit = qsl_forms::build_unit(&parsed).expect("source forms");
+    let selected = models(&unit);
     let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         "fixture".to_owned(),
         unit,
-        Vec::new(),
+        selected,
         Vec::new(),
     )
     .expect("source assembles");
     declarations.ieee_profile = Some(
         admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).expect("IEEE profile"),
     );
-    configure(&mut declarations);
     CheckedPackage::link(
         declarations
             .check(
@@ -375,9 +378,32 @@ fn global_highwaters_and_interval_amounts_remain_distinct_on_a_shared_meter() {
 #[trace("TC-1338", "FR-090-AC-24")]
 #[test]
 fn equality_plan_keeps_actual_increment_and_distinct_reservations() {
-    let package = package("function f using v(): Boolean pure { sequence[1, 2] = sequence[1, 2] }");
+    use quire_exact::{
+        form_collection, CardinalityBound, CollectionKind, CollectionType, ValueType,
+    };
+
+    let package = package("function f using v(a: Sequence<Integer>[0, 2], b: Sequence<Integer>[0, 2]): Boolean pure { a = b }");
+    let collection_type = CollectionType::new(
+        CollectionKind::Sequence,
+        ValueType::Integer,
+        Some(CardinalityBound::new(0, 2).expect("bound")),
+    );
+    let argument = form_collection(
+        &collection_type,
+        vec![int(1), int(2)],
+        &mut Meter::new(UNLIMITED),
+    )
+    .expect("typed sequence")
+    .completed()
+    .expect("sequence forms");
     let mut meter = Meter::new(UNLIMITED);
-    let report = observe(&package, "f", Vec::new(), &mut meter, options());
+    let report = observe(
+        &package,
+        "f",
+        vec![argument.clone(), argument],
+        &mut meter,
+        options(),
+    );
     assert!(matches!(
         report.outcome(),
         Some(FamilyOutcome::Evaluated(Outcome::Completed(
@@ -658,46 +684,63 @@ fn nested_and_failed_charge_locations_match_the_authored_operation_paths() {
 #[trace("TC-1338", "FR-090-AC-23")]
 #[test]
 fn family_refusal_is_owned_without_projecting_its_cause() {
+    use crate::tc235_k2 as k2;
+    use qsl_semantics::model::accounting::ModelNormalizationLimits;
+    use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
+    use quire_checked::key::DeclarationKey;
     use quire_eval::FamilyResult;
-    use quire_exact::{ObjectId, ObjectReference, Presence, ValueType};
-    use quire_semantic_value::declaration::{
-        FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
-    };
+    use quire_exact::{ObjectId, ObjectReference};
+    use serde_json::json;
 
-    let object_type = crate::support::ids::effective_id(b"observation-object");
-    let package = package_with(
-        "function f using v(a: Obj): Integer pure { a.n }",
-        |declarations| {
-            declarations.types = TypeEnvironment::new(
-                [],
-                [ObjectTypeDeclaration::new(
-                    object_type.clone(),
-                    "Obj",
-                    vec![FieldDeclaration::new(
-                        "n",
-                        ValueType::Integer,
-                        Presence::Required,
-                    )],
-                )],
-            )
-            .expect("object type");
-            declarations.models = vec![crate::support::model::object_model(
-                "observation",
-                "M::Obj",
-                object_type.clone(),
-            )];
-        },
+    let document = k2::domain_document(
+        vec![k2::declaration(
+            "Obj",
+            "thing",
+            json!({
+                "identityFields": [k2::id("Obj/n")],
+                "fields": [k2::field("Obj", "n", "ix://quire/native/Integer")],
+            }),
+        )],
+        vec![k2::construct("thing", meaning::OBJECT_TYPE)],
     );
-    let reference = ObjectReference::new(
-        crate::support::ids::universe_id(b"observation-universe"),
-        object_type,
-        ObjectId::new("missing").expect("object id"),
+    let bytes = serde_json::to_vec(&document).expect("model document");
+    let packages = package_input([bytes.as_slice()]).expect("model input");
+    let mut reference = None;
+    let package = package_with(
+        "model M = \"test/orders\";\nfunction f using v(a: M::Obj): Integer pure { a.n }",
+        |unit| {
+            let selected = admit_unit(
+                &unit.selections().models,
+                &packages,
+                ModelNormalizationLimits::default(),
+            )
+            .expect("model selection");
+            let view = &selected[0].view;
+            let object_type = view
+                .type_identities()
+                .get(&DeclarationKey {
+                    package: k2::PACKAGE.to_owned(),
+                    node: k2::id("Obj"),
+                })
+                .expect("selected object type")
+                .clone();
+            reference = Some(ObjectReference::new(
+                view.object_universe()
+                    .identity()
+                    .expect("universe identity"),
+                object_type,
+                ObjectId::new("missing").expect("object id"),
+            ));
+            selected
+        },
     );
     let objects = ObjectEnvironment::default().with_unresolved_references();
     let mut meter = Meter::new(UNLIMITED);
     let report = package.call_observing_applications(
         &QualifiedName::unqualified("f").expect("name"),
-        vec![Value::Reference(reference)],
+        vec![Value::Reference(
+            reference.expect("reference to the selected model"),
+        )],
         &objects,
         &mut meter,
         options(),
