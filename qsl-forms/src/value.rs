@@ -1487,7 +1487,8 @@ impl<'c> Mapping<'c> {
             | Production::AggregateTerm
             | Production::AggregateKind
             | Production::PastWindow
-            | Production::QuantifiedClockBound => Err(unexpected(node)),
+            | Production::QuantifiedClockBound
+            | Production::ExtensionDeclaration => Err(unexpected(node)),
         }
     }
 
@@ -2213,7 +2214,8 @@ impl<'c> Mapping<'c> {
             | Production::AggregateTerm
             | Production::AggregateKind
             | Production::PastWindow
-            | Production::QuantifiedClockBound => Err(unexpected(child)),
+            | Production::QuantifiedClockBound
+            | Production::ExtensionDeclaration => Err(unexpected(child)),
         }
     }
 

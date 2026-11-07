@@ -2,7 +2,7 @@
 //! Declarative transcription of the frozen complete-V1 EBNF.
 use std::collections::BTreeMap;
 
-use super::Production as P;
+use super::{ExtensionForms, ExtensionProduction, Production as P};
 
 /// The built-in time type's spelling (FR-393).
 const CLOCK: &str = "Clock";
@@ -40,6 +40,15 @@ pub(super) enum Terminal {
         /// The built-in's spelling, which no declared type may take.
         except: &'static str,
     },
+    /// A selected extension's leading keyword (FR-354): this spelling,
+    /// compared as a word. Not a reserved word of the core grammar, so the
+    /// same spelling stays an ordinary identifier everywhere else.
+    ExtensionKeyword(Box<str>),
+    /// A clause name of an extension production, in the production's order.
+    ExtensionClause(Box<str>),
+    /// The `,` between two clauses of an extension production, expected
+    /// before the named next clause.
+    ExtensionSeparator(Box<str>),
     End,
     /// Matches without consuming when the next token is one of these
     /// spellings: a lookahead that lets a production end where its caller
@@ -185,7 +194,23 @@ fn bound_parameter() -> Rule {
 }
 
 pub(super) fn complete_v1() -> Grammar {
+    complete_v1_with(&ExtensionForms::default())
+}
+
+/// The complete-V1 grammar where each production of `forms` is also a
+/// top-level declaration (FR-354; QSpec FR-467 "Production").
+pub(super) fn complete_v1_with(forms: &ExtensionForms) -> Grammar {
     let mut grammar = Grammar::new();
+    if !forms.productions().is_empty() {
+        grammar.insert(
+            P::ExtensionDeclaration,
+            c(forms
+                .productions()
+                .iter()
+                .map(extension_production)
+                .collect()),
+        );
+    }
     source_and_types(&mut grammar);
     expressions(&mut grammar);
     temporal(&mut grammar);
@@ -285,6 +310,30 @@ pub(super) fn complete_compound_spellings(grammar: &Grammar) -> Vec<&'static str
     output.into_iter().collect()
 }
 
+/// `keyword ident '{' [clause {',' clause}] '}'` over `production`'s clauses
+/// in order, with `clause = name ':' expression`.
+fn extension_production(production: &ExtensionProduction) -> Rule {
+    let mut rules = vec![
+        Rule::Terminal(Terminal::ExtensionKeyword(production.keyword().into())),
+        ident(),
+        x("{"),
+    ];
+    for (index, clause) in production.clauses().iter().enumerate() {
+        if index > 0 {
+            rules.push(Rule::Terminal(Terminal::ExtensionSeparator(
+                clause.as_str().into(),
+            )));
+        }
+        rules.push(Rule::Terminal(Terminal::ExtensionClause(
+            clause.as_str().into(),
+        )));
+        rules.push(x(":"));
+        rules.push(r(P::Expression));
+    }
+    rules.push(x("}"));
+    s(rules)
+}
+
 fn source_and_types(g: &mut Grammar) {
     g.insert(
         P::CompleteUnit,
@@ -348,6 +397,10 @@ fn source_and_types(g: &mut Grammar) {
         r(P::VerificationPlan),
         r(P::AbstractionDeclaration),
     ];
+    let mut declarations = declarations;
+    if g.contains_key(&P::ExtensionDeclaration) {
+        declarations.push(r(P::ExtensionDeclaration));
+    }
     g.insert(P::Declaration, c(declarations));
     g.insert(
         P::QualifiedName,

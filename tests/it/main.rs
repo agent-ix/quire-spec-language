@@ -51,6 +51,7 @@ mod dispatch_emission;
 mod emit_checked_v2;
 mod evaluate_reads_no_display_strings;
 mod exact_decimals;
+mod extension_s1_parse;
 mod family_outcome_layering;
 mod formal_source;
 mod formatter_identity;
