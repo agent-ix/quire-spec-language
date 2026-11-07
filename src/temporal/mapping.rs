@@ -313,3 +313,68 @@ pub fn classify(profile: Profile, operators: Operators, surrounding_execution: C
         premises: OUTSTANDING_PREMISES,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    fn handle(index: u32) -> w::Handle {
+        w::Handle {
+            declaration: 0,
+            index,
+        }
+    }
+
+    fn unary(operator: w::TemporalUnary, value: u32) -> w::TemporalOperation {
+        w::TemporalOperation::Unary {
+            operator,
+            interval: w::Nullable(None),
+            value: handle(value),
+        }
+    }
+
+    /// FR-045-AC-1: only operators reachable from the root count. The arena
+    /// holds a `holds` leaf (0), a future operator over it (1), a past operator
+    /// over it that no node refers to (2) and a group over the future operator
+    /// (3). Rooted at 3 or 1 the formula is future-only despite the stray past
+    /// node; rooted at the stray node it is past-only; an index outside the
+    /// arena reaches nothing; a shared subformula is inspected once.
+    #[trace("TC-125", "FR-045-AC-1")]
+    #[test]
+    fn operators_unreachable_from_the_root_are_not_detected() {
+        let arena = [
+            w::TemporalOperation::Holds { value: handle(9) },
+            unary(w::TemporalUnary::Eventually, 0),
+            unary(w::TemporalUnary::Once, 0),
+            w::TemporalOperation::Group { value: handle(1) },
+        ];
+        let future = Operators {
+            future: true,
+            past: false,
+        };
+        let past = Operators {
+            future: false,
+            past: true,
+        };
+        assert_eq!(Operators::of_operations(&arena, 3), future, "rooted at 3");
+        assert_eq!(Operators::of_operations(&arena, 1), future, "rooted at 1");
+        assert_eq!(Operators::of_operations(&arena, 2), past, "the stray node");
+        assert_eq!(Operators::of_operations(&arena, 0), Operators::default());
+        assert_eq!(
+            Operators::of_operations(&arena, 99),
+            Operators::default(),
+            "an index outside the arena reaches nothing"
+        );
+        let shared = [
+            w::TemporalOperation::Holds { value: handle(9) },
+            w::TemporalOperation::Binary {
+                operator: w::TemporalBinary::Since,
+                interval: w::Nullable(None),
+                left: handle(0),
+                right: handle(0),
+            },
+        ];
+        assert_eq!(Operators::of_operations(&shared, 1), past, "shared operand");
+    }
+}

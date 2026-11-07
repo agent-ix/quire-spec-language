@@ -724,7 +724,7 @@ fn a_shared_meter_one_unit_short_stops_the_second_instance_naming_it() {
     assert_eq!(replay.result_identity, one.result_identity);
 }
 
-#[trace("FR-516-AC-14", "TC-1311")]
+#[trace("FR-516-AC-14", "NFR-008-AC-2", "TC-1311")]
 #[test]
 fn a_sibling_clause_keeps_its_result_after_a_counter_stop() {
     let (env, p) = each();
