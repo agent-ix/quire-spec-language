@@ -19,7 +19,7 @@ use qsl_semantics::check::{CheckedGraph, FormulaNode, TemporalProfile};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
     admit_trace_snapshot, population_universe_for, AdmissionFailure, AdmissionRecord,
-    AdmissionUsage, DocumentRef,
+    AdmissionUsage, DocumentProvision, DocumentRef, Provisions,
 };
 use quire_exact::{Meter, ValueType};
 use quire_semantic_value::catalog::CatalogCode;
@@ -392,6 +392,15 @@ pub(super) struct TemporalRun<'a> {
     pub(super) over: &'a OverObject,
     /// The caller's ledger, when it carries one.
     pub(super) ledger: Option<&'a ProgressLedger>,
+    /// What FR-522 authenticates a clock-bearing trace against; `None` for a
+    /// run over a checked package alone, which accepts only a `Finite` or
+    /// `Lasso` trace.
+    pub(super) authentication: Option<Authentication<'a>>,
+}
+
+/// The emitted package a clock-bearing trace is authenticated against.
+#[derive(Clone, Copy)]
+pub(super) struct Authentication<'a> {
     /// The compiled package's `temporal_bindings` rows, keyed by clause
     /// identity (FR-522 "Authentication").
     pub(super) clock_rows: &'a qsl_package::TemporalBindingRows,
@@ -460,6 +469,60 @@ fn refused(cause: &'static str, fields: BTreeMap<&'static str, String>) -> Claus
     })))
 }
 
+/// FR-283: one temporal clause run over a checked package alone, with no
+/// source to compile and no clock-bearing trace to authenticate.
+pub struct PackageTemporalRequest<'a> {
+    /// The checked package the clause is declared in.
+    pub package: &'a qsl_package::CheckedPackage,
+    /// FR-056's package input, read by admission.
+    pub packages: &'a qsl_semantics::model::intake::PackageInput,
+    /// The limits admission re-normalizes the domain packages under.
+    pub model_limits: qsl_semantics::model::accounting::ModelNormalizationLimits,
+    /// The snapshot documents the trace's positions name.
+    pub snapshots: &'a qsl_semantics::model::observation::DocumentProvision,
+    /// FR-106's observation limits.
+    pub observation_limits: qsl_semantics::model::observation::ObservationLimits,
+    /// The evaluation meter's accounting limits.
+    pub accounting: quire_exact::ScalarLimits,
+    /// The temporal clause's declared name.
+    pub name: &'a str,
+    /// A [`TraceInput::Finite`] or [`TraceInput::Lasso`] trace.
+    pub trace: &'a TraceInput,
+    /// The object the clause's `over` parameter names.
+    pub over: &'a OverObject,
+}
+
+/// FR-283: run one temporal clause over a supplied finite or lasso trace
+/// through the evaluator [`super::run_clause`]'s `Temporal` selection uses.
+/// A progressed or timestamped trace reports an internal failure, because it
+/// is authenticated against an emitted package this entry does not hold.
+pub fn run_package_temporal(request: &PackageTemporalRequest<'_>) -> ClauseRunReport {
+    let provisions = Provisions {
+        snapshots: request.snapshots,
+        invocations: &DocumentProvision::default(),
+    };
+    let run = CompiledRun {
+        packages: request.packages,
+        model_limits: request.model_limits,
+        provisions,
+        observation_limits: request.observation_limits,
+        accounting: request.accounting,
+        package: request.package,
+        sources: &[],
+        progress_capacity: 0,
+    };
+    run_temporal(
+        &run,
+        &TemporalRun {
+            name: request.name,
+            trace: request.trace,
+            over: request.over,
+            ledger: None,
+            authentication: None,
+        },
+    )
+}
+
 /// FR-330: run the temporal clause `name` over `trace`.
 pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> ClauseRunReport {
     let TemporalRun {
@@ -467,8 +530,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         trace,
         over,
         ledger,
-        clock_rows,
-        admitted_package,
+        authentication,
     } = *request;
     // A trace is evidence for that trace only: it settles no item and
     // derives no witness (FR-332).
@@ -511,25 +573,32 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         });
     };
     let clause = node.clause();
-    let Some(declaration) = clock_rows.declaration(&node.identity(), node.claim().ordinal()) else {
-        return early(ClauseDisposition::EvaluateFault(
-            quire_semantic_value::catalog::InternalFault::new(
+    // The temporal subject is read only to authenticate a clock-bearing
+    // trace.
+    let subject_of = || {
+        let Some(Authentication {
+            clock_rows,
+            admitted_package,
+        }) = authentication
+        else {
+            return Err(quire_semantic_value::catalog::InternalFault::new(
+                "FR-050",
+                "clock-bearing-trace-has-authentication-rows",
+            ));
+        };
+        let Some(declaration) = clock_rows.declaration(&node.identity(), node.claim().ordinal())
+        else {
+            return Err(quire_semantic_value::catalog::InternalFault::new(
                 "FR-050",
                 "emitted-temporal-declaration-retains-checked-id",
-            ),
-        ));
-    };
-    let subject = match qsl_package::checked_views::temporal_subject(admitted_package, declaration)
-    {
-        Ok(subject) => subject,
-        Err(_) => {
-            return early(ClauseDisposition::EvaluateFault(
-                quire_semantic_value::catalog::InternalFault::new(
-                    "FR-050",
-                    "admitted-temporal-subject-resolves",
-                ),
             ));
-        }
+        };
+        qsl_package::checked_views::temporal_subject(admitted_package, declaration).map_err(|_| {
+            quire_semantic_value::catalog::InternalFault::new(
+                "FR-050",
+                "admitted-temporal-subject-resolves",
+            )
+        })
     };
     let mut authenticated_temporal_selection = None;
 
@@ -554,6 +623,10 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
     if let TraceInput::Progressed { binding, .. } = trace {
         // FR-522: the same authentication precedes every position of a
         // progressed trace (FR-330-AC-11).
+        let subject = match subject_of() {
+            Ok(subject) => subject,
+            Err(fault) => return early(ClauseDisposition::EvaluateFault(fault)),
+        };
         authenticated_temporal_selection =
             match authenticate_binding(Some(binding), &subject, node.claim().ordinal()) {
                 Ok(selection) => Some(selection),
@@ -570,6 +643,10 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         // FR-522: the trace's binding is authenticated before any position is
         // visited, any stamp or completeness is checked or the meter is
         // charged (FR-330-AC-11).
+        let subject = match subject_of() {
+            Ok(subject) => subject,
+            Err(fault) => return early(ClauseDisposition::EvaluateFault(fault)),
+        };
         authenticated_temporal_selection =
             match authenticate_binding(window.binding.as_ref(), &subject, node.claim().ordinal()) {
                 Ok(selection) => Some(selection),

@@ -12,6 +12,12 @@
 //! through its public accessors, never through a private field (US-009).
 
 use quire_checked::node::{NodeKind, Visit};
+mod application_observation;
+pub use application_observation::{
+    ApplicationObservation, ApplicationObservationOptions, OperationCharge, OperationLedger,
+    TruncatedOperationLedger,
+};
+use application_observation::{ApplicationObserver, OperationCapture};
 mod bare;
 mod causes;
 mod clause_set;
@@ -38,7 +44,6 @@ use quire_semantic_value::admission::AdmissionRecord;
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::TypeEnvironment;
-use quire_semantic_value::location::Location;
 use quire_semantic_value::supplied_stop::{
     SuppliedCause, SuppliedFailure, SuppliedLimits, SuppliedPhase, SuppliedRun, SuppliedStop,
 };
@@ -58,21 +63,6 @@ pub use s6a::separation::{
     Separation, SeparationStep, StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
 };
 pub use value_invariants::{ValueInvariantEvaluation, ValueInvariantOutcome, ValueInvariantResult};
-
-/// Expression evidence and the ValueValidity-specific accounting state for
-/// one checked function evaluation.
-pub struct ApplicationObservation<'a> {
-    /// Completed checked application locations and their values.
-    pub observed: &'a mut Vec<(Location, Value)>,
-    /// Whether a called dependency body was unavailable in this package.
-    pub unavailable_imported_call: &'a mut bool,
-    /// Maximum value-function body evaluations for this item case.
-    pub function_case_limit: u64,
-    /// Body evaluations charged by this function call and nested calls.
-    pub function_evaluations: &'a mut u64,
-    /// Whether the function body limit prevented a nested evaluation.
-    pub function_case_limit_reached: &'a mut bool,
-}
 
 // `CheckedExpression` is `check`'s own checked-output type; this module
 // imports it from `qsl_semantics::check` and re-exports none of it (FR-068-AC-10 is
@@ -825,19 +815,20 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure>;
 
-    /// Call a function while recording each completed checked application
-    /// location and its value. This is an evaluation trace, not a source
-    /// guess: an operation whose operands or operator stopped is not
-    /// recorded. FR-484 uses it to decide scalar-operation occurrences and
-    /// their checked result bounds.
+    /// Call with owned outcome, completed-application evidence, final global
+    /// totals and a bounded admitted operation ledger (FR-090, FR-484).
+    /// Detaches and returns the caller's unread event capture, and leaves
+    /// capture disabled on every return. Callers explicitly enable later
+    /// captures. Capacity exhaustion returns a typed prefix without changing
+    /// evaluation. Ordinary [`Self::call`] enables no event capture.
     fn call_observing_applications(
         &self,
         function: &QualifiedName,
         arguments: Vec<Value>,
         objects: &ObjectEnvironment,
         meter: &mut Meter,
-        observation: ApplicationObservation<'_>,
-    ) -> Result<Evaluation, CallFailure>;
+        options: ApplicationObservationOptions,
+    ) -> ApplicationObservation;
 
     /// [`Self::call`] under the caller's supplied-value `run` (FR-277): the
     /// final membership of every argument spends the run's cumulative
@@ -1510,50 +1501,94 @@ impl CheckedPackageEvaluation for CheckedPackage {
         arguments: Vec<Value>,
         objects: &ObjectEnvironment,
         meter: &mut Meter,
-        observation: ApplicationObservation<'_>,
-    ) -> Result<Evaluation, CallFailure> {
-        let name = function
-            .as_unqualified()
-            .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
-        let callable = self
-            .graph()
-            .callable(name)
-            .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
-        let state = self
-            .graph()
-            .function_by_identity(callable.identity.clone())
-            .ok_or_else(|| {
-                CallFailure::Fault(InternalFault::new("S6a", "evaluation-callable-unresolved"))
-            })?;
-        let cancel = meter.cancel().cloned().unwrap_or_default();
-        let mut run = SuppliedRun::new(SuppliedLimits::default(), cancel)
-            .map_err(|stop| CallFailure::from(SuppliedFailure::Stop(stop)))?;
-        admit_arguments(
-            callable.parameters,
-            &arguments,
-            objects,
-            self.graph().scope().types(),
-            &mut run,
-        )?;
-        if let Err(incomplete) = meter.charge(quire_exact::Charge::new(
-            quire_exact::ChargePoint::FunctionCall,
-        )) {
-            return Ok(Evaluation {
-                outcome: FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)),
-                location: None,
-                losses: Vec::new(),
-            });
+        options: ApplicationObservationOptions,
+    ) -> ApplicationObservation {
+        let displaced_capture = meter.disable_charge_capture();
+        let mut capture = OperationCapture::new(options);
+        capture.start(meter);
+        let mut observed = Vec::new();
+        let mut unavailable_imported_call = false;
+        let mut function_evaluations = 0;
+        let mut function_case_limit_reached = false;
+        let evaluation = (|| {
+            let name = function
+                .as_unqualified()
+                .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
+            let callable = self
+                .graph()
+                .callable(name)
+                .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
+            let state = self
+                .graph()
+                .function_by_identity(callable.identity.clone())
+                .ok_or_else(|| {
+                    CallFailure::Fault(InternalFault::new("S6a", "evaluation-callable-unresolved"))
+                })?;
+            let cancel = meter.cancel().cloned().unwrap_or_default();
+            let mut run = SuppliedRun::new(SuppliedLimits::default(), cancel)
+                .map_err(|stop| CallFailure::from(SuppliedFailure::Stop(stop)))?;
+            admit_arguments(
+                callable.parameters,
+                &arguments,
+                objects,
+                self.graph().scope().types(),
+                &mut run,
+            )?;
+            if let Err(incomplete) = meter.charge(quire_exact::Charge::new(
+                quire_exact::ChargePoint::FunctionCall,
+            )) {
+                return Ok(Evaluation {
+                    outcome: FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)),
+                    location: None,
+                    losses: Vec::new(),
+                });
+            }
+            capture.drain(meter, Some(state.body.location()));
+            if options.function_case_limit == 0 {
+                function_case_limit_reached = true;
+                return Ok(Evaluation {
+                    outcome: FamilyOutcome::Evaluated(Outcome::Incomplete(
+                        quire_exact::Incomplete {
+                            limit_kind: quire_exact::LimitKind::WorkUnits,
+                            limit: 0,
+                            consumed: 0,
+                            next_charge: quire_exact::Integer::from(1_u64),
+                            charge_point: quire_exact::ChargePoint::FunctionCall,
+                        },
+                    )),
+                    location: Some(state.body.location().clone()),
+                    losses: Vec::new(),
+                });
+            }
+            function_evaluations = 1;
+            Ok(Machine::observing_applications(
+                self.graph().scope(),
+                self.graph(),
+                objects,
+                meter,
+                self.graph().dispatch_tables(),
+                ApplicationObserver {
+                    observed: &mut observed,
+                    unavailable_imported_call: &mut unavailable_imported_call,
+                    function_case_limit: options.function_case_limit,
+                    function_evaluations: &mut function_evaluations,
+                    function_case_limit_reached: &mut function_case_limit_reached,
+                    capture: &mut capture,
+                },
+            )
+            .run(state.body, state.slots, arguments)?)
+        })();
+        let ledger = capture.finish(meter);
+        ApplicationObservation {
+            evaluation,
+            observed,
+            unavailable_imported_call,
+            function_evaluations,
+            function_case_limit_reached,
+            meter_totals: ChargeAmounts::from_meter(meter),
+            ledger,
+            displaced_capture,
         }
-        *observation.function_evaluations = 1;
-        Ok(Machine::observing_applications(
-            self.graph().scope(),
-            self.graph(),
-            objects,
-            meter,
-            self.graph().dispatch_tables(),
-            observation,
-        )
-        .run(state.body, state.slots, arguments)?)
     }
 
     fn call_supplied(

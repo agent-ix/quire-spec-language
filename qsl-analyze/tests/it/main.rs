@@ -39,6 +39,7 @@ mod model_check_safety;
 mod model_instances;
 mod model_settle;
 mod model_world;
+mod monitor;
 mod monitor_entries;
 mod monitor_plan;
 mod monitor_plan_vectors;
