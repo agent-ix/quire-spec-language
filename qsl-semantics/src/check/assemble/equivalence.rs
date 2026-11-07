@@ -562,7 +562,7 @@ pub(super) fn assemble(
                 Some(unit) => units.push(unit),
                 None => {
                     let name = term.unit.name.clone();
-                    let cause = if name.contains("::") {
+                    let cause = if term.unit.is_qualified() {
                         AssemblyCause::UnresolvedQuantityName { name }
                     } else {
                         AssemblyCause::UnresolvedUnitName {
