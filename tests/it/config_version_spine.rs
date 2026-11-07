@@ -322,7 +322,7 @@ fn clause_run_command_uses_explicit_current_self_and_anchor() {
 /// `run.json` and `compile.json` beside a generated case, and the `run`
 /// command's exit codes are the ones the README table states; `compile`
 /// prints the checked package.
-#[trace("TC-469", "FR-108-AC-1")]
+#[trace("TC-469", "FR-108-AC-1", "FR-499-AC-4")]
 #[test]
 fn walkthrough_requests_reproduce_the_documented_exit_codes() {
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/config-version/requests.sh");

@@ -79,5 +79,3 @@ cargo test -p qsl-source --features quire-extraction
 - [Source correspondence](source-correspondence.md): mapping extracted bodies
   back to the original document.
 - [Diagnostic codes](native-error-codes.md).
-- [Compiled protocol wire formats](compiled-protocol-v1.md) and
-  [v2](compiled-protocol-v2.md).

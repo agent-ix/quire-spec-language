@@ -40,8 +40,6 @@ pub enum RegisteredDefinition {
     FixedSample,
     /// Timestamped finite-window interpretation.
     TimestampedWindow,
-    /// Finite global protocol interpretation.
-    Protocol,
     /// Observation binding interpretation, not a clause profile.
     ObservationBinding,
     /// Scoped observation progress and restoration interpretation.
@@ -105,7 +103,6 @@ impl RegisteredDefinition {
             Self::EventPosition,
             Self::FixedSample,
             Self::TimestampedWindow,
-            Self::Protocol,
             Self::ObservationBinding,
             Self::Progress,
             Self::Range,
@@ -256,36 +253,11 @@ impl RegisteredDefinition {
                 [TemporalFacet],
                 []
             ),
-            Self::Protocol => definition!(
-                "protocol-finite",
-                "quire.protocol.finite-global/v1",
-                "1-draft.4",
-                [StateGraph, TemporalFacet],
-                [
-                    rule!("spec/functional/FR-049-bind-native-choreography-syntax.md"),
-                    rule!("spec/functional/FR-050-bind-protocol-instances.md"),
-                    rule!("spec/functional/FR-051-preserve-communication-identities.md"),
-                    rule!("spec/functional/FR-052-represent-bounded-control.md"),
-                    rule!("spec/functional/FR-053-enforce-choice-visibility.md"),
-                    rule!("spec/functional/FR-054-bind-channel-premises.md"),
-                    rule!("spec/functional/FR-055-activate-protocol-obligations.md"),
-                    rule!("spec/functional/FR-056-register-compensation.md"),
-                    rule!("spec/functional/FR-057-enforce-commit-recovery.md"),
-                    rule!("spec/functional/FR-058-preserve-retry-and-partial-recovery.md"),
-                    rule!("spec/functional/FR-059-assess-finite-global-conformance.md"),
-                    rule!("spec/functional/FR-060-separate-protocol-claims.md"),
-                    rule!("spec/functional/FR-061-report-orthogonal-results.md"),
-                    rule!("spec/non-functional/NFR-020-bound-protocol-processing.md"),
-                    rule!("spec/non-functional/NFR-021-reproduce-protocol-results.md"),
-                    rule!("proposals/quire-v1/choreography-surface.md"),
-                    rule!("proposals/quire-v1/protocol-contract.md"),
-                ]
-            ),
             Self::ObservationBinding => definition!(
                 "observation-binding",
                 "quire.observation.binding/v1",
                 "1-draft.3",
-                [Package, Range, TemporalFacet, Protocol],
+                [Package, Range, TemporalFacet],
                 [
                     rule!("proposals/quire-v1/observation-contract.md"),
                     rule!("spec/functional/FR-061-report-orthogonal-results.md"),

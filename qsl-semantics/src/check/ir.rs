@@ -460,6 +460,16 @@ impl CheckedBody {
         NodeId(index)
     }
 
+    /// Replace the location of every node for which `relocate` returns a new
+    /// one.
+    pub(in crate::check) fn relocate(&mut self, relocate: impl Fn(&Location) -> Option<Location>) {
+        for node in &mut self.nodes {
+            if let Some(moved) = relocate(&node.location) {
+                node.location = moved;
+            }
+        }
+    }
+
     /// The root node.
     pub fn root(&self) -> CheckedNode<'_> {
         CheckedNode {

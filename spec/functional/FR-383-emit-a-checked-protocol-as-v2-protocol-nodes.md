@@ -230,6 +230,7 @@ site-name registry that a slot expression can have are:
 | constraint or condition of the control at path `<path>` | `protocol <P> run <path> body`, the path from the run root with the root's name first, joined by spaces |
 | `related` end | `protocol <P> run <path> related <k> from` or `... related <k> to`, `k` the zero-based position of the record in the node body's emitted `related` array (sorted and collapsed by "Order, sets and collapse", not a source position) |
 | case guard | `protocol <P> run <path> case <label> guard`, `label` the case's label |
+| `repeat` guard | `protocol <P> run <path> decision <start>..<end>`, by the guard's source span: a `repeat` has no label to name it and holds one guard, so the span cannot collide |
 | `visible` entry | `protocol <P> run <path> decision <start>..<end>`, by the entry's source span; the span is a source-route alias, the slot's identity is its control node, member and ordinal (FR-390, FR-533) |
 | `finish` constraint, `terminal when` condition, role `until`, channel key | `protocol <P> finish <name> body`, `protocol <P> terminal body`, `protocol <P> role <role> until`, `protocol <P> channel <channel> key` |
 

@@ -24,6 +24,8 @@ mod bare;
 #[cfg(feature = "std")]
 mod bare_slot;
 #[cfg(feature = "std")]
+mod bare_units;
+#[cfg(feature = "std")]
 mod bare_world;
 mod checked;
 #[cfg(feature = "std")]
@@ -111,8 +113,8 @@ pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
 pub use protocol_occurrence::{
     protocol_occurrence_schemas_from_read, CompensationEntry, ControlEntry, ControlOperator,
     ControlOwner, OccurrenceRefusal, PopulationName, ProtocolOccurrence, ProtocolOccurrenceSchema,
-    RepeatDimension, RoleLifetime, RoleReplication, RoleSlot, RuntimeBindingRequirement,
-    SubjectKind,
+    RepeatDimension, RoleLifetime, RoleModelMember, RoleReplication, RoleSlot,
+    RuntimeBindingRequirement, SubjectKind,
 };
 #[cfg(feature = "std")]
 pub use protocol_occurrence_key::{OccurrenceKey, OccurrenceKeyError, WorkflowInstanceIdentity};

@@ -1063,6 +1063,20 @@ impl<'a> Definedness<'a> {
         })
     }
 
+    /// Whether `node` is a nonzero quantity literal under any depth of unary
+    /// negation (FR-093 "Negation"; QSpec FR-146-AC-9). Any other root is no
+    /// fact, whatever a guard proves of it.
+    fn nonzero_quantity_literal(mut node: CheckedNode<'_>) -> bool {
+        while let NodeKind::QuantityNegate(operand) = node.kind() {
+            node = node.at(*operand);
+        }
+        matches!(
+            node.kind(),
+            NodeKind::Literal(CheckedLiteral(Value::Quantity(quantity)))
+                if !quantity.magnitude().is_zero()
+        )
+    }
+
     fn refuse(node: CheckedNode<'_>, obligation: Obligation) -> CheckRefusal {
         CheckRefusal {
             location: node.location().clone(),
@@ -1281,13 +1295,10 @@ impl<'a> Definedness<'a> {
             // the obligation. The quotient has the whole rational domain and
             // carries no range obligation.
             NodeKind::Quantity(ArithmeticOperator::Divide, _, right) => {
-                match node.at(*right).kind() {
-                    NodeKind::Literal(CheckedLiteral(Value::Quantity(divisor)))
-                        if !divisor.magnitude().is_zero() =>
-                    {
-                        Ok(())
-                    }
-                    _ => Err(Self::refuse(node, Obligation::Nonzero)),
+                if Self::nonzero_quantity_literal(node.at(*right)) {
+                    Ok(())
+                } else {
+                    Err(Self::refuse(node, Obligation::Nonzero))
                 }
             }
             // FR-093 "Integer power": a negative exponent divides by the
@@ -1299,14 +1310,10 @@ impl<'a> Definedness<'a> {
                     NodeKind::Literal(CheckedLiteral(Value::Integer(exponent)))
                         if !exponent.is_negative()
                 );
-                match node.at(*base).kind() {
-                    NodeKind::Literal(CheckedLiteral(Value::Quantity(base)))
-                        if !base.magnitude().is_zero() =>
-                    {
-                        Ok(())
-                    }
-                    _ if !negative => Ok(()),
-                    _ => Err(Self::refuse(node, Obligation::Nonzero)),
+                if Self::nonzero_quantity_literal(node.at(*base)) || !negative {
+                    Ok(())
+                } else {
+                    Err(Self::refuse(node, Obligation::Nonzero))
                 }
             }
             NodeKind::Query {

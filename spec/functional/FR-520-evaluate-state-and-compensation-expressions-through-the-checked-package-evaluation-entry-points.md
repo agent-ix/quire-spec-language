@@ -36,7 +36,7 @@ evaluate authored expressions through `quire_spec_language::state::{StateView,
 EvaluationReport, evaluate_v2, ACCOUNTING_VERSION}`: the guard, retry relation and
 recovery predicate of each compensation, captures, and the activation guard. QSL-834
 deleted that module. The replacement is the qsl-eval entry points over a strictly
-read checked package (`docs/compiled-protocol-v2.md`): `CheckedPackageEvaluation::call`,
+read checked package (the checked-package v2 contract): `CheckedPackageEvaluation::call`,
 `evaluate` and `evaluate_protocol_slot` (FR-390). They are not a drop-in: there is
 no caller-supplied artifact graph and no `StateView`; the per-binder accounting
 of `EvaluationReport` is carried by the per-binder charge log below; the artifact-graph path

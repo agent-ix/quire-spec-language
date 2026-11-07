@@ -28,7 +28,7 @@ relationships:
 
 FR-493-AC-5 requires `quire matrix` to list no criterion of a retained
 requirement without a tagged test because its test went with a retired path.
-The deletion table (QSL-858 comment, section C.5 S:E-7) lists the retained
+The retired deletion table (QSL-858 comment, section C.5 S:E-7) listed the retained
 criteria whose only tests ride on the native, composed or protocol-artifact
 paths. This requirement gives each of the criteria below one disposition:
 **Successor** (new criteria here or an existing spine criterion, with its test)
@@ -52,9 +52,9 @@ successor is green, as FR-499's rows state; there is no permanent keep). No crit
 | FR-046-AC-7 | Successor | FR-513-AC-6. |
 | FR-046-AC-8 | Successor | FR-513-AC-7. |
 | FR-056-AC-8 | Successor | FR-513-AC-8. |
-| FR-050-AC-2, AC-3 | Successor (emission and code table) and Keep until green (legacy reader) | Emission: FR-513-AC-9. Code vocabulary: FR-513-AC-17 owns all `v2.header.*` and `v2.binding.*` strings; the legacy `Refusal::code` delegates to that table. Keep the legacy reader until quire-protocol has stopped matching on it (QSL-1501). |
+| FR-050-AC-2, AC-3 | Successor (emission and code table) and Keep until green (legacy reader) | Emission: FR-513-AC-9. Code vocabulary: FR-513-AC-17 owns all `v2.header.*` and `v2.binding.*` strings; the legacy `Refusal::code` delegates to that table. The legacy reader and its `Refusal::code` are deleted (QSL-1808; quire-protocol stopped matching on them in QSL-1501). |
 | FR-050-AC-5 | Successor | FR-513-AC-10. |
-| FR-054-AC-1 to AC-4 | Successor (derived relation) and Keep until green (`/3` reader) | Derived relation: FR-513-AC-11. `protocol_artifact::v3` and TC-143 remain until the derived-relation tests and QSL-1506 port (FR-499's row) are green and QSL-1501 has repointed quire-protocol; the checked-package reader continues to reject the incompatible compiled-protocol versions. |
+| FR-054-AC-1 to AC-4 | Successor (derived relation) and Keep until green (`/3` reader) | Derived relation: FR-513-AC-11. `protocol_artifact::v3` and TC-143 are deleted (QSL-1808) behind the green derived-relation tests; the checked-package reader refuses a `quire.checked-package` version other than `v2`. |
 | FR-048-AC-4 | Successor | FR-513-AC-12. |
 | FR-048-AC-9 | Successor | FR-513-AC-13. |
 | FR-049-AC-2, AC-5 | Successor (spine admission and versioned kind vocabulary) and Keep until green (legacy wire API) | Admission: FR-513-AC-14. The exact `ArtifactKind::{Population, Window}` and `BindingKind::{Population, Window, Clock}` spellings are owned by `qsl_package::protocol_artifact_v1` (FR-513-AC-16); the legacy root wire enums delegate these spellings to that API. The compatibility wire API and TC-136 remain until QSL-1501 repoints quire-protocol. |
@@ -77,13 +77,13 @@ successor is green, as FR-499's rows state; there is no permanent keep). No crit
 | FR-513-AC-12 | In a choice or repeat guard, a `visible` atom that the owner cannot causally see (a binder of another branch, a success-only effect binder, a value owned by another role) refuses at S3 with the FR-218 visible-entry typed cause, also when it appears only in an operand a short-circuit would skip. A same-spelled name of another owner is not a visible-entry case: in one protocol a second binder of a used name refuses `ambiguous_declaration`/`ambiguous-name` at that binder, naming the first (FR-113, binders unique across the protocol), and a guard that reads a name bound only in another protocol refuses `missing_declaration`/`missing-name` at the read as an out-of-scope read (FR-218-AC-17, AC-18). | Test (TC-1308) |
 | FR-513-AC-13 | The emitted package of a protocol unit is read by Contract IR's reader independently of QSL and admitted; changing the source identity, the domain-package identity or the result identity, or re-serialising the bytes non-canonically, is refused by the reader. | Test (TC-1308) |
 | FR-513-AC-14 | FR-106 admission refuses a duplicate, surplus, foreign or wrong-type member of a snapshot or population, keeps population, window and clock inputs distinct, refuses a duplicate storage key, and admits distinct observation occurrences of one observation under their complete observation, model, universe, object-type and object identity; evaluation of a dereference to a target absent from a complete population is `undefined` with reason `absent-key`, and to a target of an unavailable membership or closure is the incomplete unavailable outcome (FR-049-AC-5). | Test (TC-1308) |
-| FR-513-AC-15 | While `protocol_artifact::v2` refusal vocabulary, `protocol_artifact::v3` or the legacy `wire.rs` kind API exist, `quire matrix` lists FR-050-AC-2, AC-3, FR-054-AC-1 to AC-4, FR-049-AC-2 and AC-5, and FR-513-AC-17 each with a tagged test; a change that deletes one of those modules without a green successor test for its row leaves a criterion untagged, and the matrix test fails. | Test (TC-1308) |
+| FR-513-AC-15 | `quire matrix` lists FR-050-AC-2, AC-3, FR-054-AC-1 to AC-4, FR-049-AC-2 and AC-5, and FR-513-AC-17 each with a tagged test in a checked-package, evaluation or replay crate (`qsl-package`, `qsl-eval`, `qsl-replay`); the compiled-protocol readers and their tests are deleted (QSL-1808), so no retained criterion rides a deleted path and none is untagged. | Test (TC-1308) |
 | FR-513-AC-16 | The versioned `qsl_package::protocol_artifact_v1` API serializes and deserializes exactly `ArtifactKind::{Population, Window}` as `population` and `window`, and `BindingKind::{Population, Window, Clock}` as `population`, `window` and `clock`; each kind round-trips to the same variant, every other string is refused, and the legacy root wire enums serialize the overlapping values from this API. | Test (TC-136) |
-| FR-513-AC-17 | The versioned `qsl_package::protocol_artifact_v2::RefusalCode` table owns every exact `v2.header.*` and `v2.binding.*` spelling. The legacy v2 `Refusal::code` maps every corresponding header and binding variant to that table; the reader and the other `v2.*` code families remain until QSL-1501 repoints quire-protocol. | Test (TC-1308) |
+| FR-513-AC-17 | The versioned `qsl_package::protocol_artifact_v2::RefusalCode` table owns every exact `v2.header.*` and `v2.binding.*` spelling. The legacy v2 reader, its `Refusal::code` and the other `v2.*` code families are deleted (QSL-1808; QSL-1501 repointed quire-protocol). | Test (TC-1308) |
 
 ## Dependencies
 
-- **Upstream:** FR-493-AC-5, the deletion table (QSL-858), planner rulings 5,
+- **Upstream:** FR-493-AC-5, planner rulings 5,
   8 and 9 on QSL-858. The FR-015-AC-5 row is covered by the spine port delivered under QSL-1682.
 - **Same-spelled foreign owner (FR-513-AC-12):** the criterion as first written listed a
   same-spelled name of another owner among the guard atoms refused with the

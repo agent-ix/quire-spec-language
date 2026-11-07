@@ -274,7 +274,7 @@ fn refinement_claims(
 /// is settled by an engine, `global-conformance` on the claim settles
 /// `inapplicable-kind` with `relation-claim`, and `schedulability` on either
 /// occurrence does too.
-#[trace("TC-1302", "FR-507-AC-7")]
+#[trace("TC-1302", "TC-115", "FR-507-AC-7", "FR-057-AC-11")]
 #[test]
 fn a_bound_relations_model_and_code_claims_are_read_as_relation_claims() {
     let world = claims_world();
@@ -560,6 +560,43 @@ fn a_boolean_value_clause_is_read_on_its_expression_node() {
         claim_family(&package, ItemKind::Formula, &at(&function, "claim", 0)),
         None,
         "the function node does not carry the value claim"
+    );
+}
+
+/// FR-057-AC-11: a state declaration's claim, read from the checked package,
+/// admits `operation-contract`, while `finite-replay` and
+/// `probabilistic-satisfaction` settle `inapplicable-kind` naming the family
+/// the reader produced (`state-model`), without running an engine.
+#[trace("TC-115", "FR-057-AC-11")]
+#[test]
+fn a_state_declaration_admits_operation_contract_and_refuses_other_kinds_as_state_model() {
+    let world = claims_world();
+    let package = &world.package;
+    let clause = at(&node(package, "state_clause"), "claim", 0);
+    let settled = settle_many(
+        package,
+        &[
+            (Capability::OperationContract, ItemKind::Formula, &clause),
+            (Capability::FiniteReplay, ItemKind::Formula, &clause),
+            (
+                Capability::ProbabilisticSatisfaction,
+                ItemKind::Formula,
+                &clause,
+            ),
+        ],
+    );
+    assert_engine_settled(&settled[0], 0);
+    assert_inapplicable(
+        &settled[1],
+        1,
+        Capability::FiniteReplay,
+        Some(DeclarationFamily::StateModel),
+    );
+    assert_inapplicable(
+        &settled[2],
+        2,
+        Capability::ProbabilisticSatisfaction,
+        Some(DeclarationFamily::StateModel),
     );
 }
 

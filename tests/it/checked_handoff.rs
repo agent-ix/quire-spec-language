@@ -142,40 +142,6 @@ pub(super) fn integer_model() -> Value {
     model
 }
 
-/// [`request`] for the event-position unit over R without the unit `U`: the
-/// copy of R written into `dir` has `Amount` and `Total` as the bounded
-/// integer scalars they were before FR-517-AC-13, and its sources declare no
-/// unit and read no unit literal. Contract IR cannot yet project a record of
-/// the model that names a source-owned unit (`UnresolvedSelectedDeclaration`),
-/// so the bare route reads `Recovery` only over this variant.
-pub(super) fn integer_request(dir: &Path) -> CheckedHandoffRequest {
-    let model = integer_model();
-    let without_unit = |text: String| {
-        text.replace("dimension Money;\nunit U : Money = rational(1, 1);\n", "")
-            .replace(" U\n", "\n")
-            .replace(" U ", " ")
-    };
-    let model_path = dir.join("model.semantic-ir.json");
-    std::fs::write(&model_path, serde_json::to_vec_pretty(&model).unwrap()).unwrap();
-    let mut handoff = request("event_position", Corpus::None);
-    let library = dir.join("library.native");
-    std::fs::write(
-        &library,
-        without_unit(std::fs::read_to_string(format!("{DIR}/library.native")).unwrap()),
-    )
-    .unwrap();
-    let source = dir.join("unit.native");
-    std::fs::write(
-        &source,
-        without_unit(std::fs::read_to_string(&handoff.emit.source).unwrap()),
-    )
-    .unwrap();
-    handoff.emit.models = vec![model_path];
-    handoff.emit.libraries = vec![("agent-ix/checked-handoff-library".into(), library)];
-    handoff.emit.source = source;
-    handoff
-}
-
 pub(super) const KINDS: [&str; 3] = ["event_position", "fixed_sample", "timestamped_event"];
 
 /// Every regular file below `root`, keyed by its root-relative path.
@@ -1414,8 +1380,7 @@ fn a_changed_clock_value_is_admitted_by_the_reader_and_refused_by_the_sidecar() 
 #[test]
 fn the_legacy_writer_is_absent() {
     for path in [
-        "src/protocol_artifact/handoff.rs",
-        "src/protocol_artifact/handoff",
+        "src/protocol_artifact",
         "examples/native_protocol_handoff.rs",
         "examples/native_protocol_v2_handoff.rs",
         "examples/protocol-handoff",
@@ -1425,8 +1390,6 @@ fn the_legacy_writer_is_absent() {
     }
     let manifest = std::fs::read_to_string("Cargo.toml").unwrap();
     assert!(!manifest.contains("handoff-writer"));
-    let module = std::fs::read_to_string("src/protocol_artifact/mod.rs").unwrap();
-    assert!(!module.contains("mod handoff"));
 }
 
 /// One row of FR-518's table as amended by the writer self-check: identity,

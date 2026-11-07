@@ -1212,7 +1212,7 @@ fn profile_aware_spine_check_refuses_an_omitted_protocol_definition() {
 
 /// FR-040-AC-11 / TC-119 row 11: a typed protocol check value is discharged
 /// only through exact QSL source/clause and formal Handler correspondence.
-#[trace("FR-040-AC-11", "TC-119")]
+#[trace("FR-040-AC-8", "FR-040-AC-11", "TC-119")]
 #[test]
 fn protocol_check_proof_retains_goals_and_refuses_adverse_correspondence() {
     use quire_contract_model as ir;

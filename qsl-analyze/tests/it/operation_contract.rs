@@ -89,7 +89,7 @@ fn assert_proved(record: &AnalyzeRecord) {
     assert_eq!(*certification, Certification::Uncertified);
 }
 
-#[trace("TC-1302", "FR-507-AC-2")]
+#[trace("TC-1302", "TC-115", "FR-507-AC-2", "FR-057-AC-11")]
 #[test]
 fn an_inapplicable_request_does_not_change_the_state_clause_record() {
     let world = world("invariant Stable using v on Config::ConfigVersion at current { self.versionNumber <= 3 }\n", 0);

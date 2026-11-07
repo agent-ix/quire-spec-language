@@ -156,5 +156,4 @@ QSL-858's train.
 
 ## References
 
-- Linear QSL-1502, QSL-1503, QSL-1504, QSL-858; the deletion table rows of the
-  temporal family (B3 to B31).
+- Linear QSL-1502, QSL-1503, QSL-1504, QSL-858.
