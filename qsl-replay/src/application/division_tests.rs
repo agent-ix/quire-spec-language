@@ -192,6 +192,9 @@ fn facade_admission_retains_conflicting_unknown_and_incompatible_definition_refu
     let conflicting =
         admit_integer_division(&[euclidean.clone(), floor.clone()], None).unwrap_err();
     assert_eq!(conflicting.cause, PackageCause::ConflictingDefinition);
+    let mut unknown = euclidean.clone();
+    unknown.identity = "quire.integer_division.unknown/v1".to_owned();
+    assert_eq!(admit_integer_division(&[unknown], None).unwrap_err().cause, PackageCause::IncompatibleDefinition);
     let mut foreign = euclidean.clone();
     foreign.authority = "foreign".to_owned();
     assert_eq!(
@@ -206,4 +209,54 @@ fn facade_admission_retains_conflicting_unknown_and_incompatible_definition_refu
             .cause,
         PackageCause::IncompatibleDefinition
     );
+}
+
+#[trace("TC-1284", "FR-495-AC-8")]
+#[test]
+fn replay_recompilation_uses_the_admitted_division_selection() {
+    use crate::{CanonicalAssignment, ReplayRequestWire, ReplaySource, RequestTargetWire, WitnessValue};
+    let source = format!("{HEADER}function p using v(a: Int[-9,9], b: Int[-4,-1]): Boolean pure {{ a div b = -3 }}\n");
+    let law = selection(DefinitionRole::IntegerDivisionFloor);
+    let acquired = acquire_checked_closure_with_integer_division(
+        unit(&source), [], &DependencyInput::default(), &law,
+        StageLimits::default(), ReplayLimits::default(),
+    ).expect("genuine selected Boolean function");
+    let package = &acquired.handle.package;
+    let callable = package.graph().callable("p").expect("actual source function");
+    let key = callable.identity.clone();
+    let parameters = crate::execute::callable_parameter_keys(package, &callable).unwrap();
+    let name = crate::QualifiedName::new(vec![Identifier::new("p").unwrap()]).unwrap();
+    let wire = ReplayRequestWire {
+        profile_selections: vec![],
+        package_name: "division-selection".to_owned(),
+        sources: vec![("test".to_owned(), "division-selection".to_owned())],
+        dependencies: vec![],
+        replay_target: RequestTargetWire::function(name, crate::execute::declaration_occurrence(key.clone())),
+        source: ReplaySource::Input(vec![
+            CanonicalAssignment { parameter: parameters[0].clone(), value: WitnessValue::Integer(7) },
+            CanonicalAssignment { parameter: parameters[1].clone(), value: WitnessValue::Integer(-3) },
+        ]),
+        obligation_identity: crate::ObligationIdentity::new(key, None, 0),
+        backend: "test".to_owned(),
+        state_environment: crate::StateEnvironment::new(vec![]),
+        accounting_limits: ScalarLimits {
+            integer_bits: 10000, decimal_digits: 10000, scale_expansion: 10000,
+            text_input_bytes: 10000, text_scalars: 10000, normalized_scalars: 10000,
+            unit_edges: 10000, value_occurrences: 10000, work_units: 100000, result_units: 10000,
+        },
+        stage_limits: StageLimits::default(),
+        supplied_limits: None,
+        object_environment: None,
+        declared_domains: vec![],
+        byte_provision: vec![("test".to_owned(), "division-selection".to_owned(), source.as_bytes().to_vec())],
+        documents: vec![],
+    };
+    let replayed = crate::replay_with_integer_division(wire.clone(), &law, ReplayLimits::default()).expect("actual public replay uses the selected law");
+    let crate::ReplayResult::Input(result) = replayed else { panic!("input replay arm") };
+    assert_eq!(result.value(), Some(crate::EvaluatedValue::Boolean(true)));
+    let missing = crate::replay(wire.clone(), ReplayLimits::default()).expect_err("unselected replay cannot silently choose a law");
+    assert_eq!(missing.cause(), Some("missing-selection"));
+    let wrong = selection(DefinitionRole::IntegerDivisionTruncating);
+    let replayed = crate::replay_with_integer_division(wire, &wrong, ReplayLimits::default());
+    assert!(matches!(replayed, Err(crate::ReplayRefusal::ClaimOccurrence { .. })), "another selected law cannot bind the original checked occurrence: {replayed:?}");
 }
