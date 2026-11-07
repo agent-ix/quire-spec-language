@@ -44,6 +44,18 @@ impl CoreVocabulary {
     }
 }
 
+impl CoreVocabulary {
+    /// Whether `word` is a core keyword.
+    pub fn contains_keyword(&self, word: &str) -> bool {
+        self.keywords.contains(word)
+    }
+
+    /// Whether `kind` is a core node kind.
+    pub fn contains_node_kind(&self, kind: &str) -> bool {
+        self.node_kinds.contains(kind)
+    }
+}
+
 /// One clause of a production: its name and the spelling of the core
 /// `type-ref` or node kind its value checks against.
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -85,8 +85,8 @@ pub use abstraction::{
     OperationKey, PopulationBinding, RustField, RustParameter, RustPath, RustReceiver,
 };
 pub use abstraction::{AbstractionNodeRefusal, AbstractionNodes};
-pub use extension::ExtensionCause;
 pub use dispatch_link::PendingLinks;
+pub use extension::ExtensionCause;
 mod facts;
 mod family;
 // The scalar limits of a caller that bounds nothing itself, for the model

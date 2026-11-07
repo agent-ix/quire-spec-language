@@ -235,7 +235,10 @@ mod tests {
             identity_span: Span { start: 0, end: 0 },
         };
         let protocol = selection("quire.protocol.finite-global/v1");
-        assert_eq!(resolve_profiles(std::slice::from_ref(&protocol), &|_| None), Ok(Vec::new()));
+        assert_eq!(
+            resolve_profiles(std::slice::from_ref(&protocol), &|_| None),
+            Ok(Vec::new())
+        );
         assert_eq!(
             protocol_profile(&protocol.identity),
             Some(DefinitionReference {
@@ -245,7 +248,8 @@ mod tests {
         );
         let unknown = selection("quire.protocol.unknown/v1");
         assert_eq!(protocol_profile(&unknown.identity), None);
-        let refused = resolve_profiles(&[unknown], &|_| None).expect_err("an unknown profile refuses");
+        let refused =
+            resolve_profiles(&[unknown], &|_| None).expect_err("an unknown profile refuses");
         assert_eq!(refused[0].cause, ProfileCause::UnsupportedSelection);
     }
 
@@ -267,7 +271,10 @@ mod tests {
                 TemporalProfile::from_identity(profile.identity()),
                 Some(profile)
             );
-            assert_eq!(resolve_profiles(&[selection(profile.identity())], &|_| None), Ok(Vec::new()));
+            assert_eq!(
+                resolve_profiles(&[selection(profile.identity())], &|_| None),
+                Ok(Vec::new())
+            );
             assert_eq!(
                 profile.is_bounded(),
                 !matches!(

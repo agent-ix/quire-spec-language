@@ -33,9 +33,9 @@ use qsl_foundation::{Code, SourceIdentity, Span};
 use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
 use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
-    AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ExtensionCause, ProbabilisticCause,
-    ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause, TimeUnitCause,
-    TopologyRetained,
+    AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ExtensionCause,
+    ProbabilisticCause, ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause,
+    TimeUnitCause, TopologyRetained,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -51,12 +51,12 @@ mod subject;
 pub use lifecycle::{
     admit_parsed_unit_list, check, check_units, check_units_with_refinement_internals,
     check_with_execution_points, check_with_execution_points_and_refinement_internals,
-    check_with_profile_catalog, check_with_refinement_internals, core_vocabulary,
-    parse_selecting_extensions,
-    check_with_temporal_selections_and_execution_points, package, package_with_temporal_selections,
-    extension_forms, parse, parse_with_extensions, preflight_unit_list, refusal_or_fault, select, select_units, AdmittedModels,
-    AdmittedUnitList, CheckedUnit, EmittedUnit, FrontEndFailure, ObligationState, PackageLimits,
-    ParseRequest, ParsedUnitSource, PendingObligation, ProfileCatalogInput, ProfileCheckFailure,
+    check_with_profile_catalog, check_with_refinement_internals,
+    check_with_temporal_selections_and_execution_points, core_vocabulary, extension_forms, package,
+    package_with_temporal_selections, parse, parse_selecting_extensions, parse_with_extensions,
+    preflight_unit_list, refusal_or_fault, select, select_units, AdmittedModels, AdmittedUnitList,
+    CheckedUnit, EmittedUnit, FrontEndFailure, ObligationState, PackageLimits, ParseRequest,
+    ParsedUnitSource, PendingObligation, ProfileCatalogInput, ProfileCheckFailure,
     ProtocolCheckSite, TypeDeclaration, TypeReport, TypeRequirement,
 };
 pub(crate) use lifecycle::{

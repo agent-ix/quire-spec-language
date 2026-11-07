@@ -90,6 +90,7 @@ mod temporal;
 mod terminal;
 mod timed_clause;
 
+pub(crate) use extension::ExtensionFormInput;
 pub(crate) use hybrid::{
     hybrid_location, hybrid_site, HybridClaimInput, HybridModelInput, HybridSite,
 };
@@ -124,7 +125,6 @@ pub(crate) use temporal::{
     temporal_location, temporal_site, AggregatePart, LoweredTemporalClause, TemporalClauseInput,
     TemporalSite,
 };
-pub(crate) use extension::ExtensionFormInput;
 pub(crate) use terminal::{terminal_location, terminal_site, TerminalInput, TerminalSite};
 pub(crate) use timed_clause::TimedClauseInput;
 

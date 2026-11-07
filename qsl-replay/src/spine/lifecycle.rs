@@ -1332,9 +1332,7 @@ pub fn parse_selecting_extensions(
         let mut selections: Vec<qsl_foundation::selection::DefinitionRef> = Vec::new();
         for profile in &header.selections().profiles {
             // A profile that refuses is reported by E3 in its own place.
-            if let Ok(found) =
-                resolve_profiles(std::slice::from_ref(profile), &held_by_catalog)
-            {
+            if let Ok(found) = resolve_profiles(std::slice::from_ref(profile), &held_by_catalog) {
                 for selection in found {
                     if !selections.contains(&selection) {
                         selections.push(selection);
@@ -2432,14 +2430,7 @@ fn parse_unit(
     let parsed = if held.is_empty() {
         qsl_cst::parse_with_cancel(source, path, bytes, limits, cancel)
     } else {
-        qsl_cst::parse_with_extensions(
-            source,
-            path,
-            bytes,
-            limits,
-            &extension_forms(held),
-            cancel,
-        )
+        qsl_cst::parse_with_extensions(source, path, bytes, limits, &extension_forms(held), cancel)
     }
     .map_err(|diagnostic| Box::new(CompileRefusal::Source(diagnostic)))?;
     let raw = parsed.source().reference().clone();

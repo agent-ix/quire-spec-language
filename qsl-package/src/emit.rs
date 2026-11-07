@@ -6296,7 +6296,8 @@ fn emit_package_inner(
         laws.push(profile.definition().clone());
     }
 
-    let (edition, definition_selections) = catalog_selections(graph.header_layers(), &laws, graph.extension_selections());
+    let (edition, definition_selections) =
+        catalog_selections(graph.header_layers(), &laws, graph.extension_selections());
     let root = DefinitionRole::Root.identity();
     let lock = CheckedPackageLockV2 {
         sources: sources.into_iter().collect(),

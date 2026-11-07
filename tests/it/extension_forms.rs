@@ -5,11 +5,11 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
-use qsl_foundation::SourceIdentity;
 use qsl_foundation::diagnostic::Code;
+use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::{
-    check, package, parse_selecting_extensions, select, ProfileCatalogInput, CompileRefusal, DependencyInput, EmittedUnit,
-    PackageLimits, ParseRequest, SpineLimits,
+    check, core_vocabulary, package, parse_selecting_extensions, select, CompileRefusal,
+    DependencyInput, EmittedUnit, PackageLimits, ParseRequest, ProfileCatalogInput, SpineLimits,
 };
 use qsl_semantics::check::{CheckCause, ExtensionCause};
 use qsl_semantics::library::bundle::{
@@ -62,12 +62,18 @@ fn identity() -> SourceIdentity {
 }
 
 /// `declarations` through S1 to S4 under the held extension.
-fn compile(held: &DefinitionCatalog, declarations: &str) -> Result<EmittedUnit, Box<CompileRefusal>> {
+fn compile(
+    held: &DefinitionCatalog,
+    declarations: &str,
+) -> Result<EmittedUnit, Box<CompileRefusal>> {
     compile_source(held, &format!("{HEADER}{declarations}\n"))
 }
 
 /// The whole `source` through S1 to S4 under `held`.
-fn compile_source(held: &DefinitionCatalog, source: &str) -> Result<EmittedUnit, Box<CompileRefusal>> {
+fn compile_source(
+    held: &DefinitionCatalog,
+    source: &str,
+) -> Result<EmittedUnit, Box<CompileRefusal>> {
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
     let refusal = |failure| {
@@ -242,7 +248,11 @@ fn a_source_level_refusal_is_not_an_invalid_package() {
             panic!("expected an S1 refusal for {declaration}, got {refusal:?}");
         };
         assert_eq!(diagnostic.code.as_str(), "invalid_syntax", "{declaration}");
-        assert_eq!(diagnostic.cause.as_str(), "unexpected-token", "{declaration}");
+        assert_eq!(
+            diagnostic.cause.as_str(),
+            "unexpected-token",
+            "{declaration}"
+        );
     }
 }
 
@@ -252,7 +262,10 @@ fn the_emitted_node_carries_its_declaration_owner_clauses_dependencies_and_span(
     let emitted = compile(&held("retention"), FORM).expect("the unit compiles");
     let wire = wire(&emitted);
     let form = extension_node(&wire);
-    assert_eq!(form["declaration"]["qualified_name"], serde_json::json!(["Audit"]));
+    assert_eq!(
+        form["declaration"]["qualified_name"],
+        serde_json::json!(["Audit"])
+    );
     assert_eq!(
         form["owner"],
         serde_json::json!({"kind": "source", "authority": "test", "identity": "extension-forms"})
@@ -364,7 +377,8 @@ fn an_integer_outside_the_declared_range_refuses_naming_the_clause_and_both_rang
 #[trace("TC-882", "FR-354-AC-2")]
 #[test]
 fn a_type_spelling_outside_the_v1_reader_refuses_naming_the_spelling() {
-    let refusal = compile(&held_typed("retention", "Sequence<Integer>"), FORM).expect_err("unsupported");
+    let refusal =
+        compile(&held_typed("retention", "Sequence<Integer>"), FORM).expect_err("unsupported");
     let ExtensionCause::TypeMismatch {
         clause, expected, ..
     } = refusal_cause(&refusal)
@@ -391,9 +405,11 @@ fn bare_extension(identity: &str, keyword: &str) -> Definition {
 #[trace("TC-490", "FR-110-AC-15")]
 #[test]
 fn extension_rows_end_the_lock_ascending_by_identity() {
-    let catalog =
-        DefinitionCatalog::new(vec![bare_extension("ext.a", "ka"), bare_extension("ext.b", "kb")])
-            .unwrap();
+    let catalog = DefinitionCatalog::new(vec![
+        bare_extension("ext.a", "ka"),
+        bare_extension("ext.b", "kb"),
+    ])
+    .unwrap();
     let source = format!(
         "{}profile B = \"ext.b\";\nprofile A = \"ext.a\";\nrecord Window {{ lo: Integer; }}\n",
         "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\n"
@@ -413,7 +429,9 @@ fn extension_rows_end_the_lock_ascending_by_identity() {
     );
     let features = wire["lock"]["required_features"].to_string();
     assert!(!features.contains("ext."), "no feature row: {features}");
-    assert!(!wire["lock"]["profile_selections"].to_string().contains("ext."));
+    assert!(!wire["lock"]["profile_selections"]
+        .to_string()
+        .contains("ext."));
 }
 
 #[trace("TC-490", "FR-110-AC-14")]
@@ -429,7 +447,10 @@ fn a_header_identity_the_catalog_does_not_hold_as_an_extension_refuses_unknown_p
     };
     let other_role = extension_definition_with_role("retention", DefinitionRole::Source);
     for catalog in [DefinitionCatalog::default(), other_role] {
-        assert_eq!(refuse(&catalog), (Code::UnknownProfile, "unsupported-selection"));
+        assert_eq!(
+            refuse(&catalog),
+            (Code::UnknownProfile, "unsupported-selection")
+        );
     }
 }
 
@@ -479,7 +500,10 @@ fn each_v1_clause_type_spelling_admits_its_value_and_an_unsupported_one_refuses(
         .expect("every v1 spelling admits its value");
     let wire = wire(&emitted);
     assert_eq!(
-        extension_node(&wire)["body"]["clauses"].as_array().unwrap().len(),
+        extension_node(&wire)["body"]["clauses"]
+            .as_array()
+            .unwrap()
+            .len(),
         5
     );
     // `i` spelled `Sequence<Integer>` is held and refused at S3.
@@ -493,12 +517,18 @@ fn each_v1_clause_type_spelling_admits_its_value_and_an_unsupported_one_refuses(
     let refusal = compile(&scalar_extension(&respelled), &format!("{record}{form}"))
         .expect_err("`Sequence<Integer>` is outside the v1 spellings");
     let ExtensionCause::TypeMismatch {
-        clause, expected, actual, ..
+        clause,
+        expected,
+        actual,
+        ..
     } = refusal_cause(&refusal)
     else {
         panic!("expected a type mismatch, got {refusal:?}");
     };
-    assert_eq!((clause.as_str(), expected.as_str()), ("i", "Sequence<Integer>"));
+    assert_eq!(
+        (clause.as_str(), expected.as_str()),
+        ("i", "Sequence<Integer>")
+    );
     assert_eq!(actual, "Integer");
 }
 
@@ -576,17 +606,17 @@ fn a_node_kind_clause_naming_nothing_or_another_kind_refuses() {
     else {
         panic!("expected a type mismatch, got {other:?}");
     };
-    assert_eq!((clause.as_str(), expected.as_str(), actual.as_str()), ("policy", "retention", "archive"));
+    assert_eq!(
+        (clause.as_str(), expected.as_str(), actual.as_str()),
+        ("policy", "retention", "archive")
+    );
 }
 
 #[trace("TC-882", "FR-354-AC-8")]
 #[test]
 fn forms_whose_node_kind_clauses_reach_themselves_refuse_at_every_form_on_the_cycle() {
-    let cycle = compile(
-        &node_kind_catalog(),
-        "link A { to: B }\nlink B { to: A }",
-    )
-    .expect_err("A and B reach each other");
+    let cycle = compile(&node_kind_catalog(), "link A { to: B }\nlink B { to: A }")
+        .expect_err("A and B reach each other");
     let causes = extension_causes(&cycle);
     let named: Vec<_> = causes
         .iter()
@@ -603,7 +633,10 @@ fn forms_whose_node_kind_clauses_reach_themselves_refuse_at_every_form_on_the_cy
         ]
     );
     for cause in causes {
-        assert_eq!((cause.code(), cause.cause()), (Code::IllTyped, "type-mismatch"));
+        assert_eq!(
+            (cause.code(), cause.cause()),
+            (Code::IllTyped, "type-mismatch")
+        );
     }
     let own = compile(&node_kind_catalog(), "link C { to: C }").expect_err("C reaches itself");
     let [ExtensionCause::Cycle { cycle, .. }] = extension_causes(&own).as_slice() else {
@@ -639,4 +672,32 @@ fn extension_causes(refusal: &CompileRefusal) -> Vec<&ExtensionCause> {
 
 fn refusal_cause_first(refusal: &CompileRefusal) -> &ExtensionCause {
     extension_causes(refusal)[0]
+}
+
+#[trace("TC-884", "FR-354-AC-3")]
+#[test]
+fn the_core_vocabulary_holds_every_keyword_s2_dispatches_on_and_every_node_tag() {
+    let vocabulary = core_vocabulary();
+    let keywords: Vec<_> = qsl_forms::leading_keywords().collect();
+    assert!(!keywords.is_empty());
+    for keyword in keywords {
+        assert!(vocabulary.contains_keyword(keyword), "`{keyword}`");
+    }
+    for tag in qsl_semantics::check::NodeTag::ALL {
+        assert!(
+            vocabulary.contains_node_kind(tag.as_str()),
+            "`{}`",
+            tag.as_str()
+        );
+    }
+}
+
+#[trace("TC-884", "FR-354-AC-3")]
+#[test]
+fn an_extension_keyword_equal_to_a_core_leading_keyword_refuses_conflicting_definition() {
+    let catalog = DefinitionCatalog::new(vec![bare_extension("retention", "taskset")]).unwrap();
+    let refusal = compile(&catalog, "record Window { lo: Integer; }")
+        .expect_err("`taskset` is a core leading keyword");
+    assert_eq!(refusal.code(), Code::InvalidPackage);
+    assert_eq!(refusal.cause(), Some("conflicting-definition"));
 }

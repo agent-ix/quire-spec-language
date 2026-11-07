@@ -363,7 +363,11 @@ struct Builder<'a, 'c, 'x> {
 impl Builder<'_, '_, '_> {
     /// `accept(state, clause)`: one explicit arm for each pair of a position
     /// present or past the last and a clause written or not.
-    fn accept(&mut self, state: Position, clause: Option<(usize, &ExtensionClauseForm)>) -> Position {
+    fn accept(
+        &mut self,
+        state: Position,
+        clause: Option<(usize, &ExtensionClauseForm)>,
+    ) -> Position {
         match (state, clause) {
             (Position::At(at), Some((written, clause))) => {
                 let expected = self.production.clauses.get(at).map(|c| c.name.as_str());
@@ -446,8 +450,7 @@ impl Builder<'_, '_, '_> {
             .ok_or_else(|| self.order_fault(clause))?;
         let location = extension_clause_location(self.index, written);
         let span = root_span(&clause.value);
-        let (expected, scalar) = match self.expected_type(&production_clause.type_ref, &location)
-        {
+        let (expected, scalar) = match self.expected_type(&production_clause.type_ref, &location) {
             ClauseType::Value(expected, scalar) => (expected, scalar),
             ClauseType::NodeKind(node_kind) => {
                 return self.node_kind_clause(clause, &node_kind, &location, span)

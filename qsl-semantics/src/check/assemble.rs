@@ -5095,9 +5095,12 @@ impl PackageDeclarations {
         }));
         package.abstractions = unit.abstractions;
         // FR-354: a form is located under its own spaced name.
-        declared_type_spans.extend(unit.extensions.iter().enumerate().map(|(index, form)| {
-            (super::extension::extension_site(index), form.span)
-        }));
+        declared_type_spans.extend(
+            unit.extensions
+                .iter()
+                .enumerate()
+                .map(|(index, form)| (super::extension::extension_site(index), form.span)),
+        );
         package.extension_forms = unit.extensions;
         package.hyper_clauses = unit.hyper_clauses;
         package.probabilistic = unit.probabilistic;

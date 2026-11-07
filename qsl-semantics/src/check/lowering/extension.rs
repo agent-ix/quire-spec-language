@@ -45,7 +45,8 @@ impl Lowering<'_> {
         let at = extension_location(input.index);
         let mut clauses = Vec::with_capacity(input.form.clauses.len());
         for (position, clause) in input.form.clauses.iter().enumerate() {
-            let location = crate::check::extension::extension_clause_location(input.index, position);
+            let location =
+                crate::check::extension::extension_clause_location(input.index, position);
             let value = self.extension_clause_value(clause, input.lowered, &location)?;
             clauses.push(ExtensionClauseTerm::new(clause.name.clone(), value));
         }
@@ -115,12 +116,10 @@ impl Lowering<'_> {
 fn literal_of(root: CheckedNode<'_>) -> Option<(CheckedNode<'_>, &Value)> {
     match root.kind() {
         NodeKind::Literal(CheckedLiteral(value)) => Some((root, value)),
-        NodeKind::Coerce(operand, _) => {
-            match root.at(*operand).kind() {
-                NodeKind::Literal(CheckedLiteral(value)) => Some((root, value)),
-                _ => None,
-            }
-        }
+        NodeKind::Coerce(operand, _) => match root.at(*operand).kind() {
+            NodeKind::Literal(CheckedLiteral(value)) => Some((root, value)),
+            _ => None,
+        },
         _ => None,
     }
 }
