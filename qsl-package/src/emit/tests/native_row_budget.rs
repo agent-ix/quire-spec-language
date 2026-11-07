@@ -312,11 +312,22 @@ fn adapters_preserve_an_earlier_owner_denial_and_maps_never_lose_their_keys() {
         .enumerate()
         .find(|(_, row)| row.key_node.is_none())
         .expect("same emission retains a representable collection");
+    let mut conversion_budget = ample();
     let converted = supported
-        .to_ir(&mut ample(), collection_locus(supported_index))
+        .to_ir(&mut conversion_budget, collection_locus(supported_index))
         .expect("unrelated map must not poison selected collection conversion");
     assert_eq!(converted.value_type, supported.value_type);
     assert_eq!(converted.element_node, supported.element_node);
+    let package = native(&maps);
+    let joined = quire_contract_model::SelectedExactIdentities::empty()
+        .with_source_collection_rows(&package, [converted], &mut conversion_budget)
+        .expect("IR joins only the requested supported collection despite the retained map");
+    let projected = package
+        .project_exact_type(&supported.structural_node, &joined, &mut conversion_budget)
+        .expect("IR projects the authentic converted supported collection");
+    assert_eq!(projected.value_type(), &supported.value_type);
+    assert!(conversion_budget.consumed().work > 0);
+
     let (map_index, map_row) = maps
         .selected_source_collection_rows()
         .iter()
@@ -413,7 +424,7 @@ fn collection_locus(index: usize) -> NativeJoinLocus {
     }
 }
 
-#[trace("TC-1331", "FR-531-AC-29")]
+#[trace("TC-1331", "FR-531-AC-30")]
 #[test]
 fn second_retained_enum_row_keeps_its_first_unpaid_locus() {
     let emission = emission();
