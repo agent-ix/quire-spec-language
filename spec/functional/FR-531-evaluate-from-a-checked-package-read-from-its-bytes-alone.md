@@ -739,11 +739,15 @@ follows.
   `PackageMismatch::Exhausted`, and from the handoff writer
   `Error::NativeJoinExhausted`. `qsl-eval`'s `CallFailure` has no arm for it:
   the denial happens at the pass entry, before any call that returns one.
-  A view or writer that owns the original ceilings retains the native error
-  together with a `NativeJoinLimitError`: its `limit` is the diagnostic
+  Every entry, including `with_supply`, `from_read` and `from_emission`
+  with an opaque caller budget, retains the native error together with a
+  `NativeJoinLimitError`: its `limit` is the diagnostic
   `LimitExceeded` with the original configured bound and the cumulative
   attempted count (consumed plus the first unpaid charge), and its catalog
-  fields include the setting. The native error retains its structural locus.
+  fields include the setting. Original ceilings come from IR's owner budget
+  getters and configured-bound refusal field, including after prior successful
+  joins; remaining allowance is never substituted for the original bound.
+  The native error retains its structural locus.
 
 ### Charges
 

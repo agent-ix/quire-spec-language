@@ -29,7 +29,7 @@ pub enum BindingDimension {
 pub enum ReportRefusal {
     /// Native capture-type admission consumed the caller's finite allowance.
     #[error("native owner report admission exhausted its budget: {0}")]
-    NativeBudget(Box<qsl_package::ExactTypeProjectionError>),
+    NativeBudget(Box<qsl_package::NativeJoinFailure>),
     /// The format identifier or version is unsupported.
     #[error("unsupported owner report format or version")]
     UnsupportedVersion,

@@ -1489,11 +1489,12 @@ fn supply_on<'p>(
             },
             budget,
         )
-        .map_err(|failure| match failure {
-            qsl_package::NativeJoinFailure::Projection(error) => *error,
+        .map_err(|failure| match failure.native() {
+            qsl_package::NativeJoinFailure::Projection(error) => (**error).clone(),
             qsl_package::NativeJoinFailure::Equality(error) => {
                 panic!("identity-only fixture has no equality read: {error:?}")
             }
+            qsl_package::NativeJoinFailure::Limit(_) => unreachable!("native unwraps the envelope"),
         })
 }
 
@@ -1740,7 +1741,12 @@ fn the_view_the_constructors_and_the_writer_refuse_a_budget_one_short() {
         ] {
             let mut one_short = NativeJoinBudget::new(work, storage);
             match construct(&mut one_short) {
-                Err(PackageMismatch::Exhausted(denial)) => assert_eq!(denial.code, code),
+                Err(PackageMismatch::Exhausted(denial)) => {
+                    assert!(
+                        matches!(denial.native(), qsl_package::NativeJoinFailure::Projection(native) if native.code == code)
+                    );
+                    assert!(denial.limit().is_some());
+                }
                 other => panic!("expected the {code:?} denial, got {:?}", other.err()),
             }
             assert!(one_short.first_unpaid().is_some());
@@ -1814,4 +1820,92 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
     exact.native_join = qsl_package::NativeJoinLimits::new(need.work, need.storage);
     write(&exact, &target).expect("exact work and storage write the directory");
     assert!(target.join("identities.json").exists());
+}
+
+/// Original opaque ceilings and cumulative attempted totals survive every
+/// caller-budget entry, including a budget reused after successful admission.
+#[trace("TC-1331", "FR-531-AC-21")]
+#[trace("TC-1331", "FR-531-AC-24")]
+#[test]
+fn opaque_caller_budgets_preserve_original_bounds_after_prior_joins() {
+    use qsl_eval::temporal::evidence::{EvidencePackage, PackageMismatch};
+    use qsl_package::{NativeJoinFailure, NativeJoinLimits};
+    use quire_contract_model::{ExactTypeProjectionErrorCode as Code, NativeJoinBudget};
+    let built = record_capture();
+    let read = built.read(&built.emission);
+    let (rows, _) = record_rows(&read);
+    for entry in 0..3 {
+        let construct = |budget: &mut NativeJoinBudget| -> Result<(), NativeJoinFailure> {
+            if entry == 0 {
+                BarePackage::new(read.admitted())
+                    .with_supply(
+                        qsl_package::BareSupply {
+                            identities: &rows,
+                            equality: None,
+                        },
+                        budget,
+                    )
+                    .map(|_| ())
+            } else {
+                let result = if entry == 1 {
+                    EvidencePackage::from_read(&read, budget)
+                } else {
+                    EvidencePackage::from_emission(&built.emission, &read, budget)
+                };
+                result.map(|_| ()).map_err(|failure| match failure {
+                    PackageMismatch::Exhausted(error) => *error,
+                    other => panic!("authentic fixture refused before join: {other:?}"),
+                })
+            }
+        };
+        let mut measured = NativeJoinBudget::new(1 << 30, 1 << 30);
+        construct(&mut measured).expect("measure genuine successful entry");
+        let need = measured.consumed();
+        assert!(need.work > 0 && need.storage > 0);
+        let mut exact = NativeJoinBudget::new(2 * need.work, 2 * need.storage);
+        construct(&mut exact).expect("first exact join");
+        construct(&mut exact).expect("second exact join");
+        assert_eq!(exact.consumed().work, 2 * need.work);
+        assert_eq!(exact.consumed().storage, 2 * need.storage);
+        for (work, storage, code, setting) in [
+            (
+                2 * need.work - 1,
+                2 * need.storage,
+                Code::ExhaustedWork,
+                "i2.work_units",
+            ),
+            (
+                2 * need.work,
+                2 * need.storage - 1,
+                Code::ExhaustedStorage,
+                "i2.native_join_storage",
+            ),
+        ] {
+            let mut budget = NativeJoinBudget::new(work, storage);
+            construct(&mut budget).expect("first join precharges the caller budget");
+            let error = construct(&mut budget).expect_err("second join is one unit short");
+            let NativeJoinFailure::Projection(native) = error.native() else {
+                panic!("identity fixture must preserve the native projection refusal");
+            };
+            assert_eq!(native.code, code);
+            let (bound, consumed) = if code == Code::ExhaustedWork {
+                (work, budget.consumed().work)
+            } else {
+                (storage, budget.consumed().storage)
+            };
+            assert_eq!(native.configured_bound, Some(bound));
+            let diagnostic = error.limit().expect("admission attaches stage diagnostic");
+            assert_eq!(diagnostic.setting().map(|s| s.name()), Some(setting));
+            assert_eq!(diagnostic.configured_bound(), bound);
+            let unpaid = budget
+                .first_unpaid()
+                .expect("owner records first unpaid charge");
+            assert_eq!(diagnostic.actual(), u128::from(consumed) + unpaid.amount);
+            assert!(diagnostic.actual() > u128::from(bound));
+            assert_eq!(
+                NativeJoinLimits::from_budget(&budget),
+                NativeJoinLimits::new(work, storage)
+            );
+        }
+    }
 }

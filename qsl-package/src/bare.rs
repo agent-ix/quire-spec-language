@@ -111,7 +111,9 @@ impl<'p> BarePackage<'p> {
         self.joined = match supply.identities.selected(self.package, budget) {
             Ok(identities) => Some(Ok(identities)),
             Err(IdentityJoinFailure::Witness(defect)) => Some(Err(defect)),
-            Err(IdentityJoinFailure::Exhausted(denial)) => return Err((*denial).into()),
+            Err(IdentityJoinFailure::Exhausted(denial)) => {
+                return Err(crate::NativeJoinFailure::from(*denial).with_budget(budget))
+            }
         };
         self.supply = Some(supply);
         if let Some(Ok(identities)) = &self.joined {
@@ -121,7 +123,9 @@ impl<'p> BarePackage<'p> {
                     .project_exact_type(&node.node_id, identities, budget);
                 if let Err(denial) = &projection {
                     if qsl_semantics::model::intake::is_native_budget_denial(denial) {
-                        return Err(denial.clone().into());
+                        return Err(
+                            crate::NativeJoinFailure::from(denial.clone()).with_budget(budget)
+                        );
                     }
                 }
                 self.projections.insert(node.node_id.clone(), projection);
@@ -134,7 +138,8 @@ impl<'p> BarePackage<'p> {
                     equality: self.supply.as_ref().and_then(|supply| supply.equality),
                 },
                 budget,
-            )?;
+            )
+            .map_err(|failure| failure.with_budget(budget))?;
         }
         Ok(self)
     }

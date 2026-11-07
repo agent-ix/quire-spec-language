@@ -175,7 +175,7 @@ fn bare_admission_retains_equality_and_reports_its_denial_after_projection() {
         let error = BarePackage::new(&admitted)
             .with_supply(supply, &mut budget)
             .expect_err("one short in equality");
-        let NativeJoinFailure::Equality(native) = error else {
+        let NativeJoinFailure::Equality(native) = error.native() else {
             panic!("actual equality cause after identity/type prefix")
         };
         assert_eq!(native.code, code);
@@ -250,7 +250,7 @@ fn source_evaluation_view_preserves_the_equality_denial_and_exact_stage_limit() 
         let error = BarePackage::new(&admitted)
             .with_supply(supply, &mut expected_budget)
             .expect_err("equality is the denied tail");
-        let NativeJoinFailure::Equality(expected) = error else {
+        let NativeJoinFailure::Equality(expected) = error.native() else {
             panic!("owner equality denial")
         };
         assert_eq!(expected.code, code);
@@ -280,7 +280,7 @@ fn source_evaluation_view_preserves_the_equality_denial_and_exact_stage_limit() 
         let Err(crate::ViewFailure::Exhausted(denial)) = short.evaluation_view() else {
             panic!("public view must expose exhaustion")
         };
-        assert_eq!(denial.native, NativeJoinFailure::Equality(expected));
+        assert_eq!(denial.native, NativeJoinFailure::Equality(expected.clone()));
         assert_eq!(denial.limit.configured_bound(), bound);
         assert_eq!(denial.limit.setting().name(), setting);
         assert_eq!(denial.limit.actual(), u128::from(consumed) + unpaid.amount);
