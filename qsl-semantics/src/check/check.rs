@@ -55,6 +55,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
+#[cfg(test)]
+mod declared_type_tests;
 mod native_literal;
 mod typing;
 use typing::TypedOperand;
@@ -3120,8 +3122,8 @@ impl<'a> Typer<'a> {
     ) -> Result<(), CheckRefusal> {
         self.scope
             .types
-            .check_type(value_type)
-            .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
+            .try_check_type(value_type)
+            .map_err(|refusal| CheckRefusal::from_type_check(location, refusal))?;
         let mut pending = vec![value_type];
         while let Some(value_type) = pending.pop() {
             match value_type {

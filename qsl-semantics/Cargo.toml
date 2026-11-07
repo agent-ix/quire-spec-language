@@ -52,6 +52,8 @@ agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data",
 tempfile = "3.27.0"
 
 [dev-dependencies]
+# The owner's audited allocator fixture isolates denial to the current test thread.
+qsv-failing-allocator = { git = "https://github.com/agent-ix/quire-semantic-value", branch = "main" }
 # `tests/it/{ieee_profiles,quantities}.rs` build expected big-integer values.
 num-bigint = "0.4.8"
 num-traits = "0.2.19"

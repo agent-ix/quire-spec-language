@@ -364,6 +364,7 @@ fn holder(env: &TypeEnvironment, universe: &str, identity: &str) -> Value {
 
 #[trace("QSpec-TC-189", "QSpec-FR-144-AC-4")]
 #[trace("QSpec-TC-189", "QSpec-FR-144-AC-6")]
+#[trace("TC-1339", "FR-534-AC-1")]
 #[test]
 fn c06_reference_holders_are_keyed_and_ieee_elements_are_ineligible() {
     let env = holder_environment();
@@ -377,7 +378,7 @@ fn c06_reference_holders_are_keyed_and_ieee_elements_are_ineligible() {
     let hs = completed(&holders, vec![h2.clone(), h1.clone()]);
     assert_eq!(format!("{:?}", elements(&hs)), format!("{:?}", [h1, h2]));
     let hs_type = ValueType::collection(holders);
-    assert!(env.check_type(&hs_type).is_ok());
+    assert!(env.try_check_type(&hs_type).is_ok());
     assert!(equal(&env, &hs_type, &hs, &hs));
 
     let ineligible = Err(IllTyped {
@@ -391,7 +392,10 @@ fn c06_reference_holders_are_keyed_and_ieee_elements_are_ineligible() {
     );
     let records = collection_type(CollectionKind::Bag, ValueType::Composite(key("F")), 0, 2);
     for declared in [floats, records] {
-        assert_eq!(env.check_type(&ValueType::collection(declared)), ineligible);
+        assert_eq!(
+            env.try_check_type(&ValueType::collection(declared)),
+            ineligible.map_err(quire_semantic_value::declaration::TypeCheckError::Refused)
+        );
     }
 }
 
