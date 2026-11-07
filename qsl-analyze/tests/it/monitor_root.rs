@@ -1006,7 +1006,12 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
         .push(field);
     let bytes = serde_json::to_vec(&document).unwrap();
     let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
-    let unit = unit_source(ROOT_SHAPES[0], "", true, "on origin");
+    let unit = unit_source(
+        "always holds(c.tier = M::Tier::Gold)",
+        "",
+        true,
+        "on origin",
+    );
     let source = SourceIdentity::new("agent-ix", "monitor-root");
     let name = LibraryName::new("fixture").unwrap();
     let root = emit_plan_root(
