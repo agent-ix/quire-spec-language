@@ -80,7 +80,9 @@ carrier (`Report::to_owner_bytes`, `Report::to_owner_bytes_bounded`,
 `Report::from_owner_bytes`, `ReportRefusal`, `Report::predecessor_owner_bytes`
 and `Report::validate_predecessor`). AC-17 stated that carrier's encode/decode
 round trip and byte determinism, AC-18 its strict-reader refusals, and AC-21 its
-flat retained predecessor bytes. They exist only for that carrier, which is
+flat retained predecessor bytes. The one AC-18 case that is not about bytes, a
+binding that differs from the selected subject or occurrence, is already the
+spine's: FR-522's `binding-mismatch` and FR-516-AC-32 and AC-33. They exist only for that carrier, which is
 deleted; the spine evidence result is a Rust value with no owner byte
 representation, so no successor criterion is needed.
 

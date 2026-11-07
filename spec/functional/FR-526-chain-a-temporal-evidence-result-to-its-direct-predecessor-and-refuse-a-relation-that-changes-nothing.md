@@ -80,7 +80,7 @@ the predecessor.
 `lineage: u64`: 0 for `Original`, the predecessor entry's lineage plus 1 otherwise.
 `relation` echoed with `prev`. `input_identity`. The updated `ledger`.
 
-`subject: EvidenceSubject`: the checked subject of the call, with the members
+`subject: ResultSubject`: the checked subject of the call, with the members
 `package_identity`, `package_version` (the checked package format version the
 `EvidencePackage` was emitted or read at), `clause` (the clause `CheckedNodeId`),
 `occurrence` (the selected `{ role, ordinal }`, FR-516 `occurrence`; for a node
@@ -158,6 +158,13 @@ no truth), not an error (FR-523).
   or at an observed position whose valuation of the atom is absent, SHALL have no
   `support` entry; the absent valuation is reported by the `Missing` non-value or
   the `Indeterminate` cause of FR-516, not as support.
+- The request SHALL have no `native_valuations` member: that byte member carried
+  the retired native route's duplicate-preserving relation and is removed with it,
+  so it is neither a request member nor a member of `input_identity`.
+- These items change the current evidence route: its result has no `subject`
+  member, its support keeps a pair at an observed position whose valuation is
+  absent and does not remove a repeated pair, and its request carries
+  `native_valuations`.
 
 ### Predecessor authority
 
@@ -179,8 +186,10 @@ no truth), not an error (FR-523).
 - When the counter refuses the charge, the evaluator SHALL return the
   `Incomplete` of FR-523 with `LimitReached { limit, value, setting }` naming
   `lineage`, `value` the ceiling as given and `setting` `temporal_evidence.lineage`.
-- That result SHALL carry the attempted `lineage` and the request's `relation`
-  with its `prev`.
+- That result SHALL carry the attempted `lineage` (the predecessor entry's lineage
+  plus 1) and the request's `relation` with its `prev`. When that sum does not fit
+  in `u64`, the result's `lineage` SHALL be 0, the value carried with no lineage,
+  and the `LimitReached` names `lineage` as above.
 - The stopped result's `ledger` SHALL equal the request's, with no entry for the
   stopped call.
 - The caller's `Meter` SHALL keep every charge earlier calls made: a lineage stop
@@ -215,13 +224,13 @@ no truth), not an error (FR-523).
 | FR-526-AC-18 | An empty trigger identity is refused at construction of `SemanticTriggerIdentity`. | Test (TC-1321) |
 | FR-526-AC-19 | A non-empty trigger identity is echoed byte for byte by every result of a three-correction chain. | Test (TC-1321) |
 | FR-526-AC-20 | For each of **R**'s three packages (FR-517), an `Original` call returns a result whose `subject` has `package_identity`, `package_version`, `clause`, `occurrence` and `source_map` equal to the values the test reads from the package and the selected occurrence (FR-515 `source_span`), and whose `correspondence` equals the request's member for member, `authority_revision` included; a call stopped `Incomplete` (FR-523-AC-5) carries the same `subject`. | Test (TC-1321) |
-| FR-526-AC-21 | Over the twin package of FR-516-AC-32 (one node, occurrences 7 and 3), two calls with equal evidence selecting occurrences 3 and 7 return results whose `subject` agrees in `package_identity`, `package_version` and `clause` and differs in `occurrence`. | Test (TC-1321) |
-| FR-526-AC-22 | Over **R**'s event-position clause `on origin eventually[0,1] (holds(a) and holds(b))` with `a` and `b` true at position 0 and false at position 1, `Complete { through: 1 }` and `Closed` scope, the result is `True` and `support` is exactly the two entries (position 0, atom of `a`) and (position 0, atom of `b`), each naming position 0's `observation` byte for byte; a reading that merges entries by position, or by observation, gives one entry and fails this criterion. | Test (TC-1321) |
+| FR-526-AC-21 | Over the twin package of FR-516-AC-32 (one node, occurrences 7 and 3), two calls with equal positions, valuations and correspondence, each with the `binding` of its own occurrence's clock row, selecting occurrences 3 and 7 return results whose `subject` agrees in `package_identity`, `package_version` and `clause` and differs in `occurrence`. | Test (TC-1321) |
+| FR-526-AC-22 | In a unit the test authors under the event-position profile (**R** holds no such clause), over the clause `on origin eventually[0,1] (holds(a) and holds(b))` with `a` and `b` true at position 0 and false at position 1, `Complete { through: 1 }` and `Closed` scope, the result is `True` and `support` is exactly the two entries (position 0, atom of `a`) and (position 0, atom of `b`), each naming position 0's `observation` byte for byte; a reading that merges entries by position, or by observation, gives one entry and fails this criterion. | Test (TC-1321) |
 | FR-526-AC-23 | Over AC-22's clause with `b`'s valuation at position 0 withdrawn, and over a fixed-sample clause whose decision support holds a pair at a silent sample (FR-516-AC-44), no `support` entry names a pair the request admitted no valuation for, and every entry of every result of TC-1321 names a request position and an atom with an admitted valuation there. | Test (TC-1321) |
 | FR-526-AC-24 | With `r1` from one request and `r1'` from a request that differs from it in one valuation so that their truths differ, a `Superseding(r1)` request carrying the ledger returned by `r1'`'s call returns `Err(CallFailure::Admission)` with cause `predecessor-not-latest`, and a `Superseding(r1')` request with changed inputs carrying that ledger is accepted. | Test (TC-1321) |
 | FR-526-AC-25 | Over the twins of AC-21, with `r3` the result for occurrence 3, a `Superseding(r3)` request selecting occurrence 7 with `r3`'s ledger and changed inputs returns `Err(CallFailure::Admission)` with cause `predecessor-unknown`, and `r3` and its ledger are unchanged. | Test (TC-1321) |
 | FR-526-AC-26 | A `Superseding(r1)` request carrying a clone of `r1`'s returned ledger, and one carrying that ledger moved out of `r1`, each return a result equal to the request carrying the ledger itself; a compile-fail test that sets an entry's `result_identity`, `input_identity`, correspondence or lineage outside the evaluator fails to compile. | Test (TC-1321) |
-| FR-526-AC-27 | A `Superseding(r1)` request with changed inputs completes with the `lineage` ceiling 1, and with the ceiling 0 returns an `Ok` `Incomplete` result with `LimitReached` naming `lineage`, `value` 0 and setting `temporal_evidence.lineage`, result `lineage` 1, relation `Superseding` naming `r1.result_identity`, `activation = Unavailable`, no truth, `usage.instances` 0 and `usage.positions` 0, and a `ledger` equal to the request's byte for byte. | Test (TC-1321) |
+| FR-526-AC-27 | A `Superseding(r1)` request with changed inputs completes with the `lineage` ceiling 1, and with the ceiling 0 returns an `Ok` `Incomplete` result with `LimitReached` naming `lineage`, `value` 0 and setting `temporal_evidence.lineage`, result `lineage` 1, relation `Superseding` naming `r1.result_identity`, `activation = Unavailable`, no truth, `usage.instances` 0 and `usage.positions` 0, and a `ledger` equal (`==`) to the request's. | Test (TC-1321) |
 | FR-526-AC-28 | A `Meter` charged `U` work units by one call and then passed to AC-27's stopped call reports, after the stop, `U` plus the units of the stopped call's charge log, never less than `U`; a third call on the same meter continues from that total. | Test (TC-1321) |
 
 ## Dependencies
