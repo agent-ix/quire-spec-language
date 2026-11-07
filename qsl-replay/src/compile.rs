@@ -87,6 +87,38 @@ pub fn compile_package<'a>(
     )
 }
 
+/// Compile through the public facade with the exact owner-admitted `div`/`rem` law.
+///
+/// The selection is admitted by [`crate::admit_integer_division`], retained by
+/// checking and emitted on this unit's division applications. It does not
+/// substitute a law for separately owned imported libraries, and never changes
+/// `mod`'s Euclidean semantics. Omitting a demanded law through [`compile_package`]
+/// retains the checker's typed missing-selection refusal.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "compile inputs plus the admitted division law"
+)]
+pub fn compile_package_with_integer_division<'a>(
+    unit: CompileUnit<'_>,
+    packages: impl IntoIterator<Item = &'a [u8]>,
+    dependencies: &DependencyInput,
+    integer_division: &quire_checked::integer_division::AdmittedIntegerDivision,
+    limits: StageLimits,
+    replay_limits: ReplayLimits,
+) -> Result<CompiledPackage, ReplayRefusal> {
+    let compiled = recompile_with_integer_division(
+        unit,
+        packages,
+        dependencies,
+        &spine::StateClauseExecutionPoints::new(),
+        &[],
+        Some(*integer_division),
+        limits,
+        replay_limits,
+    )?;
+    Ok(CompiledPackage::new(compiled.emitted))
+}
+
 /// Compile with explicit per-declaration temporal clock selections.
 #[allow(
     clippy::too_many_arguments,
@@ -238,6 +270,43 @@ fn recompile_unit_with_temporal_selections_and_execution_points<'a>(
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
+    recompile_with_integer_division(
+        CompileUnit {
+            source,
+            package_name,
+            path,
+            bytes,
+        },
+        packages,
+        dependencies,
+        execution_points,
+        temporal_selections,
+        None,
+        limits,
+        replay_limits,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "compile inputs and owner-admitted selections"
+)]
+pub(crate) fn recompile_with_integer_division<'a>(
+    unit: CompileUnit<'_>,
+    packages: impl IntoIterator<Item = &'a [u8]>,
+    dependencies: &DependencyInput,
+    execution_points: &spine::StateClauseExecutionPoints,
+    temporal_selections: &[qsl_package::TemporalClockSelection],
+    integer_division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
+    limits: StageLimits,
+    replay_limits: ReplayLimits,
+) -> Result<Recompiled, ReplayRefusal> {
+    let CompileUnit {
+        source,
+        package_name,
+        path,
+        bytes,
+    } = unit;
     let limits = request_limits(
         &limits,
         crate::limits::AccountingLimits::default().0,
@@ -259,6 +328,7 @@ fn recompile_unit_with_temporal_selections_and_execution_points<'a>(
         dependencies,
         execution_points,
         temporal_selections,
+        integer_division,
         limits.spine,
     )
 }

@@ -90,12 +90,12 @@ pub use admitted::{
     AdmittedUnionMember, AdmittedUnit,
 };
 pub use application::{
-    acquire_checked_closure, ApplicationBeginRefusal, ApplicationEnvironment, ApplicationRegistry,
-    CallableLookupRefusal, CallableSelection, CheckedApplicationProgress,
-    CheckedApplicationSession, CheckedClosureCompilation, CheckedClosureHandle,
-    ClosureOwnerRefusal, NestedCallOccurrence, NestedCallSite, NestedCallSiteRefusal,
-    NominalDeclaration, NominalDeclarationForm, NominalDeclarationMember,
-    NominalDeclarationRefusal, SelectionRefusal,
+    acquire_checked_closure, acquire_checked_closure_with_integer_division,
+    ApplicationBeginRefusal, ApplicationEnvironment, ApplicationRegistry, CallableLookupRefusal,
+    CallableSelection, CheckedApplicationProgress, CheckedApplicationSession,
+    CheckedClosureCompilation, CheckedClosureHandle, ClosureOwnerRefusal, NestedCallOccurrence,
+    NestedCallSite, NestedCallSiteRefusal, NominalDeclaration, NominalDeclarationForm,
+    NominalDeclarationMember, NominalDeclarationRefusal, SelectionRefusal,
 };
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
 pub use call_replay_context::{run_with_replay_context, CallReplayContext, RunWithReplayContext};
@@ -151,8 +151,13 @@ pub use clause_evaluation::{
     evaluate_clause, ClauseEvaluation, ClauseEvaluationRequest, ClauseIncomplete,
     ClauseObservation, ClauseRefusal,
 };
+/// The semantic owner's division-definition admission and closed definition references.
+pub use qsl_semantics::value::{admit_integer_division, DefinitionReference, DefinitionRole};
+/// The checked owner's opaque admitted integer-division selection.
+pub use quire_checked::integer_division::AdmittedIntegerDivision;
+
 pub use compile::{
-    compile_package, compile_package_with_execution_points,
+    compile_package, compile_package_with_execution_points, compile_package_with_integer_division,
     compile_package_with_temporal_selections,
     compile_package_with_temporal_selections_and_execution_points, CompileUnit, CompiledPackage,
 };

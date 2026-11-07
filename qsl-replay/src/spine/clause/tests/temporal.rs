@@ -1270,6 +1270,7 @@ fn observed_replay_request(
         &dependencies,
         &execution_points,
         &temporal_selections,
+        None,
         crate::spine::SpineLimits::default(),
     )
     .expect("the temporal fixture compiles with its explicit clock selection");
