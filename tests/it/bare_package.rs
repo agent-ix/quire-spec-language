@@ -1494,6 +1494,9 @@ fn supply_on<'p>(
             qsl_package::NativeJoinFailure::Equality(error) => {
                 panic!("identity-only fixture has no equality read: {error:?}")
             }
+            qsl_package::NativeJoinFailure::Rows(error) => {
+                panic!("borrowed supply joins already materialized rows: {error:?}")
+            }
             qsl_package::NativeJoinFailure::Limit(_) => unreachable!("native unwraps the envelope"),
         })
 }
@@ -1755,8 +1758,8 @@ fn the_view_the_constructors_and_the_writer_refuse_a_budget_one_short() {
 }
 
 /// FR-531-AC-24 (writer half, TC-1331): a handoff request whose native join
-/// limits cannot pay for the identity join is refused with the typed denial
-/// and writes no directory; the fixture limits write it.
+/// limits cannot pay for the complete identity materialization pass is refused
+/// with the typed denial and writes no directory; exact limits write it.
 #[trace("TC-1331", "FR-531-AC-24")]
 #[test]
 fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join() {
@@ -1765,6 +1768,17 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
     let scratch = tempfile::tempdir().expect("tempdir");
     let built = recipe("event_position");
     let read = built.read(&built.emission);
+    // Copied package names are part of the real allowance. Calibrate the
+    // producer and public writer over the same complete named emission.
+    let package_name = built.emission.package().name().to_owned();
+    let mut same_request = request("event_position", Corpus::None);
+    same_request.emit.package_name = package_name.clone();
+    assert_eq!(
+        quire_spec_language::emit_checked_v2::emit(&same_request.emit)
+            .expect("actual public writer emission"),
+        built.emission.package().bytes(),
+        "the budget oracle and writer must use exactly the same producer package",
+    );
     let mut measure = quire_contract_model::NativeJoinBudget::new(1 << 30, 1 << 30);
     built
         .emission
@@ -1783,6 +1797,7 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
         ),
     ] {
         let mut asked = request("event_position", Corpus::None);
+        asked.emit.package_name = package_name.clone();
         asked.native_join = limits;
         let target = scratch.path().join(format!("{code:?}"));
         match write(&asked, &target) {
@@ -1791,8 +1806,26 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
                 let Error::NativeJoinExhausted(denial) = error else {
                     unreachable!()
                 };
-                assert!(
-                    matches!(&denial.native, qsl_package::NativeJoinFailure::Projection(native) if native.code == code)
+                let qsl_package::NativeJoinFailure::Rows(native) = &denial.native else {
+                    panic!(
+                        "the final producer copy retains its compact cause: {:?}",
+                        denial.native
+                    )
+                };
+                assert_eq!(
+                    native.code(),
+                    if code == Code::ExhaustedWork {
+                        qsl_package::NativeRowErrorCode::WorkLimit
+                    } else {
+                        qsl_package::NativeRowErrorCode::StorageLimit
+                    }
+                );
+                assert_eq!(
+                    native.locus(),
+                    Some(quire_contract_model::NativeJoinLocus {
+                        source: quire_contract_model::NativeJoinLocusSource::Package,
+                        form: "identity_package_output",
+                    })
                 );
                 assert_eq!(
                     denial.limit.setting().name(),
@@ -1808,6 +1841,7 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
                     limits.storage
                 };
                 assert_eq!(denial.limit.configured_bound(), bound);
+                assert_eq!(native.configured_bound(), Some(bound));
                 assert!(denial.limit.actual() > u128::from(bound));
                 assert!(denial.to_string().contains(denial.limit.setting().name()));
             }
@@ -1817,6 +1851,7 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
     }
     let target = scratch.path().join("written");
     let mut exact = request("event_position", Corpus::None);
+    exact.emit.package_name = package_name;
     exact.native_join = qsl_package::NativeJoinLimits::new(need.work, need.storage);
     write(&exact, &target).expect("exact work and storage write the directory");
     assert!(target.join("identities.json").exists());

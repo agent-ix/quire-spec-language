@@ -357,6 +357,10 @@ fn identity_file(
         .emission()
         .identity_rows(package, budget)
         .map_err(|refused| match refused {
+            qsl_package::IdentityFileRefusal::Rows(rows) => match limits.refusal(rows, budget) {
+                Some(denial) => Error::NativeJoinExhausted(Box::new(denial)),
+                None => unnameable("adapter budget denial has no unpaid charge".to_owned()),
+            },
             qsl_package::IdentityFileRefusal::Native(native)
                 if qsl_semantics::model::intake::is_native_budget_denial(&native) =>
             {

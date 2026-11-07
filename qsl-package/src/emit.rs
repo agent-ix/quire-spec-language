@@ -665,6 +665,8 @@ pub struct Emission {
     /// acquisition.
     pub(crate) selected_exact_field_rows: Vec<quire_contract_model::SelectedExactFieldRow>,
     /// Exact QSL identity witnesses for emitted equality occurrences.
+    // Final-emission producer membership, computed before budgeted materialization.
+    identity_row_selection: identity_rows::IdentityRowSelection,
     pub(crate) equality_producer_identity_rows: Vec<EqualityProducerEmissionRow>,
     /// Per-fact equality witnesses joined to final structural node ids.
     pub(crate) equality_fact_witness_rows: Vec<EqualityFactWitnessRow>,
@@ -897,6 +899,7 @@ impl DebugWith for Emission {
             selected_source_collection_rows,
             selected_exact_declaration_rows,
             selected_exact_field_rows,
+            identity_row_selection: _,
             equality_producer_identity_rows,
             equality_fact_witness_rows,
             wire_nodes,
@@ -1305,50 +1308,16 @@ impl Emission {
     /// # Errors
     ///
     /// The native typed stage-row refusal when declaration or field claims do
-    /// not join the admitted package.
+    /// not join the admitted package, or an inline
+    /// [`crate::IdentityFileRefusal::Rows`] denial before an unpaid producer copy.
+    /// The same caller budget pays the producer inputs, one native join and
+    /// the returned owned rows without restoring prior consumption.
     pub fn identity_rows(
         &self,
         package: &CheckedPackageV2,
         budget: &mut quire_contract_model::NativeJoinBudget,
     ) -> Result<crate::ReadIdentityRows, crate::IdentityFileRefusal> {
-        let joined = qsl_semantics::model::intake::selected_exact_identities_from_rows(
-            package,
-            &self.selected_exact_declaration_rows,
-            &self.selected_exact_field_rows,
-            budget,
-        )
-        .map_err(|error| crate::IdentityFileRefusal::Native(Box::new(error)))?;
-        let records = self
-            .selected_source_record_rows
-            .iter()
-            .map(|row| quire_contract_model::SelectedSourceRecordRow {
-                structural_node: row.structural_node.clone(),
-                source_authority: row.source_authority.clone(),
-                source_identity: row.source_identity.clone(),
-                qualified_declaration: row.qualified_declaration.clone(),
-                record_key: row.record_key.clone(),
-                members: row
-                    .members
-                    .iter()
-                    .map(
-                        |member| quire_contract_model::SelectedSourceRecordMemberRow {
-                            original_member_identity: member.original_member_identity.clone(),
-                            admitted_name: member.admitted_name.clone(),
-                            presence: member.presence,
-                            type_node: member.type_node.clone(),
-                            value_type: member.value_type.clone(),
-                        },
-                    )
-                    .collect(),
-            })
-            .collect();
-        Ok(crate::ReadIdentityRows::of_rows(
-            package,
-            joined.declaration_rows().cloned().collect(),
-            joined.field_rows().to_vec(),
-            records,
-            self.selected_source_union_rows.clone(),
-        ))
+        self.materialize_identity_rows(package, budget)
     }
 
     /// QSL-owned identity rows keyed by equality application and occurrence.
@@ -5411,12 +5380,14 @@ pub fn emit_timed_models(
         selected_source_collection_rows: Vec::new(),
         selected_exact_declaration_rows: Vec::new(),
         selected_exact_field_rows: Vec::new(),
+        identity_row_selection: identity_rows::IdentityRowSelection::default(),
         equality_producer_identity_rows: Vec::new(),
         equality_fact_witness_rows: Vec::new(),
         wire_nodes: semantic_graph.nodes,
         temporal_binding_rows: TemporalBindingRows::default(),
         temporal_rows: TemporalRows::default(),
-    })
+    }
+    .with_identity_row_selection())
 }
 
 /// [`emit_checked`] under the caller's [`Cancel`] handle, polled once at
@@ -6426,6 +6397,7 @@ fn emit_package_inner(
         selected_source_collection_rows,
         selected_exact_declaration_rows: graph.selected_exact_declaration_rows().to_vec(),
         selected_exact_field_rows: graph.selected_exact_field_rows().to_vec(),
+        identity_row_selection: identity_rows::IdentityRowSelection::default(),
         equality_producer_identity_rows,
         equality_fact_witness_rows,
         wire_nodes: semantic_graph.nodes,
@@ -6435,7 +6407,8 @@ fn emit_package_inner(
             profile_selections: lock.profile_selections,
             bindings: temporal_bindings,
         },
-    })
+    }
+    .with_identity_row_selection())
 }
 
 /// FR-092 "Source enum identity rows": one declaration row per emitted
@@ -7747,6 +7720,7 @@ pub(crate) mod equality_reader;
 /// IR's `requires-bound` at the pinned IR revision.
 #[cfg(test)]
 mod extent_agreement;
+mod identity_rows;
 mod monitor_plan;
 pub(crate) mod protocol_locations;
 pub use monitor_plan::{declaration_less_function_id, emit_monitor_plan_over, MonitorPlanWire};
