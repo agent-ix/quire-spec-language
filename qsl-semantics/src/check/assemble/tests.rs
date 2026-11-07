@@ -3541,10 +3541,10 @@ fn quantity_literal_refusals_carry_their_codes_and_locations() {
             "ill_typed/type-mismatch",
         ),
         (
-            "function m using v(d: Quantity<ms>): Boolean pure { d = -3 ms }",
+            "function m using v(b: Boolean): Boolean pure { -b }",
             default,
-            "-3 ms",
-            "ill_typed/operator-ineligible",
+            "b",
+            "ill_typed/type-mismatch",
         ),
         (
             "function g using v(): Boolean pure { f(3 ghost) }",
