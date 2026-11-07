@@ -687,7 +687,18 @@ impl WitnessValue {
     /// the encoding is canonicalised here rather than compared.
     pub(crate) fn from_wire_json(value: &serde_json::Value) -> Result<Self, EntryFault> {
         let written = serde_json::to_vec(value).map_err(|_| EntryFault::Json)?;
-        let document = read(&written, u64::MAX).map_err(|_| EntryFault::Json)?;
+        Self::from_wire_bytes(&written)
+    }
+
+    /// Read the existing typed witness JSON form directly from bytes, using
+    /// the owner reader's iterative traversal at arbitrary admitted depth.
+    ///
+    /// # Errors
+    ///
+    /// The original witness entry fault for malformed JSON, an unknown value
+    /// form or a collection that violates its canonical ordering.
+    pub fn from_wire_bytes(written: &[u8]) -> Result<Self, EntryFault> {
+        let document = read(written, u64::MAX).map_err(|_| EntryFault::Json)?;
         let canonical =
             to_vec(&document.root(), Limits::new(u64::MAX)).map_err(|_| EntryFault::Json)?;
         let value = build(document.root())?;

@@ -227,12 +227,13 @@ equal inputs.
 
 | Member | Content |
 | --- | --- |
-| `format` | the string `quire.checked-handoff.identities/2` |
+| `format` | the string `quire.checked-handoff.identities/3` |
 | `declarations` | the unit's `SelectedExactDeclarationRow` values in the order the emitter holds them; each is an object `{ "structural_node", "selected_document", "form", "original_identity", "exact_identity" }` with `structural_node` the wire node id string, `form` one of `record_value_type`, `object_type`, `union`, `declared_unit`, and `exact_identity` a tagged object `{ "kind": "record" \| "object" \| "union" \| "declared_unit", "value": <value> }` whose `value` is a node reference for `record` and `union`, an `EffectiveId` for `object` and a `UnitId` for `declared_unit`, each as the value encodings below state |
 | `fields` | the unit's `SelectedExactFieldRow` values in emitter order; each is `{ "record_node", "selected_document", "record_original_identity", "field_original_identity", "member_id" }` |
 | `source_records` | every final emission's source-owned record row, in final row order: `{ "structural_node", "source_authority", "source_identity", "qualified_declaration", "record_key", "members" }`; each ordered member is `{ "original_member_identity", "admitted_name", "presence", "type_node", "value_type" }` |
+| `source_unions` | every final emission's `SelectedSourceUnionRow`, in producer order: `{ "structural_node", "source_authority", "source_identity", "qualified_declaration", "type_handle", "settled_key", "members" }`; each ordered member is `{ "declaration", "identifier", "payload_nodes", "payload" }` |
 
-All four members are required. The reader SHALL reject `/1`, an absent member,
+All five members are required. The reader SHALL reject `/1`, `/2`, an absent member,
 an unknown or repeated member and a malformed row; it SHALL NOT supply an empty
 default, read a legacy variant or silently omit a row that cannot be represented.
 The writer SHALL emit an empty `source_records` array only when the admitted
@@ -243,6 +244,16 @@ typed `UnavailableIdentityWitness`. The public bare view maps that native failur
 to its existing `MissingTypeRepresentation` at the requested admitted node,
 without a structural-key success fallback; this carrier adds no public native
 diagnostic-payload variant.
+
+The writer SHALL acquire `source_unions` from the same final `Emission`, retaining
+the original `type_handle`, `settled_key`, each sealed member's `declaration` and
+`identifier`, and the ordered final `payload_nodes` and original Exact `payload`
+types. The three key fields use the original opaque key encoding below; payload
+types use its original-value grammar and depth limits. The reader SHALL join
+these rows through native `with_source_union_rows`, rejecting foreign, stale or
+conflicting rows. `source_unions` is required even when empty; an empty list
+does not witness an authored union. No display name or graph-derived key
+substitutes for an absent producer row.
 Selected model population catalogs are read from the retained native
 `CheckedPackageV2` using the Contract IR capability delivered by IR-1358; the
 identity carrier does not repeat that catalog. QSL-1762's selected object
@@ -759,7 +770,7 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-5 | Over a `BarePackage` with no supply, a protocol-slot call refuses `MissingIdentityWitness`; with rows of another package, `ForeignIdentityWitness`; with rows of the package naming no admitted identity, `UnknownIdentityWitness`; rows of another package are `ForeignIdentityWitness` also when they name no admitted identity. Each is `CallFailure::Admission` with `unknown_required_feature`/`unsupported-feature`, category unsupported, exit 21, and the meter untouched. A temporal evidence call over the same `BarePackage` with no supply returns its result; and `read_checked_package` over bytes whose lock selects a dependency the evidence does not supply refuses `MissingImport`, so no `BarePackage` exists for it and no dependency refusal is defined. | Test (TC-1331) |
 | FR-531-AC-6 | Over a package whose `temporal_bindings` rows are absent, the call returns `activation = Unavailable` with the `Missing` non-value for the clock row; over a lock with no `profile_selections` row for the clause, `clause-unreadable` with reason `profile-selection`; over a lock whose row names a definition no profile of the evaluator, `clause-unreadable` with reason `profile-unknown`; over a row naming an infinite-trace profile, the `not-finite-window-profile` temporal refusal. Each has the charges FR-516 gives its counterpart over a source. | Test (TC-1331) |
 | FR-531-AC-7 | No result of the bare route holds, in its canonical bytes or its fields, a clause name, a source label or a source span: over **R**, the encoded `EvidenceResult` and `ProtocolSlotEvaluation` values do not contain the unit's `source:` labels or a byte region of the source map, and a clause name appears only as the `temporal_clause_names` row of its occurrence gives it, identically on every route. Identity is spelled as the "What the bytes do not carry" list states, and the progress binding of a result holds `package.name()`. | Test (TC-1331) |
-| FR-531-AC-8 | The handoff directory of **R** holds required `identities.json` with `format` `quire.checked-handoff.identities/2`; `ReadIdentityRows::read` over it and the package gives a slot call that evaluates; the file equals, byte for byte, the encoding above of the in-process unit's rows, and two writes of equal requests give equal files; omitting the file from a `BareSupply` makes the slot call refuse `MissingIdentityWitness` while the temporal call is unaffected. | Test (TC-1331) |
+| FR-531-AC-8 | The handoff directory of **R** holds required `identities.json` with `format` `quire.checked-handoff.identities/3`; `ReadIdentityRows::read` over it and the package gives a slot call that evaluates; the file equals, byte for byte, the encoding above of the in-process unit's rows, and two writes of equal requests give equal files; omitting the file from a `BareSupply` makes the slot call refuse `MissingIdentityWitness` while the temporal call is unaffected. | Test (TC-1331) |
 | FR-531-AC-12 | `ReadIdentityRows::read` over a file that is not JSON, one with an unknown or repeated member, one with another `format`, one with a row whose `structural_node` the package does not hold and one whose `form` does not match its identity returns `Malformed`, `Malformed`, `Format`, `Unjoined` and `Unjoined` respectively, naming the member, the format string or the first row, and returns no rows. | Test (TC-1331) |
 | FR-531-AC-13 | The identity file of **R** encodes every identity as the "Value encodings" state: a node reference is the wire node id string of the package, an `EffectiveId` has the `chain` list root first, a `MemberId` has `owner` and `member`, and a declared `UnitId` has `kind` `declared` and a `node` reference; `read` returns rows equal to the writer's, a unit with `kind` other than `declared` returns `Malformed`, a declared unit whose node reference the package does not hold returns `Unjoined`, and a `declared_unit` row whose `exact_identity` has another `kind` returns `Unjoined`. A forged row that passes the joins is accepted by `read` and the slot call over it evaluates against the admitted nodes, so the test records that `read` makes no claim of authority. | Test (TC-1331) |
 | FR-531-AC-9 | For each public method of `EvidencePackage` and each method of the `CheckedPackageEvaluation` trait, enumerated by a test that reads those two items' declarations in the crate source with `syn` and compares the names to the first column of the inventory table, the table has exactly one row: available from the bare package, or listed as not carried with a reason; a method added to either type without a row fails the test. | Test (TC-1331) |
@@ -777,6 +788,9 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-23 | Two joins on one budget are charged cumulatively: after a successful `with_supply` the budget's consumed counters equal the join's measured work and storage, a second `with_supply` on the same budget is refused at the first charge that crosses the remaining allowance, and a selection, a world and a projection call made on the first package consume no further native work or storage. | Test (TC-1331) |
 | FR-531-AC-24 | `V2ReadLimits` has a required `storage` member and no `Default`; a read's evaluation view over limits whose `storage` is exactly the measured join storage succeeds and over one unit less returns `ViewFailure::Exhausted` with `ExhaustedStorage`, whose refusal names `i2.native_join_storage`; `EvidencePackage::from_read` and `from_emission` over a budget one unit short of the source join return `PackageMismatch::Exhausted`; the handoff writer over `native_join` one unit short returns `Error::NativeJoinExhausted` and writes no directory. | Test (TC-1331) |
 | FR-531-AC-25 | An inspection of the public signatures of `selected_exact_identities_from_rows`, `SelectedModels::exact_identities`, `CheckedGraph::selected_exact_identities`, `ReadIdentityRows::selected`, `BarePackage::with_supply` and the evidence constructors finds each takes a `NativeJoinBudget` by mutable reference, finds no `NativeJoinBudget::new` and no `u64::MAX` allowance in a library path below an entry, and finds that `BarePackage` implements neither `Copy` nor `Clone`. | Inspection (TC-1331) |
+
+| FR-531-AC-26 | An authentic final emission's source-union rows round-trip original type handles, settled keys, sealed member identities, final structural and payload node IDs and ordered Exact payload types; the read rows equal the emitter rows, native `source_union_rows` retains them and rewriting is byte-identical. | Test (TC-1331) |
+| FR-531-AC-27 | `/2`, absent `source_unions`, malformed member identity, stale member name, foreign source owner and conflicting union rows return typed format, malformed or native-join refusals without a partial read. An empty union list never fabricates a producer witness from the graph. | Test (TC-1331) |
 
 ## Dependencies
 

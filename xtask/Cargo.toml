@@ -20,6 +20,9 @@ logos = "0.16.1"
 qsl-route = { path = "../qsl-route" }
 qsl-replay = { path = "../qsl-replay" }
 qsl-semantics = { path = "../qsl-semantics" }
+quire-exact = { workspace = true }
+quire-canonical = { workspace = true, features = ["serde_json"] }
+quire-semantic-value = { git = "https://github.com/agent-ix/quire-semantic-value", branch = "main" }
 # FR-064: `xtask string-edge` calls the one standalone scanner with QSL's roots.
 qsl-string-edge = { path = "../qsl-string-edge" }
 serde = { version = "1.0.228", features = ["derive"] }

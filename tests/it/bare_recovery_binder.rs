@@ -46,16 +46,24 @@ const FULL_RECOVER: &str = "sum<M::Total>(receipt in recoveredFull.receipts: rec
 
 /// R with the `Full` recover condition replaced by `condition`.
 fn recipe_with(condition: Option<&str>) -> Recipe {
+    recipe_with_declarations(condition, "")
+}
+
+fn recipe_with_declarations(condition: Option<&str>, declarations: &str) -> Recipe {
     let holder = tempfile::tempdir().expect("directory");
     let mut request = integer_request(holder.path());
-    if let Some(condition) = condition {
+    if condition.is_some() || !declarations.is_empty() {
         let text = std::fs::read_to_string(&request.emit.source).expect("R's unit");
         assert!(
             text.contains(FULL_RECOVER),
             "the recipe text is as expected"
         );
         let unit = holder.path().join("unit.native");
-        let text = text.replace(FULL_RECOVER, condition);
+        let text = text.replace(FULL_RECOVER, condition.unwrap_or(FULL_RECOVER));
+        let text = text.replace(
+            "model M = \"agent-ix/checked-handoff\";",
+            &format!("model M = \"agent-ix/checked-handoff\";\n{declarations}"),
+        );
         std::fs::write(&unit, text).expect("variant");
         request.emit.source = unit;
     }
@@ -591,8 +599,72 @@ fn map_binder_is_no_source() {
 /// handoff admits, the arm binder is no caller source, and the source and
 /// bytes routes return the authored Boolean values and equal charge logs.
 #[trace("FR-390-AC-68", "TC-1071", "TC-1333")]
+#[trace("TC-1333", "FR-533-AC-20")]
 #[test]
 fn a_case_arm_binder_in_a_recover_condition_is_admitted_and_evaluates() {
+    assert_eq!(
+        assert_case_arm_union("", None),
+        assert_case_arm_union("union Unrelated { Other, Payload(Boolean) }", None),
+        "an unselected union does not change the slot's ordered charges"
+    );
+}
+
+#[trace("TC-1333", "FR-533-AC-20")]
+#[test]
+fn an_unrepresented_union_payload_does_not_poison_an_unrelated_slot() {
+    assert_eq!(
+        assert_case_arm_union("", None),
+        assert_case_arm_union(
+            "tuple Pair(Boolean, Boolean);\nunion Unrelated { Other, Payload(Pair) }",
+            Some("Unrelated"),
+        ),
+        "an unselected union with an unrepresented payload leaves values and ordered charges unchanged"
+    );
+}
+
+#[trace("TC-1333", "FR-533-AC-20")]
+#[test]
+fn a_selected_union_with_an_unrepresented_payload_refuses_before_charging() {
+    let recipe = recipe_with_declarations(
+        Some("case Unrelated::Other { Other: true; Payload(p): true; }"),
+        "tuple Pair(Boolean, Boolean);\nunion Unrelated { Other, Payload(Pair) }",
+    );
+    let bare = recipe.bare();
+    let slot = ProtocolSlot {
+        node: recipe.compensation("Full"),
+        member: "recovery.predicate".to_owned(),
+        index: None,
+    };
+    let mut meter = Meter::new(UNLIMITED);
+    let failure = bare
+        .evaluate_protocol_slot(
+            &slot,
+            &ProtocolSupply {
+                binders: Vec::new(),
+                observation: None,
+            },
+            &mut meter,
+        )
+        .expect_err(
+            "the selected union requires its payload's representation even for a nullary variant",
+        );
+    let quire_eval::CallFailure::Admission(failure) = failure else {
+        panic!("the missing projection refuses during admission")
+    };
+    let quire_eval::CallAdmissionFailure::Refused(record) = *failure else {
+        panic!("the missing projection produces a typed refusal")
+    };
+    assert_eq!(
+        record.record.fields.get("reason").map(String::as_str),
+        Some("missing-type-representation")
+    );
+    assert!(meter.admitted_charges().is_empty());
+}
+
+fn assert_case_arm_union(
+    unrelated: &str,
+    omitted_union: Option<&str>,
+) -> Vec<Vec<quire_exact::AdmittedCharge>> {
     use qsl_foundation::SourceIdentity;
     use qsl_replay::spine::{self, DependencyInput, ParseRequest, SpineLimits, SuppliedLibrary};
 
@@ -601,12 +673,11 @@ fn a_case_arm_binder_in_a_recover_condition_is_admitted_and_evaluates() {
     let text = std::fs::read_to_string(&request.emit.source).expect("R's unit");
     let unit = holder.path().join("unit.native");
     let condition = "let total = (case Shape::Circle(sum<M::Total>(receipt in recoveredFull.receipts: receipt)) { Empty: targetFull; Circle(r): r; }) in total <= targetFull and total >= targetFull and not activatedFull";
+    let declarations = format!("model M = \"agent-ix/checked-handoff\";\nunion Shape {{ Empty, Circle(M::Total) }}\n{unrelated}");
     std::fs::write(
         &unit,
-        text.replace(FULL_RECOVER, condition).replace(
-            "model M = \"agent-ix/checked-handoff\";",
-            "model M = \"agent-ix/checked-handoff\";\nunion Shape { Empty, Circle(M::Total) }",
-        ),
+        text.replace(FULL_RECOVER, condition)
+            .replace("model M = \"agent-ix/checked-handoff\";", &declarations),
     )
     .expect("variant");
     request.emit.source = unit;
@@ -694,11 +765,61 @@ fn a_case_arm_binder_in_a_recover_condition_is_admitted_and_evaluates() {
         "the arm binder is no source"
     );
     let bare = recipe.bare();
+    for declaration in source.graph().scope().types().composites() {
+        let quire_semantic_value::declaration::CompositeShape::Union(members) = declaration.shape()
+        else {
+            continue;
+        };
+        let row = recipe.identities.source_unions().iter()
+            .find(|row| row.type_handle == declaration.key())
+            .expect("every authored union, including an unrelated unsupported union, has its genuine carrier row");
+        assert_eq!(row.members.len(), members.len());
+        for (carried, declared) in row.members.iter().zip(members) {
+            assert_eq!(Some(&carried.member), declared.member());
+            assert_eq!(carried.payload.as_slice(), declared.positions());
+        }
+    }
+    let world = bare.world().expect("the admitted source unions project");
+    for declaration in source.graph().scope().types().composites() {
+        if matches!(
+            declaration.shape(),
+            quire_semantic_value::declaration::CompositeShape::Union(_)
+        ) {
+            if Some(declaration.name()) == omitted_union {
+                assert!(
+                    world.types().composite(declaration.key()).is_none(),
+                    "the unsupported union is absent from the closed environment"
+                );
+                continue;
+            }
+            assert_eq!(
+                world.types().composite(declaration.key().clone()),
+                Some(declaration),
+                "the original union handle, sealed member identities and payload order survive the bytes route"
+            );
+        }
+    }
     let bare_slot = ProtocolSlot {
         node: recipe.compensation("Full"),
         member: "recovery.predicate".to_owned(),
         index: None,
     };
+    let missing_union_rows = qsl_package::ReadIdentityRows::of_rows(
+        &recipe.package,
+        recipe.identities.declarations().to_vec(),
+        recipe.identities.fields().to_vec(),
+        recipe.identities.source_records().to_vec(),
+        Vec::new(),
+    );
+    let missing_union = BarePackage::new(&recipe.package)
+        .with_supply(
+            BareSupply {
+                identities: &missing_union_rows,
+                equality: Some(&recipe.equality),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("omitting union rows is a missing projection, not a malformed package");
     let selected = bare
         .select_protocol_slot(&ProtocolSlotDescriptor::new(
             bare_slot.node.clone(),
@@ -720,12 +841,14 @@ fn a_case_arm_binder_in_a_recover_condition_is_admitted_and_evaluates() {
         bare_names, source_route_names,
         "both routes list the same sources"
     );
+    let mut charges = Vec::new();
     for (receipts, target, activated, expected) in [
         (&[2, 3][..], 5, false, true),
         (&[2, 3][..], 4, false, false),
         (&[2, 3][..], 6, false, false),
         (&[2, 3][..], 5, true, false),
         (&[][..], 0, false, true),
+        (&[1, 5][..], 5, false, false),
     ] {
         let values = [
             ("recoveredFull", recipe.recovery(&bare, receipts)),
@@ -752,6 +875,30 @@ fn a_case_arm_binder_in_a_recover_condition_is_admitted_and_evaluates() {
         let source_result = source
             .evaluate_protocol_slot(&source_slot, &supply, &mut source_meter)
             .expect("the source evaluates");
+        let bare_supply = ProtocolSupply {
+            binders: values
+                .iter()
+                .map(|(name, value)| {
+                    let binder = selected
+                        .sources()
+                        .iter()
+                        .find(|source| source.name() == *name)
+                        .expect("a caller source on the bare route")
+                        .binder()
+                        .clone();
+                    (binder, SuppliedValue::Value(value.clone()).into())
+                })
+                .collect(),
+            observation: None,
+        };
+        let mut bare_meter = Meter::new(UNLIMITED);
+        let bare_result = bare
+            .evaluate_protocol_slot(&bare_slot, &bare_supply, &mut bare_meter)
+            .expect("the bare route constructs and matches the source union");
+        let qsl_eval::value::ProtocolSlotEvaluation::Evaluated(bare_evaluation, _) = bare_result
+        else {
+            panic!("the bare route returns an evaluation")
+        };
         let qsl_eval::value::ProtocolSlotEvaluation::Evaluated(source_evaluation, _) =
             source_result
         else {
@@ -762,7 +909,29 @@ fn a_case_arm_binder_in_a_recover_condition_is_admitted_and_evaluates() {
             Some(expected),
             "receipts={receipts:?}, target={target}, activated={activated}"
         );
+        assert_eq!(completed_boolean(&bare_evaluation.outcome), Some(expected));
+        assert_eq!(
+            bare_meter.admitted_charges(),
+            source_meter.admitted_charges()
+        );
+        charges.push(bare_meter.admitted_charges().to_vec());
+        let mut missing_meter = Meter::new(UNLIMITED);
+        let failure = missing_union
+            .evaluate_protocol_slot(&bare_slot, &bare_supply, &mut missing_meter)
+            .expect_err("a union without its original declaration projection refuses");
+        let quire_eval::CallFailure::Admission(failure) = failure else {
+            panic!("the missing projection refuses during admission")
+        };
+        let quire_eval::CallAdmissionFailure::Refused(record) = *failure else {
+            panic!("the missing projection produces a typed refusal")
+        };
+        assert_eq!(
+            record.record.fields.get("reason").map(String::as_str),
+            Some("missing-type-representation")
+        );
+        assert!(missing_meter.admitted_charges().is_empty());
     }
+    charges
 }
 
 /// A binder the body never reads is no source and the predicate evaluates

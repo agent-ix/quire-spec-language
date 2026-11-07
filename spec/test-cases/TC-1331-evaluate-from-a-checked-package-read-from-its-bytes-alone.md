@@ -12,7 +12,7 @@ relationships:
 
 ## Description
 
-Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-25. **R** is the package of FR-517; the test crate depends on `quire-contract-model`, `qsl-package` and `qsl-eval` only.
+Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-27. **R** is the package of FR-517; the test crate depends on `quire-contract-model`, `qsl-package` and `qsl-eval` only. The producer transport tests also exercise authentic final emission source-union rows before handing their bytes to this entry.
 
 ## Test Procedure
 
@@ -43,7 +43,9 @@ Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-25. **R** is the pa
 | 23 | 24 | independently measure each entry's native work W and storage S: evaluation view, `from_read`, `from_emission`, handoff writer; run each at (W, S), (W - 1, S), (W, S - 1) | exact bounds succeed; work and storage one short respectively refuse with the correct setting and `ViewFailure::Exhausted`, `PackageMismatch::Exhausted` or `Error::NativeJoinExhausted`; a refused writer leaves no directory |
 | 24 | 25 | signature inspection of the six entries; a search for `NativeJoinBudget::new` in library sources | mutable-reference parameters; none below an entry; no `Copy` or `Clone` on `BarePackage` |
 
-Tag the test `#[trace("TC-1331", "FR-531-AC-1", ..., "FR-531-AC-25")]`.
+For AC-26, write and read an authentic source-union emission with nullary and positional payload members, comparing complete original rows and native joined rows and byte-identical rewrites. For AC-27, reject format `/2`, absent `source_unions`, empty member identities, stale member names, foreign source owners and conflicting repeated rows with typed refusals and no partial read. Verify absent union witnesses through the bare union refusal tests.
+
+Tag the test `#[trace("TC-1331", "FR-531-AC-1", ..., "FR-531-AC-27")]`.
 
 ## Expected Results
 

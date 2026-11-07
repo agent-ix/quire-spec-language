@@ -316,7 +316,7 @@ fn a_handoff_directory_gives_a_bare_package_and_an_identity_file() {
     assert!(!charges.is_empty());
 
     let file: Value = serde_json::from_slice(&files["identities.json"]).expect("JSON");
-    assert_eq!(file["format"], "quire.checked-handoff.identities/2");
+    assert_eq!(file["format"], "quire.checked-handoff.identities/3");
     assert!(files["identities.json"].ends_with(b"}\n"));
     let rows = ReadIdentityRows::read(
         &files["identities.json"],
@@ -457,6 +457,7 @@ fn a_public_record_projection_requires_its_original_carried_native_witness() {
         rows.declarations().to_vec(),
         rows.fields().to_vec(),
         Vec::new(),
+        rows.source_unions().to_vec(),
     );
     let bare = BarePackage::new(&package)
         .with_supply(
@@ -1455,6 +1456,7 @@ fn record_rows(
         graph.selected_exact_declaration_rows().to_vec(),
         graph.selected_exact_field_rows().to_vec(),
         Vec::new(),
+        Vec::new(),
     );
     let mut measure = quire_contract_model::NativeJoinBudget::new(1 << 30, 1 << 30);
     BarePackage::new(read.admitted())
@@ -1572,6 +1574,7 @@ fn witness_defects_stay_deferred_and_a_denial_is_not_an_unknown_witness() {
         read.admitted(),
         doubled,
         graph.selected_exact_field_rows().to_vec(),
+        Vec::new(),
         Vec::new(),
     );
     let mut ample = NativeJoinBudget::new(1 << 30, 1 << 30);
