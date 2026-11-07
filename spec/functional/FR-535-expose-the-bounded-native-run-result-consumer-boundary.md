@@ -52,9 +52,9 @@ the bytes and its own invocation.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-535-AC-1 | Using only crate-root names, a consumer writes a clause-run `/2` document and reads it back, distinguishing the clause and command-error variants and inspecting stage, category, code, basis and typed command-error fields. | Test |
-| FR-535-AC-2 | A `/1` or unknown format, an unknown member, a contradictory basis and witness, and a malformed command-error shape each refuse with the FR-267 located typed refusal, never a normalized success. | Test |
+| FR-535-AC-2 | Over a decisive-witness record, a changed or removed format identifier refuses as `UnsupportedFormat` (FR-267-AC-3); an unknown basis, a missing basis, and an unknown top-level or disposition member refuse as `MalformedMember` naming that member (FR-267-AC-10); a basis and witness that disagree, in either direction, refuse as `Invalid` on `witness`; a malformed command-error shape refuses as `Invalid` on `details`. None normalizes to success. | Test |
 | FR-535-AC-3 | An input over `max_input_bytes` refuses as the input-byte limit before decoding; a working bound below the document's decoding need refuses as `WorkingBytes` with no result; an in-budget genuine `/2` document still yields the original typed result. | Test |
-| FR-535-AC-4 | The root API exposes no digest, receipt, token or tool-version member, and `NativeRunLimits` is the only addition to the FR-267 read contract. | Test |
+| FR-535-AC-4 | `NativeRunLimits` has exactly the two bounds, and a document written by `write_clause_run_result` has only the FR-267 members `basis`, `disposition`, `format` and `usage`; no digest, receipt, token or tool-version member exists. | Test |
 
 ## Dependencies
 

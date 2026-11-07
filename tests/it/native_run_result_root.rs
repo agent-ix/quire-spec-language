@@ -64,36 +64,123 @@ fn tc_1340_root_api_round_trips_both_variants() {
     assert_eq!(error.message(), "unknown edition in program.native");
 }
 
-/// FR-535-AC-2: wire refusals keep their owning typed refusal.
+/// A genuine decisive-witness `/2` record, produced by the FR-267 writer.
+const DECISIVE: &str = include_str!("../fixtures/native-run-result-decisive.json");
+
+fn refusal(value: &Value) -> NativeRunReadError {
+    match read(&bytes(value)) {
+        Ok(_) => panic!("accepted an invalid document: {value}"),
+        Err(error) => error,
+    }
+}
+
+/// FR-535-AC-2: the QSpec TC-255 NR-05/06/07 mutations over a decisive-witness
+/// record keep their FR-267 refusals; no fallback or normalized success.
 #[test]
 #[trace("TC-1340", "FR-535-AC-2")]
 fn tc_1340_root_api_refuses_invalid_documents() {
-    let clause: Value =
-        serde_json::from_slice(&write_clause_run_result(&report()).unwrap()).unwrap();
-    let mut old = clause.clone();
-    old["format"] = json!("native-run-result/1");
+    let valid: Value = serde_json::from_str(DECISIVE).unwrap();
     assert!(matches!(
-        read(&bytes(&old)),
-        Err(NativeRunReadError::UnsupportedFormat(format)) if format == "native-run-result/1"
+        read(&bytes(&valid)),
+        Ok(NativeRunResult::Clause(_))
     ));
-    let mut unknown = clause.clone();
-    unknown["surprise"] = json!(1);
+
+    // NR-05: identifier changed or removed.
+    for format in ["native-run-result/1", "native-run-result/3"] {
+        let mut value = valid.clone();
+        value["format"] = json!(format);
+        assert!(
+            matches!(refusal(&value), NativeRunReadError::UnsupportedFormat(found) if found == format)
+        );
+    }
+    let mut value = valid.clone();
+    value.as_object_mut().unwrap().remove("format");
+    assert!(
+        matches!(refusal(&value), NativeRunReadError::UnsupportedFormat(found) if found == "<missing>")
+    );
+
+    // NR-06: unknown basis, and basis/witness contradictions.
+    let mut value = valid.clone();
+    value["basis"] = json!("maybe");
+    assert!(
+        matches!(refusal(&value), NativeRunReadError::MalformedMember { member, .. } if member == "basis")
+    );
+    let mut value = valid.clone();
+    value.as_object_mut().unwrap().remove("basis");
+    assert!(
+        matches!(refusal(&value), NativeRunReadError::MalformedMember { member, .. } if member == ".")
+    );
+    let mut value = valid.clone();
+    value["basis"] = json!("closed-scope");
     assert!(matches!(
-        read(&bytes(&unknown)),
-        Err(NativeRunReadError::MalformedMember { .. } | NativeRunReadError::Malformed(_))
-    ));
-    let mut contradictory = clause;
-    contradictory["basis"] = json!("decisive-witness");
-    assert!(matches!(
-        read(&bytes(&contradictory)),
-        Err(NativeRunReadError::Invalid {
+        refusal(&value),
+        NativeRunReadError::Invalid {
             member: "witness",
             ..
-        })
+        }
     ));
+    let mut value = valid.clone();
+    value.as_object_mut().unwrap().remove("witness");
+    assert!(matches!(
+        refusal(&value),
+        NativeRunReadError::Invalid {
+            member: "witness",
+            ..
+        }
+    ));
+
+    // NR-07: unknown top-level and disposition members, removed required member.
+    let mut value = valid.clone();
+    value["surprise"] = json!(1);
+    assert!(
+        matches!(refusal(&value), NativeRunReadError::MalformedMember { member, .. } if member == "surprise")
+    );
+    let mut value = valid.clone();
+    value["disposition"]["surprise"] = json!(1);
+    assert!(
+        matches!(refusal(&value), NativeRunReadError::MalformedMember { member, .. } if member == "disposition.surprise")
+    );
+    let mut value = valid.clone();
+    value["disposition"]
+        .as_object_mut()
+        .unwrap()
+        .remove("stage");
+    assert!(
+        matches!(refusal(&value), NativeRunReadError::MalformedMember { member, .. } if member == "disposition")
+    );
+
+    // The malformed command-error shape.
     let mut malformed = command_error();
     malformed["details"] = json!({"phase": "profile"});
-    assert!(read(&bytes(&malformed)).is_err());
+    assert!(matches!(
+        refusal(&malformed),
+        NativeRunReadError::Invalid {
+            member: "details",
+            ..
+        }
+    ));
+}
+
+/// FR-535-AC-4: the facade adds no tool-version, digest, receipt or token. The
+/// limits are exactly the two bounds, and a written document keeps only the
+/// FR-267 member set.
+#[test]
+#[trace("TC-1340", "FR-535-AC-4")]
+fn tc_1340_root_api_adds_no_authentication_claim() {
+    let NativeRunLimits {
+        max_input_bytes: _,
+        max_working_bytes: _,
+    } = NativeRunLimits::UNBOUNDED;
+    let written: Value =
+        serde_json::from_slice(&write_clause_run_result(&report()).unwrap()).unwrap();
+    let mut members: Vec<&str> = written
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    members.sort_unstable();
+    assert_eq!(members, ["basis", "disposition", "format", "usage"]);
 }
 
 /// FR-535-AC-3: both bounds, refused before a result exists.
