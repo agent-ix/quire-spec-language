@@ -794,20 +794,34 @@ QSL's conversion of its model-enum shapes and collection rows to Contract IR's
 selected-monitor row types SHALL use the same budget for all copied containers
 and payloads. An admitted conversion SHALL preserve complete original node,
 declaration and member identities, canonical variant order and Exact value
-types. A collection that the target row contract cannot represent SHALL return
-a typed unsupported refusal without omitting its key or inventing a different
-collection kind.
-Collection conversion SHALL inspect only the retained row the caller selected;
-an unsupported map elsewhere in the emission SHALL NOT refuse conversion or
-native projection of a selected representable collection.
+types. The native collection row SHALL retain the original optional
+`key_node`: `Some` of the emitted map key type node for a map, and `None` for
+other collections. A map conversion SHALL charge that node's owned copy before
+copying it and SHALL preserve the complete original Exact `ValueType::Map`,
+including its value type and bound. It SHALL NOT drop the key, substitute the
+value node for it, change the collection kind or replace a representable map
+with an unsupported result.
+
+Collection conversion SHALL inspect only the retained row the caller selected.
+Converting and natively joining or projecting a selected sequence SHALL NOT
+inspect or refuse another retained map. A selected map SHALL pass its original
+key and value type nodes to native joining and projection in the admitted
+key-then-value order. Missing, wrong or misplaced key claims SHALL reach the
+owner's typed collection refusal; QSL SHALL NOT reinterpret that refusal or
+return a partial native result.
 
 A denied adapter charge SHALL return a fixed-size typed refusal without
 allocating the denied material or an owned diagnostic. The refusal SHALL retain
 the owner's first unpaid resource, amount, original configured bound and locus,
-together with the admitted budget prefix. Per-row copying SHALL identify the
-actual retained row or caller-supplied selection locus; a package-wide container
-allocation MAY use the package locus. No partial witness or converted row
-population is authoritative after a refusal.
+together with the admitted budget prefix. Each external input-row conversion
+SHALL identify its actual retained input position with
+`NativeJoinLocusSource::AdapterRow(i)` and name its row channel in the locus
+`form`. These QSL adapter charges SHALL NOT use the native read's `ReachedRow`
+namespace. A standalone collection conversion SHALL take the caller's
+non-owning `AdapterRow(i)` locus and preserve that input position and form;
+no graph node or row index is invented. A package-wide container allocation
+MAY use the package locus. No partial witness or converted row population is
+authoritative after a refusal.
 
 The adapters SHALL continue the pass through the owner's accounted-charge and
 resume surface without reconstructing, resetting or enlarging the allowance.
@@ -895,7 +909,7 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-27 | `/2`, absent `source_unions`, malformed member identity, stale member name, foreign source owner and conflicting union rows return typed format, malformed or native-join refusals without a partial read. An empty union list never fabricates a producer witness from the graph. | Test (TC-1331) |
 | FR-531-AC-28 | Producer and bytes-only equality admission pass the caller's same `NativeJoinBudget` through IR's admitted equality reader after identity/type projection. Decisions and non-resource witness refusals are retained for later unmetered selection and projection. Successful reads consume native work and storage cumulatively; exact measured bounds admit, and one unit less in either resource refuses with the original typed IR equality denial and recorded first unpaid charge, never an unknown witness or internal fault. Reusing an admitted slot consumes no additional native allowance. | Test (TC-1331) |
 | FR-531-AC-29 | Materializing an authentic emission's equality witness with a shared native budget preserves every application, fact and source-unit row, including original identities and order. The source admission and handoff paths use the same budgeted row builder. Exact measured work and storage allowances return the complete witness; one unit less in either resource refuses without allocating the denied material or a diagnostic, retains the first unpaid resource, amount and original locus, and returns no partial witness. Two individually affordable materializations that exceed one shared allowance refuse at the second call's first unpaid step without resetting prior consumption. | Test |
-| FR-531-AC-30 | Source-enum materialization and QSL-to-IR model-enum-shape and selected-collection conversion preserve original structural/declaration/member identities, canonical case order and complete Exact types on one shared native budget. Exact measured bounds admit; work or storage one short and zero storage return allocation-free compact denials at the first unpaid locus with prior consumption intact. A later conversion cannot reset a preceding adapter's charges or replace its first denial. A selected source map whose key has no representation in the target IR row returns a typed unsupported result instead of dropping the key or converting it to a sequence; an unrelated retained map leaves conversion and native projection of a selected representable collection unchanged. Borrowing already retained rows incurs no owned-storage charge. | Test |
+| FR-531-AC-30 | Source-enum materialization and QSL-to-IR model-enum-shape and selected-collection conversion preserve original structural/declaration/member identities, canonical case order and complete Exact types on one shared native budget. Exact measured bounds admit; work or storage one short and zero storage return allocation-free compact denials at the first unpaid locus with prior consumption intact. A later conversion cannot reset a preceding adapter's charges or replace its first denial. A selected source map preserves its original optional key node and complete Exact map value type through actual native joining and projection; absent or wrong map keys and a map key misplaced on a non-map row return the native typed collection refusal. An unrelated retained map leaves conversion and native projection of a selected sequence unchanged. External row denials name AdapterRow(i) at the actual retained input index and keep that locus across a later attempted charge; native read loci remain in their own namespace. Borrowing already retained rows incurs no owned-storage charge. | Test |
 | FR-531-AC-31 | An authentic emission with source records, record members and unions produces complete identity rows equal to the original producer claims after native joining and QSL materialization. The measured work and storage include both the native join and each later QSL declaration, field, record/member and union copy. Exact allowances admit; one unit below either measured allowance refuses at its first unpaid step with no partial identity rows, the original configured bound and the admitted prefix intact. Two materializations on one budget compose without reconstructing or resetting it. | Test |
 | FR-531-AC-32 | A real tick-monitor plan's retained context supplies the same emission's plan, obligations, admitted order and progress association to the actual native row join and selected type-closure projection. The resulting native nodes, original declaration/member identities and Exact types equal those of that emission. Substituting another genuine emission's context, even with identical authored names, or omitting required order/progress authority returns a typed refusal and no executable context. Borrowing retained context leaves native storage consumption unchanged. | Test |
 | FR-531-AC-33 | Allocation observation encloses only the adapter/conversion call, with fixture preparation and assertions outside it. A successful owned materialization performs observed allocations; a denial before its first allocation performs none, and a later denial allocates neither the denied material nor an owned diagnostic. The controls include fresh owner-produced lazy numeric payloads, values `2^127` and `-(2^127 + 1)`, and larger heap-backed values without prior warming or formatting. These values remain exact on successful copies; insufficient work/storage retains the first real row locus and original bound. | Test |
@@ -909,6 +923,8 @@ outcome map. Each carries a "Consumer entry" section that points here.
 - **Selected monitor composition:** [FR-251](./FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md) owns the admitted tick-monitor plan,
   order and progress authority. Contract IR FR-357 and FR-358 own native closure
   validation and the public accounted-charge/resume budget contract. This
+  Contract IR FR-357-AC-16 owns optional map-key row representation and native
+  map validation; FR-358-AC-10 owns the external `AdapterRow` locus. This
   requirement owns QSL's intervening row materialization and conversion; it does
   not replace either owner's admission or claim monitor/runtime qualification.
 - **Downstream:** quire-protocol FR-045 and FR-046; FR-532 and FR-533. quire-protocol
