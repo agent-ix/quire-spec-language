@@ -17,6 +17,7 @@ use quire_contract_model::{
     CheckedNodeId, CheckedPackageV2, ExactTypeProjection, ExactTypeProjectionError,
     NativeJoinBudget, SelectedExactDeclarationForm, SelectedExactDeclarationRow,
     SelectedExactFieldRow, SelectedExactIdentities, SelectedExactIdentity, SelectedSourceRecordRow,
+    SelectedSourceUnionRow,
 };
 use quire_exact::{EffectiveId, MemberId, MemberOwner, NodeKey, OriginalDeclarationKey, UnitId};
 use serde::{Deserialize, Serialize};
@@ -24,10 +25,10 @@ use serde::{Deserialize, Serialize};
 use crate::checked_v2::wire_graph;
 
 mod carried;
-use carried::SourceRecordJson;
+use carried::{SourceRecordJson, SourceUnionJson};
 
 /// The format of `identities.json` (FR-531 "The identity file").
-pub const IDENTITIES_FORMAT: &str = "quire.checked-handoff.identities/2";
+pub const IDENTITIES_FORMAT: &str = "quire.checked-handoff.identities/3";
 
 /// A checked package as a bytes-only consumer holds it (FR-531).
 ///
@@ -197,6 +198,7 @@ pub struct ReadIdentityRows {
     declarations: Vec<SelectedExactDeclarationRow>,
     fields: Vec<SelectedExactFieldRow>,
     source_records: Vec<SelectedSourceRecordRow>,
+    source_unions: Vec<SelectedSourceUnionRow>,
 }
 
 /// Why an identity file was not read: a closed set, naming what it found.
@@ -245,6 +247,9 @@ pub enum IdentityMember {
     /// The required final-emission source-record rows.
     #[error("`source_records`")]
     SourceRecords,
+    /// The required final-emission source-union rows.
+    #[error("`source_unions`")]
+    SourceUnions,
     /// A declaration row's `form`.
     #[error("`form`")]
     Form,
@@ -268,6 +273,7 @@ struct File {
     declarations: Vec<DeclarationJson>,
     fields: Vec<FieldJson>,
     source_records: Vec<SourceRecordJson>,
+    source_unions: Vec<SourceUnionJson>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -358,6 +364,7 @@ impl<'de> serde::de::Visitor<'de> for TopVisitor<'_> {
         let mut declarations: Option<Vec<DeclarationJson>> = None;
         let mut fields: Option<Vec<FieldJson>> = None;
         let mut source_records: Option<Vec<SourceRecordJson>> = None;
+        let mut source_unions: Option<Vec<SourceUnionJson>> = None;
         while let Some(key) = map.next_key::<String>()? {
             match key.as_str() {
                 "format" => {
@@ -396,20 +403,36 @@ impl<'de> serde::de::Visitor<'de> for TopVisitor<'_> {
                         self.problem.set(Some(IdentityMember::SourceRecords));
                     })?);
                 }
+                "source_unions" => {
+                    if source_unions.is_some() {
+                        return Err(self.fail(IdentityMember::Repeated("source_unions")));
+                    }
+                    source_unions = Some(map.next_value().inspect_err(|_: &A::Error| {
+                        self.problem.set(Some(IdentityMember::SourceUnions));
+                    })?);
+                }
                 other => return Err(self.fail(IdentityMember::Unknown(other.to_owned()))),
             }
         }
-        match (format, declarations, fields, source_records) {
-            (Some(format), Some(declarations), Some(fields), Some(source_records)) => Ok(File {
+        match (format, declarations, fields, source_records, source_unions) {
+            (
+                Some(format),
+                Some(declarations),
+                Some(fields),
+                Some(source_records),
+                Some(source_unions),
+            ) => Ok(File {
                 format,
                 declarations,
                 fields,
                 source_records,
+                source_unions,
             }),
-            (None, _, _, _) => Err(self.fail(IdentityMember::Format)),
-            (_, None, _, _) => Err(self.fail(IdentityMember::Declarations)),
-            (_, _, None, _) => Err(self.fail(IdentityMember::Fields)),
-            (_, _, _, None) => Err(self.fail(IdentityMember::SourceRecords)),
+            (None, _, _, _, _) => Err(self.fail(IdentityMember::Format)),
+            (_, None, _, _, _) => Err(self.fail(IdentityMember::Declarations)),
+            (_, _, None, _, _) => Err(self.fail(IdentityMember::Fields)),
+            (_, _, _, None, _) => Err(self.fail(IdentityMember::SourceRecords)),
+            (_, _, _, _, None) => Err(self.fail(IdentityMember::SourceUnions)),
         }
     }
 }
@@ -530,7 +553,8 @@ impl ReadIdentityRows {
             self.fields.iter().cloned(),
             budget,
         )?
-        .with_source_record_rows(package, self.source_records.iter().cloned(), budget)
+        .with_source_record_rows(package, self.source_records.iter().cloned(), budget)?
+        .with_source_union_rows(package, self.source_unions.iter().cloned(), budget)
     }
 
     /// The package the rows were produced for.
@@ -551,6 +575,11 @@ impl ReadIdentityRows {
     /// Original source-record producer rows, with final graph references.
     pub fn source_records(&self) -> &[SelectedSourceRecordRow] {
         &self.source_records
+    }
+
+    /// Original source-union producer rows, in declaration and payload order.
+    pub fn source_unions(&self) -> &[SelectedSourceUnionRow] {
+        &self.source_unions
     }
 
     /// Read `identities_json`, joining its rows to `package`.
@@ -692,6 +721,11 @@ impl ReadIdentityRows {
             declarations,
             fields,
             source_records,
+            source_unions: file
+                .source_unions
+                .into_iter()
+                .map(SourceUnionJson::row)
+                .collect::<Result<_, _>>()?,
         };
         rows.join(package, budget)
             .map_err(|error| IdentityFileRefusal::Native(Box::new(error)))?;
@@ -704,12 +738,14 @@ impl ReadIdentityRows {
         declarations: Vec<SelectedExactDeclarationRow>,
         fields: Vec<SelectedExactFieldRow>,
         source_records: Vec<SelectedSourceRecordRow>,
+        source_unions: Vec<SelectedSourceUnionRow>,
     ) -> Self {
         Self {
             package: package.name().to_owned(),
             declarations,
             fields,
             source_records,
+            source_unions,
         }
     }
 
@@ -817,6 +853,11 @@ impl ReadIdentityRows {
                 .source_records
                 .iter()
                 .map(SourceRecordJson::of)
+                .collect::<Result<_, _>>()?,
+            source_unions: self
+                .source_unions
+                .iter()
+                .map(SourceUnionJson::of)
                 .collect::<Result<_, _>>()?,
         };
         let mut bytes =

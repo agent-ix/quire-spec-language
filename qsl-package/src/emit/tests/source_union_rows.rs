@@ -7,7 +7,7 @@
 
 use quire_contract_model::{
     CheckedPackageReadLimits, CheckedPackageV2, CheckedPackageV2ReadResult,
-    ExactTypeProjectionErrorCode, SelectedExactIdentities,
+    ExactTypeProjectionErrorCode, NativeJoinBudget, SelectedExactIdentities,
 };
 
 use super::source_enum_rows::node_with_id;
@@ -16,6 +16,99 @@ use super::*;
 
 pub(super) const SHAPE: &str = "union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n\
     function rect using v(): Shape pure { Shape::Rect(2, 3) }\n";
+
+#[trace("TC-1331", "FR-531-AC-26")]
+#[test]
+fn authentic_source_union_rows_round_trip_and_join_original_identities() {
+    let (_, emission, wire) = emitted(SHAPE);
+    let package = admit_bytes(&emission, &wire);
+    let rows = emission
+        .identity_rows(&package, &mut NativeJoinBudget::new(1 << 30, 1 << 30))
+        .unwrap();
+    assert_eq!(rows.source_unions(), emission.selected_source_union_rows());
+    let bytes = rows.to_bytes(&package).unwrap();
+    let read = crate::ReadIdentityRows::read(
+        &bytes,
+        &package,
+        &mut NativeJoinBudget::new(1 << 30, 1 << 30),
+    )
+    .unwrap();
+    assert_eq!(read, rows);
+    assert_eq!(read.to_bytes(&package).unwrap(), bytes);
+    let selected = read
+        .selected(&package, &mut NativeJoinBudget::new(1 << 30, 1 << 30))
+        .unwrap();
+    assert_eq!(
+        selected.source_union_rows().collect::<Vec<_>>(),
+        rows.source_unions().iter().collect::<Vec<_>>()
+    );
+    let original = &emission.selected_source_union_rows()[0];
+    assert_eq!(read.source_unions()[0].type_handle, original.type_handle);
+    assert_eq!(read.source_unions()[0].settled_key, original.settled_key);
+    assert_eq!(read.source_unions()[0].members, original.members);
+}
+
+#[trace("TC-1331", "FR-531-AC-27")]
+#[test]
+fn source_union_carrier_rejects_missing_stale_foreign_and_conflicting_rows() {
+    let (_, emission, wire) = emitted(SHAPE);
+    let package = admit_bytes(&emission, &wire);
+    let rows = emission
+        .identity_rows(&package, &mut NativeJoinBudget::new(1 << 30, 1 << 30))
+        .unwrap();
+    let file: Value = serde_json::from_slice(&rows.to_bytes(&package).unwrap()).unwrap();
+    let read = |value: &Value| {
+        crate::ReadIdentityRows::read(
+            &serde_json::to_vec(value).unwrap(),
+            &package,
+            &mut NativeJoinBudget::new(1 << 30, 1 << 30),
+        )
+    };
+    let mut old = file.clone();
+    old["format"] = json!("quire.checked-handoff.identities/2");
+    assert!(matches!(
+        read(&old),
+        Err(crate::IdentityFileRefusal::Format(_))
+    ));
+    let mut absent = file.clone();
+    absent.as_object_mut().unwrap().remove("source_unions");
+    assert!(matches!(
+        read(&absent),
+        Err(crate::IdentityFileRefusal::Malformed {
+            member: crate::IdentityMember::SourceUnions
+        })
+    ));
+    let mut stale = file.clone();
+    stale["source_unions"][0]["members"][0]["identifier"] = json!("Stale");
+    assert!(matches!(
+        read(&stale),
+        Err(crate::IdentityFileRefusal::Native(_))
+    ));
+    let mut foreign = file.clone();
+    foreign["source_unions"][0]["source_identity"] = json!("foreign-source");
+    assert!(matches!(
+        read(&foreign),
+        Err(crate::IdentityFileRefusal::Native(_))
+    ));
+    let mut conflicting = file.clone();
+    let repeated = conflicting["source_unions"][0].clone();
+    conflicting["source_unions"]
+        .as_array_mut()
+        .unwrap()
+        .push(repeated);
+    assert!(matches!(
+        read(&conflicting),
+        Err(crate::IdentityFileRefusal::Native(_))
+    ));
+    let mut malformed = file;
+    malformed["source_unions"][0]["members"][0]["identifier"] = json!("");
+    assert!(matches!(
+        read(&malformed),
+        Err(crate::IdentityFileRefusal::Malformed {
+            member: crate::IdentityMember::SourceUnions
+        })
+    ));
+}
 
 /// The package of `declarations`, its emission and the emission's wire.
 fn emitted(declarations: &str) -> (CheckedPackage, Emission, Value) {
