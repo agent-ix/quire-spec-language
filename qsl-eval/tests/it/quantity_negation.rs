@@ -10,7 +10,7 @@ use qsl_semantics::check::{CheckCause, CheckRefusal, Obligation};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::FamilyOutcome;
 use quire_exact::{
-    IllTypedCause, Integer, Meter, Outcome, Quantity as ExactQuantity, Rational, Value,
+    IllTypedCause, Integer, Meter, Outcome, Quantity as ExactQuantity, Rational, Value, ValueType,
 };
 use quire_semantic_value::location::Location;
 
@@ -32,6 +32,8 @@ fn units_and(functions: &str) -> String {
     format!("{UNITS}{functions}")
 }
 
+/// The one refusal `functions` check with. The unit is refused whole, so no
+/// package, checked graph or node exists, and checking runs under no charge.
 fn refusal(functions: &str) -> CheckRefusal {
     let mut refusals = package_with(&units_and(functions)).expect_err("the unit refuses");
     assert_eq!(refusals.len(), 1, "{refusals:?}");
@@ -62,6 +64,29 @@ fn quantity(package: &CheckedPackage, name: &str) -> ExactQuantity {
     }
 }
 
+/// The Boolean function `name` over `d: Quantity<ms>` = `magnitude` ms.
+fn truth_at(package: &CheckedPackage, name: &str, magnitude: i64) -> bool {
+    let callable = package.graph().callable(name).expect("a callable");
+    let ValueType::Quantity(unit) = &callable.parameters[0].1 else {
+        panic!("{name} takes a quantity");
+    };
+    let evaluation = package
+        .call(
+            &QualifiedName::unqualified(name).expect("an identifier"),
+            vec![Value::Quantity(ExactQuantity::new(
+                integer(magnitude),
+                unit.clone(),
+            ))],
+            &ObjectEnvironment::default(),
+            &mut Meter::new(UNLIMITED),
+        )
+        .unwrap_or_else(|error| panic!("the {name} call runs: {error:?}"));
+    match evaluation.outcome {
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(truth))) => truth,
+        other => panic!("a completed Boolean, not {other:?}"),
+    }
+}
+
 fn integer(value: i64) -> Rational {
     Rational::from_integer(Integer::from(value))
 }
@@ -78,12 +103,11 @@ fn a_quantity_negation_evaluates_to_the_exact_negation_in_its_own_unit() {
          function c2 using v(): Quantity<ms> pure { -3 ms }\n\
          function z using v(): Quantity<m> pure { -(0 m) }\n\
          function q using v(): Boolean pure { -(-(3 ms)) = 3 ms }\n\
-         function r using v(): Boolean pure { let d = 0 ms - 3 ms in d = -3 ms }\n\
-         function r_wrong using v(): Boolean pure { let d = 3 ms in d = -3 ms }\n\
-         function k using v(): Boolean pure { let d = 6 ms in d / -3 ms = -(d / 3 ms) }\n\
-         function k_value using v(): Boolean pure { let d = 6 ms in d / -3 ms = (0 ms - 2 ms) / 1 ms }\n\
-         function k2 using v(): Boolean pure { let d = 6 ms in d / -(-(3 ms)) = d / 3 ms }\n\
-         function k2_value using v(): Boolean pure { let d = 6 ms in d / -(-(3 ms)) = (2 ms) / 1 ms }\n\
+         function r using v(d: Quantity<ms>): Boolean pure { d = -3 ms }\n\
+         function k using v(d: Quantity<ms>): Boolean pure { d / -3 ms = -(d / 3 ms) }\n\
+         function k_value using v(d: Quantity<ms>): Boolean pure { d / -3 ms = (0 ms - 2 ms) / 1 ms }\n\
+         function k2 using v(d: Quantity<ms>): Boolean pure { d / -(-(3 ms)) = d / 3 ms }\n\
+         function k2_value using v(d: Quantity<ms>): Boolean pure { d / -(-(3 ms)) = (2 ms) / 1 ms }\n\
          function v2 using v(): Boolean pure { -(3 m / 1 s) = -(3 m / 1 s) }\n\
          function v2_value using v(): Boolean pure { -(3 m / 1 s) = (0 m - 3 m) / 1 s }\n",
     ))
@@ -94,10 +118,15 @@ fn a_quantity_negation_evaluates_to_the_exact_negation_in_its_own_unit() {
     assert_eq!(quantity(&package, "c").magnitude(), &integer(-3));
     assert_eq!(quantity(&package, "c2"), quantity(&package, "c"));
     assert_eq!(quantity(&package, "z").magnitude(), &integer(0));
-    for name in ["q", "r", "k", "k_value", "k2", "k2_value", "v2", "v2_value"] {
+    for name in ["q", "v2", "v2_value"] {
         assert!(truth(&package, name), "{name}");
     }
-    assert!(!truth(&package, "r_wrong"));
+    // The AC's parameter form, at d = 6 ms (d = -3 ms and 3 ms for r).
+    for name in ["k", "k_value", "k2", "k2_value"] {
+        assert!(truth_at(&package, name, 6), "{name}");
+    }
+    assert!(truth_at(&package, "r", -3));
+    assert!(!truth_at(&package, "r", 3));
 }
 
 /// FR-093-AC-49 n, n2 and b2 (TC-1285 step 2): an affine unit is
