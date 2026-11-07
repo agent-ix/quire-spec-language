@@ -304,6 +304,8 @@ productions! {
     FrameBinding,
     #[doc = "`<member> to <string>`: one operation parameter's Rust parameter."]
     ParameterBinding,
+    #[doc = "`<leading-keyword> <identifier> { [<clause-name> : <expression> {, <clause-name> : <expression>}] }`: one declaration form of a selected extension, read from its grammar schema (FR-354, QSpec FR-467 \"Production\"). It exists only in a parse given the extension's forms."]
+    ExtensionDeclaration,
 }
 
 /// Structural CST identity: the node's byte range and its position in the

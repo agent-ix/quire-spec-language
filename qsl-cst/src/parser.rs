@@ -10,7 +10,7 @@ use super::cst::{
 };
 use super::diagnostic::{CompleteCause, HostCause};
 use super::grammar::{self, Grammar, Rule, Terminal};
-use super::{CompleteCode, CompleteDiagnostic, ParsedSource};
+use super::{CompleteCode, CompleteDiagnostic, ExtensionForms, ParsedSource};
 use crate::lexer::Limits;
 use crate::token::{Kind, LexError};
 use qsl_foundation::selection::{
@@ -73,13 +73,18 @@ pub(super) fn parse(
     source: Source,
     limits: Limits,
     cancel: &Cancel,
+    forms: &ExtensionForms,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
-    let grammar = grammar::complete_v1();
+    let grammar = grammar::complete_v1_with(forms);
     let compounds = grammar::complete_compound_spellings(&grammar);
     let (tokens, significant, mut diagnostics, mut recoveries) =
         scan(&source, limits, &compounds, cancel)?;
     let mut parse_significant = significant.clone();
     let prelude_nodes = selection_prelude_nodes(&source, &grammar, &significant, limits, cancel);
+    // The word an `unsupported_construct`/`declaration-form` refusal is for;
+    // its message names the unit's selections, which are read once the tree is.
+    let mut undeclared_word: Option<(Span, String)> = None;
+    let mut declaration_form_at: Option<usize> = None;
     let matched = if diagnostics.is_empty() {
         let mut engine = Engine::new(&grammar, &significant, limits, cancel);
         let matched = match engine.production(Production::CompleteUnit, 0) {
@@ -90,7 +95,14 @@ pub(super) fn parse(
                 debug_assert!(false, "a matched unit leaves its root pending");
                 Failure::expected(0, format!("{:?}", Production::CompleteUnit))
             }),
-            Outcome::No(failure) => Err(failure),
+            Outcome::No(failure) => {
+                if engine.starts_unknown_declaration(failure.position) {
+                    undeclared_word = significant
+                        .get(failure.position)
+                        .map(|token| (token.span, token.spelling.to_string()));
+                }
+                Err(failure)
+            }
             Outcome::Exhausted(refusal) => {
                 let span = significant.get(refusal.position).map_or(
                     Span {
@@ -141,29 +153,41 @@ pub(super) fn parse(
                         },
                         |token| token.span,
                     );
-                    let (code, cause) = selection_code(&significant, failure.position).map_or(
+                    let declaration_form = undeclared_word.is_some();
+                    let (code, cause) = if declaration_form {
                         (
-                            CompleteCode::InvalidSyntax,
-                            if failure.position == significant.len() {
-                                CompleteCause::UnexpectedEnd
-                            } else if malformed_decimal_argument(&significant, failure.position) {
-                                CompleteCause::InvalidToken
-                            } else {
-                                CompleteCause::UnexpectedToken
-                            },
-                        ),
-                        |code| (code, CompleteCause::UnsupportedSelection),
-                    );
+                            CompleteCode::UnsupportedConstruct,
+                            CompleteCause::DeclarationForm,
+                        )
+                    } else {
+                        selection_code(&significant, failure.position).map_or(
+                            (
+                                CompleteCode::InvalidSyntax,
+                                if failure.position == significant.len() {
+                                    CompleteCause::UnexpectedEnd
+                                } else if malformed_decimal_argument(&significant, failure.position)
+                                {
+                                    CompleteCause::InvalidToken
+                                } else {
+                                    CompleteCause::UnexpectedToken
+                                },
+                            ),
+                            |code| (code, CompleteCause::UnsupportedSelection),
+                        )
+                    };
                     let expected = failure
                         .expected
                         .into_iter()
                         .collect::<Vec<_>>()
                         .join(" or ");
+                    if declaration_form {
+                        declaration_form_at = Some(diagnostics.len());
+                    }
                     diagnostics.push(*super::diagnostic::error(
                         &source,
                         code,
                         cause,
-                        if code == CompleteCode::InvalidSyntax {
+                        if code == CompleteCode::InvalidSyntax || declaration_form {
                             Phase::Parse
                         } else {
                             Phase::Profile
@@ -220,6 +244,22 @@ pub(super) fn parse(
         selection_nodes,
         &mut diagnostics,
     );
+    if let (Some(at), Some((span, word))) = (declaration_form_at, undeclared_word) {
+        if let Some(slot) = diagnostics.get_mut(at) {
+            *slot = *super::diagnostic::error(
+                &source,
+                CompleteCode::UnsupportedConstruct,
+                CompleteCause::DeclarationForm,
+                Phase::Parse,
+                span.start,
+                span.end,
+                format!(
+                    "`{word}` begins no declaration form; the unit's selections are {}",
+                    selection_summary(&selections)
+                ),
+            );
+        }
+    }
     let cst = LosslessCst::new(source.clone(), tokens, nodes, root, recoveries);
     diagnostics.extend(interval_bounds(&source, &cst));
     diagnostics.extend(decimal_constructor_numbers(&source, &cst));
@@ -231,6 +271,28 @@ pub(super) fn parse(
         false,
         limits,
     ))
+}
+
+/// The unit's header selections in source order, as a refusal names them.
+fn selection_summary(selections: &SourceSelections) -> String {
+    let profiles = selections
+        .profiles
+        .iter()
+        .map(|selection| format!("profile {} = \"{}\"", selection.alias, selection.identity));
+    let imports = selections
+        .imports
+        .iter()
+        .map(|selection| format!("import \"{}\"", selection.identity));
+    let models = selections
+        .models
+        .iter()
+        .map(|selection| format!("model {} = \"{}\"", selection.alias, selection.identity));
+    let all: Vec<String> = profiles.chain(imports).chain(models).collect();
+    if all.is_empty() {
+        "none".into()
+    } else {
+        all.join(", ")
+    }
 }
 
 /// Recover a missing protocol-body close immediately before the next
@@ -1333,6 +1395,8 @@ struct Engine<'a> {
     steps: usize,
     maximum_steps: usize,
     farthest: usize,
+    /// Whether a `Declaration` was tried at each position `0..=tokens`.
+    declaration_starts: Vec<bool>,
     /// The farthest-position failure any attempt hit during the current
     /// [`Self::production`] call, kept even where the frame that hit it
     /// (`Optional`, a backtracking `Repeat`, a `Choice` that picks a
@@ -1373,6 +1437,7 @@ impl<'a> Engine<'a> {
                 .saturating_add(1)
                 .saturating_mul(limits.work_units),
             farthest: 0,
+            declaration_starts: vec![false; tokens.len().saturating_add(1)],
             farthest_failure: None,
             #[cfg(test)]
             peak: (0, 0),
@@ -1514,9 +1579,25 @@ impl<'a> Engine<'a> {
         })
     }
 
+    /// Whether `position` is where a top-level declaration was tried and
+    /// holds a word that neither a core keyword nor a selected extension's
+    /// leading keyword accepted (FR-354): an identifier-shaped, non-reserved
+    /// word every declaration alternative refused at its first token.
+    fn starts_unknown_declaration(&self, position: usize) -> bool {
+        self.declaration_starts.get(position).copied() == Some(true)
+            && self.tokens.get(position).is_some_and(|token| {
+                token.names() && !self.reserved_words.contains(token.spelling.as_ref())
+            })
+    }
+
     fn enter_production(&mut self, production: Production, position: usize) -> Step<'a> {
         if !self.charge(position) {
             return Step::Return(self.work_exhausted());
+        }
+        if production == Production::Declaration {
+            if let Some(started) = self.declaration_starts.get_mut(position) {
+                *started = true;
+            }
         }
         // Reuse, not copy: the memoized match joins this attempt by
         // reference, one step for the whole subtree. The walk is not charged
@@ -1820,6 +1901,10 @@ impl<'a> Engine<'a> {
                             && !self.reserved_words.contains(token.spelling.as_ref())
                             && token.spelling.as_ref() != *except
                     }
+                    Terminal::ExtensionKeyword(word) | Terminal::ExtensionClause(word) => {
+                        token.spelling.as_ref() == word.as_ref()
+                    }
+                    Terminal::ExtensionSeparator(_) => token.spelling.as_ref() == ",",
                     Terminal::End => false,
                 }
             }
@@ -1849,6 +1934,9 @@ impl Terminal {
             Self::Bound => "unsigned 64-bit integer".into(),
             Self::ClockType { word, .. } => format!("`{word}`"),
             Self::TypeIdentifier { except } => format!("type name other than `{except}`"),
+            Self::ExtensionKeyword(word) => format!("`{word}`"),
+            Self::ExtensionClause(name) => format!("clause `{name}`"),
+            Self::ExtensionSeparator(next) => format!("`,` before clause `{next}`"),
             Self::End => "end of source".into(),
         }
     }
@@ -2126,7 +2214,12 @@ mod tests {
                 ),
                 temporal,
             ] {
-                match parse(source(&text), limits, &Cancel::new()) {
+                match parse(
+                    source(&text),
+                    limits,
+                    &Cancel::new(),
+                    &ExtensionForms::default(),
+                ) {
                     Ok(parsed) => assert!(parsed.is_admissible()),
                     Err(refusal) => {
                         let defaults = Limits::default();
@@ -2153,6 +2246,7 @@ mod tests {
                 )),
                 limits,
                 &Cancel::new(),
+                &ExtensionForms::default(),
             )
             .expect("2000 nested Option<...> fit the node ceiling");
             assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
