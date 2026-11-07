@@ -64,7 +64,7 @@ occurrence key unless a step names another occurrence.
    whose source has `test/units`'s authority and identity; then remove the
    entry; then give the entry a second source.
 8. Replay a package whose refinement has a non-empty internal list with the
-   list carried at `/package/refinement_internals`; with the value `{}`; with the spelling `Spec::Twice::zz`; and with a list
+   list carried at `/package/lock/refinement_internals`; with the value `{}`; with the spelling `Spec::Twice::zz`; and with a list
    on a `dependencies` entry, valid and defective.
 
 9. Replay step 1's `small` request with its replay target replaced by
@@ -130,7 +130,7 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 
 - Step 7: `q(3)` is `false` and agrees (`reproduced-without-witness`). The
   extra entry refuses `DependencySelections`
-  (`invalid_package`/`invalid-value` at `/package/dependencies`); the
+  (`invalid_package`/`invalid-value` at `/dependencies`); the
   swapped and the repeated entries refuse `DependencySelections` before any
   recompile; the same-owner entry refuses `DependencyInput`
   (`invalid_package`/`conflicting-definition`); the
@@ -145,11 +145,11 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   none yields a verdict.
 - Step 8: the first replay recompiles; the second refuses
   `Recompile` carrying `invalid_model_binding`/`malformed-declaration`
-  located at `/package/refinement_internals`; the `zz` spelling refuses
+  located at `/package/lock/refinement_internals`; the `zz` spelling refuses
   `missing_declaration`/`missing-name` at
-  `/package/refinement_internals/0/internal/0`; the dependency entry's list
+  `/package/lock/refinement_internals/0/internal/0`; the dependency entry's list
   applies to that dependency's refinements only, and its defect is located at
-  `/package/dependencies/<n>/refinement_internals/<pointer>` (FR-098-AC-20).
+  `/dependencies/<n>/refinement_internals/<pointer>` (FR-098-AC-20).
 - Step 9: `invalid_runtime_input`/`unknown-member` at
   `/replay/frame_operation` naming the target, `replay` and `function`,
   the first two times; `missing_import`/`missing-selection` the third
