@@ -2883,11 +2883,16 @@ fn assemble_with_models(
     unit: &[u8],
     packages: &qsl_semantics::model::intake::PackageInput,
 ) -> Result<PackageDeclarations, String> {
+    // S1's size and work limits are raised to fit a unit past their defaults.
+    let mut limits = qsl_cst::Limits::default();
+    limits.source_bytes = limits.source_bytes.max(unit.len());
+    limits.tokens = limits.tokens.max(unit.len());
+    limits.nodes = limits.nodes.max(unit.len().saturating_mul(16));
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model"),
         "program.native",
         unit,
-        qsl_cst::Limits::default(),
+        limits,
     )
     .expect("S1 admits the unit");
     assert_eq!(parsed.diagnostics(), []);

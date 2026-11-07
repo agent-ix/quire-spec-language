@@ -459,6 +459,11 @@ pub(crate) fn project_package(
                     "source-route-equality-has-producer-rows",
                 )));
             }
+            Err(BuildError::Suspended) => {
+                return Err(PackageRefusal::Fault(self::fault(
+                    "reader-projection-resolves-its-suspensions",
+                )));
+            }
         };
         slots.insert((request.root, request.origin), slot);
     }
@@ -519,6 +524,10 @@ enum BuildError {
     /// application (FR-531 "The equality file").
     Equality(EqualityWitnessRefusal),
     Fault(InternalFault),
+    /// The node being projected reads a child [`ReaderBuilder::project_tree`]
+    /// has not projected yet; the walk projects the child first and then the
+    /// node again. It never leaves the walk.
+    Suspended,
 }
 
 impl From<InternalFault> for BuildError {
@@ -743,10 +752,18 @@ impl<'wire> WireIndex<'wire> {
             functions: Vec::new(),
             function_indexes: BTreeMap::new(),
             memo: BTreeMap::new(),
+            binders: BTreeMap::new(),
             root_slots: request.binders.len(),
+            active: None,
+            suspended: Vec::new(),
+            ordinal: 0,
         };
         builder.read_functions(root)?;
-        let root_index = builder.project_node(root, Context::Root, &locals)?;
+        let root_index = builder.project_tree(NodeRequest {
+            id: root.clone(),
+            context: Context::Root,
+            locals: std::rc::Rc::new(locals),
+        })?;
         Ok(ReaderProtocolProjection {
             nodes: builder.nodes,
             functions: builder.functions,
@@ -944,6 +961,9 @@ impl<'wire> BareWalker<'wire> {
                 }))
             }
             BuildError::Fault(fault) => Err(WalkFailure::Fault(fault)),
+            BuildError::Suspended => Err(WalkFailure::Fault(fault(
+                "reader-projection-resolves-its-suspensions",
+            ))),
         }
     }
 
@@ -1052,7 +1072,47 @@ struct ReaderBuilder<'index, 'wire> {
     /// Function bodies share a node reached twice; the slot's own walk
     /// holds one position per parent (FR-390).
     memo: BTreeMap<(usize, CheckedNodeId), usize>,
+    /// The binder of each `let` or query scope read so far, which a node
+    /// projected again does not look up again.
+    binders: BTreeMap<CheckedNodeId, Option<CheckedNodeId>>,
     root_slots: usize,
+    /// The node [`Self::project_tree`] is projecting now.
+    active: Option<Frame>,
+    /// The children the active node's projection asked for and did not
+    /// find, by the ordinal of the lookup that asked.
+    suspended: Vec<(usize, NodeRequest)>,
+    /// The number of child lookups the active attempt has made.
+    ordinal: usize,
+}
+
+/// A node to project: where it lives and the locals its subtree reads.
+struct NodeRequest {
+    id: CheckedNodeId,
+    context: Context,
+    locals: std::rc::Rc<BTreeMap<CheckedNodeId, usize>>,
+}
+
+/// A child's finished projection, kept by the node that asked for it.
+struct Finished {
+    index: usize,
+    /// The context's frame size once the child's subtree was projected.
+    slots: usize,
+}
+
+/// One node on [`ReaderBuilder::project_tree`]'s heap stack.
+struct Frame {
+    request: std::rc::Rc<NodeRequest>,
+    /// The context's frame size when the node was first entered.
+    entered: usize,
+    /// The node's children projected so far, by the ordinal of the lookup
+    /// that asked for each: a node's projection asks for the same children in
+    /// the same order every time it is attempted.
+    finished: BTreeMap<usize, Finished>,
+    /// The children still to project before the node is attempted again,
+    /// next last.
+    queue: Vec<(usize, NodeRequest)>,
+    /// The ordinal of the child being projected.
+    waiting: usize,
 }
 
 impl<'wire> ReaderBuilder<'_, 'wire> {
@@ -1122,7 +1182,11 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 .enumerate()
                 .map(|(slot, id)| (id.clone(), slot))
                 .collect::<BTreeMap<_, _>>();
-            let body = self.project_node(body, Context::Function(index), &locals)?;
+            let body = self.project_tree(NodeRequest {
+                id: body.clone(),
+                context: Context::Function(index),
+                locals: std::rc::Rc::new(locals),
+            })?;
             self.functions[index].body = body;
         }
         Ok(())
@@ -1134,22 +1198,222 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         index
     }
 
+    /// The frame size of `context`.
+    fn slots(&self, context: Context) -> usize {
+        match context {
+            Context::Root => self.root_slots,
+            Context::Function(function) => self
+                .functions
+                .get(function)
+                .map_or(0, |function| function.slots),
+        }
+    }
+
+    /// Set the frame size of `context`.
+    fn set_slots(&mut self, context: Context, slots: usize) {
+        match context {
+            Context::Root => self.root_slots = slots,
+            Context::Function(function) => {
+                if let Some(function) = self.functions.get_mut(function) {
+                    function.slots = slots;
+                }
+            }
+        }
+    }
+
+    /// The projection of `id`, as the node being projected reads it. A child
+    /// the walk has projected for this node is returned; any other is
+    /// requested ([`BuildError::Suspended`]) and the node is projected again
+    /// once it exists. A function body shares a node reached twice.
     fn project_node(
         &mut self,
         id: &CheckedNodeId,
         context: Context,
         locals: &BTreeMap<CheckedNodeId, usize>,
     ) -> Result<usize, BuildError> {
+        let ordinal = self.ordinal;
+        self.ordinal = ordinal.saturating_add(1);
+        let finished = self
+            .active
+            .as_ref()
+            .and_then(|frame| frame.finished.get(&ordinal))
+            .map(|child| (child.index, child.slots));
+        if let Some((index, slots)) = finished {
+            // The frame size the child's subtree left, as the node saw it.
+            self.set_slots(context, self.slots(context).max(slots));
+            return Ok(index);
+        }
         if let Context::Function(function) = context {
             if let Some(index) = self.memo.get(&(function, id.clone())) {
                 return Ok(*index);
             }
         }
-        let index = self.project_fresh(id, context, locals)?;
-        if let Context::Function(function) = context {
-            self.memo.insert((function, id.clone()), index);
+        self.suspended = vec![(
+            ordinal,
+            NodeRequest {
+                id: id.clone(),
+                context,
+                locals: std::rc::Rc::new(locals.clone()),
+            },
+        )];
+        Err(BuildError::Suspended)
+    }
+
+    /// The projections of `terms`, in order. Every child of `terms` the walk
+    /// has not projected is requested at once, so a node of any width is
+    /// attempted twice at most for these children.
+    fn project_terms<'a>(
+        &mut self,
+        parent: &CheckedNodeId,
+        terms: impl Iterator<Item = &'a CheckedTerm> + Clone,
+        context: Context,
+        locals: &BTreeMap<CheckedNodeId, usize>,
+    ) -> Result<Vec<usize>, BuildError> {
+        let mut ordinal = self.ordinal;
+        let mut missing = Vec::new();
+        let mut shared = None;
+        for term in terms.clone() {
+            let CheckedTerm::Reference { target } = term else {
+                continue;
+            };
+            let known = self
+                .active
+                .as_ref()
+                .is_some_and(|frame| frame.finished.contains_key(&ordinal))
+                || matches!(context, Context::Function(function)
+                    if self.memo.contains_key(&(function, target.clone())));
+            if !known {
+                let locals = shared.get_or_insert_with(|| std::rc::Rc::new(locals.clone()));
+                missing.push((
+                    ordinal,
+                    NodeRequest {
+                        id: target.clone(),
+                        context,
+                        locals: std::rc::Rc::clone(locals),
+                    },
+                ));
+            }
+            ordinal = ordinal.saturating_add(1);
         }
-        Ok(index)
+        if !missing.is_empty() {
+            self.ordinal = ordinal;
+            self.suspended = missing;
+            return Err(BuildError::Suspended);
+        }
+        terms
+            .map(|term| self.project_argument(parent, term, context, locals))
+            .collect()
+    }
+
+    /// Project `root` and its subtree on a heap stack, one frame per node
+    /// being projected, however deep the subtree nests (ADR-030 D-1): a node
+    /// that reads an unprojected child leaves the stack top, the child is
+    /// projected, and the node is projected again with the child at hand.
+    /// A projection attempt changes nothing but the projected nodes it adds,
+    /// which are dropped when it suspends, and the context's frame size,
+    /// which each attempt restarts from the size at the node's entry and
+    /// raises by each child's as it reads the child, so every node sees the
+    /// sizes the nested projection of its children would give it. The heap
+    /// stack holds one frame per node on the path from `root`, and each
+    /// frame one entry per child.
+    fn project_tree(&mut self, root: NodeRequest) -> Result<usize, BuildError> {
+        if let Context::Function(function) = root.context {
+            if let Some(index) = self.memo.get(&(function, root.id.clone())) {
+                return Ok(*index);
+            }
+        }
+        let mut parents: Vec<Frame> = Vec::new();
+        let mut frame = self.enter(root);
+        loop {
+            let request = std::rc::Rc::clone(&frame.request);
+            self.set_slots(request.context, frame.entered);
+            self.ordinal = 0;
+            let added = self.nodes.len();
+            self.active = Some(frame);
+            let result = self.project_fresh(&request.id, request.context, &request.locals);
+            frame = self
+                .active
+                .take()
+                .ok_or_else(|| fault("reader-projection-frame-is-active"))?;
+            let finished = match result {
+                Ok(index) => {
+                    if let Context::Function(function) = request.context {
+                        self.memo.insert((function, request.id.clone()), index);
+                    }
+                    Finished {
+                        index,
+                        slots: self.slots(request.context),
+                    }
+                }
+                Err(BuildError::Suspended) => {
+                    self.nodes.truncate(added);
+                    frame.queue = std::mem::take(&mut self.suspended);
+                    frame.queue.reverse();
+                    parents.push(frame);
+                    frame = match self.next_child(&mut parents)? {
+                        Some(next) => next,
+                        None => parents
+                            .pop()
+                            .ok_or_else(|| fault("reader-projection-parent-is-waiting"))?,
+                    };
+                    continue;
+                }
+                Err(failure) => return Err(failure),
+            };
+            // The node is projected: its parent takes it, then asks for the
+            // children still queued, then is attempted again.
+            let Some(mut parent) = parents.pop() else {
+                return Ok(finished.index);
+            };
+            parent.finished.insert(parent.waiting, finished);
+            parents.push(parent);
+            frame = match self.next_child(&mut parents)? {
+                Some(next) => next,
+                None => parents
+                    .pop()
+                    .ok_or_else(|| fault("reader-projection-parent-is-waiting"))?,
+            };
+        }
+    }
+
+    /// The frame of the next child the node on top of `parents` waits for,
+    /// entered; a child a function body shares and that is projected by now
+    /// is taken at once, as the nested projection would. `None` once the node
+    /// waits for no child.
+    fn next_child(&mut self, parents: &mut [Frame]) -> Result<Option<Frame>, BuildError> {
+        loop {
+            let Some(parent) = parents.last_mut() else {
+                return Ok(None);
+            };
+            let Some((ordinal, wanted)) = parent.queue.pop() else {
+                return Ok(None);
+            };
+            if let Context::Function(function) = wanted.context {
+                if let Some(index) = self.memo.get(&(function, wanted.id.clone())) {
+                    parent.finished.insert(
+                        ordinal,
+                        Finished {
+                            index: *index,
+                            slots: 0,
+                        },
+                    );
+                    continue;
+                }
+            }
+            parent.waiting = ordinal;
+            return Ok(Some(self.enter(wanted)));
+        }
+    }
+
+    /// A frame for `request`, entered at the context's current frame size.
+    fn enter(&self, request: NodeRequest) -> Frame {
+        Frame {
+            entered: self.slots(request.context),
+            request: std::rc::Rc::new(request),
+            finished: BTreeMap::new(),
+            queue: Vec::new(),
+            waiting: 0,
+        }
     }
 
     fn project_fresh(
@@ -1188,10 +1452,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let ValueType::Composite(declaration) = &value_type else {
                     return Err(fault("reader-tuple-value-has-declared-type").into());
                 };
-                let children = members
-                    .iter()
-                    .map(|member| self.project_argument(id, member, context, locals))
-                    .collect::<Result<Vec<_>, _>>()?;
+                let children = self.project_terms(id, members.iter(), context, locals)?;
                 (
                     NodeKind::Tuple {
                         declaration: declaration.clone(),
@@ -1217,10 +1478,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let ValueType::Collection(collection_type) = &value_type else {
                     return Err(fault("reader-collection-value-has-collection-type").into());
                 };
-                let children = members
-                    .iter()
-                    .map(|member| self.project_argument(id, member, context, locals))
-                    .collect::<Result<Vec<_>, _>>()?;
+                let children = self.project_terms(id, members.iter(), context, locals)?;
                 (
                     NodeKind::Collection {
                         collection_type: (**collection_type).clone(),
@@ -1312,10 +1570,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         let CheckedTerm::Aggregate { members } = value.as_ref() else {
             return Err(fault("reader-union-value-has-payload-list").into());
         };
-        let children = members
-            .iter()
-            .map(|argument| self.project_argument(&node.node_id, argument, context, locals))
-            .collect::<Result<Vec<_>, _>>()?;
+        let children = self.project_terms(&node.node_id, members.iter(), context, locals)?;
         Ok((
             NodeKind::UnionValue {
                 declaration: union_key,
@@ -1337,23 +1592,24 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             return Err(fault("reader-aggregate-has-checked-record-type").into());
         };
         let declaration = declaration.clone();
-        let slots = members
-            .iter()
-            .map(|member| -> Result<RecordSlot<usize>, BuildError> {
-                let CheckedTerm::Binding { name, value } = member else {
-                    return Err(fault("reader-record-value-has-checked-field-binding").into());
-                };
-                if !matches!(
-                    name.kind(),
-                    quire_contract_model::CheckedBindingNameKind::Other(_)
-                ) {
-                    return Err(fault("reader-record-value-has-declared-field-names").into());
-                }
-                Ok(RecordSlot::Present(
-                    self.project_argument(id, value, context, locals)?,
-                ))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut values = Vec::with_capacity(members.len());
+        for member in members {
+            let CheckedTerm::Binding { name, value } = member else {
+                return Err(fault("reader-record-value-has-checked-field-binding").into());
+            };
+            if !matches!(
+                name.kind(),
+                quire_contract_model::CheckedBindingNameKind::Other(_)
+            ) {
+                return Err(fault("reader-record-value-has-declared-field-names").into());
+            }
+            values.push(value.as_ref());
+        }
+        let slots = self
+            .project_terms(id, values.iter().copied(), context, locals)?
+            .into_iter()
+            .map(RecordSlot::Present)
+            .collect::<Vec<_>>();
         let children = slots
             .iter()
             .filter_map(|slot| match slot {
@@ -1381,7 +1637,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let [CheckedTerm::Binding { name, value }, body] = arguments else {
                     return Err(fault("reader-let-has-binding-and-body").into());
                 };
-                let binder = self.binder_node(name.as_ref(), body)?;
+                let binder = self.binder_of(id, name.as_ref(), body)?;
                 let slot = self.next_slot(context, locals);
                 let value = self.project_argument(id, value, context, locals)?;
                 let mut body_locals = locals.clone();
@@ -1634,7 +1890,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 let [source_term, CheckedTerm::Binding { name, value }] = arguments else {
                     return Err(fault("reader-collection-query-has-source-and-binder").into());
                 };
-                let binder = self.binder_node(name.as_ref(), value)?;
+                let binder = self.binder_of(id, name.as_ref(), value)?;
                 let slot = self.next_slot(context, locals);
                 let source = self.project_argument(id, source_term, context, locals)?;
                 let mut body_locals = locals.clone();
@@ -1859,11 +2115,8 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         context: Context,
         locals: &BTreeMap<CheckedNodeId, usize>,
     ) -> Result<Vec<usize>, BuildError> {
-        arguments
-            .ok_or_else(|| fault("reader-application-has-operands"))?
-            .iter()
-            .map(|argument| self.project_argument(id, argument, context, locals))
-            .collect()
+        let arguments = arguments.ok_or_else(|| fault("reader-application-has-operands"))?;
+        self.project_terms(id, arguments.iter(), context, locals)
     }
 
     fn equality(
@@ -2046,6 +2299,21 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
     /// outside every nested scope that rebinds `name` (FR-390 rule 3). A scope
     /// that never reads its binder reaches none, and the binder then takes a
     /// frame slot no node reads. Levels are slot-relative and play no part.
+    fn binder_of(
+        &mut self,
+        id: &CheckedNodeId,
+        name: &str,
+        scope: &CheckedTerm,
+    ) -> Result<Option<CheckedNodeId>, BuildError> {
+        if let Some(binder) = self.binders.get(id) {
+            return Ok(binder.clone());
+        }
+        let binder = self.binder_node(name, scope)?;
+        self.binders.insert(id.clone(), binder.clone());
+        Ok(binder)
+    }
+
+    /// [`Self::binder_of`] without the memo.
     fn binder_node(
         &self,
         name: &str,
@@ -2053,7 +2321,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
     ) -> Result<Option<CheckedNodeId>, BuildError> {
         let mut found = BTreeSet::new();
         let lookup = |id: &CheckedNodeId| self.index.node(id);
-        crate::introduced_binders::reach_term(&lookup, scope, &mut |node| {
+        crate::introduced_binders::reach_term(&lookup, scope, Some(name), &mut |node| {
             if parameter_name(&node.body) == Some(name) {
                 found.insert(node.node_id.clone());
             }
