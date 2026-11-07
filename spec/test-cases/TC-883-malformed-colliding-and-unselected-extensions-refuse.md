@@ -12,7 +12,7 @@ relationships:
 
 Verify each extension refusal names the definitions, keyword, node kind or form involved.
 
-Scope: FR-354-AC-3, FR-354-AC-4.
+Scope: FR-354-AC-3, FR-354-AC-4, FR-354-AC-9.
 
 ## Test Procedure
 
@@ -22,6 +22,7 @@ Scope: FR-354-AC-3, FR-354-AC-4.
 4. Two extensions whose dependency edges name each other.
 5. A unit declaring TC-882's form without selecting the extension, compiled over a catalog with and without the extension.
 6. A unit that selects TC-882's extension, has a function whose parameter is named `retention` and declares a record with a member named `retention`.
+7. A unit that selects TC-882's extension and declares `retention Audit { subject: "audit", days: 30 }` and `record Audit { n: Integer; }`.
 
 Tag the tests `#[trace("TC-883", "FR-354-AC-n")]`.
 
@@ -33,3 +34,4 @@ Tag the tests `#[trace("TC-883", "FR-354-AC-n")]`.
 - Step 4: `invalid_package`/`definition-cycle` naming both in path order.
 - Step 5: `unsupported_construct`/`declaration-form` naming `retention`, its span and the unit's selections, identical over both catalogs.
 - Step 6: the unit compiles, and `retention` is an ordinary parameter name and an ordinary member name.
+- Step 7: `ambiguous_declaration`/`ambiguous-name` naming the form `Audit` and the record `Audit` (QSpec FR-469).

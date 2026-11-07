@@ -124,6 +124,30 @@ pub enum ProtocolSite<'a> {
     /// A `visible` entry, guard, invariant or variant of the `choice` or
     /// `repeat` at this path, told apart by its source span.
     Decision(&'a [String], qsl_foundation::Span),
+    /// The guard of the case of this label of the `choice` at this path
+    /// (QSpec FR-322-AC-388).
+    CaseGuard(&'a [String], &'a str),
+    /// The `from` or `to` end of the record at this position of the emitted
+    /// `related` array of the control at this path (QSpec FR-322-AC-388).
+    RelatedEnd(&'a [String], usize, RelatedSide),
+}
+
+/// Which end of a `related` record a site names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RelatedSide {
+    /// The `from` end.
+    From,
+    /// The `to` end.
+    To,
+}
+
+impl RelatedSide {
+    fn word(self) -> &'static str {
+        match self {
+            Self::From => "from",
+            Self::To => "to",
+        }
+    }
 }
 
 /// The `Origin::TypeDeclaration` name of `site` of protocol `protocol`.
@@ -163,6 +187,17 @@ pub fn protocol_site(protocol: &str, site: ProtocolSite<'_>) -> String {
             path.join(" "),
             span.start,
             span.end
+        ),
+        ProtocolSite::CaseGuard(path, label) => {
+            format!(
+                "protocol {protocol} run {} case {label} guard",
+                path.join(" ")
+            )
+        }
+        ProtocolSite::RelatedEnd(path, position, side) => format!(
+            "protocol {protocol} run {} related {position} {}",
+            path.join(" "),
+            side.word()
         ),
     }
 }
