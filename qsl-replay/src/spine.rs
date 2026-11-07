@@ -2560,24 +2560,49 @@ mod tests {
     #[trace("TC-1339", "FR-534-AC-3")]
     #[test]
     fn declared_type_storage_requests_reach_compile_diagnostics() {
-        use quire_semantic_value::declaration::{StorageRequest, StorageUnit};
         use qsl_semantics::check::CheckingStage;
-        for (amount, unit, name) in [(13, StorageUnit::Bytes, "bytes"), (31, StorageUnit::AdditionalElements, "additional-elements")] {
+        use quire_semantic_value::declaration::{StorageRequest, StorageUnit};
+        for (amount, unit, name) in [
+            (13, StorageUnit::Bytes, "bytes"),
+            (31, StorageUnit::AdditionalElements, "additional-elements"),
+        ] {
             let request = StorageRequest::new(amount, unit);
             for (cause, field, tag) in [
-                (CheckCause::TypeCheckAllocation(request), "requested", "allocation-failed"),
-                (CheckCause::TypeCheckCapacity(request), "upstream", "reservation-size-overflow"),
+                (
+                    CheckCause::TypeCheckAllocation(request),
+                    "requested",
+                    "allocation-failed",
+                ),
+                (
+                    CheckCause::TypeCheckCapacity(request),
+                    "upstream",
+                    "reservation-size-overflow",
+                ),
             ] {
                 let location = Location::at(Origin::Expression, &[7, 2]);
                 assert_eq!(cause.type_check_stage(), Some(CheckingStage::Typing));
-                let refusal = CompileRefusal::Check { refusals: vec![CheckRefusal { cause, location: location.clone() }], region: None };
+                let refusal = CompileRefusal::Check {
+                    refusals: vec![CheckRefusal {
+                        cause,
+                        location: location.clone(),
+                    }],
+                    region: None,
+                };
                 assert_eq!(refusal.code(), Code::ResourceExhausted);
                 assert_eq!(refusal.cause(), Some(tag));
                 assert_eq!(refusal.stage(), SpineStage::Check);
-                assert_eq!(refusal.fields(), Some(BTreeMap::from([(field, format!("{name}:{amount}"))])));
-                let CompileRefusal::Check { refusals, .. } = refusal else { unreachable!() };
+                assert_eq!(
+                    refusal.fields(),
+                    Some(BTreeMap::from([(field, format!("{name}:{amount}"))]))
+                );
+                let CompileRefusal::Check { refusals, .. } = refusal else {
+                    unreachable!()
+                };
                 assert_eq!(refusals[0].location, location);
-                assert_eq!(refusals[0].cause.type_check_stage(), Some(CheckingStage::Typing));
+                assert_eq!(
+                    refusals[0].cause.type_check_stage(),
+                    Some(CheckingStage::Typing)
+                );
             }
         }
     }

@@ -9335,9 +9335,24 @@ mod tests {
         .expect("one enum declaration checks cleanly");
 
         let mut checked_nodes = 0;
-        let typer = Typer::new(&graph.scope, &graph.functions.signatures, CheckingLimits::default(), &mut checked_nodes, qsl_forms::ClauseKind::Body);
+        let typer = Typer::new(
+            &graph.scope,
+            &graph.functions.signatures,
+            CheckingLimits::default(),
+            &mut checked_nodes,
+            qsl_forms::ClauseKind::Body,
+        );
         let declared = ValueType::Enum(graph.scope.enums()[0].shape());
-        assert_eq!(typer.check_declared_type(&declared, &quire_semantic_value::location::Location::at(quire_semantic_value::location::Origin::Expression, &[1, 3])), Ok(()));
+        assert_eq!(
+            typer.check_declared_type(
+                &declared,
+                &quire_semantic_value::location::Location::at(
+                    quire_semantic_value::location::Origin::Expression,
+                    &[1, 3]
+                )
+            ),
+            Ok(())
+        );
 
         let nodes: Vec<&CheckedTypeNode> = graph.checked_type_nodes().collect();
         assert_eq!(nodes.len(), 1, "exactly the one declared enum");

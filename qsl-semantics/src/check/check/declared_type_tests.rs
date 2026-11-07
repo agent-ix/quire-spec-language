@@ -17,11 +17,19 @@ fn scope() -> Scope {
 }
 
 fn key(name: &str) -> NodeKey {
-    NodeKey::new("declared-type-test".to_owned(), vec![quire_exact::PathSegment::Text(name.to_owned())], 0).unwrap()
+    NodeKey::new(
+        "declared-type-test".to_owned(),
+        vec![quire_exact::PathSegment::Text(name.to_owned())],
+        0,
+    )
+    .unwrap()
 }
 
 fn object(name: &str) -> EffectiveId {
-    EffectiveId::new(None, quire_exact::OriginalDeclarationKey::new("declared-type-test", name))
+    EffectiveId::new(
+        None,
+        quire_exact::OriginalDeclarationKey::new("declared-type-test", name),
+    )
 }
 
 #[trace("TC-1339", "FR-534-AC-2", "FR-534-AC-4")]
@@ -124,10 +132,22 @@ fn declared_type_semantics_keep_owner_refusal_priority_and_location() {
     let mut scope = scope();
     let record = key("Record");
     let reference = object("Object");
-    let ieee = ValueType::Float(quire_exact::FloatType::exact(quire_exact::IeeeWidth::Binary64));
-    scope.types = TypeEnvironment::new([
-        CompositeDeclaration::new(record.clone(), "Record", CompositeShape::Tuple(vec![ValueType::Boolean])),
-    ], [ObjectTypeDeclaration::new(reference.clone(), "Object", vec![])]).unwrap();
+    let ieee = ValueType::Float(quire_exact::FloatType::exact(
+        quire_exact::IeeeWidth::Binary64,
+    ));
+    scope.types = TypeEnvironment::new(
+        [CompositeDeclaration::new(
+            record.clone(),
+            "Record",
+            CompositeShape::Tuple(vec![ValueType::Boolean]),
+        )],
+        [ObjectTypeDeclaration::new(
+            reference.clone(),
+            "Object",
+            vec![],
+        )],
+    )
+    .unwrap();
     let signatures = Signatures::default();
     let mut nodes = 0;
     let typer = Typer::new(
@@ -146,7 +166,11 @@ fn declared_type_semantics_keep_owner_refusal_priority_and_location() {
         ValueType::option(ValueType::option(ValueType::Integer)),
         ValueType::collection(CollectionType::new(
             CollectionKind::Sequence,
-            ValueType::Integer,
+            ValueType::collection(CollectionType::new(
+                CollectionKind::Set,
+                ValueType::Integer,
+                None,
+            )),
             None,
         )),
     ] {
@@ -159,12 +183,29 @@ fn declared_type_semantics_keep_owner_refusal_priority_and_location() {
             cause: IllTypedCause::OperatorIneligible,
         },
     );
-    assert_eq!(typer.check_declared_type(&ty, &location), Err(expected.clone()));
+    assert_eq!(
+        typer.check_declared_type(&ty, &location),
+        Err(expected.clone())
+    );
     // Both unordered collection layers prohibit the nested IEEE element;
     // the outer layer retains the owner's first-refusal priority.
     let competing = ValueType::collection(CollectionType::new(CollectionKind::Bag, ty, None));
-    assert_eq!(typer.check_declared_type(&competing, &location), Err(expected));
-    for ty in [ValueType::Composite(key("Missing")), ValueType::Reference(object("Missing"))] {
-        assert_eq!(typer.check_declared_type(&ty, &location), Err(CheckRefusal::from_ill_typed(&location, quire_exact::IllTyped { cause: IllTypedCause::TypeMismatch })));
+    assert_eq!(
+        typer.check_declared_type(&competing, &location),
+        Err(expected)
+    );
+    for ty in [
+        ValueType::Composite(key("Missing")),
+        ValueType::Reference(object("Missing")),
+    ] {
+        assert_eq!(
+            typer.check_declared_type(&ty, &location),
+            Err(CheckRefusal::from_ill_typed(
+                &location,
+                quire_exact::IllTyped {
+                    cause: IllTypedCause::TypeMismatch
+                }
+            ))
+        );
     }
 }
