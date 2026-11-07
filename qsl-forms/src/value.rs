@@ -656,7 +656,9 @@ fn type_arguments<'c>(cst: &'c LosslessCst, node: &'c CstNode) -> Vec<&'c CstNod
             Item::Node(child)
                 if matches!(
                     child.production(),
-                    Production::TypeReference | Production::QualifiedName
+                    Production::TypeReference
+                        | Production::QualifiedName
+                        | Production::UnitExpression
                 ) =>
             {
                 Some(child)
@@ -669,6 +671,30 @@ fn type_arguments<'c>(cst: &'c LosslessCst, node: &'c CstNode) -> Vec<&'c CstNod
 /// A type-form node's head and bounds, with no arguments yet.
 fn type_head(cst: &LosslessCst, node: &CstNode) -> Result<TypeForm, FormsRefusal> {
     let span = node.span();
+    if node.production() == Production::UnitExpression {
+        let children = items(cst, node);
+        let mut terms = Vec::new();
+        for term in nodes_of(&children, Production::DimensionTerm) {
+            let parts = items(cst, term);
+            let exponent = match nodes_of(&parts, Production::SignedInteger).as_slice() {
+                [] => None,
+                [exponent] => Some((
+                    integer(&spelled(cst, exponent)?, exponent)?,
+                    exponent.span(),
+                )),
+                _ => return Err(unexpected(term)),
+            };
+            terms.push(crate::UnitTermForm {
+                name: name_form(cst, only(&parts, Production::QualifiedName, term)?)?,
+                exponent,
+            });
+        }
+        let head = match terms.as_slice() {
+            [term] if term.exponent.is_none() => TypeFormHead::Name(term.name.clone()),
+            _ => TypeFormHead::UnitExpression(terms),
+        };
+        return Ok(TypeForm::new(head, span));
+    }
     if node.production() == Production::QualifiedName {
         return Ok(TypeForm::new(
             TypeFormHead::Name(name_form(cst, node)?),
@@ -1300,6 +1326,7 @@ impl<'c> Mapping<'c> {
             | Production::TextProfile
             | Production::DimensionDeclaration
             | Production::DimensionTerm
+            | Production::UnitExpression
             | Production::DimensionEquivalence
             | Production::RatioTerm
             | Production::UnitDeclaration
@@ -2019,6 +2046,7 @@ impl<'c> Mapping<'c> {
             | Production::TextProfile
             | Production::DimensionDeclaration
             | Production::DimensionTerm
+            | Production::UnitExpression
             | Production::DimensionEquivalence
             | Production::RatioTerm
             | Production::UnitDeclaration
