@@ -85,6 +85,7 @@ impl ToolFailure {
     /// `tool-failure` cause (FR-286, `kind` spelling):
     /// another `kind`, an unknown `defect`, a missing or non-integer
     /// `limit` or `value` on a byte-limit defect, or any other member.
+    #[ix_trace_rs::string_edge]
     pub fn read_cause(cause: &Value) -> Option<Self> {
         let members = cause.as_object()?;
         if members.get("kind")?.as_str()? != "tool-failure" {
