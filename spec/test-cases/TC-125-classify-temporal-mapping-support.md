@@ -23,7 +23,7 @@ classification is verified in [TC-1240](./TC-1240-establish-the-native-to-tl-tem
 
 Groups 1–5 execute in `tests/it/mapping_support.rs` and the `qsl-package` mapping tests
 (the `composed_temporal_mapping.rs` controls of the v1 classifier were retired by QSL-858 PR 1) and group 6 in
-`tests/it/mapping_support_v2.rs`, which classifies through a strict `/2` package. No TL evaluator, bridge definition or
+the `qsl-package` mapping tests (FR-527-AC-13 to AC-21); the `/2`-package classifier and its `mapping_support_v2.rs` controls were retired by QSL-858 PR 2. No TL evaluator, bridge definition or
 contract-IR predicate projection participates; the classification is a total
 function of the admitted declaration and the requested surrounding-execution
 closure, which the owner ruling on `quire-contract-ir#64` fixes as the TL row
