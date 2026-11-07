@@ -98,9 +98,11 @@ impl<'p> BarePackage<'p> {
     ///
     /// # Errors
     ///
-    /// IR's `ExhaustedWork` or `ExhaustedStorage` refusal when `budget` runs
-    /// out; no package is returned, and the denial is never an unknown
-    /// witness, a fault or an empty identity set.
+    /// [`crate::NativeJoinFailure`] retains IR's `ExhaustedWork` or
+    /// `ExhaustedStorage` for identity/type projection, or its `WorkLimit` or
+    /// `StorageLimit` for equality admission. No package is returned when
+    /// `budget` runs out; the denial is never an unknown witness, a fault or
+    /// an empty identity set.
     pub fn with_supply(
         mut self,
         supply: BareSupply<'p>,

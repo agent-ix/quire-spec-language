@@ -1240,3 +1240,81 @@ fn a_package_refusal_found_after_a_node_refusal_in_the_walk_is_reported_first() 
     let empty = ReadEqualityRows::read(&empty_file(), &package).expect("empty rows read");
     assert_eq!(project(Some(&empty)), Err("equality Unknown".to_owned()));
 }
+
+/// Repeated real equality-slot selection and projection borrow the decisions
+/// retained by exact-budget bytes admission without charging another native read.
+#[trace("TC-1331", "FR-531-AC-28")]
+#[test]
+fn equality_slots_reuse_the_decisions_retained_by_exact_budget_admission() {
+    use quire_contract_model::NativeJoinBudget;
+    let (_holder, request, files) = handoff(tc1070::SOURCE);
+    let package = read(&request, &files["checked-package.json"]);
+    let identities = ReadIdentityRows::read(
+        &files["identities.json"],
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("original identities");
+    let equality =
+        ReadEqualityRows::read(&files["equality.json"], &package).expect("original equality");
+    let supply = BareSupply {
+        identities: &identities,
+        equality: Some(&equality),
+    };
+    let mut measure = NativeJoinBudget::new(1 << 30, 1 << 30);
+    BarePackage::new(&package)
+        .with_supply(supply, &mut measure)
+        .expect("measure complete entry");
+    let need = measure.consumed();
+    let mut exact = NativeJoinBudget::new(need.work, need.storage);
+    let bare = BarePackage::new(&package)
+        .with_supply(supply, &mut exact)
+        .expect("exact budget admits");
+    let descriptor = ProtocolSlotDescriptor::new(
+        node_key(&package, "Refunds", "Refund"),
+        "retry.relation",
+        None,
+    );
+    let slot = bare
+        .select_protocol_slot(&descriptor)
+        .expect("the equality-bearing retry relation");
+    let projection = bare
+        .project_protocol_slot(&slot)
+        .expect("real slot projection");
+    let Some(quire_checked::node::NodeKind::Equality(operator, equality, _, _)) =
+        projection.kind(projection.root())
+    else {
+        panic!("root is the original admitted equality")
+    };
+    assert_eq!(
+        *operator,
+        quire_semantic_value::declaration::EqualityOperator::Equal
+    );
+    let expected = equality.clone();
+    assert_eq!(
+        projection.value_type(projection.root()),
+        Some(&quire_exact::ValueType::Boolean)
+    );
+    for _ in 0..2 {
+        let selected = bare
+            .select_protocol_slot(&descriptor)
+            .expect("selection reuses admission");
+        assert_eq!(selected.root(), slot.root());
+        assert_eq!(selected.origin(), slot.origin());
+        let repeated = bare
+            .project_protocol_slot(&selected)
+            .expect("projection reuses admission");
+        let Some(quire_checked::node::NodeKind::Equality(operator, actual, _, _)) =
+            repeated.kind(repeated.root())
+        else {
+            panic!("still an equality")
+        };
+        assert_eq!(
+            *operator,
+            quire_semantic_value::declaration::EqualityOperator::Equal
+        );
+        assert_eq!(actual, &expected);
+        assert_eq!(exact.consumed(), need);
+        assert_eq!(exact.first_unpaid(), None);
+    }
+}

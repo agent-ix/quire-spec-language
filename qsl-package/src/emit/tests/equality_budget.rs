@@ -184,3 +184,106 @@ fn bare_admission_retains_equality_and_reports_its_denial_after_projection() {
         assert_eq!(budget.first_unpaid().expect("first unpaid").kind, kind);
     }
 }
+
+#[trace("TC-1331", "FR-531-AC-28")]
+#[test]
+fn source_evaluation_view_preserves_the_equality_denial_and_exact_stage_limit() {
+    use quire_semantic_value::catalog::CatalogCoded;
+    let package = CheckedPackage::link(converted_equality::checked_graph(
+        "function same using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure { a = b }",
+    ));
+    let emission = emit(&package);
+    let Read::Verified { admitted, .. } = read_back(&emission) else {
+        panic!("owner admits")
+    };
+    let mut measure = NativeJoinBudget::new(1_000_000, 1_000_000);
+    let identities = emission
+        .identity_rows(&admitted, &mut measure)
+        .expect("producer row join");
+    let equality = emission.equality_witness(&admitted);
+    let supply = BareSupply {
+        identities: &identities,
+        equality: Some(&equality),
+    };
+    BarePackage::new(&admitted)
+        .with_supply(supply, &mut measure)
+        .expect("same complete native pass");
+    let need = measure.consumed();
+    let domains = BTreeMap::new();
+    let limits = |work, storage| {
+        V2ReadLimits::fixture()
+            .with_work(work)
+            .with_storage(storage)
+    };
+    let read = crate::read_evaluation_emission(
+        &package,
+        &emission,
+        library(),
+        &domains,
+        limits(need.work, need.storage),
+        crate::EmitLimits::fixture(),
+    )
+    .expect("public source reader admits");
+    read.evaluation_view()
+        .expect("the exact native allowance admits the public view");
+    for (work, storage, kind, code, setting) in [
+        (
+            need.work - 1,
+            need.storage,
+            NativeJoinChargeKind::Work,
+            Code::WorkLimit,
+            "i2.work_units",
+        ),
+        (
+            need.work,
+            need.storage - 1,
+            NativeJoinChargeKind::Storage,
+            Code::StorageLimit,
+            "i2.native_join_storage",
+        ),
+    ] {
+        // The same original row-production prefix that evaluation_view owns.
+        let mut expected_budget = NativeJoinBudget::new(work, storage);
+        emission
+            .identity_rows(&admitted, &mut expected_budget)
+            .expect("prefix admits");
+        let error = BarePackage::new(&admitted)
+            .with_supply(supply, &mut expected_budget)
+            .expect_err("equality is the denied tail");
+        let NativeJoinFailure::Equality(expected) = error else {
+            panic!("owner equality denial")
+        };
+        assert_eq!(expected.code, code);
+        let unpaid = expected_budget
+            .first_unpaid()
+            .expect("original first unpaid charge");
+        assert_eq!(unpaid.kind, kind);
+        let bound = if kind == NativeJoinChargeKind::Work {
+            work
+        } else {
+            storage
+        };
+        let consumed = if kind == NativeJoinChargeKind::Work {
+            expected_budget.consumed().work
+        } else {
+            expected_budget.consumed().storage
+        };
+        let short = crate::read_evaluation_emission(
+            &package,
+            &emission,
+            library(),
+            &domains,
+            limits(work, storage),
+            crate::EmitLimits::fixture(),
+        )
+        .expect("I2 read still admits");
+        let Err(crate::ViewFailure::Exhausted(denial)) = short.evaluation_view() else {
+            panic!("public view must expose exhaustion")
+        };
+        assert_eq!(denial.native, NativeJoinFailure::Equality(expected));
+        assert_eq!(denial.limit.configured_bound(), bound);
+        assert_eq!(denial.limit.setting().name(), setting);
+        assert_eq!(denial.limit.actual(), u128::from(consumed) + unpaid.amount);
+        assert_eq!(denial.catalog_code().code(), "stage_limit_exceeded");
+    }
+}

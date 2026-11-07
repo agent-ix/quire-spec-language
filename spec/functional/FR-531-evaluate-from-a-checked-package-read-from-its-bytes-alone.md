@@ -725,13 +725,16 @@ follows.
   refused, with the order FR-390 states, by the call that reads the identities
   (FR-531-AC-5). `with_supply` returns an error only for a denied native charge.
 - **Denial is its own typed refusal.** A denied work or storage charge returns
-  Contract IR's `ExactTypeProjectionError` with code `ExhaustedWork` or
-  `ExhaustedStorage`, its locus and its attempted charge, and no
-  `BarePackage`. It is not an `UnknownIdentityWitness`, not an
+  `NativeJoinFailure` retaining Contract IR's original typed cause: an
+  `ExactTypeProjectionError` with code `ExhaustedWork` or `ExhaustedStorage`
+  for identity/type projection, or an `AdmittedEqualityReadError` with code
+  `WorkLimit` or `StorageLimit` for equality admission. The shared budget
+  retains the first unpaid charge and cumulative admitted counters. No
+  `BarePackage` is returned. It is not an `UnknownIdentityWitness`, not an
   `InternalFault` and not an empty set of identities. A denial surfaced through
   the stage-failure or diagnostic path is a `stage_limit_exceeded`-class refusal
-  naming `i2.work_units` or `i2.native_join_storage`; `ExhaustedWork` and
-  `ExhaustedStorage` stay the library form. The same denial from a
+  naming `i2.work_units` or `i2.native_join_storage`; the original owner error
+  and its code remain available in the library form. The same denial from a
   view's join is `ViewFailure::Exhausted`, from an evidence constructor
   `PackageMismatch::Exhausted`, and from the handoff writer
   `Error::NativeJoinExhausted`. `qsl-eval`'s `CallFailure` has no arm for it:

@@ -19,7 +19,7 @@ use quire_semantic_value::catalog::InternalFault;
 
 use crate::bare::{BarePackage, IdentityWitnessRefusal};
 use crate::checked_v2::wire_graph;
-use crate::equality_file::{EqualityWitnessRefusal, ReadEqualityRows};
+use crate::equality_file::EqualityWitnessRefusal;
 use crate::protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
 use crate::protocol_view::{
     argument, control_operation, group_member, integer, reference, text, ControlOperation,
