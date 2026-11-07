@@ -5,8 +5,12 @@ use ix_trace_rs::trace;
 use quire_semantic_value::declaration::{StorageRequest, StorageUnit, TypeCheckError};
 
 fn scope() -> Scope {
+    scope_with_types(TypeEnvironment::new([], []).unwrap())
+}
+
+fn scope_with_types(types: TypeEnvironment) -> Scope {
     Scope::new(
-        TypeEnvironment::new([], []).unwrap(),
+        types,
         OperationTable::default(),
         vec![],
         vec![],
@@ -137,13 +141,12 @@ fn owner_storage_classes_and_units_survive_conversion() {
 #[test]
 fn declared_type_semantics_keep_owner_refusal_priority_and_location() {
     use quire_semantic_value::declaration::{CompositeDeclaration, ObjectTypeDeclaration};
-    let mut scope = scope();
     let record = key("Record");
     let reference = object("Object");
     let ieee = ValueType::Float(quire_exact::FloatType::exact(
         quire_exact::IeeeWidth::Binary64,
     ));
-    scope.types = TypeEnvironment::new(
+    let types = TypeEnvironment::new(
         [CompositeDeclaration::new(
             record.clone(),
             "Record",
@@ -156,6 +159,7 @@ fn declared_type_semantics_keep_owner_refusal_priority_and_location() {
         )],
     )
     .unwrap();
+    let scope = scope_with_types(types);
     let signatures = Signatures::default();
     let mut nodes = 0;
     let typer = Typer::new(
