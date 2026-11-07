@@ -961,6 +961,21 @@ impl ReplayRequest {
     }
 }
 
+/// Deliberately mutate an unadmitted input document for decoder/admission controls.
+#[cfg(test)]
+pub(crate) fn mutate_raw_package(
+    package: &ReplayPackage,
+    mutate: impl FnOnce(&mut serde_json::Value),
+) -> ReplayPackage {
+    let mut value: serde_json::Value = serde_json::from_slice(package.bytes()).unwrap();
+    mutate(&mut value);
+    let bytes = serde_json::to_vec(&value).unwrap();
+    let document = quire_canonical::read(&bytes, u64::MAX).unwrap();
+    let bytes =
+        quire_canonical::to_vec(&document.root(), quire_canonical::Limits::default()).unwrap();
+    ReplayPackage::read(&bytes, u64::MAX).unwrap()
+}
+
 /// Partial JSON descriptor for decoder and claim-receipt tests only; never native authority.
 #[cfg(test)]
 pub(crate) fn raw_package_descriptor(name: &str, sources: &[SourceRefWire]) -> ReplayPackage {

@@ -94,7 +94,6 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
 
     let site = &located.site;
     let parity = site.value_parity.as_ref().expect("inc is a value function");
-    let source_wire = ("agent-ix".to_owned(), "test:value-parity-uc".to_owned());
     let bindings = vec![CanonicalAssignment {
         parameter: site.parameters[0].1.clone(),
         value: WitnessValue::Integer(3),

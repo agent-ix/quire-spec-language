@@ -245,10 +245,26 @@ pub(super) fn request(
     for (_, bytes) in documents {
         provided.push(bytes.clone());
     }
+    let package = crate::compile_package(
+        crate::CompileUnit {
+            source: qsl_foundation::SourceIdentity::new(AUTHORITY, IDENTITY),
+            package_name: "fixture".to_owned(),
+            path: IDENTITY,
+            bytes: source_bytes,
+        },
+        [domain_document],
+        &crate::DependencyInput::default(),
+        crate::StageLimits::default(),
+        crate::ReplayLimits::default(),
+    )
+    .expect("actual frame source package");
     ReplayRequestWire {
-        package_name: "fixture".to_owned(),
+        package: crate::ReplayPackage::read(
+            package.bytes(),
+            crate::ReplayLimits::default().input_bytes,
+        )
+        .unwrap(),
         profile_selections: Vec::new(),
-        sources: vec![(AUTHORITY.to_owned(), IDENTITY.to_owned())],
         dependencies: Vec::new(),
         replay_target: target.into(),
         source: witness_source(),
