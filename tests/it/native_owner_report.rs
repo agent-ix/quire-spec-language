@@ -463,7 +463,8 @@ fn opposite_and_missing_valuations_are_computed_from_admitted_rows() {
 fn evaluation_reads_the_retained_rows_alone() {
     use qsl_eval::temporal::evidence::Settlement;
     use quire_spec_language::temporal::ReportOutcome;
-    let cases: [(&[(usize, bool)], Option<Truth>, ReportOutcome); 3] = [
+    type Case = (&'static [(usize, bool)], Option<Truth>, ReportOutcome);
+    let cases: [Case; 3] = [
         (
             &[(0, true), (0, true), (1, true)],
             Some(Truth::True),
