@@ -13,6 +13,7 @@
 
 use quire_exact::NodeKey;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use super::{InconclusiveCause, TerminalRecord, TerminalValue};
 use crate::execute::{process_provider_obligation, BoundEntries, IdentityEncodeError};
@@ -48,7 +49,7 @@ struct FunctionDeclaration {
 /// `check` resolved for it, if it resolved one.
 #[derive(Clone, Debug)]
 struct DependencySelection {
-    identity: String,
+    identity: crate::LibraryName,
     source: Option<DefinitionSourceRef>,
 }
 
@@ -61,6 +62,7 @@ pub struct PluginReplayContext {
     package: Vec<u8>,
     package_input_bytes: u64,
     dependencies: Vec<DependencySelection>,
+    library_packages: Arc<BTreeMap<crate::LibraryName, qsl_package::EmittedPackage>>,
     functions: BTreeMap<NodeKey, FunctionDeclaration>,
     /// Every requirement record of the package, with the function whose
     /// application claim it is when `replay` can select that function by
@@ -114,7 +116,7 @@ impl PluginReplayContext {
             .dependency_selections()
             .keys()
             .map(|identity| DependencySelection {
-                identity: identity.as_str().to_owned(),
+                identity: identity.clone(),
                 source: checked.library_source(identity).map(source_reference),
             })
             .collect();
@@ -148,6 +150,7 @@ impl PluginReplayContext {
             package: emitted.package().bytes().to_vec(),
             package_input_bytes: limits.replay.input_bytes,
             dependencies,
+            library_packages: Arc::clone(checked.shared_library_packages()),
             functions,
             requirements: graph
                 .requirements()
@@ -219,13 +222,22 @@ impl PluginReplayContext {
             .map(|selection| {
                 let source = selection.source.as_ref().ok_or_else(|| {
                     PluginReplayRefusal::UnresolvedDependency {
-                        identity: selection.identity.clone(),
+                        identity: selection.identity.as_str().to_owned(),
                     }
                 })?;
+                let package = self
+                    .library_packages
+                    .get(&selection.identity)
+                    .ok_or_else(|| {
+                        PluginReplayRefusal::Fault(InternalFault::new(
+                            "plugin-replay",
+                            "selected-library-has-its-emitted-package",
+                        ))
+                    })?;
                 Ok(DependencyEntryWire {
-                    identity: selection.identity.clone(),
+                    identity: selection.identity.as_str().to_owned(),
                     sources: vec![source.to_wire()],
-                    refinement_internals: None,
+                    refinement_internals: dependency_internals(package.bytes())?,
                 })
             })
             .collect::<Result<Vec<_>, PluginReplayRefusal>>()?;
@@ -283,6 +295,25 @@ impl PluginReplayContext {
             documents: self.documents.clone(),
         })
     }
+}
+
+// The producer owns this package's shape; this projects only its lock and does
+// not admit it or infer an absent list from its semantic graph.
+fn dependency_internals(
+    bytes: &[u8],
+) -> Result<Option<Vec<quire_contract_model::CheckedRefinementInternal>>, PluginReplayRefusal> {
+    let invalid = || {
+        PluginReplayRefusal::Fault(InternalFault::new(
+            "plugin-replay",
+            "emitted-library-lock-has-its-owner-shape",
+        ))
+    };
+    let fields: BTreeMap<&str, &serde_json::value::RawValue> =
+        serde_json::from_slice(bytes).map_err(|_| invalid())?;
+    let lock = fields.get("lock").ok_or_else(invalid)?;
+    let lock: quire_contract_model::CheckedPackageLockV2 =
+        serde_json::from_str(lock.get()).map_err(|_| invalid())?;
+    Ok(lock.refinement_internals)
 }
 
 /// A plugin counterexample [`PluginReplayContext::request`] could not build a
