@@ -792,6 +792,36 @@ pub fn acquire_checked_closure<'a>(
     replay_limits: ReplayLimits,
 ) -> Result<CheckedClosureCompilation, AdmittedRefusal> {
     let compiled = recompile_unit(unit, packages, dependencies, limits, replay_limits)?;
+    retain_compiled_closure(compiled)
+}
+
+/// Acquire a source-backed checked closure with its owner-admitted division law.
+/// The same selection reaches checking, emission, and the retained executable
+/// body; this does not create a bytes-only execution entry.
+pub fn acquire_checked_closure_with_integer_division<'a>(
+    unit: CompileUnit<'_>,
+    packages: impl IntoIterator<Item = &'a [u8]>,
+    dependencies: &DependencyInput,
+    integer_division: &quire_checked::integer_division::AdmittedIntegerDivision,
+    limits: StageLimits,
+    replay_limits: ReplayLimits,
+) -> Result<CheckedClosureCompilation, AdmittedRefusal> {
+    let compiled = crate::compile::recompile_with_integer_division(
+        unit,
+        packages,
+        dependencies,
+        &crate::spine::StateClauseExecutionPoints::new(),
+        &[],
+        Some(*integer_division),
+        limits,
+        replay_limits,
+    )?;
+    retain_compiled_closure(compiled)
+}
+
+fn retain_compiled_closure(
+    compiled: crate::execute::Recompiled,
+) -> Result<CheckedClosureCompilation, AdmittedRefusal> {
     let package_name = compiled.package.clone();
     let context = context_of(
         compiled.checked.package(),
@@ -2728,3 +2758,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod division_tests;
