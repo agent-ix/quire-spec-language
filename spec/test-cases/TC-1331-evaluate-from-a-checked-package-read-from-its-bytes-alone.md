@@ -82,7 +82,7 @@ For AC-31, obtain an authentic emission with nonempty source records, members
 and unions. Materialize its identity rows and compare every retained original
 declaration, field, member, union key and ordering to the producer's claims;
 then pass the rows through the actual native identity join and type projection.
-Measure the native join prefix separately from the adapter's later declaration,
+Measure producer input copies and the single native join separately from the adapter's later declaration,
 field, record/member and union copies, requiring their sum to equal the shared
 budget's cumulative consumption. Repeat with exact allowances, one below each
 resource and zero storage. A refusal returns no partial rows and preserves the
