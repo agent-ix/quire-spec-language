@@ -25,22 +25,6 @@ pub(super) fn execute(
 ) -> Result<Execution, Failure> {
     let (_, bytes) = inputs.one(InputKind::ReplayRequest)?;
     let value = super::super::DeepValue::new(document(bytes, schema)?);
-    if value["package"]["lock"]
-        .get("refinement_internals")
-        .is_some()
-    {
-        return super::unavailable_refinement("/package/lock/refinement_internals".to_owned());
-    }
-    for (index, dependency) in array(&value["dependencies"], "/dependencies")?
-        .iter()
-        .enumerate()
-    {
-        if dependency.get("refinement_internals").is_some() {
-            return super::unavailable_refinement(format!(
-                "/dependencies/{index}/refinement_internals"
-            ));
-        }
-    }
     let mut request = decode(&value, inputs, root)?;
     if let Some((path, error)) = inputs.unreadable_bytes.first() {
         return Err(Failure::io(path, error));
@@ -353,6 +337,7 @@ fn decode(value: &Value, inputs: &Inputs<'_>, root: &Path) -> Result<ReplayReque
                     &dependency["sources"],
                     &format!("/dependencies/{index}/sources"),
                 )?,
+                refinement_internals: dependency.get("refinement_internals").cloned(),
             })
         })
         .collect::<Result<_, Failure>>()?;
@@ -385,6 +370,7 @@ fn decode(value: &Value, inputs: &Inputs<'_>, root: &Path) -> Result<ReplayReque
             })
             .collect::<Result<_, Failure>>()?,
         sources: sources(&package["lock"]["sources"], "/package/lock/sources")?,
+        refinement_internals: package["lock"].get("refinement_internals").cloned(),
         dependencies,
         replay_target: std::mem::take(&mut target_wire),
         source: replay_source,

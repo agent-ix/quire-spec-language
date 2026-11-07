@@ -507,6 +507,7 @@ pub(crate) fn replay_unit_result(
         package_name: PACKAGE_NAME.to_owned(),
         profile_selections: Vec::new(),
         sources: vec![source_wire(unit.identity)],
+        refinement_internals: None,
         dependencies: Vec::new(),
         replay_target: qsl_replay::RequestTargetWire::function(
             selected(),

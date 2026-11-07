@@ -85,6 +85,7 @@ fn request(source_order: Vec<&str>, documents: Vec<Vec<u8>>) -> ReplayRequestWir
         package_name: "fixture".to_owned(),
         profile_selections: Vec::new(),
         sources: source_order.into_iter().map(reference).collect(),
+        refinement_internals: None,
         dependencies: Vec::new(),
         replay_target: target,
         source: ReplaySource::Input(Vec::new()),
@@ -364,6 +365,7 @@ fn d10_replay(reverse: bool) -> (qsl_replay::StateClauseReplayResult, Vec<u8>) {
         package_name: "d10-package".to_owned(),
         profile_selections: Vec::new(),
         sources: references,
+        refinement_internals: None,
         dependencies: Vec::new(),
         replay_target: RequestTargetWire::state_clause(target),
         source: ReplaySource::Input(Vec::new()),
@@ -423,6 +425,7 @@ fn multi_source_dependency_request(
     let dependency = DependencyEntryWire {
         identity: "test/library".to_owned(),
         sources,
+        refinement_internals: None,
     };
     let target = RequestTargetWire::function(selected(), selection.site.declaration.clone());
     let mut byte_provision = vec![
@@ -449,6 +452,7 @@ fn multi_source_dependency_request(
         package_name: "fixture".to_owned(),
         profile_selections: Vec::new(),
         sources: vec![reference(FIRST_ID)],
+        refinement_internals: None,
         dependencies: vec![dependency],
         replay_target: target,
         source: ReplaySource::Input(Vec::new()),
@@ -512,7 +516,7 @@ fn assert_dependency_source_list_refusal(mut wire: ReplayRequestWire) {
     assert_eq!(refusal.cause(), Some("invalid-value"));
     assert_eq!(
         refusal.pointer().as_deref(),
-        Some("/package/dependencies/0/sources")
+        Some("/dependencies/0/sources")
     );
 }
 
@@ -571,7 +575,7 @@ fn duplicate_unit_source_refuses_before_recompile() {
     assert!(matches!(refusal, ReplayRefusal::PackageSources(_)));
     assert_eq!(refusal.code(), qsl_foundation::Code::InvalidPackage);
     assert_eq!(refusal.cause(), Some("invalid-value"));
-    assert_eq!(refusal.pointer().as_deref(), Some("/package/sources"));
+    assert_eq!(refusal.pointer().as_deref(), Some("/package/lock/sources"));
 }
 
 #[trace("TC-1210", "FR-480-AC-7")]
@@ -592,7 +596,7 @@ fn definition_document_source_refuses_before_recompile() {
     assert!(matches!(refusal, ReplayRefusal::PackageSources(_)));
     assert_eq!(refusal.code(), qsl_foundation::Code::InvalidPackage);
     assert_eq!(refusal.cause(), Some("invalid-value"));
-    assert_eq!(refusal.pointer().as_deref(), Some("/package/sources"));
+    assert_eq!(refusal.pointer().as_deref(), Some("/package/lock/sources"));
 }
 
 fn supplied(identity: &str, source: &str, text: &str) -> SuppliedLibrary {
