@@ -217,7 +217,12 @@ fn a_hyper_clause_emits_the_hyperproperty_node_with_its_seven_bindings() {
     let parameters = binding(body, "parameters")["members"].as_array().unwrap();
     assert_eq!(parameters.len(), 1);
     assert_eq!(parameters[0]["name"], "c");
-    assert_eq!(
+    // FR-488-AC-2: the subject is the package's `model_root` node, not the
+    // parameter's object type node.
+    let subject = node_with(&compiled.wire, target(&subjects[0]["value"]));
+    assert_eq!(subject["node_tag"], "model");
+    assert_eq!(subject["semantic_form"], "model_root");
+    assert_ne!(
         target(&subjects[0]["value"]),
         target(&parameters[0]["value"])
     );
@@ -236,7 +241,13 @@ fn a_hyper_clause_emits_the_hyperproperty_node_with_its_seven_bindings() {
                     .unwrap(),
             )
         };
-        assert_eq!(field("kind"), "quantifier");
+        let order: Vec<&str> = members
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|member| member["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(order, ["variable", "quantifier", "alias"]);
         assert_eq!(field("variable"), variable);
         assert_eq!(field("quantifier"), "forall");
         assert_eq!(field("alias"), "Config");
@@ -345,24 +356,77 @@ fn fairness_constraints_follow_their_quantifier_as_resolved() {
     let groups = binding(&node["body"], "quantifiers")["members"]
         .as_array()
         .unwrap();
-    let field = |group: &Value, name: &str| {
+    // One Group per quantifier; each ends in references to its fairness nodes.
+    assert_eq!(groups.len(), 2);
+    let references = |group: &Value| -> Vec<Value> {
         group["members"]
             .as_array()
             .unwrap()
             .iter()
-            .find(|member| member["name"] == name)
-            .map(|member| member["value"].clone())
-            .unwrap_or_else(|| panic!("{name} in {group}"))
+            .filter(|member| member["term"] == "reference")
+            .cloned()
+            .collect()
     };
-    assert_eq!(groups.len(), 4);
-    assert_eq!(text(&field(&groups[1], "kind")), "fairness");
-    assert_eq!(text(&field(&groups[1], "variable")), "a");
-    assert_eq!(text(&field(&groups[1], "fairness_kind")), "weak");
-    assert_eq!(text(&field(&groups[1], "granularity")), "whole");
-    assert_eq!(text(&field(&groups[1], "name")), "attemptUpdate");
-    assert_eq!(text(&field(&groups[3], "fairness_kind")), "strong");
-    assert_eq!(text(&field(&groups[3], "granularity")), "each");
-    assert_eq!(text(&field(&groups[3], "variable")), "b");
+    for (group, variable) in groups.iter().zip(["a", "b"]) {
+        assert_eq!(group["members"][0]["name"], "variable");
+        assert_eq!(text(&group["members"][0]["value"]), variable);
+        assert_eq!(references(group).len(), 1);
+    }
+    let fairness_of = |group: &Value| {
+        let reference = &references(group)[0];
+        let node = node_with(&compiled.wire, target(reference));
+        assert_eq!(node["node_tag"], "temporal");
+        assert_eq!(node["semantic_form"], "fairness");
+        node["body"]["operation"]["member"].clone()
+    };
+    let weak = fairness_of(&groups[0]);
+    let strong = fairness_of(&groups[1]);
+    assert_eq!(weak["fairness_kind"], "weak");
+    assert_eq!(weak["granularity"], "whole");
+    assert_eq!(weak["target"]["kind"], "operation");
+    assert_eq!(weak["target"]["name"], "attemptUpdate");
+    assert_eq!(strong["fairness_kind"], "strong");
+    assert_eq!(strong["granularity"], "each");
+    admit(&compiled);
+}
+
+/// FR-488-AC-13: a written `weak whole` constraint emits the fairness member
+/// and clause NodeId of the unmarked one, and `weak each` a different member
+/// and, beside it in one package, a second fairness node.
+#[trace("TC-1266", "FR-488-AC-13")]
+#[test]
+fn fairness_granularity_spellings_resolve_to_one_node() {
+    let emit = |constraint: &str| {
+        let compiled = compile(&unit(
+            INFINITE,
+            &hyper("Fair", constraint, "", "", READ_A_B),
+        ));
+        let fairness = only_node(&compiled.wire, "fairness")["body"]["operation"]["member"].clone();
+        (fairness, hyper_node(&compiled.wire)["node_id"].clone())
+    };
+    let unmarked = emit("fair weak Config::ConfigVersion::attemptUpdate;");
+    let whole = emit("fair weak whole Config::ConfigVersion::attemptUpdate;");
+    let each = emit("fair weak each Config::ConfigVersion::attemptUpdate;");
+    assert_eq!(unmarked, whole);
+    assert_eq!(each.0["granularity"], "each");
+    assert_ne!(unmarked.0, each.0);
+
+    let both = compile(&unit(
+        INFINITE,
+        &hyper(
+            "Fair",
+            "fair weak Config::ConfigVersion::attemptUpdate;",
+            "fair weak each Config::ConfigVersion::attemptUpdate;",
+            "",
+            READ_A_B,
+        ),
+    ));
+    let ids: std::collections::BTreeSet<String> = nodes(&both.wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "fairness")
+        .map(|node| node["node_id"].to_string())
+        .collect();
+    assert_eq!(ids.len(), 2);
 }
 
 /// FR-488-AC-10: an `align skip` operation is the `operation_anchor` node a
@@ -691,6 +755,10 @@ fn two_aliases_list_their_subjects_parameters_and_slots() {
         .collect();
     assert_eq!(names, ["S", "N"]);
     assert_ne!(target(&subjects[0]["value"]), target(&subjects[1]["value"]));
+    for subject in subjects {
+        let root = node_with(&built.wire, target(&subject["value"]));
+        assert_eq!(root["semantic_form"], "model_root");
+    }
     let parameters = binding(body, "parameters")["members"].as_array().unwrap();
     let names: Vec<_> = parameters
         .iter()
@@ -1052,20 +1120,24 @@ fn the_wrapper_carries_the_profile_law_activation_and_formula() {
         .expect("the formula's operand");
     let holds = node_with(wire, target(operand));
     assert_eq!(holds["semantic_form"], "formula");
-    // The fairness Group's `declaration` is the model node `subjects` names.
+    // The quantifier Group's fairness reference names the object type's
+    // `model` node as its `declaration`, which is not the `model_root`
+    // subject.
     let groups = binding(&node["body"], "quantifiers")["members"]
         .as_array()
         .unwrap();
-    let declaration = groups[1]["members"]
+    let reference = groups[0]["members"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|member| member["name"] == "declaration")
-        .unwrap();
+        .find(|member| member["term"] == "reference")
+        .expect("a fairness reference");
+    let fairness = node_with(wire, target(reference));
+    let declaration = &fairness["body"]["operation"]["member"]["target"]["declaration"];
     let subjects = binding(&node["body"], "subjects")["members"]
         .as_array()
         .unwrap();
-    assert_eq!(target(&declaration["value"]), target(&subjects[0]["value"]));
+    assert_ne!(declaration, target(&subjects[0]["value"]));
     admitted(&built);
 }
 
