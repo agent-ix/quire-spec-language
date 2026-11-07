@@ -28,23 +28,21 @@ relationships:
 
 When linking an explicitly inventoried composed package, the compiler SHALL resolve each declaration to its selected definition closure, admitted domain-package model declarations and typed native dependencies before exposing it to a downstream checker.
 
-`linking::composed::subject::StaticSubject` retains the package contract's six
+`qsl_replay::spine::StaticSubject` (FR-510) retains the package contract's six
 declared static components — Sources, Language, Profiles, Models, Native
 dependencies and Binding requirements — and compares two subjects component by
 component. Nothing is derived from a subject beyond that comparison;
 canonical identity remains unavailable until its exact form and version
-are selected and qualified. `subject::BuildProvenance` retains the full
+are selected and qualified. `BuildProvenance` retains the full
 compile configuration separately, so a resource-only change is visible there and
 in no static component.
 
-The compiler recognizes a closed registry of the reviewed baseline's exact
-definition and rule bytes; callers explicitly supply those artifacts. The
-registry is implementation support, not a Markdown reader or an implicit source
-of omitted dependencies. Its normative resources preserve the selected standard
-bytes and original licensing. The historical native-state-model/1 rule-model
-source binds through NativeModel. Domain-package model declarations bind by
-declaration key and export kind; a same-shaped record from another domain
-package grants no authority. Domain-package intake belongs to #131.
+Profile and definition selections resolve against the closed definition
+catalog under FR-110; callers explicitly supply the artifacts they select, and
+the catalog is not a Markdown reader or an implicit source of omitted
+dependencies. Domain-package model declarations bind by declaration key and
+export kind; a same-shaped record from another domain package grants no
+authority. Domain-package intake belongs to #131.
 
 ## Inputs
 
@@ -57,18 +55,10 @@ dependency edges; these are processing controls rather than semantic selections.
 No filesystem discovery, network retrieval or installed backend supplies an
 omitted dependency.
 
-The public package boundary declares its work-accounting version, supported
-dimensions, published default capacities, and effective caller-configured limits
-before accepting work. Its versioned charging rules identify the bytes and
-inventory entries counted, the resolution attempts and dependency-edge visits
-charged, and how shared dependencies, cache hits and revisits are charged.
-Counters belong to one invocation; a retry starts a new accounting run without
-mutating the prior report or inputs. A zero limit permits no charged work in
-that dimension. Check a charge before performing its work; counter overflow
-also exhausts the budget. The selected accounting contract makes exact-limit
-expectations derivable from a controlled input and traversal, not from elapsed
-time or available memory. Historical per-unit limits remain separate; they do
-not silently define new whole-package capacities.
+Package-wide capacities are separate from the historical per-unit limits and
+are named at each entry point under FR-255. A zero limit permits no charged
+work in its dimension, a charge is checked before its work is performed, and a
+retry starts a new accounting run without mutating the prior report or inputs.
 
 The [standard package contract](https://github.com/agent-ix/quire-specification/blob/main/proposals/quire-v1/package-contract.md),
 landed in [standard PR #15](https://github.com/agent-ix/quire-specification/pull/15),
@@ -127,11 +117,7 @@ If a native model reference names a domain package, declaration key or export ki
 
 If a package processing budget is exhausted, then the linker SHALL report resource_exhausted for unfinished dependent work without claiming complete package admission.
 
-The compiler SHALL retain each requested clause/capability pair when handing a linked subject to downstream processing.
-
-The compiler SHALL retain a requested capability only when its label names exactly one capability kind that [FR-057](FR-057-admit-shared-capability-kinds.md) admits.
-
-If a downstream family checker refuses a requested form, or quire-contract-codegen's `negotiate_*` settles a requested pair other than `supported`, then the compiler SHALL retain that typed disposition at the pair's request index without converting the package to complete success. The compiler reads no backend state itself (FR-057).
+Requested clause/capability pairs, their admitted kinds and their settled dispositions are owned by [FR-057](FR-057-admit-shared-capability-kinds.md); a downstream family checker's refusal of a requested form is retained at the pair's request index without converting the package to complete success, and the linker reads no backend state itself.
 
 Collect declarations before resolving forward references. Alias namespaces stay
 unit-local; native declaration names are package-wide. Predicate calls, temporal
@@ -166,21 +152,23 @@ The linker SHALL bind a protocol relationship to a Connection or navigation rela
 
 The linker SHALL refuse a native reference to a declaration of any other kind.
 
-The composed type checker SHALL type a domain object type, Interface or record value type, and a field read by the field's value type (`Boolean`, or another such domain type, under multiplicity `1`, `0..1` or `0..n`).
+The type checker SHALL type a domain object type, Interface or record value type, and a field read by the field's value type (`Boolean`, or another such domain type, under multiplicity `1`, `0..1` or `0..n`).
 
-The composed type checker SHALL refuse any other field type, and a domain value type, as an unsupported prerequisite.
+The type checker SHALL refuse any other field type, and a domain value type, as an unsupported prerequisite.
+
+**QSL-499 disposition:** the composed linker (`linking::composed` namespace, binding, definition-closure, model-binding and request-report stages) is deleted under ADR-011, ADR-033 and FR-499; the spine check (`qsl_replay::spine::check`) is the single path. The retired criteria below are retained as migration history and are not active acceptance obligations. Their behavior is owned as follows: header and definition selection by FR-110 and FR-056 (AC-1, AC-3); scoped names, anchors, duplicate and cyclic declarations by FR-113 and FR-218 (AC-2, AC-4); requested clause/capability pairs by FR-057 (AC-6); work accounting by FR-218-AC-36 and FR-255 (AC-7). FR-036-AC-5, AC-8 and AC-9 stay active.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-036-AC-1 | A multi-unit state/temporal/protocol package binds exact definition/model selections and typed cross-family references without runtime observations; unit-local aliases may reuse a spelling without merging owners. All headers agree with the inventory's single language/edition; mixed editions or a header/inventory conflict refuse package namespace admission with the conflicting selections located. | Test (TC-114) |
-| FR-036-AC-2 | Omitted inventory units, duplicate native names/authorities, wrong-kind targets, illegal binder/capture scope and self or mutual semantic dependencies produce located typed refusals; bounded protocol repetition is not falsely diagnosed as a dependency cycle. | Test (TC-114) |
-| FR-036-AC-3 | Missing or conflicting definition closure, a declaration from a foreign domain package and an artifact-identity substitution refuse every dependent declaration while preserving unrelated bound declarations and their identities. | Test (TC-114) |
-| FR-036-AC-4 | Binding roles with equal local spelling in two declarations retain different declaration-owned identities; nominally different types and current/activation/invocation anchors remain distinct across families. | Test (TC-114) |
+| FR-036-AC-1 | **RETIRED in QSL-499; historical only.** A multi-unit state/temporal/protocol package binds exact definition/model selections and typed cross-family references without runtime observations; unit-local aliases may reuse a spelling without merging owners. All headers agree with the inventory's single language/edition; mixed editions or a header/inventory conflict refuse package namespace admission with the conflicting selections located. | Test (TC-114) |
+| FR-036-AC-2 | **RETIRED in QSL-499; historical only.** Omitted inventory units, duplicate native names/authorities, wrong-kind targets, illegal binder/capture scope and self or mutual semantic dependencies produce located typed refusals; bounded protocol repetition is not falsely diagnosed as a dependency cycle. | Test (TC-114) |
+| FR-036-AC-3 | **RETIRED in QSL-499; historical only.** Missing or conflicting definition closure, a declaration from a foreign domain package and an artifact-identity substitution refuse every dependent declaration while preserving unrelated bound declarations and their identities. | Test (TC-114) |
+| FR-036-AC-4 | **RETIRED in QSL-499; historical only.** Binding roles with equal local spelling in two declarations retain different declaration-owned identities; nominally different types and current/activation/invocation anchors remain distinct across families. | Test (TC-114) |
 | FR-036-AC-5 | Changing runtime population/window/trace or backend leaves static meaning unchanged; changing a required semantic selection changes it. Resource-only configuration changes remain visible without becoming semantic changes. | Test (TC-115) |
-| FR-036-AC-6 | Two required requested pairs over different FR-057 capability kinds both remain in the request report in caller order; when either is not settled `supported`, complete aggregate success joined from the FR-331 accounting records on request index is unavailable, and a family body refused by its checker is never represented as checked. | Test (TC-115) |
-| FR-036-AC-7 | A dependency chain, diamond and cycle terminate under declared versioned work accounting and lowered traversal budgets. The accounting contract supplies exact-limit expectations, including shared dependencies and revisits; zero never disables a limit. An unaffordable next charge or counter overflow retains unfinished dispositions and yields no complete or executable package. A retry with sufficient budget preserves the original inputs and prior report. | Test (TC-114) |
+| FR-036-AC-6 | **RETIRED in QSL-499; historical only.** Two required requested pairs over different FR-057 capability kinds both remain in the request report in caller order; when either is not settled `supported`, complete aggregate success joined from the FR-331 accounting records on request index is unavailable, and a family body refused by its checker is never represented as checked. | Test (TC-115) |
+| FR-036-AC-7 | **RETIRED in QSL-499; historical only.** A dependency chain, diamond and cycle terminate under declared versioned work accounting and lowered traversal budgets. The accounting contract supplies exact-limit expectations, including shared dependencies and revisits; zero never disables a limit. An unaffordable next charge or counter overflow retains unfinished dispositions and yields no complete or executable package. A retry with sufficient budget preserves the original inputs and prior report. | Test (TC-114) |
 | FR-036-AC-8 | Through `qsl_replay::spine::check`, the typed per-use profile outcome for `protocol P using ob`, where `ob` selects `quire.observation.binding/v1`, retains the selected identity, completed closure status, exact registered `quire.protocol.finite-global/v1` dependency and its transitive requirements; use-site admission separately refuses `WrongProfileKind`. If the required protocol definition is omitted, conflicting or incompatible, that outcome retains the corresponding typed closure cause, the declaration remains refused or incomplete, and no complete checked package is reported. | Test (TC-114) |
 | FR-036-AC-9 | Native model references to a field, a Port and a Connection of a domain package admitted under FR-056 bind to their exact declaration keys and kinds, and a declaration of a kind the site does not bind refuses at the linker; a same-shaped declaration from another domain package or a changed selected identity or version refuses each dependent declaration while unrelated declarations stay bound. | Test (TC-148) |
 

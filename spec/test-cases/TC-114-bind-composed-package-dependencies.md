@@ -15,16 +15,12 @@ models/definitions and source units. Concrete observations are deliberately abse
 from the valid template. Integration with a real domain-package bundle belongs to
 TC-148 and IT-012.
 
-`tests/composed_namespace.rs` and `tests/composed_linking.rs` exercise the source
-inventory and native declaration-reference portions through `admit_namespace`.
-Their unresolved profile/model selectors do not qualify later binding.
-`tests/composed_binding.rs` exercises the combined three-family path with the
-actual native rule-model source and exact normative definition/rule inputs.
-`composed_definitions`, `composed_definition_source`, `composed_models` and
-`composed_scopes` cover its adverse selections, original owners, lexical/causal
-environments and bounded retries. Binding against admitted domain-package
-declarations and the cross-family type/capture/instance boundary are completed
-by TC-148 under IT-012. None of these static cases
+Steps 1 to 6 verify the retired FR-036-AC-1 to AC-4 and AC-7 and are retained as
+migration history: the composed linker they exercised is deleted, and scoped
+names, dependencies and work accounting are owned by FR-113, FR-218 and FR-255.
+Step 7 verifies the active FR-036-AC-8 through the spine check. Binding against
+admitted domain-package declarations and the cross-family type/capture/instance
+boundary are completed by TC-148 under IT-012. None of these static cases
 claims runtime observations or family evaluation.
 
 ## Test Procedure

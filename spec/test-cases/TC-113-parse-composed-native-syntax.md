@@ -11,10 +11,11 @@ relationships:
 ## Description
 
 Exercise the public parser against the composed grammar and the historical
-corpus. The public Rust tests are in `tests/composed_syntax.rs`, including the
-authored choreography fixture and balanced-but-incomplete refusal controls. The
-`1-draft` declarations of step 5 are parsed and checked by the complete-V1
-front end.
+corpus. Steps 1 to 4, 6 and 7 verify the retired FR-035-AC-1 to AC-6 and are
+retained as migration history: their composed-unit parser is deleted, and the
+lossless CST parser (FR-002) with the S2 form builders (FR-308, FR-257) owns
+located syntax. Step 5 verifies the active FR-035-AC-7: the `1-draft`
+declarations are parsed and checked by the spine front end.
 
 ## Test Procedure
 

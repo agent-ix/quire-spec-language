@@ -40,19 +40,18 @@ relationships:
 
 ## Description
 
-When checking a composed binding report, the compiler SHALL establish each dependent value expression's selected profile permissions, exact native type and guarded definedness before exposing that expression as checked.
+When checking a bound package, the compiler SHALL establish each dependent value expression's selected profile permissions, exact native type and guarded definedness before exposing that expression as checked.
 
 ## Inputs
 
-The immutable `linking::composed::binding::Report`, its original source units,
-definition closures, admitted domain-package model declarations and their export
+The parsed source units of the spine check, their resolved definition closures, admitted domain-package model declarations and their export
 records, and lexical/anchor bindings; exact
 authored formal correspondence needed by the selected proof interface; and finite
 caller-configured checking limits. A declaration must have completed name binding
 before dependent type checking. Concrete observations, populations, clocks,
 invocation values and backend instances are absent from static checking inputs.
 
-Formal correspondence follows the existing `CheckBindings` boundary: exact
+Formal correspondence is the exact
 `FormalSource` content/source identity and each authored declaration's
 requirement, clause and execution-point selection. A `UnitId`, native source
 label or model owner's `RequirementRef` cannot substitute for this correspondence.
@@ -142,29 +141,31 @@ unfinished values as checked or erase a known refusal. A retry starts fresh
 counters and preserves prior inputs/results. Resource settings remain visible
 configuration provenance, separate from selected semantic identities.
 
+**QSL-499 disposition:** the composed type-admission and proof-discharge stages (`checking::composed`) are deleted under ADR-011, ADR-033 and FR-499; value typing and guarded definedness are owned by the spine checker. The retired criteria below are retained as migration history and are not active acceptance obligations. Their behavior is owned as follows: profile permissions by FR-110 and FR-508 (AC-2); nominal types, literals and operators by FR-016-AC-10 and FR-104 (AC-1, AC-4); ordered queries and sum-prefix proofs by FR-046-AC-4 and AC-5 (AC-5); guards, presence and pre/post reads in state clauses by FR-104-AC-4 and AC-7 (AC-6); declaration-owned requirement records by FR-104-AC-5 (AC-7); every limit and its raising setting by FR-255 (AC-9). FR-040-AC-3 and AC-11 stay active.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-040-AC-1 | Exact multi-unit predicate/state inputs and shared values in temporal/protocol bodies retain unit-qualified expression types and source spans; names-resolved, typed, proof-discharged and family/execution dispositions cannot be interchanged. Refused or unfinished input produces no dependent checked value. | Test (TC-119) |
-| FR-040-AC-2 | StateCore refuses predicate/query-extension/graph forms where absent from its catalog; StateQueries admits its typed extension while refusing graph forms; StateGraph admits its eligible graph forms. Unused or unreachable prohibited forms still refuse and a wider caller cannot upgrade a callee. | Test (TC-119) |
+| FR-040-AC-1 | **RETIRED in QSL-499; historical only.** Exact multi-unit predicate/state inputs and shared values in temporal/protocol bodies retain unit-qualified expression types and source spans; names-resolved, typed, proof-discharged and family/execution dispositions cannot be interchanged. Refused or unfinished input produces no dependent checked value. | Test (TC-119) |
+| FR-040-AC-2 | **RETIRED in QSL-499; historical only.** StateCore refuses predicate/query-extension/graph forms where absent from its catalog; StateQueries admits its typed extension while refusing graph forms; StateGraph admits its eligible graph forms. Unused or unreachable prohibited forms still refuse and a wider caller cannot upgrade a callee. | Test (TC-119) |
 | FR-040-AC-3 | Exact parameter arity/order, nominal model/scalar/unit identity, enum/text/option/sequence constraints and Boolean roots distinguish valid inputs from same-spelled foreign types, ambiguous literals, wrong arguments and forbidden coercions or status-as-Boolean. | Test (TC-119) |
-| FR-040-AC-4 | Inclusive integer extrema and guarded arithmetic preserve exact bounds. Rational normalization-before-bounds, zero denominator, exact division/nonzero guards and result-domain failures follow the selected contract. Missing model/proof representation, including unsupported rational sum-domain transfer, yields an explicit unsupported prerequisite and leaves the corresponding full-feature acceptance outstanding. | Test (TC-119) |
-| FR-040-AC-5 | All eight ordered query forms retain their exact binder/result shape. A declared sequence maximum of 0 refuses at model admission, and one above model admission's `sequence_maximum` limit (published default 10,000; FR-015) refuses there naming that limit and admits once the limit is raised to fit it. An admitted collection may be empty at runtime, and checking admits provably empty filter results. Each form, including sum, checks otherwise valid domains at maximum 10,000 with sufficient effective proof limits; caller-limit exhaustion remains distinct from semantic refusal. The declared Amount 1..20/U, N=5, Total 0..100/U, Count 0..5 case checks; N=6 against those result domains, wrong units/representation or an unproved intermediate prefix refuse despite a convenient sample/final sum. | Test (TC-119) |
-| FR-040-AC-6 | Guard-before-use and immutable aliases discharge supported presence/range obligations; reversed guards, invalid alternative joins, foreign receiver/observation and pre-retagged captures refuse at their original loci. Valid composite pre reads and same-invocation immutable parameters retain distinct provenance. | Test (TC-119) |
-| FR-040-AC-7 | Graph/context/operation/capture uses emit typed declaration-owned runtime requirements with exact universe, anchor, scope/completeness and frame selections without observations. Same-named roles, foreign universes and opaque scalar/relationship substitutions cannot satisfy them. | Test (TC-119) |
-| FR-040-AC-8 | Exact authored formal correspondence permits actual supported IR discharge. Omitted, duplicate, changed-source, foreign-declaration or wrong-execution-point correspondence prevents dependent proof without synthetic ownership. Unproved definedness, unsupported prerequisite and resource exhaustion retain distinct typed causes; typing remains inspectable. | Test (TC-119) |
-| FR-040-AC-9 | Independently calculated small chain/diamond, nested-query and proof-expansion vectors distinguish zero, exact and one-step-insufficient limits in every public dimension, including output retention and overflow. Shared work/retries obey the published charges; an exhausted or refused dependent remains unadmitted beside unrelated completed work. | Test (TC-119) |
-| FR-040-AC-10 | Historical checker/profile/package fixtures retain their original identities, successes and atomic refusals. Composed typed/partial reports cannot enter historical checked/execution interfaces by retagging or introduce an implicit wire contract. | Test (TC-119) |
+| FR-040-AC-4 | **RETIRED in QSL-499; historical only.** Inclusive integer extrema and guarded arithmetic preserve exact bounds. Rational normalization-before-bounds, zero denominator, exact division/nonzero guards and result-domain failures follow the selected contract. Missing model/proof representation, including unsupported rational sum-domain transfer, yields an explicit unsupported prerequisite and leaves the corresponding full-feature acceptance outstanding. | Test (TC-119) |
+| FR-040-AC-5 | **RETIRED in QSL-499; historical only.** All eight ordered query forms retain their exact binder/result shape. A declared sequence maximum of 0 refuses at model admission, and one above model admission's `sequence_maximum` limit (published default 10,000; FR-015) refuses there naming that limit and admits once the limit is raised to fit it. An admitted collection may be empty at runtime, and checking admits provably empty filter results. Each form, including sum, checks otherwise valid domains at maximum 10,000 with sufficient effective proof limits; caller-limit exhaustion remains distinct from semantic refusal. The declared Amount 1..20/U, N=5, Total 0..100/U, Count 0..5 case checks; N=6 against those result domains, wrong units/representation or an unproved intermediate prefix refuse despite a convenient sample/final sum. | Test (TC-119) |
+| FR-040-AC-6 | **RETIRED in QSL-499; historical only.** Guard-before-use and immutable aliases discharge supported presence/range obligations; reversed guards, invalid alternative joins, foreign receiver/observation and pre-retagged captures refuse at their original loci. Valid composite pre reads and same-invocation immutable parameters retain distinct provenance. | Test (TC-119) |
+| FR-040-AC-7 | **RETIRED in QSL-499; historical only.** Graph/context/operation/capture uses emit typed declaration-owned runtime requirements with exact universe, anchor, scope/completeness and frame selections without observations. Same-named roles, foreign universes and opaque scalar/relationship substitutions cannot satisfy them. | Test (TC-119) |
+| FR-040-AC-8 | **RETIRED in QSL-499; historical only.** Exact authored formal correspondence permits actual supported IR discharge. Omitted, duplicate, changed-source, foreign-declaration or wrong-execution-point correspondence prevents dependent proof without synthetic ownership. Unproved definedness, unsupported prerequisite and resource exhaustion retain distinct typed causes; typing remains inspectable. | Test (TC-119) |
+| FR-040-AC-9 | **RETIRED in QSL-499; historical only.** Independently calculated small chain/diamond, nested-query and proof-expansion vectors distinguish zero, exact and one-step-insufficient limits in every public dimension, including output retention and overflow. Shared work/retries obey the published charges; an exhausted or refused dependent remains unadmitted beside unrelated completed work. | Test (TC-119) |
+| FR-040-AC-10 | **RETIRED in QSL-499; historical only.** Historical checker/profile/package fixtures retain their original identities, successes and atomic refusals. Composed typed/partial reports cannot enter historical checked/execution interfaces by retagging or introduce an implicit wire contract. | Test (TC-119) |
 | FR-040-AC-11 | Through `qsl_replay::spine::check`, a protocol declaration with a typed Boolean `check` expression whose definedness is supported and whose exact authored source, clause and handler execution point are supplied has a per-declaration typed protocol-proof result with disposition `Discharged`, no causes, retained proof goals and exact formal correspondence; omitting, duplicating or substituting the formal source, declaration mapping or execution point yields a typed correspondence refusal or unfinished result and never `Discharged`. This proof result alone does not admit or execute the protocol. | Test (TC-119) |
 
 ## Dependencies
 
-[FR-036](FR-036-link-composed-native-packages.md) supplies the binding report;
+[FR-036](FR-036-link-composed-native-packages.md) supplies the bound declarations;
 [FR-014](FR-014-bind-native-formal-source.md) and
-[FR-016](FR-016-check-native-clauses.md) provide existing formal-source, native
-type and IR proof seams without changing their historical contract.
-[TC-119](../test-cases/TC-119-check-composed-values.md) is the planned compiler
+[FR-016](FR-016-check-native-clauses.md) provide formal-source, native
+type and IR proof seams.
+[TC-119](../test-cases/TC-119-check-composed-values.md) is the compiler
 test case; [IT-012](../integration/IT-012-domain-package-model-intake.md) owns
 the real domain-package intake integration.
 
