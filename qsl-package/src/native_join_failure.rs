@@ -56,6 +56,14 @@ impl NativeJoinFailure {
         match self {
             Self::Limit(error) => error.native.setting(),
             Self::Projection(error) => qsl_semantics::model::intake::native_budget_setting(error),
+            Self::Rows(error) => error.denied().map(|charge| match charge.kind {
+                quire_contract_model::NativeJoinChargeKind::Work => {
+                    qsl_foundation::Setting::I2WorkUnits
+                }
+                quire_contract_model::NativeJoinChargeKind::Storage => {
+                    qsl_foundation::Setting::I2NativeJoinStorage
+                }
+            }),
             Self::Equality(error) => match error.code {
                 quire_contract_model::AdmittedEqualityReadErrorCode::WorkLimit => {
                     Some(qsl_foundation::Setting::I2WorkUnits)

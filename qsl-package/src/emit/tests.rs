@@ -54,6 +54,7 @@ mod equality_budget;
 mod golden;
 mod hybrid;
 mod hyper_clause;
+mod identity_budget;
 mod inventory_ceilings;
 mod large_cycle;
 mod mapping_support;
