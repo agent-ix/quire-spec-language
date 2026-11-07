@@ -350,9 +350,18 @@ function e1 using v(s: State, i: Inputs): State pure { s }\n\
 function e2 using v(s: State, p: Scope): State pure { s }\n\
 function e3 using v(s: State, g: Integer): State pure { s }\n";
     let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
+    let record_document =
+        serde_json::to_vec(&child_composite::fixture::document()).expect("real record domain");
     let packages =
-        qsl_semantics::model::intake::package_input([document]).expect("real selected model");
-    let source = clock_places::clocked_unit(body).replace(
+        qsl_semantics::model::intake::package_input([document, record_document.as_slice()])
+            .expect("both actual domain packages");
+    let body = format!(
+        "model M = {:?};\n{}\n{}",
+        child_composite::fixture::PACKAGE,
+        child_composite::UNIT,
+        body
+    );
+    let source = clock_places::clocked_unit(&body).replace(
         "profile t = \"quire.temporal.complete/v1\";\n",
         "profile t = \"quire.temporal.complete/v1\";\nprofile tt = \"quire.temporal.timed/v1\";\n",
     );
@@ -369,6 +378,9 @@ function e3 using v(s: State, g: Integer): State pure { s }\n";
     evidence
         .insert_domain_package_document(package_identity(document), document)
         .expect("real domain evidence");
+    evidence
+        .insert_domain_package_document(package_identity(&record_document), &record_document)
+        .expect("the selected record domain evidence");
     let rate = quire_exact::Rational::new(1_i64.into(), 500_i64.into()).unwrap();
     let zero = quire_exact::Rational::from_integer(0_i64.into());
     let plan = MonitorPlanWire {
@@ -438,7 +450,7 @@ function e3 using v(s: State, g: Integer): State pure { s }\n";
     );
     assert!(
         !expected_fields.is_empty(),
-        "real ConfigVersion field rows survive carry"
+        "real selected model record fields survive carry"
     );
     assert_eq!(
         rooted.identity_row_selection.declarations,
