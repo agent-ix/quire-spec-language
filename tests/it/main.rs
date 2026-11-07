@@ -35,6 +35,7 @@ mod selected_object_closure;
 pub(crate) mod support;
 
 mod abstraction_relation_inert;
+mod architecture_fixture_spine;
 mod call_replay_context_items;
 mod call_requirements_items;
 mod clause_kind_canonical;
@@ -97,6 +98,7 @@ mod retired_native_runtime;
 mod seam5_retired;
 mod source_map;
 mod spine_deletion_boundaries;
+mod spine_retained_criteria;
 mod spine_run;
 mod temporal_negotiation;
 #[cfg(feature = "checked-handoff")]

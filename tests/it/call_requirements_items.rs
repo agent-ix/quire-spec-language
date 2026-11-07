@@ -505,7 +505,7 @@ fn guarded_predicate_division_admits_on_the_spine() {
 /// TC-1308 row 9/10: predicate call type errors and a partial divisor retain
 /// their typed check refusal through the complete spine, including a
 /// possibly-zero rational divisor.
-#[trace("TC-1308", "FR-046-AC-2", "FR-513-AC-4")]
+#[trace("TC-1308", "FR-046-AC-2", "FR-513-AC-4", "FR-040-AC-4")]
 #[test]
 fn predicate_call_errors_and_partial_division_are_checked_on_the_spine() {
     let compile = |identity: &str, declarations: &str| {
