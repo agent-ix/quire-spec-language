@@ -19,7 +19,7 @@ use quire_exact::Rational;
 use crate::wire_form::{has_form, has_tag, WireForm, WireTag};
 
 use super::{
-    own_evidence, read_index_segments, write_index_segments, CheckedNodeId, CheckedOccurrence,
+    read_index_segments, write_index_segments, CheckedNodeId, CheckedOccurrence,
     CheckedOccurrenceRole, CheckedPackageSidecarsRef, CheckedPackageSourceCorrespondenceRef,
     CheckedPackageV2, CheckedSemanticGraphV2, CheckedSourceMapEntry, Emission, EmitRefusal,
     EmittedPackage, OmittedNode, StructuralIds, GRAPH_V2,
@@ -350,13 +350,14 @@ pub fn emit_monitor_plan_over(
         evidence,
     )
     .map_err(|_| invariant("the base package does not read back"))?;
-    emit_monitor_plan(&read.into_value().admitted, retained, plan, emit)
+    emit_monitor_plan(&read.into_value().admitted, retained, evidence, plan, emit)
 }
 
 /// Write the plan root and entries onto the admitted package `base`.
 fn emit_monitor_plan(
     base: &CheckedPackageV2,
     retained: &Emission,
+    evidence: &quire_contract_model::CheckedPackageEvidence,
     plan: &MonitorPlanWire<'_>,
     limits: crate::checked::EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
@@ -1292,10 +1293,14 @@ fn finish(
         &mut rows.selected_source_collection_rows,
         &semantic_graph.nodes,
     )?;
+    let mut evidence = evidence.clone();
+    for feature in &lock.required_features {
+        evidence.support_feature(feature.clone());
+    }
     Ok(Emission {
         package,
         omitted: rows.omitted,
-        evidence: own_evidence(&lock),
+        evidence,
         capability_report,
         source_map: inspection_source_map,
         selected_operation_member_rows: rows.selected_operation_member_rows,

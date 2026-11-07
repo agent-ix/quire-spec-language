@@ -392,7 +392,16 @@ impl PlanRoot {
                 && row.claim.occurrence() == claim.occurrence().origin()
                 && row.observation_source == selection.observation_source.as_str()
         });
-        let row = rows.next().ok_or(ProgressSelectionRefusalCode::Claim)?;
+        let row = rows.next().ok_or_else(|| {
+            if association.rows().iter().any(|row| {
+                row.claim.clause_node().key() == claim.clause_node()
+                    && row.claim.occurrence() == claim.occurrence().origin()
+            }) {
+                ProgressSelectionRefusalCode::Source
+            } else {
+                ProgressSelectionRefusalCode::Claim
+            }
+        })?;
         if rows.next().is_some() {
             return Err(ProgressSelectionRefusalCode::Ambiguous.into());
         }

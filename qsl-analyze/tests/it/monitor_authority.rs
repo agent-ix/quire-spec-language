@@ -140,10 +140,14 @@ fn genuine_tick_authority_retains_complete_original_values_and_same_emission() {
     );
     let binding = context.admitted_package().admission_binding();
     assert!(context.admitted_package().clone().retains(&binding));
-    let independent = crate::monitor_root::read_back(
+    let independent = match quire_contract_model::read_checked_package(
         context.root().emission().package().bytes(),
+        LIMITS,
         context.root().emission().evidence(),
-    );
+    ) {
+        quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(package) => package,
+        other => panic!("retained evidence strict read: {other:?}"),
+    };
     assert!(
         !independent.retains(&binding),
         "equal-byte independent reads cannot replace the retained admission"
@@ -320,7 +324,14 @@ fn independent_source_subject_clock_and_foreign_emission_selections_refuse() {
             Some(view),
             limits(),
         );
-        assert_eq!(result.unwrap_err().code(), expected, "control {control}");
+        let error = result.unwrap_err();
+        assert_eq!(error.code(), expected, "control {control}");
+        if control == 6 {
+            assert!(matches!(
+                error,
+                PlanAuthorityRefusal::Selection(ProgressSelectionRefusalCode::Source)
+            ));
+        }
     }
     let original = tick_root();
     let (view, subject) = observation::admitted(Some(vec![row(&original)]));
@@ -391,5 +402,83 @@ fn exact_canonical_bounds_succeed_and_one_short_preserves_owner_failures() {
         } else {
             assert!(matches!(error, PlanAuthorityRefusal::Order(_)));
         }
+    }
+}
+
+#[trace("TC-1081", "FR-251-AC-45", "FR-251-AC-47")]
+#[test]
+fn final_emission_retains_actual_read_evidence_without_fixture_reinjection() {
+    let roots = [
+        tick_root(),
+        root_of(
+            &authored("eventually[0 ms, 3 ms] holds(c.versionNumber = 3)"),
+            "C",
+            &target(),
+        )
+        .unwrap(),
+    ];
+    for root in roots {
+        match quire_contract_model::read_checked_package(
+            root.emission().package().bytes(),
+            LIMITS,
+            root.emission().evidence(),
+        ) {
+            quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(package) => {
+                assert_eq!(package.monitor_plans().len(), 1)
+            }
+            other => {
+                panic!("actual retained final evidence must admit without reinjection: {other:?}")
+            }
+        }
+    }
+}
+
+#[trace("TC-1081", "FR-251-AC-46")]
+#[test]
+fn changing_only_the_independent_checked_claim_node_role_or_ordinal_refuses_claim() {
+    for control in 0..3 {
+        let root = tick_root();
+        let (view, subject) = observation::admitted(Some(vec![row(&root)]));
+        let source = root.checked_unit().source().identity().clone();
+        let original = root.plan().subject();
+        let selected_node = if control == 0 {
+            root.checked_unit().package().graph().time_sources()[0]
+                .model_node
+                .clone()
+        } else {
+            original.clause_node().clone()
+        };
+        let original_occurrence = original.occurrence().origin();
+        let occurrence = Origin::new(
+            if control == 1 {
+                Role::new("other")
+            } else {
+                original_occurrence.role().clone()
+            },
+            original_occurrence.ordinal() + u64::from(control == 2),
+        );
+        let claim = qsl_replay::MonitorSubject::new(
+            original.package().clone(),
+            selected_node.clone(),
+            qsl_foundation::source::provenance::OccurrenceKey::new(selected_node, occurrence),
+            original.clause_name(),
+        );
+        let error = root
+            .admit_authority(
+                PlanAuthoritySelection {
+                    source: &source,
+                    claim: &claim,
+                    observation_subject: &subject,
+                    observation_clock: &observation::clock(),
+                    observation_source: &observation::source(),
+                },
+                Some(view),
+                limits(),
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, PlanAuthorityRefusal::Claim),
+            "control {control}: {error:?}"
+        );
     }
 }
