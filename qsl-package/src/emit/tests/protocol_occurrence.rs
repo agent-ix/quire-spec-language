@@ -802,7 +802,10 @@ fn each_repeat_dimension_admits_exactly_its_domain() {
     ));
     let huge = Integer::from(i128::from(i64::MAX) * 4);
     assert_eq!(bind(&unbounded, "Polled", &[int(0)]), Ok(vec![int(0)]));
-    assert_eq!(bind(&unbounded, "Polled", &[huge.clone()]), Ok(vec![huge]));
+    assert_eq!(
+        bind(&unbounded, "Polled", std::slice::from_ref(&huge)),
+        Ok(vec![huge])
+    );
     assert_eq!(
         bind(&unbounded, "Polled", &[int(-1)]),
         Err(refused(0, int(-1)))
