@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-036: declaration-owned lexical environments and protocol structural names.
+//! FR-036: declaration-owned lexical environments.
 //! Scope resolution preserves authored types; it does not prove expression types.
-mod protocol;
 mod values;
 
 use super::binding_work::{Dimension, Exhaustion, Work};
@@ -17,16 +16,6 @@ use std::collections::BTreeMap;
 pub struct BinderId(pub(super) usize);
 impl BinderId {
     /// Index into this declaration's binders; not a cross-declaration identity.
-    pub fn index(self) -> usize {
-        self.0
-    }
-}
-
-/// A structural identity local to its owning protocol declaration report.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct SymbolId(pub(super) usize);
-impl SymbolId {
-    /// Index into this declaration's structural symbols.
     pub fn index(self) -> usize {
         self.0
     }
@@ -49,22 +38,6 @@ pub enum Anchor {
     Activation,
     /// Current native leaf valuation in a temporal formula.
     TemporalInstant,
-    /// Current workflow view at the protocol evaluation instant.
-    ProtocolInstant,
-    /// Isolated channel key input; index addresses protocol.channels.
-    Fifo(usize),
-    /// Forward-effect registration; index addresses protocol.requirements.
-    Registration(usize),
-    /// First eligible compensation activation; same requirement index.
-    CompensationActivation(usize),
-    /// Immutable earlier/later attempt pair; same requirement index.
-    Retry(usize),
-    /// Supplied recovery view; same requirement index.
-    Recovery(usize),
-    /// Original unit-local control, retaining its structural ancestry.
-    Control(c::ControlId),
-    /// Workflow closure observation.
-    Finish,
 }
 
 /// Why a value slot exists, separate from its nominal type and anchor.
@@ -72,7 +45,7 @@ pub enum Anchor {
 pub enum BinderKind {
     /// Explicit shared predicate parameter.
     Parameter,
-    /// Temporal or protocol current-input slot.
+    /// Temporal current-input slot.
     Input,
     /// Declaration activation trigger, unavailable in its later body.
     Trigger,
@@ -88,22 +61,6 @@ pub enum BinderKind {
     ResultValue,
     /// Actual input named by the selected model operation.
     InvocationParameter,
-    /// Event or commit record supplied at a control occurrence.
-    EventRecord,
-    /// Supplied final closure record.
-    Finish,
-    /// Channel-specific message used by a FIFO key expression.
-    Fifo,
-    /// Compensation forward record, available only during registration.
-    ForwardEffect,
-    /// Candidate trigger, available only during compensation activation.
-    CompensationTrigger,
-    /// Predecessor attempt in the retry relation.
-    EarlierAttempt,
-    /// Successor attempt in the retry relation.
-    LaterAttempt,
-    /// Supplied compensation recovery view.
-    Recovery,
 }
 
 /// Retained type input for the existing model/type stage, not a parallel type system.
@@ -170,106 +127,6 @@ pub struct ValueOccurrence {
     pub evaluation_anchor: Anchor,
 }
 
-/// Static protocol namespaces. Control kinds remain distinct from value binders.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SymbolKind {
-    /// Participant responsibility slot.
-    Role,
-    /// Declared message channel.
-    Channel,
-    /// Declared relationship. No admitted correspondence can authorize one
-    /// without the removed Producer 1.2 adapter (#131); every occurrence is
-    /// refused as unsupported once its name resolves.
-    Relationship,
-    /// Registered compensation template.
-    Compensation,
-    /// Ordered control group.
-    Sequence,
-    /// Exclusive decision group.
-    Choice,
-    /// Named choice case scope.
-    Case,
-    /// All-branch parallel group.
-    Parallel,
-    /// Named parallel branch scope.
-    Branch,
-    /// Explicitly bounded repetition group.
-    Repeat,
-    /// Event/deadline control group.
-    Await,
-    /// Semantic send event.
-    Send,
-    /// Receive tied to an exact send.
-    Receive,
-    /// Model operation attempt.
-    Attempt,
-    /// Successful effect tied to an exact attempt.
-    Effect,
-    /// Typed domain event.
-    Event,
-    /// Native value constraint control.
-    Check,
-    /// Observed forbidding commit boundary.
-    Commit,
-    /// Protocol closure observation.
-    Finish,
-}
-
-/// Parent links retain canonical group/branch paths without duplicating paths.
-#[derive(Clone, Debug)]
-pub struct Symbol {
-    /// Original declaration token and source spelling.
-    pub name: Spanned<String>,
-    /// Structural namespace/kind.
-    pub kind: SymbolKind,
-    /// Enclosing control, branch or case; None selects the protocol root.
-    pub parent: Option<SymbolId>,
-    /// Original unit-local control handle, absent for metadata declarations.
-    pub control: Option<c::ControlId>,
-    /// Authored role/relationship/payload selection for model attachment.
-    pub model: Option<QualifiedName>,
-}
-
-/// Distinct target obligations of structural occurrences.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StructuralKind {
-    /// Participant role required by an endpoint or control.
-    Role,
-    /// Message channel required by a send/receive.
-    Channel,
-    /// Relationship required by related endpoints.
-    Relationship,
-    /// Exact send selected by a receive.
-    Send,
-    /// Exact operation attempt selected by an effect.
-    Attempt,
-    /// Successful effect selected by compensation registration.
-    Effect,
-    /// Exact forbidding commit selected by a compensation template.
-    Commit,
-    /// Exact compensation registration selected by a domain event.
-    Compensation,
-    /// Preceding event/commit or named compensation activation.
-    AwaitAnchor,
-    /// Named branch required by an all-branch join.
-    Branch,
-}
-
-/// An original structural path, resolved within its owning declaration.
-#[derive(Clone, Debug)]
-pub struct StructuralReference {
-    /// Owning control; metadata references belong to the declaration.
-    pub site: Option<c::ControlId>,
-    /// Complete original path region.
-    pub span: Span,
-    /// Original path components, including each token's source span.
-    pub path: Vec<Spanned<String>>,
-    /// Required target kind, independent of equal name spelling.
-    pub required: StructuralKind,
-    /// Unique selected symbol, retained even when its kind refuses.
-    pub target: Option<SymbolId>,
-}
-
 /// Located scope failures remain typed independently of downstream model errors.
 #[derive(Clone, Debug)]
 pub enum ScopeIssue {
@@ -315,54 +172,6 @@ pub enum ScopeIssue {
         /// Source span of the reference requiring the unavailable model operation.
         span: Span,
     },
-    /// Two declarations occupy the same structural scope/name.
-    DuplicateSymbol {
-        /// The newly declared symbol occupying the conflicting scope/name.
-        symbol: SymbolId,
-        /// The symbol already occupying this structural scope/name.
-        previous: SymbolId,
-    },
-    /// No symbol supplies the original path; index addresses references.
-    MissingTarget {
-        /// Index into this declaration's structural references.
-        reference: usize,
-    },
-    /// Multiple symbols supply a path component.
-    AmbiguousTarget {
-        /// Index into this declaration's structural references.
-        reference: usize,
-    },
-    /// The unique symbol has a different required structural kind.
-    WrongTargetKind {
-        /// Index into this declaration's structural references.
-        reference: usize,
-        /// The unique symbol found, whose kind does not satisfy the requirement.
-        target: SymbolId,
-    },
-    /// The referenced event/commit is not necessarily available on this path.
-    UnavailableTarget {
-        /// Index into this declaration's structural references.
-        reference: usize,
-        /// The referenced symbol, not necessarily available on this control path.
-        target: SymbolId,
-    },
-    /// The all-branch join does not select every branch exactly once.
-    InvalidJoin {
-        /// Source span of the all-branch join that does not cover every branch.
-        span: Span,
-    },
-    /// This protocol profile does not admit waiting on a send or attempt.
-    InvalidAwaitEvent {
-        /// The control node awaiting an event this profile does not admit.
-        control: c::ControlId,
-        /// Source span of the await occurrence.
-        span: Span,
-    },
-    /// A receive selects a different channel than its exact referenced send.
-    IncompatibleReference {
-        /// Index into this declaration's structural references.
-        reference: usize,
-    },
     /// Defensive: a future scheduler invariant violation failed to extend the
     /// inherited frame chain; current constructor-private scheduling prevents it.
     InvalidEnvironment {
@@ -393,10 +202,6 @@ pub struct DeclarationScope {
     pub binders: Vec<Binder>,
     /// Resolved value-name/self/result occurrences.
     pub values: Vec<ValueOccurrence>,
-    /// Typed protocol declarations and their structural ancestry.
-    pub symbols: Vec<Symbol>,
-    /// Original protocol paths, including failed selections.
-    pub references: Vec<StructuralReference>,
     /// Typed lexical/structural refusals known before any exhaustion.
     pub issues: Vec<ScopeIssue>,
     complete: bool,
@@ -491,8 +296,6 @@ pub fn resolve(
                 unit: entry.unit(),
                 binders: Vec::new(),
                 values: Vec::new(),
-                symbols: Vec::new(),
-                references: Vec::new(),
                 issues: Vec::new(),
                 complete: false,
             });

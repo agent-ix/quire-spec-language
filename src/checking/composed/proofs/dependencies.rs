@@ -39,9 +39,9 @@ pub(super) fn finish(
             let site = Site {
                 declaration: output.declaration,
                 unit: output.unit,
-                expression: match reference.site {
-                    DependencySite::Expression(id) => Some(id),
-                    DependencySite::Declaration | DependencySite::Control(_) => None,
+                expression: {
+                    let DependencySite::Expression(id) = reference.site;
+                    Some(id)
                 },
                 span: reference.name.span,
             };

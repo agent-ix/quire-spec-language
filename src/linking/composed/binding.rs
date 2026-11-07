@@ -121,7 +121,7 @@ impl<'a> Report<'a> {
     pub fn exports(&self) -> &[ModelDeclarationReport<'a>] {
         &self.exports
     }
-    /// Declaration-owned binders, anchors and structural protocol references.
+    /// Declaration-owned binders and anchors.
     pub fn scopes(&self) -> Option<&ScopeReport> {
         self.scopes.as_ref()
     }

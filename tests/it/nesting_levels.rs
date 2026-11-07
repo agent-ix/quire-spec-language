@@ -308,30 +308,6 @@ fn longest_composed_temporal_chains_parse_and_one_longer_names_a_ceiling() {
     });
 }
 
-// `repeat` bodies and `await` branches nest control nodes without a bracket.
-#[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3")]
-#[test]
-fn long_repeat_control_chain_parses_on_a_bounded_stack() {
-    on_bounded_stack(|| {
-        let depth = 3_000;
-        let text = format!(
-            "{COMPOSED_HEADER}protocol Loops using P over (view: M::OrderView) on origin {{
-                role Service on M::OrderView;
-                run {}check Body using S {{ true }};{}
-                finish Closed as (closed: M::OrderView) {{ true }};
-            }}",
-            "repeat Loop by Service visible (true) max 1 while { true } ".repeat(depth),
-            " exhausted check Exhausted using S { true };".repeat(depth),
-        );
-        let NativeUnit::Composed(unit) = read_composed(&text).expect("a repeat chain parses")
-        else {
-            panic!("composed edition");
-        };
-        // One `check` body, `depth` repeats and `depth` exhausted checks.
-        assert_eq!(unit.controls().len(), 2 * depth + 1);
-    });
-}
-
 fn longest_admitted(read: impl Fn(usize) -> Result<(), Box<Diagnostic>>) -> usize {
     let (mut low, mut high) = (0_usize, 120_000_usize);
     while low + 1 < high {

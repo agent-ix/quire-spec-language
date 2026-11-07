@@ -108,23 +108,11 @@ const TEMPORAL: &str = "temporal Due using T over (view: M::Node) clock \"orders
      on each (started: M::Node) when (Positive(started.n)) \
      { capture saved: M::Version = started.n; \
        eventually[0,1] holds(Positive(view.n) and saved >= 0) }";
-const PROTOCOL: &str = "protocol Flow using P over (view: M::Node) on origin \
-     { role Service on M::Node; requires temporal Due; \
-       run sequence Main { event Happened by Service as (happened: M::Node) \
-         { Positive(happened.n) }; check HealthyNow using S { Positive(view.n) }; } \
-       finish Closed as (closed: M::Node) { Positive(closed.n) }; }";
-
-/// The three-family inventory of TC-115 step 1, with a selectable state profile.
+/// The predicate, state and temporal inventory of TC-115 step 1, with a selectable state profile.
 fn ecosystem(model: &NativeModel, state: R) -> Vec<Source> {
     vec![
         source("state", model, &[("S", state)], STATE),
         source("temporal", model, &[("T", R::EventPosition)], TEMPORAL),
-        source(
-            "protocol",
-            model,
-            &[("S", R::StateGraph), ("P", R::Protocol)],
-            PROTOCOL,
-        ),
     ]
 }
 
@@ -185,12 +173,12 @@ fn subject_of(model: &NativeModel, state: R) -> StaticSubject {
 fn assessment_selections_leave_every_declared_component_unchanged() {
     let model = native_rule_model::parts().model();
     let baseline = subject_of(&model, R::StateGraph);
-    assert_eq!(baseline.sources().len(), 3);
+    assert_eq!(baseline.sources().len(), 2);
     assert_eq!(baseline.language().language, "ix:native");
     assert_eq!(baseline.language().edition, "1-draft");
     assert!(baseline.language().refusal.is_none());
     assert!(!baseline.profiles().is_empty());
-    assert_eq!(baseline.models().len(), 3);
+    assert_eq!(baseline.models().len(), 2);
     assert!(!baseline.dependencies().is_empty());
     assert!(!baseline.roles().is_empty());
 
@@ -338,7 +326,7 @@ fn changing_a_required_profile_selection_changes_the_static_subject() {
         subject
             .roles()
             .iter()
-            .filter(|role| role.declaration == "Due" || role.declaration == "Flow")
+            .filter(|role| role.declaration == "Due")
             .cloned()
             .collect::<Vec<_>>()
     };
@@ -445,7 +433,6 @@ fn two_required_requests_over_different_capability_kinds_both_stay_admitted_in_c
             let positive = namespace.lookup("Positive")[0];
             let healthy = namespace.lookup("Healthy")[0];
             let due = namespace.lookup("Due")[0];
-            let flow = namespace.lookup("Flow")[0];
             let asked = requested(report);
             let requests = requests::report(report, &assessment, &asked);
 
@@ -473,12 +460,8 @@ fn two_required_requests_over_different_capability_kinds_both_stay_admitted_in_c
             // FR-057 "Family-body admission": body admission is unconditional
             // on binding disposition, not on `requests` above -- every
             // declaration whose names resolved is an admitted body,
-            // including `Positive` and `Flow`, neither of which was asked
-            // about at all.
-            assert_eq!(
-                requests.admitted_bodies(),
-                vec![positive, healthy, due, flow]
-            );
+            // including `Positive`, which was not asked about at all.
+            assert_eq!(requests.admitted_bodies(), vec![positive, healthy, due]);
         },
     );
 }
@@ -531,17 +514,20 @@ fn deleting_either_requested_entry_fails_the_requested_inventory_check() {
 #[trace("TC-115", "FR-057-AC-11")]
 fn each_kind_applies_to_exactly_its_tabled_family() {
     let expected = |kind: Capability| match kind {
-        Capability::ProbabilisticSatisfaction | Capability::Schedulability => None,
-        Capability::ValueValidity => Some(Family::Predicate),
-        Capability::OperationContract => Some(Family::State),
-        Capability::TemporalSatisfaction => Some(Family::Temporal),
-        Capability::FiniteReplay
+        // The composed lane parses no protocol declaration, so the protocol-family
+        // kinds apply to no composed family.
+        Capability::ProbabilisticSatisfaction
+        | Capability::Schedulability
+        | Capability::FiniteReplay
         | Capability::GlobalConformance
         | Capability::Monitorability
         | Capability::LocalProjection
         | Capability::Refinement
         | Capability::Realizability
-        | Capability::Composition => Some(Family::Protocol),
+        | Capability::Composition => None,
+        Capability::ValueValidity => Some(Family::Predicate),
+        Capability::OperationContract => Some(Family::State),
+        Capability::TemporalSatisfaction => Some(Family::Temporal),
     };
     assert_eq!(Capability::ALL.len(), 12);
     for &kind in Capability::ALL {
@@ -583,7 +569,6 @@ fn a_claim_inapplicable_to_a_family_is_inapplicable_while_an_applicable_one_is_a
             let positive = namespace.lookup("Positive")[0];
             let due = namespace.lookup("Due")[0];
             let healthy = namespace.lookup("Healthy")[0];
-            let flow = namespace.lookup("Flow")[0];
             let asked = [
                 Request {
                     declaration: due,
@@ -643,14 +628,11 @@ fn a_claim_inapplicable_to_a_family_is_inapplicable_while_an_applicable_one_is_a
 
             // FR-057 "Family-body admission": every declaration whose names
             // resolved is an admitted body, unconditionally -- `Positive`
-            // and `Flow` are admitted bodies here despite neither being
-            // named in `asked` at all, and `healthy`'s inapplicable,
+            // is an admitted body here despite not being named in `asked`
+            // at all, and `healthy`'s inapplicable,
             // unrequired `FiniteReplay` request does not withhold its body
             // either.
-            assert_eq!(
-                requests.admitted_bodies(),
-                vec![positive, healthy, due, flow]
-            );
+            assert_eq!(requests.admitted_bodies(), vec![positive, healthy, due]);
 
             // Its authored syntax stays inspectable and unrewritten.
             let syntax = namespace.syntax(due).expect("original declaration syntax");
@@ -681,7 +663,7 @@ fn refused_and_unknown_subjects_keep_their_own_dispositions() {
         trace: None,
     };
 
-    // A declaration handle from the full three-family namespace.
+    // A declaration handle from the full namespace.
     let sources = ecosystem(&model, R::StateGraph);
     let models = [ModelInput::Native(&model)];
     let outer = with_reports(
@@ -690,7 +672,7 @@ fn refused_and_unknown_subjects_keep_their_own_dispositions() {
         WorkLimits::default(),
         Limits::default(),
         BindingLimits::default(),
-        |_, _, report| report.namespace().lookup("Flow")[0],
+        |_, _, report| report.namespace().lookup("Due")[0],
     );
 
     // The same handle is outside a smaller namespace of one declaration.
@@ -785,7 +767,6 @@ fn four_admitted_pairs_across_three_kinds_stay_recorded_as_data() {
             let positive = namespace.lookup("Positive")[0];
             let healthy = namespace.lookup("Healthy")[0];
             let due = namespace.lookup("Due")[0];
-            let flow = namespace.lookup("Flow")[0];
             let asked = [
                 Request {
                     declaration: healthy,
@@ -798,14 +779,16 @@ fn four_admitted_pairs_across_three_kinds_stay_recorded_as_data() {
                     required: true,
                 },
                 Request {
-                    declaration: flow,
-                    capability: Capability::FiniteReplay,
-                    required: false,
-                },
-                Request {
                     declaration: positive,
                     capability: Capability::ValueValidity,
                     required: false,
+                },
+                // The same pair asked again with the other `required` value
+                // stays a separate recorded request.
+                Request {
+                    declaration: positive,
+                    capability: Capability::ValueValidity,
+                    required: true,
                 },
             ];
             let requests = requests::report(report, &assessment, &asked);

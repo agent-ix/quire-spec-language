@@ -207,18 +207,12 @@ fn key(artifact: &str) -> DeclarationKey {
 }
 
 const DECLARATIONS: &str =
-    "predicate FieldRule using S (): Boolean { M::Pump::id = M::Pump::id }\n\
-protocol Plumbing using S over (view: M::Sys) on origin {\n\
-    role Operator on M::Sys;\n\
-    role Outlet on M::pump_out;\n\
-    relationship Pipe = M::pipe;\n\
-    run sequence Main { check Valid using S { true }; }\n\
-    finish Closed as (closed: M::Sys) { true };\n\
-}\n";
+    "predicate FieldRule using S (): Boolean { M::Pump::id = M::Pump::id }\n";
 
-/// One native unit importing `M` under `digest`, with the field, Port (a
-/// role) and Connection references of TC-148 step 3, plus `Unrelated`, which names no
-/// model.
+/// One native unit importing `M` under `digest`, with the field reference of
+/// TC-148 step 3, plus `Unrelated`, which names no model. Port and Connection
+/// bindings are asserted on the spine by
+/// `architecture_fixture_binds_references_through_spine_i2`.
 fn program(identity: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
@@ -387,11 +381,6 @@ fn native_references_bind_to_domain_declaration_keys_and_kinds() {
                 vec![]
             )
         );
-        let (plumbing, refusals) = resolved(&bindings, namespace, "Plumbing");
-        assert!(refusals.is_empty(), "{refusals:?}");
-        assert!(plumbing.contains(&(key("pump_out").node, DeclarationKind::Port)));
-        assert!(plumbing.contains(&(key("pipe").node, DeclarationKind::Connection)));
-        assert!(plumbing.contains(&(key("Sys").node, DeclarationKind::ObjectType)));
         assert_eq!(
             resolved(&bindings, namespace, "Unrelated"),
             (vec![], vec![])
@@ -399,12 +388,12 @@ fn native_references_bind_to_domain_declaration_keys_and_kinds() {
 
         // Each bound occurrence carries the selection it was admitted under.
         let report = bindings
-            .resolve_declaration(namespace, namespace.lookup("Plumbing")[0], &mut work())
+            .resolve_declaration(namespace, namespace.lookup("FieldRule")[0], &mut work())
             .expect("declaration handle");
         assert!(!report.occurrences.is_empty());
         for occurrence in &report.occurrences {
             let ModelTarget::Declaration(bound) = &occurrence.target else {
-                panic!("Plumbing binds only domain declarations")
+                panic!("FieldRule binds only domain declarations")
             };
             assert_eq!(bound.selection(), &selection);
         }
@@ -716,18 +705,7 @@ fn missing_and_wrong_kind_domain_references_refuse_located() {
          predicate MissingType using S (port: M::drain_out): Boolean {{ true }}\n\
          predicate MissingField using S (): Boolean {{ M::Pump::speed = M::Pump::speed }}\n\
          predicate MemberAsType using S (): Boolean {{ M::pump_out::direction = M::pump_out::direction }}\n\
-         predicate PortAsType using S (port: M::pump_out): Boolean {{ true }}\n\
-         protocol ConnectionAsRole using S over (view: M::Sys) on origin {{\n\
-             role Operator on M::pipe;\n\
-             run sequence Main {{ check Valid using S {{ true }}; }}\n\
-             finish Closed as (closed: M::Sys) {{ true }};\n\
-         }}\n\
-         protocol NotAConnection using S over (view: M::Sys) on origin {{\n\
-             role Operator on M::Sys;\n\
-             relationship Pipe = M::pump_out;\n\
-             run sequence Main {{ check Valid using S {{ true }}; }}\n\
-             finish Closed as (closed: M::Sys) {{ true }};\n\
-         }}\n",
+         predicate PortAsType using S (port: M::pump_out): Boolean {{ true }}\n",
         selection.identity
     );
     with_namespace(&text, |namespace| {
@@ -737,8 +715,6 @@ fn missing_and_wrong_kind_domain_references_refuse_located() {
             ("MissingField", ModelErrorKind::MissingExport),
             ("MemberAsType", ModelErrorKind::WrongExportKind),
             ("PortAsType", ModelErrorKind::WrongExportKind),
-            ("ConnectionAsRole", ModelErrorKind::WrongExportKind),
-            ("NotAConnection", ModelErrorKind::WrongExportKind),
         ] {
             let (_, refusals) = resolved(&bindings, namespace, name);
             assert!(!refusals.is_empty(), "{name} refuses");
@@ -780,17 +756,16 @@ fn substituted_package_or_changed_digest_refuses_only_dependents() {
         with_namespace(&text, |namespace| {
             let bindings = bind_models(namespace, &inputs, &mut work());
             assert_eq!(bindings.imports()[0].selection, Err(refusal.clone()));
-            for name in ["FieldRule", "Plumbing"] {
-                let (declarations, refusals) = resolved(&bindings, namespace, name);
-                assert!(declarations.is_empty(), "{name}: {declarations:?}");
-                assert!(
-                    !refusals.is_empty()
-                        && refusals
-                            .iter()
-                            .all(|kind| *kind == ModelErrorKind::RefusedImport { import: 0 }),
-                    "{name} ({refusal:?}): {refusals:?}"
-                );
-            }
+            let name = "FieldRule";
+            let (declarations, refusals) = resolved(&bindings, namespace, name);
+            assert!(declarations.is_empty(), "{name}: {declarations:?}");
+            assert!(
+                !refusals.is_empty()
+                    && refusals
+                        .iter()
+                        .all(|kind| *kind == ModelErrorKind::RefusedImport { import: 0 }),
+                "{name} ({refusal:?}): {refusals:?}"
+            );
             assert_eq!(
                 resolved(&bindings, namespace, "Unrelated"),
                 (vec![], vec![])

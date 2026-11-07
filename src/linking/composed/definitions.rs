@@ -11,7 +11,7 @@ use super::binding_work::{Dimension, Exhaustion, Work};
 use super::{SyntaxNamespace, UnitId};
 use crate::linking::declaration_id::DeclarationId;
 use crate::linking::definition_source::{RegisteredDefinition, Selection};
-use crate::syntax::composed::{ControlKind, DeclarationKind, ProtocolRequirement};
+use crate::syntax::composed::DeclarationKind;
 use qsl_foundation::Spanned;
 
 /// One explicitly supplied definition; metadata grants no interpretation.
@@ -120,12 +120,6 @@ pub enum UseKind {
     State,
     /// Top-level temporal obligation with an explicit clock interpretation.
     Temporal,
-    /// Protocol/choreography declaration.
-    Protocol,
-    /// Await or compensation requiring a concrete temporal interpretation.
-    TimedObligation,
-    /// A protocol check consuming a state profile.
-    StateCheck,
 }
 
 /// Source occurrence and exact resolved closure, or its typed refusal.
@@ -241,7 +235,6 @@ fn run(
             DeclarationKind::Predicate { .. } => UseKind::Predicate,
             DeclarationKind::State { .. } => UseKind::State,
             DeclarationKind::Temporal { .. } => UseKind::Temporal,
-            DeclarationKind::Protocol(_) => UseKind::Protocol,
         };
         profile(
             namespace,
@@ -252,59 +245,6 @@ fn run(
             output,
             work,
         )?;
-        if let DeclarationKind::Protocol(protocol) = &declaration.kind {
-            for requirement in &protocol.requirements {
-                work.charge(Dimension::References, 1)?;
-                if let ProtocolRequirement::Compensation(compensation) = requirement {
-                    profile(
-                        namespace,
-                        &catalog,
-                        entry.unit(),
-                        &compensation.profile,
-                        UseKind::TimedObligation,
-                        output,
-                        work,
-                    )?;
-                }
-            }
-            // Visit only the owning declaration's contiguous arena region.
-            let unit = namespace.unit(entry.unit()).expect("closed namespace unit");
-            let controls = super::arena::owned(
-                unit.controls(),
-                declaration.span,
-                |control| control.span,
-                work,
-            )?;
-            for control in controls {
-                work.charge(Dimension::References, 1)?;
-                match &control.kind {
-                    ControlKind::Await { profile: alias, .. } => profile(
-                        namespace,
-                        &catalog,
-                        entry.unit(),
-                        alias,
-                        UseKind::TimedObligation,
-                        output,
-                        work,
-                    )?,
-                    ControlKind::Check { profile: alias, .. } => profile(
-                        namespace,
-                        &catalog,
-                        entry.unit(),
-                        alias,
-                        UseKind::StateCheck,
-                        output,
-                        work,
-                    )?,
-                    ControlKind::Sequence(_)
-                    | ControlKind::Choice { .. }
-                    | ControlKind::Parallel { .. }
-                    | ControlKind::Repeat { .. }
-                    | ControlKind::Event(_)
-                    | ControlKind::Commit { .. } => {}
-                }
-            }
-        }
         output.complete = true;
     }
     Ok(())
@@ -375,16 +315,11 @@ fn profile(
 fn admits(profile: RegisteredDefinition, kind: UseKind) -> bool {
     use RegisteredDefinition as R;
     match profile {
-        R::StateCore => matches!(kind, UseKind::State | UseKind::StateCheck),
-        R::StateQueries | R::StateGraph => matches!(
-            kind,
-            UseKind::Predicate | UseKind::State | UseKind::StateCheck
-        ),
-        R::EventPosition | R::FixedSample | R::TimestampedWindow => {
-            matches!(kind, UseKind::Temporal | UseKind::TimedObligation)
-        }
-        R::Protocol => kind == UseKind::Protocol,
+        R::StateCore => kind == UseKind::State,
+        R::StateQueries | R::StateGraph => matches!(kind, UseKind::Predicate | UseKind::State),
+        R::EventPosition | R::FixedSample | R::TimestampedWindow => kind == UseKind::Temporal,
         R::Edition
+        | R::Protocol
         | R::TemporalFacet
         | R::ObservationBinding
         | R::Progress

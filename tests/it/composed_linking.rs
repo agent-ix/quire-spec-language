@@ -39,8 +39,10 @@ fn predicates(declarations: &str) -> String {
 
 fn application() -> String {
     format!(
-        "{}\n{}",
-        include_str!("../fixtures/composed-choreography.native"),
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile S = \"quire.state.graph/v1\";\n\
+         profile T = \"quire.temporal.timestamped-event.finite-window/v1\";\n\
+         model M = \"test:orders-and-refunds\";\n{}",
         r#"
 pre CanCharge using S on M::Payment::charge { Accept(self.allowed) }
 post ChargedCorrectly using S on M::Payment::charge { Accept(result.ok) }
@@ -106,7 +108,7 @@ fn causes(entry: &DeclarationEntry) -> Vec<&DependencyRefusal> {
 
 #[test]
 #[trace("TC-114", "FR-036-AC-1", "FR-036-AC-2")]
-fn multi_unit_choreography_resolves_forward_native_targets_and_bounded_repetition() {
+fn multi_unit_application_resolves_forward_predicate_calls_across_units() {
     let sources = [
         source("application", &application()),
         source(
@@ -129,9 +131,8 @@ fn multi_unit_choreography_resolves_forward_native_targets_and_bounded_repetitio
     let namespace = report.namespace().unwrap();
     assert!(namespace.dependencies_complete());
     assert_eq!(namespace.units().len(), 2);
-    assert_eq!(namespace.declarations().len(), 6);
+    assert_eq!(namespace.declarations().len(), 5);
     for name in [
-        "Orders",
         "CanCharge",
         "ChargedCorrectly",
         "RefundDue",
@@ -139,25 +140,6 @@ fn multi_unit_choreography_resolves_forward_native_targets_and_bounded_repetitio
         "Spare",
     ] {
         available(namespace, name);
-    }
-    let references = entry(namespace, "Orders").references();
-    assert_eq!(references.len(), 3);
-    for (target, kind) in [
-        ("CanCharge", DependencyKind::OperationContract),
-        ("ChargedCorrectly", DependencyKind::OperationContract),
-        ("RefundDue", DependencyKind::TemporalRequirement),
-    ] {
-        let reference = references.iter().find(|r| r.name.value == target).unwrap();
-        assert_eq!(reference.kind, kind);
-        assert_eq!(reference.target, Some(id(namespace, target)));
-        assert_eq!(
-            namespace
-                .unit(reference.unit)
-                .unwrap()
-                .source()
-                .slice(reference.name.span),
-            Some(target)
-        );
     }
     for name in ["CanCharge", "ChargedCorrectly", "RefundDue"] {
         let [reference] = entry(namespace, name).references() else {
@@ -176,58 +158,10 @@ fn multi_unit_choreography_resolves_forward_native_targets_and_bounded_repetitio
 
 #[test]
 #[trace("TC-114", "FR-036-AC-2")]
-fn wrong_native_target_kinds_refuse_only_the_dependent_declarations() {
-    let wrong = application()
-        .replace(
-            "requires temporal RefundDue;",
-            "requires temporal CanCharge;",
-        )
-        .replace(
-            "contracts [CanCharge, ChargedCorrectly]",
-            "contracts [RefundDue, Accept]",
-        );
-    let sources = [
-        source("application", &wrong),
-        source(
-            "library",
-            &predicates("predicate Accept using S (allowed: Boolean): Boolean { allowed }"),
-        ),
-    ];
-    let inventory = inventory(&sources);
-    let report = admit_namespace(
-        &inventory,
-        &sources,
-        WorkLimits::default(),
-        Limits::default(),
-    );
-    let namespace = report.namespace().unwrap();
-    assert!(namespace.dependencies_complete());
-    refused(namespace, "Orders");
-    let orders = entry(namespace, "Orders");
-    let errors = causes(orders);
-    assert_eq!(errors.len(), 3);
-    for error in errors {
-        let DependencyRefusal::WrongTargetKind { reference, target } = error else {
-            panic!("wrong target kind required");
-        };
-        let occurrence = &orders.references()[*reference];
-        assert_eq!(occurrence.target, Some(*target));
-        assert_eq!(
-            namespace.syntax(*target).unwrap().name.value,
-            occurrence.name.value
-        );
-    }
-    for name in ["Accept", "RefundDue", "CanCharge", "ChargedCorrectly"] {
-        available(namespace, name);
-    }
-}
-
-#[test]
-#[trace("TC-114", "FR-036-AC-2")]
-fn an_invariant_is_not_an_operation_contract() {
+fn a_call_to_a_non_predicate_refuses_only_the_caller() {
     let application = application().replace(
-        "pre CanCharge using S on M::Payment::charge { Accept(self.allowed) }",
-        "invariant CanCharge using S on M::Payment at current { Accept(self.allowed) }",
+        "post ChargedCorrectly using S on M::Payment::charge { Accept(result.ok) }",
+        "post ChargedCorrectly using S on M::Payment::charge { CanCharge(result.ok) }",
     );
     let sources = [
         source("application", &application),
@@ -244,18 +178,21 @@ fn an_invariant_is_not_an_operation_contract() {
         Limits::default(),
     );
     let namespace = report.namespace().unwrap();
-    refused(namespace, "Orders");
-    let orders = entry(namespace, "Orders");
-    let errors = causes(orders);
+    assert!(namespace.dependencies_complete());
+    refused(namespace, "ChargedCorrectly");
+    let caller = entry(namespace, "ChargedCorrectly");
+    let errors = causes(caller);
     let [DependencyRefusal::WrongTargetKind { reference, target }] = errors.as_slice() else {
-        panic!("expected invariant-kind refusal");
+        panic!("wrong target kind required");
     };
     assert_eq!(*target, id(namespace, "CanCharge"));
     assert_eq!(
-        orders.references()[*reference].kind,
-        DependencyKind::OperationContract
+        caller.references()[*reference].kind,
+        DependencyKind::PredicateCall
     );
-    available(namespace, "CanCharge");
+    for name in ["Accept", "RefundDue", "CanCharge"] {
+        available(namespace, name);
+    }
 }
 
 #[test]
@@ -505,10 +442,7 @@ fn equal_expression_handles_in_different_units_keep_their_original_owners() {
     let first = &entry(namespace, "First").references()[0];
     let second = &entry(namespace, "Second").references()[0];
     let (DependencySite::Expression(first_id), DependencySite::Expression(second_id)) =
-        (first.site, second.site)
-    else {
-        panic!("predicate expression handles");
-    };
+        (first.site, second.site);
     assert_eq!(first_id, second_id);
     assert_ne!(first.unit, second.unit);
     assert_eq!(
@@ -552,12 +486,11 @@ fn unreachable_source_calls_are_still_semantic_dependencies() {
 
 #[test]
 #[trace("TC-114", "FR-036-AC-1", "FR-036-AC-2")]
-fn calls_in_activation_capture_compensation_and_control_bodies_keep_their_owner() {
+fn calls_in_activation_and_capture_bodies_keep_their_owner() {
     let text = format!(
         "{HEADER}{}",
         r#"
 profile T = "test:temporal-definition";
-profile P = "test:protocol-definition";
 model M = "test:model";
 predicate Leaf using S (): Boolean { true }
 pre Allowed using S on M::Job::run { Leaf() }
@@ -565,42 +498,6 @@ temporal Future using T over (sample: M::Sample) clock "clock"
 on each (started: M::Trigger) when (Leaf()) {
   capture accepted: Boolean = Leaf();
   always [0,1] holds(Leaf())
-}
-protocol Flow using P over (view: M::View)
-on each (started: M::Trigger) when (Leaf()) {
-  capture accepted: Boolean = Leaf();
-  role R on M::Participant;
-  channel C from R to R carries M::Message
-    ordering fifo by (message: M::Message) { Leaf() } delivery [0,1];
-  requires temporal Future;
-  compensate Undo for Main::Applied as (forward: M::Effect)
-    by R on M::Job::undo using T clock "clock" {
-    capture registered: Boolean = Leaf();
-    activate first (failed: M::Trigger) when { Leaf() } {
-      capture activated: Boolean = Leaf();
-    }
-    within [0,1]; attempts 2 of M::Attempt;
-    retry (older: M::Attempt, newer: M::Attempt) { Leaf() };
-    commit never;
-    recover (recovered: M::Recovery) { Leaf() };
-  }
-  run sequence Main {
-    attempt Tried by R on M::Job::run contracts [Allowed]
-      as (attempted: M::Attempt) { Leaf() };
-    effect Applied of Tried as (applied: M::Effect) { Leaf() };
-    check Checked using S { Leaf() };
-    choice Pick by R visible (Leaf()) {
-      case yes when { Leaf() } sequence Yes {}
-      case no when { not Leaf() } sequence No {}
-    }
-    repeat Retry by R visible (Leaf()) max 2 while { Leaf() }
-      sequence Again {} exhausted sequence Enough {}
-    await Deadline after Applied using T clock "clock" within [0,1]
-      match event Done by R as (done: M::Done) { Leaf() };
-      then sequence Complete {} timeout sequence Timeout {}
-    commit Committed by R as (committed: M::Commit) { Leaf() };
-  }
-  finish Finished as (finished: M::Finish) { Leaf() };
 }
 "#
     );
@@ -614,7 +511,7 @@ on each (started: M::Trigger) when (Leaf()) {
     );
     assert!(report.issues().is_empty(), "{:?}", report.issues());
     let namespace = report.namespace().unwrap();
-    for (owner, expected_calls) in [("Allowed", 1), ("Future", 3), ("Flow", 19)] {
+    for (owner, expected_calls) in [("Allowed", 1), ("Future", 3)] {
         available(namespace, owner);
         let calls: Vec<_> = entry(namespace, owner)
             .references()
@@ -637,7 +534,6 @@ on each (started: M::Trigger) when (Leaf()) {
             );
         }
     }
-    assert_eq!(entry(namespace, "Flow").references().len(), 21);
 }
 
 /// FR-001: two sources that differ only in their authority label are two

@@ -106,20 +106,6 @@ impl Builder<'_, '_> {
             c::DeclarationKind::Temporal {
                 captures: authored, ..
             } => self.captures(authored, &mut captures)?,
-            c::DeclarationKind::Protocol(protocol) => {
-                self.captures(&protocol.captures, &mut captures)?;
-                for requirement in &protocol.requirements {
-                    self.work
-                        .charge(D::Expressions, 1, self.declaration_site())?;
-                    match requirement {
-                        c::ProtocolRequirement::Temporal { .. } => {}
-                        c::ProtocolRequirement::Compensation(compensation) => {
-                            self.captures(&compensation.registration_captures, &mut captures)?;
-                            self.captures(&compensation.activation_captures, &mut captures)?;
-                        }
-                    }
-                }
-            }
         }
         // Top-level shared expressions live at independent family evaluation
         // points. No monitor/control truth is imported as a value guard. Captures

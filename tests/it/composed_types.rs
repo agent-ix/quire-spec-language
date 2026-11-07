@@ -437,15 +437,10 @@ fn type_facts_keep_original_let_query_activation_and_invocation_anchors() {
         "post Changed using S on M::Node::step { self.signed = pre(let prior = self.signed in prior + delta) and result }\n\
          predicate Query using S (input: M::Node): Boolean { forall(item in input.amounts: item >= 1) }\n\
          temporal Due using T over (view: M::Node) clock \"clock\" on each (trigger: M::Node) when (trigger.n >= 0) {\n\
-           capture saved: M::Q = trigger.fraction; eventually[0,1] holds(saved = view.fraction)\n}\n\
-         protocol Flow using P over (view: M::Node) on origin {\n\
-           capture initial: M::Q = view.fraction; role Actor on M::Node;\n\
-           run sequence Main { event Happened by Actor as (eventValue: M::Node) { eventValue.fraction = initial };\n\
-             check CoreCheck using C { view.n >= 0 }; }\n\
-           finish Closed as (closed: M::Node) { closed.fraction = initial };\n}",
+           capture saved: M::Q = trigger.fraction; eventually[0,1] holds(saved = view.fraction)\n}",
         |binding, formal| {
             let report = composed::admit_types(binding, formal, TypeLimits::default());
-            for name in ["Changed", "Query", "Due", "Flow"] {
+            for name in ["Changed", "Query", "Due"] {
                 let declaration = id(binding, name);
                 assert_eq!(report.disposition(declaration), Some(TypeDisposition::Typed), "{name}: {:?}", report.declaration(declaration).unwrap().causes());
                 let typed = report.declaration(declaration).unwrap();
@@ -467,7 +462,6 @@ fn type_facts_keep_original_let_query_activation_and_invocation_anchors() {
                 ("Changed", "delta", BinderKind::InvocationParameter, Anchor::InvocationInput),
                 ("Query", "item", BinderKind::Query, Anchor::Predicate),
                 ("Due", "saved", BinderKind::Capture, Anchor::Activation),
-                ("Flow", "initial", BinderKind::Capture, Anchor::Activation),
             ] {
                 let scope = binding.scopes().unwrap().declaration(id(binding, declaration)).unwrap();
                 let binder = scope.binders.iter().find(|binder| binder.name.as_deref() == Some(name)).unwrap();
@@ -478,11 +472,6 @@ fn type_facts_keep_original_let_query_activation_and_invocation_anchors() {
             for kind in [ObligationKind::InvocationContext, ObligationKind::ArithmeticRange] {
                 assert!(changed.obligations().iter().any(|obligation| obligation.kind == kind));
             }
-            let flow = report.declaration(id(binding, "Flow")).unwrap();
-            let source = binding.namespace().unit(flow.unit()).unwrap().source();
-            let core = flow.nodes().iter().find(|node| source.slice(node.span) == Some("view.n >= 0")).unwrap();
-            assert_eq!(binding.definitions().unwrap().declarations[id(binding, "Flow").index()].uses[core.profile].closure[0],
-                quire_spec_language::linking::definition_source::RegisteredDefinition::StateCore);
         },
     );
 }

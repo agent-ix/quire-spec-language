@@ -63,20 +63,15 @@ pub enum Family {
     State,
     /// Temporal obligation with an explicit clock interpretation.
     Temporal,
-    /// Choreography declaration.
-    Protocol,
 }
 
 /// Declaration [`Family`] values for which `capability` is defined at all,
 /// in stable order.
 ///
 /// FR-057 "Kind applicability": `value-validity` -> [`Family::Predicate`];
-/// `operation-contract` -> [`Family::State`]; `finite-replay` ->
-/// [`Family::Protocol`] (only a choreography declaration is replayed);
-/// `temporal-satisfaction` -> [`Family::Temporal`]; the six protocol-family
-/// kinds -> [`Family::Protocol`]. Each kind names exactly one [`Family`].
-/// QSL's [`Family`] has four members where FR-290 has five families: FR-290's
-/// `finite-replay` family applies to a QSL protocol declaration.
+/// `operation-contract` -> [`Family::State`]; `temporal-satisfaction` ->
+/// [`Family::Temporal`]. The composed lane parses no protocol declaration, so
+/// `finite-replay` and the six protocol-family kinds apply to no [`Family`].
 ///
 /// A request whose [`Capability`] is not in the requested
 /// declaration's `families()` set becomes
@@ -90,18 +85,18 @@ pub fn families(capability: Capability) -> &'static [Family] {
     match capability {
         Capability::ValueValidity => &[Family::Predicate],
         Capability::OperationContract => &[Family::State],
-        Capability::FiniteReplay => &[Family::Protocol],
         Capability::TemporalSatisfaction => &[Family::Temporal],
-        Capability::GlobalConformance
+        // FR-057 "Kind applicability": no composed declaration form belongs to
+        // these families, so every request of these kinds is inapplicable.
+        Capability::FiniteReplay
+        | Capability::GlobalConformance
         | Capability::Monitorability
         | Capability::LocalProjection
         | Capability::Refinement
         | Capability::Realizability
-        | Capability::Composition => &[Family::Protocol],
-        // FR-057 "Kind applicability": no current QSL declaration form
-        // belongs to the `probabilistic` or `real-time` family, so every
-        // request of these kinds is inapplicable.
-        Capability::ProbabilisticSatisfaction | Capability::Schedulability => &[],
+        | Capability::Composition
+        | Capability::ProbabilisticSatisfaction
+        | Capability::Schedulability => &[],
     }
 }
 
@@ -312,7 +307,6 @@ pub fn family(namespace: &SyntaxNamespace, declaration: DeclarationId) -> Option
         DeclarationKind::Predicate { .. } => Family::Predicate,
         DeclarationKind::State { .. } => Family::State,
         DeclarationKind::Temporal { .. } => Family::Temporal,
-        DeclarationKind::Protocol(_) => Family::Protocol,
     })
 }
 

@@ -28,30 +28,20 @@ fn ecosystem(model: &NativeModel, predicate: &str) -> Vec<Source> {
                eventually[0,1] holds(Positive(view.fraction) and saved >= rational(0,1))\n\
              }"
         ),
-        setup::source("protocol", model,
-            "protocol Flow using P over (view: M::Node) on origin {\n\
-               role Service on M::Node; requires temporal Due;\n\
-               run sequence Main {\n\
-                 event Happened by Service as (happened: M::Node) { Positive(happened.fraction) };\n\
-                 check HealthyNow using S { Positive(view.fraction) };\n\
-               }\n\
-               finish Closed as (closed: M::Node) { Positive(closed.fraction) };\n\
-             }"
-        ),
     ]
 }
 
 #[test]
 #[trace("TC-119", "FR-040-AC-1", "FR-040-AC-3", "FR-040-AC-6", "FR-040-AC-7")]
-fn three_family_types_retain_exact_callee_profiles_and_authored_source_owners() {
+fn predicate_state_and_temporal_types_retain_exact_callee_profiles_and_authored_source_owners() {
     let model = setup::model("Ecosystem");
     let sources = ecosystem(&model, "amount >= rational(0,1)");
     let formal = setup::formal_sources(&sources);
     setup::with_binding(&sources, &[&model], BindingLimits::default(), |binding| {
         assert!(binding.complete(), "{:?}", binding.exhaustion());
         let namespace = binding.namespace();
-        assert_eq!(namespace.units().len(), 3);
-        assert_eq!(namespace.declarations().len(), 5);
+        assert_eq!(namespace.units().len(), 2);
+        assert_eq!(namespace.declarations().len(), 4);
         let positive = namespace.lookup("Positive")[0];
         let definitions = binding.definitions().unwrap();
         let report = composed::admit_types(binding, &formal, TypeLimits::default());
@@ -61,7 +51,6 @@ fn three_family_types_retain_exact_callee_profiles_and_authored_source_owners() 
             ("Healthy", "unit:state", R::StateQueries, 1),
             ("Independent", "unit:state", R::StateQueries, 0),
             ("Due", "unit:temporal", R::EventPosition, 2),
-            ("Flow", "unit:protocol", R::Protocol, 3),
         ] {
             let id = namespace.lookup(name)[0];
             assert_eq!(
@@ -102,14 +91,7 @@ fn three_family_types_retain_exact_callee_profiles_and_authored_source_owners() 
                     .unwrap()
                     .starts_with("Positive("));
                 let selected = definitions.declarations[id.index()].uses[node.profile].closure[0];
-                let expected = if unit.source().slice(node.span) == Some("Positive(view.fraction)")
-                    && name == "Flow"
-                {
-                    R::StateQueries
-                } else {
-                    profile
-                };
-                assert_eq!(selected, expected);
+                assert_eq!(selected, profile);
             }
         }
         // Normalized literals remain in each authored unit, not in a model's
@@ -151,7 +133,7 @@ fn one_ill_typed_callee_refuses_dependent_families_without_erasing_independent_t
             .causes()
             .iter()
             .any(|cause| cause.kind == CauseKind::TypeMismatch));
-        for name in ["Positive", "Healthy", "Due", "Flow"] {
+        for name in ["Positive", "Healthy", "Due"] {
             let id = namespace.lookup(name)[0];
             assert_eq!(
                 binding.disposition(id),

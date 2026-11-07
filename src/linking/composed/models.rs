@@ -129,8 +129,6 @@ pub enum ModelErrorKind {
     WrongExportKind,
     /// The type or operation belongs to a different model binding inventory.
     ForeignModel,
-    /// A record name cannot supply authoritative related-instance semantics.
-    UnsupportedRelationshipContract,
     /// Charge-before-work prevented completing this occurrence.
     ResourceExhausted(Exhaustion),
 }
@@ -231,10 +229,6 @@ impl<'a> BoundDeclaration<'a> {
 enum Site {
     /// A parameter, capture, channel, state context or value type.
     Type,
-    /// A protocol role: a type, or the FR-152 Part or Port it participates as.
-    Role,
-    /// A protocol relationship: a Connection or a navigation relationship.
-    Relationship,
 }
 
 impl Site {
@@ -245,13 +239,13 @@ impl Site {
             | DeclarationKind::ValueType
             | DeclarationKind::RecordValueType
             | DeclarationKind::TupleValueType => {
-                matches!(self, Self::Type | Self::Role)
+                matches!(self, Self::Type)
             }
-            DeclarationKind::Part | DeclarationKind::Port => matches!(self, Self::Role),
-            DeclarationKind::Connection | DeclarationKind::Relationship => {
-                matches!(self, Self::Relationship)
-            }
-            DeclarationKind::Allocation
+            DeclarationKind::Part
+            | DeclarationKind::Port
+            | DeclarationKind::Connection
+            | DeclarationKind::Relationship
+            | DeclarationKind::Allocation
             | DeclarationKind::Clause
             | DeclarationKind::Namespace
             | DeclarationKind::EventType
@@ -1281,8 +1275,7 @@ impl ModelDeclarationReport<'_> {
             | ModelErrorKind::MissingExport
             | ModelErrorKind::AmbiguousExport
             | ModelErrorKind::WrongExportKind
-            | ModelErrorKind::ForeignModel
-            | ModelErrorKind::UnsupportedRelationshipContract => None,
+            | ModelErrorKind::ForeignModel => None,
         })
     }
 }
@@ -1344,70 +1337,6 @@ impl<'a> ModelBindings<'a> {
                     walk.parameter(input)?;
                     walk.activation(activation)?;
                     walk.captures(captures)?;
-                }
-                c::DeclarationKind::Protocol(protocol) => {
-                    walk.parameter(&protocol.input)?;
-                    walk.activation(&protocol.activation)?;
-                    walk.captures(&protocol.captures)?;
-                    for role in &protocol.roles {
-                        walk.role(&role.model)?;
-                    }
-                    for relation in &protocol.relationships {
-                        walk.visit(relation.span)?;
-                        walk.relationship(relation)?;
-                    }
-                    for channel in &protocol.channels {
-                        walk.ty(&channel.carries)?;
-                        if let c::Ordering::Fifo { parameter, .. } = &channel.ordering {
-                            walk.parameter(parameter)?;
-                        }
-                    }
-                    for requirement in &protocol.requirements {
-                        walk.visit(syntax.span)?;
-                        if let c::ProtocolRequirement::Compensation(compensation) = requirement {
-                            walk.parameter(&compensation.forward)?;
-                            walk.operation(&compensation.operation)?;
-                            walk.captures(&compensation.registration_captures)?;
-                            walk.parameter(&compensation.trigger)?;
-                            walk.captures(&compensation.activation_captures)?;
-                            walk.ty(&compensation.attempt_type)?;
-                            walk.parameter(&compensation.earlier)?;
-                            walk.parameter(&compensation.later)?;
-                            walk.parameter(&compensation.recovery)?;
-                        }
-                    }
-                    walk.parameter(&protocol.finish.parameter)?;
-                }
-            }
-            let controls = super::arena::owned(
-                unit.controls(),
-                syntax.span,
-                |control| control.span,
-                walk.work,
-            )
-            .map_err(|error| {
-                failure(
-                    walk.unit,
-                    syntax.span,
-                    ModelErrorKind::ResourceExhausted(error),
-                )
-            })?;
-            for control in controls {
-                walk.visit(control.span)?;
-                match &control.kind {
-                    c::ControlKind::Event(event) => {
-                        walk.parameter(&event.parameter)?;
-                        if let c::EventKind::Attempt { operation, .. } = &event.kind {
-                            walk.operation(operation)?;
-                        }
-                    }
-                    c::ControlKind::Commit { parameter, .. } => walk.parameter(parameter)?,
-                    c::ControlKind::Sequence(_)
-                    | c::ControlKind::Choice { .. }
-                    | c::ControlKind::Parallel { .. }
-                    | c::ControlKind::Repeat { .. }
-                    | c::ControlKind::Await { .. }
-                    | c::ControlKind::Check { .. } => {}
                 }
             }
             let expressions = super::arena::owned(
@@ -1514,18 +1443,6 @@ impl<'a> ModelWalk<'_, 'a> {
         }
         Ok(())
     }
-    fn role(&mut self, name: &QualifiedName) -> Result<(), ModelError> {
-        let result = self
-            .models
-            .resolve_at(self.unit, name, Site::Role, self.work);
-        self.record(
-            result,
-            Span {
-                start: name.model.span.start,
-                end: name.name.span.end,
-            },
-        )
-    }
     fn ty(&mut self, name: &QualifiedName) -> Result<(), ModelError> {
         let result = self.models.resolve_target(self.unit, name, self.work);
         self.record(
@@ -1566,43 +1483,6 @@ impl<'a> ModelWalk<'_, 'a> {
                 end: operation.name.span.end,
             },
         )
-    }
-    // A domain package's relationship declaration (a Connection or a
-    // navigation relationship) binds by key and kind. A native model has no
-    // relationship export: its occurrence records the named type, so the
-    // occurrence still carries a located type reference, and then refuses.
-    fn relationship(&mut self, relationship: &c::Relationship) -> Result<(), ModelError> {
-        let name = &relationship.model;
-        let span = Span {
-            start: name.model.span.start,
-            end: name.name.span.end,
-        };
-        match self
-            .models
-            .resolve_at(self.unit, name, Site::Relationship, self.work)
-        {
-            Ok(target @ ModelTarget::Declaration(_)) => self.record(Ok(target), span),
-            Ok(ModelTarget::Operation(_)) => self.record(
-                Err(failure(
-                    self.unit,
-                    name.name.span,
-                    ModelErrorKind::WrongExportKind,
-                )),
-                span,
-            ),
-            Ok(ModelTarget::Type(bound)) => {
-                self.record(Ok(ModelTarget::Type(bound)), span)?;
-                self.record(
-                    Err(failure(
-                        self.unit,
-                        relationship.span,
-                        ModelErrorKind::UnsupportedRelationshipContract,
-                    )),
-                    relationship.span,
-                )
-            }
-            Err(error) => self.record(Err(error), span),
-        }
     }
     fn parameter(&mut self, parameter: &c::Parameter) -> Result<(), ModelError> {
         self.visit(parameter.span)?;

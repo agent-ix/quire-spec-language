@@ -83,41 +83,6 @@ fn enum_members_bind_actual_variant_loci_and_reject_wrong_or_missing_kinds() {
     });
 }
 
-#[test]
-#[trace("TC-114", "FR-036-AC-3", "FR-036-AC-4")]
-fn a_named_record_cannot_grant_related_instance_authority() {
-    let model = model("test/native", "NativeModel", "native-model");
-    let inputs = [ModelInput::Native(&model)];
-    with_namespace(
-        &[program(
-            &model,
-            r#"protocol Workflow using S over (view: M::Node) on origin {
-        role Actor on M::Node;
-        relationship Relation = M::Node;
-        run sequence Main { check Valid using S { true }; }
-        finish Closed as (closed: M::Node) { true };
-    }"#,
-        )],
-        |namespace| {
-            let bindings = bind_models(namespace, &inputs, &mut work());
-            let id = namespace.lookup("Workflow")[0];
-            let report = bindings
-                .resolve_declaration(namespace, id, &mut work())
-                .unwrap();
-            assert!(report.complete);
-            assert_eq!(report.refusals.len(), 1);
-            let error = &report.refusals[0];
-            assert_eq!(error.kind, ModelErrorKind::UnsupportedRelationshipContract);
-            let source = namespace.unit(error.unit).unwrap().source();
-            assert_eq!(
-                source.slice(error.span),
-                Some("relationship Relation = M::Node;")
-            );
-            assert!(report.occurrences.iter().any(|occurrence| matches!(&occurrence.target, ModelTarget::Type(bound) if bound.location().identity.key == DeclarationKey::Type(native_rule_model::symbol("Node")))));
-        },
-    );
-}
-
 fn program(model: &NativeModel, declarations: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
@@ -1215,57 +1180,42 @@ fn direct_declaration_refusals_reserve_their_own_binding_records() {
         &[program(
             &model,
             r#"
-        predicate Missing using S (item: M::Absent): Boolean { true }
-        protocol Workflow using S over (view: M::Node) on origin {
-            role Actor on M::Node;
-            relationship Relation = M::Node;
-            run sequence Main { check Valid using S { true }; }
-            finish Closed as (closed: M::Node) { true };
-        }"#,
+        predicate Missing using S (item: M::Absent): Boolean { true }"#,
         )],
         |namespace| {
             let bindings = bind_models(namespace, &inputs, &mut work());
-            for (name, exact, before_cause, expected) in [
-                // Declaration report + missing-export cause.
-                ("Missing", 2, 1, ModelErrorKind::MissingExport),
-                // Declaration + input/role/relation/finish types + relationship cause.
-                (
-                    "Workflow",
-                    6,
-                    4,
-                    ModelErrorKind::UnsupportedRelationshipContract,
-                ),
-            ] {
-                let id = namespace.lookup(name)[0];
-                let mut meter = Work::new(BindingLimits {
-                    bindings: exact,
-                    ..BindingLimits::default()
-                });
-                let report = bindings
-                    .resolve_declaration(namespace, id, &mut meter)
-                    .unwrap();
-                assert!(report.complete);
-                assert_eq!(report.refusals.len(), 1);
-                assert_eq!(report.refusals[0].kind, expected);
-                assert_eq!(meter.usage().bindings, exact);
-                let stopped = bindings
-                    .resolve_declaration(
-                        namespace,
-                        id,
-                        &mut Work::new(BindingLimits {
-                            bindings: before_cause,
-                            ..BindingLimits::default()
-                        }),
-                    )
-                    .unwrap();
-                assert!(!stopped.complete);
-                assert_eq!(stopped.refusals.len(), 1);
-                let exhaustion = stopped.exhaustion().unwrap();
-                assert_eq!(exhaustion.dimension, Dimension::Bindings);
-                assert_eq!(exhaustion.used, before_cause);
-                assert_eq!(exhaustion.requested, 1);
-                assert_eq!(exhaustion.limit, before_cause);
-            }
+            // Declaration report + missing-export cause.
+            let (name, exact, before_cause, expected) =
+                ("Missing", 2, 1, ModelErrorKind::MissingExport);
+            let id = namespace.lookup(name)[0];
+            let mut meter = Work::new(BindingLimits {
+                bindings: exact,
+                ..BindingLimits::default()
+            });
+            let report = bindings
+                .resolve_declaration(namespace, id, &mut meter)
+                .unwrap();
+            assert!(report.complete);
+            assert_eq!(report.refusals.len(), 1);
+            assert_eq!(report.refusals[0].kind, expected);
+            assert_eq!(meter.usage().bindings, exact);
+            let stopped = bindings
+                .resolve_declaration(
+                    namespace,
+                    id,
+                    &mut Work::new(BindingLimits {
+                        bindings: before_cause,
+                        ..BindingLimits::default()
+                    }),
+                )
+                .unwrap();
+            assert!(!stopped.complete);
+            assert_eq!(stopped.refusals.len(), 1);
+            let exhaustion = stopped.exhaustion().unwrap();
+            assert_eq!(exhaustion.dimension, Dimension::Bindings);
+            assert_eq!(exhaustion.used, before_cause);
+            assert_eq!(exhaustion.requested, 1);
+            assert_eq!(exhaustion.limit, before_cause);
         },
     );
 }
