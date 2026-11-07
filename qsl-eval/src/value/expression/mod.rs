@@ -1646,13 +1646,14 @@ impl CheckedPackageEvaluation for CheckedPackage {
         supply: &ProtocolSupply<'_>,
         meter: &mut Meter,
     ) -> Result<ProtocolSlotEvaluation, CallFailure> {
-        let view =
+        let admitting =
             match supply.observation {
                 Some(quire_semantic_value::admission::ObservationAdmission::Admitted(
                     observation,
                 )) if observation.is_for_package(self) => observation.evaluation_view(),
-                _ => self.evaluation_view(),
+                _ => None,
             };
+        let view = admitting.unwrap_or_else(|| self.evaluation_view());
         let descriptor = qsl_package::ProtocolSlotDescriptor::new(
             slot.node.clone(),
             slot.member.clone(),

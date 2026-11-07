@@ -1518,3 +1518,454 @@ fn nothing_before_the_run_charges_and_a_refusal_leaves_the_meter_unchanged() {
     );
     assert_eq!(meter, before, "supply admission");
 }
+
+/// The E-P package of fixture source `source` and model document `domain`,
+/// read back, with the bare route over its handoff.
+struct EpRoutes<'p> {
+    read: qsl_package::AdmittedPackageRead<'p>,
+    rows: qsl_package::ReadIdentityRows,
+    equality: qsl_package::ReadEqualityRows,
+}
+
+impl<'p> EpRoutes<'p> {
+    fn new(package: &'p CheckedPackage, domain: Vec<u8>) -> Self {
+        let read = read_checked_package_with_model_document(package, &domain);
+        let v2 = read.admitted();
+        let rows = bare_rows(package, v2);
+        let equality = qsl_package::emit_checked(package, EmitLimits::fixture())
+            .expect("emits")
+            .equality_witness(v2);
+        Self {
+            read,
+            rows,
+            equality,
+        }
+    }
+
+    /// A new `BarePackage` value over the package's bytes.
+    fn bare(&self) -> BarePackage<'_> {
+        BarePackage::new(self.read.admitted())
+            .with_supply(
+                qsl_package::BareSupply {
+                    identities: &self.rows,
+                    equality: Some(&self.equality),
+                },
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+            )
+            .expect("the fixture budget admits the supply")
+    }
+}
+
+/// The four references and the four-occurrence attribution of TC-1070's E-P
+/// receipt, as `nested_reference_provenance_drives_the_named_population_admission`
+/// builds them.
+fn ep_references(
+    package: &CheckedPackage,
+    view: &qsl_semantics::model::normalize::EffectiveView,
+) -> (Value, Vec<ProtocolReferenceOccurrence>) {
+    let peer = other_reference(view, "ghost");
+    let nested = other_reference(view, "nested-1");
+    let optional = other_reference(view, "option-1");
+    let sequence = other_reference(view, "sequence-1");
+    let receipt = ep_receipt(package, [&peer, &nested, &optional, &sequence]);
+    let occurrence = |path: Vec<PathStep>, population: &str| ProtocolReferenceOccurrence {
+        path,
+        population: population_node(population),
+    };
+    let references = vec![
+        occurrence(vec![PathStep::Field("peer".into())], "otherSpare"),
+        occurrence(
+            vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("nested".into()),
+            ],
+            "otherNodes",
+        ),
+        occurrence(
+            vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("optional".into()),
+                PathStep::OptionValue,
+            ],
+            "otherSpare",
+        ),
+        occurrence(
+            vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("sequence".into()),
+                PathStep::Index(0),
+            ],
+            "otherNodes",
+        ),
+    ];
+    (receipt, references)
+}
+
+fn registration_capture(package: &CheckedPackage) -> ProtocolSlot {
+    slot(
+        package,
+        "Refunds",
+        "Refund",
+        "registration_captures",
+        Some(0),
+    )
+}
+
+/// FR-533-AC-5 (a)-(d): over fixture E-P with the same domain documents,
+/// snapshot and limits on both routes, the bare admission returns the source
+/// admission, a slot call over either route's admitted observation gives the
+/// same result and charges, the bare host's population types and the bare
+/// environment equal the source's, and a model the package does not select
+/// refuses `wrong-model-selection` with no fields, also without a supply.
+#[trace("FR-533-AC-5", "FR-390-AC-21", "TC-1333")]
+#[test]
+fn the_bare_observation_admission_equals_the_source_admission_on_e_p() {
+    let (package, view) = fixture_ep();
+    let routes = EpRoutes::new(&package, serde_json::to_vec(&document_ep()).unwrap());
+    let bare = routes.bare();
+    let source_view = package.evaluation_view();
+    let model = package.graph().model_selections()[0].clone();
+    assert_eq!(bare.model_selections(), vec![model.clone()]);
+    let (receipt, references) = ep_references(&package, &view);
+    let wanted = registration_capture(&package);
+    let on_bytes = bytes_slot(routes.read.admitted(), "Refunds", "Refund", &wanted);
+    let limits = qsl_semantics::model::accounting::ModelNormalizationLimits::default();
+    type OtherSpare<'a> = Option<(bool, &'a [&'a str])>;
+    let states: [(OtherSpare, bool); 4] = [
+        (Some((true, &["ghost", "option-1"])), true),
+        (Some((false, &[])), false),
+        (None, false),
+        (Some((true, &[])), false),
+    ];
+    for (state, evaluates) in states {
+        let (packages, selected, snapshots) = ep_snapshot(state, true, None, None, &[]);
+        let on_source = source_view.admit_protocol_observation(
+            &model,
+            &packages,
+            limits,
+            &snapshots,
+            &selected,
+            ObservationLimits::default(),
+        );
+        let on_bare = bare.admit_protocol_observation(
+            &model,
+            &packages,
+            limits,
+            &snapshots,
+            &selected,
+            ObservationLimits::default(),
+        );
+        match (&on_source, &on_bare) {
+            (ObservationAdmission::Admitted(source), ObservationAdmission::Admitted(bytes)) => {
+                assert_eq!(source.usage(), bytes.usage());
+                assert_eq!(source.populations(), bytes.populations());
+                assert_eq!(
+                    source.environment().references(),
+                    bytes.environment().references()
+                );
+            }
+            (ObservationAdmission::Refused(source), ObservationAdmission::Refused(bytes)) => {
+                assert_eq!(source, bytes);
+            }
+            (ObservationAdmission::Incomplete(source), ObservationAdmission::Incomplete(bytes)) => {
+                assert_eq!(source, bytes);
+            }
+            other => panic!("the routes admit differently: {other:?}"),
+        }
+        let given =
+            |observation| ep_supply(&package, receipt.clone(), references.clone(), observation);
+        let mut source_meter = Meter::new(UNLIMITED);
+        let source =
+            package.evaluate_protocol_slot(&wanted, &given(Some(&on_source)), &mut source_meter);
+        let mut bare_meter = Meter::new(UNLIMITED);
+        let bytes = bare.evaluate_protocol_slot(&on_bytes, &given(Some(&on_bare)), &mut bare_meter);
+        assert_eq!(without_location(&source), without_location(&bytes));
+        charges_and_usage_match("E-P registration capture", &source_meter, &bare_meter);
+        if evaluates {
+            assert_value_eq!(completed(bytes.unwrap()), int(5));
+        } else {
+            assert!(bytes.is_err(), "the other states refuse");
+        }
+    }
+    // (b) A reference attributed to a population of another model, and to a
+    // population of this model that no slot reads, refuses as the source does.
+    let (packages, selected, snapshots) =
+        ep_snapshot(Some((true, &["ghost", "option-1"])), true, None, None, &[]);
+    let on_source = source_view.admit_protocol_observation(
+        &model,
+        &packages,
+        limits,
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    );
+    let on_bare = bare.admit_protocol_observation(
+        &model,
+        &packages,
+        limits,
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    );
+    let other_model = NodeKey::new(
+        "other/model",
+        vec![
+            quire_exact::PathSegment::Text("relation".into()),
+            quire_exact::PathSegment::Text("population".into()),
+            quire_exact::PathSegment::Text("ix://other/model/externalOthers".into()),
+        ],
+        0,
+    )
+    .unwrap();
+    for (population, cause) in [
+        (population_node("elsewhereNodes"), "wrong-value-kind"),
+        (other_model, "wrong-model-selection"),
+    ] {
+        let mut supplied = references.clone();
+        supplied[0].population = population;
+        let given =
+            |observation| ep_supply(&package, receipt.clone(), supplied.clone(), observation);
+        let mut source_meter = Meter::new(UNLIMITED);
+        let source =
+            package.evaluate_protocol_slot(&wanted, &given(Some(&on_source)), &mut source_meter);
+        let mut bare_meter = Meter::new(UNLIMITED);
+        let bytes = bare.evaluate_protocol_slot(&on_bytes, &given(Some(&on_bare)), &mut bare_meter);
+        assert_eq!(without_location(&source), without_location(&bytes));
+        let (_, found, _, _) = refusal_of(bytes);
+        assert_eq!(found, cause);
+        assert_pristine(&bare_meter);
+    }
+    // (c) Population types and the type environment.
+    let world = bare.world().expect("world");
+    for name in ["nodes", "otherNodes", "otherSpare", "elsewhereNodes"] {
+        let node = population_node(name);
+        let (source_declaration, source_members) = package
+            .graph()
+            .protocol_population_types(&node)
+            .unwrap_or_else(|| panic!("{name} is a source population"));
+        let (bare_declaration, bare_members) = bare
+            .population_types(&node)
+            .unwrap_or_else(|| panic!("{name} is in the catalog"));
+        assert_eq!(source_declaration, bare_declaration, "{name}");
+        assert_eq!(
+            source_members
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>(),
+            bare_members
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>(),
+            "{name}"
+        );
+    }
+    let identity = |name: &str| {
+        view.type_identities()[&quire_checked::key::DeclarationKey {
+            package: model::PACKAGE.to_owned(),
+            node: model::id(name),
+        }]
+            .clone()
+    };
+    let attributes = |types: &quire_semantic_value::declaration::TypeEnvironment, name: &str| {
+        types
+            .attributes(identity(name))
+            .map(|set| {
+                set.iter()
+                    .map(|attribute| {
+                        (
+                            attribute.field().name().to_owned(),
+                            attribute.field().value_type().clone(),
+                            attribute.field().presence(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| panic!("{name} declares attributes"))
+    };
+    for name in ["Node", "Other", "Elsewhere"] {
+        assert_eq!(
+            attributes(package.graph().scope().types(), name),
+            attributes(world.types(), name),
+            "{name}"
+        );
+        for sup in ["Node", "Other", "Elsewhere"] {
+            assert_eq!(
+                package
+                    .graph()
+                    .scope()
+                    .types()
+                    .conforms(identity(name), identity(sup)),
+                world.types().conforms(identity(name), identity(sup)),
+                "{name} conforms to {sup}"
+            );
+        }
+    }
+    // (d) A model the package does not select.
+    let unselected = qsl_semantics::model::domain_package::DomainPackageRef {
+        identity: "other/model".to_owned(),
+    };
+    let on_source = source_view.admit_protocol_observation(
+        &unselected,
+        &packages,
+        limits,
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    );
+    let ObservationAdmission::Refused(record) = on_source else {
+        panic!("the source route refuses an unselected model")
+    };
+    assert_eq!(
+        (record.catalog.code(), record.catalog.cause()),
+        ("invalid_model_binding", "wrong-model-selection")
+    );
+    assert!(record.fields.is_empty() && record.path.is_empty() && record.kernel.is_none());
+    let without_supply = BarePackage::new(routes.read.admitted());
+    for route in [&bare, &without_supply] {
+        let on_bare = route.admit_protocol_observation(
+            &unselected,
+            &packages,
+            limits,
+            &snapshots,
+            &selected,
+            ObservationLimits::default(),
+        );
+        let ObservationAdmission::Refused(found) = on_bare else {
+            panic!("the bare route refuses an unselected model")
+        };
+        assert_eq!(found, record);
+    }
+}
+
+/// FR-533-AC-6: an observation is its admitting `BarePackage` value's alone.
+/// Another model's package refuses it at the population check, and another
+/// `BarePackage` value over the same bytes refuses it, each as the source
+/// route does for the same pair, and the call leaves the meter untouched.
+#[trace("FR-533-AC-6", "TC-1333")]
+#[test]
+fn an_observation_belongs_to_the_bare_package_value_that_admitted_it() {
+    let (package, view) = fixture_ep();
+    let routes = EpRoutes::new(&package, serde_json::to_vec(&document_ep()).unwrap());
+    let (receipt, references) = ep_references(&package, &view);
+    let wanted = registration_capture(&package);
+    let on_bytes = bytes_slot(routes.read.admitted(), "Refunds", "Refund", &wanted);
+    let limits = qsl_semantics::model::accounting::ModelNormalizationLimits::default();
+    let (packages, selected, snapshots) =
+        ep_snapshot(Some((true, &["ghost", "option-1"])), true, None, None, &[]);
+    let model = package.graph().model_selections()[0].clone();
+    let admit = |bare: &BarePackage<'_>| {
+        bare.admit_protocol_observation(
+            &model,
+            &packages,
+            limits,
+            &snapshots,
+            &selected,
+            ObservationLimits::default(),
+        )
+    };
+    let own = routes.bare();
+    let other = routes.bare();
+    let observation = admit(&own);
+    let given = |observation| ep_supply(&package, receipt.clone(), references.clone(), observation);
+    let mut meter = Meter::new(UNLIMITED);
+    assert_value_eq!(
+        completed(
+            own.evaluate_protocol_slot(&on_bytes, &given(Some(&observation)), &mut meter)
+                .unwrap()
+        ),
+        int(5)
+    );
+    let forward = binder(&package, "Refunds", "forward");
+    let mut meter = Meter::new(UNLIMITED);
+    let refused = other.evaluate_protocol_slot(&on_bytes, &given(Some(&observation)), &mut meter);
+    let (code, cause, _, locus) = refusal_of(refused);
+    assert_eq!(
+        (code.as_str(), cause.as_str(), locus),
+        (
+            "invalid_model_binding",
+            "wrong-model-selection",
+            CallAdmissionLocus::Binder(forward.clone())
+        )
+    );
+    assert_pristine(&meter);
+
+    // The same source with its model renamed, as a second package.
+    let rename = |text: &str| text.replace(model::PACKAGE, "test/orders-copy");
+    let copy_document = rename(&serde_json::to_string(&document_ep()).unwrap());
+    let (copy, copy_view) = fixture_from_document(&rename(SOURCE), copy_document.as_bytes());
+    let copy_routes = EpRoutes::new(&copy, copy_document.into_bytes());
+    let copy_bare = copy_routes.bare();
+    let copy_model = copy.graph().model_selections()[0].clone();
+    assert_ne!(copy_model, model);
+    // The copy's value, with the first package's population keys.
+    let in_copy = |key: &str| {
+        let declaration = quire_checked::key::DeclarationKey {
+            package: "test/orders-copy".to_owned(),
+            node: model::id("Other").replace(model::PACKAGE, "test/orders-copy"),
+        };
+        ObjectReference::new(
+            copy_view
+                .object_universe_of(&declaration)
+                .unwrap()
+                .identity()
+                .unwrap(),
+            copy_view.type_identities()[&declaration].clone(),
+            ObjectId::new(key).unwrap(),
+        )
+    };
+    let copy_receipt = ep_receipt(
+        &copy,
+        [
+            &in_copy("ghost"),
+            &in_copy("nested-1"),
+            &in_copy("option-1"),
+            &in_copy("sequence-1"),
+        ],
+    );
+    let source_observation = package.evaluation_view().admit_protocol_observation(
+        &model,
+        &packages,
+        limits,
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    );
+    let copy_wanted = registration_capture(&copy);
+    let copy_on_bytes = bytes_slot(
+        copy_routes.read.admitted(),
+        "Refunds",
+        "Refund",
+        &copy_wanted,
+    );
+    let supplied = |target: &CheckedPackage, observation| {
+        ep_supply(
+            target,
+            copy_receipt.clone(),
+            references.clone(),
+            observation,
+        )
+    };
+    let mut source_meter = Meter::new(UNLIMITED);
+    let on_source = copy.evaluate_protocol_slot(
+        &copy_wanted,
+        &supplied(&copy, Some(&source_observation)),
+        &mut source_meter,
+    );
+    let mut bare_meter = Meter::new(UNLIMITED);
+    let on_bare = copy_bare.evaluate_protocol_slot(
+        &copy_on_bytes,
+        &supplied(&copy, Some(&observation)),
+        &mut bare_meter,
+    );
+    // The source route's record for the same pair of packages and supply.
+    assert_eq!(without_location(&on_source), without_location(&on_bare));
+    let (code, cause, _, locus) = refusal_of(on_bare);
+    assert_eq!(
+        (code.as_str(), cause.as_str(), locus),
+        (
+            "foreign_reference",
+            "foreign-universe",
+            CallAdmissionLocus::Binder(binder(&copy, "Refunds", "forward"))
+        ),
+        "the first observation's universes are no universe of the copy's references"
+    );
+    assert_pristine(&bare_meter);
+}

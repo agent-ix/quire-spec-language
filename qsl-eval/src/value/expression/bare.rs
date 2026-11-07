@@ -37,17 +37,16 @@ fn refusal(package: &BarePackage<'_>, failure: BareSelectionFailure) -> CallFail
     }
 }
 
-/// What supply admission reads from a bytes-only package. It holds no
-/// population type and no model selection: an observation is admitted
-/// through a bare view, which is not yet available (FR-533 "Observation
-/// admission"), so a value that names an object reference is refused as a
-/// reference to a model the package does not select.
-struct BareHost<'w> {
+/// What supply admission reads from a bytes-only package: the bare
+/// environment, the package's model selections and population catalog, and
+/// the owner of an observation (FR-533 "Observation admission").
+struct BareHost<'w, 'p> {
+    package: &'w BarePackage<'p>,
     world: &'w BareWorld,
     levels: BTreeMap<NodeKey, usize>,
 }
 
-impl SlotHost for BareHost<'_> {
+impl SlotHost for BareHost<'_, '_> {
     fn types(&self) -> &quire_semantic_value::declaration::TypeEnvironment {
         self.world.types()
     }
@@ -58,23 +57,23 @@ impl SlotHost for BareHost<'_> {
 
     fn population_types(
         &self,
-        _node: &NodeKey,
+        node: &NodeKey,
     ) -> Option<(
         &quire_checked::key::DeclarationKey,
         &[quire_exact::EffectiveId],
     )> {
-        None
+        self.package.population_types(node)
     }
 
-    fn holds_model(&self, _model: &qsl_semantics::model::domain_package::DomainPackageRef) -> bool {
-        false
+    fn holds_model(&self, model: &qsl_semantics::model::domain_package::DomainPackageRef) -> bool {
+        self.package.model_selections().contains(model)
     }
 
     fn observation_is_for_view(
         &self,
-        _observation: &qsl_package::AdmittedProtocolObservation<'_>,
+        observation: &qsl_package::AdmittedProtocolObservation<'_>,
     ) -> bool {
-        false
+        observation.is_for_bare_package(self.package)
     }
 }
 
@@ -118,6 +117,7 @@ pub fn evaluate_selected_protocol_slot(
         })
         .collect::<Vec<_>>();
     let host = BareHost {
+        package,
         world: &world,
         levels: slot
             .sources()
@@ -130,7 +130,12 @@ pub fn evaluate_selected_protocol_slot(
         unavailable,
         binder_slots,
     } = admit_slot_supply(&host, &sources, slot.frame_len(), supply)?;
-    let objects = ObjectEnvironment::default();
+    let empty = ObjectEnvironment::default();
+    let objects = supply
+        .observation
+        .and_then(|admission| admission.authority().ok())
+        .map(|observation| observation.environment())
+        .unwrap_or(&empty);
     let no_reads = BTreeMap::new();
     // The call owns the meter's interval capture while it runs (FR-520-AC-11).
     let caller_capture = meter.take_charge_accounting().is_some();
@@ -138,7 +143,7 @@ pub fn evaluate_selected_protocol_slot(
     frame.resize(projection.frame_slots().max(frame.len()), None);
     let run = Machine::with_world(
         World::Bytes(&world),
-        &objects,
+        objects,
         None,
         Some(&no_reads),
         meter,

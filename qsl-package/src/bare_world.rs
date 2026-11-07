@@ -61,11 +61,18 @@ fn fault(invariant: &'static str) -> BareSelectionFailure {
 /// Keep the candidates whose native dependency closure can be represented.
 /// Native references carry the topology; no Exact type is reconstructed from
 /// a name or walked by a second type interpreter.
-fn closed_composites(
+fn closed_composites<'a>(
     package: &BarePackage<'_>,
-    candidates: Vec<(&CheckedNodeId, CompositeDeclaration)>,
+    candidates: Vec<(&'a CheckedNodeId, CompositeDeclaration)>,
+    objects: impl IntoIterator<Item = &'a CheckedNodeId>,
 ) -> Vec<CompositeDeclaration> {
-    let represented_nodes: BTreeSet<_> = candidates.iter().map(|(node, _)| *node).collect();
+    // An object declaration counts as represented for the closure (FR-533
+    // "Observation admission").
+    let represented_nodes: BTreeSet<_> = candidates
+        .iter()
+        .map(|(node, _)| *node)
+        .chain(objects)
+        .collect();
     let represented_handles: BTreeSet<_> = candidates
         .iter()
         .map(|(_, declaration)| declaration.key())
@@ -216,9 +223,15 @@ impl BarePackage<'_> {
                 ),
             ));
         }
-        let types = TypeEnvironment::new(closed_composites(self, composites), Vec::new())
-            .map_err(|_| fault("bare-composites-are-a-closed-environment"))?
-            .with_units(self.units.clone());
+        let object_nodes = identities.declaration_rows().filter_map(|row| {
+            matches!(row.exact_identity, SelectedExactIdentity::Object(_))
+                .then_some(&row.structural_node)
+        });
+        let objects = self.object_declarations().unwrap_or(&[]).to_vec();
+        let types =
+            TypeEnvironment::new(closed_composites(self, composites, object_nodes), objects)
+                .map_err(|_| fault("bare-composites-are-a-closed-environment"))?
+                .with_units(self.units.clone());
         let ieee = qsl_semantics::value::DefinitionRole::IeeeProfile.identity();
         Ok(BareWorld {
             types,

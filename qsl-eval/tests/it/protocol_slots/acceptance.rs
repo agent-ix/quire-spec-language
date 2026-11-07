@@ -353,6 +353,36 @@ fn ep_observation_state_through_view<'a>(
     relationship_target: Option<(&str, &str)>,
     extra_other_nodes: &[&str],
 ) -> ObservationAdmission<qsl_package::AdmittedProtocolObservation<'a>> {
+    let (packages, selected, snapshots) = ep_snapshot(
+        other_spare,
+        other_nodes_complete,
+        ghost_next,
+        relationship_target,
+        extra_other_nodes,
+    );
+    evaluation_view.admit_protocol_observation(
+        &package.graph().model_selections()[0],
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    )
+}
+
+/// The domain package input, selected document and snapshot of an E-P
+/// observation state (TC-1070 rows 34 to 46).
+fn ep_snapshot(
+    other_spare: Option<(bool, &[&str])>,
+    other_nodes_complete: bool,
+    ghost_next: Option<(&str, &str)>,
+    relationship_target: Option<(&str, &str)>,
+    extra_other_nodes: &[&str],
+) -> (
+    qsl_semantics::model::intake::PackageInput,
+    DocumentRef,
+    std::collections::BTreeMap<DocumentRef, Vec<u8>>,
+) {
     let domain = serde_json::to_vec(&document_ep()).unwrap();
     let packages = qsl_semantics::model::intake::package_input([domain.as_slice()]).unwrap();
     let selected = DocumentRef {
@@ -405,14 +435,7 @@ fn ep_observation_state_through_view<'a>(
     let snapshots = [(selected.clone(), serde_json::to_vec(&snapshot).unwrap())]
         .into_iter()
         .collect();
-    evaluation_view.admit_protocol_observation(
-        &package.graph().model_selections()[0],
-        &packages,
-        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
-        &snapshots,
-        &selected,
-        ObservationLimits::default(),
-    )
+    (packages, selected, snapshots)
 }
 
 #[test]
