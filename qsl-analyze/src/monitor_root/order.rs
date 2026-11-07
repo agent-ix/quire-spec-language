@@ -116,17 +116,15 @@ impl PlanRoot {
             .clause()
             .time_binding()
             .ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingModelTime))?;
-        let mut sources = self
-            .checked_unit()
-            .package()
-            .graph()
-            .time_sources()
-            .iter()
-            .filter(|source| {
-                source.model == binding.model
-                    && source.source == binding.source
-                    && source.unit == binding.unit
-            });
+        let graph = self.checked_unit().package().graph();
+        let model = graph
+            .timed_model(&binding.model)
+            .ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingModelTime))?;
+        let mut sources = graph.time_sources().iter().filter(|source| {
+            model.is_timed_by(source)
+                && source.source == binding.source
+                && source.unit == binding.unit
+        });
         let source = sources
             .next()
             .ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingTimeSource))?;
