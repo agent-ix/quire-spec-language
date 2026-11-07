@@ -8825,6 +8825,104 @@ mod tests {
         ));
     }
 
+    /// The refusal of one defective `Ratio`, as its code, the `Ratio`
+    /// member path the refusal names and the full detail.
+    fn ratio_refusal(constraints: Vec<Value>) -> (Code, String, String) {
+        let refusal = read_ratio(constraints, None).expect_err("a defective Ratio refuses");
+        (refusal.code, format!("{:?}", refusal.cause), refusal.detail)
+    }
+
+    fn with_foreign_applies_to(mut constraint: Value) -> Value {
+        constraint["appliesTo"] = serde_json::json!("ix://acme/orders/Other");
+        constraint
+    }
+
+    /// FR-505-AC-8 (TC-1300 row 11): when a `Ratio` carries two defects only
+    /// the earlier defect row is reported, once.
+    #[trace("FR-505-AC-8", "TC-1300")]
+    #[test]
+    fn two_rational_defects_report_only_the_earlier_row() {
+        let min_length = || rational_constraint("minLength", serde_json::json!(0));
+        let max_numerator = |value: Value| rational_constraint("maxNumerator", value);
+        let complete = |skip: &str| -> Vec<Value> {
+            [
+                ("minNumerator", -3),
+                ("maxNumerator", 7),
+                ("minDenominator", 1),
+                ("maxDenominator", 12),
+            ]
+            .into_iter()
+            .filter(|(keyword, _)| *keyword != skip)
+            .map(|(keyword, value)| rational_constraint(keyword, serde_json::json!(value)))
+            .collect()
+        };
+        let report = |constraints: Vec<Value>| ratio_refusal(constraints);
+
+        // minLength with maxNumerator given twice: minLength.
+        let mut constraints = complete("");
+        constraints.push(min_length());
+        constraints.push(max_numerator(serde_json::json!(6)));
+        let (code, member, detail) = report(constraints);
+        assert_eq!(code, Code::UnsupportedConstruct, "{detail}");
+        assert!(member.contains("Name(\"keyword\")"), "{member}");
+        assert!(detail.contains("minLength"), "{detail}");
+        assert!(!detail.contains("maxNumerator"), "{detail}");
+
+        // A foreign appliesTo with maxNumerator given twice: the appliesTo.
+        let mut constraints = complete("");
+        constraints.push(with_foreign_applies_to(max_numerator(serde_json::json!(6))));
+        constraints.push(max_numerator(serde_json::json!(5)));
+        let (code, member, detail) = report(constraints);
+        assert_eq!(code, Code::InvalidModelBinding, "{detail}");
+        assert!(member.contains("Name(\"appliesTo\")"), "{member}");
+
+        // minLength with a foreign appliesTo: minLength.
+        let mut constraints = complete("");
+        constraints.push(with_foreign_applies_to(min_length()));
+        constraints.push(with_foreign_applies_to(max_numerator(serde_json::json!(6))));
+        let (code, member, detail) = report(constraints);
+        assert_eq!(code, Code::UnsupportedConstruct, "{detail}");
+        assert!(member.contains("Name(\"keyword\")"), "{member}");
+        assert!(detail.contains("minLength"), "{detail}");
+
+        // maxNumerator twice with minDenominator removed: the repeated keyword.
+        let mut constraints = complete("minDenominator");
+        constraints.push(max_numerator(serde_json::json!(6)));
+        let (code, member, detail) = report(constraints);
+        assert_eq!(code, Code::InvalidModelBinding, "{detail}");
+        assert!(member.contains("Name(\"keyword\")"), "{member}");
+        assert!(detail.contains("maxNumerator"), "{detail}");
+        assert!(!detail.contains("minDenominator: missing"), "{detail}");
+
+        // minDenominator removed with maxNumerator 1.5: the missing keyword.
+        let mut constraints = complete("minDenominator");
+        constraints[1] = max_numerator(serde_json::json!(1.5));
+        let (code, member, detail) = report(constraints);
+        assert_eq!(code, Code::InvalidModelBinding, "{detail}");
+        assert!(!member.contains("Index"), "{member}");
+        assert!(detail.contains("minDenominator: missing"), "{detail}");
+
+        // maxNumerator 1.5 with minNumerator 8: the operand.
+        let mut constraints = complete("");
+        constraints[0] = rational_constraint("minNumerator", serde_json::json!(8));
+        constraints[1] = max_numerator(serde_json::json!(1.5));
+        let (code, member, detail) = report(constraints);
+        assert_eq!(code, Code::InvalidModelBinding, "{detail}");
+        assert!(member.contains("Name(\"operands\")"), "{member}");
+
+        // maxDenominator 0.5 listed first with maxNumerator 1.5: maxNumerator.
+        let constraints = vec![
+            rational_constraint("maxDenominator", serde_json::json!(0.5)),
+            max_numerator(serde_json::json!(1.5)),
+            rational_constraint("minNumerator", serde_json::json!(-3)),
+            rational_constraint("minDenominator", serde_json::json!(1)),
+        ];
+        let (code, member, detail) = report(constraints);
+        assert_eq!(code, Code::InvalidModelBinding, "{detail}");
+        assert!(member.contains("Name(\"operands\")"), "{member}");
+        assert!(detail.contains("maxNumerator"), "{detail}");
+    }
+
     /// FR-505-AC-4/7: package-wide binding checks refuse member-level
     /// Rational constraint restatements and a unit name absent from the unit
     /// namespace.
