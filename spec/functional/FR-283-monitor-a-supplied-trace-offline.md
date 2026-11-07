@@ -196,15 +196,18 @@ pub struct MonitorRecord {
     pub category: Category,
 }
 
+// Partial: the accessor this section defines. The record's other
+// accessors (`report`, `counterexample`, `item`) are not listed here.
 impl MonitorRecord {
     pub fn atom(&self) -> Option<&str>;
 }
 ```
 
 `MonitorRecord::atom()` is the name of the atom an `InsufficientData` or
-`Indeterminate` record names, and is `None` for every other record. An
-`InsufficientData` record's atom is named by the source text of the
-aggregate condition, read from `sources` (Behavior), such as
+`Indeterminate` record names, and is `None` for every other record. The
+name is the source text of the whole atom (a `holds` atom such as
+`holds(c.value > 0)`, or a window aggregate), read from `sources`
+(Behavior). An `InsufficientData` record's atom is its aggregate, such as
 `count over past[0, 9] min_count 2 >= 1`. An `Indeterminate` record's atom
 is the `atom` its FR-501 reason (`MissingValuation`,
 `ConflictingValuation`) names, also by source text.
@@ -314,31 +317,51 @@ pub enum MonitorRefusal {
     clause, or a temporal declaration that is not a clause). The refusal
     names the declaration's clause when it is selected, and otherwise the
     first selected clause.
-  - `temporal_selections` that do not fit `package`, FR-050's duplicate,
-    surplus and wrong-profile configurations and an invalid clock value: a
-    selection repeated for one declaration, a selection at a span no
-    declaration holds, a configuration of another profile than its
-    declaration's: `invalid_runtime_input`/`invalid-value`, field `member`
-    `temporal_selections`, naming the first selected clause. `monitor`
-    reports these as defects of its request input, in place of the
-    emitter's own FR-050 record.
+  - `temporal_selections` that do not fit `package`:
+    `invalid_runtime_input`/`invalid-value`, field `member`
+    `temporal_selections`, naming the first selected clause. These are
+    FR-050's duplicate selection (two for one declaration), surplus
+    selection (one at a span no declaration holds), wrong-profile
+    configuration (another profile than its declaration's) and FR-337's
+    `InvalidTemporalClockValue` (a selected `timestamp_unit` that is not
+    the unit node of a clause's `duration` window). `monitor` reports them as defects of its request
+    input, in place of the emitter's own FR-050 record.
   - `packages` whose domain package documents do not admit the emitted
     package (a document missing, truncated, or another document under the
     package's identity): `invalid_runtime_input`/`invalid-value`, fields
     `member` `packages` and `stage` `closure` when the dependency closure
     does not read back under them, or `strict-read` when the strict read of
     the emitted package refuses, naming the first selected clause.
-  - A trace `binding` that differs from a selected clause's emitted rows in
-    one dimension (FR-522): `invalid_runtime_input`/`invalid-value`, field
-    `mismatched_dimension` the FR-522 dimension name (`Profile`, `Clock`,
+  - A trace `binding` that differs from a selected clause's emitted rows
+    (FR-522): `invalid_runtime_input`/`invalid-value`, naming the first
+    such clause in request order, field `mismatched_dimension` the name of
+    the first differing dimension in FR-522's order (`Profile`, `Clock`,
     `ClockParameters`, `Epoch`, `SamplePeriod`, `ClockUnit`,
-    `SequenceAuthority` or `TimestampUnit`), field `asserted` the binding's value and, when the
-    clause's rows hold one, field `expected` the rows' value, naming that
-    clause. This record has no `member` field. A selection whose
+    `SequenceAuthority` or `TimestampUnit`), field `asserted` the binding's
+    value and, when the clause's rows hold one, field `expected` the rows'
+    value. This record has no `member` field. A `Progressed` or
+    `Timestamped` trace with no `binding` is refused
+    `invalid_runtime_input`/`invalid-value` with no field. A selection whose
     `timestamp_unit` differs from the unit the binding asserts fits the
     package, emits, and is refused here, with `mismatched_dimension`
     `TimestampUnit`, `asserted` the binding's unit and `expected` the
     selection's.
+  - The field names `member`, `stage` (here the read-back step, not a
+    limits-type stage label) and FR-522's `asserted` are QSL's own record
+    fields; QSpec FR-272's canonical payload names (`path`, `stage`,
+    `actual`) do not list them in these senses. The `missing-selection`
+    record names the input member only and carries neither the
+    declaration's identity nor its span, which QSpec FR-272's
+    `missing_declaration` row asks for.
+  - "The first selected clause" is the first element of `clauses` as
+    supplied: emission precedes the stage-`select` check, so a request
+    whose first selection names no temporal clause reports these defects
+    under that name, not `UnknownClause`.
+  - Cancellation during emission fails the request with
+    `StageFailure::Cancelled`. Any other emission refusal, including an
+    emit or import limit stop under the published default limits (the
+    request carries no limit for emission), is an internal failure,
+    `StageFailure::Fault`.
 - `SourceNotSupplied`: a refused condition's locus, or a record's named
   atom, whose region names a source that no element of `sources` has as its
   reference, or whose matching source's bytes do not hold the region's span
@@ -419,15 +442,16 @@ clause reports no verdict for the others.
   clause's name and FR-330's record, with no clause record.
 - If several selected clauses refuse or fault, then the `monitor`
   operation shall fail the request with the refusal or fault of the first
-  of them in request order, after the trace is read and every position
-  admitted.
+  of them in request order, after the trace is read, the emission and
+  binding authentication of a `Progressed` or `Timestamped` trace pass, and
+  every position is admitted.
 - When a record is `ConditionRefused`, the `monitor` operation shall render
   its locus as FR-100's `locus` (`file` and `span`) over the element of
   `sources` whose reference equals the region's.
 - When a record names an atom (`InsufficientData`'s `atom`, an
   `Indeterminate` reason's `atom`), the `monitor` operation shall name it by
-  the source text of the atom's condition, read from the element of
-  `sources` whose reference equals the condition's region, and never by a
+  the source text of the whole atom, read from the element of `sources`
+  whose reference equals the atom's region, and never by a
   formula node index, and shall expose that name as the record's
   `MonitorRecord::atom()`.
 - If no element of `sources` has the source of a record's locus or named
@@ -492,7 +516,8 @@ clause reports no verdict for the others.
 | FR-283-AC-12 | Over AC-1's trace, `always p` with accounting `work_units` 0 reports `Incomplete` naming `work_units`, category incomplete, exit 22. Over AC-11's samples, `always[1,1] (count over past[0, 9] min_count 1 >= 1)` `on origin`, whose window at position 1 holds the 2 values of positions 0 and 1, reports `WindowLimitReached` with `limit` `max_window_values`, `value` 1 and `setting` `monitor.max_window_values`, category incomplete, exit 22, when `max_window_values` is 1, and `Tested` when it is 2. FR-330-AC-7's clause `always[0,1] holds(InUnit(c.value))` over a two-position `Document` trace with `c.value` 0, 2, with `sources` holding the unit's source, reports `ConditionRefused` at position 1 with the record `integer_out_of_domain`/`outside-domain`, its `expected` field and a `locus` whose `file` is the unit's authored path and whose `span` is the `holds` condition's span, category refusal, exit 20; the same request with `sources` empty refuses the whole request with `MonitorRefusal::SourceNotSupplied` naming the clause and the unit's source identity, `invalid_runtime_input`/`missing-member` naming `sources`, no record and exit 20; and so does the request whose `sources` holds a `Source` with the unit's reference and bytes shorter than the condition's span. | Test (TC-766) |
 | FR-283-AC-13 | Each of these refuses the whole request with no record: over AC-2's lasso, `eventually[0,2] holds(q)` under event-position false-extension, a bounded profile, `MonitorRefusal::ClauseRefused` naming it with `invalid_runtime_input`/`invalid-value` (FR-330-AC-3), also as the second clause of a request whose first clause evaluates; a selection `Absent`, `MonitorRefusal::UnknownClause` naming `Absent`; AC-2's clause with an `over` naming key `ghost`, and the same clause with no `over`, `ClauseRefused` with `invalid_runtime_input`/`wrong-role-mapping`; FR-330-AC-17's record-trace-subject clause `always[0,2] A` over AC-1's `Document` trace, `ClauseRefused` with `invalid_runtime_input`/`invalid-value`. A request selecting `Absent` and then the bounded clause reports `UnknownClause`, the first in request order. Over FR-501-AC-7's trace (stamps 0, 1, 1, no order keys) as a `Typed` `Timestamped` trace with an agreeing `binding`, `holds(p) until[0,1] holds(q)` reports a `TraceRefused` record with `invalid_runtime_input`/`invalid-value` at position 2, category refusal, exit 20. With a test trace evaluator that returns `TemporalRefusal::Fault` for one selected clause, the request fails with `StageFailure::Fault`, no record for any clause, and exit 30. | Test (TC-766) |
 | FR-283-AC-14 | Each `MonitorRecord` this operation returns renders through `OutcomeItem::from_clause_run` (FR-286), and the document built from the records equals `OutcomeDocument::from_clause_runs` over the same clause runs, for the runs FR-286-AC-13 names. | Test (TC-765) |
-| FR-283-AC-15 | Over FR-501-AC-4's trace (stamps 0, 2, 5, `W` 5, `Complete { through: 5 }`, scope `Closed`, `p` false at stamps 0 and 5 and its valuation absent at stamp 2) as a `Typed` `Timestamped` trace, with `temporal_selections` holding the clause's `TimestampedEvent` selection and a `binding` that agrees with the emitted rows, `eventually[0,5] holds(p)` under the finite-window profile reports `Indeterminate` at position 0 with reason `MissingValuation { position: 1, atom: p }`, its `atom` named by the source text `p`, category indeterminate, exit 11; with `sources` empty the same request refuses with `MonitorRefusal::SourceNotSupplied`; with `W` 3 it reports `Pending`, exit 0. The same trace whose `binding` asserts another clock name refuses the whole request with `MonitorRefusal::ClauseRefused`, `invalid_runtime_input`/`invalid-value` with `mismatched_dimension` `Clock`, and no record, also when its position 1 snapshot fails FR-106 admission; with `temporal_selections` empty it refuses with `ClauseRefused`, `missing_declaration`/`missing-selection`; the clause over AC-1's `Document` trace refuses with `ClauseRefused`, `invalid_runtime_input`/`invalid-value` (FR-330-AC-9). Over the same `Timestamped` trace (binding unit `ms`), each of these refuses the whole request with `ClauseRefused` naming the clause and no record: `temporal_selections` lacking the selection of a clock-bearing declaration the request does not select, `missing_declaration`/`missing-selection` with `member` `temporal_selections`; `temporal_selections` with a selection repeated, with a surplus selection at a span no declaration holds, or with the clause's selection replaced by an `EventPosition` configuration, each `invalid_runtime_input`/`invalid-value` with `member` `temporal_selections`; the clause's selection with `timestamp_unit` `us`, `invalid_runtime_input`/`invalid-value` with `mismatched_dimension` `TimestampUnit`, `asserted` `ms` and `expected` `us`; `packages` empty, its package document truncated to one byte, or another document under its identity, each `invalid_runtime_input`/`invalid-value` with `member` `packages` and `stage` `strict-read`; and a `binding` whose profile, clock parameters or timestamp unit is forged, `invalid_runtime_input`/`invalid-value` with `mismatched_dimension` `Profile`, `ClockParameters` and `TimestampUnit` respectively, though position 1 names a snapshot `snapshots` does not hold, so no position is admitted. | Test (TC-765) |
+| FR-283-AC-15 | Over FR-501-AC-4's trace (stamps 0, 2, 5, `W` 5, `Complete { through: 5 }`, scope `Closed`, `p` false at stamps 0 and 5 and its valuation absent at stamp 2) as a `Typed` `Timestamped` trace, with `temporal_selections` holding the clause's `TimestampedEvent` selection and a `binding` that agrees with the emitted rows, `eventually[0,5] holds(p)` under the finite-window profile reports `Indeterminate` at position 0 with reason `MissingValuation { position: 1, atom: holds(p) }`, its `atom` and `MonitorRecord::atom()` the source text `holds(p)` of the whole `holds` atom, category indeterminate, exit 11; with `sources` empty the same request refuses with `MonitorRefusal::SourceNotSupplied`; with `W` 3 it reports `Pending`, exit 0. The same trace whose `binding` asserts another clock name refuses the whole request with `MonitorRefusal::ClauseRefused`, `invalid_runtime_input`/`invalid-value` with `mismatched_dimension` `Clock`, and no record, also when its position 1 snapshot fails FR-106 admission; with `temporal_selections` empty it refuses with `ClauseRefused`, `missing_declaration`/`missing-selection`; the clause over AC-1's `Document` trace refuses with `ClauseRefused`, `invalid_runtime_input`/`invalid-value` (FR-330-AC-9). Over the same `Timestamped` trace (binding unit `ms`), each of these refuses the whole request with `ClauseRefused` naming the clause and no record: `temporal_selections` lacking the selection of a clock-bearing declaration the request does not select, `missing_declaration`/`missing-selection` with `member` `temporal_selections`; `temporal_selections` with a selection repeated, with a surplus selection at a span no declaration holds, or with the clause's selection replaced by an `EventPosition` configuration, each `invalid_runtime_input`/`invalid-value` with `member` `temporal_selections`; the clause's selection with `timestamp_unit` `us`, `invalid_runtime_input`/`invalid-value` with `mismatched_dimension` `TimestampUnit`, `asserted` `ms` and `expected` `us`; `packages` empty, its package document truncated to one byte, or another document under its identity, each `invalid_runtime_input`/`invalid-value` with `member` `packages` and `stage` `strict-read`; and a `binding` whose profile, clock parameters or timestamp unit is forged, `invalid_runtime_input`/`invalid-value` with `mismatched_dimension` `Profile`, `ClockParameters` and `TimestampUnit` respectively, though position 1 names a snapshot `snapshots` does not hold, so no position is admitted. | Test (TC-765) |
+| FR-283-AC-16 | Over AC-15's `Timestamped` trace, in a package declaring two clock-bearing finite-window clauses `Window` and `Window2`: a request selecting `Window` then `Window2` whose `temporal_selections` lack `Window2`'s selection refuses with `ClauseRefused` naming `Window2`, `missing_declaration`/`missing-selection` with `member` `temporal_selections`; a request selecting `Window2` then `Window` whose `packages` is empty refuses with `ClauseRefused` naming `Window2`, `invalid_runtime_input`/`invalid-value` with `member` `packages` and `stage` `strict-read`; and for a package checked against a library dependency, a request whose `packages` omits the library's domain package document refuses with `ClauseRefused`, `invalid_runtime_input`/`invalid-value` with `member` `packages` and `stage` `closure`. Each has no record. | Test (TC-765) |
 
 ## Dependencies
 
