@@ -677,19 +677,25 @@ fn issuing_the_snapshot_precharges_actual_byte_copies_and_preserves_the_callers_
                             .unwrap()
                             .with_predecessor(&original, limits);
                     let mut shared = budget();
-                    qsl_eval::temporal::evidence::EvidencePackage::from_package(
-                        &qsl_package::BarePackage::new(package),
-                        &mut shared,
-                    )
-                    .expect("actual earlier IR admission charges");
+                    package
+                        .project_exact_type(
+                            &evidence.rows()[0].operand,
+                            &quire_contract_model::SelectedExactIdentities::empty(),
+                            &mut shared,
+                        )
+                        .expect("actual earlier IR projection of the admitted Boolean predicate");
                     let before = shared.clone();
+                    assert!(
+                        before.consumed().work > 0,
+                        "the earlier genuine IR operation must actually spend its caller budget"
+                    );
                     match evaluate_v2(&subject, &revised_observation, &mut meter(), &mut shared) {
                         Ok(report) => {
                             assert_eq!(
                                 report.predecessor_owner_bytes(),
                                 Some(original.to_owner_bytes().as_slice())
                             );
-                            assert!(shared.consumed().work > before.consumed().work, "successful evaluation adds actual IR charges without resetting prior charges");
+                            assert_eq!(shared.consumed(), before.consumed(), "this capture-free native evaluation adds no IR identity work and preserves all existing charges");
                             thresholds[index] = bound;
                             break;
                         }
