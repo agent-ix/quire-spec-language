@@ -23,69 +23,6 @@ const DECLARATIONS: [(&str, R); 3] = [
     ("ByTimestamp", R::TimestampedWindow),
 ];
 
-#[cfg(feature = "handoff-writer")]
-#[trace("TC-138", "TC-150", "FR-050-AC-1", "FR-050-AC-4", "FR-050-AC-7")]
-#[test]
-fn written_handoff_interchange_records_are_complete() {
-    use artifact::handoff::{
-        MUTATION_MANIFEST_FORMAT, PUBLISHED_MUTATION_MANIFEST_FILE, PUBLISHED_SELECTION_FILE,
-    };
-    use std::fs;
-    let directory = tempfile::tempdir().expect("temporary directory");
-    let root = directory.path().join("handoff");
-    artifact::handoff::write_v2(&root).expect("write_v2 emits a complete handoff");
-    let root = root.as_path();
-    let selection: artifact::handoff::SelectionV2 = serde_json::from_slice(
-        &fs::read(root.join(PUBLISHED_SELECTION_FILE)).expect("written reader selection"),
-    )
-    .expect("decode expected-v2.json with the published type");
-    assert_eq!(selection.temporal.len(), DECLARATIONS.len());
-    let selection_bytes = serde_json::to_vec(&selection).expect("encode published selection type");
-    assert_eq!(
-        serde_json::from_slice::<artifact::handoff::SelectionV2>(&selection_bytes)
-            .expect("round-trip published selection type"),
-        selection
-    );
-
-    let manifest: artifact::handoff::MutationManifest = serde_json::from_slice(
-        &fs::read(root.join(PUBLISHED_MUTATION_MANIFEST_FILE)).expect("written mutation manifest"),
-    )
-    .expect("decode mutations/manifest.json with the published type");
-    assert_eq!(manifest.format, MUTATION_MANIFEST_FORMAT);
-    assert!(!manifest.cases.is_empty(), "the adverse corpus has cases");
-    let mut case_ids = manifest
-        .cases
-        .iter()
-        .map(|case| case.identity.as_str())
-        .collect::<Vec<_>>();
-    case_ids.sort();
-    case_ids.dedup();
-    assert_eq!(case_ids.len(), manifest.cases.len(), "no duplicate case");
-    let case_files = fs::read_dir(root.join("mutations"))
-        .expect("written mutations directory")
-        .map(|entry| entry.expect("mutation entry").file_name())
-        .filter(|name| name.to_str() != Some("manifest.json"))
-        .count();
-    assert_eq!(
-        case_files,
-        manifest.cases.len(),
-        "one written case file per manifest case"
-    );
-    let manifest_bytes =
-        serde_json::to_vec(&manifest).expect("encode published mutation-manifest type");
-    assert_eq!(
-        serde_json::from_slice::<artifact::handoff::MutationManifest>(&manifest_bytes)
-            .expect("round-trip published mutation-manifest type"),
-        manifest
-    );
-    for path in [manifest.base_offer, manifest.independent_selection] {
-        assert!(
-            root.join(&path).is_file(),
-            "manifest path {path} is not a published file"
-        );
-    }
-}
-
 fn inputs() -> Inputs {
     inputs_with_event_body(
         "temporal ByEvent using T over (view: M::Plain) clock \"event-clock\" on origin { true }",

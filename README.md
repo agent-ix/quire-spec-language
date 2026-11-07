@@ -333,7 +333,6 @@ and incomplete runs. `run` can also evaluate one pure function;
 | Feature | Adds |
 | --- | --- |
 | `qsl-replay/quire-extraction` | Enables QSL's replay library to read rules from Quire Markdown spec artifacts, with locations mapped to the document. |
-| `handoff-writer` | Writes the compiled-protocol handoff files that protocol tools consume. |
 | `population-fixtures` | Writes the population fixtures used by the admission tests. |
 
 `quire-spec` is the compiler's own command line. The planned main entry point

@@ -80,12 +80,12 @@ this requirement says it has none:
   forbids them.
 - The root QSL package SHALL have no module that reads or validates
   compiled-protocol v1, v2 or v3 bytes, and no documentation of those formats.
-  The strict reader is called by the handoff writers
-  (`protocol_artifact::handoff::write_v1` and `write_v2`,
-  [FR-042](FR-042-publish-compiled-protocol-artifacts.md)-AC-15 and
-  [FR-050](FR-050-publish-authenticated-temporal-artifacts.md)-AC-8) and by the
-  composed emission, so QSL SHALL delete it in the slice that deletes the last
-  of them (M-6d, ADR-011 SEAM-3), not before.
+  The strict reader was called by the retired handoff writers
+  ([FR-042](FR-042-publish-compiled-protocol-artifacts.md)-AC-15 and
+  [FR-050](FR-050-publish-authenticated-temporal-artifacts.md)-AC-8; deleted by
+  QSL-840) and is still called by the composed emission, so QSL SHALL delete it
+  in the slice that deletes the last of them (M-6d, ADR-011 SEAM-3), not
+  before.
 - QSL SHALL contain no compatibility alias, re-export, shim, fallback or
   feature-gated duplicate of any retired item, and SHALL delete a retired path
   in the same change that makes its last caller unreachable, never before the

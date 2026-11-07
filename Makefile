@@ -271,13 +271,6 @@ test-deep-format:
 
 # The no-default-features checks: a from-clean build (its own target-dir, so
 # it never reuses this build's cached artifacts) and the parse example.
-#
-# FR-042-AC-15/FR-050-AC-8: a `--lib`, `--no-default-features`
-# check with only `handoff-writer` turned on demonstrates the acceptance
-# itself -- the public writer builds with no dev-dependency in its closure --
-# rather than resting on a claim in prose. `cargo check` (not `build`) is
-# enough: the property under test is which dependencies the lib target
-# resolves, not that its object code is produced.
 # Preserve the caller's literal target root across the Make/shell boundary.
 # An empty value retains Cargo's default target root.
 ifneq ($(origin CARGO_TARGET_DIR),undefined)
@@ -287,7 +280,6 @@ endif
 
 ci-clean-build:
 	cargo build --locked --workspace --no-default-features --target-dir "$${CI_CLEAN_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/clean}"
-	cargo check --locked -p quire-spec-language --lib --no-default-features --features handoff-writer --target-dir "$${CI_CLEAN_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/clean}"
 	cargo run --locked --no-default-features -- parse agent-ix test:parent fixture fixture:1 tests/fixtures/spine-compile.native
 
 # NFR-015: each no_std-capable crate builds with `std` off. A closure-tier row

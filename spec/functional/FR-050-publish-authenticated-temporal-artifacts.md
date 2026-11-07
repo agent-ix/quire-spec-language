@@ -56,24 +56,12 @@ The public Rust consumer entry point SHALL be
 The public Rust producer entry point SHALL be
 `protocol_artifact::native::admit_v2(proofs, selected, temporal, limits) -> Report<AdmissionV2>`.
 
-The `/2` handoff is generated, never committed. The repository SHALL commit no
-tree under `artifacts/compiled-protocol-v2`, and no checksum manifest, frozen
-digest or file count of handoff files. The only producer of the handoff is
-`protocol_artifact::handoff::write_v2(directory)` (behind the `handoff-writer`
-feature), which a consumer's build or test calls to write the handoff into a
-directory the consumer chooses, under its own build output. That call is the
-generation command; there is no second producer and no make target. A consumer obtains the compiler crate as a
-dependency with that feature enabled and SHALL NOT vendor or copy a handoff
-tree.
-
-When a Rust consumer addresses the members of a written `/2` handoff, the
-compiler crate SHALL publish the exact
-member-name constants `PUBLISHED_OFFER_FILE`, `PUBLISHED_SELECTION_FILE`,
-`PUBLISHED_MUTATION_MANIFEST_FILE` and `MUTATION_MANIFEST_FORMAT`. Their values SHALL respectively name
-`compiled-protocol-v2.json`, `expected-v2.json`, `mutations/manifest.json` and
-`quire.protocol.v2-mutations/1`. A consumer SHALL NOT require an environment
-variable or redeclare those producer-owned values to address the handoff.
-No constant names a committed handoff directory.
+The repository commits no `/2` handoff tree and no checksum manifest, frozen
+digest or file count of handoff files. The legacy directory writer
+`protocol_artifact::handoff::write_v2`, its member-name constants and its
+mutation-corpus format constant were retired with their carrier by QSL-840
+(FR-050-AC-7 and FR-050-AC-8); the checked-package writer of FR-517 and
+FR-518 writes the handoff directory of the checked package.
 
 The producer's `temporal` input SHALL be a complete table of
 `native::TemporalSelection` records keyed by exact source `ArtifactRef` and
@@ -295,8 +283,8 @@ selection (FR-383) until a decision names it.
 | FR-050-AC-4 | `/1` bytes are readable only by the strict `/1` reader; `/1` rejects `/2`, `/2` rejects `/1`, and neither reader upgrades, strips or invents a temporal selection. | Test (TC-138, TC-150) |
 | FR-050-AC-5 | Exact and one-short FR-042 limits cover added binding entries, strings, numbers and canonical bytes with the existing accounting identity; a sufficient retry starts fresh and reproduces the same bytes. | Test (TC-138, TC-150) |
 | FR-050-AC-6 | The v2-specific L5 evaluation entry points compare all authenticated clock fields before positions and retain them in results; checked `/2` counterparts additionally join the exact S3 source locus, declaration, profile and clock before evaluation and retain the same admitted definition/clock evidence. The existing `/1` entry points keep their signatures and historical unauthenticated scope and cannot establish native-to-temporal correspondence. | Test (TC-138, TC-150) |
-| FR-050-AC-7 | The three member filenames and the mutation format constant, joined to a directory written by `write_v2`, resolve that handoff's offer, selection and mutation manifest, and the decoded manifest repeats the same base-member and format identities, without an environment variable or consumer-owned duplicate vocabulary. | Test (TC-138, TC-150) |
-| FR-050-AC-8 | `protocol_artifact::handoff::write_v2(directory)` is FR-042-AC-15's `/2` counterpart: behind the same `handoff-writer` feature, it writes the complete authenticated handoff -- offer, `expected-v2.json` selection, sources, model source, the three clock inputs, every dependency's exact bytes, and the `mutations/` adverse corpus and manifest -- to a caller-chosen new directory, in-process, replaying every mutation to its expected refusal before writing. Two calls write byte-identical trees; an existing directory refuses without touching its contents. | Test (TC-138, TC-150) |
+| FR-050-AC-7 | **RETIRED in QSL-840; historical only.** The three member filenames and the mutation format constant, joined to a directory written by `write_v2`, resolve that handoff's offer, selection and mutation manifest, and the decoded manifest repeats the same base-member and format identities, without an environment variable or consumer-owned duplicate vocabulary. | Test (TC-138, TC-150), retired |
+| FR-050-AC-8 | **RETIRED in QSL-840; historical only.** `protocol_artifact::handoff::write_v2(directory)` is FR-042-AC-15's `/2` counterpart: behind the same `handoff-writer` feature, it writes the complete authenticated handoff -- offer, `expected-v2.json` selection, sources, model source, the three clock inputs, every dependency's exact bytes, and the `mutations/` adverse corpus and manifest -- to a caller-chosen new directory, in-process, replaying every mutation to its expected refusal before writing. Two calls write byte-identical trees; an existing directory refuses without touching its contents. | Test (TC-138, TC-150), retired |
 | FR-050-AC-9 | Withdrawn: the generated-not-committed rule is stated in the Description; a git-tracking test caught no functional failure. | Withdrawn |
 | FR-050-AC-10 | Withdrawn: a file-name scan for checksum manifests caught no functional failure; the rule is stated in the Description. | Withdrawn |
 | FR-050-AC-11 | Withdrawn: a layout check of the manifest directory caught no failure the writers' own source reads do not. | Withdrawn |

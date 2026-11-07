@@ -98,18 +98,6 @@ impl Recipe {
                     &clean
                 ],
                 vec![
-                    "check",
-                    "--locked",
-                    "-p",
-                    "quire-spec-language",
-                    "--lib",
-                    "--no-default-features",
-                    "--features",
-                    "handoff-writer",
-                    "--target-dir",
-                    &clean
-                ],
-                vec![
                     "run",
                     "--locked",
                     "--no-default-features",
@@ -122,7 +110,7 @@ impl Recipe {
                     "tests/fixtures/spine-compile.native"
                 ],
             ],
-            "literal caller path and all three recipe argument lists are preserved"
+            "literal caller path and both recipe argument lists are preserved"
         );
     }
 }
@@ -145,7 +133,7 @@ fn read_length(bytes: &mut &[u8]) -> usize {
     .expect("argument length fits usize")
 }
 
-#[trace("TC-121", "TC-138", "FR-042-AC-15", "FR-050-AC-8")]
+#[trace("TC-915", "NFR-013-AC-3")]
 #[test]
 fn clean_build_defaults_to_target_clean() {
     let recipe = Recipe::new();
@@ -154,7 +142,7 @@ fn clean_build_defaults_to_target_clean() {
     recipe.assert_arguments(Some(""), true);
 }
 
-#[trace("TC-121", "TC-138", "FR-042-AC-15", "FR-050-AC-8")]
+#[trace("TC-915", "NFR-013-AC-3")]
 #[test]
 fn clean_build_uses_the_callers_target_root() {
     let recipe = Recipe::new();
@@ -202,12 +190,11 @@ fn assert_clean_build_recipe(caller_root: Option<&str>) {
     let stdout = String::from_utf8(output.stdout).expect("UTF-8 recipes");
     let expected = concat!(
         "cargo build --locked --workspace --no-default-features --target-dir \"${CI_CLEAN_TARGET_DIR:-${CARGO_TARGET_DIR:-target}/clean}\"\n",
-        "cargo check --locked -p quire-spec-language --lib --no-default-features --features handoff-writer --target-dir \"${CI_CLEAN_TARGET_DIR:-${CARGO_TARGET_DIR:-target}/clean}\"\n",
         "cargo run --locked --no-default-features -- parse agent-ix test:parent fixture fixture:1 tests/fixtures/spine-compile.native\n",
     );
     assert_eq!(
         stdout, expected,
-        "clean-build recipes must retain minimal-feature/writer/parse checks and use the selected clean child as one quoted argument"
+        "clean-build recipes must retain the minimal-feature and parse checks and use the selected clean child as one quoted argument"
     );
 }
 

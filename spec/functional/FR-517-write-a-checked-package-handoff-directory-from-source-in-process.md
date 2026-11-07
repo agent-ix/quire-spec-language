@@ -34,17 +34,19 @@ FR-042-AC-10 and AC-15 (retired as historical in M-6d) required that real
 accepted source pass the compiler stages and produce a handoff that quire-protocol
 consumes unchanged, written in process by a library call into a new directory,
 deterministically, behind a feature in the normal dependency surface. The writer
-`protocol_artifact::handoff::{write_v1, write_v2}` still does this for the
+`protocol_artifact::handoff::{write_v1, write_v2}` did this for the
 `quire.compiled-protocol/1` and `/2` wires. The deletion table (rows PA A20 to
-A22, W4 to W7, AC-10, AC-15) found no successor: nothing in the checked-package
-path writes a directory, a selection sidecar or a mutation manifest, and
-quire-protocol never reads a checked package (GAP-10, GAP-15). This requirement
-specifies the successor writer. FR-518 specifies the mutation corpus it writes.
+A22, W4 to W7, AC-10, AC-15) found no successor when this requirement was
+written: nothing in the checked-package path wrote a directory, a selection
+sidecar or a mutation manifest, and quire-protocol never read a checked package
+(GAP-10, GAP-15). This requirement specifies the successor writer. FR-518
+specifies the mutation corpus it writes.
 
 The legacy writer, its two examples, the `handoff-writer` feature and the
-`expected*.json` files stay until FR-517-AC-1 to AC-9, AC-11 to AC-14, AC-17 to AC-20 and FR-518 are green and
-QSL-1549 has repointed quire-protocol (FR-499's keep row, FR-521 row 2); the
-change that deletes them replaces nothing: this writer is already its successor.
+`expected*.json` files were deleted by QSL-840 once FR-517-AC-1 to AC-9, AC-11
+to AC-14, AC-17 to AC-20 and FR-518 were green and QSL-1549 had repointed
+quire-protocol (FR-499's keep row, FR-521 row 2). That change replaced nothing:
+this writer was already its successor.
 
 ## Use case
 
@@ -366,7 +368,7 @@ the three directories. The packages hold:
 | FR-517-AC-7 | A request whose source the compiler refuses returns the compiler's refusal and writes nothing; a request whose emitted package the reader refuses, and a request for which `ReadBackDiffers` is injected, write nothing. | Test (TC-1312) |
 | FR-517-AC-8 | `checked_handoff` is behind the feature `checked-handoff`, adds no entry to `Cargo.lock`, and a downstream crate with only that feature enabled compiles `write` and `Selection::check` without building this crate's examples or dev-dependencies. | Test (TC-1312) |
 | FR-517-AC-9 | A package with one `temporal_bindings` clock value changed to another well-formed value is admitted by `read_checked_package` and refused by `Selection::check` naming its `SelectionAxis`; no function of the module parses a checked package except through `read_checked_package` (`git grep` finds no second reader). | Test (TC-1312) |
-| FR-517-AC-10 | Until FR-517-AC-1 to AC-9, AC-11 to AC-14, AC-17 to AC-20 and FR-518-AC-1 to AC-12 are green, `handoff::write_v1`, `write_v2`, the five `PUBLISHED_*` constants (`PUBLISHED_V1_OFFER_FILE`, `PUBLISHED_V1_SELECTION_FILE`, `PUBLISHED_OFFER_FILE`, `PUBLISHED_SELECTION_FILE`, `PUBLISHED_MUTATION_MANIFEST_FILE`), the `handoff-writer` feature, the two examples and `examples/protocol-handoff` are present; the change that removes any of them cannot merge while FR-521 row 2 is not green. | Inspection (TC-1312, TC-1316) |
+| FR-517-AC-10 | The legacy writer is absent: `protocol_artifact::handoff` (`write_v1`, `write_v2`, the five `PUBLISHED_*` constants), the `handoff-writer` feature, the two examples `native_protocol_handoff` and `native_protocol_v2_handoff`, `examples/protocol-handoff` and `tests/it/handoff_writer.rs` do not exist, and no Cargo manifest of the workspace names the feature. The gate that kept them (FR-517-AC-1 to AC-9, AC-11 to AC-14, AC-17 to AC-20 and FR-518-AC-1 to AC-12 green, FR-521 row 2) was met when they were deleted. | Test (TC-1312) |
 | FR-517-AC-11 | Each handoff directory written for **R** contains `inventory.json`, and its bytes equal the encoding "The inventory file" states of the outcome `qsl_replay::qsl_inventory` returns over the unit, run through the replay spine, with the formal identity that section selects; the file's rows are non-empty, `observed_count` equals their number, and two writes of equal requests give equal files. | Test (TC-1312) |
 | FR-517-AC-12 | **R**'s model declares the Rational value types `Ratio` and `Exact` with no unit, the compiled source reaches both, and the emitted package of **R** carries the rationals `9223372036854775807/9223372036854775806` and `-9223372036854775808/9223372036854775807` as `Exact` values, with no declared bound widened to admit them. | Test (TC-1312) |
 | FR-517-AC-13 | **R**'s model declares `Amount` and `Total` as aliases of the unit `ix://quire/unit/U`, each keeping its `min` and `max` naming the alias (`Amount` 1 and 20, `Total` 0 and 100), and each of the three **R** sources declares `U`. The emitted package of **R** holds the node of `U`, types the `targetFull` and `targetPartial` captures by it, and lowers **R**'s receipt sums to `quire.op.collection.sum.quantity`. | Test (TC-1312) |
