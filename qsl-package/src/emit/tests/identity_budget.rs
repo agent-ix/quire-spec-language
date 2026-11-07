@@ -459,3 +459,191 @@ function e3 using v(s: State, g: Integer): State pure { s }\n";
     assert_eq!(pair.members[0].original_member_identity.as_ref(), "fst");
     assert_eq!(pair.members[0].admitted_name.as_ref(), "one");
 }
+
+#[test]
+#[trace("TC-1331", "FR-531-AC-31")]
+#[trace("TC-1331", "FR-531-AC-33")]
+fn later_authentic_record_member_copy_denial_retains_an_observed_admitted_prefix() {
+    use crate::emit::identity_rows::copy_source_record;
+    use quire_contract_model::{NativeJoinLocus, NativeJoinLocusSource};
+    let (emission, _) = fixture();
+    let records = emission.selected_source_record_rows();
+    assert_eq!(records.len(), 2);
+    assert_eq!(
+        records[0]
+            .qualified_declaration
+            .iter()
+            .map(AsRef::as_ref)
+            .collect::<Vec<_>>(),
+        ["Point"]
+    );
+    assert_eq!(
+        records[1]
+            .qualified_declaration
+            .iter()
+            .map(AsRef::as_ref)
+            .collect::<Vec<_>>(),
+        ["Tagged"]
+    );
+    let locus = NativeJoinLocus {
+        source: NativeJoinLocusSource::Package,
+        form: "identity_record_output",
+    };
+    let mut measure = ample();
+    let first = copy_source_record(&records[0], &mut measure, locus)
+        .expect("genuine first record conversion");
+    let first_need = measure.consumed();
+    let second = copy_source_record(&records[1], &mut measure, locus)
+        .expect("genuine second record conversion");
+    assert_eq!(
+        second
+            .members
+            .iter()
+            .map(|member| member.original_member_identity.as_ref())
+            .collect::<Vec<_>>(),
+        ["p", "note", "maybe"]
+    );
+    assert_eq!(
+        second.members[0].value_type,
+        records[1].members[0].value_type
+    );
+    assert_eq!(second.members[1].presence, records[1].members[1].presence);
+    assert_eq!(
+        second.members[2].value_type,
+        records[1].members[2].value_type
+    );
+    let need = measure.consumed();
+    for (work, storage, kind) in [
+        (need.work - 1, need.storage, NativeJoinChargeKind::Work),
+        (need.work, need.storage - 1, NativeJoinChargeKind::Storage),
+    ] {
+        let mut budget = NativeJoinBudget::new(work, storage);
+        let _ = allocation_counter::measure(|| {});
+        let mut prefix = None;
+        let observed_prefix = allocation_counter::measure(|| {
+            prefix = Some(copy_source_record(&records[0], &mut budget, locus))
+        });
+        let prefix = prefix
+            .expect("prefix call")
+            .expect("already paid first record");
+        assert_eq!(prefix, first);
+        assert_eq!(budget.consumed(), first_need);
+        assert!(observed_prefix.count_total > 0);
+        let mut failure = None;
+        let observed_denial = allocation_counter::measure(|| {
+            failure = Some(copy_source_record(&records[1], &mut budget, locus))
+        });
+        let failure = failure
+            .expect("later call")
+            .expect_err("unpaid Tagged member returns no copied record");
+        assert_eq!(failure.denied().expect("first unpaid resource").kind, kind);
+        assert_eq!(
+            failure.locus().expect("member phase").form,
+            "identity_record_member_output"
+        );
+        assert_eq!(
+            failure.configured_bound(),
+            Some(if kind == NativeJoinChargeKind::Work {
+                work
+            } else {
+                storage
+            })
+        );
+        assert!(budget.consumed().storage >= first_need.storage);
+        assert_eq!(
+            observed_denial.count_total, 0,
+            "neither denied record payload nor diagnostic allocates"
+        );
+        assert_eq!(observed_denial.bytes_total, 0);
+        assert_eq!(
+            prefix, first,
+            "earlier admitted real copy survives the later refusal"
+        );
+    }
+}
+
+#[test]
+#[trace("TC-1331", "FR-531-AC-31")]
+#[trace("TC-1331", "FR-531-AC-33")]
+fn later_authentic_union_payload_copy_denial_keeps_the_paid_record_prefix() {
+    use crate::emit::identity_rows::{copy_source_record, copy_source_union};
+    use quire_contract_model::{NativeJoinLocus, NativeJoinLocusSource};
+    let (emission, _) = fixture();
+    let record = &emission.selected_source_record_rows()[0];
+    let unions = emission.selected_source_union_rows();
+    assert_eq!(unions.len(), 1);
+    let union = &unions[0];
+    assert_eq!(
+        union
+            .qualified_declaration
+            .iter()
+            .map(AsRef::as_ref)
+            .collect::<Vec<_>>(),
+        ["Shape"]
+    );
+    assert_eq!(
+        union
+            .members
+            .iter()
+            .map(|member| member.member.identifier())
+            .collect::<Vec<_>>(),
+        ["Empty", "Circle", "Rect"]
+    );
+    let record_locus = NativeJoinLocus {
+        source: NativeJoinLocusSource::Package,
+        form: "identity_record_output",
+    };
+    let union_locus = NativeJoinLocus {
+        source: NativeJoinLocusSource::Package,
+        form: "identity_union_output",
+    };
+    let mut measure = ample();
+    let first = copy_source_record(record, &mut measure, record_locus).expect("real first output");
+    let first_need = measure.consumed();
+    let original = copy_source_union(union, &mut measure, union_locus).expect("genuine union copy");
+    assert_eq!(original, *union);
+    assert_eq!(original.members[2].payload_nodes.len(), 2);
+    assert_eq!(
+        original.members[2].payload,
+        [ValueType::Integer, ValueType::Integer]
+    );
+    let need = measure.consumed();
+    for (work, storage, kind) in [
+        (need.work - 1, need.storage, NativeJoinChargeKind::Work),
+        (need.work, need.storage - 1, NativeJoinChargeKind::Storage),
+    ] {
+        let mut budget = NativeJoinBudget::new(work, storage);
+        let _ = allocation_counter::measure(|| {});
+        let mut prefix = None;
+        let observed_prefix = allocation_counter::measure(|| {
+            prefix = Some(copy_source_record(record, &mut budget, record_locus))
+        });
+        let prefix = prefix.expect("prefix call").expect("admitted real record");
+        assert_eq!(prefix, first);
+        assert_eq!(budget.consumed(), first_need);
+        assert!(observed_prefix.bytes_total > 0);
+        let mut failure = None;
+        let observed_denial = allocation_counter::measure(|| {
+            failure = Some(copy_source_union(union, &mut budget, union_locus))
+        });
+        let failure = failure
+            .expect("union call")
+            .expect_err("unpaid union payload returns no row");
+        assert_eq!(failure.denied().expect("original unpaid charge").kind, kind);
+        assert_eq!(
+            failure.locus().expect("union member phase").form,
+            "identity_union_member_output"
+        );
+        assert_eq!(
+            failure.configured_bound(),
+            Some(if kind == NativeJoinChargeKind::Work {
+                work
+            } else {
+                storage
+            })
+        );
+        assert_eq!(observed_denial.count_total, 0);
+        assert_eq!(observed_denial.bytes_total, 0);
+        assert_eq!(prefix, first);
+    }
+}
