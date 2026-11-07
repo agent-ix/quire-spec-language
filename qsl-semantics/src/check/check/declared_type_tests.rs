@@ -61,7 +61,10 @@ fn owner_traversal_denial_retains_request_and_allows_identical_retry() {
     let Err(TypeCheckError::Allocation(request)) = owner_failure else {
         panic!("the owner must expose the denied traversal request");
     };
-    assert_eq!(request, StorageRequest::new(1, StorageUnit::AdditionalElements));
+    assert_eq!(
+        request,
+        StorageRequest::new(1, StorageUnit::AdditionalElements)
+    );
     qsv_failing_allocator::arm(0);
     let failed = typer.check_declared_type(&ty, &location);
     let denied = qsv_failing_allocator::disarm();
@@ -69,10 +72,7 @@ fn owner_traversal_denial_retains_request_and_allows_identical_retry() {
     assert_eq!(denied, owner_denied);
     let failure = failed.expect_err("the real owner root-worklist reservation must fail");
     assert_eq!(failure.location, location);
-    assert_eq!(
-        failure.cause,
-        CheckCause::TypeCheckAllocation(request)
-    );
+    assert_eq!(failure.cause, CheckCause::TypeCheckAllocation(request));
     assert_eq!(
         failure.cause.code(),
         qsl_foundation::diagnostic::Code::ResourceExhausted
