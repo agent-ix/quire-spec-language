@@ -238,65 +238,12 @@ fn large_admitted_model_resolves_repeated_nominal_parameters_at_defaults() {
 }
 
 #[test]
-#[trace("TC-114", "FR-036-AC-2", "FR-036-AC-7")]
-fn definition_binding_visits_only_its_protocols_own_control_region() {
-    let model = native_rule_model::parts().model();
-    let checks = (0..50)
-        .map(|index| format!("check Check{index} using Missing {{ true }};\n"))
-        .collect::<String>();
-    let declarations = (0..200)
-        .map(|index| format!("protocol Flow{index} using P over (view: M::Node) on origin {{ role Service on M::Node; run sequence Main {{ {checks} }} finish Closed as (closed: M::Node) {{ true }}; }}\n"))
-        .collect::<String>();
-    let sources = [source(
-        "many-protocols",
-        &model,
-        &[("P", R::Protocol)],
-        &declarations,
-    )];
-    let selected_sources = inventory(&sources);
-    let admitted = admit_namespace(
-        &selected_sources,
-        &sources,
-        WorkLimits::default(),
-        Limits::default(),
-    );
-    assert!(admitted.issues().is_empty(), "{:?}", admitted.issues());
-    let namespace = admitted.namespace().unwrap();
-    assert!(namespace.dependencies_complete());
-    assert_eq!(namespace.units()[0].controls().len(), 10_200);
-    let (definitions, rules) = artifacts();
-    let selected = Inventory {
-        edition: R::Edition.selection(),
-        definitions: &definitions,
-        rules: &rules,
-    };
-    let mut work =
-        quire_spec_language::linking::composed::binding_work::Work::new(BindingLimits::default());
-    let report = quire_spec_language::linking::composed::definitions::resolve(
-        namespace, &selected, &mut work,
-    );
-    assert!(report.complete, "{:?}", report.exhaustion);
-    assert_eq!(report.declarations.len(), 200);
-    for declaration in &report.declarations {
-        assert!(declaration.complete);
-        assert_eq!(declaration.uses.len(), 51);
-        assert!(declaration.uses[0].refusal.is_none());
-        assert!(declaration.uses[1..].iter().all(|usage| usage.refusal
-            == Some(quire_spec_language::linking::composed::definitions::Cause::MissingAlias)));
-    }
-    // All 10,000 missing aliases are retained with original owning declarations.
-    // Scanning every protocol's arena would need 2,040,000 reads before lookup.
-    assert!(work.usage().references < 200_000, "{:?}", work.usage());
-}
-
-#[test]
 #[trace("TC-114", "FR-036-AC-1", "FR-036-AC-4")]
-fn one_binding_path_resolves_three_families_and_preserves_owned_anchors() {
+fn one_binding_path_resolves_predicate_state_and_temporal_and_preserves_owned_anchors() {
     let model = native_rule_model::parts().model();
     let sources = [
         source("state", &model, &[("S", R::StateGraph)], "predicate Positive using S (amount: M::Version): Boolean { amount >= 0 }\ninvariant Healthy using S on M::Node at current { Positive(self.n) }"),
         source("temporal", &model, &[("T", R::EventPosition)], "temporal Due using T over (view: M::Node) clock \"orders\" on each (started: M::Node) when (Positive(started.n)) { capture saved: M::Version = started.n; eventually[0,1] holds(Positive(view.n) and saved >= 0) }"),
-        source("protocol", &model, &[("S", R::StateGraph), ("P", R::Protocol)], "protocol Flow using P over (view: M::Node) on origin { role Service on M::Node; requires temporal Due; run sequence Main { event Happened by Service as (happened: M::Node) { Positive(happened.n) }; check HealthyNow using S { Positive(view.n) }; } finish Closed as (closed: M::Node) { Positive(closed.n) }; }"),
     ];
     let sources_selected = inventory(&sources);
     let namespace_report = admit_namespace(
@@ -327,25 +274,14 @@ fn one_binding_path_resolves_three_families_and_preserves_owned_anchors() {
             "{report:#?}"
         );
     }
-    assert_eq!(report.declarations().len(), 4);
+    assert_eq!(report.declarations().len(), 3);
     let due = namespace.lookup("Due")[0];
-    let flow = namespace.lookup("Flow")[0];
+    let healthy = namespace.lookup("Healthy")[0];
     let scopes = report.scopes().unwrap();
     let due_scope = scopes.declaration(due).unwrap();
-    let flow_scope = scopes.declaration(flow).unwrap();
-    let due_view = due_scope
-        .binders
-        .iter()
-        .find(|binder| binder.name.as_deref() == Some("view"))
-        .unwrap();
-    let flow_view = flow_scope
-        .binders
-        .iter()
-        .find(|binder| binder.name.as_deref() == Some("view"))
-        .unwrap();
-    assert_ne!(due_scope.declaration, flow_scope.declaration);
-    assert_ne!(due_scope.unit, flow_scope.unit);
-    assert_ne!(due_view.anchor, flow_view.anchor);
+    let healthy_scope = scopes.declaration(healthy).unwrap();
+    assert_ne!(due_scope.declaration, healthy_scope.declaration);
+    assert_ne!(due_scope.unit, healthy_scope.unit);
     let captured = due_scope
         .binders
         .iter()

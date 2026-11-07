@@ -2,11 +2,8 @@
 //! FR-036: bounded native declaration references, cycles and refusal propagation.
 use super::work::{Dimension, Exhaustion, Work};
 use super::{DeclarationId, DeclarationRefusal, SyntaxNamespace, UnitId};
-use crate::syntax::composed::{
-    ComposedUnit, ControlId, ControlKind, DeclarationKind, EventKind, ProtocolRequirement,
-    ValueKind,
-};
-use crate::syntax::{ClauseKind, ExprId};
+use crate::syntax::composed::{ComposedUnit, DeclarationKind, ValueKind};
+use crate::syntax::ExprId;
 use qsl_foundation::{Span, Spanned};
 use std::collections::VecDeque;
 
@@ -15,10 +12,6 @@ use std::collections::VecDeque;
 pub enum DependencyKind {
     /// A shared predicate invoked from any value-expression environment.
     PredicateCall,
-    /// A protocol requirement selecting a temporal declaration.
-    TemporalRequirement,
-    /// A protocol attempt selecting a state precondition or postcondition.
-    OperationContract,
 }
 
 /// Syntax owning an occurrence; handles remain local to the reference's unit.
@@ -26,10 +19,6 @@ pub enum DependencyKind {
 pub enum DependencySite {
     /// A predicate invocation in the unit's flat value arena.
     Expression(ExprId),
-    /// An operation-contract name on an attempt control node.
-    Control(ControlId),
-    /// A temporal requirement in the owning protocol declaration.
-    Declaration,
 }
 
 /// One authored reference, retaining its original spelling and source token span.
@@ -128,68 +117,6 @@ pub(super) fn resolve(namespace: &mut SyntaxNamespace, work: &mut Work) -> Resul
                 )?;
             }
         }
-
-        declaration = 0;
-        for index in 0..namespace.units[unit_index].controls().len() {
-            work.charge(Dimension::References, 1)?;
-            let count = {
-                let unit = &namespace.units[unit_index];
-                let control = &unit.controls()[index];
-                declaration_at(unit, control.span, &mut declaration);
-                contracts(&control.kind).len()
-            };
-            for contract in 0..count {
-                work.charge(Dimension::References, 1)?;
-                let reference = DependencyReference {
-                    unit: unit_id,
-                    kind: DependencyKind::OperationContract,
-                    site: DependencySite::Control(ControlId(index)),
-                    name: contracts(&namespace.units[unit_index].controls()[index].kind)[contract]
-                        .clone(),
-                    target: None,
-                };
-                record(
-                    namespace,
-                    unit_owners[declaration].expect("closed declaration inventory"),
-                    reference,
-                    &mut graph,
-                    work,
-                )?;
-            }
-        }
-
-        for (index, owner) in unit_owners.iter().enumerate() {
-            let count = requirements(&namespace.units[unit_index].declarations()[index].kind).len();
-            for requirement in 0..count {
-                work.charge(Dimension::References, 1)?;
-                let reference = {
-                    let requirements =
-                        requirements(&namespace.units[unit_index].declarations()[index].kind);
-                    match &requirements[requirement] {
-                        ProtocolRequirement::Temporal { name, .. } => {
-                            work.charge(Dimension::References, 1)?;
-                            Some(DependencyReference {
-                                unit: unit_id,
-                                kind: DependencyKind::TemporalRequirement,
-                                site: DependencySite::Declaration,
-                                name: name.clone(),
-                                target: None,
-                            })
-                        }
-                        ProtocolRequirement::Compensation(_) => None,
-                    }
-                };
-                if let Some(reference) = reference {
-                    record(
-                        namespace,
-                        owner.expect("closed declaration inventory"),
-                        reference,
-                        &mut graph,
-                        work,
-                    )?;
-                }
-            }
-        }
     }
     let components = graph.components(work)?;
     graph.refuse_cycles(namespace, &components, work)?;
@@ -208,46 +135,10 @@ fn declaration_at(unit: &ComposedUnit, span: Span, cursor: &mut usize) {
     debug_assert!(span.end <= declarations[*cursor].span.end);
 }
 
-fn contracts(kind: &ControlKind) -> &[Spanned<String>] {
-    match kind {
-        ControlKind::Event(event) => match &event.kind {
-            EventKind::Attempt { contracts, .. } => contracts,
-            EventKind::Send { .. }
-            | EventKind::Receive { .. }
-            | EventKind::Effect { .. }
-            | EventKind::Event { .. } => &[],
-        },
-        ControlKind::Sequence(_)
-        | ControlKind::Choice { .. }
-        | ControlKind::Parallel { .. }
-        | ControlKind::Repeat { .. }
-        | ControlKind::Await { .. }
-        | ControlKind::Check { .. }
-        | ControlKind::Commit { .. } => &[],
-    }
-}
-
-fn requirements(kind: &DeclarationKind) -> &[ProtocolRequirement] {
-    match kind {
-        DeclarationKind::Protocol(protocol) => &protocol.requirements,
-        DeclarationKind::Predicate { .. }
-        | DeclarationKind::State { .. }
-        | DeclarationKind::Temporal { .. } => &[],
-    }
-}
-
 impl DependencyKind {
     fn accepts(self, kind: &DeclarationKind) -> bool {
         match self {
             Self::PredicateCall => matches!(kind, DeclarationKind::Predicate { .. }),
-            Self::TemporalRequirement => matches!(kind, DeclarationKind::Temporal { .. }),
-            Self::OperationContract => matches!(
-                kind,
-                DeclarationKind::State {
-                    kind: ClauseKind::Precondition | ClauseKind::Postcondition,
-                    ..
-                }
-            ),
         }
     }
 }

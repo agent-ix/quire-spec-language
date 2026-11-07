@@ -92,7 +92,6 @@ struct Parser {
     composed: bool,
     values: Vec<c::Expression>,
     temporal: Vec<c::Temporal>,
-    controls: Vec<c::Control>,
     syntax_nodes: usize,
 }
 
@@ -107,7 +106,6 @@ impl Parser {
             composed: false,
             values: Vec::new(),
             temporal: Vec::new(),
-            controls: Vec::new(),
             syntax_nodes: 0,
         }
     }

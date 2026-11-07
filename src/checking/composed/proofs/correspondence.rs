@@ -220,7 +220,6 @@ fn execution(
         (
             c::DeclarationKind::Predicate { .. }
             | c::DeclarationKind::Temporal { .. }
-            | c::DeclarationKind::Protocol(_)
             | c::DeclarationKind::State {
                 kind: ClauseKind::Invariant,
                 ..

@@ -4,8 +4,8 @@
 use ix_trace_rs::trace;
 use qsl_foundation::{Code, Diagnostic, Phase, Source, SourceIdentity, Span};
 use quire_spec_language::syntax::composed::{
-    Activation, ComposedUnit, ControlKind, DeclarationKind, EventKind, NativeUnit, ParameterType,
-    ProductOp, ProtocolRequirement, QueryOp, TemporalKind, TemporalOp, ValueKind,
+    Activation, ComposedUnit, DeclarationKind, NativeUnit, ParameterType, ProductOp, QueryOp,
+    TemporalKind, TemporalOp, ValueKind,
 };
 use quire_spec_language::syntax::{BinaryOp, ExprId, ExprKind};
 use quire_spec_language::{parse, parse_native, parse_native_source, Limits};
@@ -81,18 +81,17 @@ fn binary(unit: &ComposedUnit, id: ExprId, expected: BinaryOp) -> (ExprId, ExprI
 
 #[test]
 #[trace("TC-113", "FR-035-AC-1")]
-fn four_families_retain_selectors_trees_and_authored_spans() {
-    let declarations = [PREDICATE, STATE, TEMPORAL, PROTOCOL];
+fn three_families_retain_selectors_trees_and_authored_spans() {
+    let declarations = [PREDICATE, STATE, TEMPORAL];
     let parsed = unit(&declarations.join("\n"));
     assert_eq!(parsed.edition().value, "1-draft");
     assert_eq!(parsed.profiles().len(), 3);
     assert_eq!(parsed.models().len(), 1);
-    assert_eq!(parsed.declarations().len(), 4);
+    assert_eq!(parsed.declarations().len(), 3);
     for (i, (name, profile)) in [
         ("RefundMatches", "S"),
         ("OrderValid", "S"),
         ("RefundDue", "T"),
-        ("Orders", "P"),
     ]
     .into_iter()
     .enumerate()
@@ -168,34 +167,6 @@ fn four_families_retain_selectors_trees_and_authored_spans() {
     };
     assert!(matches!(
         parsed.expression(value).unwrap().kind,
-        ValueKind::Invoke { .. }
-    ));
-    let DeclarationKind::Protocol(protocol) = &parsed.declarations()[3].kind else {
-        panic!("protocol");
-    };
-    assert_eq!(protocol.roles.len(), 2);
-    assert_eq!(protocol.channels[0].name.value, "Requests");
-    assert_eq!(protocol.finish.name.value, "Closed");
-    let ControlKind::Sequence(children) = &parsed.control(protocol.run).unwrap().kind else {
-        panic!("sequence");
-    };
-    assert_eq!(children.len(), 3);
-    let ControlKind::Event(sent) = &parsed.control(children[0]).unwrap().kind else {
-        panic!("send");
-    };
-    assert!(matches!(sent.kind, EventKind::Send { .. }));
-    let ControlKind::Event(received) = &parsed.control(children[1]).unwrap().kind else {
-        panic!("receive");
-    };
-    let EventKind::Receive { send, .. } = &received.kind else {
-        panic!("receive correspondence");
-    };
-    assert_eq!(send.path[0].value, "Sent");
-    let ControlKind::Check { expression, .. } = &parsed.control(children[2]).unwrap().kind else {
-        panic!("check");
-    };
-    assert!(matches!(
-        parsed.expression(*expression).unwrap().kind,
         ValueKind::Invoke { .. }
     ));
 }
@@ -274,13 +245,14 @@ fn malformed_family_bodies_and_trailing_content_never_return_a_unit() {
     };
     let bad = [
         STATE.replace("RefundMatches(self)", "a < b < c"),
-        STATE.replace("RefundMatches(self)", "RefundMatches(eventually [0,1] holds(true))"),
+        STATE.replace(
+            "RefundMatches(self)",
+            "RefundMatches(eventually [0,1] holds(true))",
+        ),
         temporal("true until [0,1] false since [0,1] true"),
         temporal("holds(always [0,1] true)"),
-        PROTOCOL.replace("via Requests as", "via as"),
-        PROTOCOL.replace("run sequence Main", "run sequence"),
-        format!("{PROTOCOL} garbage"),
-        "protocol P using P over (v: M::WorkflowView) on origin { role R on M::Service; compensate C for Main::E as (e: M::Effect) by R on M::Thing::refund using T clock \"c\" { activate first".into(),
+        // The composed lane has no protocol family: the retired keyword is refused.
+        PROTOCOL.into(),
     ];
     for declaration in bad {
         let text = format!("{HEADER}{declaration}");
@@ -289,7 +261,7 @@ fn malformed_family_bodies_and_trailing_content_never_return_a_unit() {
         assert_eq!(error.source, identity());
         assert_eq!(error.path, "composed.native");
     }
-    for declaration in [STATE, TEMPORAL, PROTOCOL] {
+    for declaration in [STATE, TEMPORAL] {
         assert_eq!(unit(declaration).declarations().len(), 1);
     }
 }
@@ -440,38 +412,6 @@ fn unavailable_edition_is_located_without_falling_back_to_historical_syntax() {
     "FR-048-AC-2",
     "FR-048-AC-3"
 )]
-#[test]
-fn negative_and_unbounded_choreography_counts_refuse_as_unsigned_syntax() {
-    for text in [
-        format!(
-            "{HEADER}{}",
-            PROTOCOL.replace("delivery [0,3]", "delivery [-1,3]")
-        ),
-        format!(
-            "{HEADER}protocol InvalidRepeat using P over (view: M::OrderView) on origin {{
-                role Service on M::OrderView;
-                run repeat Loop by Service visible (true) max -1 while {{ true }}
-                    check Body using S {{ true }};
-                    exhausted check Exhausted using S {{ true }};
-                finish Closed as (closed: M::OrderView) {{ true }};
-            }}"
-        ),
-        format!(
-            "{HEADER}protocol UnboundedRepeat using P over (view: M::OrderView) on origin {{
-                role Service on M::OrderView;
-                run repeat Loop by Service visible (true) max * while {{ true }}
-                    check Body using S {{ true }};
-                    exhausted check Exhausted using S {{ true }};
-                finish Closed as (closed: M::OrderView) {{ true }};
-            }}"
-        ),
-    ] {
-        let error = read(&text, Limits::default()).expect_err("count must be an unsigned integer");
-        assert_eq!(error.code, Code::InvalidSyntax);
-        assert_eq!(error.phase, Phase::Parse);
-    }
-}
-
 #[test]
 #[trace("TC-113", "FR-035-AC-5")]
 fn exact_small_limits_admit_and_each_next_charge_refuses() {
@@ -633,242 +573,6 @@ fn shared_queries_and_exact_numeric_syntax_have_typed_nodes() {
     };
     assert_eq!(op.value, ProductOp::Slash);
     assert_eq!(parsed.source().slice(op.span), Some("/"));
-}
-
-#[test]
-#[trace("TC-113", "FR-035-AC-1", "FR-035-AC-2")]
-fn protocol_controls_and_compensation_preserve_their_distinct_operands() {
-    let text = include_str!("../fixtures/composed-choreography.native");
-    let NativeUnit::Composed(parsed) = read(text, Limits::default()).unwrap() else {
-        panic!("composed");
-    };
-    let DeclarationKind::Protocol(protocol) = &parsed.declarations()[0].kind else {
-        panic!("protocol");
-    };
-    let Activation::Each { trigger, guard, .. } = &protocol.activation else {
-        panic!("each activation");
-    };
-    assert_eq!(trigger.name.value, "started");
-    assert_eq!(
-        parsed
-            .source()
-            .slice(parsed.expression(guard.unwrap()).unwrap().span),
-        Some("started.ready")
-    );
-    assert_eq!(protocol.captures[0].parameter.name.value, "requested");
-    assert_eq!(protocol.relationships[0].model.name.value, "OrderPayment");
-    assert_eq!(protocol.requirements.len(), 2);
-    let ProtocolRequirement::Compensation(compensation) = &protocol.requirements[1] else {
-        panic!("compensation");
-    };
-    assert_eq!(
-        compensation
-            .effect
-            .path
-            .iter()
-            .map(|name| name.value.as_str())
-            .collect::<Vec<_>>(),
-        ["Main", "Applied"]
-    );
-    assert_eq!(compensation.operation.name.value, "refund");
-    assert_eq!(
-        compensation.registration_captures[0].parameter.name.value,
-        "saved"
-    );
-    assert_eq!(
-        compensation.activation_captures[0].parameter.name.value,
-        "expected"
-    );
-    assert_eq!(compensation.trigger.name.value, "trigger");
-    assert_eq!(compensation.attempts.value, "2");
-    assert_eq!(
-        (
-            compensation.earlier.name.value.as_str(),
-            compensation.later.name.value.as_str()
-        ),
-        ("older", "newer")
-    );
-    assert_eq!(compensation.recovery.name.value, "recovery");
-    assert_eq!(
-        parsed
-            .source()
-            .slice(parsed.expression(compensation.retry).unwrap().span),
-        Some("newer.previous = older.id")
-    );
-    assert_eq!(
-        parsed
-            .source()
-            .slice(parsed.expression(compensation.recover).unwrap().span),
-        Some("recovery.remaining = expected")
-    );
-    let ControlKind::Sequence(children) = &parsed.control(protocol.run).unwrap().kind else {
-        panic!("root sequence");
-    };
-    let names: Vec<_> = children
-        .iter()
-        .map(|id| parsed.control(*id).unwrap().name.value.as_str())
-        .collect();
-    assert_eq!(
-        names,
-        [
-            "Sent",
-            "Received",
-            "Charged",
-            "Applied",
-            "Failed",
-            "Choose",
-            "Both",
-            "Retry",
-            "Refund",
-            "Committed"
-        ]
-    );
-    let ControlKind::Event(sent) = &parsed.control(children[0]).unwrap().kind else {
-        panic!("send");
-    };
-    assert_eq!(sent.related[0].relationship.value, "Owner");
-    assert_eq!(
-        parsed
-            .source()
-            .slice(parsed.expression(sent.related[0].from).unwrap().span),
-        Some("view.order")
-    );
-    assert_eq!(
-        parsed
-            .source()
-            .slice(parsed.expression(sent.related[0].to).unwrap().span),
-        Some("sent.payment")
-    );
-    let ControlKind::Event(attempt) = &parsed.control(children[2]).unwrap().kind else {
-        panic!("attempt");
-    };
-    let EventKind::Attempt {
-        operation,
-        contracts,
-        ..
-    } = &attempt.kind
-    else {
-        panic!("attempt operands");
-    };
-    assert_eq!(operation.name.value, "charge");
-    assert_eq!(
-        contracts
-            .iter()
-            .map(|name| name.value.as_str())
-            .collect::<Vec<_>>(),
-        ["CanCharge", "ChargedCorrectly"]
-    );
-    let ControlKind::Event(effect) = &parsed.control(children[3]).unwrap().kind else {
-        panic!("effect");
-    };
-    let EventKind::Effect { attempt } = &effect.kind else {
-        panic!("effect correspondence");
-    };
-    assert_eq!(attempt.path[0].value, "Charged");
-    let ControlKind::Choice {
-        role,
-        visible,
-        cases,
-    } = &parsed.control(children[5]).unwrap().kind
-    else {
-        panic!("choice");
-    };
-    assert_eq!(role.value, "OrdersService");
-    assert_eq!(visible.len(), 1);
-    assert_eq!(
-        cases
-            .iter()
-            .map(|case| case.name.value.as_str())
-            .collect::<Vec<_>>(),
-        ["yes", "no"]
-    );
-    let ControlKind::Parallel { branches, join } = &parsed.control(children[6]).unwrap().kind
-    else {
-        panic!("parallel");
-    };
-    assert_eq!(
-        branches
-            .iter()
-            .map(|branch| branch.name.value.as_str())
-            .collect::<Vec<_>>(),
-        ["left", "right"]
-    );
-    assert_eq!(
-        join.iter()
-            .map(|name| name.value.as_str())
-            .collect::<Vec<_>>(),
-        ["left", "right"]
-    );
-    let ControlKind::Repeat {
-        maximum,
-        body,
-        exhausted,
-        ..
-    } = &parsed.control(children[7]).unwrap().kind
-    else {
-        panic!("repeat");
-    };
-    assert_eq!(maximum.value, "2");
-    assert_eq!(parsed.control(*body).unwrap().name.value, "Again");
-    assert_eq!(
-        parsed.control(*exhausted).unwrap().name.value,
-        "LimitReached"
-    );
-    let ControlKind::Await {
-        after,
-        clock,
-        within,
-        event,
-        then,
-        timeout,
-        ..
-    } = &parsed.control(children[8]).unwrap().kind
-    else {
-        panic!("await");
-    };
-    assert_eq!(after.path[0].value, "Applied");
-    assert_eq!(clock.value, "payment-clock");
-    assert_eq!(within.upper.value, "5");
-    assert_eq!(parsed.control(*event).unwrap().name.value, "Refunded");
-    assert_eq!(parsed.control(*then).unwrap().name.value, "GotRefund");
-    assert_eq!(parsed.control(*timeout).unwrap().name.value, "Expired");
-    assert!(matches!(
-        parsed.control(children[9]).unwrap().kind,
-        ControlKind::Commit { .. }
-    ));
-    assert_eq!(protocol.finish.parameter.name.value, "closed");
-}
-
-#[test]
-#[trace("TC-113", "FR-035-AC-2")]
-fn balanced_but_incomplete_protocol_forms_are_refused_by_the_grammar() {
-    let valid = include_str!("../fixtures/composed-choreography.native");
-    for omitted in [
-        "attempts 2 of M::AttemptView;",
-        "recover (recovery: M::RecoveryView) { recovery.remaining = expected };",
-        "case no when { not view.confirmed } sequence NoBody {}",
-        "branch right sequence Right { check Recorded using S { view.recorded }; }",
-        "join all [left,right];",
-        "exhausted sequence LimitReached {}",
-        "timeout sequence Expired {}",
-    ] {
-        assert!(
-            valid.contains(omitted),
-            "the negative control must alter its input"
-        );
-        let malformed = valid.replacen(omitted, "", 1);
-        let error = read(&malformed, Limits::default()).unwrap_err();
-        assert_eq!(
-            error.code,
-            Code::InvalidSyntax,
-            "omitting {omitted}: {error}"
-        );
-        assert_eq!(error.phase, Phase::Parse);
-    }
-    let NativeUnit::Composed(parsed) = read(valid, Limits::default()).unwrap() else {
-        panic!("positive counterpart");
-    };
-    assert_eq!(parsed.declarations().len(), 1);
 }
 
 #[test]

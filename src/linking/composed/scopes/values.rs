@@ -262,7 +262,6 @@ impl Resolver<'_, '_> {
                 env = self.activation(activation, env, captures)?;
                 self.temporal(*formula, env)
             }
-            c::DeclarationKind::Protocol(protocol) => self.protocol(protocol),
         }
     }
     fn state(

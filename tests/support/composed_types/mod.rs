@@ -221,7 +221,6 @@ pub fn source(name: &str, model: &NativeModel, body: &str) -> Source {
         ("T", R::EventPosition),
         ("F", R::FixedSample),
         ("W", R::TimestampedWindow),
-        ("P", R::Protocol),
     ] {
         let selection = profile.selection();
         text.push_str(&format!("profile {alias} = \"{}\";\n", selection.identity));

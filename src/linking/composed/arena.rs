@@ -87,14 +87,6 @@ mod tests {
                 eventually[0,1] holds(true and false)
             }
             predicate Gap using S (): Boolean { true }
-            protocol Flow using P over (view: M::Node) on origin {
-                role Service on M::Node;
-                run sequence Main {
-                    check One using S { true };
-                    check Two using S { false and true };
-                }
-                finish Closed as (closed: M::Node) { true };
-            }
             temporal Last using T over (view: M::Node) clock "clock" on origin {
                 always[0,1] holds(true)
             }
@@ -112,18 +104,16 @@ mod tests {
             panic!("composed fixture")
         };
         let owners: Vec<_> = unit.declarations().iter().map(|decl| decl.span).collect();
-        assert_eq!(owners.len(), 5);
+        assert_eq!(owners.len(), 4);
         assert!(owners.windows(2).all(|pair| pair[0].end <= pair[1].start));
-        assert_eq!(unit.expressions().len(), 13);
+        assert_eq!(unit.expressions().len(), 8);
         assert_eq!(unit.temporal_nodes().len(), 4);
-        assert_eq!(unit.controls().len(), 3);
         assert!(unit
             .expressions()
             .windows(2)
             .any(|pair| pair[0].span.start > pair[1].span.start));
         assert_regions(unit.expressions(), &owners, |node| node.span);
         assert_regions(unit.temporal_nodes(), &owners, |node| node.span);
-        assert_regions(unit.controls(), &owners, |node| node.span);
     }
 
     #[test]

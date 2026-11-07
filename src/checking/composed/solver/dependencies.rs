@@ -34,9 +34,9 @@ pub(super) fn finish(report: &mut TypeReport<'_, '_>, work: &mut Work, site: Sit
             let site = Site {
                 declaration: output.declaration,
                 unit: entry.unit(),
-                expression: match reference.site {
-                    DependencySite::Expression(id) => Some(id),
-                    DependencySite::Control(_) | DependencySite::Declaration => None,
+                expression: {
+                    let DependencySite::Expression(id) = reference.site;
+                    Some(id)
                 },
                 span: reference.name.span,
             };

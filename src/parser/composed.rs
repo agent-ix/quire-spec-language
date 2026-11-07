@@ -5,7 +5,6 @@ use crate::syntax::{ClauseKind, ExprId, ModelImport, LANGUAGE};
 use c::*;
 use qsl_foundation::{Code, Diagnostic, Phase, Span, Spanned};
 
-mod protocol;
 mod temporal;
 
 impl Parser {
@@ -80,7 +79,6 @@ impl Parser {
             declarations,
             expressions: std::mem::take(&mut self.values),
             temporal: std::mem::take(&mut self.temporal),
-            controls: std::mem::take(&mut self.controls),
         }))
     }
 
@@ -166,13 +164,6 @@ impl Parser {
         self.expect(K::Qualify)?;
         let name = self.member()?;
         Ok(QualifiedName { model, name })
-    }
-
-    fn operation(&mut self) -> Result<Operation, Box<Diagnostic>> {
-        let context = self.qualified()?;
-        self.expect(K::Qualify)?;
-        let name = self.member()?;
-        Ok(Operation { context, name })
     }
 
     fn parameter(&mut self) -> Result<Parameter, Box<Diagnostic>> {
@@ -268,13 +259,13 @@ impl Parser {
         let token = self.take();
         if !matches!(
             token.kind,
-            K::Predicate | K::Invariant | K::Pre | K::Post | K::Temporal | K::Protocol
+            K::Predicate | K::Invariant | K::Pre | K::Post | K::Temporal
         ) {
             return Err(self.failure(
                 Code::InvalidSyntax,
                 Phase::Parse,
                 token.span,
-                "expected predicate, state, temporal or protocol declaration",
+                "expected predicate, state or temporal declaration",
             ));
         }
         let name = self.identifier()?;
@@ -342,7 +333,6 @@ impl Parser {
                     formula,
                 }
             }
-            K::Protocol => DeclarationKind::Protocol(Box::new(self.protocol()?)),
             _ => unreachable!("declaration kind checked"),
         };
         Ok(Declaration {
@@ -351,16 +341,5 @@ impl Parser {
             kind,
             span: self.range_from(token.span.start),
         })
-    }
-
-    fn value_list(&mut self, close: K) -> Result<Vec<ExprId>, Box<Diagnostic>> {
-        let mut values = Vec::new();
-        if !self.is(close) {
-            values.push(self.expression()?);
-            while self.eat(K::Comma) {
-                values.push(self.expression()?);
-            }
-        }
-        Ok(values)
     }
 }
