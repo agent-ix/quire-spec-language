@@ -49,33 +49,11 @@ and `/2` to the `/1` reader. For every added work dimension, take the successful
 amount (its byte work is at least the emitted bytes) and retry with exact,
 one-short and raised-above-default limits.
 
-Import the public `protocol_artifact::handoff` member-name and mutation format
-constants. Call `write_v2` into a temporary directory, join each member name to
-that directory, require every named file to exist, decode the named mutation
-manifest, and compare its base offer, independent selection and format fields
-with the published constants, and require each of those base files to exist,
-without consulting an environment variable or redeclaring a path, filename or
-format literal in the consumer harness (FR-050-AC-7).
-
-Behind the `handoff-writer` feature, call `protocol_artifact::handoff::write_v2`
-twice, each time into a fresh temporary directory, from a test that calls only
-that public function -- exactly as a downstream crate would. Confirm the two
-written trees are byte-identical, that each written clock input is the one named
-by the selection, and that the strict `/2`
-reader admits the written offer against the written selection with no other
-input. Decode the written mutation manifest, confirm every case's referenced
-file(s) exist, and replay one case's exact bytes through the strict `/2`
-reader, requiring the manifest's own recorded refusal code. Call `write_v2` a
-third time into an already-existing directory and require refusal, and confirm
-that directory's contents, including a sentinel file already there, are
-unchanged.
-
-Separately, `make ci`'s `ci-clean-build` target runs `cargo check -p
-quire-spec-language --lib --no-default-features --features handoff-writer`:
-the no-dev-dependency acceptance this step's test cannot demonstrate by
-itself, because a test in this crate's own `tests/` always builds inside its
-dev-dependency closure. That `cargo check` line is what actually resolves
-`write_v2`'s dependency graph with no dev-dependency in it.
+The legacy directory writer `protocol_artifact::handoff::write_v2`, its
+member-name and mutation-format constants and the `handoff-writer` library-only
+`cargo check` of `ci-clean-build` (FR-050-AC-7, FR-050-AC-8) were retired by
+QSL-840 with their carrier; TC-1312 and TC-1313 verify the checked-package
+writer that replaced them.
 
 ## Expected Results
 

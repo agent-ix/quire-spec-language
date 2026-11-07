@@ -74,16 +74,12 @@ Run the following named checks in the integration suite:
    separation. Preserve the frozen `/1` bytes and require both cross-version
    reader directions to refuse without inserting or removing a temporal
    selection.
-5. Under `handoff-writer`, run
-   `written_handoff_interchange_records_are_complete`,
-   `write_v2_handoff_admits_from_its_files_through_the_strict_v2_reader`, and
-   `write_v2_is_deterministic_across_runs`, and
-   `write_refuses_an_existing_directory`. Resolve filenames and the mutation
-   format only through the public constants, read the writer's actual offer
-   bytes from disk, strictly admit them against the written independent
-   selection and dependency bytes, replay the manifest's recorded refusal,
-   compare two written trees byte-for-byte, and verify refusal to overwrite an
-   existing directory leaves its sentinel and contents unchanged.
+5. The legacy `handoff-writer` tests (`written_handoff_interchange_records_are_complete`,
+   `write_v2_handoff_admits_from_its_files_through_the_strict_v2_reader`,
+   `write_v2_is_deterministic_across_runs` and
+   `write_refuses_an_existing_directory`) were retired by QSL-840 with
+   FR-050-AC-7 and FR-050-AC-8; TC-1312 and TC-1313 verify the checked-package
+   writer that replaced them.
 
 For any positive checked evaluation, use the artifact's exact source locus,
 declaration name, span, profile and clock name. The checked formula and

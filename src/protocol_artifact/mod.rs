@@ -29,7 +29,6 @@
 mod decode;
 mod domain;
 mod encoding;
-pub mod handoff;
 mod intake;
 mod models;
 pub mod native;

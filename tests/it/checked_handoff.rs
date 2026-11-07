@@ -1407,31 +1407,26 @@ fn a_changed_clock_value_is_admitted_by_the_reader_and_refused_by_the_sidecar() 
     }
 }
 
-/// FR-517-AC-10: the legacy writer and its items are present.
+/// FR-517-AC-10: the legacy writer, its constants, its feature, its two
+/// examples and `examples/protocol-handoff` are absent, and no Cargo manifest
+/// of the workspace names the `handoff-writer` feature.
 #[trace("FR-517-AC-10", "TC-1312")]
 #[test]
-fn the_legacy_writer_is_still_present() {
-    let handoff = std::fs::read_to_string("src/protocol_artifact/handoff.rs").unwrap();
-    for constant in [
-        "PUBLISHED_V1_OFFER_FILE",
-        "PUBLISHED_V1_SELECTION_FILE",
-        "PUBLISHED_OFFER_FILE",
-        "PUBLISHED_SELECTION_FILE",
-        "PUBLISHED_MUTATION_MANIFEST_FILE",
+fn the_legacy_writer_is_absent() {
+    for path in [
+        "src/protocol_artifact/handoff.rs",
+        "src/protocol_artifact/handoff",
+        "examples/native_protocol_handoff.rs",
+        "examples/native_protocol_v2_handoff.rs",
+        "examples/protocol-handoff",
+        "tests/it/handoff_writer.rs",
     ] {
-        assert!(handoff.contains(constant), "{constant}");
+        assert!(!Path::new(path).exists(), "{path}");
     }
-    let writer = std::fs::read_to_string("src/protocol_artifact/handoff/writer.rs").unwrap();
-    assert!(writer.contains("pub fn write_v1") && writer.contains("pub fn write_v2"));
     let manifest = std::fs::read_to_string("Cargo.toml").unwrap();
-    assert!(manifest.contains("handoff-writer = []"));
-    for example in [
-        "native_protocol_handoff.rs",
-        "native_protocol_v2_handoff.rs",
-    ] {
-        assert!(Path::new("examples").join(example).exists());
-    }
-    assert!(Path::new("examples/protocol-handoff/model.json").exists());
+    assert!(!manifest.contains("handoff-writer"));
+    let module = std::fs::read_to_string("src/protocol_artifact/mod.rs").unwrap();
+    assert!(!module.contains("mod handoff"));
 }
 
 /// One row of FR-518's table as amended by the writer self-check: identity,
@@ -2230,15 +2225,16 @@ fn the_other_clock_kinds_are_compared_member_by_member() {
     }
 }
 
-/// The package carries no declared clause name (a `temporal_clause` node has no
-/// `declaration`), so the sidecar's name has nothing to compare with: an edited
-/// name passes. `clause.name` fires only for a node that carries a declaration,
-/// and the reader refuses that member on this node.
+/// FR-518-AC-11, from the sidecar side: the package names its clause in a
+/// `temporal_clause_names` row, so a sidecar that declares another name is
+/// refused on `clause.name`; the clause node itself carries no declaration.
+#[trace("FR-518-AC-11", "TC-1313")]
 #[test]
-fn the_clause_name_has_no_package_side_value() {
+fn a_differing_sidecar_clause_name_is_refused_on_clause_name() {
     let (mut sidecar, package) = sidecar_fixture();
-    sidecar["clauses"][0]["name"] = "Renamed".into();
     assert_eq!(axis_of(&sidecar, &package), None);
+    sidecar["clauses"][0]["name"] = "Renamed".into();
+    assert_eq!(axis_of(&sidecar, &package), Some(SelectionAxis::ClauseName));
     assert!(
         package
             .graph()
@@ -2333,29 +2329,41 @@ fn crash_residue_does_not_block_a_write_and_leaves_no_claim() {
     write(&request("event_position", Corpus::None), &other).expect("a later write is not refused");
 }
 
-/// FR-518-AC-11: with a reader that admits a declared name on a temporal
-/// clause, a package whose clause declares a name other than the sidecar's is
-/// admitted by the reader and refused by `Selection::check` with
-/// `clause.name`.
+/// FR-518-AC-11: a package whose `temporal_clause_names` row for a clause holds
+/// another name than the sidecar declares is admitted by `read_checked_package`
+/// and refused by `Selection::check` with `clause.name`; the same package with
+/// the sidecar's name is admitted by both.
 #[trace("FR-518-AC-11", "TC-1313")]
 #[test]
-#[ignore = "gated on IR-1278: the reader refuses a declaration member on a temporal clause node"]
 fn a_differing_declared_clause_name_is_refused_on_clause_name() {
     let (_holder, out) = written("event_position", Corpus::None, &Double::default());
     let files = tree(&out);
+    let held = evidence(&request("event_position", Corpus::None)).unwrap();
+    let selection = Selection::read(&files["selection.json"]).unwrap();
+    let unchanged = admitted(&files["checked-package.json"], &held);
+    selection
+        .check(&unchanged)
+        .expect("the written package matches the sidecar");
+
     let mut package: Value = serde_json::from_slice(&files["checked-package.json"]).unwrap();
     let clause = package["semantic_graph"]["nodes"]
-        .as_array_mut()
+        .as_array()
         .unwrap()
-        .iter_mut()
+        .iter()
         .find(|node| node["semantic_form"] == "temporal_clause")
-        .unwrap();
-    clause["declaration"] = serde_json::json!({"qualified_name": ["Renamed"]});
-    let held = evidence(&request("event_position", Corpus::None)).unwrap();
-    let package = admitted(&serde_json::to_vec(&package).unwrap(), &held);
-    let selection = Selection::read(&files["selection.json"]).unwrap();
+        .unwrap()["node_id"]
+        .clone();
+    let rows = package["temporal_clause_names"].as_array_mut().unwrap();
+    let row = rows
+        .iter_mut()
+        .find(|row| row["declaration"] == clause)
+        .expect("the first temporal clause has a name row");
+    let sidecar_name = row["name"].clone();
+    assert_ne!(sidecar_name, "Omega");
+    row["name"] = Value::from("Omega");
+    let renamed = admitted(&serde_json::to_vec(&package).unwrap(), &held);
     assert_eq!(
-        selection.check(&package).unwrap_err().axis,
+        selection.check(&renamed).unwrap_err().axis,
         SelectionAxis::ClauseName
     );
 }
