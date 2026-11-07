@@ -55,6 +55,10 @@ FR-361 states what a unit that selects `quire.model.complete/v1` gains.
   by `{authority, identity}`, including header-selectable layers (each
   layer's identity, direct requirements and admitted forms). There is no
   separately recorded identity table.
+- When spine `compile` is given a `ProfileCatalogInput`
+  (`qsl_replay::spine`), that input's `DefinitionCatalog`
+  (`qsl_semantics::library::bundle`), read only to classify a header
+  identity no layer has as an extension selection ("Extension selection").
 
 ## Outputs
 
@@ -80,12 +84,14 @@ a header-selectable layer (see "Layer selection"); the catalog's
 qualification definitions are not selected by a header. E3
 compares the header's identity, the only member a header profile carries
 (QSpec shared grammar `profile = 'profile', ident, '=', string, ';'`). The
-emitter writes no row for the selected layer.
+emitter writes no `profile_selections` row for the selected layer ("Lock
+rows").
 
 | Header selection | Code | Cause |
 | --- | --- | --- |
 | identity equals a header-selectable layer's | resolves to that layer | |
-| identity equals no supported role, and no clause family admits it | `unknown_profile` | `unsupported-selection` |
+| identity equals no header-selectable layer's and is held by the `DefinitionCatalog` supplied in `ProfileCatalogInput` as an extension definition | resolves to an extension selection (FR-354), not `unknown_profile`/`unsupported-selection` | |
+| identity equals no supported role, no clause family admits it, and the supplied catalog holds no extension definition of it | `unknown_profile` | `unsupported-selection` |
 | identity equals a qualification definition's and no layer's | `unknown_profile` | `wrong-selection-role` |
 
 - If any header profile refuses, E3 SHALL return every refusing profile, in
@@ -106,6 +112,30 @@ emitter writes no row for the selected layer.
 - Every code and cause is one `quire.native.diagnostics/v1` lists. The
   `unsupported-selection` row gives the pair the editor's profile check
   gives for the same standing (`complete::editor::profile_refusal`).
+
+### Extension selection
+
+An extension is selected by a header `profile <alias> = "<identity>";`
+whose identity is no header-selectable layer's and which the
+`DefinitionCatalog` supplied in `ProfileCatalogInput` holds as an extension
+definition (FR-354, QSpec FR-467). The selection is typed: the catalog's
+`DefinitionRole` has the variant `DefinitionRole::Extension`, and a held
+definition is an extension definition exactly when its role is `Extension`
+(a `Definition::is_extension()`, if provided, is `role() ==
+DefinitionRole::Extension`). E3 never classifies by the identity's spelling
+or the definition's members, so an `Extension` definition missing a member
+is selected and then refused `missing-member` by FR-354.
+
+- E3 SHALL return the unit's extension selections, each the catalog
+  definition's `DefinitionRef` `{authority, identity}`, in header source
+  order; FR-354 "Definition validation" holds them.
+- An identity the catalog holds under any other role, and any identity when
+  no `ProfileCatalogInput` is supplied, falls to the table's remaining rows.
+- Two header profiles that select one extension both resolve, and the
+  extension is selected once.
+- An extension selection selects no layer: it adds no admitted form to a
+  `using` declaration, and a declaration whose `using` alias names it is
+  admitted as for a unit that selects no layer.
 
 ### Placement
 
@@ -214,16 +244,35 @@ The emitter SHALL write `profile_selections` empty for a package whose
 declarations are all `Value`-family: FR-322 fills it with clause profile
 rows (`temporal_profile`, `protocol_profile`).
 
-The emitter writes no row for a selected layer and no selection rows for
-definitions. A law's `definition` is the `DefinitionRef` `{authority,
+The emitter writes no `profile_selections` row for a selected layer or
+extension. A law's `definition` is the `DefinitionRef` `{authority,
 identity}` of the QSpec definition prose for that role, from the layer
 table (FR-093).
+
+### Lock rows
+
+The emitter SHALL write the lock's `edition` as the catalog's edition and
+its `definition_selections` as these rows, each `{authority, identity}`,
+each once, in this order:
+
+1. the closed rows, in the lock's row order: the header-selected layers and every layer their
+   `requires` closure names; the qualification-catalog rows QSpec FR-001
+   selects for those layers (the `always` rows for a unit that selects no
+   layer), the edition excepted; and the complete-model and
+   complete-temporal lock rows when those layers are in the closure
+   (FR-361-AC-8);
+2. the laws: each law definition the bodies name that is not already a row;
+3. the extensions: one row per extension definition the unit selects
+   ("Extension selection"), ascending by `(authority, identity)`.
+
+An extension's row appears only in `definition_selections`: the emitter
+adds no `required_features` entry and no `profile_selections` row for it.
 
 ## Constraints
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
-| FR-110-CON-1 | The resolution's one input is the unit's profile selections; it reads the layer table, which names each layer's admitted-form set and `requires` edges (ADR-011 §2.4: the package selections derive from the source and the QSL build). QSL's Rust layer table is the machine form of QSpec's prose admitted-form sets; QSL adds no form of its own. | Design | Inspection |
+| FR-110-CON-1 | The resolution's one source input is the unit's profile selections. It reads the layer table, which names each layer's admitted-form set and `requires` edges (ADR-011 §2.4: the package selections derive from the source and the QSL build), and, for the extension row only, the role of the supplied `ProfileCatalogInput`'s catalog definitions. QSL's Rust layer table is the machine form of QSpec's prose admitted-form sets; QSL adds no form of its own. | Design | Inspection |
 
 ## Acceptance Criteria
 
@@ -241,6 +290,8 @@ table (FR-093).
 | FR-110-AC-11 | In a unit with no header profile, `r = q` over records and `x = y` over `Int[0, 9]` compile. Under `quire.value.complete/v1`, `s = t` over `Sequence<Reference<Order>>` and `r = q` over a record with a `Reference<Order>` field each refuse `unsupported_construct`/`expression-form` at the operator naming `quire.state.graph/v1`; under `quire.state.graph/v1` the same two refuse naming `quire.value.complete/v1`; under `quire.model.complete/v1` both compile. | Test (TC-490) |
 | FR-110-AC-12 | `complete::header_profile_catalog()` contains each identity of the layer table's layers, and contains neither `test:unknown-profile` nor the identity of any qualification definition. For each of the six layers, `complete::parse_with_catalog` over a unit whose one header profile names the layer, with that catalog, adds no `unknown_profile` diagnostic. The same call over the unit with the identity `test:unknown-profile` reports `unknown_profile`/`unsupported-selection` at the identity literal's span, the pair FR-110-AC-2 gives; over the unit whose header profile names the `ieee_profile` row's identity, which E3 refuses `wrong-selection-role` (FR-110-AC-3), it reports `unknown_profile`/`unsupported-selection` at the identity literal's span. | Test (TC-490) |
 | FR-110-AC-13 | A unit whose one header profile names `quire.temporal.complete/v1` resolves to that layer as a header-selectable layer, with no new refusal code; `complete::header_profile_catalog()` contains the identity, and `complete::parse_with_catalog` over the unit adds no `unknown_profile` diagnostic. A declaration whose `using` alias names the layer is admitted under the layer's and its `requires` closure's admitted forms, and an equality `r = q` over records, `a = b` over `Reference<Order>` and `s = t` over sequences compile under it. | Test (TC-490) |
+| FR-110-AC-14 | A unit with the `root` profile `v` and a second header profile `r` naming `ext.retention`, an identity no layer has, compiled with a `ProfileCatalogInput` whose `DefinitionCatalog` holds `agent-ix`/`ext.retention` as a `DefinitionRole::Extension` definition, resolves `r` to the extension selection `{agent-ix, ext.retention}` and reports no `unknown_profile` refusal; the same unit with a catalog that does not hold the identity, and with one that holds it under another role, each refuse `unknown_profile`/`unsupported-selection` at the identity literal's span, as FR-110-AC-2. | Test (TC-490) |
+| FR-110-AC-15 | The AC-14 unit's emitted lock has `definition_selections` whose last row is `{agent-ix, ext.retention}`, after every closed row and law row; a unit selecting `agent-ix`/`ext.b` and then `agent-ix`/`ext.a` ends `definition_selections` with `ext.a` then `ext.b`; no extension identity appears in `required_features` or `profile_selections`. | Test (TC-490) |
 
 ## Dependencies
 
