@@ -138,10 +138,10 @@ impl Budget {
 impl CheckedSubject<'_> {
     pub(super) fn admit_predecessor(
         &self,
+        identity: Option<&[u8]>,
         supplied: Option<&[u8]>,
     ) -> Result<Option<Arc<[u8]>>, ReportRefusal> {
-        let entry = self.predecessor_entry()?;
-        let Some(entry) = entry else {
+        let Some(identity) = identity else {
             return if self.predecessor_input.is_none() && supplied.is_none() {
                 Ok(None)
             } else {
@@ -157,9 +157,7 @@ impl CheckedSubject<'_> {
         for expected in &self.binding {
             budget.work(1 + expected.len() as u128)?;
         }
-        if previous.binding != self.binding
-            || previous.identity != entry.result_identity().as_bytes()
-        {
+        if previous.binding != self.binding || previous.identity != identity {
             return Err(ReportRefusal::InvalidPredecessor);
         }
         if let Some(supplied) = supplied {

@@ -480,7 +480,8 @@ impl Report {
         {
             return Err(ReportRefusal::InvalidPredecessor);
         }
-        let predecessor_value = subject.admit_predecessor(predecessor_bytes)?;
+        let predecessor_value =
+            subject.admit_predecessor(predecessor.as_deref(), predecessor_bytes)?;
         let request = native_request(subject, observation)?;
         let bare = BarePackage::new(subject.package);
         let package = qsl_eval::temporal::evidence::EvidencePackage::from_package(&bare, budget)
@@ -606,11 +607,12 @@ pub fn evaluate_v2(
     meter: &mut Meter,
     budget: &mut qsl_package::NativeJoinBudget,
 ) -> Result<Report, NativeReportError> {
-    let predecessor_value = subject.admit_predecessor(None)?;
     let request = native_request(subject, observation)?;
     let view = temporal_subject(subject.package, &subject.occurrence.node)
         .map_err(|_| ReportRefusal::BindingMismatch(BindingDimension::Clause))?;
-    let predecessor = subject.predecessor()?.map(<[u8]>::to_vec);
+    let predecessor = subject.predecessor()?;
+    let predecessor_value = subject.admit_predecessor(predecessor, None)?;
+    let predecessor = predecessor.map(<[u8]>::to_vec);
     let bare = BarePackage::new(subject.package);
     let package = qsl_eval::temporal::evidence::EvidencePackage::from_package(&bare, budget)?;
     let operands = qsl_eval::temporal::evidence::native_atom_operands(&view);
