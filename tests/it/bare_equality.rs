@@ -1307,19 +1307,24 @@ fn equality_slots_reuse_the_decisions_retained_by_exact_budget_admission() {
         .location(*position)
         .expect("the equality has its original protocol location")
         .clone();
-    let graph = qsl_semantics::check::wire_id::WireGraph::new(
-        package.graph().nodes.iter().map(|node| &node.node_id),
-    )
-    .expect("original node identities");
+    let quire_semantic_value::location::Origin::TypeDeclaration {
+        name: original_origin,
+    } = &original_location.origin
+    else {
+        panic!("authored protocol type-declaration origin")
+    };
+    let semantic_row = package.checked_term_data().expect("original native term data").protocol_locations.iter().find(|row| {
+        matches!(&row.location.origin, quire_contract_model::CheckedProtocolLocationOrigin::TypeDeclaration { name } if name.as_ref() == original_origin)
+            && row.location.path.iter().map(|ordinal| match ordinal {
+                quire_contract_model::CheckedKeyOrdinal::Safe(value) => usize::try_from(*value).expect("small authored child index"),
+                quire_contract_model::CheckedKeyOrdinal::BeyondSafe(_) => panic!("fixture child indices are small"),
+            }).collect::<Vec<_>>() == original_location.path()
+    }).expect("original protocol occurrence at the equality's authored origin and path");
     let row = equality
         .applications()
         .iter()
-        .find(|row| {
-            graph
-                .key(&row.application)
-                .is_ok_and(|key| &key == original_location.node())
-        })
-        .expect("the equality position joins to its authentic owner row");
+        .find(|row| row.application == semantic_row.application)
+        .expect("that original protocol application has an authentic equality owner row");
     let decision = package
         .admitted_equality(
             &row.application,
@@ -1330,6 +1335,7 @@ fn equality_slots_reuse_the_decisions_retained_by_exact_budget_admission() {
             &mut NativeJoinBudget::new(1 << 30, 1 << 30),
         )
         .expect("independent original owner decision");
+    assert_eq!(decision.location(), &row.location);
     let expected = Box::new(
         quire_semantic_value::declaration::CheckedEquality::from_admitted_decision(&decision),
     );
