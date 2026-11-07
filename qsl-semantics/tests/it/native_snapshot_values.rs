@@ -2973,5 +2973,15 @@ fn a_unit_bearing_rational_member_admits_its_quantity_or_refuses_the_pair() {
             "{slot}"
         );
         assert_eq!(record.catalog.cause(), "wrong-value-kind", "{slot}");
+        assert_eq!(
+            record.fields.get("field").map(String::as_str),
+            Some(slot),
+            "{slot}"
+        );
+        assert_eq!(
+            record.fields.get("member").map(String::as_str),
+            (slot == "metered").then_some("magnitude"),
+            "{slot}"
+        );
     }
 }
