@@ -34,11 +34,13 @@ front end.
 5. For each exact spelling `helper`, `rec`, `cast` and `Tuple`, use it under
    `1-draft` as a function name (and call it), a predicate name, the `using`
    profile alias of each, a parameter, a `let` binder, a record name and its
-   field, an enum member, a type-alias name and a model selection alias, and
+   field, an enum member, a type-alias name and a model selection alias (each
+   unit also declaring a function), and
    as a qualified `M::<spelling>` type and `x.<spelling>` member access.
    Confirm each unit parses and checks with no `invalid_syntax` and no
    `unsupported_construct`, that a call of a function so named evaluates, and
-   that a `using <spelling>(...)` selection reaches S3. Use lowercase `tuple`
+   that a function `using <spelling>` is admitted with its profile alias
+   resolved to the profile that `profile <spelling>` selects. Use lowercase `tuple`
    as a record name and confirm its `invalid_syntax`/`unexpected-token`
    refusal. Under `0-draft`, use each of the four exact spellings in a value
    position and confirm the historical `unsupported_construct` refusal is

@@ -28,7 +28,7 @@ Fixtures: the timestamped response trace of FR-194-AC-1; event-position traces o
 8. Check each FR-194-AC-8 clause and read the full ordered list of refusals.
 9. Check `count over past[0, 9] >= 1` beside the same term written `min_count 1`, compare the checked terms and the node ids of two clauses that differ only in that spelling, and evaluate both over a one-event trace; evaluate FR-194-AC-9's filtered `count` without `min_count` and the `min_count 2` count over `x` values `1, 2`.
 10. Over `x` values `1, 2`, evaluate FR-194-AC-10's `count` and `sum` terms with `min_count 0` and the `count` without it at position 1; check the `min`, `max`, `fraction` and `quantile` terms with `min_count 0`.
-11. With FR-194-AC-11's model `M` and units, check and evaluate the `sum`, `min`, `max` and `quantile 1/2` terms of `e.latency: Quantity<M::ms>` over `latency` values `5, 1, 4` at position 2, the `sum` with threshold `1 M::s`, and the `sum` with thresholds `10 ms` and `10 s`.
+11. With FR-194-AC-11's model `M` and units, check and evaluate the `sum`, `min`, `max` and `quantile 0.5` terms of `e.latency: Quantity<M::ms>` over `latency` values `5, 1, 4` at position 2, the `sum` with threshold `1 M::s`, the filtered `sum ... where holds(e.latency > 9 M::ms) ... min_count 0 = 0 M::ms`, and the `sum` with thresholds `10 ms` and `10 s`.
 12. With FR-194-AC-12's `Lc`, check each of the four terms of `convert<Lc>(e.d)` with thresholds `5 m` and `5 s`, the `sum` of `e.d` with threshold `convert<Lc>(5 m)`, and the converted-back sum over `d` values `2, -1, 3`, read at position 2.
 
 Tag the tests `#[trace("TC-629", "FR-194-AC-n")]`.
@@ -45,5 +45,5 @@ Tag the tests `#[trace("TC-629", "FR-194-AC-n")]`.
 - Step 8: exactly the refusals FR-194-AC-8 lists, in that order, and no others.
 - Step 9: equal terms with `min_count` 1 and one node id, each atom `true`; `Undefined(InsufficientData{0, 1})` at position 1 for the filtered count; `Undefined(InsufficientData{1, 2})` at position 0 and `true` at position 1 for `min_count 2`.
 - Step 10: `true`, `false` and `true`, never `InsufficientData`; `Undefined(InsufficientData{0, 1})` without `min_count`; `invalid_package`/`invalid-value` at `0` for each of the four other terms.
-- Step 11: value type `Quantity<M::ms>` over the package unit's node and the values `10`, `1`, `5`, `4` of `M::ms`; `true` with the threshold `1000` of `M::ms`; `ill_typed`/`unit-mismatch` at `10 ms` and at `10 s`.
+- Step 11: value type `Quantity<M::ms>` over the package unit's node and the values `10`, `1`, `5`, `4` of `M::ms`; `true` with the threshold `1000` of `M::ms`; `true` for the filtered sum; `ill_typed`/`unit-mismatch` at `10 ms` and at `10 s`.
 - Step 12: one `ill_typed`/`type-mismatch` at `convert<Lc>(e.d)` per term with `5 m`, and that refusal then `ill_typed`/`unit-mismatch` at `5 s`; `ill_typed`/`type-mismatch` at the threshold; the converted-back sum checks, is `4 m` and the atom is `true`.
