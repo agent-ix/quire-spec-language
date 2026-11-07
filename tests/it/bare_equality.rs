@@ -305,6 +305,7 @@ fn the_equality_file_reader_refuses_as_the_spec_closes_it() {
 }
 
 const DECISION: &str = "protocol Pipeline run Main Decide decision ";
+const CASE: &str = "protocol Pipeline run Main Decide case ";
 
 /// The package of fixture L's handoff with `edit` applied to its
 /// `protocol_locations` rows, re-admitted by the reader.
@@ -365,36 +366,42 @@ fn decide_origin(
         .map(|slot| slot.origin().map(str::to_owned))
 }
 
-/// FR-533-AC-12 (numeric half): origins renamed to `999..1005`,
-/// `1000..1004` and `1001..1002` are taken in numeric `(start, end)` order,
-/// so the visible entry takes `999..1005`; the bytes order would give it
-/// `1000..1004`.
+/// FR-533-AC-12 (numeric half): two origins, `999..1005` and `1000..1004`,
+/// are added, each holding a copy of the `got.ready` row of the visible
+/// entry's origin, numbered on after the existing `term_ordinal` values. The
+/// visible entry takes `999..1005`: numeric order, where the bytes order
+/// would give it `1000..1004`. The case guards keep their `case` origins.
 #[trace("FR-533-AC-12", "TC-1333")]
 #[test]
 fn renamed_origins_are_taken_in_numeric_order_not_byte_order() {
     let (_holder, request, files) = handoff(tc1070::SOURCE);
     let original = read(&request, &files["checked-package.json"]);
-    let [first, second, third] = decision_origins(&original)
+    let [visible] = decision_origins(&original)
         .try_into()
-        .expect("three origins");
-    let renamed = [
-        (first, "999..1005"),
-        (second, "1000..1004"),
-        (third, "1001..1002"),
-    ];
+        .expect("the visible entry is the only span-named origin");
     let package = edited(&request, &files, |rows| {
-        for row in rows {
-            let name = origin_name(row).to_owned();
-            if let Some((_, span)) = renamed.iter().find(|(old, _)| *old == name) {
-                row["location"]["origin"]["name"] = format!("{DECISION}{span}").into();
-            }
+        let at = rows
+            .iter()
+            .position(|row| origin_name(row) == visible)
+            .expect("the visible entry's row");
+        let row = rows[at].clone();
+        let ordinal = row["term_ordinal"].as_u64().expect("ordinal");
+        for (offset, span) in ["1000..1004", "999..1005"].into_iter().enumerate() {
+            let mut copy = row.clone();
+            copy["location"]["origin"]["name"] = format!("{DECISION}{span}").into();
+            copy["term_ordinal"] = (ordinal + 1 + offset as u64).into();
+            rows.insert(at + 1 + offset, copy);
         }
     });
     let want = |span: &str| Some(format!("{DECISION}{span}"));
     let origin = |member, index| decide_origin(&package, &files, member, index).expect("selects");
     assert_eq!(origin("visible", 0), want("999..1005"));
-    assert_eq!(origin("cases.guard", 1), want("1000..1004"));
-    assert_eq!(origin("cases.guard", 0), want("1001..1002"));
+    assert_eq!(
+        origin("cases.guard", 0),
+        Some(format!("{CASE}no guard")),
+        "a case guard is named by its label, whatever span-named origins exist"
+    );
+    assert_eq!(origin("cases.guard", 1), Some(format!("{CASE}yes guard")));
 }
 
 fn binding_mut<'a>(group: &'a mut Value, name: &str) -> &'a mut Value {
@@ -522,11 +529,11 @@ fn related_calls_resolve_equal_walks_in_numeric_origin_order() {
 /// the source checker correctly refuses identical exhaustive guards.
 #[trace("TC-1333", "FR-533-AC-13")]
 #[test]
-fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
+fn tied_case_calls_each_read_their_own_cases_origin_in_both_label_orders() {
     use qsl_eval::value::{CheckedPackageEvaluation, ProtocolSlot, ProtocolSlotEvaluation};
     let (_holder, request, files) = handoff(tc1070::SOURCE);
     let original = read(&request, &files["checked-package.json"]);
-    assert_eq!(decision_origins(&original).len(), 3);
+    assert_eq!(decision_origins(&original).len(), 1);
     for labels_follow_source in [false, true] {
         let mut wire: Value =
             serde_json::from_slice(&files["checked-package.json"]).expect("package");
@@ -589,9 +596,15 @@ fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
         rows.retain(|row| row["application"] != removed);
         for row in rows
             .iter_mut()
-            .filter(|row| origin_name(row).starts_with(DECISION))
+            .filter(|row| origin_name(row).starts_with(CASE))
         {
             row["location"]["path"] = serde_json::json!([]);
+            if labels_follow_source {
+                let renamed = origin_name(row)
+                    .replace("case yes guard", "case a guard")
+                    .replace("case no guard", "case b guard");
+                row["location"]["origin"]["name"] = renamed.into();
+            }
         }
         let package = read(&request, &serde_json::to_vec(&wire).expect("bytes"));
         let identities = ReadIdentityRows::read(
@@ -616,7 +629,12 @@ fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
             vec![("ready", quire_exact::Value::Boolean(true))],
         );
         let mut charges = Vec::new();
-        for (index, span) in [(0, "2676..2685"), (1, "2735..2748")] {
+        let labels = if labels_follow_source {
+            ["a", "b"]
+        } else {
+            ["no", "yes"]
+        };
+        for (index, label) in labels.into_iter().enumerate() {
             let slot = ProtocolSlot {
                 node: node_key(&package, "Pipeline", "Decide"),
                 member: "cases.guard".into(),
@@ -631,7 +649,8 @@ fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
                 .expect("tied slot selects");
             assert_eq!(
                 selected.origin(),
-                Some(format!("{DECISION}{span}").as_str())
+                Some(format!("{CASE}{label} guard").as_str()),
+                "guard {index} takes its own case's origin"
             );
             let supply = supply_of(&selected, vec![("got", got.clone())]);
             let mut meter = quire_exact::Meter::new(UNLIMITED);
@@ -646,7 +665,7 @@ fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
             let projection = bare.project_protocol_slot(&selected).expect("projects");
             let expected_location = quire_semantic_value::location::Location::at(
                 quire_semantic_value::location::Origin::TypeDeclaration {
-                    name: format!("{DECISION}{span}"),
+                    name: format!("{CASE}{label} guard"),
                 },
                 &[],
             );
@@ -669,24 +688,24 @@ fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
 }
 
 /// FR-533-AC-14 (missing candidate half): with the first origin's rows
-/// removed, `visible[0]` (rank 0, one candidate) takes the second origin and
-/// `cases.guard[1]` (rank 1, none) refuses `MissingLocationProjection` at the
-/// `Node` locus of the `got.ready` application.
+/// removed, `cases.guard[1]` refuses `MissingLocationProjection` at the
+/// `Node` locus of the `got.ready` application, and `visible[0]` still takes
+/// its own origin.
 #[trace("TC-1333", "FR-533-AC-14")]
 #[test]
 fn a_slot_whose_rank_exceeds_its_candidates_refuses_missing_location_projection() {
     use qsl_package::UnsupportedReason;
     let (_holder, request, files) = handoff(tc1070::SOURCE);
     let original = read(&request, &files["checked-package.json"]);
-    let [first, second, _] = decision_origins(&original)
+    let [visible] = decision_origins(&original)
         .try_into()
-        .expect("three origins");
+        .expect("one span-named origin");
     let package = edited(&request, &files, |rows| {
-        rows.retain(|row| origin_name(row) != first);
+        rows.retain(|row| origin_name(row) != format!("{CASE}yes guard"));
     });
     assert_eq!(
         decide_origin(&package, &files, "visible", 0).expect("selects"),
-        Some(second)
+        Some(visible)
     );
     let Err(BareSelectionFailure::Unsupported(view)) =
         decide_origin(&package, &files, "cases.guard", 1)
@@ -753,7 +772,9 @@ fn a_slot_whose_rank_exceeds_its_candidates_refuses_missing_location_projection(
     assert!(meter.admitted_charges().is_empty());
 
     let all_missing = edited(&request, &files, |rows| {
-        rows.retain(|row| !origin_name(row).starts_with(DECISION));
+        rows.retain(|row| {
+            !origin_name(row).starts_with(DECISION) && !origin_name(row).starts_with(CASE)
+        });
     });
     let identities = ReadIdentityRows::read(
         &files["identities.json"],

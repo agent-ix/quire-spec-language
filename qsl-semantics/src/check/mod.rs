@@ -8965,11 +8965,7 @@ fn register_protocol_sites(
         .map(|choice| {
             (
                 choice.declaration,
-                choice
-                    .visible
-                    .iter()
-                    .chain(choice.cases.iter().map(|case| &case.guard))
-                    .collect::<Vec<_>>(),
+                choice.visible.iter().collect::<Vec<_>>(),
             )
         })
         .chain(protocol.repeats.iter().map(|repeat| {
@@ -9002,6 +8998,20 @@ fn register_protocol_sites(
                     entry.spans.clone(),
                 );
             }
+        }
+        for case in protocol
+            .choices
+            .iter()
+            .filter(|choice| choice.declaration == node)
+            .flat_map(|choice| &choice.cases)
+        {
+            site_spans.insert(
+                protocol_site(
+                    name,
+                    ProtocolSite::CaseGuard(&control.path, &case.name.name),
+                ),
+                case.guard.spans.clone(),
+            );
         }
     }
     let Some((finish, finish_name)) = &checked.finish else {

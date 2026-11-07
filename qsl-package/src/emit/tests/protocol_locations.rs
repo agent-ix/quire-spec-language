@@ -358,6 +358,27 @@ fn every_fixture_e_row_is_under_its_slots_site_name() {
     assert!(names.contains("protocol Refunds run Main Applied body"));
 }
 
+/// FR-383-AC-63 (case-guard half): in fixture L the rows of `Decide`'s case
+/// guards are under `... case yes guard` and `... case no guard`, the rows of
+/// its one `visible` entry under a `decision <start>..<end>` origin, and no
+/// row is under any other `decision` origin.
+#[trace("TC-1063", "FR-383-AC-63")]
+#[test]
+fn case_guards_are_named_by_label_and_only_visible_entries_by_span() {
+    let (_, wire) = checked_and_emitted(tc1070::SOURCE);
+    let names: BTreeSet<&str> = rows(&wire).iter().map(origin_name).collect();
+    let decide = "protocol Pipeline run Main Decide";
+    for label in ["yes", "no"] {
+        let name = format!("{decide} case {label} guard");
+        assert!(names.contains(name.as_str()), "{name}: {names:?}");
+    }
+    let spans: Vec<&&str> = names
+        .iter()
+        .filter(|name| name.starts_with(&format!("{decide} decision ")))
+        .collect();
+    assert_eq!(spans.len(), 1, "only the visible entry: {spans:?}");
+}
+
 /// TC-1063 rows over fixture E's emitted rows: the QSpec FR-322 reader
 /// admits them (FR-383-AC-19's read-back, extended to the populated array)
 /// and a package with the occurrence-1 `earlier.tally` row removed

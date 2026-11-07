@@ -119,6 +119,9 @@ pub enum ProtocolSite<'a> {
     Control(&'a [String]),
     /// The constraint or condition tree of the control at this path.
     ControlBody(&'a [String]),
+    /// A `choice` case's guard, named by the case's label (QSpec
+    /// FR-322-AC-388).
+    CaseGuard(&'a [String], &'a str),
     /// One end of a control's `related` record, distinguished by its span.
     Related(&'a [String], qsl_foundation::Span),
     /// A `visible` entry, guard, invariant or variant of the `choice` or
@@ -151,6 +154,12 @@ pub fn protocol_site(protocol: &str, site: ProtocolSite<'_>) -> String {
         ProtocolSite::Control(path) => format!("protocol {protocol} run {}", path.join(" ")),
         ProtocolSite::ControlBody(path) => {
             format!("protocol {protocol} run {} body", path.join(" "))
+        }
+        ProtocolSite::CaseGuard(path, label) => {
+            format!(
+                "protocol {protocol} run {} case {label} guard",
+                path.join(" ")
+            )
         }
         ProtocolSite::Related(path, span) => format!(
             "protocol {protocol} run {} related {} {}",

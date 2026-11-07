@@ -5026,9 +5026,10 @@ fn the_bare_route_names_fixture_l_decision_slots_by_node_member_and_index() {
         .map(str::to_owned)
     };
     let name = |span: &str| format!("protocol Pipeline run Main Decide decision {span}");
+    let case = |label: &str| format!("protocol Pipeline run Main Decide case {label} guard");
     assert_eq!(origin("Decide", "visible", 0), Some(name("2641..2650")));
-    assert_eq!(origin("Decide", "cases.guard", 0), Some(name("2735..2748")));
-    assert_eq!(origin("Decide", "cases.guard", 1), Some(name("2676..2685")));
+    assert_eq!(origin("Decide", "cases.guard", 0), Some(case("no")));
+    assert_eq!(origin("Decide", "cases.guard", 1), Some(case("yes")));
     assert_eq!(origin("Got", "related.from", 0), None);
     assert_eq!(origin("Got", "related.to", 0), None);
 }

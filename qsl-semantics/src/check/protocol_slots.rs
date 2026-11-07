@@ -349,6 +349,9 @@ struct Slot<'s> {
     goal: Goal<'s>,
     readable: &'s BTreeSet<usize>,
     bars_model_state: bool,
+    /// The label of the `choice` case whose guard this is, which names its
+    /// site (QSpec FR-322-AC-388).
+    case: Option<&'s str>,
 }
 
 struct Checker<'c, 'a> {
@@ -455,6 +458,12 @@ impl Checker<'_, '_> {
                             &self.protocol.name.name,
                             ProtocolSite::ControlBody(&path),
                         )),
+                        SlotKind::Guard if slot.case.is_some() => slot.case.map(|label| {
+                            protocol_location(
+                                &self.protocol.name.name,
+                                ProtocolSite::CaseGuard(&path, label),
+                            )
+                        }),
                         SlotKind::Visible
                         | SlotKind::Guard
                         | SlotKind::Invariant
@@ -1124,6 +1133,7 @@ pub(crate) fn check(
             goal: Goal::Boolean,
             readable: &readable,
             bars_model_state,
+            case: None,
         };
         if let Some((checked_body, slot_names)) = checker.named_slot(&slot, &mut cx) {
             slots.bodies.push(CheckedNodeBody {
@@ -1180,6 +1190,7 @@ pub(crate) fn check(
                         goal: Goal::Infer,
                         readable: &readable,
                         bars_model_state: false,
+                        case: None,
                     },
                     &mut cx,
                 ) else {
@@ -1224,6 +1235,7 @@ pub(crate) fn check(
                         goal: Goal::Infer,
                         readable: &readable,
                         bars_model_state: true,
+                        case: None,
                     },
                     &mut cx,
                 )
@@ -1243,6 +1255,7 @@ pub(crate) fn check(
                             goal: Goal::Boolean,
                             readable: &readable,
                             bars_model_state: true,
+                            case: Some(&case.name.name),
                         },
                         &mut cx,
                     )
@@ -1315,6 +1328,7 @@ pub(crate) fn check(
                     goal,
                     readable: &readable,
                     bars_model_state,
+                    case: None,
                 },
                 &mut cx,
             )
@@ -1436,6 +1450,7 @@ pub(crate) fn check(
                         goal: Goal::Boolean,
                         readable: &no_reads,
                         bars_model_state: false,
+                        case: None,
                     },
                     &mut cx,
                 )
@@ -1518,6 +1533,7 @@ pub(crate) fn check(
                     goal: Goal::Boolean,
                     readable: &terminal_readable,
                     bars_model_state: false,
+                    case: None,
                 },
                 &mut cx,
             )

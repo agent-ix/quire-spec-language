@@ -162,7 +162,7 @@ enum Site {
 enum Tail {
     /// `related <start> <end>`.
     Related,
-    /// `decision <start>..<end>`: a `visible` entry, case guard or repeat guard.
+    /// `decision <start>..<end>`: a `visible` entry or a repeat guard.
     Decision,
 }
 
@@ -314,10 +314,14 @@ fn slot_term<'n>(
                 _ => return Err(no()),
             }
         }
-        (Op::Choice, "cases.guard") => (
-            member_of(record("cases")?, "guard")?,
-            Site::Spanned(control(), Tail::Decision),
-        ),
+        (Op::Choice, "cases.guard") => {
+            let case = record("cases")?;
+            let label = text(member_of(case, "label")?).ok_or_else(no)?;
+            (
+                member_of(case, "guard")?,
+                exact(ProtocolSite::CaseGuard(&path, label)),
+            )
+        }
         (Op::Choice | Op::Repeat, "visible") => (
             at(arg("visible")?)?
                 .get(index.ok_or_else(no)?)
@@ -363,8 +367,8 @@ struct Resolved<'p> {
 }
 
 /// The slots of one control that a span-named origin may be shared by, in the
-/// rank order of FR-533 rule 4: `visible`, `cases.guard`, then the `related`
-/// ends by record (`from[0]`, `to[0]`, `from[1]`, ...).
+/// rank order of FR-533 rule 4: `visible`, a `repeat`'s guard, then the
+/// `related` ends by record (`from[0]`, `to[0]`, `from[1]`, ...).
 #[ix_trace_rs::string_edge]
 fn tied_order<'n>(
     node: &'n Node,
@@ -373,12 +377,7 @@ fn tied_order<'n>(
     package: &'n CheckedPackageV2,
 ) -> Vec<ProtocolSlotDescriptor> {
     let mut slots: Vec<((usize, usize), ProtocolSlotDescriptor)> = Vec::new();
-    for (member, rank) in [
-        ("visible", 0),
-        ("cases.guard", 1),
-        ("related.from", 2),
-        ("related.to", 2),
-    ] {
+    for (member, rank) in [("visible", 0), ("related.from", 2), ("related.to", 2)] {
         for index in 0.. {
             let descriptor = ProtocolSlotDescriptor::new(key.clone(), member, Some(index));
             if slot_term(node, op, &descriptor, package).is_err() {
