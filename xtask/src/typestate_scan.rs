@@ -754,9 +754,9 @@ mod tests {
             Some(S3_CONSTRUCTOR.receiver),
             "check_retaining_protocols",
         ),
-        // S3: the protocol continuation's refusals attached to the graph the
-        // checker returned; it takes an owned `CheckedGraph` and hands the
-        // same one back, so it forges none.
+        // S3: the protocol continuation's refusals reported on the graph the
+        // checker returned; it takes an owned `CheckedGraph`, hands the same
+        // one back and never clears its refusals, so it forges none.
         (
             S3_CONSTRUCTOR.file,
             Some("CheckedGraph"),
