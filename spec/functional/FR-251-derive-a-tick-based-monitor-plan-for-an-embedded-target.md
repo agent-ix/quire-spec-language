@@ -165,6 +165,21 @@ model-time order; they SHALL NOT establish a static progress context in place
 of that observation authority. The observation owner's original values and
 bytes SHALL be retained without substituting a compiler-generated assertion.
 
+The canonical model-step order value SHALL be RFC 8785 JSON with exactly
+`kind: "model-step"`, `model`, `unit`, `dimension` and `source`. The model,
+unit and dimension components SHALL be the original checked time source's
+structural node identities encoded through the existing structural-id
+conversion, not aliases or a new identity scheme. For a dense source,
+`source` SHALL contain exactly `kind: "dense"`. For a digital source it SHALL
+contain exactly `kind: "tick"`, `operation` (the original checked tick-operation
+anchor) and `period` with canonical decimal-string `numerator` and
+`denominator` of the checked exact rational. No absent tick anchor SHALL be
+defaulted. The value establishes model-step semantics under QSpec FR-252;
+it contains no timestamp sorting or event-arrival ordering claim. Encoding
+SHALL obey the caller's finite canonical byte ceiling and preserve the native
+encoder refusal without a partial value. These original structural components
+are not final writer addresses and do not replace the final-emission join.
+
 The public plan-root handoff SHALL expose independently admitted event-order
 and progress-association authority retained from the same final emission as
 its plan and timing obligations. The handoff SHALL preserve the original
@@ -569,6 +584,7 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-45 | From a genuine authored tick-monitor unit, the public plan-root handoff returns the original owner-admitted order and progress-association values for the same final emission as its plan and two timing obligations. A public consumer compares both complete values and the owner-established package/clause/subject/claim association, then uses them after temporary compilation inputs are dropped. Clone and rename controls follow the owner contract and preserve all previously retained rows. | Test |
 | FR-251-AC-46 | Independently omit each required authority, substitute a foreign admitted emission, change the selected clause or claim occurrence, change the source, substitute order and substitute progress association. Each invalid association returns its typed refusal and no partial admitted context; matching labels, equal numeric indices, clock configuration or a second emission cannot turn it into success. | Test |
 | FR-251-AC-47 | After original source, model and request inputs are dropped, a public consumer reads the actual combined checked unit retained by the plan root: its exact source includes the authored unit and generated entries, its selected clause equals the plan subject, and its checked time source retains the selected model node, source kind and unit. These are explicitly original checker facts, not final renamed identities or admitted order/progress. | Test |
+| FR-251-AC-48 | A genuine dense model-time monitor root yields the complete specified canonical model-step value, with the actual checked model/unit/dimension identities. A digital source retains its exact period and checked tick-operation anchor. Changed source kind, unit or period changes the value. Exact-byte-ceiling encoding succeeds and one byte less returns Encoding with the original native canonical limit and no partial order value. | Test |
 
 ## Dependencies
 
