@@ -166,8 +166,11 @@ fn request(
 ) -> ReplayRequestWire {
     ReplayRequestWire {
         profile_selections: vec![],
-        package_name: "fixture".to_owned(),
-        sources: vec![(AUTHORITY.to_owned(), IDENTITY.to_owned())],
+        package: crate::ReplayPackage::read(
+            compiled.emitted.bytes(),
+            ReplayLimits::default().input_bytes,
+        )
+        .expect("actual emitted replay package"),
         dependencies: Vec::new(),
         replay_target: crate::RequestTargetWire::function(
             function.clone(),

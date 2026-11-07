@@ -25,23 +25,28 @@ pub(super) fn execute(
 ) -> Result<Execution, Failure> {
     let (_, bytes) = inputs.one(InputKind::ReplayRequest)?;
     let value = super::super::DeepValue::new(document(bytes, schema)?);
-    if value["package"]["lock"]
-        .get("refinement_internals")
-        .is_some()
-    {
-        return super::unavailable_refinement("/package/lock/refinement_internals".to_owned());
-    }
-    for (index, dependency) in array(&value["dependencies"], "/dependencies")?
+    let raw_members: BTreeMap<String, &serde_json::value::RawValue> =
+        serde_json::from_slice(bytes).map_err(|error| Failure::decode("", error.to_string()))?;
+    let raw_package = raw_members
+        .get("package")
+        .ok_or_else(|| Failure::decode("/package", "missing package"))?;
+    let package =
+        qsl_replay::ReplayPackage::read(raw_package.get().as_bytes(), limits.replay.input_bytes)
+            .map_err(|error| Failure::decode("/package", error.to_string()))?;
+    for (index, provision) in array(&value["byte_provision"], "/byte_provision")?
         .iter()
         .enumerate()
     {
-        if dependency.get("refinement_internals").is_some() {
-            return super::unavailable_refinement(format!(
-                "/dependencies/{index}/refinement_internals"
+        if provision.get("authority").is_none() {
+            let result = Err(qsl_replay::ReplayRefusal::Request(
+                qsl_replay::ReplayRequestRefusal::MissingProvisionAuthority {
+                    pointer: format!("/byte_provision/{index}/authority"),
+                },
             ));
+            return from_document(qsl_replay::OutcomeDocument::from_replay(&result), None);
         }
     }
-    let mut request = decode(&value, inputs, root)?;
+    let mut request = decode(&value, inputs, root, package)?;
     if let Some((path, error)) = inputs.unreadable_bytes.first() {
         return Err(Failure::io(path, error));
     }
@@ -142,7 +147,12 @@ fn optional<T>(
 /// Read the closed corpus request encoding into the public request carrier;
 /// package, target and semantic admission remain with the native request reader.
 #[ix_trace_rs::string_edge]
-fn decode(value: &Value, inputs: &Inputs<'_>, root: &Path) -> Result<ReplayRequestWire, Failure> {
+fn decode(
+    value: &Value,
+    inputs: &Inputs<'_>,
+    root: &Path,
+    raw_package: qsl_replay::ReplayPackage,
+) -> Result<ReplayRequestWire, Failure> {
     let package = &value["package"];
     let graph = qsl_replay::WireGraph::of_package_value(package)
         .map_err(|message| Failure::decode("/package", message))?;
@@ -353,6 +363,17 @@ fn decode(value: &Value, inputs: &Inputs<'_>, root: &Path) -> Result<ReplayReque
                     &dependency["sources"],
                     &format!("/dependencies/{index}/sources"),
                 )?,
+                refinement_internals: dependency
+                    .get("refinement_internals")
+                    .map(|rows| {
+                        serde_json::from_value(rows.clone()).map_err(|error| {
+                            Failure::decode(
+                                format!("/dependencies/{index}/refinement_internals"),
+                                error.to_string(),
+                            )
+                        })
+                    })
+                    .transpose()?,
             })
         })
         .collect::<Result<_, Failure>>()?;
@@ -374,7 +395,7 @@ fn decode(value: &Value, inputs: &Inputs<'_>, root: &Path) -> Result<ReplayReque
         })
         .collect::<Result<_, Failure>>()?;
     Ok(ReplayRequestWire {
-        package_name: text(&package["name"], "/package/name")?.to_owned(),
+        package: raw_package,
         profile_selections: array(&value["profile_selections"], "/profile_selections")?
             .iter()
             .map(|selection| {
@@ -384,7 +405,6 @@ fn decode(value: &Value, inputs: &Inputs<'_>, root: &Path) -> Result<ReplayReque
                 ))
             })
             .collect::<Result<_, Failure>>()?,
-        sources: sources(&package["lock"]["sources"], "/package/lock/sources")?,
         dependencies,
         replay_target: std::mem::take(&mut target_wire),
         source: replay_source,
