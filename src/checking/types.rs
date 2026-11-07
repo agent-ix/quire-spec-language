@@ -107,30 +107,6 @@ impl<'a> DomainType<'a> {
     }
 }
 
-/// The native type of a domain value typed `value_type` with `multiplicity`,
-/// or `None` when it has none here: a native value type other than
-/// `Boolean`, a domain value type, a unit typeRef (`ix://quire/unit/...`),
-/// or a multiplicity other than `[1,1]` or a bounded, ordered, non-unique
-/// `[0,n]` collection. Field presence is
-/// applied separately by [`DomainType::field`].
-pub(crate) fn domain_value_type<'a>(
-    package: &'a AdmittedPackage,
-    value_type: &ValueTypeRef,
-    multiplicity: Multiplicity,
-) -> Option<NativeType<'a>> {
-    let leaf = domain_leaf_type(package, value_type)?;
-    match (multiplicity.lower, multiplicity.upper) {
-        (1, Some(1)) => Some(leaf),
-        (0, Some(maximum)) if multiplicity.ordered && !multiplicity.unique => {
-            Some(NativeType::Sequence {
-                element: Box::new(leaf),
-                maximum: u32::try_from(maximum).ok()?,
-            })
-        }
-        _ => None,
-    }
-}
-
 fn domain_field_type<'a>(
     package: &'a AdmittedPackage,
     value_type: &ValueTypeRef,
@@ -372,30 +348,6 @@ impl PartialEq for NativeType<'_> {
 impl Eq for NativeType<'_> {}
 
 impl<'a> NativeType<'a> {
-    /// Exact rational representation, without integer conversion or new bounds.
-    pub(super) fn rational(&self) -> Option<&'a ir::RationalType> {
-        match self {
-            Self::Scalar {
-                representation: ir::ValueType::Rational { value },
-                ..
-            } => Some(value),
-            _ => None,
-        }
-    }
-    /// Numeric unit shared by integer and rational nominal roles.
-    pub(super) fn numeric_unit(&self) -> Option<&'a Unit> {
-        match self {
-            Self::Scalar {
-                role:
-                    ScalarRole {
-                        kind: ScalarKind::Integer { unit } | ScalarKind::Rational { unit },
-                        ..
-                    },
-                ..
-            } => Some(unit),
-            _ => None,
-        }
-    }
     pub(super) fn integer(&self) -> Option<&'a ir::IntegerType> {
         match self {
             Self::Scalar {
@@ -472,7 +424,6 @@ pub(crate) struct Catalog<'a> {
     pub values: BTreeMap<&'a ir::SymbolName, &'a ir::ValueDeclaration>,
     pub objects: BTreeMap<&'a ir::SymbolName, &'a ObjectRole>,
     pub fields: BTreeMap<(&'a ir::SymbolName, &'a ir::SymbolName), &'a ir::RecordFieldDeclaration>,
-    pub ordered_fields: BTreeMap<&'a ir::SymbolName, Vec<&'a ir::RecordFieldDeclaration>>,
     references: BTreeMap<&'a ir::SymbolName, &'a ObjectRole>,
     scalars: BTreeMap<&'a ScalarSite, &'a ScalarRole>,
     interpretation: Interpretation,
@@ -511,14 +462,6 @@ impl<'a> Catalog<'a> {
         Self {
             model,
             interpretation,
-            ordered_fields: records
-                .values()
-                .map(|record| {
-                    let mut fields: Vec<_> = record.fields().iter().collect();
-                    fields.sort_by_key(|field| field.name());
-                    (record.name(), fields)
-                })
-                .collect(),
             fields: records
                 .values()
                 .flat_map(|record| {

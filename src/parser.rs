@@ -5,12 +5,9 @@ use qsl_cst::lexer::{self, Token};
 use qsl_cst::token::{Kind, Kind as K};
 use qsl_foundation::{Code, Diagnostic, Phase, Source, SourceIdentity, Span, Spanned, SyntaxLimit};
 
-mod composed;
 mod expression;
-use crate::syntax::composed as c;
 
 /// Parse the historical `0-draft` grammar. Model imports stay unresolved here.
-/// Use [`parse_native`] for explicit source-selected edition dispatch.
 pub fn parse(
     identity: SourceIdentity,
     path: impl Into<String>,
@@ -53,47 +50,12 @@ fn lexer_limits(limits: Limits) -> lexer::Limits {
     }
 }
 
-/// Parse the source-selected historical or composed edition, without semantic admission.
-pub fn parse_native(
-    identity: SourceIdentity,
-    path: impl Into<String>,
-    bytes: &[u8],
-    limits: Limits,
-) -> Result<c::NativeUnit, Box<Diagnostic>> {
-    let source = Source::read(identity, path, bytes, limits.source_bytes)?;
-    parse_native_source(source, limits)
-}
-
-/// Edition-dispatched parsing of an immutable source.
-pub fn parse_native_source(
-    source: Source,
-    limits: Limits,
-) -> Result<c::NativeUnit, Box<Diagnostic>> {
-    if source.text().len() > limits.source_bytes {
-        return Err(qsl_foundation::diagnostic::resource_exhausted(
-            &source,
-            Phase::Source,
-            Span { start: 0, end: 0 },
-            SyntaxLimit::SourceBytes {
-                bound: limits.source_bytes,
-            },
-        ));
-    }
-    let tokens = lexer::recognize(&source, lexer_limits(limits))?;
-    Parser::new(source, tokens, limits).native_unit()
-}
-
 struct Parser {
     source: Source,
     tokens: Vec<Token>,
     at: usize,
     nodes: Vec<Expr>,
     limits: Limits,
-    composed: bool,
-    values: Vec<c::Expression>,
-    temporal: Vec<c::Temporal>,
-    controls: Vec<c::Control>,
-    syntax_nodes: usize,
 }
 
 impl Parser {
@@ -104,35 +66,13 @@ impl Parser {
             at: 0,
             nodes: Vec::new(),
             limits,
-            composed: false,
-            values: Vec::new(),
-            temporal: Vec::new(),
-            controls: Vec::new(),
-            syntax_nodes: 0,
         }
     }
 
     fn expression_span(&self, id: ExprId) -> Span {
-        if self.composed {
-            self.values[id.0].span
-        } else {
-            self.nodes[id.0].span
-        }
+        self.nodes[id.0].span
     }
 
-    fn add_operator(
-        &mut self,
-        kind: ExprKind,
-        start: usize,
-        end: usize,
-        operator_span: Span,
-    ) -> Result<ExprId, Box<Diagnostic>> {
-        let id = self.add(kind, start, end)?;
-        if self.composed {
-            self.values[id.0].operator_span = Some(operator_span);
-        }
-        Ok(id)
-    }
     fn peek(&self) -> &Token {
         &self.tokens[self.at]
     }
@@ -168,12 +108,10 @@ impl Parser {
         qsl_foundation::diagnostic::resource_exhausted(&self.source, Phase::Parse, span, limit)
     }
     fn unexpected(&self, expected: &str) -> Box<Diagnostic> {
-        if !self.composed
-            && matches!(
-                self.peek().kind,
-                Kind::Unsupported | Kind::Fractional | Kind::Slash | Kind::OpenBracket
-            )
-        {
+        if matches!(
+            self.peek().kind,
+            Kind::Unsupported | Kind::Fractional | Kind::Slash | Kind::OpenBracket
+        ) {
             let name = self.source.slice(self.peek().span).expect("token span");
             self.failure(
                 Code::UnsupportedConstruct,
@@ -267,9 +205,6 @@ impl Parser {
         self.import(K::Model)
     }
     fn import(&mut self, keyword: K) -> Result<ModelImport, Box<Diagnostic>> {
-        if self.composed {
-            self.charge(self.peek().span)?;
-        }
         let start = self.expect(keyword)?.span.start;
         let alias = self.identifier()?;
         self.expect(K::Equal)?;
@@ -317,9 +252,6 @@ impl Parser {
         })
     }
     fn add(&mut self, kind: ExprKind, start: usize, end: usize) -> Result<ExprId, Box<Diagnostic>> {
-        if self.composed {
-            return self.add_value(c::ValueKind::Shared(kind), Span { start, end });
-        }
         if self.nodes.len() >= self.limits.nodes {
             return Err(self.exhausted(
                 Span { start, end },
@@ -394,18 +326,6 @@ mod tests {
                 // One group per pair around the literal.
                 assert_eq!(unit.expressions.len(), depth + 1);
 
-                let composed = format!(
-                    "language \"ix:native\" edition \"1-draft\";\nprofile T = \"quire.temporal.timestamped-event.finite-window/v1\";\nmodel M = \"m\";\ntemporal W using T over (v: M::V) clock \"c\" on origin {{ {}holds({}v{}){} }}\n",
-                    "(".repeat(depth / 2),
-                    "(".repeat(depth / 4),
-                    ")".repeat(depth / 4),
-                    ")".repeat(depth / 2)
-                );
-                let text = source(&composed);
-                let tokens = lexer::recognize(&text, lexer_limits(limits)).expect("lexes");
-                Parser::new(text, tokens, limits)
-                    .native_unit()
-                    .expect("parses");
             })
             .expect("spawn a 512 KiB thread")
             .join()

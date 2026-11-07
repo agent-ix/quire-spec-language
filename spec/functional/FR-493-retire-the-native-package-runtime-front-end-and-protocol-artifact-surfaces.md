@@ -37,13 +37,8 @@ unreachable, so that no two paths to the same behavior exist side by side.
 mapped and extraction adapter; the state evaluator and `lower` are retired
 ([FR-049](FR-049-admit-composed-evaluation-inputs.md)); this requirement
 retires the rest of the SEAM-1 native-v1 lane (ADR-011 §7.3) and the compiled-protocol
-read side of SEAM-3. It does not retire SEAM-2, the composed lane
-(`syntax::composed`, `parser::composed`, `linking::composed`,
-`checking::composed` and `formal_source`, which `checking::composed` imports),
-which stays normative and is deleted family by family under
-[FR-362](FR-362-produce-the-checked-graph-and-the-type-report-from-one-source.md)
-item 9 (ADR-012 §15.8 step 2: `formal_source` is not deleted in step 2); and it
-does not delete `native_model`, which SEAM-2 and SEAM-3 still import
+read side of SEAM-3. SEAM-2, the composed lane, is deleted (FR-499); `formal_source` is kept
+(ADR-012 §15.8 step 2). This requirement does not delete `native_model`, which SEAM-3 still imports
 (ADR-012 §15.8 step 3).
 
 The behavior these paths provided has a replacement on the spine, except where
@@ -74,10 +69,9 @@ this requirement says it has none:
   `syntax`, `linking::native`, native `checking`, `model_source` or
   `located_json` module, and no build gate, example or Makefile target SHALL
   invoke one.
-- QSL SHALL keep `formal_source`, `native_model` and every `composed` module
-  until the slice that removes their last importer, as ADR-012 §15.8 steps 2
-  and 3 and FR-362 item 9 order; this requirement neither deletes nor
-  forbids them.
+- QSL SHALL keep `formal_source` and `native_model` until the slice that
+  removes their last importer, as ADR-012 §15.8 steps 2 and 3 order; this
+  requirement neither deletes nor forbids them.
 - The root QSL package SHALL have no module that reads or validates
   compiled-protocol v1, v2 or v3 bytes, and no documentation of those formats.
   The strict reader was called by the retired handoff writers
@@ -127,7 +121,7 @@ normative. No requirement is deleted before its path is unreachable.
 | FR-016 (TC-025 to TC-029, TC-046 to TC-053, TC-895) | **Retire** AC-1 to AC-10 with native `checking` and `linking::native`; FR-104 and FR-107 own the spine checker and evaluator. Two retained requirements cite it and are re-pointed in the same slice: FR-104's `CheckBindings`/`ClauseBinding` adapter paragraph (the native route that validates a `Vec<ClauseBinding>` is deleted, so the execution-point map has no native producer) and FR-098's two citations of the short-circuit and conditional order (to FR-107). |
 | FR-017 (TC-054, TC-030 to TC-034) | **Retire** AC-1 and AC-2 (the rule-model JSON decoder) with `model_source` and `located_json`, and AC-3 (native linker stage separation) with `linking::native`. |
 | FR-025 (TC-101, TC-102) | **Split**. **Keep** AC-1 to AC-4 and their source-derived model/model_source coverage in this slice; **retire** AC-5, which promises native package compilation and state/operation execution. The `native-rule-model/1` source profile has no spine successor; domain-package models enter through FR-056. |
-| FR-035 (TC-113), FR-036 (TC-114, TC-115, TC-148), FR-040 (TC-119) | **Split**. Keep the composed lane (SEAM-2) under FR-362 item 9. **Retire** FR-036-AC-8, which promises historical package/runtime behavior removed here; keep FR-036-AC-5 to AC-7 and AC-9. |
+| FR-035 (TC-113), FR-036 (TC-114, TC-115, TC-148), FR-040 (TC-119) | **Split**. The composed lane (SEAM-2) is deleted (FR-499). **Retire** FR-036-AC-8, which promises historical package/runtime behavior removed here; keep FR-036-AC-5 to AC-7 and AC-9. |
 | FR-041 (TC-120) | **Split**. **Retire** AC-1, AC-3 and AC-4 with `model_source`, and the `link_native` refusal in AC-5 with `linking::native`. **Keep** AC-2, AC-6 and AC-7 and AC-5's composed `bind_models` clause until `native_model` is deleted last (ADR-012 §15.8 step 3), then retire them. |
 | FR-042 (TC-121) | **Retire** AC-1 to AC-15 with the compiled-protocol emitters, readers and handoff writers (M-6d); AC-16 and AC-17 are already withdrawn. Its dependents FR-043 to FR-050, FR-052 and FR-053 build on this contract and need their own dispositions in that slice. FR-054 and TC-143 are already scheduled with `/3` (QSL-838, QSL-840). |
 

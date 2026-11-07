@@ -2,11 +2,9 @@
 //! FR-006/016: native constraints and guarded IR proofs over exact authored input.
 
 mod bindings;
-pub mod composed;
 mod constraints;
 mod inputs;
 mod proof;
-pub mod source_inventory;
 mod types;
 mod variables;
 
@@ -19,7 +17,7 @@ use crate::syntax::ExprId;
 use qsl_foundation::{Code, Diagnostic, Phase, Source, Span};
 
 pub(crate) use types::Catalog;
-pub(crate) use types::{domain_value_type, DomainField};
+pub(crate) use types::DomainField;
 pub use types::{DomainType, NativeType};
 
 type Result<T> = std::result::Result<T, Box<CheckingError>>;
