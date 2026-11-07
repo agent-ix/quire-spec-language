@@ -109,3 +109,38 @@ Supplemental fixture-only inspection since 59144f865: no new finding. The final 
 | FND | Outcome | Reason |
 | --- | --- | --- |
 | FND-001 | still-open | The authentic writer-carry fixture remains sound after correcting its model-field selection and actual named/value rekey expectation. The separate independently expected external row-index oracle still requires the real owner AdapterRow(i) seam; runtime fix8 is pending. |
+
+### Disposition round 4 — focused runtime and caller compatibility
+
+Frozen head 395823b9795238a20eabd8c403b7c384a9d31c47.
+
+Supplemental source and runtime evidence check at the clean pushed head: no new finding. The public writer test calibrates over an explicitly identical package name and first asserts complete byte equality between its measured emission and the actual public writer emission, then still requires exact allowances to write and each one-short resource to refuse with no directory. This corrects an oracle-fixture mismatch without weakening its assertions. The borrowed supply helper explicitly rejects the impossible adapter Rows condition rather than relabelling it. The predecessor snapshot test replaces the removed budget Clone with observation of all six public ledger fields: original work/storage limits, cumulative charge, last success delta, first unpaid charge and first unpaid locus. Its prior-consumption and unchanged-refusal ledger assertions remain intact.
+
+Runtime receipts inspected (reviewer ran no Cargo): `/tmp/ir1389-fix8-focused-root-compatibility-compile-failure.log` contains 9/9 identity tests, 2/2 cold-copy/catalog tests, package Clippy and root library check passing, followed by a preserved root test compilation failure from the removed Clone and new Rows arm. The latter compatibility failures were corrected, and `/tmp/ir1389-root-caller-fix10-focused.log` shows the public writer and predecessor snapshot tests each pass 1/1 on the current source; formatting and diff checks also passed in the coder receipt. This is focused evidence, not a final combined-tree gate. The actual owner AdapterRow API and independent row-index oracle remain open.
+
+Additional examined units:
+
+```yaml
+scope:
+- id: FR-531-AC-24
+  path: spec/functional/FR-531-evaluate-from-a-checked-package-read-from-its-bytes-alone.md
+  role: examined
+  excerpt: '`V2ReadLimits` has a required `storage` member and no `Default`; a read''s
+    evaluation view over limits whose `storage` is exactly the measured join storage
+    succeeds and over one unit less returns `ViewFailure::Exhausted` with `ExhaustedStorage`,
+    whose refusal names `i2.native_join_storage`; `EvidencePackage::from_read` and
+    `from_emission` over a budget one unit short of the source join return `PackageMismatch::Exhausted`;
+    the handoff writer over `native_join` one unit short returns `Error::NativeJoinExhausted`
+    and writes no directory.'
+- id: FR-052-AC-20
+  path: spec/functional/FR-052-publish-native-temporal-evaluation-owner.md
+  role: examined
+  excerpt: Full-predecessor issuance, reading and validation charge their stated native-owner
+    work/storage limits before inspection or allocation; exact measured limits admit,
+    one less returns the original typed resource/ceiling/attempt with no partial relation,
+    and existing caller NativeJoinBudget consumption is never reset.
+```
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | still-open | The authentic later-copy, writer-carry and public boundary tests now have focused runtime evidence. The independently expected original external row-index assertion still requires the actual owner AdapterRow(i) seam. |
