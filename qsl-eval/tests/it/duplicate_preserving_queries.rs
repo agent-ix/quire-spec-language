@@ -266,3 +266,93 @@ fn duplicate_items_of_a_nominal_unit_survive_the_queries() {
     );
     assert_eq!(total.unit(), &unit, "the total is 7 U");
 }
+
+/// The domains of [`UNIT`] with the literal items `items` in that order.
+fn plain_source(items: &[i64; 3]) -> String {
+    UNIT.replace(
+        "sequence[2, 2, 3]",
+        &format!("sequence[{}, {}, {}]", items[0], items[1], items[2]),
+    )
+}
+
+/// The domains of [`UNIT_U`] with the items `items` in that order.
+fn unit_source(items: &[i64; 3]) -> String {
+    UNIT_U.replace(
+        "sequence[two(), two(), three()]",
+        &format!(
+            "sequence[convert<Amount>({} U), convert<Amount>({} U), convert<Amount>({} U)]",
+            items[0], items[1], items[2]
+        ),
+    )
+}
+
+/// FR-046-AC-3 (TC-127): source order is kept, not sorted. `[3, 2, 2]` and
+/// `[2, 3, 2]` come back in exactly the written order through the items,
+/// `filter` and `map`, with the duplicates, and size, count and sum read them;
+/// a sort anywhere in the evaluator would reorder them and fail.
+#[trace("TC-127")]
+#[test]
+fn unsorted_items_keep_their_written_order_with_and_without_the_unit() {
+    for items in [[3_i64, 2, 2], [2, 3, 2], [2, 2, 3]] {
+        let expected_flags: Vec<bool> = items.iter().map(|item| *item == 2).collect();
+        let expected_twos = [2_i64, 2].map(Integer::from).to_vec();
+
+        let package = package_of(&plain_source(&items));
+        assert_eq!(
+            integers(&call(&package, "amounts")),
+            items.map(Integer::from).to_vec(),
+            "{items:?}"
+        );
+        assert_eq!(
+            integers(&call(&package, "twos")),
+            expected_twos,
+            "{items:?}"
+        );
+        assert_eq!(
+            booleans(&call(&package, "flags")),
+            expected_flags,
+            "{items:?}"
+        );
+        assert_eq!(integer_of(&call(&package, "length")), Integer::from(3_i64));
+        assert_eq!(
+            integer_of(&call(&package, "twos_counted")),
+            Integer::from(2_i64)
+        );
+        assert_eq!(integer_of(&call(&package, "summed")), Integer::from(7_i64));
+
+        let package = package_of(&unit_source(&items));
+        let amounts = call(&package, "amounts");
+        let unit = quantities(&amounts)[0].1.clone();
+        let of = |numbers: &[i64]| -> Vec<((Integer, Integer), quire_exact::UnitId)> {
+            numbers
+                .iter()
+                .map(|n| ((Integer::from(*n), Integer::one()), unit.clone()))
+                .collect()
+        };
+        assert_eq!(quantities(&amounts), of(&items), "{items:?}");
+        assert_eq!(
+            quantities(&call(&package, "plain")),
+            of(&items),
+            "{items:?}"
+        );
+        assert_eq!(
+            quantities(&call(&package, "twos")),
+            of(&[2, 2]),
+            "{items:?}"
+        );
+        assert_eq!(
+            booleans(&call(&package, "flags")),
+            expected_flags,
+            "{items:?}"
+        );
+        assert_eq!(integer_of(&call(&package, "length")), Integer::from(3_i64));
+        assert_eq!(
+            integer_of(&call(&package, "twos_counted")),
+            Integer::from(2_i64)
+        );
+        let Value::Quantity(total) = call(&package, "summed") else {
+            panic!("the sum is a quantity");
+        };
+        assert_eq!(total.magnitude().numerator(), &Integer::from(7_i64));
+    }
+}
