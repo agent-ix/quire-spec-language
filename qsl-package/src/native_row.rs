@@ -435,11 +435,16 @@ mod integer_budget_tests {
                     allocations.bytes_total as u128, footprint.bytes as u128,
                     "actual copy payload agrees with owner footprint"
                 );
+                let expected_storage = if allocations.count_total == 0 {
+                    0
+                } else {
+                    1 + allocations.bytes_total as u128
+                };
                 assert_eq!(
-                budget.consumed().storage > 0,
-                allocations.count_total > 0,
-                "owned storage must follow the actual signed integer representation: {spelling}"
-            );
+                    u128::from(budget.consumed().storage),
+                    expected_storage,
+                    "charge the actual owned buffer and payload at {spelling}"
+                );
             }
         }
     }
