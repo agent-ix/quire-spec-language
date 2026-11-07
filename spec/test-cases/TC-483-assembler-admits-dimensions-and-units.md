@@ -3,6 +3,8 @@ id: TC-483
 title: "The assembler admits source dimensions and units into a UnitGraph and refuses each source error"
 type: TC
 relationships:
+  - target: ix://agent-ix/quire-specification/TC-187
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-091
     type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-093
@@ -22,7 +24,7 @@ This catches: unnormalized or unsorted terms; an unreduced scale or offset
 unit name read as a type; `UnitGraph::admit` reached only from tests; and a
 topology error reported as a reader's `invalid_semantic_graph`.
 
-Scope: FR-091-AC-33 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-50, FR-091-AC-55, FR-091-AC-60, FR-091-AC-62 to FR-091-AC-64, FR-091-AC-67, FR-091-AC-68, FR-091-AC-71, FR-091-AC-72, FR-091-AC-73, FR-092-AC-25, FR-092-AC-29, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37, FR-093-AC-43, FR-093-AC-44, FR-093-AC-46, FR-093-AC-60.
+Scope: FR-091-AC-74, FR-091-AC-33 to FR-091-AC-35, FR-091-AC-44 to FR-091-AC-47, FR-091-AC-50, FR-091-AC-55, FR-091-AC-60, FR-091-AC-62 to FR-091-AC-64, FR-091-AC-67, FR-091-AC-68, FR-091-AC-71, FR-091-AC-72, FR-091-AC-73, FR-092-AC-25, FR-092-AC-29, FR-093-AC-33, FR-093-AC-34, FR-093-AC-36, FR-093-AC-37, FR-093-AC-43, FR-093-AC-44, FR-093-AC-46, FR-093-AC-60.
 
 ## Test Procedure
 
@@ -42,7 +44,7 @@ form and read `units`; repeat with source-owner identity `w` and the same requir
    `dimension Mass;`, `unit a` and `unit d` removed.
 4. Assemble each of FR-091-AC-35's units, the five refused and the two
    that declare `N = L / L`.
-5. Assemble FR-091-AC-44's unit with `function f using v(d: Quantity<ms>): Boolean pure { true }`, then with `d: Quantity<Time>`, then with `d: Quantity<nothing>`. Then check the first unit with a further `function g using v(): Boolean pure { f(3 s) }`. Check the first unit with a further `function h using v(): Boolean pure { f(3 ms) }`, and lower it. Assemble a unit declaring a unit `ms` and a record `ms`, a unit declaring two units named `ms` (refused `ambiguous_declaration`/`ambiguous-name` at the two declarations, each named), and a unit declaring `record Quantity`.
+5. Assemble FR-091-AC-44's unit with `function f using v(d: Quantity<ms>): Boolean pure { true }`, then with `d: Quantity<Time>`, then with `d: Quantity<nothing>`. Then check the first unit with a further `function g using v(): Boolean pure { f(3 s) }`. Check the first unit with a further `function h using v(): Boolean pure { f(3 ms) }`, and lower it. Assemble a unit declaring a unit `ms` and a record `ms`, a unit declaring two units named `ms` (refused `ambiguous_declaration`/`ambiguous-name`, retaining both declaration-name spans and locating the first complete `Quantity<ms>` type form when present, otherwise the later declaration-name span), and a unit declaring `record Quantity`.
 6. Check and lower the first unit of step 5 with each further body of
    FR-093-AC-33 (`h2`, `h3`, `h4` beside `h`, `n`, `k` and `c`, whose
    body is `convert<Quantity<s>>(d) = 3 s`), and pass each checked package
@@ -112,8 +114,11 @@ Tag the tests with the AC ids they back and `TC-483`.
   and `16`.
 - Step 7: each refused unit refuses with exactly the one error its AC
   names, the first defect in FR-142's order; each admitted unit assembles.
-- Step 8: each vector's TC-187 result, with `P`'s node refusals located at
-  `P`'s `model_root` node; `unit tick : M::Rate` admitted and `unit tick : Rate`
+- Step 8: each vector's TC-187 result, with `P`'s row-4 and row-6 node
+  refusals located at `P`'s `model_root` node. Imported base-dimension
+  refusals retain the selecting model's original source provenance separately
+  from the backed owner-field locus of FR-091-AC-74 and the procedure below;
+  `unit tick : M::Rate` admitted and `unit tick : Rate`
   refused `missing_declaration`/`missing-name` at `Rate`; the source `Time` beside the package `Time`, and two
   packages' `Rate`, assemble with no error; the two `ms` units check.
 - Step 9: each of `p1` to `p6` checks and lowers, its divisions to
@@ -140,3 +145,40 @@ Tag the tests with the AC ids they back and `TC-483`.
   `M::ghost` target row 2 with the name as written.
 - Step 18: `L` and `N` remain distinct nodes through assembly, checking, lowering and replay; `L` is base with `base=true`, while `N` is derived with `base=false` and no normalized terms. Both units reference their declared dimension, and only `one` is dimensionless.
 - Step 19: the wire body of `L` has `base=true` with no terms, `N` has `base=false` with no terms and `M` has `base=false` with one term; IR admits the package and its `dimension_base()` equals the written value for each node.
+
+### Duplicate unit use locus
+
+Assemble two original linked source units that each declare `ms`, with multiple
+unqualified `Quantity<ms>` references. Require one typed duplicate-unit refusal
+with both original declaration-name spans and its primary span at the first
+complete quantity type form in canonical source-unit and source order. Require
+the original input source reference and public compiler region to identify that
+same input when a different linked input has an identical relative span. Put an
+ordinary record type named `ms` and a qualified `Quantity<M::ms>` before the
+matching use and require neither to become its locus. Repeat with no matching
+quantity reference and with duplicate dimension declarations to retain the
+existing declaration-locus controls.
+
+### Imported base-dimension owner-field evidence
+
+Use QSpec TC-187 U34 by reference. Admit the original `acme/rpc` model with
+unitless base dimension `Length`, then compile the genuine source selection,
+`dimension Area = M::Length ^ 2` and `unit m2 : Area`. Through both the public
+assembly and compiler refusal APIs require the typed missing-name cause,
+original `ix://acme/rpc/dimension/Length` identity and `m2`, preserving topology
+turn/refusal precedence. Separately inspect the selecting model's original
+source reference and source span.
+
+Require the owner-field pointer to carry its actual checked-artifact reference.
+Resolve `/semantic_graph/nodes/0/owner` against that retained fixture artifact
+and assert the owner is the original admitted model declaration. Use a genuine
+producer input that places the owner at another node position and resolve its
+actual pointer instead of expecting index zero universally. Never manufacture
+an owner-only wrapper graph or infer an artifact pointer from the source span
+or the model input's `/dimensions/...` path. No partially admitted program is
+returned by a refusal. The producer boundary described in FR-091 remains an
+explicit prerequisite: a source-span-only refusal characterizes existing
+behavior but does not pass FR-091-AC-74.
+
+Tests for these new obligations carry separate two-id tags such as
+`#[trace("TC-483", "FR-091-AC-74")]` and the corresponding QSpec authority tag.

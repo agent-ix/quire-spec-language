@@ -3,6 +3,7 @@ id: FR-056
 title: "Admit domain packages as Quire model declarations"
 type: FR
 relationships:
+  - { target: ix://agent-ix/quire-specification/FR-142, type: depends_on }
   - { target: ix://agent-ix/quire-spec-language/US-002, type: implements }
   - { target: ix://agent-ix/quire-spec-language/FR-036, type: traces_to }
   - { target: ix://agent-ix/quire-specification/AD-006, type: depends_on }
@@ -566,6 +567,16 @@ the later member's path (`TypeDefinition.fields[j]`,
 `TypeDefinition.variants[i]`), as a clause, state, transition or step is
 (FR-208-AC-5, FR-208-AC-6).
 
+A repeated native model `Dimension.identity` is also an identity collision,
+not malformed declaration syntax. The intake seam SHALL retain the owner's
+typed duplicate-identity cause and refuse `invalid_model_binding`/
+`conflicting-binding` at the repeated identity, with the later dimension's
+original member path and reader pointer. It SHALL preserve their original
+values rather than parse a display string to recover them. The model-selection
+source span remains additional source provenance. No declaration population
+from that refusing model is admitted. This rule does not reclassify unrelated
+malformed input or alter which earlier native refusal wins.
+
 A member's `typeRef` may name a declaration bound to
 `quire.meaning.model.variant-type/v1`: FR-360 states how intake admits it and
 how the assembler types it. A `typeRef` that names a variant type whose own
@@ -975,6 +986,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-44 | A business bundle with model-declaring artifacts `FR-001` and `OP-001`, including the underscore member names and references in TC-145, passes the real FCD bundle-to-lift path and QSL's intake/read path. The admitted declarations retain keys `ix://<package identity>/FR-001` and `ix://<package identity>/OP-001`; field and operation member identities retain their authored names and references resolve to those declarations, with no refusal caused by the artifact ids' spelling. | Test (TC-145) |
 | FR-056-AC-51 | Over `function a1 using v(x: Text[0, 8; nfc]): Boolean pure { x = Text("\u00e9") }` and `function a2 using v(x: Text[0, 8; nfc]): Boolean pure { x = Text("e\u0301") }`, `x` holding U+00E9 gives `true` for both, and `x` holding the empty text gives `false` for both; the two bodies hold the one retained sequence U+00E9. Over `Text[0, 8; unicode-scalars]` the same bodies are `true` for U+00E9 and U+0065 U+0301 respectively and `false` for the other. `function r1 using v(): Text[1, 1; nfc] pure { Text("e\u0301") }` checks (the retained length is one) and returns the text U+00E9; `Text[0, 1; binary-utf8]` with `Text("\u00e9")` refuses `TextLiteralOutsideBounds` (two bytes) and `Text[0, 2; binary-utf8]` admits it. | Test (TC-1052) |
 | FR-056-AC-52 | `function b1 using v(): Text[0, 2; nfc] pure { Text("abc") }` refuses `ill_typed`/`type-mismatch` with the cause `TextLiteralOutsideBounds` naming `abc`, the bounds `0` and `2`, the profile `nfc`, the retained length `3` and the span of the call, and `Text[2, 2; nfc]` with `Text("e\u0301")` refuses it with retained length `1`; `Text[1, 8; nfc]` with `Text("")` refuses it with retained length `0`. A `Text("abc")` in the body of a function whose result is `String`, `Integer` or `UUID`, and as an operand of `=` against a `String` operand, each refuse `ill_typed`/`type-mismatch` at the call, and `r = Text("abc")` over `r: String` and `x = "abc"` over `x: Text[0, 8; nfc]` still refuse (FR-056-AC-41); no refusal yields a value or a coercion. | Test (TC-1052) |
+| FR-056-AC-53 | In QSpec TC-187 U35's authentic native model input, repeating `ix://acme/rpc/dimension/Time` refuses before assembly as typed `invalid_model_binding`/`conflicting-binding`. The refusal retains that exact identity, the later member path `$.dimensions[1].identity` and original reader pointer `/ir/dimensions/1/identity`, plus the selected model identity/alias and original source selection region. Reversing two distinct declarations that claim one identity still identifies the later occurrence. A separate malformed-field control remains `malformed-declaration`, and no partial declarations are admitted in either refusing case. | Test |
 
 ### FR-056-AC-17
 
@@ -1003,6 +1015,7 @@ Use independent fixed expected text, not the encoder's output as its own oracle.
   UUID digit or Timestamp `0` to `1` gives false. Mixed UUID/Timestamp/Integer
   pairs give a typed refusal, not false, under FR-149. These controls do not
   select an ordering or arithmetic operation.
+
 
 ## Open Questions
 

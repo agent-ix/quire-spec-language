@@ -3,6 +3,8 @@ id: TC-145
 title: "Admit a Semantic IR 2.0.0 domain package as model declarations"
 type: TC
 relationships:
+  - target: ix://agent-ix/quire-specification/TC-187
+    type: references
   - { target: ix://agent-ix/quire-spec-language/FR-056, type: verifies }
 ---
 # TC-145: Admit a Semantic IR 2.0.0 domain package as model declarations
@@ -12,7 +14,7 @@ relationships:
 Verify FR-154 admission, reader refusal, artifact-id identity, relationship
 exports and all-or-nothing declaration refusal through the intake seam. Scope:
 FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5, FR-056-AC-7,
-FR-056-AC-12, FR-056-AC-13, FR-056-AC-14, FR-056-AC-15, FR-056-AC-44.
+FR-056-AC-53, FR-056-AC-12, FR-056-AC-13, FR-056-AC-14, FR-056-AC-15, FR-056-AC-44.
 
 ## Test Procedure
 
@@ -136,3 +138,19 @@ FR-056-AC-12, FR-056-AC-13, FR-056-AC-14, FR-056-AC-15, FR-056-AC-44.
   parameter identities are preserved verbatim, and the field reference from
   `OP-001` resolves to `FR-001` (FR-056-AC-44).
 - Assertions compare typed refusal codes and loci, never message text.
+
+### Duplicate model dimension identity
+
+Obtain the complete QSpec TC-187 U35 record by reference. Give the native model
+reader a genuine package whose later dimension repeats
+`ix://acme/rpc/dimension/Time`. Run public intake before assembly and require
+one typed `invalid_model_binding`/`conflicting-binding`, the exact repeated
+identity, later member `$.dimensions[1].identity` and retained reader pointer
+`/ir/dimensions/1/identity`. Check the model alias, identity and original
+selection region as independent values, rather than matching formatted detail
+text. Reverse the two identity-colliding declarations and require the later
+occurrence to remain the reported member. Add a malformed-field control and
+require its original malformed-declaration class, and an earlier genuine native
+refusal to check unchanged priority. Neither refusing case yields partially
+admitted declarations. Trace the new test with
+`#[trace("TC-145", "FR-056-AC-53")]`.

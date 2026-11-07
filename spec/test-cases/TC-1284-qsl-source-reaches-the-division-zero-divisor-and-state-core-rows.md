@@ -3,6 +3,8 @@ id: TC-1284
 title: "QSL source reaches the division, zero-divisor and state-core rows"
 type: TC
 relationships:
+  - target: ix://agent-ix/quire-specification/TC-192
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-495
     type: verifies
 ---
@@ -16,7 +18,7 @@ with the two observations the requirement states: the check refusal under
 state-core declaration is refused as a declaration before any of its
 expressions is classified; and that an integer division over unbounded
 `Integer` operands settles `requires-bound` against a finite backend without
-narrowing. Scope: FR-495-AC-1 to FR-495-AC-4, FR-495-AC-6, FR-495-AC-7 and,
+narrowing. Scope: FR-495-AC-1 to FR-495-AC-4, FR-495-AC-6, FR-495-AC-7, FR-495-AC-8 and,
 through QSpec TC-266, FR-495-AC-5.
 
 ## Test Procedure
@@ -76,3 +78,31 @@ Vectors are referenced by QSpec row ID, never copied.
   settles `requires-bound` with no harness and no evaluation in the run with
   cvc5 registered, and the same in the run without it; no operand is narrowed
   to an `Int[..]`.
+
+### Public compile-facade admitted division law
+
+Obtain Euclidean, Floor and Truncating selections through the actual native
+`admit_integer_division` owner admission, retaining their definition references.
+Through the public `qsl-replay` compile entry, pass each selection for genuine
+bounded-operand functions with an `Integer` result and bodies `a div b` and
+`a rem b`. Use dividend bounds `Int[-9,9]`, positive nonzero divisor bounds
+`Int[1,4]` and negative nonzero controls `Int[-4,-1]`; choose concrete positive
+and negative values from QSpec TC-192 that distinguish the laws. Inspect the
+checked selection and original emitted operation-law references, strict-read
+those same checked-package bytes, and evaluate both routes. Require the exact
+owner-defined quotient/remainder, typed outcome and charge sequence for the
+same operands and law. No assignment to a private declarations field is this
+public-facade test.
+
+Omit the demanded selection and require typed
+`MissingSelection(IntegerDivision)` at `div`/`rem`, with no compiled result.
+Present unknown, multiple or incompatible definition inputs to owner admission
+and preserve its distinct typed cause. Present a conflicting retained operation
+law to the independent read/replay boundary and require the native mismatch
+refusal. Compile an ordinary non-division function and a `mod`-only function
+without the optional selection; the latter uses its existing Euclidean core.
+Keep nonzero/range checking and zero-divisor outcomes unchanged. Trace this
+new public-path test with `#[trace("TC-1284", "FR-495-AC-8")]`; reference QSpec
+vectors rather than copying their catalogs. This procedure supplies the QSL
+law authority needed by the IR-842/IR-1391 fixture, and makes no CG result-bound
+inference or whole integration-acceptance claim.
