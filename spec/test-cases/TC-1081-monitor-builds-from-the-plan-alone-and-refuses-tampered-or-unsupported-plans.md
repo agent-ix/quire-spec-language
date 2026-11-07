@@ -52,6 +52,8 @@ Fixtures: the deadline claim of FR-251-AC-1 on a 20-bit 1 MHz counter with its a
 
 31. Drop the original authored source, model documents and request inputs after producing a plan root. Read its retained combined checked unit through the public API; compare the authored source prefix, generated entry names, original selected clause key, model object key, dense source kind and millisecond unit. Separately join the final clause through the emission retained rows, without treating original checker keys as final renamed identities or progress authority (AC-47).
 
+32. Read the public canonical model-step order value from genuine dense and digital model-time roots. Compare the entire object with the checked model, unit and dimension identities; for digital time compare the checked operation anchor and exact period. Change source kind, time-source unit and digital period independently. Encode at the exact observed byte length and one byte less; inspect the original canonical limit refusal. Substitute a genuinely produced foreign plan and require typed missing-clause refusal before encoding (AC-48 and AC-46).
+
 Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 
 ## Expected Results
@@ -87,3 +89,4 @@ Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 - Step 29: both original canonical admitted values and every owner-established association equal the genuine final emission values, remain usable after temporary input destruction and obey the owner clone/rename contract; all older retained rows remain authentic.
 - Step 30: each invalid association returns the owning typed refusal and no partial admitted context; no label, clock row, matching index or second emission supplies missing authority.
 - Step 31: the original combined checked unit retains all compared source/time facts after input destruction; the separate final-emission selection equals the strict reader clause. This is component retention evidence and grants no admitted order/progress claim.
+- Step 32: the complete canonical values retain every specified component; source kind, unit and period changes give unequal values. Exact-length encoding succeeds; one less returns Encoding with the native canonical byte limit. A foreign plan cannot select order from the retained checked owner.
