@@ -4604,15 +4604,17 @@ fn the_decisive_search_stops_at_the_first_false_or_failed_atom() {
     );
 }
 
-/// FR-337 "Aggregate formula emission" item 7 through the spine: the clock
-/// selection the check stage receives reaches S3, so a `duration` window
-/// written in seconds and milliseconds of the selected package's `Time` is
-/// emitted in the selected clock unit, both bounds converted exactly
-/// (QSpec FR-370, `past[0 s, 300000 ms]` under a clock in `ms` is `0` and
-/// `300000` of `ms`).
-#[trace("TC-1267", "FR-337-AC-15")]
-#[test]
-fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
+/// A unit with a `duration` window written in seconds and milliseconds of
+/// the selected package's `Time`, checked through the spine with a clock in
+/// `ms` selected.
+struct MixedUnitClock {
+    checked: crate::spine::CheckedUnit,
+    packages: qsl_semantics::model::intake::PackageInput,
+    selections: Vec<qsl_package::TemporalClockSelection>,
+    millisecond: String,
+}
+
+fn mixed_unit_clock() -> MixedUnitClock {
     use crate::spine::{
         check_with_temporal_selections_and_execution_points, package_with_temporal_selections,
         parse, select, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
@@ -4665,7 +4667,7 @@ fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
         .find(|form| matches!(form.form(), qsl_forms::DeclarationForm::Temporal(_)))
         .map(qsl_forms::ParsedForm::span)
         .expect("the clause form");
-    let selections = [qsl_package::TemporalClockSelection::new(
+    let selections = vec![qsl_package::TemporalClockSelection::new(
         parsed.source().reference().clone(),
         span,
         qsl_package::ClockConfiguration::TimestampedEvent {
@@ -4687,6 +4689,32 @@ fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
     )
     .unwrap_or_else(|failure| panic!("the unit checks: {failure:?}"))
     .into_value();
+    MixedUnitClock {
+        checked,
+        packages,
+        selections,
+        millisecond,
+    }
+}
+
+/// FR-337 "Aggregate formula emission" item 7 through the spine: the clock
+/// selection the check stage receives reaches S3, so a `duration` window
+/// written in seconds and milliseconds of the selected package's `Time` is
+/// emitted in the selected clock unit, both bounds converted exactly
+/// (QSpec FR-370, `past[0 s, 300000 ms]` under a clock in `ms` is `0` and
+/// `300000` of `ms`).
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
+    use crate::spine::{package_with_temporal_selections, PackageLimits};
+
+    let MixedUnitClock {
+        checked,
+        selections,
+        millisecond,
+        ..
+    } = mixed_unit_clock();
+    let cancel = quire_exact::Cancel::new();
     let emitted =
         package_with_temporal_selections(&checked, &selections, PackageLimits::default(), &cancel)
             .unwrap_or_else(|failure| panic!("the unit emits: {failure:?}"))
@@ -4719,4 +4747,36 @@ fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
             "{name}"
         );
     }
+}
+
+/// QSL-1662, FR-337 "Aggregate formula emission": the model-check re-emit
+/// resolves a clause's identity (and so the item and closure paths, which
+/// resolve through it) from a package checked with the same clock
+/// selections, without `InvalidTemporalClockValue`, for a `duration` window
+/// written in a unit other than the clock unit.
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn the_model_check_reemit_accepts_a_duration_window_in_another_unit() {
+    use crate::model_check::identity::ClauseIdentity;
+
+    let MixedUnitClock {
+        checked,
+        packages,
+        selections,
+        ..
+    } = mixed_unit_clock();
+    let package = checked.package();
+    let [node] = package.graph().temporal_clauses() else {
+        panic!("one clause");
+    };
+    let identity = ClauseIdentity::resolve(
+        package,
+        &packages,
+        node.clause(),
+        &selections,
+        &quire_exact::Cancel::new(),
+        qsl_package::EmitLimits::fixture(),
+    )
+    .unwrap_or_else(|refusal| panic!("the re-emit resolves the clause: {refusal}"));
+    assert!(identity.over().is_some(), "the clause ranges over `e`");
 }
