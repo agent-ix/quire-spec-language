@@ -807,6 +807,25 @@ fn owner_of(
     })
 }
 
+/// The role's optional `model_member` group, read by its wire spelling.
+#[ix_trace_rs::string_edge]
+fn read_model_member(role: &Raw) -> Result<Option<RoleModelMember>, OccurrenceRefusal> {
+    match role.args.iter().find(|(name, _)| name == "model_member") {
+        None => Ok(None),
+        Some((_, Term::Group(fields))) => {
+            let text = |name: &str| match field(fields, name) {
+                Some(Term::Text(text)) => Ok(text.clone()),
+                _ => Err(role.malformed("model_member")),
+            };
+            Ok(Some(RoleModelMember {
+                package: text("package")?,
+                node: text("node")?,
+            }))
+        }
+        Some(_) => Err(role.malformed("model_member")),
+    }
+}
+
 fn derive(nodes: &[Raw]) -> Result<Vec<ProtocolOccurrence>, OccurrenceRefusal> {
     let by_key: BTreeMap<&NodeKey, &Raw> = nodes.iter().map(|node| (&node.key, node)).collect();
     let lookup = |from: &Raw, key: &NodeKey| -> Result<&Raw, OccurrenceRefusal> {
@@ -842,20 +861,7 @@ fn derive(nodes: &[Raw]) -> Result<Vec<ProtocolOccurrence>, OccurrenceRefusal> {
                     }
                 }
             };
-            let model_member = match role.args.iter().find(|(name, _)| name == "model_member") {
-                None => None,
-                Some((_, Term::Group(fields))) => {
-                    let text = |name: &str| match field(fields, name) {
-                        Some(Term::Text(text)) => Ok(text.clone()),
-                        _ => Err(role.malformed("model_member")),
-                    };
-                    Some(RoleModelMember {
-                        package: text("package")?,
-                        node: text("node")?,
-                    })
-                }
-                Some(_) => return Err(role.malformed("model_member")),
-            };
+            let model_member = read_model_member(role)?;
             roles.push(RoleSlot {
                 key: role.key.clone(),
                 path: role.path.clone(),
