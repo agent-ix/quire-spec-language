@@ -167,11 +167,8 @@ fn request(
 ) -> ReplayRequestWire {
     ReplayRequestWire {
         profile_selections: vec![],
-        package: crate::ReplayPackage::read(
-            compiled.emitted.bytes(),
-            ReplayLimits::default().input_bytes,
-        )
-        .expect("actual emitted replay package"),
+        package: crate::ReplayPackage::read(compiled.emitted.bytes(), 1 << 30)
+            .expect("actual emitted replay package"),
         dependencies: Vec::new(),
         replay_target: crate::RequestTargetWire::function(
             function.clone(),

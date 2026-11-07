@@ -730,6 +730,11 @@ fn tc_736_a_100000_term_source_and_list_replay_to_the_proving_verdict() {
                 "s3.input_bytes",
                 "s3.work_units",
                 "emit.output_bytes",
+                "i2.input_bytes",
+                "i2.nodes",
+                "i2.edges",
+                "i2.occurrences",
+                "i2.work_units",
             ]
             .map(|name| {
                 let bound = if name == "s1.input_bytes" {
