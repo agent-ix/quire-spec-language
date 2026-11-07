@@ -1286,3 +1286,77 @@ fn a_v3_event_control_mapped_to_a_temporal_declaration_is_admitted_exactly() {
         })
     );
 }
+
+/// Every refusal below is raised while the value graph of the protocol is built,
+/// before the compensation's own members are validated, so the authored
+/// compensation only has to name the capture and retry values.
+#[test]
+#[trace("TC-121", "FR-042-AC-4")]
+fn a_compensation_capture_or_retry_with_a_foreign_owner_or_a_cycle_is_refused_by_the_value_graph() {
+    let (fixture, at) = Fixture::compensated();
+    let base = fixture.offered(&fixture.package);
+    // The authored compensation names only capture and retry values; its other
+    // members are not a complete recovery contract, so the unmutated package is
+    // refused at the compensation's bindings, after the value graph is built.
+    assert_eq!(refusal(&base), &Error::Invalid(Invalid::Binding));
+    let handle = |index: u32| w::Handle {
+        declaration: 0,
+        index,
+    };
+    let owner = Error::Invalid(Invalid::Owner);
+    let cycle = Error::Invalid(Invalid::Cycle);
+    let cases: Vec<(&str, Box<dyn Fn(&mut w::Package)>, Error)> = vec![
+        (
+            "a capture initializer owned by another declaration",
+            Box::new(move |p| {
+                p.declarations[0].binders[at.registered as usize]
+                    .initializer
+                    .0
+                    .as_mut()
+                    .unwrap()
+                    .declaration = 1
+            }),
+            owner.clone(),
+        ),
+        (
+            "a retry value selecting a foreign value",
+            Box::new(move |p| {
+                p.declarations[0].values[at.retry as usize].operation = w::ValueOperation::Group {
+                    value: w::Handle {
+                        declaration: 1,
+                        index: 0,
+                    },
+                }
+            }),
+            owner,
+        ),
+        (
+            "a capture initializer that groups the retry that reads the capture",
+            Box::new(move |p| {
+                p.declarations[0].values[at.registered_initializer as usize].operation =
+                    w::ValueOperation::Group {
+                        value: handle(at.retry),
+                    }
+            }),
+            cycle.clone(),
+        ),
+        (
+            "two capture initializers that group each other",
+            Box::new(move |p| {
+                let d = &mut p.declarations[0];
+                d.values[at.registered_initializer as usize].operation = w::ValueOperation::Group {
+                    value: handle(at.activated_initializer),
+                };
+                d.values[at.activated_initializer as usize].operation = w::ValueOperation::Group {
+                    value: handle(at.registered_initializer),
+                };
+            }),
+            cycle,
+        ),
+    ];
+    for (name, mutate, expected) in cases {
+        let mut offered = fixture.package.clone();
+        mutate(&mut offered);
+        assert_eq!(refusal(&fixture.offered(&offered)), &expected, "{name}");
+    }
+}

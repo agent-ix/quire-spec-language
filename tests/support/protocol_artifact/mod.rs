@@ -14,6 +14,15 @@ use quire_spec_language::number::{NumberWire, NUMERIC_PROFILE};
 use quire_spec_language::protocol_artifact::{self as artifact, wire as w};
 use serde_json::json;
 
+/// Indices into declaration 0 of the authored compensation's graph members.
+pub struct CompensationHandles {
+    pub registered: u32,
+    pub activated: u32,
+    pub registered_initializer: u32,
+    pub activated_initializer: u32,
+    pub retry: u32,
+}
+
 pub struct Fixture {
     pub package: w::Package,
     pub model: NativeModel,
@@ -1379,6 +1388,105 @@ impl Fixture {
         // Input, all event-record views, and finish retain three observations.
         fixture.population_requirements(&[(0, 0), (0, 1), (0, 2)]);
         fixture
+    }
+
+    /// The finite-control protocol with one authored compensation whose capture and
+    /// retry handles are the subject of the value-graph refusals. Value indices:
+    /// `first` and `second` are the two capture initializers (true), `retry` reads
+    /// the first capture. The compensation's other members reference existing
+    /// protocol elements only; they are not a complete recovery contract, so the
+    /// package as a whole is refused at the compensation (see the tests).
+    pub fn compensated() -> (Self, CompensationHandles) {
+        let mut fixture = Self::controlled();
+        let operation = fixture.export(w::ExportKind::Operation, &["Node", "step"]);
+        let profile = fixture.definition(R::EventPosition);
+        let declaration = &mut fixture.package.declarations[0];
+        let truth = declaration
+            .values
+            .iter()
+            .position(|value| matches!(value.operation, w::ValueOperation::Boolean { value: true }))
+            .expect("an authored true");
+        // Value loci are strictly increasing, so the three appended values sit in
+        // the protocol's closing text, after every authored one.
+        let end = declaration.locus.span.end;
+        let first = declaration.values.len() as u32;
+        let first_binder = declaration.binders.len() as u32;
+        let retry = first + 2;
+        let operations = [
+            w::ValueOperation::Boolean { value: true },
+            w::ValueOperation::Boolean { value: true },
+            w::ValueOperation::Read {
+                binder: handle(first_binder),
+            },
+        ];
+        for (offset, operation) in operations.into_iter().enumerate() {
+            let mut value = declaration.values[truth].clone();
+            value.locus.span = w::Span {
+                start: end - 5 + offset as u32,
+                end: end - 4 + offset as u32,
+            };
+            value.operation = operation;
+            declaration.values.push(value);
+        }
+        for (offset, (name, initializer)) in [("registered", first), ("activated", first + 1)]
+            .into_iter()
+            .enumerate()
+        {
+            let mut capture = binder(0, declaration, name, w::BinderKind::Capture, 1);
+            capture.locus.span = w::Span {
+                start: end - 9 + offset as u32,
+                end: end - 8 + offset as u32,
+            };
+            capture.initializer = w::Nullable(Some(handle(initializer)));
+            declaration.binders.push(capture);
+        }
+        identify(&mut declaration.values);
+        let locus = declaration.locus.clone();
+        let w::Body::Protocol { compensations, .. } = &mut declaration.body else {
+            unreachable!("the finite-control fixture is a protocol");
+        };
+        compensations.push(w::Compensation {
+            name: "Undo".into(),
+            forward_effect: handle(2),
+            forward: handle(0),
+            owner: handle(0),
+            operation,
+            profile,
+            clock: 0,
+            registration_anchor: handle(0),
+            registration_instance: 0,
+            registration_captures: vec![handle(first_binder)],
+            trigger: handle(0),
+            guard: handle(truth as u32),
+            activation_anchor: handle(0),
+            activation_captures: vec![handle(first_binder + 1)],
+            within: w::Interval {
+                lower: integer(0),
+                upper: integer(1),
+            },
+            maximum_attempts: integer(1),
+            attempt_type: 1,
+            earlier: handle(0),
+            later: handle(0),
+            retry: handle(retry),
+            attempt_instance: 0,
+            effect_instance: 0,
+            commit: w::Nullable(None),
+            recovery: handle(0),
+            recover: handle(truth as u32),
+            recovery_bindings: vec![],
+            locus,
+        });
+        (
+            fixture,
+            CompensationHandles {
+                registered: first_binder,
+                activated: first_binder + 1,
+                registered_initializer: first,
+                activated_initializer: first + 1,
+                retry,
+            },
+        )
     }
 
     /// The finite-control protocol (declaration 0, with event controls) beside one
