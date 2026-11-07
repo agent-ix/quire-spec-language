@@ -479,7 +479,7 @@ fn mixed_collection_package() -> CheckedPackage {
     let collection = ValueType::collection(CollectionType::new(
         CollectionKind::Sequence,
         ValueType::Boolean,
-        Some(CardinalityBound::new(0, 3).expect("sequence bound")),
+        None,
     ));
     let record = CompositeDeclaration::new(
         handle,
