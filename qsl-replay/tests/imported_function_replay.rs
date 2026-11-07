@@ -113,6 +113,7 @@ fn own(unit: &str, libraries: Vec<SuppliedLibrary>, name: &str) -> CallSite<Func
 
 /// What a request needs from a located function.
 struct Located {
+    package: Vec<u8>,
     site: FunctionSite,
 }
 
@@ -143,6 +144,7 @@ fn request(
     let mut dependencies: Vec<DependencyEntryWire> = libraries
         .iter()
         .map(|library| DependencyEntryWire {
+            refinement_internals: None,
             identity: library.identity.clone(),
             sources: vec![("a".to_owned(), library.source.identity.to_owned())],
         })
@@ -158,8 +160,11 @@ fn request(
     }));
     ReplayRequestWire {
         profile_selections: vec![],
-        package_name: "fixture".to_owned(),
-        sources: vec![("a".to_owned(), "u".to_owned())],
+        package: qsl_replay::ReplayPackage::read(
+            &located.package,
+            ReplayLimits::default().input_bytes,
+        )
+        .unwrap(),
         dependencies,
         replay_target: target,
         source: ReplaySource::Input(located.assign(values)),
@@ -206,6 +211,7 @@ fn an_owner_carrying_request_executes_the_imported_function() {
     let libraries = [units()];
     let big = imported(&unit, libraries.to_vec(), "big");
     let big_located = Located {
+        package: big.package.clone(),
         site: big.site.function.clone(),
     };
     for (x, holds) in [(3, false), (7, true)] {
@@ -222,6 +228,7 @@ fn an_owner_carrying_request_executes_the_imported_function() {
 
     let both = imported(&unit, libraries.to_vec(), "both");
     let both_located = Located {
+        package: both.package.clone(),
         site: both.site.function.clone(),
     };
     for (a, b, holds) in [(1, 5, true), (5, 1, false)] {
@@ -264,9 +271,11 @@ fn a_same_named_unit_function_never_answers_the_owner() {
     let mine = own(&unit, libraries.to_vec(), "big");
     assert_ne!(mine.site.declaration, theirs.site.function.declaration);
     let theirs_located = Located {
+        package: theirs.package.clone(),
         site: theirs.site.function.clone(),
     };
     let mine_located = Located {
+        package: mine.package.clone(),
         site: mine.site.clone(),
     };
 
@@ -307,6 +316,7 @@ fn an_owner_the_unit_does_not_import_refuses_typed() {
     let libraries = [units()];
     let big = imported(&unit, libraries.to_vec(), "big");
     let located = Located {
+        package: big.package.clone(),
         site: big.site.function.clone(),
     };
 
@@ -338,13 +348,20 @@ fn an_owner_the_unit_does_not_import_refuses_typed() {
         "function t using v(): Boolean pure { true }\n",
     );
     let transitive_libraries = [units(), wrap];
-    let refusal = refusal_of(request(
+    let mut wire = request(
         &transitive,
         &transitive_libraries,
         owned(&big, "big"),
         &located,
         &[3],
-    ));
+    );
+    let transitive_package = own(&transitive, transitive_libraries.to_vec(), "t");
+    wire.package = qsl_replay::ReplayPackage::read(
+        &transitive_package.package,
+        ReplayLimits::default().input_bytes,
+    )
+    .unwrap();
+    let refusal = refusal_of(wire);
     assert!(
         matches!(&refusal, ReplayRefusal::UnknownOwner { owner, .. } if owner.as_str() == "test/units"),
         "{refusal:?}"
@@ -361,6 +378,7 @@ fn a_function_the_owner_cannot_call_refuses_typed() {
     let libraries = [units()];
     let big = imported(&unit, libraries.to_vec(), "big");
     let located = Located {
+        package: big.package.clone(),
         site: big.site.function.clone(),
     };
 
@@ -408,6 +426,7 @@ fn an_owner_carrying_request_checks_the_environment_against_the_owner() {
     let libraries = [units()];
     let big = imported(&unit, libraries.to_vec(), "big");
     let located = Located {
+        package: big.package.clone(),
         site: big.site.function.clone(),
     };
     let environment = || {
@@ -461,4 +480,64 @@ fn no_serialized_route_accepts_the_function_owner() {
         Probe::<String>::DESERIALIZES,
     ];
     assert_eq!(found, [false, false, false, true]);
+}
+
+#[test]
+#[trace("TC-444", "FR-098-AC-20")]
+#[trace("TC-1325", "FR-350-AC-16")]
+fn supplied_dependency_internal_lists_reach_the_library_semantic_owner() {
+    let unit = format!("{HEADER}import \"test/a\" as a;\nimport \"test/units\" as u;\n{UNIT_BODY}");
+    let libraries = [
+        library(
+            "test/a",
+            "earlier",
+            "function unused using v(): Boolean pure { true }",
+        ),
+        units(),
+    ];
+    let big = imported(&unit, libraries.to_vec(), "big");
+    let located = Located {
+        package: big.package.clone(),
+        site: big.site.function.clone(),
+    };
+    let mut wire = request(&unit, &libraries, owned(&big, "big"), &located, &[3]);
+    assert_eq!(wire.dependencies[0].identity, "test/a");
+    assert_eq!(wire.dependencies[1].identity, "test/units");
+    wire.dependencies[1].refinement_internals = Some(
+        serde_json::from_value(
+            serde_json::json!([{"refinement":"NoSuchRefinement","internal":[]}]),
+        )
+        .unwrap(),
+    );
+    let error = refusal_of(wire);
+    assert_eq!(
+        error.pointer().as_deref(),
+        Some("/dependencies/1/refinement_internals/0/refinement")
+    );
+    let ReplayRefusal::RefinementInternals {
+        refusal,
+        protocol_results,
+        ..
+    } = error
+    else {
+        panic!("the dependency list must reach semantic checking: {error:?}")
+    };
+    assert!(
+        protocol_results.is_none(),
+        "no protocol results are synthesized"
+    );
+    let qsl_replay::CompileRefusal::Dependency { path, refusal } = *refusal else {
+        panic!("the refusal names its library owner: {refusal:?}")
+    };
+    assert_eq!(path[0].as_str(), "test/units");
+    let qsl_replay::CompileRefusal::Check { refusals, .. } = *refusal else {
+        panic!("the library semantic checker refuses: {refusal:?}")
+    };
+    let qsl_semantics::check::CheckCause::Refinement(refusal) = &refusals[0].cause else {
+        panic!("typed refinement list refusal: {refusals:?}")
+    };
+    let qsl_semantics::check::RefinementCause::InternalList(defect) = &refusal.cause else {
+        panic!("typed internal-list defect: {refusal:?}")
+    };
+    assert_eq!(defect.pointer, "/0/refinement");
 }

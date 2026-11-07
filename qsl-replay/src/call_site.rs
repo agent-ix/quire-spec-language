@@ -1040,10 +1040,26 @@ mod tests {
         declaration: qsl_foundation::source::provenance::OccurrenceKey,
         assignments: Vec<CanonicalAssignment>,
     ) -> ReplayRequestWire {
+        let package = crate::compile_package(
+            crate::CompileUnit {
+                source: SourceIdentity::new("a", "u"),
+                package_name: "fixture".to_owned(),
+                path: "u",
+                bytes,
+            },
+            std::iter::empty::<&[u8]>(),
+            &DependencyInput::default(),
+            crate::StageLimits::default(),
+            crate::ReplayLimits::default(),
+        )
+        .expect("actual source package");
         ReplayRequestWire {
-            package_name: "fixture".to_owned(),
+            package: crate::ReplayPackage::read(
+                package.bytes(),
+                crate::ReplayLimits::default().input_bytes,
+            )
+            .unwrap(),
             profile_selections: vec![],
-            sources: vec![("a".to_owned(), "u".to_owned())],
             dependencies: Vec::new(),
             replay_target: crate::RequestTargetWire::function(function, declaration),
             source: ReplaySource::Input(assignments),

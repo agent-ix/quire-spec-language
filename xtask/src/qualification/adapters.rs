@@ -126,7 +126,6 @@ impl Failure {
 pub(super) enum Partition {
     Result,
     Unsupported,
-    AdapterUnavailable,
     Incomplete,
     ToolFailure,
 }
@@ -135,20 +134,6 @@ pub(super) struct Execution {
     pub(super) actual: Value,
     pub(super) bytes: Option<Vec<u8>>,
     pub(super) partition: Partition,
-}
-
-pub(super) fn unavailable_refinement(pointer: String) -> Result<Execution, Failure> {
-    Ok(Execution {
-        actual: serde_json::to_value(Failure {
-            code: qsl_foundation::Code::UnsupportedProjection.as_str(),
-            cause: None,
-            pointer,
-            message: "the public replay request has no refinement-internals input".to_owned(),
-        })
-        .map_err(|error| Failure::decode("", error.to_string()))?,
-        bytes: None,
-        partition: Partition::AdapterUnavailable,
-    })
 }
 
 struct Inputs<'a> {
