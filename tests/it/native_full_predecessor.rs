@@ -684,9 +684,19 @@ fn issuing_the_snapshot_precharges_actual_byte_copies_and_preserves_the_callers_
                             &mut shared,
                         )
                         .expect("actual earlier IR projection of the admitted Boolean predicate");
-                    let before = shared.clone();
+                    let state = |ledger: &quire_contract_model::NativeJoinBudget| {
+                        (
+                            ledger.work_limit(),
+                            ledger.storage_limit(),
+                            ledger.consumed(),
+                            ledger.last_success_delta(),
+                            ledger.first_unpaid(),
+                            ledger.first_unpaid_locus(),
+                        )
+                    };
+                    let before = state(&shared);
                     assert!(
-                        before.consumed().work > 0,
+                        before.2.work > 0,
                         "the earlier genuine IR operation must actually spend its caller budget"
                     );
                     match evaluate_v2(&subject, &revised_observation, &mut meter(), &mut shared) {
@@ -695,7 +705,7 @@ fn issuing_the_snapshot_precharges_actual_byte_copies_and_preserves_the_callers_
                                 report.predecessor_owner_bytes(),
                                 Some(original.to_owner_bytes().as_slice())
                             );
-                            assert_eq!(shared.consumed(), before.consumed(), "this capture-free native evaluation adds no IR identity work and preserves all existing charges");
+                            assert_eq!(shared.consumed(), before.2, "this capture-free native evaluation adds no IR identity work and preserves all existing charges");
                             thresholds[index] = bound;
                             break;
                         }
@@ -707,7 +717,7 @@ fn issuing_the_snapshot_precharges_actual_byte_copies_and_preserves_the_callers_
                             assert_eq!(denied, resource);
                             assert_eq!(limit, bound);
                             assert!(actual > u128::from(bound));
-                            assert_eq!(shared, before, "owner snapshot denial precedes and does not repurpose the shared IR ledger");
+                            assert_eq!(state(&shared), before, "owner snapshot denial precedes and does not repurpose the shared IR ledger");
                             bound = u64::try_from(actual)
                                 .expect("small actual producer fixture charge");
                         }

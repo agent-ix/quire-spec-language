@@ -1494,6 +1494,9 @@ fn supply_on<'p>(
             qsl_package::NativeJoinFailure::Equality(error) => {
                 panic!("identity-only fixture has no equality read: {error:?}")
             }
+            qsl_package::NativeJoinFailure::Rows(error) => {
+                panic!("borrowed supply joins already materialized rows: {error:?}")
+            }
             qsl_package::NativeJoinFailure::Limit(_) => unreachable!("native unwraps the envelope"),
         })
 }
