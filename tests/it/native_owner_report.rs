@@ -8,8 +8,8 @@ use qsl_eval::temporal::evidence::{EvidencePackage, Truth};
 use qsl_package::checked_views::temporal_subject;
 use quire_spec_language::temporal::{
     evaluate_v2, BindingDimension, CheckedSubject, ClockBinding, Closure, Completeness, Execution,
-    NativeReportError, ObservationRef, Position, Report, ReportRefusal, Trace, ValuationEvidence,
-    ValuationInstance, ValuationRow, EVENT_POSITION,
+    MissingValuation, NativeReportError, ObservationRef, Position, Report, ReportRefusal, Trace,
+    ValuationEvidence, ValuationInstance, ValuationRow, EVENT_POSITION,
 };
 
 fn with_subject(check: impl FnOnce(&CheckedSubject, &ObservationRef, &[ValuationRow])) {
@@ -1309,6 +1309,18 @@ fn the_retained_rows_alone_decide_the_report() {
                         assert_eq!(positions, [0, 1], "{rows:?}: decision support");
                     } else {
                         assert_eq!(report.outcome(), ReportOutcome::Missing, "{rows:?}");
+                        // The retained rows locate the missing valuation at the
+                        // occurrence, the operand and position 0, never `false`.
+                        let operand = evidence.rows()[0].operand.clone();
+                        assert_eq!(
+                            evidence.value_of(occurrence, 0, &operand),
+                            Err(MissingValuation {
+                                subject: occurrence.clone(),
+                                position: 0,
+                                operand,
+                            }),
+                            "{rows:?}"
+                        );
                     }
                 },
             );

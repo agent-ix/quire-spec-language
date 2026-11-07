@@ -825,3 +825,49 @@ fn a_result_retains_the_name_the_view_reads() {
     assert_eq!(classified.retained.name, None);
     assert_eq!(classified.retained.name.as_deref(), view.name());
 }
+
+/// FR-045-AC-6 (refusal half), FR-527-AC-17: a clause id the package does not
+/// hold, and the id of every node that is not a temporal clause, is refused
+/// `UnresolvedClause` by the view, so no classification exists for it. The
+/// absent id is a clause of another package; the non-clause ids are every
+/// other node of the package, which include its declarations and formula
+/// nodes.
+#[trace("TC-1322", "FR-527-AC-17", "FR-045-AC-6")]
+#[test]
+fn an_id_the_package_does_not_hold_or_that_is_no_clause_is_refused() {
+    use quire_contract_model::{CheckedNodeKind, TemporalForm};
+    let package = package_of(INFINITE, FUTURE);
+    let [held] = clauses(&package)[..]
+        .to_vec()
+        .try_into()
+        .expect("one clause");
+    assert!(temporal_subject(&package, &held).is_ok());
+
+    // An id the package does not hold: the held clause's id with another package and `u64::MAX`.
+    let mut foreign = held.clone();
+    foreign.package = "foreign".into();
+    foreign.ordinal = u64::MAX;
+    assert!(!package
+        .graph()
+        .nodes
+        .iter()
+        .any(|node| node.node_id == foreign));
+    assert_eq!(
+        temporal_subject(&package, &foreign).err(),
+        Some(ViewRefusal::UnresolvedClause)
+    );
+
+    let mut refused = 0;
+    for (node, kind) in package.graph().nodes.iter().zip(package.node_kinds()) {
+        if *kind == CheckedNodeKind::Temporal(TemporalForm::TemporalClause) {
+            continue;
+        }
+        assert_eq!(
+            temporal_subject(&package, &node.node_id).err(),
+            Some(ViewRefusal::UnresolvedClause),
+            "{kind:?}"
+        );
+        refused += 1;
+    }
+    assert!(refused > 1);
+}
