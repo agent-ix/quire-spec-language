@@ -94,12 +94,11 @@ struct Frame {
 }
 
 /// What tells one key allocation from another: the address of its package
-/// name, which clones of a key share and distinct allocations do not. An
-/// empty package name has no allocation to tell, so such a key is never
-/// remembered.
-fn identity(key: &NodeKey) -> Option<usize> {
-    let package = key.package();
-    (!package.is_empty()).then_some(package.as_ptr() as usize)
+/// name, which clones of a key share and distinct allocations do not. A key
+/// never has an empty package name (`NodeKey` refuses one), so the name is
+/// always a heap allocation of its own.
+fn identity(key: &NodeKey) -> usize {
+    key.package().as_ptr() as usize
 }
 
 impl Ranking {
@@ -123,7 +122,7 @@ impl Ranking {
     /// keys built apart get two shapes that [`Self::insert`] then puts in
     /// one class by their children's classes, so no step walks a chain.
     fn built(&self, key: &NodeKey) -> Option<usize> {
-        self.ids.get(&identity(key)?).copied()
+        self.ids.get(&identity(key)).copied()
     }
 
     /// The class of `key`, ranking it and every nested key not reached yet.
@@ -157,9 +156,7 @@ impl Ranking {
                 key: frame.key.clone(),
                 children: frame.built,
             });
-            if let Some(identity) = identity(&frame.key) {
-                self.ids.insert(identity, id);
-            }
+            self.ids.insert(identity(&frame.key), id);
             let class = self.insert(id);
             self.class_of.push(class);
             match stack.last_mut() {
@@ -391,6 +388,36 @@ mod tests {
         assert!(!node_keys_within([&one, &other], [&two]));
         assert!(node_keys_within([&two], [&two, &other]));
         assert!(!node_keys_within([&chain(999, "p")], [&two]));
+    }
+
+    /// FR-356-AC-5: the memo is by allocation, so clones of one key share a
+    /// class and a node shared by many parents is ranked once and orders
+    /// the parents by its class.
+    #[trace("TC-902", "FR-356-AC-5")]
+    #[test]
+    fn clones_and_a_shared_child_keep_one_class_and_the_node_key_order() {
+        let shared = chain(50, "p");
+        let parent =
+            |ordinal| NodeKey::new("p", vec![PathSegment::Node(shared.clone())], ordinal).unwrap();
+        let parents: Vec<NodeKey> = [3, 1, 2].into_iter().map(parent).collect();
+        let mut ranking = Ranking::new();
+        let child = ranking.class(&shared);
+        assert_eq!(
+            ranking.class(&shared.clone()),
+            child,
+            "a clone is its key's class"
+        );
+        let classes: Vec<usize> = parents.iter().map(|key| ranking.class(key)).collect();
+        assert_eq!(ranking.class(&parents[0].clone()), classes[0]);
+        assert_eq!(
+            ranking.class(&shared),
+            child,
+            "the shared child is ranked once"
+        );
+        let sorted = sorted_by_key(parents.clone(), |key| key);
+        let mut expected = parents;
+        expected.sort();
+        assert_eq!(sorted, expected);
     }
 
     fn text(value: &str) -> PathSegment {
