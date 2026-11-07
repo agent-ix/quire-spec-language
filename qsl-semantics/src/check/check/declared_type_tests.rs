@@ -52,14 +52,22 @@ fn owner_traversal_denial_retains_request_and_allows_identical_retry() {
     let fresh = typer.check_declared_type(&ty, &location);
     assert_eq!(fresh, Ok(()));
     qsv_failing_allocator::arm(0);
+    let owner_failure = scope.types.try_check_type(&ty);
+    let owner_denied = qsv_failing_allocator::disarm();
+    let Err(TypeCheckError::Allocation(request)) = owner_failure else {
+        panic!("the owner must expose the denied traversal request");
+    };
+    assert_eq!(request, StorageRequest::new(1, StorageUnit::AdditionalElements));
+    qsv_failing_allocator::arm(0);
     let failed = typer.check_declared_type(&ty, &location);
     let denied = qsv_failing_allocator::disarm();
     assert_eq!(denied, Some(core::mem::size_of::<&ValueType>()));
+    assert_eq!(denied, owner_denied);
     let failure = failed.expect_err("the real owner root-worklist reservation must fail");
     assert_eq!(failure.location, location);
     assert_eq!(
         failure.cause,
-        CheckCause::TypeCheckAllocation(StorageRequest::new(1, StorageUnit::AdditionalElements))
+        CheckCause::TypeCheckAllocation(request)
     );
     assert_eq!(
         failure.cause.code(),
