@@ -51,6 +51,7 @@ mod deep_bodies;
 mod dimension_base;
 mod envelope_adoption;
 mod equality_budget;
+mod native_row_budget;
 mod golden;
 mod hybrid;
 mod hyper_clause;

@@ -1054,6 +1054,7 @@ pub(super) fn carry_rows(
             owner: _,
             value_type: _,
             fact,
+            selected_for_emission: _,
         } = row;
         rekey.id(checked_application);
         rekey.entry(source_map_entry);
@@ -1292,6 +1293,7 @@ fn finish(
         &mut rows.selected_source_collection_rows,
         &semantic_graph.nodes,
     )?;
+    refresh_equality_membership(&mut rows.equality_fact_witness_rows, &semantic_graph.nodes);
     Ok(Emission {
         package,
         omitted: rows.omitted,
@@ -1318,6 +1320,18 @@ fn finish(
         temporal_binding_rows: rows.temporal_binding_rows,
         temporal_rows: rows.temporal_rows,
     })
+}
+
+/// Carry the original package-local/emitted filter onto final rows. This is
+/// only a materialization hint: IR still validates every returned native row.
+pub(super) fn refresh_equality_membership(
+    rows: &mut [super::EqualityFactWitnessRow],
+    nodes: &[CheckedSemanticNodeV2],
+) {
+    for row in rows {
+        row.selected_for_emission = row.checked_application.package == row.structural_node.package
+            && nodes.iter().any(|node| node.node_id == row.structural_node);
+    }
 }
 
 /// The node a `binding` term named `name` references, or `None` for any other
