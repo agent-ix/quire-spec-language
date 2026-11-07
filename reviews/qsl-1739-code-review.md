@@ -39,3 +39,14 @@ No applicable local AssuranceProfile found. Rust API, implementation, safety, te
 - FR-090-AC-25 — examined: Given an unread caller capture, the observing report returns that capture intact as displaced evidence, including when it was truncated or the observing call fails.
 - FR-090-AC-26 — examined: After any observing-call return, event capture is disabled until the caller explicitly enables a new capture.
 - TC-1338 — examined: Failed operations retain their checked location even though they have no completed-application value.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Static inspection: the new nested and failed charge test compares all eight point/location pairs against independently constructed authored function indices and expression paths; the incomplete case checks the admitted nested prefix and halted operation location. Runtime verification remains pending. |
+| FND-002 | fixed | The owned report now has an explanatory must_use attribute naming the call result and displaced capture. |
+
+### Disposition round 1 verdict
+
+Both findings are statically fixed. Overall readiness remains CONDITIONAL pending the queued runtime, replay and Clippy checks. No additional audit, build or matrix was performed in this disposition pass. The other five method artifacts remain unchanged.
