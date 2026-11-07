@@ -2503,35 +2503,6 @@ fn malformed_frame_entry(
     }
 }
 
-/// A native value type whose required parameters
-/// `agent-ix-semantic-ir`'s own constraint keyword vocabulary
-/// (`min`/`max`/`exclusiveMin`/`exclusiveMax`/`minLength`/`maxLength`/
-/// `pattern`/`enumValues`/`nonEmpty`/`unique`/`format`) cannot express, no
-/// matter what a producer's own field-level constraints supply -- names
-/// which parameters are missing.
-fn unsupported_native_parameters(
-    value: &Value,
-    at: &str,
-    native: NativeValueType,
-    missing: &[&str],
-) -> ModelRefusal {
-    let node = node_identity_label(value, at);
-    let what = format!("typeRef:ix://quire/native/{}", native.as_str());
-    ModelRefusal {
-        code: Code::UnsupportedConstruct,
-        cause: ModelRefusalCause::UnsupportedDeclarationForm {
-            node,
-            what: what.clone(),
-            member: MemberPath::from_document_location(at).name("typeRef"),
-        },
-        detail: format!(
-            "{at}: typeRef: native value type {:?} requires parameter(s) {} that agent-ix-semantic-ir's constraint vocabulary cannot express",
-            native.as_str(),
-            missing.join(", ")
-        ),
-    }
-}
-
 /// One IR node under reading: its own JSON value and dotted document path.
 /// Every read helper reports a malformed-declaration/declaration-form
 /// refusal against `value`'s own `identity`/`origin`, so a nested check
@@ -3215,12 +3186,6 @@ fn read_value_type_ref(
                 &ctx.at,
                 MemberPath::from_document_location(&ctx.at).child("textProfile"),
                 "textProfile",
-            ));
-        }
-        let missing = native.unsupported_parameters();
-        if !missing.is_empty() {
-            return Err(unsupported_native_parameters(
-                ctx.value, &ctx.at, native, missing,
             ));
         }
         return Ok(ValueTypeRef::Native(native));
@@ -8087,32 +8052,35 @@ mod tests {
         assert_eq!(resolved, ValueTypeRef::Native(NativeValueType::Uuid));
     }
 
-    /// H3: `Rational`/`Decimal`/`Text` are parameterized in shared-grammar.md,
-    /// and `agent-ix-semantic-ir`'s own constraint keyword vocabulary has no
-    /// `dmin`/`dmax`/`profile` keyword at all -- so these refuse
-    /// unconditionally, naming which parameters are unexpressable, never
-    /// resolving to a made-up declaration.
-    /// PR #200 review R2-4/R3-3: untagged, not re-traced -- see
-    /// `resolves_a_known_native_type_ref`'s own doc comment (no local
-    /// FR-151-AC/FR-152-AC row exists to tag against, and FR-152-AC-4 is
-    /// the binder's `check_connection`, not intake's typeRef reading).
-    /// Also a direct `read_value_type_ref` test, not AC-3's kind/meaning
-    /// subject.
+    /// FR-056-AC-43, FR-505-AC-6 (TC-897 step 3, TC-1300): a bare
+    /// `ix://quire/native/Text`, `Rational` or `Decimal` `typeRef` resolves to
+    /// the native name, declaring no node: the member has no checked type and
+    /// is refused where used. Read below the semantic-IR validator, whose
+    /// pinned native set names no `Rational`, so this is the Rational case's
+    /// only intake-level assertion until the validator carries it.
+    #[trace("TC-897")]
     #[test]
-    fn refuses_a_parameterized_native_type_as_unsupported() {
+    fn admits_a_bare_native_text_rational_or_decimal_with_no_checked_type() {
         let node = serde_json::json!({"identity": "ix://acme/orders/Widget/amount"});
         let ctx = NodeCtx::new(&node, "$.types[0].fields[0]");
-        let refusal = read_value_type_ref("acme/orders", &ctx, "ix://quire/native/Decimal", false)
-            .expect_err(
-                "Decimal requires dmin/dmax, which the constraint vocabulary cannot express",
-            );
-        assert_eq!(refusal.code, Code::UnsupportedConstruct);
-        assert_eq!(refusal.cause.as_str(), "declaration-form");
-        assert!(
-            refusal.detail.contains("dmin") && refusal.detail.contains("dmax"),
-            "the detail names the missing parameters: {:?}",
-            refusal.detail
-        );
+        for (name, native) in [
+            ("Text", NativeValueType::Text),
+            ("Rational", NativeValueType::Rational),
+            ("Decimal", NativeValueType::Decimal),
+        ] {
+            let resolved = read_value_type_ref(
+                "acme/orders",
+                &ctx,
+                &format!("ix://quire/native/{name}"),
+                false,
+            )
+            .unwrap_or_else(|refusal| panic!("{name} resolves: {refusal:?}"));
+            assert_eq!(resolved, ValueTypeRef::Native(native), "{name}");
+        }
+        let unknown =
+            read_value_type_ref("acme/orders", &ctx, "ix://quire/native/UnknownText", false)
+                .expect_err("an undeclared native name refuses");
+        assert_eq!(unknown.code, Code::InvalidModelBinding);
     }
 
     // `read_records`'s own two hand-rolled `unsupported_at` refusals -- a

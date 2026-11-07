@@ -2024,6 +2024,161 @@ fn admit_value<'a: 'w, 'w>(
         .ok_or_else(|| admission_record(Code::InvalidRuntimeInput, "wrong-value-kind"))
 }
 
+/// Where a member with no checked type is written.
+#[derive(Clone, Copy)]
+pub(super) enum UntypedSlot<'a> {
+    /// A field.
+    Field,
+    /// A parameter of an operation, by name.
+    Parameter(&'a str),
+    /// The result of an operation.
+    Result,
+}
+
+/// Whether a value type reference is a bare native `Text`, `Rational` or
+/// `Decimal`, which has no checked type (FR-056-AC-43).
+fn bare_native(value_type: &crate::model::domain_package::ValueTypeRef) -> bool {
+    use crate::model::domain_package::{NativeValueType, ValueTypeRef};
+    matches!(
+        value_type,
+        ValueTypeRef::Native(
+            NativeValueType::Text | NativeValueType::Rational | NativeValueType::Decimal
+        )
+    )
+}
+
+/// The `ill_typed`/`operator-ineligible` record of a use of the member `name`
+/// of `owner` when `package` declares it with no checked type: naming the
+/// owning type and the locus of its type reference. `None` when the member is
+/// typed or not declared.
+pub(super) fn untyped_member_record(
+    package: &crate::model::domain_package::DomainPackage,
+    owner: &DeclarationKey,
+    name: &str,
+    slot: UntypedSlot<'_>,
+) -> Option<AdmissionRecord> {
+    use crate::model::domain_package::DomainPackageRecord;
+    use crate::model::intake::member_identity_name;
+    let owner_name = owner.node.rsplit('/').next().unwrap_or(&owner.node);
+    let located = |locus: String, member: &str| {
+        admission_record(Code::IllTyped, "operator-ineligible")
+            .with("type", owner_name.to_owned())
+            .with("member", member.to_owned())
+            .with("locus", locus)
+    };
+    package
+        .records
+        .iter()
+        .find_map(|record| match (record, slot) {
+            (DomainPackageRecord::FieldMember(field), UntypedSlot::Field)
+                if field.owner == *owner
+                    && member_identity_name(&owner.node, &field.key.node) == Some(name)
+                    && bare_native(&field.value_type) =>
+            {
+                Some(located("Field.typeRef".to_owned(), name))
+            }
+            (DomainPackageRecord::OperationMember(operation), slot)
+                if operation.owner == *owner
+                    && member_identity_name(&owner.node, &operation.key.node) == Some(name) =>
+            {
+                match slot {
+                    UntypedSlot::Parameter(parameter) => operation
+                        .parameters
+                        .iter()
+                        .enumerate()
+                        .find(|(_, candidate)| {
+                            member_identity_name(&operation.key.node, &candidate.key.node)
+                                == Some(parameter)
+                                && bare_native(&candidate.value_type)
+                        })
+                        .map(|(index, _)| {
+                            located(format!("Operation.params[{index}].typeRef"), name)
+                        }),
+                    UntypedSlot::Result => operation
+                        .result
+                        .as_ref()
+                        .filter(|result| bare_native(&result.value_type))
+                        .map(|_| located("Operation.returns.typeRef".to_owned(), name)),
+                    UntypedSlot::Field => None,
+                }
+            }
+            _ => None,
+        })
+}
+
+/// FR-056-AC-43 over an invocation's parameters: a parameter of `operation`
+/// declared with no checked type refuses `ill_typed`/`operator-ineligible`
+/// when supplied (its value unread) and `missing-member` when omitted.
+pub(super) fn check_untyped_parameters(
+    views: &[ModelView],
+    context_name: &str,
+    operation: &str,
+    parameters: &[(String, SnapshotValue)],
+) -> Result<(), AdmissionFailure> {
+    use crate::model::domain_package::DomainPackageRecord;
+    use crate::model::intake::member_identity_name;
+    let Some((view, owner)) = find_declaration(views, context_name) else {
+        return Ok(());
+    };
+    let package = view.view.domain_package();
+    for record in &package.records {
+        let DomainPackageRecord::OperationMember(declared) = record else {
+            continue;
+        };
+        if declared.owner != owner
+            || member_identity_name(&owner.node, &declared.key.node) != Some(operation)
+        {
+            continue;
+        }
+        for parameter in &declared.parameters {
+            let Some(name) = member_identity_name(&declared.key.node, &parameter.key.node) else {
+                continue;
+            };
+            if !bare_native(&parameter.value_type) {
+                continue;
+            }
+            if raw_field(parameters, name).is_none() {
+                return Err(refuse(
+                    admission_record(Code::InvalidRuntimeInput, "missing-member")
+                        .with("field", name.to_owned()),
+                ));
+            }
+            if let Some(record) =
+                untyped_member_record(package, &owner, operation, UntypedSlot::Parameter(name))
+            {
+                return Err(refuse(record.with("field", name.to_owned())));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// FR-056-AC-43 over an invocation's result: a non-null `result` of an
+/// operation whose result has no checked type refuses `ill_typed`/
+/// `operator-ineligible`, its value unread.
+pub(super) fn check_untyped_result(
+    views: &[ModelView],
+    context_name: &str,
+    operation: &str,
+    result: &ResultValue,
+) -> Result<(), AdmissionFailure> {
+    if matches!(result, ResultValue::Null) {
+        return Ok(());
+    }
+    let Some((view, owner)) = find_declaration(views, context_name) else {
+        return Ok(());
+    };
+    match untyped_member_record(
+        view.view.domain_package(),
+        &owner,
+        operation,
+        UntypedSlot::Result,
+    ) {
+        Some(record) => Err(refuse(record.with("field", "result"))),
+        None => Ok(()),
+    }
+}
+
 /// `value` when `domain` contains it, else the FR-106-AC-56 refusal naming the
 /// declared type and the normalized pair.
 fn rational_in_domain(
@@ -2667,6 +2822,20 @@ pub(super) fn admit_population_values<'t>(
                     .iter()
                     .any(|attribute| attribute.field().name() == name)
                 {
+                    // FR-056-AC-43: a value for a field declared with no
+                    // checked type is refused unread, not as unknown.
+                    if let Some(record) = untyped_member_record(
+                        population_view.view.domain_package(),
+                        &object_key,
+                        name,
+                        UntypedSlot::Field,
+                    ) {
+                        return Err(refuse(
+                            record
+                                .with("object", object.key.clone())
+                                .with("field", name.clone()),
+                        ));
+                    }
                     return Err(refuse(
                         admission_record(Code::InvalidRuntimeInput, "unknown-member")
                             .with("object", object.key.clone())

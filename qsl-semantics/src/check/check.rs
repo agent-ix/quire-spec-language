@@ -415,6 +415,8 @@ pub struct PackageDeclarations {
     pub enums: Vec<EnumBinding>,
     /// The admitted models' variant types, ascending by effective identity.
     pub variant_types: Vec<VariantTypeDeclaration>,
+    /// The members the models declare with no checked type (FR-056-AC-43).
+    pub untyped_members: Vec<UntypedMember>,
     /// `type Name = T;` aliases, which create no declaration identity.
     pub aliases: Vec<(String, ValueType)>,
     /// Each package-owned type name's spelling under a further `model`
@@ -739,6 +741,7 @@ impl PackageDeclarations {
             operations: OperationTable::default(),
             enums: Vec::new(),
             variant_types: Vec::new(),
+            untyped_members: Vec::new(),
             aliases: Vec::new(),
             model_spellings: super::model_spelling::ModelSpellings::default(),
             alias_names: std::collections::BTreeMap::new(),
@@ -1001,6 +1004,8 @@ pub struct Scope {
     /// The package-owned type names each unit's model aliases spell (FR-480
     /// "Selections and imports").
     model_spellings: ModelSpellings,
+    /// The members the models declare with no checked type (FR-056-AC-43).
+    untyped_members: Vec<UntypedMember>,
     /// The source unit of each top-level declaration, by declared name; a
     /// name with no entry is the primary unit's.
     source_owners: BTreeMap<String, RawSourceRef>,
@@ -1233,6 +1238,34 @@ pub(crate) fn declared_unit_ids(
     )
 }
 
+/// Whether an untyped member is a field or an operation.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum UntypedKind {
+    /// A field.
+    Field,
+    /// An operation, untyped in a parameter or its result.
+    Operation,
+}
+
+/// A member of a model's object type declared with no checked type: a bare
+/// native `Text`, `Rational` or `Decimal` (FR-056-AC-43). It is admitted, and
+/// refused where a clause or an input names it.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct UntypedMember {
+    /// The declaring object type.
+    pub owner: quire_exact::EffectiveId,
+    /// The declaring object type's name.
+    pub owner_name: String,
+    /// The member name.
+    pub name: String,
+    /// Field or operation.
+    pub kind: UntypedKind,
+    /// Where its type reference is written.
+    pub locus: String,
+    /// For an operation, each parameter of no checked type and its locus.
+    pub parameters: Vec<(String, String)>,
+}
+
 impl ScopeIndex {
     fn new(
         types: &TypeEnvironment,
@@ -1327,6 +1360,7 @@ impl Scope {
             relationships: Relationships::default(),
             enums,
             variant_types: Vec::new(),
+            untyped_members: Vec::new(),
             operations,
             ieee_profile,
             ieee_operation: false,
@@ -1477,6 +1511,24 @@ impl Scope {
     }
 
     /// This scope with the admitted models' variant types.
+    pub(crate) fn with_untyped_members(mut self, untyped: Vec<UntypedMember>) -> Self {
+        self.untyped_members = untyped;
+        self
+    }
+
+    /// The member `name` of kind `kind` that `owner` declares with no checked
+    /// type.
+    pub(crate) fn untyped_member(
+        &self,
+        owner: &quire_exact::EffectiveId,
+        name: &str,
+        kind: UntypedKind,
+    ) -> Option<&UntypedMember> {
+        self.untyped_members
+            .iter()
+            .find(|member| member.kind == kind && &member.owner == owner && member.name == name)
+    }
+
     pub(crate) fn with_variant_types(mut self, variant_types: Vec<VariantTypeDeclaration>) -> Self {
         self.index.variant_types(&variant_types);
         self.variant_types = variant_types;

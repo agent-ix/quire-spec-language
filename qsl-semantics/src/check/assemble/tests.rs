@@ -1810,7 +1810,7 @@ fn rational_value_types_project_with_bounds_and_nominal_unit() {
             &variants,
             &units,
         ),
-        Err(Unmapped::Unsupported)
+        Err(Unmapped::Untyped(_))
     ));
     assert_eq!(
         model_value_type(
@@ -2031,8 +2031,9 @@ fn option_type_projects_through_signature_alias_sequence_map_tuple_variant_unit_
             _ => None,
         })
         .unwrap();
-    let declaration =
-        model_operation(operation, &by_key, &identities, &handles, &variants, &units).unwrap();
+    let declaration = model_operation(operation, &by_key, &identities, &handles, &variants, &units)
+        .unwrap()
+        .0;
     assert_eq!(
         declaration.parameters(),
         &[("value".to_owned(), ValueType::option(ValueType::Integer))]
@@ -5512,6 +5513,41 @@ fn compound_quantity_type_factors_reuse_the_quantity_cores_affine_refusal() {
         assert_eq!(
             error.cause.catalog_code().to_string(),
             "ill_typed/operator-ineligible"
+        );
+    }
+}
+
+/// FR-056-AC-43, FR-505-AC-6 (TC-897 step 3, TC-1300): a bare native `Text`,
+/// `Rational` or `Decimal` has no checked type -- the member is declared with
+/// no kernel type and refused where used. Read below the semantic-IR
+/// validator, whose pinned native set names no `Rational`.
+#[trace("TC-897")]
+#[test]
+fn a_bare_native_text_rational_or_decimal_maps_to_no_checked_type() {
+    let single = Multiplicity {
+        lower: 1,
+        upper: Some(1),
+        ordered: false,
+        unique: true,
+    };
+    let none = BTreeMap::new();
+    for native in [
+        NativeValueType::Text,
+        NativeValueType::Rational,
+        NativeValueType::Decimal,
+    ] {
+        let mapped = model_value_type(
+            &ValueTypeRef::Native(native),
+            single,
+            &none,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        );
+        assert!(
+            matches!(mapped, Err(super::Unmapped::Untyped(_))),
+            "{native:?}"
         );
     }
 }

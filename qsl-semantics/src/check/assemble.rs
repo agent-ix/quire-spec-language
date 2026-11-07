@@ -50,6 +50,7 @@ use quire_semantic_value::catalog::CatalogCode;
 use super::check::{
     EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignature, VariantTypeDeclaration,
 };
+use super::check::{UntypedKind, UntypedMember};
 use super::layer::LayerAdmission;
 use super::lowering::{model_declaration_key, strongly_connected, AdmittedModel};
 use super::model_gate::{self, ModelGateRefusal};
@@ -1289,6 +1290,8 @@ struct ModelTypes {
     scalars: Vec<(String, ValueType)>,
     model_records: ModelRecords,
     relationships: Vec<RelationshipDeclaration>,
+    /// The members declared with no checked type (FR-056-AC-43).
+    untyped_members: Vec<UntypedMember>,
     /// Each record value type's and event type's composite declaration node.
     handles: BTreeMap<DeclarationKey, NodeKey>,
 }
@@ -1402,6 +1405,8 @@ fn model_object_types(
     }
     let mut fields: BTreeMap<&DeclarationKey, Vec<FieldDeclaration>> = BTreeMap::new();
     let mut operations: BTreeMap<&DeclarationKey, Vec<OperationDeclaration>> = BTreeMap::new();
+    let mut untyped: BTreeMap<&DeclarationKey, Vec<UntypedEntry>> = BTreeMap::new();
+    let mut untyped_members = Vec::new();
     let mut meaning_handles = BTreeMap::<DeclarationKey, NodeKey>::new();
     for record in &package.records {
         if matches!(
@@ -1470,6 +1475,17 @@ fn model_object_types(
                     units,
                 ) {
                     Ok(declaration) => fields.entry(&field.owner).or_default().push(declaration),
+                    Err(Unmapped::Untyped(locus)) => {
+                        if let Some(name) = member_identity_name(&field.owner.node, &field.key.node)
+                        {
+                            untyped.entry(&field.owner).or_default().push((
+                                name.to_owned(),
+                                UntypedKind::Field,
+                                locus,
+                                Vec::new(),
+                            ));
+                        }
+                    }
                     Err(Unmapped::Unsupported) => errors.push(unsupported(&field.key.node)),
                     Err(Unmapped::Broken) => errors.push(broken(&field.key.node)),
                     Err(Unmapped::Float(width)) => {
@@ -1507,11 +1523,26 @@ fn model_object_types(
                     &variant_shapes,
                     units,
                 ) {
-                    Ok(declaration) => operations
-                        .entry(&operation.owner)
-                        .or_default()
-                        .push(declaration),
-                    Err(Unmapped::Unsupported) => errors.push(unsupported(&operation.key.node)),
+                    Ok((declaration, untyped_at)) => {
+                        if let (Some((locus, parameters)), Some(name)) = (
+                            untyped_at,
+                            member_identity_name(&operation.owner.node, &operation.key.node),
+                        ) {
+                            untyped.entry(&operation.owner).or_default().push((
+                                name.to_owned(),
+                                UntypedKind::Operation,
+                                locus,
+                                parameters,
+                            ));
+                        }
+                        operations
+                            .entry(&operation.owner)
+                            .or_default()
+                            .push(declaration)
+                    }
+                    Err(Unmapped::Unsupported | Unmapped::Untyped(_)) => {
+                        errors.push(unsupported(&operation.key.node))
+                    }
                     Err(Unmapped::Broken) => errors.push(broken(&operation.key.node)),
                     Err(Unmapped::Float(width)) => {
                         errors.push(error(AssemblyCause::FloatingType {
@@ -1635,6 +1666,16 @@ fn model_object_types(
         if let Some(declared) = operations.remove(key) {
             table.declare(identity.clone(), declared);
         }
+        for (name, kind, locus, parameters) in untyped.remove(key).unwrap_or_default() {
+            untyped_members.push(UntypedMember {
+                owner: identity.clone(),
+                owner_name: artifact.to_owned(),
+                name,
+                kind,
+                locus,
+                parameters,
+            });
+        }
         declarations.push(
             ObjectTypeDeclaration::new(
                 identity.clone(),
@@ -1720,7 +1761,9 @@ fn model_object_types(
                     field.value_type().clone(),
                     field.presence(),
                 )),
-                Err(Unmapped::Unsupported) => errors.push(unsupported(&field.key.node)),
+                Err(Unmapped::Unsupported | Unmapped::Untyped(_)) => {
+                    errors.push(unsupported(&field.key.node))
+                }
                 Err(Unmapped::Broken) => errors.push(broken(&field.key.node)),
                 Err(Unmapped::Float(width)) => errors.push(error(AssemblyCause::FloatingType {
                     width,
@@ -1807,7 +1850,7 @@ fn model_object_types(
                 units,
             ) {
                 Ok(value_type) => elements.push(value_type),
-                Err(Unmapped::Unsupported | Unmapped::InDefinition) => {
+                Err(Unmapped::Unsupported | Unmapped::Untyped(_) | Unmapped::InDefinition) => {
                     errors.push(unsupported(&position.key.node))
                 }
                 Err(Unmapped::Broken) => errors.push(broken(&position.key.node)),
@@ -1879,7 +1922,9 @@ fn model_object_types(
                     units,
                 ) {
                     Ok(value_type) => payload.push(value_type),
-                    Err(Unmapped::Unsupported) => errors.push(unsupported(&case.key.node)),
+                    Err(Unmapped::Unsupported | Unmapped::Untyped(_)) => {
+                        errors.push(unsupported(&case.key.node))
+                    }
                     Err(Unmapped::Broken) => errors.push(broken(&case.key.node)),
                     Err(Unmapped::Float(width)) => {
                         errors.push(error(AssemblyCause::FloatingType {
@@ -1973,6 +2018,7 @@ fn model_object_types(
             scalars,
             model_records,
             relationships,
+            untyped_members,
             handles: meaning_handles,
         })
     } else {
@@ -2130,6 +2176,9 @@ enum Unmapped {
         member_identity: String,
         member_path: String,
     },
+    /// A bare native `Text`, `Rational` or `Decimal`, which has no checked
+    /// type (FR-056-AC-43); the callers name where it was written.
+    Untyped(String),
     /// A key the admitted view does not resolve: a broken invariant of I1.
     Broken,
     /// A unit reference of an alias or sequence the member is typed by
@@ -2212,10 +2261,10 @@ fn model_value_type(
             // element types. Preserve them in intake; do not coerce either to
             // text or an integer during assembly.
             NativeValueType::String => ValueType::String,
-            // Intake refuses these: their domain parameters have no Semantic
-            // IR spelling, so no unparameterized kernel type stands for them.
+            // Bare, these have no checked type: the member is admitted and
+            // refused where used (FR-056-AC-43).
             NativeValueType::Rational | NativeValueType::Decimal | NativeValueType::Text => {
-                return Err(Unmapped::Unsupported)
+                return Err(Unmapped::Untyped(String::new()))
             }
         },
         ValueTypeRef::Unit(name) => ValueType::Quantity(
@@ -2256,8 +2305,10 @@ fn model_value_type(
                         QuantityCarrier::Rational(domain.clone()),
                     ))
                 }
+                // FR-505-AC-6: a Rational value type with no constraints
+                // has no checked type, as a bare native Rational has none.
                 ScalarValueDomain::Rational { domain: None, .. } => {
-                    return Err(Unmapped::Unsupported)
+                    return Err(Unmapped::Untyped(String::new()))
                 }
                 ScalarValueDomain::Native(NativeValueType::Uuid) => ValueType::Uuid,
                 ScalarValueDomain::Native(NativeValueType::Timestamp) => ValueType::Timestamp,
@@ -2403,6 +2454,7 @@ fn model_field(
             member_identity: field.key.node.clone(),
             member_path: "Field.typeRef".to_owned(),
         },
+        Unmapped::Untyped(_) => Unmapped::Untyped("Field.typeRef".to_owned()),
         error => error,
     })?;
     let declaration = FieldDeclaration::new(name, value_type, field.presence);
@@ -2423,6 +2475,13 @@ fn model_field(
 /// field rule), and its effect frame carried unchanged -- I1 already
 /// resolved every key it names against the whole domain package
 /// (`resolve_effect`), so the assembler does no further resolution over it.
+/// One member of no checked type: its name, kind, the locus of its type
+/// reference and, for an operation, each untyped parameter with its locus.
+type UntypedEntry = (String, UntypedKind, String, Vec<(String, String)>);
+
+/// An operation's first untyped locus and its untyped parameters.
+type UntypedOperation = (String, Vec<(String, String)>);
+
 fn model_operation(
     operation: &OperationMemberRecord,
     records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
@@ -2430,9 +2489,13 @@ fn model_operation(
     meaning_handles: &BTreeMap<DeclarationKey, NodeKey>,
     variant_shapes: &BTreeMap<&DeclarationKey, EnumShape>,
     units: &BTreeMap<String, quire_exact::UnitId>,
-) -> Result<OperationDeclaration, Unmapped> {
+) -> Result<(OperationDeclaration, Option<UntypedOperation>), Unmapped> {
     let name =
         member_identity_name(&operation.owner.node, &operation.key.node).ok_or(Unmapped::Broken)?;
+    // The first parameter or result of no checked type (FR-056-AC-43): the
+    // operation is declared without it and refused where it is used.
+    let mut untyped_locus: Option<String> = None;
+    let mut untyped_parameters: Vec<(String, String)> = Vec::new();
     // A single `Clock`, directly or through aliases, is a place.
     let clock = |value_type: &ValueTypeRef, multiplicity: Multiplicity| {
         multiplicity.upper == Some(1)
@@ -2473,8 +2536,18 @@ fn model_operation(
                 member_identity: parameter.key.node.clone(),
                 member_path: format!("Operation.params[{index}].typeRef"),
             },
+            Unmapped::Untyped(_) => Unmapped::Untyped(format!("Operation.params[{index}].typeRef")),
             error => error,
-        })?;
+        });
+        let value_type = match value_type {
+            Ok(value_type) => value_type,
+            Err(Unmapped::Untyped(locus)) => {
+                untyped_parameters.push((parameter_name.to_owned(), locus.clone()));
+                untyped_locus.get_or_insert(locus);
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         parameters.push((parameter_name.to_owned(), value_type));
     }
     let clock_result = operation
@@ -2506,14 +2579,24 @@ fn model_operation(
                     member_identity: operation.key.node.clone(),
                     member_path: "Operation.returns.typeRef".to_owned(),
                 },
+                Unmapped::Untyped(_) => Unmapped::Untyped("Operation.returns.typeRef".to_owned()),
                 error => error,
             })
         })
-        .transpose()?;
-    Ok(
+        .transpose();
+    let result = match result {
+        Ok(result) => result,
+        Err(Unmapped::Untyped(locus)) => {
+            untyped_locus.get_or_insert(locus);
+            None
+        }
+        Err(error) => return Err(error),
+    };
+    Ok((
         OperationDeclaration::new(name, parameters, result, operation.effect.clone())
             .with_clocks(clock_parameters, clock_result),
-    )
+        untyped_locus.map(|locus| (locus, untyped_parameters)),
+    ))
 }
 
 /// FR-103: each kept `requires`/`ensures` clause the driver parsed for
@@ -3660,6 +3743,7 @@ impl PackageDeclarations {
         let mut model_scalars = Vec::new();
         let mut model_records = ModelRecords::default();
         let mut model_relationships = Vec::new();
+        let mut model_untyped_members = Vec::new();
         let mut operations = OperationTable::default();
         let mut object_spans = BTreeMap::new();
         let mut operation_clauses = Vec::new();
@@ -3763,6 +3847,7 @@ impl PackageDeclarations {
                     model_scalars.extend(types.scalars);
                     model_records.extend(types.model_records);
                     model_relationships.extend(types.relationships);
+                    model_untyped_members.extend(types.untyped_members);
                     let handles = types.handles;
                     match operation_clause_declarations(&selection.alias, model, &operations) {
                         Ok(resolved) => operation_clauses.extend(resolved),
@@ -5011,6 +5096,7 @@ impl PackageDeclarations {
         package.declared_type_spans = declared_type_spans;
         package.model_records = model_records;
         package.relationships = Relationships::new(model_relationships);
+        package.untyped_members = model_untyped_members;
         package.imports = qualified;
         Ok(package)
     }

@@ -106,6 +106,14 @@ pub(crate) fn quantity_document() -> Value {
     build_with(Flavor::Quantity)
 }
 
+/// The package document with `Item` also holding, after its other fields, the
+/// members of no checked type of FR-056-AC-43: `memo` (`Text`), `amount` and
+/// `amounts` (`Decimal`, `[0, 3]`), the operation `scale(by: Decimal): Integer`
+/// and `peek(): Text`, every `typeRef` under `ix://quire/native/`.
+pub(crate) fn bare_native_document() -> Value {
+    build_with(Flavor::BareNative)
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Flavor {
     Plain,
@@ -113,6 +121,7 @@ enum Flavor {
     Collections,
     Quantity,
     Rational,
+    BareNative,
 }
 
 /// A field of `Item` called `name` of `type_ref`, with the multiplicity of a
@@ -223,6 +232,38 @@ fn build_with(flavor: Flavor) -> Value {
             .as_array_mut()
             .expect("Item has fields")
             .extend([variants::field("Item", "reach", &ms)]);
+    }
+    if flavor == Flavor::BareNative {
+        let decimal = |mut member: Value| {
+            member["decimal"] = json!({"precision": 5, "scale": 2});
+            member
+        };
+        item["fields"]
+            .as_array_mut()
+            .expect("Item has fields")
+            .extend([
+                variants::field("Item", "memo", &type_ref("Text")),
+                decimal(variants::field("Item", "amount", &type_ref("Decimal"))),
+                decimal(collection_field(
+                    "amounts",
+                    &type_ref("Decimal"),
+                    false,
+                    false,
+                    3,
+                )),
+            ]);
+        let mut scale = variants::operation_with(
+            "Item",
+            "scale",
+            &[("by", type_ref("Decimal"))],
+            &type_ref("Integer"),
+        );
+        scale["params"][0] = decimal(scale["params"][0].clone());
+        let peek = variants::operation_with("Item", "peek", &[], &type_ref("Text"));
+        item["operations"]
+            .as_array_mut()
+            .expect("Item has operations")
+            .extend([scale, peek]);
     }
     if flavor == Flavor::Rational {
         let rational_type = |name: &str| {
