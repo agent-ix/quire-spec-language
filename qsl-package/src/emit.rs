@@ -1308,7 +1308,10 @@ impl Emission {
     /// # Errors
     ///
     /// The native typed stage-row refusal when declaration or field claims do
-    /// not join the admitted package.
+    /// not join the admitted package, or an inline
+    /// [`crate::IdentityFileRefusal::Rows`] denial before an unpaid producer copy.
+    /// The same caller budget pays the producer inputs, one native join and
+    /// the returned owned rows without restoring prior consumption.
     pub fn identity_rows(
         &self,
         package: &CheckedPackageV2,
