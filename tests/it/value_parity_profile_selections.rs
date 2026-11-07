@@ -94,7 +94,6 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
 
     let site = &located.site;
     let parity = site.value_parity.as_ref().expect("inc is a value function");
-    let source_wire = ("agent-ix".to_owned(), "test:value-parity-uc".to_owned());
     let bindings = vec![CanonicalAssignment {
         parameter: site.parameters[0].1.clone(),
         value: WitnessValue::Integer(3),
@@ -119,8 +118,11 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
 
     let wire = ReplayRequestWire {
         profile_selections: envelope.profile_selections().to_vec(),
-        package_name: "fixture".to_owned(),
-        sources: vec![source_wire],
+        package: qsl_replay::ReplayPackage::read(
+            &located.package,
+            ReplayLimits::default().input_bytes,
+        )
+        .unwrap(),
         dependencies: Vec::new(),
         replay_target: RequestTargetWire::function(inc(), envelope.occurrence_key().clone()),
         source: envelope.source().clone().into(),
@@ -156,6 +158,6 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
             | (ValueParityResult::Diverged { .. }, false) => {}
             (other, _) => panic!("generated {generated}: {other:?}"),
         }
-        assert_eq!(report.claim().package_name, wire.package_name);
+        assert_eq!(report.claim().package, wire.package);
     }
 }
