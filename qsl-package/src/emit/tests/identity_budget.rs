@@ -498,9 +498,36 @@ function fromRush using v(e: M::RushOrderPlaced): Integer pure {{ occurredAt(e) 
     assert_eq!(pair.record_key, original_pair.record_key);
     assert_eq!(pair.source_authority, original_pair.source_authority);
     assert_eq!(pair.source_identity, original_pair.source_identity);
-    assert_ne!(
+    assert_eq!(
         pair.structural_node, original_pair.structural_node,
-        "the actual writer rekeyed Pair after renaming its binding"
+        "the named declaration retains its original structural identity"
+    );
+    let before_value = base
+        .wire_nodes
+        .iter()
+        .find(|node| {
+            node.semantic_form.as_ref() == "record_value"
+                && node.semantic_type == original_pair.structural_node
+        })
+        .expect("the real authored mkPair value");
+    let after_value = rooted
+        .wire_nodes
+        .iter()
+        .find(|node| {
+            node.semantic_form.as_ref() == "record_value"
+                && node.semantic_type == pair.structural_node
+        })
+        .expect("the actual writer carried the renamed Pair value");
+    assert_ne!(
+        before_value.node_id, after_value.node_id,
+        "renaming the value's binding really rekeys its content node"
+    );
+    assert!(
+        !rooted
+            .wire_nodes
+            .iter()
+            .any(|node| node.node_id == before_value.node_id),
+        "the stale value id is absent from the final graph"
     );
 }
 
