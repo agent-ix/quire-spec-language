@@ -5791,11 +5791,36 @@ impl PackageDeclarations {
         }
         // FR-354, QSpec FR-469: each checked declaration form of a selected
         // extension, after every function its clause values may call.
-        for (index, form) in checked_extension_forms.iter().enumerate() {
-            let Some(form) = form else { continue };
-            if let Err(refusal) = lowering.extension_form(&lowering::ExtensionFormInput { index, form })
-            {
-                refusals.push(refusal);
+        // A node-kind clause references its target form's node, so each
+        // form is lowered after the forms it names.
+        let mut lowered_extensions: Vec<Option<quire_exact::NodeKey>> =
+            vec![None; checked_extension_forms.len()];
+        let mut pending: Vec<usize> = (0..checked_extension_forms.len()).collect();
+        while !pending.is_empty() {
+            let before = pending.len();
+            pending.retain(|&index| {
+                let Some(form) = &checked_extension_forms[index] else {
+                    return false;
+                };
+                let ready = form.clauses.iter().all(|clause| match clause.value {
+                    extension::ClauseValue::Form(target) => lowered_extensions[target].is_some(),
+                    extension::ClauseValue::Checked { .. } => true,
+                });
+                if !ready {
+                    return true;
+                }
+                match lowering.extension_form(&lowering::ExtensionFormInput {
+                    index,
+                    form,
+                    lowered: &lowered_extensions,
+                }) {
+                    Ok(key) => lowered_extensions[index] = Some(key),
+                    Err(refusal) => refusals.push(refusal),
+                }
+                false
+            });
+            if pending.len() == before {
+                break;
             }
         }
         // FR-411, QSpec FR-476: each checked `terminal` declaration, after

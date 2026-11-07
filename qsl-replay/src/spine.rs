@@ -1390,11 +1390,12 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 } => format!(
                     "{message}: clause `{clause}` is checked against `{expected}` but its value is `{actual}`"
                 ),
-                ExtensionCause::NodeKindClause {
-                    clause, node_kind, ..
-                } => format!(
-                    "{message}: clause `{clause}` is typed by the node kind `{node_kind}`, which no source expression denotes yet"
-                ),
+                ExtensionCause::AmbiguousName { name, .. } => {
+                    format!("{message}: `{name}` names an extension form and another declaration")
+                }
+                ExtensionCause::Cycle { cycle, .. } => {
+                    format!("{message}: the forms {} reach themselves", cycle.join(" -> "))
+                }
                 ExtensionCause::UnheldKeyword { keyword, .. } => {
                     format!("{message}: `{keyword}` is the leading keyword of no selected extension")
                 }

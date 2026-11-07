@@ -446,3 +446,197 @@ fn extension_definition_with_role(identity: &str, role: DefinitionRole) -> Defin
     .unwrap();
     DefinitionCatalog::new(vec![definition]).unwrap()
 }
+
+/// An extension `kinds` whose `scalars` form has one clause per `(name, type)`.
+fn scalar_extension(clauses: &[(&str, &str)]) -> DefinitionCatalog {
+    let names: Vec<&str> = clauses.iter().map(|(name, _)| *name).collect();
+    let typed: Vec<Value> = clauses
+        .iter()
+        .map(|(name, ty)| serde_json::json!({"name": name, "type": ty}))
+        .collect();
+    let document = serde_json::json!({
+        "grammar_schema": {"productions": [{"keyword": "retention", "clauses": names}]},
+        "typed_node_schema": {"nodes": [
+            {"keyword": "retention", "node_kind": "retention", "clauses": typed}
+        ]}
+    });
+    DefinitionCatalog::new(vec![extension_definition("retention", &document)]).unwrap()
+}
+
+#[trace("TC-882", "FR-354-AC-7")]
+#[test]
+fn each_v1_clause_type_spelling_admits_its_value_and_an_unsupported_one_refuses() {
+    let clauses = [
+        ("b", "Boolean"),
+        ("i", "Integer"),
+        ("t", "Text"),
+        ("r", "Int[0, 9]"),
+        ("w", "Window"),
+    ];
+    let record = "record Window { lo: Integer; }\n";
+    let form = "retention F { b: true, i: 7, t: \"x\", r: 3, w: Window { lo: 1 } }";
+    let emitted = compile(&scalar_extension(&clauses), &format!("{record}{form}"))
+        .expect("every v1 spelling admits its value");
+    let wire = wire(&emitted);
+    assert_eq!(
+        extension_node(&wire)["body"]["clauses"].as_array().unwrap().len(),
+        5
+    );
+    // `i` spelled `Sequence<Integer>` is held and refused at S3.
+    let respelled = [
+        ("b", "Boolean"),
+        ("i", "Sequence<Integer>"),
+        ("t", "Text"),
+        ("r", "Int[0, 9]"),
+        ("w", "Window"),
+    ];
+    let refusal = compile(&scalar_extension(&respelled), &format!("{record}{form}"))
+        .expect_err("`Sequence<Integer>` is outside the v1 spellings");
+    let ExtensionCause::TypeMismatch {
+        clause, expected, actual, ..
+    } = refusal_cause(&refusal)
+    else {
+        panic!("expected a type mismatch, got {refusal:?}");
+    };
+    assert_eq!((clause.as_str(), expected.as_str()), ("i", "Sequence<Integer>"));
+    assert_eq!(actual, "Integer");
+}
+
+/// `retention` plus `archive <name> { policy: <expr> }` typing `policy` by the
+/// node kind `retention`, and `link <name> { to: <expr> }` typing `to` by `link`.
+fn node_kind_catalog() -> DefinitionCatalog {
+    let document = serde_json::json!({
+        "grammar_schema": {"productions": [
+            {"keyword": "retention", "clauses": ["subject", "days"]},
+            {"keyword": "archive", "clauses": ["policy"]},
+            {"keyword": "link", "clauses": ["to"]}
+        ]},
+        "typed_node_schema": {"nodes": [
+            {"keyword": "retention", "node_kind": "retention", "clauses": [
+                {"name": "subject", "type": "Text"},
+                {"name": "days", "type": "Int[1, 3650]"}
+            ]},
+            {"keyword": "archive", "node_kind": "archive", "clauses": [
+                {"name": "policy", "type": "retention"}
+            ]},
+            {"keyword": "link", "node_kind": "link", "clauses": [
+                {"name": "to", "type": "link"}
+            ]}
+        ]}
+    });
+    DefinitionCatalog::new(vec![extension_definition("retention", &document)]).unwrap()
+}
+
+#[trace("TC-882", "FR-354-AC-8")]
+#[test]
+fn a_node_kind_clause_references_the_named_form_whatever_the_order() {
+    let emitted = compile(
+        &node_kind_catalog(),
+        &format!("archive Logs {{ policy: Audit }}\n{FORM}"),
+    )
+    .expect("a form may name a form declared after it");
+    let wire = wire(&emitted);
+    let archive = nodes(&wire)
+        .iter()
+        .find(|node| node["node_tag"] == "extension" && node["body"]["node_kind"] == "archive")
+        .expect("the archive node");
+    let retention = nodes(&wire)
+        .iter()
+        .find(|node| node["node_tag"] == "extension" && node["body"]["node_kind"] == "retention")
+        .expect("the retention node");
+    assert_eq!(
+        archive["body"]["clauses"][0]["value"]["target"],
+        retention["node_id"]
+    );
+}
+
+#[trace("TC-882", "FR-354-AC-8")]
+#[test]
+fn a_node_kind_clause_naming_nothing_or_another_kind_refuses() {
+    let missing = compile(&node_kind_catalog(), "archive Logs { policy: Missing }")
+        .expect_err("`Missing` names no form");
+    let CompileRefusal::Check { refusals, .. } = &*missing else {
+        panic!("expected a check refusal, got {missing:?}");
+    };
+    assert_eq!(refusals[0].cause.code(), Code::MissingDeclaration);
+    assert_eq!(refusals[0].cause.cause(), Some("missing-name"));
+    assert!(matches!(&refusals[0].cause, CheckCause::MissingName(name) if name == "Missing"));
+
+    let other = compile(
+        &node_kind_catalog(),
+        "archive Other { policy: Logs }\narchive Logs { policy: Other }",
+    )
+    .expect_err("`Logs` is an `archive`, not a `retention`");
+    let ExtensionCause::TypeMismatch {
+        clause,
+        expected,
+        actual,
+        ..
+    } = refusal_cause_first(&other)
+    else {
+        panic!("expected a type mismatch, got {other:?}");
+    };
+    assert_eq!((clause.as_str(), expected.as_str(), actual.as_str()), ("policy", "retention", "archive"));
+}
+
+#[trace("TC-882", "FR-354-AC-8")]
+#[test]
+fn forms_whose_node_kind_clauses_reach_themselves_refuse_at_every_form_on_the_cycle() {
+    let cycle = compile(
+        &node_kind_catalog(),
+        "link A { to: B }\nlink B { to: A }",
+    )
+    .expect_err("A and B reach each other");
+    let causes = extension_causes(&cycle);
+    let named: Vec<_> = causes
+        .iter()
+        .map(|cause| match cause {
+            ExtensionCause::Cycle { cycle, .. } => cycle.clone(),
+            other => panic!("expected a cycle, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        named,
+        [
+            vec!["A".to_owned(), "B".to_owned(), "A".to_owned()],
+            vec!["B".to_owned(), "A".to_owned(), "B".to_owned()],
+        ]
+    );
+    for cause in causes {
+        assert_eq!((cause.code(), cause.cause()), (Code::IllTyped, "type-mismatch"));
+    }
+    let own = compile(&node_kind_catalog(), "link C { to: C }").expect_err("C reaches itself");
+    let [ExtensionCause::Cycle { cycle, .. }] = extension_causes(&own).as_slice() else {
+        panic!("expected one cycle, got {own:?}");
+    };
+    assert_eq!(cycle, &["C".to_owned(), "C".to_owned()]);
+}
+
+#[trace("TC-883", "FR-354-AC-9")]
+#[test]
+fn an_extension_form_and_a_record_of_one_name_refuse_ambiguous_name() {
+    let refusal = compile(
+        &node_kind_catalog(),
+        &format!("{FORM}\nrecord Audit {{ n: Integer; }}"),
+    )
+    .expect_err("one name, two declarations");
+    assert_eq!(refusal.code(), Code::AmbiguousDeclaration);
+    assert_eq!(refusal.cause(), Some("ambiguous-name"));
+}
+
+fn extension_causes(refusal: &CompileRefusal) -> Vec<&ExtensionCause> {
+    let CompileRefusal::Check { refusals, .. } = refusal else {
+        panic!("expected a check refusal, got {refusal:?}");
+    };
+    refusals
+        .iter()
+        .map(|refusal| match &refusal.cause {
+            CheckCause::Extension(cause) => cause.as_ref(),
+            other => panic!("expected an extension refusal, got {other:?}"),
+        })
+        .collect()
+}
+
+fn refusal_cause_first(refusal: &CompileRefusal) -> &ExtensionCause {
+    extension_causes(refusal)[0]
+}

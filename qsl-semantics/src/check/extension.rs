@@ -16,7 +16,8 @@
 //! what source expression denotes another extension's node).
 
 use qsl_forms::{
-    parse_type_text, BuiltinType, TypeFormHead, ClauseKind, ExpressionForm, ExtensionClauseForm, ExtensionForm, TypeForm,
+    parse_type_text, BuiltinType, ClauseKind, ExprNode, ExpressionForm, ExtensionClauseForm,
+    ExtensionForm, TypeFormHead,
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::selection::DefinitionRef;
@@ -49,15 +50,22 @@ pub enum ExtensionCause {
         /// The clause value's type, in the core's spelling.
         actual: String,
     },
-    /// `unsupported_construct`/`not-yet-implemented`: the clause's schema
-    /// type names a node kind, not a core `type-ref`.
-    NodeKindClause {
-        /// The clause name.
-        clause: String,
-        /// The span of the clause value.
+    /// `ambiguous_declaration`/`ambiguous-name` (QSpec FR-469): the form's
+    /// declared name is also a record type's, or an earlier form's.
+    AmbiguousName {
+        /// The declared name.
+        name: String,
+        /// The span of the form's declared name.
         span: Span,
-        /// The node kind the schema names.
-        node_kind: String,
+    },
+    /// `ill_typed`/`type-mismatch` from `DeclarationCause::Recursion`
+    /// (QSpec FR-143 "Recursion rule"): the form's node-kind clauses reach a
+    /// form again. Names the cycle in path order, first and last equal.
+    Cycle {
+        /// The declared names of the forms on the cycle.
+        cycle: Vec<String>,
+        /// The span of the whole form it is reported at.
+        span: Span,
     },
     /// `unsupported_construct`/`declaration-form`: the form's leading keyword
     /// is the keyword of no held production.
@@ -85,8 +93,9 @@ impl ExtensionCause {
     /// The refusal code.
     pub fn code(&self) -> Code {
         match self {
-            Self::TypeMismatch { .. } => Code::IllTyped,
-            Self::NodeKindClause { .. } | Self::UnheldKeyword { .. } => Code::UnsupportedConstruct,
+            Self::TypeMismatch { .. } | Self::Cycle { .. } => Code::IllTyped,
+            Self::UnheldKeyword { .. } => Code::UnsupportedConstruct,
+            Self::AmbiguousName { .. } => Code::AmbiguousDeclaration,
             Self::ClauseOrder { .. } => Code::InvalidSyntax,
         }
     }
@@ -94,8 +103,8 @@ impl ExtensionCause {
     /// The closed cause tag.
     pub fn cause(&self) -> &'static str {
         match self {
-            Self::TypeMismatch { .. } => "type-mismatch",
-            Self::NodeKindClause { .. } => "not-yet-implemented",
+            Self::TypeMismatch { .. } | Self::Cycle { .. } => "type-mismatch",
+            Self::AmbiguousName { .. } => "ambiguous-name",
             Self::UnheldKeyword { .. } => "declaration-form",
             Self::ClauseOrder { .. } => "unexpected-token",
         }
@@ -105,7 +114,8 @@ impl ExtensionCause {
     pub fn span(&self) -> Span {
         match self {
             Self::TypeMismatch { span, .. }
-            | Self::NodeKindClause { span, .. }
+            | Self::Cycle { span, .. }
+            | Self::AmbiguousName { span, .. }
             | Self::UnheldKeyword { span, .. }
             | Self::ClauseOrder { span, .. } => *span,
         }
@@ -139,18 +149,29 @@ pub(crate) fn extension_clause_location(index: usize, clause: usize) -> Location
     })
 }
 
-/// One checked clause: its name, the type its value was checked against and
-/// the checked value.
+/// One checked clause: its name and its checked value.
 #[derive(Debug)]
 pub(crate) struct CheckedClause {
     pub(crate) name: String,
-    pub(crate) expected: ValueType,
-    /// The bare scalar type node the clause's subnode is typed at when the
-    /// schema spells a scalar word the checked type does not distinguish
-    /// (`Text`, checked as the native string).
-    pub(crate) scalar: Option<&'static str>,
-    pub(crate) body: CheckedBody,
-    pub(crate) slot_names: Vec<String>,
+    pub(crate) value: ClauseValue,
+}
+
+/// What a clause's value checked to.
+#[derive(Debug)]
+pub(crate) enum ClauseValue {
+    /// An expression checked against a core type.
+    Checked {
+        expected: ValueType,
+        /// The bare scalar type node the clause's subnode is typed at when
+        /// the schema spells a scalar word the checked type does not
+        /// distinguish (`Text`, checked as the native string).
+        scalar: Option<&'static str>,
+        body: CheckedBody,
+        slot_names: Vec<String>,
+    },
+    /// A bare identifier naming the extension form at this index among the
+    /// unit's extension forms (the clause's schema type is a node kind).
+    Form(usize),
 }
 
 /// One checked form of a selected extension: the definition and node kind of
@@ -172,6 +193,9 @@ pub(crate) struct ExtensionInput<'a> {
     pub(crate) cancel: &'a quire_exact::Cancel,
 }
 
+/// The forms of the unit by declared name: the form's index and node kind.
+type Declared = std::collections::BTreeMap<String, (usize, String)>;
+
 /// The checked forms, each at its index among the unit's extension forms
 /// (`None` where the form was refused), and the refusals in builder order.
 pub(crate) struct Checked {
@@ -179,19 +203,29 @@ pub(crate) struct Checked {
     pub(crate) refusals: Vec<CheckRefusal>,
 }
 
-/// Check each of `forms`, charging `nodes`.
+/// Check each of `forms`, charging `nodes`. The declared names of every form
+/// are collected before any clause is resolved, so a node-kind clause may
+/// name a form declared after it (FR-354 "Clause checking").
 pub(crate) fn check_forms(
     forms: &[ExtensionForm],
     input: &ExtensionInput<'_>,
     cx: &mut CheckContext<'_, Scope>,
     nodes: &mut u64,
 ) -> Checked {
+    let mut declared = Declared::new();
+    for (index, form) in forms.iter().enumerate() {
+        if let Some((_, production)) = production(input.held, &form.keyword.name) {
+            declared
+                .entry(form.name.name.clone())
+                .or_insert((index, production.node_kind.clone()));
+        }
+    }
     let mut checked = Checked {
         forms: Vec::with_capacity(forms.len()),
         refusals: Vec::new(),
     };
     for (index, form) in forms.iter().enumerate() {
-        match check_form(index, form, input, cx, nodes) {
+        match check_form(index, form, input, &declared, cx, nodes) {
             Ok(form) => checked.forms.push(Some(form)),
             Err(refusals) => {
                 checked.forms.push(None);
@@ -199,7 +233,89 @@ pub(crate) fn check_forms(
             }
         }
     }
+    refuse_cycles(forms, &mut checked);
     checked
+}
+
+/// Refuse every form that its node-kind clauses reach again, naming the
+/// cycle through it in path order, and drop it from the checked forms.
+fn refuse_cycles(forms: &[ExtensionForm], checked: &mut Checked) {
+    let edges: Vec<Vec<usize>> = checked
+        .forms
+        .iter()
+        .map(|form| {
+            form.iter()
+                .flat_map(|form| &form.clauses)
+                .filter_map(|clause| match clause.value {
+                    ClauseValue::Form(target) => Some(target),
+                    ClauseValue::Checked { .. } => None,
+                })
+                .collect()
+        })
+        .collect();
+    for start in 0..edges.len() {
+        // The shortest path from `start` back to itself, breadth first.
+        let mut parent: Vec<Option<usize>> = vec![None; edges.len()];
+        let mut queue = std::collections::VecDeque::from([start]);
+        let mut closes = None;
+        'search: while let Some(at) = queue.pop_front() {
+            for &next in &edges[at] {
+                if next == start {
+                    closes = Some(at);
+                    break 'search;
+                }
+                if parent[next].is_none() {
+                    parent[next] = Some(at);
+                    queue.push_back(next);
+                }
+            }
+        }
+        let Some(last) = closes else { continue };
+        let mut path = vec![last];
+        while let Some(&at) = path.last() {
+            if at == start {
+                break;
+            }
+            match parent[at] {
+                Some(previous) => path.push(previous),
+                None => break,
+            }
+        }
+        path.reverse();
+        let cycle: Vec<String> = path
+            .iter()
+            .chain(std::iter::once(&start))
+            .map(|at| forms[*at].name.name.clone())
+            .collect();
+        checked.refusals.push(refusal(
+            start,
+            ExtensionCause::Cycle {
+                cycle,
+                span: forms[start].span,
+            },
+        ));
+    }
+    for (index, form) in checked.forms.iter_mut().enumerate() {
+        if checked.refusals.iter().any(|refusal| {
+            refusal.location == extension_location(index)
+                && matches!(
+                    refusal.cause,
+                    CheckCause::Extension(ref cause) if matches!(**cause, ExtensionCause::Cycle { .. })
+                )
+        }) {
+            *form = None;
+        }
+    }
+}
+
+/// What a clause's schema type spelling denotes.
+enum ClauseType {
+    /// A core type, with the bare scalar node a scalar word is typed at.
+    Value(ValueType, Option<&'static str>),
+    /// A node kind of a held extension.
+    NodeKind(String),
+    /// A spelling outside the v1 set.
+    Unsupported,
 }
 
 /// The held production `keyword` names, with its extension's definition.
@@ -237,6 +353,7 @@ struct Builder<'a, 'c, 'x> {
     form: &'a ExtensionForm,
     production: &'a Production,
     input: &'a ExtensionInput<'a>,
+    declared: &'a Declared,
     cx: &'c mut CheckContext<'x, Scope>,
     nodes: &'c mut u64,
     checked: Vec<CheckedClause>,
@@ -329,24 +446,24 @@ impl Builder<'_, '_, '_> {
             .ok_or_else(|| self.order_fault(clause))?;
         let location = extension_clause_location(self.index, written);
         let span = root_span(&clause.value);
-        let (expected, scalar) = match self.expected_type(
-            &production_clause.type_ref,
-            &location,
-            &clause.name.name,
-            span,
-        ) {
-            Ok(Some((expected, scalar))) => (expected, scalar),
-            Ok(None) => {
+        let (expected, scalar) = match self.expected_type(&production_clause.type_ref, &location)
+        {
+            ClauseType::Value(expected, scalar) => (expected, scalar),
+            ClauseType::NodeKind(node_kind) => {
+                return self.node_kind_clause(clause, &node_kind, &location, span)
+            }
+            ClauseType::Unsupported => {
+                let actual = self.actual_type(clause, &location);
                 return Err(refusal(
                     self.index,
-                    ExtensionCause::NodeKindClause {
+                    ExtensionCause::TypeMismatch {
                         clause: clause.name.name.clone(),
                         span,
-                        node_kind: production_clause.type_ref.clone(),
+                        expected: production_clause.type_ref.clone(),
+                        actual,
                     },
-                ))
+                ));
             }
-            Err(refusal) => return Err(refusal),
         };
         let literal_range = std::cell::Cell::new(None);
         let mut used = *self.nodes;
@@ -371,10 +488,12 @@ impl Builder<'_, '_, '_> {
                 *self.nodes = used;
                 Ok(CheckedClause {
                     name: clause.name.name.clone(),
-                    expected,
-                    scalar,
-                    body,
-                    slot_names,
+                    value: ClauseValue::Checked {
+                        expected,
+                        scalar,
+                        body,
+                        slot_names,
+                    },
                 })
             }
             Err(CheckRefusal {
@@ -408,60 +527,89 @@ impl Builder<'_, '_, '_> {
         }
     }
 
-    /// The core type a `type-ref` spelling denotes, with the bare scalar
-    /// node it is typed at when the spelling is a scalar word the checked
-    /// type does not distinguish, or `None` when the spelling names a node
-    /// kind of the catalog.
+    /// What a `type-ref` spelling denotes.
     ///
     /// Read in this order (FR-354 "Clause checking"): a scalar word is that
     /// scalar and never a record or node-kind name; any other spelling is
     /// the core `TypeReference` production, of which only `Int[lo, hi]`
-    /// (no rounding mode) and a record-type name are supported; anything
-    /// else refuses naming the spelling.
-    fn expected_type(
-        &self,
-        type_ref: &str,
-        location: &Location,
-        clause: &str,
-        span: Span,
-    ) -> Result<Option<(ValueType, Option<&'static str>)>, CheckRefusal> {
-        if let Some(read) = scalar_word(type_ref) {
-            return Ok(Some(read));
+    /// (no rounding mode) and a `QualifiedName` are supported, the name being
+    /// a node kind of a held extension or else a record type.
+    fn expected_type(&self, type_ref: &str, location: &Location) -> ClauseType {
+        if let Some((value_type, scalar)) = scalar_word(type_ref) {
+            return ClauseType::Value(value_type, scalar);
         }
-        if self
-            .input
-            .held
-            .iter()
-            .flat_map(|extension| extension.productions())
-            .any(|production| production.node_kind == type_ref)
-        {
-            return Ok(None);
-        }
-        let unsupported = || {
-            refusal(
-                self.index,
-                ExtensionCause::TypeMismatch {
-                    clause: clause.to_owned(),
-                    span,
-                    expected: type_ref.to_owned(),
-                    actual: "an unsupported type spelling".to_owned(),
-                },
-            )
+        let Ok(form) = parse_type_text(type_ref) else {
+            return ClauseType::Unsupported;
         };
-        let form: TypeForm = parse_type_text(type_ref).map_err(|_| unsupported())?;
         let supported = match &form.head {
             TypeFormHead::Builtin(BuiltinType::Int) => form.bounds.len() == 2,
             TypeFormHead::Name(_) => form.arguments.is_empty() && form.bounds.is_empty(),
             _ => false,
         };
         if !supported {
-            return Err(unsupported());
+            return ClauseType::Unsupported;
         }
-        let resolved = resolve_type_form(&self.input.scope.in_source(None), &form, location)
-            .map_err(|_| unsupported())?;
-        match resolved {
-            ValueType::Int(_) | ValueType::Composite(_) => Ok(Some((resolved, None))),
-            _ => Err(unsupported()),
+        if matches!(form.head, TypeFormHead::Name(_))
+            && self
+                .input
+                .held
+                .iter()
+                .flat_map(|extension| extension.productions())
+                .any(|production| production.node_kind == type_ref)
+        {
+            return ClauseType::NodeKind(type_ref.to_owned());
+        }
+        match resolve_type_form(&self.input.scope.in_source(None), &form, location) {
+            Ok(resolved @ (ValueType::Int(_) | ValueType::Composite(_))) => {
+                ClauseType::Value(resolved, None)
+            }
+            _ => ClauseType::Unsupported,
+        }
+    }
+
+    /// A clause typed by the node kind `node_kind`: its value is a bare
+    /// identifier, resolved by declared name among the unit's extension forms
+    /// as a type name is.
+    fn node_kind_clause(
+        &mut self,
+        clause: &ExtensionClauseForm,
+        node_kind: &str,
+        location: &Location,
+        span: Span,
+    ) -> Result<CheckedClause, CheckRefusal> {
+        let name = match clause.value.expression.root().node() {
+            ExprNode::Name(name) if !name.is_qualified() => name,
+            _ => {
+                let actual = self.actual_type(clause, location);
+                return Err(refusal(
+                    self.index,
+                    ExtensionCause::TypeMismatch {
+                        clause: clause.name.name.clone(),
+                        span,
+                        expected: node_kind.to_owned(),
+                        actual,
+                    },
+                ));
+            }
+        };
+        match self.declared.get(&name.name) {
+            None => Err(CheckRefusal {
+                location: location.clone(),
+                cause: CheckCause::MissingName(name.name.clone()),
+            }),
+            Some((_, actual)) if actual != node_kind => Err(refusal(
+                self.index,
+                ExtensionCause::TypeMismatch {
+                    clause: clause.name.name.clone(),
+                    span,
+                    expected: node_kind.to_owned(),
+                    actual: actual.clone(),
+                },
+            )),
+            Some((target, _)) => Ok(CheckedClause {
+                name: clause.name.name.clone(),
+                value: ClauseValue::Form(*target),
+            }),
         }
     }
 
@@ -560,6 +708,7 @@ fn check_form(
     index: usize,
     form: &ExtensionForm,
     input: &ExtensionInput<'_>,
+    declared: &Declared,
     cx: &mut CheckContext<'_, Scope>,
     nodes: &mut u64,
 ) -> Result<CheckedExtensionForm, Vec<CheckRefusal>> {
@@ -572,11 +721,30 @@ fn check_form(
             },
         )]);
     };
+    // QSpec FR-469: one declared name is one declaration, whatever its form.
+    let record_named = !crate::check::type_form::TypeNames::named_types(
+        &input.scope.in_source(None),
+        &form.name.name,
+    )
+    .is_empty();
+    let earlier_form = declared
+        .get(&form.name.name)
+        .is_some_and(|(first, _)| *first != index);
+    if record_named || earlier_form {
+        return Err(vec![refusal(
+            index,
+            ExtensionCause::AmbiguousName {
+                name: form.name.name.clone(),
+                span: form.name.span,
+            },
+        )]);
+    }
     let mut builder = Builder {
         index,
         form,
         production,
         input,
+        declared,
         cx,
         nodes,
         checked: Vec::with_capacity(form.clauses.len()),

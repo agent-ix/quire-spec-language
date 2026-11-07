@@ -16,7 +16,9 @@ use quire_exact::{NodeKey, Value};
 use quire_semantic_value::location::Location;
 
 use super::{identifiers, require_admitted, Binders, Lowering};
-use crate::check::extension::{extension_location, CheckedClause, CheckedExtensionForm};
+use crate::check::extension::{
+    extension_location, CheckedClause, CheckedExtensionForm, ClauseValue,
+};
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::CheckedNode;
 use crate::check::node_key::{BodyTerm, ExtensionClauseTerm, ExtensionTerm, NodeRef, NodeTag};
@@ -28,6 +30,9 @@ pub(crate) struct ExtensionFormInput<'a> {
     pub(crate) index: usize,
     /// The checked form.
     pub(crate) form: &'a CheckedExtensionForm,
+    /// The key of each form already lowered, by index: a node-kind clause
+    /// references its target's.
+    pub(crate) lowered: &'a [Option<NodeKey>],
 }
 
 impl Lowering<'_> {
@@ -41,7 +46,7 @@ impl Lowering<'_> {
         let mut clauses = Vec::with_capacity(input.form.clauses.len());
         for (position, clause) in input.form.clauses.iter().enumerate() {
             let location = crate::check::extension::extension_clause_location(input.index, position);
-            let value = self.extension_clause_value(clause, &location)?;
+            let value = self.extension_clause_value(clause, input.lowered, &location)?;
             clauses.push(ExtensionClauseTerm::new(clause.name.clone(), value));
         }
         let term = ExtensionTerm::new(
@@ -68,18 +73,35 @@ impl Lowering<'_> {
     fn extension_clause_value(
         &mut self,
         clause: &CheckedClause,
+        lowered: &[Option<NodeKey>],
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
-        let expected = match clause.scalar {
-            Some(form) => NodeRef::from(self.scalar(form, location)?),
-            None => self.type_ref(&clause.expected, location)?,
+        let (expected, scalar, body, slot_names) = match &clause.value {
+            // A node-kind clause is a `reference` to the target form's node.
+            ClauseValue::Form(target) => {
+                return lowered
+                    .get(*target)
+                    .cloned()
+                    .flatten()
+                    .ok_or_else(|| super::fault(location, KeyFault::UnkeyableRequirements));
+            }
+            ClauseValue::Checked {
+                expected,
+                scalar,
+                body,
+                slot_names,
+            } => (expected, *scalar, body, slot_names),
         };
-        self.record(expected, OccurrenceRole::Type, location.clone());
-        let root = clause.body.root();
+        let expected_node = match scalar {
+            Some(form) => NodeRef::from(self.scalar(form, location)?),
+            None => self.type_ref(expected, location)?,
+        };
+        self.record(expected_node, OccurrenceRole::Type, location.clone());
+        let root = body.root();
         let term = match literal_of(root) {
-            Some((node, value)) => self.literal_as(node, value, &clause.expected, clause.scalar)?,
+            Some((node, value)) => self.literal_as(node, value, expected, scalar)?,
             None => {
-                let mut binders = Binders::new(&clause.slot_names, &[]);
+                let mut binders = Binders::new(slot_names, &[]);
                 self.expression(root, &mut binders)?
             }
         };
