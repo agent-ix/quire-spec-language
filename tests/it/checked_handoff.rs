@@ -1380,8 +1380,7 @@ fn a_changed_clock_value_is_admitted_by_the_reader_and_refused_by_the_sidecar() 
 #[test]
 fn the_legacy_writer_is_absent() {
     for path in [
-        "src/protocol_artifact/handoff.rs",
-        "src/protocol_artifact/handoff",
+        "src/protocol_artifact",
         "examples/native_protocol_handoff.rs",
         "examples/native_protocol_v2_handoff.rs",
         "examples/protocol-handoff",
@@ -1391,8 +1390,6 @@ fn the_legacy_writer_is_absent() {
     }
     let manifest = std::fs::read_to_string("Cargo.toml").unwrap();
     assert!(!manifest.contains("handoff-writer"));
-    let module = std::fs::read_to_string("src/protocol_artifact/mod.rs").unwrap();
-    assert!(!module.contains("mod handoff"));
 }
 
 /// One row of FR-518's table as amended by the writer self-check: identity,

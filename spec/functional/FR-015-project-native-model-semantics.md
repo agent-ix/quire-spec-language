@@ -22,7 +22,7 @@ When a caller supplies formal declarations and explicit native roles, the native
 
 One exact FormalSource, one existing validated Contract IR DeclarationEnvironment,
 NativeRoles and caller-configured ModelLimits. The concrete Rust contract is
-[native-model-checking.md](../../docs/native-model-checking.md). The selected
+this requirement's criteria. The selected
 profile is native-state-model/1. Its inputs are typed Rust values, not generated
 Rust layouts or the historical abstract typing hypotheses treated as model wire.
 
