@@ -24,7 +24,7 @@ fn with_subject(check: impl FnOnce(&CheckedSubject, &ObservationRef, &[Valuation
     );
 }
 
-fn with_inputs(
+pub(super) fn with_inputs(
     value: bool,
     missing: bool,
     check: impl FnOnce(
@@ -460,8 +460,14 @@ fn correction_keeps_direct_predecessor_immutable_and_rejects_stale_or_foreign_id
             let mut correction = request.clone();
             correction.ledger = original.ledger().cloned();
             correction.relation = Relation::Superseding(original_identity.clone());
-            let revised_subject =
-                CheckedSubject::new(package, occurrence, evidence, &correction).unwrap();
+            let revised_subject = CheckedSubject::new(package, occurrence, evidence, &correction)
+                .unwrap()
+                .with_predecessor(
+                    &original,
+                    quire_spec_language::temporal::ReportPredecessorLimits::new(
+                        16_777_216, 16_777_216,
+                    ),
+                );
             assert!(matches!(
                 evaluate_v2(
                     &revised_subject,
@@ -497,7 +503,14 @@ fn correction_keeps_direct_predecessor_immutable_and_rejects_stale_or_foreign_id
             );
             // Once the revision is current, the earlier result is no longer direct.
             correction.ledger = revised.ledger().cloned();
-            let stale = CheckedSubject::new(package, occurrence, evidence, &correction).unwrap();
+            let stale = CheckedSubject::new(package, occurrence, evidence, &correction)
+                .unwrap()
+                .with_predecessor(
+                    &original,
+                    quire_spec_language::temporal::ReportPredecessorLimits::new(
+                        16_777_216, 16_777_216,
+                    ),
+                );
             assert!(matches!(
                 evaluate_v2(
                     &stale,
@@ -578,8 +591,14 @@ fn reader_rejects_a_correction_self_edge_and_original_with_invented_predecessor(
             let mut correction = request.clone();
             correction.ledger = original.ledger().cloned();
             correction.relation = Relation::Superseding(identity);
-            let revised_subject =
-                CheckedSubject::new(package, occurrence, evidence, &correction).unwrap();
+            let revised_subject = CheckedSubject::new(package, occurrence, evidence, &correction)
+                .unwrap()
+                .with_predecessor(
+                    &original,
+                    quire_spec_language::temporal::ReportPredecessorLimits::new(
+                        16_777_216, 16_777_216,
+                    ),
+                );
             let revised_observation = ObservationRef {
                 reference: "observation:opaque:revised".into(),
                 ..observation.clone()
