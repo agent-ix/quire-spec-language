@@ -20,7 +20,6 @@ record R { statuses: Sequence<Status>[0, 3]; flags: Set<Boolean>; }
 function status using v(s: Status, l: Level, r: R): Boolean pure { s = Status::READY }
 function quantity using v(a: Quantity<ms>, b: Quantity<s>): Boolean pure { convert<Quantity<s>>(a) = b }
 function text using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure { a = b }
-function large using v(a: Int[0, 680564733841876926926749214863536422912], b: Int[0, 680564733841876926926749214863536422912]): Boolean pure { a = b }
 ";
 
 fn emission() -> Emission {
@@ -516,9 +515,7 @@ fn mixed_collection_package() -> CheckedPackage {
 #[trace("TC-1331", "FR-531-AC-33")]
 #[test]
 fn cold_integer_payloads_refuse_inside_the_real_equality_adapter_without_allocating() {
-    let emission = super::converted_equality::emitted(
-        "function same using v(a: Int[0, 340282366920938463463374607431768211457], b: Int[0, 340282366920938463463374607431768211457]): Boolean pure { a = b }",
-    );
+    let emission = cold_integer_emission();
     let package = native(&emission);
     let row_index = emission
         .equality_fact_witness_rows()
@@ -584,4 +581,47 @@ fn cold_integer_payloads_refuse_inside_the_real_equality_adapter_without_allocat
             .expect("cold payloads copy at exact full allowance"),
         expected
     );
+}
+
+fn cold_integer_emission() -> Emission {
+    // The source syntax deliberately limits Int bounds to i128. The typed
+    // composer accepts the Exact interval directly, through the same genuine
+    // declaration/check/emission route as the source collection fixtures.
+    let handle = NodeKey::new("pkg", vec![quire_exact::PathSegment::Text("R".into())], 0)
+        .expect("record key");
+    let interval = quire_exact::IntegerInterval::new(
+        quire_exact::Integer::zero(),
+        "340282366920938463463374607431768211457".parse().unwrap(),
+    )
+    .expect("exact interval");
+    let record = CompositeDeclaration::new(
+        handle,
+        "R",
+        CompositeShape::Record(vec![FieldDeclaration::new(
+            "value",
+            ValueType::Int(interval),
+            Presence::Required,
+        )]),
+    );
+    let mut declarations = qsl_semantics::check::depth_forms::declarations(
+        qsl_semantics::check::depth_forms::Form::And,
+        1,
+    );
+    let operand = || Expression::field(Expression::name("r"), "value");
+    declarations.functions = vec![qsl_semantics::check::depth_forms::function(
+        "same",
+        &[(
+            "r",
+            TypeForm::name("R", qsl_foundation::Span { start: 0, end: 0 }),
+        )],
+        qsl_semantics::check::depth_forms::boolean(),
+        None,
+        Expression::binary(BinaryOperator::Equal, operand(), operand()),
+    )];
+    declarations.package_name = "pkg".into();
+    declarations.types = TypeEnvironment::new([record], []).expect("owner admits the record type");
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("typed Exact interval checks: {refusals:?}"));
+    emit_checked(&CheckedPackage::link(graph)).expect("genuine checked numeric emission")
 }
