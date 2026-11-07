@@ -73,6 +73,7 @@ impl TruncatedOperationLedger {
 /// The call detaches any unread caller capture and returns it in
 /// `displaced_capture`. It uses the explicit capacities and leaves capture
 /// disabled on every return. Callers must explicitly enable later captures.
+#[must_use = "the report owns the call result and any displaced unread charge capture"]
 pub struct ApplicationObservation {
     /// The actual result, without cloning or projecting family-owned causes.
     pub evaluation: Result<Evaluation, CallFailure>,

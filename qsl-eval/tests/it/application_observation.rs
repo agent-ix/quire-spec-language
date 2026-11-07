@@ -15,6 +15,7 @@ use quire_exact::{
     Outcome, ScalarLimits, Value,
 };
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::location::{Location, Origin};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -568,6 +569,90 @@ fn nested_calls_preserve_completed_values_counts_and_whole_call_capacity() {
     assert!(
         matches!(report.outcome(), Some(FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(value)))) if value == &Integer::from(106_i64))
     );
+}
+
+#[trace("TC-1338", "FR-090-AC-23")]
+#[test]
+fn nested_and_failed_charge_locations_match_the_authored_operation_paths() {
+    // The declaration indices and expression paths are fixed by this source:
+    // double's addition is its root; f's call to double is addition child 1.
+    // These expected locations do not read the ledger or machine context.
+    let package = package("function double using v(x: Integer): Integer pure { x + x }\nfunction f using v(x: Integer): Integer pure { 100 + double(x) }");
+    let double_add = Location::root(Origin::Body {
+        function: "double".to_owned(),
+        index: 0,
+    });
+    let outer_add = Location::root(Origin::Body {
+        function: "f".to_owned(),
+        index: 1,
+    });
+    let nested_call = Location::at(
+        Origin::Body {
+            function: "f".to_owned(),
+            index: 1,
+        },
+        &[1],
+    );
+    assert_ne!(double_add, outer_add);
+    assert_ne!(nested_call, outer_add);
+    let expected = [
+        (ChargePoint::FunctionCall, Some(outer_add.clone())),
+        (ChargePoint::FunctionCall, Some(nested_call)),
+        (
+            ChargePoint::IntegerArithmeticOperands,
+            Some(double_add.clone()),
+        ),
+        (
+            ChargePoint::IntegerArithmeticArithmetic,
+            Some(double_add.clone()),
+        ),
+        (
+            ChargePoint::IntegerArithmeticResultRetain,
+            Some(double_add.clone()),
+        ),
+        (
+            ChargePoint::IntegerArithmeticOperands,
+            Some(outer_add.clone()),
+        ),
+        (
+            ChargePoint::IntegerArithmeticArithmetic,
+            Some(outer_add.clone()),
+        ),
+        (ChargePoint::IntegerArithmeticResultRetain, Some(outer_add)),
+    ];
+    for (work_units, retained) in [(u64::MAX, 8), (3, 3)] {
+        let mut meter = Meter::new(ScalarLimits {
+            work_units,
+            ..UNLIMITED
+        });
+        let report = observe(&package, "f", vec![int(3)], &mut meter, options());
+        let ledger = report.ledger.as_ref().expect("complete admitted ledger");
+        let actual: Vec<_> = ledger
+            .entries()
+            .iter()
+            .map(|entry| (entry.request.point, entry.location.clone()))
+            .collect();
+        assert_eq!(
+            actual,
+            expected[..retained],
+            "each charge names its authored operation, including the halted nested addition"
+        );
+        if retained == 3 {
+            let evaluation = report.evaluation.as_ref().expect("incomplete evaluation");
+            assert!(
+                matches!(&evaluation.outcome, FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)) if incomplete.charge_point == ChargePoint::IntegerArithmeticArithmetic)
+            );
+            assert_eq!(evaluation.location.as_ref(), Some(&double_add));
+            assert!(
+                report.observed.is_empty(),
+                "the halted addition produces no completed-application evidence"
+            );
+        } else {
+            assert!(
+                matches!(report.outcome(), Some(FamilyOutcome::Evaluated(Outcome::Completed(Value::Integer(value)))) if value == &Integer::from(106_i64))
+            );
+        }
+    }
 }
 
 #[trace("TC-1338", "FR-090-AC-23")]
