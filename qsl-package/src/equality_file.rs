@@ -78,6 +78,12 @@ pub enum EqualityWitnessRefusal {
     Foreign,
 }
 
+/// Failure while admitting one equality decision under the entry budget.
+pub(crate) enum EqualityDecisionFailure {
+    Witness(EqualityWitnessRefusal),
+    Exhausted(Box<AdmittedEqualityReadError>),
+}
+
 // ---- the ordered JSON tree ------------------------------------------------
 
 /// A JSON value whose objects keep member order and refuse a repeated member.
@@ -2219,10 +2225,4 @@ mod tests {
             Err(EqualityFileRefusal::Malformed { .. })
         ));
     }
-}
-
-/// Failure while admitting one equality decision under the entry budget.
-pub(crate) enum EqualityDecisionFailure {
-    Witness(EqualityWitnessRefusal),
-    Exhausted(Box<AdmittedEqualityReadError>),
 }
