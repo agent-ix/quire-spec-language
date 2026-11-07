@@ -4682,6 +4682,7 @@ fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
         &selections,
         &models,
         &DependencyInput::default(),
+        None,
         limits,
         &cancel,
     )

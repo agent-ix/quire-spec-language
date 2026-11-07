@@ -151,8 +151,13 @@ pub use clause_evaluation::{
     evaluate_clause, ClauseEvaluation, ClauseEvaluationRequest, ClauseIncomplete,
     ClauseObservation, ClauseRefusal,
 };
+/// The semantic owner's division-definition admission and closed definition references.
+pub use qsl_semantics::value::{admit_integer_division, DefinitionReference, DefinitionRole};
+/// The checked owner's opaque admitted integer-division selection.
+pub use quire_checked::integer_division::AdmittedIntegerDivision;
+
 pub use compile::{
-    compile_package, compile_package_with_execution_points,
+    compile_package, compile_package_with_execution_points, compile_package_with_integer_division,
     compile_package_with_temporal_selections,
     compile_package_with_temporal_selections_and_execution_points, CompileUnit, CompiledPackage,
 };
