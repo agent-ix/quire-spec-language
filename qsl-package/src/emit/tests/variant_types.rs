@@ -45,6 +45,12 @@ pub(super) fn emitted_enums(unit_body: &str) -> Emission {
     emit_unit(unit_body).emission
 }
 
+pub(super) fn emitted_complete_enums(unit_body: &str) -> Emission {
+    let (graph, document) = checked_unit_with_profile(unit_body, "quire.model.complete/v1");
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the complete package emits");
+    emitted_from(emission, document).emission
+}
+
 fn emit_unit(unit_body: &str) -> Emitted {
     let (graph, document) = checked_unit(unit_body);
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
@@ -54,6 +60,13 @@ fn emit_unit(unit_body: &str) -> Emitted {
 /// The checked graph of `unit_body` over the `Tier` and `Odd` model enums,
 /// with the domain document it selects.
 fn checked_unit(unit_body: &str) -> (qsl_semantics::check::CheckedGraph, Vec<u8>) {
+    checked_unit_with_profile(unit_body, "quire.value.complete/v1")
+}
+
+fn checked_unit_with_profile(
+    unit_body: &str,
+    profile: &str,
+) -> (qsl_semantics::check::CheckedGraph, Vec<u8>) {
     let document = serde_json::to_vec(&fixture::with_types(vec![fixture::variant_type(
         "Odd", &ODD_CASES,
     )]))
@@ -61,7 +74,7 @@ fn checked_unit(unit_body: &str) -> (qsl_semantics::check::CheckedGraph, Vec<u8>
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = {profile:?};\n\
          model M = {package:?};\n\
          {unit_body}\n",
         package = fixture::PACKAGE,

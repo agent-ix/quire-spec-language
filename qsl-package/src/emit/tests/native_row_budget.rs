@@ -27,9 +27,9 @@ fn emission() -> Emission {
 }
 
 fn mixed_emission() -> Emission {
-    super::variant_types::emitted_enums(&format!(
+    super::variant_types::emitted_complete_enums(&format!(
         "{ROWS}\nfunction tier using v(a: M::Tier): Boolean pure {{ a = M::Tier::Gold }}\n\
-         profile g = \"quire.model.complete/v1\"; function accounts using g(a: M::Account, b: M::Account): Boolean pure {{ a = b }}"
+         function accounts using v(a: M::Account, b: M::Account): Boolean pure {{ a = b }}"
     ))
 }
 
@@ -316,6 +316,9 @@ fn adapters_preserve_an_earlier_owner_denial_and_maps_never_lose_their_keys() {
         .to_ir(&mut conversion_budget, collection_locus(supported_index))
         .expect("unrelated map must not poison selected collection conversion");
     assert_eq!(converted.value_type, supported.value_type);
+    assert!(
+        matches!(&converted.value_type, ValueType::Collection(value) if value.kind() == CollectionKind::Sequence)
+    );
     assert_eq!(converted.element_node, supported.element_node);
     let package = native(&maps);
     let joined = quire_contract_model::SelectedExactIdentities::empty()
@@ -473,13 +476,11 @@ fn mixed_collection_package() -> CheckedPackage {
             bound.map(|(lower, upper)| CardinalityBound::new(lower, upper).expect("a bound")),
         ))
     };
-    let collection = emission()
-        .selected_source_collection_rows()
-        .iter()
-        .find(|row| matches!(&row.value_type, ValueType::Collection(value) if value.element() == &ValueType::Boolean))
-        .expect("real sequence row")
-        .value_type
-        .clone();
+    let collection = ValueType::collection(CollectionType::new(
+        CollectionKind::Sequence,
+        ValueType::Boolean,
+        Some(CardinalityBound::new(0, 3).expect("sequence bound")),
+    ));
     let record = CompositeDeclaration::new(
         handle,
         "R",
