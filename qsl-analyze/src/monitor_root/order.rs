@@ -8,6 +8,8 @@ use quire_exact::{NodeKey, Rational};
 
 use super::PlanRoot;
 
+mod charge;
+
 /// Original canonical model-step order value, admitted by the QSL producer.
 /// Its node components are original checker keys, not final writer addresses.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -146,6 +148,16 @@ impl PlanRoot {
         self.model_step_order_with_period(limits, None)
     }
 
+    pub(super) fn model_step_order_with_period_charged(
+        &self,
+        limits: Limits,
+        admitted_period: Option<&quire_contract_model::CheckedRational>,
+        budget: &mut super::progress::charge::Charge<'_>,
+    ) -> Result<ModelStepOrder, super::PlanAuthorityRefusal> {
+        let value = order_value(self, admitted_period)?;
+        charge::encode(&value, limits, budget)
+    }
+
     // Only the same-emission constructor supplies an already compared IR period.
     // This does not expose a caller substitution path for the original order.
     pub(super) fn model_step_order_with_period(
@@ -153,20 +165,9 @@ impl PlanRoot {
         limits: Limits,
         admitted_period: Option<&quire_contract_model::CheckedRational>,
     ) -> Result<ModelStepOrder, ModelStepOrderRefusal> {
-        let (_, source, _) = selected_time_source(self)?;
-        let kind = match &source.source {
-            TimeSourceKind::Dense => SourceEncoding::Dense,
-            TimeSourceKind::Tick { period, .. } => SourceEncoding::Tick {
-                operation: source
-                    .tick_operation_anchor
-                    .as_ref()
-                    .ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingTickOperation))?,
-                period: admitted_period
-                    .map_or(PeriodEncoding::Kernel(period), PeriodEncoding::Admitted),
-            },
-        };
+        let value = order_value(self, admitted_period)?;
         let bytes =
-            quire_canonical::to_vec(&OrderValue { source, kind }, limits).map_err(|encoding| {
+            quire_canonical::to_vec(&value, limits).map_err(|encoding| {
                 ModelStepOrderRefusal {
                     code: ModelStepOrderRefusalCode::Encoding,
                     encoding: Some(encoding),
@@ -174,6 +175,25 @@ impl PlanRoot {
             })?;
         Ok(ModelStepOrder { bytes })
     }
+}
+
+fn order_value<'a>(
+    root: &'a PlanRoot,
+    admitted_period: Option<&'a quire_contract_model::CheckedRational>,
+) -> Result<OrderValue<'a>, ModelStepOrderRefusal> {
+    let (_, source, _) = selected_time_source(root)?;
+    let kind = match &source.source {
+        TimeSourceKind::Dense => SourceEncoding::Dense,
+        TimeSourceKind::Tick { period, .. } => SourceEncoding::Tick {
+            operation: source
+                .tick_operation_anchor
+                .as_ref()
+                .ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingTickOperation))?,
+            period: admitted_period
+                .map_or(PeriodEncoding::Kernel(period), PeriodEncoding::Admitted),
+        },
+    };
+    Ok(OrderValue { source, kind })
 }
 
 /// A borrowed encoding of existing checked facts, with no second model carrier.

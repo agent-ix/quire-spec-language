@@ -143,7 +143,7 @@ pub(super) fn check_time_source_fields(
 #[cfg(test)]
 mod tests;
 
-mod charge;
+pub(super) mod charge;
 mod time_source;
 
 use qsl_foundation::SourceIdentity;
@@ -154,7 +154,6 @@ use quire_contract_model::{
     CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageV2, CheckedRational,
     NativeJoinBudget, NativeJoinCharge, NativeJoinDeniedCharge, NativeJoinLocus,
 };
-use quire_observation::authority::Limits as ProgressLimits;
 
 use super::{order::selected_time_source, ModelStepOrder, ModelStepOrderRefusal, PlanRoot};
 
@@ -182,8 +181,6 @@ pub struct PlanAuthorityValidationCaps {
     pub read: CheckedPackageReadLimits,
     /// Bounds for the canonical model-step order value.
     pub order: quire_canonical::Limits,
-    /// Lowerable observation-owner bounds for the canonical association value.
-    pub progress: ProgressLimits,
 }
 
 /// Stable family of a complete plan-authority refusal.
@@ -369,7 +366,6 @@ pub struct AdmittedPlanAuthority {
     package: Box<CheckedPackageV2>,
     order: ModelStepOrder,
     progress: progress::View,
-    progress_value: Vec<u8>,
     time_source_slot: usize,
     checked_tick_period: Option<CheckedRational>,
 }
@@ -410,7 +406,9 @@ impl AdmittedPlanAuthority {
 
     /// The original observation-owner canonical association VALUE, never document bytes.
     pub fn progress_context(&self) -> &[u8] {
-        &self.progress_value
+        self.progress
+            .association_canonical_bytes()
+            .expect("the constructor retained this immutable owner's association bytes")
     }
 
     /// The original constructor-private observation owner capability.
@@ -533,15 +531,17 @@ impl PlanRoot {
             let clock = final_plan.clock_for_claim(declaration, &occurrence, charge.budget)?;
             time_source::checked_period(&package, clock.clock(), row, &mut charge)?
         };
-        let order =
-            self.model_step_order_with_period(validation.order, checked_tick_period.as_ref())?;
-        let progress_value = progress.association_canonical_bytes(validation.progress)?;
+        progress.association_canonical_bytes()?;
+        let order = self.model_step_order_with_period_charged(
+            validation.order,
+            checked_tick_period.as_ref(),
+            &mut charge,
+        )?;
         Ok(AdmittedPlanAuthority {
             root: self,
             package,
             order,
             progress,
-            progress_value,
             time_source_slot,
             checked_tick_period,
         })

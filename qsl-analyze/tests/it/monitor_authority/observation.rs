@@ -28,6 +28,13 @@ pub(super) fn source() -> Identity {
 pub(super) fn admitted(
     rows: Option<Vec<progress::AssociationRow>>,
 ) -> (progress::View, SubjectSelection) {
+    admitted_with_progress_limits(rows, Limits::owner_max()).expect("real progress owner admission")
+}
+
+pub(super) fn admitted_with_progress_limits(
+    rows: Option<Vec<progress::AssociationRow>>,
+    progress_limits: Limits,
+) -> Result<(progress::View, SubjectSelection), authority::Error> {
     let limits = Limits::owner_max();
     let mut candidate = StaticProducerBundle {
         bundle_identity: Some("bundle:monitor-observations".to_owned()),
@@ -167,8 +174,7 @@ pub(super) fn admitted(
         Some(rows) => base.with_association(rows),
         None => base,
     };
-    let document = progress::derive(context, &selection, limits).expect("owner derives progress");
-    let view =
-        progress::read(document.bytes(), context, &selection, limits).expect("strict owner read");
-    (view, subject)
+    let document = progress::derive(context, &selection, progress_limits)?;
+    let view = progress::read(document.bytes(), context, &selection, progress_limits)?;
+    Ok((view, subject))
 }

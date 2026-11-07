@@ -35,7 +35,6 @@ fn limits() -> PlanAuthorityValidationCaps {
     PlanAuthorityValidationCaps {
         read: LIMITS,
         order: quire_canonical::Limits::new(1 << 20),
-        progress: authority::Limits::owner_max(),
     }
 }
 
@@ -106,9 +105,8 @@ fn genuine_tick_authority_retains_complete_original_values_and_same_emission() {
     let root = tick_root();
     let original_row = row(&root);
     let (progress, subject) = observation::admitted(Some(vec![original_row.clone()]));
-    let expected_progress = progress
-        .association_canonical_bytes(authority::Limits::owner_max())
-        .unwrap();
+    let owner_progress_pointer = progress.association_canonical_bytes().unwrap().as_ptr();
+    let expected_progress = progress.association_canonical_bytes().unwrap().to_vec();
     let expected_order = root.model_step_order(limits().order).unwrap();
     let original_package_bytes = root.emission().package().bytes().to_vec();
     let original_plan = root.plan().clone();
@@ -134,6 +132,7 @@ fn genuine_tick_authority_retains_complete_original_values_and_same_emission() {
     assert_eq!(exact.denominator.as_ref(), "1");
     assert_eq!(context.admitted_order(), expected_order.bytes());
     assert_eq!(context.progress_context(), expected_progress);
+    assert_eq!(context.progress_context().as_ptr(), owner_progress_pointer);
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(context.progress_context()).unwrap(),
         complete_association
@@ -403,42 +402,44 @@ fn independent_source_subject_clock_and_foreign_emission_selections_refuse() {
 fn exact_canonical_bounds_succeed_and_one_short_preserves_owner_failures() {
     let root = tick_root();
     let (view, subject) = observation::admitted(Some(vec![row(&root)]));
-    let progress_size = view
-        .association_canonical_bytes(limits().progress)
-        .unwrap()
-        .len();
     let order_size = root.model_step_order(limits().order).unwrap().bytes().len() as u64;
     let mut exact = limits();
-    exact.progress.max_output_bytes = progress_size;
     exact.order = quire_canonical::Limits::new(order_size);
+    let context = admit(root, Some(view), &subject, exact).unwrap();
+    assert_eq!(context.admitted_order().len() as u64, order_size);
     assert_eq!(
-        admit(root, Some(view), &subject, exact)
+        context.progress_context().as_ptr(),
+        context
+            .progress()
+            .association_canonical_bytes()
             .unwrap()
-            .progress_context()
-            .len(),
-        progress_size
+            .as_ptr()
     );
-    for progress_short in [false, true] {
-        let root = tick_root();
-        let (view, subject) = observation::admitted(Some(vec![row(&root)]));
-        let mut short = exact;
-        if progress_short {
-            short.progress.max_output_bytes -= 1;
-        } else {
-            short.order = quire_canonical::Limits::new(order_size - 1);
-        }
-        let error = admit(root, Some(view), &subject, short).unwrap_err();
-        if progress_short {
-            match error {
-                PlanAuthorityRefusal::Progress(owner) => {
-                    assert_eq!(owner.code(), authority::ErrorCode::ResourceIncomplete)
-                }
-                other => panic!("wrong owner {other:?}"),
-            }
-        } else {
-            assert!(matches!(error, PlanAuthorityRefusal::Order(_)));
-        }
-    }
+    let root = tick_root();
+    let (view, subject) = observation::admitted(Some(vec![row(&root)]));
+    let mut short = exact;
+    short.order = quire_canonical::Limits::new(order_size - 1);
+    assert!(matches!(
+        admit(root, Some(view), &subject, short),
+        Err(PlanAuthorityRefusal::Order(_))
+    ));
+}
+
+#[trace("TC-1081", "FR-251-AC-46")]
+#[test]
+fn progress_owner_admission_keeps_its_exact_and_one_short_resource_limits() {
+    let root = tick_root();
+    let (view, _) = observation::admitted(Some(vec![row(&root)]));
+    let owner_document_bytes = view.bytes().len();
+    let mut limits = authority::Limits::owner_max();
+    limits.max_output_bytes = owner_document_bytes;
+    let (exact, _) = observation::admitted_with_progress_limits(Some(vec![row(&root)]), limits)
+        .expect("exact owner admission output ceiling");
+    assert_eq!(exact.bytes().len(), owner_document_bytes);
+    limits.max_output_bytes -= 1;
+    let error =
+        observation::admitted_with_progress_limits(Some(vec![row(&root)]), limits).unwrap_err();
+    assert_eq!(error.code(), authority::ErrorCode::ResourceIncomplete);
 }
 
 #[trace("TC-1081", "FR-251-AC-45", "FR-251-AC-47")]

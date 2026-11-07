@@ -17,10 +17,14 @@
 //! consumes the call stack.
 
 use qsl_foundation::source::node_table::{standalone, DebugTable, DebugWith, NodeList};
-use std::collections::HashMap;
+use std::collections::{HashMap, TryReserveError};
+use std::convert::Infallible;
 use std::sync::Arc;
 
-use quire_contract_model::{CheckedNodeId, CheckedNodePathSegment};
+use quire_contract_model::{
+    CheckedNodeId, CheckedNodePathSegment, NativeJoinBudget, NativeJoinChargeKind,
+    NativeJoinDeniedCharge, NativeJoinLocus,
+};
 use quire_exact::{InvalidNodeKey, NodeKey, PathSegment};
 
 /// Why a node id could not be converted.
@@ -93,21 +97,9 @@ impl StructuralIds {
     /// [`CheckedNodePathSegment::Node`] holding the operand's own id, shared
     /// with every other id built here that names that operand.
     pub fn id(&self, key: &NodeKey) -> CheckedNodeId {
-        let mut done = self.interned.borrow_mut();
-        let path = key
-            .path()
-            .into_iter()
-            .map(|segment| match segment {
-                PathSegment::Text(text) => CheckedNodePathSegment::Name(text.into()),
-                PathSegment::Node(operand) => {
-                    CheckedNodePathSegment::Node(intern(&mut done, &operand))
-                }
-            })
-            .collect();
-        CheckedNodeId {
-            package: key.package().into(),
-            path,
-            ordinal: key.ordinal(),
+        match materialize_id(key, &mut self.interned.borrow_mut(), &mut Unmetered) {
+            Ok(id) => id,
+            Err(never) => match never {},
         }
     }
 }
@@ -118,41 +110,198 @@ pub fn structural_id(key: &NodeKey) -> CheckedNodeId {
     StructuralIds::default().id(key)
 }
 
-/// The interned id of `key`, converting each operand not yet interned once.
-fn intern(done: &mut HashMap<NodeKey, Arc<CheckedNodeId>>, key: &NodeKey) -> Arc<CheckedNodeId> {
-    let mut pending = vec![(key.clone(), false)];
-    while let Some((node, expanded)) = pending.pop() {
-        if done.contains_key(&node) {
-            continue;
+/// A structural-id materialization stopped before an unpaid allocation.
+#[derive(Debug, thiserror::Error)]
+pub enum StructuralIdMaterializationError {
+    /// The caller's actual native ledger denied its next logical charge.
+    #[error("native structural-id charge denied: {0:?}")]
+    Budget(NativeJoinDeniedCharge),
+    /// A paid working list or package string could not reserve storage.
+    #[error(transparent)]
+    Allocation(#[from] TryReserveError),
+}
+
+/// Materialize the original structural identity under the caller's one budget.
+///
+/// Work visits and copies are charged before they happen. Logical storage
+/// charges cover each temporary container, its reserved entries, every owned
+/// UTF-8 byte, and each newly retained shared id/cache entry. The conversion
+/// never resets the ledger and uses the same identity traversal and operand
+/// interning as [`structural_id`]. It does not meter a later encoder's heap.
+///
+/// # Errors
+///
+/// The original native denial or a paid list/string reservation failure.
+pub fn try_structural_id(
+    key: &NodeKey,
+    budget: &mut NativeJoinBudget,
+    locus: NativeJoinLocus,
+) -> Result<CheckedNodeId, StructuralIdMaterializationError> {
+    let mut provision = Metered { budget, locus };
+    provision.storage(1)?;
+    materialize_id(key, &mut HashMap::new(), &mut provision)
+}
+
+trait Materialization {
+    type Error;
+
+    fn work(&mut self, amount: u128) -> Result<(), Self::Error>;
+    fn storage(&mut self, amount: u128) -> Result<(), Self::Error>;
+    fn room<T>(&mut self, list: &mut Vec<T>, additional: usize) -> Result<(), Self::Error>;
+    fn text(&mut self, text: &str) -> Result<Box<str>, Self::Error>;
+    fn cache_room(
+        &mut self,
+        cache: &mut HashMap<NodeKey, Arc<CheckedNodeId>>,
+    ) -> Result<(), Self::Error>;
+
+    fn path(&mut self, key: &NodeKey) -> Result<Vec<PathSegment>, Self::Error> {
+        self.storage(1)?;
+        for segment in key.view().path() {
+            self.work(1)?;
+            self.storage(1)?;
+            if let quire_exact::PathSegmentView::Text(text) = segment {
+                self.storage(1 + text.len() as u128)?;
+                self.work(text.len() as u128)?;
+            }
         }
-        let path = node.path();
+        // The kernel copies exactly these direct text segments; nested keys
+        // are shallow owner handles. All logical copies were paid above.
+        Ok(key.path())
+    }
+}
+
+struct Unmetered;
+
+impl Materialization for Unmetered {
+    type Error = Infallible;
+
+    fn work(&mut self, _: u128) -> Result<(), Infallible> { Ok(()) }
+    fn storage(&mut self, _: u128) -> Result<(), Infallible> { Ok(()) }
+    fn room<T>(&mut self, list: &mut Vec<T>, additional: usize) -> Result<(), Infallible> {
+        list.reserve(additional);
+        Ok(())
+    }
+    fn text(&mut self, text: &str) -> Result<Box<str>, Infallible> { Ok(text.into()) }
+    fn cache_room(&mut self, _: &mut HashMap<NodeKey, Arc<CheckedNodeId>>) -> Result<(), Infallible> {
+        Ok(())
+    }
+}
+
+struct Metered<'a> {
+    budget: &'a mut NativeJoinBudget,
+    locus: NativeJoinLocus,
+}
+
+impl Materialization for Metered<'_> {
+    type Error = StructuralIdMaterializationError;
+
+    fn work(&mut self, amount: u128) -> Result<(), Self::Error> {
+        self.budget.accounted_charge(NativeJoinChargeKind::Work, amount, self.locus)
+            .map_err(StructuralIdMaterializationError::Budget)
+    }
+    fn storage(&mut self, amount: u128) -> Result<(), Self::Error> {
+        self.budget.accounted_charge(NativeJoinChargeKind::Storage, amount, self.locus)
+            .map_err(StructuralIdMaterializationError::Budget)
+    }
+    fn room<T>(&mut self, list: &mut Vec<T>, additional: usize) -> Result<(), Self::Error> {
+        let needed = list.len().saturating_add(additional);
+        if needed > list.capacity() {
+            let target = needed.max(list.capacity().saturating_mul(2));
+            self.storage(target as u128)?;
+            list.try_reserve_exact(target - list.len())?;
+        }
+        Ok(())
+    }
+    fn text(&mut self, text: &str) -> Result<Box<str>, Self::Error> {
+        self.storage(1 + text.len() as u128)?;
+        self.work(text.len() as u128)?;
+        let mut owned = String::new();
+        owned.try_reserve_exact(text.len())?;
+        owned.push_str(text);
+        Ok(owned.into_boxed_str())
+    }
+    fn cache_room(&mut self, cache: &mut HashMap<NodeKey, Arc<CheckedNodeId>>) -> Result<(), Self::Error> {
+        // One retained map entry. Payload/path strings and shared id are
+        // charged separately; this is logical storage, not a table-layout estimate.
+        self.storage(1)?;
+        cache.try_reserve(1)?;
+        Ok(())
+    }
+}
+
+fn materialize_id<P: Materialization>(
+    key: &NodeKey,
+    done: &mut HashMap<NodeKey, Arc<CheckedNodeId>>,
+    provision: &mut P,
+) -> Result<CheckedNodeId, P::Error> {
+    provision.work(1)?;
+    let segments = provision.path(key)?;
+    provision.storage(1)?;
+    let mut path = Vec::new();
+    provision.room(&mut path, segments.len())?;
+    for segment in segments {
+        provision.work(1)?;
+        path.push(match segment {
+            PathSegment::Text(text) => CheckedNodePathSegment::Name(text.into()),
+            PathSegment::Node(operand) => CheckedNodePathSegment::Node(intern(done, &operand, provision)?),
+        });
+    }
+    Ok(CheckedNodeId {
+        package: provision.text(key.package())?,
+        path,
+        ordinal: key.ordinal(),
+    })
+}
+
+/// The one shared iterative operand conversion, with allocation policy kept
+/// separate from structural identity decisions.
+fn intern<P: Materialization>(
+    done: &mut HashMap<NodeKey, Arc<CheckedNodeId>>,
+    key: &NodeKey,
+    provision: &mut P,
+) -> Result<Arc<CheckedNodeId>, P::Error> {
+    provision.storage(1)?;
+    let mut pending = Vec::new();
+    provision.room(&mut pending, 1)?;
+    pending.push((key.clone(), false));
+    while let Some((node, expanded)) = pending.pop() {
+        provision.work(1)?;
+        if done.contains_key(&node) { continue; }
+        let path = provision.path(&node)?;
         if !expanded {
+            provision.room(&mut pending, 1)?;
             pending.push((node.clone(), true));
             for segment in &path {
+                provision.work(1)?;
                 if let PathSegment::Node(operand) = segment {
                     if !done.contains_key(operand) {
+                        provision.room(&mut pending, 1)?;
                         pending.push((operand.clone(), false));
                     }
                 }
             }
             continue;
         }
+        provision.storage(1)?;
+        let mut converted = Vec::new();
+        provision.room(&mut converted, path.len())?;
+        for segment in path {
+            provision.work(1)?;
+            converted.push(match segment {
+                PathSegment::Text(text) => CheckedNodePathSegment::Name(text.into()),
+                PathSegment::Node(operand) => CheckedNodePathSegment::Node(done[&operand].clone()),
+            });
+        }
         let id = CheckedNodeId {
-            package: node.package().into(),
-            path: path
-                .into_iter()
-                .map(|segment| match segment {
-                    PathSegment::Text(text) => CheckedNodePathSegment::Name(text.into()),
-                    PathSegment::Node(operand) => {
-                        CheckedNodePathSegment::Node(done[&operand].clone())
-                    }
-                })
-                .collect(),
+            package: provision.text(node.package())?,
+            path: converted,
             ordinal: node.ordinal(),
         };
+        provision.storage(1)?;
+        provision.cache_room(done)?;
         done.insert(node, Arc::new(id));
     }
-    done[key].clone()
+    Ok(done[key].clone())
 }
 
 /// The structural keys of structural ids, each distinct operand id converted

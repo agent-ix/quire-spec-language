@@ -8,9 +8,9 @@ use quire_exact::{NodeKey, PathSegmentView};
 use super::PlanAuthorityRefusal;
 
 /// Borrows the original ledger; owns neither allowance nor shadow counters.
-pub(super) struct Charge<'budget> {
-    pub(super) budget: &'budget mut NativeJoinBudget,
-    pub(super) locus: NativeJoinLocus,
+pub(in crate::monitor_root) struct Charge<'budget> {
+    pub(in crate::monitor_root) budget: &'budget mut NativeJoinBudget,
+    pub(in crate::monitor_root) locus: NativeJoinLocus,
 }
 
 impl Charge<'_> {
@@ -32,15 +32,25 @@ impl Charge<'_> {
             })
     }
 
-    pub(super) fn work(&mut self, amount: u128) -> Result<(), PlanAuthorityRefusal> {
+    pub(in crate::monitor_root) fn work(
+        &mut self,
+        amount: u128,
+    ) -> Result<(), PlanAuthorityRefusal> {
         self.pay(NativeJoinChargeKind::Work, amount)
     }
 
-    pub(super) fn storage(&mut self, amount: u128) -> Result<(), PlanAuthorityRefusal> {
+    pub(in crate::monitor_root) fn storage(
+        &mut self,
+        amount: u128,
+    ) -> Result<(), PlanAuthorityRefusal> {
         self.pay(NativeJoinChargeKind::Storage, amount)
     }
 
-    pub(super) fn text(&mut self, left: &str, right: &str) -> Result<bool, PlanAuthorityRefusal> {
+    pub(in crate::monitor_root) fn text(
+        &mut self,
+        left: &str,
+        right: &str,
+    ) -> Result<bool, PlanAuthorityRefusal> {
         let (mut left, mut right) = (left.bytes(), right.bytes());
         loop {
             self.work(2)?;
@@ -91,7 +101,7 @@ impl Charge<'_> {
         }
     }
 
-    pub(super) fn subject(
+    pub(in crate::monitor_root) fn subject(
         &mut self,
         left: &MonitorSubject,
         right: &MonitorSubject,
