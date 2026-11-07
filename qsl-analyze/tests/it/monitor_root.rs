@@ -904,7 +904,10 @@ fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them(
         assert_eq!(projected.source_tuple_view(), Some(row));
     }
     // The enum and collection rows follow the same rekey.
-    let enum_rows = root.emission().selected_source_enum_rows();
+    let enum_rows = root
+        .emission()
+        .selected_source_enum_rows(&mut native_budget)
+        .expect("budgeted enum rows");
     let color = enum_rows
         .iter()
         .find(|row| {
@@ -1159,4 +1162,159 @@ fn source_aliases_are_not_model_step_order_authority() {
             .model_step_order(quire_canonical::Limits::new(1 << 20))
             .unwrap()
     );
+}
+
+/// Converted model shapes enter the actual IR selected monitor closure with
+/// the same budget that paid for their QSL-owned materialization.
+#[trace("TC-1331", "FR-531-AC-30")]
+#[test]
+fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure() {
+    use quire_contract_model::{NativeJoinBudget, SelectedMonitorClosureRows};
+    use serde_json::json;
+
+    let domain = Domain::config_version();
+    let mut document: serde_json::Value = serde_json::from_slice(&domain.document).unwrap();
+    let tier = format!("ix://{}/Tier", domain.package);
+    document["constructs"].as_array_mut().unwrap().push(json!({
+        "kind": {"module": domain.package, "name": "tier"},
+        "moduleVersion": "1.0.0",
+        "construct": {"identity": "none", "shape": "enumeration",
+            "members": {"variants": "required"},
+            "meaning": qsl_semantics::model::intake::meaning::VARIANT_TYPE}
+    }));
+    let mut declaration = document["types"][0].clone();
+    declaration["identity"] = json!(tier);
+    declaration["displayName"] = json!("Tier");
+    declaration["kind"]["name"] = json!("tier");
+    declaration.as_object_mut().unwrap().remove("scalar");
+    declaration["constraints"] = json!([]);
+    declaration["variants"] = ["Gold", "Standard"]
+        .into_iter()
+        .map(|case| {
+            json!({
+                "identity": format!("ix://{}/variant/Tier-{case}", domain.package),
+                "name": case,
+                "origin": {"source": {"sourceIdentity": document["source"]["identity"],
+                    "path": "fixture.qspec", "startLine": 1, "startColumn": 1}}
+            })
+        })
+        .collect();
+    document["types"].as_array_mut().unwrap().push(declaration);
+    let mut field = document["types"][1]["fields"][0].clone();
+    field["identity"] = json!(format!("ix://{}/ConfigVersion/tier", domain.package));
+    field["name"] = json!("tier");
+    field["typeRef"] = json!(tier);
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .unwrap()
+        .push(field);
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
+    let unit = unit_source(
+        "always holds(c.tier = M::Tier::Gold)",
+        "",
+        true,
+        "on origin",
+    );
+    let source = SourceIdentity::new("agent-ix", "monitor-root");
+    let name = LibraryName::new("fixture").unwrap();
+    let root = emit_plan_root(
+        &PlanRootRequest {
+            source: &source,
+            path: "monitor.native",
+            bytes: unit.as_bytes(),
+            packages: &packages,
+            package_name: &name,
+            limits: SpineLimits::default(),
+            clause: "C",
+            target: &target(),
+            settings: &TimingObligationSettings::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("authored model-enum monitor emits");
+    let mut evidence = root.emission().evidence().clone();
+    let _ = evidence.insert_domain_package_document(domain.package, bytes.as_slice());
+    let package = match read_checked_package(root.emission().package().bytes(), LIMITS, &evidence) {
+        CheckedPackageDispatchResult::AdmittedV2(package) => package,
+        other => panic!("the genuine custom-domain plan root must read: {other:?}"),
+    };
+    let mut budget = NativeJoinBudget::new(100_000_000, 100_000_000);
+    let identities = root
+        .emission()
+        .identity_rows(&package, &mut budget)
+        .expect("same-emission identity rows");
+    let equality = root
+        .emission()
+        .equality_witness(&package, &mut budget)
+        .expect("same-emission equality rows");
+    let enums = root
+        .emission()
+        .selected_source_enum_rows(&mut budget)
+        .expect("source enum adapter");
+    let model_shapes = root
+        .emission()
+        .selected_ir_model_enum_shape_rows(&mut budget)
+        .expect("model enum adapter");
+    assert_eq!(
+        model_shapes.len(),
+        1,
+        "the reached ConfigVersion field retains Tier"
+    );
+    let collections: Vec<_> = root
+        .emission()
+        .selected_source_collection_rows()
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            row.to_ir(
+                &mut budget,
+                quire_contract_model::NativeJoinLocus {
+                    source: quire_contract_model::NativeJoinLocusSource::ReachedRow(index),
+                    form: "monitor_source_collection_row",
+                },
+            )
+            .expect("monitor result sequence converts")
+        })
+        .collect();
+    let prefix = budget.consumed();
+    let plan = package
+        .monitor_plans()
+        .next()
+        .expect("one genuine plan root");
+    let closure = plan
+        .project_selected_type_closure(
+            SelectedMonitorClosureRows {
+                declarations: identities.declarations(),
+                fields: identities.fields(),
+                model_tuples: root.emission().selected_tuple_declaration_rows(),
+                source_units: root.emission().selected_source_unit_rows(),
+                model_enum_declarations: root.emission().selected_model_enum_declaration_rows(),
+                model_enum_members: root.emission().selected_model_enum_member_rows(),
+                model_enum_shapes: &model_shapes,
+                source_records: identities.source_records(),
+                source_tuples: root.emission().selected_source_tuple_rows(),
+                source_unions: identities.source_unions(),
+                source_enums: &enums,
+                source_collections: &collections,
+                equality_applications: equality.applications(),
+                equality_facts: equality.facts(),
+            },
+            &mut budget,
+        )
+        .expect("IR admits and projects converted authentic model shapes");
+    assert_eq!(closure.model_enums(), model_shapes.as_slice());
+    let projected = package
+        .project_exact_type(
+            &model_shapes[0].structural_node,
+            closure.identities(),
+            &mut budget,
+        )
+        .expect("the joined authentic model enum projects through native IR");
+    assert_eq!(
+        projected.value_type(),
+        &quire_exact::ValueType::Enum(model_shapes[0].shape.clone())
+    );
+    assert!(budget.consumed().work > prefix.work);
+    assert!(budget.consumed().storage > prefix.storage);
 }

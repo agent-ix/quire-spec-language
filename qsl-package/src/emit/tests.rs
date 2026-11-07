@@ -57,6 +57,7 @@ mod hyper_clause;
 mod inventory_ceilings;
 mod large_cycle;
 mod mapping_support;
+mod native_row_budget;
 mod navigation;
 mod one_occurrence;
 mod operation_effects;

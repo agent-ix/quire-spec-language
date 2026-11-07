@@ -978,6 +978,9 @@ pub struct EqualityFactWitnessRow {
     owner: Option<CheckedNodeOwner>,
     value_type: Option<quire_exact::ValueType>,
     fact: EqualityFactWitness,
+    // Derived eligibility in this final emission, not an admission claim. It
+    // avoids building a temporary identity index in the budgeted row adapter.
+    selected_for_emission: bool,
 }
 
 /// The exact producer fact represented by an equality witness row.
@@ -1249,28 +1252,6 @@ impl Emission {
     /// in declaration order with their final type nodes and checked types.
     pub fn selected_source_tuple_rows(&self) -> &[quire_contract_model::SelectedSourceTupleRow] {
         &self.selected_source_tuple_rows
-    }
-
-    /// Complete source enum rows in the form IR's `with_source_enum_rows`
-    /// joins: each declaration with its cases in the shape's canonical
-    /// order, assembled from the declaration and member rows.
-    pub fn selected_source_enum_rows(&self) -> Vec<quire_contract_model::SelectedSourceEnumRow> {
-        self.selected_enum_declaration_rows
-            .iter()
-            .map(|declaration| {
-                let mut members: Vec<_> = self
-                    .selected_enum_member_rows
-                    .iter()
-                    .filter(|member| member.declaration_node == declaration.structural_node)
-                    .cloned()
-                    .collect();
-                members.sort_by_key(|member| declaration.shape.rank(&member.variant));
-                quire_contract_model::SelectedSourceEnumRow {
-                    declaration: declaration.clone(),
-                    members,
-                }
-            })
-            .collect()
     }
 
     /// The model-owned enum shape rows (FR-092 "Model enum shape rows"), in
@@ -2863,6 +2844,7 @@ fn equality_fact_witness_rows(
                 owner,
                 value_type,
                 fact,
+                selected_for_emission: true,
             });
             Ok(())
         };
@@ -7738,6 +7720,8 @@ fn own_evidence(lock: &CheckedPackageLockV2) -> CheckedPackageEvidence {
     }
     evidence
 }
+
+mod selected_rows;
 
 #[cfg(test)]
 pub(crate) mod tests;
