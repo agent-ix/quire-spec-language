@@ -36,5 +36,6 @@ mod refinement_unmapped;
 mod ring_world;
 mod script_search;
 mod static_subject;
+mod tool_failure;
 mod vault_world;
 mod witness_entry_name;
