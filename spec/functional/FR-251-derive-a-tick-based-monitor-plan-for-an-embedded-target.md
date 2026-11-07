@@ -23,6 +23,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-observation/FR-004
     type: depends_on
+  - target: ix://agent-ix/quire-contract-ir/FR-358
+    type: depends_on
 ---
 # FR-251: Derive a tick-based monitor plan for an embedded target
 
@@ -230,6 +232,48 @@ fabricate an admitted value or infer authority from clock configuration. A
 bare semantic identity SHALL NOT substitute for a complete admitted value.
 QSL SHALL NOT reconstruct the association from a second emission or duplicate
 the owner admission rules.
+
+The handoff SHALL expose the original opaque IR `AdmissionBinding` retained by
+the admitted emitting package used by downstream closure selection. The package
+used by that selection SHALL retain that exact capability. A clone permitted by
+the IR owner retains it; an independent strict read of equal bytes or a handoff
+from another emission SHALL NOT replace it. QSL SHALL NOT mint, reconstruct,
+hash or serialize an alternative binding. This requirement leaves the concrete
+constructor ownership form to the owning admission interface; it does not
+introduce a second package admission for the handoff.
+
+### Shared preparation budget
+
+Authority selection and canonical value materialization SHALL require the
+caller's same mutable `NativeJoinBudget` under
+[FR-358](ix://agent-ix/quire-contract-ir/FR-358). The budget SHALL be shared with
+the following row adaptation and native selected-closure preparation. QSL SHALL
+NOT create a fresh allowance, clone a budget, restore spent work or storage,
+or continue a preparation phase after its first unpaid charge. Starting a new
+phase through the owner's public resume operation may clear phase metadata;
+it SHALL preserve cumulative consumption and the caller's original limits.
+
+Before each corresponding inspection, comparison, traversal, conversion or
+allocation, QSL SHALL admit its work and logical ownership charges through the
+original budget's public accounted-charge interface. The inventory SHALL
+include original source and full claim identity comparison; checked clause,
+model-time-source and association-row scans; structural identity components
+and examined text/value bytes; final-emission binding lookup and comparison;
+exact period formatting; canonical order and observation association value
+materialization, temporary owned copies and final retained values; and owned
+refusal envelopes when such envelopes are affordable. Borrowing an existing
+owner value charges no storage; retaining or copying a handle, container,
+element, row or payload follows FR-358's logical-storage rule. Merely deriving
+a second encoded representation for measurement SHALL NOT move an allocation
+before its charge or duplicate the owner's encoding judgment.
+
+A denied charge SHALL return the original native denied kind and full attempted
+amount, original configured bound and non-owning first-unpaid locus, preserve
+all earlier admitted consumption, and expose no partially authoritative
+context. Counter or footprint arithmetic exhaustion SHALL deny rather than
+wrap. A compact zero-storage refusal SHALL allocate no owned diagnostic.
+Read and canonical owner limits remain validation ceilings; they SHALL NOT
+substitute for the preparation budget or replenish either of its counters.
 
 The handoff SHALL retain the owner capabilities required to use both values
 after temporary compilation inputs are dropped. A clone or writer rename
@@ -615,10 +659,11 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-42 | The `Emission` returned with a plan-root package holds, non-empty wherever the acquisition had rows, the selected model declaration rows, selected model field rows, source-unit rows, model enum and source enum declaration and member rows, source union rows, source record rows, tuple declaration rows, operation-member rows, equality producer rows, equality fact rows, temporal binding rows and omitted nodes of that acquisition. Every node id in each of them (anchor, structural node, record node, declaration node, union payload node, record member type node, checked node, source-map entry node, fact nodes, omitted node and the node an omission cause names, temporal binding declaration) equals the plan-root package's id for the node, so a node the writer renames is named by its renamed id in every row and a row naming no renamed node is unchanged; no row is written anew. The selected model declaration and field rows equal the unit's acquisition rows, and IR's selected exact identity join accepts them against the package read back. | Test (TC-1081) |
 | FR-251-AC-43 | For a plan root written over a unit with two temporal clauses, each subject's clause node and claim ordinal select, through the returned `Emission`'s temporal binding rows, the declaration the plan root's `clause` binding names and the declaration of the package's `temporal_clause_names` row of that ordinal, read back through the strict reader; the selection is re-keyed with the retained rows through every rename the writer performs or may perform, so a carry that renames a clause declaration returns the renamed id and not the base package's id; a subject whose clause node or claim ordinal the package does not hold selects nothing, and a subject's selection never returns the other clause's declaration. | Test (TC-1081) |
 | FR-251-AC-44 | After the plan-root writer renames the fields `origin_tick` and `amount` of the generated `Instance`, `Activation` and `LimitReached` records to `origin` and `value`, each retained source record row of those records has `admitted_name` `origin` or `value` at the renamed members and the other members' binding names unchanged, keeps the declared field names `origin_tick` and `amount`, and Contract IR's source record join over the rows and the package read back through the strict reader succeeds and projects each record; the same rows with a renamed member's `admitted_name` set to the declared field name are refused with `MismatchedIdentityWitness`. | Test (TC-1081) |
-| FR-251-AC-45 | From a genuine authored tick-monitor unit, the public plan-root handoff returns the complete QSL-admitted model-step order and the observation owner's original canonical association VALUE, bound to the same final emission as its plan and two timing obligations. A public consumer compares the complete values and original source, structural clause node, claim role and ordinal, selected subject and checked model-time facts; the final emission temporal binding join equals its plan-root clause and the strict reader declaration. Both values and owner capabilities remain usable after temporary compilation inputs are dropped; clones and writer renames retain the owner-permitted association and all previously retained rows. | Test |
+| FR-251-AC-45 | From a genuine authored tick-monitor unit, the public plan-root handoff returns the complete QSL-admitted model-step order and the observation owner's original canonical association VALUE, bound to the same final emission as its plan and two timing obligations. A public consumer compares the complete values and original source, structural clause node, claim role and ordinal, selected subject and checked model-time facts; the final emission temporal binding join equals its plan-root clause and the strict reader declaration. The handoff exposes the actual emitting package's original opaque IR AdmissionBinding, retained by that same package and its owner-permitted clones; an independent equal-byte read does not retain it. Both values and owner capabilities remain usable after temporary compilation inputs are dropped; clones and writer renames retain the owner-permitted association and all previously retained rows. | Test |
 | FR-251-AC-46 | Independently omit the checked order premise and progress association; substitute a foreign admitted emission; change the structural clause node, claim role, claim ordinal or original source; change the selected subject, observation source, clock identity/revision, model, structural model/unit/dimension/digital-operation node, unit, source kind, digital operation or exact period; and substitute order or progress values. Each candidate returns its typed missing-premise, owner refusal or mismatched-selection condition and no partial admitted context. Exact owner canonical-association byte bounds succeed; one byte less returns the original owner resource refusal. A name, digest, clock configuration, equal numeric index, full authority document or a second emission cannot turn refusal into admission. | Test |
 | FR-251-AC-47 | After original source, model and request inputs are dropped, a public consumer reads the actual combined checked unit retained by the plan root: its exact source includes the authored unit and generated entries, its selected clause equals the plan subject, and its checked time source retains the selected model node, source kind and unit. These are explicitly original checker facts, not final renamed identities or admitted order/progress. | Test |
 | FR-251-AC-48 | A genuine dense model-time monitor root yields the complete specified canonical model-step value, with the actual checked model/unit/dimension identities. A digital source retains its exact period and checked tick-operation anchor. Changed source kind, unit or period changes the value. Exact-byte-ceiling encoding succeeds and one byte less returns Encoding with the original native canonical limit and no partial order value. | Test |
+| FR-251-AC-49 | The authority handoff and order materialization receive the caller's one mutable NativeJoinBudget, precharge every specified selection/materialization work and logical-storage step, and preserve previous consumption when used before row adaptation and native closure preparation. Measure genuine dense and tick handoffs at ample allowance: exact combined work and storage succeed; one short independently preserves the first unpaid native kind, full amount, original bound and non-owning locus without a context. Precharge part of the same budget before entry, then demonstrate that two individually affordable handoffs can exhaust their combined allowance without resetting counters. Package clones yield equal values and charges; zero storage denies before owned allocation, later charges preserve the first refusal within a phase, and overflow cannot wrap. Owner read/canonical ceilings do not act as a second preparation allowance. | Test, Inspection |
 
 ## Dependencies
 
