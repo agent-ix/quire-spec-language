@@ -161,6 +161,7 @@ impl ModelSpellings {
     /// when no unit of the compiling unit declares it: the one unit of that
     /// name the packages the unit selects declare in their own documents
     /// (FR-505-AC-9). Two different units of the name leave it unresolved.
+    #[ix_trace_rs::string_edge]
     pub(crate) fn declared_unit(
         &self,
         unit: Option<&RawSourceRef>,

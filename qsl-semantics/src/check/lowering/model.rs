@@ -2612,10 +2612,13 @@ impl<'a> Lowering<'a> {
         use crate::model::domain_package::{ScalarValueDomain, ValueTypeRef};
 
         for model in self.models {
-            // A type of the package names its units in the package's own
-            // document first (FR-505-AC-7, AC-9).
+            // A type of the package names a unit the compiling unit declares,
+            // or else a unit the package's own document declares
+            // (FR-505-AC-7, AC-9).
             let mut units = declared.clone();
-            units.extend(crate::check::check::model_unit_ids(model));
+            for (name, id) in crate::check::check::model_unit_ids(model) {
+                units.entry(name).or_insert(id);
+            }
             let location =
                 type_declaration(model.alias.as_deref().unwrap_or(&model.selection.identity));
             for (key, record) in &model.records {

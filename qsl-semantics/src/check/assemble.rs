@@ -3730,11 +3730,14 @@ impl PackageDeclarations {
                     })
                     .collect(),
             );
-            // A type of the package resolves its `unit` against the units of
-            // the package's own document first, then the unit's declarations.
+            // A type of the package names a unit the compiling unit declares,
+            // or else a unit the package's own document declares
+            // (FR-505-AC-7, AC-9).
             let mut package_units = model_units.clone();
             if let Some(admitted_model) = admitted.last() {
-                package_units.extend(super::check::model_unit_ids(admitted_model));
+                for (name, id) in super::check::model_unit_ids(admitted_model) {
+                    package_units.entry(name).or_insert(id);
+                }
             }
             match model_object_types(
                 &selection.alias,

@@ -1186,7 +1186,7 @@ fn unit_ids_by_name(
 /// The units a domain package declares in its own document, by their authored
 /// name: the unit table a type of that package resolves its `unit` against
 /// (FR-505-AC-7, AC-9), whether or not the compiling unit declares a unit of
-/// the same name.
+/// the same name (the compiling unit's own unit of that name takes the name).
 pub(crate) fn model_unit_ids(
     model: &crate::check::AdmittedModel,
 ) -> BTreeMap<String, quire_exact::UnitId> {
