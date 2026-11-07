@@ -422,7 +422,8 @@ mod integer_budget_tests {
             "-340282366920938463463374607431768211457",
         ] {
             let value: Integer = spelling.parse().expect("exact signed boundary");
-            for value in [value.clone(), value.try_clone().expect("cold owned digits")] {
+            let cold = value.try_clone().expect("cold owned digits");
+            for value in [value, cold] {
                 let footprint = value.copy_footprint();
                 let mut budget = NativeJoinBudget::new(1_000_000, 1_000_000);
                 start(&mut budget, LOCUS.form).expect("fresh phase");
