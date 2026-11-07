@@ -121,17 +121,18 @@ whose identity is no header-selectable layer's and which the
 definition (FR-354, QSpec FR-467). The selection is typed: the catalog's
 `DefinitionRole` has the variant `DefinitionRole::Extension`, and a held
 definition is an extension definition exactly when its role is `Extension`
-(equivalently, a `Definition::is_extension()` that is true exactly when the
-definition's exact bytes hold a `grammar_schema` or a `typed_node_schema`
-member, so that a definition missing one member still reaches FR-354's
-`missing-member` refusal). E3 never classifies by the identity's spelling.
+(a `Definition::is_extension()`, if provided, is `role() ==
+DefinitionRole::Extension`). E3 never classifies by the identity's spelling
+or the definition's members, so an `Extension` definition missing a member
+is selected and then refused `missing-member` by FR-354.
 
 - E3 SHALL return the unit's extension selections, each the catalog
   definition's `DefinitionRef` `{authority, identity}`, in header source
   order; FR-354 "Definition validation" holds them.
 - An identity the catalog holds under any other role, and any identity when
-  no `ProfileCatalogInput` is supplied, falls to the `unsupported-selection`
-  row.
+  no `ProfileCatalogInput` is supplied, falls to the table's remaining rows.
+- Two header profiles that select one extension both resolve, and the
+  extension is selected once.
 - An extension selection selects no layer: it adds no admitted form to a
   `using` declaration, and a declaration whose `using` alias names it is
   admitted as for a unit that selects no layer.
@@ -254,7 +255,7 @@ The emitter SHALL write the lock's `edition` as the catalog's edition and
 its `definition_selections` as these rows, each `{authority, identity}`,
 each once, in this order:
 
-1. the closed rows: the header-selected layers and every layer their
+1. the closed rows, in the lock's row order: the header-selected layers and every layer their
    `requires` closure names; the qualification-catalog rows QSpec FR-001
    selects for those layers (the `always` rows for a unit that selects no
    layer), the edition excepted; and the complete-model and
