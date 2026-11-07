@@ -194,7 +194,7 @@ impl DefinitionSourceRef {
     /// readers measure them against the reader bound.
     pub(crate) fn wire_len(wire: &SourceRefWire) -> usize {
         let (authority, identity) = wire;
-        authority.len() + identity.len()
+        authority.len().saturating_add(identity.len())
     }
 
     /// The source's authority (e.g. a registry or repository host).

@@ -729,57 +729,60 @@ impl ReplayRequestRefusal {
 /// caller-declared number a request could understate to launder an
 /// oversized byte provision past the bound (B3).
 fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
-    wire.package.bytes().len()
-        + wire
-            .profile_selections
-            .iter()
-            .map(|p| p.profile().len() + p.value().len())
-            .sum::<usize>()
-        + wire
-            .stage_limits
-            .keys()
-            .map(|name| name.len() + std::mem::size_of::<u64>())
-            .sum::<usize>()
-        + wire
-            .dependencies
-            .iter()
-            .map(|entry| {
-                entry.identity.len()
-                    + entry
-                        .sources
-                        .iter()
-                        .map(DefinitionSourceRef::wire_len)
-                        .sum::<usize>()
-            })
-            .sum::<usize>()
-        + wire.replay_target.members.measured_bytes()
-        + wire
-            .replay_target
-            .over
-            .as_ref()
-            .map_or(0, |over| over.population.len() + over.key.len())
-        + wire.backend.len()
-        + wire
-            .state_environment
-            .entries()
-            .iter()
-            .map(|(name, value)| name.len() + value.len())
-            .sum::<usize>()
-        + wire
-            .byte_provision
-            .iter()
-            .map(|(authority, identity, bytes)| authority.len() + identity.len() + bytes.len())
-            .sum::<usize>()
-        + wire
-            .declared_domains
-            .iter()
-            .map(|declared| crate::witness::finite_bound_bytes(declared.bound()))
-            .sum::<usize>()
-        + wire.source.measured_bytes()
-        + wire.object_environment.as_ref().map_or(0, |environment| {
-            let labels = environment.identity();
-            labels.authority.len() + labels.identity.len()
-        })
+    let mut bytes = 0usize;
+    let mut add = |length| bytes = bytes.saturating_add(length);
+    add(wire.package.bytes().len());
+    for selection in &wire.profile_selections {
+        add(selection.profile().len());
+        add(selection.value().len());
+    }
+    for name in wire.stage_limits.keys() {
+        add(name.len());
+        add(std::mem::size_of::<u64>());
+    }
+    for entry in &wire.dependencies {
+        add(entry.identity.len());
+        for source in &entry.sources {
+            add(DefinitionSourceRef::wire_len(source));
+        }
+        if let Some(rows) = &entry.refinement_internals {
+            for row in rows {
+                // Typed sequence slots also bound empty names and entries;
+                // no serialization or retained clone is needed to count them.
+                add(std::mem::size_of::<CheckedRefinementInternal>());
+                add(row.refinement.len());
+                for internal in &row.internal {
+                    add(std::mem::size_of::<Box<str>>());
+                    add(internal.len());
+                }
+            }
+        }
+    }
+    add(wire.replay_target.members.measured_bytes());
+    if let Some(over) = &wire.replay_target.over {
+        add(over.population.len());
+        add(over.key.len());
+    }
+    add(wire.backend.len());
+    for (name, value) in wire.state_environment.entries() {
+        add(name.len());
+        add(value.len());
+    }
+    for (authority, identity, value) in &wire.byte_provision {
+        add(authority.len());
+        add(identity.len());
+        add(value.len());
+    }
+    for declared in &wire.declared_domains {
+        add(crate::witness::finite_bound_bytes(declared.bound()));
+    }
+    add(wire.source.measured_bytes());
+    if let Some(environment) = &wire.object_environment {
+        let labels = environment.identity();
+        add(labels.authority.len());
+        add(labels.identity.len());
+    }
+    bytes
 }
 
 impl ReplayRequest {
@@ -1275,6 +1278,103 @@ mod tests {
             ),
             Err(ReplayRequestRefusal::BoundExceeded(_))
         ));
+    }
+
+    #[trace("TC-186", "FR-071-AC-7")]
+    #[test]
+    fn dependency_internal_strings_are_bounded_before_request_retention() {
+        let source = b"language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction f using v(): Boolean pure { true }\n";
+        let located = crate::call_site(
+            qsl_foundation::SourceIdentity::new("registry", "pkg-a"),
+            "fixture".to_owned(),
+            "unit.native",
+            source,
+            [],
+            &crate::DependencyInput::default(),
+            &QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+        )
+        .expect("the complete package comes from genuine source compilation");
+        let mut absent = wire(1);
+        absent.package = ReplayPackage::read(&located.package, u64::MAX).unwrap();
+        absent.profile_selections.clear();
+        absent.stage_limits.clear();
+        absent.state_environment = StateEnvironment::default();
+        absent.backend = "bound-test".to_owned();
+        absent.source = ReplaySource::Input(Vec::new());
+        absent.replay_target = RequestTargetWire::function(
+            QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
+            located.site.declaration.clone(),
+        );
+        absent.obligation_identity = located.site.obligation_identity().clone();
+        absent.byte_provision[0].2 = source.to_vec();
+        let (entry, _) = dependency("test/a", 1);
+        let dependency_bytes = source.to_vec();
+        absent.byte_provision.push((
+            entry.sources[0].0.clone(),
+            entry.sources[0].1.clone(),
+            dependency_bytes,
+        ));
+        absent.dependencies.push(entry);
+        let baseline = measured_encoded_bytes(&absent);
+        let rows = vec![
+            CheckedRefinementInternal {
+                refinement: "r".repeat(DEFAULT_INPUT_BYTES + 1).into_boxed_str(),
+                internal: vec!["first-step".into(), "second-step".into()],
+            },
+            CheckedRefinementInternal {
+                refinement: "another-refinement".into(),
+                internal: vec!["last-step".into()],
+            },
+        ];
+        // This delta comes from the authored typed strings, independently of
+        // the size probe under test. The absent-list control fixes the rest.
+        let added = DEFAULT_INPUT_BYTES
+            + 1
+            + "first-step".len()
+            + "second-step".len()
+            + "another-refinement".len()
+            + "last-step".len()
+            + 2 * std::mem::size_of::<CheckedRefinementInternal>()
+            + 3 * std::mem::size_of::<Box<str>>();
+        let exact = u64::try_from(baseline + added).unwrap();
+        let mut oversized = absent.clone();
+        oversized.dependencies[0].refinement_internals = Some(rows.clone());
+        let expected = |bound| {
+            ReplayRequestRefusal::BoundExceeded(BoundExceeded {
+                bound,
+                actual: u128::from(exact),
+            })
+        };
+        assert_eq!(
+            match ReplayRequest::decode(oversized.clone(), ReplayLimits::default()) {
+                Err(refusal) => refusal,
+                Ok(_) => panic!("oversized dependency internals bypassed the reader bound"),
+            },
+            expected(ReplayLimits::default().input_bytes)
+        );
+        assert_eq!(
+            match ReplayRequest::decode(
+                oversized.clone(),
+                ReplayLimits::default().with_input_bytes(exact - 1)
+            ) {
+                Err(refusal) => refusal,
+                Ok(_) => panic!("one below the complete size must refuse"),
+            },
+            expected(exact - 1)
+        );
+        let admitted =
+            ReplayRequest::decode(oversized, ReplayLimits::default().with_input_bytes(exact))
+                .expect("the exact complete size fits");
+        assert_eq!(
+            admitted.dependencies()[0].refinement_internals(),
+            Some(rows.as_slice())
+        );
+        let absent = ReplayRequest::decode(
+            absent,
+            ReplayLimits::default().with_input_bytes(u64::try_from(baseline).unwrap()),
+        )
+        .expect("an absent list uses only the original members");
+        assert_eq!(absent.dependencies()[0].refinement_internals(), None);
     }
 
     /// ADR-013 O-19: an empty `backend` member refuses, and a non-empty one
