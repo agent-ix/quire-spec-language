@@ -219,3 +219,41 @@ fn facade_admission_retains_conflicting_unknown_and_incompatible_definition_refu
         PackageCause::IncompatibleDefinition
     );
 }
+
+#[trace("TC-1284", "FR-495-AC-8")]
+#[test]
+fn independent_reader_refuses_an_emitted_law_binding_not_selected_by_the_package() {
+    use quire_contract_model::{CheckedPackageRefusalCause, CheckedPackageRefusalCode};
+    let source = format!(
+        "{HEADER}function q using v(a: Int[-9,9], b: Int[1,4]): Integer pure {{ a div b }}\n"
+    );
+    let compiled = compile(&source, &selection(DefinitionRole::IntegerDivisionFloor));
+    let mut wire: serde_json::Value = serde_json::from_slice(compiled.bytes()).unwrap();
+    let nodes = wire["semantic_graph"]["nodes"].as_array_mut().unwrap();
+    let (index, node) = nodes
+        .iter_mut()
+        .enumerate()
+        .find(|(_, node)| node["body"]["operation"]["identity"] == "quire.op.integer.div")
+        .expect("actual emitted application");
+    node["body"]["operation"]["laws"][0]["definition"] =
+        serde_json::to_value(DefinitionRole::IntegerDivisionTruncating.reference()).unwrap();
+    let mut evidence = CheckedPackageEvidence::new();
+    evidence.support_feature("quire.value.complete/v1");
+    let result = CheckedPackageV2::read(
+        &serde_json::to_vec(&wire).unwrap(),
+        CheckedPackageReadLimits::bounded(),
+        &evidence,
+    );
+    let CheckedPackageV2ReadResult::Refused(refusal) = result else {
+        panic!("an unselected law must refuse: {result:?}")
+    };
+    assert_eq!(refusal.code, CheckedPackageRefusalCode::InvalidPackage);
+    assert_eq!(
+        refusal.cause,
+        Some(CheckedPackageRefusalCause::OperationLawUnselected)
+    );
+    assert_eq!(
+        refusal.loci[0].path.as_ref().unwrap().as_str(),
+        format!("/semantic_graph/nodes/{index}/body/operation/laws/0/definition")
+    );
+}
