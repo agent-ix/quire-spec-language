@@ -295,3 +295,66 @@ pub(crate) fn value_type(
         | ValueType::Population(_) => Ok(()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    const LOCUS: NativeJoinLocus = NativeJoinLocus {
+        source: NativeJoinLocusSource::Package,
+        form: "identity_integer_copy",
+    };
+
+    #[test]
+    #[trace("TC-1331", "FR-531-AC-33")]
+    fn cold_signed_integer_copies_pay_the_exact_owned_buffer_before_copying() {
+        let _ = allocation_counter::measure(|| {});
+        for spelling in [
+            "-170141183460469231731687303715884105728",
+            "170141183460469231731687303715884105728",
+            "-170141183460469231731687303715884105729",
+            "340282366920938463463374607431768211457",
+            "-340282366920938463463374607431768211457",
+        ] {
+            let original: Integer = spelling.parse().expect("valid exact integer");
+            let cold = original.try_clone().expect("owner-produced cold digits");
+            let mut budget = NativeJoinBudget::new(1_000_000, 1_000_000);
+            let mut copy = None;
+            let observed = allocation_counter::measure(|| {
+                integer(&mut budget, LOCUS, &cold).expect("actual payload precharged");
+                copy = Some(cold.clone());
+            });
+            assert_eq!(copy.expect("owned copy"), original);
+            let expected = if observed.count_total == 0 {
+                0
+            } else {
+                1 + observed.bytes_total
+            };
+            assert_eq!(budget.consumed().storage, expected);
+            assert_eq!(
+                observed.bytes_total as usize,
+                original.copy_footprint().bytes
+            );
+            let cold = original.try_clone().expect("fresh cold control");
+            let mut zero = NativeJoinBudget::new(1_000_000, 0);
+            let mut refusal = None;
+            let observed =
+                allocation_counter::measure(|| refusal = Some(integer(&mut zero, LOCUS, &cold)));
+            if expected == 0 {
+                refusal
+                    .expect("call ran")
+                    .expect("inline integer needs no storage");
+            } else {
+                let refused = refusal
+                    .expect("call ran")
+                    .expect_err("heap buffer must be paid first");
+                assert_eq!(refused.code(), NativeRowErrorCode::StorageLimit);
+                assert_eq!(refused.configured_bound(), Some(0));
+                assert_eq!(refused.locus(), Some(LOCUS));
+            }
+            assert_eq!(observed.count_total, 0);
+            assert_eq!(observed.bytes_total, 0);
+        }
+    }
+}
