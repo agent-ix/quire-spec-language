@@ -443,10 +443,14 @@ impl CompileRefusal {
                     .first()
                     .and_then(|refusal| refusal.cause.type_check_fields())
                     .or_else(|| {
-                        refusals.iter().find_map(|refusal| match refusal.cause.unwrapped() {
-                            CheckCause::DispatchLink(cause) => cause.denial.as_ref().map(|denial| denial.catalog_fields()),
-                            _ => None,
-                        })
+                        refusals
+                            .iter()
+                            .find_map(|refusal| match refusal.cause.unwrapped() {
+                                CheckCause::DispatchLink(cause) => {
+                                    cause.denial.as_ref().map(|denial| denial.catalog_fields())
+                                }
+                                _ => None,
+                            })
                     })
                     .unwrap_or_default();
                 // FR-366: a refusal in a type-level invariant names the
@@ -2561,7 +2565,10 @@ mod tests {
     #[trace("TC-1339", "FR-534-AC-3")]
     #[test]
     fn declared_type_storage_requests_reach_compile_diagnostics() {
-        use qsl_semantics::check::{CheckingStage, PredicateRole, SlotKind, StateGraphCause, StateModelRefusal, TemporalCause};
+        use qsl_semantics::check::{
+            CheckingStage, PredicateRole, SlotKind, StateGraphCause, StateModelRefusal,
+            TemporalCause,
+        };
         use quire_semantic_value::declaration::{StorageRequest, StorageUnit};
         for (amount, unit, name) in [
             (13, StorageUnit::Bytes, "bytes"),
@@ -2583,41 +2590,70 @@ mod tests {
                 let span = Span { start: 2, end: 5 };
                 let wrapped = [
                     cause.clone(),
-                    CheckCause::StateModel(Box::new(StateModelRefusal { cause: cause.clone(), receiver: None })),
-                    CheckCause::StateGraph(Box::new(StateGraphCause::Predicate { role: PredicateRole::Target, span, cause: Box::new(cause.clone()) })),
-                    CheckCause::Temporal(Box::new(TemporalCause::TimedPredicate { span, cause: Box::new(cause.clone()) })),
-                    CheckCause::Temporal(Box::new(TemporalCause::Multiple { causes: vec![
-                        TemporalCause::TimedPredicate { span, cause: Box::new(cause.clone()) },
-                        TemporalCause::TimedPredicate { span, cause: Box::new(CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)) },
-                    ] })),
-                    CheckCause::ProtocolAnchor(Box::new(ProtocolAnchorCause::KeyClause { channel: "channel".to_owned(), span, cause: Box::new(cause.clone()) })),
-                    CheckCause::ProtocolAnchor(Box::new(ProtocolAnchorCause::SlotClause { node: "slot".to_owned(), slot: SlotKind::Condition, span, cause: Box::new(cause) })),
+                    CheckCause::StateModel(Box::new(StateModelRefusal {
+                        cause: cause.clone(),
+                        receiver: None,
+                    })),
+                    CheckCause::StateGraph(Box::new(StateGraphCause::Predicate {
+                        role: PredicateRole::Target,
+                        span,
+                        cause: Box::new(cause.clone()),
+                    })),
+                    CheckCause::Temporal(Box::new(TemporalCause::TimedPredicate {
+                        span,
+                        cause: Box::new(cause.clone()),
+                    })),
+                    CheckCause::Temporal(Box::new(TemporalCause::Multiple {
+                        causes: vec![
+                            TemporalCause::TimedPredicate {
+                                span,
+                                cause: Box::new(cause.clone()),
+                            },
+                            TemporalCause::TimedPredicate {
+                                span,
+                                cause: Box::new(CheckCause::IllTyped(
+                                    quire_exact::IllTypedCause::TypeMismatch,
+                                )),
+                            },
+                        ],
+                    })),
+                    CheckCause::ProtocolAnchor(Box::new(ProtocolAnchorCause::KeyClause {
+                        channel: "channel".to_owned(),
+                        span,
+                        cause: Box::new(cause.clone()),
+                    })),
+                    CheckCause::ProtocolAnchor(Box::new(ProtocolAnchorCause::SlotClause {
+                        node: "slot".to_owned(),
+                        slot: SlotKind::Condition,
+                        span,
+                        cause: Box::new(cause),
+                    })),
                 ];
                 for cause in wrapped {
-                let location = Location::at(Origin::Expression, &[7, 2]);
-                assert_eq!(cause.type_check_stage(), Some(CheckingStage::Typing));
-                let refusal = CompileRefusal::Check {
-                    refusals: vec![CheckRefusal {
-                        cause,
-                        location: location.clone(),
-                    }],
-                    region: None,
-                };
-                assert_eq!(refusal.code(), Code::ResourceExhausted);
-                assert_eq!(refusal.cause(), Some(tag));
-                assert_eq!(refusal.stage(), SpineStage::Check);
-                assert_eq!(
-                    refusal.fields(),
-                    Some(BTreeMap::from([(field, format!("{name}:{amount}"))]))
-                );
-                let CompileRefusal::Check { refusals, .. } = refusal else {
-                    unreachable!()
-                };
-                assert_eq!(refusals[0].location, location);
-                assert_eq!(
-                    refusals[0].cause.type_check_stage(),
-                    Some(CheckingStage::Typing)
-                );
+                    let location = Location::at(Origin::Expression, &[7, 2]);
+                    assert_eq!(cause.type_check_stage(), Some(CheckingStage::Typing));
+                    let refusal = CompileRefusal::Check {
+                        refusals: vec![CheckRefusal {
+                            cause,
+                            location: location.clone(),
+                        }],
+                        region: None,
+                    };
+                    assert_eq!(refusal.code(), Code::ResourceExhausted);
+                    assert_eq!(refusal.cause(), Some(tag));
+                    assert_eq!(refusal.stage(), SpineStage::Check);
+                    assert_eq!(
+                        refusal.fields(),
+                        Some(BTreeMap::from([(field, format!("{name}:{amount}"))]))
+                    );
+                    let CompileRefusal::Check { refusals, .. } = refusal else {
+                        unreachable!()
+                    };
+                    assert_eq!(refusals[0].location, location);
+                    assert_eq!(
+                        refusals[0].cause.type_check_stage(),
+                        Some(CheckingStage::Typing)
+                    );
                 }
             }
         }
@@ -2629,19 +2665,50 @@ mod tests {
         use qsl_semantics::check::TemporalCause;
         use quire_semantic_value::declaration::{StorageRequest, StorageUnit};
         let span = Span { start: 1, end: 4 };
-        let cause = CheckCause::Temporal(Box::new(TemporalCause::Multiple { causes: vec![
-            TemporalCause::TimedPredicate { span, cause: Box::new(CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)) },
-            TemporalCause::TimedPredicate { span, cause: Box::new(CheckCause::TypeCheckAllocation(StorageRequest::new(9, StorageUnit::Bytes))) },
-        ] }));
+        let cause = CheckCause::Temporal(Box::new(TemporalCause::Multiple {
+            causes: vec![
+                TemporalCause::TimedPredicate {
+                    span,
+                    cause: Box::new(CheckCause::IllTyped(
+                        quire_exact::IllTypedCause::TypeMismatch,
+                    )),
+                },
+                TemporalCause::TimedPredicate {
+                    span,
+                    cause: Box::new(CheckCause::TypeCheckAllocation(StorageRequest::new(
+                        9,
+                        StorageUnit::Bytes,
+                    ))),
+                },
+            ],
+        }));
         assert_eq!(cause.type_check_stage(), None);
-        let refusal = CompileRefusal::Check { refusals: vec![CheckRefusal { location: Location::root(Origin::Expression), cause }], region: None };
+        let refusal = CompileRefusal::Check {
+            refusals: vec![CheckRefusal {
+                location: Location::root(Origin::Expression),
+                cause,
+            }],
+            region: None,
+        };
         assert_eq!(refusal.code(), Code::IllTyped);
         assert_eq!(refusal.cause(), Some("type-mismatch"));
         assert_eq!(refusal.fields(), None);
-        let refusal = CompileRefusal::Check { refusals: vec![
-            CheckRefusal { location: Location::root(Origin::Expression), cause: CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch) },
-            CheckRefusal { location: Location::root(Origin::Expression), cause: CheckCause::TypeCheckCapacity(StorageRequest::new(23, StorageUnit::AdditionalElements)) },
-        ], region: None };
+        let refusal = CompileRefusal::Check {
+            refusals: vec![
+                CheckRefusal {
+                    location: Location::root(Origin::Expression),
+                    cause: CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
+                },
+                CheckRefusal {
+                    location: Location::root(Origin::Expression),
+                    cause: CheckCause::TypeCheckCapacity(StorageRequest::new(
+                        23,
+                        StorageUnit::AdditionalElements,
+                    )),
+                },
+            ],
+            region: None,
+        };
         assert_eq!(refusal.code(), Code::IllTyped);
         assert_eq!(refusal.cause(), Some("type-mismatch"));
         assert_eq!(refusal.fields(), None);
