@@ -19,6 +19,10 @@ use quire_exact::{
     IntegerInterval, LimitKind, Meter, ObjectId, ObjectReference, Outcome, Refusal, ScalarLimits,
     Undefined, UnitId, UniverseId,
 };
+use quire_exact::{
+    CarriedQuantityType, DecimalType, Quantity, QuantityCarrier, Rational, RationalDomain,
+    RoundingMode,
+};
 use quire_exact::{CollectionType, FieldValue, Value, ValueType};
 use quire_exact::{IllTypedCause, Presence};
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
@@ -141,6 +145,17 @@ fn aliases() -> Vec<(String, ValueType)> {
         ("Three".to_owned(), int_type(0, 3)),
         ("Positive".to_owned(), int_type(1, 3)),
         ("Hundred".to_owned(), int_type(0, 100)),
+        ("Li".to_owned(), carried(integer_carrier(-5, 5))),
+        ("Lp".to_owned(), carried(integer_carrier(1, 5))),
+        (
+            "Ld".to_owned(),
+            carried(decimal_carrier(RoundingMode::NearestEven)),
+        ),
+        (
+            "Lx".to_owned(),
+            carried(decimal_carrier(RoundingMode::Exact)),
+        ),
+        ("Lr".to_owned(), carried(rational_carrier())),
     ]
 }
 
@@ -1793,4 +1808,248 @@ fn fr041_an_incomplete_domain_is_never_read_as_empty_or_aggregated() {
             );
         }
     }
+}
+
+// QSpec FR-142 "Carried quantity sum" (TC-187 U46 to U50), run directly
+// through the kernel: a linked sum of this length is not provable, so the
+// fold, its accounting and the empty sum are driven unlinked.
+
+fn integer_carrier(lower: i64, upper: i64) -> QuantityCarrier {
+    QuantityCarrier::Integer {
+        domain: IntegerInterval::new(Integer::from(lower), Integer::from(upper)).unwrap(),
+        rounding: RoundingMode::Exact,
+    }
+}
+
+fn decimal_carrier(rounding: RoundingMode) -> QuantityCarrier {
+    QuantityCarrier::Decimal(
+        DecimalType::new(
+            Integer::from(-500_i64),
+            Integer::from(500_i64),
+            2,
+            2,
+            rounding,
+        )
+        .unwrap(),
+    )
+}
+
+fn rational_carrier() -> QuantityCarrier {
+    let interval = |lower: i64, upper: i64| {
+        IntegerInterval::new(Integer::from(lower), Integer::from(upper)).unwrap()
+    };
+    QuantityCarrier::Rational(RationalDomain::new(interval(-3, 7), interval(1, 12)).unwrap())
+}
+
+fn carried(carrier: QuantityCarrier) -> ValueType {
+    ValueType::carried_quantity(CarriedQuantityType::new(
+        UnitId::declared(key("metre")),
+        carrier,
+    ))
+}
+
+fn metres(numerator: i64, denominator: i64) -> Value {
+    Value::Quantity(Quantity::new(
+        Rational::new(Integer::from(numerator), Integer::from(denominator)).unwrap(),
+        UnitId::declared(key("metre")),
+    ))
+}
+
+struct CarriedRun {
+    outcome: FamilyOutcome<Value>,
+    location: Option<Location>,
+    sum: Location,
+    meter: Meter,
+}
+
+/// `sum<alias>(x in q: x)` over `values` (numerator, denominator pairs), under
+/// `limits`.
+fn run_carried(alias: &str, values: &[(i64, i64)], limits: ScalarLimits) -> CarriedRun {
+    let package = plain();
+    let (_, element) = aliases()
+        .into_iter()
+        .find(|(name, _)| name == alias)
+        .expect("the carried alias");
+    let source = of(CollectionKind::Sequence, element, 0, 4);
+    let checked = check(
+        &package,
+        &[("q", source.clone())],
+        &sum(alias, "q", name("x")),
+    )
+    .unwrap();
+    let values_debug = values.to_vec();
+    let values = values.iter().map(|(n, d)| metres(*n, *d)).collect();
+    let ValueType::Collection(source_type) = &source else {
+        panic!("a collection type");
+    };
+    // The kernel's constructor does not admit a carried element; `form` is the
+    // one the evaluator builds its sequences with.
+    let argument = quire_exact::form(source_type, values, &mut Meter::new(UNLIMITED))
+        .completed()
+        .expect("the carried sequence forms");
+    let mut meter = Meter::new(limits);
+    let evaluation = package
+        .evaluate(
+            &checked,
+            vec![argument],
+            &ObjectEnvironment::default(),
+            &mut meter,
+        )
+        .unwrap_or_else(|failure| panic!("{alias} over {values_debug:?}: {failure:?}"));
+    CarriedRun {
+        outcome: evaluation.outcome,
+        location: evaluation.location,
+        sum: checked.root().location().clone(),
+        meter,
+    }
+}
+
+fn completed_quantity(run: &CarriedRun) -> &Rational {
+    match &run.outcome {
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Quantity(quantity))) => {
+            quantity.magnitude()
+        }
+        other => panic!("a completed quantity, not {other:?}"),
+    }
+}
+
+fn ratio(numerator: i64, denominator: i64) -> Rational {
+    Rational::new(Integer::from(numerator), Integer::from(denominator)).unwrap()
+}
+
+/// FR-142-AC-34 (TC-187 U46): `2 m, -1 m, 3 m` over `Li` is `4 m` after
+/// fourteen work units and three result units; thirteen work units stop it
+/// at `collection.result-retain` and three integer bits at the first
+/// addition's `unit.rational-arithmetic`.
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-34")]
+#[trace("FR-517-AC-20", "TC-1312")]
+#[test]
+fn a_carried_fold_adds_and_charges_the_unit_addition_schedule() {
+    let values = [(2, 1), (-1, 1), (3, 1)];
+    let run = run_carried("Li", &values, UNLIMITED);
+    assert_eq!(completed_quantity(&run), &ratio(4, 1));
+    assert_eq!(run.meter.consumed(LimitKind::WorkUnits), 14);
+    assert_eq!(run.meter.consumed(LimitKind::ResultUnits), 3);
+
+    let limited = |limits: ScalarLimits| match run_carried("Li", &values, limits).outcome {
+        FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)) => incomplete,
+        other => panic!("an incomplete outcome, not {other:?}"),
+    };
+    let work = limited(ScalarLimits {
+        work_units: 13,
+        ..UNLIMITED
+    });
+    assert_eq!(
+        (work.limit_kind, work.consumed, work.charge_point),
+        (
+            LimitKind::WorkUnits,
+            13,
+            ChargePoint::CollectionResultRetain
+        )
+    );
+    let bits = limited(ScalarLimits {
+        integer_bits: 3,
+        ..UNLIMITED
+    });
+    assert_eq!(
+        (bits.limit_kind, bits.consumed, bits.charge_point),
+        (
+            LimitKind::IntegerBits,
+            2,
+            ChargePoint::UnitRationalArithmetic
+        )
+    );
+}
+
+/// FR-142-AC-35 (TC-187 U47): `3 m, 3 m, -2 m` is undefined at the second
+/// addition after six work units, with no result unit, although the final
+/// `4 m` is inside; `5 m, 0 m` and `-3 m, -2 m` are `5 m` and `-5 m`.
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-35")]
+#[trace("FR-517-AC-20", "TC-1312")]
+#[test]
+fn a_carried_total_outside_the_carrier_is_undefined_at_its_addition() {
+    let run = run_carried("Li", &[(3, 1), (3, 1), (-2, 1)], UNLIMITED);
+    assert!(
+        matches!(
+            run.outcome,
+            FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))
+        ),
+        "{:?}",
+        run.outcome
+    );
+    assert_eq!(run.location.as_ref(), Some(&run.sum));
+    assert_eq!(run.meter.consumed(LimitKind::WorkUnits), 6);
+    assert_eq!(run.meter.consumed(LimitKind::ResultUnits), 0);
+    assert_eq!(
+        completed_quantity(&run_carried("Li", &[(5, 1), (0, 1)], UNLIMITED)),
+        &ratio(5, 1)
+    );
+    assert_eq!(
+        completed_quantity(&run_carried("Li", &[(-3, 1), (-2, 1)], UNLIMITED)),
+        &ratio(-5, 1)
+    );
+}
+
+/// FR-142-AC-36 (TC-187 U48): an empty `Li` sum is `0 m` after one scalar
+/// retain; an empty sum over `Int[1, 5]` is undefined with no charge.
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-36")]
+#[trace("FR-517-AC-20", "TC-1312")]
+#[test]
+fn an_empty_carried_sum_is_the_carriers_zero_or_undefined() {
+    let run = run_carried("Li", &[], UNLIMITED);
+    assert_eq!(completed_quantity(&run), &ratio(0, 1));
+    assert_eq!(run.meter.consumed(LimitKind::WorkUnits), 1);
+    assert_eq!(run.meter.consumed(LimitKind::ResultUnits), 1);
+    let run = run_carried("Lp", &[], UNLIMITED);
+    assert!(
+        matches!(
+            run.outcome,
+            FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))
+        ),
+        "{:?}",
+        run.outcome
+    );
+    assert_eq!(run.meter.consumed(LimitKind::WorkUnits), 0);
+}
+
+/// FR-142-AC-37 (TC-187 U49): a decimal carrier's fold never rounds, under
+/// either mode; `4.00 m + 2.00 m` is undefined; the empty sum is zero.
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-37")]
+#[trace("FR-517-AC-20", "TC-1312")]
+#[test]
+fn a_carried_decimal_fold_never_rounds() {
+    for alias in ["Ld", "Lx"] {
+        let run = run_carried(alias, &[(5, 4), (5, 2)], UNLIMITED);
+        assert_eq!(completed_quantity(&run), &ratio(15, 4), "{alias}");
+        assert_eq!(run.meter.consumed(LimitKind::WorkUnits), 8, "{alias}");
+        assert_eq!(run.meter.consumed(LimitKind::ResultUnits), 2, "{alias}");
+        let run = run_carried(alias, &[(4, 1), (2, 1)], UNLIMITED);
+        assert!(
+            matches!(
+                run.outcome,
+                FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))
+            ),
+            "{alias}: {:?}",
+            run.outcome
+        );
+        assert_eq!(
+            completed_quantity(&run_carried(alias, &[], UNLIMITED)),
+            &ratio(0, 1),
+            "{alias}"
+        );
+    }
+}
+
+/// FR-142-AC-38 (TC-187 U50): the empty sum over a rational carrier is `0 m`.
+/// The fold itself (`1/4 m + 1/3 m`, the totals outside the bounds) is run
+/// over the carrier by `carried_sum::tests`: the kernel's argument admission
+/// refuses every non-empty `Sequence` of a rational-carried quantity as
+/// `WrongValueKind`, so no such sequence reaches the evaluator from here.
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-38")]
+#[trace("FR-517-AC-20", "TC-1312")]
+#[test]
+fn an_empty_carried_rational_sum_is_zero() {
+    let run = run_carried("Lr", &[], UNLIMITED);
+    assert_eq!(completed_quantity(&run), &ratio(0, 1));
+    assert_eq!(run.meter.consumed(LimitKind::WorkUnits), 1);
 }

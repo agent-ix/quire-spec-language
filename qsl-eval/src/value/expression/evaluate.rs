@@ -507,8 +507,26 @@ fn sum_zero(value_type: &ValueType) -> Result<Value, Halt> {
             Rational::from_integer(Integer::zero()),
             unit.clone(),
         )),
+        // Zero is not a member of every carrier; the caller decides that.
+        ValueType::CarriedQuantity(carried) => Value::Quantity(quire_exact::Quantity::new(
+            Rational::from_integer(Integer::zero()),
+            carried.unit().clone(),
+        )),
         _ => return Err(invariant("sum-family-invalid")),
     })
+}
+
+/// Whether `value` is a member of the total type `N` of a `sum<N>`: a carried
+/// quantity is a quantity of its unit inside its carrier (FR-142 "Carried
+/// quantity sum"), which the kernel's `admits` does not decide.
+fn sum_admits(value_type: &ValueType, value: &Value) -> bool {
+    match (value_type, value) {
+        (ValueType::CarriedQuantity(carried), Value::Quantity(quantity)) => {
+            quantity.unit() == carried.unit()
+                && carried_sum::carrier_admits(carried, quantity.magnitude())
+        }
+        _ => value_type.admits(value),
+    }
 }
 
 /// A scalar retain: `collection.result-retain` with one result unit.
@@ -1644,7 +1662,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     ) -> Result<Value, Halt> {
         let value_type = node.value_type();
         let Some(total) = total else {
-            if !value_type.admits(&summand) {
+            if !sum_admits(value_type, &summand) {
                 return Err(Halt::Located(Box::new(LocatedStop {
                     stop: Stop::Undefined(Undefined::SumOutOfDomain),
                     location: body.location().cloned(),
@@ -1722,6 +1740,17 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                         .map_err(|_| invariant("quantity-operation-rejected"))?;
                 let quantity = outcome_into_stop(outcome)?;
                 self.units.form(unit);
+                Ok(Value::Quantity(quantity))
+            }
+            (
+                ValueType::CarriedQuantity(carried),
+                Value::Quantity(total),
+                Value::Quantity(summand),
+            ) => {
+                // FR-142: no unit edge, no rounding and no loss record; the
+                // bound is decided after every addition.
+                let quantity =
+                    carried_sum::add(carried, &total, &summand, self.meter).map_err(Halt::from)?;
                 Ok(Value::Quantity(quantity))
             }
             _ => Err(invariant("sum-accumulator-value-invalid")),
@@ -4831,7 +4860,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     let total = match iteration.accumulator {
                         None => {
                             let zero = sum_zero(node.value_type())?;
-                            if !node.value_type().admits(&zero) {
+                            if !sum_admits(node.value_type(), &zero) {
                                 return Err(Stop::Undefined(Undefined::SumOutOfDomain).into());
                             }
                             zero
@@ -4870,6 +4899,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     }
 }
 
+mod carried_sum;
 #[cfg(test)]
 mod invariants;
 

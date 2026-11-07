@@ -78,7 +78,9 @@ states only how `check`, lowering and the kernel realize them, and invents none.
   `ill_typed`/`type-mismatch` at the expression before any charge. A carried
   quantity is not an element of `collection.sum.quantity`, which is defined over
   `Quantity<u>` only; it is converted back
-  with `convert<Quantity<u''>>(e)` first (QSpec FR-142-AC-27, AC-30).
+  with `convert<Quantity<u''>>(e)` first, or summed by `sum<N>` whose `N` is
+  its own carried type, which lowers to `collection.sum.carried_quantity`
+  (QSpec FR-142-AC-27, AC-30, AC-33).
 - **Conversion.** `convert<Quantity<u, C>>(e)` is built as a conversion node
   whose source `e` has a `Quantity<u'>` or carried type with `u'` of the same
   dimension as `u` (FR-093's dimension-equivalence rule applies unchanged); a
