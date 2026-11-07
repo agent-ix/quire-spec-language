@@ -691,18 +691,33 @@ fn replay_evaluated_limits_retain_the_actual_named_charge_and_bound() {
 }
 
 #[test]
-#[trace("TC-1325", "FR-350-AC-11")]
+#[trace("TC-1325", "FR-350-AC-10", "FR-350-AC-11")]
 fn refinement_internals_members_reach_the_replay_executor() {
+    // Replaces the retired "unavailable" test: the members now execute, so a
+    // defective list is a real refusal that names its request locus. Like
+    // the other `replay_fixture` tests it cannot run until the fixture
+    // matches the published corpus schema (`/package/semantic_graph/operand_rows`).
     let fixture = replay_fixture();
     let path = fixture.corpus.join("inputs/request.json");
     let mut request: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     request["package"]["lock"]["refinement_internals"] =
         json!([{"refinement":"R", "internal":["unit/hidden"]}]);
     fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
-    let run = report(&fixture.execute(&[]));
-    let actual = &run["capabilities"][0]["vectors"][0]["actual"];
-    assert_eq!(actual["code"], "missing_declaration", "{run}");
-    assert_eq!(actual["cause"], "missing-name", "{run}");
+    let run = fixture.execute(&[]);
+    let first = report(&run);
+    let actual = &first["capabilities"][0]["vectors"][0]["actual"];
+    assert_eq!(actual["code"], "missing_declaration", "{first}");
+    assert_eq!(actual["cause"], "missing-name", "{first}");
+    assert!(
+        actual["message"].as_str().is_some_and(
+            |message| message.contains("/package/lock/refinement_internals/0/refinement")
+        ),
+        "{first}"
+    );
+    assert_ne!(
+        first["capabilities"][0]["outcome"], "unsupported",
+        "{first}"
+    );
 }
 
 fn subset_population_fixture(redefined: bool) -> Fixture {

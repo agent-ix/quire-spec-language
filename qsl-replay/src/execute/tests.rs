@@ -1661,6 +1661,50 @@ fn refinement_internals_reach_the_recompile_with_schema_loci() {
     assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
 }
 
+/// QSpec FR-323-AC-17: a `refinement_internals` defect that reaches the
+/// replay as `RecompileWithProtocolResults` is wrapped with its locus too.
+#[trace("QSpec-FR-323-AC-17", "QSpec-TC-277")]
+#[test]
+fn a_protocol_results_refusal_with_an_internals_defect_is_wrapped() {
+    use qsl_semantics::check::{
+        CheckCause, CheckRefusal, ListDefect, ListDefectKind, RefinementCause, RefinementRefusal,
+    };
+    use quire_semantic_value::location::{Location, Origin};
+    let compile = CompileRefusal::Check {
+        refusals: vec![CheckRefusal {
+            location: Location::root(Origin::Expression),
+            cause: CheckCause::Refinement(Box::new(RefinementRefusal {
+                refinement: String::new(),
+                span: qsl_foundation::Span { start: 0, end: 0 },
+                cause: RefinementCause::InternalList(ListDefect {
+                    kind: ListDefectKind::Missing,
+                    pointer: "/0/refinement".to_owned(),
+                    first: None,
+                }),
+            })),
+        }],
+        region: None,
+    };
+    let wrapped = locate_refinement_internals(
+        ReplayRefusal::RecompileWithProtocolResults {
+            refusal: Box::new(compile),
+            protocol_results: Vec::new(),
+        },
+        &[],
+    );
+    assert!(matches!(
+        &wrapped,
+        ReplayRefusal::RefinementInternals { source, .. }
+            if matches!(**source, ReplayRefusal::RecompileWithProtocolResults { .. })
+    ));
+    assert_eq!(
+        wrapped.pointer().as_deref(),
+        Some("/package/lock/refinement_internals/0/refinement")
+    );
+    assert_eq!(wrapped.code(), Code::MissingDeclaration);
+    assert_eq!(wrapped.protocol_results(), Some(&[][..]));
+}
+
 /// SR-746 FND-002 (FR-096-AC-15): `call_failure_to_replay_refusal`, the
 /// mapping `replay`'s own `package.call` site applies, turns a
 /// `CallFailure::Fault` -- which is what a kernel `Refusal::CheckedInvariant`

@@ -298,9 +298,6 @@ fn partition(category: Category) -> Partition {
 }
 
 fn compile_refusal(refusal: &qsl_replay::ReplayRefusal) -> Result<Execution, Failure> {
-    if let qsl_replay::ReplayRefusal::RefinementInternals { source, .. } = refusal {
-        return compile_refusal(source);
-    }
     let diagnostic = match refusal {
         qsl_replay::ReplayRefusal::Recompile(refusal) => {
             qsl_replay::OutcomeDiagnostic::from_compile_refusal(refusal)
