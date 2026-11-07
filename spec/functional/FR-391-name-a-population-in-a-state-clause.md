@@ -69,7 +69,8 @@ The data predicate of a timed model's `time invariant when` and `urgent when`
 is a population position, read at `current` like a unit-level invariant. It
 reads the timed model's state object as `self` (FR-230 "Time invariants and
 urgency"), and the one population of such a model is its context population,
-so naming it adds no second domain. A time invariant's body is not a
+so naming it adds no second domain; the alias there is the timed model's
+own, and another model alias's population refuses (FR-230). A time invariant's body is not a
 population position: it stays a conjunction of upper bounds on clocks of
 `self` (FR-230).
 
@@ -153,8 +154,9 @@ read as a domain, `forall(o in M::counters : o.v < 2)`, means the same.
   when `P` has an authored maximum `N` (FR-380) and the unbounded
   `Set<Reference<T>>` otherwise, as FR-084 states for a parameter.
 - Every read through the name takes the clause's observation (FR-104,
-  "Observations of reads"): `current` in an invariant, in a `holds` atom and in the predicate of a
-  `terminal when` declaration,
+  "Observations of reads"): `current` in an invariant, in a `holds` atom, in the predicate of a
+  `terminal when` declaration and in the data predicate of a `time invariant
+  when` or an `urgent when` (FR-230),
   `pre` in a precondition, `post` in a postcondition and `pre` inside
   `pre(e)`.
 

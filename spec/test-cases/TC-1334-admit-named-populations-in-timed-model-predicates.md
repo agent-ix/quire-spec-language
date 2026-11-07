@@ -31,12 +31,14 @@ time invariant body and the state-object rule stay as FR-230 states them.
 2. Check each FR-230-AC-58 predicate (`forall` and `exists` domains,
    `allInstances`, `lookup` by `self`, `count`, `sum`, and the two-read
    conjunction) in a `time invariant` or `urgent when` declaration, and the
-   refusal variants: `Config::nothing`, `Config::calls = Config::calls`, and
+   refusal variants: `exists(c in Config::nothing : true)`,
+   `exists(j in Other::jobs : true)` over a second model alias `Other`,
+   `Config::calls = Config::calls`, and
    the body `forall(c in Config::calls : c.x <= 3 ms)`.
 3. Build the two-object discrete state of FR-230-AC-59 and, with each
    declaration alone in its model, read the admissible delays and urgency;
    repeat with `c2.waiting` false, and at a state whose `calls` holds no
-   object for `urgent Idle` and `AnyInflight`.
+   object for `urgent Idle`, `AnyInflight` and `AllInflight`.
 4. Emit the FR-230-AC-60 unit, count its `relation`/`population` nodes and
    follow each predicate's references; run the I2 read-back.
 5. Check a time invariant and an `urgent when` in models whose populations
@@ -47,8 +49,8 @@ time invariant body and the state-object rule stay as FR-230 states them.
 1. Every FR-230-AC-58 predicate checks to a `TimedModel` with the population
    operand `Population<Call>`, the domain and `allInstances` result
    `Set<Reference<Call>>`, reads at `current`, and `calls` as the predicate's
-   only population domain. `Config::nothing` refuses
-   `missing_declaration`/`missing-name` at `nothing`, `Config::calls =
+   only population domain. `Config::nothing` and `Other::jobs` refuse
+   `missing_declaration`/`missing-name` at `nothing` and at `jobs`, `Config::calls =
    Config::calls` refuses `ill_typed`/`operator-ineligible` at the first
    `Config::calls`, and the population-quantified body refuses
    `invalid_timed_model`/`time-invariant-shape`, each with no `TimedModel`.
@@ -58,7 +60,8 @@ time invariant body and the state-object rule stay as FR-230 states them.
    `CallsExist` makes the state urgent (no positive delay), and does not
    with `c2.waiting` false (a delay of 5 is admissible); `Known` holds of
    `c1` and of `c2`. With no object in `calls`, `Idle` makes the state urgent
-   and `AnyInflight` bounds no clock. Each truth equals the
+   and neither `AnyInflight` nor `AllInflight` bounds a clock, so with either
+   alone the state is quiescent. Each truth equals the
    `allInstances<Config::Call>(Config::calls)` spelling's.
 3. The package holds one population reference node for `calls`, referenced
    by `HasCalls`, `CallsExist`, `Known` and the precondition; `CallsExist`
