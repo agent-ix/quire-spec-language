@@ -395,10 +395,8 @@ fn source_refusals(declarations: &str) -> Result<(), Vec<(Code, Option<String>)>
 /// FR-505-AC-9 (TC-1300 row 20): a source `Rational[..]` whose numerator
 /// bounds are inverted or whose denominator may be zero, as a function
 /// parameter type and as the carrier of `Quantity<m, ..>`, refuses
-/// `ill_typed` once at the type; the consistent bounds check. This is the
-/// source-form half of FR-505-AC-9; the unit-bearing `convert` half is not
-/// carried by the spine yet, so the test is not tagged with the criterion.
-#[trace("TC-1300")]
+/// `ill_typed` once at the type; the consistent bounds check.
+#[trace("FR-505-AC-9", "TC-1300")]
 #[test]
 fn inconsistent_source_rational_bounds_refuse_ill_typed_at_the_type() {
     const UNITS: &str = "dimension Length;\nunit m : Length = rational(1, 1);\n";
@@ -444,13 +442,16 @@ fn with_length_units(document: &[u8]) -> Vec<u8> {
     serde_json::to_vec(&value).expect("fixture encoding")
 }
 
-/// TC-1300 row 19, first half (FR-505-AC-9): over a unit-bearing `Ratio`, a
-/// comparison, an ordering and a sum of two members refuse
-/// `ill_typed`/`type-mismatch`. The `convert<Quantity<m>>` half is not
-/// carried by the spine yet, so this test is not tagged FR-505-AC-9.
-#[trace("TC-1300")]
+/// FR-505-AC-9 (TC-1300 row 19): over a unit-bearing `Ratio` whose unit `m` is
+/// declared in the type's own model document, which also declares an object
+/// type, two fields `a` and `b` of `Ratio`: the invariants
+/// `self.a = self.b`, `self.a < self.b` and `self.a + self.b = self.a` each
+/// refuse `ill_typed`/`type-mismatch`, while
+/// `convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b)` and the same
+/// with `<` check. `m` is the document's unit.
+#[trace("FR-505-AC-9", "TC-1300")]
 #[test]
-fn unit_bearing_rational_members_do_not_compare_or_add_directly() {
+fn unit_bearing_rational_members_compare_only_through_convert() {
     let ratio = identity("Ratio");
     let document = with_length_units(&document(
         vec![rational_type(
@@ -466,14 +467,144 @@ fn unit_bearing_rational_members_do_not_compare_or_add_directly() {
         "self.a < self.b",
         "self.a + self.b = self.a",
     ] {
-        let body = format!(
-            "dimension Length;\nunit m : Length = rational(1, 1);\n\
-             invariant I using v on Config::ConfigVersion at current {{ {clause} }}\n"
-        );
+        let body =
+            format!("invariant I using v on Config::ConfigVersion at current {{ {clause} }}\n");
         assert_eq!(
             assemble(&document, &body).map(|_| ()),
             Err(vec![(Code::IllTyped, Some("type-mismatch".to_owned()))]),
             "{clause}"
         );
     }
+    for clause in [
+        "convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b)",
+        "convert<Quantity<m>>(self.a) < convert<Quantity<m>>(self.b)",
+        "convert<Quantity<m>>(self.a) = 1 m",
+        "convert<Quantity<cm>>(self.a) = 100 cm",
+    ] {
+        let body =
+            format!("invariant I using v on Config::ConfigVersion at current {{ {clause} }}\n");
+        assert_eq!(assemble(&document, &body).map(|_| ()), Ok(()), "{clause}");
+    }
+}
+
+/// FR-505-AC-9 (TC-1300 row 19), wrong-unit controls: the converted sides must
+/// agree on the unit, so a different unit, a different dimension or a bare
+/// carried member refuses `ill_typed`/`type-mismatch`.
+#[trace("TC-1300")]
+#[test]
+fn unit_bearing_rational_comparisons_refuse_a_wrong_unit() {
+    let ratio = identity("Ratio");
+    let document = with_length_units(&document(
+        vec![rational_type(
+            "Ratio",
+            ratio_constraints(&ratio),
+            Some("ix://quire/unit/m"),
+        )],
+        Vec::new(),
+        &[("a", &ratio), ("b", &ratio)],
+    ));
+    for clause in [
+        "convert<Quantity<m>>(self.a) = convert<Quantity<cm>>(self.b)",
+        "convert<Quantity<m>>(self.a) = 1 cm",
+        "convert<Quantity<m>>(self.a) = self.b",
+    ] {
+        let body =
+            format!("invariant I using v on Config::ConfigVersion at current {{ {clause} }}\n");
+        assert_eq!(
+            assemble(&document, &body).map(|_| ()),
+            Err(vec![(Code::IllTyped, Some("type-mismatch".to_owned()))]),
+            "{clause}"
+        );
+    }
+}
+
+/// A source unit `m` of another dimension takes the name from the model
+/// document's `m` (the compiling unit's own unit wins), so the document's
+/// `Ratio` carries the source `m` (Time): `convert<Quantity<cm>>(self.a)`,
+/// a conversion to the document's Length unit, checks without the source `m`
+/// and is refused `ill_typed`/`type-mismatch` with it.
+#[trace("TC-1300")]
+#[test]
+fn a_source_unit_named_like_the_document_unit_wins_the_name() {
+    let ratio = identity("Ratio");
+    let document = with_length_units(&document(
+        vec![rational_type(
+            "Ratio",
+            ratio_constraints(&ratio),
+            Some("ix://quire/unit/m"),
+        )],
+        Vec::new(),
+        &[("a", &ratio), ("b", &ratio)],
+    ));
+    let clause = "invariant I using v on Config::ConfigVersion at current { \
+        convert<Quantity<cm>>(self.a) = 100 cm }\n";
+    assert_eq!(assemble(&document, clause).map(|_| ()), Ok(()));
+    let shadowed = format!("dimension Time;\nunit m : Time = rational(1, 1);\n{clause}");
+    assert_eq!(
+        assemble(&document, &shadowed).map(|_| ()),
+        Err(vec![(Code::IllTyped, Some("type-mismatch".to_owned()))])
+    );
+}
+
+/// Two selected models that each declare a unit `x` leave the bare name `x`
+/// unresolved (`UnresolvedTypeName`, the refusal of a name no unit holds): no
+/// model is picked silently. The qualified spellings `A::x` and `B::x` each
+/// resolve, and a bare name only one model declares resolves.
+#[cfg(feature = "test-support")]
+#[trace("TC-1300")]
+#[test]
+fn a_bare_unit_name_declared_by_two_models_is_refused() {
+    use crate::timed_declarations::{assemble_selected_as, time_package};
+    use qsl_semantics::check::AssemblyCause;
+    let both = [
+        (
+            "A",
+            "acme/a",
+            time_package("acme/a", false, &[("x", None, "1")]),
+        ),
+        (
+            "B",
+            "acme/b",
+            time_package("acme/b", false, &[("x", None, "1")]),
+        ),
+    ];
+    let one = [
+        (
+            "A",
+            "acme/a",
+            time_package("acme/a", false, &[("x", None, "1")]),
+        ),
+        (
+            "B",
+            "acme/b",
+            time_package("acme/b", false, &[("y", None, "1")]),
+        ),
+    ];
+    let outcome = |packages: &[(&str, &str, Vec<u8>)], unit: &str| {
+        assemble_selected_as(
+            ("test", "fr-505-two-units"),
+            packages,
+            &format!("function f using v(d: Quantity<{unit}>): Boolean pure {{ d = d }}"),
+        )
+        .1
+        .map(|_| ())
+        .map_err(|refusal| {
+            refusal
+                .errors
+                .into_iter()
+                .map(|error| error.cause)
+                .collect::<Vec<_>>()
+        })
+    };
+    assert_eq!(
+        outcome(&both, "x"),
+        Err(vec![AssemblyCause::UnresolvedTypeName {
+            name: "x".to_owned()
+        }])
+    );
+    for unit in ["A::x", "B::x"] {
+        assert_eq!(outcome(&both, unit), Ok(()), "{unit}");
+    }
+    assert_eq!(outcome(&one, "x"), Ok(()));
+    assert_eq!(outcome(&one, "y"), Ok(()));
 }

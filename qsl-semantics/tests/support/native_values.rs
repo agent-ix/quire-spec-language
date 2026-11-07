@@ -251,10 +251,18 @@ fn build_with(flavor: Flavor) -> Value {
             )
         };
         types.push(rational_type("Ratio"));
+        // The same bounds carrying the unit `ms` the document declares
+        // (FR-505-AC-5's unit sentence).
+        let mut metered = rational_type("RatioMs");
+        metered["unit"] = json!("ix://quire/unit/ms");
+        types.push(metered);
         item["fields"]
             .as_array_mut()
             .expect("Item has fields")
-            .extend([variants::field("Item", "level", &id("Ratio"))]);
+            .extend([
+                variants::field("Item", "level", &id("Ratio")),
+                variants::field("Item", "metered", &id("RatioMs")),
+            ]);
     }
     if text {
         let (title, tag, code) = (id("Title"), id("Tag"), id("Code"));
@@ -305,6 +313,18 @@ fn build_with(flavor: Flavor) -> Value {
             .as_array_mut()
             .expect("constructs")
             .push(scalar);
+    }
+    if flavor == Flavor::Rational {
+        let origin = base::origin("dimension/Time");
+        document["dimensions"] = json!([{
+            "identity": id("dimension/Time"), "name": "Time",
+            "base": true, "terms": [], "origin": origin
+        }]);
+        document["units"] = json!([{
+            "identity": id("unit/ms"), "name": "ms",
+            "dimension": id("dimension/Time"), "scale": "1", "offset": "0",
+            "origin": base::origin("unit/ms")
+        }]);
     }
     if collections {
         document["constructs"]

@@ -1189,7 +1189,12 @@ impl TypeNames for UnitNames<'_> {
     fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
         match self.spellings.spelled(self.unit, name) {
             Spelled::Model(_) => self.spellings.unit(self.unit, name),
-            Spelled::Other => self.names.units.get(name).cloned(),
+            Spelled::Other => self
+                .names
+                .units
+                .get(name)
+                .cloned()
+                .or_else(|| self.spellings.declared_unit(self.unit, name)),
         }
     }
 }
@@ -3646,12 +3651,6 @@ impl PackageDeclarations {
             &package_name,
             limits,
         );
-        let model_units = quantity_result
-            .as_ref()
-            .ok()
-            .map(|quantities| super::check::declared_unit_ids(&quantities.graph))
-            .unwrap_or_default();
-
         // Each `model` declaration's admitted domain package, and its
         // object types by name.
         let mut admitted = Vec::with_capacity(selections.models.len());
@@ -3682,6 +3681,18 @@ impl PackageDeclarations {
                     .map(|unit| (unit.key(), unit.id()))
                     .collect()
             })
+            .unwrap_or_default();
+        // The units of the selected packages, which a bare unit name reaches
+        // only through `ModelSpellings::declared_unit`.
+        let package_unit_ids: Vec<quire_exact::UnitId> = imported
+            .units
+            .values()
+            .filter_map(|imported_unit| graph_unit_ids.get(&imported_unit.key).cloned())
+            .collect();
+        let model_units = quantity_result
+            .as_ref()
+            .ok()
+            .map(|quantities| super::check::declared_unit_ids(&quantities.graph, &package_unit_ids))
             .unwrap_or_default();
         for (selection, source_unit) in selections.models.iter().zip(&model_selection_units) {
             let unit_source = sources.get(*source_unit).unwrap_or(&source);
@@ -3725,12 +3736,21 @@ impl PackageDeclarations {
                     })
                     .collect(),
             );
+            // A type of the package names a unit the compiling unit declares,
+            // or else a unit the package's own document declares
+            // (FR-505-AC-7, AC-9).
+            let package_units = match admitted.last() {
+                Some(admitted_model) => {
+                    super::check::package_unit_ids(&model_units, admitted_model)
+                }
+                None => model_units.clone(),
+            };
             match model_object_types(
                 &selection.alias,
                 model,
                 selection.span,
                 &mut operations,
-                &model_units,
+                &package_units,
             ) {
                 Ok(types) => {
                     model_spellings.set_names(package, types.package_names(&selection.alias));
@@ -4080,7 +4100,9 @@ impl PackageDeclarations {
             ),
             units: quantities
                 .as_ref()
-                .map(|assembled| super::check::declared_unit_ids(&assembled.graph))
+                .map(|assembled| {
+                    super::check::declared_unit_ids(&assembled.graph, &package_unit_ids)
+                })
                 .unwrap_or_default(),
             ..Names::default()
         };
