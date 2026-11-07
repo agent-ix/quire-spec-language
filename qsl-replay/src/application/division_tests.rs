@@ -61,11 +61,11 @@ fn division_owner_selection_reaches_public_compile_source_execution_and_strict_r
     for (role, cases) in [
         (
             DefinitionRole::IntegerDivisionEuclidean,
-            [(-7, 3, -3, 2), (7, -3, -2, 1), (-7, -3, 3, 2)],
+            [(-7_i64, 3_i64, -3_i64, 2_i64), (7, -3, -2, 1), (-7, -3, 3, 2)],
         ),
         (
             DefinitionRole::IntegerDivisionFloor,
-            [(-7, 3, -3, 2), (7, -3, -3, -2), (-7, -3, 2, -1)],
+            [(-7_i64, 3_i64, -3_i64, 2_i64), (7, -3, -3, -2), (-7, -3, 2, -1)],
         ),
         (
             DefinitionRole::IntegerDivisionTruncating,
@@ -191,19 +191,19 @@ fn facade_admission_retains_conflicting_unknown_and_incompatible_definition_refu
     let floor = DefinitionRole::IntegerDivisionFloor.reference();
     let conflicting =
         admit_integer_division(&[euclidean.clone(), floor.clone()], None).unwrap_err();
-    assert_eq!(conflicting.cause(), PackageCause::ConflictingDefinition);
+    assert_eq!(conflicting.cause, PackageCause::ConflictingDefinition);
     let mut foreign = euclidean.clone();
     foreign.authority = "foreign".to_owned();
     assert_eq!(
         admit_integer_division(&[foreign], None)
             .unwrap_err()
-            .cause(),
+            .cause,
         PackageCause::IncompatibleDefinition
     );
     assert_eq!(
         admit_integer_division(&[euclidean], Some(&floor))
             .unwrap_err()
-            .cause(),
+            .cause,
         PackageCause::IncompatibleDefinition
     );
 }
