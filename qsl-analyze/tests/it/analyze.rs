@@ -20,8 +20,8 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze as analyze_request, analyze_items, model_item, AnalyzeItem, AnalyzeLimits,
-    AnalyzeRequest, DispositionKind, Engine, Engines, Payload, Settlement,
+    analyze as analyze_request, analyze_items, model_item, Aggregate, AggregateGap, AnalyzeItem,
+    AnalyzeLimits, AnalyzeRequest, DispositionKind, Engine, Engines, Payload, Settlement,
 };
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
@@ -498,6 +498,7 @@ fn routed_service_item(world: &crate::prob_world::World) -> qsl_analyze::provide
             max_witnesses: request.max_witnesses,
             symmetry: request.symmetry,
             timed_sampling: request.timed_sampling,
+            required: false,
         },
         backend: BackendId::new("en-4"),
     }
@@ -971,4 +972,72 @@ fn accounting_limit_before_deadline_keeps_its_typed_result() {
         })
     ));
     assert_eq!(cancel.cause(), None);
+}
+
+/// FR-507-AC-5 through `analyze`: aggregate availability is joined from the
+/// settled records to the request's required indices. An engine the registry
+/// does not hold settles every item `invalid-request`, so a required item
+/// makes the aggregate unavailable while an optional one does not; a
+/// request that repeats an index yields no aggregate.
+#[trace("TC-1302", "FR-507-AC-5")]
+#[test]
+fn analyze_joins_required_items_to_the_aggregate() {
+    use crate::prob_world::{self, World};
+
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.01, beta 0.01, indifference 0.01 \
+         { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
+         until holds(s.phase = 2) within 10) <= 2 }\n";
+    let world = World::new(&prob_world::service(claim));
+    let limits = AnalyzeLimits {
+        accounting: prob_world::UNLIMITED,
+        ..AnalyzeLimits::default()
+    };
+    let run = |engines: &Engines, required: &[bool], indices: &[usize]| {
+        let items = indices
+            .iter()
+            .zip(required)
+            .map(|(at, required)| {
+                let mut item = routed_service_item(&world);
+                item.item.request_index = index(*at);
+                item.item.required = *required;
+                item
+            })
+            .collect();
+        analyze_request(
+            &world.package,
+            AnalyzeRequest {
+                binding: world.binding(),
+                items,
+            },
+            engines,
+            &limits,
+            &Cancel::new(),
+        )
+        .expect("Service's binding admits")
+        .into_value()
+    };
+    let absent = Engines::default();
+    let present = Engines::qsl().expect("they register");
+
+    let refused = run(&absent, &[true, false], &[0, 1]);
+    assert_eq!(refused.records.len(), 2);
+    assert_eq!(
+        refused.aggregate,
+        Ok(Aggregate::Unavailable {
+            request_index: index(0)
+        })
+    );
+    assert_eq!(
+        run(&absent, &[false, false], &[0, 1]).aggregate,
+        Ok(Aggregate::Attainable)
+    );
+    assert_eq!(
+        run(&present, &[true, true], &[0, 1]).aggregate,
+        Ok(Aggregate::Attainable)
+    );
+    assert_eq!(
+        run(&present, &[true, false], &[1, 1]).aggregate,
+        Err(AggregateGap::Duplicate(index(1)))
+    );
 }

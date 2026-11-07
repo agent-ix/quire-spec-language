@@ -324,6 +324,10 @@ pub struct AnalyzeRequest<'a> {
 pub struct AnalyzeOutcome {
     /// The per-item outcomes.
     pub records: Vec<TerminalRecord>,
+    /// Aggregate availability joined from the settled records to the
+    /// request's required indices (FR-507-AC-5); a gap when the request
+    /// repeats an index.
+    pub aggregate: Result<Aggregate, AggregateGap>,
 }
 
 /// Why analyze could not admit a shared subject binding.
@@ -960,13 +964,16 @@ pub fn analyze(
     ModelSystem::new(simulation)
         .map_err(|failure| StageFailure::Refused(AnalyzeRefusal::Binding(failure)))?;
 
-    let items = request
+    let items: Vec<_> = request
         .items
         .iter()
         .map(|routed| statistical_work(package, &request.binding, routed, limits))
         .collect();
-    let records = terminal_records(analyze_items(engines, items, cancel));
-    Ok(Staged::new(AnalyzeOutcome { records }))
+    let requirements: Vec<_> = items.iter().map(AnalyzeItem::requirement).collect();
+    let settled = analyze_items(engines, items, cancel);
+    let aggregate = aggregate(&requirements, &settled);
+    let records = terminal_records(settled);
+    Ok(Staged::new(AnalyzeOutcome { records, aggregate }))
 }
 
 fn statistical_work<'a>(
@@ -1013,6 +1020,7 @@ fn statistical_work<'a>(
         Disposition::Supported(Candidate::new(routed.backend.clone())),
         None,
     )
+    .required(item.required)
 }
 
 pub(crate) fn terminal_records(records: Vec<AnalyzeRecord>) -> Vec<TerminalRecord> {

@@ -34,6 +34,9 @@ pub struct ClaimItem<'a> {
     pub symmetry: Vec<qsl_route::reductions::SymmetryDeclaration>,
     /// The timed sampler settings (FR-254).
     pub timed_sampling: qsl_replay::statistical::TimedSampling,
+    /// Whether the caller requires this item for complete aggregate success
+    /// (FR-507-AC-5).
+    pub required: bool,
 }
 
 /// One item routed by the caller to a QSL engine.
