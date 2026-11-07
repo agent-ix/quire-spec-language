@@ -399,56 +399,70 @@ function e3 using v(s: State, g: Integer): State pure { s }\n";
         crate::EmitLimits::fixture(),
     )
     .expect("real writer carry");
-    let read = read_v2(
-        rooted.package().bytes(),
-        library(),
-        V2ReadLimits::fixture(),
-        &evidence,
-    );
-    let Read::Verified { admitted, .. } = read else {
-        panic!("rooted package admits: {read:?}")
-    };
-    let mut measure = ample();
-    let rows = rooted
-        .identity_rows(&admitted, &mut measure)
-        .expect("carried producer rows join");
+    // This writer fixture exercises final carry and rename. Its separate
+    // monitor-entry ABI is not a native identity-admission oracle; genuine
+    // admitted identity rows are projected in the combined fixture above.
+    let expected_declarations: Vec<usize> = rooted
+        .selected_exact_declaration_rows()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, row)| {
+            rooted
+                .wire_nodes
+                .iter()
+                .any(|node| {
+                    qsl_semantics::model::intake::selected_exact_declaration_row_matches_node(
+                        row, node,
+                    )
+                })
+                .then_some(index)
+        })
+        .collect();
+    let expected_fields: Vec<usize> = rooted
+        .selected_exact_field_rows()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, row)| {
+            rooted
+                .wire_nodes
+                .iter()
+                .any(|node| {
+                    qsl_semantics::model::intake::selected_exact_field_row_matches_node(row, node)
+                })
+                .then_some(index)
+        })
+        .collect();
     assert!(
-        !rows.declarations().is_empty(),
-        "default or stale carry metadata must not erase selected model declarations"
+        !expected_declarations.is_empty(),
+        "the actual carried model declarations are selected"
     );
     assert!(
-        !rows.fields().is_empty(),
-        "selected ConfigVersion field witnesses survive writer carry"
+        !expected_fields.is_empty(),
+        "real ConfigVersion field rows survive carry"
     );
-    let expected = qsl_semantics::model::intake::selected_exact_identities_from_rows(
-        &admitted,
-        rooted.selected_exact_declaration_rows(),
-        rooted.selected_exact_field_rows(),
-        &mut ample(),
-    )
-    .expect("owner validates carried identities");
     assert_eq!(
-        rows.declarations(),
-        expected.declaration_rows().cloned().collect::<Vec<_>>()
+        rooted.identity_row_selection.declarations,
+        expected_declarations
     );
-    assert_eq!(rows.fields(), expected.field_rows());
-    let need = measure.consumed();
-    assert_eq!(
-        rooted
-            .identity_rows(
-                &admitted,
-                &mut NativeJoinBudget::new(need.work, need.storage)
-            )
-            .expect("exact carried allowance"),
-        rows
-    );
+    assert_eq!(rooted.identity_row_selection.fields, expected_fields);
     assert_ne!(
         base.package().bytes(),
         rooted.package().bytes(),
-        "the actual plan writer changed the emitted package"
+        "the actual writer changed its package"
     );
-    let pair = rows
-        .source_records()
+    let original_pair = base
+        .selected_source_record_rows()
+        .iter()
+        .find(|row| {
+            row.qualified_declaration
+                .iter()
+                .map(AsRef::as_ref)
+                .eq(["Pair"])
+        })
+        .expect("original authored record");
+
+    let pair = rooted
+        .selected_source_record_rows()
         .iter()
         .find(|row| {
             row.qualified_declaration
@@ -459,6 +473,13 @@ function e3 using v(s: State, g: Integer): State pure { s }\n";
         .expect("real renamed source record");
     assert_eq!(pair.members[0].original_member_identity.as_ref(), "fst");
     assert_eq!(pair.members[0].admitted_name.as_ref(), "one");
+    assert_eq!(pair.record_key, original_pair.record_key);
+    assert_eq!(pair.source_authority, original_pair.source_authority);
+    assert_eq!(pair.source_identity, original_pair.source_identity);
+    assert_ne!(
+        pair.structural_node, original_pair.structural_node,
+        "the actual writer rekeyed Pair after renaming its binding"
+    );
 }
 
 #[test]

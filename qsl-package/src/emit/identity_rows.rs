@@ -15,8 +15,8 @@ use super::Emission;
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct IdentityRowSelection {
-    declarations: Vec<usize>,
-    fields: Vec<usize>,
+    pub(super) declarations: Vec<usize>,
+    pub(super) fields: Vec<usize>,
 }
 
 impl Emission {
