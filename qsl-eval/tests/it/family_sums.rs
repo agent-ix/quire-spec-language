@@ -103,9 +103,7 @@ fn a_quantity_sum_adds_the_summands_in_the_unit_of_n() {
     assert!(check("sum<Len>(x in two(): x) = 5 m"));
     assert!(!check("sum<Len>(x in two(): x) = 6 m"));
     assert!(check("sum<Len>(x in three(): x + 1 m) = 12 m"));
-    assert!(check(
-        "sum<Len>(x in nothing(): x) = convert<Quantity<m>>(convert<Li>(0 m))"
-    ));
+    assert!(check("sum<Len>(x in nothing(): x) = 0 m"));
 
     let refusals = package_with(&format!(
         "{UNIT}function ints using v(): Sequence<Integer>[0, 4] pure {{ sequence[1, 2] }}\nfunction f using v(): Boolean pure {{ sum<Len>(x in ints(): x) = 3 m }}\n"
