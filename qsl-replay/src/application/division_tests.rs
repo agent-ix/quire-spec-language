@@ -279,7 +279,7 @@ fn replay_recompilation_uses_the_admitted_division_selection() {
             work_units: 100000,
             result_units: 10000,
         },
-        stage_limits: StageLimits::default(),
+        stage_limits: Default::default(),
         supplied_limits: None,
         object_environment: None,
         declared_domains: vec![],
