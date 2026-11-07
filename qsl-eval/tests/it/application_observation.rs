@@ -707,7 +707,7 @@ fn family_refusal_is_owned_without_projecting_its_cause() {
     let packages = package_input([bytes.as_slice()]).expect("model input");
     let mut reference = None;
     let package = package_with(
-        "model M = \"test/orders\";\nfunction f using v(a: M::Obj): Integer pure { deref(a).n }",
+        "profile m = \"quire.model.complete/v1\";\nmodel M = \"test/orders\";\nfunction f using m(a: M::Obj): Integer pure { deref(a).n }",
         |unit| {
             let selected = admit_unit(
                 &unit.selections().models,
