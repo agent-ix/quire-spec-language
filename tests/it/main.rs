@@ -78,19 +78,12 @@ mod hybrid_request_items;
 mod layer_crate_reexports;
 mod limit_name_patterns;
 mod linking;
-mod located_json;
 #[cfg(feature = "checked-handoff")]
 mod mapping_support;
-mod model_source;
 #[cfg(feature = "checked-handoff")]
 mod model_type_unit_roots;
 mod name_resolution_confinement;
 mod native_boundaries;
-mod native_checking;
-mod native_linking;
-mod native_model;
-mod native_model_profiles;
-mod native_model_qualification;
 mod nesting_levels;
 mod parser;
 mod protocol_artifact;

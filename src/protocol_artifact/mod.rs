@@ -44,7 +44,6 @@ pub use encoding::encode_candidate;
 pub use intake::read;
 pub use work::{Accumulation, Dimension, Exhaustion, Limits, Usage, ACCOUNTING_VERSION};
 
-use crate::native_model::NativeModel;
 use crate::number::NumberError;
 
 /// The one reader of the emitter's `clock:` binding-name spelling. Version-2
@@ -75,28 +74,6 @@ pub struct SuppliedDependency<'a> {
     pub bytes: &'a [u8],
     /// Exact direct prerequisites; caller order need not be canonical wire order.
     pub requires: &'a [wire::ArtifactRef],
-}
-
-/// Exact external source selection for a model's original foreign loci.
-#[derive(Clone, Copy, Debug)]
-pub struct ExpectedForeignSource<'a> {
-    /// Independently selected source artifact reference.
-    pub artifact: &'a wire::ArtifactRef,
-    /// Authored formal identity, distinct from the external source reference.
-    pub formal: &'a wire::Formal,
-    /// Original UTF-8 source bytes corresponding to the admitted model.
-    pub bytes: &'a [u8],
-}
-
-/// Existing constructor-private model authority, separate from a wire export.
-#[derive(Clone, Copy, Debug)]
-pub struct AdmittedModel<'a> {
-    /// Exact selected model-package reference, with no inferred namespace mapping.
-    pub artifact: &'a wire::ArtifactRef,
-    /// Existing native producer's admitted declarations, roles and artifact.
-    pub model: &'a NativeModel,
-    /// Independent source/formal correspondence for original model loci.
-    pub source: &'a ExpectedForeignSource<'a>,
 }
 
 /// Independently selected authored declaration correspondence.
@@ -149,8 +126,6 @@ pub struct Expected<'a> {
     pub sources: &'a [ExpectedSource<'a>],
     /// Complete dependency inventory; omitted entries are never discovered.
     pub dependencies: &'a [SuppliedDependency<'a>],
-    /// Actual admitted native views for every model dependency retained as a model.
-    pub models: &'a [AdmittedModel<'a>],
     /// Admitted domain packages for every model dependency that names one.
     pub domain_packages: &'a [AdmittedDomainPackage<'a>],
 }

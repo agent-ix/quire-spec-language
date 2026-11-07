@@ -4,7 +4,6 @@
 
 pub mod declaration_id;
 pub mod definition_source;
-mod native;
 
 use std::collections::BTreeSet;
 
@@ -13,7 +12,6 @@ use quire_contract_model::{
     SymbolName, TypeDeclaration, ValueDeclarationKind, ValueType,
 };
 
-use crate::native_model::{NativeModel, NativeModelProfile, ObjectRole, OperationRole};
 use crate::syntax::{BinaryOp, Builtin, Clause, ClauseKind, ExprId, ExprKind, UnaryOp};
 use crate::ParsedUnit;
 use qsl_foundation::{Code, Diagnostic, Phase, Span};
@@ -140,17 +138,12 @@ pub struct ResolvedOccurrence {
 #[derive(Clone, Copy, Debug)]
 pub struct LinkedModel<'a> {
     environment: &'a DeclarationEnvironment,
-    native: Option<&'a NativeModel>,
 }
 
 impl<'a> LinkedModel<'a> {
     /// The immutable, constructor-validated formal environment.
     pub fn environment(&self) -> &'a DeclarationEnvironment {
         self.environment
-    }
-    /// Explicit native correspondence; absent for the original formal profile.
-    pub fn native_model(&self) -> Option<&'a NativeModel> {
-        self.native
     }
 }
 
@@ -159,7 +152,6 @@ impl<'a> LinkedModel<'a> {
 pub struct LinkedClause {
     model: usize,
     context: DeclarationLocation,
-    operation: Option<DeclarationLocation>,
     occurrences: Vec<ResolvedOccurrence>,
 }
 
@@ -172,10 +164,6 @@ impl LinkedClause {
     pub fn context(&self) -> &DeclarationLocation {
         &self.context
     }
-    /// Selected explicit operation and its role locus; absent for invariants.
-    pub fn operation(&self) -> Option<&DeclarationLocation> {
-        self.operation.as_ref()
-    }
     /// Resolved occurrences; no static-typing judgment is implied.
     pub fn occurrences(&self) -> &[ResolvedOccurrence] {
         &self.occurrences
@@ -185,36 +173,15 @@ impl LinkedClause {
 /// Atomically linked names, retaining the original source and borrowed models.
 #[derive(Debug)]
 pub struct LinkedPackage<'a> {
-    profile: BindingProfile,
     unit: ParsedUnit,
     models: Vec<LinkedModel<'a>>,
     clauses: Vec<LinkedClause>,
 }
 
 impl<'a> LinkedPackage<'a> {
-    /// Binding interpretation selected by the entry point. Consumers also verify
-    /// the actual selected model profiles through the typed boundary.
+    /// Binding interpretation selected by the entry point.
     pub fn binding_profile(&self) -> &'static str {
-        match self.profile {
-            BindingProfile::Formal => "native-formal-environment/1",
-            BindingProfile::Native => NativeModelProfile::V1.as_str(),
-        }
-    }
-    /// Historical checking validates actual model selections, not a display label.
-    pub(crate) fn require_historical_native(&self) -> Result<(), Box<LinkingError>> {
-        match self.profile {
-            BindingProfile::Native => native::check_selected_profiles(&self.unit, &self.models),
-            // A strict equality check against one admitted profile, not a
-            // catalog of admitted profiles: invalid binding, not an
-            // unsupported construct. Same shape and reasoning as the
-            // clause-kind check below.
-            BindingProfile::Formal => Err(failure(
-                &self.unit,
-                Code::InvalidModelBinding,
-                Span { start: 0, end: 0 },
-                "checking requires the explicit native model binding profile",
-            )),
-        }
+        "native-formal-environment/1"
     }
     /// Exact original syntax/source; cannot be replaced through this API.
     pub fn unit(&self) -> &ParsedUnit {
@@ -228,12 +195,6 @@ impl<'a> LinkedPackage<'a> {
     pub fn clauses(&self) -> &[LinkedClause] {
         &self.clauses
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BindingProfile {
-    Formal,
-    Native,
 }
 
 fn location(
@@ -323,34 +284,8 @@ pub fn link(
     preflight(&unit, environments.len(), limits)?;
     let catalog = formal_catalog(&unit, environments, limits)?;
     let models = select_models(&unit, &catalog)?;
-    let clauses = resolve_clauses(&unit, &models, limits, BindingProfile::Formal)?;
+    let clauses = resolve_clauses(&unit, &models, limits)?;
     Ok(LinkedPackage {
-        profile: BindingProfile::Formal,
-        unit,
-        models,
-        clauses,
-    })
-}
-
-/// Link using exact native-state-model/1 artifacts and explicit native roles.
-///
-/// # Errors
-/// Refuses conflicting inventory identity, missing/stale/ambiguous selections,
-/// unbound native references or operations, and exhausted limits atomically.
-/// Successful linkage does not establish types, definedness or runtime validity.
-pub fn link_native(
-    unit: ParsedUnit,
-    models: &[NativeModel],
-    limits: LinkLimits,
-) -> Result<LinkedPackage<'_>, Box<LinkingError>> {
-    let limits = limits.bounded();
-    preflight(&unit, models.len(), limits)?;
-    let catalog = native::catalog(&unit, models, limits)?;
-    let models = select_models(&unit, &catalog)?;
-    native::check_selected_profiles(&unit, &models)?;
-    let clauses = resolve_clauses(&unit, &models, limits, BindingProfile::Native)?;
-    Ok(LinkedPackage {
-        profile: BindingProfile::Native,
         unit,
         models,
         clauses,
@@ -411,10 +346,7 @@ fn formal_catalog<'a>(
                 error
             })?;
         emitted += output.bytes().as_slice().len();
-        catalog.push(LinkedModel {
-            environment,
-            native: None,
-        });
+        catalog.push(LinkedModel { environment });
     }
     Ok(catalog)
 }
@@ -468,7 +400,6 @@ fn resolve_clauses(
     unit: &ParsedUnit,
     models: &[LinkedModel<'_>],
     limits: LinkLimits,
-    profile: BindingProfile,
 ) -> Result<Vec<LinkedClause>, Box<LinkingError>> {
     let mut names = BTreeSet::new();
     let mut clauses = Vec::with_capacity(unit.clauses().len());
@@ -481,7 +412,7 @@ fn resolve_clauses(
                 "duplicate native clause name",
             ));
         }
-        if profile == BindingProfile::Formal && clause.kind != ClauseKind::Invariant {
+        if clause.kind != ClauseKind::Invariant {
             // A strict equality check against one admitted clause kind, not a
             // catalog of admitted operation-clause forms: invalid binding, not
             // an unsupported construct.
@@ -492,34 +423,17 @@ fn resolve_clauses(
                 "operation clauses need an explicit native operation mapping",
             ));
         }
-        let (model, record) = resolve_context(unit, models, clause, profile)?;
+        let (model, record) = resolve_context(unit, models, clause)?;
         let environment = models[model].environment;
-        let operation = models[model]
-            .native
-            .map(|model| native::operation(unit, model, clause))
-            .transpose()?
-            .flatten();
         let context = location(
             environment,
             DeclarationKey::Type(record.name().clone()),
             record.source(),
         );
-        let operation_location = operation.map(|operation| {
-            location(
-                environment,
-                DeclarationKey::Operation {
-                    context: operation.context.clone(),
-                    name: operation.name.clone(),
-                },
-                &operation.source,
-            )
-        });
         let mut resolver = Resolver {
             unit,
             models,
             current: model,
-            context: record,
-            operation,
             limits,
             locals: Vec::new(),
             occurrences: Vec::new(),
@@ -529,18 +443,10 @@ fn resolve_clauses(
             span: clause.context.span,
             target: ResolutionTarget::Formal(context.clone()),
         });
-        if let (Some(name), Some(location)) = (&clause.operation, &operation_location) {
-            resolver.occurrences.push(ResolvedOccurrence {
-                expression: None,
-                span: name.span,
-                target: ResolutionTarget::Formal(location.clone()),
-            });
-        }
         resolver.visit(clause.expression, 0)?;
         clauses.push(LinkedClause {
             model,
             context,
-            operation: operation_location,
             occurrences: resolver.occurrences,
         });
     }
@@ -551,7 +457,6 @@ fn resolve_context<'a>(
     unit: &ParsedUnit,
     models: &[LinkedModel<'a>],
     clause: &Clause,
-    profile: BindingProfile,
 ) -> Result<(usize, &'a RecordDeclaration), Box<LinkingError>> {
     let (model, declaration) = exported(
         unit,
@@ -571,43 +476,30 @@ fn resolve_context<'a>(
             "native context must select a record",
         ));
     };
-    match profile {
-        BindingProfile::Native => {
-            if !models[model].native.is_some_and(|native| {
-                native
-                    .roles()
-                    .objects
-                    .iter()
-                    .any(|object| &object.record == record.name())
-            }) {
-                return Err(failure(
-                    unit,
-                    Code::InvalidModelBinding,
-                    clause.context.span,
-                    "native context requires an explicit object role",
-                ));
-            }
-        }
-        BindingProfile::Formal => {
-            let self_name = SymbolName::new("self").map_err(|error| {
-                failure(
-                    unit,
-                    Code::InvalidModelBinding,
-                    clause.context.span,
-                    format!("the `self` value name is not a valid symbol name: {error:?}"),
-                )
-            })?;
-            let self_value = models[model]
-                .environment
-                .values()
-                .iter()
-                .find(|value| *value.name() == self_name);
-            if !self_value.is_some_and(|value| {
-                value.kind() == ValueDeclarationKind::State
-                    && matches!(value.value_type(), ValueType::Record { name } if name == record.name())
-            }) {
-                return Err(failure(unit, Code::InvalidModelBinding, clause.context.span, "context requires an explicit self State value of its record type"));
-            }
+    {
+        let self_name = SymbolName::new("self").map_err(|error| {
+            failure(
+                unit,
+                Code::InvalidModelBinding,
+                clause.context.span,
+                format!("the `self` value name is not a valid symbol name: {error:?}"),
+            )
+        })?;
+        let self_value = models[model]
+            .environment
+            .values()
+            .iter()
+            .find(|value| *value.name() == self_name);
+        if !self_value.is_some_and(|value| {
+            value.kind() == ValueDeclarationKind::State
+                && matches!(value.value_type(), ValueType::Record { name } if name == record.name())
+        }) {
+            return Err(failure(
+                unit,
+                Code::InvalidModelBinding,
+                clause.context.span,
+                "context requires an explicit self State value of its record type",
+            ));
         }
     }
     Ok((model, record))
@@ -616,8 +508,6 @@ fn resolve_context<'a>(
 #[derive(Clone, Copy)]
 enum Shape<'a> {
     Formal(&'a DeclarationEnvironment, &'a ValueType),
-    Object(&'a DeclarationEnvironment, &'a SymbolName),
-    Reference(&'a DeclarationEnvironment, &'a ObjectRole),
     Boolean,
     Integer,
     Text,
@@ -629,12 +519,6 @@ impl Shape<'_> {
         match self {
             Self::Formal(a, ta) => {
                 matches!(other, Self::Formal(b, tb) if std::ptr::eq(a, b) && ta == tb)
-            }
-            Self::Object(a, name) => {
-                matches!(other, Self::Object(b, other_name) if std::ptr::eq(a, b) && name == other_name)
-            }
-            Self::Reference(a, role) => {
-                matches!(other, Self::Reference(b, other_role) if std::ptr::eq(a, b) && role.record == other_role.record)
             }
             Self::Boolean => matches!(other, Self::Boolean),
             Self::Integer => matches!(other, Self::Integer),
@@ -648,8 +532,6 @@ struct Resolver<'u, 'a> {
     unit: &'u ParsedUnit,
     models: &'u [LinkedModel<'a>],
     current: usize,
-    context: &'a RecordDeclaration,
-    operation: Option<&'a OperationRole>,
     limits: LinkLimits,
     locals: Vec<(&'u str, Span, Shape<'a>)>,
     occurrences: Vec<ResolvedOccurrence>,
@@ -748,7 +630,7 @@ impl<'u, 'a> Resolver<'u, 'a> {
                 value.source(),
             )),
         );
-        self.shape(environment, value.value_type())
+        Shape::Formal(environment, value.value_type())
     }
 
     fn value(
@@ -758,7 +640,6 @@ impl<'u, 'a> Resolver<'u, 'a> {
         span: Span,
     ) -> Result<Shape<'a>, Box<LinkingError>> {
         let value = self.lookup_value(name, span)?;
-        self.check_input_scope(value, span)?;
         Ok(self.bind_value(id, span, value))
     }
 
@@ -769,16 +650,7 @@ impl<'u, 'a> Resolver<'u, 'a> {
         shape: Shape<'a>,
     ) -> Result<Shape<'a>, Box<LinkingError>> {
         let (environment, record_name) = match shape {
-            Shape::Formal(environment, ValueType::Record { name })
-            | Shape::Object(environment, name) => (environment, name),
-            Shape::Reference(..) => {
-                return Err(failure(
-                    self.unit,
-                    Code::IllTyped,
-                    name.span,
-                    "reference carrier fields are not native field-access syntax",
-                ))
-            }
+            Shape::Formal(environment, ValueType::Record { name }) => (environment, name),
             Shape::Formal(..) | Shape::Boolean | Shape::Integer | Shape::Text | Shape::Unknown => {
                 return Err(failure(
                     self.unit,
@@ -820,7 +692,7 @@ impl<'u, 'a> Resolver<'u, 'a> {
                 field.source(),
             )),
         );
-        Ok(self.shape(environment, field.value_type()))
+        Ok(Shape::Formal(environment, field.value_type()))
     }
 
     fn visit(&mut self, id: ExprId, depth: usize) -> Result<Shape<'a>, Box<LinkingError>> {
@@ -842,8 +714,8 @@ impl<'u, 'a> Resolver<'u, 'a> {
             ExprKind::Boolean(_) => Ok(Shape::Boolean),
             ExprKind::Integer(_) => Ok(Shape::Integer),
             ExprKind::Text(_) => Ok(Shape::Text),
-            ExprKind::SelfValue => self.context_value(id, expression.span),
-            ExprKind::ResultValue => self.result_value(id, expression.span),
+            ExprKind::SelfValue => self.value(id, "self", expression.span),
+            ExprKind::ResultValue => self.value(id, "result", expression.span),
             ExprKind::Name(name) => {
                 if let Some((_, declaration, shape)) = self
                     .locals
@@ -931,7 +803,12 @@ impl<'u, 'a> Resolver<'u, 'a> {
                 }
             }
             ExprKind::Call { builtin, argument } => match builtin {
-                Builtin::Deref => self.dereference(id, *argument, expression.span, next),
+                Builtin::Deref => Err(failure(
+                    self.unit,
+                    Code::InvalidModelBinding,
+                    expression.span,
+                    "native references need a concrete formal mapping",
+                )),
                 Builtin::Present => {
                     self.visit(*argument, next)?;
                     Ok(Shape::Boolean)
@@ -943,11 +820,9 @@ impl<'u, 'a> Resolver<'u, 'a> {
                 Builtin::Pre => self.visit(*argument, next),
                 Builtin::Value => Ok(match self.visit(*argument, next)? {
                     Shape::Formal(environment, ValueType::Option { value }) => {
-                        self.shape(environment, value)
+                        Shape::Formal(environment, value)
                     }
                     Shape::Formal(..)
-                    | Shape::Object(..)
-                    | Shape::Reference(..)
                     | Shape::Boolean
                     | Shape::Integer
                     | Shape::Text
@@ -983,11 +858,9 @@ impl<'u, 'a> Resolver<'u, 'a> {
             } => {
                 let shape = match self.visit(*domain, next)? {
                     Shape::Formal(environment, ValueType::Collection { value }) => {
-                        self.shape(environment, value.element())
+                        Shape::Formal(environment, value.element())
                     }
                     Shape::Formal(..)
-                    | Shape::Object(..)
-                    | Shape::Reference(..)
                     | Shape::Boolean
                     | Shape::Integer
                     | Shape::Text
@@ -999,106 +872,12 @@ impl<'u, 'a> Resolver<'u, 'a> {
                 result?;
                 Ok(Shape::Boolean)
             }
-            ExprKind::Reaches {
-                start,
-                target,
-                field,
-            } => self.reaches(id, *start, *target, field, expression.span, next),
-        }
-    }
-}
-
-#[cfg(test)]
-mod profile_tests {
-    use super::*;
-    use crate::checking::{check, CheckBindings, CheckLimits};
-    use crate::formal_source::FormalSource;
-    use crate::native_model::ModelLimits;
-    use crate::native_rule_model_test_support as native_rule_model;
-    use crate::{parse, Limits};
-    use ix_trace_rs::trace;
-    use qsl_foundation::SourceIdentity;
-    use quire_contract_model as ir;
-
-    #[test]
-    #[trace("TC-120", "FR-041-AC-4")]
-    fn historical_checker_rechecks_actual_profiles_after_a_linker_invariant_bypass() {
-        let parts = native_rule_model::parts();
-        let model = NativeModel::new_with_profile(
-            NativeModelProfile::V2,
-            parts.source,
-            parts.environment,
-            parts.roles,
-            ModelLimits::default(),
-        )
-        .unwrap();
-        let text = "language \"ix:native\" edition \"0-draft\"; profile \"state-finite/0-draft\"; model M = \"example/rule-tests\"; invariant Rule on M::Node at current { true }";
-        let unit = parse(
-            SourceIdentity {
-                authority: "test".into(),
-                identity: "historical-profile-check".into(),
-            },
-            "historical.native",
-            text.as_bytes(),
-            Limits::default(),
-        )
-        .unwrap();
-        let import = unit.imports()[0].span;
-        let bindings = CheckBindings {
-            source: FormalSource::new(
-                unit.source().clone(),
-                ir::SourceIdentity::new(
-                    ir::SourceDocumentId::new("ProfileCheck").unwrap(),
-                    ir::SourceRevision::new(1).unwrap(),
-                ),
-            ),
-            clauses: Vec::new(),
-        };
-        let selected = LinkedModel {
-            environment: model.environment(),
-            native: Some(&model),
-        };
-        for (models, expected, at) in [
-            (vec![selected], Code::UnsupportedConstruct, import),
-            (
-                Vec::new(),
+            ExprKind::Reaches { .. } => Err(failure(
+                self.unit,
                 Code::InvalidModelBinding,
-                Span { start: 0, end: 0 },
-            ),
-            (
-                vec![selected, selected],
-                Code::InvalidModelBinding,
-                Span { start: 0, end: 0 },
-            ),
-            (
-                vec![LinkedModel {
-                    native: None,
-                    ..selected
-                }],
-                Code::InvalidModelBinding,
-                import,
-            ),
-        ] {
-            // Only this private invariant control bypasses normal link_native.
-            // Its historical label cannot authorize the actual /2 selection or
-            // let a malformed correspondence reach clause/type/proof processing.
-            let linked = LinkedPackage {
-                profile: BindingProfile::Native,
-                unit: unit.clone(),
-                models,
-                clauses: Vec::new(),
-            };
-            assert_eq!(linked.binding_profile(), NativeModelProfile::V1.as_str());
-            let error = check(linked, bindings.clone(), CheckLimits::default()).unwrap_err();
-            assert_eq!(error.diagnostic.code, expected);
-            assert_eq!(error.diagnostic.phase, Phase::Check);
-            assert_eq!(
-                (
-                    error.diagnostic.span.start.byte,
-                    error.diagnostic.span.end.byte
-                ),
-                (at.start, at.end)
-            );
+                expression.span,
+                "native reachability needs a concrete reference/population mapping",
+            )),
         }
     }
 }

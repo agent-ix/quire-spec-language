@@ -186,8 +186,7 @@ fn malformed_and_unsupported_are_distinct_and_located() {
         assert!(e.span.end.byte > e.span.start.byte);
     }
     // A user-named call target is a declaration/call form this profile
-    // excludes outright (the same concept as native_model/admission.rs's
-    // pure-function check), not a real capability the parser recognizes but
+    // excludes outright, not a real capability the parser recognizes but
     // this build lacks: InvalidPackage, not UnsupportedConstruct.
     {
         let expression = "customHelper(x)";
