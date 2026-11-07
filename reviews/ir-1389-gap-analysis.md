@@ -89,3 +89,13 @@ Round 1, frozen head 6df9d8b9592adeb798cb85e1d6afb432c3426400.
 | FND-001 | still-open | New production copy_source_record/copy_source_union controls observe the paid Point prefix separately and demand zero allocations for denied Tagged member and Shape payload copies with value/resource/phase assertions. They still pass Package loci and do not assert an independently expected original row index; runtime is queued, so the complete finding is not fixed. |
 
 Source inspection only. Focused runtime remains queued in `/tmp/ir1389-fix1-focused.log`; no reviewer Cargo or aggregate gate was run and no runtime pass is claimed. New helper extraction keeps the actual production copy paths under observation; it does not invent authoritative rows.
+
+### Disposition round 2 — supplemental source check
+
+Frozen head 59144f865da3b61e8b06f73cac182c2e64df889a.
+
+Supplemental source check of commits 852a434b6 and 59144f865: no new finding. The final-carry fixture still invokes the genuine monitor-plan writer, proves nonempty selected-model populations, checks cached indices against the semantics-owned predicate over final wire nodes, preserves original record/source identity and verifies the real Pair rename/rekey. It no longer claims the unrelated monitor-entry ABI passes strict admission. That failure is retained at /semantic_graph/nodes/68/body/members/5 as IllTyped/TypeMismatch in `/tmp/ir1389-carry-refusal-diagnostic-exact.log`; no fabricated admitted package or weakened native success assertion is introduced. The separately admitted combined fixture still executes identity_rows and owner projections with exact and insufficient budgets. The updated existing checked-handoff writer test checks the real final QSL package-copy Rows cause, work/storage code, configured bound, setting and actual over-limit amount, and retains the no-output-on-refusal oracle. Focused fix3 runtime remains queued, so this source supplement claims no runtime pass and does not require IR1397/PLAT1265.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | still-open | Authentic later-copy allocation controls and writer-boundary resource assertions remain substantive, but the independently expected external row-index oracle still requires the actual owner AdapterRow(i) API. The revised genuine writer-carry test validates metadata against final wire membership and original/rekeyed record values without forging native admission; full native identity value/budget evidence remains in the separately admitted combined fixture. |
