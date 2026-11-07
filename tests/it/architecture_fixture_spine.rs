@@ -351,3 +351,149 @@ fn architecture_fixture_binds_references_through_spine_i2() {
         "the checked protocol retains the fixture's role and relationship bindings"
     );
 }
+
+/// `text` through the spine's parse, select and check over `packages`.
+fn spine_check(
+    text: &str,
+    packages: &qsl_semantics::model::intake::PackageInput,
+) -> Result<qsl_replay::spine::CheckedUnit, Box<qsl_replay::spine::CompileRefusal>> {
+    let source = SourceIdentity::new("agent-ix", "test:fcd-refusals");
+    let cancel = Cancel::new();
+    let limits = qsl_replay::spine::SpineLimits::default();
+    let fault = |failure| {
+        qsl_replay::spine::refusal_or_fault(failure).expect("no internal front-end fault")
+    };
+    let parsed = qsl_replay::spine::parse(
+        &qsl_replay::spine::ParseRequest {
+            source: &source,
+            path: "refusals.native",
+            bytes: text.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .map_err(fault)?
+    .into_value();
+    let models = qsl_replay::spine::select(&parsed, packages, limits.model, &cancel)
+        .map_err(fault)?
+        .into_value();
+    Ok(qsl_replay::spine::check(
+        &parsed,
+        "fcd-refusals".to_owned(),
+        &models,
+        &DependencyInput::default(),
+        limits,
+        &cancel,
+    )
+    .map_err(fault)?
+    .into_value())
+}
+
+fn unit(declarations: &str) -> String {
+    format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile S = \"quire.model.complete/v1\";\n\
+         model M = \"{PACKAGE}\";\n{declarations}"
+    )
+}
+
+/// A systems part, port or allocation is retained for model-reference
+/// binding but is not a value type: used where a type is written, each
+/// refuses at the assembler, located on the written name.
+#[trace("TC-1308", "FR-036-AC-9")]
+#[test]
+fn systems_records_and_missing_names_are_not_value_types_on_the_spine() {
+    let bundle = architecture_bundle(|_| {});
+    let bytes = lift(bundle.path());
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()])
+        .expect("the lifted FCD package enters I2 intake");
+    // A part, a Port and an allocation (kinds the type site cannot take) and
+    // a name the package does not declare.
+    for record in ["sys_pump", "pump_out", "pump_alloc", "drain_out"] {
+        let text = unit(&format!(
+            "predicate AsType using S (x: M::{record}): Boolean {{ true }}\n"
+        ));
+        let refusal = spine_check(&text, &packages)
+            .err()
+            .unwrap_or_else(|| panic!("M::{record} is not a value type"));
+        let qsl_replay::spine::CompileRefusal::Assembly {
+            refusal,
+            region: Some(region),
+        } = refusal.as_ref()
+        else {
+            panic!("M::{record} refuses at the assembler: {refusal:?}");
+        };
+        let written = format!("M::{record}");
+        assert!(
+            matches!(
+                refusal.errors.as_slice(),
+                [qsl_semantics::check::AssemblyError {
+                    cause: qsl_semantics::check::AssemblyCause::UnresolvedTypeName { name },
+                    ..
+                }] if *name == written
+            ),
+            "M::{record} is an unresolved type name: {refusal:?}"
+        );
+        let start = usize::try_from(region.start()).unwrap();
+        let end = usize::try_from(region.end()).unwrap();
+        assert_eq!(text.get(start..end), Some(written.as_str()));
+    }
+}
+
+/// A member the declared object type does not have refuses as a typing
+/// failure while the declared member checks; and a package under another
+/// identity does not satisfy the `model` selection, which refuses the unit at
+/// intake, located on the `model` declaration, where the same unit over the
+/// selected package checks.
+#[trace("TC-148", "FR-036-AC-9")]
+#[test]
+fn missing_members_and_substituted_packages_refuse() {
+    let bundle = architecture_bundle(|_| {});
+    let bytes = lift(bundle.path());
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()])
+        .expect("the lifted FCD package enters I2 intake");
+    let read = |member: &str| {
+        unit(&format!(
+            "predicate Read using S (p: Reference<M::Pump>): Boolean \
+             {{ deref(p).{member} = deref(p).{member} }}\n\
+             predicate Unrelated using S (flag: Boolean): Boolean {{ flag }}\n"
+        ))
+    };
+    spine_check(&read("id"), &packages).expect("the declared field binds");
+    let refusal = spine_check(&read("speed"), &packages)
+        .err()
+        .unwrap_or_else(|| panic!("a member Pump does not declare refuses"));
+    assert!(
+        matches!(*refusal, qsl_replay::spine::CompileRefusal::Check { .. }),
+        "{refusal:?}"
+    );
+
+    let other = architecture_bundle(|root| {
+        edit(
+            &root.join("spec/spec.md"),
+            "name: architecture",
+            "name: plumbing",
+        );
+    });
+    let other_bytes = lift(other.path());
+    let substitute = qsl_semantics::model::intake::package_input([other_bytes.as_slice()])
+        .expect("the same-shaped package under another identity enters intake");
+    let text = read("id");
+    let refusal = spine_check(&text, &substitute).err().unwrap_or_else(|| {
+        panic!("a same-shaped package under another identity is not the selection")
+    });
+    let qsl_replay::spine::CompileRefusal::Intake {
+        refusal,
+        region: Some(region),
+    } = refusal.as_ref()
+    else {
+        panic!("the selection refuses at intake: {refusal:?}");
+    };
+    assert_eq!(refusal.identity, PACKAGE);
+    let start = usize::try_from(region.start()).unwrap();
+    let end = usize::try_from(region.end()).unwrap();
+    assert_eq!(
+        text.get(start..end),
+        Some(format!("model M = \"{PACKAGE}\";").as_str())
+    );
+}
