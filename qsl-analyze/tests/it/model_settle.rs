@@ -42,12 +42,6 @@ use crate::counter::{
 /// none.
 const NO_ATOMS: Letters = Letters { atom: |_| None };
 
-const AUTHORITY: &str = "agent-ix";
-const IDENTITY: &str = "counter";
-
-/// The fixture package manifest's top-level name.
-pub(crate) const PACKAGE_NAME: &str = "package";
-
 /// A compiled Counter unit with its documents, initial snapshots and the
 /// engine's deadlock-freedom outcome over universe `{c}`.
 pub(crate) struct Case {
@@ -132,13 +126,6 @@ pub(crate) fn case(body: &str, values: &[i64]) -> Case {
     }
 }
 
-/// A source reference as the request spells it.
-type SourceWire = (String, String);
-
-pub(crate) fn source_wire() -> SourceWire {
-    (AUTHORITY.to_owned(), IDENTITY.to_owned())
-}
-
 fn witness_source() -> ReplaySource {
     ReplaySource::Witness(
         Witness::parse("<<<assertion|model_check|deadlock|>>>").expect("a transcript"),
@@ -155,9 +142,11 @@ fn selected() -> QualifiedName {
     QualifiedName::new(vec![Identifier::new("Noop").expect("an identifier")]).expect("a name")
 }
 
-/// FR-098's request for `unit`, with the domain package and
-/// the snapshots in the byte provision.
+/// FR-098's request retaining the original checked package's emission,
+/// with its source, domain package and snapshots in the byte provision.
 pub(crate) fn request<'a>(
+    checked: &CheckedPackage,
+    temporal_clock_selections: &[qsl_package::TemporalClockSelection],
     document: &[u8],
     snapshots: impl Iterator<
         Item = (
@@ -167,30 +156,29 @@ pub(crate) fn request<'a>(
     >,
     unit: &[u8],
 ) -> ReplayRequestWire {
-    request_named(PACKAGE_NAME, document, snapshots, unit)
-}
-
-/// FR-098's request with an explicit checked package identity.
-pub(crate) fn request_named<'a>(
-    package_name: &str,
-    document: &[u8],
-    snapshots: impl Iterator<
-        Item = (
-            &'a qsl_semantics::model::observation::DocumentRef,
-            &'a Vec<u8>,
-        ),
-    >,
-    unit: &[u8],
-) -> ReplayRequestWire {
-    let byte_provision = vec![(AUTHORITY.to_owned(), IDENTITY.to_owned(), unit.to_vec())];
+    let source = checked.graph().source();
+    let byte_provision = vec![(
+        source.authority().to_owned(),
+        source.identity().to_owned(),
+        unit.to_vec(),
+    )];
     let mut documents = vec![document.to_vec()];
     for (_, bytes) in snapshots {
         documents.push(bytes.clone());
     }
+    let emission = qsl_package::emit_checked_with_temporal_selections(
+        checked,
+        temporal_clock_selections,
+        qsl_package::EmitLimits::fixture(),
+    )
+    .expect("the original checked replay package emits");
     ReplayRequestWire {
-        package_name: package_name.to_owned(),
+        package: qsl_replay::ReplayPackage::read(
+            emission.package().bytes(),
+            ReplayLimits::default().input_bytes,
+        )
+        .expect("the emitted package is bounded JSON"),
         profile_selections: Vec::new(),
-        sources: vec![source_wire()],
         dependencies: Vec::new(),
         replay_target: qsl_replay::RequestTargetWire::function(
             selected(),
@@ -304,6 +292,8 @@ pub(crate) fn replay(
 ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
     replay_model_trace(
         request(
+            &case.checked,
+            &[],
             &case.documents.document,
             case.documents.snapshot_bytes(),
             &case.unit,
@@ -364,8 +354,9 @@ fn refusal(
 ) -> (ModelTraceRefusal, Code, &'static str) {
     match result {
         Err(ReplayRefusal::ModelTrace(refusal)) => {
-            let error = ReplayRefusal::ModelTrace(refusal.clone());
-            (*refusal, error.code(), error.cause().expect("a cause"))
+            let code = refusal.code();
+            let cause = refusal.cause();
+            (*refusal, code, cause)
         }
         other => panic!("expected a model-trace refusal, got {other:?}"),
     }
@@ -447,6 +438,8 @@ fn a_counterexample_resolves_its_item_by_clause_node_and_occurrence_key() {
     let replay_at = |payload: TemporalCounterexample, node, occurrence| {
         replay_model_trace(
             request(
+                &case.checked,
+                &[],
                 &case.documents.document,
                 case.documents.snapshot_bytes(),
                 &case.unit,
@@ -992,6 +985,8 @@ fn a_race_counterexample_over_a_model_subject_refuses_the_replay() {
     let (node, occurrence) = crate::model_settle::deadlock_freedom_clause();
     let result = replay_model_trace(
         request(
+            &case.checked,
+            &[],
             &case.documents.document,
             case.documents.snapshot_bytes(),
             &case.unit,

@@ -72,6 +72,8 @@ pub(crate) fn replay_with(
     let (node, occurrence) = clause_identity(fixture);
     replay_model_trace_with_temporal_selections(
         request(
+            &fixture.package,
+            &fixture.temporal_clock_selections,
             &fixture.documents.document,
             fixture.documents.snapshot_bytes(),
             &fixture.unit,
@@ -118,8 +120,9 @@ pub(crate) fn refusal(
 ) -> (ModelTraceRefusal, Code, &'static str) {
     match result {
         Err(ReplayRefusal::ModelTrace(refusal)) => {
-            let error = ReplayRefusal::ModelTrace(refusal.clone());
-            (*refusal, error.code(), error.cause().expect("a cause"))
+            let code = refusal.code();
+            let cause = refusal.cause();
+            (*refusal, code, cause)
         }
         other => panic!("expected a model-trace refusal, got {other:?}"),
     }
@@ -238,6 +241,8 @@ fn a_guarded_on_each_prefix_replays_through_production_letters() {
     assert_eq!(payload.prefix.len(), 3);
     let (node_id, occurrence) = clause_identity(&fixture);
     let wire = request(
+        &fixture.package,
+        &fixture.temporal_clock_selections,
         &fixture.documents.document,
         fixture.documents.snapshot_bytes(),
         &fixture.unit,
@@ -391,6 +396,8 @@ fn a_counterexample_names_its_clause_by_node_and_occurrence() {
     let replay_at = |node, occurrence| {
         replay_model_trace_with_temporal_selections(
             request(
+                &fixture.package,
+                &fixture.temporal_clock_selections,
                 &fixture.documents.document,
                 fixture.documents.snapshot_bytes(),
                 &fixture.unit,
@@ -456,6 +463,8 @@ fn a_liveness_violation_settles_refuted_through_replay() {
         |counterexample| {
             replay_model_trace_with_temporal_selections(
                 request(
+                    &fixture.package,
+                    &fixture.temporal_clock_selections,
                     &fixture.documents.document,
                     fixture.documents.snapshot_bytes(),
                     &fixture.unit,
@@ -496,6 +505,8 @@ fn a_liveness_violation_settles_refuted_through_replay() {
             open.prefix.pop();
             replay_model_trace_with_temporal_selections(
                 request(
+                    &fixture.package,
+                    &fixture.temporal_clock_selections,
                     &fixture.documents.document,
                     fixture.documents.snapshot_bytes(),
                     &fixture.unit,
@@ -881,6 +892,8 @@ fn a_clause_with_a_capture_replays_through_the_production_letters() {
     let (clause_node, occurrence) = clause_identity(&fixture);
     let result = replay_model_trace_with_temporal_selections(
         request(
+            &fixture.package,
+            &fixture.temporal_clock_selections,
             &fixture.documents.document,
             fixture.documents.snapshot_bytes(),
             &fixture.unit,

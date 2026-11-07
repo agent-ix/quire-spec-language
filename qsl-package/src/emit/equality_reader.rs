@@ -72,7 +72,7 @@ impl Emission {
         charge::items(budget, locus, self.selected_source_unit_rows().len())?;
         for (index, unit) in self.selected_source_unit_rows().iter().enumerate() {
             let locus = NativeJoinLocus {
-                source: NativeJoinLocusSource::SourceUnitRow(index),
+                source: NativeJoinLocusSource::AdapterRow(index),
                 form: "equality_source_unit_row",
             };
             charge::source_unit(budget, locus, unit)?;
@@ -100,7 +100,7 @@ impl Emission {
         )?;
         for (index, row) in self.equality_producer_identity_rows().iter().enumerate() {
             let locus = NativeJoinLocus {
-                source: NativeJoinLocusSource::ReachedRow(index),
+                source: NativeJoinLocusSource::AdapterRow(index),
                 form: "equality_application_row",
             };
             charge::node(budget, locus, row.checked_node())?;
@@ -126,7 +126,7 @@ impl Emission {
         {
             let (index, row) = row;
             let locus = NativeJoinLocus {
-                source: NativeJoinLocusSource::ReachedRow(index),
+                source: NativeJoinLocusSource::AdapterRow(index),
                 form: "equality_fact_row",
             };
             charge::node(budget, locus, row.checked_application())?;

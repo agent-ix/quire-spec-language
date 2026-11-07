@@ -556,15 +556,28 @@ fn later_authentic_record_member_copy_denial_retains_an_observed_admitted_prefix
             .collect::<Vec<_>>(),
         ["Tagged"]
     );
-    let locus = NativeJoinLocus {
-        source: NativeJoinLocusSource::Package,
+    let point_index = records
+        .iter()
+        .position(|row| row.qualified_declaration.last().map(AsRef::as_ref) == Some("Point"))
+        .expect("original Point row");
+    let tagged_index = records
+        .iter()
+        .position(|row| row.qualified_declaration.last().map(AsRef::as_ref) == Some("Tagged"))
+        .expect("original Tagged row");
+    assert_ne!(point_index, tagged_index);
+    let point_locus = NativeJoinLocus {
+        source: NativeJoinLocusSource::AdapterRow(point_index),
+        form: "identity_record_output",
+    };
+    let tagged_locus = NativeJoinLocus {
+        source: NativeJoinLocusSource::AdapterRow(tagged_index),
         form: "identity_record_output",
     };
     let mut measure = ample();
-    let first = copy_source_record(&records[0], &mut measure, locus)
+    let first = copy_source_record(&records[point_index], &mut measure, point_locus)
         .expect("genuine first record conversion");
     let first_need = measure.consumed();
-    let second = copy_source_record(&records[1], &mut measure, locus)
+    let second = copy_source_record(&records[tagged_index], &mut measure, tagged_locus)
         .expect("genuine second record conversion");
     assert_eq!(
         second
@@ -576,12 +589,15 @@ fn later_authentic_record_member_copy_denial_retains_an_observed_admitted_prefix
     );
     assert_eq!(
         second.members[0].value_type,
-        records[1].members[0].value_type
+        records[tagged_index].members[0].value_type
     );
-    assert_eq!(second.members[1].presence, records[1].members[1].presence);
+    assert_eq!(
+        second.members[1].presence,
+        records[tagged_index].members[1].presence
+    );
     assert_eq!(
         second.members[2].value_type,
-        records[1].members[2].value_type
+        records[tagged_index].members[2].value_type
     );
     let need = measure.consumed();
     for (work, storage, kind) in [
@@ -592,7 +608,11 @@ fn later_authentic_record_member_copy_denial_retains_an_observed_admitted_prefix
         let _ = allocation_counter::measure(|| {});
         let mut prefix = None;
         let observed_prefix = allocation_counter::measure(|| {
-            prefix = Some(copy_source_record(&records[0], &mut budget, locus))
+            prefix = Some(copy_source_record(
+                &records[point_index],
+                &mut budget,
+                point_locus,
+            ))
         });
         let prefix = prefix
             .expect("prefix call")
@@ -602,15 +622,22 @@ fn later_authentic_record_member_copy_denial_retains_an_observed_admitted_prefix
         assert!(observed_prefix.count_total > 0);
         let mut failure = None;
         let observed_denial = allocation_counter::measure(|| {
-            failure = Some(copy_source_record(&records[1], &mut budget, locus))
+            failure = Some(copy_source_record(
+                &records[tagged_index],
+                &mut budget,
+                tagged_locus,
+            ))
         });
         let failure = failure
             .expect("later call")
             .expect_err("unpaid Tagged member returns no copied record");
         assert_eq!(failure.denied().expect("first unpaid resource").kind, kind);
         assert_eq!(
-            failure.locus().expect("member phase").form,
-            "identity_record_member_output"
+            failure.locus(),
+            Some(NativeJoinLocus {
+                source: NativeJoinLocusSource::AdapterRow(tagged_index),
+                form: "identity_record_member_output",
+            })
         );
         assert_eq!(
             failure.configured_bound(),
@@ -640,10 +667,19 @@ fn later_authentic_union_payload_copy_denial_keeps_the_paid_record_prefix() {
     use crate::emit::identity_rows::{copy_source_record, copy_source_union};
     use quire_contract_model::{NativeJoinLocus, NativeJoinLocusSource};
     let (emission, _) = fixture();
-    let record = &emission.selected_source_record_rows()[0];
+    let records = emission.selected_source_record_rows();
+    let point_index = records
+        .iter()
+        .position(|row| row.qualified_declaration.last().map(AsRef::as_ref) == Some("Point"))
+        .expect("original Point row");
+    let record = &records[point_index];
     let unions = emission.selected_source_union_rows();
     assert_eq!(unions.len(), 1);
-    let union = &unions[0];
+    let shape_index = unions
+        .iter()
+        .position(|row| row.qualified_declaration.last().map(AsRef::as_ref) == Some("Shape"))
+        .expect("original Shape row");
+    let union = &unions[shape_index];
     assert_eq!(
         union
             .qualified_declaration
@@ -661,11 +697,11 @@ fn later_authentic_union_payload_copy_denial_keeps_the_paid_record_prefix() {
         ["Empty", "Circle", "Rect"]
     );
     let record_locus = NativeJoinLocus {
-        source: NativeJoinLocusSource::Package,
+        source: NativeJoinLocusSource::AdapterRow(point_index),
         form: "identity_record_output",
     };
     let union_locus = NativeJoinLocus {
-        source: NativeJoinLocusSource::Package,
+        source: NativeJoinLocusSource::AdapterRow(shape_index),
         form: "identity_union_output",
     };
     let mut measure = ample();
@@ -702,8 +738,11 @@ fn later_authentic_union_payload_copy_denial_keeps_the_paid_record_prefix() {
             .expect_err("unpaid union payload returns no row");
         assert_eq!(failure.denied().expect("original unpaid charge").kind, kind);
         assert_eq!(
-            failure.locus().expect("union member phase").form,
-            "identity_union_member_output"
+            failure.locus(),
+            Some(NativeJoinLocus {
+                source: NativeJoinLocusSource::AdapterRow(shape_index),
+                form: "identity_union_member_output",
+            })
         );
         assert_eq!(
             failure.configured_bound(),
@@ -716,5 +755,139 @@ fn later_authentic_union_payload_copy_denial_keeps_the_paid_record_prefix() {
         assert_eq!(observed_denial.count_total, 0);
         assert_eq!(observed_denial.bytes_total, 0);
         assert_eq!(prefix, first);
+    }
+}
+
+#[test]
+#[trace("TC-1331", "FR-531-AC-31")]
+fn output_adapter_denials_use_the_original_row_channel_indices() {
+    use quire_contract_model::{NativeJoinLocus, NativeJoinLocusSource};
+
+    let (emission, package) = fixture();
+    let records = emission.selected_source_record_rows();
+    let tagged_index = records
+        .iter()
+        .position(|row| row.qualified_declaration.last().map(AsRef::as_ref) == Some("Tagged"))
+        .expect("retained Tagged row");
+    assert!(
+        tagged_index > 0,
+        "the later record distinguishes a constant-zero locus"
+    );
+    let shape_index = emission
+        .selected_source_union_rows()
+        .iter()
+        .position(|row| row.qualified_declaration.last().map(AsRef::as_ref) == Some("Shape"))
+        .expect("retained Shape row");
+    let mut native_budget = ample();
+    let (declarations, fields) = emission
+        .identity_input_rows(&mut native_budget)
+        .expect("authentic producer input copies");
+    let joined = SelectedExactIdentities::from_stage_rows(
+        &package,
+        declarations,
+        fields,
+        &mut native_budget,
+    )
+    .expect("the native join precedes output materialization");
+    let mut complete_budget = ample();
+    let complete = emission
+        .identity_output_rows(&package, &joined, &mut complete_budget)
+        .expect("complete owned output");
+    assert_eq!(complete.source_records().len(), records.len());
+    let need = complete_budget.consumed();
+
+    for expected in [
+        NativeJoinLocus {
+            source: NativeJoinLocusSource::AdapterRow(tagged_index),
+            form: "identity_record_member_output",
+        },
+        NativeJoinLocus {
+            source: NativeJoinLocusSource::AdapterRow(shape_index),
+            form: "identity_union_member_output",
+        },
+    ] {
+        let (mut budget, refusal) = (0..need.work)
+            .find_map(|limit| {
+                let mut budget = NativeJoinBudget::new(limit, need.storage);
+                let refusal = adapter_error(
+                    emission
+                        .identity_output_rows(&package, &joined, &mut budget)
+                        .expect_err("the complete output needs more work"),
+                );
+                (refusal.locus() == Some(expected)).then_some((budget, refusal))
+            })
+            .expect("the actual output loop reaches this original row and channel");
+        assert_eq!(
+            refusal.denied().expect("native unpaid charge").kind,
+            NativeJoinChargeKind::Work
+        );
+        assert_eq!(refusal.configured_bound(), Some(budget.work_limit()));
+        let consumed = budget.consumed();
+        assert!(
+            consumed.storage > 0,
+            "the genuine earlier output prefix was admitted"
+        );
+        let repeated = adapter_error(
+            emission
+                .identity_rows(&package, &mut budget)
+                .expect_err("a later complete adapter cannot resume over denial"),
+        );
+        assert_eq!(repeated, refusal);
+        assert_eq!(budget.first_unpaid_locus(), Some(expected));
+        assert_eq!(budget.consumed(), consumed);
+    }
+}
+
+#[test]
+#[trace("TC-1331", "FR-531-AC-31")]
+fn sparse_producer_input_selection_keeps_its_retained_field_index() {
+    use quire_contract_model::{NativeJoinLocus, NativeJoinLocusSource};
+
+    let (mut emission, _) = fixture();
+    let original_index = emission
+        .identity_row_selection
+        .fields
+        .iter()
+        .copied()
+        .find(|index| *index > 0)
+        .expect("the authentic retained field population has a later row");
+    let expected = emission.selected_exact_field_rows()[original_index].clone();
+    // Exercise the producer-copy phase only. A subset is not claimed to be
+    // a complete or authoritative native identity join.
+    emission.identity_row_selection.declarations.clear();
+    emission.identity_row_selection.fields = vec![original_index];
+    let mut complete = ample();
+    let (declarations, fields) = emission
+        .identity_input_rows(&mut complete)
+        .expect("the original retained field copies");
+    assert!(declarations.is_empty());
+    assert_eq!(fields, vec![expected]);
+    let need = complete.consumed();
+    for kind in [NativeJoinChargeKind::Work, NativeJoinChargeKind::Storage] {
+        let mut budget = NativeJoinBudget::new(
+            if kind == NativeJoinChargeKind::Work {
+                need.work - 1
+            } else {
+                need.work
+            },
+            if kind == NativeJoinChargeKind::Storage {
+                need.storage - 1
+            } else {
+                need.storage
+            },
+        );
+        let refusal = adapter_error(
+            emission
+                .identity_input_rows(&mut budget)
+                .expect_err("the selected retained field must be paid before copying"),
+        );
+        assert_eq!(refusal.denied().expect("first unpaid charge").kind, kind);
+        assert_eq!(
+            refusal.locus(),
+            Some(NativeJoinLocus {
+                source: NativeJoinLocusSource::AdapterRow(original_index),
+                form: "identity_field_input",
+            })
+        );
     }
 }

@@ -86,7 +86,7 @@ impl Emission {
         for &index in &self.identity_row_selection.declarations {
             let row = &self.selected_exact_declaration_rows[index];
             let locus = NativeJoinLocus {
-                source: NativeJoinLocusSource::IdentityDeclaration(index),
+                source: NativeJoinLocusSource::AdapterRow(index),
                 form: "identity_declaration_input",
             };
             charge::work(budget, locus, 1)?;
@@ -97,7 +97,7 @@ impl Emission {
         let mut fields = Vec::with_capacity(self.identity_row_selection.fields.len());
         for &index in &self.identity_row_selection.fields {
             let row = &self.selected_exact_field_rows[index];
-            let locus = package_locus("identity_field_input");
+            let locus = adapter_locus(index, "identity_field_input");
             charge::work(budget, locus, 1)?;
             field(budget, locus, row)?;
             fields.push(row.clone());
@@ -117,7 +117,7 @@ impl Emission {
         let mut declarations = Vec::with_capacity(count);
         for (index, row) in joined.declaration_rows().enumerate() {
             let locus = NativeJoinLocus {
-                source: NativeJoinLocusSource::IdentityDeclaration(index),
+                source: NativeJoinLocusSource::AdapterRow(index),
                 form: "identity_declaration_output",
             };
             charge::work(budget, locus, 1)?;
@@ -127,7 +127,8 @@ impl Emission {
         let locus = package_locus("identity_field_output");
         charge::items(budget, locus, joined.field_rows().len())?;
         let mut fields = Vec::with_capacity(joined.field_rows().len());
-        for row in joined.field_rows() {
+        for (index, row) in joined.field_rows().iter().enumerate() {
+            let locus = adapter_locus(index, "identity_field_output");
             charge::work(budget, locus, 1)?;
             field(budget, locus, row)?;
             fields.push(row.clone());
@@ -135,13 +136,15 @@ impl Emission {
         let locus = package_locus("identity_record_output");
         charge::items(budget, locus, self.selected_source_record_rows.len())?;
         let mut records = Vec::with_capacity(self.selected_source_record_rows.len());
-        for row in &self.selected_source_record_rows {
+        for (index, row) in self.selected_source_record_rows.iter().enumerate() {
+            let locus = adapter_locus(index, "identity_record_output");
             records.push(copy_source_record(row, budget, locus)?);
         }
         let locus = package_locus("identity_union_output");
         charge::items(budget, locus, self.selected_source_union_rows.len())?;
         let mut unions = Vec::with_capacity(self.selected_source_union_rows.len());
-        for row in &self.selected_source_union_rows {
+        for (index, row) in self.selected_source_union_rows.iter().enumerate() {
+            let locus = adapter_locus(index, "identity_union_output");
             unions.push(copy_source_union(row, budget, locus)?);
         }
         charge::text(
@@ -213,6 +216,13 @@ pub(super) fn copy_source_union(
     charge::work(budget, locus, 1)?;
     union(budget, locus, row)?;
     Ok(row.clone())
+}
+
+fn adapter_locus(index: usize, form: &'static str) -> NativeJoinLocus {
+    NativeJoinLocus {
+        source: NativeJoinLocusSource::AdapterRow(index),
+        form,
+    }
 }
 
 fn package_locus(form: &'static str) -> NativeJoinLocus {

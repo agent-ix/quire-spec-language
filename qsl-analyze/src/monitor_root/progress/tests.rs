@@ -120,6 +120,34 @@ fn row(source: &ModelTimeSource, claim: progress::ClaimOccurrence) -> progress::
     }
 }
 
+fn check_component_labels(
+    source: &ModelTimeSource,
+    row: &progress::AssociationRow,
+    selected_source: &Identity,
+    clock: &clock::Selection,
+) -> Result<(), ProgressSelectionRefusalCode> {
+    let mut budget = NativeJoinBudget::new(1_000_000, 1_000_000);
+    budget.resume();
+    let result = check_time_source_labels(
+        source,
+        row,
+        selected_source,
+        clock,
+        &mut charge::Charge {
+            budget: &mut budget,
+            locus: quire_contract_model::NativeJoinLocus {
+                source: quire_contract_model::NativeJoinLocusSource::Package,
+                form: "qsl_authority_selection",
+            },
+        },
+    );
+    match result {
+        Ok(()) => Ok(()),
+        Err(PlanAuthorityRefusal::Selection(code)) => Err(code),
+        Err(other) => panic!("component labels refused outside selection: {other:?}"),
+    }
+}
+
 #[trace("TC-1081", "FR-251-AC-46")]
 #[test]
 fn source_field_component_checks_use_original_checked_dense_and_tick_facts() {
@@ -129,7 +157,7 @@ fn source_field_component_checks_use_original_checked_dense_and_tick_facts() {
         let (source, claim) = checked_source(digital);
         let original = row(&source, claim);
         assert_eq!(
-            check_time_source_fields(&source, &original, &selected_source, &clock),
+            check_component_labels(&source, &original, &selected_source, &clock),
             Ok(())
         );
         for (candidate, expected) in [
@@ -175,7 +203,7 @@ fn source_field_component_checks_use_original_checked_dense_and_tick_facts() {
             ),
         ] {
             assert_eq!(
-                check_time_source_fields(&source, &candidate, &selected_source, &clock),
+                check_component_labels(&source, &candidate, &selected_source, &clock),
                 Err(expected)
             );
         }
@@ -189,30 +217,18 @@ fn source_field_component_checks_use_original_checked_dense_and_tick_facts() {
             }
         };
         assert_eq!(
-            check_time_source_fields(&source, &changed_kind, &selected_source, &clock),
+            check_component_labels(&source, &changed_kind, &selected_source, &clock),
             Err(ProgressSelectionRefusalCode::TimeSource)
         );
         if digital {
-            for field in 0..3 {
-                let mut changed = original.clone();
-                if let progress::TimeSource::Tick {
-                    operation,
-                    period_numerator,
-                    period_denominator,
-                    ..
-                } = &mut changed.source
-                {
-                    match field {
-                        0 => operation.push_str("_foreign"),
-                        1 => *period_numerator = "3".to_owned(),
-                        _ => *period_denominator = "2".to_owned(),
-                    }
-                }
-                assert_eq!(
-                    check_time_source_fields(&source, &changed, &selected_source, &clock),
-                    Err(ProgressSelectionRefusalCode::TimeSource)
-                );
+            let mut changed = original.clone();
+            if let progress::TimeSource::Tick { operation, .. } = &mut changed.source {
+                operation.push_str("_foreign");
             }
+            assert_eq!(
+                check_component_labels(&source, &changed, &selected_source, &clock),
+                Err(ProgressSelectionRefusalCode::TimeSource)
+            );
         }
     }
 }

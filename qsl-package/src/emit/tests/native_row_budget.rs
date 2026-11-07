@@ -267,7 +267,7 @@ fn enum_and_collection_conversions_preserve_owner_values_and_one_shared_allowanc
         assert_eq!(row.base_node, original.base_node);
         assert_eq!(row.element_node, original.element_node);
         assert_eq!(row.value_type, original.value_type);
-        assert_eq!(original.key_node, None);
+        assert_eq!(row.key_node, original.key_node);
     }
 }
 
@@ -336,22 +336,62 @@ fn adapters_preserve_an_earlier_owner_denial_and_maps_never_lose_their_keys() {
         .enumerate()
         .find(|(_, row)| row.key_node.is_some())
         .expect("same emission retains map");
-    let mut budget = ample();
-    let mut result = None;
-    let allocations = allocation_counter::measure(|| {
-        result = Some(map_row.to_ir(&mut budget, collection_locus(map_index)));
-    });
-    assert_eq!(allocations.count_total, 0);
-    let error = result
-        .expect("adapter ran")
-        .expect_err("target IR row cannot carry a map key");
-    assert_eq!(error.code(), NativeRowErrorCode::UnsupportedMap);
-    assert_eq!(error.denied(), None);
-    assert_eq!(budget.first_unpaid(), None);
-    assert!(maps
-        .selected_source_collection_rows()
-        .iter()
-        .any(|row| row.key_node.is_some()));
+    let need = boundaries(|budget| map_row.to_ir(budget, collection_locus(map_index)));
+    let mut shared = NativeJoinBudget::new(need.work + 10_000_000, need.storage + 10_000_000);
+    let converted = map_row
+        .to_ir(&mut shared, collection_locus(map_index))
+        .expect("selected map preserves its real key and value");
+    assert_eq!(converted.key_node, map_row.key_node);
+    assert_eq!(converted.element_node, map_row.element_node);
+    assert_eq!(converted.value_type, map_row.value_type);
+    assert!(matches!(&converted.value_type, ValueType::Map(_)));
+    assert_ne!(converted.key_node.as_ref(), Some(&converted.element_node));
+    let original_key = converted.key_node.clone().expect("the original map key");
+    let identity_rows = maps
+        .identity_rows(&package, &mut shared)
+        .expect("authentic record witnesses");
+    let identities = identity_rows
+        .selected(&package, &mut shared)
+        .expect("native source-record identity joins");
+    let joined = identities
+        .with_source_collection_rows(&package, [converted.clone()], &mut shared)
+        .expect("native map join");
+    let projected = package
+        .project_exact_type(&map_row.structural_node, &joined, &mut shared)
+        .expect("native bounded map and record value projection");
+    assert_eq!(projected.value_type(), &map_row.value_type);
+    let ValueType::Map(map_type) = projected.value_type() else {
+        panic!("the original map must not become another collection kind");
+    };
+    assert!(matches!(map_type.values(), ValueType::Composite(_)));
+
+    let mut missing_key = converted.clone();
+    missing_key.key_node = None;
+    let mut wrong_key = converted.clone();
+    wrong_key.key_node = Some(converted.element_node.clone());
+    let mut misplaced_key = supported
+        .to_ir(&mut ample(), collection_locus(supported_index))
+        .expect("the unrelated sequence still converts");
+    misplaced_key.key_node = Some(original_key);
+    for candidate in [missing_key, wrong_key, misplaced_key] {
+        let requested = candidate.structural_node.clone();
+        let mut budget = ample();
+        let result = identities.with_source_collection_rows(&package, [candidate], &mut budget);
+        let error = result.expect_err("invalid map-key association must not join");
+        assert_eq!(
+            error.code,
+            quire_contract_model::ExactTypeProjectionErrorCode::MismatchedIdentityWitness
+        );
+        assert_eq!(error.requested.as_deref(), Some(&requested));
+        assert!(budget.consumed().work > 0);
+        assert_eq!(
+            budget.first_unpaid(),
+            None,
+            "semantic key refusal is not exhaustion"
+        );
+    }
+    assert_eq!(map_row.key_node, converted.key_node);
+    assert_eq!(map_row.value_type, converted.value_type);
 }
 
 #[trace("TC-1331", "FR-531-AC-29")]
@@ -421,7 +461,7 @@ fn final_row_membership_matches_the_original_filter_after_carry_and_rekey() {
 
 fn collection_locus(index: usize) -> NativeJoinLocus {
     NativeJoinLocus {
-        source: NativeJoinLocusSource::ReachedRow(index),
+        source: NativeJoinLocusSource::AdapterRow(index),
         form: "selected_source_collection_row",
     }
 }
@@ -435,7 +475,7 @@ fn second_retained_enum_row_keeps_its_first_unpaid_locus() {
         .selected_source_enum_rows(&mut complete)
         .expect("complete real population");
     let second = NativeJoinLocus {
-        source: NativeJoinLocusSource::ReachedRow(1),
+        source: NativeJoinLocusSource::AdapterRow(1),
         form: "source_enum_declaration_row",
     };
     let (mut budget, error) = (0..complete.consumed().work)
@@ -470,6 +510,17 @@ fn mixed_collection_package() -> CheckedPackage {
 
     let handle = NodeKey::new("pkg", vec![quire_exact::PathSegment::Text("R".into())], 0)
         .expect("a well formed key");
+    let value_handle = NodeKey::new("pkg", vec![quire_exact::PathSegment::Text("V".into())], 0)
+        .expect("the producer's record value key");
+    let value_record = CompositeDeclaration::new(
+        value_handle.clone(),
+        "V",
+        CompositeShape::Record(vec![FieldDeclaration::new(
+            "value",
+            ValueType::Boolean,
+            Presence::Required,
+        )]),
+    );
     let map = |values, bound: Option<(u64, u64)>| {
         ValueType::map(MapType::new(
             values,
@@ -487,7 +538,7 @@ fn mixed_collection_package() -> CheckedPackage {
         CompositeShape::Record(vec![
             FieldDeclaration::new(
                 "m",
-                map(ValueType::Boolean, Some((1, 4))),
+                map(ValueType::Composite(value_handle), Some((1, 4))),
                 Presence::Required,
             ),
             FieldDeclaration::new("n", collection, Presence::Required),
@@ -506,7 +557,8 @@ fn mixed_collection_package() -> CheckedPackage {
         qsl_forms::Expression::boolean(true),
     )];
     declarations.package_name = "pkg".to_owned();
-    declarations.types = TypeEnvironment::new([record], []).expect("R is admitted");
+    declarations.types =
+        TypeEnvironment::new([value_record, record], []).expect("both source records are admitted");
     let graph = declarations
         .check(CheckingLimits::default())
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
@@ -527,7 +579,7 @@ fn cold_integer_payloads_refuse_inside_the_real_equality_adapter_without_allocat
         })
         .expect("the genuine emission retains the integer operand type");
     let locus = NativeJoinLocus {
-        source: NativeJoinLocusSource::ReachedRow(row_index),
+        source: NativeJoinLocusSource::AdapterRow(row_index),
         form: "equality_fact_row",
     };
     let mut measure = ample();
@@ -626,4 +678,57 @@ fn cold_integer_emission() -> Emission {
         .unwrap_or_else(|refusals| panic!("typed Exact interval checks: {refusals:?}"));
     emit_package(&CheckedPackage::link(graph), whole_unit)
         .expect("genuine checked numeric emission")
+}
+
+#[trace("TC-1331", "FR-531-AC-30")]
+#[test]
+fn map_key_copy_is_precharged_before_its_record_value_without_partial_materialization() {
+    let maps = emit_package(&mixed_collection_package(), whole_unit)
+        .expect("the genuine typed producer emits its map and record");
+    let (index, row) = maps
+        .selected_source_collection_rows()
+        .iter()
+        .enumerate()
+        .find(|(_, row)| row.key_node.is_some())
+        .expect("the original map row");
+    let locus = collection_locus(index);
+    let key = row.key_node.as_ref().expect("the original scalar key");
+    let mut preceding = ample();
+    crate::native_row::work(&mut preceding, locus, 1).expect("row visit");
+    crate::native_row::node(&mut preceding, locus, &row.structural_node)
+        .expect("structural node copy");
+    crate::native_row::node(&mut preceding, locus, &row.base_node).expect("base node copy");
+    let prefix = preceding.consumed();
+    let mut key_measure = ample();
+    crate::native_row::node(&mut key_measure, locus, key).expect("the key copy footprint");
+    let key_need = key_measure.consumed();
+    assert!(key_need.storage > 0);
+    let mut key_short = NativeJoinBudget::new(4_000_000, key_need.storage - 1);
+    let expected = crate::native_row::node(&mut key_short, locus, key)
+        .expect_err("the last key payload is unpaid");
+    let key_prefix = key_short.consumed();
+    let configured_storage = prefix.storage + key_need.storage - 1;
+    let mut budget = NativeJoinBudget::new(4_000_000, configured_storage);
+    let _ = allocation_counter::measure(|| {});
+    let mut result = None;
+    let observed = allocation_counter::measure(|| {
+        result = Some(row.to_ir(&mut budget, locus));
+    });
+    let refused = result
+        .expect("the adapter ran")
+        .expect_err("the original key is refused before the value is inspected or copied");
+    assert_eq!(refused.code(), NativeRowErrorCode::StorageLimit);
+    assert_eq!(refused.denied(), expected.denied());
+    assert_eq!(refused.locus(), Some(locus));
+    assert_eq!(refused.configured_bound(), Some(configured_storage));
+    assert_eq!(budget.consumed().work, prefix.work + key_prefix.work);
+    assert_eq!(
+        budget.consumed().storage,
+        prefix.storage + key_prefix.storage
+    );
+    assert_eq!(
+        observed.count_total, 0,
+        "no key, value or diagnostic copy is allocated"
+    );
+    assert_eq!(observed.bytes_total, 0);
 }

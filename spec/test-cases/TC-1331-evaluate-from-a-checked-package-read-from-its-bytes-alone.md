@@ -99,6 +99,12 @@ For AC-31, obtain an authentic emission with nonempty source records, members
 and unions. Materialize its identity rows and compare every retained original
 declaration, field, member, union key and ordering to the producer's claims;
 then pass the rows through the actual native identity join and type projection.
+Derive expected row positions independently from the original retained slices.
+Select a later input field without renumbering its retained index and require
+an exact `AdapterRow(i)` refusal. After a paid genuine record prefix, refuse
+the later record member and union payload copies at their original outer row
+positions; verify those indices through the actual output adapter loops, and
+preserve the first denial across a later attempted complete adapter call.
 Measure producer input copies and the single native join separately from the adapter's later declaration,
 field, record/member and union copies, requiring their sum to equal the shared
 budget's cumulative consumption. Repeat with exact allowances, one below each

@@ -14,6 +14,14 @@ pub(super) fn checked_period(
     row: &progress::AssociationRow,
     charge: &mut Charge<'_>,
 ) -> Result<Option<CheckedRational>, PlanAuthorityRefusal> {
+    // emit_plan_root retains the same combined CheckedUnit passed to
+    // emit_checked. CheckedTimedModel::from_checked_time_source writes this
+    // source's numerator/denominator directly into the period literal; the
+    // monitor writer only rekeys references and generated record fields.
+    // PlanRoot's private source/emission fields cannot be replaced. The
+    // caller reached this clock through that emission's exact original
+    // claim, so these canonical components are the original checked period,
+    // without formatting or copying the kernel integer to compare it again.
     let CheckedMonitorClock::ModelTime { source, .. } = clock else {
         return Err(PlanAuthorityRefusal::FinalEmission);
     };

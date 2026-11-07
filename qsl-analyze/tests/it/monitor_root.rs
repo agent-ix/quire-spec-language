@@ -1211,8 +1211,8 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
     let bytes = serde_json::to_vec(&document).unwrap();
     let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
     let unit = unit_source(
-        "always holds(c.tier = M::Tier::Gold)",
-        "",
+        "always holds(is_gold(c.tier))",
+        "function is_gold using v(tier: M::Tier): Boolean pure { tier = M::Tier::Gold }",
         true,
         "on origin",
     );
@@ -1233,9 +1233,11 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
         &Cancel::new(),
     )
     .expect("authored model-enum monitor emits");
-    let mut evidence = root.emission().evidence().clone();
-    let _ = evidence.insert_domain_package_document(domain.package, bytes.as_slice());
-    let package = match read_checked_package(root.emission().package().bytes(), LIMITS, &evidence) {
+    let package = match read_checked_package(
+        root.emission().package().bytes(),
+        LIMITS,
+        root.emission().evidence(),
+    ) {
         CheckedPackageDispatchResult::AdmittedV2(package) => package,
         other => panic!("the genuine custom-domain plan root must read: {other:?}"),
     };
@@ -1259,7 +1261,7 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
     assert_eq!(
         model_shapes.len(),
         1,
-        "the reached ConfigVersion field retains Tier"
+        "the reached helper parameter retains the field's original Tier type"
     );
     let collections: Vec<_> = root
         .emission()
@@ -1270,7 +1272,7 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
             row.to_ir(
                 &mut budget,
                 quire_contract_model::NativeJoinLocus {
-                    source: quire_contract_model::NativeJoinLocusSource::ReachedRow(index),
+                    source: quire_contract_model::NativeJoinLocusSource::AdapterRow(index),
                     form: "monitor_source_collection_row",
                 },
             )

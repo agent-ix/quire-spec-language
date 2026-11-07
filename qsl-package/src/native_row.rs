@@ -15,8 +15,6 @@ pub enum NativeRowErrorCode {
     WorkLimit,
     /// The caller's original logical-storage allowance was exhausted.
     StorageLimit,
-    /// The target IR collection row cannot carry a map's key.
-    UnsupportedMap,
     /// The emission does not retain exactly one member for each enum variant.
     IncompleteEnum,
 }
@@ -28,7 +26,6 @@ impl NativeRowErrorCode {
         match self {
             Self::WorkLimit => "native-row-work-limit",
             Self::StorageLimit => "native-row-storage-limit",
-            Self::UnsupportedMap => "native-row-unsupported-map",
             Self::IncompleteEnum => "native-row-incomplete-enum",
         }
     }
@@ -36,12 +33,7 @@ impl NativeRowErrorCode {
     /// Every condition, in catalog order.
     #[must_use]
     pub fn all() -> &'static [Self] {
-        &[
-            Self::WorkLimit,
-            Self::StorageLimit,
-            Self::UnsupportedMap,
-            Self::IncompleteEnum,
-        ]
+        &[Self::WorkLimit, Self::StorageLimit, Self::IncompleteEnum]
     }
 
     /// Decode an exact stable condition spelling.
@@ -106,15 +98,6 @@ impl NativeRowError {
                 NativeJoinChargeKind::Work => budget.work_limit(),
                 NativeJoinChargeKind::Storage => budget.storage_limit(),
             }),
-        }
-    }
-
-    pub(crate) fn unsupported_map(locus: NativeJoinLocus) -> Self {
-        Self {
-            code: NativeRowErrorCode::UnsupportedMap,
-            denied: None,
-            locus: Some(locus),
-            configured_bound: None,
         }
     }
 
@@ -405,7 +388,7 @@ mod integer_budget_tests {
     use ix_trace_rs::trace;
 
     const LOCUS: NativeJoinLocus = NativeJoinLocus {
-        source: quire_contract_model::NativeJoinLocusSource::ReachedRow(1),
+        source: quire_contract_model::NativeJoinLocusSource::AdapterRow(1),
         form: "equality_fact_row",
     };
 
@@ -550,8 +533,10 @@ mod error_catalog_tests {
         let expected = [
             (NativeRowErrorCode::WorkLimit, "native-row-work-limit"),
             (NativeRowErrorCode::StorageLimit, "native-row-storage-limit"),
-            (NativeRowErrorCode::UnsupportedMap, "native-row-unsupported-map"),
-            (NativeRowErrorCode::IncompleteEnum, "native-row-incomplete-enum"),
+            (
+                NativeRowErrorCode::IncompleteEnum,
+                "native-row-incomplete-enum",
+            ),
         ];
         assert_eq!(NativeRowErrorCode::all().len(), expected.len());
         for (code, spelling) in expected {
@@ -560,6 +545,10 @@ mod error_catalog_tests {
             assert_eq!(NativeRowErrorCode::from_code(spelling), Some(code));
         }
         assert_eq!(NativeRowErrorCode::from_code("work-limit"), None);
+        assert_eq!(
+            NativeRowErrorCode::from_code("native-row-unsupported-map"),
+            None
+        );
         assert_eq!(NativeRowErrorCode::from_code(""), None);
     }
 }

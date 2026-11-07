@@ -707,3 +707,46 @@ fn dense_authority_borrows_original_time_source_without_tick_period() {
     ));
     assert!(context.checked_tick_period().is_none());
 }
+
+#[trace("TC-1081", "FR-251-AC-46", "FR-251-AC-50")]
+#[test]
+fn changed_period_components_are_checked_at_the_same_emission_claim_clock() {
+    for numerator_changed in [true, false] {
+        let root = tick_root();
+        let mut changed = row(&root);
+        let progress::TimeSource::Tick {
+            period_numerator,
+            period_denominator,
+            ..
+        } = &mut changed.source
+        else {
+            panic!("genuine checked tick association");
+        };
+        if numerator_changed {
+            *period_numerator = "3".to_owned();
+        } else {
+            *period_denominator = "2".to_owned();
+        }
+        let (view, subject) = observation::admitted(Some(vec![changed.clone()]));
+        let mut read_denied = limits();
+        read_denied.read.nodes = 0;
+        assert!(
+            matches!(
+                admit(root, Some(view), &subject, read_denied),
+                Err(PlanAuthorityRefusal::ReadIncomplete(_))
+            ),
+            "the changed period is not rejected by an uncharged pre-read formatter"
+        );
+        let root = tick_root();
+        let (view, subject) = observation::admitted(Some(vec![changed]));
+        assert!(
+            matches!(
+                admit(root, Some(view), &subject, limits()),
+                Err(PlanAuthorityRefusal::Selection(
+                    ProgressSelectionRefusalCode::TimeSource
+                ))
+            ),
+            "the genuine bound clock must reject the changed period component"
+        );
+    }
+}

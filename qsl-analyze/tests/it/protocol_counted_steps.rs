@@ -131,7 +131,13 @@ impl Case {
         let replay = |payload: &TemporalCounterexample<ProtocolTransition>| {
             let subject = self.subject(protocol);
             replay_protocol_trace_with_temporal_selections(
-                request(&document(), self.documents.snapshots.iter(), &unit),
+                request(
+                    &self.checked,
+                    &self.temporal_clock_selections,
+                    &document(),
+                    self.documents.snapshots.iter(),
+                    &unit,
+                ),
                 &ProtocolTraceSubject {
                     model: ModelTraceSubject {
                         timed: None,

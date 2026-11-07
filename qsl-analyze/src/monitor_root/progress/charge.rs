@@ -2,7 +2,11 @@
 //! Incremental selection charges on the caller's actual preparation budget.
 
 use qsl_replay::MonitorSubject;
-use quire_contract_model::{NativeJoinBudget, NativeJoinChargeKind, NativeJoinLocus};
+use qsl_semantics::check::wire_id::{try_structural_id, StructuralIdMaterializationError};
+use quire_contract_model::{
+    CheckedNodeId, CheckedNodePathSegment, NativeJoinBudget, NativeJoinChargeKind,
+    NativeJoinDeniedCharge, NativeJoinLocus,
+};
 use quire_exact::{NodeKey, PathSegmentView};
 
 use super::PlanAuthorityRefusal;
@@ -21,15 +25,32 @@ impl Charge<'_> {
     ) -> Result<(), PlanAuthorityRefusal> {
         self.budget
             .accounted_charge(kind, amount, self.locus)
-            .map_err(|denied| PlanAuthorityRefusal::Budget {
-                denied,
-                locus: self.budget.first_unpaid_locus(),
-                configured_bound: match denied.kind {
-                    NativeJoinChargeKind::Work => self.budget.work_limit(),
-                    NativeJoinChargeKind::Storage => self.budget.storage_limit(),
-                },
-                consumed: self.budget.consumed(),
-            })
+            .map_err(|denied| self.denial(denied))
+    }
+
+    fn denial(&self, denied: NativeJoinDeniedCharge) -> PlanAuthorityRefusal {
+        PlanAuthorityRefusal::Budget {
+            denied,
+            locus: self.budget.first_unpaid_locus(),
+            configured_bound: match denied.kind {
+                NativeJoinChargeKind::Work => self.budget.work_limit(),
+                NativeJoinChargeKind::Storage => self.budget.storage_limit(),
+            },
+            consumed: self.budget.consumed(),
+        }
+    }
+
+    pub(in crate::monitor_root) fn node_id(
+        &mut self,
+        key: &NodeKey,
+    ) -> Result<CheckedNodeId, PlanAuthorityRefusal> {
+        match try_structural_id(key, self.budget, self.locus) {
+            Ok(id) => Ok(id),
+            Err(StructuralIdMaterializationError::Budget(denied)) => Err(self.denial(denied)),
+            Err(StructuralIdMaterializationError::Allocation(error)) => {
+                Err(PlanAuthorityRefusal::Allocation(error))
+            }
+        }
     }
 
     pub(in crate::monitor_root) fn work(
@@ -62,7 +83,11 @@ impl Charge<'_> {
         }
     }
 
-    fn node(&mut self, left: &NodeKey, right: &NodeKey) -> Result<bool, PlanAuthorityRefusal> {
+    pub(in crate::monitor_root) fn node(
+        &mut self,
+        left: &NodeKey,
+        right: &NodeKey,
+    ) -> Result<bool, PlanAuthorityRefusal> {
         self.storage(1)?;
         let mut pending = Vec::new();
         self.storage(1)?;
@@ -94,6 +119,57 @@ impl Charge<'_> {
                         self.storage(1)?;
                         pending.try_reserve(1)?;
                         pending.push((left, right));
+                    }
+                    _ => return Ok(false),
+                }
+            }
+        }
+    }
+
+    /// Compare the original admitted identities without invoking an uncharged
+    /// recursive Eq or manufacturing another encoded identity.
+    pub(in crate::monitor_root) fn checked_node(
+        &mut self,
+        left: &CheckedNodeId,
+        right: &CheckedNodeId,
+    ) -> Result<bool, PlanAuthorityRefusal> {
+        self.storage(2)?;
+        let mut pending = Vec::new();
+        pending.try_reserve_exact(1)?;
+        pending.push((left, right));
+        loop {
+            self.work(1)?;
+            let Some((left, right)) = pending.pop() else {
+                return Ok(true);
+            };
+            if !self.text(&left.package, &right.package)? {
+                return Ok(false);
+            }
+            self.work(4)?;
+            if left.ordinal != right.ordinal || left.path.len() != right.path.len() {
+                return Ok(false);
+            }
+            for (left, right) in left.path.iter().zip(&right.path) {
+                self.work(2)?;
+                match (left, right) {
+                    (CheckedNodePathSegment::Name(left), CheckedNodePathSegment::Name(right)) => {
+                        if !self.text(left, right)? {
+                            return Ok(false);
+                        }
+                    }
+                    (CheckedNodePathSegment::Index(left), CheckedNodePathSegment::Index(right)) => {
+                        self.work(2)?;
+                        if left != right {
+                            return Ok(false);
+                        }
+                    }
+                    (CheckedNodePathSegment::Node(left), CheckedNodePathSegment::Node(right)) => {
+                        // Reserve the actual additional stack slot before growing it.
+                        if pending.len() == pending.capacity() {
+                            self.storage(1)?;
+                            pending.try_reserve_exact(1)?;
+                        }
+                        pending.push((left.as_ref(), right.as_ref()));
                     }
                     _ => return Ok(false),
                 }

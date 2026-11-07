@@ -30,7 +30,7 @@ impl Emission {
         let mut expected_members = 0_u128;
         for (index, declaration) in self.selected_enum_declaration_rows.iter().enumerate() {
             let locus = NativeJoinLocus {
-                source: NativeJoinLocusSource::ReachedRow(index),
+                source: NativeJoinLocusSource::AdapterRow(index),
                 form: "source_enum_declaration_row",
             };
             charge::work(budget, locus, 1)?;
@@ -42,7 +42,7 @@ impl Emission {
         }
         for (index, declaration) in self.selected_enum_declaration_rows.iter().enumerate() {
             let locus = NativeJoinLocus {
-                source: NativeJoinLocusSource::ReachedRow(index),
+                source: NativeJoinLocusSource::AdapterRow(index),
                 form: "source_enum_declaration_row",
             };
             charge::enum_declaration(budget, locus, declaration)?;
@@ -81,7 +81,7 @@ impl Emission {
                 charge::enum_member(
                     budget,
                     NativeJoinLocus {
-                        source: NativeJoinLocusSource::ReachedRow(member_index),
+                        source: NativeJoinLocusSource::AdapterRow(member_index),
                         form: "source_enum_member_row",
                     },
                     member,
@@ -123,7 +123,7 @@ impl Emission {
         charge::items(budget, locus, self.selected_model_enum_shape_rows.len())?;
         for (index, row) in self.selected_model_enum_shape_rows.iter().enumerate() {
             let locus = NativeJoinLocus {
-                source: NativeJoinLocusSource::ReachedRow(index),
+                source: NativeJoinLocusSource::AdapterRow(index),
                 form: "model_enum_shape_row",
             };
             charge::node(budget, locus, &row.structural_node)?;
@@ -166,13 +166,12 @@ impl Emission {
 impl super::SelectedSourceCollectionRow {
     /// Convert this already-selected collection row to IR's native row type.
     /// Other retained collections in the emission are neither inspected nor
-    /// materialized, so an unrelated unsupported map cannot poison this read.
+    /// materialized. A map retains its original key before its value node.
     /// `locus` identifies this row in the caller's retained selection.
     ///
     /// # Errors
     ///
-    /// A compact [`NativeRowError`] on an unpaid charge. A requested map
-    /// refuses because the target IR row cannot carry its key node.
+    /// A compact [`NativeRowError`] on an unpaid charge.
     pub fn to_ir(
         &self,
         budget: &mut NativeJoinBudget,
@@ -180,16 +179,17 @@ impl super::SelectedSourceCollectionRow {
     ) -> Result<quire_contract_model::SelectedSourceCollectionRow, NativeRowError> {
         charge::start(budget, locus.form)?;
         charge::work(budget, locus, 1)?;
-        if self.key_node.is_some() || matches!(self.value_type, quire_exact::ValueType::Map(_)) {
-            return Err(NativeRowError::unsupported_map(locus));
-        }
         charge::node(budget, locus, &self.structural_node)?;
         charge::node(budget, locus, &self.base_node)?;
+        if let Some(key) = &self.key_node {
+            charge::node(budget, locus, key)?;
+        }
         charge::node(budget, locus, &self.element_node)?;
         charge::value_type(budget, locus, &self.value_type)?;
         Ok(quire_contract_model::SelectedSourceCollectionRow {
             structural_node: self.structural_node.clone(),
             base_node: self.base_node.clone(),
+            key_node: self.key_node.clone(),
             element_node: self.element_node.clone(),
             value_type: self.value_type.clone(),
         })

@@ -83,60 +83,64 @@ pub(super) fn check_observation_selection(
     association: &progress::AssociationRef<'_>,
     subject: &SubjectSelection,
     clock: &clock::Selection,
-) -> Result<(), ProgressSelectionRefusalCode> {
-    if association.scope_identity() != subject.scope_identity.as_str()
-        || association.population_identity() != subject.population_identity.as_str()
-    {
-        return Err(ProgressSelectionRefusalCode::Subject);
+    charge: &mut charge::Charge<'_>,
+) -> Result<(), PlanAuthorityRefusal> {
+    if !charge.text(
+        association.scope_identity(),
+        subject.scope_identity.as_str(),
+    )? || !charge.text(
+        association.population_identity(),
+        subject.population_identity.as_str(),
+    )? {
+        return Err(ProgressSelectionRefusalCode::Subject.into());
     }
-    if association.clock_identity() != clock.clock_identity().as_str()
-        || association.clock_revision() != clock.clock_revision().as_str()
-    {
-        return Err(ProgressSelectionRefusalCode::Clock);
+    if !charge.text(
+        association.clock_identity(),
+        clock.clock_identity().as_str(),
+    )? || !charge.text(
+        association.clock_revision(),
+        clock.clock_revision().as_str(),
+    )? {
+        return Err(ProgressSelectionRefusalCode::Clock.into());
     }
     Ok(())
 }
 
-/// Check only the non-node time-source fields of an asserted row against the
-/// original checker facts. A successful component comparison does not admit
-/// the row's structural node keys or its claim occurrence.
-pub(super) fn check_time_source_fields(
+/// Compare the original non-node labels. The period is compared against
+/// this claim's strictly admitted, same-emission clock by checked_period;
+/// formatting a kernel integer here would allocate outside the native ledger.
+pub(super) fn check_time_source_labels(
     source: &ModelTimeSource,
     row: &progress::AssociationRow,
     observation_source: &Identity,
     clock: &clock::Selection,
-) -> Result<(), ProgressSelectionRefusalCode> {
-    if row.observation_source != observation_source.as_str() {
-        return Err(ProgressSelectionRefusalCode::Source);
+    charge: &mut charge::Charge<'_>,
+) -> Result<(), PlanAuthorityRefusal> {
+    if !charge.text(&row.observation_source, observation_source.as_str())? {
+        return Err(ProgressSelectionRefusalCode::Source.into());
     }
-    if row.observation_clock != clock.clock_identity().as_str()
-        || row.observation_revision != clock.clock_revision().as_str()
+    if !charge.text(&row.observation_clock, clock.clock_identity().as_str())?
+        || !charge.text(&row.observation_revision, clock.clock_revision().as_str())?
     {
-        return Err(ProgressSelectionRefusalCode::Clock);
+        return Err(ProgressSelectionRefusalCode::Clock.into());
     }
-    if row.model != source.model {
-        return Err(ProgressSelectionRefusalCode::Model);
+    if !charge.text(&row.model, &source.model)? {
+        return Err(ProgressSelectionRefusalCode::Model.into());
     }
-    if row.unit != source.unit {
-        return Err(ProgressSelectionRefusalCode::Unit);
+    if !charge.text(&row.unit, &source.unit)? {
+        return Err(ProgressSelectionRefusalCode::Unit.into());
     }
+    charge.work(2)?;
     match (&source.source, &row.source) {
         (TimeSourceKind::Dense, progress::TimeSource::Dense) => Ok(()),
         (
-            TimeSourceKind::Tick { operation, period },
+            TimeSourceKind::Tick { operation, .. },
             progress::TimeSource::Tick {
                 operation: selected_operation,
-                period_numerator,
-                period_denominator,
                 ..
             },
-        ) if operation == selected_operation
-            && period.numerator().to_string() == *period_numerator
-            && period.denominator().to_string() == *period_denominator =>
-        {
-            Ok(())
-        }
-        _ => Err(ProgressSelectionRefusalCode::TimeSource),
+        ) if charge.text(operation, selected_operation)? => Ok(()),
+        _ => Err(ProgressSelectionRefusalCode::TimeSource.into()),
     }
 }
 
@@ -155,7 +159,7 @@ use quire_contract_model::{
     NativeJoinBudget, NativeJoinCharge, NativeJoinDeniedCharge, NativeJoinLocus,
 };
 
-use super::{order::selected_time_source, ModelStepOrder, ModelStepOrderRefusal, PlanRoot};
+use super::{order::selected_time_source_charged, ModelStepOrder, ModelStepOrderRefusal, PlanRoot};
 
 /// Independent selections checked before a same-emission authority is issued.
 /// QSL source provenance and observation source identity are distinct domains.
@@ -278,16 +282,16 @@ pub enum PlanAuthorityRefusal {
     FinalEmission,
     /// The original QSL order admission refused.
     #[error(transparent)]
-    Order(#[from] Box<ModelStepOrderRefusal>),
+    Order(#[from] ModelStepOrderRefusal),
     /// The original observation owner refused.
     #[error(transparent)]
-    Progress(#[from] Box<quire_observation::authority::Error>),
+    Progress(#[from] quire_observation::authority::Error),
     /// The original strict reader refused the final package.
     #[error("the final emission was refused by the strict reader: {0:?}")]
-    ReadRefused(Box<CheckedPackageRefusal>),
+    ReadRefused(CheckedPackageRefusal),
     /// The original strict reader exhausted its bound.
     #[error("the final emission read was incomplete: {0:?}")]
-    ReadIncomplete(Box<CheckedPackageIncomplete>),
+    ReadIncomplete(CheckedPackageIncomplete),
     /// The actual owner clock lookup refused under the shared native ledger.
     #[error(transparent)]
     ClockRead(#[from] CheckedMonitorClockReadError),
@@ -306,18 +310,6 @@ pub enum PlanAuthorityRefusal {
     /// A previously paid temporary container reserve failed.
     #[error(transparent)]
     Allocation(#[from] std::collections::TryReserveError),
-}
-
-impl From<ModelStepOrderRefusal> for PlanAuthorityRefusal {
-    fn from(error: ModelStepOrderRefusal) -> Self {
-        Self::Order(Box::new(error))
-    }
-}
-
-impl From<quire_observation::authority::Error> for PlanAuthorityRefusal {
-    fn from(error: quire_observation::authority::Error) -> Self {
-        Self::Progress(Box::new(error))
-    }
 }
 
 impl PlanAuthorityRefusal {
@@ -446,54 +438,82 @@ impl PlanRoot {
         }
         // Retain one index into the original immutable checked source slice.
         charge.storage(1)?;
-        let (_, source, time_source_slot) = selected_time_source(&self)?;
+        let (_, source, time_source_slot) = selected_time_source_charged(&self, &mut charge)?;
         let association = progress.association()?;
         check_observation_selection(
             &association,
             selection.observation_subject,
             selection.observation_clock,
+            &mut charge,
         )?;
         let claim = self.plan().subject();
-        let mut rows = association.rows().iter().filter(|row| {
-            row.claim.clause_node().key() == claim.clause_node()
-                && row.claim.occurrence() == claim.occurrence().origin()
-                && row.observation_source == selection.observation_source.as_str()
-        });
-        let row = rows.next().ok_or_else(|| {
-            if association.rows().iter().any(|row| {
-                row.claim.clause_node().key() == claim.clause_node()
-                    && row.claim.occurrence() == claim.occurrence().origin()
-            }) {
-                ProgressSelectionRefusalCode::Source
-            } else {
-                ProgressSelectionRefusalCode::Claim
+        let mut selected_row = None;
+        let mut claim_seen = false;
+        for candidate in association.rows() {
+            charge.work(1)?;
+            if !charge.node(candidate.claim.clause_node().key(), claim.clause_node())?
+                || !charge.text(
+                    candidate.claim.role(),
+                    claim.occurrence().origin().role().as_str(),
+                )?
+            {
+                continue;
             }
-        })?;
-        if rows.next().is_some() {
-            return Err(ProgressSelectionRefusalCode::Ambiguous.into());
+            charge.work(2)?;
+            if candidate.claim.ordinal() != claim.occurrence().origin().ordinal() {
+                continue;
+            }
+            claim_seen = true;
+            if !charge.text(
+                &candidate.observation_source,
+                selection.observation_source.as_str(),
+            )? {
+                continue;
+            }
+            if selected_row.is_some() {
+                return Err(ProgressSelectionRefusalCode::Ambiguous.into());
+            }
+            selected_row = Some(candidate);
         }
-        check_time_source_fields(
+        let row = selected_row.ok_or(if claim_seen {
+            ProgressSelectionRefusalCode::Source
+        } else {
+            ProgressSelectionRefusalCode::Claim
+        })?;
+        check_time_source_labels(
             source,
             row,
             selection.observation_source,
             selection.observation_clock,
+            &mut charge,
         )?;
-        if row.model_node.key() != &source.model_node
-            || row.unit_node.key() != &source.unit_node
-            || row.time_dimension.key() != &source.time_dimension
+        if !charge.node(row.model_node.key(), &source.model_node)?
+            || !charge.node(row.unit_node.key(), &source.unit_node)?
+            || !charge.node(row.time_dimension.key(), &source.time_dimension)?
         {
             return Err(ProgressSelectionRefusalCode::Node.into());
         }
         if let progress::TimeSource::Tick { operation_node, .. } = &row.source {
-            if source.tick_operation_anchor.as_ref() != Some(operation_node.key()) {
+            let Some(operation) = source.tick_operation_anchor.as_ref() else {
+                return Err(ProgressSelectionRefusalCode::Node.into());
+            };
+            if !charge.node(operation_node.key(), operation)? {
                 return Err(ProgressSelectionRefusalCode::Node.into());
             }
         }
-        let declaration = self
-            .emission()
-            .temporal_binding_rows()
-            .declaration(claim.clause_node(), claim.occurrence().origin().ordinal())
-            .ok_or(PlanAuthorityRefusal::FinalEmission)?;
+        let mut declaration = None;
+        for (key, ordinal, admitted) in self.emission().temporal_binding_rows().declaration_rows() {
+            charge.work(1)?;
+            if !charge.node(key, claim.clause_node())? {
+                continue;
+            }
+            charge.work(2)?;
+            if *ordinal == claim.occurrence().origin().ordinal() {
+                declaration = Some(admitted);
+                break;
+            }
+        }
+        let declaration = declaration.ok_or(PlanAuthorityRefusal::FinalEmission)?;
         let package = match read_checked_package(
             self.emission().package().bytes(),
             validation.read,
@@ -501,24 +521,34 @@ impl PlanRoot {
         ) {
             CheckedPackageDispatchResult::AdmittedV2(package) => package,
             CheckedPackageDispatchResult::Refused(error) => {
-                return Err(PlanAuthorityRefusal::ReadRefused(Box::new(error)));
+                return Err(PlanAuthorityRefusal::ReadRefused(error));
             }
             CheckedPackageDispatchResult::Incomplete(error) => {
-                return Err(PlanAuthorityRefusal::ReadIncomplete(Box::new(error)));
+                return Err(PlanAuthorityRefusal::ReadIncomplete(error));
             }
         };
         let checked_tick_period = {
             let mut plans = package.monitor_plans();
             let final_plan = plans.next().ok_or(PlanAuthorityRefusal::FinalEmission)?;
-            if plans.next().is_some()
-                || final_plan.clause() != declaration
-                || !package.temporal_clause_names().is_some_and(|rows| {
-                    rows.iter().any(|row| {
-                        &row.declaration == declaration
-                            && row.occurrence == claim.occurrence().origin().ordinal()
-                    })
-                })
-            {
+            charge.work(2)?;
+            if plans.next().is_some() || !charge.checked_node(final_plan.clause(), declaration)? {
+                return Err(PlanAuthorityRefusal::FinalEmission);
+            }
+            let mut named = false;
+            if let Some(rows) = package.temporal_clause_names() {
+                for row in rows {
+                    charge.work(1)?;
+                    if !charge.checked_node(&row.declaration, declaration)? {
+                        continue;
+                    }
+                    charge.work(2)?;
+                    if row.occurrence == claim.occurrence().origin().ordinal() {
+                        named = true;
+                        break;
+                    }
+                }
+            }
+            if !named {
                 return Err(PlanAuthorityRefusal::FinalEmission);
             }
             if !charge.text(claim.occurrence().origin().role().as_str(), "claim")? {

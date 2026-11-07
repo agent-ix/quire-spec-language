@@ -738,6 +738,15 @@ pub struct TemporalBindingRows {
 }
 
 impl TemporalBindingRows {
+    /// The retained checked clause keys, occurrence ordinals and emitted
+    /// declaration identities, borrowed in their original row order.
+    ///
+    /// Callers with an explicit work allowance can charge each comparison
+    /// before searching, without copying or reconstructing this table.
+    pub fn declaration_rows(&self) -> &[(NodeKey, u64, quire_contract_model::CheckedNodeId)] {
+        &self.declarations
+    }
+
     /// The row of `declaration`'s claim occurrence `occurrence`, `None` when
     /// the lock selects no clock configuration for it.
     pub fn get(

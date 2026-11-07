@@ -156,8 +156,12 @@ trait Materialization {
 
     fn path(&mut self, key: &NodeKey) -> Result<Vec<PathSegment>, Self::Error> {
         self.storage(1)?;
-        for segment in key.view().path() {
+        let mut segments = key.view().path();
+        loop {
             self.work(1)?;
+            let Some(segment) = segments.next() else {
+                break;
+            };
             self.storage(1)?;
             if let quire_exact::PathSegmentView::Text(text) = segment {
                 self.storage(1 + text.len() as u128)?;
@@ -175,14 +179,23 @@ struct Unmetered;
 impl Materialization for Unmetered {
     type Error = Infallible;
 
-    fn work(&mut self, _: u128) -> Result<(), Infallible> { Ok(()) }
-    fn storage(&mut self, _: u128) -> Result<(), Infallible> { Ok(()) }
+    fn work(&mut self, _: u128) -> Result<(), Infallible> {
+        Ok(())
+    }
+    fn storage(&mut self, _: u128) -> Result<(), Infallible> {
+        Ok(())
+    }
     fn room<T>(&mut self, list: &mut Vec<T>, additional: usize) -> Result<(), Infallible> {
         list.reserve(additional);
         Ok(())
     }
-    fn text(&mut self, text: &str) -> Result<Box<str>, Infallible> { Ok(text.into()) }
-    fn cache_room(&mut self, _: &mut HashMap<NodeKey, Arc<CheckedNodeId>>) -> Result<(), Infallible> {
+    fn text(&mut self, text: &str) -> Result<Box<str>, Infallible> {
+        Ok(text.into())
+    }
+    fn cache_room(
+        &mut self,
+        _: &mut HashMap<NodeKey, Arc<CheckedNodeId>>,
+    ) -> Result<(), Infallible> {
         Ok(())
     }
 }
@@ -196,15 +209,21 @@ impl Materialization for Metered<'_> {
     type Error = StructuralIdMaterializationError;
 
     fn work(&mut self, amount: u128) -> Result<(), Self::Error> {
-        self.budget.accounted_charge(NativeJoinChargeKind::Work, amount, self.locus)
+        self.budget
+            .accounted_charge(NativeJoinChargeKind::Work, amount, self.locus)
             .map_err(StructuralIdMaterializationError::Budget)
     }
     fn storage(&mut self, amount: u128) -> Result<(), Self::Error> {
-        self.budget.accounted_charge(NativeJoinChargeKind::Storage, amount, self.locus)
+        self.budget
+            .accounted_charge(NativeJoinChargeKind::Storage, amount, self.locus)
             .map_err(StructuralIdMaterializationError::Budget)
     }
     fn room<T>(&mut self, list: &mut Vec<T>, additional: usize) -> Result<(), Self::Error> {
-        let needed = list.len().saturating_add(additional);
+        let Some(needed) = list.len().checked_add(additional) else {
+            self.storage(list.len() as u128 + additional as u128)?;
+            list.try_reserve_exact(additional)?;
+            return Ok(());
+        };
         if needed > list.capacity() {
             let target = needed.max(list.capacity().saturating_mul(2));
             self.storage(target as u128)?;
@@ -220,7 +239,10 @@ impl Materialization for Metered<'_> {
         owned.push_str(text);
         Ok(owned.into_boxed_str())
     }
-    fn cache_room(&mut self, cache: &mut HashMap<NodeKey, Arc<CheckedNodeId>>) -> Result<(), Self::Error> {
+    fn cache_room(
+        &mut self,
+        cache: &mut HashMap<NodeKey, Arc<CheckedNodeId>>,
+    ) -> Result<(), Self::Error> {
         // One retained map entry. Payload/path strings and shared id are
         // charged separately; this is logical storage, not a table-layout estimate.
         self.storage(1)?;
@@ -243,7 +265,9 @@ fn materialize_id<P: Materialization>(
         provision.work(1)?;
         path.push(match segment {
             PathSegment::Text(text) => CheckedNodePathSegment::Name(text.into()),
-            PathSegment::Node(operand) => CheckedNodePathSegment::Node(intern(done, &operand, provision)?),
+            PathSegment::Node(operand) => {
+                CheckedNodePathSegment::Node(intern(done, &operand, provision)?)
+            }
         });
     }
     Ok(CheckedNodeId {
@@ -266,7 +290,9 @@ fn intern<P: Materialization>(
     pending.push((key.clone(), false));
     while let Some((node, expanded)) = pending.pop() {
         provision.work(1)?;
-        if done.contains_key(&node) { continue; }
+        if done.contains_key(&node) {
+            continue;
+        }
         let path = provision.path(&node)?;
         if !expanded {
             provision.room(&mut pending, 1)?;
@@ -896,5 +922,62 @@ mod tests {
             std::ptr::eq(operand.package(), keys[keys.len() - 2].package()),
             "the inverse memo retains the original operand's shared storage"
         );
+    }
+    #[ix_trace_rs::trace("TC-1081", "FR-251-AC-49")]
+    #[test]
+    fn charged_structural_materialization_preserves_original_ids_and_shared_operands() {
+        let keys = chain(2);
+        let key = NodeKey::new(
+            "example/charged-node",
+            vec![
+                PathSegment::Node(keys[1].clone()),
+                PathSegment::Node(keys[1].clone()),
+            ],
+            7,
+        )
+        .unwrap();
+        let locus = NativeJoinLocus {
+            source: quire_contract_model::NativeJoinLocusSource::ReachedRow(37),
+            form: "qsl_authority_selection",
+        };
+        let mut budget = NativeJoinBudget::new(1_000_000, 1_000_000);
+        budget.resume();
+        let actual = try_structural_id(&key, &mut budget, locus).unwrap();
+        assert_eq!(actual, structural_id(&key));
+        let (CheckedNodePathSegment::Node(left), CheckedNodePathSegment::Node(right)) =
+            (&actual.path[0], &actual.path[1])
+        else {
+            panic!("original operand paths");
+        };
+        assert!(Arc::ptr_eq(left, right));
+        let total = budget.consumed();
+        let mut exact = NativeJoinBudget::new(total.work, total.storage);
+        exact.resume();
+        assert_eq!(try_structural_id(&key, &mut exact, locus).unwrap(), actual);
+        assert_eq!(exact.consumed(), total);
+        for kind in [NativeJoinChargeKind::Work, NativeJoinChargeKind::Storage] {
+            let mut short = NativeJoinBudget::new(
+                total.work - u64::from(kind == NativeJoinChargeKind::Work),
+                total.storage - u64::from(kind == NativeJoinChargeKind::Storage),
+            );
+            short.resume();
+            let error = try_structural_id(&key, &mut short, locus).unwrap_err();
+            let StructuralIdMaterializationError::Budget(denied) = error else {
+                panic!("the original native ledger denies before materialization");
+            };
+            assert_eq!(denied.kind, kind);
+            assert_eq!(Some(denied), short.first_unpaid());
+            assert_eq!(short.first_unpaid_locus(), Some(locus));
+        }
+        let mut reused = NativeJoinBudget::new(total.work * 2, total.storage * 2 - 1);
+        reused.resume();
+        try_structural_id(&key, &mut reused, locus).unwrap();
+        let prefix = reused.consumed();
+        assert!(matches!(
+            try_structural_id(&key, &mut reused, locus),
+            Err(StructuralIdMaterializationError::Budget(_))
+        ));
+        assert!(reused.consumed().work >= prefix.work);
+        assert!(reused.consumed().storage >= prefix.storage);
     }
 }
