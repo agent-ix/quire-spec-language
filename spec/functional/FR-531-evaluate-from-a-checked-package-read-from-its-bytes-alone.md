@@ -922,7 +922,7 @@ outcome map. Each carries a "Consumer entry" section that points here.
   and `SelectedExactIdentities`; QSL-1377 (selected-model identity-row production).
 - **Selected monitor composition:** [FR-251](./FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md) owns the admitted tick-monitor plan,
   order and progress authority. Contract IR FR-357 and FR-358 own native closure
-  validation and the public accounted-charge/resume budget contract. This
+  validation and the public accounted-charge/resume budget contract.
   Contract IR FR-357-AC-16 owns optional map-key row representation and native
   map validation; FR-358-AC-10 owns the external `AdapterRow` locus. This
   requirement owns QSL's intervening row materialization and conversion; it does
