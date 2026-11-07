@@ -114,6 +114,7 @@ pub mod imports;
 pub(crate) mod imports;
 mod ir;
 mod key_order;
+pub use key_order::node_keys_within;
 mod layer;
 mod lowering;
 pub(crate) use assemble::variant_type_declarations;

@@ -1125,14 +1125,14 @@ impl AdmittedPackageRead<'_> {
     > {
         use crate::evaluation_view::ViewFailure;
         use crate::reader_protocol_projection::{project_package, PackageRefusal};
-        let source_nodes: BTreeSet<_> = self
+        let source_nodes: Vec<_> = self
             .source
             .graph()
             .semantic_graph()
             .nodes()
             .map(|node| node.key())
             .collect();
-        if !source_nodes.is_subset(&self.reader_nodes) {
+        if !qsl_semantics::check::node_keys_within(&source_nodes, &self.reader_nodes) {
             return Err(ViewFailure::ReaderSourceMismatch(InternalFault::new(
                 "FR-390",
                 "reader-evaluation-view-retains-source-nodes",

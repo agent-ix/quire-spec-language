@@ -1102,16 +1102,15 @@ fn a_slot_expression_4000_deep_projects_on_a_small_stack() {
     );
 }
 
-/// TC-902 step 1 (FR-356-AC-5) for view creation: a function body of 5,000
+/// TC-902 step 1 (FR-356-AC-5) for view creation: a function body of 100,000
 /// chained additions, which the wire writes once however often it is called,
-/// is projected on a 512 KiB stack. The criterion's 100,000 is out of reach
-/// here, not for the projection (20,000 projects in 0.3 s) but for the view
-/// entry's `source_nodes` pass, which computes `node.key()` of every source
-/// node at a cost that grows with the chain: 52 s at 20,000 deep.
+/// is projected on a 512 KiB stack. The view entry ranks the source and
+/// reader node keys once, so the cost grows with the chain, not with its
+/// square.
 #[trace("TC-902", "FR-356-AC-5")]
 #[test]
-fn a_function_body_5000_deep_projects_on_a_small_stack() {
-    const TERMS: usize = 5_000;
+fn a_function_body_100000_deep_projects_on_a_small_stack() {
+    const TERMS: usize = 100_000;
     let function = format!(
         "function f using v(x: Integer): Integer pure {{ {}x }}\n",
         "x + ".repeat(TERMS - 1)
