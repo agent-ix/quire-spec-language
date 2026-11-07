@@ -5,7 +5,7 @@ use super::*;
 use crate::{IdentityFileRefusal, NativeRowError, NativeRowErrorCode, ReadIdentityRows};
 use quire_contract_model::{NativeJoinBudget, NativeJoinChargeKind, SelectedExactIdentities};
 
-fn fixture() -> (Emission, Box<quire_contract_model::CheckedPackageV2>) {
+fn fixture() -> (Emission, Arc<quire_contract_model::CheckedPackageV2>) {
     let text = format!(
         "{}\n{}\n{}",
         child_composite::UNIT,
@@ -16,10 +16,10 @@ fn fixture() -> (Emission, Box<quire_contract_model::CheckedPackageV2>) {
     let Read::Verified { admitted, .. } = read else {
         panic!("genuine combined package admits")
     };
-    assert!(!emission.identity_row_selection.declarations.is_empty());
-    assert!(!emission.identity_row_selection.fields.is_empty());
-    assert!(!emission.selected_source_record_rows.is_empty());
-    assert!(!emission.selected_source_union_rows.is_empty());
+    assert!(!emission.selected_exact_declaration_rows().is_empty());
+    assert!(!emission.selected_exact_field_rows().is_empty());
+    assert_eq!(emission.selected_source_record_rows().len(), 2);
+    assert_eq!(emission.selected_source_union_rows().len(), 1);
     (emission, admitted)
 }
 
@@ -47,7 +47,7 @@ fn authentic_identity_rows_pay_producer_join_and_output_once_and_preserve_native
     let joined =
         SelectedExactIdentities::from_stage_rows(&package, declarations, fields, &mut phases)
             .expect("one actual native join");
-    let native = phases.last_success_delta();
+    let native = phases.last_success_delta().expect("completed native join");
     assert_eq!(phases.consumed().work, producer.work + native.work);
     assert_eq!(phases.consumed().storage, producer.storage + native.storage);
     let before_output = phases.consumed();
@@ -71,6 +71,10 @@ fn authentic_identity_rows_pay_producer_join_and_output_once_and_preserve_native
     assert_eq!(
         actual.source_unions(),
         emission.selected_source_union_rows()
+    );
+    assert_eq!(
+        actual.source_records().len(),
+        emission.selected_source_record_rows().len()
     );
     for (original, copied) in emission
         .selected_source_record_rows()
