@@ -1473,6 +1473,7 @@ fn ir_tag(tag: NodeTag) -> CheckedNodeTag {
         NodeTag::Correspondence => CheckedNodeTag::Correspondence,
         NodeTag::Hybrid => CheckedNodeTag::Hybrid,
         NodeTag::TimedModel => CheckedNodeTag::TimedModel,
+        NodeTag::Extension => CheckedNodeTag::Extension,
     }
 }
 
@@ -1562,6 +1563,13 @@ impl BodyNames {
             // QSpec FR-451: `dependencies` are exactly the unique set of every
             // `type`, `population` and `context` target of the body.
             BodyTerm::Abstraction(term) => {
+                names
+                    .dependencies
+                    .extend(term.targets().map_err(encoding)?.iter().cloned());
+            }
+            // QSpec FR-469: `dependencies` are exactly the unique targets of
+            // the form's clause references.
+            BodyTerm::Extension(term) => {
                 names
                     .dependencies
                     .extend(term.targets().map_err(encoding)?.iter().cloned());
@@ -1909,7 +1917,36 @@ fn checked_term(ids: &StructuralIds, term: &BodyTerm) -> Result<CheckedTerm, Emi
         }),
         BodyTerm::Frame(frame) => frame_term(ids, frame),
         BodyTerm::Abstraction(abstraction) => abstraction_term(ids, abstraction),
+        BodyTerm::Extension(extension) => extension_term(ids, extension),
     }
+}
+
+/// QSpec FR-469: `{term: "extension_form", definition, node_kind, clauses}`,
+/// each clause a `binding` of the clause name to a `reference` to the node of
+/// its checked value.
+fn extension_term(
+    ids: &StructuralIds,
+    extension: &qsl_semantics::check::ExtensionTerm,
+) -> Result<CheckedTerm, EmitRefusal> {
+    Ok(CheckedTerm::ExtensionForm {
+        definition: CheckedArtifactRef {
+            authority: extension.definition().authority().into(),
+            identity: extension.definition().identity().into(),
+        },
+        node_kind: extension.node_kind().into(),
+        clauses: extension
+            .clauses()
+            .iter()
+            .map(|clause| {
+                Ok(CheckedTerm::Binding {
+                    name: clause.name().into(),
+                    value: Box::new(CheckedTerm::Reference {
+                        target: admitted_id(ids, clause.value())?,
+                    }),
+                })
+            })
+            .collect::<Result<_, EmitRefusal>>()?,
+    })
 }
 
 fn leaf_term(ids: &StructuralIds, leaf: &LeafTerm) -> Result<CheckedTerm, EmitRefusal> {
@@ -6220,6 +6257,20 @@ fn emit_package_inner(
         &mut source_map,
     )?;
     let (mut profile_selections, mut laws) = split_laws(&order);
+    // QSpec FR-469 "Carriage": a selected extension enters a package through
+    // its `definition_selections` entry and its `extension` nodes, never
+    // through `required_features`.
+    for candidate in &order {
+        if let BodyTerm::Extension(extension) = candidate.node.body() {
+            let reference = DefinitionReference {
+                authority: extension.definition().authority().to_owned(),
+                identity: extension.definition().identity().to_owned(),
+            };
+            if !laws.contains(&reference) {
+                laws.push(reference);
+            }
+        }
+    }
     for refinement in emitted_refinements {
         let selection = CheckedSelection {
             role: CheckedSelectionRole::TemporalProfile,

@@ -25,6 +25,7 @@ use qsl_foundation::{Code, Span};
 use std::collections::BTreeMap;
 
 use super::abstraction_declaration;
+use super::extension_declaration;
 use super::hybrid_declaration;
 use super::hyper_clause;
 use super::probabilistic;
@@ -102,6 +103,7 @@ impl ParsedForm {
     pub fn declared_name(&self) -> Option<&str> {
         use DeclarationForm as F;
         match &self.form {
+            F::Extension(form) => Some(&form.name.name),
             F::Union(form) => Some(&form.name.name),
             F::Abstraction(form) => Some(&form.name.name),
             F::Function(form) => Some(form.name.as_str()),
@@ -393,6 +395,10 @@ pub enum LeadingTokenKind {
     /// `hybrid`: the hybrid declaration form, holding its optional initial
     /// clause, modes, equations and transitions (FR-447).
     Hybrid,
+    /// A selected extension's leading keyword (FR-354): every selected
+    /// extension's declaration forms are this one entry (ADR-012 §5.1 row
+    /// S2), the production's own keyword and clauses being data.
+    Extension,
     /// Test-only: never constructed outside this crate's own tests, and
     /// absent from every non-test build.
     #[cfg(test)]
@@ -614,7 +620,7 @@ pub fn build_unit_with_protocol_results(
             continue;
         }
         let spelling = leading_token_spelling(cst, node).unwrap_or_default();
-        let Some(kind) = from_spelling(spelling) else {
+        let Some(kind) = leading_token_kind(cst, node, spelling) else {
             let refusal = FormsRefusal::at(
                 FormsCause::NoDispatchEntry {
                     spelling: String::from_utf8_lossy(spelling).into_owned(),
@@ -705,7 +711,7 @@ fn build_forms(cst: &LosslessCst) -> Result<Vec<ParsedForm>, FormsRefusal> {
     let mut forms = Vec::new();
     for node in declarations(cst) {
         let spelling = leading_token_spelling(cst, node).unwrap_or_default();
-        let Some(kind) = from_spelling(spelling) else {
+        let Some(kind) = leading_token_kind(cst, node, spelling) else {
             return Err(FormsRefusal::at(
                 FormsCause::NoDispatchEntry {
                     spelling: String::from_utf8_lossy(spelling).into_owned(),
@@ -782,6 +788,7 @@ fn dispatch(
         LeadingTokenKind::Probabilistic => probabilistic::probabilistic_clause(construct),
         LeadingTokenKind::StateGraph => state_graph::state_graph_claim(construct),
         LeadingTokenKind::Hybrid => hybrid_declaration::hybrid_declaration(construct),
+        LeadingTokenKind::Extension => extension_declaration::extension_declaration(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
     }
@@ -794,6 +801,28 @@ fn leading_token_spelling<'c>(cst: &'c LosslessCst, node: &CstNode) -> Option<&'
     value::significant_tokens(cst, node)
         .first()
         .map(|token| token.spelling())
+}
+
+/// The dispatch-table entry the declaration `node` selects: the extension
+/// entry when S1 read the declaration as a selected extension's form (its
+/// keyword is data of the selection, not a spelling of this table), else the
+/// entry `spelling` selects.
+fn leading_token_kind(
+    cst: &LosslessCst,
+    node: &CstNode,
+    spelling: &[u8],
+) -> Option<LeadingTokenKind> {
+    let extension = node.children().iter().any(|child| match child {
+        CstElement::Node(index) => cst
+            .nodes()
+            .get(*index)
+            .is_some_and(|child| child.production() == Production::ExtensionDeclaration),
+        CstElement::Token(_) => false,
+    });
+    if extension {
+        return Some(LeadingTokenKind::Extension);
+    }
+    from_spelling(spelling)
 }
 
 /// Maps a leading-token spelling to its dispatch-table entry, or `None`

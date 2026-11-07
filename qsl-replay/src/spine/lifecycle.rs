@@ -99,6 +99,7 @@ use qsl_semantics::check::{
     resolve_profiles, AdmittedImport, AssemblyCause, AssemblyError, CheckCause, CheckRefusal,
     CorrespondenceConflict, KeyFault, PackageDeclarations,
 };
+use qsl_semantics::library::extension::HeldExtensions;
 use qsl_semantics::library::{ImportView, LibraryName};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{
@@ -467,6 +468,8 @@ pub struct ParseRequest<'a> {
 pub struct ParsedUnitSource {
     syntax: qsl_cst::ParsedSource,
     unit: ParsedUnit,
+    /// The extension definitions the unit was parsed against (FR-354).
+    extensions: HeldExtensions,
     protocol_results: Vec<super::ProtocolResult>,
     protocol_forms_refusal: Option<FormsRefusal>,
 }
@@ -1265,7 +1268,33 @@ pub fn parse(
     limits: SourceLimits,
     cancel: &Cancel,
 ) -> Result<Staged<ParsedUnitSource>, FrontEndFailure> {
-    parse_operation(request, limits, cancel, false)
+    parse_operation(request, &HeldExtensions::default(), limits, cancel, false)
+}
+
+/// S1 and S2 for a unit that selects the extensions `held` (FR-354): each
+/// held leading keyword begins a declaration form at the first token of a
+/// top-level declaration, and S2 builds the form as the `Extension` variant.
+/// The held definitions stay with the parsed unit, and S3 reads them.
+pub fn parse_with_extensions(
+    request: &ParseRequest<'_>,
+    held: &HeldExtensions,
+    limits: SourceLimits,
+    cancel: &Cancel,
+) -> Result<Staged<ParsedUnitSource>, FrontEndFailure> {
+    parse_operation(request, held, limits, cancel, false)
+}
+
+/// The productions S1 recognises for the extensions `held`: each production's
+/// leading keyword and its clause names in source order.
+pub fn extension_forms(held: &HeldExtensions) -> qsl_cst::ExtensionForms {
+    qsl_cst::ExtensionForms::new(held.iter().flat_map(|extension| {
+        extension.productions().iter().map(|production| {
+            qsl_cst::ExtensionProduction::new(
+                production.keyword.clone(),
+                production.clauses.iter().map(|clause| clause.name.clone()),
+            )
+        })
+    }))
 }
 
 /// S1 and S2 for the compiler's continuation path: an attributable protocol
@@ -1275,11 +1304,12 @@ pub(crate) fn parse_for_continuation(
     limits: SourceLimits,
     cancel: &Cancel,
 ) -> Result<Staged<ParsedUnitSource>, FrontEndFailure> {
-    parse_operation(request, limits, cancel, true)
+    parse_operation(request, &HeldExtensions::default(), limits, cancel, true)
 }
 
 fn parse_operation(
     request: &ParseRequest<'_>,
+    held: &HeldExtensions,
     limits: SourceLimits,
     cancel: &Cancel,
     continue_protocol_refusals: bool,
@@ -1292,6 +1322,7 @@ fn parse_operation(
                 request.source.clone(),
                 request.path,
                 request.bytes,
+                held,
                 limits,
                 cancel,
             )
@@ -2327,11 +2358,23 @@ fn parse_unit(
     source: SourceIdentity,
     path: &str,
     bytes: &[u8],
+    held: &HeldExtensions,
     limits: SourceLimits,
     cancel: &Cancel,
 ) -> Result<ParsedUnitSource, StageError> {
-    let parsed = qsl_cst::parse_with_cancel(source, path, bytes, limits, cancel)
-        .map_err(|diagnostic| Box::new(CompileRefusal::Source(diagnostic)))?;
+    let parsed = if held.is_empty() {
+        qsl_cst::parse_with_cancel(source, path, bytes, limits, cancel)
+    } else {
+        qsl_cst::parse_with_extensions(
+            source,
+            path,
+            bytes,
+            limits,
+            &extension_forms(held),
+            cancel,
+        )
+    }
+    .map_err(|diagnostic| Box::new(CompileRefusal::Source(diagnostic)))?;
     let raw = parsed.source().reference().clone();
     let (unit, forms_refusals) = match qsl_forms::build_unit_with_protocol_results(&parsed) {
         Ok(built) => built,
@@ -2361,6 +2404,7 @@ fn parse_unit(
     Ok(ParsedUnitSource {
         syntax: parsed,
         unit,
+        extensions: held.clone(),
         protocol_results,
         protocol_forms_refusal,
     })
@@ -3346,6 +3390,7 @@ impl<'a> Resolution<'a> {
                     supplied.source.clone(),
                     &supplied.path,
                     &supplied.bytes,
+                    &HeldExtensions::default(),
                     limits.source,
                     cancel,
                 )
@@ -3388,6 +3433,7 @@ impl<'a> Resolution<'a> {
                     source.source.clone(),
                     &source.path,
                     &source.bytes,
+                    &HeldExtensions::default(),
                     limits.source,
                     cancel,
                 )
@@ -3518,6 +3564,11 @@ impl<'a> Resolution<'a> {
         })?;
         if frame.raw == self.continuation_source {
             declarations.integer_division = self.integer_division;
+        }
+        // FR-354: the extensions the root unit was parsed against are the
+        // ones S3 checks its forms with.
+        if let [only] = frame.source_units.as_slice() {
+            declarations = declarations.with_extensions(only.extensions.clone());
         }
         if let Some(value) = frame.refinement_internals.clone() {
             declarations = declarations.with_refinement_internals(value);

@@ -33,7 +33,7 @@ use qsl_foundation::{Code, SourceIdentity, Span};
 use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
 use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
-    AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProbabilisticCause,
+    AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ExtensionCause, ProbabilisticCause,
     ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause, TimeUnitCause,
     TopologyRetained,
 };
@@ -53,7 +53,7 @@ pub use lifecycle::{
     check_with_execution_points, check_with_execution_points_and_refinement_internals,
     check_with_profile_catalog, check_with_refinement_internals,
     check_with_temporal_selections_and_execution_points, package, package_with_temporal_selections,
-    parse, preflight_unit_list, refusal_or_fault, select, select_units, AdmittedModels,
+    extension_forms, parse, parse_with_extensions, preflight_unit_list, refusal_or_fault, select, select_units, AdmittedModels,
     AdmittedUnitList, CheckedUnit, EmittedUnit, FrontEndFailure, ObligationState, PackageLimits,
     ParseRequest, ParsedUnitSource, PendingObligation, ProfileCatalogInput, ProfileCheckFailure,
     ProtocolCheckSite, TypeDeclaration, TypeReport, TypeRequirement,
@@ -1367,6 +1367,33 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     protocol, temporal, ..
                 } => format!(
                     "{message}: `requires temporal {temporal}` reaches `protocol {protocol}` again"
+                ),
+            };
+        }
+        CheckCause::Extension(cause) => {
+            message = match cause.as_ref() {
+                ExtensionCause::TypeMismatch {
+                    clause,
+                    expected,
+                    actual,
+                    ..
+                } => format!(
+                    "{message}: clause `{clause}` is checked against `{expected}` but its value is `{actual}`"
+                ),
+                ExtensionCause::NodeKindClause {
+                    clause, node_kind, ..
+                } => format!(
+                    "{message}: clause `{clause}` is typed by the node kind `{node_kind}`, which no source expression denotes yet"
+                ),
+                ExtensionCause::UnheldKeyword { keyword, .. } => {
+                    format!("{message}: `{keyword}` is the leading keyword of no selected extension")
+                }
+                ExtensionCause::ClauseOrder {
+                    found, expected, ..
+                } => format!(
+                    "{message}: found {}, expected {}",
+                    found.as_deref().map_or("no clause".to_owned(), |name| format!("clause `{name}`")),
+                    expected.as_deref().map_or("no further clause".to_owned(), |name| format!("clause `{name}`")),
                 ),
             };
         }

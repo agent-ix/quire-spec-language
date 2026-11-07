@@ -76,6 +76,7 @@ use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::quantity::UnitTable;
 
 mod abstraction;
+mod extension;
 mod hybrid;
 mod hyper;
 mod model;
@@ -123,6 +124,7 @@ pub(crate) use temporal::{
     temporal_location, temporal_site, AggregatePart, LoweredTemporalClause, TemporalClauseInput,
     TemporalSite,
 };
+pub(crate) use extension::ExtensionFormInput;
 pub(crate) use terminal::{terminal_location, terminal_site, TerminalInput, TerminalSite};
 pub(crate) use timed_clause::TimedClauseInput;
 
@@ -6213,6 +6215,18 @@ impl<'a> Lowering<'a> {
     /// quantity or absent option, the enum member's nominal node for an
     /// enum member.
     fn literal(&mut self, node: CheckedNode<'_>, value: &Value) -> Result<LeafTerm, CheckRefusal> {
+        self.literal_as(node, value, node.value_type())
+    }
+
+    /// [`Self::literal`] typed at the node of `declared`, which a literal
+    /// admitted into a declared type (an extension clause's `Int[1, 3650]`)
+    /// carries instead of the narrower type of the value alone.
+    fn literal_as(
+        &mut self,
+        node: CheckedNode<'_>,
+        value: &Value,
+        declared: &ValueType,
+    ) -> Result<LeafTerm, CheckRefusal> {
         let literal = match value {
             Value::Boolean(value) => LiteralValue::Boolean(*value),
             Value::Integer(value) => LiteralValue::Integer(value.clone()),
@@ -6226,7 +6240,7 @@ impl<'a> Lowering<'a> {
                 // FR-093: the enum member's QSpec `enum_value` node, whose
                 // key is its `VariantId` (ADR-013 O-14). A model variant
                 // type's nodes are built where it is first named, here.
-                self.type_ref(node.value_type(), node.location())?;
+                self.type_ref(declared, node.location())?;
                 let variant = member.variant();
                 let key = crate::value::enumeration::enum_value_key_in(
                     &self.package_name,
@@ -6265,7 +6279,7 @@ impl<'a> Lowering<'a> {
             Value::Timestamp(value) => LiteralValue::Timestamp(*value),
             Value::String(value) => LiteralValue::String(value.clone()),
         };
-        let semantic_type = self.type_ref(node.value_type(), node.location())?;
+        let semantic_type = self.type_ref(declared, node.location())?;
         self.value_node(
             node,
             "literal",
@@ -7099,7 +7113,7 @@ fn walked_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
             walk.text(application.operator.wire_name());
             walk.node(&application.result_type);
         }
-        BodyTerm::Frame(_) | BodyTerm::Abstraction(_) => {}
+        BodyTerm::Frame(_) | BodyTerm::Abstraction(_) | BodyTerm::Extension(_) => {}
     }
     if let Some(semantic_type) = &content.semantic_type {
         walk.node(semantic_type);
@@ -7171,6 +7185,7 @@ fn named_nodes(node: &SemanticNode) -> Vec<NodeKey> {
             );
         }
         BodyTerm::Abstraction(term) => named.extend(term.targets().into_iter().flatten()),
+        BodyTerm::Extension(term) => named.extend(term.targets().into_iter().flatten()),
         BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
     }
     // A dependency's node is not a node of this graph.

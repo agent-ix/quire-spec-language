@@ -307,6 +307,9 @@ pub enum NodeTag {
     /// `presence_read` over the place references (QSpec FR-322
     /// "Presence").
     TimedModel,
+    /// `extension`: a declaration form of a selected extension (QSpec
+    /// FR-469), the one tag every extension's forms share.
+    Extension,
 }
 
 impl NodeTag {
@@ -328,6 +331,7 @@ impl NodeTag {
             Self::Correspondence => "correspondence",
             Self::Hybrid => "hybrid",
             Self::TimedModel => "timed_model",
+            Self::Extension => "extension",
         }
     }
 }
@@ -488,6 +492,8 @@ pub enum BodyTerm {
     Frame(FrameTerm),
     /// A `correspondence`/`abstraction_relation` node's body (QSpec FR-451).
     Abstraction(AbstractionTerm),
+    /// An `extension`/`extension_form` node's body (QSpec FR-469).
+    Extension(ExtensionTerm),
 }
 
 /// One `modifies` entry of a `state`/`frame` node's body (QSpec FR-340's
@@ -643,6 +649,10 @@ impl DebugWith for BodyTerm {
             Self::Frame(term) => f.debug_tuple("Frame").field(&With(term, table)).finish(),
             Self::Abstraction(term) => f
                 .debug_tuple("Abstraction")
+                .field(&With(term, table))
+                .finish(),
+            Self::Extension(term) => f
+                .debug_tuple("Extension")
                 .field(&With(term, table))
                 .finish(),
         }
@@ -1189,7 +1199,11 @@ impl BodyTerm {
     pub fn application_term(&self) -> Option<&ApplicationTerm> {
         match self {
             Self::Application(application) => Some(application),
-            Self::Leaf(_) | Self::Aggregate(_) | Self::Frame(_) | Self::Abstraction(_) => None,
+            Self::Leaf(_)
+            | Self::Aggregate(_)
+            | Self::Frame(_)
+            | Self::Abstraction(_)
+            | Self::Extension(_) => None,
         }
     }
 
@@ -1204,7 +1218,7 @@ impl BodyTerm {
                     member.for_each_leaf(visit);
                 }
             }
-            Self::Frame(_) | Self::Abstraction(_) => {}
+            Self::Frame(_) | Self::Abstraction(_) | Self::Extension(_) => {}
         }
     }
 
@@ -1219,7 +1233,7 @@ impl BodyTerm {
             | Self::Aggregate(AggregateTerm { members: arguments }) => {
                 arguments.iter().flat_map(MemberTerm::leaves).collect()
             }
-            Self::Frame(_) | Self::Abstraction(_) => Vec::new(),
+            Self::Frame(_) | Self::Abstraction(_) | Self::Extension(_) => Vec::new(),
         }
     }
 
@@ -1258,6 +1272,11 @@ impl BodyTerm {
                 }
             }
             Self::Abstraction(term) => {
+                for target in term.targets()? {
+                    visit(target);
+                }
+            }
+            Self::Extension(term) => {
                 for target in term.targets()? {
                     visit(target);
                 }
@@ -1317,6 +1336,7 @@ impl BodyTerm {
                 }
             }
             Self::Abstraction(term) => term.for_each_ref(visit),
+            Self::Extension(term) => term.for_each_ref(visit),
             Self::Leaf(_) | Self::Aggregate(_) => {}
         }
         self.for_each_leaf(&mut |leaf| match leaf {
@@ -1402,6 +1422,7 @@ impl BodyTerm {
                 deletes_scoped: deletes_scoped.clone(),
             }),
             Self::Abstraction(term) => Self::Abstraction(term.map_refs(map)),
+            Self::Extension(term) => Self::Extension(term.map_refs(map)),
         }
     }
 }
@@ -1929,8 +1950,10 @@ pub enum NodeKeyRefusal {
 }
 
 mod abstraction;
+mod extension;
 
 pub use abstraction::{AbstractionTerm, FrameEntry, ObjectEntry, PopulationEntry};
+pub use extension::{ExtensionClauseTerm, ExtensionTerm};
 
 #[cfg(test)]
 mod ref_tests;

@@ -85,6 +85,7 @@ pub use abstraction::{
     OperationKey, PopulationBinding, RustField, RustParameter, RustPath, RustReceiver,
 };
 pub use abstraction::{AbstractionNodeRefusal, AbstractionNodes};
+pub use extension::ExtensionCause;
 pub use dispatch_link::PendingLinks;
 mod facts;
 mod family;
@@ -119,6 +120,7 @@ mod lowering;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
 pub use lowering::{protocol_site, ProtocolSite};
+mod extension;
 mod hybrid;
 mod hyper_clause;
 mod node_key;
@@ -231,7 +233,9 @@ pub use lowering::{
     model_root_key, AdmittedModel, ForeignView, ModelClause, SemanticGraph, SemanticNode,
     SourceCollection, SourceEnumDeclaration, SourceEnumMember,
 };
-pub use node_key::{AbstractionTerm, FrameEntry, ObjectEntry, PopulationEntry};
+pub use node_key::{
+    AbstractionTerm, ExtensionClauseTerm, ExtensionTerm, FrameEntry, ObjectEntry, PopulationEntry,
+};
 pub use node_key::{
     AggregateTerm, ApplicationTerm, Binding, BindingValue, BodyTerm, FrameDeletesScoped,
     FrameField, FrameModifies, FrameScope, FrameTerm, GroupMember, GroupTerm, InvalidModelOwner,
@@ -4334,6 +4338,23 @@ impl PackageDeclarations {
         );
         refusals.extend(checked_probabilistic.refusals);
         let probabilistic_model = checked_probabilistic.model;
+        // FR-354: each declaration form of a selected extension, checked
+        // against the typed-node schema entry of its production.
+        let extension_input = extension::ExtensionInput {
+            scope: &scope,
+            signatures: &signatures,
+            held: &self.held_extensions,
+            limits,
+            cancel,
+        };
+        let checked_extensions = extension::check_forms(
+            &self.extension_forms,
+            &extension_input,
+            &mut probabilistic_cx,
+            &mut nodes_used,
+        );
+        refusals.extend(checked_extensions.refusals);
+        let checked_extension_forms = checked_extensions.forms;
         // QSL FR-249: the `release` declarations, resolved against the task
         // sets and the operations of the admitted models.
         if task_sets_admitted {
@@ -5754,6 +5775,15 @@ impl PackageDeclarations {
                     Ok(lowered) => lowered_hybrid_claims.push((index, lowered)),
                     Err(refusal) => refusals.push(refusal),
                 }
+            }
+        }
+        // FR-354, QSpec FR-469: each checked declaration form of a selected
+        // extension, after every function its clause values may call.
+        for (index, form) in checked_extension_forms.iter().enumerate() {
+            let Some(form) = form else { continue };
+            if let Err(refusal) = lowering.extension_form(&lowering::ExtensionFormInput { index, form })
+            {
+                refusals.push(refusal);
             }
         }
         // FR-411, QSpec FR-476: each checked `terminal` declaration, after

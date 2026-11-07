@@ -31,6 +31,7 @@
 mod abstraction_declaration;
 mod clause_text;
 mod dispatch;
+mod extension_declaration;
 mod hybrid_declaration;
 mod hyper_clause;
 mod probabilistic;
@@ -52,7 +53,7 @@ pub use abstraction_declaration::{
     AbstractionBindingForm, AbstractionDeclarationForm, FieldBindingForm, FrameBindingForm,
     ObjectBindingForm, ParameterBindingForm, PopulationBindingForm, RustSpelling,
 };
-pub use clause_text::{parse_clause_text, ClauseTextRefusal};
+pub use clause_text::{parse_clause_text, parse_type_text, ClauseTextRefusal};
 pub use dispatch::{
     build_unit, build_unit_with_protocol_results, FormsCause, FormsRefusal, LeadingTokenKind,
     ParsedForm, ParsedUnit, ProtocolFormsRefusal,
@@ -82,7 +83,7 @@ pub use syntax::{
     CompensationRetry, ConfidenceItemForm, ConfidenceKey, CriticalityForm, DeclarationForm,
     DeclarationKind, DeclaredClauseKind, DeclaredName, DelayDistributionForm, DelayForm,
     DimensionEquivalenceForm, DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm,
-    EquationForm, EventForm, ExactNumberForm, ExactNumberKind, ExactValueForm, ExactValueKind,
+    EquationForm, EventForm, ExtensionClauseForm, ExtensionForm, ExactNumberForm, ExactNumberKind, ExactValueForm, ExactValueKind,
     ExpectedQuantity, ExprId, ExprNode, ExprRef, Expression, ExpressionBuilder, ExpressionForm,
     FairnessConstraintForm, FairnessGranularity, FairnessKind, FieldInitializer, FractionForm,
     FunctionDeclaration, HorizonForm, HybridForm, HybridInitialForm, HybridModeForm,

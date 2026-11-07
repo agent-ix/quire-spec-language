@@ -936,6 +936,9 @@ struct Unit {
     /// Each `hybrid` declaration's form, in source order, resolved by the
     /// caller into the unit's `HybridDeclaration`s (FR-447).
     hybrids: Vec<qsl_forms::HybridForm>,
+    /// Each selected extension's declaration form, in source order, for
+    /// `check::extension` to check against its typed-node schema (FR-354).
+    extensions: Vec<qsl_forms::ExtensionForm>,
     /// The timed declarations in source order, with their complete S2 forms.
     timed: Vec<TimedDeclaration>,
     /// The unit's clock-reading declarations in source order (FR-230
@@ -971,6 +974,7 @@ impl Unit {
             terminals: Vec::new(),
             refinements: Vec::new(),
             hybrids: Vec::new(),
+            extensions: Vec::new(),
             timed: Vec::new(),
             clock_reading: Vec::new(),
             task_sets: Vec::new(),
@@ -1048,6 +1052,7 @@ impl Unit {
                 DeclarationForm::Terminal(terminal) => unit.terminals.push(*terminal),
                 DeclarationForm::Refinement(refinement) => unit.refinements.push(*refinement),
                 DeclarationForm::Hybrid(hybrid) => unit.hybrids.push(*hybrid),
+                DeclarationForm::Extension(extension) => unit.extensions.push(*extension),
                 DeclarationForm::TimeSource(time) => {
                     unit.timed.push(TimedDeclaration::TimeSource {
                         form: *time,
@@ -5039,6 +5044,16 @@ impl PackageDeclarations {
         // FR-185: each random parameter's support values and each reward's
         // expression are located at their own sites.
         declared_site_spans.extend(super::probabilistic::site_spans(&unit.probabilistic));
+        // FR-354: each clause value of an extension form is located at its
+        // own site.
+        for (index, form) in unit.extensions.iter().enumerate() {
+            for (clause, written) in form.clauses.iter().enumerate() {
+                declared_site_spans.insert(
+                    super::extension::extension_clause_site(index, clause),
+                    written.value.spans.clone(),
+                );
+            }
+        }
         package.declared_site_spans = declared_site_spans;
         // FR-381: a template's operation anchor occurrence is recorded at
         // the template's name.
@@ -5079,6 +5094,11 @@ impl PackageDeclarations {
             )
         }));
         package.abstractions = unit.abstractions;
+        // FR-354: a form is located under its own spaced name.
+        declared_type_spans.extend(unit.extensions.iter().enumerate().map(|(index, form)| {
+            (super::extension::extension_site(index), form.span)
+        }));
+        package.extension_forms = unit.extensions;
         package.hyper_clauses = unit.hyper_clauses;
         package.probabilistic = unit.probabilistic;
         package.profile_selections = selections.profiles.clone();
