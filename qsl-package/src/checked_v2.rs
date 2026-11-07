@@ -197,7 +197,9 @@ impl NativeJoinLimits {
         };
         let bound = match native.native() {
             crate::NativeJoinFailure::Projection(error) => error.configured_bound.unwrap_or(bound),
-            crate::NativeJoinFailure::Equality(_) | crate::NativeJoinFailure::Limit(_) => bound,
+            crate::NativeJoinFailure::Equality(_)
+            | crate::NativeJoinFailure::Limit(_)
+            | crate::NativeJoinFailure::UnitDefinitions { .. } => bound,
         };
         let actual = u128::from(consumed).saturating_add(unpaid.amount);
         Some(crate::NativeJoinLimitError {
