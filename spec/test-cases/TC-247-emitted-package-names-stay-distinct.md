@@ -56,7 +56,8 @@ case's steps 6-7 no longer apply. Scope: FR-087-AC-10.
    interchangeable at a call site expecting one or the other).
 5. Confirm `src/protocol_artifact/native/mod.rs` is unchanged by this
    requirement's implementation (a diff against the pre-implementation tree
-   touches no line in that file).
+   touches no line in that file); this step no longer applies once SEAM-3's
+   deletion removes the file.
 6. Read `src/package/features.rs:9` and `src/package/view.rs:13` and
    confirm each still imports `CheckedPackage` from `crate::checking`
    (unrenamed, unaliased) after this requirement's implementation, for as
@@ -79,7 +80,7 @@ case's steps 6-7 no longer apply. Scope: FR-087-AC-10.
 - Step 3: no import scope resolves both `EmittedPackage` names ambiguously.
 - Step 4: no shared shape or trait makes the two `EmittedPackage`s
   interchangeable.
-- Step 5: `protocol_artifact/native/mod.rs` is untouched.
+- Step 5: `protocol_artifact/native/mod.rs` is untouched while it exists.
 - Step 6: while `checking`'s lane exists, both files' `crate::checking::CheckedPackage`
   imports are present and unchanged; an import that was renamed, removed,
   or redirected to the canonical type fails this step before that lane's
