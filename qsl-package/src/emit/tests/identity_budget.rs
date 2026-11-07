@@ -379,7 +379,10 @@ function e3 using v(s: State, g: Integer): State pure { s }\n";
         .insert_domain_package_document(package_identity(document), document)
         .expect("real domain evidence");
     evidence
-        .insert_domain_package_document(package_identity(&record_document), &record_document)
+        .insert_domain_package_document(
+            package_identity(&record_document),
+            record_document.as_slice(),
+        )
         .expect("the selected record domain evidence");
     let rate = quire_exact::Rational::new(1_i64.into(), 500_i64.into()).unwrap();
     let zero = quire_exact::Rational::from_integer(0_i64.into());
