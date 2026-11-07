@@ -12,6 +12,144 @@ use quire_spec_language::temporal::{
 
 const AMPLE: ReportPredecessorLimits = ReportPredecessorLimits::new(1 << 30, 1 << 30);
 
+#[trace("TC-144", "FR-052-AC-19", "FR-052-AC-20")]
+#[test]
+fn strict_read_charges_full_prior_comparison_at_exact_limits_and_refuses_legacy_authority() {
+    super::native_owner_report::with_inputs(
+        true,
+        false,
+        |package, occurrence, evidence, request, observation, _| {
+            let original = evaluate(
+                &CheckedSubject::new(package, occurrence, evidence, request).unwrap(),
+                observation,
+            );
+            let mut corrected_request = after(request, occurrence, &original);
+            // The same complete-value authority also applies to invalidation.
+            let Relation::Superseding(identity) = &corrected_request.relation else {
+                panic!("fixture supplies actual predecessor identity");
+            };
+            corrected_request.relation = Relation::Invalidating(identity.clone());
+            let revised_observation = ObservationRef {
+                reference: "observation:strict-read-limits".into(),
+                ..observation.clone()
+            };
+            let corrected = evaluate(
+                &CheckedSubject::new(package, occurrence, evidence, &corrected_request)
+                    .unwrap()
+                    .with_predecessor(&original, AMPLE),
+                &revised_observation,
+            );
+            let bytes = corrected.to_owner_bytes();
+            assert_eq!(
+                corrected.predecessor_owner_bytes(),
+                Some(original.to_owner_bytes().as_slice())
+            );
+            let mut legacy = bytes.clone();
+            legacy[4] = 1;
+            let ample_subject =
+                CheckedSubject::new(package, occurrence, evidence, &corrected_request)
+                    .unwrap()
+                    .with_predecessor(&original, AMPLE);
+            assert_eq!(
+                Report::from_owner_bytes(
+                    &legacy,
+                    &ample_subject,
+                    &revised_observation,
+                    &mut budget()
+                ),
+                Err(ReportRefusal::UnsupportedVersion)
+            );
+            let mut thresholds = [0_u64; 2];
+            for (index, resource) in [
+                ReportPredecessorResource::Work,
+                ReportPredecessorResource::Storage,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let mut bound = 0;
+                for _ in 0..64 {
+                    let limits = match resource {
+                        ReportPredecessorResource::Work => {
+                            ReportPredecessorLimits::new(bound, AMPLE.storage)
+                        }
+                        ReportPredecessorResource::Storage => {
+                            ReportPredecessorLimits::new(AMPLE.work, bound)
+                        }
+                    };
+                    let subject =
+                        CheckedSubject::new(package, occurrence, evidence, &corrected_request)
+                            .unwrap()
+                            .with_predecessor(&original, limits);
+                    match Report::from_owner_bytes(
+                        &bytes,
+                        &subject,
+                        &revised_observation,
+                        &mut budget(),
+                    ) {
+                        Ok(decoded) => {
+                            assert_eq!(decoded, corrected);
+                            thresholds[index] = bound;
+                            break;
+                        }
+                        Err(ReportRefusal::PredecessorLimit {
+                            resource: denied,
+                            limit,
+                            actual,
+                        }) => {
+                            assert_eq!(denied, resource);
+                            assert_eq!(limit, bound);
+                            assert!(actual > u128::from(bound));
+                            bound = u64::try_from(actual).expect("bounded fixture charge");
+                        }
+                        other => panic!(
+                            "only owner snapshot limits may stop this strict read: {other:?}"
+                        ),
+                    }
+                }
+                assert!(
+                    thresholds[index] > 0,
+                    "strict reading must reach an actual admitting threshold"
+                );
+            }
+            let exact = ReportPredecessorLimits::new(thresholds[0], thresholds[1]);
+            let exact_subject =
+                CheckedSubject::new(package, occurrence, evidence, &corrected_request)
+                    .unwrap()
+                    .with_predecessor(&original, exact);
+            assert_eq!(
+                Report::from_owner_bytes(
+                    &bytes,
+                    &exact_subject,
+                    &revised_observation,
+                    &mut budget()
+                )
+                .unwrap(),
+                corrected
+            );
+            for (limits, resource) in [
+                (
+                    ReportPredecessorLimits::new(exact.work - 1, exact.storage),
+                    ReportPredecessorResource::Work,
+                ),
+                (
+                    ReportPredecessorLimits::new(exact.work, exact.storage - 1),
+                    ReportPredecessorResource::Storage,
+                ),
+            ] {
+                let subject =
+                    CheckedSubject::new(package, occurrence, evidence, &corrected_request)
+                        .unwrap()
+                        .with_predecessor(&original, limits);
+                assert!(
+                    matches!(Report::from_owner_bytes(&bytes, &subject, &revised_observation, &mut budget()),
+                    Err(ReportRefusal::PredecessorLimit {resource: denied, ..}) if denied == resource)
+                );
+            }
+        },
+    );
+}
+
 #[trace("TC-144", "FR-052-AC-20")]
 #[test]
 fn bounded_owner_writer_precharges_every_frame_and_returns_no_bytes_one_short() {
