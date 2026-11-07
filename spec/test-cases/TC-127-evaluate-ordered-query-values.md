@@ -41,6 +41,20 @@ normalized prefixes exercise the declared rational domain. Compare emitted
 query/binder/type/capture records separately from the public state evaluator's
 actual results.
 
+### Admitted-artifact host
+
+FR-046-AC-3's admitted-artifact leg runs through an existing protocol slot, not
+a new bytes-route call: the `recovery.predicate` slots of
+`examples/checked-handoff/unit-duplicate-queries.native`, read in recipe R's
+unit-free variant with the integer model, written to a handoff directory and
+evaluated by `BarePackage::evaluate_protocol_slot` (FR-531, FR-533). The one
+binder each slot reads is a `M::Recovery` record whose Collection member
+`receipts` carries the items.
+
+| Row | AC | Input | Expected |
+| --- | --- | --- | --- |
+| 1 | FR-046-AC-3 | `Full` and `Partial` `recovery.predicate` over receipts [2,2,3], then over [2,3] | [2,2,3]: `Full` true, `Partial` false; [2,3]: `Full` false, `Partial` true. Map/filter element order and unit U are not asserted on this route (no sequence value leaves a slot; over U `Recovery` refuses `MissingTypeRepresentation`) and are asserted on the compilation route |
+
 ## Expected Results
 
 Map yields [2,2,3], filter yields [2,2], count is 2, sum is 7 and size is 3.
