@@ -22,8 +22,8 @@ use serde_json::json;
 
 use crate::temporal_activation::{
     activated, call, claim, delivery, env, event_env, expect_refusal, fault_of, fixed_env, id,
-    input, origin, position, request, run, try_env_under, unlimited, Env, EACH, GUARDED,
-    ONE_CAPTURE,
+    input, origin, position, request, run, source_map, try_env_under, unlimited, Env, EACH,
+    GUARDED, ONE_CAPTURE,
 };
 
 fn each() -> (Env, u64) {
@@ -840,7 +840,6 @@ fn the_request_has_no_supplied_result_member_and_only_the_evaluator_writes_entri
         decision_closure: _,
         surrounding_progress: _,
         surrounding_closure: _,
-        native_valuations: _,
         execution: _,
         completeness: _,
         authoritative_origin: _,
@@ -1003,7 +1002,7 @@ fn every_evidence_member_changes_the_result_identity() {
     }
 }
 
-#[trace("FR-516-AC-32", "FR-516-AC-33", "TC-1311")]
+#[trace("FR-516-AC-32", "FR-516-AC-33", "FR-043-AC-16", "TC-1311")]
 #[test]
 fn twins_pair_their_clock_rows_by_key_and_an_absent_or_unknown_selector_is_refused() {
     use qsl_eval::temporal::evidence::TraceBinding;
@@ -1020,15 +1019,18 @@ fn twins_pair_their_clock_rows_by_key_and_an_absent_or_unknown_selector_is_refus
     // The lock lists the rows ascending (3, 7); the node lists its
     // occurrences 7 then 3.
     let rows = [row(3, "ms"), row(7, "us")];
+    let maps = [source_map(3), source_map(7)];
     let mut subject = base.subject(&[]);
     subject.occurrences = vec![
         SubjectOccurrence {
             occurrence: claim(7),
             clock: Some(&rows[1]),
+            source_map: &maps[1],
         },
         SubjectOccurrence {
             occurrence: claim(3),
             clock: Some(&rows[0]),
+            source_map: &maps[0],
         },
     ];
     let binding = |unit: &str| TraceBinding {

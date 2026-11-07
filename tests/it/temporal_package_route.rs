@@ -206,7 +206,6 @@ pub(super) fn request(
         .and_then(|found| found.clock)
         .expect("a clocked clause");
     EvidenceRequest {
-        native_valuations: Vec::new(),
         trigger: Some(id("o1")),
         correspondence: EvidenceRef::named("corr"),
         positions: (0..ticks)

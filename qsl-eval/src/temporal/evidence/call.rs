@@ -29,8 +29,8 @@ use super::ledger::{EvidenceLedger, ObligationKey, ResultEntry};
 use super::limits::{EvidenceCounter, EvidenceUsage};
 use super::request::{
     ActivationState, EvidenceIncomplete, EvidencePosition, EvidenceRef, EvidenceRequest,
-    EvidenceResult, EvidenceSubject, Indeterminate, NonValue, NonValueKind, Relation, Settlement,
-    SupportRef, Truth,
+    EvidenceResult, EvidenceSubject, Indeterminate, NonValue, NonValueKind, Relation,
+    ResultSubject, Settlement, SupportRef, Truth,
 };
 use super::trigger::{
     CaptureFact, Evicted, SemanticTriggerIdentity, TriggerEvidence, TriggerRecord, TriggerScope,
@@ -94,6 +94,7 @@ struct ResolvedSubject<'p> {
     max_window_values: u64,
     occurrence: u64,
     occurrence_key: Vec<u8>,
+    subject: ResultSubject,
 }
 
 impl ResolvedSubject<'_> {
@@ -150,6 +151,13 @@ fn resolve<'p>(
         max_window_values: subject.max_window_values,
         occurrence: chosen.occurrence.ordinal,
         occurrence_key,
+        subject: ResultSubject {
+            package_identity: subject.package_identity.clone(),
+            package_version: qsl_package::CHECKED_PACKAGE_V2.to_owned(),
+            clause: subject.declaration.clone(),
+            occurrence: chosen.occurrence.clone(),
+            source_map: chosen.source_map.clone(),
+        },
     })
 }
 
@@ -607,9 +615,7 @@ fn encode_captures(mut encoder: MemberEncoder, captures: &[CaptureFact]) -> Memb
 }
 
 fn encode_trace(subject: &ResolvedSubject<'_>, request: &EvidenceRequest) -> Vec<u8> {
-    let mut encoder = MemberEncoder::new()
-        .bytes(&request.native_valuations)
-        .u64(request.positions.len() as u64);
+    let mut encoder = MemberEncoder::new().u64(request.positions.len() as u64);
     // The listing is the order of an event-position or fixed-sample trace;
     // a timestamped trace has the canonical order of FR-501.
     let ordered = if subject.facts.profile() == TemporalProfile::TimestampedEventFiniteWindow {
@@ -1828,15 +1834,26 @@ fn evaluate(
         }) else {
             continue;
         };
+        let atom = facts
+            .subject
+            .facts
+            .formula()
+            .atom_index(pair.atom.index())
+            .ok_or_else(|| fault("support-atom-is-an-atom"))?;
+        // A pair the request admitted no valuation for is not support, and a
+        // pair appears once (FR-526 "Result subject and support").
+        if !admitted_valuation(&request.positions[position], trigger, atom)
+            || outcome
+                .support
+                .iter()
+                .any(|kept| kept.position == position && kept.atom == atom)
+        {
+            continue;
+        }
         outcome.support.push(SupportRef {
             position,
             observation,
-            atom: facts
-                .subject
-                .facts
-                .formula()
-                .atom_index(pair.atom.index())
-                .ok_or_else(|| fault("support-atom-is-an-atom"))?,
+            atom,
         });
     }
     if outcome.truth.is_some() {
@@ -1856,6 +1873,29 @@ fn evaluate(
         }
     }
     Ok(outcome)
+}
+
+/// Whether `position` of the request admits a valuation of `atom`: the shared
+/// valuation, the assessed instance's valuation or an aggregate sample of it.
+fn admitted_valuation(
+    position: &EvidencePosition,
+    instance: &SemanticTriggerIdentity,
+    atom: u64,
+) -> bool {
+    let valued =
+        |found: Option<&Valuation>| found.is_some_and(|valuation| *valuation != Valuation::Missing);
+    valued(position.valuations.get(&atom))
+        || valued(
+            position
+                .instance_valuations
+                .get(instance)
+                .and_then(|valuations| valuations.get(&atom)),
+        )
+        || position.aggregate_samples.contains_key(&atom)
+        || position
+            .instance_aggregate_samples
+            .get(instance)
+            .is_some_and(|samples| samples.contains_key(&atom))
 }
 
 /// Add the members every result carries and record the result as the latest
@@ -1897,6 +1937,7 @@ fn conclude(facts: &Facts<'_>, outcome: Outcome, _meter: &Meter) -> EvidenceResu
         surrounding_closure: request.surrounding_closure,
         completeness: request.completeness.clone(),
         correspondence: request.correspondence.clone(),
+        subject: facts.subject.subject.clone(),
         trigger: request.trigger.clone(),
         usage: outcome.usage,
         relation: request.relation.clone(),

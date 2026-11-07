@@ -41,6 +41,17 @@ pub(crate) fn claim(ordinal: u64) -> qsl_package::CheckedOccurrence {
     serde_json::from_value(json!({"role": "claim", "ordinal": ordinal})).expect("an occurrence key")
 }
 
+/// The source-map entry of occurrence `ordinal` of the recipe's `Due` clause.
+pub(crate) fn source_map(ordinal: u64) -> qsl_package::CheckedSourceMapEntry {
+    serde_json::from_value(json!({
+        "node_id": {"package": "recipe", "path": ["Due"], "ordinal": 0},
+        "role": "claim",
+        "ordinal": ordinal,
+        "regions": [],
+    }))
+    .expect("a source-map entry")
+}
+
 pub(crate) fn id(text: &str) -> SemanticTriggerIdentity {
     SemanticTriggerIdentity::new(text.as_bytes()).expect("a non-empty identity")
 }
@@ -51,6 +62,7 @@ pub(crate) struct Env {
     declaration: CheckedNodeId,
     profile: CheckedSelection,
     row: TemporalBinding,
+    source: qsl_package::CheckedSourceMapEntry,
     rows: Vec<ActivationRow>,
     pub(crate) binding: TraceBinding,
     pub(crate) occurrence: u64,
@@ -175,6 +187,7 @@ pub(crate) fn rows_for(fixture: Fixture, profile_identity: &str, clock: serde_js
         declaration,
         profile,
         row,
+        source: source_map(0),
         rows: Vec::new(),
         binding,
         occurrence: 0,
@@ -184,11 +197,13 @@ pub(crate) fn rows_for(fixture: Fixture, profile_identity: &str, clock: serde_js
 impl Env {
     pub(crate) fn subject(&self, bound: &[u64]) -> EvidenceSubject<'_> {
         EvidenceSubject {
+            package_identity: "a".to_owned(),
             declaration: &self.declaration,
             profile: &self.profile,
             occurrences: vec![SubjectOccurrence {
                 occurrence: claim(self.occurrence),
                 clock: Some(&self.row),
+                source_map: &self.source,
             }],
             facts: ClauseFacts::of_checked(&self.fixture.clause),
             instance_bound: bound.iter().copied().collect(),
@@ -287,7 +302,6 @@ pub(crate) fn position(index: u64, values: &[(u64, Valuation)]) -> EvidencePosit
 
 pub(crate) fn request(env: &Env, positions: Vec<EvidencePosition>) -> EvidenceRequest {
     EvidenceRequest {
-        native_valuations: Vec::new(),
         trigger: None,
         correspondence: EvidenceRef::named("corr"),
         positions,

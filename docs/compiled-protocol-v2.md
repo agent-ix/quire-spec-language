@@ -161,8 +161,7 @@ that retains this contract and names the exact public surface it consumes:
   ClockConfiguration}`;
 - `protocol_artifact::native::{TemporalSelection, AdmissionV2, admit_v2}`;
 - the `qsl-eval` checked-term entry points
-  `CheckedPackageEvaluation::{call, evaluate, evaluate_protocol_slot}`; and
-- `temporal::{evaluate_v2, Report, Trace}`, the native owner-report route.
+  `CheckedPackageEvaluation::{call, evaluate, evaluate_protocol_slot}`.
 
 The producing caller supplies the actual parser/linker/proof report plus the
 complete `native::Selections`: original native source and model artifacts,

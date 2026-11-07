@@ -19,7 +19,7 @@ use serde_json::json;
 
 use crate::temporal_activation::{
     call, claim, delivery, env, event_env, expect_refusal, fixed_env, id, node, origin, position,
-    request, unlimited, Env, EACH, ONE_CAPTURE,
+    request, source_map, unlimited, Env, EACH, ONE_CAPTURE,
 };
 
 fn interval(value: serde_json::Value) -> Option<CheckedOperationInterval> {
@@ -402,15 +402,18 @@ fn each_cause_refuses_with_nothing_charged_and_its_unmet_twin_is_evaluated() {
         "clock": {"kind": "timestamped_event", "timestamp_unit": "ms"},
     }))
     .expect("a row");
+    let maps = [source_map(0), source_map(1)];
     let mut twins = each.subject(&[]);
     twins.occurrences = vec![
         SubjectOccurrence {
             occurrence: claim(0),
             clock: Some(&row),
+            source_map: &maps[0],
         },
         SubjectOccurrence {
             occurrence: claim(1),
             clock: Some(&row),
+            source_map: &maps[1],
         },
     ];
     let mut selected = delivered("t1");
