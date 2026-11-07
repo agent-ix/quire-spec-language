@@ -210,6 +210,10 @@ impl CompileRefusal {
             )
             .reaching(Some(ReachedLimit::of(limit)))],
             Self::Omitted(_) => vec![RefusalCause::new(Code::UnsupportedProjection, None)],
+            Self::Extension(refusal) => vec![RefusalCause::new(
+                refusal.code(),
+                Some(refusal.cause().as_str()),
+            )],
         }
     }
 }
@@ -433,6 +437,7 @@ fn group(refusal: &CompileRefusal) -> Group {
             UnitIntakeCause::Refused(_) | UnitIntakeCause::Invariant => Group::Setup,
         },
         CompileRefusal::Profile { .. }
+        | CompileRefusal::Extension(_)
         | CompileRefusal::UnitList(_)
         | CompileRefusal::DependencyInput(_)
         | CompileRefusal::Dependency { .. } => Group::Setup,

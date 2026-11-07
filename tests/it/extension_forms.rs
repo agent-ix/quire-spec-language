@@ -5,32 +5,30 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
-use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::SourceIdentity;
 use qsl_foundation::diagnostic::Code;
 use qsl_replay::spine::{
-    check, package, parse_with_extensions, select, CompileRefusal, DependencyInput, EmittedUnit,
+    check, package, parse_selecting_extensions, select, ProfileCatalogInput, CompileRefusal, DependencyInput, EmittedUnit,
     PackageLimits, ParseRequest, SpineLimits,
 };
 use qsl_semantics::check::{CheckCause, ExtensionCause};
 use qsl_semantics::library::bundle::{
-    Definition, DefinitionCatalog, DefinitionRole, ReaderAuthority,
+    Definition, DefinitionCatalog, DefinitionRole, PackageLimits as CatalogLimits, ReaderAuthority,
 };
-use qsl_semantics::library::extension::{CoreVocabulary, HeldExtensions};
 use quire_exact::Cancel;
 use serde_json::Value;
 
-const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\n";
+const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\nprofile Retention = \"retention\";\n";
 const FORM: &str = "retention Audit { subject: \"audit\", days: 30 }";
 
 /// TC-882's `retention` extension whose node kind is `node_kind`, held after
 /// catalog validation.
-fn held(node_kind: &str) -> HeldExtensions {
+fn held(node_kind: &str) -> DefinitionCatalog {
     held_typed(node_kind, "Int[1, 3650]")
 }
 
 /// As [`held`], with `days` typed `days_type`.
-fn held_typed(node_kind: &str, days_type: &str) -> HeldExtensions {
+fn held_typed(node_kind: &str, days_type: &str) -> DefinitionCatalog {
     let document = serde_json::json!({
         "grammar_schema": {"productions": [
             {"keyword": "retention", "clauses": ["subject", "days"]}
@@ -42,23 +40,21 @@ fn held_typed(node_kind: &str, days_type: &str) -> HeldExtensions {
             ]}
         ]}
     });
-    let definition = Definition::from_exact_bytes(
+    DefinitionCatalog::new(vec![extension_definition("retention", &document)]).unwrap()
+}
+
+/// An `Extension`-role definition of `agent-ix`/`identity` holding `document`.
+fn extension_definition(identity: &str, document: &Value) -> Definition {
+    Definition::from_exact_bytes(
         &ReaderAuthority::fixture(),
         "agent-ix",
-        "retention",
-        DefinitionRole::Source,
+        identity,
+        DefinitionRole::Extension,
         BTreeSet::new(),
         BTreeSet::new(),
         document.to_string().as_bytes(),
     )
-    .unwrap();
-    DefinitionCatalog::new(vec![definition])
-        .unwrap()
-        .hold_extensions(
-            &[DefinitionRef::new("agent-ix", "retention").unwrap()],
-            &CoreVocabulary::new(["function", "record"], ["record"]),
-        )
-        .unwrap()
+    .unwrap()
 }
 
 fn identity() -> SourceIdentity {
@@ -66,8 +62,12 @@ fn identity() -> SourceIdentity {
 }
 
 /// `declarations` through S1 to S4 under the held extension.
-fn compile(held: &HeldExtensions, declarations: &str) -> Result<EmittedUnit, Box<CompileRefusal>> {
-    let source = format!("{HEADER}{declarations}\n");
+fn compile(held: &DefinitionCatalog, declarations: &str) -> Result<EmittedUnit, Box<CompileRefusal>> {
+    compile_source(held, &format!("{HEADER}{declarations}\n"))
+}
+
+/// The whole `source` through S1 to S4 under `held`.
+fn compile_source(held: &DefinitionCatalog, source: &str) -> Result<EmittedUnit, Box<CompileRefusal>> {
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
     let refusal = |failure| {
@@ -75,13 +75,16 @@ fn compile(held: &HeldExtensions, declarations: &str) -> Result<EmittedUnit, Box
             .unwrap_or_else(|fault| panic!("the front end faulted: {fault:?}"))
     };
     let source_identity = identity();
-    let parsed = parse_with_extensions(
+    let parsed = parse_selecting_extensions(
         &ParseRequest {
             source: &source_identity,
             path: "unit.native",
             bytes: source.as_bytes(),
         },
-        held,
+        ProfileCatalogInput {
+            catalog: held,
+            limits: CatalogLimits::default(),
+        },
         limits.source,
         &cancel,
     )
@@ -280,14 +283,21 @@ fn the_emitted_node_carries_its_declaration_owner_clauses_dependencies_and_span(
         panic!("one region, got {spans:?}");
     };
     let source = format!("{HEADER}{FORM}\n");
-    let start = source.find("retention").expect("the form");
+    let start = source.find(FORM).expect("the form");
     assert_eq!(region["start"], start);
     assert_eq!(region["end"], start + FORM.len());
     // The package lists the definition as a selection and as no feature.
-    assert!(wire["lock"]["definition_selections"]
+    let selections = wire["lock"]["definition_selections"]
         .as_array()
-        .expect("selections")
-        .contains(&serde_json::json!({"authority": "agent-ix", "identity": "retention"})));
+        .expect("selections");
+    assert_eq!(
+        selections.last(),
+        Some(&serde_json::json!({"authority": "agent-ix", "identity": "retention"})),
+        "the extension row is last, after the closed rows and laws"
+    );
+    assert!(!wire["lock"]["profile_selections"]
+        .to_string()
+        .contains("retention"));
     assert!(!wire["lock"]["required_features"]
         .as_array()
         .expect("features")
@@ -363,4 +373,76 @@ fn a_type_spelling_outside_the_v1_reader_refuses_naming_the_spelling() {
     };
     assert_eq!(clause, "days");
     assert_eq!(expected, "Sequence<Integer>");
+}
+
+/// An extension of `agent-ix`/`identity` with one clause-less `keyword` form.
+fn bare_extension(identity: &str, keyword: &str) -> Definition {
+    extension_definition(
+        identity,
+        &serde_json::json!({
+            "grammar_schema": {"productions": [{"keyword": keyword, "clauses": []}]},
+            "typed_node_schema": {"nodes": [
+                {"keyword": keyword, "node_kind": keyword, "clauses": []}
+            ]}
+        }),
+    )
+}
+
+#[trace("TC-490", "FR-110-AC-15")]
+#[test]
+fn extension_rows_end_the_lock_ascending_by_identity() {
+    let catalog =
+        DefinitionCatalog::new(vec![bare_extension("ext.a", "ka"), bare_extension("ext.b", "kb")])
+            .unwrap();
+    let source = format!(
+        "{}profile B = \"ext.b\";\nprofile A = \"ext.a\";\nrecord Window {{ lo: Integer; }}\n",
+        "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\n"
+    );
+    let emitted = compile_source(&catalog, &source).expect("the unit compiles");
+    let wire = wire(&emitted);
+    let selections = wire["lock"]["definition_selections"]
+        .as_array()
+        .expect("selections");
+    let tail: Vec<_> = selections.iter().rev().take(2).rev().cloned().collect();
+    assert_eq!(
+        tail,
+        [
+            serde_json::json!({"authority": "agent-ix", "identity": "ext.a"}),
+            serde_json::json!({"authority": "agent-ix", "identity": "ext.b"}),
+        ]
+    );
+    let features = wire["lock"]["required_features"].to_string();
+    assert!(!features.contains("ext."), "no feature row: {features}");
+    assert!(!wire["lock"]["profile_selections"].to_string().contains("ext."));
+}
+
+#[trace("TC-490", "FR-110-AC-14")]
+#[test]
+fn a_header_identity_the_catalog_does_not_hold_as_an_extension_refuses_unknown_profile() {
+    let source = format!("{HEADER}record Window {{ lo: Integer; }}\n");
+    let refuse = |catalog: &DefinitionCatalog| {
+        let refusal = compile_source(catalog, &source).expect_err("the profile is refused");
+        let CompileRefusal::Profile { refusals, .. } = &*refusal else {
+            panic!("expected a profile refusal, got {refusal:?}");
+        };
+        (refusals[0].code(), refusals[0].cause())
+    };
+    let other_role = extension_definition_with_role("retention", DefinitionRole::Source);
+    for catalog in [DefinitionCatalog::default(), other_role] {
+        assert_eq!(refuse(&catalog), (Code::UnknownProfile, "unsupported-selection"));
+    }
+}
+
+fn extension_definition_with_role(identity: &str, role: DefinitionRole) -> DefinitionCatalog {
+    let definition = Definition::from_exact_bytes(
+        &ReaderAuthority::fixture(),
+        "agent-ix",
+        identity,
+        role,
+        BTreeSet::new(),
+        BTreeSet::new(),
+        b"{}",
+    )
+    .unwrap();
+    DefinitionCatalog::new(vec![definition]).unwrap()
 }

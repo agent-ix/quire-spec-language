@@ -834,6 +834,9 @@ pub struct CheckedGraph {
     /// FR-110: the header-selectable layers the unit's header profiles
     /// resolve to, ascending.
     header_layers: Vec<crate::value::layer::HeaderLayer>,
+    /// FR-110 "Extension selection": the extension definitions the unit
+    /// selects, ascending by `(authority, identity)`.
+    extension_selections: Vec<qsl_foundation::selection::DefinitionRef>,
     /// FR-230: checked time sources, in source declaration order.
     time_sources: Vec<ModelTimeSource>,
     /// FR-230/FR-251: exact checked time-unit scales used for timed clauses.
@@ -1001,6 +1004,7 @@ impl DebugWith for CheckedGraph {
             protocol_population_types,
             model_roots,
             header_layers,
+            extension_selections,
             time_sources,
             time_units,
             state_clauses,
@@ -1109,6 +1113,7 @@ impl DebugWith for CheckedGraph {
             )
             .field("model_roots", &NodeList(model_roots.iter(), table))
             .field("header_layers", &header_layers)
+            .field("extension_selections", &extension_selections)
             .field("time_sources", &Seq(time_sources, table))
             .field("time_units", &With(time_units, table))
             .field("state_clauses", &Seq(state_clauses, table))
@@ -2633,6 +2638,13 @@ impl PackageDeclarations {
             .collect();
         let protocol_profile = self.protocol_profile;
         let header_layers = self.header_layers;
+        let mut extension_selections: Vec<_> = self
+            .held_extensions
+            .iter()
+            .map(|held| held.definition().clone())
+            .collect();
+        extension_selections
+            .sort_by(|a, b| (a.authority(), a.identity()).cmp(&(b.authority(), b.identity())));
         let models = self.models;
         let operation_effects = checked_model_operation_effects(&models);
         let model_inputs = self.model_inputs;
@@ -7125,6 +7137,7 @@ impl PackageDeclarations {
             protocol_population_types,
             model_roots,
             header_layers,
+            extension_selections,
             time_sources: self.time_sources,
             time_units: time_units.clone(),
             state_clauses,
@@ -7982,6 +7995,13 @@ impl CheckedGraph {
     /// `requires` closure of these.
     pub fn header_layers(&self) -> &[crate::value::layer::HeaderLayer] {
         &self.header_layers
+    }
+
+    /// FR-110 "Extension selection": the extension definitions the unit
+    /// selects, ascending by `(authority, identity)`. The lock's
+    /// `definition_selections` end with these rows.
+    pub fn extension_selections(&self) -> &[qsl_foundation::selection::DefinitionRef] {
+        &self.extension_selections
     }
 
     /// FR-001: the canonical first `RawSourceRef` of the checked package,

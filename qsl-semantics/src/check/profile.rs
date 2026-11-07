@@ -12,7 +12,7 @@
 //! family's is [`TemporalProfile`]. Every other header profile reaches the
 //! `Value` table.
 
-use qsl_foundation::selection::ProfileSelection;
+use qsl_foundation::selection::{DefinitionRef, ProfileSelection};
 use qsl_foundation::{Code, Span};
 
 use crate::value::definition::{DefinitionReference, DefinitionRole};
@@ -161,8 +161,16 @@ impl ProfileRefusal {
 /// roles of the value, model, temporal and protocol families, in source order
 /// (FR-110). Every refusing
 /// profile is returned, in source order.
-pub fn resolve_profiles(profiles: &[ProfileSelection]) -> Result<(), Vec<ProfileRefusal>> {
+///
+/// An identity no layer has that `extension_of` classifies as an extension
+/// definition is an extension selection (FR-110 "Extension selection"), not a
+/// refusal. The selections are returned in header source order, each once.
+pub fn resolve_profiles(
+    profiles: &[ProfileSelection],
+    extension_of: &dyn Fn(&str) -> Option<DefinitionRef>,
+) -> Result<Vec<DefinitionRef>, Vec<ProfileRefusal>> {
     let root = DefinitionRole::Root.reference();
+    let mut extensions: Vec<DefinitionRef> = Vec::new();
     let refusals: Vec<ProfileRefusal> = profiles
         .iter()
         .filter_map(|profile| {
@@ -171,6 +179,11 @@ pub fn resolve_profiles(profiles: &[ProfileSelection]) -> Result<(), Vec<Profile
                 || protocol_profile(selected).is_some()
                 || TemporalProfile::from_identity(selected).is_some()
             {
+                return None;
+            } else if let Some(extension) = extension_of(selected) {
+                if !extensions.contains(&extension) {
+                    extensions.push(extension);
+                }
                 return None;
             } else if DefinitionRole::ALL
                 .into_iter()
@@ -197,7 +210,7 @@ pub fn resolve_profiles(profiles: &[ProfileSelection]) -> Result<(), Vec<Profile
         })
         .collect();
     if refusals.is_empty() {
-        Ok(())
+        Ok(extensions)
     } else {
         Err(refusals)
     }
@@ -222,7 +235,7 @@ mod tests {
             identity_span: Span { start: 0, end: 0 },
         };
         let protocol = selection("quire.protocol.finite-global/v1");
-        assert_eq!(resolve_profiles(std::slice::from_ref(&protocol)), Ok(()));
+        assert_eq!(resolve_profiles(std::slice::from_ref(&protocol), &|_| None), Ok(Vec::new()));
         assert_eq!(
             protocol_profile(&protocol.identity),
             Some(DefinitionReference {
@@ -232,7 +245,7 @@ mod tests {
         );
         let unknown = selection("quire.protocol.unknown/v1");
         assert_eq!(protocol_profile(&unknown.identity), None);
-        let refused = resolve_profiles(&[unknown]).expect_err("an unknown profile refuses");
+        let refused = resolve_profiles(&[unknown], &|_| None).expect_err("an unknown profile refuses");
         assert_eq!(refused[0].cause, ProfileCause::UnsupportedSelection);
     }
 
@@ -254,7 +267,7 @@ mod tests {
                 TemporalProfile::from_identity(profile.identity()),
                 Some(profile)
             );
-            assert_eq!(resolve_profiles(&[selection(profile.identity())]), Ok(()));
+            assert_eq!(resolve_profiles(&[selection(profile.identity())], &|_| None), Ok(Vec::new()));
             assert_eq!(
                 profile.is_bounded(),
                 !matches!(
@@ -274,7 +287,7 @@ mod tests {
             "quire.temporal.Infinite-trace/v1",
         ] {
             assert_eq!(TemporalProfile::from_identity(unknown), None);
-            let refused = resolve_profiles(&[selection(unknown)]).expect_err("refuses");
+            let refused = resolve_profiles(&[selection(unknown)], &|_| None).expect_err("refuses");
             assert_eq!(refused[0].cause, ProfileCause::UnsupportedSelection);
         }
     }

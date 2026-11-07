@@ -825,6 +825,49 @@ fn leading_token_kind(
     from_spelling(spelling)
 }
 
+/// Every leading-token spelling that selects a dispatch-table entry: the
+/// one list `from_spelling` reads and [`leading_keywords`] reports.
+const LEADING_SPELLINGS: &[(&str, LeadingTokenKind)] = &[
+    ("union", LeadingTokenKind::Union),
+    ("abstraction", LeadingTokenKind::Abstraction),
+    ("function", LeadingTokenKind::Function),
+    ("type", LeadingTokenKind::Type),
+    ("record", LeadingTokenKind::Record),
+    ("tuple", LeadingTokenKind::Tuple),
+    ("enum", LeadingTokenKind::Enum),
+    ("ordered", LeadingTokenKind::Ordered),
+    ("predicate", LeadingTokenKind::Predicate),
+    ("dimension", LeadingTokenKind::Dimension),
+    ("unit", LeadingTokenKind::Unit),
+    ("invariant", LeadingTokenKind::Invariant),
+    ("constraint", LeadingTokenKind::Constraint),
+    ("pre", LeadingTokenKind::Pre),
+    ("post", LeadingTokenKind::Post),
+    ("body", LeadingTokenKind::Body),
+    ("bound", LeadingTokenKind::Bound),
+    ("protocol", LeadingTokenKind::Protocol),
+    ("temporal", LeadingTokenKind::Temporal),
+    ("terminal", LeadingTokenKind::Terminal),
+    ("refinement", LeadingTokenKind::Refinement),
+    ("time", LeadingTokenKind::Time),
+    ("urgent", LeadingTokenKind::Urgent),
+    ("taskset", LeadingTokenKind::Taskset),
+    ("schedulable", LeadingTokenKind::Schedulable),
+    ("response", LeadingTokenKind::Response),
+    ("release", LeadingTokenKind::Release),
+    ("hyper", LeadingTokenKind::Hyper),
+    ("relation", LeadingTokenKind::Relation),
+    ("random", LeadingTokenKind::Random),
+    ("reward", LeadingTokenKind::Reward),
+    ("delay", LeadingTokenKind::Delay),
+    ("workload", LeadingTokenKind::Workload),
+    ("probabilistic", LeadingTokenKind::Probabilistic),
+    ("possible", LeadingTokenKind::StateGraph),
+    ("always", LeadingTokenKind::StateGraph),
+    ("unique", LeadingTokenKind::StateGraph),
+    ("hybrid", LeadingTokenKind::Hybrid),
+];
+
 /// Maps a leading-token spelling to its dispatch-table entry, or `None`
 /// when it selects no entry.
 fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
@@ -832,45 +875,16 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
     if spelling == test_support::PROBE_SPELLING.as_bytes() {
         return Some(LeadingTokenKind::TestProbe);
     }
-    match spelling {
-        b"union" => Some(LeadingTokenKind::Union),
-        b"abstraction" => Some(LeadingTokenKind::Abstraction),
-        b"function" => Some(LeadingTokenKind::Function),
-        b"type" => Some(LeadingTokenKind::Type),
-        b"record" => Some(LeadingTokenKind::Record),
-        b"tuple" => Some(LeadingTokenKind::Tuple),
-        b"enum" => Some(LeadingTokenKind::Enum),
-        b"ordered" => Some(LeadingTokenKind::Ordered),
-        b"predicate" => Some(LeadingTokenKind::Predicate),
-        b"dimension" => Some(LeadingTokenKind::Dimension),
-        b"unit" => Some(LeadingTokenKind::Unit),
-        b"invariant" => Some(LeadingTokenKind::Invariant),
-        b"constraint" => Some(LeadingTokenKind::Constraint),
-        b"pre" => Some(LeadingTokenKind::Pre),
-        b"post" => Some(LeadingTokenKind::Post),
-        b"body" => Some(LeadingTokenKind::Body),
-        b"bound" => Some(LeadingTokenKind::Bound),
-        b"protocol" => Some(LeadingTokenKind::Protocol),
-        b"temporal" => Some(LeadingTokenKind::Temporal),
-        b"terminal" => Some(LeadingTokenKind::Terminal),
-        b"refinement" => Some(LeadingTokenKind::Refinement),
-        b"time" => Some(LeadingTokenKind::Time),
-        b"urgent" => Some(LeadingTokenKind::Urgent),
-        b"taskset" => Some(LeadingTokenKind::Taskset),
-        b"schedulable" => Some(LeadingTokenKind::Schedulable),
-        b"response" => Some(LeadingTokenKind::Response),
-        b"release" => Some(LeadingTokenKind::Release),
-        b"hyper" => Some(LeadingTokenKind::Hyper),
-        b"relation" => Some(LeadingTokenKind::Relation),
-        b"random" => Some(LeadingTokenKind::Random),
-        b"reward" => Some(LeadingTokenKind::Reward),
-        b"delay" => Some(LeadingTokenKind::Delay),
-        b"workload" => Some(LeadingTokenKind::Workload),
-        b"probabilistic" => Some(LeadingTokenKind::Probabilistic),
-        b"possible" | b"always" | b"unique" => Some(LeadingTokenKind::StateGraph),
-        b"hybrid" => Some(LeadingTokenKind::Hybrid),
-        _ => None,
-    }
+    LEADING_SPELLINGS
+        .iter()
+        .find(|(word, _)| word.as_bytes() == spelling)
+        .map(|(_, kind)| *kind)
+}
+
+/// The spellings that begin a core declaration form, which an extension's
+/// leading keyword must not equal (QSpec FR-467 rule 2).
+pub fn leading_keywords() -> impl Iterator<Item = &'static str> {
+    LEADING_SPELLINGS.iter().map(|(word, _)| *word)
 }
 
 /// The header's declared edition literal, decoded, from the CST's own

@@ -2637,7 +2637,8 @@ fn source_artifact(source: &RawSourceRef) -> CheckedSourceRef {
 /// that requires a selected layer; then the qualification-catalog rows
 /// QSpec FR-001 selects for those layers; then the complete-model and
 /// complete-temporal lock rows when their layers are selected; then each law
-/// definition the bodies name that is not already selected.
+/// definition the bodies name that is not already selected; then each
+/// selected extension definition, ascending by `(authority, identity)`.
 ///
 /// A unit whose header selects no layer selects the `always` rows: the
 /// lock's `without_layer` rows are for a unit that selects layers none of
@@ -2645,6 +2646,7 @@ fn source_artifact(source: &RawSourceRef) -> CheckedSourceRef {
 fn catalog_selections(
     layers: &[HeaderLayer],
     laws: &[DefinitionReference],
+    extensions: &[qsl_foundation::selection::DefinitionRef],
 ) -> (CheckedSelection, Vec<CheckedArtifactRef>) {
     // A law's `DefinitionRef` is also part of the application-node keys that
     // name the law.
@@ -2683,7 +2685,12 @@ fn catalog_selections(
                 .into_iter()
                 .flatten(),
         )
-        .chain(laws.iter().cloned());
+        .chain(laws.iter().cloned())
+        // FR-110 "Lock rows" item 3: the extensions, last, already ascending.
+        .chain(extensions.iter().map(|extension| DefinitionReference {
+            authority: extension.authority().to_owned(),
+            identity: extension.identity().to_owned(),
+        }));
     let mut definitions: Vec<CheckedArtifactRef> = Vec::new();
     for definition in selected {
         let definition = artifact(&definition);
@@ -6257,20 +6264,6 @@ fn emit_package_inner(
         &mut source_map,
     )?;
     let (mut profile_selections, mut laws) = split_laws(&order);
-    // QSpec FR-469 "Carriage": a selected extension enters a package through
-    // its `definition_selections` entry and its `extension` nodes, never
-    // through `required_features`.
-    for candidate in &order {
-        if let BodyTerm::Extension(extension) = candidate.node.body() {
-            let reference = DefinitionReference {
-                authority: extension.definition().authority().to_owned(),
-                identity: extension.definition().identity().to_owned(),
-            };
-            if !laws.contains(&reference) {
-                laws.push(reference);
-            }
-        }
-    }
     for refinement in emitted_refinements {
         let selection = CheckedSelection {
             role: CheckedSelectionRole::TemporalProfile,
@@ -6303,7 +6296,7 @@ fn emit_package_inner(
         laws.push(profile.definition().clone());
     }
 
-    let (edition, definition_selections) = catalog_selections(graph.header_layers(), &laws);
+    let (edition, definition_selections) = catalog_selections(graph.header_layers(), &laws, graph.extension_selections());
     let root = DefinitionRole::Root.identity();
     let lock = CheckedPackageLockV2 {
         sources: sources.into_iter().collect(),

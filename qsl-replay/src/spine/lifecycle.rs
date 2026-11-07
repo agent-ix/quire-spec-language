@@ -99,7 +99,7 @@ use qsl_semantics::check::{
     resolve_profiles, AdmittedImport, AssemblyCause, AssemblyError, CheckCause, CheckRefusal,
     CorrespondenceConflict, KeyFault, PackageDeclarations,
 };
-use qsl_semantics::library::extension::HeldExtensions;
+use qsl_semantics::library::extension::{CoreVocabulary, HeldExtensions};
 use qsl_semantics::library::{ImportView, LibraryName};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{
@@ -374,6 +374,7 @@ fn limit_of(
         | CompileRefusal::OperationClause { .. }
         | CompileRefusal::TypeInvariant { .. }
         | CompileRefusal::Profile { .. }
+        | CompileRefusal::Extension(_)
         | CompileRefusal::DependencyInput(_)
         | CompileRefusal::Import { .. }
         | CompileRefusal::Link(_)
@@ -1282,6 +1283,72 @@ pub fn parse_with_extensions(
     cancel: &Cancel,
 ) -> Result<Staged<ParsedUnitSource>, FrontEndFailure> {
     parse_operation(request, held, limits, cancel, false)
+}
+
+/// The names an extension's leading keywords and node kinds must not equal
+/// (QSpec FR-467 rule 2): the core grammar's reserved spellings, the leading
+/// spellings S2 dispatches on and the checked package's core node kinds. Each
+/// comes from the list its stage reads, never a copy.
+pub fn core_vocabulary() -> CoreVocabulary {
+    CoreVocabulary::new(
+        qsl_cst::grammar::base_reserved_spellings()
+            .into_iter()
+            .chain(qsl_forms::leading_keywords()),
+        qsl_semantics::check::NodeTag::ALL.map(qsl_semantics::check::NodeTag::as_str),
+    )
+}
+
+/// FR-354 "Compile path" steps 1 to 3: select the unit's extensions from its
+/// header profiles against the catalog `catalog` supplies, hold them, and
+/// parse the unit with their productions. A unit that selects no extension
+/// parses exactly as [`parse`] does.
+pub fn parse_selecting_extensions(
+    request: &ParseRequest<'_>,
+    catalog: ProfileCatalogInput<'_>,
+    limits: SourceLimits,
+    cancel: &Cancel,
+) -> Result<Staged<ParsedUnitSource>, FrontEndFailure> {
+    let source_len =
+        |identity: &SourceIdentity| (identity == request.source).then_some(request.bytes.len());
+    let held = stage(cancel, &source_len, |work| {
+        // Step 1: the header, read without any extension production.
+        let header = charged(cancel, &mut work.s1, || {
+            qsl_cst::parse_with_cancel(
+                request.source.clone(),
+                request.path,
+                request.bytes,
+                limits,
+                cancel,
+            )
+        })
+        .map_err(|diagnostic| Box::new(CompileRefusal::Source(diagnostic)))?;
+        let held_by_catalog = |identity: &str| {
+            catalog
+                .catalog
+                .definition(identity)
+                .filter(|definition| definition.is_extension())
+                .map(|definition| definition.exact().clone())
+        };
+        let mut selections: Vec<qsl_foundation::selection::DefinitionRef> = Vec::new();
+        for profile in &header.selections().profiles {
+            // A profile that refuses is reported by E3 in its own place.
+            if let Ok(found) =
+                resolve_profiles(std::slice::from_ref(profile), &held_by_catalog)
+            {
+                for selection in found {
+                    if !selections.contains(&selection) {
+                        selections.push(selection);
+                    }
+                }
+            }
+        }
+        // Step 2.
+        catalog
+            .catalog
+            .hold_extensions(&selections, &core_vocabulary())
+            .map_err(|refusal| Box::new(CompileRefusal::Extension(refusal)))
+    })?;
+    parse_with_extensions(request, &held.into_value(), limits, cancel)
 }
 
 /// The productions S1 recognises for the extensions `held`: each production's
@@ -3504,7 +3571,16 @@ impl<'a> Resolution<'a> {
         let models = std::mem::take(&mut frame.models);
         let admitted = std::mem::take(&mut frame.admitted);
         let links = std::mem::take(&mut frame.links);
-        resolve_profiles(&unit.selections().profiles).map_err(|refusals| {
+        // FR-110 "Extension selection": a header identity the unit's held
+        // extensions name is their selection, not a refusal.
+        let held_extension = |identity: &str| {
+            source_units
+                .iter()
+                .flat_map(|source| source.extensions.iter())
+                .find(|held| held.definition().identity() == identity)
+                .map(|held| held.definition().clone())
+        };
+        resolve_profiles(&unit.selections().profiles, &held_extension).map_err(|refusals| {
             Box::new(CompileRefusal::Profile {
                 region: refusals
                     .first()

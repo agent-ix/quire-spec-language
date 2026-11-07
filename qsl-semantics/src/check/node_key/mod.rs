@@ -313,8 +313,28 @@ pub enum NodeTag {
 }
 
 impl NodeTag {
+    /// Every node tag, the checked package's core node kinds.
+    pub const ALL: [Self; 16] = [
+        Self::ScalarType,
+        Self::CompositeType,
+        Self::BoundedDomain,
+        Self::Value,
+        Self::Expression,
+        Self::Function,
+        Self::Model,
+        Self::Relation,
+        Self::State,
+        Self::Temporal,
+        Self::Protocol,
+        Self::Claim,
+        Self::Correspondence,
+        Self::Hybrid,
+        Self::TimedModel,
+        Self::Extension,
+    ];
+
     /// The closed v2 node tag spelling used as a derived path segment.
-    pub(crate) const fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::ScalarType => "scalar_type",
             Self::CompositeType => "composite_type",

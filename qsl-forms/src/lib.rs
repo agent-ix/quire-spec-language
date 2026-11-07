@@ -55,7 +55,8 @@ pub use abstraction_declaration::{
 };
 pub use clause_text::{parse_clause_text, parse_type_text, ClauseTextRefusal};
 pub use dispatch::{
-    build_unit, build_unit_with_protocol_results, FormsCause, FormsRefusal, LeadingTokenKind,
+    build_unit, build_unit_with_protocol_results, leading_keywords, FormsCause, FormsRefusal,
+    LeadingTokenKind,
     ParsedForm, ParsedUnit, ProtocolFormsRefusal,
 };
 pub use hyper_clause::{
