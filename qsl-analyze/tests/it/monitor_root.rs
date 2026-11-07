@@ -1025,7 +1025,7 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
     )
     .expect("authored model-enum monitor emits");
     let mut evidence = root.emission.evidence().clone();
-    let _ = evidence.insert_domain_package_document(domain.package, bytes);
+    let _ = evidence.insert_domain_package_document(domain.package, bytes.as_slice());
     let package = match read_checked_package(root.emission.package().bytes(), LIMITS, &evidence) {
         CheckedPackageDispatchResult::AdmittedV2(package) => package,
         other => panic!("the genuine custom-domain plan root must read: {other:?}"),
