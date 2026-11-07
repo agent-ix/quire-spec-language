@@ -20,7 +20,7 @@ definitions under `resources/native-v1/proposals/quire-v1/definitions/`, never
 from the evaluator's own output or reported usage. Each numbered group
 corresponds to the matching acceptance criterion.
 
-Controls execute in `tests/composed_temporal_evaluation.rs`. Traces are Rust
+The controls, `tests/composed_temporal_evaluation.rs`, were retired by QSL-858 PR 1 with the v1 evaluator; the successor tests are the ones FR-525 names for each criterion (qsl-eval `temporal_trace`, `finite_window`, `temporal_evidence`, `temporal_identity`). Traces are Rust
 values; no JSON fixture, shell step or installed CLI participates. A profile is
 selected per declaration by its authored `profile` alias, so a case comparing
 profiles compiles one declaration per profile from identical clause text.
@@ -124,7 +124,7 @@ profiles compiles one declaration per profile from identical clause text.
     `unit` `ms`), one event-position (`sequence_authority` `seq`) and one
     timestamped-event (`timestamp_unit` `ns`) declaration through FR-050's
     producer, read it with the strict `/2` reader, and evaluate each declaration
-    through `temporal::evaluate_v2` with its exact trace; require the report's
+    through the evidence call (FR-522) with its exact trace; require the report's
     authenticated binding to hold the package identity and version, declaration, definition
     identity and revision, clock name and parameter map. Then apply each single
     change of FR-043-AC-14 and require `Refusal::Binding` with that AC's

@@ -94,6 +94,7 @@ mod linking;
 mod located_json;
 #[cfg(feature = "checked-handoff")]
 mod mapping_support;
+mod mapping_support_v2;
 mod model_source;
 #[cfg(feature = "checked-handoff")]
 mod model_type_unit_roots;

@@ -179,17 +179,17 @@ so that a changed period, epoch, unit or sequence authority yields a distinct
 result identity and refuses reuse of an earlier result.
 
 A `quire.compiled-protocol/1` body carries a clock binding name and the selected
-definition entry's identity and revision, and no declared
-period, epoch, unit or sequence authority. Through the `/1` entry points
-(`temporal::evaluate`, `evaluate_with_progress`) the evaluator therefore retains
-those trace values as unauthenticated premises and does not compare them with
-the artifact.
+definition entry's identity and revision, and no declared period, epoch, unit or
+sequence authority. The `/1` entry points (`temporal::evaluate`,
+`evaluate_with_progress`) that retained those trace values as unauthenticated
+premises are retired (QSL-858 PR 1).
 
 A strict `quire.compiled-protocol/2` package (FR-050) carries each temporal
-declaration's binding: its definition identity and revision, and one typed clock configuration. Through the `/2`
-entry points (`temporal::evaluate_v2`, `evaluate_with_progress_v2`) the
-evaluator SHALL authenticate the trace against that binding before it visits any
-position:
+declaration's binding: its definition identity and revision, and one typed clock
+configuration. The evaluator SHALL authenticate the trace against that binding
+before it visits any position (the `/2` entry points `evaluate_artifact_v2` and
+`evaluate_with_progress_v2` are retired; the successor is the evidence call,
+FR-522):
 
 - a trace profile identity other than the binding's definition SHALL refuse
   `Refusal::Binding` with dimension `Profile`;
@@ -329,7 +329,7 @@ closure combination, and SHALL refuse any one-axis substitution.
 | FR-043-AC-11 | A fixed-sample or timestamped watermark reaching an inclusive deadline with complete valuations settles a silent obligation, an instant exactly at the deadline participates before settlement, an instant after it does not, and an event-position clock does not advance during silence. | Test (TC-122, TC-1277) |
 | FR-043-AC-12 | A regressing watermark or a conflicting completeness revision under one binding returns a typed contradiction refusal without rolling back progress, restamping closure or rewriting an earlier result; a foreign clock, subject or binding cannot settle the obligation. | Test (TC-122, TC-1277) |
 | FR-043-AC-13 | Repeated evaluation with identical inputs reproduces one result identity; a changed profile, clock binding, declared period, epoch, unit, sequence authority or ceiling yields a distinct result identity and the earlier result is neither reused nor rewritten. | Test (TC-122, TC-1277); Analysis |
-| FR-043-AC-14 | Through `temporal::evaluate_v2` over a strict `/2` package whose declarations bind a fixed-sample (`epoch` 0, `period` 1, `unit` `ms`), an event-position (`sequence_authority` `seq`) and a timestamped-event (`timestamp_unit` `ns`) configuration, a trace with the exact profile, clock name and parameters evaluates and its report retains the package identity and version, declaration, definition identity and revision, clock name and parameter map. Each single change refuses `Refusal::Binding` before any position is visited, with no truth and no authenticated binding: another profile (`Profile`), another clock name (`Clock`), a missing or extra parameter key (`ClockParameters`), `epoch` 1 (`Epoch`), `period` 2 (`SamplePeriod`), `unit` `s` (`ClockUnit`), `sequence_authority` `other` (`SequenceAuthority`) and `timestamp_unit` `us` (`TimestampUnit`). Through the temporal `/1` `evaluate`, the profile and clock-name mutations refuse `Refusal::Binding` (`Profile`, `Clock`) as they do under `/2`; the parameter mutations (the key set, `epoch`, `period`, `unit`, `sequence_authority` and `timestamp_unit`) are not refused, and every `/1` result retains no authenticated binding. | Test (TC-122, TC-1277) |
+| FR-043-AC-14 | Through the evidence call (FR-522) over a package whose declarations bind a fixed-sample (`epoch` 0, `period` 1, `unit` `ms`), an event-position (`sequence_authority` `seq`) and a timestamped-event (`timestamp_unit` `ns`) configuration, a trace with the exact profile, clock name and parameters evaluates and its report retains the package identity and version, declaration, definition identity and revision, clock name and parameter map. Each single change refuses `Refusal::Binding` before any position is visited, with no truth and no authenticated binding: another profile (`Profile`), another clock name (`Clock`), a missing or extra parameter key (`ClockParameters`), `epoch` 1 (`Epoch`), `period` 2 (`SamplePeriod`), `unit` `s` (`ClockUnit`), `sequence_authority` `other` (`SequenceAuthority`) and `timestamp_unit` `us` (`TimestampUnit`). | Test (TC-122, TC-1277) |
 | FR-043-AC-15 | Over two occurrences of one checked temporal declaration that share a checked node and formula, evaluation retains distinct rows under their respective occurrence keys. Over one occurrence, three rows for one `holds` operand at one position with identical anchor, capture instance and revision are retained as three rows in admission order, and two rows for that operand at two different positions are retained as two rows; the output multiset of rows equals the admitted input multiset in every one of the six facts, and a `BTreeMap` keyed by position and leaf is not the retained form. | Test |
 | FR-043-AC-16 | Each of these single mutations of an otherwise valid row refuses with `Refusal::Valuation` naming the cause and yields no truth or partial support: an occurrence key the declaration does not hold (`OccurrenceNotDeclared`), an operand outside the checked formula (`OperandNotInFormula`), a position not in the trace (`PositionNotAdmitted`), another instance's anchor (`AnchorMismatch`), another instance's capture instance (`CaptureInstanceMismatch`), and a revision unequal to the evaluation's revision reference, including a row replayed from an earlier revision (`RevisionMismatch`). Omitting a required row yields missing-valuation incompleteness, never false. | Test |
 

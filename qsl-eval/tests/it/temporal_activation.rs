@@ -32,7 +32,7 @@ use quire_eval::{CallAdmissionFailure, CallFailure};
 use quire_exact::Meter;
 use serde_json::json;
 
-use crate::temporal_trace::{fixture, Fixture};
+use crate::temporal_trace::Fixture;
 
 const FINITE_WINDOW: &str = "quire.temporal.timestamped-event.finite-window/v1";
 
@@ -94,8 +94,58 @@ pub(crate) fn event_env(activation: &str, body: &str) -> Env {
 }
 
 fn build(profile_identity: &str, clock: serde_json::Value, activation: &str, body: &str) -> Env {
-    let fixture = fixture(profile_identity, "c: Counter", activation, body);
-    rows_for(fixture, profile_identity, clock)
+    try_build(profile_identity, clock, activation, body)
+        .unwrap_or_else(|reached| panic!("{body}: stopped at S3: {reached:?}"))
+}
+
+fn try_build(
+    profile_identity: &str,
+    clock: serde_json::Value,
+    activation: &str,
+    body: &str,
+) -> Result<Env, qsl_foundation::diagnostic::LimitExceeded> {
+    let fixture = crate::temporal_trace::try_fixture_within(
+        profile_identity,
+        "c: Counter",
+        activation,
+        body,
+        qsl_cst::Limits::default(),
+    )?;
+    Ok(rows_for(fixture, profile_identity, clock))
+}
+
+/// A clause under the profile `profile` (`"event-position"`, `"fixed-sample"` or
+/// `"finite-window"`), or the limit the S3 check reached on it.
+pub(crate) fn try_env_under(
+    profile: &str,
+    activation: &str,
+    body: &str,
+) -> Result<Env, qsl_foundation::diagnostic::LimitExceeded> {
+    match profile {
+        "event-position" => try_build(
+            EVENT_POSITION,
+            json!({"kind": "event_position", "sequence_authority": "order-events"}),
+            activation,
+            body,
+        ),
+        "fixed-sample" => try_build(
+            FIXED_SAMPLE,
+            json!({
+                "kind": "fixed_sample",
+                "epoch": {"kind": "integer", "decimal": "0"},
+                "period": {"kind": "integer", "decimal": "1"},
+                "unit": "sample",
+            }),
+            activation,
+            body,
+        ),
+        _ => try_build(
+            FINITE_WINDOW,
+            json!({"kind": "timestamped_event", "timestamp_unit": "ms"}),
+            activation,
+            body,
+        ),
+    }
 }
 
 /// The recipe rows around an already checked clause.
@@ -362,7 +412,7 @@ pub(crate) fn fault_of(
     }
 }
 
-#[trace("FR-524-AC-1", "FR-524-AC-7", "TC-1319")]
+#[trace("FR-524-AC-1", "FR-524-AC-7", "TC-1319", "FR-044-AC-1")]
 #[test]
 fn distinct_identities_make_distinct_instances_even_with_equal_content() {
     let env = env(EACH, ONE_CAPTURE);
@@ -402,7 +452,9 @@ fn distinct_identities_make_distinct_instances_even_with_equal_content() {
     "FR-524-AC-19",
     "FR-516-AC-11",
     "TC-1319",
-    "TC-1311"
+    "TC-1311",
+    "FR-044-AC-2",
+    "FR-044-AC-3"
 )]
 #[test]
 fn a_redelivery_with_an_equal_payload_adds_a_receipt_and_keeps_the_environment() {
@@ -455,7 +507,7 @@ fn a_redelivery_with_an_equal_payload_adds_a_receipt_and_keeps_the_environment()
     );
 }
 
-#[trace("FR-524-AC-5", "FR-524-AC-20", "TC-1319")]
+#[trace("FR-524-AC-5", "FR-524-AC-20", "TC-1319", "FR-044-AC-2")]
 #[test]
 fn a_different_payload_under_one_identity_is_the_contradiction_refusal() {
     let env = env(EACH, ONE_CAPTURE);
@@ -510,7 +562,7 @@ pub(crate) fn origin(identity: &str, payload: &str) -> ExecutionOrigin {
     }
 }
 
-#[trace("FR-524-AC-8", "FR-524-AC-9", "TC-1319")]
+#[trace("FR-524-AC-8", "FR-524-AC-9", "TC-1319", "FR-044-AC-8")]
 #[test]
 fn an_origin_clause_has_one_instance_per_origin_identity() {
     let env = env("on origin", "eventually[0, 2] holds(p)");
@@ -570,7 +622,8 @@ pub(crate) fn capture_named(name: &str) -> FaultSubject {
     "FR-524-AC-13",
     "FR-524-AC-14",
     "FR-524-AC-15",
-    "TC-1319"
+    "TC-1319",
+    "FR-044-AC-4"
 )]
 #[test]
 fn every_capture_fault_names_its_input_and_kind() {
@@ -698,7 +751,7 @@ fn a_faulted_instance_leaves_its_sibling_active() {
     assert_eq!(activation.ledger.instance_count(), 2);
 }
 
-#[trace("FR-524-AC-18", "FR-524-AC-22", "TC-1319")]
+#[trace("FR-524-AC-18", "FR-524-AC-22", "TC-1319", "FR-044-AC-6")]
 #[test]
 fn captures_keep_authored_order_and_no_later_delivery_changes_them() {
     let env = env(EACH, THREE_CAPTURES);
@@ -730,7 +783,7 @@ fn captures_keep_authored_order_and_no_later_delivery_changes_them() {
     assert_eq!(second.instances[0].evaluations, 1);
 }
 
-#[trace("FR-524-AC-21", "TC-1319")]
+#[trace("FR-524-AC-21", "TC-1319", "FR-044-AC-9", "NFR-008-AC-3")]
 #[test]
 fn an_evicted_capture_of_a_retained_instance_is_a_missing_fault_and_recomputes_nothing() {
     let env = env(EACH, ONE_CAPTURE);
@@ -789,7 +842,8 @@ fn deliveries_captures_and_instances_are_charged_on_their_counters() {
     "FR-524-AC-28",
     "FR-524-AC-29",
     "FR-524-AC-30",
-    "TC-1319"
+    "TC-1319",
+    "FR-044-AC-5"
 )]
 #[test]
 fn a_scope_with_no_instance_reports_one_of_four_dispositions() {
@@ -1004,7 +1058,7 @@ fn the_trigger_must_select_a_resolved_instance() {
     assert!(result.instances.is_empty());
 }
 
-#[trace("FR-524-AC-1", "FR-524-AC-2", "TC-1319")]
+#[trace("FR-524-AC-1", "FR-524-AC-2", "TC-1319", "FR-044-AC-1")]
 #[test]
 fn an_instance_bound_atom_reads_only_its_own_instance() {
     let (env, p) = each_env();
@@ -1152,7 +1206,7 @@ fn each_counter_completes_at_its_usage_and_one_below_is_incomplete() {
     }
 }
 
-#[trace("FR-516-AC-17", "FR-502-AC-1", "TC-1311")]
+#[trace("FR-516-AC-17", "FR-502-AC-1", "TC-1311", "FR-043-AC-12")]
 #[test]
 fn a_regressing_watermark_is_refused_and_the_progress_ledger_is_unchanged() {
     let (env, p) = each_env();

@@ -1679,7 +1679,7 @@ fn a_temporal_refusal_takes_its_category_from_its_catalog_code() {
 
 /// FR-501-AC-1/2 (TC-1295): timestamp distances select a sparse finite
 /// window, and a closed window does not synthesize a false tail.
-#[trace("TC-1295", "FR-501-AC-1", "FR-501-AC-2")]
+#[trace("TC-1295", "FR-501-AC-1", "FR-501-AC-2", "FR-043-AC-2", "FR-043-AC-4")]
 #[test]
 fn timestamped_windows_use_ticks_and_close_without_false_extension() {
     let outside = report(timestamped(&[0, 2, 5], &[0, 1, 0], 5, Some(5)));
@@ -1735,7 +1735,7 @@ fn timestamped_windows_use_ticks_and_close_without_false_extension() {
 
 /// FR-501-AC-3 (TC-1295): an open future window remains pending until its
 /// deadline, while a witness already inside it is decisive.
-#[trace("TC-1295", "FR-501-AC-3")]
+#[trace("TC-1295", "FR-501-AC-3", "FR-043-AC-11")]
 #[test]
 fn timestamped_windows_pending_and_decisive_witnesses() {
     let pending = report(timestamped(&[0, 1], &[0, 0], 1, Some(1)));
@@ -2043,7 +2043,7 @@ fn timestamped_counter_cover_uses_half_open_boundary_rules() {
 /// FR-501-AC-4 (TC-1295): an unresolved atom reading is a possibility, a
 /// later witness can settle around it, and differing same-stamp readings are
 /// reported as conflicting valuation.
-#[trace("TC-1295", "FR-501-AC-4")]
+#[trace("TC-1295", "FR-501-AC-4", "FR-043-AC-7")]
 #[test]
 fn timestamped_missing_and_conflicting_atom_readings_are_indeterminate() {
     fn missing(values: &[i64], watermark: u64) -> ClauseRunReport {
@@ -2251,7 +2251,7 @@ fn timestamped_window_charges_exact_visits_and_stops_on_the_denied_visit() {
 /// FR-501-AC-7/18 (TC-1295): order-sensitive operators require comparable
 /// authority-scoped keys for equal stamps; insertion order does not decide
 /// an ordered reading.
-#[trace("TC-1295", "FR-501-AC-7")]
+#[trace("TC-1295", "FR-501-AC-7", "FR-043-AC-5")]
 #[test]
 fn order_sensitive_equal_stamps_require_one_authority_and_sort_by_key() {
     fn until_request(values: &[i64]) -> ClauseRunRequest {
@@ -2313,7 +2313,7 @@ fn order_sensitive_equal_stamps_require_one_authority_and_sort_by_key() {
 
 /// FR-501-AC-8 (TC-1295): a past window before a history cutoff is
 /// indeterminate only when the represented history does not decide it.
-#[trace("TC-1295", "FR-501-AC-8")]
+#[trace("TC-1295", "FR-501-AC-8", "FR-043-AC-9")]
 #[test]
 fn timestamped_past_windows_respect_history_cutoff() {
     fn once(values: &[i64], authoritative_origin: bool) -> ClauseRunReport {
@@ -2557,7 +2557,7 @@ fn timestamped_report_gives_basis_and_decision_support() {
 /// FR-501-AC-15 (TC-1295 row 29): scope closure, surrounding-execution
 /// closure, assessment disposition and input completeness stay four
 /// independent fields.
-#[trace("TC-1295", "FR-501-AC-15")]
+#[trace("TC-1295", "FR-501-AC-15", "FR-043-AC-10")]
 #[test]
 fn timestamped_report_keeps_four_independent_dimensions() {
     use crate::spine::FiniteWindowAssessment as Assessment;
@@ -2629,7 +2629,7 @@ fn timestamped_report_keeps_four_independent_dimensions() {
 
 /// FR-501-AC-16 (TC-1295 row 30): one result identity per input; each input
 /// changed alone gives a distinct identity.
-#[trace("TC-1295", "FR-501-AC-16")]
+#[trace("TC-1295", "FR-501-AC-16", "FR-043-AC-13")]
 #[test]
 fn timestamped_result_identity_follows_every_input() {
     let base = || {
@@ -3235,7 +3235,7 @@ fn with_clause_body(mut request: ClauseRunRequest, body: &str) -> ClauseRunReque
 /// valuation absent at one position settles a clause that does not depend on
 /// it (`p or not p`), and a history cutoff is `MissingHistory` only when the
 /// history present does not already decide.
-#[trace("TC-1295", "FR-501-AC-4")]
+#[trace("TC-1295", "FR-501-AC-4", "FR-043-AC-7")]
 #[trace("TC-1295", "FR-501-AC-8")]
 #[test]
 fn timestamped_possibility_lift_settles_independent_of_an_absent_valuation() {
@@ -3393,7 +3393,7 @@ fn timestamped_requests_run_twice_give_equal_reports() {
 
 /// FR-501 "Established window": the watermark settles an activation at exactly
 /// its deadline and not one tick before.
-#[trace("TC-1295", "FR-501-AC-3")]
+#[trace("TC-1295", "FR-501-AC-3", "FR-043-AC-11")]
 #[test]
 fn timestamped_watermark_at_the_deadline_settles() {
     let at_deadline = report(timestamped(&[0, 1], &[0, 0], 5, Some(5)));
@@ -3528,7 +3528,7 @@ fn a_request_without_a_ledger_evaluates_its_trace_and_returns_none() {
     assert_eq!(outcome(&report), &TemporalVerdict::Violated { at: 0 });
 }
 
-#[trace("FR-502-AC-1", "FR-502-AC-6", "FR-330-AC-9", "TC-1296")]
+#[trace("FR-502-AC-1", "FR-502-AC-6", "FR-330-AC-9", "TC-1296", "FR-043-AC-12")]
 #[test]
 fn run_clause_returns_the_updated_ledger_and_preserves_it_on_regression() {
     let first = report(with_progress(
@@ -3731,9 +3731,8 @@ fn a_position_of_another_identity_inside_the_retained_extent_is_refused() {
 /// FR-502-AC-11: the report of a request refused by FR-502 returns the ledger
 /// the request supplied, equal to it: a watermark regression returns the
 /// retained ledger, and a request that outgrows `progress.covered_positions`
-/// returns the empty ledger it carried. The no-ledger half of the AC is
-/// unreachable: `run_clause` admits progress only against a supplied ledger,
-/// so no FR-502 refusal exists for a request that supplied none.
+/// returns the empty ledger it carried. A request that supplied no ledger and
+/// is stopped (here by an exhausted evaluation meter) returns none.
 #[trace("FR-502-AC-11", "TC-1296")]
 #[test]
 fn a_refused_request_returns_the_ledger_it_supplied() {
@@ -3763,6 +3762,12 @@ fn a_refused_request_returns_the_ledger_it_supplied() {
     let limited = report(request);
     assert_eq!(limited.disposition.category(), Category::Incomplete);
     assert_eq!(limited.ledger, Some(empty));
+
+    let mut unledgered = finite(Unit::Bounded, "Bounded", &[0, 1, 2]);
+    unledgered.accounting = default_accounting(0);
+    let stopped = report(unledgered);
+    assert_eq!(stopped.disposition.category(), Category::Incomplete);
+    assert_eq!(stopped.ledger, None);
 }
 
 /// FR-522-AC-14: the `Finite` and `Lasso` traces carry no `TraceBinding`, and

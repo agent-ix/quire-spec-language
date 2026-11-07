@@ -21,6 +21,11 @@ row 5 keeps until `quire-protocol` and Contract IR repoint: `evaluate_v2` and it
 
 ## Trace inputs
 
+In this crate only `positions`, `anchor` and the valuation rows are read (by
+`ValuationEvidence::admit`). The other `Trace` fields and the `Trigger`,
+`CaptureInput` and `Eviction` types are inert inputs kept for `quire-protocol`
+until QSL-858 PR 2; their evaluation is `qsl-eval`'s.
+
 A `Trace` is caller-constructed and carries its asserted profile identity and
 revision, its clock binding name, the declared clock parameters the profile
 requires as opaque retained premises, its admitted positions, its four

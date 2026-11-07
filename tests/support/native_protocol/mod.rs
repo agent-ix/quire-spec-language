@@ -445,6 +445,20 @@ impl Inputs {
         *self.executions.get_mut(name).unwrap() = expected;
     }
 
+    pub fn with_proofs(
+        &self,
+        type_limits: TypeLimits,
+        proof_limits: proofs::ProofLimits,
+        test: impl FnOnce(&proofs::ProofReport<'_, '_, '_>, &native::Selections<'_>),
+    ) {
+        self.with_proofs_and_source_limits(
+            type_limits,
+            proof_limits,
+            quire_spec_language::Limits::default(),
+            test,
+        );
+    }
+
     pub fn with_proofs_and_source_limits(
         &self,
         type_limits: TypeLimits,

@@ -135,7 +135,7 @@ fn refused(recipe: &Recipe, binding: &TraceBinding) -> MismatchedDimension {
 /// FR-522-AC-1: another profile identity is refused at stage `admit` with
 /// `invalid_runtime_input`/`invalid-value`, `Profile`, both identities and
 /// no authenticated binding.
-#[trace("FR-522-AC-1", "TC-1317")]
+#[trace("FR-522-AC-1", "TC-1317", "FR-043-AC-3")]
 #[test]
 fn another_profile_is_refused_naming_both_identities() {
     let recipe = fixed_sample();
@@ -158,7 +158,7 @@ fn another_profile_is_refused_naming_both_identities() {
 /// FR-522-AC-2, AC-3, AC-6: a differing clock name, another clock
 /// alternative, a differing sequence authority and a differing timestamp
 /// unit are each refused with their own dimension.
-#[trace("FR-522-AC-2", "FR-522-AC-3", "FR-522-AC-6", "TC-1317")]
+#[trace("FR-522-AC-2", "FR-522-AC-3", "FR-522-AC-6", "TC-1317", "FR-043-AC-3")]
 #[test]
 fn a_clock_name_an_alternative_and_a_member_each_name_their_dimension() {
     let recipe = event_position();
@@ -197,7 +197,7 @@ fn a_clock_name_an_alternative_and_a_member_each_name_their_dimension() {
 /// `period` and `unit` alone is refused with `Epoch`, `SamplePeriod` and
 /// `ClockUnit`, and one that differs in `epoch` and `unit` is refused with
 /// `Epoch`.
-#[trace("FR-522-AC-4", "FR-522-AC-5", "TC-1317")]
+#[trace("FR-522-AC-4", "FR-522-AC-5", "TC-1317", "FR-043-AC-14")]
 #[test]
 fn a_fixed_sample_member_names_the_first_differing_dimension() {
     let recipe = fixed_sample();
@@ -689,7 +689,7 @@ fn the_usage_of_an_origin_clause_over_three_positions_is_measured_per_counter() 
 /// here; `captures_are_charged_by_a_capture_and_an_evicted_record_spends_no_capture`
 /// covers it. The script's charges are its own, so this proves the ceiling
 /// machinery per counter and not the counts of a real evaluation.
-#[trace("FR-523-AC-4", "FR-523-AC-5", "TC-1318")]
+#[trace("FR-523-AC-4", "FR-523-AC-5", "TC-1318", "NFR-008-AC-2")]
 #[test]
 fn each_counter_completes_at_its_usage_and_stops_one_below() {
     let usage = measured();
@@ -727,7 +727,7 @@ fn each_counter_completes_at_its_usage_and_stops_one_below() {
 /// FR-523-AC-7, AC-9: a ceiling of zero is used as zero, so `positions` 0
 /// stops at the first scan, and a refused charge leaves the counter at its
 /// last successful value.
-#[trace("FR-523-AC-7", "FR-523-AC-9", "TC-1318")]
+#[trace("FR-523-AC-7", "FR-523-AC-9", "TC-1318", "NFR-008-AC-5")]
 #[test]
 fn a_zero_ceiling_stops_at_the_first_charge_and_raises_nothing() {
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
@@ -957,7 +957,7 @@ fn calls_sharing_a_meter_accumulate_and_the_counter_is_charged_first() {
 /// FR-523-AC-9: a charge the meter denies leaves every counter at its last
 /// successful value, as a charge a counter refuses does. The counters are
 /// raised only once the meter has admitted the unit.
-#[trace("FR-523-AC-9", "TC-1318")]
+#[trace("FR-523-AC-9", "TC-1318", "NFR-008-AC-5")]
 #[test]
 fn a_meter_denial_leaves_every_counter_at_its_last_value() {
     let mut meter = Meter::new(work_limit(1));
@@ -985,7 +985,7 @@ fn a_meter_denial_leaves_every_counter_at_its_last_value() {
 /// retained, and by nothing else; its ceiling admits exactly that many
 /// captures and the next stops naming `captures`. An evicted record consulted
 /// spends `evaluation_steps` and `visited` and never `captures`.
-#[trace("FR-523-AC-4", "FR-523-AC-5", "TC-1318")]
+#[trace("FR-523-AC-4", "FR-523-AC-5", "TC-1318", "NFR-008-AC-2")]
 #[test]
 fn captures_are_charged_by_a_capture_and_an_evicted_record_spends_no_capture() {
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
@@ -1030,7 +1030,7 @@ fn captures_are_charged_by_a_capture_and_an_evicted_record_spends_no_capture() {
 /// FR-523-AC-16: a stamp whose `t0 + Hf + m` exceeds `u64::MAX` stops naming
 /// `history_span` before any position is visited, a stamp whose sum is
 /// `u64::MAX` is admitted, and the margin `2u` is part of the sum.
-#[trace("FR-523-AC-16", "TC-1318")]
+#[trace("FR-523-AC-16", "TC-1318", "NFR-008-AC-1")]
 #[test]
 fn a_tick_sum_that_overflows_u64_stops_at_history_span() {
     let fixture = clause_with_five_tick_reach();

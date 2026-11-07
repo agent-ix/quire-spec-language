@@ -48,11 +48,9 @@ pub use work::{Accumulation, Dimension, Exhaustion, Limits, Usage, ACCOUNTING_VE
 use crate::native_model::NativeModel;
 use crate::number::NumberError;
 
-/// The one reader of the emitter's `clock:` binding-name spelling. Version-1
-/// admission has no other source for a declaration's clock name; version-2
-/// admission reads the typed `temporal_bindings.clock_name` field instead
-/// ([`ClockNames::of_v2`]) and uses this only to emit that field and to
-/// verify it agrees with the legacy spelling.
+/// The one reader of the emitter's `clock:` binding-name spelling. Version-2
+/// admission reads the typed `temporal_bindings.clock_name` field and uses
+/// this only to verify that the field agrees with the legacy spelling.
 #[ix_trace_rs::string_edge]
 pub(crate) fn clock_binding_name(binding: &wire::BindingRequirement) -> Option<&str> {
     binding.name.strip_prefix("clock:")

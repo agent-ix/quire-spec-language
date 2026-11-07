@@ -486,7 +486,7 @@ fn atom_id(fixture: &Fixture) -> FormulaNodeId {
 /// FR-501-AC-1 (TC-1295 rows 1 to 3): only positions whose stamp distance
 /// lies in the closed interval take part; a position stamped at the bound
 /// does, one past it does not.
-#[trace("TC-1295", "FR-501-AC-1")]
+#[trace("TC-1295", "FR-501-AC-1", "FR-043-AC-4")]
 #[test]
 fn the_interval_selects_positions_by_stamp_distance() {
     let stamps = [0, 2, 5];
@@ -526,7 +526,7 @@ fn the_interval_selects_positions_by_stamp_distance() {
 /// FR-501-AC-2 (rows 4 and 5): no synthetic false atom after closure, where
 /// event-position false extension gives false; empty windows of an
 /// established activation settle.
-#[trace("TC-1295", "FR-501-AC-2")]
+#[trace("TC-1295", "FR-501-AC-2", "FR-043-AC-2")]
 #[test]
 fn an_established_window_adds_no_synthetic_atom() {
     let single = origin("always[0,1] holds(p)");
@@ -563,7 +563,7 @@ fn an_established_window_adds_no_synthetic_atom() {
 /// FR-501-AC-3 (rows 6 and 7): pending until progress closes the window;
 /// the same positions with later progress settle; a decisive witness or
 /// counterexample settles an open window.
-#[trace("TC-1295", "FR-501-AC-3")]
+#[trace("TC-1295", "FR-501-AC-3", "FR-043-AC-11")]
 #[test]
 fn an_open_window_is_pending_until_progress_or_a_decisive_event() {
     let eventually = origin("eventually[0,5] holds(p)");
@@ -594,7 +594,7 @@ fn an_open_window_is_pending_until_progress_or_a_decisive_event() {
 
 /// FR-501-AC-4 (rows 8 to 11): a missing or conflicting valuation is never
 /// read as false.
-#[trace("TC-1295", "FR-501-AC-4")]
+#[trace("TC-1295", "FR-501-AC-4", "FR-043-AC-7")]
 #[trace("TC-1295", "FR-501-AC-23")]
 #[test]
 fn missing_and_conflicting_valuations_are_never_false() {
@@ -660,7 +660,7 @@ fn missing_and_conflicting_valuations_are_never_false() {
 
 /// FR-501-AC-5 (rows 12 and 13): an incomplete input never admits the
 /// empty-window truth.
-#[trace("TC-1295", "FR-501-AC-5")]
+#[trace("TC-1295", "FR-501-AC-5", "FR-043-AC-8")]
 #[test]
 fn an_incomplete_input_is_indeterminate_never_closed() {
     let always = origin("always[0,5] holds(p)");
@@ -720,7 +720,7 @@ fn the_inclusive_deadline_participates_and_silence_settles() {
 
 /// FR-501-AC-7 (rows 17 and 18): equal stamps need comparable order keys at
 /// an order-sensitive operator, refused at the later position.
-#[trace("TC-1295", "FR-501-AC-7")]
+#[trace("TC-1295", "FR-501-AC-7", "FR-043-AC-5")]
 #[test]
 fn equal_stamps_need_comparable_order_keys() {
     let plain = request(
@@ -806,7 +806,7 @@ fn equal_stamps_need_comparable_order_keys() {
 /// FR-501-AC-8 (row 19): a past operator reaching before a history cutoff is
 /// indeterminate unless history already decides; an authoritative origin
 /// gives a definite verdict.
-#[trace("TC-1295", "FR-501-AC-8")]
+#[trace("TC-1295", "FR-501-AC-8", "FR-043-AC-9")]
 #[test]
 fn a_history_cutoff_is_missing_history_unless_decided() {
     let once = clause("on each (q: Counter)", "once[0,4] holds(p)");
@@ -1092,7 +1092,7 @@ fn the_report_gives_basis_and_decision_support() {
 
 /// FR-501-AC-15 (row 29): scope, execution, assessment and completeness stay
 /// four independent fields.
-#[trace("TC-1295", "FR-501-AC-15")]
+#[trace("TC-1295", "FR-501-AC-15", "FR-043-AC-10")]
 #[test]
 fn the_four_dimensions_stay_independent() {
     let always = origin("always[0,5] holds(p)");
@@ -1142,7 +1142,7 @@ fn the_four_dimensions_stay_independent() {
 
 /// FR-501-AC-16 (row 30): one result identity per input; each input changed
 /// alone changes it.
-#[trace("TC-1295", "FR-501-AC-16")]
+#[trace("TC-1295", "FR-501-AC-16", "FR-043-AC-13")]
 #[test]
 fn the_result_identity_follows_every_input() {
     let always = origin("always[0,5] holds(p)");
@@ -1358,7 +1358,7 @@ fn mixed_authorities_have_one_canonical_order() {
 /// FR-501 "Verdicts": a clause under a profile that carries no progress is
 /// refused. The event-position and fixed-sample profiles are read through the
 /// same evaluator by FR-504, so the refused profile here is infinite-trace.
-#[trace("TC-1295", "FR-501-AC-1")]
+#[trace("TC-1295", "FR-501-AC-1", "FR-043-AC-4")]
 #[test]
 fn a_clause_under_another_profile_is_refused() {
     let control = fixture(INFINITE, "c: Counter", "on origin", "always[0,1] holds(p)");
@@ -1381,7 +1381,7 @@ fn a_clause_under_another_profile_is_refused() {
 /// FR-501 "Verdicts": nested operators lift over the possibility sets of
 /// the positions they read, and an atom that is undefined at an eligible
 /// position is returned as FR-327 states.
-#[trace("TC-1295", "FR-501-AC-4")]
+#[trace("TC-1295", "FR-501-AC-4", "FR-043-AC-7")]
 #[test]
 fn a_nested_clause_lifts_over_missing_valuations() {
     let nested = origin("always[0,2] eventually[0,2] holds(p)");
@@ -1416,7 +1416,7 @@ fn a_nested_clause_lifts_over_missing_valuations() {
 /// FR-501 "Verdicts" (TC-1295 rows 8 to 10): the lift is over every
 /// consistent valuation, so an atom correlated with itself is not `Unknown`:
 /// `p or not p` with `p` absent is true, `p and not p` false.
-#[trace("TC-1295", "FR-501-AC-4")]
+#[trace("TC-1295", "FR-501-AC-4", "FR-043-AC-7")]
 #[test]
 fn a_correlated_atom_lifts_over_its_one_valuation() {
     let tautology = origin("holds(p) or not holds(p)");
@@ -1442,7 +1442,7 @@ fn a_correlated_atom_lifts_over_its_one_valuation() {
 /// window reaches before the trace and the history present does not already
 /// decide; `once`, `historically` and `since` over activations at later
 /// positions.
-#[trace("TC-1295", "FR-501-AC-8")]
+#[trace("TC-1295", "FR-501-AC-8", "FR-043-AC-9")]
 #[test]
 fn a_history_cutoff_is_missing_history_only_when_unsettled() {
     let each = |body: &str| clause("on each (q: Counter)", body);
@@ -1535,7 +1535,7 @@ fn a_straddled_bound_is_judged_by_the_covers_over_every_clause_shape() {
 /// FR-501 "Established window" (TC-1295 rows 6, 12 and 31): the watermark and
 /// completeness settle at exactly the deadline, and short of it only the
 /// short one decides between pending and indeterminate.
-#[trace("TC-1295", "FR-501-AC-3")]
+#[trace("TC-1295", "FR-501-AC-3", "FR-043-AC-11")]
 #[test]
 fn a_window_settles_at_exactly_the_deadline() {
     let eventually = origin("eventually[0,5] holds(p)");

@@ -19,7 +19,7 @@ under accounting label `quire.native.temporal-work/1`, never from the run's own
 reported usage. Each numbered group corresponds to the matching acceptance
 criterion.
 
-Controls execute in `tests/composed_temporal_limits.rs`. Groups 1 and 5 enumerate
+The controls, `tests/composed_temporal_limits.rs`, were retired by QSL-858 PR 1 with the v1 evaluator; the successor tests are the ones FR-525 names for each criterion (qsl-eval `temporal_evidence`, `temporal_rulings`). Groups 1 and 5 enumerate
 bounded formula, interval and ceiling families deterministically over a declared
 finite population; group 3 generates obligation and eviction schedules from a
 declared finite model. No randomized campaign, fuzzing result or mutation-adequacy
