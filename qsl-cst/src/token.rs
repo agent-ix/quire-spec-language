@@ -130,18 +130,6 @@ macro_rules! vocabulary {
             () => { $(Kind::$complete_variant)|+ };
         }
         impl Kind {
-            /// Whether this token's spelling is a bare ASCII word, so a
-            /// composed-base member name may reuse it unquoted.
-            // Widened to `pub`: the root crate's `parser::composed` calls it
-            // across the crate boundary (ADR-011 §7.3 X-3).
-            pub fn is_word(&self) -> bool {
-                match self {
-                    $(Self::$base_variant => $base_text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'),)+
-                    $(Self::$complete_variant => $complete_text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'),)+
-                    Self::Identifier(_) | Self::Unsupported => true,
-                    _ => false,
-                }
-            }
             /// A human-readable name for this token kind, used in "expected
             /// ..." diagnostics.
             // Widened to `pub`: the root crate's own base-grammar `parser`
@@ -252,17 +240,6 @@ impl Kind {
             Self::Identifier(spelling.into())
         } else {
             Self::Unsupported
-        }
-    }
-
-    /// Remove complete-facet reservations when parsing the composed base grammar.
-    // Widened to `pub`: the root crate's `parser::composed` calls it across
-    // the crate boundary (ADR-011 §7.3 X-3).
-    pub fn composed_base(self, spelling: &str) -> Self {
-        if self.complete_only() {
-            self.unreserved(spelling)
-        } else {
-            self
         }
     }
 

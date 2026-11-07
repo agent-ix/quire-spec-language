@@ -784,10 +784,10 @@ fn from_package_returns_only_the_ambiguous_name_mismatch() {
         assert!(!body.contains(variant), "{variant}");
     }
     let rows = package
-        .split("pub fn of_package")
+        .split("fn of_admitted")
         .nth(1)
         .and_then(|rest| rest.split("pub fn names").next())
-        .expect("of_package");
+        .expect("of_admitted");
     assert!(rows.contains("PackageMismatch::AmbiguousName"));
     for variant in ["ClauseRow", "ProfileSelections", "Bindings"] {
         assert!(

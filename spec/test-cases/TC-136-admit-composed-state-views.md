@@ -18,13 +18,12 @@ relationships:
 
 Scope: FR-049-AC-1 to FR-049-AC-6 and FR-049-AC-10 to FR-049-AC-11.
 
-Verify the replacement boundary for the retired native `state` evaluator:
-checked expression identity, typed environment and observation admission,
-graph identity, authority selection and typed outcomes. It also verifies the
-replacement for each former authority source through that source's owning
-admission path. The test invokes the current checked-term/family evaluator and
-never constructs the retired `EvaluationRequest`, `StateView`,
-`StaticAuthority` or artifact-value graph.
+Verify the checked-term evaluation boundary: checked expression identity, typed
+environment and observation admission, graph identity, authority selection and
+typed outcomes. It also verifies that each identity authority (source, model,
+profile, configuration and observation) is checked at its owning admission path.
+The test invokes the checked-term/family evaluator and never constructs an
+artifact-value graph.
 
 ## Test Procedure
 
@@ -76,7 +75,7 @@ of another package (TC-465, row 13). Run observation admission
 through the spine entry point and assert `invalid_model_binding` /
 `wrong-model-selection`, no `AdmittedObservations`, and no evaluator call.
 
-Exercise the four former `StaticAuthority` roles at their current owners:
+Exercise the four identity roles (document, model, profile and configuration) at their owners:
 (1) compile the source document through FR-036 and admit the model fixture
 `{"objects": ["Order", "Line"], "id": "orders-model"}` as the selected
 FR-056 `ModelSelection`, using its identity from the parsed package;

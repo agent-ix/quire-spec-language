@@ -1158,10 +1158,6 @@ fn syntax_and_legacy_file_fixtures_have_observed_original_refusals() {
     let second = "invariant Second on M::Node at current { false }";
     let mut fixtures: Vec<(String, Vec<u8>)> = vec![
         (
-            "composed-choreography.native".to_owned(),
-            include_bytes!("../fixtures/composed-choreography.native").to_vec(),
-        ),
-        (
             "parent.native".to_owned(),
             include_bytes!("../fixtures/parent.native").to_vec(),
         ),

@@ -8328,14 +8328,19 @@ impl CheckedGraph {
     /// state clause here instead of failing, and the caller reports it as it
     /// reports a primary refusal (a call whose dispatch family did not link,
     /// FR-302).
+    ///
+    /// An empty `refusals` leaves the graph as it is: this method can report
+    /// a refusal again, never clear one.
     #[must_use]
     pub fn with_unit_refusals(
         mut self,
         refusals: Vec<CheckRefusal>,
         region: Option<SourceRegion>,
     ) -> Self {
-        self.unit_refusals = refusals;
-        self.unit_refusal_region = region;
+        if !refusals.is_empty() {
+            self.unit_refusals = refusals;
+            self.unit_refusal_region = region;
+        }
         self
     }
 

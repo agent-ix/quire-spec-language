@@ -23,5 +23,5 @@ Verify FR-362-AC-3, FR-362-AC-5 and FR-362-AC-6 by absence, so that a second rou
 
 - Step 1 finds the one `spine::CheckedUnit` and none of the other symbols. It closes when the label-only types and the root-crate inventory `CheckedUnit` are gone.
 - Step 2 finds none of them.
-- Step 3 finds none of them and none of the paths. Steps 2 and 3 close when the composed lane is gone.
+- Step 3 finds none of them and none of the paths. The composed lane is deleted, so steps 2 and 3 pass.
 - Step 4 finds one source reference on the checked unit and no copied-reference comparison or mismatch result.

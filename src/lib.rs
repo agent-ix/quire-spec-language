@@ -10,9 +10,6 @@ pub mod complete;
 pub mod emit_checked_v2;
 pub mod formal_source;
 pub mod linking;
-pub mod located_json;
-pub mod model_source;
-pub mod native_model;
 pub mod number;
 mod parser;
 #[cfg(feature = "population-fixtures")]
@@ -27,10 +24,6 @@ pub mod syntax;
 #[cfg(test)]
 extern crate self as quire_spec_language;
 
-#[cfg(test)]
-#[path = "../tests/support/native_rule_model.rs"]
-pub mod native_rule_model_test_support;
-
-pub use linking::{link, link_native, LinkLimits, LinkedPackage};
-pub use parser::{parse, parse_native, parse_native_source, parse_source};
+pub use linking::{link, LinkLimits, LinkedPackage};
+pub use parser::{parse, parse_source};
 pub use syntax::{Limits, ParsedUnit};

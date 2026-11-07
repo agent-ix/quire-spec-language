@@ -114,17 +114,19 @@ content. Zero never disables a limit, and the next unaffordable step refuses
 before its work. No rational fast path bypasses source, locus, role, type-node,
 canonicalization or output-content checks.
 
+**QSL-499 disposition:** the native 0-draft carrier of the retired acceptance criteria below (`native_model`, `model_source`, `located_json`, `link_native` and the native `checking` pipeline) is deleted under ADR-011, ADR-033 and FR-499. Each retired criterion is retained as migration history and is not an active acceptance obligation; its behavior is owned by FR-056 and FR-154 (model intake over IR numeric declarations); IR constructors stay authoritative for rational declarations.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-041-AC-1 | **RETIRED in M-6d.** The historical `NativeModel::new`/`FORMAT` `/1` identity and the `/2` source-read/draft profile selection are no longer acceptance obligations of this feature. | Test |
-| FR-041-AC-2 | A rational scalar with identical IR numerator/denominator bounds at all scalar sites admits under `/2`; missing/duplicate/empty site mappings, kind mismatch or a change to any one site's minimum, maximum or denominator refuses without a model. | Test |
+| FR-041-AC-2 | **RETIRED in QSL-499; historical only.** A rational scalar with identical IR numerator/denominator bounds at all scalar sites admits under `/2`; missing/duplicate/empty site mappings, kind mismatch or a change to any one site's minimum, maximum or denominator refuses without a model. | Test |
 | FR-041-AC-3 | **RETIRED in M-6d.** The former closed rational JSON decoding boundary is not a separately maintained native acceptance obligation; IR constructors remain authoritative for rational declarations. | Test |
 | FR-041-AC-4 | **RETIRED in M-6d.** The former native source-derived rational value/site mapping is not a separately maintained acceptance obligation. | Test |
 | FR-041-AC-5 | Composed `bind_models` accepts actual admitted `/2` exports and refuses stale models, foreign ownership or wrong exports through its existing typed boundary. The historical `link_native` refusal clause is retired in M-6d. | Test |
-| FR-041-AC-6 | `/1` and `/2` over otherwise identical source/declarations/roles yield different profile-bearing native artifacts. Rational bounds, unit and source mutations alter the selected artifact; and set-like inventory reorderings remain deterministic. | Test |
-| FR-041-AC-7 | Controlled rational/wrapped inputs obey existing source-entry, role/site/node and artifact/canonicalization limits at zero, exact and one-step-insufficient capacities, and an input above a default is admitted once that limit is raised to fit it. Exhaustion yields typed resource incompleteness without partial model or historical fallback. | Test |
+| FR-041-AC-6 | **RETIRED in QSL-499; historical only.** `/1` and `/2` over otherwise identical source/declarations/roles yield different profile-bearing native artifacts. Rational bounds, unit and source mutations alter the selected artifact; and set-like inventory reorderings remain deterministic. | Test |
+| FR-041-AC-7 | **RETIRED in QSL-499; historical only.** Controlled rational/wrapped inputs obey existing source-entry, role/site/node and artifact/canonicalization limits at zero, exact and one-step-insufficient capacities, and an input above a default is admitted once that limit is raised to fit it. Exhaustion yields typed resource incompleteness without partial model or historical fallback. | Test |
 
 ## M-6d disposition
 
