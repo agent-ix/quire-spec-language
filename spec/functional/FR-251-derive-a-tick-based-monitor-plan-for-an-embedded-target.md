@@ -152,6 +152,10 @@ checked field type are carried unchanged. Contract IR joins the row to the
 admitted record node by that binding name, so a row that kept the base name
 is refused there.
 
+The plan root SHALL expose its plan, timing obligations and final emission
+through read-only accessors. A caller SHALL NOT replace any of those outputs
+while retaining a context that can admit authority for the original emission.
+
 The plan root SHALL retain the actual combined checked unit from which its
 final emission was written, including its exact source and checked time-source
 facts. Reads of that unit SHALL identify its keys as original checker keys,

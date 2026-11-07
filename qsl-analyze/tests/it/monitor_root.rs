@@ -78,11 +78,14 @@ pub(crate) fn read_back(bytes: &[u8], evidence: &CheckedPackageEvidence) -> Box<
 }
 
 fn admitted(root: &PlanRoot) -> Box<CheckedPackageV2> {
-    read_back(root.emission.package().bytes(), root.emission.evidence())
+    read_back(
+        root.emission().package().bytes(),
+        root.emission().evidence(),
+    )
 }
 
 fn json(root: &PlanRoot) -> serde_json::Value {
-    serde_json::from_slice(root.emission.package().bytes()).unwrap()
+    serde_json::from_slice(root.emission().package().bytes()).unwrap()
 }
 
 /// The first of each kind of the plan root's keys: the root and its four
@@ -129,7 +132,7 @@ fn the_authored_unit_is_taken_to_a_plan_root_the_strict_reader_admits() {
         .map(|buffer| buffer.capacity().to_owned())
         .collect();
     let expected: Vec<String> = root
-        .plan
+        .plan()
         .buffers()
         .iter()
         .map(|(_, capacity)| capacity.to_string())
@@ -195,10 +198,10 @@ fn the_returned_plan_is_the_one_the_root_carries() {
     let unit = authored(ROOT_SHAPES[0]);
     let root = root_of(&unit, "C", &target()).unwrap();
     let again = root_of(&unit, "C", &target()).unwrap();
-    assert_eq!(root.plan, again.plan);
-    assert_eq!(root.plan.id(), again.plan.id());
-    assert_eq!(root.plan.root_premises().counter, "counter");
-    assert_eq!(root.obligations.len(), 2);
+    assert_eq!(root.plan(), again.plan());
+    assert_eq!(root.plan().id(), again.plan().id());
+    assert_eq!(root.plan().root_premises().counter, "counter");
+    assert_eq!(root.obligations().len(), 2);
 }
 
 /// Emitting the same unit twice gives byte-identical packages, and the
@@ -210,8 +213,8 @@ fn emitting_twice_gives_identical_bytes_and_keys() {
     let first = root_of(&unit, "C", &target()).unwrap();
     let second = root_of(&unit, "C", &target()).unwrap();
     assert_eq!(
-        first.emission.package().bytes(),
-        second.emission.package().bytes()
+        first.emission().package().bytes(),
+        second.emission().package().bytes()
     );
     assert_eq!(keys(&admitted(&first)), keys(&admitted(&second)));
 }
@@ -491,24 +494,24 @@ fn the_root_key_covers_the_bodies_of_called_helpers() {
     let atom = root_of(&helper_unit(2, 2), "C", &target()).expect("atom helper body");
     let guard = root_of(&helper_unit(1, 3), "C", &target()).expect("guard helper body");
     assert_eq!(
-        one.plan.id(),
-        again.plan.id(),
+        one.plan().id(),
+        again.plan().id(),
         "an equal helper body gives an equal PlanId"
     );
     for (what, other) in [("atom", &atom), ("guard", &guard)] {
         assert_eq!(
-            other.plan.program().atoms(),
-            one.plan.program().atoms(),
+            other.plan().program().atoms(),
+            one.plan().program().atoms(),
             "the {what} case keeps every atom body"
         );
         assert_eq!(
-            other.plan.program().guard(),
-            one.plan.program().guard(),
+            other.plan().program().guard(),
+            one.plan().program().guard(),
             "the {what} case keeps the guard body"
         );
         assert_ne!(
-            other.plan.id(),
-            one.plan.id(),
+            other.plan().id(),
+            one.plan().id(),
             "a swapped {what} helper body changes the PlanId"
         );
     }
@@ -610,7 +613,7 @@ fn the_root_key_covers_the_bodies_of_called_helpers() {
 fn the_plan_root_retains_the_acquisitions_witness_rows() {
     let unit = authored(ROOT_SHAPES[0]);
     let root = root_of(&unit, "C", &target()).expect("the plan root");
-    let emission = &root.emission;
+    let emission = root.emission();
 
     let domain = Domain::config_version();
     let packages =
@@ -689,7 +692,7 @@ fn the_plan_root_retains_the_acquisitions_witness_rows() {
 }
 
 fn ir_source_record_rows(root: &PlanRoot) -> Vec<quire_contract_model::SelectedSourceRecordRow> {
-    root.emission
+    root.emission()
         .selected_source_record_rows()
         .iter()
         .map(|row| quire_contract_model::SelectedSourceRecordRow {
@@ -730,7 +733,7 @@ fn retained_source_record_rows_name_the_final_bindings_and_the_ir_join_accepts_t
     let package = admitted(&root);
     let rows = ir_source_record_rows(&root);
     let handoff = root
-        .emission
+        .emission()
         .identity_rows(&package, &mut native_budget)
         .expect("the final emission retains required handoff facts");
     let bytes = handoff
@@ -834,10 +837,10 @@ fn the_subject_occurrence_selects_the_emitted_clause_claim_after_the_writer_reke
     let mut selected = Vec::new();
     for clause in ["C", "D"] {
         let root = root_of(&unit, clause, &target()).expect(clause);
-        let subject = root.plan.subject();
+        let subject = root.plan().subject();
         let ordinal = subject.occurrence().origin().ordinal();
         let declaration = root
-            .emission
+            .emission()
             .temporal_binding_rows()
             .declaration(subject.clause_node(), ordinal)
             .expect("the subject selects an emitted declaration")
@@ -854,7 +857,7 @@ fn the_subject_occurrence_selects_the_emitted_clause_claim_after_the_writer_reke
         assert_eq!(row.name.as_ref(), subject.clause_name());
         assert_eq!(row.name.as_ref(), clause);
         assert!(
-            root.emission
+            root.emission()
                 .temporal_binding_rows()
                 .declaration(subject.clause_node(), ordinal + 1)
                 .is_none(),
@@ -885,7 +888,7 @@ fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them(
     let unit = unit_source(ROOT_SHAPES[0], extra, true, "on origin");
     let root = root_of(&unit, "C", &target()).expect("the plan root");
     let package = admitted(&root);
-    let rows = root.emission.selected_source_tuple_rows().to_vec();
+    let rows = root.emission().selected_source_tuple_rows().to_vec();
     let declared = |name: &str| {
         rows.iter()
             .any(|row| row.qualified_declaration.last().map(AsRef::as_ref) == Some(name))
@@ -901,7 +904,7 @@ fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them(
         assert_eq!(projected.source_tuple_view(), Some(row));
     }
     // The enum and collection rows follow the same rekey.
-    let enum_rows = root.emission.selected_source_enum_rows();
+    let enum_rows = root.emission().selected_source_enum_rows();
     let color = enum_rows
         .iter()
         .find(|row| {
@@ -927,7 +930,7 @@ fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them(
         &quire_exact::ValueType::Enum(color.declaration.shape.clone())
     );
     let collection = root
-        .emission
+        .emission()
         .selected_source_collection_rows()
         .iter()
         .find(|row| row.element_node == color.declaration.structural_node)
@@ -992,7 +995,7 @@ fn the_actual_combined_checked_unit_retains_its_source_and_time_facts() {
         .iter()
         .find(|node| node.clause().name() == "C")
         .expect("the retained selected clause");
-    assert_eq!(&clause.identity(), root.plan.subject().clause_node());
+    assert_eq!(&clause.identity(), root.plan().subject().clause_node());
     assert_eq!(graph.time_sources().len(), 1);
     let source = &graph.time_sources()[0];
     assert_eq!(source.model, "M");
@@ -1014,11 +1017,11 @@ fn the_actual_combined_checked_unit_retains_its_source_and_time_facts() {
         .any(|node| node.key == source.unit_node));
     let package = admitted(&root);
     let declaration = root
-        .emission
+        .emission()
         .temporal_binding_rows()
         .declaration(
-            root.plan.subject().clause_node(),
-            root.plan.subject().occurrence().origin().ordinal(),
+            root.plan().subject().clause_node(),
+            root.plan().subject().occurrence().origin().ordinal(),
         )
         .expect("the final clause selection");
     assert_eq!(
@@ -1128,23 +1131,4 @@ fn model_step_order_retains_digital_operation_and_period_and_distinguishes_sourc
             );
         }
     }
-}
-
-#[trace("TC-1081", "FR-251-AC-46")]
-#[test]
-fn a_foreign_plan_cannot_select_order_from_the_retained_checked_owner() {
-    use qsl_analyze::monitor_root::ModelStepOrderRefusalCode;
-    let mut root = root_of(&authored(ROOT_SHAPES[0]), "C", &target()).unwrap();
-    let foreign = root_of(
-        &authored("eventually[0 ms, 3 ms] holds(c.versionNumber = 3)"),
-        "C",
-        &target(),
-    )
-    .unwrap();
-    root.plan = foreign.plan;
-    let error = root
-        .model_step_order(quire_canonical::Limits::new(1 << 20))
-        .unwrap_err();
-    assert_eq!(error.code, ModelStepOrderRefusalCode::MissingClause);
-    assert!(error.encoding.is_none());
 }

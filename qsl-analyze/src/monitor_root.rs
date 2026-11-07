@@ -67,16 +67,31 @@ pub struct PlanRootRequest<'a> {
 #[derive(Debug)]
 pub struct PlanRoot {
     /// The derived plan.
-    pub plan: TimedMonitorPlan,
+    plan: TimedMonitorPlan,
     /// The FR-252 timing obligations of the plan.
-    pub obligations: [TimingObligation; 2],
+    obligations: [TimingObligation; 2],
     /// The checked-package v2 bytes holding the one `temporal`/
     /// `monitor_plan` node and the four declaration-less entry functions.
-    pub emission: Emission,
+    emission: Emission,
     checked_unit: CheckedUnit,
 }
 
 impl PlanRoot {
+    /// The immutable plan derived beside this root's emission.
+    pub fn plan(&self) -> &TimedMonitorPlan {
+        &self.plan
+    }
+
+    /// The timing obligations derived with this root's plan.
+    pub fn obligations(&self) -> &[TimingObligation; 2] {
+        &self.obligations
+    }
+
+    /// The original final emission, including its retained witness rows.
+    pub fn emission(&self) -> &Emission {
+        &self.emission
+    }
+
     /// The original checked unit, including generated entries, from which
     /// this root's final emission was written. This retains checked source
     /// facts; it does not admit event order or observation progress.

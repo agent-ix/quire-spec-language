@@ -62,8 +62,8 @@ fn selected_clause(root: &PlanRoot) -> Option<&TemporalClauseNode> {
         .temporal_clauses()
         .iter()
         .find(|node| {
-            node.identity() == *root.plan.subject().clause_node()
-                && node.claim() == root.plan.subject().occurrence().origin()
+            node.identity() == *root.plan().subject().clause_node()
+                && node.claim() == root.plan().subject().occurrence().origin()
         })
 }
 
