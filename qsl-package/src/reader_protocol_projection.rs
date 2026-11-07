@@ -48,12 +48,12 @@ pub struct ReaderProtocolProjection {
 }
 
 impl ReaderProtocolProjection {
-    /// Admission against the bare world's closed declarations uses the same
-    /// nested-type membership check as the source environment.
+    /// Resolve runtime representations against the closed declarations. A
+    /// native-authenticated reference needs no object population environment.
     pub(crate) fn has_unrepresented_types(&self, types: &TypeEnvironment) -> bool {
         self.nodes
             .iter()
-            .any(|node| types.check_type(&node.value_type).is_err())
+            .any(|node| types.runtime_type(&node.value_type).is_none())
     }
 
     /// Index of the selected root node.
@@ -2838,6 +2838,43 @@ mod order_tests {
 
     fn key(name: &str) -> NodeKey {
         NodeKey::new("pkg", vec![PathSegment::Text(name.to_owned())], 0).expect("a key")
+    }
+
+    /// Representation admission preserves opaque references and still checks
+    /// every later nested composite in the same projected arena.
+    #[trace("TC-1333", "FR-533-AC-20")]
+    #[test]
+    fn a_reference_does_not_mask_an_unrepresented_composite_in_the_same_projection() {
+        let types = TypeEnvironment::new(Vec::new(), Vec::new()).expect("an empty closed world");
+        let reference = ValueType::Reference(quire_exact::EffectiveId::new(
+            None,
+            quire_exact::OriginalDeclarationKey::new("model", "Node"),
+        ));
+        let nested = |value_type| {
+            ValueType::option(ValueType::map(quire_exact::MapType::new(value_type, None)))
+        };
+        let mut projection = ReaderProtocolProjection {
+            nodes: vec![ReaderProjectedNode::leaf(
+                NodeKind::Local(0),
+                nested(reference),
+            )],
+            functions: Vec::new(),
+            root: 0,
+            frame_slots: 2,
+            locals: BTreeMap::new(),
+        };
+        assert!(
+            !projection.has_unrepresented_types(&types),
+            "a reference's native identity does not require an object declaration in the bare value environment"
+        );
+        projection.nodes.push(ReaderProjectedNode::leaf(
+            NodeKind::Local(1),
+            nested(ValueType::Composite(key("missing"))),
+        ));
+        assert!(
+            projection.has_unrepresented_types(&types),
+            "accepting the earlier reference must not hide a later unrepresented composite under wrappers"
+        );
     }
 
     fn node(package: &str, node: &str, reason: UnsupportedReason) -> UnsupportedView {
