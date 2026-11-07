@@ -16,7 +16,7 @@ Frozen head: 1efa1e56c582cf137d456e8669c750d46aea43e5. Ticket: IR-1389.
 
 ## Verdict
 
-**FAIL** — All findings require disposition in the same PR before merge.
+**FAIL — FND-002 is fixed by independent source inspection; FND-001 remains open pending the actual owner row-locus API.**
 
 ## Findings
 
@@ -80,3 +80,14 @@ scope:
 
     budget''s cumulative consumption.'
 ```
+
+## Dispositions
+
+Round 1, frozen head 6df9d8b9592adeb798cb85e1d6afb432c3426400.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | still-open | Current owner API still lacks AdapterRow(i); production field/record/union/member charges retain Package plus static form, so the original external row index is absent. No completion or mergeability claim. |
+| FND-002 | fixed | The semantics-owned shared predicates are used by both the cached selection and original live helper; the duplicate local classification was removed. |
+
+Source inspection only. Focused runtime remains queued in `/tmp/ir1389-fix1-focused.log`; no reviewer Cargo or aggregate gate was run and no runtime pass is claimed. New helper extraction keeps the actual production copy paths under observation; it does not invent authoritative rows.

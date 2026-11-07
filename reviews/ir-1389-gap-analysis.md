@@ -16,7 +16,7 @@ Frozen head: 1efa1e56c582cf137d456e8669c750d46aea43e5. Ticket: IR-1389.
 
 ## Verdict
 
-**CONDITIONAL** — All findings require disposition in the same PR before merge.
+**CONDITIONAL — later authentic record/member and union allocation-prefix controls are now present, but the independently expected real row-index assertion remains impossible until the actual owner AdapterRow(i) seam is consumed.**
 
 ## Findings
 
@@ -79,3 +79,13 @@ scope:
 
     budget''s cumulative consumption.'
 ```
+
+## Dispositions
+
+Round 1, frozen head 6df9d8b9592adeb798cb85e1d6afb432c3426400.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | still-open | New production copy_source_record/copy_source_union controls observe the paid Point prefix separately and demand zero allocations for denied Tagged member and Shape payload copies with value/resource/phase assertions. They still pass Package loci and do not assert an independently expected original row index; runtime is queued, so the complete finding is not fixed. |
+
+Source inspection only. Focused runtime remains queued in `/tmp/ir1389-fix1-focused.log`; no reviewer Cargo or aggregate gate was run and no runtime pass is claimed. New helper extraction keeps the actual production copy paths under observation; it does not invent authoritative rows.
