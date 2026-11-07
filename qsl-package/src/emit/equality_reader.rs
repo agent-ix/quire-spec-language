@@ -4,7 +4,8 @@
 use crate::native_row as charge;
 use crate::NativeRowError;
 use quire_contract_model::{
-    CheckedPackageV2, SelectedEqualityApplicationRow, SelectedEqualityFactRow,
+    CheckedPackageV2, NativeJoinLocus, NativeJoinLocusSource, SelectedEqualityApplicationRow,
+    SelectedEqualityFactRow,
 };
 use quire_semantic_value::declaration::AdmittedEqualityDecision;
 
@@ -69,7 +70,11 @@ impl Emission {
         let locus = charge::start(budget, "equality_witness")?;
         charge::text(budget, locus, package.name())?;
         charge::items(budget, locus, self.selected_source_unit_rows().len())?;
-        for unit in self.selected_source_unit_rows() {
+        for (index, unit) in self.selected_source_unit_rows().iter().enumerate() {
+            let locus = NativeJoinLocus {
+                source: NativeJoinLocusSource::SourceUnitRow(index),
+                form: "equality_source_unit_row",
+            };
             charge::source_unit(budget, locus, unit)?;
         }
         let rows = self.equality_rows(budget)?;
@@ -88,8 +93,16 @@ impl Emission {
     ) -> Result<EqualityRows, NativeRowError> {
         let locus = charge::start(budget, "equality_rows")?;
         charge::items(budget, locus, self.equality_producer_identity_rows().len())?;
-        charge::work(budget, locus, (self.equality_producer_identity_rows().len() as u128).saturating_mul(2))?;
-        for row in self.equality_producer_identity_rows() {
+        charge::work(
+            budget,
+            locus,
+            (self.equality_producer_identity_rows().len() as u128).saturating_mul(2),
+        )?;
+        for (index, row) in self.equality_producer_identity_rows().iter().enumerate() {
+            let locus = NativeJoinLocus {
+                source: NativeJoinLocusSource::ReachedRow(index),
+                form: "equality_application_row",
+            };
             charge::node(budget, locus, row.checked_node())?;
             charge::source_map(budget, locus, row.source_map_entry())?;
             charge::text(budget, locus, row.location().occurrence().role().as_str())?;
@@ -108,8 +121,14 @@ impl Emission {
         for row in self
             .equality_fact_witness_rows()
             .iter()
-            .filter(|row| row.selected_for_emission)
+            .enumerate()
+            .filter(|(_, row)| row.selected_for_emission)
         {
+            let (index, row) = row;
+            let locus = NativeJoinLocus {
+                source: NativeJoinLocusSource::ReachedRow(index),
+                form: "equality_fact_row",
+            };
             charge::node(budget, locus, row.checked_application())?;
             charge::node(budget, locus, row.structural_node())?;
             charge::source_map(budget, locus, row.source_map_entry())?;

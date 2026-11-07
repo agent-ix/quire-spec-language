@@ -78,10 +78,7 @@ fn boundaries<T: std::fmt::Debug + PartialEq>(
                 NativeJoinChargeKind::Storage => storage,
             })
         );
-        assert_eq!(
-            error.locus().expect("first caller locus").source,
-            NativeJoinLocusSource::Package
-        );
+        assert!(error.locus().is_some());
         assert_eq!(limited.work_limit(), work);
         assert_eq!(limited.storage_limit(), storage);
         assert_eq!(limited.last_success_delta(), None);
@@ -179,15 +176,16 @@ fn enum_and_collection_conversions_preserve_owner_values_and_one_shared_allowanc
     let emission = mixed_emission();
     let source_need = boundaries(|budget| emission.selected_source_enum_rows(budget));
     let model_need = boundaries(|budget| emission.selected_ir_model_enum_shape_rows(budget));
-    let collection_need = emission.selected_source_collection_rows().iter().fold(
-        NativeJoinCharge::default(),
-        |mut total, row| {
-            let need = boundaries(|budget| row.to_ir(budget));
+    let collection_need = emission
+        .selected_source_collection_rows()
+        .iter()
+        .enumerate()
+        .fold(NativeJoinCharge::default(), |mut total, (index, row)| {
+            let need = boundaries(|budget| row.to_ir(budget, collection_locus(index)));
             total.work += need.work;
             total.storage += need.storage;
             total
-        },
-    );
+        });
     let mut shared = NativeJoinBudget::new(
         source_need.work + model_need.work + collection_need.work,
         source_need.storage + model_need.storage + collection_need.storage,
@@ -201,7 +199,11 @@ fn enum_and_collection_conversions_preserve_owner_values_and_one_shared_allowanc
     let collections: Vec<_> = emission
         .selected_source_collection_rows()
         .iter()
-        .map(|row| row.to_ir(&mut shared).expect("selected collection row"))
+        .enumerate()
+        .map(|(index, row)| {
+            row.to_ir(&mut shared, collection_locus(index))
+                .expect("selected collection row")
+        })
         .collect();
     assert_eq!(shared.consumed().work, shared.work_limit());
     assert_eq!(shared.consumed().storage, shared.storage_limit());
@@ -275,7 +277,7 @@ fn enum_and_collection_conversions_preserve_owner_values_and_one_shared_allowanc
 fn adapters_preserve_an_earlier_owner_denial_and_maps_never_lose_their_keys() {
     let emission = emission();
     let original = NativeJoinLocus {
-        source: NativeJoinLocusSource::GraphNode(7),
+        source: NativeJoinLocusSource::ReachedRow(0),
         form: "earlier_selection",
     };
     let mut budget = NativeJoinBudget::new(0, 0);
@@ -298,22 +300,33 @@ fn adapters_preserve_an_earlier_owner_denial_and_maps_never_lose_their_keys() {
     assert_eq!(budget.first_unpaid_locus(), Some(original));
     assert_eq!(budget.consumed(), NativeJoinCharge::default());
 
-    let map_package = super::source_tuple_rows::map_record_package();
+    let map_package = mixed_collection_package();
     let maps = emit_checked(&map_package).expect("real source map emission");
     assert!(maps
         .selected_source_collection_rows()
         .iter()
         .any(|row| row.key_node.is_some()));
+    let (supported_index, supported) = maps
+        .selected_source_collection_rows()
+        .iter()
+        .enumerate()
+        .find(|(_, row)| row.key_node.is_none())
+        .expect("same emission retains a representable collection");
+    let converted = supported
+        .to_ir(&mut ample(), collection_locus(supported_index))
+        .expect("unrelated map must not poison selected collection conversion");
+    assert_eq!(converted.value_type, supported.value_type);
+    assert_eq!(converted.element_node, supported.element_node);
+    let (map_index, map_row) = maps
+        .selected_source_collection_rows()
+        .iter()
+        .enumerate()
+        .find(|(_, row)| row.key_node.is_some())
+        .expect("same emission retains map");
     let mut budget = ample();
     let mut result = None;
     let allocations = allocation_counter::measure(|| {
-        result = Some(
-            maps.selected_source_collection_rows()
-                .iter()
-                .find(|row| row.key_node.is_some())
-                .expect("selected map")
-                .to_ir(&mut budget),
-        );
+        result = Some(map_row.to_ir(&mut budget, collection_locus(map_index)));
     });
     assert_eq!(allocations.count_total, 0);
     let error = result
@@ -391,4 +404,100 @@ fn final_row_membership_matches_the_original_filter_after_carry_and_rekey() {
         carried.equality_fact_witness_rows[0].selected_for_emission,
         "final emitted rekey refreshes a stale omission hint"
     );
+}
+
+fn collection_locus(index: usize) -> NativeJoinLocus {
+    NativeJoinLocus {
+        source: NativeJoinLocusSource::ReachedRow(index),
+        form: "selected_source_collection_row",
+    }
+}
+
+#[trace("TC-1331", "FR-531-AC-29")]
+#[test]
+fn second_retained_enum_row_keeps_its_first_unpaid_locus() {
+    let emission = emission();
+    let mut complete = ample();
+    emission
+        .selected_source_enum_rows(&mut complete)
+        .expect("complete real population");
+    let second = NativeJoinLocus {
+        source: NativeJoinLocusSource::ReachedRow(1),
+        form: "source_enum_declaration_row",
+    };
+    let (mut budget, error) = (0..complete.consumed().work)
+        .find_map(|limit| {
+            let mut budget = NativeJoinBudget::new(limit, complete.consumed().storage);
+            let error = emission
+                .selected_source_enum_rows(&mut budget)
+                .expect_err("short work allowance");
+            (error.locus() == Some(second)).then_some((budget, error))
+        })
+        .expect("a real charge in the second retained declaration exhausts");
+    let consumed = budget.consumed();
+    let denied = error.denied().expect("owner denial");
+    assert_eq!(denied.kind, NativeJoinChargeKind::Work);
+    assert_eq!(
+        budget.accounted_charge(NativeJoinChargeKind::Storage, 1, collection_locus(9)),
+        Err(denied)
+    );
+    assert_eq!(budget.first_unpaid_locus(), Some(second));
+    assert_eq!(budget.consumed(), consumed);
+    assert_eq!(emission.selected_source_enum_rows(&mut budget), Err(error));
+    assert_eq!(budget.first_unpaid_locus(), Some(second));
+    assert_eq!(budget.consumed(), consumed);
+}
+
+fn mixed_collection_package() -> CheckedPackage {
+    use qsl_forms::TypeForm;
+    use quire_exact::{CardinalityBound, MapType, Presence};
+    use quire_semantic_value::declaration::{
+        CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
+    };
+
+    let handle = NodeKey::new("pkg", vec![quire_exact::PathSegment::Text("R".into())], 0)
+        .expect("a well formed key");
+    let map = |values, bound: Option<(u64, u64)>| {
+        ValueType::map(MapType::new(
+            values,
+            bound.map(|(lower, upper)| CardinalityBound::new(lower, upper).expect("a bound")),
+        ))
+    };
+    let collection = emission()
+        .selected_source_collection_rows()
+        .iter()
+        .find(|row| matches!(&row.value_type, ValueType::Collection(value) if value.element() == &ValueType::Boolean))
+        .expect("real sequence row")
+        .value_type
+        .clone();
+    let record = CompositeDeclaration::new(
+        handle,
+        "R",
+        CompositeShape::Record(vec![
+            FieldDeclaration::new(
+                "m",
+                map(ValueType::Boolean, Some((1, 4))),
+                Presence::Required,
+            ),
+            FieldDeclaration::new("n", collection, Presence::Required),
+        ]),
+    );
+    let span = qsl_foundation::Span { start: 0, end: 0 };
+    let mut declarations = qsl_semantics::check::depth_forms::declarations(
+        qsl_semantics::check::depth_forms::Form::And,
+        1,
+    );
+    declarations.functions = vec![qsl_semantics::check::depth_forms::function(
+        "f",
+        &[("r", TypeForm::name("R", span))],
+        qsl_semantics::check::depth_forms::boolean(),
+        None,
+        qsl_forms::Expression::boolean(true),
+    )];
+    declarations.package_name = "pkg".to_owned();
+    declarations.types = TypeEnvironment::new([record], []).expect("R is admitted");
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
+    CheckedPackage::link(graph)
 }

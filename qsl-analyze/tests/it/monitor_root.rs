@@ -901,7 +901,10 @@ fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them(
         assert_eq!(projected.source_tuple_view(), Some(row));
     }
     // The enum and collection rows follow the same rekey.
-    let enum_rows = root.emission.selected_source_enum_rows();
+    let enum_rows = root
+        .emission
+        .selected_source_enum_rows(&mut native_budget)
+        .expect("budgeted enum rows");
     let color = enum_rows
         .iter()
         .find(|row| {

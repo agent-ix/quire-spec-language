@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-531: accounted selected-monitor row materialization from one emission.
 
-use quire_contract_model::{NativeJoinBudget, SelectedSourceEnumRow};
+use quire_contract_model::{
+    NativeJoinBudget, NativeJoinLocus, NativeJoinLocusSource, SelectedSourceEnumRow,
+};
 
 use crate::native_row as charge;
 use crate::NativeRowError;
@@ -26,7 +28,11 @@ impl Emission {
         let locus = charge::start(budget, "selected_source_enum_rows")?;
         charge::items(budget, locus, self.selected_enum_declaration_rows.len())?;
         let mut expected_members = 0_u128;
-        for declaration in &self.selected_enum_declaration_rows {
+        for (index, declaration) in self.selected_enum_declaration_rows.iter().enumerate() {
+            let locus = NativeJoinLocus {
+                source: NativeJoinLocusSource::ReachedRow(index),
+                form: "source_enum_declaration_row",
+            };
             charge::work(budget, locus, 1)?;
             expected_members =
                 expected_members.saturating_add(declaration.shape.variants().count() as u128);
@@ -34,7 +40,11 @@ impl Emission {
         if expected_members != self.selected_enum_member_rows.len() as u128 {
             return Err(NativeRowError::incomplete_enum(locus));
         }
-        for declaration in &self.selected_enum_declaration_rows {
+        for (index, declaration) in self.selected_enum_declaration_rows.iter().enumerate() {
+            let locus = NativeJoinLocus {
+                source: NativeJoinLocusSource::ReachedRow(index),
+                form: "source_enum_declaration_row",
+            };
             charge::enum_declaration(budget, locus, declaration)?;
             let variants = declaration.shape.variants().count();
             charge::items(budget, locus, variants)?;
@@ -60,14 +70,22 @@ impl Emission {
                 let mut matching = self
                     .selected_enum_member_rows
                     .iter()
-                    .filter(|member| &member.variant == variant);
-                let Some(member) = matching.next() else {
+                    .enumerate()
+                    .filter(|(_, member)| &member.variant == variant);
+                let Some((member_index, member)) = matching.next() else {
                     return Err(NativeRowError::incomplete_enum(locus));
                 };
                 if matching.next().is_some() {
                     return Err(NativeRowError::incomplete_enum(locus));
                 }
-                charge::enum_member(budget, locus, member)?;
+                charge::enum_member(
+                    budget,
+                    NativeJoinLocus {
+                        source: NativeJoinLocusSource::ReachedRow(member_index),
+                        form: "source_enum_member_row",
+                    },
+                    member,
+                )?;
             }
         }
 
@@ -103,7 +121,11 @@ impl Emission {
     ) -> Result<Vec<quire_contract_model::SelectedModelEnumShapeRow>, NativeRowError> {
         let locus = charge::start(budget, "selected_model_enum_shape_rows")?;
         charge::items(budget, locus, self.selected_model_enum_shape_rows.len())?;
-        for row in &self.selected_model_enum_shape_rows {
+        for (index, row) in self.selected_model_enum_shape_rows.iter().enumerate() {
+            let locus = NativeJoinLocus {
+                source: NativeJoinLocusSource::ReachedRow(index),
+                form: "model_enum_shape_row",
+            };
             charge::node(budget, locus, &row.structural_node)?;
             charge::text(budget, locus, &row.selected_document)?;
             charge::text(budget, locus, &row.original_identity)?;
@@ -145,6 +167,7 @@ impl super::SelectedSourceCollectionRow {
     /// Convert this already-selected collection row to IR's native row type.
     /// Other retained collections in the emission are neither inspected nor
     /// materialized, so an unrelated unsupported map cannot poison this read.
+    /// `locus` identifies this row in the caller's retained selection.
     ///
     /// # Errors
     ///
@@ -153,8 +176,9 @@ impl super::SelectedSourceCollectionRow {
     pub fn to_ir(
         &self,
         budget: &mut NativeJoinBudget,
+        locus: NativeJoinLocus,
     ) -> Result<quire_contract_model::SelectedSourceCollectionRow, NativeRowError> {
-        let locus = charge::start(budget, "selected_source_collection_row")?;
+        charge::start(budget, locus.form)?;
         charge::work(budget, locus, 1)?;
         if self.key_node.is_some() || matches!(self.value_type, quire_exact::ValueType::Map(_)) {
             return Err(NativeRowError::unsupported_map(locus));
