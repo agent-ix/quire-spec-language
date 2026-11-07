@@ -8058,7 +8058,7 @@ mod tests {
     /// is refused where used. Read below the semantic-IR validator, whose
     /// pinned native set names no `Rational`, so this is the Rational case's
     /// only intake-level assertion until the validator carries it.
-    #[trace("FR-056-AC-43", "TC-897")]
+    #[trace("TC-897")]
     #[test]
     fn admits_a_bare_native_text_rational_or_decimal_with_no_checked_type() {
         let node = serde_json::json!({"identity": "ix://acme/orders/Widget/amount"});

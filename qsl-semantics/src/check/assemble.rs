@@ -1405,8 +1405,7 @@ fn model_object_types(
     }
     let mut fields: BTreeMap<&DeclarationKey, Vec<FieldDeclaration>> = BTreeMap::new();
     let mut operations: BTreeMap<&DeclarationKey, Vec<OperationDeclaration>> = BTreeMap::new();
-    let mut untyped: BTreeMap<&DeclarationKey, Vec<(String, UntypedKind, String)>> =
-        BTreeMap::new();
+    let mut untyped: BTreeMap<&DeclarationKey, Vec<UntypedEntry>> = BTreeMap::new();
     let mut untyped_members = Vec::new();
     let mut meaning_handles = BTreeMap::<DeclarationKey, NodeKey>::new();
     for record in &package.records {
@@ -1483,6 +1482,7 @@ fn model_object_types(
                                 name.to_owned(),
                                 UntypedKind::Field,
                                 locus,
+                                Vec::new(),
                             ));
                         }
                     }
@@ -1523,15 +1523,16 @@ fn model_object_types(
                     &variant_shapes,
                     units,
                 ) {
-                    Ok((declaration, locus)) => {
-                        if let (Some(locus), Some(name)) = (
-                            locus,
+                    Ok((declaration, untyped_at)) => {
+                        if let (Some((locus, parameters)), Some(name)) = (
+                            untyped_at,
                             member_identity_name(&operation.owner.node, &operation.key.node),
                         ) {
                             untyped.entry(&operation.owner).or_default().push((
                                 name.to_owned(),
                                 UntypedKind::Operation,
                                 locus,
+                                parameters,
                             ));
                         }
                         operations
@@ -1665,13 +1666,14 @@ fn model_object_types(
         if let Some(declared) = operations.remove(key) {
             table.declare(identity.clone(), declared);
         }
-        for (name, kind, locus) in untyped.remove(key).unwrap_or_default() {
+        for (name, kind, locus, parameters) in untyped.remove(key).unwrap_or_default() {
             untyped_members.push(UntypedMember {
                 owner: identity.clone(),
                 owner_name: artifact.to_owned(),
                 name,
                 kind,
                 locus,
+                parameters,
             });
         }
         declarations.push(
@@ -2473,6 +2475,13 @@ fn model_field(
 /// field rule), and its effect frame carried unchanged -- I1 already
 /// resolved every key it names against the whole domain package
 /// (`resolve_effect`), so the assembler does no further resolution over it.
+/// One member of no checked type: its name, kind, the locus of its type
+/// reference and, for an operation, each untyped parameter with its locus.
+type UntypedEntry = (String, UntypedKind, String, Vec<(String, String)>);
+
+/// An operation's first untyped locus and its untyped parameters.
+type UntypedOperation = (String, Vec<(String, String)>);
+
 fn model_operation(
     operation: &OperationMemberRecord,
     records: &BTreeMap<&DeclarationKey, &DomainPackageRecord>,
@@ -2480,12 +2489,13 @@ fn model_operation(
     meaning_handles: &BTreeMap<DeclarationKey, NodeKey>,
     variant_shapes: &BTreeMap<&DeclarationKey, EnumShape>,
     units: &BTreeMap<String, quire_exact::UnitId>,
-) -> Result<(OperationDeclaration, Option<String>), Unmapped> {
+) -> Result<(OperationDeclaration, Option<UntypedOperation>), Unmapped> {
     let name =
         member_identity_name(&operation.owner.node, &operation.key.node).ok_or(Unmapped::Broken)?;
     // The first parameter or result of no checked type (FR-056-AC-43): the
     // operation is declared without it and refused where it is used.
     let mut untyped_locus: Option<String> = None;
+    let mut untyped_parameters: Vec<(String, String)> = Vec::new();
     // A single `Clock`, directly or through aliases, is a place.
     let clock = |value_type: &ValueTypeRef, multiplicity: Multiplicity| {
         multiplicity.upper == Some(1)
@@ -2532,6 +2542,7 @@ fn model_operation(
         let value_type = match value_type {
             Ok(value_type) => value_type,
             Err(Unmapped::Untyped(locus)) => {
+                untyped_parameters.push((parameter_name.to_owned(), locus.clone()));
                 untyped_locus.get_or_insert(locus);
                 continue;
             }
@@ -2584,7 +2595,7 @@ fn model_operation(
     Ok((
         OperationDeclaration::new(name, parameters, result, operation.effect.clone())
             .with_clocks(clock_parameters, clock_result),
-        untyped_locus,
+        untyped_locus.map(|locus| (locus, untyped_parameters)),
     ))
 }
 

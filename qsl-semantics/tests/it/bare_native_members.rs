@@ -98,7 +98,13 @@ fn note_document_with(rational: bool, types: Vec<Value>, fields: &[(&str, &str)]
         json!({"modifies": [identity("ConfigVersion/memo")], "creates": [], "deletes": []}),
     );
     let operations = owner["operations"].as_array_mut().expect("operations");
-    operations.extend([scale, peek, touch]);
+    // `adjust(qty)`: a clause can name `qty`, which `by` (a keyword) cannot.
+    let mut qty = operation_parameter("adjust", "qty", &format!("ix://quire/native/{ratio}"));
+    if !rational {
+        qty["decimal"] = json!({"precision": 5, "scale": 2});
+    }
+    let adjust = operation("adjust", json!([qty]), None, empty_frame());
+    operations.extend([scale, peek, touch, adjust]);
     serde_json::to_vec(&value).expect("fixture encoding")
 }
 
@@ -253,12 +259,14 @@ fn an_unconstrained_rational_value_type_field_admits_and_refuses_where_used() {
     );
 }
 
-/// FR-505-AC-6 (TC-1300): adding a bounded `Ratio` to the package leaves
-/// every other declaration's node identity unchanged.
+/// FR-505-AC-6 (TC-1300): adding a bounded `Ratio` to the package, typing a
+/// field by it, leaves every other declaration's node identity unchanged:
+/// the object types' keys and every other scalar's resolved type.
 #[trace("TC-1300")]
 #[test]
 fn adding_a_ratio_leaves_every_other_declaration_identity_unchanged() {
     let raw = identity("Raw");
+    let ratio = identity("Ratio");
     let keys = |document: &[u8]| {
         let declarations = crate::model_operations::admit_and_assemble_with_profiles(
             document,
@@ -266,18 +274,28 @@ fn adding_a_ratio_leaves_every_other_declaration_identity_unchanged() {
             "function keep using v(): Boolean pure { true }",
         )
         .unwrap_or_else(|refusal| panic!("assembly admits: {refusal:?}"));
-        declarations
+        let objects = declarations
             .types
             .object_types()
             .map(|declaration| (declaration.name().to_owned(), declaration.key()))
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        let scalars = declarations
+            .aliases
+            .iter()
+            .filter(|(name, _)| !name.ends_with("::Ratio"))
+            .cloned()
+            .collect::<Vec<_>>();
+        let has_ratio = declarations
+            .aliases
+            .iter()
+            .any(|(name, _)| name.ends_with("::Ratio"));
+        (objects, scalars, has_ratio)
     };
     let without = note_document_with(
         false,
         vec![rational_value_type("Raw", Vec::new())],
         &[("raw", &raw)],
     );
-    let ratio = identity("Ratio");
     let bounded = |keyword: &str, value: i64| {
         json!({
             "identity": identity(&format!("Ratio/{keyword}")), "keyword": keyword,
@@ -302,8 +320,35 @@ fn adding_a_ratio_leaves_every_other_declaration_identity_unchanged() {
                 ],
             ),
         ],
-        &[("raw", &raw)],
+        &[("raw", &raw), ("ratioed", &ratio)],
     );
-    assert_eq!(keys(&without), keys(&with));
-    assert!(!keys(&without).is_empty());
+    let (objects_without, scalars_without, ratio_without) = keys(&without);
+    let (objects_with, scalars_with, ratio_with) = keys(&with);
+    assert!(!ratio_without && ratio_with, "only `with` declares Ratio");
+    assert!(!objects_without.is_empty() && !scalars_without.is_empty());
+    assert_eq!(objects_without, objects_with);
+    assert_eq!(scalars_without, scalars_with);
+}
+
+/// FR-056-AC-43 (TC-897 step 8): a clause naming a parameter of its operation
+/// that has no checked type reaches an untyped member: it refuses
+/// `ill_typed`/`operator-ineligible` naming the operation and
+/// `Operation.params[0].typeRef`, not a missing name; a clause over an
+/// operation whose untyped slot is only its result is admitted.
+#[trace("TC-897")]
+#[test]
+fn a_clause_naming_an_untyped_parameter_refuses_operator_ineligible() {
+    let document = note_document(false);
+    assert_eq!(
+        untyped(
+            &document,
+            "pre P using v on Config::ConfigVersion::adjust { qty = qty }\n"
+        ),
+        expect("ConfigVersion", "adjust", "Operation.params[0].typeRef")
+    );
+    assert!(assembled(
+        &document,
+        "post P using v on Config::ConfigVersion::peek { true }\n"
+    )
+    .is_ok());
 }

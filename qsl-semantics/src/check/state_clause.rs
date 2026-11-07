@@ -919,6 +919,52 @@ fn check_clause_in(
     cx: &mut CheckContext<'_, Scope>,
     named: Option<super::check::NamedScope>,
 ) -> Result<TypedStateClause, CheckRefusal> {
+    check_clause_typed(form, input, cx, named).map_err(|refusal| {
+        // FR-056-AC-43: a clause naming a parameter of its operation that has
+        // no checked type reaches an untyped member, not a missing name.
+        let CheckCause::MissingName(name) = &refusal.cause else {
+            return refusal;
+        };
+        let Some(operation) = form.operation.as_ref() else {
+            return refusal;
+        };
+        let (declaring, operation_name) = operation_reference(operation);
+        let untyped = input
+            .scope
+            .untyped_member(
+                &declaring,
+                &operation_name,
+                super::check::UntypedKind::Operation,
+            )
+            .and_then(|member| {
+                let (_, locus) = member
+                    .parameters
+                    .iter()
+                    .find(|(parameter, _)| parameter == name)?;
+                Some(CheckCause::UntypedMember(Box::new(
+                    super::refusal::UntypedMemberRefusal {
+                        owner: member.owner_name.clone(),
+                        member: member.name.clone(),
+                        locus: locus.clone(),
+                    },
+                )))
+            });
+        match untyped {
+            Some(cause) => CheckRefusal {
+                location: refusal.location,
+                cause,
+            },
+            None => refusal,
+        }
+    })
+}
+
+fn check_clause_typed(
+    form: &ClauseView<'_>,
+    input: &ClauseDeclarations<'_>,
+    cx: &mut CheckContext<'_, Scope>,
+    named: Option<super::check::NamedScope>,
+) -> Result<TypedStateClause, CheckRefusal> {
     let location = input.location;
     let mut nodes = input.nodes_used;
     let (parameters, has_result) = form.parameters();

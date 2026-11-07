@@ -1260,6 +1260,8 @@ pub struct UntypedMember {
     pub kind: UntypedKind,
     /// Where its type reference is written.
     pub locus: String,
+    /// For an operation, each parameter of no checked type and its locus.
+    pub parameters: Vec<(String, String)>,
 }
 
 impl ScopeIndex {

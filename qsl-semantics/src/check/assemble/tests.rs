@@ -5521,7 +5521,7 @@ fn compound_quantity_type_factors_reuse_the_quantity_cores_affine_refusal() {
 /// `Rational` or `Decimal` has no checked type -- the member is declared with
 /// no kernel type and refused where used. Read below the semantic-IR
 /// validator, whose pinned native set names no `Rational`.
-#[trace("FR-056-AC-43", "TC-897")]
+#[trace("TC-897")]
 #[test]
 fn a_bare_native_text_rational_or_decimal_maps_to_no_checked_type() {
     let single = Multiplicity {
