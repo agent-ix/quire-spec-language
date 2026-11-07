@@ -489,6 +489,9 @@ fn read_refs(node: Option<NodeRef<'_>>, pointer: &str) -> Result<Vec<DocumentRef
 }
 
 /// One `DocumentRef` element: `{"identity": {"authority", "identity"}}`.
+/// Reads one document reference object; member names are wire words compared at
+/// this JSON boundary.
+#[ix_trace_rs::string_edge]
 fn read_ref(item: NodeRef<'_>, pointer: &str) -> Result<DocumentRef, Defect> {
     let Node::Object(members) = item.node() else {
         return Err(defect(
