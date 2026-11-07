@@ -197,7 +197,7 @@ pub use clause::{
     run_package_trace_subject, run_trace_subject_clause, temporal_batch_exit_code,
     temporal_batch_outcome, AuthenticatedTemporalSelection, AuthenticationFailure, ClauseArgument,
     ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest,
-    ClauseRunSelection, ClauseRunSource, ClauseRunStage, ConsequentEventRefusal,
+    ClauseRunSelection, ClauseRunSource, ClauseRunStage, ClauseRunUsage, ConsequentEventRefusal,
     ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState, ContradictedDimension,
     FiniteWindowAssessment, FiniteWindowPremises, FiniteWindowReport, FiniteWindowSupport,
     LedgerBinding, ObservedPosition, OperationName, OverObject, PackageAuthentication,
@@ -218,12 +218,13 @@ mod native_result;
 mod protocol_proof;
 pub(crate) use native_result::{item_record, ReasonWire};
 pub use native_result::{
-    read_native_run_result, write_clause_run_result, CallLocationRead, CallLocusRead,
-    CallOriginRead, ClauseRunRecord, ClosureRead, CommandErrorRecord, CounterexampleRead,
-    DimensionRead, EffectiveIdRead, FairnessGranularityRead, FairnessKindRead,
-    FairnessOperationRead, FairnessRead, GuardRead, IndeterminateReasonRead, NativeRunOutcome,
-    NativeRunReadError, NativeRunResult, NativeRunResultError, PositionRead, ProgressValueRead,
-    RefusalLocusRead, SourceRefRead, SpanRead, TemporalRecord, UndefinedLocusRead,
+    read_native_run_result, read_native_run_result_bounded, write_clause_run_result,
+    CallLocationRead, CallLocusRead, CallOriginRead, ClauseRunRecord, ClosureRead,
+    CommandErrorRecord, CounterexampleRead, DimensionRead, EffectiveIdRead,
+    FairnessGranularityRead, FairnessKindRead, FairnessOperationRead, FairnessRead, GuardRead,
+    IndeterminateReasonRead, NativeRunLimits, NativeRunOutcome, NativeRunReadError,
+    NativeRunResult, NativeRunResultError, PositionRead, ProgressValueRead, RefusalLocusRead,
+    SourceRefRead, SpanRead, TemporalRecord, UndefinedLocusRead,
 };
 pub use protocol_proof::{
     ProtocolProofCause, ProtocolProofCorrespondence, ProtocolProofDisposition,
