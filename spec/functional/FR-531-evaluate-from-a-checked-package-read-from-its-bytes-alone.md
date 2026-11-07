@@ -791,6 +791,7 @@ outcome map. Each carries a "Consumer entry" section that points here.
 
 | FR-531-AC-26 | An authentic final emission's source-union rows round-trip original type handles, settled keys, sealed member identities, final structural and payload node IDs and ordered Exact payload types; the read rows equal the emitter rows, native `source_union_rows` retains them and rewriting is byte-identical. | Test (TC-1331) |
 | FR-531-AC-27 | `/2`, absent `source_unions`, malformed member identity, stale member name, foreign source owner and conflicting union rows return typed format, malformed or native-join refusals without a partial read. An empty union list never fabricates a producer witness from the graph. | Test (TC-1331) |
+| FR-531-AC-28 | Producer and bytes-only equality admission pass the caller's same `NativeJoinBudget` through IR's admitted equality reader after identity/type projection. Decisions and non-resource witness refusals are retained for later unmetered selection and projection. Successful reads consume native work and storage cumulatively; exact measured bounds admit, and one unit less in either resource refuses with the original typed IR equality denial and recorded first unpaid charge, never an unknown witness or internal fault. Reusing an admitted slot consumes no additional native allowance. | Test (TC-1331) |
 
 ## Dependencies
 
