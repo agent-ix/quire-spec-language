@@ -120,26 +120,11 @@ redefine the selected profile's complete admitted forms.
 
 ## Work accounting
 
-The compiler SHALL expose a checking-accounting contract, published default capacities, the effective caller-configured limits (each used as given, with no ceiling) and consumed work in every report.
+Checking work is bounded by the caller-configured limits of the spine check, each used as given with no ceiling and each named by its raising setting under [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md). The bounded work is the formal-correspondence bytes, the visited declarations and native value/control occurrences, type and dependency work, proof and guard work, and retained output.
 
-The public contract defines deterministic stage/traversal order and the following
-charges before their work. Retained inputs may be borrowed; copying them cannot
-evade the byte or structure charges. Parser and binding budgets remain separate.
+If the next charge exceeds an effective limit or overflows its counter, then the compiler SHALL stop unfinished checking work with typed resource exhaustion retaining the dimension, limit, prior usage and source-owned next operation. Zero permits no charged work in its dimension. An exhausted stage cannot expose unfinished values as checked or erase a known refusal. A retry starts fresh counters and preserves prior inputs and results.
 
-| Work | Charged unit |
-| --- | --- |
-| Bytes | Each offered formal-correspondence metadata/content byte once on intake, plus each subsequent byte copied or scanned by this stage. |
-| Declarations and expressions | Each visited declaration and each visited native value/control occurrence; repeated visits and callee instantiations count again. |
-| Type and dependency work | Each constraint creation/inspection, type-wrapper traversal/copy, resolution attempt and native call/dependency-edge visit, including shared dependencies and cache hits. |
-| Proof and guard work | Each inspected/propagated fact, generated symbolic value/graph node, proof goal and materialized IR node, with both per-goal and total expansion limits. Rational normalization/arithmetic steps have explicit charged work before computation. |
-| Retained output | Each created type/result/cause/runtime-role record and retained dependency or provenance entry, before allocation/copy. |
-
-If the next charge exceeds an effective limit or overflows its counter, then the compiler SHALL stop unfinished checking work with typed resource exhaustion retaining the dimension, limit, prior usage and source-owned next operation.
-
-Zero permits no charged work in its dimension. An exhausted stage cannot expose
-unfinished values as checked or erase a known refusal. A retry starts fresh
-counters and preserves prior inputs/results. Resource settings remain visible
-configuration provenance, separate from selected semantic identities.
+The dedicated composed checking-accounting contract, its charge table and its per-report published capacities are historical and retired with FR-040-AC-9.
 
 **QSL-499 disposition:** the composed type-admission and proof-discharge stages (`checking::composed`) are deleted under ADR-011, ADR-033 and FR-499; value typing and guarded definedness are owned by the spine checker. The retired criteria below are retained as migration history and are not active acceptance obligations. Their behavior is owned as follows: profile permissions by FR-110 and FR-508 (AC-2); nominal types, literals and operators by FR-016-AC-10 and FR-104 (AC-1, AC-4); ordered queries and sum-prefix proofs by FR-046-AC-4 and AC-5 (AC-5); guards, presence and pre/post reads in state clauses by FR-104-AC-4 and AC-7 (AC-6); declaration-owned requirement records by FR-104-AC-5 (AC-7); every limit and its raising setting by FR-255 (AC-9). FR-040-AC-3 and AC-11 stay active.
 

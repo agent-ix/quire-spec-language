@@ -14,69 +14,17 @@ relationships:
 
 ## Description
 
-The composed linker SHALL perform no backend negotiation in its
-request-report path (`linking::composed::requests`). The composed linker's
-`requests::report` function SHALL record requested capability pairs as data
-only. The composed linker SHALL take no `Backend` parameter in
-`requests::report`. The composed linker SHALL produce no
-`UnsupportedCapability` or `UnsupportedFamily` disposition from
-`requests::report`. This is ADR-010 OBS-003 as resolved by ADR-012 §10:
-candidates and routing live only in the registry (FR-075), and dispositions
-live only in `quire-contract-codegen`'s `negotiate_*`.
+The composed linker performed no backend negotiation in its request-report path: it recorded requested capability pairs as data only, took no `Backend` parameter and produced no `UnsupportedCapability` or `UnsupportedFamily` disposition. This is ADR-010 OBS-003 as resolved by ADR-012 §10: candidates and routing live only in the registry (FR-075), and dispositions live only in `quire-contract-codegen`'s `negotiate_*`.
 
-## Inputs
-
-- A requested clause/capability pair, unchanged from FR-036's existing
-  request shape, minus any backend argument.
-
-## Outputs
-
-- A request report recording each pair as data (declaration, capability
-  kind, `required` flag, request index), with no disposition field that
-  reflects backend support.
-
-## Behavior
-
-### No `Backend` parameter
-
-`requests::report`'s signature SHALL take no parameter, of any type, whose
-purpose is to supply a backend or backend set for negotiation. The function
-SHALL be callable, and SHALL produce a complete request report, with no
-backend information available to it.
-
-### No `UnsupportedCapability` or `UnsupportedFamily` disposition
-
-The disposition type `requests::report` returns, or any type reachable from
-it, SHALL contain no variant named for, or serving the purpose of,
-"unsupported capability" or "unsupported family" as a per-pair disposition.
-A pair's capability kind admission (FR-057) is unaffected by this removal:
-`absent-kind` and `unknown-kind` remain admission-time refusals, produced
-without reading backend state; this requirement removes only the backend-
-dependent dispositions, not admission's own refusal causes.
-
-### Requests are still recorded as data
-
-Removing negotiation SHALL NOT remove recording. `requests::report` SHALL
-continue to record every admitted pair (declaration, capability kind,
-`required` flag, request index) as data available to later stages, so that
-unconditional removal of the four-kind negotiation path leaves the request
-report complete for every pair QSL admits.
-
-### Four-kind compatibility is not retained
-
-Because `requests::report` no longer negotiates, it SHALL retain no
-compatibility path for the pre-canonical four-kind capability request label
-enum. A request built against the four-kind vocabulary SHALL be treated as
-unsupported by the surrounding admission machinery (FR-057), not specially
-accepted by this function.
+**QSL-499 disposition:** the composed linker and its `requests::report` function are deleted under ADR-011, ADR-033 and FR-499, so the criteria below are retained as migration history and are not active acceptance obligations. The behavior is owned by FR-057: its admission entry point takes no registry or backend parameter, admitted pairs and static meaning do not depend on registered backends, a pair keeps its declaration, kind, `required` flag and request index, and `absent-kind` and `unknown-kind` remain admission-time refusals (FR-057-AC-4, AC-5; TC-155).
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-077-AC-1 | `requests::report`'s signature contains no parameter of a `Backend`-shaped type; a call site supplying no backend argument compiles and produces a complete request report. | Test (TC-199) |
-| FR-077-AC-2 | The disposition type returned by, or reachable from, `requests::report` contains no `UnsupportedCapability` variant and no `UnsupportedFamily` variant. | Test (TC-199) |
-| FR-077-AC-3 | Given a set of at least four admitted requested pairs spanning at least three distinct capability kinds and both `required` values, `requests::report` (with no negotiation code path present at all, per FR-077-AC-1 and FR-077-AC-2) records every pair's declaration, capability kind, `required` flag and request index in its output, unchanged from its pre-removal input, showing recording does not depend on the negotiation logic this requirement removes. | Test (TC-200) |
+| FR-077-AC-1 | **RETIRED in QSL-499; historical only.** `requests::report`'s signature contains no parameter of a `Backend`-shaped type; a call site supplying no backend argument compiles and produces a complete request report. | Test (TC-199) |
+| FR-077-AC-2 | **RETIRED in QSL-499; historical only.** The disposition type returned by, or reachable from, `requests::report` contains no `UnsupportedCapability` variant and no `UnsupportedFamily` variant. | Test (TC-199) |
+| FR-077-AC-3 | **RETIRED in QSL-499; historical only.** Given a set of at least four admitted requested pairs spanning at least three distinct capability kinds and both `required` values, `requests::report` (with no negotiation code path present at all, per FR-077-AC-1 and FR-077-AC-2) records every pair's declaration, capability kind, `required` flag and request index in its output, unchanged from its pre-removal input, showing recording does not depend on the negotiation logic this requirement removes. | Test (TC-200) |
 
 ## Dependencies
 
