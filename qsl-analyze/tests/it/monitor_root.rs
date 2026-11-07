@@ -961,3 +961,49 @@ fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them(
         ExactTypeProjectionErrorCode::MismatchedIdentityWitness
     );
 }
+
+/// The final emitter's original checked owner survives temporary producer
+/// inputs. Original checker keys remain distinct from final writer joins.
+#[trace("TC-1081", "FR-251-AC-47")]
+#[test]
+fn the_actual_combined_checked_unit_retains_its_source_and_time_facts() {
+    let root = {
+        let unit = authored(ROOT_SHAPES[0]);
+        root_of(&unit, "C", &target()).expect("the plan root")
+    };
+    let checked = root.checked_unit();
+    let unit = authored(ROOT_SHAPES[0]);
+    assert!(checked.source().text().starts_with(&unit));
+    assert!(checked.source().text().len() > unit.len());
+    let graph = checked.package().graph();
+    let clause = graph
+        .temporal_clauses()
+        .iter()
+        .find(|node| node.clause().name() == "C")
+        .expect("the retained selected clause");
+    assert_eq!(&clause.identity(), root.plan.subject().clause_node());
+    assert_eq!(graph.time_sources().len(), 1);
+    let source = &graph.time_sources()[0];
+    assert_eq!(source.model, "M");
+    assert_eq!(source.unit, "ms");
+    assert_eq!(source.source, qsl_semantics::check::TimeSourceKind::Dense);
+    assert!(source.tick_operation_anchor.is_none());
+    assert!(source.tick_operation_key.is_none());
+    assert!(source
+        .nominal_nodes
+        .iter()
+        .any(|node| node.key == source.unit_node));
+    let package = admitted(&root);
+    let declaration = root
+        .emission
+        .temporal_binding_rows()
+        .declaration(
+            root.plan.subject().clause_node(),
+            root.plan.subject().occurrence().origin().ordinal(),
+        )
+        .expect("the final clause selection");
+    assert_eq!(
+        package.monitor_plans().next().unwrap().clause(),
+        declaration
+    );
+}

@@ -152,6 +152,11 @@ checked field type are carried unchanged. Contract IR joins the row to the
 admitted record node by that binding name, so a row that kept the base name
 is refused there.
 
+The plan root SHALL retain the actual combined checked unit from which its
+final emission was written, including its exact source and checked time-source
+facts. Reads of that unit SHALL identify its keys as original checker keys,
+not final writer-renamed identities or admitted order/progress authority.
+
 ### Admitted order and progress association
 
 The public plan-root handoff SHALL expose independently admitted event-order
@@ -557,6 +562,7 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-44 | After the plan-root writer renames the fields `origin_tick` and `amount` of the generated `Instance`, `Activation` and `LimitReached` records to `origin` and `value`, each retained source record row of those records has `admitted_name` `origin` or `value` at the renamed members and the other members' binding names unchanged, keeps the declared field names `origin_tick` and `amount`, and Contract IR's source record join over the rows and the package read back through the strict reader succeeds and projects each record; the same rows with a renamed member's `admitted_name` set to the declared field name are refused with `MismatchedIdentityWitness`. | Test (TC-1081) |
 | FR-251-AC-45 | From a genuine authored tick-monitor unit, the public plan-root handoff returns the original owner-admitted order and progress-association values for the same final emission as its plan and two timing obligations. A public consumer compares both complete values and the owner-established package/clause/subject/claim association, then uses them after temporary compilation inputs are dropped. Clone and rename controls follow the owner contract and preserve all previously retained rows. | Test |
 | FR-251-AC-46 | Independently omit each required authority, substitute a foreign admitted emission, change the selected clause or claim occurrence, change the source, substitute order and substitute progress association. Each invalid association returns its typed refusal and no partial admitted context; matching labels, equal numeric indices, clock configuration or a second emission cannot turn it into success. | Test |
+| FR-251-AC-47 | After original source, model and request inputs are dropped, a public consumer reads the actual combined checked unit retained by the plan root: its exact source includes the authored unit and generated entries, its selected clause equals the plan subject, and its checked time source retains the selected model node, source kind and unit. These are explicitly original checker facts, not final renamed identities or admitted order/progress. | Test |
 
 ## Dependencies
 

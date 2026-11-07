@@ -70,6 +70,18 @@ pub struct PlanRoot {
     /// The checked-package v2 bytes holding the one `temporal`/
     /// `monitor_plan` node and the four declaration-less entry functions.
     pub emission: Emission,
+    checked_unit: CheckedUnit,
+}
+
+impl PlanRoot {
+    /// The original checked unit, including generated entries, from which
+    /// this root's final emission was written. This retains checked source
+    /// facts; it does not admit event order or observation progress.
+    /// Node keys are the checker's original keys, before final writer
+    /// renames. Use the emission's retained rows for final-package joins.
+    pub fn checked_unit(&self) -> &CheckedUnit {
+        &self.checked_unit
+    }
 }
 
 /// Why no plan root was produced.
@@ -245,5 +257,6 @@ pub fn emit_plan_root(
         plan,
         obligations,
         emission,
+        checked_unit: combined,
     })
 }
