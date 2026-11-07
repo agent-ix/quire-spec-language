@@ -4611,8 +4611,9 @@ fn the_decisive_search_stops_at_the_first_false_or_failed_atom() {
 }
 
 /// A unit with a `duration` window written in seconds and milliseconds of
-/// the selected package's `Time`, checked through the spine with a clock in
-/// `ms` selected.
+/// the selected package's `Time`, with a clock in `ms` selected. The unit is
+/// named as the model package, which the I2 reader resolves a clause's clock
+/// unit node in (QSL-1662).
 struct MixedUnitClock {
     checked: crate::spine::CheckedUnit,
     packages: qsl_semantics::model::intake::PackageInput,
@@ -4620,10 +4621,10 @@ struct MixedUnitClock {
     millisecond: String,
 }
 
-fn mixed_unit_clock() -> MixedUnitClock {
+fn mixed_unit_clock(checked_with_selections: bool) -> MixedUnitClock {
     use crate::spine::{
-        check_with_temporal_selections_and_execution_points, package_with_temporal_selections,
-        parse, select, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
+        check_with_temporal_selections_and_execution_points, parse, select, DependencyInput,
+        ParseRequest, SpineLimits,
     };
 
     let package = super::receiver_frames::fixture::PACKAGE;
@@ -4685,9 +4686,13 @@ fn mixed_unit_clock() -> MixedUnitClock {
         .into_value();
     let checked = check_with_temporal_selections_and_execution_points(
         &parsed,
-        "fixture".to_owned(),
+        package.to_owned(),
         &BTreeMap::new(),
-        &selections,
+        if checked_with_selections {
+            &selections
+        } else {
+            &[]
+        },
         &models,
         &DependencyInput::default(),
         limits,
@@ -4719,7 +4724,7 @@ fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
         selections,
         millisecond,
         ..
-    } = mixed_unit_clock();
+    } = mixed_unit_clock(true);
     let cancel = quire_exact::Cancel::new();
     let emitted =
         package_with_temporal_selections(&checked, &selections, PackageLimits::default(), &cancel)
@@ -4756,10 +4761,10 @@ fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
 }
 
 /// QSL-1662, FR-337 "Aggregate formula emission": the model-check re-emit
-/// resolves a clause's identity (and so the item and closure paths, which
-/// resolve through it) from a package checked with the same clock
-/// selections, without `InvalidTemporalClockValue`, for a `duration` window
-/// written in a unit other than the clock unit.
+/// resolves a clause's identity from a package checked with the same clock
+/// selections, for a `duration` window written in a unit other than the
+/// clock unit. The item and closure re-emit paths resolve through this one
+/// call (`ModelCheckItem::instances_for`).
 #[trace("TC-1267", "FR-337-AC-15")]
 #[test]
 fn the_model_check_reemit_accepts_a_duration_window_in_another_unit() {
@@ -4770,7 +4775,7 @@ fn the_model_check_reemit_accepts_a_duration_window_in_another_unit() {
         packages,
         selections,
         ..
-    } = mixed_unit_clock();
+    } = mixed_unit_clock(true);
     let package = checked.package();
     let [node] = package.graph().temporal_clauses() else {
         panic!("one clause");
@@ -4785,4 +4790,43 @@ fn the_model_check_reemit_accepts_a_duration_window_in_another_unit() {
     )
     .unwrap_or_else(|refusal| panic!("the re-emit resolves the clause: {refusal}"));
     assert!(identity.over().is_some(), "the clause ranges over `e`");
+}
+
+/// QSL-1662: the re-emit does not run S3, so a package checked without the
+/// clock selection keeps its `duration` bounds in the written unit and the
+/// emitter refuses it, naming `timestamp_unit`, rather than emitting a bound
+/// that is not in the clock unit. The subject of a model check is checked with
+/// the same selections it is re-emitted with.
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn the_model_check_reemit_refuses_a_package_checked_without_the_clock_selection() {
+    use crate::model_check::identity::{ClauseIdentity, ClauseRootRefusal};
+
+    let MixedUnitClock {
+        checked,
+        packages,
+        selections,
+        ..
+    } = mixed_unit_clock(false);
+    let package = checked.package();
+    let [node] = package.graph().temporal_clauses() else {
+        panic!("one clause");
+    };
+    let refusal = ClauseIdentity::resolve(
+        package,
+        &packages,
+        node.clause(),
+        &selections,
+        &quire_exact::Cancel::new(),
+        qsl_package::EmitLimits::fixture(),
+    )
+    .expect_err("a bound in the written unit is no bound in the clock unit");
+    let ClauseRootRefusal::Package(message) = refusal else {
+        panic!("a package refusal: {refusal:?}");
+    };
+    assert!(
+        message.starts_with("temporal clock selection at ")
+            && message.ends_with("has an invalid timestamp_unit"),
+        "{message}"
+    );
 }

@@ -179,7 +179,8 @@ pub struct CertificateRequest<'a> {
     /// The model subject (FR-125).
     pub subject: ModelSubject<'a>,
     /// Explicit clock configurations selected for this subject's checked
-    /// temporal declarations.
+    /// temporal declarations. The subject's package was checked with these
+    /// same selections ([`crate::model_check::identity::ClauseIdentity::resolve`]).
     pub temporal_clock_selections: &'a [TemporalClockSelection],
     /// The item.
     pub item: ModelCheckItem<'a>,
@@ -337,7 +338,8 @@ pub struct ProtocolCertificateRequest<'a> {
     /// The protocol subject (FR-205).
     pub subject: ProtocolSubject<'a>,
     /// Explicit clock configurations selected for this subject's checked
-    /// temporal declarations.
+    /// temporal declarations. The subject's package was checked with these
+    /// same selections ([`crate::model_check::identity::ClauseIdentity::resolve`]).
     pub temporal_clock_selections: &'a [TemporalClockSelection],
     /// The item.
     pub item: ModelCheckItem<'a>,
