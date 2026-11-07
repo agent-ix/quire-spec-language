@@ -2,9 +2,9 @@
 //! FR-531: account producer inputs and every owned identity-row output.
 
 use quire_contract_model::{
-    NativeJoinBudget, NativeJoinLocus, NativeJoinLocusSource, SelectedExactDeclarationForm,
-    SelectedExactDeclarationRow, SelectedExactFieldRow, SelectedExactIdentities,
-    SelectedExactIdentity, SelectedSourceRecordRow, SelectedSourceUnionRow,
+    NativeJoinBudget, NativeJoinLocus, NativeJoinLocusSource, SelectedExactDeclarationRow,
+    SelectedExactFieldRow, SelectedExactIdentities, SelectedExactIdentity, SelectedSourceRecordRow,
+    SelectedSourceUnionRow,
 };
 use quire_exact::{EffectiveId, MemberId, MemberOwner};
 
@@ -23,28 +23,17 @@ impl Emission {
     /// Derive producer membership again after every final carry/rekey. These
     /// flags avoid allocating structural comparisons in the budgeted adapter;
     /// they do not replace the subsequent native validation of the rows.
-    #[ix_trace_rs::string_edge]
     pub(super) fn with_identity_row_selection(mut self) -> Self {
-        self.identity_row_selection.declarations = self
-            .selected_exact_declaration_rows
-            .iter()
-            .enumerate()
-            .filter_map(|(index, row)| {
-                let expected = match row.form {
-                    SelectedExactDeclarationForm::RecordValueType => ("model", "record_value_type"),
-                    SelectedExactDeclarationForm::ObjectType => ("model", "object_type"),
-                    SelectedExactDeclarationForm::Union => ("composite_type", "union"),
-                    SelectedExactDeclarationForm::DeclaredUnit => ("scalar_type", "unit"),
-                };
-                self.wire_nodes
-                    .iter()
-                    .any(|node| {
-                        node.node_id == row.structural_node
-                            && (node.node_tag.as_ref(), node.semantic_form.as_ref()) == expected
-                    })
-                    .then_some(index)
-            })
-            .collect();
+        self.identity_row_selection.declarations =
+            self.selected_exact_declaration_rows
+                .iter()
+                .enumerate()
+                .filter_map(|(index, row)| {
+                    self.wire_nodes.iter().any(|node| {
+                qsl_semantics::model::intake::selected_exact_declaration_row_matches_node(row, node)
+            }).then_some(index)
+                })
+                .collect();
         self.identity_row_selection.fields = self
             .selected_exact_field_rows
             .iter()
@@ -53,9 +42,9 @@ impl Emission {
                 self.wire_nodes
                     .iter()
                     .any(|node| {
-                        node.node_id == row.record_node
-                            && node.node_tag.as_ref() == "model"
-                            && node.semantic_form.as_ref() == "record_value_type"
+                        qsl_semantics::model::intake::selected_exact_field_row_matches_node(
+                            row, node,
+                        )
                     })
                     .then_some(index)
             })
@@ -147,47 +136,13 @@ impl Emission {
         charge::items(budget, locus, self.selected_source_record_rows.len())?;
         let mut records = Vec::with_capacity(self.selected_source_record_rows.len());
         for row in &self.selected_source_record_rows {
-            charge::work(budget, locus, 1)?;
-            charge::node(budget, locus, &row.structural_node)?;
-            charge::text(budget, locus, &row.source_authority)?;
-            charge::text(budget, locus, &row.source_identity)?;
-            charge::texts(budget, locus, &row.qualified_declaration)?;
-            charge::items(budget, locus, row.members.len())?;
-            for member in &row.members {
-                charge::work(budget, locus, 1)?;
-                charge::text(budget, locus, &member.original_member_identity)?;
-                charge::text(budget, locus, &member.admitted_name)?;
-                charge::node(budget, locus, &member.type_node)?;
-                charge::value_type(budget, locus, &member.value_type)?;
-            }
-            records.push(SelectedSourceRecordRow {
-                structural_node: row.structural_node.clone(),
-                source_authority: row.source_authority.clone(),
-                source_identity: row.source_identity.clone(),
-                qualified_declaration: row.qualified_declaration.clone(),
-                record_key: row.record_key.clone(),
-                members: row
-                    .members
-                    .iter()
-                    .map(
-                        |member| quire_contract_model::SelectedSourceRecordMemberRow {
-                            original_member_identity: member.original_member_identity.clone(),
-                            admitted_name: member.admitted_name.clone(),
-                            presence: member.presence,
-                            type_node: member.type_node.clone(),
-                            value_type: member.value_type.clone(),
-                        },
-                    )
-                    .collect(),
-            });
+            records.push(copy_source_record(row, budget, locus)?);
         }
         let locus = package_locus("identity_union_output");
         charge::items(budget, locus, self.selected_source_union_rows.len())?;
         let mut unions = Vec::with_capacity(self.selected_source_union_rows.len());
         for row in &self.selected_source_union_rows {
-            charge::work(budget, locus, 1)?;
-            union(budget, locus, row)?;
-            unions.push(row.clone());
+            unions.push(copy_source_union(row, budget, locus)?);
         }
         charge::text(
             budget,
@@ -202,6 +157,62 @@ impl Emission {
             unions,
         ))
     }
+}
+
+/// Convert one authentic retained record after all of its copies are paid.
+pub(super) fn copy_source_record(
+    row: &super::SelectedSourceRecordRow,
+    budget: &mut NativeJoinBudget,
+    locus: NativeJoinLocus,
+) -> Result<SelectedSourceRecordRow, NativeRowError> {
+    charge::work(budget, locus, 1)?;
+    charge::node(budget, locus, &row.structural_node)?;
+    charge::text(budget, locus, &row.source_authority)?;
+    charge::text(budget, locus, &row.source_identity)?;
+    charge::texts(budget, locus, &row.qualified_declaration)?;
+    charge::items(budget, locus, row.members.len())?;
+    for member in &row.members {
+        let locus = NativeJoinLocus {
+            source: locus.source,
+            form: "identity_record_member_output",
+        };
+        charge::work(budget, locus, 1)?;
+        charge::text(budget, locus, &member.original_member_identity)?;
+        charge::text(budget, locus, &member.admitted_name)?;
+        charge::node(budget, locus, &member.type_node)?;
+        charge::value_type(budget, locus, &member.value_type)?;
+    }
+    Ok(SelectedSourceRecordRow {
+        structural_node: row.structural_node.clone(),
+        source_authority: row.source_authority.clone(),
+        source_identity: row.source_identity.clone(),
+        qualified_declaration: row.qualified_declaration.clone(),
+        record_key: row.record_key.clone(),
+        members: row
+            .members
+            .iter()
+            .map(
+                |member| quire_contract_model::SelectedSourceRecordMemberRow {
+                    original_member_identity: member.original_member_identity.clone(),
+                    admitted_name: member.admitted_name.clone(),
+                    presence: member.presence,
+                    type_node: member.type_node.clone(),
+                    value_type: member.value_type.clone(),
+                },
+            )
+            .collect(),
+    })
+}
+
+/// Copy one authentic retained union only after charging its full owned payload.
+pub(super) fn copy_source_union(
+    row: &SelectedSourceUnionRow,
+    budget: &mut NativeJoinBudget,
+    locus: NativeJoinLocus,
+) -> Result<SelectedSourceUnionRow, NativeRowError> {
+    charge::work(budget, locus, 1)?;
+    union(budget, locus, row)?;
+    Ok(row.clone())
 }
 
 fn package_locus(form: &'static str) -> NativeJoinLocus {
@@ -274,6 +285,10 @@ fn union(
     charge::texts(budget, locus, &row.qualified_declaration)?;
     charge::items(budget, locus, row.members.len())?;
     for member in &row.members {
+        let locus = NativeJoinLocus {
+            source: locus.source,
+            form: "identity_union_member_output",
+        };
         charge::work(budget, locus, 1)?;
         charge::text(budget, locus, member.member.identifier())?;
         charge::text(budget, locus, member.member.variant().case())?;

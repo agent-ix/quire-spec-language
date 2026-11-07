@@ -109,6 +109,28 @@ impl DeclarationNodeKind {
     }
 }
 
+/// Whether this producer declaration row belongs to this emitted node and form.
+///
+/// This is a membership filter, not authentication of the opaque Exact payload;
+/// the native identity join still validates the selected original declaration.
+pub fn selected_exact_declaration_row_matches_node(
+    row: &quire_contract_model::SelectedExactDeclarationRow,
+    node: &quire_contract_model::CheckedSemanticNodeV2,
+) -> bool {
+    node.node_id == row.structural_node
+        && DeclarationNodeKind::of(node) == Some(DeclarationNodeKind::of_form(row.form))
+}
+
+/// Whether this producer field row belongs to an emitted model record node.
+/// This does not grant authority or replace the subsequent native field join.
+pub fn selected_exact_field_row_matches_node(
+    row: &quire_contract_model::SelectedExactFieldRow,
+    node: &quire_contract_model::CheckedSemanticNodeV2,
+) -> bool {
+    node.node_id == row.record_node
+        && DeclarationNodeKind::of(node) == Some(DeclarationNodeKind::RecordValueType)
+}
+
 /// Join the selected-model stage's producer rows to the declaration forms
 /// admitted in `package`. Rows for declarations not present in this package
 /// graph are outside the emitted projection and do not enter the witness.
@@ -136,21 +158,21 @@ pub fn selected_exact_identities_from_rows(
         declaration_rows
             .iter()
             .filter(|row| {
-                package.graph().nodes.iter().any(|node| {
-                    node.node_id == row.structural_node
-                        && DeclarationNodeKind::of(node)
-                            == Some(DeclarationNodeKind::of_form(row.form))
-                })
+                package
+                    .graph()
+                    .nodes
+                    .iter()
+                    .any(|node| selected_exact_declaration_row_matches_node(row, node))
             })
             .cloned(),
         field_rows
             .iter()
             .filter(|row| {
-                package.graph().nodes.iter().any(|node| {
-                    node.node_id == row.record_node
-                        && DeclarationNodeKind::of(node)
-                            == Some(DeclarationNodeKind::RecordValueType)
-                })
+                package
+                    .graph()
+                    .nodes
+                    .iter()
+                    .any(|node| selected_exact_field_row_matches_node(row, node))
             })
             .cloned(),
         budget,
