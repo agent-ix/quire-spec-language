@@ -1251,6 +1251,78 @@ fn tc_774_a_transitive_dependency_replays() {
     ));
 }
 
+#[trace("TC-444", "FR-098-AC-7")]
+#[trace("TC-774", "FR-290-AC-12")]
+#[test]
+fn plugin_replay_retains_every_source_of_each_selected_library() {
+    let header =
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
+    let first =
+        format!("{header}function big using v(x: Int[0, 9]): Boolean pure {{ helper(x) }}\n");
+    let second =
+        format!("{header}function helper using v(x: Int[0, 9]): Boolean pure {{ x > 3 }}\n");
+    let sibling = format!("{header}function big using v(x: Int[0, 9]): Boolean pure {{ x < 8 }}\n");
+    let root = format!(
+        "{header}import \"test/b\" as b;\nimport \"test/c\" as c;\n\
+         function q using v(x: Int[0, 9]): Boolean pure {{ b::big(x) and c::big(x) }}\n"
+    );
+    let library = |identity: &str, authority: &str, source: &str, bytes: &str| {
+        crate::spine::SuppliedLibrary {
+            identity: identity.to_owned(),
+            source: SourceIdentity::new(authority, source),
+            path: format!("{source}.native"),
+            bytes: bytes.as_bytes().to_vec(),
+        }
+    };
+    let first = library("test/b", "agent-ix", "b1", &first);
+    let second = library("test/b", "agent-ix", "b2", &second);
+    let sibling = library("test/c", "other", "c1", &sibling);
+    let dependencies = DependencyInput::new([first.clone(), sibling.clone()])
+        .unwrap()
+        .with_library_units("test/b", vec![second.clone(), first.clone()])
+        .unwrap();
+    let fixture = fixture_of(&root, &BTreeMap::new(), &dependencies);
+    let context = context(&fixture, CallerLimits::default());
+    let (q, parameter) = declaration(&fixture, "q");
+    let wire = context
+        .request(
+            &q,
+            &[bound_at(parameter.clone())],
+            &plugin(),
+            input(parameter, 0),
+        )
+        .unwrap();
+    assert_eq!(wire.package.bytes(), fixture.emitted.package().bytes());
+    assert_eq!(wire.dependencies.len(), 2);
+    assert_eq!(wire.dependencies[0].identity, "test/b");
+    assert_eq!(
+        wire.dependencies[0].sources,
+        [
+            ("agent-ix".to_owned(), "b1".to_owned()),
+            ("agent-ix".to_owned(), "b2".to_owned()),
+        ]
+    );
+    assert_eq!(wire.dependencies[1].identity, "test/c");
+    assert_eq!(
+        wire.dependencies[1].sources,
+        [("other".to_owned(), "c1".to_owned())]
+    );
+    for library in [&first, &second, &sibling] {
+        assert!(wire
+            .byte_provision
+            .iter()
+            .any(|(authority, identity, bytes)| {
+                authority == &library.source.authority
+                    && identity == &library.source.identity
+                    && bytes == &library.bytes
+            }));
+    }
+    let ReplayResult::Input(result) = crate::replay(wire, ReplayLimits::default()).unwrap() else {
+        panic!("the genuine multi-source function replays");
+    };
+    assert_eq!(result.value(), Some(crate::EvaluatedValue::Boolean(false)));
+}
+
 /// FR-290-AC-1, the two clauses `main` can assert. The driver below reads an
 /// entry's `certification`, then its `basis`, and builds a record only when
 /// both readers accept: a `trusted` entry settles `proved` with the read
