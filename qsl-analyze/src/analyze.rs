@@ -1681,7 +1681,7 @@ mod tests {
         }
     }
 
-    #[trace("TC-1302", "FR-507-AC-4")]
+    #[trace("TC-1302", "TC-115", "FR-507-AC-4", "FR-057-AC-11")]
     #[test]
     fn probabilistic_and_schedulability_kinds_apply_only_to_their_claim_families() {
         let cases = [
@@ -1737,6 +1737,18 @@ mod tests {
                     .as_ref()
                     .map(|diagnostic| diagnostic.code),
                 Some(CatalogCode::new("invalid_capability", "inapplicable-kind"))
+            );
+            // FR-057-AC-11: the payload names the `state-model` family.
+            assert_eq!(
+                disposed
+                    .diagnostic
+                    .as_ref()
+                    .map(|diagnostic| &diagnostic.payload),
+                Some(&Payload::Inapplicable {
+                    request_index: RequestIndex::new(index),
+                    capability: cases[index].0,
+                    family: Some(DeclarationFamily::StateModel),
+                })
             );
         }
     }
