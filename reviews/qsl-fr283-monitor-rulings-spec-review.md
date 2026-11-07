@@ -120,3 +120,25 @@ Recommended fixes:
 
 Not ready to merge. FND-001 must be fixed: AC-15 and part of AC-13 cannot be built from FR-283's
 inputs. FND-002 to FND-005 should be fixed in the same branch. FND-006 to FND-009 are small text fixes.
+
+## Dispositions
+
+All nine findings were fixed in the same branch, in the commit after this review:
+
+- FND-001: `MonitorRequest` gains `temporal_selections`; `monitor` emits `package` with them and
+  authenticates a `Progressed`/`Timestamped` binding against the emission's rows; a missing selection
+  is `ClauseRefused`, `missing_declaration`/`missing-selection` (AC-15, TC-765 step 10).
+- FND-002: the atom-naming rule now targets the records that carry an atom (`InsufficientData`'s
+  `atom`, an `Indeterminate` reason's `atom`); the rows list `atom`; AC-15 names `p`; the AC-5 sentence
+  is removed.
+- FND-003: `SourceNotSupplied` states that it replaces FR-100's `locus-source-supplied` fault for
+  `monitor`, and a matched source whose bytes do not hold the span refuses the same way (AC-12 vector).
+- FND-004: binding authentication precedes position admission; `Admission.position` of a
+  `Timestamped` trace is its canonical-order position (AC-15 vector with both defects).
+- FND-005: an If/then bullet states `monitor`'s own `over` and subject-kind checks; AC-13 adds the
+  record-subject clause over a `Document` trace.
+- FND-006: the precedence bullet covers refusals and faults, first in request order.
+- FND-007: ADR-029 OP-3 Input/Output, FR-275's `monitor` row and ADR-011's gate table updated.
+- FND-008: `MonitorRecord.clause` is a `String`.
+- FND-009: the empty-loop and `Samples`-violation rules are their own bullets, the precedence bullet
+  has an If trigger, and AC-15 drops the `ms` unit.
