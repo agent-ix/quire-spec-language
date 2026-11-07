@@ -512,6 +512,7 @@ fn assert_equality_reader_outcomes(emission: &Emission, read: Read) {
         })
         .collect::<Vec<_>>();
 
+    let mut equality_budget = quire_contract_model::NativeJoinBudget::new(1_000_000, 1_000_000);
     for (index, decision) in decisions.iter().enumerate() {
         let row = emission
             .equality_producer_identity_rows()
@@ -527,7 +528,7 @@ fn assert_equality_reader_outcomes(emission: &Emission, read: Read) {
             &selected_rows,
             &selected_fact_rows,
             emission.selected_source_unit_rows(),
-            1_000_000,
+            &mut equality_budget,
         ) {
             Ok(equality) => {
                 let expected_schedule = match decision["schedule"].as_str() {

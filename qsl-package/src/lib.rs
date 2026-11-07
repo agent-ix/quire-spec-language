@@ -292,3 +292,8 @@ mod behind_std {}
 
 #[cfg(test)]
 const TEST_PACKAGE_NAME: &str = "pkg";
+
+#[cfg(feature = "std")]
+mod native_join_failure;
+#[cfg(feature = "std")]
+pub use native_join_failure::NativeJoinFailure;

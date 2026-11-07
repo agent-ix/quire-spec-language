@@ -65,6 +65,7 @@ pub struct BarePackage<'p> {
     /// identities, not when the supply is attached (FR-390).
     joined: Option<Result<SelectedExactIdentities, IdentityWitnessRefusal>>,
     projections: BTreeMap<CheckedNodeId, Result<ExactTypeProjection, ExactTypeProjectionError>>,
+    equality: crate::reader_protocol_projection::EqualityDecisions,
 }
 
 /// What a protocol-slot call reads beside the package (FR-531).
@@ -85,6 +86,7 @@ impl<'p> BarePackage<'p> {
             supply: None,
             joined: None,
             projections: BTreeMap::new(),
+            equality: BTreeMap::new(),
         }
     }
 
@@ -103,11 +105,11 @@ impl<'p> BarePackage<'p> {
         mut self,
         supply: BareSupply<'p>,
         budget: &mut NativeJoinBudget,
-    ) -> Result<Self, ExactTypeProjectionError> {
+    ) -> Result<Self, crate::NativeJoinFailure> {
         self.joined = match supply.identities.selected(self.package, budget) {
             Ok(identities) => Some(Ok(identities)),
             Err(IdentityJoinFailure::Witness(defect)) => Some(Err(defect)),
-            Err(IdentityJoinFailure::Exhausted(denial)) => return Err(*denial),
+            Err(IdentityJoinFailure::Exhausted(denial)) => return Err((*denial).into()),
         };
         self.supply = Some(supply);
         if let Some(Ok(identities)) = &self.joined {
@@ -117,13 +119,28 @@ impl<'p> BarePackage<'p> {
                     .project_exact_type(&node.node_id, identities, budget);
                 if let Err(denial) = &projection {
                     if qsl_semantics::model::intake::is_native_budget_denial(denial) {
-                        return Err(denial.clone());
+                        return Err(denial.clone().into());
                     }
                 }
                 self.projections.insert(node.node_id.clone(), projection);
             }
         }
+        if self.identities().is_some() {
+            self.equality = crate::reader_protocol_projection::admit_equality_decisions(
+                self.package,
+                crate::reader_protocol_projection::ProjectionSource::Bytes {
+                    equality: self.supply.as_ref().and_then(|supply| supply.equality),
+                },
+                budget,
+            )?;
+        }
         Ok(self)
+    }
+
+    pub(crate) fn equality_decisions(
+        &self,
+    ) -> &crate::reader_protocol_projection::EqualityDecisions {
+        &self.equality
     }
 
     /// Owner-projected Exact types retained under the supply entry's native budget.

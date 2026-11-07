@@ -1354,17 +1354,21 @@ impl ReadEqualityRows {
         &self,
         package: &CheckedPackageV2,
         application: &CheckedNodeId,
-        work_limit: u64,
-    ) -> Result<quire_semantic_value::declaration::AdmittedEqualityDecision, EqualityWitnessRefusal>
+        budget: &mut quire_contract_model::NativeJoinBudget,
+    ) -> Result<quire_semantic_value::declaration::AdmittedEqualityDecision, EqualityDecisionFailure>
     {
         if self.package != package.name() {
-            return Err(EqualityWitnessRefusal::Foreign);
+            return Err(EqualityDecisionFailure::Witness(
+                EqualityWitnessRefusal::Foreign,
+            ));
         }
         let row = self
             .applications
             .iter()
             .find(|row| &row.application == application)
-            .ok_or(EqualityWitnessRefusal::Unknown)?;
+            .ok_or(EqualityDecisionFailure::Witness(
+                EqualityWitnessRefusal::Unknown,
+            ))?;
         package
             .admitted_equality(
                 application,
@@ -1372,9 +1376,19 @@ impl ReadEqualityRows {
                 &self.applications,
                 &self.facts,
                 &self.source_units,
-                work_limit,
+                budget,
             )
-            .map_err(|_: AdmittedEqualityReadError| EqualityWitnessRefusal::Unknown)
+            .map_err(|error: AdmittedEqualityReadError| {
+                if matches!(
+                    error.code,
+                    quire_contract_model::AdmittedEqualityReadErrorCode::WorkLimit
+                        | quire_contract_model::AdmittedEqualityReadErrorCode::StorageLimit
+                ) {
+                    EqualityDecisionFailure::Exhausted(Box::new(error))
+                } else {
+                    EqualityDecisionFailure::Witness(EqualityWitnessRefusal::Unknown)
+                }
+            })
     }
 
     /// Whether these rows were produced for `package` (FR-531-AC-16).
@@ -2205,4 +2219,10 @@ mod tests {
             Err(EqualityFileRefusal::Malformed { .. })
         ));
     }
+}
+
+/// Failure while admitting one equality decision under the entry budget.
+pub(crate) enum EqualityDecisionFailure {
+    Witness(EqualityWitnessRefusal),
+    Exhausted(Box<AdmittedEqualityReadError>),
 }
