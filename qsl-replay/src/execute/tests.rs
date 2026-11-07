@@ -26,6 +26,7 @@ use admitted_charge::admitted_charge_points;
 
 mod application_claim;
 mod child_composite;
+mod complete_package;
 mod composite;
 mod composite_parity;
 mod native_scalar;

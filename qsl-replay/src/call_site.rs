@@ -1100,7 +1100,7 @@ mod tests {
                 value: crate::witness::WitnessValue::Integer(3),
             }],
         );
-        let result = crate::replay(request, crate::crate::ReplayLimits::default());
+        let result = crate::replay(request, crate::ReplayLimits::default());
         assert!(
             result.is_ok(),
             "call_site's node id for x must be the one replay accepts: {result:?}"
