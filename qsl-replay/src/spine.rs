@@ -440,12 +440,13 @@ impl CompileRefusal {
             // reports its retained charge.
             Self::Check { refusals, .. } => {
                 let mut fields = refusals
-                    .iter()
-                    .find_map(|refusal| match refusal.cause.unwrapped() {
-                        CheckCause::DispatchLink(cause) => {
-                            cause.denial.as_ref().map(|denial| denial.catalog_fields())
-                        }
-                        cause => cause.type_check_fields(),
+                    .first()
+                    .and_then(|refusal| refusal.cause.type_check_fields())
+                    .or_else(|| {
+                        refusals.iter().find_map(|refusal| match refusal.cause.unwrapped() {
+                            CheckCause::DispatchLink(cause) => cause.denial.as_ref().map(|denial| denial.catalog_fields()),
+                            _ => None,
+                        })
                     })
                     .unwrap_or_default();
                 // FR-366: a refusal in a type-level invariant names the
@@ -2631,6 +2632,13 @@ mod tests {
         ] }));
         assert_eq!(cause.type_check_stage(), None);
         let refusal = CompileRefusal::Check { refusals: vec![CheckRefusal { location: Location::root(Origin::Expression), cause }], region: None };
+        assert_eq!(refusal.code(), Code::IllTyped);
+        assert_eq!(refusal.cause(), Some("type-mismatch"));
+        assert_eq!(refusal.fields(), None);
+        let refusal = CompileRefusal::Check { refusals: vec![
+            CheckRefusal { location: Location::root(Origin::Expression), cause: CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch) },
+            CheckRefusal { location: Location::root(Origin::Expression), cause: CheckCause::TypeCheckCapacity(StorageRequest::new(23, StorageUnit::AdditionalElements)) },
+        ], region: None };
         assert_eq!(refusal.code(), Code::IllTyped);
         assert_eq!(refusal.cause(), Some("type-mismatch"));
         assert_eq!(refusal.fields(), None);
