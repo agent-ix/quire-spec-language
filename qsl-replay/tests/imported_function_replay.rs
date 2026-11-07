@@ -483,25 +483,49 @@ fn no_serialized_route_accepts_the_function_owner() {
 }
 
 #[test]
+#[trace("TC-444", "FR-098-AC-20")]
 #[trace("TC-1325", "FR-350-AC-16")]
 fn supplied_dependency_internal_lists_reach_the_library_semantic_owner() {
-    let unit = unit_source("test/units", "u", UNIT_BODY);
-    let libraries = [units()];
+    let unit = format!("{HEADER}import \"test/a\" as a;\nimport \"test/units\" as u;\n{UNIT_BODY}");
+    let libraries = [
+        library(
+            "test/a",
+            "earlier",
+            "function unused using v(): Boolean pure { true }",
+        ),
+        units(),
+    ];
     let big = imported(&unit, libraries.to_vec(), "big");
     let located = Located {
         package: big.package.clone(),
         site: big.site.function.clone(),
     };
     let mut wire = request(&unit, &libraries, owned(&big, "big"), &located, &[3]);
-    wire.dependencies[0].refinement_internals = Some(
+    assert_eq!(wire.dependencies[0].identity, "test/a");
+    assert_eq!(wire.dependencies[1].identity, "test/units");
+    wire.dependencies[1].refinement_internals = Some(
         serde_json::from_value(
             serde_json::json!([{"refinement":"NoSuchRefinement","internal":[]}]),
         )
         .unwrap(),
     );
-    let ReplayRefusal::Recompile(refusal) = refusal_of(wire) else {
-        panic!("the dependency list must reach semantic checking")
+    let error = refusal_of(wire);
+    assert_eq!(
+        error.pointer().as_deref(),
+        Some("/dependencies/1/refinement_internals/0/refinement")
+    );
+    let ReplayRefusal::RefinementInternals {
+        refusal,
+        protocol_results,
+        ..
+    } = error
+    else {
+        panic!("the dependency list must reach semantic checking: {error:?}")
     };
+    assert!(
+        protocol_results.is_none(),
+        "no protocol results are synthesized"
+    );
     let qsl_replay::CompileRefusal::Dependency { path, refusal } = *refusal else {
         panic!("the refusal names its library owner: {refusal:?}")
     };

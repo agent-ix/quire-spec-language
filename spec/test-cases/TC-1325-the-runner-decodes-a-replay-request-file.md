@@ -51,7 +51,15 @@ An omitted provision `authority` is a schema `corpus-decode` refusal at
 `/byte_provision/0/authority`; no authority is inferred. Optional root and
 dependency refinement-internals inputs reach their actual semantic owner.
 A nonexistent supplied refinement produces the owner's missing-declaration,
-missing-name refusal, rather than an adapter-unsupported result.
+missing-name refusal, rather than an adapter-unsupported result. Root semantic
+list failures retain the complete native compiler value and relative pointer,
+with a separate request pointer under `/package/lock/refinement_internals`.
+A dependency list failure on entry 1, after an unrelated entry 0, carries
+`/dependencies/1/refinement_internals` followed by the native relative pointer;
+the compiler's real dependency-owner path selects the supplied index. A root
+list of `{}` refuses during bounded descriptor decode, `InvalidPackage` with
+`wrong-value-kind` at `/package/lock/refinement_internals`, because the complete
+package requires an array. It never becomes a synthetic semantic refusal.
 
 The typed traversal control retains present, absent and null record slots,
 all four native collection kinds and their element order. It checks that a

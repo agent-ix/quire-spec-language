@@ -1723,6 +1723,10 @@ impl OutcomeDocument {
                 refusal.code().as_str(),
                 match refusal {
                     ReplayRefusal::Package(_)
+                    | ReplayRefusal::RefinementInternals { .. }
+                    | ReplayRefusal::PackageSources(_)
+                    | ReplayRefusal::DependencySources { .. }
+                    | ReplayRefusal::DependencySelections(_)
                     | ReplayRefusal::Request(crate::ReplayRequestRefusal::PackageMember {
                         ..
                     }) => refusal.pointer().map(|pointer| OutcomeLocus::Artifact {
@@ -1882,7 +1886,8 @@ impl OutcomeDocument {
 fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
     match refusal {
         ReplayRefusal::Recompile(refusal) => Some(refusal.stage().into()),
-        ReplayRefusal::RecompileWithProtocolResults { refusal, .. } => Some(refusal.stage().into()),
+        ReplayRefusal::RecompileWithProtocolResults { refusal, .. }
+        | ReplayRefusal::RefinementInternals { refusal, .. } => Some(refusal.stage().into()),
         ReplayRefusal::Fault(_)
         | ReplayRefusal::InvalidPackageName(_)
         | ReplayRefusal::ObservedTemporalRefusal(qsl_eval::temporal::TemporalRefusal::Fault(_))

@@ -105,7 +105,6 @@ fn native_admission_uses_the_callers_finite_i2_input_ceiling() {
 }
 
 #[test]
-#[trace("TC-444", "FR-098-AC-3")]
 #[trace("TC-1325", "FR-350-AC-16")]
 fn admitted_offered_package_does_not_restore_the_retired_source_staleness_check() {
     let mut wire = small(7);
@@ -122,6 +121,7 @@ fn admitted_offered_package_does_not_restore_the_retired_source_staleness_check(
 }
 
 #[test]
+#[trace("TC-444", "FR-098-AC-20")]
 #[trace("TC-1325", "FR-350-AC-16")]
 fn supplied_root_internal_lists_reach_the_semantic_owner_before_native_admission() {
     let mut wire = small(7);
@@ -129,10 +129,45 @@ fn supplied_root_internal_lists_reach_the_semantic_owner_before_native_admission
         package["lock"]["refinement_internals"] =
             serde_json::json!([{"refinement":"NoSuchRefinement", "internal":["tau"]}]);
     });
+    let request = ReplayRequest::decode(wire.clone(), ReplayLimits::default()).unwrap();
     let error = replay(wire, ReplayLimits::default()).unwrap_err();
-    let ReplayRefusal::Recompile(refusal) = error else {
+    let expected_pointer = "/package/lock/refinement_internals/0/refinement";
+    assert_eq!(error.pointer().as_deref(), Some(expected_pointer));
+    let outcome = crate::OutcomeDocument::from_replay(&Err(error));
+    let output: serde_json::Value = serde_json::from_slice(&outcome.to_bytes().unwrap()).unwrap();
+    assert_eq!(
+        output["diagnostics"][0]["locus"]["pointer"],
+        expected_pointer
+    );
+    // Obtain another genuine compiler failure; request-location composition
+    // must retain its entire native value and its relative list locus.
+    let error = replay(request.to_wire(), ReplayLimits::default()).unwrap_err();
+    let ReplayRefusal::RefinementInternals {
+        refusal,
+        protocol_results,
+        ..
+    } = error
+    else {
         panic!("the source owner checks its supplied lists: {error:?}")
     };
+    let native_before = format!("{refusal:?}");
+    let code = refusal.code();
+    let cause = refusal.cause().map(str::to_owned);
+    let ordinary = match protocol_results {
+        Some(protocol_results) => ReplayRefusal::RecompileWithProtocolResults {
+            refusal,
+            protocol_results,
+        },
+        None => ReplayRefusal::Recompile(refusal),
+    };
+    let located = locate_refinement_internals(&request, ordinary);
+    assert_eq!(located.code(), code);
+    assert_eq!(located.cause(), cause.as_deref());
+    assert_eq!(located.pointer().as_deref(), Some(expected_pointer));
+    let ReplayRefusal::RefinementInternals { refusal, .. } = located else {
+        panic!("located native refusal");
+    };
+    assert_eq!(format!("{refusal:?}"), native_before);
     let CompileRefusal::Check { refusals, .. } = *refusal else {
         panic!("S3 list check: {refusal:?}")
     };
@@ -143,4 +178,29 @@ fn supplied_root_internal_lists_reach_the_semantic_owner_before_native_admission
         panic!("typed internal list: {refusal:?}")
     };
     assert_eq!(defect.pointer, "/0/refinement");
+}
+
+#[test]
+#[trace("TC-444", "FR-098-AC-20")]
+fn malformed_raw_internal_list_refuses_at_its_full_carrier_location() {
+    let mut wire = small(7);
+    wire.package = crate::request::mutate_raw_package(&wire.package, |package| {
+        package["lock"]["refinement_internals"] = serde_json::json!({});
+    });
+    let before = super::super::spine_run_count();
+    let error = replay(wire, ReplayLimits::default()).unwrap_err();
+    assert_eq!(super::super::spine_run_count(), before);
+    assert_eq!(error.code(), Code::InvalidPackage);
+    assert_eq!(error.cause(), Some("wrong-value-kind"));
+    assert_eq!(
+        error.pointer().as_deref(),
+        Some("/package/lock/refinement_internals")
+    );
+    assert!(matches!(
+        error,
+        ReplayRefusal::Request(crate::ReplayRequestRefusal::PackageMember {
+            cause: crate::request::PackageMemberCause::WrongKind,
+            ..
+        })
+    ));
 }

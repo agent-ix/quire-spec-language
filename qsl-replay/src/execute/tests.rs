@@ -1528,6 +1528,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     )
     .expect_err("test/zzz is not selected");
     assert_eq!(refused.code(), Code::InvalidPackage);
+    assert_eq!(refused.pointer().as_deref(), Some("/dependencies"));
     assert!(
         matches!(
             &refused,
@@ -1557,6 +1558,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
             "{refused:?}"
         );
         assert_eq!(refused.code(), Code::InvalidPackage);
+        assert_eq!(refused.pointer().as_deref(), Some("/dependencies"));
     }
 
     // An entry whose source has test/units's authority and identity.

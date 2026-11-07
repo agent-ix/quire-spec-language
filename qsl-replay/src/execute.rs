@@ -164,11 +164,11 @@ pub enum ReplayRefusal {
     SourceCount(usize),
     /// FR-480: the package reference's source list is empty, repeats an
     /// owner, or names a document from the byte provision.
-    #[error("invalid_package/invalid-value at /package/sources: {0}")]
+    #[error("invalid_package/invalid-value at /package/lock/sources: {0}")]
     PackageSources(&'static str),
     /// FR-098: one dependency entry's source list is empty, repeats an owner,
     /// or names a definition document.
-    #[error("invalid_package/invalid-value at /package/dependencies/{index}/sources: {reason}")]
+    #[error("invalid_package/invalid-value at /dependencies/{index}/sources: {reason}")]
     DependencySources {
         /// The dependency entry's zero-based index.
         index: usize,
@@ -192,11 +192,23 @@ pub enum ReplayRefusal {
     /// input (an unreadable document, or two for one identity).
     #[error("{}", .0.detail)]
     DomainPackages(Box<qsl_semantics::model::normalize::ModelRefusal>),
+    /// A supplied refinement-internals list refused in its semantic owner.
+    /// The native refusal keeps its relative locus; the request boundary adds
+    /// the exact supplied list's pointer without changing that native value.
+    #[error("the refinement internals at {pointer} refused: {refusal}")]
+    RefinementInternals {
+        /// The complete native compiler refusal, including any dependency path.
+        refusal: Box<CompileRefusal>,
+        /// The actual supplied list's pointer followed by the native relative locus.
+        pointer: String,
+        /// Genuine protocol results retained by the refusing compile stage, if any.
+        protocol_results: Option<Vec<spine::ProtocolResult>>,
+    },
     /// ADR-015 D-4 rules 1 and 6: the package reference's `dependencies`
     /// are not in strictly ascending UTF-8 byte order of identity, or name
     /// an identity the recompiled package does not select
-    /// (`invalid_package`/`invalid-value` at `/package/dependencies`).
-    #[error("invalid_package/invalid-value at /package/dependencies: {0}")]
+    /// (`invalid_package`/`invalid-value` at `/dependencies`).
+    #[error("invalid_package/invalid-value at /dependencies: {0}")]
     DependencySelections(DependencySelectionsCause),
     /// ADR-015 D-4 rule 3: the `dependencies` entries do not form a
     /// dependency input (ADR-015 D-1).
@@ -554,7 +566,8 @@ impl ReplayRefusal {
             Self::DependencySources { .. } => Code::InvalidPackage,
             Self::InvalidPackageName(_) => Code::InvalidRequest,
             Self::Recompile(refusal) => refusal.code(),
-            Self::RecompileWithProtocolResults { refusal, .. } => refusal.code(),
+            Self::RecompileWithProtocolResults { refusal, .. }
+            | Self::RefinementInternals { refusal, .. } => refusal.code(),
             Self::DomainPackages(refusal) => refusal.code,
             Self::DependencySelections(_) => Code::InvalidPackage,
             Self::DependencyInput(refusal) => refusal.code(),
@@ -619,7 +632,8 @@ impl ReplayRefusal {
             Self::Package(refusal) => refusal.cause(),
             Self::PackageEvidence(_) => None,
             Self::Recompile(refusal) => refusal.cause(),
-            Self::RecompileWithProtocolResults { refusal, .. } => refusal.cause(),
+            Self::RecompileWithProtocolResults { refusal, .. }
+            | Self::RefinementInternals { refusal, .. } => refusal.cause(),
             Self::DomainPackages(refusal) => Some(refusal.cause.as_str()),
             Self::DependencySelections(_) => Some("invalid-value"),
             Self::PackageSources(_) => Some("invalid-value"),
@@ -686,6 +700,9 @@ impl ReplayRefusal {
             Self::RecompileWithProtocolResults {
                 protocol_results, ..
             } => Some(protocol_results),
+            Self::RefinementInternals {
+                protocol_results, ..
+            } => protocol_results.as_deref(),
             _ => None,
         }
     }
@@ -700,6 +717,7 @@ impl ReplayRefusal {
                 .pointer()
                 .map(|pointer| Cow::Owned(pointer.to_owned())),
             Self::Package(refusal) => Some(Cow::Owned(refusal.pointer())),
+            Self::RefinementInternals { pointer, .. } => Some(Cow::Owned(pointer.clone())),
             Self::WrongReplayTarget { target, .. } => {
                 Some(Cow::Borrowed(target.member().pointer()))
             }
@@ -732,9 +750,10 @@ impl ReplayRefusal {
                 _ => Cow::Borrowed("/replay/obligation_identity"),
             }),
             Self::ObservedTemporalInput { pointer, .. } => Some(Cow::Borrowed(pointer)),
-            Self::PackageSources(_) => Some(Cow::Borrowed("/package/sources")),
+            Self::PackageSources(_) => Some(Cow::Borrowed("/package/lock/sources")),
+            Self::DependencySelections(_) => Some(Cow::Borrowed("/dependencies")),
             Self::DependencySources { index, .. } => {
-                Some(Cow::Owned(format!("/package/dependencies/{index}/sources")))
+                Some(Cow::Owned(format!("/dependencies/{index}/sources")))
             }
             _ => None,
         }
@@ -1787,7 +1806,8 @@ pub(crate) fn recompile_with_temporal_selections(
         temporal_selections,
         limits.spine,
         request.refinement_internals(),
-    )?;
+    )
+    .map_err(|failure| locate_refinement_internals(request, failure))?;
     // Rule 6: every entry names a selection of the recompiled closure.
     let selections = compiled.checked.package().dependency_selections();
     for entry in request.dependencies() {
@@ -1803,6 +1823,71 @@ pub(crate) fn recompile_with_temporal_selections(
         .package()
         .admit(&evidence, limits.spine.imports.for_ir())?;
     Ok(compiled)
+}
+
+/// Compose the request location only when the genuine compiler owner path
+/// identifies an explicitly supplied list. Ordinary compile failures stay intact.
+fn locate_refinement_internals(request: &ReplayRequest, failure: ReplayRefusal) -> ReplayRefusal {
+    let (refusal, protocol_results) = match failure {
+        ReplayRefusal::Recompile(refusal) => (refusal, None),
+        ReplayRefusal::RecompileWithProtocolResults {
+            refusal,
+            protocol_results,
+        } => (refusal, Some(protocol_results)),
+        other => return other,
+    };
+    let pointer = refinement_internals_pointer(request, &refusal);
+    match pointer {
+        Some(pointer) => ReplayRefusal::RefinementInternals {
+            refusal,
+            pointer,
+            protocol_results,
+        },
+        None => match protocol_results {
+            Some(protocol_results) => ReplayRefusal::RecompileWithProtocolResults {
+                refusal,
+                protocol_results,
+            },
+            None => ReplayRefusal::Recompile(refusal),
+        },
+    }
+}
+
+fn refinement_internals_pointer(
+    request: &ReplayRequest,
+    refusal: &CompileRefusal,
+) -> Option<String> {
+    let (owner, refusal) = match refusal {
+        CompileRefusal::Dependency { path, refusal } => (Some(path.last()?), refusal.as_ref()),
+        refusal => (None, refusal),
+    };
+    let CompileRefusal::Check { refusals, .. } = refusal else {
+        return None;
+    };
+    let qsl_semantics::check::CheckCause::Refinement(refinement) = &refusals.first()?.cause else {
+        return None;
+    };
+    let qsl_semantics::check::RefinementCause::InternalList(defect) = &refinement.cause else {
+        return None;
+    };
+    let prefix = match owner {
+        Some(owner) => {
+            // ADR-015 rule 1 has already rejected duplicate identities. The
+            // compiler's actual dependency path names this unique supplied row.
+            let (index, entry) = request
+                .dependencies()
+                .iter()
+                .enumerate()
+                .find(|(_, entry)| entry.identity() == owner)?;
+            entry.refinement_internals()?;
+            format!("/dependencies/{index}/refinement_internals")
+        }
+        None => {
+            request.refinement_internals()?;
+            "/package/lock/refinement_internals".to_owned()
+        }
+    };
+    Some(format!("{prefix}{}", defect.pointer))
 }
 
 fn internals_value(

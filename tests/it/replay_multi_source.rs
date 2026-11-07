@@ -585,7 +585,7 @@ fn assert_dependency_source_list_refusal(mut wire: ReplayRequestWire) {
     assert_eq!(refusal.cause(), Some("invalid-value"));
     assert_eq!(
         refusal.pointer().as_deref(),
-        Some("/package/dependencies/0/sources")
+        Some("/dependencies/0/sources")
     );
 }
 
@@ -644,7 +644,7 @@ fn duplicate_unit_source_refuses_before_recompile() {
     assert!(matches!(refusal, ReplayRefusal::PackageSources(_)));
     assert_eq!(refusal.code(), qsl_foundation::Code::InvalidPackage);
     assert_eq!(refusal.cause(), Some("invalid-value"));
-    assert_eq!(refusal.pointer().as_deref(), Some("/package/sources"));
+    assert_eq!(refusal.pointer().as_deref(), Some("/package/lock/sources"));
 }
 
 #[trace("TC-1210", "FR-480-AC-7")]
@@ -665,7 +665,7 @@ fn definition_document_source_refuses_before_recompile() {
     assert!(matches!(refusal, ReplayRefusal::PackageSources(_)));
     assert_eq!(refusal.code(), qsl_foundation::Code::InvalidPackage);
     assert_eq!(refusal.cause(), Some("invalid-value"));
-    assert_eq!(refusal.pointer().as_deref(), Some("/package/sources"));
+    assert_eq!(refusal.pointer().as_deref(), Some("/package/lock/sources"));
 }
 
 fn supplied(identity: &str, source: &str, text: &str) -> SuppliedLibrary {
