@@ -69,7 +69,7 @@ Tag the tests `#[trace("TC-1266", "FR-488-AC-n")]`.
 - Step 4: FR-488-AC-10's anchor references.
 - Step 5: FR-488-AC-11's different NodeIds and AC-12's equal NodeIds,
   ordinals and the renamed-variable difference.
-- Step 6: FR-488-AC-13's quantifier Tuple with its fairness Group and the refused
+- Step 6: FR-488-AC-13's quantifier Tuple with `a`'s fairness reference and the refused
   `systems_interface` declaration.
 - Step 7: FR-488-AC-14's equal occurrences and lookup refusals.
 - Step 8: FR-488-AC-15: the wrapper is not a temporal clause root, and

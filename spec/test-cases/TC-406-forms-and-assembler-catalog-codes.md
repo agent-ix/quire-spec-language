@@ -35,7 +35,9 @@ Tag the test `#[trace("FR-091-AC-21", "TC-406")]`.
 - `NoDispatchEntry` and `UnrepresentedConstruct` return
   `unsupported_construct`.
 - Unresolved type name returns `missing_declaration`, ambiguous type name
-  returns `ambiguous_declaration`, and ill-formed bounds return `ill_typed`.
+  returns `ambiguous_declaration`, ambiguous unit name (`AmbiguousUnitName`)
+  returns `ambiguous_declaration`/`ambiguous-name`, and ill-formed bounds
+  return `ill_typed`.
 - The undeclared-alias cause returns `missing_declaration`, the
   duplicate-alias cause `ambiguous_declaration`, and the alias-cycle cause
   `invalid_package`.
