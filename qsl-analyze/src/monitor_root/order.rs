@@ -80,14 +80,14 @@ pub struct ModelStepOrderRefusal {
     pub encoding: Option<Error>,
 }
 
-fn refuse(code: ModelStepOrderRefusalCode) -> ModelStepOrderRefusal {
+pub(super) fn refuse(code: ModelStepOrderRefusalCode) -> ModelStepOrderRefusal {
     ModelStepOrderRefusal {
         code,
         encoding: None,
     }
 }
 
-fn selected_clause(root: &PlanRoot) -> Option<&TemporalClauseNode> {
+pub(super) fn selected_clause(root: &PlanRoot) -> Option<&TemporalClauseNode> {
     root.checked_unit()
         .package()
         .graph()
@@ -97,6 +97,33 @@ fn selected_clause(root: &PlanRoot) -> Option<&TemporalClauseNode> {
             node.identity() == *root.plan().subject().clause_node()
                 && node.claim() == root.plan().subject().occurrence().origin()
         })
+}
+
+/// Resolve the original clause and exactly its checked model time source.
+/// This selection is shared by order encoding and progress-field comparison.
+pub(super) fn selected_time_source(
+    root: &PlanRoot,
+) -> Result<(&TemporalClauseNode, &ModelTimeSource), ModelStepOrderRefusal> {
+    let clause =
+        selected_clause(root).ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingClause))?;
+    let binding = clause
+        .clause()
+        .time_binding()
+        .ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingModelTime))?;
+    let graph = root.checked_unit().package().graph();
+    let model = graph
+        .timed_model(&binding.model)
+        .ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingModelTime))?;
+    let mut sources = graph.time_sources().iter().filter(|source| {
+        model.is_timed_by(source) && source.source == binding.source && source.unit == binding.unit
+    });
+    let source = sources
+        .next()
+        .ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingTimeSource))?;
+    if sources.next().is_some() {
+        return Err(refuse(ModelStepOrderRefusalCode::MissingTimeSource));
+    }
+    Ok((clause, source))
 }
 
 impl PlanRoot {
@@ -110,27 +137,7 @@ impl PlanRoot {
         &self,
         limits: Limits,
     ) -> Result<ModelStepOrder, ModelStepOrderRefusal> {
-        let clause = selected_clause(self)
-            .ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingClause))?;
-        let binding = clause
-            .clause()
-            .time_binding()
-            .ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingModelTime))?;
-        let graph = self.checked_unit().package().graph();
-        let model = graph
-            .timed_model(&binding.model)
-            .ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingModelTime))?;
-        let mut sources = graph.time_sources().iter().filter(|source| {
-            model.is_timed_by(source)
-                && source.source == binding.source
-                && source.unit == binding.unit
-        });
-        let source = sources
-            .next()
-            .ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingTimeSource))?;
-        if sources.next().is_some() {
-            return Err(refuse(ModelStepOrderRefusalCode::MissingTimeSource));
-        }
+        let (_, source) = selected_time_source(self)?;
         let kind = match &source.source {
             TimeSourceKind::Dense => SourceEncoding::Dense,
             TimeSourceKind::Tick { period, .. } => SourceEncoding::Tick {

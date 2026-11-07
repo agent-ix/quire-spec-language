@@ -90,3 +90,9 @@ Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 - Step 30: each invalid association returns the owning typed refusal and no partial admitted context; no label, clock row, matching index or second emission supplies missing authority.
 - Step 31: the original combined checked unit retains all compared source/time facts after input destruction; the separate final-emission selection equals the strict reader clause. This is component retention evidence and grants no admitted order/progress claim.
 - Step 32: the complete canonical values retain every specified component; source kind, unit and period changes give unequal values. Exact-length encoding succeeds; one less returns Encoding with the native canonical byte limit. The returned plan, obligations and emission remain immutable.
+
+Component controls independently change the observation source, clock identity,
+clock revision, model, unit, dense/tick kind, operation, period numerator and
+denominator against genuine checked source facts. These controls provide no
+positive joint-authority credit until the original structural node and claim
+occurrence comparisons and owner-issued association test also pass.

@@ -30,6 +30,8 @@ qsl-route = { path = "../qsl-route" }
 quire-checked = { workspace = true }
 quire-semantic-value = { workspace = true }
 quire-canonical = { workspace = true }
+# The observation owner admits progress associations independently of QSL.
+quire-observation = { git = "https://github.com/agent-ix/quire-observation", branch = "main" }
 quire-exact = { workspace = true }
 num-bigint = "0.4.8"
 num-integer = "0.1.47"

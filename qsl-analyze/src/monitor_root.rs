@@ -36,6 +36,7 @@ use crate::monitor_entries::{names, render, spec_from_plan, WIRE_FIELD_NAMES};
 use crate::monitor_plan::produce;
 
 mod order;
+mod progress;
 pub use order::{ModelStepOrder, ModelStepOrderRefusal, ModelStepOrderRefusalCode};
 
 /// The authored unit and the selection the plan root is written for.

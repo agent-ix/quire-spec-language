@@ -192,6 +192,14 @@ selected package, clause, subject and claim occurrence. It SHALL use the
 owning admission interface; neither the monitor scope type nor its watermark
 entry establishes that authority.
 
+QSL SHALL independently compare the observation association's selected subject,
+clock identity and revision, observation source, model, time unit, source kind,
+and digital operation and exact period against the independently selected
+observation inputs and original checked model-time source. These component
+comparisons SHALL NOT establish joint authority without comparing the complete
+structural node identities and the actual clause claim occurrence. Matching a
+model alias, clause name or clock label alone SHALL NOT establish that identity.
+
 The handoff SHALL return a typed refusal without a partial admitted context
 when either authority is absent or its owner rejects the association. A
 foreign emission, changed selection, changed source, substituted order or
