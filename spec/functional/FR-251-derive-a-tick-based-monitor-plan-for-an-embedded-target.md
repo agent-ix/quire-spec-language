@@ -233,8 +233,12 @@ bare semantic identity SHALL NOT substitute for a complete admitted value.
 QSL SHALL NOT reconstruct the association from a second emission or duplicate
 the owner admission rules.
 
-The handoff SHALL expose the original opaque IR `AdmissionBinding` retained by
-the admitted emitting package used by downstream closure selection. The package
+`PlanRoot::admit_authority` SHALL perform the one strict admission of the final
+emission. The driver SHALL use the returned authority's `admitted_package()`
+for downstream rows and closure selection; it SHALL NOT strictly read the
+same bytes again for that preparation. The handoff's `admission_binding()`
+SHALL clone the actual original opaque IR `AdmissionBinding` retained by that
+admitted emitting package. The package
 used by that selection SHALL retain that exact capability. A clone permitted by
 the IR owner retains it; an independent strict read of equal bytes or a handoff
 from another emission SHALL NOT replace it. QSL SHALL NOT mint, reconstruct,
@@ -272,8 +276,12 @@ amount, original configured bound and non-owning first-unpaid locus, preserve
 all earlier admitted consumption, and expose no partially authoritative
 context. Counter or footprint arithmetic exhaustion SHALL deny rather than
 wrap. A compact zero-storage refusal SHALL allocate no owned diagnostic.
-Read and canonical owner limits remain validation ceilings; they SHALL NOT
-substitute for the preparation budget or replenish either of its counters.
+The authority entry SHALL accept the caller's original `NativeJoinLocus` and
+preserve its non-owning first-unpaid location without inventing a row source.
+Owner structural read/canonical caps, grouped as validation caps where needed,
+SHALL be passed through unchanged. They SHALL NOT become another resource
+allowance, substitute for the shared preparation budget, replenish its counters,
+or be derived from that budget's remaining allowance.
 
 The handoff SHALL retain the owner capabilities required to use both values
 after temporary compilation inputs are dropped. A clone or writer rename

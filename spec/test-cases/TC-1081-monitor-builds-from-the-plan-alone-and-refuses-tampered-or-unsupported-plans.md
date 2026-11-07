@@ -97,7 +97,10 @@ Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 The procedure defines required evidence; specification text alone grants no
 implementation or qualification credit. Shared-budget and admission-binding
 controls remain planned until their concrete owner interfaces and charged
-implementation have passed these procedures. Positive joint-authority steps remain
+implementation have passed these procedures. Complete materialization charging
+requires the observation owner's retained canonical VALUE interface (IR-1397)
+and the canonical writer's allocation preflight/reservation interface
+(PLAT-1265). Selection-prefix tests alone do not qualify that materialization. Positive joint-authority steps remain
 planned until the observation owner supplies the structural node and original
 claim-occurrence association contract (IR-1390). An owner API that accepts only
 64-hex node strings does not admit QSL's complete structural identities; no
