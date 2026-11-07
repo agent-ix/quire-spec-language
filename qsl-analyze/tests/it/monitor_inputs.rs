@@ -116,6 +116,10 @@ fn selections(parsed: &qsl_cst::ParsedSource) -> Vec<TemporalClockSelection> {
 }
 
 fn compile(documents: &Documents, text: String) -> Compiled {
+    compile_with(documents, text, &DependencyInput::default())
+}
+
+fn compile_with(documents: &Documents, text: String, dependencies: &DependencyInput) -> Compiled {
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
     let identity = identity();
@@ -142,7 +146,7 @@ fn compile(documents: &Documents, text: String) -> Compiled {
         &StateClauseExecutionPoints::new(),
         &selections,
         &models,
-        &DependencyInput::default(),
+        dependencies,
         limits,
         &cancel,
     )
@@ -1287,5 +1291,127 @@ fn the_kind_refusal_precedes_the_document_limits() {
             pointer.as_str()
         ),
         ("invalid_runtime_input", "wrong-value-kind", "")
+    );
+}
+
+/// A `monitor` over `clauses` of `unit` and its `Typed` `trace`.
+fn run_clauses(
+    world: &World,
+    unit: &Compiled,
+    clauses: &[&str],
+    trace: &TraceInput,
+    selections: &[TemporalClockSelection],
+    packages: &qsl_semantics::model::intake::PackageInput,
+) -> Result<MonitorOutcome, StageFailure<MonitorRefusal>> {
+    let request = MonitorRequest {
+        clauses: clauses.iter().map(|name| model_clause(name)).collect(),
+        trace: MonitorTrace::Typed(trace),
+        snapshots: &world.documents.snapshots,
+        packages,
+        sources: &unit.sources,
+        temporal_selections: selections,
+    };
+    monitor(
+        unit.unit.package(),
+        &request,
+        &limits(1 << 20),
+        &Cancel::new(),
+    )
+    .map(|staged| staged.into_value())
+}
+
+/// FR-283-AC-16: a missing selection and an empty `packages` each name the
+/// clause the rule picks (the owner of the missing selection when selected,
+/// otherwise the first selected clause), with no record.
+#[trace("TC-765", "FR-283-AC-16")]
+#[test]
+fn request_defects_name_the_owner_or_the_first_clause() {
+    let mut world = world();
+    let refs = world.refs("n", &[0, 2, 0]);
+    let trace = window(refs, &[0, 2, 5], 5, binding("ms"));
+    let all = world.window.selections.clone();
+    assert_eq!(all.len(), 2, "Window and Window2 each bear a clock");
+    let packages = world.documents.packages.clone();
+
+    // `Window2`'s selection is the one missing, so it is named although
+    // `Window` is selected first.
+    let missing = run_clauses(
+        &world,
+        &world.window,
+        &["Window", "Window2"],
+        &trace,
+        &all[..1],
+        &packages,
+    );
+    assert_eq!(
+        request_defect(missing),
+        (
+            "Window2".to_owned(),
+            "missing_declaration".to_owned(),
+            "missing-selection".to_owned(),
+            std::collections::BTreeMap::from([("member", "temporal_selections".to_owned())])
+        )
+    );
+
+    // Empty `packages` fails the strict read, naming the first selected.
+    let empty = qsl_semantics::model::intake::PackageInput::default();
+    let strict = run_clauses(
+        &world,
+        &world.window,
+        &["Window2", "Window"],
+        &trace,
+        &all,
+        &empty,
+    );
+    assert_eq!(
+        request_defect(strict),
+        (
+            "Window2".to_owned(),
+            "invalid_runtime_input".to_owned(),
+            "invalid-value".to_owned(),
+            std::collections::BTreeMap::from([
+                ("member", "packages".to_owned()),
+                ("stage", "strict-read".to_owned()),
+            ])
+        )
+    );
+}
+
+/// FR-283-AC-16: a package checked against a library dependency whose own
+/// domain package document `packages` omits is refused at the `closure`
+/// stage.
+#[trace("TC-765", "FR-283-AC-16")]
+#[test]
+fn a_missing_library_domain_package_is_refused_at_the_closure_stage() {
+    let mut world = world();
+    let library = DependencyInput::new([qsl_replay::spine::SuppliedLibrary {
+        identity: "test/lib".to_owned(),
+        source: SourceIdentity::new("agent-ix", "lib"),
+        path: "lib.native".to_owned(),
+        bytes: b"language \"ix:native\" edition \"1-draft\";\n\
+                 profile v = \"quire.value.complete/v1\";\n\
+                 model L = \"test/counter\";\n\
+                 function ok using v(): Boolean pure { true }\n"
+            .to_vec(),
+    }])
+    .expect("an admissible dependency input");
+    let text = window_unit().replacen("model M", "import \"test/lib\" as g;\nmodel M", 1);
+    let unit = compile_with(&world.documents, text, &library);
+    let refs = world.refs("c", &[0, 2, 0]);
+    let trace = window(refs, &[0, 2, 5], 5, binding("ms"));
+    let selections = unit.selections.clone();
+    let empty = qsl_semantics::model::intake::PackageInput::default();
+    let result = run_clauses(&world, &unit, &["Window"], &trace, &selections, &empty);
+    assert_eq!(
+        request_defect(result),
+        (
+            "Window".to_owned(),
+            "invalid_runtime_input".to_owned(),
+            "invalid-value".to_owned(),
+            std::collections::BTreeMap::from([
+                ("member", "packages".to_owned()),
+                ("stage", "closure".to_owned()),
+            ])
+        )
     );
 }
