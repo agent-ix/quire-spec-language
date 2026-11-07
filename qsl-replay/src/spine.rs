@@ -2586,7 +2586,10 @@ mod tests {
                     CheckCause::StateModel(Box::new(StateModelRefusal { cause: cause.clone(), receiver: None })),
                     CheckCause::StateGraph(Box::new(StateGraphCause::Predicate { role: PredicateRole::Target, span, cause: Box::new(cause.clone()) })),
                     CheckCause::Temporal(Box::new(TemporalCause::TimedPredicate { span, cause: Box::new(cause.clone()) })),
-                    CheckCause::Temporal(Box::new(TemporalCause::Multiple { causes: vec![TemporalCause::TimedPredicate { span, cause: Box::new(cause.clone()) }] })),
+                    CheckCause::Temporal(Box::new(TemporalCause::Multiple { causes: vec![
+                        TemporalCause::TimedPredicate { span, cause: Box::new(cause.clone()) },
+                        TemporalCause::TimedPredicate { span, cause: Box::new(CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)) },
+                    ] })),
                     CheckCause::ProtocolAnchor(Box::new(ProtocolAnchorCause::KeyClause { channel: "channel".to_owned(), span, cause: Box::new(cause.clone()) })),
                     CheckCause::ProtocolAnchor(Box::new(ProtocolAnchorCause::SlotClause { node: "slot".to_owned(), slot: SlotKind::Condition, span, cause: Box::new(cause) })),
                 ];
