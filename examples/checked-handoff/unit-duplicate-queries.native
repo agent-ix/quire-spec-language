@@ -1,0 +1,90 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// FR-046-AC-3 on the admitted bytes route (FR-531, FR-533): recipe R without
+// the unit `U`, read with the integer model of the checked-handoff tests,
+// whose two `recover` slots host the duplicate-preserving sequence queries
+// over the Collection member `receipts` of `M::Recovery` (Amount 1..20,
+// at most 5 receipts, Total 0..100, Count 0..5). Over the receipts [2,2,3]
+// `Full` holds and `Partial` does not; over the deduplicated [2,3] `Full`
+// does not hold and `Partial` does.
+language "ix:native" edition "1-draft";
+profile v = "quire.model.complete/v1";
+profile p = "quire.protocol.finite-global/v1";
+profile t = "quire.temporal.event-position.false-extension/v1";
+import "agent-ix/checked-handoff-library" as L;
+model M = "agent-ix/checked-handoff";
+type Count = Int[0, 5];
+
+pre BeforeApply using v on M::Workflow::apply { amount >= 1 }
+post AfterApply using v on M::Workflow::apply { result }
+
+temporal Due using t over (view: M::Workflow) clock "events" on origin {
+    always[0,30] holds(L::Ready(view.ready))
+}
+temporal DueLate using t over (view: M::Workflow) clock "events" on origin {
+    always[0,60] holds(L::Ready(view.ready))
+}
+
+protocol Flow using p over (view: M::Workflow) on origin {
+    role Service on M::Workflow;
+    role Provider on M::Provider;
+    channel Decisions from Provider to Service carries M::Notice
+        ordering unordered delivery at-least-once capacity 4 overflow reject;
+
+    // Each conjunct holds over [2,2,3] and fails if any query deduplicates:
+    // filter keeps both 2s, map keeps one result per receipt and both true
+    // results, size is 3, the count of 2 is 2 and the sum is 7.
+    compensate Full for Main::Applied as (forwardFull: M::Workflow)
+        by Service on M::Workflow::apply using t clock "full-recovery" {
+        capture targetFull: M::Total = forwardFull.total;
+        activate first (triggerFull: M::Notice) when { not triggerFull.ready } {
+            capture activatedFull: Boolean = triggerFull.ready;
+        }
+        within [0,30]; attempts 3 of M::Attempt;
+        retry (earlierFull: M::Attempt, laterFull: M::Attempt) {
+            earlierFull.tally < 3 and laterFull.tally = earlierFull.tally + 1
+            and targetFull >= 0 and not activatedFull
+        };
+        commit Main::Committed;
+        recover (recoveredFull: M::Recovery) {
+            size(filter(x in recoveredFull.receipts: x = 2)) = 2
+            and sum<M::Total>(y in filter(x in recoveredFull.receipts: x = 2): y) = 4
+            and size(map(x in recoveredFull.receipts: x = 2)) = 3
+            and count<Count>(b in map(x in recoveredFull.receipts: x = 2): b) = 2
+            and size(recoveredFull.receipts) = 3
+            and count<Count>(x in recoveredFull.receipts: x = 2) = 2
+            and sum<M::Total>(x in recoveredFull.receipts: x) = 7
+        };
+    }
+
+    requires temporal Due;
+
+    // The values a deduplicating query would give over [2,2,3]: a filter of
+    // one 2 or a sum of 5. False over [2,2,3], true over [2,3].
+    compensate Partial for Main::Applied as (forwardPartial: M::Workflow)
+        by Service on M::Workflow::apply using t clock "partial-recovery" {
+        capture targetPartial: M::Total = forwardPartial.total;
+        activate first (triggerPartial: M::Notice) when { not triggerPartial.ready } {
+            capture activatedPartial: Boolean = triggerPartial.ready;
+        }
+        within [0,30]; attempts 3 of M::Attempt;
+        retry (earlierPartial: M::Attempt, laterPartial: M::Attempt) {
+            earlierPartial.tally < 3 and laterPartial.tally = earlierPartial.tally + 1
+            and targetPartial >= 0 and not activatedPartial
+        };
+        commit never;
+        recover (recoveredPartial: M::Recovery) {
+            size(filter(x in recoveredPartial.receipts: x = 2)) = 1
+            or sum<M::Total>(x in recoveredPartial.receipts: x) = 5
+        };
+    }
+
+    run sequence Main {
+        check Gate using v { true };
+        attempt Tried by Service on M::Workflow::apply contracts [BeforeApply,AfterApply]
+            as (attempted: M::Notice) { attempted.ready };
+        effect Applied of Tried as (applied: M::Workflow) { L::Ready(applied.ready) };
+        event Recovered by Service for Full as (recoveryEvent: M::Notice) { recoveryEvent.ready };
+        commit Committed by Service as (committed: M::Notice) { committed.ready };
+    }
+    finish Closed as (closed: M::Workflow) { L::Ready(closed.ready) };
+}
