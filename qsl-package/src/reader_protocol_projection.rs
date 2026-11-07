@@ -459,6 +459,11 @@ pub(crate) fn project_package(
                     "source-route-equality-has-producer-rows",
                 )));
             }
+            Err(BuildError::Suspended) => {
+                return Err(PackageRefusal::Fault(self::fault(
+                    "reader-projection-resolves-its-suspensions",
+                )));
+            }
         };
         slots.insert((request.root, request.origin), slot);
     }
@@ -519,6 +524,10 @@ enum BuildError {
     /// application (FR-531 "The equality file").
     Equality(EqualityWitnessRefusal),
     Fault(InternalFault),
+    /// The node being projected reads a child [`ReaderBuilder::project_tree`]
+    /// has not projected yet; the walk projects the child first and then the
+    /// node again. It never leaves the walk.
+    Suspended,
 }
 
 impl From<InternalFault> for BuildError {
@@ -744,9 +753,16 @@ impl<'wire> WireIndex<'wire> {
             function_indexes: BTreeMap::new(),
             memo: BTreeMap::new(),
             root_slots: request.binders.len(),
+            active: None,
+            suspended: None,
+            attempt: 0,
         };
         builder.read_functions(root)?;
-        let root_index = builder.project_node(root, Context::Root, &locals)?;
+        let root_index = builder.project_tree(NodeRequest {
+            id: root.clone(),
+            context: Context::Root,
+            locals,
+        })?;
         Ok(ReaderProtocolProjection {
             nodes: builder.nodes,
             functions: builder.functions,
@@ -944,6 +960,9 @@ impl<'wire> BareWalker<'wire> {
                 }))
             }
             BuildError::Fault(fault) => Err(WalkFailure::Fault(fault)),
+            BuildError::Suspended => Err(WalkFailure::Fault(fault(
+                "reader-projection-resolves-its-suspensions",
+            ))),
         }
     }
 
@@ -1053,6 +1072,42 @@ struct ReaderBuilder<'index, 'wire> {
     /// holds one position per parent (FR-390).
     memo: BTreeMap<(usize, CheckedNodeId), usize>,
     root_slots: usize,
+    /// The node [`Self::project_tree`] is projecting now.
+    active: Option<Frame>,
+    /// The child the active node's projection asked for and did not find.
+    suspended: Option<NodeRequest>,
+    /// The number of projection attempts started, stamping which attempt
+    /// took a finished child.
+    attempt: u64,
+}
+
+/// A node to project: where it lives and the locals its subtree reads.
+#[derive(Clone)]
+struct NodeRequest {
+    id: CheckedNodeId,
+    context: Context,
+    locals: BTreeMap<CheckedNodeId, usize>,
+}
+
+/// A child's finished projection, kept by the node that asked for it.
+struct Finished {
+    context: Context,
+    locals: BTreeMap<CheckedNodeId, usize>,
+    index: usize,
+    /// The context's frame size once the child's subtree was projected.
+    slots: usize,
+    /// The attempt that took this projection, so a node a parent reads twice
+    /// in the slot's own walk is projected twice (FR-390).
+    taken_by: u64,
+}
+
+/// One node on [`ReaderBuilder::project_tree`]'s heap stack.
+struct Frame {
+    request: std::rc::Rc<NodeRequest>,
+    /// The context's frame size when the node was first entered.
+    entered: usize,
+    /// The node's children projected so far, by node.
+    finished: BTreeMap<CheckedNodeId, Vec<Finished>>,
 }
 
 impl<'wire> ReaderBuilder<'_, 'wire> {
@@ -1122,7 +1177,11 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 .enumerate()
                 .map(|(slot, id)| (id.clone(), slot))
                 .collect::<BTreeMap<_, _>>();
-            let body = self.project_node(body, Context::Function(index), &locals)?;
+            let body = self.project_tree(NodeRequest {
+                id: body.clone(),
+                context: Context::Function(index),
+                locals,
+            })?;
             self.functions[index].body = body;
         }
         Ok(())
@@ -1134,22 +1193,146 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         index
     }
 
+    /// The frame size of `context`.
+    fn slots(&self, context: Context) -> usize {
+        match context {
+            Context::Root => self.root_slots,
+            Context::Function(function) => self
+                .functions
+                .get(function)
+                .map_or(0, |function| function.slots),
+        }
+    }
+
+    /// Set the frame size of `context`.
+    fn set_slots(&mut self, context: Context, slots: usize) {
+        match context {
+            Context::Root => self.root_slots = slots,
+            Context::Function(function) => {
+                if let Some(function) = self.functions.get_mut(function) {
+                    function.slots = slots;
+                }
+            }
+        }
+    }
+
+    /// The projection of `id`, as the node being projected reads it. A child
+    /// the walk has projected for this node is returned; any other is
+    /// requested ([`BuildError::Suspended`]) and the node is projected again
+    /// once it exists. A function body shares a node reached twice.
     fn project_node(
         &mut self,
         id: &CheckedNodeId,
         context: Context,
         locals: &BTreeMap<CheckedNodeId, usize>,
     ) -> Result<usize, BuildError> {
+        let attempt = self.attempt;
+        let finished = self
+            .active
+            .as_mut()
+            .and_then(|frame| frame.finished.get_mut(id))
+            .and_then(|children| {
+                children.iter_mut().find(|child| {
+                    child.context == context
+                        && child.locals == *locals
+                        && (matches!(context, Context::Function(_)) || child.taken_by != attempt)
+                })
+            })
+            .map(|child| {
+                child.taken_by = attempt;
+                (child.index, child.slots)
+            });
+        if let Some((index, slots)) = finished {
+            // The frame size the child's subtree left, as the node saw it.
+            self.set_slots(context, self.slots(context).max(slots));
+            return Ok(index);
+        }
         if let Context::Function(function) = context {
             if let Some(index) = self.memo.get(&(function, id.clone())) {
                 return Ok(*index);
             }
         }
-        let index = self.project_fresh(id, context, locals)?;
-        if let Context::Function(function) = context {
-            self.memo.insert((function, id.clone()), index);
+        self.suspended = Some(NodeRequest {
+            id: id.clone(),
+            context,
+            locals: locals.clone(),
+        });
+        Err(BuildError::Suspended)
+    }
+
+    /// Project `root` and its subtree on a heap stack, one frame per node
+    /// being projected, however deep the subtree nests (ADR-030 D-1): a node
+    /// that reads an unprojected child leaves the stack top, the child is
+    /// projected, and the node is projected again with the child at hand.
+    /// A projection attempt changes nothing but the projected nodes it adds,
+    /// which are dropped when it suspends, and the context's frame size,
+    /// which each attempt restarts from the size at the node's entry and
+    /// raises by each child's as it reads the child, so every node sees the
+    /// sizes the nested projection of its children would give it. The heap
+    /// stack holds one frame per node on the path from `root`, and each
+    /// frame one entry per child, all bounded by the admitted graph's I2 node
+    /// ceiling.
+    fn project_tree(&mut self, root: NodeRequest) -> Result<usize, BuildError> {
+        if let Context::Function(function) = root.context {
+            if let Some(index) = self.memo.get(&(function, root.id.clone())) {
+                return Ok(*index);
+            }
         }
-        Ok(index)
+        let mut parents: Vec<Frame> = Vec::new();
+        let mut frame = self.enter(root);
+        loop {
+            let request = std::rc::Rc::clone(&frame.request);
+            self.set_slots(request.context, frame.entered);
+            self.attempt = self.attempt.saturating_add(1);
+            let added = self.nodes.len();
+            self.active = Some(frame);
+            let result = self.project_fresh(&request.id, request.context, &request.locals);
+            frame = self
+                .active
+                .take()
+                .ok_or_else(|| fault("reader-projection-frame-is-active"))?;
+            match result {
+                Ok(index) => {
+                    if let Context::Function(function) = request.context {
+                        self.memo.insert((function, request.id.clone()), index);
+                    }
+                    let Some(mut parent) = parents.pop() else {
+                        return Ok(index);
+                    };
+                    parent
+                        .finished
+                        .entry(request.id.clone())
+                        .or_default()
+                        .push(Finished {
+                            context: request.context,
+                            locals: request.locals.clone(),
+                            index,
+                            slots: self.slots(request.context),
+                            taken_by: 0,
+                        });
+                    frame = parent;
+                }
+                Err(BuildError::Suspended) => {
+                    self.nodes.truncate(added);
+                    let wanted = self
+                        .suspended
+                        .take()
+                        .ok_or_else(|| fault("reader-suspension-names-its-child"))?;
+                    parents.push(frame);
+                    frame = self.enter(wanted);
+                }
+                Err(failure) => return Err(failure),
+            }
+        }
+    }
+
+    /// A frame for `request`, entered at the context's current frame size.
+    fn enter(&self, request: NodeRequest) -> Frame {
+        Frame {
+            entered: self.slots(request.context),
+            request: std::rc::Rc::new(request),
+            finished: BTreeMap::new(),
+        }
     }
 
     fn project_fresh(

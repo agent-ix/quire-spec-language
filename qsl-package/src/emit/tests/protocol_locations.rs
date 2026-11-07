@@ -994,3 +994,134 @@ fn the_reader_projects_nested_let_binders_into_distinct_slots() {
         },
     );
 }
+
+/// How many terms the deep slot expression sums.
+const DEEP_TERMS: usize = 4_000;
+
+/// [`E_C_LET_IF`] with a `Deep` control whose constraint adds `terms` ones to
+/// `dm.count`: the left-nested chain `(((1 + 1) + ..) + dm.count) >= 1`.
+fn deep_sum(terms: usize) -> String {
+    let sum = format!("{}dm.count", "1 + ".repeat(terms));
+    E_C_LET_IF.replace(
+        "    LET\n",
+        &format!(
+            "attempt Deep by Service on M::Node::step contracts [] \
+             as (dm: M::Tick) {{ {sum} >= 1 }};\n"
+        ),
+    )
+}
+
+/// TC-902 step 1 (FR-356-AC-5) for view creation: the reader projection of an
+/// admitted slot expression 4,000 additions deep builds on a 512 KiB stack,
+/// whatever its depth, with one projected node per admitted application.
+#[trace("TC-902", "FR-356-AC-5")]
+#[test]
+fn a_slot_expression_4000_deep_projects_on_a_small_stack() {
+    let worker = std::thread::Builder::new()
+        .name("deep-projection".to_owned())
+        .stack_size(512 * 1024)
+        .spawn(|| {
+            let packages =
+                qsl_semantics::model::intake::package_input([domain().as_slice()]).unwrap();
+            let graph = assemble_with_models(deep_sum(DEEP_TERMS).as_bytes(), &packages)
+                .expect("the deep unit assembles")
+                .check(
+                    CheckingLimits::new(u64::MAX)
+                        .with_input_bytes(u64::MAX)
+                        .with_work_budget(u64::MAX),
+                )
+                .expect("the deep unit checks");
+            let package = CheckedPackage::link(graph);
+            let emission = emit_checked(&package).expect("the deep unit emits");
+            let name = emission.package.name().to_owned();
+            let limits = V2ReadLimits {
+                artifact_bytes: emission.package.bytes().len(),
+                nodes: u64::MAX,
+                edges: u64::MAX,
+                occurrences: u64::MAX,
+                diagnostics: u64::MAX,
+                work: u64::MAX,
+                storage: 1 << 30,
+            };
+            let read = crate::read_evaluation_emission(
+                &package,
+                &emission,
+                LibraryName::new(name).unwrap(),
+                &packages,
+                limits,
+                crate::EmitLimits::fixture(),
+            )
+            .expect("the I2 reader admits the deep package");
+            let view = read.evaluation_view().expect("the deep view is created");
+            let slots = view.reader_slots().expect("a reader-backed view");
+            let Some(crate::ReaderSlot::Projected(projection)) =
+                slots.slot_named(&composed("Deep"))
+            else {
+                panic!("the deep sum is projected");
+            };
+            // `terms` additions, the read of `dm.count` and the comparison.
+            assert_eq!(projection.term_locations().len(), DEEP_TERMS + 2);
+            let mut depth = 0;
+            let mut node = projection.root();
+            while let Some([left, _]) = projection.children(node) {
+                depth += 1;
+                node = *left;
+            }
+            assert_eq!(depth, DEEP_TERMS + 1);
+        })
+        .expect("the worker thread starts");
+    worker.join().expect("the projection does not overflow");
+}
+
+/// TC-902 step 1 (FR-356-AC-5) for view creation: nested `let`s 400 deep
+/// project on a 512 KiB stack, each `let` in the body of the one outside it
+/// on the next frame slot, and the frame holds them all.
+#[trace("TC-902", "FR-356-AC-5")]
+#[test]
+fn nested_lets_400_deep_project_on_the_next_frame_slots_on_a_small_stack() {
+    const LETS: usize = 400;
+    let worker = std::thread::Builder::new()
+        .name("deep-lets".to_owned())
+        .stack_size(512 * 1024)
+        .spawn(|| {
+            let mut chain = String::from("let c0 = dm.count in ");
+            for level in 1..LETS {
+                chain.push_str(&format!("let c{level} = c{} in ", level - 1));
+            }
+            chain.push_str(&format!("c{} >= 1", LETS - 1));
+            let source = E_C_LET_IF.replace(
+                "    LET\n",
+                &format!(
+                    "attempt Deep by Service on M::Node::step contracts [] \
+                     as (dm: M::Tick) {{ {chain} }};\n"
+                ),
+            );
+            reader_view_over(
+                &source,
+                |_| {},
+                |slots| {
+                    let slots = slots.expect("the admitted nested lets are projected");
+                    let Some(crate::ReaderSlot::Projected(projection)) =
+                        slots.slot_named(&composed("Deep"))
+                    else {
+                        panic!("the nested lets are projected");
+                    };
+                    let mut node = projection.root();
+                    let mut first = None;
+                    for level in 0..LETS {
+                        let Some(quire_checked::node::NodeKind::Let { slot, body, .. }) =
+                            projection.kind(node)
+                        else {
+                            panic!("level {level} is a projected let");
+                        };
+                        let first = *first.get_or_insert(*slot);
+                        assert_eq!(*slot, first + level, "the let at level {level}");
+                        node = *body;
+                    }
+                    assert_eq!(projection.frame_slots(), first.unwrap_or(0) + LETS);
+                },
+            );
+        })
+        .expect("the worker thread starts");
+    worker.join().expect("the projection does not overflow");
+}
