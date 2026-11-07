@@ -37,6 +37,38 @@ pub enum ModelStepOrderRefusalCode {
     Encoding,
 }
 
+impl ModelStepOrderRefusalCode {
+    /// Every stable model-step admission refusal code.
+    pub const fn all() -> &'static [Self] {
+        &[
+            Self::MissingClause,
+            Self::MissingModelTime,
+            Self::MissingTimeSource,
+            Self::MissingTickOperation,
+            Self::Encoding,
+        ]
+    }
+
+    /// The stable catalog spelling of this condition.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MissingClause => "missing_clause",
+            Self::MissingModelTime => "missing_model_time",
+            Self::MissingTimeSource => "missing_time_source",
+            Self::MissingTickOperation => "missing_tick_operation",
+            Self::Encoding => "encoding",
+        }
+    }
+
+    /// Resolve a catalog spelling without accepting unknown conditions.
+    pub fn from_code(code: &str) -> Option<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .find(|value| value.as_str() == code)
+    }
+}
+
 /// Typed refusal without a partial admitted order value.
 #[derive(Debug, thiserror::Error)]
 #[error("model-step order refused: {code:?}")]
