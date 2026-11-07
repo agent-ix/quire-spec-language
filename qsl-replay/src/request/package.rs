@@ -14,10 +14,19 @@ use quire_contract_model::{
 ///
 /// The shared JSON document has flat ownership. Original bytes are retained
 /// unchanged so native admission still sees noncanonical numbers and spellings.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ReplayPackage {
     document: Document,
     bytes: Vec<u8>,
+}
+
+impl std::fmt::Debug for ReplayPackage {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ReplayPackage")
+            .field("input_bytes", &self.bytes.len())
+            .finish()
+    }
 }
 
 impl PartialEq for ReplayPackage {

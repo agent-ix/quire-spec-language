@@ -829,11 +829,7 @@ pub enum DependencySelectionsCause {
 /// let wire = ReplayRequestWire {
 ///     replay_target: RequestTargetWire::function("small", key),
 /// #   profile_selections: vec![],
-/// #   package_name: "fixture".to_owned(),
-/// #   sources: vec![(
-/// #       "a".to_owned(),
-/// #       "u".to_owned(),
-/// #   )],
+/// #   package: ReplayPackage::read(&site.package, ReplayLimits::default().input_bytes).unwrap(),
 /// #   dependencies: Vec::new(),
 /// #   source: ReplaySource::Input(vec![CanonicalAssignment {
 /// #       parameter: site.site.parameters[0].1.clone(),
@@ -889,11 +885,7 @@ pub enum DependencySelectionsCause {
 /// let wire = ReplayRequestWire {
 ///     replay_target: RequestTargetWire::function(small, key),
 /// #   profile_selections: vec![],
-/// #   package_name: "fixture".to_owned(),
-/// #   sources: vec![(
-/// #       "a".to_owned(),
-/// #       "u".to_owned(),
-/// #   )],
+/// #   package: ReplayPackage::read(&site.package, ReplayLimits::default().input_bytes).unwrap(),
 /// #   dependencies: Vec::new(),
 /// #   source: ReplaySource::Input(vec![CanonicalAssignment {
 /// #       parameter: site.site.parameters[0].1.clone(),

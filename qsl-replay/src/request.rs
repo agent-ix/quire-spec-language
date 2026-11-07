@@ -961,6 +961,16 @@ impl ReplayRequest {
     }
 }
 
+/// Partial JSON descriptor for decoder and claim-receipt tests only; never native authority.
+#[cfg(test)]
+pub(crate) fn raw_package_descriptor(name: &str, sources: &[SourceRefWire]) -> ReplayPackage {
+    let sources = sources.iter().map(|(authority, identity)| serde_json::json!({"authority": authority, "identity": identity})).collect::<Vec<_>>();
+    let bytes =
+        serde_json::to_vec(&serde_json::json!({"name": name, "lock": {"sources": sources}}))
+            .unwrap();
+    ReplayPackage::read(&bytes, u64::MAX).unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1000,12 +1010,14 @@ mod tests {
     fn wire(stage_seed: u64) -> ReplayRequestWire {
         let source_bytes = source_bytes(0xAB, 64);
         ReplayRequestWire {
-            package_name: "fixture".to_owned(),
+            package: raw_package_descriptor(
+                "fixture",
+                &[("registry".to_owned(), "pkg-a".to_owned())],
+            ),
             profile_selections: vec![ProfileSelection::new(
                 "quire.profile.v1".to_owned(),
                 "finite-state".to_owned(),
             )],
-            sources: vec![("registry".to_owned(), "pkg-a".to_owned())],
             dependencies: Vec::new(),
             replay_target: RequestTargetWire::function(
                 QualifiedName::new(vec![
@@ -1096,6 +1108,7 @@ mod tests {
             DependencyEntryWire {
                 identity: identity.to_owned(),
                 sources: vec![("registry".to_owned(), format!("lib-{fill}"))],
+                refinement_internals: None,
             },
             bytes,
         )

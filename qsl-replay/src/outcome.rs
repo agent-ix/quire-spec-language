@@ -2812,7 +2812,7 @@ mod tests {
                                 None,
                                 0,
                             ),
-                            package_name: "fixture".to_owned(),
+                            package: crate::request::raw_package_descriptor("fixture", &[]),
                             function: Some(
                                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
                             ),

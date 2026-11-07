@@ -1060,6 +1060,7 @@ fn entry(
     crate::request::DependencyEntryWire {
         identity: identity.to_owned(),
         sources,
+        refinement_internals: None,
     }
 }
 
