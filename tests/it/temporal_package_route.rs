@@ -341,7 +341,7 @@ fn both_routes_hold_the_emissions_rows_and_ids() {
         let rows = built.emission.temporal_rows();
         assert_eq!(
             emitted.rows(),
-            &PackageRows::of_package(read.admitted()).expect("the package's rows")
+            &PackageRows::of_read(&read).expect("the package's rows")
         );
         assert_eq!(
             serde_json::to_vec(emitted.rows().bindings()).unwrap(),

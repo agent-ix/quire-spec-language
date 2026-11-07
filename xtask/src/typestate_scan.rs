@@ -722,7 +722,7 @@ mod tests {
 
     /// Every item allowed to hand back an owned stage-output type, by
     /// (file, `Self` type, name), and why.
-    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 16] = [
+    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 17] = [
         // S3: the checker, every entry point of `S3_ENTRY_NAMES`.
         (
             S3_CONSTRUCTOR.file,
@@ -753,6 +753,14 @@ mod tests {
             S3_CONSTRUCTOR.file,
             Some(S3_CONSTRUCTOR.receiver),
             "check_retaining_protocols",
+        ),
+        // S3: the protocol continuation's refusals attached to the graph the
+        // checker returned; it takes an owned `CheckedGraph` and hands the
+        // same one back, so it forges none.
+        (
+            S3_CONSTRUCTOR.file,
+            Some("CheckedGraph"),
+            "with_unit_refusals",
         ),
         // S4: the link step, and its dependency-bearing form (E4).
         ("qsl-package/src/checked.rs", Some("CheckedPackage"), "link"),
