@@ -1400,6 +1400,7 @@ dependencies = [
  "quire-contract-model",
  "quire-eval",
  "quire-exact",
+ "quire-observation",
  "quire-semantic-value",
  "serde_json",
  "thiserror",
@@ -1662,7 +1663,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#a62095a5b54174bf12cdef84100fbfe700dc9ca2"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#2312df5d3a52d4dc4fe72b0d1753f25f83f73192"
 dependencies = [
  "ix-trace-rs",
  "jsonschema 0.17.1",
@@ -1710,6 +1711,18 @@ dependencies = [
  "thiserror",
  "triomphe",
  "unicode-normalization",
+]
+
+[[package]]
+name = "quire-observation"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-observation?branch=main#c34fdcf1d0bd5d4e22053df79f5902e4c960eada"
+dependencies = [
+ "quire-canonical",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
 ]
 
 [[package]]
