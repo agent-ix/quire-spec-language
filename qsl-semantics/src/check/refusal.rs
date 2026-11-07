@@ -3244,21 +3244,52 @@ pub enum InvalidDispatchDeclaration {
 }
 
 impl CheckCause {
+    fn type_check_failure(&self) -> Option<&Self> {
+        let mut current = self;
+        loop {
+            current = match current {
+                Self::TypeCheckAllocation(_) | Self::TypeCheckCapacity(_) => return Some(current),
+                Self::StateModel(refusal) => &refusal.cause,
+                Self::TypeInvariant(refusal) => &refusal.cause,
+                Self::Terminal(refusal) => &refusal.cause,
+                Self::Refinement(refusal) => match &refusal.cause {
+                    super::refinement::RefinementCause::Check(cause) => cause,
+                    _ => return None,
+                },
+                Self::StateGraph(cause) => match cause.as_ref() {
+                    StateGraphCause::Predicate { cause, .. } => cause,
+                    _ => return None,
+                },
+                Self::ProtocolAnchor(cause) => match cause.as_ref() {
+                    ProtocolAnchorCause::KeyClause { cause, .. }
+                    | ProtocolAnchorCause::SlotClause { cause, .. } => cause,
+                    _ => return None,
+                },
+                Self::Temporal(cause) => {
+                    let mut temporal = cause.as_ref();
+                    loop {
+                        match temporal {
+                            TemporalCause::TimedPredicate { cause, .. } => break cause,
+                            TemporalCause::Multiple { causes } => temporal = causes.first()?,
+                            _ => return None,
+                        }
+                    }
+                }
+                _ => return None,
+            };
+        }
+    }
+
     /// The checking stage of a declared-type traversal storage failure.
     pub fn type_check_stage(&self) -> Option<CheckingStage> {
-        match self.unwrapped() {
-            Self::TypeCheckAllocation(_) | Self::TypeCheckCapacity(_) => {
-                Some(CheckingStage::Typing)
-            }
-            _ => None,
-        }
+        self.type_check_failure().map(|_| CheckingStage::Typing)
     }
 
     /// Catalog fields for an owner's declared-type storage failure, in its
     /// native unit; these requests are not configured limits.
     pub fn type_check_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
         use quire_semantic_value::declaration::StorageUnit;
-        let (field, request) = match self {
+        let (field, request) = match self.type_check_failure()? {
             Self::TypeCheckAllocation(request) => ("requested", request),
             Self::TypeCheckCapacity(request) => ("upstream", request),
             _ => return None,

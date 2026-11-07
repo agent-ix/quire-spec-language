@@ -2560,7 +2560,7 @@ mod tests {
     #[trace("TC-1339", "FR-534-AC-3")]
     #[test]
     fn declared_type_storage_requests_reach_compile_diagnostics() {
-        use qsl_semantics::check::CheckingStage;
+        use qsl_semantics::check::{CheckingStage, PredicateRole, SlotKind, StateGraphCause, StateModelRefusal, TemporalCause};
         use quire_semantic_value::declaration::{StorageRequest, StorageUnit};
         for (amount, unit, name) in [
             (13, StorageUnit::Bytes, "bytes"),
@@ -2579,6 +2579,17 @@ mod tests {
                     "reservation-size-overflow",
                 ),
             ] {
+                let span = Span { start: 2, end: 5 };
+                let wrapped = [
+                    cause.clone(),
+                    CheckCause::StateModel(Box::new(StateModelRefusal { cause: cause.clone(), receiver: None })),
+                    CheckCause::StateGraph(Box::new(StateGraphCause::Predicate { role: PredicateRole::Target, span, cause: Box::new(cause.clone()) })),
+                    CheckCause::Temporal(Box::new(TemporalCause::TimedPredicate { span, cause: Box::new(cause.clone()) })),
+                    CheckCause::Temporal(Box::new(TemporalCause::Multiple { causes: vec![TemporalCause::TimedPredicate { span, cause: Box::new(cause.clone()) }] })),
+                    CheckCause::ProtocolAnchor(Box::new(ProtocolAnchorCause::KeyClause { channel: "channel".to_owned(), span, cause: Box::new(cause.clone()) })),
+                    CheckCause::ProtocolAnchor(Box::new(ProtocolAnchorCause::SlotClause { node: "slot".to_owned(), slot: SlotKind::Condition, span, cause: Box::new(cause) })),
+                ];
+                for cause in wrapped {
                 let location = Location::at(Origin::Expression, &[7, 2]);
                 assert_eq!(cause.type_check_stage(), Some(CheckingStage::Typing));
                 let refusal = CompileRefusal::Check {
@@ -2603,8 +2614,26 @@ mod tests {
                     refusals[0].cause.type_check_stage(),
                     Some(CheckingStage::Typing)
                 );
+                }
             }
         }
+    }
+
+    #[trace("TC-1339", "FR-534-AC-3")]
+    #[test]
+    fn temporal_multiple_projects_only_its_first_reported_cause() {
+        use qsl_semantics::check::TemporalCause;
+        use quire_semantic_value::declaration::{StorageRequest, StorageUnit};
+        let span = Span { start: 1, end: 4 };
+        let cause = CheckCause::Temporal(Box::new(TemporalCause::Multiple { causes: vec![
+            TemporalCause::TimedPredicate { span, cause: Box::new(CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)) },
+            TemporalCause::TimedPredicate { span, cause: Box::new(CheckCause::TypeCheckAllocation(StorageRequest::new(9, StorageUnit::Bytes))) },
+        ] }));
+        assert_eq!(cause.type_check_stage(), None);
+        let refusal = CompileRefusal::Check { refusals: vec![CheckRefusal { location: Location::root(Origin::Expression), cause }], region: None };
+        assert_eq!(refusal.code(), Code::IllTyped);
+        assert_eq!(refusal.cause(), Some("type-mismatch"));
+        assert_eq!(refusal.fields(), None);
     }
 
     /// FR-255-AC-15/16 (TC-721): the outer import limits own the published
