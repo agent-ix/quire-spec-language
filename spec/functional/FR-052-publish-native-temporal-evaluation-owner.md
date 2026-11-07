@@ -91,16 +91,26 @@ in the relation or whose position ordinal is not a position of the report
 (`SupportNotInTrace`). `ReportRefusal` is a closed enum and a refusal returns no
 partial report. Writing then reading a report returns an equal report.
 
-*Predecessor.* A report on a correction carries its direct predecessor as that
-predecessor's FR-043 result identity (FR-043-AC-13), and the reader applies the
-same predecessor rule as AC-12. QSL's rule applies only to a correction relation
+*Predecessor.* A report on a correction carries its direct predecessor's
+FR-043 result identity (FR-043-AC-13) and the complete exact owner representation
+of that predecessor. `CheckedSubject::with_predecessor` supplies the actual
+prior owner `Report` and explicit finite `ReportPredecessorLimits`; the evaluator
+and strict reader SHALL reject a correction with no supplied report, a report
+whose checked binding differs, or a report whose identity is not the request
+ledger's direct predecessor. The owner bytes SHALL use report format version 2;
+version 1 is refused `UnsupportedVersion`, with no inferred full-value authority.
+The reader compares the complete retained predecessor bytes with the supplied
+actual report, including its outcome, truth, settlement, support, subject,
+observation and predecessor relation. Equal request/result identities alone do
+not establish equality. The reader also applies the predecessor rule of AC-12. QSL's rule applies only to a correction relation
 carried by this native route; it grants no authority over an IR bridge join's
 predecessor or supersession lineage, which Contract IR owns.
 
 The native `CheckedSubject` binds an actual checked-package occurrence, its
 admitted valuation relation and the evaluation request. The strict reader uses
 that relation as its support authority and the request ledger as its direct
-predecessor authority. The native evaluator invokes the existing checked-package
+predecessor identity authority. The actual supplied owner report establishes the
+complete value, and a decoded report grants no next-call ledger authority. The native evaluator invokes the existing checked-package
 temporal evidence engine; the retired artifact evaluator is named
 `evaluate_artifact_v2`. This native report contract is distinct from FR-516's
 quire-protocol request/result types.
@@ -111,6 +121,32 @@ subject, observation and evaluation request, retaining the encoded original
 meter ceiling. An incomplete or request-mismatched identity refuses
 `UnknownTag`; it cannot establish changed-input predecessor authority. This
 check encodes identity members without evaluating temporal positions.
+
+`Report::predecessor_owner_bytes` SHALL expose the exact retained complete prior
+owner value. `Report::validate_predecessor` SHALL compare a supplied actual report
+with that value without running temporal evaluation, an IR reader, or a bridge
+join. It SHALL return `InvalidPredecessor` for a different complete report even
+if request/result identity is equal. Clones and moves preserve this relation.
+Retained predecessor representations are flat byte values, not recursively owned
+`Report` chains; encoding, comparison, cloning and dropping have bounded stack
+use. Each encoding copies the retained predecessor bytes once rather than
+recursively reconstructing prior reports.
+
+The new full-predecessor operations SHALL charge `ReportPredecessorLimits.work`
+for the initial report visit, each binding and support-row visit, every encoded
+byte, the identity and binding comparison bytes, supplied predecessor comparison
+bytes, and each retained-byte copy before that work. They SHALL charge
+`ReportPredecessorLimits.storage` for every temporary row/support/predecessor frame and final encoded buffer,
+including their handles, and retained bytes plus one shared-buffer handle before
+allocation. Bytes copied through multiple encoder frames are charged on each
+copy.
+Validation without retention charges only its temporary buffer. A first excess
+charge SHALL return `PredecessorLimit {resource, limit, actual}` with the original
+ceiling and full attempted cumulative charge, and no partial admitted relation.
+`validate_predecessor` returns the admitted work/storage usage on success. These
+are the native report owner's limits; the same caller `NativeJoinBudget` remains
+threaded through all existing IR admission operations without replacement or
+reset. It is not used as an unimplemented generic report-byte counter.
 
 FR-043 owns temporal meaning; FR-044 owns activation and captures. The retired
 M-6d request/result API criteria remain historical and do not retire these
@@ -130,6 +166,9 @@ behaviors.
 | FR-052-AC-16 | Every support entry of a report names a trace position ordinal and a valuation-evidence row key present in the admitted evidence; for an evaluation with three identical rows at one position and one row at another, the support relation lists the rows with that multiplicity, and no support entry exists for a position or row the evaluation did not admit. | Test |
 | FR-052-AC-17 | `from_owner_bytes(to_owner_bytes(r), subject, observation)` returns a report equal to `r`, including support multiplicity and predecessor, and `to_owner_bytes` is byte-identical across two calls and two builds of the same evaluation. | Test |
 | FR-052-AC-18 | Each single mutation of valid owner bytes is refused with the named `ReportRefusal` and returns no report: an unknown version or format tag (`UnsupportedVersion`), a prefix of the bytes (`Truncated`), one appended byte (`TrailingBytes`), an unknown outcome tag (`UnknownTag`), two members swapped (`OutOfOrder`), a different supplied subject, occurrence key or observation reference (`BindingMismatch` naming the dimension), and a support entry naming a row or position the report does not hold (`SupportNotInTrace`). | Test |
+| FR-052-AC-19 | A genuine correction requires the actual full direct predecessor report; its retained predecessor owner bytes equal the complete prior report bytes, and non-evaluating validation accepts clones/moves of that value. A different full outcome/support value with equal request/result identity, a skipped or cross-binding report, and a missing actual predecessor refuse. Strict reading rejects mutated predecessor value bytes and unsupported old format rather than inferring authority from labels. | Test |
+| FR-052-AC-20 | Full-predecessor issuance, reading and validation charge their stated native-owner work/storage limits before inspection or allocation; exact measured limits admit, one less returns the original typed resource/ceiling/attempt with no partial relation, and existing caller NativeJoinBudget consumption is never reset. | Test |
+| FR-052-AC-21 | Repeated native corrections retain complete prior representations as flat bytes; clone, compare, encode and drop do not recursively traverse or own Report chains, and work/copies of retained predecessor bytes are explicitly charged. | Test |
 
 ## Dependencies
 

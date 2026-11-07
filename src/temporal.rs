@@ -29,7 +29,8 @@ mod trace;
 mod valuation;
 pub use owner::{
     evaluate_v2, CheckedSubject, NativeReportError, ObservationRef, Report, ReportOutcome,
-    ReportSubject, ReportSupport,
+    ReportPredecessorLimits, ReportPredecessorResource, ReportPredecessorUsage, ReportSubject,
+    ReportSupport,
 };
 pub use owner_codec::{BindingDimension, ReportRefusal};
 

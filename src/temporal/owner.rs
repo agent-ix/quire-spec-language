@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-052: immutable reports of the checked-package temporal evaluator.
 
+mod predecessor;
+
+pub use predecessor::{ReportPredecessorLimits, ReportPredecessorResource, ReportPredecessorUsage};
+
+use std::sync::Arc;
+
 use qsl_eval::temporal::evidence::{
     EvidenceIncomplete, EvidenceLedger, EvidenceRequest, EvidenceResult, NonValueKind,
     ObligationKey, Relation, Settlement, Truth,
@@ -37,6 +43,7 @@ pub struct CheckedSubject<'a> {
     request: &'a EvidenceRequest,
     binding: [Vec<u8>; 5],
     checked: ReportSubject,
+    predecessor_input: Option<(&'a Report, ReportPredecessorLimits)>,
 }
 
 impl<'a> CheckedSubject<'a> {
@@ -105,7 +112,23 @@ impl<'a> CheckedSubject<'a> {
             request,
             binding,
             checked,
+            predecessor_input: None,
         })
+    }
+
+    /// Supply the actual complete direct predecessor for a correction.
+    ///
+    /// This borrows an owner-issued report, not an asserted identity. Evaluation
+    /// and strict reading validate it against the request's latest ledger entry
+    /// and retain its exact owner value within the explicit finite limits.
+    #[must_use]
+    pub fn with_predecessor(
+        mut self,
+        predecessor: &'a Report,
+        limits: ReportPredecessorLimits,
+    ) -> Self {
+        self.predecessor_input = Some((predecessor, limits));
+        self
     }
 
     fn predecessor_entry(
@@ -256,6 +279,7 @@ pub struct Report {
     support: Vec<ReportSupport>,
     identity: Vec<u8>,
     predecessor: Option<Vec<u8>>,
+    predecessor_value: Option<Arc<[u8]>>,
     ledger: Option<EvidenceLedger>,
 }
 
@@ -269,6 +293,7 @@ impl PartialEq for Report {
             && self.support == other.support
             && self.identity == other.identity
             && self.predecessor == other.predecessor
+            && self.predecessor_value == other.predecessor_value
     }
 }
 impl Eq for Report {}
@@ -306,6 +331,13 @@ impl Report {
     pub fn predecessor(&self) -> Option<&[u8]> {
         self.predecessor.as_deref()
     }
+    /// The exact complete direct predecessor owner representation.
+    ///
+    /// It retains outcome, support, checked subject, observation and its own
+    /// predecessor relation. The flat byte value owns no recursive report chain.
+    pub fn predecessor_owner_bytes(&self) -> Option<&[u8]> {
+        self.predecessor_value.as_deref()
+    }
     /// The evaluator's next-call ledger. A decoded report grants no ledger authority.
     pub fn ledger(&self) -> Option<&EvidenceLedger> {
         self.ledger.as_ref()
@@ -313,7 +345,7 @@ impl Report {
 
     /// Write the deterministic, ordered and self-delimiting owner representation.
     pub fn to_owner_bytes(&self) -> Vec<u8> {
-        let mut writer = Writer::new();
+        let mut writer = Writer::report();
         for (tag, value) in (1_u8..=5).zip(&self.binding) {
             writer.field(tag, value);
         }
@@ -344,6 +376,9 @@ impl Report {
             Some(identity) => {
                 predecessor.field(1, &[1]);
                 predecessor.field(2, identity);
+                if let Some(value) = &self.predecessor_value {
+                    predecessor.field(3, value);
+                }
             }
         }
         writer.field(11, &predecessor.finish());
@@ -361,7 +396,7 @@ impl Report {
         observation: &ObservationRef,
         budget: &mut qsl_package::NativeJoinBudget,
     ) -> Result<Self, ReportRefusal> {
-        let mut reader = Reader::new(bytes)?;
+        let mut reader = Reader::report(bytes)?;
         let dimensions = [
             BindingDimension::PackageIdentity,
             BindingDimension::PackageVersion,
@@ -425,9 +460,9 @@ impl Report {
             qsl_eval::temporal::evidence::ResultIdentity::input_identity_from_bytes(&identity)
                 .ok_or(ReportRefusal::UnknownTag)?;
         let mut previous = Reader::new(reader.field(11)?)?;
-        let predecessor = match previous.field(1)? {
-            [0] => None,
-            [1] => Some(previous.field(2)?.to_vec()),
+        let (predecessor, predecessor_bytes) = match previous.field(1)? {
+            [0] => (None, None),
+            [1] => (Some(previous.field(2)?.to_vec()), Some(previous.field(3)?)),
             _ => return Err(ReportRefusal::UnknownTag),
         };
         previous.finish()?;
@@ -443,6 +478,7 @@ impl Report {
         {
             return Err(ReportRefusal::InvalidPredecessor);
         }
+        let predecessor_value = subject.admit_predecessor(predecessor_bytes)?;
         let request = native_request(subject, observation)?;
         let bare = BarePackage::new(subject.package);
         let package = qsl_eval::temporal::evidence::EvidencePackage::from_package(&bare, budget)
@@ -470,6 +506,7 @@ impl Report {
             support,
             identity,
             predecessor,
+            predecessor_value,
             ledger: None,
         })
     }
@@ -567,6 +604,7 @@ pub fn evaluate_v2(
     meter: &mut Meter,
     budget: &mut qsl_package::NativeJoinBudget,
 ) -> Result<Report, NativeReportError> {
+    let predecessor_value = subject.admit_predecessor(None)?;
     let request = native_request(subject, observation)?;
     let view = temporal_subject(subject.package, &subject.occurrence.node)
         .map_err(|_| ReportRefusal::BindingMismatch(BindingDimension::Clause))?;
@@ -575,7 +613,14 @@ pub fn evaluate_v2(
     let package = qsl_eval::temporal::evidence::EvidencePackage::from_package(&bare, budget)?;
     let operands = qsl_eval::temporal::evidence::native_atom_operands(&view);
     let result = package.evaluate_temporal_evidence(&subject.occurrence.node, &request, meter)?;
-    report_from_result(subject, observation, predecessor, &operands, result)
+    report_from_result(
+        subject,
+        observation,
+        predecessor,
+        predecessor_value,
+        &operands,
+        result,
+    )
 }
 
 fn native_request(
@@ -645,6 +690,7 @@ fn report_from_result(
     subject: &CheckedSubject<'_>,
     observation: &ObservationRef,
     predecessor: Option<Vec<u8>>,
+    predecessor_value: Option<Arc<[u8]>>,
     operands: &[Option<CheckedNodeId>],
     result: EvidenceResult,
 ) -> Result<Report, NativeReportError> {
@@ -682,6 +728,7 @@ fn report_from_result(
         support,
         identity: result.result_identity.as_bytes().to_vec(),
         predecessor,
+        predecessor_value,
         ledger: Some(result.ledger),
     })
 }
