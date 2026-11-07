@@ -142,6 +142,9 @@ pub enum ReplayRefusal {
     /// The complete offered checked package failed native admission after recompilation.
     #[error(transparent)]
     Package(#[from] crate::ReplayPackageAdmissionRefusal),
+    /// Genuine recompilation evidence could not be assembled by the spine owner.
+    #[error(transparent)]
+    PackageEvidence(Box<spine::RunRefusal>),
     /// The request's S1 source limit is above the reader limit: the request
     /// asks for more than the reader allows, which is invalid input
     /// (`invalid-request`, exit 20), not an exhausted limit.
@@ -544,6 +547,7 @@ impl ReplayRefusal {
         match self {
             Self::Request(refusal) => refusal.code(),
             Self::Package(refusal) => refusal.code(),
+            Self::PackageEvidence(refusal) => refusal.code(),
             Self::LimitAboveReader(_) => Code::InvalidRequest,
             Self::SourceCount(_) => Code::InvalidRequest,
             Self::PackageSources(_) => Code::InvalidPackage,
@@ -613,6 +617,7 @@ impl ReplayRefusal {
         match self {
             Self::Request(refusal) => refusal.cause(),
             Self::Package(refusal) => refusal.cause(),
+            Self::PackageEvidence(refusal) => refusal.cause(),
             Self::Recompile(refusal) => refusal.cause(),
             Self::RecompileWithProtocolResults { refusal, .. } => refusal.cause(),
             Self::DomainPackages(refusal) => Some(refusal.cause.as_str()),
@@ -1780,7 +1785,7 @@ pub(crate) fn recompile_with_temporal_selections(
             ))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let compiled = run_spine_units(
+    let (compiled, evidence) = run_spine_units(
         &units,
         &package_name,
         &packages,
@@ -1802,7 +1807,7 @@ pub(crate) fn recompile_with_temporal_selections(
     }
     request
         .package()
-        .admit(compiled.emitted.evidence(), limits.spine.imports.for_ir())?;
+        .admit(&evidence, limits.spine.imports.for_ir())?;
     Ok(compiled)
 }
 
@@ -1916,7 +1921,7 @@ fn run_spine_units(
     temporal_selections: &[qsl_package::TemporalClockSelection],
     limits: SpineLimits,
     refinement_internals: Option<&[quire_contract_model::CheckedRefinementInternal]>,
-) -> Result<Recompiled, ReplayRefusal> {
+) -> Result<(Recompiled, quire_contract_model::CheckedPackageEvidence), ReplayRefusal> {
     #[cfg(test)]
     SPINE_RUNS.with(|runs| runs.set(runs.get() + 1));
     let cancel = Cancel::new();
@@ -1989,13 +1994,24 @@ fn run_spine_units(
     )
     .map_err(&refusal)?
     .into_value();
-    Ok(Recompiled {
-        checked,
-        emitted,
-        package: package.clone(),
-        packages: packages.clone(),
-        model_limits: limits.model,
-    })
+    let evidence = spine::admission_evidence(
+        &models,
+        &checked,
+        &emitted,
+        limits.imports,
+        limits.package.emit(),
+    )
+    .map_err(ReplayRefusal::PackageEvidence)?;
+    Ok((
+        Recompiled {
+            checked,
+            emitted,
+            package: package.clone(),
+            packages: packages.clone(),
+            model_limits: limits.model,
+        },
+        evidence,
+    ))
 }
 
 /// A source reference's two FR-001 labels.

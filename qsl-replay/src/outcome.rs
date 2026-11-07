@@ -1721,7 +1721,9 @@ impl OutcomeDocument {
             .with_diagnostics(vec![OutcomeDiagnostic::new(
                 refusal.cause(),
                 refusal.code().as_str(),
-                None,
+                refusal.pointer().map(|pointer| OutcomeLocus::Artifact {
+                    pointer: pointer.into_owned(),
+                }),
                 refusal.to_string(),
             )]),
         }
@@ -1881,6 +1883,7 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::Admission(AdmissionFailure::Fault(_)) => None,
         ReplayRefusal::Request(_)
         | ReplayRefusal::Package(_)
+        | ReplayRefusal::PackageEvidence(_)
         | ReplayRefusal::DomainPackages(_)
         | ReplayRefusal::LimitAboveReader(_)
         | ReplayRefusal::SourceCount(_)
