@@ -358,3 +358,25 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod error_catalog_tests {
+    use super::NativeRowErrorCode;
+
+    #[test]
+    #[ix_trace_rs::trace("TC-1331", "FR-531-AC-31")]
+    fn compact_identity_row_error_codes_have_a_closed_stable_catalog() {
+        let expected = [
+            (NativeRowErrorCode::WorkLimit, "native-row-work-limit"),
+            (NativeRowErrorCode::StorageLimit, "native-row-storage-limit"),
+        ];
+        assert_eq!(NativeRowErrorCode::all().len(), expected.len());
+        for (code, spelling) in expected {
+            assert!(NativeRowErrorCode::all().contains(&code));
+            assert_eq!(code.as_str(), spelling);
+            assert_eq!(NativeRowErrorCode::from_code(spelling), Some(code));
+        }
+        assert_eq!(NativeRowErrorCode::from_code("work-limit"), None);
+        assert_eq!(NativeRowErrorCode::from_code(""), None);
+    }
+}

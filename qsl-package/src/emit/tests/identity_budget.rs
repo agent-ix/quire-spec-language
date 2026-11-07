@@ -298,7 +298,7 @@ fn final_emission_input_selection_matches_the_existing_native_stage_filter() {
 #[trace("TC-1331", "FR-531-AC-31")]
 #[trace("TC-1331", "FR-531-AC-33")]
 fn source_record_signed_boundary_types_are_copied_exactly_with_precharged_storage() {
-    let source = "record Boundary { value: Int[-170141183460469231731687303715884105729, 170141183460469231731687303715884105728]; }\nfunction keep using v(b: Boundary): Boolean pure { true }\n";
+    let source = "record Boundary { sample: Int[-170141183460469231731687303715884105729, 170141183460469231731687303715884105728]; }\nfunction keep using v(b: Boundary): Boolean pure { true }\n";
     let (_, checked) = package_from_text(source);
     let emission = emit_checked(&checked).expect("genuine boundary record emits");
     let package = source_union_rows::admit_bytes(&emission, &wire(&emission));
