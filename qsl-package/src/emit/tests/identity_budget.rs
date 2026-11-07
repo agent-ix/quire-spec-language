@@ -331,3 +331,131 @@ fn source_record_admitted_i128_endpoint_types_are_copied_exactly_with_precharged
         copied
     );
 }
+
+#[test]
+#[trace("TC-1331", "FR-531-AC-31")]
+fn final_monitor_plan_carry_recomputes_producer_membership_after_real_writer_rekeys() {
+    use super::admission_corpus::config_version_unit;
+    use crate::emit::{emit_monitor_plan_over, MonitorPlanWire};
+    let body = "temporal C using tt over (c: Config::ConfigVersion) clock \"model-time\" on origin { always holds(c.versionNumber = 2) }\n\
+record State { now: Integer; }\n\
+record Inputs { x: Integer; }\n\
+record Scope { y: Integer; }\n\
+record Result { lab: String; }\n\
+record Pair { fst: Integer; }\n\
+function mkPair using v(): Pair pure { Pair { fst: 1 } }\n\
+function results using v(): Sequence<Result> pure { sequence[Result { lab: \"a\" }] }\n\
+function e0 using v(s: State): State pure { s }\n\
+function e1 using v(s: State, i: Inputs): State pure { s }\n\
+function e2 using v(s: State, p: Scope): State pure { s }\n\
+function e3 using v(s: State, g: Integer): State pure { s }\n";
+    let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
+    let packages =
+        qsl_semantics::model::intake::package_input([document]).expect("real selected model");
+    let source = clock_places::clocked_unit(body).replace(
+        "profile t = \"quire.temporal.complete/v1\";\n",
+        "profile t = \"quire.temporal.complete/v1\";\nprofile tt = \"quire.temporal.timed/v1\";\n",
+    );
+    let graph = assemble_with_models(source.as_bytes(), &packages)
+        .expect("author unit")
+        .check(CheckingLimits::default())
+        .expect("checked unit");
+    let checked = CheckedPackage::link(graph);
+    let base = emit_checked(&checked).expect("original emission");
+    let clause = &checked.graph().temporal_clauses()[0];
+    let key = clause.identity();
+    let formula = clause.clause().formula();
+    let mut evidence = base.evidence().clone();
+    evidence
+        .insert_domain_package_document(package_identity(document), document)
+        .expect("real domain evidence");
+    let rate = quire_exact::Rational::new(1_i64.into(), 500_i64.into()).unwrap();
+    let zero = quire_exact::Rational::from_integer(0_i64.into());
+    let plan = MonitorPlanWire {
+        clause: &key,
+        formula,
+        counter: "counter",
+        counter_width_bits: 12,
+        max_reading_gap: 3600,
+        max_event_rate: &rate,
+        uncertainty: &zero,
+        buffers: &[],
+        tick_unit: "ms",
+        activation_capacity: 8,
+        state: "State",
+        inputs: "Inputs",
+        scope: "Scope",
+        result: "Result",
+        entries: ["e0", "e1", "e2", "e3"],
+        renamed_records: &["Pair"],
+        renames: &[("fst", "one")],
+    };
+    let rooted = emit_monitor_plan_over(
+        &base,
+        LibraryName::new(base.package().name()).unwrap(),
+        &evidence,
+        &plan,
+        V2ReadLimits::fixture(),
+        crate::EmitLimits::fixture(),
+    )
+    .expect("real writer carry");
+    let Read::Verified { admitted, .. } = read_v2(
+        rooted.package().bytes(),
+        library(),
+        V2ReadLimits::fixture(),
+        &evidence,
+    ) else {
+        panic!("rooted package admits")
+    };
+    let mut measure = ample();
+    let rows = rooted
+        .identity_rows(&admitted, &mut measure)
+        .expect("carried producer rows join");
+    assert!(
+        !rows.declarations().is_empty(),
+        "default or stale carry metadata must not erase selected model declarations"
+    );
+    assert!(
+        !rows.fields().is_empty(),
+        "selected ConfigVersion field witnesses survive writer carry"
+    );
+    let expected = qsl_semantics::model::intake::selected_exact_identities_from_rows(
+        &admitted,
+        rooted.selected_exact_declaration_rows(),
+        rooted.selected_exact_field_rows(),
+        &mut ample(),
+    )
+    .expect("owner validates carried identities");
+    assert_eq!(
+        rows.declarations(),
+        expected.declaration_rows().cloned().collect::<Vec<_>>()
+    );
+    assert_eq!(rows.fields(), expected.field_rows());
+    let need = measure.consumed();
+    assert_eq!(
+        rooted
+            .identity_rows(
+                &admitted,
+                &mut NativeJoinBudget::new(need.work, need.storage)
+            )
+            .expect("exact carried allowance"),
+        rows
+    );
+    assert_ne!(
+        base.package().bytes(),
+        rooted.package().bytes(),
+        "the actual plan writer changed the emitted package"
+    );
+    let pair = rows
+        .source_records()
+        .iter()
+        .find(|row| {
+            row.qualified_declaration
+                .iter()
+                .map(AsRef::as_ref)
+                .eq(["Pair"])
+        })
+        .expect("real renamed source record");
+    assert_eq!(pair.members[0].original_member_identity.as_ref(), "fst");
+    assert_eq!(pair.members[0].admitted_name.as_ref(), "one");
+}
