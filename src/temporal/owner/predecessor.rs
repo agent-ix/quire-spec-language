@@ -177,6 +177,23 @@ impl CheckedSubject<'_> {
 }
 
 impl Report {
+    /// Encode complete owner bytes within explicit finite operation limits.
+    ///
+    /// Unlike the convenience `to_owner_bytes` representation, this operation
+    /// admits every temporary/final frame and copy before allocation. It is the
+    /// bounded writer for consumers retaining full predecessor or join values.
+    ///
+    /// # Errors
+    /// Returns the original first excess work/storage charge and no output.
+    pub fn to_owner_bytes_bounded(
+        &self,
+        limits: ReportPredecessorLimits,
+    ) -> Result<(Vec<u8>, ReportPredecessorUsage), ReportRefusal> {
+        let mut budget = Budget::new(limits);
+        let bytes = budget.encode(self)?;
+        Ok((bytes, budget.usage))
+    }
+
     /// Validate the actual complete direct predecessor without evaluation.
     ///
     /// An equal request/result identity alone is insufficient: every retained

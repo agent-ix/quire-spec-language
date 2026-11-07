@@ -140,7 +140,12 @@ bytes, and each retained-byte copy before that work. They SHALL charge
 including their handles, and retained bytes plus one shared-buffer handle before
 allocation. Bytes copied through multiple encoder frames are charged on each
 copy.
-Validation without retention charges only its temporary buffer. A first excess
+`Report::to_owner_bytes_bounded` SHALL expose the same canonical owner
+representation and admitted usage after charging every temporary/final frame
+before allocation; a first excess charge returns no bytes. The existing
+`to_owner_bytes` convenience representation has no operation-limit parameter.
+Validation without retention charges only its encoding buffers, not a retained
+shared snapshot. A first excess
 charge SHALL return `PredecessorLimit {resource, limit, actual}` with the original
 ceiling and full attempted cumulative charge, and no partial admitted relation.
 `validate_predecessor` returns the admitted work/storage usage on success. These

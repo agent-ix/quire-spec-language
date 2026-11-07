@@ -115,6 +115,7 @@ mod native_composite_visible_choices;
 mod native_composite_visible_truth_tables;
 mod native_domain_event_boundaries;
 mod native_domain_event_choices;
+mod native_full_predecessor;
 mod native_linking;
 mod native_mixed_observation_choices;
 mod native_model;
