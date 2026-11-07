@@ -95,10 +95,12 @@ and the tickets named below own each PORT.
 
 ## QSL-858: `src/temporal`
 
-Public surface kept (ruling 2) until IR repoints (IR-1005) and quire-protocol
-repoints (QSL-1501): `temporal::{mapping_support_v2, Classification,
-AuthenticatedSelection, Trace, Report, evaluate_v2}` and
-`Closure, Completeness, Execution, Evidence, Position, OrderKey`. The
+`temporal::{mapping_support_v2, Classification, AuthenticatedSelection}` and
+the profile enum were deleted by QSL-858 PR 2 (consumers import
+`qsl_eval::temporal`, not this crate's). Still kept: the native owner-report route
+`temporal::{Trace, Report, evaluate_v2}` and `Closure, Completeness, Execution,
+Evidence, Position, OrderKey`, whose FR-052-AC-15 to AC-21 criteria have no
+FR-525 successor. The
 quire-protocol conformance kernel (`src/conformance/kernel.rs:1198-1271`) uses
 them at its pinned revision.
 

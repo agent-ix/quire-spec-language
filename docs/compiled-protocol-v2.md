@@ -137,23 +137,14 @@ path and its `state::Refusal::UnpublishedArtifact` were retired under FR-049
 through the checked-term entry points of `qsl-eval`
 (`CheckedPackageEvaluation::{call, evaluate, evaluate_protocol_slot}` and the
 checked-family functions), with the package identity established by its
-compile/read path; no caller-supplied artifact identity can be substituted. L5 adds `temporal::evaluate_v2`,
-`evaluate_with_progress_v2` and `mapping_support_v2` over the v2 admitted type;
-the existing `/1` signatures remain unchanged. The v2 trace-evaluation entry
-points compare the trace's profile, revision,
+compile/read path; no caller-supplied artifact identity can be substituted. The retired L5 entry points compared the trace's profile, revision,
 binding name and exact parameter map before visiting positions. Event-position
 uses only `sequence_authority`; fixed-sample uses exactly `epoch`, `period` and
 `unit`, with the numbers encoded as compact canonical FR-038 Number JSON;
 timestamped-event uses only `timestamp_unit`. L5 does not interpret clock
 progress during artifact admission.
 
-`mapping_support_v2(package, declaration, closure)` has no trace input; it
-checks the declaration's authenticated definition/profile binding before using
-the existing surrounding-execution-closure classifier and makes no parameter-map
-claim. Its `Classification::authenticated()` accessor returns the
-`AuthenticatedSelection` containing the selected package reference, declaration,
-definition identity/revision and definition artifact reference. Version-1 classification
-returns `None`; neither path authenticates clock parameters without a trace.
+Mapping classification over a `/2` package (`mapping_support_v2`) is retired; the checked-clause classifier (FR-527) replaces it.
 `evaluate_with_progress_v2` keys retained progress by the admitted package
 reference, declaration, definition identity/revision and exact clock configuration,
 so another artifact, `/1` evaluation or changed clock selection cannot lend it
@@ -171,8 +162,7 @@ that retains this contract and names the exact public surface it consumes:
 - `protocol_artifact::native::{TemporalSelection, AdmissionV2, admit_v2}`;
 - the `qsl-eval` checked-term entry points
   `CheckedPackageEvaluation::{call, evaluate, evaluate_protocol_slot}`; and
-- `temporal::{AuthenticatedSelection, Classification, evaluate_v2,
-  evaluate_with_progress_v2, mapping_support_v2}`.
+- `temporal::{evaluate_v2, Report, Trace}`, the native owner-report route.
 
 The producing caller supplies the actual parser/linker/proof report plus the
 complete `native::Selections`: original native source and model artifacts,

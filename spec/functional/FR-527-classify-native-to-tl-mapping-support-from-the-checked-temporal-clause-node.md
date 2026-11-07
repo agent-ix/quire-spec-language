@@ -36,8 +36,7 @@ FR-045's table does not list, and the authenticated selection on the checked
 node.
 
 This requirement is the successor of the legacy surface `temporal::{mapping_support_v2,
-Classification, AuthenticatedSelection}`, which FR-499 keeps until Contract IR
-FR-350 consumes the successor's classification (IR-1005).
+Classification, AuthenticatedSelection}`, deleted by QSL-858 PR 2.
 
 ## Use case
 
@@ -251,8 +250,8 @@ leave TL formula/request/result admission and evaluation with their TL owners.
 
 - FR-045-AC-1 to AC-6 (the legacy criteria this requirement succeeds), FR-515
   (the view), FR-337 (the node), FR-050 (the binding and selection).
-- Contract IR FR-350 and IR-1005 consume the classification; they repoint from
-  `temporal::mapping_support_v2` to `mapping_support`.
+- Contract IR FR-350 and IR-1005 consume the classification through
+  `mapping_support`.
 - Does not depend on FR-522 to FR-526: classification takes no trace.
 
 ## References

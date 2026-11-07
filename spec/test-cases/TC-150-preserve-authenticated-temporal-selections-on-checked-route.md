@@ -35,7 +35,7 @@ Run the following named checks in the integration suite:
    the strict admitted package. For each profile, assert the retained
    definition identity/revision, exact selected definition ArtifactRef,
    declaration index, clock name and full parameter map. Also exercise
-   the evidence call (FR-522) and `mapping_support_v2` with
+   the evidence call (FR-522) and `mapping_support` (FR-527) with
    the same admitted artifact and check their retained authentication evidence.
    Substitute a wrong profile, clock name, missing parameter key, extra
    parameter key, each event/fixed-sample/timestamped clock field, and require
