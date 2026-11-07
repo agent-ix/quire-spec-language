@@ -112,6 +112,7 @@ mod native_owner_report;
 mod nesting_levels;
 mod parser;
 mod protocol_artifact;
+mod protocol_artifact_versions;
 mod protocol_number_root_module;
 mod replay_multi_source;
 mod request_builder;
