@@ -958,3 +958,122 @@ fn genuine_witness_replay_retains_record_absence_regions_and_disagreement() {
     assert_eq!(undefined_row["disagreement"]["cause"], "no-value");
     assert_eq!(undefined_fixture.execute(&[]).outcome.code, 0);
 }
+
+#[test]
+#[trace("TC-1325", "FR-350-AC-17")]
+#[trace("TC-1325", "QSpec-FR-336-AC-8")]
+fn replay_provision_paths_refuse_absent_unlisted_absolute_and_parent_traversal() {
+    let fixture = replay_fixture();
+    let path = fixture.corpus.join("inputs/request.json");
+    let original: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    for replacement in [
+        None,
+        Some("inputs/unlisted.native"),
+        Some("/tmp/outside.native"),
+        Some("../outside.native"),
+    ] {
+        let mut request = original.clone();
+        match replacement {
+            Some(replacement) => request["byte_provision"][0]["bytes_path"] = json!(replacement),
+            None => {
+                request["byte_provision"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("bytes_path");
+            }
+        }
+        fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+        let result = report(&fixture.execute(&[]));
+        let actual = &result["capabilities"][0]["vectors"][0]["actual"];
+        assert_eq!(
+            actual["cause"], "corpus-decode",
+            "{replacement:?}: {result}"
+        );
+        assert_eq!(
+            actual["pointer"], "/byte_provision/0/bytes_path",
+            "{replacement:?}: {result}"
+        );
+    }
+}
+
+#[test]
+#[trace("TC-1325", "FR-350-AC-18")]
+fn replay_stage_settings_keep_unknown_depth_distinct_from_accepted_input_bytes() {
+    let fixture = replay_fixture();
+    let path = fixture.corpus.join("inputs/request.json");
+    let original: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let mut request = original.clone();
+    request["stage_limits"] = json!({"depth":"1024"});
+    fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+    let result = report(&fixture.execute(&[]));
+    let actual = &result["capabilities"][0]["vectors"][0]["actual"];
+    assert_eq!(actual["cause"], "corpus-decode", "{result}");
+    assert_eq!(actual["pointer"], "/stage_limits/depth", "{result}");
+    request["stage_limits"] = json!({"s1.input_bytes":"1048576"});
+    fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+    let result = fixture.execute(&[]);
+    assert_eq!(result.outcome.code, 0, "{}", report(&result));
+    assert_eq!(
+        result.outputs["V1-TOOL-004-operation"],
+        *fixture.expected_output.as_ref().unwrap()
+    );
+}
+
+#[test]
+#[trace("TC-1325", "FR-350-AC-16")]
+fn replay_corpus_keeps_noncanonical_package_bytes_for_the_native_reader() {
+    let fixture = replay_fixture();
+    let path = fixture.corpus.join("inputs/request.json");
+    let mut bytes = fs::read(&path).unwrap();
+    let marker = b"\"package\":{";
+    let position = bytes
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .expect("the original package member");
+    bytes.insert(position + marker.len(), b' ');
+    fs::write(&path, &bytes).unwrap();
+    let result = report(&fixture.execute(&[]));
+    let actual = &result["capabilities"][0]["vectors"][0]["actual"];
+    assert_eq!(
+        actual["code"], "noncanonical_wire",
+        "the corpus adapter must not repair the offered raw package: {result}"
+    );
+    assert_eq!(actual["locus"]["pointer"], "/package", "{result}");
+    assert_ne!(actual["cause"], "corpus-decode", "{result}");
+}
+
+#[test]
+#[trace("TC-1325", "FR-350-AC-16")]
+fn absent_provision_authority_is_typed_replay_input_without_path_inference() {
+    let fixture = replay_fixture();
+    let path = fixture.corpus.join("inputs/request.json");
+    let mut request: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    request["byte_provision"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("authority");
+    fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+    let result = report(&fixture.execute(&[]));
+    let actual = &result["capabilities"][0]["vectors"][0]["actual"];
+    assert_eq!(actual["code"], "invalid_runtime_input", "{result}");
+    assert_eq!(
+        actual["cause"], "missing-member",
+        "schema-valid absence reaches the replay input boundary: {result}"
+    );
+    assert_eq!(
+        actual["locus"]["pointer"], "/byte_provision/0/authority",
+        "{result}"
+    );
+    request["byte_provision"][0]["bytes_path"] = json!("inputs/unlisted.native");
+    fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+    let result = report(&fixture.execute(&[]));
+    let actual = &result["capabilities"][0]["vectors"][0]["actual"];
+    assert_eq!(
+        actual["cause"], "corpus-decode",
+        "the invalid corpus path is checked before typed input construction: {result}"
+    );
+    assert_eq!(
+        actual["pointer"], "/byte_provision/0/bytes_path",
+        "{result}"
+    );
+}
