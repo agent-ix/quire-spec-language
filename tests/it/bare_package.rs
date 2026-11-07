@@ -1768,6 +1768,17 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
     let scratch = tempfile::tempdir().expect("tempdir");
     let built = recipe("event_position");
     let read = built.read(&built.emission);
+    // Copied package names are part of the real allowance. Calibrate the
+    // producer and public writer over the same complete named emission.
+    let package_name = built.emission.package().name().to_owned();
+    let mut same_request = request("event_position", Corpus::None);
+    same_request.emit.package_name = package_name.clone();
+    assert_eq!(
+        quire_spec_language::emit_checked_v2::emit(&same_request.emit)
+            .expect("actual public writer emission"),
+        built.emission.package().bytes(),
+        "the budget oracle and writer must use exactly the same producer package",
+    );
     let mut measure = quire_contract_model::NativeJoinBudget::new(1 << 30, 1 << 30);
     built
         .emission
@@ -1786,6 +1797,7 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
         ),
     ] {
         let mut asked = request("event_position", Corpus::None);
+        asked.emit.package_name = package_name.clone();
         asked.native_join = limits;
         let target = scratch.path().join(format!("{code:?}"));
         match write(&asked, &target) {
@@ -1839,6 +1851,7 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
     }
     let target = scratch.path().join("written");
     let mut exact = request("event_position", Corpus::None);
+    exact.emit.package_name = package_name;
     exact.native_join = qsl_package::NativeJoinLimits::new(need.work, need.storage);
     write(&exact, &target).expect("exact work and storage write the directory");
     assert!(target.join("identities.json").exists());
