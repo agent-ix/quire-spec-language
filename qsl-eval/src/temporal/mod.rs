@@ -53,7 +53,7 @@ mod timed;
 mod tuple;
 mod window;
 
-pub use engine::{unrolling, Unrolling};
+pub use engine::{unrolling, DecisiveAtom, DecisiveSearch, DecisiveStop, Unrolling};
 pub use finite_window::{
     evaluate_finite_window, evaluate_finite_window_at, Assessment, Basis, ClockCover, Containment,
     IndeterminateReason, LowerBoundary, OrderKey, Premises, ProgressedRefusal, ResultIdentity,
@@ -69,8 +69,9 @@ pub use ledger::{
 };
 pub use letters::{AtomReading, CaptureReading, LetterStop, TemporalLetters, UndefinedCause};
 pub use observed::{
-    evaluate_observed, evaluate_observed_at, evaluate_observed_finite_window, FirstUndefined,
-    HoldsStop, ObservedLocus, ObservedRun, ObservedWindowRun, WindowValuations,
+    evaluate_observed, evaluate_observed_at, evaluate_observed_decisive,
+    evaluate_observed_finite_window, FirstUndefined, HoldsStop, ObservedLocus, ObservedRun,
+    ObservedWindowRun, WindowValuations,
 };
 pub use observed_window::{ObservedWindowExpressions, ObservedWindowSource};
 pub use outcome::{

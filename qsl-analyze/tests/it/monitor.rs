@@ -494,6 +494,38 @@ fn a_bounded_eventually_is_tested_or_violated_over_the_counter_trace() {
     ));
 }
 
+/// FR-283-AC-10: `always p` over the `Counter` trace 0, 1, 2 is violated at
+/// position 0 with a `decisive` beside the counterexample at position 2, no
+/// quantifier and no index, element `false` and the empty path at the
+/// observation's root.
+#[trace("TC-765", "FR-283-AC-10")]
+#[test]
+fn a_violation_carries_the_decisive_position_of_its_atom() {
+    let mut world = world(&[("P", "", ALWAYS_SMALL)]);
+    let outcome = world.finite(&["P"], &[0, 1, 2]);
+    let [record] = outcome.records.as_slice() else {
+        panic!("one record");
+    };
+    let report = record.report();
+    assert!(matches!(
+        report.disposition,
+        ClauseDisposition::Temporal(TemporalVerdict::Violated { at: 0 })
+    ));
+    assert_eq!(
+        report
+            .counterexample
+            .as_ref()
+            .map(|counterexample| counterexample.trace_position.index()),
+        Some(0)
+    );
+    let decisive = report.decisive.as_ref().expect("a decisive record");
+    assert_eq!(decisive.position, Some(2));
+    assert_eq!(decisive.quantifier, None);
+    assert_eq!(decisive.index, None);
+    assert!(decisive.value_path.steps.is_empty());
+    assert!(report.witness.is_none());
+}
+
 /// FR-283-AC-14: each record renders through `OutcomeItem::from_clause_run`,
 /// and the document is those items in request order under the most severe
 /// item's category.
