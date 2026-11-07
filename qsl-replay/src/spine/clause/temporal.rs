@@ -880,7 +880,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
             ClauseDisposition::Temporal(TemporalVerdict::Violated { .. })
         )
         .then(|| {
-            evaluate_observed_decisive(
+            progressed_search(evaluate_observed_decisive(
                 run.package,
                 node,
                 &environments,
@@ -888,10 +888,8 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
                 reference,
                 silent_from,
                 &mut meter,
-            )
-            .decisive
-        })
-        .flatten();
+            ))
+        });
         let (disposition, counterexample, decisive) = with_decisive(
             &DecisiveRun {
                 run,
@@ -1273,6 +1271,23 @@ impl WindowRun {
             refused_at: None,
         }
     }
+}
+
+/// The decisive search of a progressed violation's finite-trace run. A run
+/// that stopped before it reached its own violation is that stop, never a
+/// violation without a record.
+fn progressed_search(observed: qsl_eval::temporal::ObservedRun) -> DecisiveSearch {
+    if let Some(search) = observed.decisive {
+        return search;
+    }
+    Err(match observed.result {
+        Ok(TemporalOutcome::Incomplete(incomplete)) => DecisiveStop::Incomplete(incomplete),
+        Err(TemporalRefusal::Fault(fault)) => DecisiveStop::Fault(fault),
+        _ => DecisiveStop::Fault(quire_semantic_value::catalog::InternalFault::new(
+            "temporal-progress",
+            "decisive-run-reaches-the-violation",
+        )),
+    })
 }
 
 /// What the decisive record of a violation is read from.

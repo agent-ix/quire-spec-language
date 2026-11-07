@@ -449,14 +449,16 @@ fn opposite_and_missing_valuations_are_computed_from_admitted_rows() {
     }
 }
 
-/// FR-043-AC-17: on the checked-package route `evaluate_v2` reads the
-/// retained rows alone. Two identical rows valuing the operand true at
+/// On the checked-package route `evaluate_v2` reads the retained rows alone.
+/// This is part of FR-043-AC-17 only: the located `Incomplete` the AC requires
+/// of disagreeing and missing rows is not yet reported (QSL-1780), so the test
+/// does not claim the AC. Two identical rows valuing the operand true at
 /// position 0 and one at position 1 give truth `true`, basis `closed-scope`
 /// and support at positions 0 and 1; a true and a false row at position 0
 /// give a missing valuation with no truth, and so does no row at position 0,
 /// never `false`. The trace positions' legacy leaf-handle map, set false at
 /// every position, changes none of the results.
-#[trace("TC-144", "FR-043-AC-17")]
+#[trace("TC-144")]
 #[test]
 fn evaluation_reads_the_retained_rows_alone() {
     use qsl_eval::temporal::evidence::Settlement;

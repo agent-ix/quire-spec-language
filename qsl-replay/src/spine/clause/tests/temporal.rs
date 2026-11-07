@@ -432,7 +432,9 @@ impl Unit {
                  temporal Past using t over (c: Counters::Counter) clock \"model-steps\" \
                  on origin { always (holds(c.value = 0) implies once[1,1] holds(c.value = 9)) }\n\
                  temporal Negated using t over (c: Counters::Counter) clock \"model-steps\" \
-                 on origin { always not holds(c.value = 2) }\n"
+                 on origin { always not holds(c.value = 2) }\n\
+                 temporal Wrap using t over (c: Counters::Counter) clock \"model-steps\" \
+                 on origin { always (holds(c.value = 1) implies eventually[1,1] holds(c.value = 1)) }\n"
             }
             Self::DescentBounded => {
                 "temporal Each using t over (c: Counters::Counter) clock \"model-steps\" \
@@ -4622,6 +4624,18 @@ fn the_decisive_atom_descends_by_operator() {
         );
         assert!(none.decisive.is_none(), "{clause}");
     }
+}
+
+/// FR-330 "The decisive atom": over a lasso whose descent crosses the loop's
+/// closing edge, `decisive.position` is the in-trace position, not the
+/// unrolled one. With an empty prefix and loop 0, 1 the `eventually[1,1]` of
+/// the activation at 1 reads the unrolled position 2, which is position 0.
+#[trace("TC-840", "FR-330-AC-12")]
+#[test]
+fn a_lasso_decisive_position_is_the_in_trace_position() {
+    let wrapped = report(lasso(Unit::Descent, "Wrap", 0, &[0, 1]));
+    assert_eq!(outcome(&wrapped), &TemporalVerdict::Violated { at: 0 });
+    assert_undecided(&wrapped, "counter-0", 0);
 }
 
 /// FR-330-AC-15: a violation only past the last position has no decisive

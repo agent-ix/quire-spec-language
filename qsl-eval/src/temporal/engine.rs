@@ -971,20 +971,19 @@ impl<'a> Evaluator<'a> {
 
     /// The atom `node` read at `q`, when `q` is a position of the trace: a
     /// position before 0 and a false-extension position have no observation.
+    /// Over a lasso the position is the in-trace one `q` reads (FR-330).
     fn decisive_atom(&self, node: usize, q: i128) -> Result<Option<DecisiveAtom>, Stop> {
         if q < 0 {
             return Ok(None);
         }
         Ok(match self.geometry.site(self.geometry.canon(q))? {
             Site::Sentinel => None,
-            Site::Real(_) => Some(DecisiveAtom {
+            Site::Real(position) => Some(DecisiveAtom {
                 atom: self
                     .formula
                     .node_id(node)
                     .ok_or_else(|| fault("atom-has-node-id"))?,
-                position: TemporalPosition::new(
-                    u64::try_from(q).map_err(|_| fault("position-in-u64"))?,
-                ),
+                position: TemporalPosition::new(position),
             }),
         })
     }
