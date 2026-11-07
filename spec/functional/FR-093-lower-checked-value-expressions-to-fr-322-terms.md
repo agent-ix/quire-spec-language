@@ -217,6 +217,11 @@ negation rooted in a parameter, call, `let` name, conversion, or other
 nonliteral quantity expression is not a nonzero fact, even when a guard or
 the expression's value happens to be nonzero.
 
+A bounded quantity (FR-154) and a carried quantity (FR-497) are no operand of
+the unary `-`: a bounded one refuses `ill_typed`/`operator-ineligible` and a
+carried one `ill_typed`/`type-mismatch` (FR-497-AC-2), each with no charge and
+no node.
+
 A literal never changes type to fit its slot (FR-056-AC-41). A quantity
 literal is admitted where its operand position takes `Quantity<u>` of the
 same unit: a parameter of type `Quantity<u>`, a comparison or `+`/`-` whose

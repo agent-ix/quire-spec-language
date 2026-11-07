@@ -62,6 +62,7 @@ mod protocol_reference;
 mod protocol_retry_bound;
 mod protocol_slots;
 mod quantity_literals;
+mod quantity_negation;
 mod quantity_power;
 mod reference_adapter;
 mod refinement_populations;
