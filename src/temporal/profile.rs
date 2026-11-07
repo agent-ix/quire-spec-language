@@ -51,38 +51,4 @@ impl Profile {
             Self::TimestampedWindow => TIMESTAMPED_WINDOW,
         }
     }
-
-    /// Whether atomic valuations extend false past a closed-complete decision
-    /// scope. The finite-window profile instead quantifies only over admitted
-    /// instants, so an empty universal window is true and an empty existential
-    /// window is false once the authority establishes completeness.
-    pub fn extends_false(self) -> bool {
-        match self {
-            Self::EventPosition | Self::FixedSample => true,
-            Self::TimestampedWindow => false,
-        }
-    }
-
-    /// Whether a progress watermark advances this clock through an offset that
-    /// carries no business event. A declared sample period and a declared
-    /// timestamp unit both advance without one; an event-position sequence does
-    /// not advance during silence, so its watermark stays a retained premise.
-    pub fn advances_on_progress(self) -> bool {
-        match self {
-            Self::FixedSample | Self::TimestampedWindow => true,
-            Self::EventPosition => false,
-        }
-    }
-
-    /// Whether an offset addresses a required position that must exist in a
-    /// complete trace. Event-position and fixed-sample traces are dense in their
-    /// own domain: every offset inside the scope is a required position, and a
-    /// missing one is incomplete. A timestamped window is sparse: an offset with
-    /// no admitted instant is simply not in the quantification range.
-    pub fn requires_dense_positions(self) -> bool {
-        match self {
-            Self::EventPosition | Self::FixedSample => true,
-            Self::TimestampedWindow => false,
-        }
-    }
 }

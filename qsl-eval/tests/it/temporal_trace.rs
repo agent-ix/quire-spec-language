@@ -52,6 +52,18 @@ pub(crate) fn fixture_within(
     body: &str,
     limits: qsl_cst::Limits,
 ) -> Fixture {
+    try_fixture_within(profile, over, activation, body, limits)
+        .unwrap_or_else(|reached| panic!("{body}: stopped at S3: {reached:?}"))
+}
+
+/// [`fixture_within`] where a limit reached by the S3 check is returned.
+pub(crate) fn try_fixture_within(
+    profile: &str,
+    over: &str,
+    activation: &str,
+    body: &str,
+    limits: qsl_cst::Limits,
+) -> Result<Fixture, qsl_foundation::diagnostic::LimitExceeded> {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"{VALUE}\";\n\
@@ -80,10 +92,11 @@ pub(crate) fn fixture_within(
     let mut checked = check_clauses(&package);
     let clause = match checked.pop() {
         Some(Ok(clause)) if checked.is_empty() => clause,
+        Some(Err(StageFailure::Limit(reached))) => return Err(reached),
         Some(Err(StageFailure::Refused(refusal))) => panic!("{body}: refused: {refusal:?}"),
         other => panic!("{body}: one checked clause, not {other:?}"),
     };
-    Fixture { text, clause }
+    Ok(Fixture { text, clause })
 }
 
 /// A unit over the `test/counters` model `M` with one infinite-trace `temporal`
@@ -386,7 +399,7 @@ fn prefix(body: &str) -> TemporalOutcome {
 /// FR-327-AC-1: over the closed `Counter` trace with `c.level` 0, 1, 2 under
 /// event-position false-extension, `on origin`, the four bounded clauses
 /// settle as the AC states, position 3 being past closure.
-#[trace("TC-837", "FR-327-AC-1")]
+#[trace("TC-837", "FR-327-AC-1", "FR-043-AC-1")]
 #[test]
 fn a_closed_trace_settles_bounded_clauses_with_false_extension_past_its_end() {
     assert_eq!(
@@ -1410,7 +1423,7 @@ fn closed_each(body: &str) -> TemporalOutcome {
 /// and through a grouping node, while the `holds` atom beside it is read at
 /// each position and is false past the end: the constant and the atom are
 /// not folded.
-#[trace("TC-837", "FR-327-AC-8")]
+#[trace("TC-837", "FR-327-AC-8", "FR-043-AC-1")]
 #[test]
 fn a_temporal_constant_keeps_its_value_past_closure_and_through_grouping() {
     assert_eq!(closed("always[0,3] true"), TemporalOutcome::Holds);
@@ -1421,7 +1434,7 @@ fn a_temporal_constant_keeps_its_value_past_closure_and_through_grouping() {
 /// FR-327-AC-9: `until[1,2]` requires its left operand only from the lower
 /// bound to the witness, and `release[1,2]` is its dual: each of the four
 /// clauses of the AC settles on its own side.
-#[trace("TC-837", "FR-327-AC-9")]
+#[trace("TC-837", "FR-327-AC-9", "FR-043-AC-4")]
 #[test]
 fn until_and_release_with_a_lower_bound_settle_on_the_witness() {
     assert_eq!(
@@ -1527,7 +1540,7 @@ fn since_triggered_until_and_release_agree_with_their_duals() {
 /// FR-327-AC-13: negation is pointwise: `eventually[0,1] not holds(c.level =
 /// 9)` holds, and `eventually[0,1] holds(c.level = 9)` is false at position
 /// 0, not an untimed reading of the whole formula.
-#[trace("TC-837", "FR-327-AC-13")]
+#[trace("TC-837", "FR-327-AC-13", "FR-043-AC-6")]
 #[test]
 fn negation_is_pointwise_inside_a_window() {
     assert_eq!(

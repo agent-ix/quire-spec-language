@@ -62,14 +62,9 @@ pub struct AdmittedPackage {
     // artifact identity. Compiler emission has no published identity yet.
     pub(super) artifact: Option<ArtifactRef>,
     pub(crate) model_schema: Vec<Option<crate::native_model::NativeModel>>,
-    pub(crate) clocks: super::ClockNames,
 }
 
 impl AdmittedPackage {
-    pub(crate) fn clock_names(&self) -> &super::ClockNames {
-        &self.clocks
-    }
-
     /// Read-only admitted version-2 package.
     pub fn package(&self) -> &wire::Package {
         &self.package
@@ -93,21 +88,5 @@ impl AdmittedPackage {
     /// synthesized from the payload.
     pub fn artifact(&self) -> Option<&ArtifactRef> {
         self.artifact.as_ref()
-    }
-}
-
-/// Retain the already admitted version-2 temporal selection from a strict
-/// version-3 read. The v3 contract adds activation mappings without changing
-/// the inherited temporal binding evidence.
-pub(crate) fn admitted_from_v3(
-    package: wire::Package,
-    artifact: Option<ArtifactRef>,
-    model_schema: Vec<Option<crate::native_model::NativeModel>>,
-) -> AdmittedPackage {
-    AdmittedPackage {
-        clocks: super::ClockNames::of_v2(&package),
-        package,
-        artifact,
-        model_schema,
     }
 }

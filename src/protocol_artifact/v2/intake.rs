@@ -353,12 +353,10 @@ fn temporal(
             .and_then(artifact::clock_binding_name)
             .ok_or(Error::Invalid(Invalid::Reference))?;
         // The typed `clock_name` field must agree with the inherited
-        // `v1` binding's legacy `clock:` spelling. `ClockNames::of_v2`
-        // (evaluation and request derivation) reads `clock_name` alone and
-        // never parses the legacy name; this admission check is the one
-        // remaining reader of the `clock:` prefix on the v2 path, run once
-        // here to refuse a producer offering two disagreeing facts rather
-        // than trust the typed field unchecked.
+        // `v1` binding's legacy `clock:` spelling; this admission
+        // check is the one reader of the `clock:` prefix on the v2 path, run
+        // once here to refuse a producer offering two disagreeing facts
+        // rather than trust the typed field unchecked.
         if binding.clock_name != expected_clock_name {
             return Err(Error::V2(Refusal::ClockName));
         }
@@ -509,7 +507,6 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
             return Err(Error::Invalid(Invalid::Canonical));
         }
         Ok(AdmittedPackage {
-            clocks: super::super::ClockNames::of_v2(&package),
             package,
             artifact: Some(artifact::intake::retained_reference(
                 expected.inherited.artifact,

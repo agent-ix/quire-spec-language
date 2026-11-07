@@ -2,11 +2,17 @@
 //! FR-043: the caller-supplied observation trace.
 //!
 //! Agent F owns observation transport, storage, replay and completeness
-//! authority. Everything here is a caller-constructed input. The completeness
-//! assertion, the admitted order and the authoritative-origin claim are trusted
-//! as supplied and retained as premises; they are not verified by this
-//! evaluator, so a later contradiction can identify the results that depended
-//! on them.
+//! authority. Everything here is a caller-constructed input.
+//!
+//! The v1 evaluator that read these values is retired. Of this module, only
+//! `positions`, `anchor` and the valuation rows are read in this crate (by
+//! `ValuationEvidence::admit`); the remaining fields and types (`Trigger`,
+//! `CaptureInput`, `Eviction`, `triggers`, `trigger_evidence`, `trigger_scope`,
+//! `decision_scope`, `surrounding_execution`, `execution`, `completeness`,
+//! `authoritative_origin`, `watermark`, `evicted`) are inert inputs here: they
+//! are kept only for `quire-protocol` (FR-521 row 5) and are removed with it in
+//! QSL-858 PR 2. Their evaluation is specified by FR-501 to FR-524 and
+//! implemented in `qsl-eval`.
 
 use std::collections::BTreeMap;
 
@@ -22,9 +28,7 @@ pub struct ClockBinding {
     pub profile_identity: String,
     /// Declared clock parameters this profile requires — sample period, epoch
     /// and unit, timestamp unit, or sequence authority. The emitted body
-    /// carries none of them, so they are retained premises that participate in
-    /// result identity rather than values this evaluator can authenticate.
-    /// Recorded as remaining work on compiler #38.
+    /// carries none of them, so they are retained premises.
     pub parameters: BTreeMap<String, String>,
 }
 
@@ -145,9 +149,8 @@ pub struct Trace {
     pub authoritative_origin: bool,
     /// Progress watermark in the profile's clock domain.
     pub watermark: i64,
-    /// Retained valuation and capture records this evaluation may still read.
-    /// A record required by an unsettled obligation but listed here as evicted
-    /// produces an explicit incomplete result naming it.
+    /// Valuation and capture records the caller reports as evicted. Inert in
+    /// this crate; `qsl-eval` names an evicted record an obligation needs.
     pub evicted: Vec<Eviction>,
 }
 
@@ -168,36 +171,4 @@ pub enum Eviction {
         /// Index of the declared capture in the authored list.
         capture: usize,
     },
-}
-
-impl Trace {
-    /// Positions ordered by clock coordinate, then by admitted order key where
-    /// one authority supplies both. Insertion order is never consulted.
-    pub(super) fn ordered(&self) -> Vec<usize> {
-        let mut indices: Vec<usize> = (0..self.positions.len()).collect();
-        indices.sort_by(|left, right| {
-            let (left, right) = (&self.positions[*left], &self.positions[*right]);
-            left.coordinate.cmp(&right.coordinate).then_with(|| {
-                match (left.order.as_ref(), right.order.as_ref()) {
-                    (Some(left), Some(right)) if left.authority == right.authority => {
-                        left.key.cmp(&right.key)
-                    }
-                    _ => std::cmp::Ordering::Equal,
-                }
-            })
-        });
-        indices
-    }
-
-    /// Whether two positions at one coordinate carry a usable admitted order.
-    /// Missing keys on either side, or keys from different authorities, do not.
-    pub(super) fn comparable(&self, left: usize, right: usize) -> bool {
-        match (
-            self.positions[left].order.as_ref(),
-            self.positions[right].order.as_ref(),
-        ) {
-            (Some(left), Some(right)) => left.authority == right.authority,
-            _ => false,
-        }
-    }
 }

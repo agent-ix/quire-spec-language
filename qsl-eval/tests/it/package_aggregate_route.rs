@@ -309,7 +309,7 @@ fn false_aggregate_result_matches_all_package_routes() {
 
 /// FR-523-AC-9: a denied aggregate-window visit leaves its counters at the
 /// successful prefix, including the evaluator's valuation and visit totals.
-#[trace("FR-523-AC-9", "FR-516-AC-50")]
+#[trace("FR-523-AC-9", "FR-516-AC-50", "NFR-008-AC-5")]
 #[test]
 fn denied_aggregate_window_visit_keeps_counters_at_the_successful_prefix() {
     with_routes(
