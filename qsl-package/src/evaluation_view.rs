@@ -159,12 +159,13 @@ impl<'package> AdmittedEvaluationView<'package> {
         #[cfg(feature = "std")]
         let reader_slot = match &self.reader {
             Some(reader) => {
-                let origin = protocol_selection::slot_origin(body).ok_or_else(|| {
-                    SlotSelectionFailure::Fault(InternalFault::new(
-                        "FR-390",
-                        "selected-protocol-slot-has-a-site-name",
-                    ))
-                })?;
+                let origin = protocol_selection::slot_origin(self.package.graph(), body)
+                    .ok_or_else(|| {
+                        SlotSelectionFailure::Fault(InternalFault::new(
+                            "FR-390",
+                            "selected-protocol-slot-has-a-site-name",
+                        ))
+                    })?;
                 Some(reader.slots.slot(&root_node, origin).ok_or_else(|| {
                     SlotSelectionFailure::Fault(InternalFault::new(
                         "FR-390",

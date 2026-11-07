@@ -455,6 +455,23 @@ impl Checker<'_, '_> {
                             &self.protocol.name.name,
                             ProtocolSite::ControlBody(&path),
                         )),
+                        SlotKind::Guard if declaration.kind == ProtocolNodeKind::Choice => {
+                            // A case guard is named by its case's label, not
+                            // its span, so equal guards stay apart
+                            // (QSpec FR-322-AC-388).
+                            self.protocol
+                                .choices
+                                .iter()
+                                .filter(|choice| choice.declaration == node)
+                                .flat_map(|choice| &choice.cases)
+                                .find(|case| std::ptr::eq(&case.guard, slot.form))
+                                .map(|case| {
+                                    protocol_location(
+                                        &self.protocol.name.name,
+                                        ProtocolSite::CaseGuard(&path, &case.name.name),
+                                    )
+                                })
+                        }
                         SlotKind::Visible
                         | SlotKind::Guard
                         | SlotKind::Invariant

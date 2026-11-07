@@ -110,7 +110,7 @@ pub(crate) use protocol::{
     compensation_origin, declaration_origin, protocol_location, AttemptNodes, CompensationNodes,
     ProtocolInput,
 };
-pub use protocol::{protocol_site, ProtocolSite};
+pub use protocol::{protocol_site, ProtocolSite, RelatedSide};
 pub(crate) use state::{
     protocol_attempt_operation_location, protocol_attempt_operation_site,
     state_clause_name_location, state_clause_name_site, state_operation_location,
@@ -4138,6 +4138,23 @@ impl<'a> Lowering<'a> {
         })
     }
 
+    /// Record `site` as the wire site name of the active protocol's
+    /// expressions rooted at `location`.
+    pub(super) fn name_expression_site(&mut self, location: &Location, site: String) {
+        let Some(protocol) = &self.active_protocol else {
+            return;
+        };
+        for expression in self
+            .protocol_expression_binders
+            .get_mut(protocol)
+            .into_iter()
+            .flatten()
+            .filter(|expression| expression.location == *location)
+        {
+            expression.site = Some(site.clone());
+        }
+    }
+
     /// Lower checked `root` and return the term that names it: a reference
     /// to its node, or to its binder's parameter node for a local read.
     ///
@@ -4176,6 +4193,7 @@ impl<'a> Lowering<'a> {
                     crate::check::protocol_clause::CheckedProtocolExpressionBindings {
                         location: root.location().clone(),
                         binders: expression_binders,
+                        site: None,
                     },
                 );
         }

@@ -118,7 +118,7 @@ mod layer;
 mod lowering;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
-pub use lowering::{protocol_site, ProtocolSite};
+pub use lowering::{protocol_site, ProtocolSite, RelatedSide};
 mod hybrid;
 mod hyper_clause;
 mod node_key;
@@ -8356,6 +8356,22 @@ impl CheckedGraph {
         self.protocol_node_keys.get(name)
     }
 
+    /// The type-declaration origin name that keys the `protocol_locations`
+    /// rows of the protocol slot expression rooted at `location`: the site
+    /// name built from the emitted control node where FR-383 builds it so
+    /// (a `related` end), else the name of the checker's location.
+    pub fn protocol_slot_origin<'g>(&'g self, location: &'g Location) -> Option<&'g str> {
+        self.protocol_node_keys
+            .values()
+            .flat_map(|keys| &keys.expressions)
+            .find(|expression| expression.location == *location)
+            .and_then(|expression| expression.site.as_deref())
+            .or(match &location.origin {
+                Origin::TypeDeclaration { name } => Some(name),
+                _ => None,
+            })
+    }
+
     /// FR-115 (ADR-017 PF-3): the operation `model::object::operation`
     /// names, resolved once against this package: `model` to the domain
     /// package selection its `model` declaration binds, and `object` to the
@@ -8970,11 +8986,7 @@ fn register_protocol_sites(
         .map(|choice| {
             (
                 choice.declaration,
-                choice
-                    .visible
-                    .iter()
-                    .chain(choice.cases.iter().map(|case| &case.guard))
-                    .collect::<Vec<_>>(),
+                choice.visible.iter().collect::<Vec<_>>(),
             )
         })
         .chain(protocol.repeats.iter().map(|repeat| {
@@ -9007,6 +9019,23 @@ fn register_protocol_sites(
                     entry.spans.clone(),
                 );
             }
+        }
+    }
+    for choice in &protocol.choices {
+        let Some(control) = checked
+            .controls
+            .control(protocol_clause::ProtocolNodeId(choice.declaration))
+        else {
+            continue;
+        };
+        for case in &choice.cases {
+            site_spans.insert(
+                protocol_site(
+                    name,
+                    ProtocolSite::CaseGuard(&control.path, &case.name.name),
+                ),
+                case.guard.spans.clone(),
+            );
         }
     }
     let Some((finish, finish_name)) = &checked.finish else {
