@@ -1481,13 +1481,20 @@ fn supply_on<'p>(
     rows: &'p ReadIdentityRows,
     budget: &mut quire_contract_model::NativeJoinBudget,
 ) -> Result<BarePackage<'p>, quire_contract_model::ExactTypeProjectionError> {
-    BarePackage::new(read.admitted()).with_supply(
-        qsl_package::BareSupply {
-            identities: rows,
-            equality: None,
-        },
-        budget,
-    )
+    BarePackage::new(read.admitted())
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: rows,
+                equality: None,
+            },
+            budget,
+        )
+        .map_err(|failure| match failure {
+            qsl_package::NativeJoinFailure::Projection(error) => *error,
+            qsl_package::NativeJoinFailure::Equality(error) => {
+                panic!("identity-only fixture has no equality read: {error:?}")
+            }
+        })
 }
 
 /// FR-531-AC-21 (TC-1331): `with_supply` succeeds on a budget of exactly the
@@ -1693,7 +1700,9 @@ fn the_view_the_constructors_and_the_writer_refuse_a_budget_one_short() {
         match short.evaluation_view() {
             Err(qsl_package::ViewFailure::Exhausted(denial)) => {
                 use quire_semantic_value::catalog::CatalogCoded;
-                assert_eq!(denial.native.code, code);
+                assert!(
+                    matches!(&denial.native, qsl_package::NativeJoinFailure::Projection(native) if native.code == code)
+                );
                 let (bound, setting) = if code == Code::ExhaustedWork {
                     (work, "i2.work_units")
                 } else {
@@ -1776,7 +1785,9 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
                 let Error::NativeJoinExhausted(denial) = error else {
                     unreachable!()
                 };
-                assert_eq!(denial.native.code, code);
+                assert!(
+                    matches!(&denial.native, qsl_package::NativeJoinFailure::Projection(native) if native.code == code)
+                );
                 assert_eq!(
                     denial.limit.setting().name(),
                     if code == Code::ExhaustedWork {

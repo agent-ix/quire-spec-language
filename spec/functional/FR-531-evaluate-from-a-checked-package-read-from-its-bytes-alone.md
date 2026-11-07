@@ -725,13 +725,16 @@ follows.
   refused, with the order FR-390 states, by the call that reads the identities
   (FR-531-AC-5). `with_supply` returns an error only for a denied native charge.
 - **Denial is its own typed refusal.** A denied work or storage charge returns
-  Contract IR's `ExactTypeProjectionError` with code `ExhaustedWork` or
-  `ExhaustedStorage`, its locus and its attempted charge, and no
-  `BarePackage`. It is not an `UnknownIdentityWitness`, not an
+  `NativeJoinFailure` retaining Contract IR's original typed cause: an
+  `ExactTypeProjectionError` with code `ExhaustedWork` or `ExhaustedStorage`
+  for identity/type projection, or an `AdmittedEqualityReadError` with code
+  `WorkLimit` or `StorageLimit` for equality admission. The shared budget
+  retains the first unpaid charge and cumulative admitted counters. No
+  `BarePackage` is returned. It is not an `UnknownIdentityWitness`, not an
   `InternalFault` and not an empty set of identities. A denial surfaced through
   the stage-failure or diagnostic path is a `stage_limit_exceeded`-class refusal
-  naming `i2.work_units` or `i2.native_join_storage`; `ExhaustedWork` and
-  `ExhaustedStorage` stay the library form. The same denial from a
+  naming `i2.work_units` or `i2.native_join_storage`; the original owner error
+  and its code remain available in the library form. The same denial from a
   view's join is `ViewFailure::Exhausted`, from an evidence constructor
   `PackageMismatch::Exhausted`, and from the handoff writer
   `Error::NativeJoinExhausted`. `qsl-eval`'s `CallFailure` has no arm for it:
@@ -791,6 +794,7 @@ outcome map. Each carries a "Consumer entry" section that points here.
 
 | FR-531-AC-26 | An authentic final emission's source-union rows round-trip original type handles, settled keys, sealed member identities, final structural and payload node IDs and ordered Exact payload types; the read rows equal the emitter rows, native `source_union_rows` retains them and rewriting is byte-identical. | Test (TC-1331) |
 | FR-531-AC-27 | `/2`, absent `source_unions`, malformed member identity, stale member name, foreign source owner and conflicting union rows return typed format, malformed or native-join refusals without a partial read. An empty union list never fabricates a producer witness from the graph. | Test (TC-1331) |
+| FR-531-AC-28 | Producer and bytes-only equality admission pass the caller's same `NativeJoinBudget` through IR's admitted equality reader after identity/type projection. Decisions and non-resource witness refusals are retained for later unmetered selection and projection. Successful reads consume native work and storage cumulatively; exact measured bounds admit, and one unit less in either resource refuses with the original typed IR equality denial and recorded first unpaid charge, never an unknown witness or internal fault. Reusing an admitted slot consumes no additional native allowance. | Test (TC-1331) |
 
 ## Dependencies
 

@@ -1407,31 +1407,26 @@ fn a_changed_clock_value_is_admitted_by_the_reader_and_refused_by_the_sidecar() 
     }
 }
 
-/// FR-517-AC-10: the legacy writer and its items are present.
+/// FR-517-AC-10: the legacy writer, its constants, its feature, its two
+/// examples and `examples/protocol-handoff` are absent, and no Cargo manifest
+/// of the workspace names the `handoff-writer` feature.
 #[trace("FR-517-AC-10", "TC-1312")]
 #[test]
-fn the_legacy_writer_is_still_present() {
-    let handoff = std::fs::read_to_string("src/protocol_artifact/handoff.rs").unwrap();
-    for constant in [
-        "PUBLISHED_V1_OFFER_FILE",
-        "PUBLISHED_V1_SELECTION_FILE",
-        "PUBLISHED_OFFER_FILE",
-        "PUBLISHED_SELECTION_FILE",
-        "PUBLISHED_MUTATION_MANIFEST_FILE",
+fn the_legacy_writer_is_absent() {
+    for path in [
+        "src/protocol_artifact/handoff.rs",
+        "src/protocol_artifact/handoff",
+        "examples/native_protocol_handoff.rs",
+        "examples/native_protocol_v2_handoff.rs",
+        "examples/protocol-handoff",
+        "tests/it/handoff_writer.rs",
     ] {
-        assert!(handoff.contains(constant), "{constant}");
+        assert!(!Path::new(path).exists(), "{path}");
     }
-    let writer = std::fs::read_to_string("src/protocol_artifact/handoff/writer.rs").unwrap();
-    assert!(writer.contains("pub fn write_v1") && writer.contains("pub fn write_v2"));
     let manifest = std::fs::read_to_string("Cargo.toml").unwrap();
-    assert!(manifest.contains("handoff-writer = []"));
-    for example in [
-        "native_protocol_handoff.rs",
-        "native_protocol_v2_handoff.rs",
-    ] {
-        assert!(Path::new("examples").join(example).exists());
-    }
-    assert!(Path::new("examples/protocol-handoff/model.json").exists());
+    assert!(!manifest.contains("handoff-writer"));
+    let module = std::fs::read_to_string("src/protocol_artifact/mod.rs").unwrap();
+    assert!(!module.contains("mod handoff"));
 }
 
 /// One row of FR-518's table as amended by the writer self-check: identity,

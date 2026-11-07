@@ -16,7 +16,7 @@ const DEC2: &str = "Decimal[-100,100;0,2;nearest-even]";
 const RAT: &str = "Rational[-100, 100; 1, 1]";
 
 /// `declarations` through S1 to S4 and the v2 emitter, with nothing omitted.
-fn checked_graph(declarations: &str) -> qsl_semantics::check::CheckedGraph {
+pub(super) fn checked_graph(declarations: &str) -> qsl_semantics::check::CheckedGraph {
     let text = format!("{HEADER}{declarations}\n");
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:conv-eq"),
