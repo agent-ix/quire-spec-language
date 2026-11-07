@@ -401,18 +401,20 @@ impl PlanRoot {
                 return Err(PlanAuthorityRefusal::ReadIncomplete(Box::new(error)));
             }
         };
-        let mut plans = package.monitor_plans();
-        let final_plan = plans.next().ok_or(PlanAuthorityRefusal::FinalEmission)?;
-        if plans.next().is_some()
-            || final_plan.clause() != declaration
-            || !package.temporal_clause_names().is_some_and(|rows| {
-                rows.iter().any(|row| {
-                    &row.declaration == declaration
-                        && row.occurrence == claim.occurrence().origin().ordinal()
-                })
-            })
         {
-            return Err(PlanAuthorityRefusal::FinalEmission);
+            let mut plans = package.monitor_plans();
+            let final_plan = plans.next().ok_or(PlanAuthorityRefusal::FinalEmission)?;
+            if plans.next().is_some()
+                || final_plan.clause() != declaration
+                || !package.temporal_clause_names().is_some_and(|rows| {
+                    rows.iter().any(|row| {
+                        &row.declaration == declaration
+                            && row.occurrence == claim.occurrence().origin().ordinal()
+                    })
+                })
+            {
+                return Err(PlanAuthorityRefusal::FinalEmission);
+            }
         }
         let order = self.model_step_order(limits.order)?;
         let progress_value = progress.association_canonical_bytes(limits.progress)?;
