@@ -14,7 +14,7 @@ use qsl_replay::spine::{
     authenticate_emission, authenticate_package_trace, name_clause_atom, run_package_temporal,
     run_package_trace_subject, AuthenticationFailure, ClauseDisposition, ClauseRunReport,
     OverObject, PackageAuthentication, PackageTemporalRequest, PackageTraceSubjectRequest,
-    RunRefusal, SpineLimits, TemporalIndeterminateReason, TemporalTraceRefusal,
+    PackagesStage, RunRefusal, SpineLimits, TemporalIndeterminateReason, TemporalTraceRefusal,
     TemporalUndefinedCause, TemporalVerdict, TraceInput,
 };
 use qsl_replay::{ClauseRunNotAnItem, OutcomeDocument, OutcomeItem, OutcomeStage};
@@ -335,6 +335,9 @@ impl Runs<'_> {
         ) {
             return Ok(None);
         }
+        let Some(first) = self.request.clauses.first() else {
+            return Ok(None);
+        };
         let authentication = authenticate_emission(
             self.package,
             self.request.temporal_selections,
@@ -342,7 +345,7 @@ impl Runs<'_> {
             &SpineLimits::default(),
             self.cancel,
         )
-        .map_err(|failure| self.emission_failure(failure))?;
+        .map_err(|failure| self.emission_failure(failure, &first.name))?;
         for clause in &self.request.clauses {
             if let Err(disposition) = authenticate_package_trace(
                 self.package,
@@ -364,33 +367,57 @@ impl Runs<'_> {
     }
 
     /// The whole-request failure an emission failure stands for.
-    fn emission_failure(&self, failure: AuthenticationFailure) -> Failure {
+    ///
+    /// FR-283 names only a selected clause's missing selection. The other
+    /// defects of the request's `temporal_selections` and `packages` are
+    /// refused as `ClauseRefused` on `first`, the first selected clause, with
+    /// `invalid_runtime_input`/`invalid-value` naming the member; a missing
+    /// selection of a declaration no selected clause owns is
+    /// `missing_declaration`/`missing-selection` on `first` as well.
+    fn emission_failure(&self, failure: AuthenticationFailure, first: &str) -> Failure {
+        let refusal = |clause: &str, code, cause, member: &str, stage: Option<&str>| {
+            let mut fields = BTreeMap::from([("member", member.to_owned())]);
+            if let Some(stage) = stage {
+                fields.insert("stage", stage.to_owned());
+            }
+            StageFailure::Refused(MonitorRefusal::ClauseRefused {
+                clause: clause.to_owned(),
+                failure: Box::new(refused(code, cause, fields)),
+            })
+        };
         match failure {
             AuthenticationFailure::Cancelled(cause) => StageFailure::Cancelled(cause),
-            AuthenticationFailure::MissingSelection {
-                clause: Some(clause),
-            } if self
-                .request
-                .clauses
-                .iter()
-                .any(|selected| selected.name == clause) =>
-            {
-                StageFailure::Refused(MonitorRefusal::ClauseRefused {
-                    clause,
-                    failure: Box::new(refused(
-                        Code::MissingDeclaration,
-                        "missing-selection",
-                        BTreeMap::new(),
-                    )),
-                })
+            AuthenticationFailure::MissingSelection { clause } => {
+                let owner = clause
+                    .as_deref()
+                    .filter(|name| self.request.clauses.iter().any(|c| c.name == *name))
+                    .unwrap_or(first);
+                refusal(
+                    owner,
+                    Code::MissingDeclaration,
+                    "missing-selection",
+                    "temporal_selections",
+                    None,
+                )
             }
-            AuthenticationFailure::MissingSelection { .. } => StageFailure::Fault(
-                InternalFault::new("monitor", "selections-cover-every-temporal-declaration"),
+            AuthenticationFailure::SelectionsDoNotFit => refusal(
+                first,
+                Code::InvalidRuntimeInput,
+                "invalid-value",
+                "temporal_selections",
+                None,
             ),
-            AuthenticationFailure::Refused(_) => StageFailure::Fault(InternalFault::new(
-                "monitor",
-                "selections-fit-the-checked-package",
-            )),
+            AuthenticationFailure::PackagesDoNotAdmit(stage) => refusal(
+                first,
+                Code::InvalidRuntimeInput,
+                "invalid-value",
+                "packages",
+                Some(match stage {
+                    PackagesStage::Conflict => "conflict",
+                    PackagesStage::Closure => "closure",
+                    PackagesStage::StrictRead => "strict-read",
+                }),
+            ),
             AuthenticationFailure::Fault(fault) => StageFailure::Fault(fault),
         }
     }
@@ -760,7 +787,6 @@ fn read_trace(bytes: &[u8], limits: ObservationLimits) -> Result<TraceDocument, 
     }
     let document = quire_canonical::read(bytes, input_bytes)
         .map_err(|_| defect(Code::InvalidRuntimeInput, "invalid-value", None, ""))?;
-    charge_document(document.root(), limits)?;
     let root = document.root();
     let Node::Object(members) = root.node() else {
         return Err(defect(
@@ -770,6 +796,9 @@ fn read_trace(bytes: &[u8], limits: ObservationLimits) -> Result<TraceDocument, 
             "",
         ));
     };
+    // The reader and kind refusals come first (FR-283 "Trace document"
+    // order); the counts need a document that is an object.
+    charge_document(root, limits)?;
     let names: Vec<&str> = members.map(|(name, _)| name).collect();
     if let Some(missing) = ["format", "prefix"]
         .into_iter()

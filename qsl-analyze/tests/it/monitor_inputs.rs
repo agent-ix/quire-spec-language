@@ -52,13 +52,15 @@ fn event_unit() -> String {
            temporal Refuse using t over (c: M::Counter) clock \"model-steps\" on origin { always[0,1] holds(count<Zero>(m in ints(sequence[c.value]): m > 0) = 0) }\n\
            temporal Gate using t over (r: Reading) clock \"model-steps\" on origin { always[0,2] (count over past[0, 9] min_count 2 >= 1) }\n\
            temporal Dense using t over (r: Reading) clock \"model-steps\" on origin { always[1,1] (count over past[0, 9] min_count 1 >= 1) }\n\
-           temporal Wide using t over (r: Reading) clock \"model-steps\" on origin { always[0,0] (count where holds(r.level > 9) over past[0, 0] min_count 0 >= 1) }\n"
+           temporal Wide using t over (r: Reading) clock \"model-steps\" on origin { always[0,0] (count where holds(r.level > 9) over past[0, 0] min_count 0 >= 1) }\n\
+           temporal Long using t over (r: Reading) clock \"model-steps\" on origin { always[0,19999] (count where holds(r.level >= 0) over past[0, 0] min_count 0 >= 1) }\n"
 }
 
 /// The finite-window unit: FR-501-AC-4's clause.
 fn window_unit() -> String {
     header("quire.temporal.timestamped-event.finite-window/v1")
-        + "temporal Window using t over (c: M::Counter) clock \"ms\" on origin { eventually[0,5] holds(c.value > 0) }\n"
+        + "temporal Window using t over (c: M::Counter) clock \"ms\" on origin { eventually[0,5] holds(c.value > 0) }\n\
+           temporal Window2 using t over (c: M::Counter) clock \"ms\" on origin { eventually[0,5] holds(c.value > 1) }\n"
 }
 
 fn identity() -> SourceIdentity {
@@ -553,12 +555,13 @@ fn a_trace_document_is_bounded_and_its_identity_object_is_closed() {
     assert_eq!(pointer, "/prefix/0/identity");
 }
 
-/// FND-007: the evaluation meter polls the caller's handle at every charge,
-/// so a cancelled handle stops a clause run mid-evaluation, and `monitor`
-/// reports the cancel rather than the denied charge.
-#[trace("TC-766", "FR-283-AC-13")]
+/// FR-276-AC-1: `monitor` over a handle already cancelled with `Requested`
+/// returns `StageFailure::Cancelled(Requested)` and no output, on every trace
+/// shape; and the evaluation meter denies a charge once the handle is
+/// cancelled (TC-757).
+#[trace("TC-757", "FR-276-AC-1")]
 #[test]
-fn a_cancelled_handle_stops_the_evaluation() {
+fn a_handle_cancelled_before_the_call_returns_cancelled() {
     let mut world = world();
     let refs = world.refs("k", &[0, 1, 0]);
     let trace = TraceInput::Finite(refs);
@@ -612,6 +615,100 @@ fn a_cancelled_handle_stops_the_evaluation() {
         ),
         Err(StageFailure::Cancelled(CancelCause::Requested))
     ));
+
+    let subject = world.reading();
+    let ValueType::Composite(key) = &subject else {
+        panic!("Reading is a record");
+    };
+    let samples = vec![reading_sample(key, 1)];
+    let request = MonitorRequest {
+        clauses: vec![record_clause("Gate")],
+        trace: MonitorTrace::Samples {
+            subject: subject.clone(),
+            samples: &samples,
+        },
+        snapshots: &world.documents.snapshots,
+        packages: &world.documents.packages,
+        sources: &world.event.sources,
+        temporal_selections: &[],
+    };
+    assert!(matches!(
+        monitor(
+            world.event.unit.package(),
+            &request,
+            &limits(1 << 20),
+            &cancel
+        ),
+        Err(StageFailure::Cancelled(CancelCause::Requested))
+    ));
+}
+
+fn reading_sample(key: &quire_exact::NodeKey, level: i64) -> Value {
+    quire_exact::from_admitted_slots(
+        key.clone(),
+        vec![FieldValue::Present(Value::Integer(level.into()))].into_boxed_slice(),
+    )
+}
+
+/// TC-757: a handle cancelled from a second thread DURING a `Samples`
+/// evaluation stops it at a meter charge: `monitor` returns
+/// `Cancelled(Requested)` in a fraction of the time the same request takes
+/// uncancelled, so the poll is inside the evaluation and not only before or
+/// after it.
+#[trace("TC-757")]
+#[test]
+fn a_handle_cancelled_during_a_samples_evaluation_stops_it() {
+    let world = world();
+    let subject = world.reading();
+    let ValueType::Composite(key) = &subject else {
+        panic!("Reading is a record");
+    };
+    let samples: Vec<Value> = (0..20_000).map(|_| reading_sample(key, 1)).collect();
+    let run = |cancel: &Cancel| {
+        let request = MonitorRequest {
+            clauses: vec![record_clause("Long")],
+            trace: MonitorTrace::Samples {
+                subject: subject.clone(),
+                samples: &samples,
+            },
+            snapshots: &world.documents.snapshots,
+            packages: &world.documents.packages,
+            sources: &world.event.sources,
+            temporal_selections: &[],
+        };
+        monitor(
+            world.event.unit.package(),
+            &request,
+            &limits(1 << 20),
+            cancel,
+        )
+    };
+    let started = std::time::Instant::now();
+    let completed = run(&Cancel::new())
+        .expect("the uncancelled request completes")
+        .into_value();
+    let uncancelled = started.elapsed();
+    assert_eq!(only(&completed).verdict, MonitorVerdict::Tested);
+
+    let cancel = Cancel::new();
+    let started = std::time::Instant::now();
+    let result = std::thread::scope(|scope| {
+        let handle = cancel.clone();
+        scope.spawn(move || {
+            std::thread::sleep(uncancelled / 10);
+            handle.cancel(CancelCause::Requested);
+        });
+        run(&cancel)
+    });
+    let cancelled = started.elapsed();
+    assert!(
+        matches!(result, Err(StageFailure::Cancelled(CancelCause::Requested))),
+        "{result:?}"
+    );
+    assert!(
+        cancelled < uncancelled / 2,
+        "cancelled after {cancelled:?}, uncancelled {uncancelled:?}"
+    );
 }
 
 fn window(
@@ -829,5 +926,340 @@ fn a_clause_that_does_not_fit_the_trace_shape_is_refused() {
     assert!(
         matches!(&result, Err(StageFailure::Refused(MonitorRefusal::UnknownClause { name })) if name == "Absent"),
         "{result:?}"
+    );
+}
+
+/// The refusal record a request defect is reported as, with its clause.
+fn request_defect(
+    result: Result<MonitorOutcome, StageFailure<MonitorRefusal>>,
+) -> (
+    String,
+    String,
+    String,
+    std::collections::BTreeMap<&'static str, String>,
+) {
+    let (clause, record) = refused_clause(result);
+    (
+        clause,
+        record.catalog.code().to_owned(),
+        record.catalog.cause().to_owned(),
+        record.fields.clone(),
+    )
+}
+
+fn window_run(
+    world: &World,
+    trace: &TraceInput,
+    selections: &[TemporalClockSelection],
+    packages: &qsl_semantics::model::intake::PackageInput,
+) -> Result<MonitorOutcome, StageFailure<MonitorRefusal>> {
+    let request = MonitorRequest {
+        clauses: vec![model_clause("Window")],
+        trace: MonitorTrace::Typed(trace),
+        snapshots: &world.documents.snapshots,
+        packages,
+        sources: &world.window.sources,
+        temporal_selections: selections,
+    };
+    monitor(
+        world.window.unit.package(),
+        &request,
+        &limits(1 << 20),
+        &Cancel::new(),
+    )
+    .map(|staged| staged.into_value())
+}
+
+/// FR-283 Behavior (FND-001): the defects of the request's
+/// `temporal_selections` are `ClauseRefused` request refusals (exit class
+/// 20), never `StageFailure::Fault`.
+#[trace("TC-765", "FR-283-AC-15")]
+#[test]
+fn defective_clock_selections_are_request_refusals() {
+    let mut world = world();
+    let refs = world.refs("s", &[0, 2, 0]);
+    let trace = window(refs, &[0, 2, 5], 5, binding("ms"));
+    let all = world.window.selections.clone();
+    let packages = world.documents.packages.clone();
+    let fields = |member: &str| std::collections::BTreeMap::from([("member", member.to_owned())]);
+
+    // A declaration no selected clause owns has no selection.
+    let missing = window_run(&world, &trace, &all[..1], &packages);
+    assert_eq!(
+        request_defect(missing),
+        (
+            "Window".to_owned(),
+            "missing_declaration".to_owned(),
+            "missing-selection".to_owned(),
+            fields("temporal_selections")
+        )
+    );
+
+    // A repeated selection.
+    let mut twice = all.clone();
+    twice.push(all[0].clone());
+    // A selection at a span no declaration holds.
+    let mut surplus = all.clone();
+    surplus.push(TemporalClockSelection::new(
+        all[0].source.clone(),
+        qsl_foundation::Span { start: 0, end: 1 },
+        ClockConfiguration::TimestampedEvent {
+            timestamp_unit: "ms".into(),
+        },
+    ));
+    // A configuration of another profile.
+    let mut mismatched = all.clone();
+    mismatched[0] = TemporalClockSelection::new(
+        all[0].source.clone(),
+        all[0].declaration_span,
+        ClockConfiguration::EventPosition {
+            sequence_authority: "counter-event-sequence".into(),
+        },
+    );
+    // A timestamp unit other than the one the trace asserts.
+    let mut wrong_unit = all.clone();
+    wrong_unit[0] = TemporalClockSelection::new(
+        all[0].source.clone(),
+        all[0].declaration_span,
+        ClockConfiguration::TimestampedEvent {
+            timestamp_unit: "us".into(),
+        },
+    );
+    for (name, selections) in [
+        ("duplicate", twice),
+        ("surplus", surplus),
+        ("mismatched", mismatched),
+    ] {
+        assert_eq!(
+            request_defect(window_run(&world, &trace, &selections, &packages)),
+            (
+                "Window".to_owned(),
+                "invalid_runtime_input".to_owned(),
+                "invalid-value".to_owned(),
+                fields("temporal_selections")
+            ),
+            "{name}"
+        );
+    }
+    assert_eq!(
+        request_defect(window_run(&world, &trace, &wrong_unit, &packages)),
+        (
+            "Window".to_owned(),
+            "invalid_runtime_input".to_owned(),
+            "invalid-value".to_owned(),
+            std::collections::BTreeMap::from([
+                ("asserted", "ms".to_owned()),
+                ("expected", "us".to_owned()),
+                ("mismatched_dimension", "TimestampUnit".to_owned()),
+            ])
+        )
+    );
+}
+
+/// FR-283 Behavior (FND-001): domain package documents the strict read does
+/// not admit are a `ClauseRefused` request refusal, never a `Fault`.
+#[trace("TC-765", "FR-283-AC-15")]
+#[test]
+fn domain_packages_the_strict_read_refuses_are_request_refusals() {
+    let mut world = world();
+    let refs = world.refs("p", &[0, 2, 0]);
+    let trace = window(refs, &[0, 2, 5], 5, binding("ms"));
+    let selections = world.window.selections.clone();
+    let identity = world
+        .documents
+        .packages
+        .keys()
+        .next()
+        .expect("one package")
+        .clone();
+
+    let missing = qsl_semantics::model::intake::PackageInput::default();
+    let mut altered = world.documents.packages.clone();
+    altered
+        .get_mut(&identity)
+        .expect("the package is supplied")
+        .truncate(1);
+    for (name, packages) in [("missing", missing), ("altered", altered)] {
+        let (clause, code, cause, fields) =
+            request_defect(window_run(&world, &trace, &selections, &packages));
+        assert_eq!(
+            (clause.as_str(), code.as_str(), cause.as_str()),
+            ("Window", "invalid_runtime_input", "invalid-value"),
+            "{name}"
+        );
+        assert_eq!(fields["member"], "packages", "{name}");
+        assert!(
+            ["conflict", "closure", "strict-read"].contains(&fields["stage"].as_str()),
+            "{name}: {fields:?}"
+        );
+    }
+}
+
+/// FR-522 (FND-003): a forged profile, clock parameters or timestamp unit is
+/// refused with its mismatched dimension before any position is admitted,
+/// though the trace names an unprovisioned snapshot.
+#[trace("TC-765", "FR-283-AC-15")]
+#[test]
+fn a_forged_binding_dimension_is_refused_before_admission() {
+    let mut world = world();
+    let mut refs = world.refs("d", &[0, 2, 0]);
+    refs[1] = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "never-provisioned".to_owned(),
+    };
+    let selections = world.window.selections.clone();
+    let packages = world.documents.packages.clone();
+    let forged = |change: &dyn Fn(&mut TraceBinding)| {
+        let mut forged = binding("ms");
+        change(&mut forged);
+        window(refs.clone(), &[0, 2, 5], 5, forged)
+    };
+    let cases: Vec<(&str, TraceInput, &str)> = vec![
+        (
+            "profile",
+            forged(&|binding| {
+                binding.profile = "quire.temporal.event-position.false-extension/v1".to_owned();
+            }),
+            "Profile",
+        ),
+        (
+            "parameters",
+            forged(&|binding| {
+                binding.parameters = ClockConfiguration::EventPosition {
+                    sequence_authority: "ms".into(),
+                };
+            }),
+            "ClockParameters",
+        ),
+        (
+            "unit",
+            forged(&|binding| {
+                binding.parameters = ClockConfiguration::TimestampedEvent {
+                    timestamp_unit: "us".into(),
+                };
+            }),
+            "TimestampUnit",
+        ),
+    ];
+    for (name, trace, dimension) in cases {
+        let (clause, code, cause, fields) =
+            request_defect(window_run(&world, &trace, &selections, &packages));
+        assert_eq!(
+            (clause.as_str(), code.as_str(), cause.as_str()),
+            ("Window", "invalid_runtime_input", "invalid-value"),
+            "{name}"
+        );
+        assert_eq!(fields["mismatched_dimension"], dimension, "{name}");
+    }
+}
+
+/// FR-283 Behavior: a `Progressed` trace goes through `monitor`, its binding
+/// authenticated against the emission before any position is admitted.
+#[trace("TC-765", "FR-283-AC-15")]
+#[test]
+fn a_progressed_trace_is_authenticated_through_monitor() {
+    let mut world = world();
+    let refs = world.refs("g", &[0, 1, 0]);
+    let progressed = |refs: Vec<DocumentRef>, clock: &str| TraceInput::Progressed {
+        trace: refs,
+        progress: ProgressAssertion {
+            watermark: 2,
+            completeness: ProgressCompleteness::Complete { through: 2 },
+            scope: ProgressClosure::Closed,
+            execution: ProgressClosure::Closed,
+        },
+        lower_boundary: spine::ProgressLowerBoundary::AuthoritativeOrigin,
+        binding: TraceBinding {
+            profile: "quire.temporal.event-position.false-extension/v1".to_owned(),
+            clock_name: clock.to_owned(),
+            parameters: ClockConfiguration::EventPosition {
+                sequence_authority: "counter-event-sequence".into(),
+            },
+        },
+    };
+    let run = |trace: &TraceInput| {
+        world.run(
+            &world.event,
+            vec![model_clause("Small")],
+            MonitorTrace::Typed(trace),
+            &world.event.sources,
+            &world.event.selections,
+            &limits(1 << 20),
+        )
+    };
+    let outcome = run(&progressed(refs.clone(), "model-steps")).expect("the request completes");
+    let record = only(&outcome);
+    assert!(
+        record.report().authenticated_temporal_selection.is_some(),
+        "the binding was authenticated"
+    );
+
+    let mut unprovisioned = refs;
+    unprovisioned[1] = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "never-provisioned".to_owned(),
+    };
+    let (clause, code, cause, fields) = request_defect(run(&progressed(unprovisioned, "other")));
+    assert_eq!(
+        (clause.as_str(), code.as_str(), cause.as_str()),
+        ("Small", "invalid_runtime_input", "invalid-value")
+    );
+    assert_eq!(fields["mismatched_dimension"], "Clock");
+}
+
+/// FND-004: an atom is a `holds` or aggregate node; a formula node of
+/// another kind, or none, is never named by its node index.
+#[trace("TC-765", "FR-283-AC-15")]
+#[test]
+fn only_a_holds_or_aggregate_atom_is_named() {
+    let world = world();
+    let package = world.window.unit.package();
+    let sources = &world.window.sources;
+    assert_eq!(
+        spine::name_clause_atom(package, sources, "Window", 1).expect("the holds atom"),
+        "holds(c.value > 0)"
+    );
+    for (index, expected) in [
+        (0, ("temporal", "named-atom-is-a-holds-or-aggregate-node")),
+        (99, ("monitor", "named-atom-is-a-formula-node")),
+    ] {
+        let Err(refusal) = spine::name_clause_atom(package, sources, "Window", index) else {
+            panic!("node {index} is no atom");
+        };
+        let spine::RunRefusal::Fault(fault) = *refusal else {
+            panic!("an internal failure for node {index}");
+        };
+        assert_eq!((fault.stage(), fault.invariant()), expected, "node {index}");
+    }
+}
+
+/// FR-283 "Trace document" order (FND-005): the reader and kind refusals
+/// precede the object and value limits.
+#[trace("TC-766", "FR-283-AC-8")]
+#[test]
+fn the_kind_refusal_precedes_the_document_limits() {
+    let world = world();
+    let mut tight = limits(1 << 20);
+    tight.observation.values_per_document = 1;
+    tight.observation.objects_per_document = 0;
+    let result = world.run(
+        &world.event,
+        vec![model_clause("Small")],
+        MonitorTrace::Document(b"[1,2,3]"),
+        &[],
+        &[],
+        &tight,
+    );
+    let Err(StageFailure::Refused(MonitorRefusal::TraceDocument { record, pointer })) = result
+    else {
+        panic!("a trace document defect, got {result:?}");
+    };
+    assert_eq!(
+        (
+            record.catalog.code(),
+            record.catalog.cause(),
+            pointer.as_str()
+        ),
+        ("invalid_runtime_input", "wrong-value-kind", "")
     );
 }

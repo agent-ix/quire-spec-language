@@ -33,7 +33,7 @@ mod progress;
 mod temporal;
 mod trace_subject;
 pub use package_authentication::{
-    authenticate_emission, AuthenticationFailure, PackageAuthentication,
+    authenticate_emission, AuthenticationFailure, PackageAuthentication, PackagesStage,
 };
 pub use progress::{
     ContradictedDimension, LedgerBinding, ObservedPosition, ProgressAssertion, ProgressClosure,

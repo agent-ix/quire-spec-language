@@ -1612,15 +1612,17 @@ pub(super) fn atom_name(
     node: &qsl_semantics::check::TemporalClauseNode,
     atom: qsl_semantics::check::FormulaNodeId,
 ) -> Result<String, Box<RunRefusal>> {
-    let (FormulaNode::Holds { span } | FormulaNode::Aggregate { span }) = node
-        .clause()
-        .formula()
-        .nodes()
-        .get(atom.index())
-        .cloned()
-        .unwrap_or(FormulaNode::Constant(false))
+    let Some(FormulaNode::Holds { span } | FormulaNode::Aggregate { span }) =
+        node.clause().formula().nodes().get(atom.index()).cloned()
     else {
-        return Ok(format!("node@{}", atom.index()));
+        // An atom is a `holds` or aggregate node; FR-283 never names one by
+        // its formula node index.
+        return Err(Box::new(RunRefusal::Fault(
+            quire_semantic_value::catalog::InternalFault::new(
+                "temporal",
+                "named-atom-is-a-holds-or-aggregate-node",
+            ),
+        )));
     };
     let Some(reference) = clause_source_ref(package, node) else {
         return Err(Box::new(RunRefusal::Fault(

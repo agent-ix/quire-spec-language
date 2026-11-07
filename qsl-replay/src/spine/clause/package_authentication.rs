@@ -38,24 +38,45 @@ impl PackageAuthentication {
 pub enum AuthenticationFailure {
     /// The caller's handle stopped the emitter.
     Cancelled(CancelCause),
-    /// Emission refused for want of the `TemporalClockSelection` of the
-    /// temporal declaration at `declaration`.
+    /// Emission refused for want of the `TemporalClockSelection` of a
+    /// clock-bearing temporal declaration.
     MissingSelection {
         /// The name of the temporal clause whose declaration has no
         /// selection; `None` for a temporal declaration that is not a
         /// clause of the package's graph, such as a `compensate` node.
         clause: Option<String>,
     },
-    /// Emission refused for another reason: the selections do not fit the
-    /// package.
-    Refused(Box<EmitRefusal>),
-    /// An internal failure: the emitted bytes do not read back.
+    /// The caller's selections do not fit the checked package: a selection
+    /// for no declaration, a repeated selection, a configuration of another
+    /// profile or an invalid clock value.
+    SelectionsDoNotFit,
+    /// The caller's domain package documents do not admit the emitted
+    /// package: they conflict with the emission's own, the dependency
+    /// closure does not read back, or the strict read refuses.
+    PackagesDoNotAdmit(PackagesStage),
+    /// An internal failure: emission refused for a reason no caller input
+    /// causes.
     Fault(InternalFault),
+}
+
+/// Where the caller's domain package documents stopped the authentication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PackagesStage {
+    /// A document conflicts with the one the emission evidence holds.
+    Conflict,
+    /// The dependency closure does not read back under the documents.
+    Closure,
+    /// The strict read of the emitted package refuses under the documents.
+    StrictRead,
 }
 
 /// Emit `package` with `selections` (`emit_checked_with_temporal_selections`)
 /// and read the bytes back strictly, under `domain_packages` and the
 /// dependency closure, as the clause run of a source does.
+///
+/// `limits` is the published default [`SpineLimits`] of the emit and import
+/// ceilings: FR-283's request takes no limit for them, so the caller passes
+/// the default.
 ///
 /// # Errors
 ///
@@ -90,16 +111,22 @@ pub fn authenticate_emission(
                     .map(|node| node.clause().name().to_owned()),
             }
         }
-        other => AuthenticationFailure::Refused(Box::new(other)),
+        EmitRefusal::SurplusTemporalClockSelection { .. }
+        | EmitRefusal::DuplicateTemporalClockSelection { .. }
+        | EmitRefusal::TemporalClockProfileMismatch { .. }
+        | EmitRefusal::InvalidTemporalClockValue { .. } => {
+            AuthenticationFailure::SelectionsDoNotFit
+        }
+        _ => AuthenticationFailure::Fault(InternalFault::new(
+            "FR-050",
+            "emission-of-a-checked-package-with-selections",
+        )),
     })?;
-    let fault = |invariant: &'static str| {
-        AuthenticationFailure::Fault(InternalFault::new("FR-050", invariant))
-    };
     let mut evidence = emission.evidence().clone();
     for (identity, document) in domain_packages {
         evidence
             .insert_domain_package_document(identity.as_str(), document.as_slice())
-            .map_err(|_| fault("domain-package-documents-do-not-conflict"))?;
+            .map_err(|_| AuthenticationFailure::PackagesDoNotAdmit(PackagesStage::Conflict))?;
     }
     qsl_package::supply_closure(
         package,
@@ -108,14 +135,18 @@ pub fn authenticate_emission(
         limits.package.emit(),
         &mut evidence,
     )
-    .map_err(|_| fault("dependency-closure-reads-back"))?;
+    .map_err(|_| AuthenticationFailure::PackagesDoNotAdmit(PackagesStage::Closure))?;
     let admitted = match quire_contract_model::CheckedPackageV2::read(
         emission.package().bytes(),
         quire_contract_model::CheckedPackageReadLimits::bounded(),
         &evidence,
     ) {
         quire_contract_model::CheckedPackageV2ReadResult::Admitted(admitted) => *admitted,
-        _ => return Err(fault("emitted-checked-package-strict-read-admits")),
+        _ => {
+            return Err(AuthenticationFailure::PackagesDoNotAdmit(
+                PackagesStage::StrictRead,
+            ))
+        }
     };
     Ok(PackageAuthentication { emission, admitted })
 }
