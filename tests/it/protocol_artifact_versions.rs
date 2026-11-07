@@ -1176,3 +1176,113 @@ fn a_binder_initializer_from_another_declaration_or_grouping_itself_is_refused()
         &Error::Invalid(Invalid::Cycle)
     );
 }
+
+/// The `/3` read of the authored finite-control protocol (declaration 0) and its
+/// temporal declaration `Due` (declaration 1): the mapping is authored here, as
+/// the independent expectation, and the bytes are encoded at test time.
+#[test]
+#[trace("TC-143", "FR-054-AC-1", "FR-054-AC-2", "FR-054-AC-3", "FR-054-AC-4")]
+fn a_v3_event_control_mapped_to_a_temporal_declaration_is_admitted_exactly() {
+    let fixture = Fixture::mapped();
+    fixture
+        .offered(&fixture.package)
+        .result()
+        .expect("the authored /1 package is admitted");
+    let base = temporal_package(&fixture, 0);
+    let due = base.temporal_bindings[0].declaration;
+    assert_eq!(due, 1);
+    // `Pulse` and `Matched` are the protocol's two plain event controls.
+    let pulse = control(7);
+    let matched = control(10);
+    let mappings = [(pulse.clone(), due), (matched.clone(), due)];
+    let package = v3_package(&base, &mappings);
+    let bytes = v3::encode_candidate(&package, Limits::default())
+        .into_result()
+        .expect("canonical /3 candidate")
+        .bytes()
+        .to_vec();
+    let read = read_v3(&fixture, &base, &bytes, &mappings);
+    let admitted = read.result().expect("strict /3 reader");
+    assert_eq!(
+        admitted.activation_mappings(),
+        [
+            v3::wire::ActivationMapping {
+                control: pulse.clone(),
+                temporal_declaration: due
+            },
+            v3::wire::ActivationMapping {
+                control: matched.clone(),
+                temporal_declaration: due
+            },
+        ]
+    );
+    assert_eq!(admitted.package(), &package);
+
+    let refuse = |offered: &v3::wire::Package, expected: &[(w::Handle, u32)]| {
+        let bytes = serde_json::to_vec(offered).unwrap();
+        refusal(&read_v3(&fixture, &base, &bytes, expected)).clone()
+    };
+    // A control that is not an event, and a target that is not temporal.
+    let mut choice = package.clone();
+    choice.activation_mappings[0].control = control(3);
+    assert_eq!(refuse(&choice, &mappings), Error::V3(v3::Refusal::Control));
+    let mut protocol_target = package.clone();
+    protocol_target.activation_mappings[0].temporal_declaration = 0;
+    assert_eq!(
+        refuse(&protocol_target, &mappings),
+        Error::V3(v3::Refusal::TemporalDeclaration)
+    );
+    // The expected relation is authored independently of the offer.
+    let substituted = [(pulse.clone(), 0), (matched.clone(), due)];
+    assert_eq!(
+        refuse(&package, &substituted),
+        Error::V3(v3::Refusal::Expected(v3::MappingField::TemporalDeclaration))
+    );
+    let mut reordered = package.clone();
+    reordered.activation_mappings.swap(0, 1);
+    assert_eq!(
+        refuse(&reordered, &mappings),
+        Error::V3(v3::Refusal::OfferOrder)
+    );
+    let mut missing = package.clone();
+    missing.activation_mappings.pop();
+    assert_eq!(
+        refuse(&missing, &mappings),
+        Error::V3(v3::Refusal::Mapping {
+            side: v3::InventorySide::Offer,
+            cause: v3::MappingCause::Missing,
+        })
+    );
+    let mut duplicate = package.clone();
+    duplicate.activation_mappings[1] = duplicate.activation_mappings[0].clone();
+    assert_eq!(
+        refuse(&duplicate, &mappings),
+        Error::V3(v3::Refusal::Mapping {
+            side: v3::InventorySide::Offer,
+            cause: v3::MappingCause::Duplicate,
+        })
+    );
+    let mut surplus = package.clone();
+    surplus
+        .activation_mappings
+        .push(v3::wire::ActivationMapping {
+            control: control(13),
+            temporal_declaration: due,
+        });
+    assert_eq!(
+        refuse(&surplus, &mappings),
+        Error::V3(v3::Refusal::Mapping {
+            side: v3::InventorySide::Offer,
+            cause: v3::MappingCause::Surplus,
+        })
+    );
+    // An expected relation naming a control the offer does not map.
+    let elsewhere = [(pulse, due), (control(1), due)];
+    assert_eq!(
+        refuse(&package, &elsewhere),
+        Error::V3(v3::Refusal::Mapping {
+            side: v3::InventorySide::Expected,
+            cause: v3::MappingCause::Missing,
+        })
+    );
+}

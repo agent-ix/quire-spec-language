@@ -1381,6 +1381,95 @@ impl Fixture {
         fixture
     }
 
+    /// The finite-control protocol (declaration 0, with event controls) beside one
+    /// authored temporal declaration `Due` (declaration 1). The activation
+    /// relation between an event control and `Due` is the caller's to author.
+    pub fn mapped() -> Self {
+        let mut fixture = Self::controlled();
+        const TEMPORAL: &str = "temporal Due using T over (view: M::Node) clock \"ticks\" on origin { eventually[0,1] holds(true) }";
+        let mut temporal = fixture.append("Due", TEMPORAL, R::EventPosition);
+        temporal.anchors[0].kind = w::AnchorKind::TemporalInstant;
+        temporal.anchors.push(w::Anchor {
+            kind: w::AnchorKind::Activation,
+            owner: w::Nullable(None),
+            binding: w::Nullable(None),
+            locus: temporal.locus.clone(),
+        });
+        temporal
+            .binders
+            .push(binder(1, &temporal, "view", w::BinderKind::Input, 0));
+        let start = temporal.locus.span.start as usize;
+        let at = start + TEMPORAL.find("true").unwrap();
+        temporal.values = vec![value(
+            1,
+            &temporal,
+            (at, "true".len()),
+            1,
+            w::ValueOperation::Boolean { value: true },
+        )];
+        identify(&mut temporal.values);
+        let mut clock = fixture.package.declarations[0].bindings[0].clone();
+        clock.name = "ticks".into();
+        clock.kind = w::BindingKind::Clock;
+        clock.value_type = w::Nullable(None);
+        clock.model = w::Nullable(None);
+        clock.subject = w::Subject::Declaration { declaration: 1 };
+        clock.anchor = owned(1, 0);
+        clock.scope = owned(1, 0);
+        clock.locus = temporal.locus.clone();
+        temporal.bindings.push(clock);
+        let node = |text: &str| w::Locus {
+            source: 0,
+            span: w::Span {
+                start: (start + TEMPORAL.find(text).unwrap()) as u32,
+                end: (start + TEMPORAL.len() - 2) as u32,
+            },
+        };
+        temporal.temporal = vec![
+            w::Temporal {
+                original_node: 1,
+                locus: node("eventually"),
+                operation: w::TemporalOperation::Unary {
+                    operator: w::TemporalUnary::Eventually,
+                    interval: w::Nullable(Some(w::Interval {
+                        lower: integer(0),
+                        upper: integer(1),
+                    })),
+                    value: owned(1, 1),
+                },
+            },
+            w::Temporal {
+                original_node: 0,
+                locus: node("holds"),
+                operation: w::TemporalOperation::Holds { value: owned(1, 0) },
+            },
+        ];
+        temporal.body = w::Body::Temporal {
+            input: owned(1, 0),
+            clock: 0,
+            activation: w::Activation::Origin {
+                anchor: owned(1, 1),
+            },
+            captures: vec![],
+            root: owned(1, 0),
+        };
+        fixture.package.declarations.push(temporal);
+        fixture
+            .package
+            .features
+            .declarations
+            .push("family.temporal".into());
+        fixture.package.features.declarations.sort();
+        fixture
+            .package
+            .features
+            .required
+            .push("quire.protocol.temporal/1".into());
+        fixture.package.features.required.sort();
+        fixture.population_requirements(&[(1, 0)]);
+        fixture
+    }
+
     /// Two separate branch-label scopes retain repeated nested control names.
     /// The records and original text are authored reader inputs, not emission.
     pub fn branched() -> Self {
