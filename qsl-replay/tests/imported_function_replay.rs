@@ -113,6 +113,7 @@ fn own(unit: &str, libraries: Vec<SuppliedLibrary>, name: &str) -> CallSite<Func
 
 /// What a request needs from a located function.
 struct Located {
+    package: Vec<u8>,
     site: FunctionSite,
 }
 
@@ -143,6 +144,7 @@ fn request(
     let mut dependencies: Vec<DependencyEntryWire> = libraries
         .iter()
         .map(|library| DependencyEntryWire {
+            refinement_internals: None,
             identity: library.identity.clone(),
             sources: vec![("a".to_owned(), library.source.identity.to_owned())],
         })
@@ -158,8 +160,11 @@ fn request(
     }));
     ReplayRequestWire {
         profile_selections: vec![],
-        package_name: "fixture".to_owned(),
-        sources: vec![("a".to_owned(), "u".to_owned())],
+        package: qsl_replay::ReplayPackage::read(
+            &located.package,
+            ReplayLimits::default().input_bytes,
+        )
+        .unwrap(),
         dependencies,
         replay_target: target,
         source: ReplaySource::Input(located.assign(values)),
@@ -206,6 +211,7 @@ fn an_owner_carrying_request_executes_the_imported_function() {
     let libraries = [units()];
     let big = imported(&unit, libraries.to_vec(), "big");
     let big_located = Located {
+        package: big.package.clone(),
         site: big.site.function.clone(),
     };
     for (x, holds) in [(3, false), (7, true)] {
@@ -222,6 +228,7 @@ fn an_owner_carrying_request_executes_the_imported_function() {
 
     let both = imported(&unit, libraries.to_vec(), "both");
     let both_located = Located {
+        package: both.package.clone(),
         site: both.site.function.clone(),
     };
     for (a, b, holds) in [(1, 5, true), (5, 1, false)] {
@@ -264,9 +271,11 @@ fn a_same_named_unit_function_never_answers_the_owner() {
     let mine = own(&unit, libraries.to_vec(), "big");
     assert_ne!(mine.site.declaration, theirs.site.function.declaration);
     let theirs_located = Located {
+        package: theirs.package.clone(),
         site: theirs.site.function.clone(),
     };
     let mine_located = Located {
+        package: mine.package.clone(),
         site: mine.site.clone(),
     };
 
@@ -307,6 +316,7 @@ fn an_owner_the_unit_does_not_import_refuses_typed() {
     let libraries = [units()];
     let big = imported(&unit, libraries.to_vec(), "big");
     let located = Located {
+        package: big.package.clone(),
         site: big.site.function.clone(),
     };
 
@@ -361,6 +371,7 @@ fn a_function_the_owner_cannot_call_refuses_typed() {
     let libraries = [units()];
     let big = imported(&unit, libraries.to_vec(), "big");
     let located = Located {
+        package: big.package.clone(),
         site: big.site.function.clone(),
     };
 
@@ -408,6 +419,7 @@ fn an_owner_carrying_request_checks_the_environment_against_the_owner() {
     let libraries = [units()];
     let big = imported(&unit, libraries.to_vec(), "big");
     let located = Located {
+        package: big.package.clone(),
         site: big.site.function.clone(),
     };
     let environment = || {

@@ -97,7 +97,7 @@ fn a_consumer_runs_builds_and_settles_through_the_crate_root() {
             assignments.clone(),
         )
         .expect("a member is an application item");
-    assert_eq!(request.package_name, package_name.as_str());
+    assert_eq!(request.package.bytes(), emitted.package().bytes());
     assert_eq!(
         request.replay_target.occurrence_key.as_ref(),
         Some(member.occurrence())
