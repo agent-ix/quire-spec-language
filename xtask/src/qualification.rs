@@ -838,7 +838,6 @@ fn execute_vector(
                         VectorOutcome::Incomplete
                     }
                 }
-                adapters::Partition::AdapterUnavailable => VectorOutcome::Unsupported,
                 adapters::Partition::ToolFailure => VectorOutcome::ToolFailure,
             };
             (

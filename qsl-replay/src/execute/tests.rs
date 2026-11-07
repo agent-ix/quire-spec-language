@@ -168,6 +168,7 @@ fn request(
         profile_selections: vec![],
         package_name: "fixture".to_owned(),
         sources: vec![(AUTHORITY.to_owned(), IDENTITY.to_owned())],
+        refinement_internals: None,
         dependencies: Vec::new(),
         replay_target: crate::RequestTargetWire::function(
             function.clone(),
@@ -1057,6 +1058,7 @@ fn entry(
     crate::request::DependencyEntryWire {
         identity: identity.to_owned(),
         sources,
+        refinement_internals: None,
     }
 }
 
@@ -1160,6 +1162,90 @@ fn tc_444_a_package_with_a_dependency_replays() {
         InputSettlement::ReproducedWithoutWitness
     );
     assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
+}
+
+/// FR-323-AC-17 (TC-277 BP-15): a defective `refinement_internals` value of
+/// the proved package refuses in the recompile, located at
+/// `/package/lock/refinement_internals` followed by the pointer into the
+/// value; a spelling naming no refinement is `missing_declaration`/
+/// `missing-name`, and a value that is no list `invalid_model_binding`/
+/// `malformed-declaration` at the member itself.
+#[trace("TC-277", "FR-323-AC-17")]
+#[test]
+fn a_package_refinement_internals_defect_is_located_at_the_lock_member() {
+    let importing = Importing::new();
+    for (value, pointer, code, cause) in [
+        (
+            serde_json::json!([{"refinement": "NoSuchRefinement", "internal": []}]),
+            "/package/lock/refinement_internals/0/refinement",
+            "missing_declaration",
+            "missing-name",
+        ),
+        (
+            serde_json::json!({}),
+            "/package/lock/refinement_internals",
+            "invalid_model_binding",
+            "malformed-declaration",
+        ),
+    ] {
+        let mut wire =
+            importing.request(vec![importing.units_entry()], &[importing.units.as_bytes()]);
+        wire.refinement_internals = Some(value);
+        let refusal = replay(wire, ReplayLimits::default()).expect_err("the list is defective");
+        assert!(
+            matches!(refusal, ReplayRefusal::RefinementInternals { .. }),
+            "{refusal:?}"
+        );
+        assert_eq!(refusal.pointer().as_deref(), Some(pointer));
+        assert_eq!(refusal.code().as_str(), code);
+        assert_eq!(refusal.cause(), Some(cause));
+    }
+}
+
+/// FR-323-AC-17 (TC-277 BP-15): a defective `refinement_internals` value of
+/// the `n`th `dependencies` entry is located at
+/// `/dependencies/<n>/refinement_internals` followed by the pointer into the
+/// value, and applies to that dependency alone: the same value on the
+/// proved package locates at the package's member instead.
+#[trace("TC-277", "FR-323-AC-17")]
+#[test]
+fn a_dependency_refinement_internals_defect_is_located_at_its_entry() {
+    let importing = Importing::new();
+    let mut entry = importing.units_entry();
+    entry.refinement_internals =
+        Some(serde_json::json!([{"refinement": "NoSuchRefinement", "internal": []}]));
+    let refusal = replay(
+        importing.request(vec![entry], &[importing.units.as_bytes()]),
+        ReplayLimits::default(),
+    )
+    .expect_err("the dependency's list is defective");
+    assert_eq!(
+        refusal.pointer().as_deref(),
+        Some("/dependencies/0/refinement_internals/0/refinement")
+    );
+    assert_eq!(refusal.code().as_str(), "missing_declaration");
+    assert_eq!(refusal.cause(), Some("missing-name"));
+}
+
+/// FR-323-AC-17: the wire carries the lists through `to_wire` unchanged.
+#[trace("TC-277", "FR-323-AC-17")]
+#[test]
+fn refinement_internals_round_trip_through_the_decoded_request() {
+    let importing = Importing::new();
+    let list = serde_json::json!([{"refinement": "R", "internal": ["Spec::Twice::finish"]}]);
+    let mut entry = importing.units_entry();
+    entry.refinement_internals = Some(list.clone());
+    let mut wire = importing.request(vec![entry], &[importing.units.as_bytes()]);
+    wire.refinement_internals = Some(list.clone());
+    let request = crate::ReplayRequest::decode(wire, ReplayLimits::default()).expect("decodes");
+    assert_eq!(request.refinement_internals(), Some(&list));
+    assert_eq!(
+        request.dependencies()[0].refinement_internals(),
+        Some(&list)
+    );
+    let back = request.to_wire();
+    assert_eq!(back.refinement_internals, Some(list.clone()));
+    assert_eq!(back.dependencies[0].refinement_internals, Some(list));
 }
 
 /// The request must carry C's source even though A's lock selects only B.
