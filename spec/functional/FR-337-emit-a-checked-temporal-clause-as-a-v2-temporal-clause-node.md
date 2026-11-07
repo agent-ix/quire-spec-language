@@ -556,6 +556,7 @@ FR-488 and FR-447.
 | FR-337-AC-26 | A Timed clause over a model with no `time` declaration refuses at S3 (`ModelTimeOnUntimedModel`, located at the clause's `model-time` clock text) and no package is written. | Test (TC-1326) |
 | FR-337-AC-27 | A clock selection of any kind supplied for a Timed clause is refused as a surplus selection at the clause's span, `invalid_package`/`timed-node-reference`, and no package is written. | Test (TC-1326) |
 | FR-337-AC-28 | A `temporal_bindings` row supplied for a Timed clause in an otherwise emitted package refuses in the reader `invalid_package`/`timed-node-reference` at `/temporal_bindings/0`; the package without the row is admitted. | Test (TC-1326) |
+| FR-337-AC-29 | A unit compiled as package `acme/orders` with `model M = "acme/rpc"` (base dimension `Time`, units `s` and `ms`), whose timestamped-event clause has `count over past[0 M::s, 300000 M::ms] >= 1` under a clock in `ix://acme/rpc/unit/ms`, emits both bounds typed by the node `{package: "acme/rpc", path: ["scalar_type", "unit", "ix://acme/rpc/unit/ms"], ordinal: 0}`, which carries the `ModelOwner` of `acme/rpc`; the package holds exactly one node with that path, and the clause node's `node_id.package` is `acme/orders`. | Test (TC-1267) |
 
 ### Aggregate formula emission
 
@@ -637,10 +638,6 @@ certificate closure) re-emit a supplied checked package with clock
 selections but do not re-run S3 with them, so a package checked without
 the clock whose bound unit differs from the clock unit is refused
 `InvalidTemporalClockValue`; the result is a refusal, never a wrong verdict.
-The Contract IR reader QSL locks still builds the clock unit's node id from
-the clause node's package, so a model-unit window reads back only from a
-package named after its model until the reader matches by path as QSpec
-FR-370-AC-20 states.
 
 The bindings are inputs of the node's structural identity, so a change of any
 binding changes the formula node, and an omitted `min_count` and `min_count 1`

@@ -52,7 +52,7 @@ Each row below mutates `R0` as stated and admits it.
 | 20 | a source function parameter typed `Rational[8, 7; 1, 12]`; one typed `Rational[0, 7; 0, 12]`; the types `Quantity<m, Rational[8, 7; 1, 12]>` and `Quantity<m, Rational[0, 7; 0, 12]>` | each `ill_typed` at the `Rational[..]` type |
 | 24 | add tuple type `P` with position `p0` typed `Ratio` and variant type `V` with case `c` whose `payloadType` is `Ratio` | admitted; `p0` and `c`'s payload type `Rational[-3, 7; 1, 12]`, naming row 1's node |
 | 25 | row 24 with `Ratio`'s `constraints` empty | `p0` `invalid_model_binding`/`malformed-declaration` at the position; `c` `unsupported_construct`/`declaration-form` at `Variant.payloadType`; both at stage `package_read`; `level` admitted with no checked type |
-| 26 | row 19's model document; the compiling unit also declares `dimension Time;` and `unit m : Time = rational(1, 1);`; then the same without the source `m` | `Ratio`'s members typed over the source `m` unit node (`SourceOwner`), not the model document's `m` node; without the source `m`, over the model document's `m` node (`ModelOwner`) |
+| 26 | row 19's model document; the compiling unit also declares its own `dimension Length;` and `unit m : Length = rational(1, 1);`; then the same without the source `m` | `Ratio`'s members typed over the source `m` unit node (`SourceOwner`), not the model document's `m` node; without the source `m`, over the model document's `m` node (`ModelOwner`) |
 
 Value rows, as `level` in a snapshot:
 
