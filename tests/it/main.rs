@@ -86,6 +86,7 @@ mod checked_handoff;
 mod checked_handoff_healthy;
 #[cfg(feature = "checked-handoff")]
 mod checked_views;
+mod compound_quantity_types;
 mod fairness_item_path;
 mod hybrid_request_items;
 mod layer_crate_reexports;
@@ -100,14 +101,10 @@ mod model_type_unit_roots;
 mod name_resolution_confinement;
 mod native_boundaries;
 mod native_checking;
-#[cfg(feature = "checked-handoff")]
-mod native_full_predecessor;
 mod native_linking;
 mod native_model;
 mod native_model_profiles;
 mod native_model_qualification;
-#[cfg(feature = "checked-handoff")]
-mod native_owner_report;
 mod nesting_levels;
 mod parser;
 mod protocol_artifact;
@@ -128,12 +125,10 @@ mod temporal_negotiation;
 mod temporal_package_route;
 #[cfg(feature = "checked-handoff")]
 mod temporal_package_route_formula;
+#[cfg(feature = "checked-handoff")]
+mod temporal_result_evidence;
 mod temporal_v1_retired;
 mod text_enum_identity;
 mod unbounded_declarations;
 mod union_nodes;
 mod v2_refusal_code_bridge;
-#[cfg(feature = "checked-handoff")]
-mod valuation_evidence;
-
-mod compound_quantity_types;

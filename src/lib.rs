@@ -19,7 +19,6 @@ mod parser;
 pub mod population_fixtures;
 pub mod protocol_artifact;
 pub mod syntax;
-pub mod temporal;
 
 // The shared integration-test support below names this crate by its package
 // name; the alias lets the same file compile as a unit-test module. The module
