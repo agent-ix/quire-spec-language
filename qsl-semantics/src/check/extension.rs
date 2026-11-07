@@ -160,18 +160,22 @@ pub(crate) struct CheckedClause {
 #[derive(Debug)]
 pub(crate) enum ClauseValue {
     /// An expression checked against a core type.
-    Checked {
-        expected: ValueType,
-        /// The bare scalar type node the clause's subnode is typed at when
-        /// the schema spells a scalar word the checked type does not
-        /// distinguish (`Text`, checked as the native string).
-        scalar: Option<&'static str>,
-        body: CheckedBody,
-        slot_names: Vec<String>,
-    },
+    Checked(Box<CheckedExpression>),
     /// A bare identifier naming the extension form at this index among the
     /// unit's extension forms (the clause's schema type is a node kind).
     Form(usize),
+}
+
+/// An expression a clause value checked to.
+#[derive(Debug)]
+pub(crate) struct CheckedExpression {
+    pub(crate) expected: ValueType,
+    /// The bare scalar type node the clause's subnode is typed at when the
+    /// schema spells a scalar word the checked type does not distinguish
+    /// (`Text`, checked as the native string).
+    pub(crate) scalar: Option<&'static str>,
+    pub(crate) body: CheckedBody,
+    pub(crate) slot_names: Vec<String>,
 }
 
 /// One checked form of a selected extension: the definition and node kind of
@@ -248,7 +252,7 @@ fn refuse_cycles(forms: &[ExtensionForm], checked: &mut Checked) {
                 .flat_map(|form| &form.clauses)
                 .filter_map(|clause| match clause.value {
                     ClauseValue::Form(target) => Some(target),
-                    ClauseValue::Checked { .. } => None,
+                    ClauseValue::Checked(_) => None,
                 })
                 .collect()
         })
@@ -491,12 +495,12 @@ impl Builder<'_, '_, '_> {
                 *self.nodes = used;
                 Ok(CheckedClause {
                     name: clause.name.name.clone(),
-                    value: ClauseValue::Checked {
+                    value: ClauseValue::Checked(Box::new(CheckedExpression {
                         expected,
                         scalar,
                         body,
                         slot_names,
-                    },
+                    })),
                 })
             }
             Err(CheckRefusal {

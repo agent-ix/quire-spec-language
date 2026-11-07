@@ -5804,7 +5804,7 @@ impl PackageDeclarations {
                 };
                 let ready = form.clauses.iter().all(|clause| match clause.value {
                     extension::ClauseValue::Form(target) => lowered_extensions[target].is_some(),
-                    extension::ClauseValue::Checked { .. } => true,
+                    extension::ClauseValue::Checked(_) => true,
                 });
                 if !ready {
                     return true;

@@ -86,12 +86,12 @@ impl Lowering<'_> {
                     .flatten()
                     .ok_or_else(|| super::fault(location, KeyFault::UnkeyableRequirements));
             }
-            ClauseValue::Checked {
-                expected,
-                scalar,
-                body,
-                slot_names,
-            } => (expected, *scalar, body, slot_names),
+            ClauseValue::Checked(checked) => (
+                &checked.expected,
+                checked.scalar,
+                &checked.body,
+                &checked.slot_names,
+            ),
         };
         let expected_node = match scalar {
             Some(form) => NodeRef::from(self.scalar(form, location)?),
