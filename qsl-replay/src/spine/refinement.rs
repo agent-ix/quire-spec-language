@@ -315,6 +315,8 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         CheckCause::Identity(
             IdentityRefusal::Allocation { .. } | IdentityRefusal::NonCanonical,
         )
+        | CheckCause::TypeCheckAllocation(_)
+        | CheckCause::TypeCheckCapacity(_)
         | CheckCause::ProfileProhibitedOperator(_)
         | CheckCause::LayerEquality { .. }
         | CheckCause::StateModel(_)

@@ -2183,7 +2183,12 @@ fn e28_equality_on_ieee_bearing_types_is_operator_ineligible() {
         ValueType::Float(FloatType::exact(IeeeWidth::Binary64)),
         2,
     ));
-    assert_eq!(env.check_type(&set), Err(ineligible));
+    assert_eq!(
+        env.try_check_type(&set),
+        Err(quire_semantic_value::declaration::TypeCheckError::Refused(
+            ineligible
+        ))
+    );
 }
 
 #[trace("QSpec-TC-194", "QSpec-FR-149-AC-10")]

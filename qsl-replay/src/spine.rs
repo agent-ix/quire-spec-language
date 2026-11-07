@@ -445,7 +445,7 @@ impl CompileRefusal {
                         CheckCause::DispatchLink(cause) => {
                             cause.denial.as_ref().map(|denial| denial.catalog_fields())
                         }
-                        _ => None,
+                        cause => cause.type_check_fields(),
                     })
                     .unwrap_or_default();
                 // FR-366: a refusal in a type-level invariant names the
@@ -2556,6 +2556,31 @@ mod tests {
     use quire_semantic_value::checking::CheckingLimits;
     use quire_semantic_value::location::{Location, Origin};
     use std::collections::BTreeMap;
+
+    #[trace("TC-1339", "FR-534-AC-3")]
+    #[test]
+    fn declared_type_storage_requests_reach_compile_diagnostics() {
+        use quire_semantic_value::declaration::{StorageRequest, StorageUnit};
+        use qsl_semantics::check::CheckingStage;
+        for (amount, unit, name) in [(13, StorageUnit::Bytes, "bytes"), (31, StorageUnit::AdditionalElements, "additional-elements")] {
+            let request = StorageRequest::new(amount, unit);
+            for (cause, field, tag) in [
+                (CheckCause::TypeCheckAllocation(request), "requested", "allocation-failed"),
+                (CheckCause::TypeCheckCapacity(request), "upstream", "reservation-size-overflow"),
+            ] {
+                let location = Location::at(Origin::Expression, &[7, 2]);
+                assert_eq!(cause.type_check_stage(), Some(CheckingStage::Typing));
+                let refusal = CompileRefusal::Check { refusals: vec![CheckRefusal { cause, location: location.clone() }], region: None };
+                assert_eq!(refusal.code(), Code::ResourceExhausted);
+                assert_eq!(refusal.cause(), Some(tag));
+                assert_eq!(refusal.stage(), SpineStage::Check);
+                assert_eq!(refusal.fields(), Some(BTreeMap::from([(field, format!("{name}:{amount}"))])));
+                let CompileRefusal::Check { refusals, .. } = refusal else { unreachable!() };
+                assert_eq!(refusals[0].location, location);
+                assert_eq!(refusals[0].cause.type_check_stage(), Some(CheckingStage::Typing));
+            }
+        }
+    }
 
     /// FR-255-AC-15/16 (TC-721): the outer import limits own the published
     /// native-join storage default and accept the named setting independently.

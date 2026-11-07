@@ -530,13 +530,16 @@ fn a_unit_with_no_clause_naming_the_variant_type_assembles() {
 /// package the unit selected carries the declaration and exports of step 1's
 /// package, which no member names.
 #[trace("TC-997", "FR-056-AC-27", "FR-056-AC-31")]
+#[trace("TC-1339", "FR-534-AC-1")]
 #[test]
 fn a_unit_naming_a_variant_type_leaves_the_declaration_and_exports_unchanged() {
     let document = tiers(&["Gold", "Standard"]);
     let bytes = serde_json::to_vec(&document).unwrap();
     let body = "function pick using v(t: Config::Tier): Config::Tier pure { t }";
     admit_and_assemble_with_body(&bytes, body)
-        .expect("a function typed by the variant type assembles");
+        .expect("a function typed by the variant type assembles")
+        .check(CheckingLimits::default())
+        .expect("the variant parameter and result pass declared-type checking");
 
     let step_one = admitted(&document);
     let (unit, packages) = config_unit_with_body(&bytes, body);
