@@ -13,9 +13,8 @@ relationships:
 Exercise the public parser against the composed grammar and the historical
 corpus. The public Rust tests are in `tests/composed_syntax.rs`, including the
 authored choreography fixture and balanced-but-incomplete refusal controls. The
-`1-draft` function and predicate declarations of step 5 are parsed by the
-complete-V1 front end; its tests are in `qsl-cst/tests/it/reserved_declaration_names.rs`
-and `qsl-semantics/tests/it/reserved_declaration_names.rs`.
+`1-draft` declarations of step 5 are parsed and checked by the complete-V1
+front end.
 
 ## Test Procedure
 
@@ -33,16 +32,17 @@ and `qsl-semantics/tests/it/reserved_declaration_names.rs`.
    spellings as native binders. Compare edition-specific keyword treatment with a
    valid historical identifier newly reserved by the composed edition.
 5. For each exact spelling `helper`, `rec`, `cast` and `Tuple`, use it under
-   `1-draft` as a function name, a predicate name, and the `using` alias of
-   each. Require one located syntax refusal whose span covers the spelling and
-   whose diagnostic names it, with no admissible parsed unit. Confirm every
-   other native name position, and a qualified `M::<spelling>` type or
-   `x.<spelling>` member access, parses as before. Then use `helperz`,
-   `recount`, `caster` and `TupleX` in those positions and confirm each unit
-   is admissible, and check a unit whose second function calls a first
-   function so named. Under `0-draft`, use each of the four exact spellings in
-   a value position and confirm the historical `unsupported_construct` refusal
-   is unchanged.
+   `1-draft` as a function name (and call it), a predicate name, the `using`
+   profile alias of each, a parameter, a `let` binder, a record name and its
+   field, an enum member, a type-alias name and a model selection alias, and
+   as a qualified `M::<spelling>` type and `x.<spelling>` member access.
+   Confirm each unit parses and checks with no `invalid_syntax` and no
+   `unsupported_construct`, that a call of a function so named evaluates, and
+   that a `using <spelling>(...)` selection reaches S3. Use lowercase `tuple`
+   as a record name and confirm its `invalid_syntax`/`unexpected-token`
+   refusal. Under `0-draft`, use each of the four exact spellings in a value
+   position and confirm the historical `unsupported_construct` refusal is
+   unchanged.
 6. Insert CRLF, comments, escaped quotes and multibyte string values. Check spans
    by slicing the original bytes at every selected declaration/reference/literal,
    including delimiters, rather than comparing decoded-character offsets.
@@ -54,11 +54,10 @@ and `qsl-semantics/tests/it/reserved_declaration_names.rs`.
 The composed forms produce typed, located syntax with no linked or checked claim.
 Malformed forms return their typed source-bound diagnostics; budget failures are
 `stage_limit_exceeded` with the budget's cause, a token budget
-`token-count-exceeded`. A reserved spelling as a `1-draft` function or
-predicate name or `using` alias has one diagnostic spanning and naming that
-exact spelling and produces no admissible unit, while every other name position
-parses as before; the near-spelling controls remain identifiers and a call of a
-function so named checks, and the same spellings under `0-draft` keep their
-historical `unsupported_construct` refusal. All historical expectations remain
+`token-count-exceeded`. Under `1-draft`, `helper`, `rec`, `cast` and `Tuple`
+are ordinary identifiers in every name position, a call of a function so named
+evaluates and its `using` selection is kept; lowercase `tuple` is refused as a
+record name; the same four spellings under `0-draft` keep their historical
+`unsupported_construct` refusal. All historical expectations remain
 byte-for-byte unchanged. Each step has unconditional assertions; a missing declaration or absent
 error object fails the test rather than skipping the check.
