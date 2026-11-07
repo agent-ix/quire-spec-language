@@ -152,6 +152,32 @@ checked field type are carried unchanged. Contract IR joins the row to the
 admitted record node by that binding name, so a row that kept the base name
 is refused there.
 
+### Admitted order and progress association
+
+The public plan-root handoff SHALL expose independently admitted event-order
+and progress-association authority retained from the same final emission as
+its plan and timing obligations. The handoff SHALL preserve the original
+canonical admitted values and the owner-established association with the
+selected package, clause, subject and claim occurrence. It SHALL use the
+owning admission interface; neither the monitor scope type nor its watermark
+entry establishes that authority.
+
+The handoff SHALL return a typed refusal without a partial admitted context
+when either authority is absent or its owner rejects the association. A
+foreign emission, changed selection, changed source, substituted order or
+substituted progress association SHALL NOT acquire authority by matching a
+clause name, type, structural label or numeric index. The handoff SHALL NOT
+manufacture a canonical value, infer authority from clock configuration,
+serialize a semantic identity as an admitted value, reconstruct the association
+from a second emission or duplicate the owner admission rules.
+
+The handoff SHALL retain the owner capabilities required to use both values
+after temporary compilation inputs are dropped. A clone or writer rename
+SHALL preserve precisely the association the owning admission contract
+permits; a package with equal contents SHALL NOT substitute for an owner-bound
+package instance when that contract requires the original instance. The
+retained witness and final-binding requirements above remain in force.
+
 The retained closure SHALL include the clock binding's counter, exact unit
 scale and width, so `ClockBindingKey` requires no ambient lookup at build or
 execution. The plan's uncertainty and maximum gap remain available to every
@@ -529,6 +555,8 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-42 | The `Emission` returned with a plan-root package holds, non-empty wherever the acquisition had rows, the selected model declaration rows, selected model field rows, source-unit rows, model enum and source enum declaration and member rows, source union rows, source record rows, tuple declaration rows, operation-member rows, equality producer rows, equality fact rows, temporal binding rows and omitted nodes of that acquisition. Every node id in each of them (anchor, structural node, record node, declaration node, union payload node, record member type node, checked node, source-map entry node, fact nodes, omitted node and the node an omission cause names, temporal binding declaration) equals the plan-root package's id for the node, so a node the writer renames is named by its renamed id in every row and a row naming no renamed node is unchanged; no row is written anew. The selected model declaration and field rows equal the unit's acquisition rows, and IR's selected exact identity join accepts them against the package read back. | Test (TC-1081) |
 | FR-251-AC-43 | For a plan root written over a unit with two temporal clauses, each subject's clause node and claim ordinal select, through the returned `Emission`'s temporal binding rows, the declaration the plan root's `clause` binding names and the declaration of the package's `temporal_clause_names` row of that ordinal, read back through the strict reader; the selection is re-keyed with the retained rows through every rename the writer performs or may perform, so a carry that renames a clause declaration returns the renamed id and not the base package's id; a subject whose clause node or claim ordinal the package does not hold selects nothing, and a subject's selection never returns the other clause's declaration. | Test (TC-1081) |
 | FR-251-AC-44 | After the plan-root writer renames the fields `origin_tick` and `amount` of the generated `Instance`, `Activation` and `LimitReached` records to `origin` and `value`, each retained source record row of those records has `admitted_name` `origin` or `value` at the renamed members and the other members' binding names unchanged, keeps the declared field names `origin_tick` and `amount`, and Contract IR's source record join over the rows and the package read back through the strict reader succeeds and projects each record; the same rows with a renamed member's `admitted_name` set to the declared field name are refused with `MismatchedIdentityWitness`. | Test (TC-1081) |
+| FR-251-AC-45 | From a genuine authored tick-monitor unit, the public plan-root handoff returns the original owner-admitted order and progress-association values for the same final emission as its plan and two timing obligations. A public consumer compares both complete values and the owner-established package/clause/subject/claim association, then uses them after temporary compilation inputs are dropped. Clone and rename controls follow the owner contract and preserve all previously retained rows. | Test |
+| FR-251-AC-46 | Independently omit each required authority, substitute a foreign admitted emission, change the selected clause or claim occurrence, change the source, substitute order and substitute progress association. Each invalid association returns its typed refusal and no partial admitted context; matching labels, equal numeric indices, clock configuration or a second emission cannot turn it into success. | Test |
 
 ## Dependencies
 
