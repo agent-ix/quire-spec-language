@@ -730,32 +730,32 @@ mod tests {
         (
             S3_CONSTRUCTOR.file,
             Some(S3_CONSTRUCTOR.receiver),
-            S3_ENTRY_NAMES[0],
+            S3_CONSTRUCTOR.name,
         ),
         (
             S3_CONSTRUCTOR.file,
             Some(S3_CONSTRUCTOR.receiver),
-            S3_ENTRY_NAMES[1],
+            "check_with_cancel",
         ),
         (
             S3_CONSTRUCTOR.file,
             Some(S3_CONSTRUCTOR.receiver),
-            S3_ENTRY_NAMES[2],
+            "check_with_protocol_results",
         ),
         (
             S3_CONSTRUCTOR.file,
             Some(S3_CONSTRUCTOR.receiver),
-            S3_ENTRY_NAMES[3],
+            "check_with_protocol_results_and_cancel",
         ),
         (
             S3_CONSTRUCTOR.file,
             Some(S3_CONSTRUCTOR.receiver),
-            S3_ENTRY_NAMES[4],
+            "check_with_protocol_continuation_and_cancel",
         ),
         (
             S3_CONSTRUCTOR.file,
             Some(S3_CONSTRUCTOR.receiver),
-            S3_ENTRY_NAMES[5],
+            "check_retaining_protocols",
         ),
         // S4: the link step, and its dependency-bearing form (E4).
         ("qsl-package/src/checked.rs", Some("CheckedPackage"), "link"),

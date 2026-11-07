@@ -124,6 +124,9 @@ pub(crate) type OnParameter<'a, 'w> = dyn FnMut(&'w CheckedSemanticNodeV2) + 'a;
 pub(crate) type Lookup<'a, 'w> = dyn Fn(&CheckedNodeId) -> Option<&'w CheckedSemanticNodeV2> + 'a;
 
 struct Walk<'a, 'w> {
+    /// The one binder name the walk looks for; a scope that binds any other
+    /// name hides nothing the walk reports, so it opens no scope.
+    watch: Option<&'a str>,
     lookup: &'a Lookup<'a, 'w>,
     on_parameter: &'a mut OnParameter<'a, 'w>,
     seen: BTreeSet<(CheckedNodeId, Shadow)>,
@@ -132,13 +135,17 @@ struct Walk<'a, 'w> {
 /// Walks `start` and every `expression`/`value` node it reaches, reporting
 /// each parameter node that no scope of the walk hides. The walk stops at a
 /// parameter and at any node that is not an expression or a value (a
-/// function, a type), as the dependency closure of FR-390 rule 3 does.
+/// function, a type), as the dependency closure of FR-390 rule 3 does. With
+/// `watch`, only the parameters of that name are of interest, and the walk
+/// opens only the scopes that bind it.
 pub(crate) fn reach_term<'a, 'w>(
     lookup: &'a Lookup<'a, 'w>,
     start: &CheckedTerm,
+    watch: Option<&'a str>,
     on_parameter: &'a mut OnParameter<'a, 'w>,
 ) {
     let mut walk = Walk {
+        watch,
         lookup,
         on_parameter,
         seen: BTreeSet::new(),
@@ -187,11 +194,13 @@ impl<'w> Walk<'_, 'w> {
                     ..
                 }) => match opening(operation.identity(), arguments) {
                     Opening::Let { name, value, body } => {
-                        reading.push((Reading::Term(body), Rc::new(shadow.with_name(name))));
+                        let inner = self.scoped(&shadow, name);
+                        reading.push((Reading::Term(body), inner));
                         reading.push((Reading::Term(value), shadow));
                     }
                     Opening::Query { source, name, body } => {
-                        reading.push((Reading::Term(body), Rc::new(shadow.with_name(name))));
+                        let inner = self.scoped(&shadow, name);
+                        reading.push((Reading::Term(body), inner));
                         reading.push((Reading::Term(source), shadow));
                     }
                     Opening::Case(arms) => {
@@ -245,6 +254,14 @@ impl<'w> Walk<'_, 'w> {
                     reading.push((Reading::Term(body), Rc::new(shadow.with_nodes(introduced))));
                 }
             }
+        }
+    }
+
+    /// `shadow` with the scope of a binder named `name` opened.
+    fn scoped(&self, shadow: &Rc<Shadow>, name: &str) -> Rc<Shadow> {
+        match self.watch {
+            Some(watched) if watched != name => Rc::clone(shadow),
+            _ => Rc::new(shadow.with_name(name)),
         }
     }
 
@@ -338,7 +355,7 @@ mod tests {
         let lookup = |id: &CheckedNodeId| nodes.get(id);
         let mut found = Vec::new();
         let start: CheckedTerm = serde_json::from_value(reference(root)).expect("a term");
-        reach_term(&lookup, &start, &mut |node| {
+        reach_term(&lookup, &start, None, &mut |node| {
             found.push(
                 crate::reader_protocol_projection::parameter_name(&node.body)
                     .unwrap_or_default()
