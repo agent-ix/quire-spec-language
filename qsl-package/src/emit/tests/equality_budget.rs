@@ -62,7 +62,12 @@ fn producer_and_bytes_equality_share_exact_owner_charges_and_denials() {
     let mut exact = NativeJoinBudget::new(owner.work, owner.storage);
     assert_eq!(
         read.decision(&admitted, row.checked_node(), &mut exact)
-            .expect("exact bytes budget"),
+            .unwrap_or_else(|failure| match failure {
+                EqualityDecisionFailure::Witness(error) =>
+                    panic!("exact bytes witness refused: {error:?}"),
+                EqualityDecisionFailure::Exhausted(error) =>
+                    panic!("exact bytes budget refused: {error:?}"),
+            }),
         expected
     );
     assert_eq!(exact.consumed(), owner);
