@@ -633,12 +633,6 @@ package. A source-declared unit's node path is its declared name, never
 `["scalar_type", "unit", T]`, so a `duration` window emits only in the time
 units of a selected model package (`M::s`, `M::ms`).
 
-Remaining work: QSL-1662. The model-check re-emit paths (identity, item and
-certificate closure) re-emit a supplied checked package with clock
-selections but do not re-run S3 with them, so a package checked without
-the clock whose bound unit differs from the clock unit is refused
-`InvalidTemporalClockValue`; the result is a refusal, never a wrong verdict.
-
 The bindings are inputs of the node's structural identity, so a change of any
 binding changes the formula node, and an omitted `min_count` and `min_count 1`
 give one node. Each expression is located in the source map at its own
