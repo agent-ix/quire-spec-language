@@ -5,10 +5,11 @@
 use ix_trace_rs::trace;
 use qsl_foundation::{Code, Source, SourceIdentity};
 use quire_spec_language::linking::composed::{
-    admit_namespace, DeclarationDisposition, DeclarationEntry, DeclarationId, DeclarationRefusal,
-    DependencyKind, DependencyRefusal, DependencySite, Dimension, ExpectedSource, SourceInventory,
-    SyntaxNamespace, WorkLimits,
+    admit_namespace, DeclarationDisposition, DeclarationEntry, DeclarationRefusal, DependencyKind,
+    DependencyRefusal, DependencySite, Dimension, ExpectedSource, SourceInventory, SyntaxNamespace,
+    WorkLimits,
 };
+use quire_spec_language::linking::declaration_id::DeclarationId;
 use quire_spec_language::Limits;
 
 const HEADER: &str = r#"language "ix:native" edition "1-draft";

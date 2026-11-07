@@ -836,7 +836,7 @@ fn domain_typed_declarations_type_check() {
         self, CauseKind, Prerequisite, TypeDisposition, TypeLimits,
     };
     use quire_spec_language::checking::NativeType;
-    use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
+    use quire_spec_language::linking::definition_source::RegisteredDefinition as R;
 
     let bundle = architecture_bundle(|_| {});
     let package = admitted(bundle.path());
@@ -955,7 +955,7 @@ fn domain_field_multiplicities_and_nested_reads_type_check() {
         self, CauseKind, Prerequisite, TypeDisposition, TypeLimits,
     };
     use quire_spec_language::checking::NativeType;
-    use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
+    use quire_spec_language::linking::definition_source::RegisteredDefinition as R;
 
     let bundle = architecture_bundle(|root| {
         record_value_type(
@@ -1178,10 +1178,10 @@ fn domain_operation_parameters_and_result_bind_and_type_check() {
         self, CauseKind, Prerequisite, TypeDisposition, TypeLimits,
     };
     use quire_spec_language::checking::NativeType;
-    use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
     use quire_spec_language::linking::composed::scopes::{
         Anchor, BinderKind, ScopeDisposition, ScopeIssue,
     };
+    use quire_spec_language::linking::definition_source::RegisteredDefinition as R;
 
     let bundle = architecture_bundle(|root| {
         record_value_type(root, "Reading", &[("ok", "Boolean", "1")]);

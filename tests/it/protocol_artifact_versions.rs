@@ -8,7 +8,7 @@
 use crate::support::protocol_artifact::Fixture;
 
 use ix_trace_rs::trace;
-use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
+use quire_spec_language::linking::definition_source::RegisteredDefinition as R;
 use quire_spec_language::number::{NumberComponent, NumberError, NumberWire};
 use quire_spec_language::protocol_artifact::{
     self as artifact, v2, v3, wire as w, Dimension, Error, Invalid, Limits, Unsupported,

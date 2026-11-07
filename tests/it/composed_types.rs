@@ -15,7 +15,7 @@ use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::binding::{self, Disposition as BindingDisposition};
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
 use quire_spec_language::linking::composed::scopes::{Anchor, BinderKind};
-use quire_spec_language::linking::composed::DeclarationId;
+use quire_spec_language::linking::declaration_id::DeclarationId;
 
 fn id(binding: &binding::Report<'_>, name: &str) -> DeclarationId {
     let [id] = binding.namespace().lookup(name) else {
@@ -328,7 +328,7 @@ fn exact_profiles_are_checked_locally_and_a_wider_caller_cannot_upgrade_a_callee
             let definitions = binding.definitions().unwrap();
             for cause in causes.iter().filter(|cause| cause.kind == CauseKind::ProfilePermission) {
                 assert_eq!(definitions.declarations[id(binding, "Narrow").index()].uses[cause.profile.unwrap()].closure[0],
-                    quire_spec_language::linking::composed::definition_source::RegisteredDefinition::StateQueries);
+                    quire_spec_language::linking::definition_source::RegisteredDefinition::StateQueries);
             }
         },
     );
