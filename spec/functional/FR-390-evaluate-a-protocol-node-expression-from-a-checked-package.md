@@ -421,6 +421,20 @@ value-type vocabulary SHALL NOT be presumed to represent every kernel
 evaluation type vocabulary, with no QSL-owned type mirror, guessed identity
 or fallback to an unchecked or serialized interpretation.
 
+Reader view creation SHALL take its selected identity witness from a required
+`EvaluationWitnessSupplier`, supplied to `read_evaluation_emission` with no
+optional default. The supplier runs after the I2 read admitted the package and
+returns the complete native `SelectedExactIdentities`, or none. The read SHALL
+validate the supplied identities against the admitted package with the native
+whole-witness validation (`validate_and_rebind`) under the pass's native budget,
+and SHALL NOT trust a caller-written package tag. Creation SHALL report a
+supplier with none as `MissingIdentityWitness`, identities the package
+contradicts (another package's, or rows that conflict with its declarations) as
+`ForeignIdentityWitness`, and identities that do not cover or resolve in the
+package as `UnknownIdentityWitness`, each at the `Package` locus before any node
+is projected; an exhausted native allowance is a limit refusal, never a witness
+reason. The source route's supplier is the identity rows its emission carries.
+
 `ViewFailure` SHALL be the layer-4 closed enum
 `Unsupported(UnsupportedView)`, `Limit(LimitExceeded)` or `Fault(InternalFault)`.
 `UnsupportedView` SHALL carry the catalog pair
@@ -882,6 +896,7 @@ value; check 6 does not apply to it.
 | FR-390-AC-66 | The bytes route reports `MissingIdentityWitness`, `ForeignIdentityWitness`, `UnknownIdentityWitness` and the three equality-witness reasons as `CallAdmissionLocus::Package`, and the in-process reader view reports the same three as the `Package` locus of `UnsupportedView`; neither reports a `Node` or `Binder` locus for them. | Test (TC-1070) |
 | FR-390-AC-67 | View creation reports the first unsupported projection by package identity, then locus (`Package` before `Node`), then node key, then reason. A package with a `MissingTypeRepresentation` at a `Node` locus and a `ForeignIdentityWitness` reports `ForeignIdentityWitness`; with `MissingLiteralProjection` at a `Node` locus and `MissingEqualityWitness` reports `MissingEqualityWitness`; with `ForeignIdentityWitness` and `MissingEqualityWitness` (both `Package`) reports `ForeignIdentityWitness`, the reason order breaking the tie; with `MissingIdentityWitness` and `MissingEqualityWitness` reports `MissingIdentityWitness`. The three equality-witness reasons never co-occur over one supply: over a slot that reaches an equality application, a supply with no equality rows reports `MissingEqualityWitness` alone; rows of another package report `ForeignEqualityWitness` alone, also when those rows hold no row of the application; and the package's own rows with the row of the reached application removed report `UnknownEqualityWitness` alone. The equality-witness reasons are at the `Package` locus and charge nothing. | Test (TC-1070) |
 | FR-390-AC-68 | Over recipe **R**'s `Full` recovery predicate (`sum(receipt in recovered.receipts: receipt) = target and not activated`), the slot lists the sources `target`, `activated` and `recovered` and not `receipt`, on the bare route; the same holds with the `sum` replaced by a `let` binder bound to it, with two nested collection queries of distinct names, with each of `forall`, `exists`, `filter` and `map`, and with a binder the body never reads (alone and nested), none of those binders being a source. The genuine `case Shape::Circle(sum<M::Total>(receipt in recoveredFull.receipts: receipt)) { Empty: targetFull; Circle(r): r; }` form in `Full`'s recovery predicate is admitted by the strict reader, its arm binder `r` is not a source on either route, and source and bare routes return equal Boolean outcomes and ordered charge logs for matching, mismatching, empty and activated supplies. A supply that adds a key for the introduced binder refuses `invalid_runtime_input`/`unknown-member` before any charge, and the predicate evaluates to the value its text states over a supply of the three sources. A query binder named as a readable source is refused by the checker as `AmbiguousName`. | Test (TC-1071, TC-1333) |
+| FR-390-AC-69 | Over the emitted-and-admitted package of TC-1070 fixture E, a supplier that returns no identities gives `MissingIdentityWitness`; a supplier that returns the identities of a different admitted package gives `ForeignIdentityWitness`; a supplier that returns the package's own identities with a field row removed gives `UnknownIdentityWitness`; each at the `Package` locus of `UnsupportedView`. | Test (TC-1070) |
 
 ## Dependencies
 
