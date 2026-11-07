@@ -86,6 +86,7 @@ mod checked_handoff;
 mod checked_handoff_healthy;
 #[cfg(feature = "checked-handoff")]
 mod checked_views;
+mod compound_quantity_types;
 mod fairness_item_path;
 mod hybrid_request_items;
 mod layer_crate_reexports;
@@ -131,4 +132,3 @@ mod text_enum_identity;
 mod unbounded_declarations;
 mod union_nodes;
 mod v2_refusal_code_bridge;
-mod compound_quantity_types;
