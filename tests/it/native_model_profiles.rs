@@ -3,17 +3,9 @@
 
 use crate::support::native_rule_model;
 use ix_trace_rs::trace;
-use qsl_foundation::{Code, Source, SourceIdentity, Span, Spanned};
+use qsl_foundation::{Code, Source, SourceIdentity, Span};
 use quire_contract_model as ir;
-use quire_spec_language::checking::NativeType;
 use quire_spec_language::formal_source::FormalSource;
-use quire_spec_language::linking::composed::binding_work::{Limits as BindingLimits, Work};
-use quire_spec_language::linking::composed::models::{
-    bind_models, ImportRefusal, ModelErrorKind, ModelInput,
-};
-use quire_spec_language::linking::composed::{
-    admit_namespace, ExpectedSource, SourceInventory, SyntaxNamespace, UnitId, WorkLimits,
-};
 use quire_spec_language::linking::DeclarationKey;
 use quire_spec_language::model_source::{
     read, ModelDraft, ModelSourceCause, ModelSourceLimits, FORMAT, FORMAT_V2,
@@ -21,7 +13,6 @@ use quire_spec_language::model_source::{
 use quire_spec_language::native_model::{
     ModelLimits, NativeModel, NativeModelProfile, ScalarKind, ScalarSite, Unit,
 };
-use quire_spec_language::syntax::composed::{DeclarationKind, ParameterType, QualifiedName};
 use quire_spec_language::{link_native, parse, Limits, LinkLimits};
 use serde_json::{json, Value};
 
@@ -762,131 +753,6 @@ fn historical_linking_refuses_only_selected_v2_artifacts() {
     );
 }
 
-fn with_namespace(text: &str, inspect: impl FnOnce(&SyntaxNamespace)) {
-    let sources = [Source::read(
-        SourceIdentity {
-            authority: "test".into(),
-            identity: "native:composed".into(),
-        },
-        "composed.native",
-        text.as_bytes(),
-        1_048_576,
-    )
-    .unwrap()];
-    let inventory = SourceInventory {
-        language: "ix:native".into(),
-        edition: "1-draft".into(),
-        units: vec![ExpectedSource {
-            authority: "native:composed".into(),
-            identity: sources[0].identity().clone(),
-        }],
-    };
-    let report = admit_namespace(
-        &inventory,
-        &sources,
-        WorkLimits::default(),
-        Limits::default(),
-    );
-    assert!(report.issues().is_empty(), "{:?}", report.issues());
-    inspect(report.namespace().unwrap());
-}
-
-fn parameter(namespace: &SyntaxNamespace, index: usize) -> (UnitId, &QualifiedName) {
-    let id = namespace.lookup("Rule")[0];
-    let DeclarationKind::Predicate { parameters, .. } = &namespace.syntax(id).unwrap().kind else {
-        panic!("predicate")
-    };
-    let ParameterType::Model(name) = &parameters[index].ty else {
-        panic!("model parameter")
-    };
-    (namespace.declaration(id).unwrap().unit(), name)
-}
-
-#[test]
-#[trace("TC-120", "FR-041-AC-5", "FR-041-AC-6")]
-fn composed_exports_retain_rational_roles_and_require_exact_native_artifacts() {
-    let record = r#"{"name":"Measure","fields":[{"name":"amount","type":{"kind":"scalar","name":"Ratio"}}]}"#;
-    let admitted = model(&document(RATIONAL, record, AMOUNT));
-    let program = String::from("language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\";\nmodel M = \"test/rational\";\npredicate Rule using S (amount: M::Ratio, item: M::Measure): Boolean { true }");
-    let inputs = [ModelInput::Native(&admitted)];
-    with_namespace(&program, |namespace| {
-        let mut work = Work::new(BindingLimits::default());
-        let bindings = bind_models(namespace, &inputs, &mut work);
-        assert!(bindings.complete());
-        let (unit, name) = parameter(namespace, 0);
-        let scalar = bindings.resolve_type(unit, name, &mut work).unwrap();
-        assert_eq!(scalar.model().profile(), NativeModelProfile::V2);
-        assert_eq!(
-            scalar.location().identity.owner,
-            *admitted.environment().owner()
-        );
-        assert_eq!(
-            scalar.location().identity.key,
-            DeclarationKey::Scalar(symbol("Ratio"))
-        );
-        assert_eq!(scalar.location().source, admitted.roles().scalars[0].source);
-        let NativeType::Scalar {
-            representation,
-            role,
-            ..
-        } = scalar.native()
-        else {
-            panic!("nominal scalar")
-        };
-        assert_bounds(representation, (-1, 1, 2));
-        assert_eq!(
-            role.kind,
-            ScalarKind::Rational {
-                unit: Unit::Dimensionless
-            }
-        );
-        let (_, name) = parameter(namespace, 1);
-        let record = bindings.resolve_type(unit, name, &mut work).unwrap();
-        let field = bindings
-            .field(
-                unit,
-                &record,
-                &Spanned {
-                    value: "amount".into(),
-                    span: name.name.span,
-                },
-                &mut work,
-            )
-            .unwrap();
-        assert_eq!(field.native(), scalar.native());
-        assert_eq!(
-            field.location().identity.key,
-            DeclarationKey::Field {
-                record: symbol("Measure"),
-                field: symbol("amount")
-            }
-        );
-    });
-    with_namespace(
-        &program.replace("test/rational", "test/foreign"),
-        |namespace| {
-            let bindings =
-                bind_models(namespace, &inputs, &mut Work::new(BindingLimits::default()));
-            assert_eq!(
-                bindings.imports()[0].selection,
-                Err(ImportRefusal::MissingPackage)
-            );
-        },
-    );
-    with_namespace(&program.replace("M::Ratio", "M::Missing"), |namespace| {
-        let mut work = Work::new(BindingLimits::default());
-        let bindings = bind_models(namespace, &inputs, &mut work);
-        let (unit, name) = parameter(namespace, 0);
-        assert_eq!(
-            bindings
-                .resolve_type(unit, name, &mut work)
-                .unwrap_err()
-                .kind,
-            ModelErrorKind::MissingExport
-        );
-    });
-}
-
 #[test]
 #[trace("TC-120", "FR-041-AC-7")]
 fn rational_frontend_limits_count_authored_entries_and_nested_levels() {
@@ -941,65 +807,6 @@ fn rational_frontend_limits_count_authored_entries_and_nested_levels() {
         read(source(&text), FORMAT_V2, above).unwrap().source_limits,
         ModelSourceLimits::default()
     );
-}
-
-#[test]
-#[trace("TC-120", "FR-041-AC-2", "FR-041-AC-4", "FR-041-AC-5")]
-fn equal_rational_representations_preserve_distinct_names_and_owners() {
-    let text = document(
-        &format!("{RATIONAL},{}", RATIONAL.replace("Ratio", "OtherRatio")),
-        "",
-        &format!(
-            "{AMOUNT},{}",
-            AMOUNT
-                .replace("amount", "other")
-                .replace("Ratio", "OtherRatio")
-        ),
-    );
-    let first = model(&text);
-    let second_text = text
-        .replace("test/rational", "test/second")
-        .replace("RationalModel", "SecondModel");
-    let second = read(
-        named_source(&second_text, "test:second", "SecondSource"),
-        FORMAT_V2,
-        ModelSourceLimits::default(),
-    )
-    .unwrap()
-    .admit(ModelLimits::default())
-    .unwrap();
-    let program = String::from("language \"ix:native\" edition \"1-draft\";\nprofile S = \"test:unresolved\";\nmodel M = \"test/rational\";\nmodel N = \"test/second\";\npredicate Rule using S (firstValue: M::Ratio, other: M::OtherRatio, secondValue: N::Ratio): Boolean { true }");
-    let inputs = [ModelInput::Native(&first), ModelInput::Native(&second)];
-    with_namespace(&program, |namespace| {
-        let mut work = Work::new(BindingLimits::default());
-        let bindings = bind_models(namespace, &inputs, &mut work);
-        let resolved: Vec<_> = (0..3)
-            .map(|index| {
-                let (unit, name) = parameter(namespace, index);
-                bindings.resolve_type(unit, name, &mut work).unwrap()
-            })
-            .collect();
-        for value in &resolved {
-            let NativeType::Scalar { representation, .. } = value.native() else {
-                panic!("rational scalar")
-            };
-            assert_bounds(representation, (-1, 1, 2));
-        }
-        assert_ne!(resolved[0].native(), resolved[1].native());
-        assert_ne!(resolved[0].native(), resolved[2].native());
-        assert_eq!(
-            resolved[0].location().identity.owner,
-            resolved[1].location().identity.owner
-        );
-        assert_ne!(
-            resolved[0].location().identity.owner,
-            resolved[2].location().identity.owner
-        );
-        assert_ne!(
-            resolved[0].location().source.source(),
-            resolved[2].location().source.source()
-        );
-    });
 }
 
 #[test]

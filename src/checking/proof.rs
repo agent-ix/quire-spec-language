@@ -58,7 +58,6 @@ struct KeyInfo {
 pub(super) enum Kind<'a> {
     Boolean(bool),
     Integer(i128, &'a ir::IntegerType),
-    Rational(i128, i128, &'a ir::RationalType),
     Input(ValueKey),
     Present(GraphId),
     Unwrap(GraphId),
@@ -174,14 +173,7 @@ impl Meter<'_> {
 }
 
 fn proof_type(ty: &NativeType<'_>) -> std::result::Result<ir::ValueType, RepresentationError> {
-    representation(ty, Interpretation::HistoricalFinite)
-}
-
-/// Admitted input profile, not a request to approximate an unknown scalar kind.
-#[derive(Clone, Copy)]
-pub(super) enum Interpretation {
-    HistoricalFinite,
-    ComposedValues,
+    representation(ty)
 }
 
 #[derive(Debug)]
@@ -211,7 +203,6 @@ impl RepresentationError {
 // refuses a broken prerequisite instead of panicking across that module boundary.
 pub(super) fn representation(
     ty: &NativeType<'_>,
-    interpretation: Interpretation,
 ) -> std::result::Result<ir::ValueType, RepresentationError> {
     Ok(match ty {
         NativeType::Scalar {
@@ -225,17 +216,7 @@ pub(super) fn representation(
                     return Err(RepresentationError::Unsupported)
                 }
             },
-            ir::ValueType::Rational { value } => match &role.kind {
-                ScalarKind::Rational { .. } => match interpretation {
-                    Interpretation::ComposedValues => ir::ValueType::rational(value.clone()),
-                    Interpretation::HistoricalFinite => {
-                        return Err(RepresentationError::Unsupported)
-                    }
-                },
-                ScalarKind::Integer { .. } | ScalarKind::Text { .. } => {
-                    return Err(RepresentationError::Unsupported)
-                }
-            },
+            ir::ValueType::Rational { .. } => return Err(RepresentationError::Unsupported),
             ir::ValueType::Text => match &role.kind {
                 ScalarKind::Text { .. } => ir::ValueType::Boolean,
                 ScalarKind::Integer { .. } | ScalarKind::Rational { .. } => {
@@ -248,9 +229,9 @@ pub(super) fn representation(
             | ir::ValueType::Option { .. }
             | ir::ValueType::Collection { .. } => return Err(RepresentationError::Unsupported),
         },
-        NativeType::Option(value) => ir::ValueType::option(representation(value, interpretation)?),
+        NativeType::Option(value) => ir::ValueType::option(representation(value)?),
         NativeType::Sequence { element, maximum } => ir::ValueType::Collection {
-            value: ir::CollectionType::new(representation(element, interpretation)?, *maximum)?,
+            value: ir::CollectionType::new(representation(element)?, *maximum)?,
         },
         NativeType::Boolean
         | NativeType::Uuid

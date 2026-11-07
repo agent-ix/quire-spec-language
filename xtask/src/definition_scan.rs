@@ -372,8 +372,7 @@ mod tests {
     /// leftover in `value::expression`, no duplicate under `check`"), not a
     /// literal crate-wide uniqueness claim. Some CON-3/TC-173 names (e.g.
     /// `Obligation`) collide, by plain English word, with unrelated,
-    /// pre-existing types elsewhere in the crate (`checking::composed::Obligation`,
-    /// a struct about a SEAM obligation site; `temporal::result::Obligation`,
+    /// pre-existing types elsewhere in the crate (`temporal::result::Obligation`,
     /// an enum about instance-assessment outcomes) that have nothing to do
     /// with this split and are out of scope for it; a global `locations.len()
     /// == 1` assertion would wrongly fail on those legitimate namesakes, so
