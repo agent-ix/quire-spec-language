@@ -36,7 +36,7 @@ impl Charge<'_> {
         self.pay(NativeJoinChargeKind::Work, amount)
     }
 
-    fn storage(&mut self, amount: u128) -> Result<(), PlanAuthorityRefusal> {
+    pub(super) fn storage(&mut self, amount: u128) -> Result<(), PlanAuthorityRefusal> {
         self.pay(NativeJoinChargeKind::Storage, amount)
     }
 

@@ -94,7 +94,13 @@ fn admit(
     )
 }
 
-#[trace("TC-1081", "FR-251-AC-45", "FR-251-AC-47", "FR-251-AC-48")]
+#[trace(
+    "TC-1081",
+    "FR-251-AC-45",
+    "FR-251-AC-47",
+    "FR-251-AC-48",
+    "FR-251-AC-50"
+)]
 #[test]
 fn genuine_tick_authority_retains_complete_original_values_and_same_emission() {
     let root = tick_root();
@@ -111,6 +117,21 @@ fn genuine_tick_authority_retains_complete_original_values_and_same_emission() {
     let complete_association = serde_json::to_value(progress.association().unwrap()).unwrap();
     let context = admit(root, Some(progress), &subject, limits()).unwrap();
     drop(subject);
+    assert!(context
+        .root()
+        .checked_unit()
+        .package()
+        .graph()
+        .time_sources()
+        .iter()
+        .any(|source| std::ptr::eq(source, context.checked_time_source())));
+    assert!(matches!(
+        context.checked_time_source().source,
+        TimeSourceKind::Tick { .. }
+    ));
+    let exact: &quire_contract_model::CheckedRational = context.checked_tick_period().unwrap();
+    assert_eq!(exact.numerator.as_ref(), "2");
+    assert_eq!(exact.denominator.as_ref(), "1");
     assert_eq!(context.admitted_order(), expected_order.bytes());
     assert_eq!(context.progress_context(), expected_progress);
     assert_eq!(
@@ -658,4 +679,30 @@ fn selection_prefix_composes_two_attempts_without_restoring_spent_work() {
             }
         }
     }
+}
+
+#[trace("TC-1081", "FR-251-AC-50")]
+#[test]
+fn dense_authority_borrows_original_time_source_without_tick_period() {
+    let root = root_of(
+        &authored("eventually[0 ms, 3 ms] holds(c.versionNumber = 3)"),
+        "C",
+        &target(),
+    )
+    .unwrap();
+    let (view, subject) = observation::admitted(Some(vec![row(&root)]));
+    let context = admit(root, Some(view), &subject, limits()).unwrap();
+    assert!(context
+        .root()
+        .checked_unit()
+        .package()
+        .graph()
+        .time_sources()
+        .iter()
+        .any(|source| std::ptr::eq(source, context.checked_time_source())));
+    assert!(matches!(
+        context.checked_time_source().source,
+        TimeSourceKind::Dense
+    ));
+    assert!(context.checked_tick_period().is_none());
 }

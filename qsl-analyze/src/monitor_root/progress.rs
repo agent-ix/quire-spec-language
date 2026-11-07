@@ -144,13 +144,15 @@ pub(super) fn check_time_source_fields(
 mod tests;
 
 mod charge;
+mod time_source;
 
 use qsl_foundation::SourceIdentity;
 use qsl_replay::MonitorSubject;
 use quire_contract_model::{
-    read_checked_package, AdmissionBinding, CheckedPackageDispatchResult, CheckedPackageIncomplete,
-    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageV2, NativeJoinBudget,
-    NativeJoinCharge, NativeJoinDeniedCharge, NativeJoinLocus,
+    read_checked_package, AdmissionBinding, CheckedMonitorClockReadError, CheckedOccurrence,
+    CheckedOccurrenceRole, CheckedPackageDispatchResult, CheckedPackageIncomplete,
+    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageV2, CheckedRational,
+    NativeJoinBudget, NativeJoinCharge, NativeJoinDeniedCharge, NativeJoinLocus,
 };
 use quire_observation::authority::Limits as ProgressLimits;
 
@@ -205,6 +207,8 @@ pub enum PlanAuthorityRefusalCode {
     ReadRefused,
     /// The original strict package reader exhausted a caller bound.
     ReadIncomplete,
+    /// The original admitted monitor clock lookup refused.
+    ClockRead,
     /// The caller's actual shared native preparation budget denied a charge.
     Budget,
     /// A paid temporary container could not reserve storage.
@@ -224,6 +228,7 @@ impl PlanAuthorityRefusalCode {
             Self::Progress,
             Self::ReadRefused,
             Self::ReadIncomplete,
+            Self::ClockRead,
             Self::Budget,
             Self::Allocation,
         ]
@@ -241,6 +246,7 @@ impl PlanAuthorityRefusalCode {
             Self::Progress => "progress",
             Self::ReadRefused => "read_refused",
             Self::ReadIncomplete => "read_incomplete",
+            Self::ClockRead => "clock_read",
             Self::Budget => "budget",
             Self::Allocation => "allocation",
         }
@@ -285,6 +291,9 @@ pub enum PlanAuthorityRefusal {
     /// The original strict reader exhausted its bound.
     #[error("the final emission read was incomplete: {0:?}")]
     ReadIncomplete(Box<CheckedPackageIncomplete>),
+    /// The actual owner clock lookup refused under the shared native ledger.
+    #[error(transparent)]
+    ClockRead(#[from] CheckedMonitorClockReadError),
     /// Original fixed-size native denial metadata; constructing this allocates nothing.
     #[error("shared native preparation budget denied {denied:?}")]
     Budget {
@@ -327,6 +336,7 @@ impl PlanAuthorityRefusal {
             Self::Progress(_) => PlanAuthorityRefusalCode::Progress,
             Self::ReadRefused(_) => PlanAuthorityRefusalCode::ReadRefused,
             Self::ReadIncomplete(_) => PlanAuthorityRefusalCode::ReadIncomplete,
+            Self::ClockRead(_) => PlanAuthorityRefusalCode::ClockRead,
             Self::Budget { .. } => PlanAuthorityRefusalCode::Budget,
             Self::Allocation(_) => PlanAuthorityRefusalCode::Allocation,
         }
@@ -360,6 +370,8 @@ pub struct AdmittedPlanAuthority {
     order: ModelStepOrder,
     progress: progress::View,
     progress_value: Vec<u8>,
+    time_source_slot: usize,
+    checked_tick_period: Option<CheckedRational>,
 }
 
 impl AdmittedPlanAuthority {
@@ -377,6 +389,18 @@ impl AdmittedPlanAuthority {
     /// A preparation caller accounts for the retained handle before acquiring it.
     pub fn admission_binding(&self) -> AdmissionBinding {
         self.package.admission_binding()
+    }
+
+    /// The original checked time source, borrowed in constant time.
+    pub fn checked_time_source(&self) -> &ModelTimeSource {
+        // The constructor selects this slot from this immutable root's slice.
+        // No public method can replace the root or mutate its checked graph.
+        &self.root.checked_unit().package().graph().time_sources()[self.time_source_slot]
+    }
+
+    /// The exact IR period copied once from this admitted emission; absent for dense time.
+    pub fn checked_tick_period(&self) -> Option<&CheckedRational> {
+        self.checked_tick_period.as_ref()
     }
 
     /// The complete QSL-admitted canonical model-step order VALUE.
@@ -422,7 +446,9 @@ impl PlanRoot {
         if !charge.subject(selection.claim, self.plan().subject())? {
             return Err(PlanAuthorityRefusal::Claim);
         }
-        let (_, source) = selected_time_source(&self)?;
+        // Retain one index into the original immutable checked source slice.
+        charge.storage(1)?;
+        let (_, source, time_source_slot) = selected_time_source(&self)?;
         let association = progress.association()?;
         check_observation_selection(
             &association,
@@ -483,7 +509,7 @@ impl PlanRoot {
                 return Err(PlanAuthorityRefusal::ReadIncomplete(Box::new(error)));
             }
         };
-        {
+        let checked_tick_period = {
             let mut plans = package.monitor_plans();
             let final_plan = plans.next().ok_or(PlanAuthorityRefusal::FinalEmission)?;
             if plans.next().is_some()
@@ -497,8 +523,18 @@ impl PlanRoot {
             {
                 return Err(PlanAuthorityRefusal::FinalEmission);
             }
-        }
-        let order = self.model_step_order(validation.order)?;
+            if !charge.text(claim.occurrence().origin().role().as_str(), "claim")? {
+                return Err(PlanAuthorityRefusal::Claim);
+            }
+            let occurrence = CheckedOccurrence {
+                role: CheckedOccurrenceRole::Claim,
+                ordinal: claim.occurrence().origin().ordinal(),
+            };
+            let clock = final_plan.clock_for_claim(declaration, &occurrence, charge.budget)?;
+            time_source::checked_period(&package, clock.clock(), row, &mut charge)?
+        };
+        let order =
+            self.model_step_order_with_period(validation.order, checked_tick_period.as_ref())?;
         let progress_value = progress.association_canonical_bytes(validation.progress)?;
         Ok(AdmittedPlanAuthority {
             root: self,
@@ -506,6 +542,8 @@ impl PlanRoot {
             order,
             progress,
             progress_value,
+            time_source_slot,
+            checked_tick_period,
         })
     }
 }

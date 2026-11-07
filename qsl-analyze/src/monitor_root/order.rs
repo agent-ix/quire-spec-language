@@ -103,7 +103,7 @@ pub(super) fn selected_clause(root: &PlanRoot) -> Option<&TemporalClauseNode> {
 /// This selection is shared by order encoding and progress-field comparison.
 pub(super) fn selected_time_source(
     root: &PlanRoot,
-) -> Result<(&TemporalClauseNode, &ModelTimeSource), ModelStepOrderRefusal> {
+) -> Result<(&TemporalClauseNode, &ModelTimeSource, usize), ModelStepOrderRefusal> {
     let clause =
         selected_clause(root).ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingClause))?;
     let binding = clause
@@ -114,16 +114,22 @@ pub(super) fn selected_time_source(
     let model = graph
         .timed_model(&binding.model)
         .ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingModelTime))?;
-    let mut sources = graph.time_sources().iter().filter(|source| {
-        model.is_timed_by(source) && source.source == binding.source && source.unit == binding.unit
-    });
-    let source = sources
+    let mut sources = graph
+        .time_sources()
+        .iter()
+        .enumerate()
+        .filter(|(_, source)| {
+            model.is_timed_by(source)
+                && source.source == binding.source
+                && source.unit == binding.unit
+        });
+    let (slot, source) = sources
         .next()
         .ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingTimeSource))?;
     if sources.next().is_some() {
         return Err(refuse(ModelStepOrderRefusalCode::MissingTimeSource));
     }
-    Ok((clause, source))
+    Ok((clause, source, slot))
 }
 
 impl PlanRoot {
@@ -137,7 +143,17 @@ impl PlanRoot {
         &self,
         limits: Limits,
     ) -> Result<ModelStepOrder, ModelStepOrderRefusal> {
-        let (_, source) = selected_time_source(self)?;
+        self.model_step_order_with_period(limits, None)
+    }
+
+    // Only the same-emission constructor supplies an already compared IR period.
+    // This does not expose a caller substitution path for the original order.
+    pub(super) fn model_step_order_with_period(
+        &self,
+        limits: Limits,
+        admitted_period: Option<&quire_contract_model::CheckedRational>,
+    ) -> Result<ModelStepOrder, ModelStepOrderRefusal> {
+        let (_, source, _) = selected_time_source(self)?;
         let kind = match &source.source {
             TimeSourceKind::Dense => SourceEncoding::Dense,
             TimeSourceKind::Tick { period, .. } => SourceEncoding::Tick {
@@ -145,7 +161,8 @@ impl PlanRoot {
                     .tick_operation_anchor
                     .as_ref()
                     .ok_or_else(|| refuse(ModelStepOrderRefusalCode::MissingTickOperation))?,
-                period,
+                period: admitted_period
+                    .map_or(PeriodEncoding::Kernel(period), PeriodEncoding::Admitted),
             },
         };
         let bytes =
@@ -169,8 +186,13 @@ enum SourceEncoding<'a> {
     Dense,
     Tick {
         operation: &'a NodeKey,
-        period: &'a Rational,
+        period: PeriodEncoding<'a>,
     },
+}
+
+enum PeriodEncoding<'a> {
+    Kernel(&'a Rational),
+    Admitted(&'a quire_contract_model::CheckedRational),
 }
 
 fn node<S: Sink + ?Sized>(writer: &mut Writer<'_, S>, key: &NodeKey) -> Result<(), Error> {
@@ -204,9 +226,19 @@ impl Encode for OrderValue<'_> {
                 writer.name("period")?;
                 writer.begin_object()?;
                 writer.name("numerator")?;
-                writer.string(&period.numerator().to_string())?;
+                match period {
+                    PeriodEncoding::Kernel(value) => {
+                        writer.string(&value.numerator().to_string())?
+                    }
+                    PeriodEncoding::Admitted(value) => writer.string(&value.numerator)?,
+                }
                 writer.name("denominator")?;
-                writer.string(&period.denominator().to_string())?;
+                match period {
+                    PeriodEncoding::Kernel(value) => {
+                        writer.string(&value.denominator().to_string())?
+                    }
+                    PeriodEncoding::Admitted(value) => writer.string(&value.denominator)?,
+                }
                 writer.end_object()?;
             }
         }
