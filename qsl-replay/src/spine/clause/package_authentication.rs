@@ -51,8 +51,8 @@ pub enum AuthenticationFailure {
     /// profile or an invalid clock value.
     SelectionsDoNotFit,
     /// The caller's domain package documents do not admit the emitted
-    /// package: they conflict with the emission's own, the dependency
-    /// closure does not read back, or the strict read refuses.
+    /// package: the dependency closure does not read back, or the
+    /// strict read refuses.
     PackagesDoNotAdmit(PackagesStage),
     /// An internal failure: emission refused for a reason no caller input
     /// causes.
@@ -62,8 +62,6 @@ pub enum AuthenticationFailure {
 /// Where the caller's domain package documents stopped the authentication.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PackagesStage {
-    /// A document conflicts with the one the emission evidence holds.
-    Conflict,
     /// The dependency closure does not read back under the documents.
     Closure,
     /// The strict read of the emitted package refuses under the documents.
@@ -126,7 +124,14 @@ pub fn authenticate_emission(
     for (identity, document) in domain_packages {
         evidence
             .insert_domain_package_document(identity.as_str(), document.as_slice())
-            .map_err(|_| AuthenticationFailure::PackagesDoNotAdmit(PackagesStage::Conflict))?;
+            // Never happens: the emission evidence holds no domain package
+            // document and `PackageInput` keeps one document per identity.
+            .map_err(|_| {
+                AuthenticationFailure::Fault(InternalFault::new(
+                    "FR-050",
+                    "domain-package-documents-do-not-conflict-in-fresh-evidence",
+                ))
+            })?;
     }
     qsl_package::supply_closure(
         package,

@@ -54,3 +54,20 @@ Round 1, reviewed at 86456bba3355d65ec747d3d14d16e8a6d3d54a11. Touched tests pas
 | FND-005 | fixed | Kind check precedes charge_document; the_kind_refusal_precedes_the_document_limits. Default SpineLimits: accepted-no-change, documented on authenticate_emission, the spec gives the request no limit for it. |
 | FND-006 | still-open | Replace the sleep race with Cancel::observing cancelling at a fixed charge. |
 | FND-007 | accepted-no-change | Same mapping class for all three stages; low risk, may be assert-by-stage later. |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | PackagesStage::Conflict and its map_err branch are unreachable dead code. The emission evidence is built by own_evidence, which holds only lock features and no domain package document, and PackageInput is a map with one document per identity, so insert_domain_package_document into it cannot conflict. Remove the variant and map the insertion error to an internal fault. (PackagesStage::Closure is reachable by a package with dependencies, since supply_closure reads the dependency closure; the test world has none, so it is only unexercised.) | qsl-replay/src/spine/clause/package_authentication.rs (PackagesStage::Conflict) |
+
+## Dispositions (round 2)
+
+Round 2, reviewed at 51e437f61480ade3d5dcf8e107ef7c68cb8f9a1d. monitor_inputs run 3 times, 16 passed each; clippy and fmt clean.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | fixed | Deterministic observer test; tags corrected. |
+| FND-006 | fixed | Cancel::observing cancels at charge total/2 and asserts the run stopped at exactly that charge count. |
+| FND-007 | accepted-no-change | The strict-read stage is pinned for three inputs; Conflict is dead (FND-008), Closure is reachable but needs a dependency fixture. |
+| FND-008 | still-open | Remove the dead Conflict variant. |

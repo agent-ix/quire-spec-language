@@ -413,7 +413,6 @@ impl Runs<'_> {
                 "invalid-value",
                 "packages",
                 Some(match stage {
-                    PackagesStage::Conflict => "conflict",
                     PackagesStage::Closure => "closure",
                     PackagesStage::StrictRead => "strict-read",
                 }),
