@@ -226,12 +226,10 @@ The decoder refuses, as the consumer of QSpec FR-336-AC-8, a
 or parent-traversing, and a `stage_limits` key that names no FR-255 setting,
 each before the request is constructed.
 
-The published provision-path schema permits an omitted `authority`. The
-adapter retains that absence rather than choosing an authority from a package,
-dependency or path. When construction of the typed replay provision needs the
-absent authority, it returns a typed replay-input refusal at that provision-path
-locus; this schema-valid omission is not a `corpus-decode` schema defect. A
-present authority is carried unchanged.
+The published provision-path schema requires an explicit `authority`. Its
+absence is a `corpus-decode` schema refusal at the provision's `authority`
+locus. The adapter carries a present authority unchanged and never infers one
+from a package, dependency or path.
 
 ### Settlement
 

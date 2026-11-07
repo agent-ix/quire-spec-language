@@ -348,13 +348,20 @@ fn an_owner_the_unit_does_not_import_refuses_typed() {
         "function t using v(): Boolean pure { true }\n",
     );
     let transitive_libraries = [units(), wrap];
-    let refusal = refusal_of(request(
+    let mut wire = request(
         &transitive,
         &transitive_libraries,
         owned(&big, "big"),
         &located,
         &[3],
-    ));
+    );
+    let transitive_package = own(&transitive, transitive_libraries.to_vec(), "t");
+    wire.package = qsl_replay::ReplayPackage::read(
+        &transitive_package.package,
+        ReplayLimits::default().input_bytes,
+    )
+    .unwrap();
+    let refusal = refusal_of(wire);
     assert!(
         matches!(&refusal, ReplayRefusal::UnknownOwner { owner, .. } if owner.as_str() == "test/units"),
         "{refusal:?}"
@@ -473,4 +480,40 @@ fn no_serialized_route_accepts_the_function_owner() {
         Probe::<String>::DESERIALIZES,
     ];
     assert_eq!(found, [false, false, false, true]);
+}
+
+#[test]
+#[trace("TC-1325", "FR-350-AC-16")]
+fn supplied_dependency_internal_lists_reach_the_library_semantic_owner() {
+    let unit = unit_source("test/units", "u", UNIT_BODY);
+    let libraries = [units()];
+    let big = imported(&unit, libraries.to_vec(), "big");
+    let located = Located {
+        package: big.package.clone(),
+        site: big.site.function.clone(),
+    };
+    let mut wire = request(&unit, &libraries, owned(&big, "big"), &located, &[3]);
+    wire.dependencies[0].refinement_internals = Some(
+        serde_json::from_value(
+            serde_json::json!([{"refinement":"NoSuchRefinement","internal":[]}]),
+        )
+        .unwrap(),
+    );
+    let ReplayRefusal::Recompile(refusal) = refusal_of(wire) else {
+        panic!("the dependency list must reach semantic checking")
+    };
+    let qsl_replay::CompileRefusal::Dependency { path, refusal } = *refusal else {
+        panic!("the refusal names its library owner: {refusal:?}")
+    };
+    assert_eq!(path[0].as_str(), "test/units");
+    let qsl_replay::CompileRefusal::Check { refusals, .. } = *refusal else {
+        panic!("the library semantic checker refuses: {refusal:?}")
+    };
+    let qsl_semantics::check::CheckCause::Refinement(refusal) = &refusals[0].cause else {
+        panic!("typed refinement list refusal: {refusals:?}")
+    };
+    let qsl_semantics::check::RefinementCause::InternalList(defect) = &refusal.cause else {
+        panic!("typed internal-list defect: {refusal:?}")
+    };
+    assert_eq!(defect.pointer, "/0/refinement");
 }

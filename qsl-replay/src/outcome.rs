@@ -1723,10 +1723,9 @@ impl OutcomeDocument {
                 refusal.code().as_str(),
                 match refusal {
                     ReplayRefusal::Package(_)
-                    | ReplayRefusal::Request(
-                        crate::ReplayRequestRefusal::PackageMember { .. }
-                        | crate::ReplayRequestRefusal::MissingProvisionAuthority { .. },
-                    ) => refusal.pointer().map(|pointer| OutcomeLocus::Artifact {
+                    | ReplayRefusal::Request(crate::ReplayRequestRefusal::PackageMember {
+                        ..
+                    }) => refusal.pointer().map(|pointer| OutcomeLocus::Artifact {
                         pointer: pointer.into_owned(),
                     }),
                     _ => None,

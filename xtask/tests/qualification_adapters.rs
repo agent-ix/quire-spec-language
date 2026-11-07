@@ -693,28 +693,18 @@ fn replay_evaluated_limits_retain_the_actual_named_charge_and_bound() {
 }
 
 #[test]
-#[trace("TC-1325", "FR-350-AC-10", "FR-350-AC-11")]
-fn unavailable_refinement_inputs_cannot_qualify_from_their_own_report() {
-    let mut fixture = replay_fixture();
+#[trace("TC-1325", "FR-350-AC-16")]
+fn supplied_refinement_inputs_reach_the_semantic_owner() {
+    let fixture = replay_fixture();
     let path = fixture.corpus.join("inputs/request.json");
     let mut request: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     request["package"]["lock"]["refinement_internals"] =
-        json!([{"refinement":"R", "internal":["unit/hidden"]}]);
+        json!([{"refinement":"NoSuchRefinement", "internal":["unit/hidden"]}]);
     fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
-    let first = report(&fixture.execute(&[]));
-    assert_eq!(
-        first["capabilities"][0]["outcome"], "unsupported",
-        "{first}"
-    );
-    let actual = first["capabilities"][0]["vectors"][0]["actual"].clone();
-    assert_eq!(actual["pointer"], "/package/lock/refinement_internals");
-    fixture.value["vectors"][0]["expected"] = json!({"disposition":"value", "value":actual});
-    let second = fixture.execute(&[]);
-    assert_eq!(report(&second)["capabilities"][0]["outcome"], "unsupported");
-    assert!(
-        second.outputs.is_empty(),
-        "no operation ran and no passed bytes exist"
-    );
+    let result = report(&fixture.execute(&[]));
+    let actual = &result["capabilities"][0]["vectors"][0]["actual"];
+    assert_eq!(actual["code"], "missing_declaration", "{result}");
+    assert_eq!(actual["cause"], "missing-name", "{result}");
 }
 
 fn subset_population_fixture(redefined: bool) -> Fixture {
@@ -1044,7 +1034,7 @@ fn replay_corpus_keeps_noncanonical_package_bytes_for_the_native_reader() {
 
 #[test]
 #[trace("TC-1325", "FR-350-AC-16")]
-fn absent_provision_authority_is_typed_replay_input_without_path_inference() {
+fn absent_provision_authority_is_corpus_decode_without_path_inference() {
     let fixture = replay_fixture();
     let path = fixture.corpus.join("inputs/request.json");
     let mut request: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
@@ -1055,25 +1045,7 @@ fn absent_provision_authority_is_typed_replay_input_without_path_inference() {
     fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
     let result = report(&fixture.execute(&[]));
     let actual = &result["capabilities"][0]["vectors"][0]["actual"];
-    assert_eq!(actual["code"], "invalid_runtime_input", "{result}");
-    assert_eq!(
-        actual["cause"], "missing-member",
-        "schema-valid absence reaches the replay input boundary: {result}"
-    );
-    assert_eq!(
-        actual["locus"]["pointer"], "/byte_provision/0/authority",
-        "{result}"
-    );
-    request["byte_provision"][0]["bytes_path"] = json!("inputs/unlisted.native");
-    fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
-    let result = report(&fixture.execute(&[]));
-    let actual = &result["capabilities"][0]["vectors"][0]["actual"];
-    assert_eq!(
-        actual["cause"], "corpus-decode",
-        "the invalid corpus path is checked before typed input construction: {result}"
-    );
-    assert_eq!(
-        actual["pointer"], "/byte_provision/0/bytes_path",
-        "{result}"
-    );
+    assert_eq!(actual["code"], "qualification_input", "{result}");
+    assert_eq!(actual["cause"], "corpus-decode", "{result}");
+    assert_eq!(actual["pointer"], "/byte_provision/0/authority", "{result}");
 }

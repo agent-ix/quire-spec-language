@@ -474,13 +474,6 @@ pub enum ReplayRequestRefusal {
         /// The structural input condition.
         cause: PackageMemberCause,
     },
-    /// The schema permits this omission, but a typed source provision needs
-    /// an explicit authority; none is inferred from its identity or byte path.
-    #[error("invalid_runtime_input/missing-member at {pointer}: a replay byte provision needs an authority")]
-    MissingProvisionAuthority {
-        /// The provision-path row that could not supply a typed source owner.
-        pointer: String,
-    },
     /// A profile selection names a semantic profile outside the closed
     /// known set: catalog `unknown_profile`/`unsupported-selection`. It
     /// retains the supplied selection and the role it was supplied for, as
@@ -674,7 +667,6 @@ impl ReplayRequestRefusal {
     pub fn code(&self) -> Code {
         match self {
             Self::PackageMember { .. } => Code::InvalidPackage,
-            Self::MissingProvisionAuthority { .. } => Code::InvalidRuntimeInput,
             Self::UnknownSemanticProfile { .. } => Code::UnknownProfile,
             Self::IncompleteByteProvision { .. } => Code::MissingImport,
             Self::EmptyDependencySelection { .. } | Self::EmptyBackendIdentity => {
@@ -698,7 +690,6 @@ impl ReplayRequestRefusal {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::PackageMember { cause, .. } => Some(cause.as_str()),
-            Self::MissingProvisionAuthority { .. } => Some("missing-member"),
             Self::MissingReplayTarget | Self::MissingOccurrenceKey => Some("missing-member"),
             Self::ConflictingReplayTarget { .. } => Some("invalid-value"),
             Self::UnexpectedArguments { .. }
@@ -714,9 +705,7 @@ impl ReplayRequestRefusal {
     /// other refusal.
     pub fn pointer(&self) -> Option<&str> {
         match self {
-            Self::PackageMember { pointer, .. } | Self::MissingProvisionAuthority { pointer } => {
-                Some(pointer)
-            }
+            Self::PackageMember { pointer, .. } => Some(pointer),
             Self::MissingReplayTarget => Some("/replay"),
             Self::MissingOccurrenceKey => Some("/replay/occurrence_key"),
             Self::ConflictingReplayTarget { members } => {
