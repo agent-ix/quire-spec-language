@@ -6288,6 +6288,9 @@ impl<'a> Lowering<'a> {
             | Value::Union(_) => return Err(fault(node.location(), KeyFault::UnbuiltLiteral)),
             Value::Uuid(value) => LiteralValue::Uuid(*value),
             Value::Timestamp(value) => LiteralValue::Timestamp(*value),
+            // A string written for a `Text` clause is a text literal of the
+            // bare `text` scalar (IR joins the two).
+            Value::String(value) if scalar == Some("text") => LiteralValue::Text(value.clone()),
             Value::String(value) => LiteralValue::String(value.clone()),
         };
         let semantic_type = match scalar {

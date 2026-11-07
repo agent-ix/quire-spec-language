@@ -15,6 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::Code;
+use quire_contract_model::CheckedExtensionDefinition;
 use serde_json::Value;
 
 use super::bundle::{Definition, DefinitionCatalog};
@@ -86,9 +87,17 @@ pub struct HeldExtension {
     /// The `keyword` of each node entry in `typed_node_schema` order; rule 1
     /// guarantees every entry has one.
     entry_keywords: Vec<String>,
+    /// The two FR-467 members, read strictly from the definition's bytes: the
+    /// evidence IR's reader joins an `extension` node against.
+    checked: CheckedExtensionDefinition,
 }
 
 impl HeldExtension {
+    /// The definition as IR's reader holds it.
+    pub fn checked_definition(&self) -> &CheckedExtensionDefinition {
+        &self.checked
+    }
+
     /// The definition's authority and identity.
     pub fn definition(&self) -> &DefinitionRef {
         &self.definition
@@ -199,6 +208,9 @@ pub enum MissingMember {
         /// The entry's keyword.
         keyword: String,
     },
+    /// A schema member that is not exactly the FR-467 shape: a member the
+    /// shape lacks or does not name.
+    SchemaShape(String),
 }
 
 /// What a FR-467 rule 2 collision is over.
@@ -362,10 +374,16 @@ impl DefinitionCatalog {
                     definition: definition.exact().clone(),
                     member,
                 })?;
+            let checked =
+                strict_definition(definition).map_err(|error| ExtensionRefusal::MissingMember {
+                    definition: definition.exact().clone(),
+                    member: MissingMember::SchemaShape(error.to_string()),
+                })?;
             held.push(HeldExtension {
                 definition: definition.exact().clone(),
                 productions,
                 entry_keywords,
+                checked,
             });
         }
         check_collisions(&held, core)?;
@@ -569,6 +587,19 @@ fn check_collisions(held: &[HeldExtension], core: &CoreVocabulary) -> Result<(),
         }
     }
     Ok(())
+}
+
+/// The two exact FR-467 members of `definition`'s bytes, deserialized with
+/// unknown members refused.
+fn strict_definition(
+    definition: &Definition,
+) -> Result<CheckedExtensionDefinition, serde_json::Error> {
+    let root = root(definition).unwrap_or(Value::Null);
+    let members = serde_json::json!({
+        "grammar_schema": root.get("grammar_schema"),
+        "typed_node_schema": root.get("typed_node_schema"),
+    });
+    serde_json::from_value(members)
 }
 
 fn root(definition: &Definition) -> Option<Value> {

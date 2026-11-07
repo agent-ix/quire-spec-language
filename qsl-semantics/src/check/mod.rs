@@ -837,6 +837,9 @@ pub struct CheckedGraph {
     /// FR-110 "Extension selection": the extension definitions the unit
     /// selects, ascending by `(authority, identity)`.
     extension_selections: Vec<qsl_foundation::selection::DefinitionRef>,
+    /// The selected extensions' definitions as IR's reader holds them, in
+    /// the order of `extension_selections`.
+    extension_definitions: Vec<quire_contract_model::CheckedExtensionDefinition>,
     /// FR-230: checked time sources, in source declaration order.
     time_sources: Vec<ModelTimeSource>,
     /// FR-230/FR-251: exact checked time-unit scales used for timed clauses.
@@ -1005,6 +1008,7 @@ impl DebugWith for CheckedGraph {
             model_roots,
             header_layers,
             extension_selections,
+            extension_definitions,
             time_sources,
             time_units,
             state_clauses,
@@ -1114,6 +1118,7 @@ impl DebugWith for CheckedGraph {
             .field("model_roots", &NodeList(model_roots.iter(), table))
             .field("header_layers", &header_layers)
             .field("extension_selections", &extension_selections)
+            .field("extension_definitions", &extension_definitions)
             .field("time_sources", &Seq(time_sources, table))
             .field("time_units", &With(time_units, table))
             .field("state_clauses", &Seq(state_clauses, table))
@@ -2638,13 +2643,19 @@ impl PackageDeclarations {
             .collect();
         let protocol_profile = self.protocol_profile;
         let header_layers = self.header_layers;
-        let mut extension_selections: Vec<_> = self
-            .held_extensions
+        let mut held_extensions: Vec<_> = self.held_extensions.iter().collect();
+        held_extensions.sort_by(|a, b| {
+            let (a, b) = (a.definition(), b.definition());
+            (a.authority(), a.identity()).cmp(&(b.authority(), b.identity()))
+        });
+        let extension_selections: Vec<_> = held_extensions
             .iter()
             .map(|held| held.definition().clone())
             .collect();
-        extension_selections
-            .sort_by(|a, b| (a.authority(), a.identity()).cmp(&(b.authority(), b.identity())));
+        let extension_definitions: Vec<_> = held_extensions
+            .iter()
+            .map(|held| held.checked_definition().clone())
+            .collect();
         let models = self.models;
         let operation_effects = checked_model_operation_effects(&models);
         let model_inputs = self.model_inputs;
@@ -7210,6 +7221,7 @@ impl PackageDeclarations {
             model_roots,
             header_layers,
             extension_selections,
+            extension_definitions,
             time_sources: self.time_sources,
             time_units: time_units.clone(),
             state_clauses,
@@ -8074,6 +8086,12 @@ impl CheckedGraph {
     /// `definition_selections` end with these rows.
     pub fn extension_selections(&self) -> &[qsl_foundation::selection::DefinitionRef] {
         &self.extension_selections
+    }
+
+    /// The selected extensions' definitions as IR's reader holds them, in
+    /// the order of [`Self::extension_selections`].
+    pub fn extension_definitions(&self) -> &[quire_contract_model::CheckedExtensionDefinition] {
+        &self.extension_definitions
     }
 
     /// FR-001: the canonical first `RawSourceRef` of the checked package,

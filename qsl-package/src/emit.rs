@@ -6450,7 +6450,8 @@ fn emit_package_inner(
         )
         .map_err(EmitRefusal::from)
     })?;
-    let evidence = own_evidence(&lock);
+    let mut evidence = own_evidence(&lock);
+    supply_extension_definitions(&mut evidence, graph, &order)?;
     Ok(Emission {
         package,
         omitted,
@@ -7769,6 +7770,40 @@ fn read_index_segments(
     for entry in source_map.iter_mut() {
         if holds_segment(&entry.node_id, is_index) {
             entry.node_id = structural(&entry.node_id)?;
+        }
+    }
+    Ok(())
+}
+
+/// FR-354 "Reading": each held extension definition that an `extension` node
+/// of the package names, under its `DefinitionRef`, with exactly its two
+/// FR-467 members. Reader input only; no package byte depends on it.
+fn supply_extension_definitions(
+    evidence: &mut CheckedPackageEvidence,
+    graph: &CheckedGraph,
+    order: &[&Candidate<'_>],
+) -> Result<(), EmitRefusal> {
+    for (selection, definition) in graph
+        .extension_selections()
+        .iter()
+        .zip(graph.extension_definitions())
+    {
+        let named = order.iter().any(|candidate| {
+            matches!(
+                candidate.node.body(),
+                BodyTerm::Extension(extension) if extension.definition() == selection
+            )
+        });
+        if named {
+            evidence
+                .insert_extension_definition(
+                    CheckedArtifactRef {
+                        authority: selection.authority().into(),
+                        identity: selection.identity().into(),
+                    },
+                    definition.clone(),
+                )
+                .map_err(encoding)?;
         }
     }
     Ok(())

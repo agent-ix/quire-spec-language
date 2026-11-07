@@ -677,7 +677,7 @@ fn refusal_cause_first(refusal: &CompileRefusal) -> &ExtensionCause {
 #[trace("TC-884", "FR-354-AC-3")]
 #[test]
 fn the_core_vocabulary_holds_every_keyword_s2_dispatches_on_and_every_node_tag() {
-    let vocabulary = core_vocabulary();
+    let vocabulary = core_vocabulary("1-draft");
     let keywords: Vec<_> = qsl_forms::leading_keywords().collect();
     assert!(!keywords.is_empty());
     for keyword in keywords {
@@ -700,4 +700,58 @@ fn an_extension_keyword_equal_to_a_core_leading_keyword_refuses_conflicting_defi
         .expect_err("`taskset` is a core leading keyword");
     assert_eq!(refusal.code(), Code::InvalidPackage);
     assert_eq!(refusal.cause(), Some("conflicting-definition"));
+}
+
+#[trace("TC-884", "FR-354-AC-5")]
+#[test]
+fn the_package_reads_back_under_the_emissions_evidence_and_not_without_the_definition() {
+    use quire_contract_model::{
+        read_checked_package, CheckedPackageDispatchResult, CheckedPackageEvidence,
+        CheckedPackageReadLimits,
+    };
+    let emitted = compile(&held("retention"), FORM).expect("the unit compiles");
+    let bytes = emitted.package().bytes();
+    let read = read_checked_package(
+        bytes,
+        CheckedPackageReadLimits::bounded(),
+        emitted.evidence(),
+    );
+    assert!(
+        matches!(read, CheckedPackageDispatchResult::AdmittedV2(_)),
+        "{read:?}"
+    );
+    // The same features, no `insert_extension_definition`.
+    let mut bare = CheckedPackageEvidence::new();
+    let wire = wire(&emitted);
+    for feature in wire["lock"]["required_features"].as_array().unwrap() {
+        bare.support_feature(feature.as_str().unwrap());
+    }
+    let refused = read_checked_package(bytes, CheckedPackageReadLimits::bounded(), &bare);
+    assert!(
+        !matches!(refused, CheckedPackageDispatchResult::AdmittedV2(_)),
+        "an extension node whose definition the reader does not hold is refused"
+    );
+    assert!(
+        format!("{refused:?}").contains("UnknownRequiredCapability"),
+        "{refused:?}"
+    );
+}
+
+#[trace("TC-882", "FR-354-AC-7")]
+#[test]
+fn rational_and_decimal_are_bare_clause_words() {
+    let clauses = [("q", "Rational"), ("d", "Decimal")];
+    let emitted = compile(
+        &scalar_extension(&clauses),
+        "retention F { q: rational(1, 2), d: decimal(15, 1) }",
+    )
+    .expect("IR's scalar words admit their values");
+    let wire = wire(&emitted);
+    assert_eq!(
+        extension_node(&wire)["body"]["clauses"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
 }

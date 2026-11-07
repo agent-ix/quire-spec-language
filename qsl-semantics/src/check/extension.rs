@@ -545,6 +545,26 @@ impl Builder<'_, '_, '_> {
         if let Some((value_type, scalar)) = scalar_word(type_ref) {
             return ClauseType::Value(value_type, scalar);
         }
+        // IR's reader matches `Rational` and `Decimal` as scalar words too;
+        // the core has no unbounded type of either, so the widest bounds
+        // stand for them and the subnode is typed at the bare scalar.
+        let wide = match type_ref {
+            "Rational" => Some((
+                "Rational[-1000000000000000000, 1000000000000000000; 1, 1000000000000000000]",
+                "rational",
+            )),
+            "Decimal" => Some(("Decimal[-1000000, 1000000; 0, 6; nearest-even]", "decimal")),
+            _ => None,
+        };
+        if let Some((spelling, scalar)) = wide {
+            let resolved = parse_type_text(spelling).ok().and_then(|form| {
+                resolve_type_form(&self.input.scope.in_source(None), &form, location).ok()
+            });
+            return match resolved {
+                Some(value_type) => ClauseType::Value(value_type, Some(scalar)),
+                None => ClauseType::Unsupported,
+            };
+        }
         let Ok(form) = parse_type_text(type_ref) else {
             return ClauseType::Unsupported;
         };

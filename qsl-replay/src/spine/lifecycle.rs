@@ -1289,7 +1289,7 @@ pub fn parse_with_extensions(
 /// (QSpec FR-467 rule 2): the core grammar's reserved spellings, the leading
 /// spellings S2 dispatches on and the checked package's core node kinds. Each
 /// comes from the list its stage reads, never a copy.
-pub fn core_vocabulary() -> CoreVocabulary {
+pub fn core_vocabulary(_edition: &str) -> CoreVocabulary {
     CoreVocabulary::new(
         qsl_cst::grammar::base_reserved_spellings()
             .into_iter()
@@ -1340,10 +1340,15 @@ pub fn parse_selecting_extensions(
                 }
             }
         }
-        // Step 2.
+        // Step 2, against the vocabulary of the edition the header declares.
+        let edition = std::str::from_utf8(request.bytes)
+            .ok()
+            .and_then(qsl_cst::declared_edition)
+            .map(|declared| declared.edition)
+            .unwrap_or_default();
         catalog
             .catalog
-            .hold_extensions(&selections, &core_vocabulary())
+            .hold_extensions(&selections, &core_vocabulary(&edition))
             .map_err(|refusal| Box::new(CompileRefusal::Extension(refusal)))
     })?;
     parse_with_extensions(request, &held.into_value(), limits, cancel)
