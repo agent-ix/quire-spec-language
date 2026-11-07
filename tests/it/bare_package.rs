@@ -1755,8 +1755,8 @@ fn the_view_the_constructors_and_the_writer_refuse_a_budget_one_short() {
 }
 
 /// FR-531-AC-24 (writer half, TC-1331): a handoff request whose native join
-/// limits cannot pay for the identity join is refused with the typed denial
-/// and writes no directory; the fixture limits write it.
+/// limits cannot pay for the complete identity materialization pass is refused
+/// with the typed denial and writes no directory; exact limits write it.
 #[trace("TC-1331", "FR-531-AC-24")]
 #[test]
 fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join() {
@@ -1791,8 +1791,26 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
                 let Error::NativeJoinExhausted(denial) = error else {
                     unreachable!()
                 };
-                assert!(
-                    matches!(&denial.native, qsl_package::NativeJoinFailure::Projection(native) if native.code == code)
+                let qsl_package::NativeJoinFailure::Rows(native) = &denial.native else {
+                    panic!(
+                        "the final producer copy retains its compact cause: {:?}",
+                        denial.native
+                    )
+                };
+                assert_eq!(
+                    native.code(),
+                    if code == Code::ExhaustedWork {
+                        qsl_package::NativeRowErrorCode::WorkLimit
+                    } else {
+                        qsl_package::NativeRowErrorCode::StorageLimit
+                    }
+                );
+                assert_eq!(
+                    native.locus(),
+                    Some(quire_contract_model::NativeJoinLocus {
+                        source: quire_contract_model::NativeJoinLocusSource::Package,
+                        form: "identity_package_output",
+                    })
                 );
                 assert_eq!(
                     denial.limit.setting().name(),
@@ -1808,6 +1826,7 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
                     limits.storage
                 };
                 assert_eq!(denial.limit.configured_bound(), bound);
+                assert_eq!(native.configured_bound(), Some(bound));
                 assert!(denial.limit.actual() > u128::from(bound));
                 assert!(denial.to_string().contains(denial.limit.setting().name()));
             }
