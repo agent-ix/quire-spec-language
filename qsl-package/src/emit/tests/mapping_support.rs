@@ -96,7 +96,10 @@ fn unsupported(dimensions: &[Unmatched]) -> Support {
     "FR-527-AC-4",
     "FR-527-AC-6",
     "FR-527-AC-7",
-    "TC-1322"
+    "TC-1322",
+    "FR-045-AC-1",
+    "FR-045-AC-2",
+    "FR-045-AC-4"
 )]
 #[test]
 fn each_row_of_the_support_table_returns_its_disposition() {
@@ -204,7 +207,7 @@ const PAST_OPERATORS: [&str; 4] = [
 /// `triggered` alone, under each false-extension profile and each closure,
 /// is `Supported` with `mltl.origin-complete-history/v1`; `once[1,1]`, strong
 /// previous, is among them.
-#[trace("FR-527-AC-3", "TC-1322")]
+#[trace("FR-527-AC-3", "TC-1322", "FR-045-AC-2")]
 #[test]
 fn each_past_operator_alone_maps_to_the_origin_complete_history_target() {
     let strong_previous = "once[1,1] holds(c.versionNumber = 1)";
@@ -240,7 +243,7 @@ fn wrapped(formula: &str) -> [String; 4] {
 /// `eventually[0,2] holds(q)` as future-only and a formula holding both as
 /// mixed-direction, and `not`, `and`, `or` and `implies` change none of the
 /// three.
-#[trace("FR-527-AC-5", "TC-1322")]
+#[trace("FR-527-AC-5", "TC-1322", "FR-045-AC-1")]
 #[test]
 fn the_connectives_carry_no_direction() {
     let past = format!("once[0,1] {P}");
@@ -278,7 +281,7 @@ fn the_connectives_carry_no_direction() {
 /// FR-527-AC-8 (TC-1322 row 8): an unsupported result holds the clause's
 /// `CheckedNodeId`, profile selection and activation equal to the values read
 /// from the view, and classification leaves the package unchanged.
-#[trace("FR-527-AC-8", "TC-1322")]
+#[trace("FR-527-AC-8", "TC-1322", "FR-045-AC-3")]
 #[test]
 fn an_unsupported_result_retains_the_native_subject() {
     let compiled = compile(&unit_each());
@@ -318,7 +321,7 @@ fn unit_each() -> String {
 /// FR-527-AC-9 (TC-1322 row 9): a supported result names the exact TL target
 /// and the eight outstanding premises of FR-045, and holds nothing that
 /// claims a correspondence record.
-#[trace("FR-527-AC-9", "TC-1322")]
+#[trace("FR-527-AC-9", "TC-1322", "FR-045-AC-5")]
 #[test]
 fn a_supported_result_names_its_target_and_the_eight_premises() {
     let identities = [
@@ -355,7 +358,7 @@ fn a_supported_result_names_its_target_and_the_eight_premises() {
 
 /// FR-527-AC-10 (TC-1322 row 10): the same formula bytes under different
 /// profiles receive different classifications.
-#[trace("FR-527-AC-10", "TC-1322")]
+#[trace("FR-527-AC-10", "TC-1322", "FR-045-AC-5")]
 #[test]
 fn equal_formula_bytes_under_different_profiles_classify_differently() {
     let body = "always[0,5] holds(c.versionNumber = 1)";
@@ -450,7 +453,7 @@ fn lock_row(package: &CheckedPackageV2, profile: &str) -> quire_contract_model::
 /// package identity, the clause and the definition identity and artifact equal
 /// to the values read from the lock row, supported or not. The selection has
 /// no clock parameter map.
-#[trace("TC-1322", "FR-527-AC-13")]
+#[trace("TC-1322", "FR-527-AC-13", "FR-045-AC-6")]
 #[test]
 fn every_result_retains_the_selection_of_the_lock_row() {
     let cases = [
@@ -821,4 +824,50 @@ fn a_result_retains_the_name_the_view_reads() {
     let classified = mapping_support(&view, Closure::Complete).expect("classifies");
     assert_eq!(classified.retained.name, None);
     assert_eq!(classified.retained.name.as_deref(), view.name());
+}
+
+/// FR-045-AC-6 (refusal half), FR-527-AC-17: a clause id the package does not
+/// hold, and the id of every node that is not a temporal clause, is refused
+/// `UnresolvedClause` by the view, so no classification exists for it. The
+/// absent id is a clause of another package; the non-clause ids are every
+/// other node of the package, which include its declarations and formula
+/// nodes.
+#[trace("TC-1322", "FR-527-AC-17", "FR-045-AC-6")]
+#[test]
+fn an_id_the_package_does_not_hold_or_that_is_no_clause_is_refused() {
+    use quire_contract_model::{CheckedNodeKind, TemporalForm};
+    let package = package_of(INFINITE, FUTURE);
+    let [held] = clauses(&package)[..]
+        .to_vec()
+        .try_into()
+        .expect("one clause");
+    assert!(temporal_subject(&package, &held).is_ok());
+
+    // An id the package does not hold: the held clause's id with another package and `u64::MAX`.
+    let mut foreign = held.clone();
+    foreign.package = "foreign".into();
+    foreign.ordinal = u64::MAX;
+    assert!(!package
+        .graph()
+        .nodes
+        .iter()
+        .any(|node| node.node_id == foreign));
+    assert_eq!(
+        temporal_subject(&package, &foreign).err(),
+        Some(ViewRefusal::UnresolvedClause)
+    );
+
+    let mut refused = 0;
+    for (node, kind) in package.graph().nodes.iter().zip(package.node_kinds()) {
+        if *kind == CheckedNodeKind::Temporal(TemporalForm::TemporalClause) {
+            continue;
+        }
+        assert_eq!(
+            temporal_subject(&package, &node.node_id).err(),
+            Some(ViewRefusal::UnresolvedClause),
+            "{kind:?}"
+        );
+        refused += 1;
+    }
+    assert!(refused > 1);
 }

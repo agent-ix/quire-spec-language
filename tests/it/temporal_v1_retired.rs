@@ -7,9 +7,9 @@
 //! This guards reintroduction. It does not check the per-row COVERED status
 //! FR-499-AC-1 asks of a deleting change; that is the deletion table's.
 //!
-//! The kept FR-521 row-5 surface (`Closure`, `Completeness`, `Execution`,
-//! `Evidence`, `Position`, `OrderKey`, `Classification`, `mapping_support_v2`,
-//! `evaluate_v2`, `Trace`, `Report`) is not named by the scan. Each retired
+//! The mapping classification (`Classification`, `mapping_support_v2`) is
+//! retired with `src/temporal/mapping.rs`; the native `Report` route
+//! (`evaluate_v2`, `Trace`, `Position`, ...) is not named by the scan. Each retired
 //! name is built from two separately-quoted halves so this file's own source
 //! needs no exemption from its own scan.
 //!
@@ -60,6 +60,11 @@ fn module_members() -> Vec<String> {
         ["LimitDimen", "sion"],
         ["Checked", "Classification"],
         ["ProtocolEval", "uation"],
+        ["mapping_support_", "v2"],
+        ["Classif", "ication"],
+        ["Profi", "le"],
+        ["Dimen", "sion"],
+        ["Sub", "ject"],
     ]
     .into_iter()
     .map(|halves| halves.concat())
@@ -67,8 +72,9 @@ fn module_members() -> Vec<String> {
 }
 
 /// The retired files of `src/temporal`.
-fn banned_files() -> [&'static str; 5] {
+fn banned_files() -> [&'static str; 6] {
     [
+        "src/temporal/mapping.rs",
         "src/temporal/activation.rs",
         "src/temporal/budget.rs",
         "src/temporal/formula.rs",

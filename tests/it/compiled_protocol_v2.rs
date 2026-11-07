@@ -12,7 +12,6 @@ use quire_spec_language::protocol_artifact::{
     self as artifact, native, v2, v3, wire as w, Dimension as WorkDimension, Error, Invalid,
     Limits, Unsupported,
 };
-use quire_spec_language::temporal;
 use setup::{Inputs, TemporalDefinitionExpectation, TemporalExpectation, Unit};
 
 const DECLARATIONS: [(&str, R); 3] = [
@@ -954,11 +953,6 @@ fn native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter() {
         // them; the reader retains the identity it independently admitted.
         assert!(emitted.admitted().artifact().is_none());
         assert!(admitted.artifact().is_some());
-
-        for name in ["ByEvent", "BySample", "ByTimestamp"] {
-            let at = declaration(admitted, name);
-            assert!(temporal::mapping_support_v2(admitted, at, temporal::Closure::Open).is_ok());
-        }
 
         let v1_before = native::admit(proofs, selected, Limits::default())
             .into_result()
