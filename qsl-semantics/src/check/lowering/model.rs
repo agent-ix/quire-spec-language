@@ -2615,10 +2615,7 @@ impl<'a> Lowering<'a> {
             // A type of the package names a unit the compiling unit declares,
             // or else a unit the package's own document declares
             // (FR-505-AC-7, AC-9).
-            let mut units = declared.clone();
-            for (name, id) in crate::check::check::model_unit_ids(model) {
-                units.entry(name).or_insert(id);
-            }
+            let units = crate::check::check::package_unit_ids(declared, model);
             let location =
                 type_declaration(model.alias.as_deref().unwrap_or(&model.selection.identity));
             for (key, record) in &model.records {

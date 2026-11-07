@@ -3733,12 +3733,12 @@ impl PackageDeclarations {
             // A type of the package names a unit the compiling unit declares,
             // or else a unit the package's own document declares
             // (FR-505-AC-7, AC-9).
-            let mut package_units = model_units.clone();
-            if let Some(admitted_model) = admitted.last() {
-                for (name, id) in super::check::model_unit_ids(admitted_model) {
-                    package_units.entry(name).or_insert(id);
+            let package_units = match admitted.last() {
+                Some(admitted_model) => {
+                    super::check::package_unit_ids(&model_units, admitted_model)
                 }
-            }
+                None => model_units.clone(),
+            };
             match model_object_types(
                 &selection.alias,
                 model,

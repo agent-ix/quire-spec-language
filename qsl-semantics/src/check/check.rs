@@ -1200,6 +1200,20 @@ pub(crate) fn model_unit_ids(
         .collect()
 }
 
+/// The units a type of `model` resolves its `unit` against: `declared`, the
+/// compiling unit's own units, then the units the package's document declares
+/// for the names the compiling unit leaves free (FR-505-AC-7, AC-9).
+pub(crate) fn package_unit_ids(
+    declared: &BTreeMap<String, quire_exact::UnitId>,
+    model: &crate::check::AdmittedModel,
+) -> BTreeMap<String, quire_exact::UnitId> {
+    let mut units = declared.clone();
+    for (name, id) in model_unit_ids(model) {
+        units.entry(name).or_insert(id);
+    }
+    units
+}
+
 /// The units `graph` declares by their declared name (QSpec FR-142
 /// "Quantity type reference": the unit namespace `Quantity<u>` looks up).
 pub(crate) fn declared_unit_ids(

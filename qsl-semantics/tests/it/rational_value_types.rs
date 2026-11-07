@@ -444,32 +444,21 @@ fn with_length_units(document: &[u8]) -> Vec<u8> {
 
 /// FR-505-AC-9 (TC-1300 row 19): over a unit-bearing `Ratio` whose unit `m` is
 /// declared in the type's own model document, which also declares an object
-/// type `Config` with a member `m` (the compiling unit's alias for the model is
-/// also `Config`), two fields `a` and `b` of `Ratio`: the invariants
+/// type, two fields `a` and `b` of `Ratio`: the invariants
 /// `self.a = self.b`, `self.a < self.b` and `self.a + self.b = self.a` each
 /// refuse `ill_typed`/`type-mismatch`, while
 /// `convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b)` and the same
-/// with `<` check. `m` is the document's unit; the `Config::m` spelling names
-/// the same unit through the model alias.
+/// with `<` check. `m` is the document's unit.
 #[trace("FR-505-AC-9", "TC-1300")]
 #[test]
 fn unit_bearing_rational_members_compare_only_through_convert() {
     let ratio = identity("Ratio");
-    let config = wire_type(
-        &identity("Config"),
-        "object_type",
-        json!({"supertypes": [], "operations": [],
-            "fields": [wire_field(&identity("Config/m"), "m", &ratio, "optional", 0)]}),
-    );
     let document = with_length_units(&document(
-        vec![
-            rational_type(
-                "Ratio",
-                ratio_constraints(&ratio),
-                Some("ix://quire/unit/m"),
-            ),
-            config,
-        ],
+        vec![rational_type(
+            "Ratio",
+            ratio_constraints(&ratio),
+            Some("ix://quire/unit/m"),
+        )],
         Vec::new(),
         &[("a", &ratio), ("b", &ratio)],
     ));
@@ -489,11 +478,67 @@ fn unit_bearing_rational_members_compare_only_through_convert() {
     for clause in [
         "convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b)",
         "convert<Quantity<m>>(self.a) < convert<Quantity<m>>(self.b)",
-        "convert<Quantity<Config::m>>(self.a) = convert<Quantity<Config::m>>(self.b)",
-        "convert<Quantity<m>>(self.a) = 1 Config::m",
+        "convert<Quantity<m>>(self.a) = 1 m",
+        "convert<Quantity<cm>>(self.a) = 100 cm",
     ] {
         let body =
             format!("invariant I using v on Config::ConfigVersion at current {{ {clause} }}\n");
         assert_eq!(assemble(&document, &body).map(|_| ()), Ok(()), "{clause}");
     }
+}
+
+/// FR-505-AC-9 (TC-1300 row 19), wrong-unit controls: the converted sides must
+/// agree on the unit, so a different unit, a different dimension or a bare
+/// carried member refuses `ill_typed`/`type-mismatch`.
+#[trace("TC-1300")]
+#[test]
+fn unit_bearing_rational_comparisons_refuse_a_wrong_unit() {
+    let ratio = identity("Ratio");
+    let document = with_length_units(&document(
+        vec![rational_type(
+            "Ratio",
+            ratio_constraints(&ratio),
+            Some("ix://quire/unit/m"),
+        )],
+        Vec::new(),
+        &[("a", &ratio), ("b", &ratio)],
+    ));
+    for clause in [
+        "convert<Quantity<m>>(self.a) = convert<Quantity<cm>>(self.b)",
+        "convert<Quantity<m>>(self.a) = 1 cm",
+        "convert<Quantity<m>>(self.a) = self.b",
+    ] {
+        let body =
+            format!("invariant I using v on Config::ConfigVersion at current {{ {clause} }}\n");
+        assert_eq!(
+            assemble(&document, &body).map(|_| ()),
+            Err(vec![(Code::IllTyped, Some("type-mismatch".to_owned()))]),
+            "{clause}"
+        );
+    }
+}
+
+/// A source unit `m` declared beside the model document's `m` is not an
+/// ambiguity: the compiling unit's own declaration takes the bare name and the
+/// same clause checks with and without it (the order is observable at lowering,
+/// see `model_type_unit_roots`; the checker does not dimension-check
+/// `convert`, so no clause here separates the two units).
+#[trace("TC-1300")]
+#[test]
+fn a_source_unit_named_like_the_document_unit_is_not_ambiguous() {
+    let ratio = identity("Ratio");
+    let document = with_length_units(&document(
+        vec![rational_type(
+            "Ratio",
+            ratio_constraints(&ratio),
+            Some("ix://quire/unit/m"),
+        )],
+        Vec::new(),
+        &[("a", &ratio), ("b", &ratio)],
+    ));
+    let clause = "invariant I using v on Config::ConfigVersion at current { \
+        convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b) }\n";
+    assert_eq!(assemble(&document, clause).map(|_| ()), Ok(()));
+    let shadowed = format!("dimension Time;\nunit m : Time = rational(1, 1);\n{clause}");
+    assert_eq!(assemble(&document, &shadowed).map(|_| ()), Ok(()));
 }

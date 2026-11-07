@@ -1522,23 +1522,28 @@ fn admit_native(
         }
         (NativeKind::Rational, quire_exact::ValueType::Rational(domain)) => {
             let value = rational_payload(native)?;
-            if domain.contains(&value) {
-                Ok(Value::Rational(value))
-            } else {
-                // FR-106-AC-56: the declared type and the normalized pair.
-                Err(admission_record(Code::InvalidRuntimeInput, "invalid-value")
-                    .with(
-                        "expected",
-                        format!(
-                            "Rational[{}, {}; {}, {}]",
-                            domain.numerator().lower(),
-                            domain.numerator().upper(),
-                            domain.denominator().lower(),
-                            domain.denominator().upper()
-                        ),
-                    )
-                    .with("actual", value.to_string()))
+            rational_in_domain(domain, value).map(Value::Rational)
+        }
+        // FR-505-AC-5, the unit sentence: a Quantity of the carried unit whose
+        // magnitude is a Rational admits as that quantity when the normalized
+        // magnitude is within the carrier's bounds.
+        (NativeKind::Quantity, quire_exact::ValueType::CarriedQuantity(carried)) => {
+            let quire_exact::QuantityCarrier::Rational(domain) = carried.carrier() else {
+                return Err(wrong("magnitude"));
+            };
+            if unit_name(types, carried.unit().clone()).as_deref()
+                != Some(payload_text(native, "unit"))
+            {
+                return Err(wrong("unit"));
             }
+            let magnitude = native
+                .object("magnitude")
+                .ok_or_else(|| wrong("magnitude"))?;
+            let magnitude = rational_in_domain(domain, quantity_magnitude(magnitude)?)?;
+            Ok(Value::Quantity(quire_exact::Quantity::new(
+                magnitude,
+                carried.unit().clone(),
+            )))
         }
         (NativeKind::Quantity, quire_exact::ValueType::Quantity(unit)) => {
             if unit_name(types, unit.clone()).as_deref() != Some(payload_text(native, "unit")) {
@@ -2009,6 +2014,29 @@ fn admit_value<'a: 'w, 'w>(
     }
     done.pop()
         .ok_or_else(|| admission_record(Code::InvalidRuntimeInput, "wrong-value-kind"))
+}
+
+/// `value` when `domain` contains it, else the FR-106-AC-56 refusal naming the
+/// declared type and the normalized pair.
+fn rational_in_domain(
+    domain: &quire_exact::RationalDomain,
+    value: quire_exact::Rational,
+) -> Result<quire_exact::Rational, AdmissionRecord> {
+    if domain.contains(&value) {
+        return Ok(value);
+    }
+    Err(admission_record(Code::InvalidRuntimeInput, "invalid-value")
+        .with(
+            "expected",
+            format!(
+                "Rational[{}, {}; {}, {}]",
+                domain.numerator().lower(),
+                domain.numerator().upper(),
+                domain.denominator().lower(),
+                domain.denominator().upper()
+            ),
+        )
+        .with("actual", value.to_string()))
 }
 
 /// The name of the first element type inside `value_type` (through `Option`
