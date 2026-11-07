@@ -165,7 +165,7 @@ for negotiation whether the claim is bounded.
 
 ## Dependencies
 
-- The finite-window interval rule removes the current acceptance of a closed integral timed interval as a tick interval (`checked_interval` in `src/temporal.rs`, `temporal_interval` in `qsl-semantics`, the `qsl-eval` timed arm); the code change that deletes that path is its own code ticket, to be filed after the spec ticket QSL-1611.
+- The finite-window interval rule is owned by the S3 check, which refuses a timed interval in a finite-window clause (FR-326-AC-6); lowering keeps an invariant guard that faults, rather than writes a rational, if a timed interval ever reaches a finite-window clause.
 - ADR-014 §2 (absent temporal interval), §3 TR-3 and TR-4, §4 (extent rule),
   §5 A-2 and A-3, as amended by ADR-018 IV-1.
 - [FR-110](FR-110-resolve-header-profile-selections-at-e3.md) (profile
