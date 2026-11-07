@@ -1134,3 +1134,29 @@ fn model_step_order_retains_digital_operation_and_period_and_distinguishes_sourc
         }
     }
 }
+
+/// Renaming a checked source alias preserves the selected model-step value;
+/// source-content authentication remains the separate progress association.
+#[trace("TC-1081", "FR-251-AC-48")]
+#[test]
+fn source_aliases_are_not_model_step_order_authority() {
+    let unit = authored(ROOT_SHAPES[0]);
+    let renamed = unit
+        .replace("model M =", "model Renamed =")
+        .replace("time M ", "time Renamed ")
+        .replace("M::", "Renamed::");
+    let first = root_of(&unit, "C", &target()).unwrap();
+    let second = root_of(&renamed, "C", &target()).unwrap();
+    assert_ne!(
+        first.checked_unit().source().text(),
+        second.checked_unit().source().text()
+    );
+    assert_eq!(
+        first
+            .model_step_order(quire_canonical::Limits::new(1 << 20))
+            .unwrap(),
+        second
+            .model_step_order(quire_canonical::Limits::new(1 << 20))
+            .unwrap()
+    );
+}
