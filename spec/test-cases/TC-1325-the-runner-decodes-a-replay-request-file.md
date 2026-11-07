@@ -22,8 +22,8 @@ Verify FR-350-AC-11 to FR-350-AC-14 and FR-350-AC-16 to FR-350-AC-18 (AC-15 is r
 | 2 | 12 | a `sources` entry of the package and of a dependency | two members as written; no revision label; `bytes_path` bytes read raw |
 | 3 | 13 | `object_environment` `{identity: {authority, identity}}`; the same with another member | the closed identity; the second is a `tool-failure` |
 | 4 | 14 | an unknown member; a `sources` entry without `identity`; a wrong JSON kind | each `tool-failure` holding cause `corpus-decode` and the JSON pointer of the defect (Settlement) |
-| 5 | 16 | a file whose `package` is the checked-package document `orders` (`contract_version` `quire.checked-package/v2`, `lock.sources` `("repo","orders.qsl")`) and whose `dependencies` holds `lib/money` with source `("repo","money.qsl")`; the same without `package`; with `package` the string `"orders"`; with `contract_version` `quire.checked-package/v1`; with a `checked_package` member added to the dependency entry | the request with package name `orders`, the source and the dependency entry, no version member; the others `tool-failure`, `corpus-decode`, at `/package`, `/package`, `/package/contract_version` and `/dependencies/0` |
-| 6 | 17 | `bytes_path` `missing.bin`, `unlisted.bin`, `/etc/hostname`, `../x.bin`; a listed path | each of the four a `tool-failure`, `corpus-decode`, `/byte_provision/0/bytes_path`, no request; the listed path read as raw bytes |
+| 5 | 16 | a file whose `package` is the checked-package document `orders` (`contract_version` `quire.checked-package/v2`, `lock.sources` `("repo","orders.qsl")`) and whose `dependencies` holds `lib/money` with source `("repo","money.qsl")`; the same without `package`; with `package` the string `"orders"`; with `contract_version` `quire.checked-package/v1`; with a `checked_package` member added to the dependency entry | the request retaining the complete raw package (including its own `contract_version`, semantic graph and lock), package name `orders`, the source and the dependency entry, with no added top-level version member; the others `tool-failure`, `corpus-decode`, at `/package`, `/package`, `/package/contract_version` and `/dependencies/0` |
+| 6 | 17 | explicit provision `authority` and `bytes_path` `missing.bin`, `unlisted.bin`, `/etc/hostname`, `../x.bin`; a listed path | each of the four a `tool-failure`, `corpus-decode`, `/byte_provision/0/bytes_path`, no request; the listed path read as raw bytes |
 | 7 | 18 | `stage_limits` with `depth`; with `s1.input_bytes` `"1024"` | a `tool-failure`, `corpus-decode`, `/stage_limits/depth`; the entry `("s1.input_bytes", 1024)` |
 
 Additional native result controls run the same public function replay with an
@@ -37,9 +37,21 @@ replay checks the positive settlement, explicit null record, exact verdict
 disagreement and the source region of an undefined remainder operation. Function calls
 cannot produce a nonempty separating record under ADR-031 SW-7. Removing a
 result member or changing its expected native facts makes the controls fail.
-A nonempty refinement input that
-FR-071 cannot represent stays unsupported even when its expected result is
-copied from that unsupported report.
+The complete package is admitted by the native checked-package owner after
+actual source and dependency compilation and before evaluation. A malformed
+native graph retains the original typed native cause and `/package`-prefixed
+pointer. Interior whitespace is retained byte for byte and reaches the native
+noncanonical-wire refusal without repair. A finite caller I2 input limit
+produces the native incomplete result. The full package survives request and
+receipt round trips. Changed supplied source bytes still evaluate the freshly
+compiled meaning: these controls do not restore the retired source-staleness
+check or require offered and recompiled package bytes to be equal.
+
+An omitted provision `authority` is a schema `corpus-decode` refusal at
+`/byte_provision/0/authority`; no authority is inferred. Optional root and
+dependency refinement-internals inputs reach their actual semantic owner.
+A nonexistent supplied refinement produces the owner's missing-declaration,
+missing-name refusal, rather than an adapter-unsupported result.
 
 The typed traversal control retains present, absent and null record slots,
 all four native collection kinds and their element order. It checks that a
