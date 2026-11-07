@@ -32,7 +32,9 @@ fn matrix(root: &Path) -> BTreeMap<String, (String, String)> {
         .args(["matrix", "--format", "tsv", "--scope"])
         .arg(root)
         .output()
-        .expect("native quire is required on PATH");
+        .unwrap_or_else(|error| {
+            panic!("FR-513-AC-15 needs the installed `quire` CLI on PATH (0.38 or later): {error}")
+        });
     assert!(
         output.status.success(),
         "quire matrix failed: {}",

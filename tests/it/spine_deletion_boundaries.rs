@@ -182,6 +182,19 @@ fn no_root_source_names_the_deleted_protocol_reader_or_protocol_definition() {
     ];
     let forbidden: Vec<&str> = forbidden.iter().map(String::as_str).collect();
     assert_absent(&workspace.join("src"), &forbidden);
+    for entry in std::fs::read_dir(workspace).expect("read the workspace") {
+        let path = entry.expect("directory entry").path();
+        let is_layer = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("qsl-"));
+        if is_layer && path.join("src").is_dir() {
+            assert_absent(
+                &path.join("src"),
+                &["quire_spec_language::protocol_artifact"],
+            );
+        }
+    }
     assert!(
         quire_spec_language::linking::definition_source::RegisteredDefinition::all()
             .iter()

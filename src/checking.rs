@@ -3,4 +3,4 @@
 
 mod types;
 
-pub use types::{DomainField, DomainType, NativeType};
+pub use types::{DomainType, NativeType};
