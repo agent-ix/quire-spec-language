@@ -32,5 +32,5 @@ extern crate self as quire_spec_language;
 pub mod native_rule_model_test_support;
 
 pub use linking::{link, link_native, LinkLimits, LinkedPackage};
-pub use parser::{parse, parse_native, parse_native_source, parse_source};
+pub use parser::{parse, parse_source};
 pub use syntax::{Limits, ParsedUnit};
