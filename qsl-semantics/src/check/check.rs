@@ -2226,6 +2226,14 @@ impl NamedScope {
         }
     }
 
+    /// This scope narrowed to the populations of the model alias `alias`:
+    /// a population of another alias is then missing at its second segment.
+    pub(crate) fn of_alias(mut self, alias: &str) -> Self {
+        self.populations
+            .retain(|population| alias_of(&population.name) == Some(alias));
+        self
+    }
+
     /// The population `name` spells, when it spells one.
     pub(crate) fn named(&self, name: &str) -> Option<&NamedPopulation> {
         self.populations

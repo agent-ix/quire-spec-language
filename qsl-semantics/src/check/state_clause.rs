@@ -898,6 +898,18 @@ pub(crate) fn check_clause(
     check_clause_in(form, input, cx, None)
 }
 
+/// [`check_clause`] in a population position (FR-391) that names exactly
+/// the populations of `named`: a timed model's predicate names its own
+/// model's population (FR-230-AC-58).
+pub(crate) fn check_clause_named(
+    form: &ClauseView<'_>,
+    input: &ClauseDeclarations<'_>,
+    cx: &mut CheckContext<'_, Scope>,
+    named: super::check::NamedScope,
+) -> Result<TypedStateClause, CheckRefusal> {
+    check_clause_in(form, input, cx, Some(named))
+}
+
 /// [`check_clause`] in a population position (FR-391) when `named` is
 /// given: the body may name the populations of `named`, each a domain of
 /// the clause's record.
