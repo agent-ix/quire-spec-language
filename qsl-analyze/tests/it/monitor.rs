@@ -6,7 +6,7 @@
 use ix_trace_rs::trace;
 use qsl_analyze::monitor::{
     monitor, MonitorClause, MonitorLimits, MonitorOutcome, MonitorRefusal, MonitorRequest,
-    MonitorVerdict, TRACE_FORMAT,
+    MonitorTrace, MonitorVerdict, TRACE_FORMAT,
 };
 use qsl_foundation::diagnostic::StageFailure;
 use qsl_package::CheckedPackage;
@@ -111,20 +111,23 @@ impl World {
                 .iter()
                 .map(|name| MonitorClause {
                     name: (*name).to_owned(),
-                    over: OverObject {
+                    over: Some(OverObject {
                         population: "ix://test/counter/counters".to_owned(),
                         key: key.to_owned(),
-                    },
+                    }),
                 })
                 .collect(),
-            trace,
+            trace: MonitorTrace::Document(trace),
             snapshots: &self.documents.snapshots,
             packages: &self.documents.packages,
+            sources: &[],
+            temporal_selections: &[],
         };
         let limits = MonitorLimits {
             observation: ObservationLimits::default(),
             normalization: ModelNormalizationLimits::default(),
             accounting,
+            max_window_values: qsl_eval::temporal::DEFAULT_MAX_WINDOW_VALUES,
         };
         monitor(&self.package, &request, &limits, cancel).map(|staged| staged.into_value())
     }
@@ -429,13 +432,16 @@ fn a_defective_trace_document_is_refused_at_its_first_defect() {
         observation: ObservationLimits::default(),
         normalization: ModelNormalizationLimits::default(),
         accounting: UNLIMITED,
+        max_window_values: qsl_eval::temporal::DEFAULT_MAX_WINDOW_VALUES,
     };
     limits.observation.document_bytes = u64::try_from(bytes.len()).expect("small") - 1;
     let request = MonitorRequest {
         clauses: vec![],
-        trace: &bytes,
+        trace: MonitorTrace::Document(&bytes),
         snapshots: &world.documents.snapshots,
         packages: &world.documents.packages,
+        sources: &[],
+        temporal_selections: &[],
     };
     let Err(StageFailure::Refused(MonitorRefusal::TraceDocument { record, .. })) =
         monitor(&world.package, &request, &limits, &Cancel::new())
