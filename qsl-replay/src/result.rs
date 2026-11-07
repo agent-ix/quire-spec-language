@@ -430,6 +430,12 @@ impl PartialEq for TemporalDecisive {
 impl Eq for TemporalDecisive {}
 
 impl TemporalDecisive {
+    /// This decisive information read at trace position `position`.
+    pub(crate) fn at_position(mut self, position: u64) -> Self {
+        self.position = Some(position);
+        self
+    }
+
     /// The decisive information of a quantifier's stop.
     pub(crate) fn from_stop(report: &StopReport) -> Self {
         Self {

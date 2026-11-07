@@ -6,12 +6,12 @@
 //! FR-329).
 
 use std::collections::BTreeMap;
-use std::ops::ControlFlow;
 
 use qsl_eval::temporal::{
-    evaluate_observed, FirstUndefined, HoldsStop, PositionRefusal, ProgressedRefusal,
-    TemporalOutcome, TemporalPosition, TemporalRefusal, TemporalTrace, TimestampedTrace,
-    UndefinedCause, UndefinedEvaluation, WindowRefusal,
+    evaluate_observed_decisive, DecisiveAtom, DecisiveSearch, DecisiveStop, FirstUndefined,
+    HoldsStop, PositionRefusal, ProgressedRefusal, TemporalOutcome, TemporalPosition,
+    TemporalRefusal, TemporalTrace, TimestampedTrace, UndefinedCause, UndefinedEvaluation,
+    WindowRefusal,
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::Source;
@@ -873,6 +873,39 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         );
         let (disposition, counterexample) =
             with_counterexample(node, trace, window.disposition, window.undefined);
+        // FR-504: a progressed trace's violation reads its decisive atom
+        // through the finite-trace evaluator, over the supplied trace.
+        let seeking = matches!(
+            disposition,
+            ClauseDisposition::Temporal(TemporalVerdict::Violated { .. })
+        )
+        .then(|| {
+            evaluate_observed_decisive(
+                run.package,
+                node,
+                &environments,
+                shape,
+                reference,
+                silent_from,
+                &mut meter,
+            )
+            .decisive
+        })
+        .flatten();
+        let (disposition, counterexample, decisive) = with_decisive(
+            &DecisiveRun {
+                run,
+                node,
+                trace,
+                environments: &environments,
+                over: reference,
+                silent_from,
+            },
+            seeking,
+            disposition,
+            counterexample,
+            &mut meter,
+        );
         let accepted = !matches!(
             disposition.category(),
             quire_semantic_value::catalog::Category::Refusal
@@ -880,8 +913,6 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         );
         let mut usage = ClauseRunUsage::from_meter(&meter, admitted);
         usage.temporal_visits = window.visits;
-        let decisive =
-            decisive_information(run, node, trace, &environments, reference, &disposition);
         let mut finished = report(disposition, usage, authenticated_temporal_selection.clone());
         finished.finite_window = window.report;
         finished.refused_at = window.refused_at;
@@ -913,24 +944,24 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         );
         let mut usage = ClauseRunUsage::from_meter(&meter, admitted);
         usage.temporal_visits = window.visits;
-        let decisive =
-            decisive_information(run, node, trace, &environments, reference, &disposition);
+        // FR-330: a `Timestamped` run carries no `decisive`; FR-501's
+        // decision support is its record.
         let mut finished = report(disposition, usage, authenticated_temporal_selection.clone());
         finished.finite_window = window.report;
         finished.refused_at = window.refused_at;
         finished.counterexample = counterexample;
-        finished.decisive = decisive;
         if accepted {
             finished.ledger = accepted_ledger.or_else(|| ledger.cloned());
         }
         return finished;
     }
-    let observed = evaluate_observed(
+    let observed = evaluate_observed_decisive(
         run.package,
         node,
         &environments,
         shape,
         reference,
+        None,
         &mut meter,
     );
     let (disposition, refused_at) = observed_disposition(
@@ -941,12 +972,25 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
     );
     let (disposition, counterexample) =
         with_counterexample(node, trace, disposition, observed.undefined);
+    let (disposition, counterexample, decisive) = with_decisive(
+        &DecisiveRun {
+            run,
+            node,
+            trace,
+            environments: &environments,
+            over: reference,
+            silent_from: None,
+        },
+        observed.decisive,
+        disposition,
+        counterexample,
+        &mut meter,
+    );
     let accepted = !matches!(
         disposition.category(),
         quire_semantic_value::catalog::Category::Refusal
             | quire_semantic_value::catalog::Category::InternalFailure
     );
-    let decisive = decisive_information(run, node, trace, &environments, reference, &disposition);
     let mut report = report(
         disposition,
         ClauseRunUsage::from_meter(&meter, admitted),
@@ -1231,77 +1275,147 @@ impl WindowRun {
     }
 }
 
-/// FR-330 Outputs, FR-283 `decisive`: the decisive information of a
-/// temporal violation. The deciding atom is the first `holds` atom, in
-/// clause-node order, that evaluates false at the failing position over the
-/// observation there; FR-107's evaluator, its witness channel kept, gives
-/// the quantifier that decided it, its element, index and value path, or,
-/// when no quantifier decides it, the atom's value `false` at the empty path
-/// at the observation's root. `None` for every other disposition, when no
-/// atom evaluates false at a position with an observation (a silent sample
-/// has none), and when the evaluation of an atom fails before one is found
-/// false or the deciding atom's record cannot be built: the search never
-/// passes a failure to report a later atom that did not decide. The atoms
-/// share one meter of their own, so the search does one run budget of work
-/// and the run's usage is the evaluator's alone.
-fn decisive_information(
-    run: &CompiledRun<'_>,
-    node: &qsl_semantics::check::TemporalClauseNode,
-    trace: &TraceInput,
-    environments: &[ObjectEnvironment],
-    over: &quire_exact::ObjectReference,
-    disposition: &ClauseDisposition,
-) -> Option<crate::TemporalDecisive> {
+/// What the decisive record of a violation is read from.
+struct DecisiveRun<'a> {
+    run: &'a CompiledRun<'a>,
+    node: &'a qsl_semantics::check::TemporalClauseNode,
+    trace: &'a TraceInput,
+    environments: &'a [ObjectEnvironment],
+    over: &'a quire_exact::ObjectReference,
+    /// The first silent sample of a progressed trace: it has no observation.
+    silent_from: Option<u64>,
+}
+
+/// FR-330 Outputs, FR-283 `decisive`: the report of a temporal violation with
+/// its decisive information. `search` is the evaluator's descent to the
+/// decisive atom (FR-330 "The decisive atom"), found on the run's own
+/// evaluator and meter; `None` for a run that did not seek one.
+///
+/// FR-107's evaluator, its witness channel kept, evaluates the atom over the
+/// observation at `decisive.position` on the run's meter and gives the
+/// quantifier that decided it, its element, index and value path, or, when no
+/// quantifier decides it, the atom's value `false` at the empty path at the
+/// observation's root. No decisive record when the clause has no decisive
+/// atom. A descent or an atom evaluation that stops is not passed over: the
+/// run reports the stop as its own disposition.
+fn with_decisive(
+    source: &DecisiveRun<'_>,
+    search: Option<DecisiveSearch>,
+    disposition: ClauseDisposition,
+    counterexample: Option<crate::ObservedTemporalCounterexample>,
+    meter: &mut Meter,
+) -> (
+    ClauseDisposition,
+    Option<crate::ObservedTemporalCounterexample>,
+    Option<crate::TemporalDecisive>,
+) {
+    let stopped = |disposition| (disposition, None, None);
+    let atom = match search {
+        None | Some(Ok(None)) => return (disposition, counterexample, None),
+        Some(Ok(Some(atom))) => atom,
+        Some(Err(DecisiveStop::Incomplete(incomplete))) => {
+            return stopped(ClauseDisposition::Temporal(TemporalVerdict::Incomplete(
+                incomplete,
+            )))
+        }
+        Some(Err(DecisiveStop::Fault(fault))) => {
+            return stopped(ClauseDisposition::EvaluateFault(fault))
+        }
+    };
+    match decisive_record(source, atom, meter) {
+        Ok(decisive) => (disposition, counterexample, decisive),
+        Err(failure) => stopped(*failure),
+    }
+}
+
+/// The decisive record of `atom`, read over the observation at its position.
+fn decisive_record(
+    source: &DecisiveRun<'_>,
+    atom: DecisiveAtom,
+    meter: &mut Meter,
+) -> Result<Option<crate::TemporalDecisive>, Box<ClauseDisposition>> {
     use qsl_eval::value::CheckedPackageEvaluation as _;
     use quire_eval::FamilyOutcome;
     use quire_exact::{Outcome, Value};
-    let ClauseDisposition::Temporal(TemporalVerdict::Violated { at }) = disposition else {
-        return None;
+    let DecisiveRun {
+        run,
+        node,
+        trace,
+        environments,
+        over,
+        silent_from,
+    } = *source;
+    let fault = |invariant: &'static str| {
+        Box::new(ClauseDisposition::EvaluateFault(
+            quire_semantic_value::catalog::InternalFault::new("temporal", invariant),
+        ))
     };
-    let slot = observation_slot(trace, usize::try_from(*at).ok()?)?;
-    let document = trace.documents().nth(slot)?;
-    let objects = environments.get(slot)?;
-    let observation = qsl_eval::value::ObservationIdentity {
-        authority: document.authority.clone(),
-        identity: document.identity.clone(),
-    };
-    let formula = node.clause().formula();
-    let atoms = formula
-        .nodes()
-        .iter()
-        .enumerate()
-        .filter(|(_, formula)| matches!(formula, FormulaNode::Holds { .. }))
-        .filter_map(|(index, _)| formula.node_id(index));
-    let mut meter = Meter::new(run.accounting);
-    first_false_atom(atoms, |atom| {
-        let Ok(evaluation) = run.package.evaluate_holds_traced(
+    let position = atom.position.index();
+    // A silent sample and an aggregate atom have no `holds` observation.
+    if silent_from.is_some_and(|first| position >= first)
+        || !matches!(
+            node.clause().formula().nodes().get(atom.atom.index()),
+            Some(FormulaNode::Holds { .. })
+        )
+    {
+        return Ok(None);
+    }
+    let slot = usize::try_from(position)
+        .ok()
+        .and_then(|at| observation_slot(trace, at))
+        .ok_or_else(|| fault("decisive-position-has-an-observation"))?;
+    let document = trace
+        .documents()
+        .nth(slot)
+        .ok_or_else(|| fault("decisive-position-has-a-document"))?;
+    let objects = environments
+        .get(slot)
+        .ok_or_else(|| fault("decisive-position-has-an-environment"))?;
+    let evaluation = run
+        .package
+        .evaluate_holds_traced(
             node,
-            atom,
+            atom.atom,
             over,
             objects,
-            observation.clone(),
-            &mut meter,
-        ) else {
-            return ControlFlow::Break(None);
-        };
-        if !matches!(
-            evaluation.evaluation.outcome,
-            FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false)))
-        ) {
-            return ControlFlow::Continue(());
+            qsl_eval::value::ObservationIdentity {
+                authority: document.authority.clone(),
+                identity: document.identity.clone(),
+            },
+            meter,
+        )
+        .map_err(|failure| {
+            Box::new(match *convert_call_failure(failure) {
+                RunRefusal::Fault(internal) => ClauseDisposition::EvaluateFault(internal),
+                other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
+            })
+        })?;
+    match &evaluation.evaluation.outcome {
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false))) => {}
+        FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)) => {
+            return Err(Box::new(ClauseDisposition::Temporal(
+                TemporalVerdict::Incomplete(incomplete.clone()),
+            )))
         }
-        let decided = node
-            .condition(atom)
-            .and_then(|(condition, _)| crate::witness::decisive_stop(condition, &evaluation).ok());
-        ControlFlow::Break(match decided {
-            Some(Some(report)) => Some(crate::TemporalDecisive::from_stop(report)),
-            Some(None) => evaluation
+        FamilyOutcome::Evaluated(_) | FamilyOutcome::FamilyEvaluated(_) => {
+            return Err(fault("decisive-atom-reads-false-again"))
+        }
+    }
+    let (condition, _) = node
+        .condition(atom.atom)
+        .ok_or_else(|| fault("decisive-atom-has-a-condition"))?;
+    let stop = crate::witness::decisive_stop(condition, &evaluation)
+        .map_err(|internal| Box::new(ClauseDisposition::EvaluateFault(internal)))?;
+    let decisive = match stop {
+        Some(report) => crate::TemporalDecisive::from_stop(report),
+        None => crate::TemporalDecisive::undecided(
+            evaluation
                 .receiver_path()
                 .cloned()
-                .map(crate::TemporalDecisive::undecided),
-            None => None,
-        })
-    })
+                .ok_or_else(|| fault("decisive-atom-has-a-root-path"))?,
+        ),
+    };
+    Ok(Some(decisive.at_position(position)))
 }
 
 /// The trace slot holding the observation at position `at`: a lasso's
@@ -1317,16 +1431,6 @@ pub(super) fn observation_slot(trace: &TraceInput, at: usize) -> Option<usize> {
         | TraceInput::Progressed { .. }
         | TraceInput::Timestamped { .. } => Some(at),
     }
-}
-
-/// The record of the first atom `read` stops at, in `atoms` order. `read`
-/// continues past an atom that is not false and stops at the first that is
-/// false or whose evaluation fails, with that atom's record or `None`.
-pub(super) fn first_false_atom<A, T>(
-    atoms: impl IntoIterator<Item = A>,
-    read: impl FnMut(A) -> ControlFlow<Option<T>>,
-) -> Option<T> {
-    atoms.into_iter().try_for_each(read).break_value().flatten()
 }
 
 /// `disposition` with its FR-330 counterexample. A violation or an
