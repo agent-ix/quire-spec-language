@@ -2086,7 +2086,17 @@ impl<'a> Typer<'a> {
                     ));
                 }
                 let source = typed.value_type.clone();
+                // A carried quantity is the quantity of its unit with a
+                // restricted carrier (FR-497), so the exact conversion the
+                // equality admits starts from that quantity.
+                let compared_source = match &source {
+                    ValueType::CarriedQuantity(carried) => {
+                        ValueType::Quantity(carried.unit().clone())
+                    }
+                    other => other.clone(),
+                };
                 let operand = EqualityOperand::converted(source.clone(), target.clone());
+                let compared = EqualityOperand::converted(compared_source, target.clone());
                 // A conversion that changes the type is its own typed node,
                 // so FR-093 lowers it as a `numeric.convert` operand and
                 // the equality compares at the converted type.
@@ -2110,8 +2120,8 @@ impl<'a> Typer<'a> {
                 Ok((
                     TypedOperand {
                         node,
-                        authored: operand.clone(),
-                        checked: operand,
+                        authored: compared.clone(),
+                        checked: compared,
                         stored,
                         source_type: source,
                         conversion_target: Some(target.clone()),

@@ -1189,7 +1189,9 @@ pub(super) fn assemble(
 ) -> Result<Assembled, Refused> {
     let owners = sources.owners;
     let source_order = sources.order;
-    if dimensions.is_empty() && units.is_empty() {
+    // A unit that declares nothing still holds the units its selected
+    // packages declare, which a type of the package names (FR-505-AC-7).
+    if dimensions.is_empty() && units.is_empty() && imported.units.is_empty() {
         return Ok(Assembled {
             graph: UnitGraph::default(),
             spans: BTreeMap::new(),

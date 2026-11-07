@@ -1169,13 +1169,17 @@ impl FormedUnits {
 }
 
 /// The units `graph` declares by their declared name, read from `declared`,
-/// the table built over the same graph.
+/// the table built over the same graph, leaving out the units of a selected
+/// package (`packages`), which a bare name reaches only when exactly one
+/// package declares it ([`ModelSpellings::declared_unit`]).
 fn unit_ids_by_name(
     graph: &quire_semantic_value::unit::UnitGraph,
     declared: &quire_semantic_value::quantity::UnitTable,
+    packages: &[quire_exact::UnitId],
 ) -> BTreeMap<String, quire_exact::UnitId> {
     graph
         .units()
+        .filter(|unit| !packages.contains(&unit.id()))
         .filter_map(|unit| {
             let name = declared
                 .nominal_node(&unit.key())
@@ -1188,14 +1192,47 @@ fn unit_ids_by_name(
         .collect()
 }
 
+/// The units a domain package declares in its own document, by their authored
+/// name: the unit table a type of that package resolves its `unit` against
+/// (FR-505-AC-7, AC-9), whether or not the compiling unit declares a unit of
+/// the same name (the compiling unit's own unit of that name takes the name).
+pub(crate) fn model_unit_ids(
+    model: &crate::check::AdmittedModel,
+) -> BTreeMap<String, quire_exact::UnitId> {
+    model
+        .units
+        .iter()
+        .filter_map(|unit| {
+            let key = crate::check::assemble::package_unit_key(model, unit)?;
+            Some((unit.name.clone(), quire_exact::UnitId::declared(key)))
+        })
+        .collect()
+}
+
+/// The units a type of `model` resolves its `unit` against: `declared`, the
+/// compiling unit's own units, then the units the package's document declares
+/// for the names the compiling unit leaves free (FR-505-AC-7, AC-9).
+pub(crate) fn package_unit_ids(
+    declared: &BTreeMap<String, quire_exact::UnitId>,
+    model: &crate::check::AdmittedModel,
+) -> BTreeMap<String, quire_exact::UnitId> {
+    let mut units = declared.clone();
+    for (name, id) in model_unit_ids(model) {
+        units.entry(name).or_insert(id);
+    }
+    units
+}
+
 /// The units `graph` declares by their declared name (QSpec FR-142
 /// "Quantity type reference": the unit namespace `Quantity<u>` looks up).
 pub(crate) fn declared_unit_ids(
     graph: &quire_semantic_value::unit::UnitGraph,
+    packages: &[quire_exact::UnitId],
 ) -> BTreeMap<String, quire_exact::UnitId> {
     unit_ids_by_name(
         graph,
         &quire_semantic_value::quantity::UnitTable::declared(graph),
+        packages,
     )
 }
 
@@ -1575,7 +1612,10 @@ impl Scope {
             return self;
         }
         let declared = quire_semantic_value::quantity::UnitTable::declared(graph);
-        self.index.units.extend(unit_ids_by_name(graph, &declared));
+        let packages = self.model_spellings.package_unit_ids();
+        self.index
+            .units
+            .extend(unit_ids_by_name(graph, &declared, &packages));
         let mut units = self.types.units().clone();
         units.append(declared);
         self.types = std::mem::take(&mut self.types).with_units(units);
@@ -1592,7 +1632,12 @@ impl Scope {
     ) -> Option<quire_exact::UnitId> {
         match self.model_spellings.spelled(source, name) {
             Spelled::Model(_) => self.model_spellings.unit(source, name),
-            Spelled::Other => self.index.units.get(name).cloned(),
+            Spelled::Other => self
+                .index
+                .units
+                .get(name)
+                .cloned()
+                .or_else(|| self.model_spellings.declared_unit(source, name)),
         }
     }
 
