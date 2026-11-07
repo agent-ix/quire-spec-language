@@ -169,8 +169,16 @@ pub struct NativeJoinLimits {
 }
 
 impl NativeJoinLimits {
+    /// The original configured ceilings of the caller's budget, including
+    /// charges admitted before the current join.
+    #[must_use]
+    pub fn from_budget(budget: &quire_contract_model::NativeJoinBudget) -> Self {
+        Self::new(budget.work_limit(), budget.storage_limit())
+    }
+
     /// Map an exhausted native join using this pass's original ceilings and
-    /// the budget's first unpaid charge.
+    /// the budget's first unpaid charge. A bound retained by the owner refusal
+    /// remains authoritative.
     /// Returns `None` for a non-budget error or a budget without a recorded
     /// unpaid charge. `native` and `budget` must come from the same pass.
     pub fn refusal(
@@ -186,6 +194,10 @@ impl NativeJoinLimits {
             quire_contract_model::NativeJoinChargeKind::Storage => {
                 (self.storage, budget.consumed().storage)
             }
+        };
+        let bound = match native.native() {
+            crate::NativeJoinFailure::Projection(error) => error.configured_bound.unwrap_or(bound),
+            crate::NativeJoinFailure::Equality(_) | crate::NativeJoinFailure::Limit(_) => bound,
         };
         let actual = u128::from(consumed).saturating_add(unpaid.amount);
         Some(crate::NativeJoinLimitError {

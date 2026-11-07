@@ -21,6 +21,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-252
     type: depends_on
+  - target: ix://agent-ix/quire-observation/FR-004
+    type: depends_on
 ---
 # FR-251: Derive a tick-based monitor plan for an embedded target
 
@@ -164,10 +166,15 @@ not final writer-renamed identities or admitted order/progress authority.
 ### Admitted order and progress association
 
 The request SHALL receive a genuine independently admitted observation-owner
-association as an explicit input. Checked model-step facts may establish the
-model-time order; they SHALL NOT establish a static progress context in place
-of that observation authority. The observation owner's original values and
-bytes SHALL be retained without substituting a compiler-generated assertion.
+progress association as an explicit input under the observation owner's
+[authority-value contract](ix://agent-ix/quire-observation/FR-004). Checked
+model-step facts may establish the model-time order; they SHALL NOT establish
+a static progress context in place of that observation authority. The
+observation owner's canonical association VALUE and the capability that
+admitted it SHALL be retained without substituting a compiler-generated assertion. QSL SHALL consume the supplying owner's bounded canonical-value
+interface; the complete progress authority document bytes SHALL NOT serve as
+the association value. A lowerable canonical-value ceiling SHALL preserve
+the owner's typed resource refusal without a partial association.
 
 The canonical model-step order value SHALL be RFC 8785 JSON with exactly
 `kind: "model-step"`, `model`, `unit`, `dimension` and `source`. The model,
@@ -184,10 +191,10 @@ SHALL obey the caller's finite canonical byte ceiling and preserve the native
 encoder refusal without a partial value. These original structural components
 are not final writer addresses and do not replace the final-emission join.
 
-The public plan-root handoff SHALL expose independently admitted event-order
-and progress-association authority retained from the same final emission as
-its plan and timing obligations. The handoff SHALL preserve the original
-canonical admitted values and the owner-established association with the
+The public plan-root handoff SHALL expose QSL-admitted model-step order and
+independently admitted progress-association authority bound to the same final
+emission as its plan and timing obligations. The handoff SHALL preserve the
+original canonical admitted values and the owner-established association with the
 selected package, clause, subject and claim occurrence. It SHALL use the
 owning admission interface; neither the monitor scope type nor its watermark
 entry establishes that authority.
@@ -197,17 +204,32 @@ clock identity and revision, observation source, model, time unit, source kind,
 and digital operation and exact period against the independently selected
 observation inputs and original checked model-time source. These component
 comparisons SHALL NOT establish joint authority without comparing the complete
-structural node identities and the actual clause claim occurrence. Matching a
-model alias, clause name or clock label alone SHALL NOT establish that identity.
+structural model, unit, dimension and digital operation node identities and
+the actual clause claim occurrence. The clause comparison SHALL retain the
+original structural clause node, claim role and ordinal, and original source
+reference under the owning occurrence contract. QSL SHALL compare the complete
+owner-encoded structural components; a digest, alias, clause name, clock label
+or equal numeric position SHALL NOT replace any component. This requirement
+specifies the compared owner values, not a new carrier or an alternative
+claim-string encoding.
+
+Before issuing the admitted context, QSL SHALL join the original clause node
+and claim ordinal through that same final emission's retained temporal binding
+rows. The selected declaration SHALL equal the plan root's clause binding and
+the strict reader's selected clause declaration. A foreign emission or a
+binding row from a second emission SHALL NOT satisfy this association.
 
 The handoff SHALL return a typed refusal without a partial admitted context
-when either authority is absent or its owner rejects the association. A
-foreign emission, changed selection, changed source, substituted order or
+when the checked order premise or progress association is absent, when its
+owner rejects it, or when an independent source, subject, clock, model, time or
+claim comparison fails. A foreign emission, changed selection, changed source,
+substituted order or
 substituted progress association SHALL NOT acquire authority by matching a
 clause name, type, structural label or numeric index. The handoff SHALL NOT
-manufacture a canonical value, infer authority from clock configuration,
-serialize a semantic identity as an admitted value, reconstruct the association
-from a second emission or duplicate the owner admission rules.
+fabricate an admitted value or infer authority from clock configuration. A
+bare semantic identity SHALL NOT substitute for a complete admitted value.
+QSL SHALL NOT reconstruct the association from a second emission or duplicate
+the owner admission rules.
 
 The handoff SHALL retain the owner capabilities required to use both values
 after temporary compilation inputs are dropped. A clone or writer rename
@@ -593,8 +615,8 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-42 | The `Emission` returned with a plan-root package holds, non-empty wherever the acquisition had rows, the selected model declaration rows, selected model field rows, source-unit rows, model enum and source enum declaration and member rows, source union rows, source record rows, tuple declaration rows, operation-member rows, equality producer rows, equality fact rows, temporal binding rows and omitted nodes of that acquisition. Every node id in each of them (anchor, structural node, record node, declaration node, union payload node, record member type node, checked node, source-map entry node, fact nodes, omitted node and the node an omission cause names, temporal binding declaration) equals the plan-root package's id for the node, so a node the writer renames is named by its renamed id in every row and a row naming no renamed node is unchanged; no row is written anew. The selected model declaration and field rows equal the unit's acquisition rows, and IR's selected exact identity join accepts them against the package read back. | Test (TC-1081) |
 | FR-251-AC-43 | For a plan root written over a unit with two temporal clauses, each subject's clause node and claim ordinal select, through the returned `Emission`'s temporal binding rows, the declaration the plan root's `clause` binding names and the declaration of the package's `temporal_clause_names` row of that ordinal, read back through the strict reader; the selection is re-keyed with the retained rows through every rename the writer performs or may perform, so a carry that renames a clause declaration returns the renamed id and not the base package's id; a subject whose clause node or claim ordinal the package does not hold selects nothing, and a subject's selection never returns the other clause's declaration. | Test (TC-1081) |
 | FR-251-AC-44 | After the plan-root writer renames the fields `origin_tick` and `amount` of the generated `Instance`, `Activation` and `LimitReached` records to `origin` and `value`, each retained source record row of those records has `admitted_name` `origin` or `value` at the renamed members and the other members' binding names unchanged, keeps the declared field names `origin_tick` and `amount`, and Contract IR's source record join over the rows and the package read back through the strict reader succeeds and projects each record; the same rows with a renamed member's `admitted_name` set to the declared field name are refused with `MismatchedIdentityWitness`. | Test (TC-1081) |
-| FR-251-AC-45 | From a genuine authored tick-monitor unit, the public plan-root handoff returns the original owner-admitted order and progress-association values for the same final emission as its plan and two timing obligations. A public consumer compares both complete values and the owner-established package/clause/subject/claim association, then uses them after temporary compilation inputs are dropped. Clone and rename controls follow the owner contract and preserve all previously retained rows. | Test |
-| FR-251-AC-46 | Independently omit each required authority, substitute a foreign admitted emission, change the selected clause or claim occurrence, change the source, substitute order and substitute progress association. Each invalid association returns its typed refusal and no partial admitted context; matching labels, equal numeric indices, clock configuration or a second emission cannot turn it into success. | Test |
+| FR-251-AC-45 | From a genuine authored tick-monitor unit, the public plan-root handoff returns the complete QSL-admitted model-step order and the observation owner's original canonical association VALUE, bound to the same final emission as its plan and two timing obligations. A public consumer compares the complete values and original source, structural clause node, claim role and ordinal, selected subject and checked model-time facts; the final emission temporal binding join equals its plan-root clause and the strict reader declaration. Both values and owner capabilities remain usable after temporary compilation inputs are dropped; clones and writer renames retain the owner-permitted association and all previously retained rows. | Test |
+| FR-251-AC-46 | Independently omit the checked order premise and progress association; substitute a foreign admitted emission; change the structural clause node, claim role, claim ordinal or original source; change the selected subject, observation source, clock identity/revision, model, structural model/unit/dimension/digital-operation node, unit, source kind, digital operation or exact period; and substitute order or progress values. Each candidate returns its typed missing-premise, owner refusal or mismatched-selection condition and no partial admitted context. Exact owner canonical-association byte bounds succeed; one byte less returns the original owner resource refusal. A name, digest, clock configuration, equal numeric index, full authority document or a second emission cannot turn refusal into admission. | Test |
 | FR-251-AC-47 | After original source, model and request inputs are dropped, a public consumer reads the actual combined checked unit retained by the plan root: its exact source includes the authored unit and generated entries, its selected clause equals the plan subject, and its checked time source retains the selected model node, source kind and unit. These are explicitly original checker facts, not final renamed identities or admitted order/progress. | Test |
 | FR-251-AC-48 | A genuine dense model-time monitor root yields the complete specified canonical model-step value, with the actual checked model/unit/dimension identities. A digital source retains its exact period and checked tick-operation anchor. Changed source kind, unit or period changes the value. Exact-byte-ceiling encoding succeeds and one byte less returns Encoding with the original native canonical limit and no partial order value. | Test |
 

@@ -23,6 +23,12 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-533
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-251
+    type: references
+  - target: ix://agent-ix/quire-contract-ir/FR-357
+    type: references
+  - target: ix://agent-ix/quire-contract-ir/FR-358
+    type: depends_on
   - target: ix://agent-ix/quire-protocol/FR-045
     type: references
   - target: ix://agent-ix/quire-protocol/FR-046
@@ -739,11 +745,105 @@ follows.
   `PackageMismatch::Exhausted`, and from the handoff writer
   `Error::NativeJoinExhausted`. `qsl-eval`'s `CallFailure` has no arm for it:
   the denial happens at the pass entry, before any call that returns one.
-  A view or writer that owns the original ceilings retains the native error
-  together with a `NativeJoinLimitError`: its `limit` is the diagnostic
+  Every entry, including `with_supply`, `from_read` and `from_emission`
+  with an opaque caller budget, retains the native error together with a
+  `NativeJoinLimitError`: its `limit` is the diagnostic
   `LimitExceeded` with the original configured bound and the cumulative
   attempted count (consumed plus the first unpaid charge), and its catalog
-  fields include the setting. The native error retains its structural locus.
+  fields include the setting. Original ceilings come from IR's owner budget
+  getters and configured-bound refusal field, including after prior successful
+  joins; remaining allowance is never substituted for the original bound.
+  The native error retains its structural locus.
+
+### Selected-monitor row materialization
+
+When materializing selected-monitor rows from an `Emission`,
+`identity_rows`, `equality_witness` and `selected_source_enum_rows` SHALL take the pass's
+caller-owned `NativeJoinBudget` by mutable reference. Their shared row-building
+helpers SHALL use that same allowance on source-view admission and handoff
+writing paths.
+
+Each adapter SHALL charge its inspections and every owned allocation through
+Contract IR's public accounted-charge API before the corresponding inspection
+or allocation. The charged material includes vector and temporary-container
+storage, copied node and occurrence identities, paths, source-map entries,
+owner/type/unit payloads, enum declarations, canonical case rows and source-unit
+rows. A borrowed row accessor incurs no owned-storage charge.
+
+The `identity_rows` adapter SHALL charge its QSL-owned materialization in
+addition to the native identity join. This material includes converted source
+record and member rows, copies of joined declarations and fields, and copied
+source union rows. A successful native join SHALL NOT count as payment for
+those later QSL allocations. A denied materialization SHALL return no partial
+`ReadIdentityRows` and SHALL retain the native charges already admitted.
+
+Footprint inspection SHALL use borrowed owner data without allocating. When
+inspection itself requires an allocation, that allocation SHALL be charged
+before inspection proceeds. A fresh or lazily represented numeric payload
+SHALL NOT be materialized merely to calculate an uncharged footprint. Charges
+SHALL cover every owned numeric representation that is actually copied,
+including heap-backed values at the signed 128-bit boundary.
+
+These QSL materialization charges count one logical container and one unit per
+initialized entry, plus each copied text or numeric payload byte and its owned
+buffer. A shared Exact handle contributes its containing entry rather than a
+deep copy of the shared payload. The charge does not depend on host pointer
+width, allocator capacity or artifact JSON byte length.
+
+QSL's conversion of its model-enum shapes and collection rows to Contract IR's
+selected-monitor row types SHALL use the same budget for all copied containers
+and payloads. An admitted conversion SHALL preserve complete original node,
+declaration and member identities, canonical variant order and Exact value
+types. A collection that the target row contract cannot represent SHALL return
+a typed unsupported refusal without omitting its key or inventing a different
+collection kind.
+Collection conversion SHALL inspect only the retained row the caller selected;
+an unsupported map elsewhere in the emission SHALL NOT refuse conversion or
+native projection of a selected representable collection.
+
+A denied adapter charge SHALL return a fixed-size typed refusal without
+allocating the denied material or an owned diagnostic. The refusal SHALL retain
+the owner's first unpaid resource, amount, original configured bound and locus,
+together with the admitted budget prefix. Per-row copying SHALL identify the
+actual retained row or caller-supplied selection locus; a package-wide container
+allocation MAY use the package locus. No partial witness or converted row
+population is authoritative after a refusal.
+
+The adapters SHALL continue the pass through the owner's accounted-charge and
+resume surface without reconstructing, resetting or enlarging the allowance.
+Materialization charges are separate from the subsequent native validation and
+join charges: both operations spend the same budget once for the work and owned
+storage each actually performs.
+
+An explicit caller resume MAY start a new phase without restoring spent
+allowance. An adapter SHALL NOT implicitly resume over an existing first
+denial. After a denied charge, another attempted charge or adapter call in that
+phase SHALL retain that first resource, amount and locus and SHALL perform no
+further inspection or allocation.
+
+### Same-emission tick-monitor context
+
+When preparing a selected tick-monitor plan, QSL SHALL keep the [FR-251](./FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md) plan,
+obligations, admitted order and progress association bound to the same final
+emission and its original selected package/model identities. The order and
+progress authority remain FR-251's admitted values; selected-row adapters
+SHALL NOT recreate them from names, source spans, bytes, guessed node indices
+or tracking values.
+
+The public selected-monitor preparation entry SHALL return a typed refusal
+when required order or progress authority is absent or belongs to another
+emission. It SHALL NOT produce an executable context with an empty or invented
+authority value. Retained context accessors MAY borrow the already admitted
+values without owned-storage charges; any owned copy SHALL use the same
+caller budget as row materialization and native closure validation.
+
+QSL SHALL pass the complete converted rows to the actual Contract IR native
+join and selected type-closure projection before treating them as admitted
+monitor inputs. Materialization alone SHALL NOT confer native identity or
+execution authority. Successful composition SHALL retain the original plan,
+obligation, node, declaration and member identities and the native projected
+Exact types. A typed unsupported row SHALL remain unsupported at its requested
+locus rather than becoming a partial or differently typed witness.
 
 ### Charges
 
@@ -791,10 +891,14 @@ outcome map. Each carries a "Consumer entry" section that points here.
 | FR-531-AC-23 | Two joins on one budget are charged cumulatively: after a successful `with_supply` the budget's consumed counters equal the join's measured work and storage, a second `with_supply` on the same budget is refused at the first charge that crosses the remaining allowance, and a selection, a world and a projection call made on the first package consume no further native work or storage. | Test (TC-1331) |
 | FR-531-AC-24 | `V2ReadLimits` has a required `storage` member and no `Default`; a read's evaluation view over limits whose `storage` is exactly the measured join storage succeeds and over one unit less returns `ViewFailure::Exhausted` with `ExhaustedStorage`, whose refusal names `i2.native_join_storage`; `EvidencePackage::from_read` and `from_emission` over a budget one unit short of the source join return `PackageMismatch::Exhausted`; the handoff writer over `native_join` one unit short returns `Error::NativeJoinExhausted` and writes no directory. | Test (TC-1331) |
 | FR-531-AC-25 | An inspection of the public signatures of `selected_exact_identities_from_rows`, `SelectedModels::exact_identities`, `CheckedGraph::selected_exact_identities`, `ReadIdentityRows::selected`, `BarePackage::with_supply` and the evidence constructors finds each takes a `NativeJoinBudget` by mutable reference, finds no `NativeJoinBudget::new` and no `u64::MAX` allowance in a library path below an entry, and finds that `BarePackage` implements neither `Copy` nor `Clone`. | Inspection (TC-1331) |
-
 | FR-531-AC-26 | An authentic final emission's source-union rows round-trip original type handles, settled keys, sealed member identities, final structural and payload node IDs and ordered Exact payload types; the read rows equal the emitter rows, native `source_union_rows` retains them and rewriting is byte-identical. | Test (TC-1331) |
 | FR-531-AC-27 | `/2`, absent `source_unions`, malformed member identity, stale member name, foreign source owner and conflicting union rows return typed format, malformed or native-join refusals without a partial read. An empty union list never fabricates a producer witness from the graph. | Test (TC-1331) |
 | FR-531-AC-28 | Producer and bytes-only equality admission pass the caller's same `NativeJoinBudget` through IR's admitted equality reader after identity/type projection. Decisions and non-resource witness refusals are retained for later unmetered selection and projection. Successful reads consume native work and storage cumulatively; exact measured bounds admit, and one unit less in either resource refuses with the original typed IR equality denial and recorded first unpaid charge, never an unknown witness or internal fault. Reusing an admitted slot consumes no additional native allowance. | Test (TC-1331) |
+| FR-531-AC-29 | Materializing an authentic emission's equality witness with a shared native budget preserves every application, fact and source-unit row, including original identities and order. The source admission and handoff paths use the same budgeted row builder. Exact measured work and storage allowances return the complete witness; one unit less in either resource refuses without allocating the denied material or a diagnostic, retains the first unpaid resource, amount and original locus, and returns no partial witness. Two individually affordable materializations that exceed one shared allowance refuse at the second call's first unpaid step without resetting prior consumption. | Test |
+| FR-531-AC-30 | Source-enum materialization and QSL-to-IR model-enum-shape and selected-collection conversion preserve original structural/declaration/member identities, canonical case order and complete Exact types on one shared native budget. Exact measured bounds admit; work or storage one short and zero storage return allocation-free compact denials at the first unpaid locus with prior consumption intact. A later conversion cannot reset a preceding adapter's charges or replace its first denial. A selected source map whose key has no representation in the target IR row returns a typed unsupported result instead of dropping the key or converting it to a sequence; an unrelated retained map leaves conversion and native projection of a selected representable collection unchanged. Borrowing already retained rows incurs no owned-storage charge. | Test |
+| FR-531-AC-31 | An authentic emission with source records, record members and unions produces complete identity rows equal to the original producer claims after native joining and QSL materialization. The measured work and storage include both the native join and each later QSL declaration, field, record/member and union copy. Exact allowances admit; one unit below either measured allowance refuses at its first unpaid step with no partial identity rows, the original configured bound and the admitted prefix intact. Two materializations on one budget compose without reconstructing or resetting it. | Test |
+| FR-531-AC-32 | A real tick-monitor plan's retained context supplies the same emission's plan, obligations, admitted order and progress association to the actual native row join and selected type-closure projection. The resulting native nodes, original declaration/member identities and Exact types equal those of that emission. Substituting another genuine emission's context, even with identical authored names, or omitting required order/progress authority returns a typed refusal and no executable context. Borrowing retained context leaves native storage consumption unchanged. | Test |
+| FR-531-AC-33 | Allocation observation encloses only the adapter/conversion call, with fixture preparation and assertions outside it. A successful owned materialization performs observed allocations; a denial before its first allocation performs none, and a later denial allocates neither the denied material nor an owned diagnostic. The controls include fresh owner-produced lazy numeric payloads, values `2^127` and `-(2^127 + 1)`, and larger heap-backed values without prior warming or formatting. These values remain exact on successful copies; insufficient work/storage retains the first real row locus and original bound. | Test |
 
 ## Dependencies
 
@@ -802,6 +906,11 @@ outcome map. Each carries a "Consumer entry" section that points here.
   its identity rows; the reader-view criteria it states are the ones the bare slot
   call rests on), FR-515, FR-516, FR-517, FR-520; Contract IR `read_checked_package`
   and `SelectedExactIdentities`; QSL-1377 (selected-model identity-row production).
+- **Selected monitor composition:** [FR-251](./FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md) owns the admitted tick-monitor plan,
+  order and progress authority. Contract IR FR-357 and FR-358 own native closure
+  validation and the public accounted-charge/resume budget contract. This
+  requirement owns QSL's intervening row materialization and conversion; it does
+  not replace either owner's admission or claim monitor/runtime qualification.
 - **Downstream:** quire-protocol FR-045 and FR-046; FR-532 and FR-533. quire-protocol
   FR-043's admission input list follows the two files.
 - **Writer and reader encoders for the three added tags:** the code ticket for the

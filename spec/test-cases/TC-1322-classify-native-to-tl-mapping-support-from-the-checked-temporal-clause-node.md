@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify FR-527-AC-1 to FR-527-AC-26. The unit **M** holds one clause per row of FR-045's table, plus the formulas below, packaged and read back with the reader. Targets and premises are FR-045's and are read, not copied.
+Verify FR-527-AC-1 to FR-527-AC-28. The unit **M** holds one clause per row of FR-045's table, plus the formulas below, packaged and read back with the reader. Targets and premises are FR-045's and are read, not copied.
 
 ## Test Procedure
 
@@ -41,8 +41,15 @@ Verify FR-527-AC-1 to FR-527-AC-26. The unit **M** holds one clause per row of F
 | 23 | 23 | a timed clause with a past and a future operator | `Unsupported` naming `TimedProfile` and `MixedDirection` |
 | 24 | 24 | the one-occurrence clauses `Gamma` (supported) and `Delta` (timed, unsupported), and FR-337-AC-16's `Alpha` and `Beta` sharing one node; the retained name | `Some("Gamma")`, `Some("Delta")` and `None`, each equal to the view's `name()` |
 | 26 | 26 | supported and unsupported clauses; two independent strict admissions of identical original producer bytes; unchanged clones and a move of the original; retained selection after its source borrow and package are dropped | equal content does not authorize a foreign admission; owner binding accepts original and unchanged clones across moves, rejects the independent admission, stays retained by the owned classification, and participates in classification equality |
+| 27 | 27 | inspect the FR-527 temporal bridge input contract and its FR-515, FR-052 and Contract IR FR-350 allocations | actual checked owner values, distinct view/admission checks and reclassification are required; no classifier correspondence receipt, mirror admission carrier or evaluator callback is introduced |
+| 28 | 28 | producer package with two declaration occurrences sharing a node; select each occurrence independently; read selected model packages; clone a classification and change one public support/premise/retained field without changing its sealed selection | classification retains no unique name; each original occurrence resolves its own name/clock by its full key; model package identity order is preserved with no invented alias map; mutated classification differs from a fresh classification over the bound original subject |
 
-Tag the test `#[trace("FR-527-AC-1", ..., "FR-527-AC-19", "TC-1322")]`, and AC-21 to AC-24 likewise; AC-20 is Inspection and carries no test tag.
+Rows 27 and 28 specify the bridge-input contract and its planned qualification;
+they do not assert that FR-350 projection, strict reading, result agreement or
+runtime coverage has been delivered. FR-350/TC-461 own those cross-repository
+acceptance cases.
+
+Tag the test `#[trace("FR-527-AC-1", ..., "FR-527-AC-19", "TC-1322")]`, and AC-21 to AC-24 likewise; AC-20 and AC-27 are Inspection and carry no test tag; the new component checks carry `#[trace("TC-1322", "FR-527-AC-28")]`.
 
 ## Expected Results
 

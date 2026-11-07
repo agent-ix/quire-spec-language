@@ -3,6 +3,8 @@ id: TC-1284
 title: "QSL source reaches the division, zero-divisor and state-core rows"
 type: TC
 relationships:
+  - target: ix://agent-ix/quire-specification/TC-192
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-495
     type: verifies
 ---
@@ -16,7 +18,7 @@ with the two observations the requirement states: the check refusal under
 state-core declaration is refused as a declaration before any of its
 expressions is classified; and that an integer division over unbounded
 `Integer` operands settles `requires-bound` against a finite backend without
-narrowing. Scope: FR-495-AC-1 to FR-495-AC-4, FR-495-AC-6, FR-495-AC-7 and,
+narrowing. Scope: FR-495-AC-1 to FR-495-AC-4, FR-495-AC-6, FR-495-AC-7, FR-495-AC-8 and,
 through QSpec TC-266, FR-495-AC-5.
 
 ## Test Procedure
@@ -76,3 +78,33 @@ Vectors are referenced by QSpec row ID, never copied.
   settles `requires-bound` with no harness and no evaluation in the run with
   cvc5 registered, and the same in the run without it; no operand is narrowed
   to an `Int[..]`.
+
+### Public compile-facade admitted division law
+
+Obtain Euclidean, Floor and Truncating selections through the actual native
+`admit_integer_division` owner admission, retaining the admitted capability and
+its definition references. Through the existing public `qsl-replay` compile
+entry, pass each selection for genuine bounded-operand functions with an
+`Integer` result and bodies `a div b` and `a rem b`. Use dividend bounds
+`Int[-9,9]`, positive nonzero divisor bounds `Int[1,4]` and negative nonzero
+controls `Int[-4,-1]`; choose concrete values from QSpec TC-192 that distinguish
+the laws. Inspect the checked capability and original emitted operation-law
+references, then run the existing source-backed QSL/CG agreement path with the
+same source, operands and admitted law. Require the owner-defined
+quotient/remainder, typed outcome and agreement charges required by the
+IR-1391 cells. CG may strict-read the original emitted checked-package bytes
+through its existing intake. No new QSL byte-only execution entry is required,
+and no assignment to a private declarations field is this public-facade test.
+
+Omit the demanded selection and require typed
+`MissingSelection(IntegerDivision)` at `div`/`rem`, with no compiled result.
+Present unknown, multiple, foreign or incompatible definition bindings to the
+source-backed owner admission and preserve its distinct typed refusal before
+execution. Compile an ordinary non-division function and a `mod`-only function
+without the optional selection; the latter uses its existing Euclidean core.
+Keep nonzero/range checking and zero-divisor outcomes unchanged. Trace this
+new public-path test with `#[trace("TC-1284", "FR-495-AC-8")]`; reference QSpec
+vectors rather than copying their catalogs. This procedure supplies the
+admitted law to CG/source-backed IR-1391 agreement. A new byte-only execution
+surface, another execution API/owner chain, and CG result-bound inference are
+outside this QSL selection scope; no whole integration-acceptance claim follows.

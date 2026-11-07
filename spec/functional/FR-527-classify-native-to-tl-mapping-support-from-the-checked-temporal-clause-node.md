@@ -172,6 +172,48 @@ view names a definition identity that is none of the five temporal profiles the
   operators of the clause (FR-515), so the legacy out-of-range-reaches-nothing rule
   has no successor case.
 
+## Temporal bridge input contract
+
+The QSL input contract for Contract IR FR-350's bridge SHALL be the original
+`CheckedPackageV2`, its FR-515 `TemporalSubjectView`, and this classification.
+The subject's `belongs_to(package)` checks the actual borrowed package; the
+classification's `belongs_to(package)` checks the opaque owner admission that
+its sealed selection retains. These checks are distinct. An unchanged clone
+may retain the classification's admission without being the package from which
+a particular subject view was borrowed. Neither package-name equality nor equal
+producer bytes SHALL replace either check.
+
+The disposition and retained facts are plain data, not a sealed correspondence
+receipt. The bridge consumer SHALL reclassify the bound subject with the same
+`surrounding` closure and compare the complete result before using those facts.
+Changing public support, premises, retained facts or closure-dependent target
+while keeping the sealed selection SHALL NOT authorize a correspondence. A
+supported result leaves every FR-045 premise outstanding; an unsupported result
+retains its full dimension set and authorizes no TL output.
+
+The classification SHALL NOT supply an occurrence selection or inferred source
+model aliases. A bridge consumer selects its exact `ClauseOccurrence` from
+FR-515's declared rows and obtains the occurrence name and clock by their
+original declaration/role/ordinal keys. The node-level retained name remains
+`None` where several declarations share the node. Source identity and regions
+come from the checked source map; selected model packages come from
+`CheckedPackageV2::selected_model_packages` in that owner's admitted identity
+order. The checked package carries no authored source model alias map, and no
+consumer SHALL synthesize one from a package name, node order or caller table.
+An absent required owner fact remains absent and cannot discharge a bridge
+premise.
+
+QSL owns this classification and FR-052's native evaluation/report contract.
+The bridge in `quire-integration` owns `project_tl`, strict projection/join
+reading and correspondence under Contract IR FR-350; it invokes neither the
+native nor TL evaluator. Its native report input is the actual FR-052 owner
+value, and a correction uses that owner's complete direct predecessor and
+non-evaluating validation. A result identifier, equal truth or report label
+alone grants no predecessor authority. QSL SHALL add no bridge-specific mirror
+of the classification, package admission, occurrence, report or predecessor,
+and no classifier output is a TL artifact or bridge result. These allocations
+leave TL formula/request/result admission and evaluation with their TL owners.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -202,6 +244,8 @@ view names a definition identity that is none of the five temporal profiles the
 | FR-527-AC-24 | Over a package whose clause `Gamma` has one occurrence, a supported result and an unsupported result (AC-22's timed clause named `Delta`, with one occurrence) hold the retained name `Some("Gamma")` and `Some("Delta")` respectively, each equal to `name()` of the view; over FR-337-AC-16's package of the two structurally equal clauses `Alpha` and `Beta`, the result holds `None`, equal to `name()` of the view. | Test (TC-1322) |
 | FR-527-AC-25 | The signature of `mapping_support` takes no budget, limit or receipt parameter and returns none; `MappingRefusal` holds no work-limit variant; over a view built at the FR-515 work-unit default exactly, it returns the same classification on a second call, and a view one expansion past that default is refused at view construction (`ViewRefusal::FormulaTooLarge`), never by `mapping_support`. | Test; Inspection |
 | FR-527-AC-26 | For a supported and an unsupported clause, classify the same producer bytes admitted twice independently: package names, content, disposition and retained clause facts are equal, but each selection's owner binding accepts its original admission and its unchanged clone, refuses the other admission, and makes the classifications unequal. Moving the original package preserves binding membership. Dropping the source package and subject borrow does not prevent an owned selection from retaining and comparing its owner binding. | Test (TC-1322) |
+| FR-527-AC-27 | Inspection of the temporal bridge input contract identifies the original checked package/view/classification APIs, distinct borrowed-view and opaque-admission membership checks, full reclassification before trusting public data, and separate QSL/native, integration/bridge and TL owner responsibilities; it introduces no new carrier, callback evaluator or content-derived admission identity. | Inspection |
+| FR-527-AC-28 | For two declaration occurrences sharing one clause node, the classification retains the node and no single name, while the bridge input's independently selected occurrence resolves its own name and clock by declaration/role/ordinal. Selected model package identities retain the checked owner's order and no authored model alias map is inferred. A changed public classification field is unequal to reclassification of the original subject even when its sealed selection is unchanged. | Test |
 
 ## Dependencies
 
