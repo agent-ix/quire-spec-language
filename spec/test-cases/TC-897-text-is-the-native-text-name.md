@@ -71,7 +71,8 @@ Start from a domain package whose object type `Note` declares a field
 9. Over step 8's admitted unit with an invariant over `count`, admit an
    FR-106 snapshot whose `Note` object supplies `count` and omits the four
    bare-native fields, then the same snapshot supplying `{"kind": "text",
-   "text": "a"}` for `memo`. Admit an invocation of `scale` supplying `by`,
+   "text": "a"}` for `memo`, then the same snapshot supplying `{"kind":
+   "decimal", "coefficient": "1", "scale": "0"}` for `amount`. Admit an invocation of `scale` supplying `by`,
    one omitting `by`, and an invocation of `peek` with a non-null `result`.
 
 ## Expected Results
@@ -108,7 +109,9 @@ Start from a domain package whose object type `Note` declares a field
 - Step 9: the snapshot omitting the bare-native fields is admitted, with no
   `missing-member`, and the `count` invariant is checked against it; the
   snapshot supplying `memo` refuses `ill_typed`/`operator-ineligible` at
-  `fields.memo` with the value unread; the `scale` invocation supplying `by`
+  `fields.memo` with the value unread; the snapshot supplying `amount`
+  refuses the same at `fields.amount` naming `Note` and `Field.typeRef`, with
+  the value unread; the `scale` invocation supplying `by`
   refuses the same at `parameters.by` naming `scale`; omitting `by` refuses
   `invalid_runtime_input`/`missing-member`; the `peek` invocation refuses at
   `result` naming `peek` and `Operation.returns.typeRef`.
