@@ -5841,3 +5841,121 @@ fn a_clock_count_field_is_keyed_by_its_place_among_the_own_fields() {
         .collect();
     assert_eq!(counts, vec![&vec![0, 2]], "{roots:?}");
 }
+
+/// A world whose `calls` holds `c1` (`inflight`, not `late`) and `c2` (not
+/// `inflight`, `late` as `c2_late`), under the one timed declaration
+/// `declaration`; `objects` is false for a state whose `calls` is empty.
+fn population_world(declaration: &str, c2_late: bool, objects: bool) -> World {
+    let held = |key: &str, inflight: bool, late: bool| {
+        json!({"key": key, "type": ident("Call"), "fields": initial_fields(
+            json!({"inflight": {"boolean": inflight}, "late": {"boolean": late}}))})
+    };
+    let objects = if objects {
+        json!([held("c1", true, false), held("c2", false, c2_late)])
+    } else {
+        json!([])
+    };
+    world_of(
+        rpc_document(true),
+        "",
+        &format!(
+            "dimension Time;\nunit s : Time = rational(1, 1);\n\
+             unit ms : Time = rational(1, 1000) * s;\n\
+             time M dense unit ms;\n{declaration}\n"
+        ),
+        objects,
+    )
+}
+
+/// The delays 5 and `1 + 1/1000` admitted at the initial discrete state of
+/// `world` over `keys`, and whether the state is urgent and quiescent.
+fn population_reading(world: &World, keys: &[&str]) -> (bool, bool, bool, bool) {
+    let system = system_over(world, keys);
+    let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+    let state = timed.initial().remove(0);
+    let admits = |delay: Rational| timed.delay(&state, &delay).expect("decided").is_some();
+    (
+        admits(exact(5, 1)),
+        admits(exact(1001, 1000)),
+        timed.is_urgent(state.discrete()).expect("decided"),
+        timed.is_quiescent(state.discrete()).expect("decided"),
+    )
+}
+
+/// FR-230-AC-59 (TC-1334): a time invariant or `urgent when` predicate that
+/// reads no `self` is read once at the state and applies to every object;
+/// one that reads `self` is read for each object; at a state whose `calls`
+/// holds no object a predicate reading no `self` still holds once.
+#[trace("TC-1334", "FR-230-AC-59")]
+#[test]
+fn a_predicate_naming_the_population_reads_the_state_once() {
+    let two = ["c1", "c2"];
+    // `HasCalls` holds of neither object: it applies to none and bounds no
+    // clock, so a delay of 5 is admissible.
+    let reading = |declaration: &str, c2_late: bool| {
+        population_reading(&population_world(declaration, c2_late, true), &two)
+    };
+    let (five, _, urgent, quiescent) = reading(
+        "time invariant HasCalls when { forall(c in M::calls : c.inflight) } { self.x <= 1 ms }",
+        true,
+    );
+    assert!(five && !urgent && quiescent, "HasCalls bounds no clock");
+
+    // `AnyInflight` reads no `self`: it applies to both objects.
+    for predicate in [
+        "exists(c in M::calls : c.inflight)",
+        "exists(c in allInstances<M::Call>(M::calls) : c.inflight)",
+    ] {
+        let (five, just_over_one, urgent, quiescent) = reading(
+            &format!("time invariant AnyInflight when {{ {predicate} }} {{ self.x <= 1 ms }}"),
+            true,
+        );
+        assert!(
+            !five && !just_over_one && !urgent && !quiescent,
+            "{predicate}: a delay of 1 is admissible and 1 + 1/1000 is not"
+        );
+        let world = population_world(
+            &format!("time invariant AnyInflight when {{ {predicate} }} {{ self.x <= 1 ms }}"),
+            true,
+            true,
+        );
+        let system = system_over(&world, &two);
+        let timed = TimedSystem::new(&system, "M").expect("a timed subject");
+        let state = timed.initial().remove(0);
+        assert!(timed
+            .delay(&state, &exact(1, 1))
+            .expect("decided")
+            .is_some());
+    }
+
+    // `CallsExist` makes the state urgent; with `c2.late` false it does not.
+    let urgent_when = "urgent CallsExist when { exists(c in M::calls : c.late) };";
+    let (five, tick, urgent, _) = reading(urgent_when, true);
+    assert!(urgent && !five && !tick, "no positive delay is admissible");
+    let (five, _, urgent, _) = reading(urgent_when, false);
+    assert!(!urgent && five, "a delay of 5 is admissible");
+
+    // `Known` reads `self`: it is read for each object and holds of both.
+    let (_, _, urgent, _) = reading(
+        "urgent Known when { present(lookup<M::Call>(M::calls, self) absent empty) };",
+        true,
+    );
+    assert!(urgent);
+
+    // No object: `Idle` holds once at the state and makes it urgent;
+    // `AnyInflight` and `AllInflight` bound no clock.
+    let empty =
+        |declaration: &str| population_reading(&population_world(declaration, true, false), &[]);
+    let (_, _, urgent, _) = empty("urgent Idle when { count(c in M::calls where c.late) = 0 };");
+    assert!(
+        urgent,
+        "a predicate reading no self holds once at the state"
+    );
+    for declaration in [
+        "time invariant AnyInflight when { exists(c in M::calls : c.inflight) } { self.x <= 1 ms }",
+        "time invariant AllInflight when { forall(c in M::calls : c.inflight) } { self.x <= 1 ms }",
+    ] {
+        let (_, _, urgent, quiescent) = empty(declaration);
+        assert!(!urgent && quiescent, "{declaration} bounds no clock");
+    }
+}
