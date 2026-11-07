@@ -393,3 +393,7 @@ Self::StateGraph(cause) => match cause.as_ref() {
     _ => return None,
 },
 ```
+
+## Fresh-main interaction review
+
+Fresh-main interaction review: PASS, no new finding. Consumed the merged model-document unit-scope and carried-quantity equality changes. They establish the shared environment and resolve model units before declared-type checking; carried equality preserves actual source conversion metadata. The owner try_check_type call, semantic mapping, native StorageRequest carriers, storage-only nested projection, first-refusal selection and refinement classification remain intact. No source or Cargo command was changed or run by the reviewer.

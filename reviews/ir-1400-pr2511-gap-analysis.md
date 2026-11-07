@@ -17,11 +17,11 @@ relationships:
 
 ## Summary
 
-Review of IR-1400 consumer PR 2511 against its frozen source and specification. No applicable AssuranceProfile is declared in the repository. Plan completion: not assessed. PR-scoped reverse-gap inventory: declared-type call/conversion, allocation and capacity typed carriers, stage metadata, native diagnostic fields, replay projection, refinement classification and dev allocator hookup all have FR-534 ownership. No new hollow source or test behavior was found. Semantic review: optional gap-analysis pass skipped; behavioral intent and assertions were examined under code-review. Fresh whole-repository matrix is running separately; the preimplementation matrix is not evidence of final bindings and its unrelated gaps are outside this PR verdict.
+Review of IR-1400 consumer PR 2511 against its frozen source and specification. No applicable AssuranceProfile is declared in the repository. Plan completion: not assessed. PR-scoped reverse-gap inventory: declared-type call/conversion, allocation and capacity typed carriers, stage metadata, native diagnostic fields, replay projection, refinement classification and dev allocator hookup all have FR-534 ownership. No new hollow source or test behavior was found. Semantic review: optional gap-analysis pass skipped; behavioral intent and assertions were examined under code-review. The completed computed matrix confirms all four changed criteria are tagged; unrelated baseline statuses are unchanged.
 
 ## Verdict
 
-**CONDITIONAL** — no PR-scoped reverse gap or hollow implementation found. Final computed matrix bindings are still unavailable; no full-repository coverage or completion claim is made. The lead explicitly directed that the expensive background matrix must not block the scoped consumer review.
+**PASS for this PR’s changed criteria and behavior** — all four FR-534 criteria compute tagged and no scoped reverse gap or hollow implementation was found. Whole-repository assurance remains incomplete: its unrelated baseline gaps are unchanged. Plan completion: not assessed.
 
 ## Findings
 
@@ -31,7 +31,7 @@ Review of IR-1400 consumer PR 2511 against its frozen source and specification. 
 
 ## Coverage
 
-Plan completion: not assessed. PR-scoped reverse-gap inventory: declared-type call/conversion, allocation and capacity typed carriers, stage metadata, native diagnostic fields, replay projection, refinement classification and dev allocator hookup all have FR-534 ownership. No new hollow source or test behavior was found. Semantic review: optional gap-analysis pass skipped; behavioral intent and assertions were examined under code-review. Fresh whole-repository matrix is running separately; the preimplementation matrix is not evidence of final bindings and its unrelated gaps are outside this PR verdict.
+Plan completion: not assessed. PR-scoped reverse-gap inventory: declared-type call/conversion, allocation and capacity typed carriers, stage metadata, native diagnostic fields, replay projection, refinement classification and dev allocator hookup all have FR-534 ownership. No new hollow source or test behavior was found. Semantic review: optional gap-analysis pass skipped; behavioral intent and assertions were examined under code-review. The completed computed matrix confirms all four changed criteria are tagged; unrelated baseline statuses are unchanged.
 
 ## Examined scope
 
@@ -373,4 +373,17 @@ bindings:
 
 Focused declared-type tests, replay native-field projection, enum binding and variant checking controls passed in the coder’s local logs. Scoped three-crate check and Clippy passed. The reviewer inspected these logs and the production call chain; no competing Cargo or aggregate gate was started. The lead retains the final combined-tree gate.
 
-Reconciliation: fresh quire matrix is running in the background and has emitted no final result. No static-status count is reported. The four FR-534 criteria were extracted from Quire’s parsed AST and their concrete tagged behavioral tests were code-reviewed; this is a manual binding review, not a computed matrix claim. Whole-repository reverse-gap and unrelated existing assurance gaps were not audited in this PR-scoped invocation.
+The four FR-534 criteria were extracted from Quire’s parsed AST; their behavioral tests were code-reviewed and now also confirmed by the completed computed matrix. Whole-repository reverse-gap and unrelated existing assurance gaps were not audited in this PR-scoped invocation.
+
+## Fresh-main interaction review
+
+Fresh-main interaction review: PASS, no new finding. Consumed the merged model-document unit-scope and carried-quantity equality changes. They establish the shared environment and resolve model units before declared-type checking; carried equality preserves actual source conversion metadata. The owner try_check_type call, semantic mapping, native StorageRequest carriers, storage-only nested projection, first-refusal selection and refinement classification remain intact. No source or Cargo command was changed or run by the reviewer.
+
+## Completed computed matrix
+
+Reconciliation: quire matrix, fresh background result; no run evidence read. The complete result reports tagged 3410, untagged 982, method-without-symbol 97 and tagged-by-ignored-test 3. Comparison with the preimplementation computed matrix shows exactly four status changes, all FR-534 criteria changing from untagged to tagged; all unrelated statuses are unchanged. This scoped PASS does not claim whole-repository assurance PASS.
+
+- FR-534-AC-1: tagged; qsl-eval/tests/it/collection_algebra.rs::c06_reference_holders_are_keyed_and_ieee_elements_are_ineligible, qsl-eval/tests/it/equality_matrix.rs::e28_equality_on_ieee_bearing_types_is_operator_ineligible, qsl-semantics/src/check/check/declared_type_tests.rs::declared_type_semantics_keep_owner_refusal_priority_and_location, qsl-semantics/src/check/mod.rs::tests::enum_declaration_becomes_a_real_checked_type_node, qsl-semantics/tests/it/variant_type.rs::a_unit_naming_a_variant_type_leaves_the_declaration_and_exports_unchanged
+- FR-534-AC-2: tagged; qsl-semantics/src/check/check/declared_type_tests.rs::owner_traversal_denial_retains_request_and_allows_identical_retry
+- FR-534-AC-3: tagged; qsl-replay/src/spine.rs::tests::declared_type_storage_requests_reach_compile_diagnostics, qsl-semantics/src/check/check/declared_type_tests.rs::owner_storage_classes_and_units_survive_conversion
+- FR-534-AC-4: tagged; qsl-semantics/src/check/check/declared_type_tests.rs::owner_traversal_denial_retains_request_and_allows_identical_retry
