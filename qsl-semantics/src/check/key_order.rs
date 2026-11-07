@@ -99,7 +99,7 @@ struct Frame {
 /// remembered.
 fn identity(key: &NodeKey) -> Option<usize> {
     let package = key.package();
-    (!package.is_empty()).then(|| package.as_ptr() as usize)
+    (!package.is_empty()).then_some(package.as_ptr() as usize)
 }
 
 impl Ranking {
