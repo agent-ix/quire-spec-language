@@ -179,7 +179,7 @@ The adapter reads the request from those members and FR-071 stays unchanged:
 - each `dependencies` entry becomes a dependency entry with its `identity` and
   `sources`;
 - `package.contract_version` must be the constant `quire.checked-package/v2`
-  the checked-package schema fixes, and is stored nowhere in the request.
+  the checked-package schema fixes; the complete package retains that value.
 
 A `replay-request` file without `package`, whose `package` is not a
 checked-package document, or whose `contract_version` is another value, is a
@@ -188,7 +188,7 @@ flat canonical document, not a package-name wrapper. It requires the genuine
 selected artifact, model and dependency evidence and the caller's finite native
 read limits; the native checked-package reader admits the complete package.
 Its typed refusal keeps the native cause and prefixes its package-relative
-pointer with `/package`. No request is returned after a failed admission.
+pointer with `/package`. No replay result is returned after a failed admission.
 
 The in-process `ReplayRequest::decode` phase remains a bounded input decoder;
 it retains the complete raw package and does not claim native admission from
@@ -203,11 +203,11 @@ list, and the dependency recompile remains responsible for consuming it.
 
 An obligation's nullable `model` retains the public owner's exact optional
 identity: `null` becomes `None`, and a string becomes that exact model identity.
-No model identity is synthesized for a function obligation. A nonempty
-`refinement_internals` member in the package lock or a dependency cannot be
-represented by FR-071's current request carrier. That input remains
-`unsupported` and unqualified even if its oracle anticipates that report;
-its refinements are never silently dropped.
+No model identity is synthesized for a function obligation. Supplied
+`refinement_internals` are retained as the owner's typed rows and passed to
+that root or dependency's semantic check; a list defect retains its genuine
+owner refusal. Absence supplies no list. Neither an unsupported classification
+nor dropping a list substitutes for this check.
 
 The replay-result owner serializes function results without re-evaluation,
 retaining the settled arm, category, optional value, disagreement, witness
