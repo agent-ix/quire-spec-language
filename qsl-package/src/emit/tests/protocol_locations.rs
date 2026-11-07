@@ -1287,6 +1287,29 @@ fn supplied_identities_are_validated_against_the_admitted_package() {
         }),
         UnsupportedReason::ForeignIdentityWitness
     );
+    // A genuinely different package: its own emission, admitted on its own.
+    let different = super::converted_equality::emitted(
+        "function same using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure { a = b }",
+    );
+    let Read::Verified {
+        admitted: different_admitted,
+        ..
+    } = read_back(&different)
+    else {
+        panic!("the different package admits")
+    };
+    assert_eq!(
+        reason(&|_, budget| {
+            let rows = different
+                .identity_rows(&different_admitted, budget)
+                .expect("different rows");
+            Some(
+                rows.selected(&different_admitted, budget)
+                    .expect("different identities"),
+            )
+        }),
+        UnsupportedReason::ForeignIdentityWitness
+    );
     assert_eq!(
         reason(&|admitted, budget| {
             let rows = emission.identity_rows(admitted, budget).expect("own rows");
