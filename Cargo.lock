@@ -1390,7 +1390,7 @@ dependencies = [
  "qsl-cst",
  "qsl-eval",
  "qsl-forms",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-package",
  "qsl-replay",
  "qsl-route",
@@ -1415,7 +1415,7 @@ dependencies = [
  "qsl-cst",
  "qsl-eval",
  "qsl-forms",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-package",
  "qsl-replay",
  "qsl-semantics",
@@ -1433,7 +1433,7 @@ version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
  "logos",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "quire-exact",
  "serde_json",
 ]
@@ -1445,7 +1445,7 @@ dependencies = [
  "ix-trace-rs",
  "qsl-cst",
  "qsl-forms",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-package",
  "qsl-semantics",
  "quire-canonical",
@@ -1466,7 +1466,7 @@ dependencies = [
  "ix-trace-rs",
  "proc-macro2",
  "qsl-cst",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "quire-exact",
  "quire-semantic-value",
  "quire-walk",
@@ -1487,6 +1487,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "qsl-foundation"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-spec-language?branch=main#03adacffc48ad5b3a414bfa9fc62932475bcede5"
+dependencies = [
+ "hashbrown 0.17.1",
+ "ix-trace-rs",
+ "quire-exact",
+ "quire-semantic-value",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "qsl-inspect"
 version = "0.1.0"
 dependencies = [
@@ -1495,7 +1509,7 @@ dependencies = [
  "qsl-cst",
  "qsl-eval",
  "qsl-forms",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-package",
  "qsl-replay",
  "qsl-semantics",
@@ -1512,7 +1526,7 @@ dependencies = [
  "jsonschema 0.17.1",
  "qsl-cst",
  "qsl-forms",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-semantics",
  "quire-canonical",
  "quire-checked",
@@ -1535,7 +1549,7 @@ dependencies = [
  "qsl-cst",
  "qsl-eval",
  "qsl-forms",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-package",
  "qsl-semantics",
  "qsl-source",
@@ -1556,7 +1570,7 @@ name = "qsl-route"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-semantics",
  "quire-checked",
  "quire-exact",
@@ -1577,7 +1591,7 @@ dependencies = [
  "proc-macro2",
  "qsl-cst",
  "qsl-forms",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "quire-canonical",
  "quire-checked",
  "quire-contract-model",
@@ -1596,7 +1610,7 @@ name = "qsl-source"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "quire-rs",
  "serde",
  "serde_json",
@@ -1716,9 +1730,11 @@ dependencies = [
 [[package]]
 name = "quire-observation"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-observation?branch=main#c34fdcf1d0bd5d4e22053df79f5902e4c960eada"
+source = "git+https://github.com/agent-ix/quire-observation?branch=main#61bd980960602f15f6a67bd3e4b68b947802f4e7"
 dependencies = [
+ "qsl-foundation 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?branch=main)",
  "quire-canonical",
+ "quire-exact",
  "serde",
  "serde_json",
  "sha2",
@@ -1768,7 +1784,7 @@ dependencies = [
  "qsl-cst",
  "qsl-eval",
  "qsl-forms",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-package",
  "qsl-replay",
  "qsl-route",
@@ -2692,7 +2708,7 @@ dependencies = [
  "proc-macro2",
  "qsl-analyze",
  "qsl-cst",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-replay",
  "qsl-route",
  "qsl-semantics",
