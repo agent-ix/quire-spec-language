@@ -12,7 +12,7 @@ relationships:
 
 Verify that the executable monitor plan of FR-251 is self-sufficient, that admission refuses any plan not derived from the selected clause and target, that built monitors do not share state, that executing the plan agrees with QSL's reference evaluator, and that every build, admission and execution fault is a typed non-verdict result.
 
-Scope: FR-251-AC-4 to FR-251-AC-12, FR-251-AC-14, FR-251-AC-15, FR-251-AC-17, FR-251-AC-19, FR-251-AC-21, FR-251-AC-23 to FR-251-AC-25, FR-251-AC-27 to FR-251-AC-30, FR-251-AC-32 to FR-251-AC-39, FR-251-AC-41, FR-251-AC-42, FR-251-AC-43 through FR-251-AC-49.
+Scope: FR-251-AC-4 to FR-251-AC-12, FR-251-AC-14, FR-251-AC-15, FR-251-AC-17, FR-251-AC-19, FR-251-AC-21, FR-251-AC-23 to FR-251-AC-25, FR-251-AC-27 to FR-251-AC-30, FR-251-AC-32 to FR-251-AC-39, FR-251-AC-41, FR-251-AC-42, FR-251-AC-43 through FR-251-AC-50.
 
 ## Test Procedure
 
@@ -53,6 +53,8 @@ Fixtures: the deadline claim of FR-251-AC-1 on a 20-bit 1 MHz counter with its a
 
 33. Pass one caller-owned NativeJoinBudget through authority selection and canonical value materialization, then reuse it for the row adapters and native preparation. On genuine dense and tick fixtures, measure cumulative work/storage at ample allowance; repeat at both exact combined bounds and independently one unit short, including a precharged budget and two individually affordable handoffs whose combined charges exceed one bound. Repeat with an owner-permitted package clone. Deny zero storage before owned allocation and attempt a charge whose addition would overflow; inspect the original configured bound, first unpaid amount and non-owning locus. Verify that later charges in the refused phase retain that refusal, and that resume preserves all spent counters. Inspect charge-before-inspection/allocation order, including canonical temporary copies and compact refusals; do not allocate an encoded value merely to discover its later charge (AC-49).
 
+34. From genuine dense and tick authorities, borrow the original checked ModelTimeSource and verify its immutable checked-unit slice identity; compare QSL's actual TimeSourceKind and exact kernel Rational for a tick. Read the optional IR CheckedRational and compare its canonical numerator/denominator with the selected same-package admitted clock and verified association. Measure the paid period-copy storage, then deny one short before copying. Repeat the accessors and inspect their bodies for constant-time borrowing with no formatting, allocation, clone or source lookup (AC-50).
+
 Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 
 ## Expected Results
@@ -91,6 +93,8 @@ Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 - Step 32: the complete canonical values retain every specified component; source kind, unit and period changes give unequal values. Exact-length encoding succeeds; one less returns Encoding with the native canonical byte limit. The returned plan, obligations and emission remain immutable.
 
 - Step 33: exact combined allowances return equal complete values and charges; every independent one-short control returns the original fixed native denial/locus with no context and no restoration of prior consumption. A reused or precharged budget cannot receive a new allowance. Package clones follow owner accounting, zero-storage refusal owns no diagnostic, and overflow stops rather than wraps. Owner byte/read limits do not replenish this budget.
+
+- Step 34: the source is the actual retained checked source, the dense IR period is absent, and the tick period has IR's actual canonical component type and exact values. One paid copy establishes the owned IR value; one-short storage returns the original native denial before a copy. Getters borrow the same values without materialization and do not claim that the kernel and IR rational types are aliases.
 
 ## Qualification boundary
 

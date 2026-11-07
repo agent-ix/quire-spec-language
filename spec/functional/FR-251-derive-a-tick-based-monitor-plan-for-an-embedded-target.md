@@ -246,6 +246,21 @@ hash or serialize an alternative binding. This requirement leaves the concrete
 constructor ownership form to the owning admission interface; it does not
 introduce a second package admission for the handoff.
 
+The admitted authority SHALL expose the original checked `ModelTimeSource`
+through a borrowed constant-time accessor tied to its retained immutable checked
+unit. The source's `TimeSourceKind` is QSL's actual type: its tick period is
+`quire_exact::Rational`, not IR's `CheckedRational`.
+
+For IR authority-row adaptation, the authority SHALL also expose a borrowed
+`Option<&quire_contract_model::CheckedRational>`: `None` for dense time and the
+exact checked tick period for tick time. Construction SHALL obtain the selected
+same-package admitted clock through the public budgeted IR clock read, compare
+its kind and already-validated canonical period components with the original
+checked time source's verified association, and precharge the one owned IR
+`CheckedRational` value and its component copies before storing them. The
+accessors SHALL not scan, clone, format or allocate; they SHALL not relabel
+QSL's numeric type as an IR type or introduce a local time-source carrier.
+
 ### Shared preparation budget
 
 Authority selection and canonical value materialization SHALL require the
@@ -672,6 +687,7 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-47 | After original source, model and request inputs are dropped, a public consumer reads the actual combined checked unit retained by the plan root: its exact source includes the authored unit and generated entries, its selected clause equals the plan subject, and its checked time source retains the selected model node, source kind and unit. These are explicitly original checker facts, not final renamed identities or admitted order/progress. | Test |
 | FR-251-AC-48 | A genuine dense model-time monitor root yields the complete specified canonical model-step value, with the actual checked model/unit/dimension identities. A digital source retains its exact period and checked tick-operation anchor. Changed source kind, unit or period changes the value. Exact-byte-ceiling encoding succeeds and one byte less returns Encoding with the original native canonical limit and no partial order value. | Test |
 | FR-251-AC-49 | The authority handoff and order materialization receive the caller's one mutable NativeJoinBudget, precharge every specified selection/materialization work and logical-storage step, and preserve previous consumption when used before row adaptation and native closure preparation. Measure genuine dense and tick handoffs at ample allowance: exact combined work and storage succeed; one short independently preserves the first unpaid native kind, full amount, original bound and non-owning locus without a context. Precharge part of the same budget before entry, then demonstrate that two individually affordable handoffs can exhaust their combined allowance without resetting counters. Package clones yield equal values and charges; zero storage denies before owned allocation, later charges preserve the first refusal within a phase, and overflow cannot wrap. Owner read/canonical ceilings do not act as a second preparation allowance. | Test, Inspection |
+| FR-251-AC-50 | A genuine dense authority returns its original checked ModelTimeSource by borrow and no IR tick period; a genuine tick authority returns its original checked source and an actual borrowed IR CheckedRational with the exact same checked numerator/denominator. The source borrow names the same element of the immutable retained checked-unit source slice. The IR period comes from the selected same-package clock's validated canonical period components, compared against the checked association and copied once under the original shared budget; exact storage for the actual IR container and two component payloads succeeds and one short refuses before copying. Repeated getters return those original values without lookup, cloning, formatting or allocation. QSL TimeSourceKind::Tick retains quire_exact::Rational and is never claimed to be an IR type alias. | Test, Inspection |
 
 ## Dependencies
 
