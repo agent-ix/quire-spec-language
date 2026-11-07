@@ -73,7 +73,7 @@ emits and reads back the `correspondence`/`implementation_guarantee` node.
 Each derived `operation-contract` item is a requirement record of the
 checked package carrying QSpec FR-331's `correspondence` member, and the
 model-claim item carries `stutter_closure` for a liveness clause; `qsl-route`
-writes both members into the requested item (ADR-013 O-20), so `route` and
+writes both members into the requested item (its FR-075 request writer), so `route` and
 E7 negotiate them as every other item (ADR-012 §7.2). An unbound model
 element refuses only the guarantee item, through FR-307's per-item export.
 
@@ -89,9 +89,18 @@ it derives without the relation (QSpec FR-490-AC-8), so
 Admission and settlement are a new module `planner` of layer 6 `qsl-replay`,
 not of `qsl-route` (R) or `qsl-analyze` (A):
 
-- they read QSpec FR-331 request items and result entries into
-  `TerminalRecord`s, which `qsl-replay` owns (ADR-013 O-24), through its
-  existing result readers (FR-290 for a plugin entry);
+- they read QSpec FR-331 result entries into `TerminalRecord`s, which
+  `qsl-replay` owns (ADR-013 O-24): a plugin's entry through FR-290's
+  reader, and every other entry through a new strict reader,
+  `planner::read_result_entry`, that applies QSpec FR-331 "Result entries"
+  in its reading order;
+- they read the premise's FR-331 request item through a new strict reader,
+  `planner::read_premise_item`, which reads exactly the slot-key members
+  (QSpec FR-492 "Slot key") into a `qsl-replay` value. `qsl-route`'s
+  request writer is not reachable from layer 6 (ADR-011 §6.1 lists no R
+  edge for it) and is not needed: a root-crate integration test
+  (`tests/it/`) round-trips every derived item from `qsl-route`'s writer
+  through `read_premise_item` and asserts equal slot keys;
 - they read the checked package (layers 3 and 4) and nothing above layer 6;
 - `qsl-replay` already settles an item from other items' results
   (QSpec FR-468's hypothesis settlement in `model_check::step_safety`).
@@ -112,10 +121,10 @@ and per filled slot one `PremiseResult`:
 
 | Field | Meaning |
 | --- | --- |
-| `identity` | the slot's FR-201 `ObligationIdentity` (`qsl_replay::identity`), which binds the package identity and so the relation revision |
+| `key` | the slot key of QSpec FR-492: the FR-201 `ObligationIdentity` (`qsl_replay::identity`) together with the subject, claim node, kind, `item_kind`, fairness set, `stutter_closure`, `correspondence` and extent classification. The FR-201 triple alone is not enough: the four `operation-contract` roles share one anchor node, and a model claim without `stutter_closure` shares its triple |
 | `item` | the premise request item as read: subject, claim node, FR-290 kind, fairness set, `stutter_closure`, `correspondence` and FR-331 extent classification |
 | `record` | the item's `TerminalRecord`, read from the complete result entry |
-| `certification` | the record's FR-354 `Certification` when `proved` |
+| `certification` | the record's FR-354 `Certification` when `proved`, capped as QSpec FR-492 states: an entry read from request bytes is never `certified` (a `certified` entry reads as `uncertified`); only a `PremiseResult::from_record` built in process from QSL's own `TerminalRecord` keeps `certified` |
 
 An environment slot holds an `EnvironmentRecord {name, supplier,
 supplies}` and no certification. A slot is constructed only from read bytes,
@@ -148,6 +157,9 @@ never from a bare label or a reference to another result.
   slot's cause; any other outcome settles `Inconclusive(PremiseUnproved {
   premise, result })`. A `tested` slot, a finite trace, never promotes the
   item to `proved`, and no guarantee item is `refuted`.
+- Before any slot, a clause outside QSpec FR-380's stuttering-invariant
+  fragment settles the item `Inconclusive(TransferNotPreserving { reason:
+  Fragment { operator } })` (QSpec FR-488 "Settlement").
 - Settlement of one item settles every other item of the package unchanged.
 
 ### Closed causes
@@ -155,10 +167,12 @@ never from a bare label or a reference to another result.
 `InconclusiveCause` (ADR-018 §1's closed set) gains the two QSpec FR-331
 planner-only causes, with their FR-331 spellings:
 
-- `PremiseUnproved { premise: u64, result: Option<ItemLabel> }`, spelled
+- `PremiseUnproved { premise: u64, result: PremiseOutcome }`, spelled
   `premise-unproved{premise, result}`: `premise` the FR-492 slot index (for a
   transfer item, the premise item's `request_index`), `result` its label, or
-  `None` for an unfilled slot, spelled `absent`;
+  a `PremiseOutcome`: `Label(ItemLabel)`, `Absent` for an unfilled slot,
+  spelled `absent`, or `Assumption` for a premise supplied only as an
+  assumption, spelled `assumption`;
 - `TransferNotPreserving { reason }`, spelled
   `transfer-not-preserving{reason}`, `reason` `Fragment { operator }`,
   `Fairness { constraint }` or `StutterClosure`.
@@ -180,6 +194,9 @@ plugin's entry as QSL-only causes (`unknown-cause`), not as `Unsupported`.
 | FR-529-AC-8 | A finite implementation trace result (`tested`) over which the clause holds does not settle the item `proved`, and no guarantee item settles `refuted`. | Test (TC-1329) |
 | FR-529-AC-9 | A unit with an abstraction relation and no `guarantee-decl` has the requirement records and `route` results it has without the relation (FR-306-AC-3 unchanged). | Test (TC-1329) |
 | FR-529-AC-10 | `read_plugin_inconclusive_cause` refuses `premise-unproved` and `transfer-not-preserving` with their valid payloads as QSL-only causes (`unknown-cause` at `/cause/type`), and `planner` writes them with QSpec FR-331's spellings. | Test (TC-1329) |
+| FR-529-AC-11 | A clause nesting an interval operator under an unbounded one, and one using previous, settle `inconclusive`, `transfer-not-preserving{reason: fragment}` naming the operator, with every slot proved. | Test (TC-1329) |
+| FR-529-AC-12 | Admission refuses `invalid_runtime_input`/`invalid-value` a model-claim result without `stutter_closure`, one under another fairness set and a frame result in the transition-simulation slot; a `certified` entry read from the request settles its slot `uncertified`, so the item is never `certified` from request bytes. | Test (TC-1329) |
+| FR-529-AC-13 | Every derived item written by `qsl-route`'s request writer reads back through `planner::read_premise_item` with an equal slot key, and `planner::read_result_entry` refuses each QSpec FR-331 result-entry defect in its reading order. | Test (TC-1329) |
 
 ## Dependencies
 

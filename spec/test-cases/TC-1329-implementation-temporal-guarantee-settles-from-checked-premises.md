@@ -40,6 +40,12 @@ through QSL's result readers; the environment slot holds its record. Then:
 7. Read `premise-unproved` and `transfer-not-preserving` with valid payloads
    through `read_plugin_inconclusive_cause`, and encode the planner's causes
    (FR-529-AC-10).
+8. Run QSpec TC-986 cases 11 and 13 and TC-982 cases 10 and 11; fill every
+   slot with `certified` entries read from request bytes (FR-529-AC-11,
+   FR-529-AC-12).
+9. Round-trip every derived item from `qsl-route`'s writer through
+   `planner::read_premise_item`, and seed each QSpec FR-331 result-entry
+   defect into `planner::read_result_entry` (FR-529-AC-13).
 
 Compile a sibling clause in the same package and settle it in every run.
 Tag the tests `#[trace("TC-1329", "<AC id>")]` and, for each QSpec case they
@@ -62,5 +68,8 @@ run, `#[trace("QSpec-TC-982")]`, `#[trace("QSpec-TC-984")]` or
 6. Not `proved`; no result is `refuted`.
 7. Both refused `unknown-cause` at `/cause/type`; the planner's spellings are
    QSpec FR-331's.
+8. The QSpec cases' results; the all-`certified` chain settles `proved`,
+   `uncertified`.
+9. Equal slot keys for every item; each defect refused in reading order.
 
 The sibling clause settles unchanged in every run.

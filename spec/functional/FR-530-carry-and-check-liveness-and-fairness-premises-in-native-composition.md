@@ -107,8 +107,11 @@ peer guarantee clause, FR-363 gives it the slot's form, its result is
 constraint. No other entailment is decided: a different clause, a weaker
 claim, a guarantee of another kind, or a same-named guarantee of another
 package leaves the slot undischarged. A component-guarantee slot is
-discharged by a `proved` result of that guarantee's item; a failed component
-check leaves it undischarged. A discharge record that names an existing pool
+discharged by a `proved` result of that guarantee's item checked under
+exactly its FR-176 assumption set (the peer guarantees its `rely` and
+`depends` members name), which is part of its slot key (QSpec FR-491); a
+result checked under other assumptions or none is refused at admission, and
+a failed component check leaves the slot undischarged. A discharge record that names an existing pool
 entry over the right subject is used only after the same check; an
 `inconclusive` referenced result discharges nothing.
 
@@ -128,8 +131,10 @@ premise discharge record: per slot, the discharging pool entry or supplied
 constraint, the subject, the relation (`identity`, `fairness-implication`,
 `assumption` or `fixed-point`), its certification and extent. A premise
 discharged by a `trusted` plugin result settles `proved` with certification
-`trusted`; a premise supplied only as an assumption record, with no result
-behind it, is `inconclusive`, `premise-unproved`. Unmet premise, trusted
+`trusted`; a `rely` or liveness-dependency premise whose only discharger is
+an environment record is `inconclusive`, `premise-unproved` with `result`
+`assumption`, while an `environment` premise itself settles `supplied` and
+is listed as an assumption. Unmet premise, trusted
 assumption, unsupported rule, failed check and exhausted budget keep their
 distinct outcomes, trust basis and extent; the request's unrelated supported
 claims settle unchanged. Backend execution stays with the TL-9 providers,
