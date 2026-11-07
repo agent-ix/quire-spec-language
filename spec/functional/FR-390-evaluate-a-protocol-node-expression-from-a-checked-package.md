@@ -573,9 +573,9 @@ own order; no source span is part of that identity. The slot descriptor the
 selector returns SHALL carry the slot's root node key and the slot's
 type-declaration origin name (its site name, FR-383), and the reader SHALL take both
 from it. The source span that FR-383's registry writes into the site name of a
-`related` end, a `visible` entry or a case guard is an alias of the slot under which
-the source route finds its rows, not a second identity: a package read by a
-consumer that holds no source resolves those origins from the package alone, by the
+`visible` entry is an alias of the slot under which the source route finds its
+rows, not a second identity: a package read by a consumer that holds no source
+resolves those origins from the package alone, by the
 rule of FR-533 "Slot naming on the bytes route", and the two routes select the same
 slot for the same triple. FR-383 gives every slot of a package its own site name, so
 an application held by two slots has rows of two origins and the reader separates

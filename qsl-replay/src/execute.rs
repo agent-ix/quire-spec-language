@@ -1572,6 +1572,7 @@ pub(crate) fn run_spine_with_temporal_selections_and_execution_points(
     dependencies: &DependencyInput,
     execution_points: &spine::StateClauseExecutionPoints,
     temporal_selections: &[qsl_package::TemporalClockSelection],
+    integer_division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
     limits: SpineLimits,
 ) -> Result<Recompiled, ReplayRefusal> {
     let SpineUnit {
@@ -1621,6 +1622,7 @@ pub(crate) fn run_spine_with_temporal_selections_and_execution_points(
             package_name: package.as_str().to_owned(),
             execution_points,
             temporal_selections,
+            integer_division,
         },
         &models,
         dependencies,

@@ -2,9 +2,8 @@
 //! TC-125 group 6: mapping support classification through a strict
 //! compiled-protocol version-2 package.
 //!
-//! FR-045-AC-6. Each declaration is compiled for real and emitted twice: once
-//! through the version-1 producer and strict reader, and once through the
-//! version-2 producer and a strict reader whose temporal expectation is
+//! FR-045-AC-6, FR-527. Each declaration is compiled for real, emitted through
+//! the version-2 producer and read by a strict reader whose temporal expectation is
 //! re-derived from the authored sources and the registered catalog rather than
 //! projected from the producer's table. Expected dispositions are spelt here
 //! from the reviewed support table, and expected selections from the registered
@@ -16,7 +15,7 @@ use ix_trace_rs::trace;
 use quire_spec_language::checking::composed::{proofs, TypeLimits};
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::number::NumberWire;
-use quire_spec_language::protocol_artifact::{native, v2, wire as w, AdmittedPackage, Limits};
+use quire_spec_language::protocol_artifact::{native, v2, wire as w, Limits};
 use quire_spec_language::temporal::{
     self, Closure, Dimension, Error, Refusal, Subject, Support, Unmatched,
 };
@@ -189,10 +188,9 @@ fn definition_artifact<'a>(
         .artifact
 }
 
-/// Compile the fixture once and hand the test the strict version-1 and
-/// strict version-2 admissions of the same proofs and selections, with the
-/// strict version-1 and strict version-2 admissions.
-fn with_both(test: impl FnOnce(&native::Selections<'_>, &AdmittedPackage, &v2::AdmittedPackage)) {
+/// Compile the fixture once and hand the test the strict version-2 admission
+/// of the proofs and selections.
+fn with_v2(test: impl FnOnce(&native::Selections<'_>, &v2::AdmittedPackage)) {
     let inputs = inputs();
     inputs.with_proofs(
         TypeLimits::default(),
@@ -264,18 +262,7 @@ fn with_both(test: impl FnOnce(&native::Selections<'_>, &AdmittedPackage, &v2::A
                 .into_result()
                 .expect("strict version-2 reader");
 
-            let family = native::admit(proofs, selected, Limits::default())
-                .into_result()
-                .expect("version-1 admission");
-            let emitted_v1 = native::emit(&family, Limits::default())
-                .into_result()
-                .expect("version-1 emission");
-            let admitted_v1 = inputs
-                .read(proofs, &emitted_v1)
-                .into_result()
-                .expect("strict version-1 reader");
-
-            test(selected, &admitted_v1, &admitted_v2);
+            test(selected, &admitted_v2);
         },
     );
 }
@@ -287,20 +274,26 @@ fn position(declarations: &[w::Declaration], name: &str) -> usize {
         .expect("authored temporal declaration")
 }
 
-/// FR-045-AC-6: a strict version-2 classification returns the same disposition
-/// as the version-1 classification of the same declaration under both requested
-/// closures, and additionally retains its declaration and definition selection.
-/// The version-1 classification retains no authenticated selection.
-#[trace("TC-125", "FR-045-AC-6")]
+/// FR-045-AC-1 to AC-6: a strict version-2 classification of every table row
+/// returns the disposition spelt from FR-045's table under both requested
+/// closures (target, total-sample-valuation condition, every unmatched
+/// dimension), retains the native subject and profile, and retains its
+/// declaration and definition selection.
+#[trace(
+    "TC-125",
+    "FR-045-AC-1",
+    "FR-045-AC-2",
+    "FR-045-AC-3",
+    "FR-045-AC-4",
+    "FR-045-AC-5",
+    "FR-045-AC-6"
+)]
 #[test]
 fn a_version_two_classification_retains_its_authenticated_definition_selection() {
-    with_both(|selected, v1_package, v2_package| {
+    with_v2(|selected, v2_package| {
         for (name, definition, kind) in DECLARATIONS {
-            let v1_at = position(&v1_package.package().declarations, name);
             let v2_at = position(&v2_package.inherited().declarations, name);
             for closure in [Closure::Closed, Closure::Open] {
-                let unauthenticated = temporal::mapping_support(v1_package, v1_at, closure)
-                    .expect("a version-1 temporal declaration classifies");
                 let authenticated = temporal::mapping_support_v2(v2_package, v2_at, closure)
                     .expect("a version-2 temporal declaration classifies");
 
@@ -326,10 +319,15 @@ fn a_version_two_classification_retains_its_authenticated_definition_selection()
                         Support::Supported {
                             target: named,
                             total_sample_valuation,
-                            ..
+                            premises,
                         },
                     ) => {
                         assert_eq!(named.identity(), target, "{name} {closure:?}: TL target");
+                        assert_eq!(
+                            *premises,
+                            temporal::OUTSTANDING_PREMISES,
+                            "{name} {closure:?}: the outstanding premises are named"
+                        );
                         assert_eq!(
                             *total_sample_valuation,
                             definition == R::FixedSample && matches!(kind, Kind::Future),
@@ -340,18 +338,13 @@ fn a_version_two_classification_retains_its_authenticated_definition_selection()
                         panic!("{name} {closure:?}: expected {expected:?}, classified {support:?}")
                     }
                 }
+                let retained = &authenticated.retained;
+                assert_eq!(retained.name, name, "{name}: the retained native subject");
+                assert_eq!(retained.subject.declaration, v2_at);
                 assert_eq!(
-                    authenticated.support, unauthenticated.support,
-                    "{name} {closure:?}: authentication does not change the disposition",
-                );
-                assert_eq!(
-                    authenticated.retained, unauthenticated.retained,
-                    "{name} {closure:?}: the same native subject, profile and activation",
-                );
-
-                assert!(
-                    unauthenticated.authenticated().is_none(),
-                    "{name}: a version-1 classification authenticates nothing",
+                    retained.profile.identity(),
+                    definition.identity(),
+                    "{name}: the retained profile"
                 );
                 let selection = authenticated
                     .authenticated()
@@ -378,7 +371,7 @@ fn a_version_two_classification_retains_its_authenticated_definition_selection()
 #[trace("TC-125", "FR-045-AC-6")]
 #[test]
 fn a_version_two_request_outside_the_package_or_not_temporal_is_refused() {
-    with_both(|_, _, v2_package| {
+    with_v2(|_, v2_package| {
         let at = |declaration| Subject {
             declaration,
             ..Subject::default()

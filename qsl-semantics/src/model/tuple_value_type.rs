@@ -5,7 +5,7 @@
     reason = "intake refusal path follows the model's typed refusal contract"
 )]
 
-use crate::model::intake::read_tuple_value_type;
+use crate::model::intake::{read_tuple_value_type, TypeSets};
 use crate::model::normalize::Refusals;
 
 use super::meaning_dispatch::MeaningBindingContext;
@@ -17,7 +17,10 @@ pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), Re
         context.node,
         context.at,
         context.construct_shape,
-        context.meanings_by_node,
+        &TypeSets {
+            meanings: context.meanings_by_node,
+            unbounded_rationals: context.unbounded_rationals,
+        },
         context.records,
     )
 }

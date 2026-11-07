@@ -241,13 +241,10 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         let artifact = Some(artifact::intake::retained_reference(
             expected.inherited.inherited.artifact,
         )?);
-        let temporal =
-            v2::admitted_from_v3(v2_package(&package), artifact.clone(), model_schema.clone());
         Ok(AdmittedPackage {
             package,
             artifact,
             model_schema,
-            temporal,
         })
     })();
     artifact::report(work, result)

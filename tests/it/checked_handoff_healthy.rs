@@ -28,8 +28,19 @@ fn source() -> String {
     let mut text = std::fs::read_to_string(format!("{DIR}/unit-event-position.native"))
         .expect("the event-position unit");
     text.push_str(
-        "\nfunction twoAndThree using v(): Sequence<Quantity<U>>[0, 5] pure { sequence[2 U, 3 U] }\n",
+        "\nfunction twoAndThree using v(): Sequence<Quantity<U>>[0, 5] pure { sequence[2 U, 3 U] }\n\
+         type Count = Int[0, 5];\n\
+         function amounts using v(): Sequence<M::Amount>[0, 5] pure { sequence[2 U, 2 U, 3 U] }\n",
     );
+    for (index, (_, body, _)) in
+        super::bare_recovery_binder::duplicate_query_cases("amounts()", " U", "Count")
+            .into_iter()
+            .enumerate()
+    {
+        text.push_str(&format!(
+            "function query{index} using v(): Boolean pure {{ {body} }}\n"
+        ));
+    }
     text
 }
 
@@ -196,4 +207,35 @@ fn the_receipt_sum_of_healthy_over_r_is_five_u() {
     let unit = checked();
     assert!(healthy(&unit, 5), "2 U and 3 U total 5 U, within 5 U");
     assert!(!healthy(&unit, 4), "2 U and 3 U total 5 U, not within 4 U");
+}
+
+/// FR-046-AC-3 (TC-127), the nominal-unit leg on the checked route: over R,
+/// the items `[2 U, 2 U, 3 U]` keep the duplicate and the order through
+/// `filter` and `map`, and give size 3, the count of 2 U as 2 and the sum
+/// 7 U, with the controls a deduplicating query would satisfy false.
+#[trace("FR-046-AC-3", "TC-127")]
+#[test]
+fn unit_queries_over_duplicate_items_evaluate_on_the_checked_route() {
+    let unit = checked();
+    for (index, (label, _, expected)) in
+        super::bare_recovery_binder::duplicate_query_cases("amounts()", " U", "Count")
+            .into_iter()
+            .enumerate()
+    {
+        let called = unit
+            .package()
+            .call(
+                &QualifiedName::unqualified(format!("query{index}")).expect("an identifier"),
+                Vec::new(),
+                &ObjectEnvironment::default(),
+                &mut Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED),
+            )
+            .unwrap_or_else(|error| panic!("{label}: the call runs: {error:?}"));
+        let quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(held))) =
+            called.outcome
+        else {
+            panic!("{label}: a completed Boolean, not {:?}", called.outcome);
+        };
+        assert_eq!(held, expected, "{label}");
+    }
 }

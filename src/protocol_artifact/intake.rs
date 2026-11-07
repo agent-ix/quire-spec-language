@@ -506,7 +506,6 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
             return Err(Error::Invalid(Invalid::Canonical));
         }
         Ok(AdmittedPackage {
-            clocks: super::ClockNames::of(&package),
             package,
             artifact: retained_reference(expected.artifact)?,
         })

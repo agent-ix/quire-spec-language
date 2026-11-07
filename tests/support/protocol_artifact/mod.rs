@@ -1557,6 +1557,15 @@ impl Fixture {
         selected: &w::ArtifactRef,
         limits: artifact::Limits,
     ) -> artifact::Report<artifact::AdmittedPackage> {
+        self.with_expected(selected, |expected| artifact::read(bytes, expected, limits))
+    }
+
+    /// Run `then` against the independently authored complete selections.
+    pub fn with_expected<T>(
+        &self,
+        selected: &w::ArtifactRef,
+        then: impl FnOnce(&artifact::Expected<'_>) -> T,
+    ) -> T {
         let declarations: Vec<_> = self
             .package
             .declarations
@@ -1625,7 +1634,7 @@ impl Fixture {
             models: &models,
             domain_packages: &[],
         };
-        artifact::read(bytes, &expected, limits)
+        then(&expected)
     }
 
     /// Select adverse bytes explicitly so tests reach validation past identity matching;

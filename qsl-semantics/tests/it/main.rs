@@ -78,6 +78,7 @@ mod option_values;
 mod population_bound;
 mod probabilistic_declarations;
 mod quantities;
+mod rational_value_types;
 #[cfg(feature = "test-support")]
 mod refinement_class_catalog;
 #[cfg(feature = "test-support")]

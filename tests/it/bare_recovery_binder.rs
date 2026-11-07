@@ -957,3 +957,78 @@ fn completed_boolean(outcome: &quire_eval::FamilyOutcome<Value>) -> Option<bool>
         _ => None,
     }
 }
+
+/// The queries of FR-046-AC-3 over the three items `2, 2, 3` read from
+/// `items`, with `unit` the suffix of a literal (` U` or empty), each with the
+/// result its text states: (label, expression, expected). The last two are
+/// controls that a deduplicating query would satisfy, so they are false.
+pub(super) fn duplicate_query_cases(
+    items: &str,
+    unit: &str,
+    count_type: &str,
+) -> Vec<(&'static str, String, bool)> {
+    let twos = format!("filter(x in {items}: x = 2{unit})");
+    let flags = format!("map(x in {items}: x = 2{unit})");
+    vec![
+        ("filter keeps both 2s", format!("size({twos}) = 2"), true),
+        (
+            "filter keeps the 2s in order",
+            format!("sum<M::Total>(y in {twos}: y) = 4{unit}"),
+            true,
+        ),
+        (
+            "map keeps one result per item",
+            format!("size({flags}) = 3"),
+            true,
+        ),
+        (
+            "map keeps both true results",
+            format!("count<{count_type}>(b in {flags}: b) = 2"),
+            true,
+        ),
+        ("size", format!("size({items}) = 3"), true),
+        (
+            "count of 2",
+            format!("count<{count_type}>(x in {items}: x = 2{unit}) = 2"),
+            true,
+        ),
+        (
+            "sum",
+            format!("sum<M::Total>(x in {items}: x) = 7{unit}"),
+            true,
+        ),
+        (
+            "a deduplicated filter would not hold",
+            format!("size({twos}) = 1"),
+            false,
+        ),
+        (
+            "a deduplicated sum would not hold",
+            format!("sum<M::Total>(x in {items}: x) = 5{unit}"),
+            false,
+        ),
+    ]
+}
+
+/// FR-046-AC-3 (TC-127), the admitted-artifact leg: the items `2, 2, 3`
+/// supplied as the receipts of `Recovery`, evaluated from the handoff files
+/// alone, keep the duplicate and the order through `filter` and `map`, and
+/// give size 3, the count of 2 as 2 and the sum 7. R is read in its
+/// unit-free variant: over the unit `U` the bytes cannot project `Recovery`
+/// (`recovery_over_the_unit_u_is_a_missing_type_representation`, FR-533), and
+/// the nominal-unit leg runs on the checked route in
+/// `checked_handoff_healthy.rs`.
+#[trace("FR-046-AC-3", "TC-127")]
+#[test]
+fn duplicate_queries_over_the_receipts_evaluate_from_the_handoff_files() {
+    for (label, body, expected) in duplicate_query_cases("recoveredFull.receipts", "", "M::Total") {
+        let recipe = recipe_with(Some(&format!(
+            "{body}\n            and targetFull >= 0 and not activatedFull"
+        )));
+        let result = recipe.recover("Full", &[2, 2, 3], 0, false);
+        let Ok(Value::Boolean(held)) = result else {
+            panic!("{label}: a Boolean outcome, not {result:?}");
+        };
+        assert_eq!(held, expected, "{label}");
+    }
+}

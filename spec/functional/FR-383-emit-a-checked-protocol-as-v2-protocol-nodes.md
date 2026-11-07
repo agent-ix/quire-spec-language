@@ -228,7 +228,9 @@ site-name registry that a slot expression can have are:
 | capture initializer | `protocol <P> capture <name> initializer` |
 | registration capture, trigger guard, activation capture, retry relation, recovery predicate of a compensation `<N>` | `protocol <P> compensate <N> <stage> <index>`, the stage being `registration-capture`, `trigger-guard`, `activation-capture`, `retry` or `recovery`, and the index the capture's position (zero for the other three) |
 | constraint or condition of the control at path `<path>` | `protocol <P> run <path> body`, the path from the run root with the root's name first, joined by spaces |
-| `related` end, `visible` entry, case guard | `protocol <P> run <path> related <start> <end>` or `... decision <start>..<end>`, by source span; the span is a source-route alias, the slot's identity is its control node, member and ordinal (FR-390, FR-533) |
+| `related` end | `protocol <P> run <path> related <k> from` or `... related <k> to`, `k` the zero-based position of the record in the node body's emitted `related` array (sorted and collapsed by "Order, sets and collapse", not a source position) |
+| case guard | `protocol <P> run <path> case <label> guard`, `label` the case's label |
+| `visible` entry | `protocol <P> run <path> decision <start>..<end>`, by the entry's source span; the span is a source-route alias, the slot's identity is its control node, member and ordinal (FR-390, FR-533) |
 | `finish` constraint, `terminal when` condition, role `until`, channel key | `protocol <P> finish <name> body`, `protocol <P> terminal body`, `protocol <P> role <role> until`, `protocol <P> channel <channel> key` |
 
 The emitter SHALL write each slot's rows under that slot's own site name as the
@@ -244,7 +246,12 @@ checker assigned it to that position, its origin (above), the child-index path
 of the position and a zero-based `term_ordinal`.
 
 The emitter SHALL take each slot's origin name from the site at which the
-checker located that slot, and SHALL NOT invent a name. A `repeat`'s
+checker located that slot, and SHALL NOT invent a name. The name of a case guard
+and of a `related` end is built from the emitted control node: the case's label,
+and the record's position in the `related` list as the emitter writes it (Order,
+sets and collapse), so that two case guards, or two `related` ends, whose
+expressions are one graph node have distinct names and each pairs with its own
+case or end (QSpec FR-322-AC-388). A `repeat`'s
 `proof.invariant` and `proof.variant` are not slots (FR-390), and the emitter
 writes no row for them.
 
@@ -605,9 +612,10 @@ refusal changes no other protocol's result (see "Per-protocol results").
 | FR-383-AC-60 | In fixture E-C each arm of `Composed.case` holds exactly one row (`x >= 1` and `not b`). | Test (TC-1063) |
 | FR-383-AC-61 | In fixture E the checked package records exactly two `expression` occurrences of the `earlier.tally` application of `Refund`'s retry relation, ordinal 0 at its term in `earlier.tally < 3` and ordinal 1 at its term in `earlier.tally + 1`, and exactly two of `target >= 0`, ordinal 0 at its term in the trigger guard and ordinal 1 at its term in the retry relation; and in fixture E-C's `Tried` and `Picked` controls exactly two of `order >= 0`, ordinal 0 at the `Tried` constraint and ordinal 1 at the `Picked` constraint (declaration order, although `Picked` sorts first by origin name); so each position of an application in a slot's walk has an occurrence of its own. | Test (TC-1063) |
 | FR-383-AC-62 | Over a unit that imports a model package `M` in which the component `Sys` owns two Ports, `pump_out` (direction out) and `tank_in` (direction in), and holds `role Outlet on M::pump_out;`, `role Inlet on M::tank_in;`, `role Operator on M::Sys;` and a role on the whole model `M` emits `Outlet` and `Inlet` with a `model_member` Group holding the `package` identity of `M` and the declaration identity of their own Port, and a `model` reference to the node of `Sys`, so the two roles have different node ids; `Operator` and the whole-model role emit no third argument and the same bytes they emitted before the argument existed. After the I2 read, the typed role read back holds the same `package` and `node` as the checked role's selected Port key (`CheckedRole.model_member`). | Test (TC-1062) |
+| FR-383-AC-63 | In fixture L (TC-1070) the rows of `Decide`'s case guards are under `protocol Pipeline run Main Decide case yes guard` and `... case no guard`, the rows of `Decide.visible[0]` under `... decision 2641..2650`, and no row is under any other `decision` origin; in the variant of fixture L whose two `related` ends of `Got` are one identity-function call, the ends' rows are under `protocol Pipeline run Main Got related 0 from` and `... related 0 to`. | Test (TC-1063) |
 ## Dependencies
 
-- FR-383-AC-15 is gated on a QSpec path-stability decision (STD-653, Backlog; owner: QSpec). QSpec FR-322 "Operand index segments" writes every operand in a node path and every `NodeRef` as the operand's position in the whole document's `semantic_graph.nodes`, so adding any node ahead of an operand a protocol reaches changes the bytes of every protocol node that references it, whatever graph order the producer picks. The criterion's "same nodes" half holds today (structural ids and the reached node set are equal across unrelated declarations; two emissions are byte-identical) and the "same bytes" half is unmet until QSpec either adds a locality-preserving operand reference to the wire or rules that node equality across documents is identity equality resolved against each document's own graph. The criterion is kept as written and is restated against the chosen definition when STD-653 is decided; it is not narrowed in this requirement.
+- FR-383-AC-15 rests on QSpec FR-322 "Operand index segments" (QSL-1695): inside a node every operand is an operand slot `{"operand": k}` into the document's required `semantic_graph.operand_rows`, numbered by first occurrence in the node's serialization, and only ids outside nodes keep `{"node": i}`. A node's bytes therefore hold no graph index of its own graph, so adding a node ahead of an operand a protocol reaches changes no protocol node's bytes, only `operand_rows`; node equality across documents is equality of resolved structural keys (each operand slot replaced by the key of the node it names). The path-stability gate (STD-653) is closed by that wire form.
 - Contract IR IR-1310: the reader sees the declaration kinds of the selected model package, which a Port role's `model_member` check needs (QSpec FR-465).
 - ADR-011 §6.1 layer 4 `package` and §2.1 E4; ADR-027 §9 DS-1.
 - [FR-218](FR-218-check-every-protocol-control-construct-at-s3.md) and
