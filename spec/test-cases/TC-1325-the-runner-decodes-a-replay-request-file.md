@@ -26,6 +26,27 @@ Verify FR-350-AC-11 to FR-350-AC-14 and FR-350-AC-16 to FR-350-AC-18 (AC-15 is r
 | 6 | 17 | `bytes_path` `missing.bin`, `unlisted.bin`, `/etc/hostname`, `../x.bin`; a listed path | each of the four a `tool-failure`, `corpus-decode`, `/byte_provision/0/bytes_path`, no request; the listed path read as raw bytes |
 | 7 | 18 | `stage_limits` with `depth`; with `s1.input_bytes` `"1024"` | a `tool-failure`, `corpus-decode`, `/stage_limits/depth`; the entry `("s1.input_bytes", 1024)` |
 
+Additional native result controls run the same public function replay with an
+admission limit, an evaluated work limit and an optional owner model of `None`.
+They compare the owner's complete function result envelope, verify zero
+evaluator charges for a pre-call stop and retain the actual public output
+bytes across repeated runs. The owner codec exercises all five supplied-stop
+cause arms, both cancellation sources, overflow and the original nested locus;
+it does not convert any stop into a value. A genuine Witness-source function
+replay checks the positive settlement, explicit null record, exact verdict
+disagreement and the source region of an undefined remainder operation. Function calls
+cannot produce a nonempty separating record under ADR-031 SW-7. Removing a
+result member or changing its expected native facts makes the controls fail.
+A nonempty refinement input that
+FR-071 cannot represent stays unsupported even when its expected result is
+copied from that unsupported report.
+
+The typed traversal control retains present, absent and null record slots,
+all four native collection kinds and their element order. It checks that a
+tuple/union declaration is read before its children while a record declaration
+is read after its children. Structural codec fixtures assert encoding only;
+they do not assert admission of a checked declaration or qualify a corpus row.
+
 Tag each test with its AC ids and `TC-1325`.
 
 ## Expected Results

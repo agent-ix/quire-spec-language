@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-527-AC-15 (TC-1322 row 15): the classification of each temporal clause
 //! of the three packages of the ported IT-001 recipe R from the in-process
-//! package equals the classification from the package read back with the
-//! reader.
+//! package has the same semantic facts as the classification from the package
+//! read back with the reader, while each retains its own admission binding.
 
 use ix_trace_rs::trace;
 use qsl_package::checked_views::{
@@ -42,7 +42,7 @@ fn classified(package: &CheckedPackageV2) -> Vec<(Closure, Classification)> {
         .collect()
 }
 
-#[trace("FR-527-AC-15", "TC-1322")]
+#[trace("TC-1322", "FR-527-AC-15")]
 #[test]
 fn the_in_process_and_the_read_back_package_classify_alike() {
     let mut seen = 0;
@@ -65,9 +65,28 @@ fn the_in_process_and_the_read_back_package_classify_alike() {
 
         let first = classified(&in_process);
         let second = classified(&read_back);
-        assert_eq!(first, second, "{kind}");
+        assert_eq!(first.len(), second.len(), "{kind}");
         assert!(!first.is_empty(), "{kind}");
         seen += first.len() / 2;
+        for ((left_closure, left), (right_closure, right)) in first.iter().zip(&second) {
+            assert_eq!(left_closure, right_closure, "{kind}");
+            assert_eq!(left.support, right.support, "{kind}");
+            assert_eq!(left.retained, right.retained, "{kind}");
+            assert_eq!(left.selection().package(), right.selection().package());
+            assert_eq!(left.selection().clause(), right.selection().clause());
+            assert_eq!(
+                left.selection().definition_artifact(),
+                right.selection().definition_artifact()
+            );
+            assert_ne!(
+                left.selection().admission_binding(),
+                right.selection().admission_binding()
+            );
+            assert!(left.belongs_to(&in_process));
+            assert!(!left.belongs_to(&read_back));
+            assert!(right.belongs_to(&read_back));
+            assert!(!right.belongs_to(&in_process));
+        }
 
         for (closure, result) in &first {
             let expected = match kind {

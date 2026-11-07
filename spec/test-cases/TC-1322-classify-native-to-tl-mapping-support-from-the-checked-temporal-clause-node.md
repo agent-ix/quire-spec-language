@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify FR-527-AC-1 to FR-527-AC-24. The unit **M** holds one clause per row of FR-045's table, plus the formulas below, packaged and read back with the reader. Targets and premises are FR-045's and are read, not copied.
+Verify FR-527-AC-1 to FR-527-AC-26. The unit **M** holds one clause per row of FR-045's table, plus the formulas below, packaged and read back with the reader. Targets and premises are FR-045's and are read, not copied.
 
 ## Test Procedure
 
@@ -30,7 +30,7 @@ Verify FR-527-AC-1 to FR-527-AC-24. The unit **M** holds one clause per row of F
 | 12 | 12 | `surrounding` changed | only the future rows' target changes |
 | 13 | 13 | `selection` of every result | package identity, clause, definition `authority` and `identity` (the `/vN` suffix the revision) equal to the lock row; no clock parameter map |
 | 14 | 14 | constructing `AuthenticatedSelection` outside the classifier (compile-fail) | does not compile |
-| 15 | 15 | each temporal clause of **R**'s three packages: the reader over the bytes the emitter returns without a file vs the reader over the written handoff tree's bytes | equal classifications |
+| 15 | 15 | each temporal clause of **R**'s three packages: the reader over the bytes the emitter returns without a file vs the reader over the written handoff tree's bytes | equal support, retained clause and selected definition facts; different admission bindings, each belonging to its own admitted package |
 | 16 | 16 | a view whose profile row names an identity outside the five admitted profiles | `NoProfileSelection` |
 | 17 | 17 | a node that is not a temporal clause | `temporal_subject` refuses `UnresolvedClause` |
 | 18 | 18 | a unit selecting a temporal profile outside the five admitted identities | refused at check with `UnsupportedSelection`; no clause node |
@@ -40,6 +40,7 @@ Verify FR-527-AC-1 to FR-527-AC-24. The unit **M** holds one clause per row of F
 | 22 | 22 | a clause selected under `quire.temporal.timed/v1` | `Unsupported` naming `TimedProfile`, no target |
 | 23 | 23 | a timed clause with a past and a future operator | `Unsupported` naming `TimedProfile` and `MixedDirection` |
 | 24 | 24 | the one-occurrence clauses `Gamma` (supported) and `Delta` (timed, unsupported), and FR-337-AC-16's `Alpha` and `Beta` sharing one node; the retained name | `Some("Gamma")`, `Some("Delta")` and `None`, each equal to the view's `name()` |
+| 26 | 26 | supported and unsupported clauses; two independent strict admissions of identical original producer bytes; unchanged clones and a move of the original; retained selection after its source borrow and package are dropped | equal content does not authorize a foreign admission; owner binding accepts original and unchanged clones across moves, rejects the independent admission, stays retained by the owned classification, and participates in classification equality |
 
 Tag the test `#[trace("FR-527-AC-1", ..., "FR-527-AC-19", "TC-1322")]`, and AC-21 to AC-24 likewise; AC-20 is Inspection and carries no test tag.
 
