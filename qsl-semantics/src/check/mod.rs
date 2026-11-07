@@ -2278,6 +2278,7 @@ impl PackageDeclarations {
             self.dispatch_operations,
         )
         .with_variant_types(self.variant_types)
+        .with_untyped_members(self.untyped_members)
         .with_model_spellings(self.model_spellings)
         .with_source_owners(self.source_owners.clone())
         .with_model_records(self.model_records)

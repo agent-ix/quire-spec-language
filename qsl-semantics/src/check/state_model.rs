@@ -12,6 +12,7 @@ use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 use quire_semantic_value::location::Location;
 
 use super::check::Scope;
+use super::check::UntypedKind;
 use super::ir::{Node, NodeId};
 use super::navigation::Navigable;
 use super::refusal::{
@@ -110,6 +111,15 @@ pub(crate) enum Checked {
     Type(ValueType),
     Operation(usize),
     Admitted,
+}
+
+/// The refusal of a use of the member `untyped`, which has no checked type.
+fn untyped_cause(untyped: &super::check::UntypedMember) -> CheckCause {
+    CheckCause::UntypedMember(Box::new(super::refusal::UntypedMemberRefusal {
+        owner: untyped.owner_name.clone(),
+        member: untyped.name.clone(),
+        locus: untyped.locus.clone(),
+    }))
 }
 
 pub(crate) fn fault(location: &Location) -> CheckRefusal {
@@ -300,7 +310,16 @@ impl FamilyContract for StateModelFamily {
                             // FR-138: a history field is the refinement's own.
                             return Err(refuse(location, CheckCause::MissingName(field.clone())));
                         }
-                        (None, []) => return Err(mismatch(location)),
+                        (None, []) => {
+                            // FR-056-AC-43: a field declared with no checked
+                            // type is refused where it is used.
+                            return Err(
+                                match scope.untyped_member(object, field, UntypedKind::Field) {
+                                    Some(untyped) => refuse(location, untyped_cause(untyped)),
+                                    None => mismatch(location),
+                                },
+                            );
+                        }
                         (Some(_), []) if !*field_reads => return Err(mismatch(location)),
                         (Some(attribute), []) => {
                             let declared = attribute.field();
@@ -500,6 +519,13 @@ impl FamilyContract for StateModelFamily {
                     let ValueType::Reference(receiver_type) = receiver_type else {
                         return Err(ineligible(location));
                     };
+                    // FR-056-AC-43: an operation with a parameter or result of
+                    // no checked type is refused at the call.
+                    if let Some(untyped) =
+                        scope.untyped_member(receiver_type, member, UntypedKind::Operation)
+                    {
+                        return Err(refuse(location, untyped_cause(untyped)));
+                    }
                     let (index, operation) = scope
                         .dispatch_operations()
                         .iter()

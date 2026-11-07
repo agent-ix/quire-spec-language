@@ -129,6 +129,12 @@ fn rational_replay() -> Replay {
     replay_of(fixture::rational_document(), rational_fields())
 }
 
+/// The FR-056-AC-43 fixture: `Item` also holding `memo`, `amount` and
+/// `amounts` of no checked type, and the operations `scale` and `peek`.
+fn bare_native_replay() -> Replay {
+    replay_of(fixture::bare_native_document(), base_fields())
+}
+
 fn replay_of(document: Value, base: Vec<(String, Value)>) -> Replay {
     replay_with(document, base, "")
 }
@@ -2896,4 +2902,120 @@ fn a_bounded_rational_member_admits_its_normalized_value_or_refuses_the_pair() {
             "{numerator}/{denominator}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// FR-056-AC-43 (TC-897 step 9): members of no checked type
+// ---------------------------------------------------------------------------
+
+/// The refusal as (code, cause, type, member, locus, field).
+fn untyped_refusal(
+    record: &qsl_semantics::model::observation::AdmissionRecord,
+) -> (String, String, String, String, String, String) {
+    let field = |name: &str| record.fields.get(name).cloned().unwrap_or_default();
+    (
+        record.catalog.code().to_owned(),
+        record.catalog.cause().to_owned(),
+        field("type"),
+        field("member"),
+        field("locus"),
+        field("field"),
+    )
+}
+
+fn expected(
+    member: &str,
+    locus: &str,
+    field: &str,
+) -> (String, String, String, String, String, String) {
+    (
+        "ill_typed".to_owned(),
+        "operator-ineligible".to_owned(),
+        "Item".to_owned(),
+        member.to_owned(),
+        locus.to_owned(),
+        field.to_owned(),
+    )
+}
+
+/// FR-056-AC-43 (TC-897 step 9): a snapshot supplying the typed fields and
+/// omitting `memo`, `amount` and `amounts` is admitted, with no
+/// `missing-member`.
+#[trace("TC-897")]
+#[test]
+fn a_snapshot_omitting_the_members_of_no_checked_type_is_admitted() {
+    bare_native_replay()
+        .admit(&base_fields(), ObservationLimits::default())
+        .unwrap_or_else(|failure| panic!("the snapshot admits: {failure:?}"));
+}
+
+/// FR-056-AC-43 (TC-897 step 9): a snapshot supplying a Text for `memo`, or a
+/// Decimal for `amount`, refuses `ill_typed`/`operator-ineligible` at that
+/// field naming the type and `Field.typeRef`, the value unread: a payload
+/// that would itself be malformed gives the same refusal.
+#[trace("TC-897")]
+#[test]
+fn a_snapshot_supplying_a_member_of_no_checked_type_refuses_unread() {
+    let replay = bare_native_replay();
+    for (field, value) in [
+        ("memo", json!({"kind": "text", "text": "a"})),
+        (
+            "amount",
+            json!({"kind": "decimal", "coefficient": "1", "scale": "0"}),
+        ),
+        ("memo", json!({"kind": "text", "text": 7, "extra": true})),
+    ] {
+        let mut fields = base_fields();
+        fields.push((field.to_owned(), value));
+        let record = record_of(replay.admit(&fields, ObservationLimits::default()));
+        assert_eq!(
+            untyped_refusal(&record),
+            expected(field, "Field.typeRef", field),
+            "{field}"
+        );
+    }
+}
+
+/// FR-056-AC-43 (TC-897 step 9): an invocation of `scale` supplying `by`
+/// refuses at `by` naming `scale` and `Operation.params[0].typeRef`; one
+/// omitting `by` refuses `invalid_runtime_input`/`missing-member`; an
+/// invocation of `peek` with a non-null `result` refuses at `result` naming
+/// `peek` and `Operation.returns.typeRef`, and a null `result` is admitted.
+#[trace("TC-897")]
+#[test]
+fn an_invocation_of_an_operation_of_no_checked_type_refuses_the_untyped_slot() {
+    let replay = bare_native_replay();
+    let decimal = json!({"kind": "decimal", "coefficient": "1", "scale": "0"});
+    let record = record_of(replay.invoke(
+        "scale",
+        Selected::Postcondition,
+        json!({"by": decimal}),
+        integer("1"),
+        ObservationLimits::default(),
+    ));
+    assert_eq!(
+        untyped_refusal(&record),
+        expected("scale", "Operation.params[0].typeRef", "by")
+    );
+    let record = record_of(replay.invoke(
+        "scale",
+        Selected::Postcondition,
+        json!({}),
+        integer("1"),
+        ObservationLimits::default(),
+    ));
+    assert_eq!(record.catalog.code(), Code::InvalidRuntimeInput.as_str());
+    assert_eq!(record.catalog.cause(), "missing-member");
+    assert_eq!(record.fields.get("field").map(String::as_str), Some("by"));
+    let record = record_of(replay.invoke(
+        "peek",
+        Selected::Postcondition,
+        json!({}),
+        text("a"),
+        ObservationLimits::default(),
+    ));
+    assert_eq!(
+        untyped_refusal(&record),
+        expected("peek", "Operation.returns.typeRef", "result")
+    );
 }

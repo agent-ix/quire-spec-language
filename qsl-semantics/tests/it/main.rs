@@ -13,6 +13,7 @@
 // identities in individual fixtures remain independent of the source package.
 const TEST_PACKAGE_NAME: &str = "qsl-semantics-integration-tests";
 
+mod bare_native_members;
 #[cfg(feature = "test-support")]
 mod business_meanings;
 mod child_composite;

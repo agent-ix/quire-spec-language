@@ -261,8 +261,8 @@ pub struct PersistenceInterfaceRecord {
 /// (`Int[lo,hi]`) is a constraint fact about the field, not a distinct
 /// value-type reference. `Rational`, `Decimal` and `Text` are parameterized
 /// in the grammar (`Rational[lo,hi;dmin,dmax]`, `Decimal[lo,hi;dmin,dmax]`,
-/// `Text[min,max;profile]`) and REQUIRE their full parameter set to resolve
-/// (see [`Self::unsupported_parameters`]).
+/// `Text[min,max;profile]`); named bare, each is admitted with no checked
+/// type and refused where used (FR-056-AC-43).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeValueType {
     /// `UUID`.
@@ -301,32 +301,6 @@ impl NativeValueType {
             Self::Text => "Text",
             Self::String => "String",
             Self::Timestamp => "Timestamp",
-        }
-    }
-
-    /// The required parameter names (shared-grammar.md's own labels for
-    /// each production: `Rational`/`Decimal`'s `dmin`/`dmax`, `Text`'s
-    /// `profile`) that `agent-ix-semantic-ir`'s own constraint vocabulary
-    /// (`constraint_schema`'s closed `keyword` set: `min`, `max`,
-    /// `exclusiveMin`, `exclusiveMax`, `minLength`, `maxLength`, `pattern`,
-    /// `enumValues`, `nonEmpty`, `unique`, `format`) has no keyword for these
-    /// parameter sets, so `Rational`, `Decimal` and `Text` cannot resolve no
-    /// matter what a producer's own document supplies. `Rational`/`Decimal`
-    /// also require `lo`/`hi`, which the vocabulary's `min`/`max` do carry;
-    /// only the decimal-scale bound is unexpressable. `Boolean`, `Integer`,
-    /// `Float32`, `Float64` and `Timestamp` take no required parameter, so this
-    /// is empty for them.
-    pub fn unsupported_parameters(&self) -> &'static [&'static str] {
-        match self {
-            Self::Uuid
-            | Self::Boolean
-            | Self::Integer
-            | Self::Float32
-            | Self::Float64
-            | Self::String
-            | Self::Timestamp => &[],
-            Self::Rational | Self::Decimal => &["dmin", "dmax"],
-            Self::Text => &["profile"],
         }
     }
 }
