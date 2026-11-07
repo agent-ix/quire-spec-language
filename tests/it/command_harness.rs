@@ -20,10 +20,6 @@ impl Status {
     pub(crate) fn code(&self) -> Option<i32> {
         Some(i32::from(self.0))
     }
-
-    pub(crate) fn success(&self) -> bool {
-        self.0 == 0
-    }
 }
 
 /// What the driver would write for one in-process call.
