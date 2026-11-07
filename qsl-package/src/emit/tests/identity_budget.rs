@@ -399,13 +399,14 @@ function e3 using v(s: State, g: Integer): State pure { s }\n";
         crate::EmitLimits::fixture(),
     )
     .expect("real writer carry");
-    let Read::Verified { admitted, .. } = read_v2(
+    let read = read_v2(
         rooted.package().bytes(),
         library(),
         V2ReadLimits::fixture(),
         &evidence,
-    ) else {
-        panic!("rooted package admits")
+    );
+    let Read::Verified { admitted, .. } = read else {
+        panic!("rooted package admits: {read:?}")
     };
     let mut measure = ample();
     let rows = rooted
