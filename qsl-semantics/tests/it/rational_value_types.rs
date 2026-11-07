@@ -166,8 +166,14 @@ fn definition(name: &str, kind: &str, members: Value) -> Value {
 /// TC-1300 row 24: `Ratio` (bounded, or with empty `constraints`), the tuple
 /// type `P` whose position `p0` is typed `Ratio`, and the variant type `V`
 /// whose case `c` has `Ratio` as its `payloadType`.
-fn positions_document(bounded: bool) -> Value {
+fn positions_document(bounded: bool, via_alias: bool) -> Value {
     let ratio = identity("Ratio");
+    // The position and the payload name `Ratio` itself, or an alias of it.
+    let named = if via_alias {
+        identity("RatioAlias")
+    } else {
+        ratio.clone()
+    };
     let constraints = if bounded {
         ratio_constraints(&ratio)
     } else {
@@ -183,7 +189,7 @@ fn positions_document(bounded: bool) -> Value {
         "tuple_type",
         json!({"positions": [{
             "identity": identity("P/p0"),
-            "typeRef": ratio,
+            "typeRef": named,
             "origin": sourced(5),
         }]}),
     );
@@ -194,9 +200,15 @@ fn positions_document(bounded: bool) -> Value {
             "identity": identity("variant/V-c"),
             "name": "c",
             "origin": sourced(7),
-            "payloadType": ratio,
+            "payloadType": named,
         }]}),
     );
+    let mut types = vec![ratio_type, tuple, variant];
+    if via_alias {
+        let mut alias = definition("RatioAlias", "unused", json!({"target": ratio}));
+        alias["kind"] = json!("alias");
+        types.push(alias);
+    }
     json!({
         "contractVersion": "2.0.0",
         "canonicalization": {"algorithm": "rfc8785-v1"},
@@ -208,7 +220,7 @@ fn positions_document(bounded: bool) -> Value {
             construct("tuple_type", meaning::TUPLE_VALUE_TYPE, "tuple", json!({"positions": "required"})),
             construct("variant_type", meaning::VARIANT_TYPE, "enumeration", json!({"variants": "required"})),
         ],
-        "types": [ratio_type, tuple, variant],
+        "types": types,
         "occurrences": [], "extensions": [],
     })
 }
@@ -228,13 +240,15 @@ fn key(node: &str) -> quire_checked::key::DeclarationKey {
     }
 }
 
-/// FR-505-AC-10 (TC-1300 row 24): a tuple position and a variant case payload
-/// typed by a bounded `Ratio` admit, and both name the one `Ratio`
-/// declaration whose domain is `Rational[-3, 7; 1, 12]`.
-#[trace("FR-505-AC-10", "TC-1300")]
+/// TC-1300 row 24 (FR-505-AC-10, record level): a tuple position and a
+/// variant case payload typed by a bounded `Ratio` admit, and both name the
+/// one `Ratio` declaration whose domain is `Rational[-3, 7; 1, 12]`. The
+/// checked type and the `rational_range` node of the two are not asserted
+/// here, so the test is not tagged with the criterion.
+#[trace("TC-1300")]
 #[test]
 fn a_bounded_ratio_admits_as_a_tuple_position_and_a_variant_payload() {
-    let package = read_positions(&positions_document(true)).expect("the package reads");
+    let package = read_positions(&positions_document(true, false)).expect("the package reads");
     let ratio = package
         .records
         .iter()
@@ -278,44 +292,54 @@ fn a_bounded_ratio_admits_as_a_tuple_position_and_a_variant_payload() {
     )));
 }
 
-/// FR-505-AC-10 (TC-1300 row 25): with `Ratio`'s `constraints` empty the
-/// position refuses `invalid_model_binding`/`malformed-declaration` and the
-/// payload `unsupported_construct`/`declaration-form` at `Variant.payloadType`.
-#[trace("FR-505-AC-10", "TC-1300")]
+/// TC-1300 row 25 (FR-505-AC-10, refusal half): with `Ratio`'s `constraints`
+/// empty, a tuple position and a variant payload that name `Ratio` or an
+/// alias of it refuse at the package read: the position
+/// `invalid_model_binding`/`malformed-declaration` at the position's
+/// `typeRef`, the payload `unsupported_construct`/`declaration-form` at
+/// `Variant.payloadType`. Both are intake-reader causes raised by
+/// `read_domain_package`, before any assembly. The "field admits with no
+/// checked type" clause is not carried by the spine, so the test is not
+/// tagged with the criterion.
+#[trace("TC-1300")]
 #[test]
 fn an_unbounded_ratio_refuses_as_a_tuple_position_and_a_variant_payload() {
-    let package = read_positions(&positions_document(false)).expect("the package reads");
-    assert!(
-        package.records.iter().all(|record| !matches!(
-            record,
-            DomainPackageRecord::TuplePosition(_) | DomainPackageRecord::Variant(_)
-        )),
-        "neither the position nor the payload is admitted"
-    );
-    let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::default());
-    let NormalizeOutcome::Refused(refusals) = outcome else {
-        panic!("normalization carries the package_read refusals: {outcome:?}");
-    };
-    let refusals: Vec<ModelRefusal> = refusals.iter().cloned().collect();
-    assert_eq!(refusals.len(), 2, "{refusals:#?}");
-    let position = refusals
-        .iter()
-        .find(|refusal| refusal.code == Code::InvalidModelBinding)
-        .expect("the tuple position refuses malformed-declaration");
-    assert!(
-        matches!(&position.cause, ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
-            if *node == identity("P/p0")),
-        "{position:#?}"
-    );
-    let payload = refusals
-        .iter()
-        .find(|refusal| refusal.code == Code::UnsupportedConstruct)
-        .expect("the variant payload refuses declaration-form");
-    assert!(
-        matches!(&payload.cause, ModelRefusalCause::UnsupportedDeclarationForm { node, member, .. }
-            if *node == identity("variant/V-c") && member.to_string() == "Variant.payloadType"),
-        "{payload:#?}"
-    );
+    for via_alias in [false, true] {
+        let package =
+            read_positions(&positions_document(false, via_alias)).expect("the package reads");
+        assert!(
+            package.records.iter().all(|record| !matches!(
+                record,
+                DomainPackageRecord::TuplePosition(_) | DomainPackageRecord::Variant(_)
+            )),
+            "alias {via_alias}: neither the position nor the payload is admitted"
+        );
+        let (outcome, _) = normalize_with_meter(&package, ModelNormalizationLimits::default());
+        let NormalizeOutcome::Refused(refusals) = outcome else {
+            panic!("alias {via_alias}: the reader's refusals surface: {outcome:?}");
+        };
+        let refusals: Vec<ModelRefusal> = refusals.iter().cloned().collect();
+        assert_eq!(refusals.len(), 2, "alias {via_alias}: {refusals:#?}");
+        let position = refusals
+            .iter()
+            .find(|refusal| refusal.code == Code::InvalidModelBinding)
+            .expect("the tuple position refuses malformed-declaration");
+        assert!(
+            matches!(&position.cause, ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. }
+                if *node == identity("P/p0")
+                    && member.to_string() == "TypeDefinition.positions[0].typeRef"),
+            "alias {via_alias}: {position:#?}"
+        );
+        let payload = refusals
+            .iter()
+            .find(|refusal| refusal.code == Code::UnsupportedConstruct)
+            .expect("the variant payload refuses declaration-form");
+        assert!(
+            matches!(&payload.cause, ModelRefusalCause::UnsupportedDeclarationForm { node, member, .. }
+                if *node == identity("variant/V-c") && member.to_string() == "Variant.payloadType"),
+            "alias {via_alias}: {payload:#?}"
+        );
+    }
 }
 
 fn source_refusals(declarations: &str) -> Result<(), Vec<(Code, Option<String>)>> {

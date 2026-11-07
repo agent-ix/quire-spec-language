@@ -8895,11 +8895,16 @@ mod tests {
         ));
     }
 
-    /// The refusal of one defective `Ratio`, as its code, the `Ratio`
-    /// member path the refusal names and the full detail.
+    /// The refusal of one defective `Ratio`, as its code, the exact member
+    /// path it names and the full detail.
     fn ratio_refusal(constraints: Vec<Value>) -> (Code, String, String) {
         let refusal = read_ratio(constraints, None).expect_err("a defective Ratio refuses");
-        (refusal.code, format!("{:?}", refusal.cause), refusal.detail)
+        let member = match &refusal.cause {
+            ModelRefusalCause::IntakeMalformedDeclaration { member, .. }
+            | ModelRefusalCause::UnsupportedDeclarationForm { member, .. } => member.to_string(),
+            other => panic!("not an intake refusal of a member: {other:?}"),
+        };
+        (refusal.code, member, refusal.detail)
     }
 
     fn with_foreign_applies_to(mut constraint: Value) -> Value {
@@ -8934,9 +8939,8 @@ mod tests {
         constraints.push(max_numerator(serde_json::json!(6)));
         let (code, member, detail) = report(constraints);
         assert_eq!(code, Code::UnsupportedConstruct, "{detail}");
-        assert!(member.contains("Name(\"keyword\")"), "{member}");
+        assert_eq!(member, "TypeDefinition.constraints[4].keyword");
         assert!(detail.contains("minLength"), "{detail}");
-        assert!(!detail.contains("maxNumerator"), "{detail}");
 
         // A foreign appliesTo with maxNumerator given twice: the appliesTo.
         let mut constraints = complete("");
@@ -8944,7 +8948,7 @@ mod tests {
         constraints.push(max_numerator(serde_json::json!(5)));
         let (code, member, detail) = report(constraints);
         assert_eq!(code, Code::InvalidModelBinding, "{detail}");
-        assert!(member.contains("Name(\"appliesTo\")"), "{member}");
+        assert_eq!(member, "TypeDefinition.constraints[4].appliesTo");
 
         // minLength with a foreign appliesTo: minLength.
         let mut constraints = complete("");
@@ -8952,7 +8956,7 @@ mod tests {
         constraints.push(with_foreign_applies_to(max_numerator(serde_json::json!(6))));
         let (code, member, detail) = report(constraints);
         assert_eq!(code, Code::UnsupportedConstruct, "{detail}");
-        assert!(member.contains("Name(\"keyword\")"), "{member}");
+        assert_eq!(member, "TypeDefinition.constraints[4].keyword");
         assert!(detail.contains("minLength"), "{detail}");
 
         // maxNumerator twice with minDenominator removed: the repeated keyword.
@@ -8960,16 +8964,15 @@ mod tests {
         constraints.push(max_numerator(serde_json::json!(6)));
         let (code, member, detail) = report(constraints);
         assert_eq!(code, Code::InvalidModelBinding, "{detail}");
-        assert!(member.contains("Name(\"keyword\")"), "{member}");
+        assert_eq!(member, "TypeDefinition.constraints[3].keyword");
         assert!(detail.contains("maxNumerator"), "{detail}");
-        assert!(!detail.contains("minDenominator: missing"), "{detail}");
 
         // minDenominator removed with maxNumerator 1.5: the missing keyword.
         let mut constraints = complete("minDenominator");
         constraints[1] = max_numerator(serde_json::json!(1.5));
         let (code, member, detail) = report(constraints);
         assert_eq!(code, Code::InvalidModelBinding, "{detail}");
-        assert!(!member.contains("Index"), "{member}");
+        assert_eq!(member, "TypeDefinition.constraints");
         assert!(detail.contains("minDenominator: missing"), "{detail}");
 
         // maxNumerator 1.5 with minNumerator 8: the operand.
@@ -8978,7 +8981,7 @@ mod tests {
         constraints[1] = max_numerator(serde_json::json!(1.5));
         let (code, member, detail) = report(constraints);
         assert_eq!(code, Code::InvalidModelBinding, "{detail}");
-        assert!(member.contains("Name(\"operands\")"), "{member}");
+        assert_eq!(member, "TypeDefinition.constraints[1].operands");
 
         // maxDenominator 0.5 listed first with maxNumerator 1.5: maxNumerator.
         let constraints = vec![
@@ -8989,7 +8992,7 @@ mod tests {
         ];
         let (code, member, detail) = report(constraints);
         assert_eq!(code, Code::InvalidModelBinding, "{detail}");
-        assert!(member.contains("Name(\"operands\")"), "{member}");
+        assert_eq!(member, "TypeDefinition.constraints[1].operands");
         assert!(detail.contains("maxNumerator"), "{detail}");
     }
 
