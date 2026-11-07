@@ -135,11 +135,17 @@ impl<'p> BarePackage<'p> {
             Err(crate::bare_units::UnitDefinitionRefusal::Read(
                 quire_contract_model::nominal_reads::NominalReadCode::LimitReached,
             )) => {
+                // A native read that reports its allowance exhausted records the
+                // unpaid charge; without one the denial is no allowance of this
+                // pass, and the witness is refused rather than given a setting.
                 let setting = match budget.first_unpaid().map(|charge| charge.kind) {
+                    Some(quire_contract_model::NativeJoinChargeKind::Work) => {
+                        qsl_foundation::Setting::I2WorkUnits
+                    }
                     Some(quire_contract_model::NativeJoinChargeKind::Storage) => {
                         qsl_foundation::Setting::I2NativeJoinStorage
                     }
-                    _ => qsl_foundation::Setting::I2WorkUnits,
+                    None => return Ok((Err(IdentityWitnessRefusal::Unknown), none)),
                 };
                 Err(crate::NativeJoinFailure::UnitDefinitions { setting }.with_budget(budget))
             }
