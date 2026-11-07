@@ -164,9 +164,6 @@ protocol Orders using P over (view: M::WorkflowView) on each (started: M::StartV
 }
 ```
 
-The full example, with compensation, retries and timeouts, is
-[`tests/fixtures/composed-choreography.native`](tests/fixtures/composed-choreography.native).
-
 | Profile | Family |
 | --- | --- |
 | `quire.value.complete/v1` | values, records, functions, predicates |

@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Bracket nesting, chain lengths and stack safety for the native S1 parser,
-//! historical and composed editions. Every test runs on a 512 KiB thread at
+//! historical edition. Every test runs on a 512 KiB thread at
 //! the default ceilings; see `qsl-cst/tests/it/nesting_levels.rs` for the
 //! complete-V1 parser.
 use ix_trace_rs::trace;
 use qsl_foundation::{Code, Diagnostic, Phase, SourceIdentity, SyntaxLimit};
-use quire_spec_language::syntax::composed::NativeUnit;
-use quire_spec_language::{parse, parse_native, Limits, ParsedUnit};
+use quire_spec_language::{parse, Limits, ParsedUnit};
 
 fn identity(id: &str) -> SourceIdentity {
     SourceIdentity {
@@ -16,13 +15,6 @@ fn identity(id: &str) -> SourceIdentity {
 }
 
 const HEADER: &str = "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\";\n";
-
-const COMPOSED_HEADER: &str = r#"language "ix:native" edition "1-draft";
-profile S = "quire.state.graph/v1";
-profile T = "quire.temporal.timestamped-event.finite-window/v1";
-profile P = "quire.protocol.finite-global/v1";
-model M = "test:orders-and-refunds";
-"#;
 
 /// Everything before a historical invariant's expression. Its `{` is one
 /// bracket pair.
@@ -39,21 +31,6 @@ fn read_expr(expression: &str) -> Result<ParsedUnit, Box<Diagnostic>> {
         identity("nesting"),
         "test.native",
         document(expression).as_bytes(),
-        Limits::default(),
-    )
-}
-
-fn temporal_document(formula: &str) -> String {
-    format!(
-        "{COMPOSED_HEADER}temporal Test using T over (view: M::OrderView) clock \"c\" on origin {{ {formula} }}"
-    )
-}
-
-fn read_composed(text: &str) -> Result<NativeUnit, Box<Diagnostic>> {
-    parse_native(
-        identity("composed"),
-        "composed.native",
-        text.as_bytes(),
         Limits::default(),
     )
 }
@@ -138,16 +115,6 @@ fn if_then_chain(elements: usize) -> String {
         " else 0".repeat(elements)
     )
 }
-fn always_chain(elements: usize) -> String {
-    temporal_document(&format!("{}true", "always [0,1] ".repeat(elements)))
-}
-fn temporal_implies_chain(elements: usize) -> String {
-    temporal_document(&repeat_join("true", " implies ", elements + 1))
-}
-fn temporal_not_chain(elements: usize) -> String {
-    temporal_document(&format!("{}true", "not ".repeat(elements)))
-}
-
 /// `elements` parses with nesting depth 0 and `elements + 1` is refused
 /// naming the token or syntax-node ceiling.
 fn assert_longest_chain(
@@ -170,10 +137,6 @@ fn historical(build: fn(usize) -> String) -> impl Fn(usize) -> Result<(), Box<Di
     move |elements| read_expr(&build(elements)).map(drop)
 }
 
-fn composed(build: fn(usize) -> String) -> impl Fn(usize) -> Result<(), Box<Diagnostic>> {
-    move |elements| read_composed(&build(elements)).map(drop)
-}
-
 #[trace("TC-012", "NFR-001-M-4")]
 #[test]
 fn parenthesized_sum_five_deep_parses() {
@@ -183,9 +146,8 @@ fn parenthesized_sum_five_deep_parses() {
     });
 }
 
-// Bracket nesting has no ceiling of its own: parentheses and composed
-// type-argument brackets nested far past the old 64-pair ceiling parse at
-// the default limits.
+// Bracket nesting has no ceiling of its own: parentheses nested far past
+// the old 64-pair ceiling parse at the default limits.
 #[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3")]
 #[test]
 fn deep_brackets_parse_at_the_default_ceilings() {
@@ -193,12 +155,6 @@ fn deep_brackets_parse_at_the_default_ceilings() {
         let depth = 5_000;
         read_expr(&format!("{}1{}", "(".repeat(depth), ")".repeat(depth)))
             .expect("5,000 parenthesis pairs parse");
-        let deep = format!(
-            "{COMPOSED_HEADER}invariant Deep using S on M::OrderView at current {{ {}size<M::T>(1){} }}",
-            "(".repeat(depth),
-            ")".repeat(depth)
-        );
-        read_composed(&deep).expect("size<…>(…) inside 5,000 pairs parses");
     });
 }
 
@@ -286,28 +242,6 @@ fn let_and_if_chains_in_every_position_parse_on_a_bounded_stack() {
     });
 }
 
-#[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3")]
-#[test]
-fn longest_composed_temporal_chains_parse_and_one_longer_names_a_ceiling() {
-    on_bounded_stack(|| {
-        assert_longest_chain(
-            "always",
-            longest_admitted(composed(always_chain)),
-            composed(always_chain),
-        );
-        assert_longest_chain(
-            "temporal implies",
-            longest_admitted(composed(temporal_implies_chain)),
-            composed(temporal_implies_chain),
-        );
-        assert_longest_chain(
-            "temporal not",
-            longest_admitted(composed(temporal_not_chain)),
-            composed(temporal_not_chain),
-        );
-    });
-}
-
 fn longest_admitted(read: impl Fn(usize) -> Result<(), Box<Diagnostic>>) -> usize {
     let (mut low, mut high) = (0_usize, 120_000_usize);
     while low + 1 < high {
@@ -338,13 +272,6 @@ fn probe_longest_chains_at_default_ceilings() {
             ("if then", if_then_chain),
         ] {
             println!("historical {name}: {}", longest_admitted(historical(build)));
-        }
-        for (name, build) in [
-            ("always", always_chain as fn(usize) -> String),
-            ("temporal implies", temporal_implies_chain),
-            ("temporal not", temporal_not_chain),
-        ] {
-            println!("composed {name}: {}", longest_admitted(composed(build)));
         }
     });
 }

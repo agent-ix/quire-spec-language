@@ -35,11 +35,6 @@ pub(in crate::checking) fn materialize<'a, C: Context<'a>>(
             value,
             value_type: ty.clone(),
         },
-        Kind::Rational(numerator, denominator, ty) => ir::ExpressionKind::RationalLiteral {
-            numerator,
-            denominator,
-            value_type: ty.clone(),
-        },
         Kind::Input(key) => ir::ExpressionKind::ValueReference {
             name: context
                 .symbol(key)

@@ -2,8 +2,6 @@
 //! FR-002: located syntax and parser ceilings, before model linking or evaluation.
 use qsl_foundation::source::{Source, Span, Spanned};
 
-pub mod composed;
-
 /// Exact admitted language identifier.
 pub const LANGUAGE: &str = "ix:native";
 /// Exact admitted syntax edition.
@@ -21,9 +19,7 @@ pub struct Limits {
     /// Historical parsing: maximum non-comment tokens. Complete parsing:
     /// maximum retained CST leaves. Defaults to 100,000.
     pub tokens: usize,
-    /// Maximum syntax nodes. Defaults to 50,000. The historical path counts
-    /// expressions; the composed path also counts declarations, parameters,
-    /// captures, activation/interval records and protocol binding/control records.
+    /// Maximum syntax nodes. Defaults to 50,000, counting expressions.
     pub nodes: usize,
 }
 
@@ -37,7 +33,7 @@ impl Default for Limits {
     }
 }
 
-/// Expression handle local to one historical or composed unit; not a cross-unit identity.
+/// Expression handle local to one historical unit; not a cross-unit identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExprId(pub(crate) usize);
 

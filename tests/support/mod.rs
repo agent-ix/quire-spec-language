@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Shared helpers for the root integration-test binary.
 
-pub mod composed_types;
 #[path = "../../examples/config-version/spine_corpus.rs"]
 pub mod config_version_spine;
 pub mod front_end;
