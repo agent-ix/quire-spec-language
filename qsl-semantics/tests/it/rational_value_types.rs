@@ -666,6 +666,13 @@ fn a_bare_unit_name_declared_by_two_models_is_refused() {
     for unit in ["A::x", "B::x"] {
         assert_eq!(refusal(&both, unit), Ok(()), "{unit}");
     }
+    // The cause follows the order the `model` declarations select the
+    // packages in, not alias or identity order.
+    let reversed = [package("B", "acme/b", "x"), package("A", "acme/a", "x")];
+    assert_eq!(
+        refusal(&reversed, "x"),
+        unresolved("x", &["acme/b", "acme/a"])
+    );
     assert_eq!(refusal(&one, "x"), unresolved("x", &["acme/a"]));
     assert_eq!(refusal(&one, "nosuch"), unresolved("nosuch", &[]));
     assert_eq!(refusal(&one, "y"), unresolved("y", &["acme/b"]));
