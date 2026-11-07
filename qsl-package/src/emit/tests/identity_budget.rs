@@ -237,3 +237,55 @@ fn two_identity_materializations_compose_without_restoring_allowance() {
     assert_eq!(error.configured_bound(), Some(need.storage * 2 - 1));
     assert!(short_two.consumed().storage >= need.storage);
 }
+
+#[test]
+#[trace("TC-1331", "FR-531-AC-33")]
+fn denied_identity_output_copies_do_not_allocate_payloads_or_diagnostics() {
+    let (emission, package) = fixture();
+    let (declarations, fields) = emission
+        .identity_input_rows(&mut ample())
+        .expect("real producer inputs");
+    let joined =
+        SelectedExactIdentities::from_stage_rows(&package, declarations, fields, &mut ample())
+            .expect("actual native join");
+    let mut budget = NativeJoinBudget::new(1_000_000_000, 0);
+    let _ = allocation_counter::measure(|| {});
+    let mut result = None;
+    let observed = allocation_counter::measure(|| {
+        result = Some(emission.identity_output_rows(&package, &joined, &mut budget))
+    });
+    let denied = adapter_error(
+        result
+            .expect("call executed")
+            .expect_err("unpaid output refuses"),
+    );
+    assert_eq!(denied.code(), NativeRowErrorCode::StorageLimit);
+    assert_eq!(
+        denied.locus().expect("output location").form,
+        "identity_declaration_output"
+    );
+    assert_eq!(denied.denied(), budget.first_unpaid());
+    assert_eq!(observed.bytes_total, 0);
+    assert_eq!(observed.count_total, 0);
+}
+
+#[test]
+#[trace("TC-1331", "FR-531-AC-31")]
+fn final_emission_input_selection_matches_the_existing_native_stage_filter() {
+    let (emission, package) = fixture();
+    let existing = qsl_semantics::model::intake::selected_exact_identities_from_rows(
+        &package,
+        emission.selected_exact_declaration_rows(),
+        emission.selected_exact_field_rows(),
+        &mut ample(),
+    )
+    .expect("existing selected membership");
+    let actual = emission
+        .identity_rows(&package, &mut ample())
+        .expect("accounted selected membership");
+    assert_eq!(
+        actual.declarations(),
+        existing.declaration_rows().cloned().collect::<Vec<_>>()
+    );
+    assert_eq!(actual.fields(), existing.field_rows());
+}
