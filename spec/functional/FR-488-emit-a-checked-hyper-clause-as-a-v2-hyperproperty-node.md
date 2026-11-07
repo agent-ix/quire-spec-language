@@ -165,7 +165,8 @@ aggregate, so each of the seven bindings stands as a Member `binding`
 `domain` a Leaf literal; `subjects`, `parameters` and `align_skip` an
 `aggregate` whose first non-Leaf member is a `binding` (or none), hence a
 Group whose members are `binding(name, Leaf)` or Leaves; `match` an `aggregate`
-of Leaves (references, or a literal for a constant conjunct), hence a Group;
+of Leaves (references; a constant conjunct is a reference to its
+`value`/`literal` node), hence a Group;
 `quantifiers` an `aggregate` whose first non-Leaf member is an `aggregate`,
 hence a Tuple whose members are Groups, each Group's members being
 `binding(name, Leaf)` (`Place::GroupMember` takes a `binding` whose value is
@@ -369,7 +370,10 @@ order, and a clause stops at its first refusal, in this order:
 1. a clause under the timed profile (FR-234), at the clause;
 2. a clause with an alias that binds no object parameter, at the clause:
    QSpec FR-402 gives such an alias its package's `model_root` as subject,
-   and the emitter does not yet emit one (Remaining work: QSL-1094);
+   and the refusal stays only until the emitter writes the `model_root`
+   subject this requirement now states in place of the earlier subject, the
+   object type of the alias's first object parameter, which such an alias
+   lacks (Remaining work: QSL-1094);
 3. a clause whose quantifier has a non-empty fairness set under a profile
    that QSpec FR-370's profile fit gives an empty fairness argument (the
    three bounded profiles), at the constraint, when S3 admitted it;

@@ -67,26 +67,29 @@ reader, checker and lowering realize it and invents none.
   show: `ix://quire/unit/<name>` names the unit namespace, not the
   document's own unit, so a source unit `m` of `Time` types a document
   value type's `unit` `ix://quire/unit/m` over that `Time` unit and is not
-  refused. Intake checks the value type's `unit`, and the checker resolves
-  the `m` of `convert<Quantity<m>>` over its members, against that table,
-  so a model document's unit is reached by a bare name only where the
-  source declares no unit of that name. The alias-qualified spelling
-  `Config::m`, `Config` being the alias that selects the document, names
-  the document's own unit `m` (FR-091 "Dimension and unit declarations": `M::name` names a unit of the selected package) and resolves
-  whether or not the source declares an `m`.
-- A bare unit name in source that the compiling unit does not declare
-  (a `Quantity<x>` type form, a quantity literal's unit or a
-  `convert<Quantity<x>>` target) resolves to a selected domain package's
-  unit of that name only when exactly one selected package declares a unit
-  of that name. When two or more selected packages each declare one, the
-  assembler SHALL refuse the name `ambiguous_declaration`/`ambiguous-name`
-  (QSpec FR-272) at the name, through the assembly cause
-  `AmbiguousUnitName { name, packages }`, whose `packages` are the
-  identities of every declaring package in the order the unit's `model`
-  declarations select them, and SHALL resolve no unit for it; it never
-  refuses the name as `UnresolvedTypeName`, the cause of a name no unit
-  holds, and never picks one package. The alias-qualified spellings `A::x`
-  and `B::x` resolve to each package's unit.
+  refused. Intake checks the value type's `unit` against that table: the
+  compiling unit's units and the units of that value type's own document
+  only, never another selected package's, so two selected packages that
+  each declare a unit `x` leave a document's `ix://quire/unit/x` resolving
+  to its own document's `x`.
+- Source reaches a model document's unit only by its alias-qualified
+  spelling (QSpec FR-142 "Namespaces": a package unit carries no
+  declaration name): `Config::m`, `Config` being the alias that selects the
+  document, names the document's own unit `m` (FR-091 "Dimension and unit
+  declarations") whether or not the source declares an `m`. A bare unit
+  name in source (a `Quantity<x>` type form, a quantity literal's unit
+  `1 x` or a `convert<Quantity<x>>` target) names a unit the compiling unit
+  declares, and nothing else.
+- A bare unit name in source that the compiling unit does not declare SHALL
+  refuse `missing_declaration`/`missing-name` (QSpec FR-272) at the name,
+  through the assembly cause `UnresolvedUnitName { name, packages }`, even
+  when one or more selected packages declare a unit of that name: it never
+  resolves to a package's unit and never picks one. `packages` holds the
+  identities of every selected package that declares a unit of that name,
+  in the order the unit's `model` declarations select them, so the
+  diagnostic names each package whose qualified spelling (`A::x`, `B::x`)
+  would resolve; it is empty when no selected package declares one. The
+  cause replaces `UnresolvedTypeName` for a unit name.
 - Fields, parameters, results, aliases, option `inner`, sequence `items`, map
   `values`, tuple positions and variant payloads whose `typeRef`, `target` or
   member names that value type.
@@ -238,10 +241,10 @@ reader, checker and lowering realize it and invents none.
 | FR-505-AC-6 | A field typed bare `ix://quire/native/Rational`, and a field typed a Rational value type with no constraints, each admit and their use in a clause refuses `ill_typed`/`operator-ineligible` as FR-056-AC-43 states; adding `Ratio` to the package leaves every other declaration's node identity unchanged. | Test (TC-1300) |
 | FR-505-AC-7 | With `dimension Length;`, `unit m : Length = rational(1, 1);` and `unit cm : Length = rational(1, 100);`, `Ratio` with `unit` `ix://quire/unit/m` types its members `Quantity<m, Rational[-3, 7; 1, 12]>`, lowered to the `scalar_type`/`carried_quantity` node over `m`'s unit node, AC-1's `rational_range` node and `rounding` `exact`; a second value type of equal bounds and unit `ix://quire/unit/m` names that same node, while `Ratio` with no unit and a value type of equal bounds with unit `ix://quire/unit/cm` name two other nodes. `unit` `ix://quire/unit/nosuch` refuses `missing_declaration`/`missing-name` at the value type node and `TypeDefinition.unit`; `unit` `m`, `unit` `1` and `unit` `ix://quire/native/Rational` on `Ratio`, and `unit` `ix://quire/unit/m` on a value type of `scalar` `string`, each refuse `invalid_model_binding`/`malformed-declaration` at `TypeDefinition.unit`; `Ratio` with `unit` `m` and `minNumerator` 8 reports only the bounds refusal. | Test (TC-1300) |
 | FR-505-AC-8 | When two defects of `Ratio` are present only the earlier row is reported: `minLength` with `maxNumerator` given twice reports `minLength`; a foreign `appliesTo` with `maxNumerator` given twice reports the `appliesTo`; `minLength` with a foreign `appliesTo` reports `minLength`; `maxNumerator` given twice with `minDenominator` removed reports the repeated keyword; `minDenominator` removed with `maxNumerator` `1.5` reports the missing keyword; `maxNumerator` `1.5` with `minNumerator` 8 reports the operand; `maxDenominator` `0.5` (listed first) with `maxNumerator` `1.5` reports `maxNumerator`, in keyword order. | Test (TC-1300) |
-| FR-505-AC-9 | Over AC-7's units declared in `Ratio`'s model document, selected under the alias `Config`, so that the bare `m` resolves against that document's own units, two fields `a` and `b` typed by `Ratio` with `unit` `ix://quire/unit/m`: the invariants `self.a = self.b`, `self.a < self.b` and `self.a + self.b = self.a` each refuse `ill_typed`/`type-mismatch` at the expression, while `convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b)`, `convert<Quantity<m>>(self.a) < convert<Quantity<m>>(self.b)` and the alias-qualified `convert<Quantity<Config::m>>(self.a) = convert<Quantity<m>>(self.b)` check, `Config::m` and `m` naming the document's one `m` unit node. The source types `Rational[8, 7; 1, 12]` and `Rational[0, 7; 0, 12]` refuse `ill_typed` at the type as a function parameter type and as the carrier of `Quantity<m, ..>`. | Test (TC-1300) |
+| FR-505-AC-9 | Over AC-7's units declared in `Ratio`'s model document, selected under the alias `Config`, two fields `a` and `b` typed by `Ratio` with `unit` `ix://quire/unit/m` (the document's own `m`, the source declaring no `m`): the invariants `self.a = self.b`, `self.a < self.b` and `self.a + self.b = self.a` each refuse `ill_typed`/`type-mismatch` at the expression, while `convert<Quantity<Config::m>>(self.a) = convert<Quantity<Config::m>>(self.b)`, `convert<Quantity<Config::m>>(self.a) < convert<Quantity<Config::m>>(self.b)` and `convert<Quantity<Config::cm>>(self.a) = 100 Config::cm` check; the bare `convert<Quantity<m>>(self.a) = convert<Quantity<m>>(self.b)` refuses `missing_declaration`/`missing-name` at the first `m` with `UnresolvedUnitName { name: "m", packages: [<the document's identity>] }`. The source types `Rational[8, 7; 1, 12]` and `Rational[0, 7; 0, 12]` refuse `ill_typed` at the type as a function parameter type and as the carrier of `Quantity<Config::m, ..>`. | Test (TC-1300) |
 | FR-505-AC-10 | A tuple type `P` with position `p0` typed `Ratio` and a variant type `V` with case `c` whose `payloadType` is `Ratio` admit, and `p0` and `c`'s payload have the type `Rational[-3, 7; 1, 12]` and name AC-1's `rational_range` node; with `Ratio`'s `constraints` empty, `p0` refuses `invalid_model_binding`/`malformed-declaration` at the position and `c` refuses `unsupported_construct`/`declaration-form` at `Variant.payloadType`, each at stage `package_read`, while a field typed the unconstrained `Ratio` admits with no checked type. | Test (TC-1300) |
-| FR-505-AC-11 | Over AC-9's model document (its own `dimension Length`, `m` and `cm`), with the compiling unit also declaring its own `dimension Length;` and `unit m : Length = rational(1, 1);`, `Ratio` with `unit` `ix://quire/unit/m` types its members over the compiling unit's `m` unit node, the one whose owner is a `SourceOwner`, not the model document's `m` node; with the source `m` removed the members are typed over the model document's `m` node, whose owner is a `ModelOwner`. With the source declaring `dimension Time;` and `unit m : Time = rational(1, 1);` in place of its `Length` and `m`, the package is admitted with no refusal, the members are typed over the source `m` of `Time`, and `convert<Quantity<cm>>(self.a) = 100 cm`, which checks without the source `m`, refuses `ill_typed`/`type-mismatch` at the conversion. | Test (TC-1300) |
-| FR-505-AC-12 | With selected packages `acme/a` under alias `A` and `acme/b` under alias `B`, in that order, each declaring a base dimension and a unit `x`, and a compiling unit that declares no `x`: `function f using v(d: Quantity<x>): Boolean pure { d = d }` refuses once, `ambiguous_declaration`/`ambiguous-name` at `x`, with the cause `AmbiguousUnitName { name: "x", packages: ["acme/a", "acme/b"] }` and no `UnresolvedTypeName`, and no `PackageDeclarations`; the same function over `Quantity<A::x>` and over `Quantity<B::x>` assembles; with `acme/b` declaring `y` in place of `x`, `Quantity<x>` resolves to `acme/a`'s `x` and `Quantity<y>` to `acme/b`'s `y`; and with the compiling unit declaring its own `dimension L;` and `unit x : L = rational(1, 1);`, `Quantity<x>` resolves to the source `x` with no refusal. | Test (TC-1300) |
+| FR-505-AC-11 | Over AC-9's model document (its own `dimension Length`, `m` and `cm`), with the compiling unit also declaring its own `dimension Length;` and `unit m : Length = rational(1, 1);`, `Ratio` with `unit` `ix://quire/unit/m` types its members over the compiling unit's `m` unit node, the one whose owner is a `SourceOwner`, not the model document's `m` node; with the source `m` removed the members are typed over the model document's `m` node, whose owner is a `ModelOwner`. With the source declaring `dimension Time;` and `unit m : Time = rational(1, 1);` in place of its `Length` and `m`, the package is admitted with no refusal, the members are typed over the source `m` of `Time`, and `convert<Quantity<Config::cm>>(self.a) = 100 Config::cm`, which checks without the source `m`, refuses `ill_typed`/`type-mismatch` at the conversion. | Test (TC-1300) |
+| FR-505-AC-12 | With selected packages `acme/a` under alias `A` and `acme/b` under alias `B`, in that order, each declaring a base dimension and a unit `x`, and a compiling unit that declares no `x`: `function f using v(d: Quantity<x>): Boolean pure { d = d }` refuses once, `missing_declaration`/`missing-name` at `x`, with the cause `UnresolvedUnitName { name: "x", packages: ["acme/a", "acme/b"] }`, and no `PackageDeclarations`; the literal `1 x` and the target of `convert<Quantity<x>>(1 A::x)` refuse the same at `x`; the same function over `Quantity<A::x>` and over `Quantity<B::x>` assembles; with `acme/b` declaring `y` in place of `x`, `Quantity<x>` refuses with `packages: ["acme/a"]` and `Quantity<nosuch>` with `packages: []`; with the compiling unit declaring its own `dimension L;` and `unit x : L = rational(1, 1);`, `Quantity<x>` resolves to the source `x` with no refusal; and a value type of `acme/a` with `unit` `ix://quire/unit/x`, beside `acme/b`'s `x`, types its members over `acme/a`'s `x` with no refusal. | Test (TC-1300) |
 
 ## Dependencies
 
