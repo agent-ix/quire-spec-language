@@ -591,6 +591,20 @@ pub const S3_CONSTRUCTOR: StageConstructor = StageConstructor {
     name: "check",
 };
 
+/// Every S3 entry point on [`S3_CONSTRUCTOR`]'s receiver, TC-244's
+/// constructor table rows for the checker: the strict check, the same under
+/// a caller's cancel handle, the per-protocol-results forms (FR-383), the
+/// unit-level continuation form (FR-503) and the one check all of them
+/// delegate to. CK-4 flags a stage-entry crate calling any of them.
+pub const S3_ENTRY_NAMES: [&str; 6] = [
+    S3_CONSTRUCTOR.name,
+    "check_with_cancel",
+    "check_with_protocol_results",
+    "check_with_protocol_results_and_cancel",
+    "check_with_protocol_continuation_and_cancel",
+    "check_retaining_protocols",
+];
+
 /// The layer crates ADR-011 §6.1 places the canonical stage types in:
 /// layer 3 `qsl-semantics`, layer 4 `qsl-package`, layer 5 `qsl-eval` and
 /// layer 6 `qsl-replay`.
@@ -712,21 +726,17 @@ mod tests {
     /// Every item allowed to hand back an owned stage-output type, by
     /// (file, `Self` type, name), and why.
     const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 17] = [
-        // S3: the checker.
+        // S3: the checker, every entry point of `S3_ENTRY_NAMES`.
         (
             S3_CONSTRUCTOR.file,
             Some(S3_CONSTRUCTOR.receiver),
             S3_CONSTRUCTOR.name,
         ),
-        // S3 under a caller's cancel handle.
         (
             S3_CONSTRUCTOR.file,
             Some(S3_CONSTRUCTOR.receiver),
             "check_with_cancel",
         ),
-        // S3 keeping per-protocol results (FR-383), with and without a
-        // caller's cancel handle, continuing past a unit-level state-clause
-        // refusal (FR-503), and the one check all S3 entries delegate to.
         (
             S3_CONSTRUCTOR.file,
             Some(S3_CONSTRUCTOR.receiver),

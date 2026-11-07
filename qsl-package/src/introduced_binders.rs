@@ -10,6 +10,7 @@
 //! source discovery and the reader's binder choice both use the one walk.
 
 use std::collections::BTreeSet;
+use std::rc::Rc;
 
 use quire_contract_model::{CheckedNodeId, CheckedSemanticNodeV2, CheckedTerm};
 
@@ -125,6 +126,9 @@ pub(crate) type OnParameter<'a, 'w> = dyn FnMut(&'w CheckedSemanticNodeV2) + 'a;
 pub(crate) type Lookup<'a, 'w> = dyn Fn(&CheckedNodeId) -> Option<&'w CheckedSemanticNodeV2> + 'a;
 
 struct Walk<'a, 'w> {
+    /// The one binder name the walk looks for; a scope that binds any other
+    /// name hides nothing the walk reports, so it opens no scope.
+    watch: Option<&'a str>,
     lookup: &'a Lookup<'a, 'w>,
     on_parameter: &'a mut OnParameter<'a, 'w>,
     seen: BTreeSet<(CheckedNodeId, Shadow)>,
@@ -133,98 +137,142 @@ struct Walk<'a, 'w> {
 /// Walks `start` and every `expression`/`value` node it reaches, reporting
 /// each parameter node that no scope of the walk hides. The walk stops at a
 /// parameter and at any node that is not an expression or a value (a
-/// function, a type), as the dependency closure of FR-390 rule 3 does.
+/// function, a type), as the dependency closure of FR-390 rule 3 does. With
+/// `watch`, only the parameters of that name are of interest, and the walk
+/// opens only the scopes that bind it.
 pub(crate) fn reach_term<'a, 'w>(
     lookup: &'a Lookup<'a, 'w>,
     start: &CheckedTerm,
+    watch: Option<&'a str>,
     on_parameter: &'a mut OnParameter<'a, 'w>,
 ) {
     let mut walk = Walk {
+        watch,
         lookup,
         on_parameter,
         seen: BTreeSet::new(),
     };
-    walk.term(start, &Shadow::default(), &mut BTreeSet::new());
+    // Every node a term references waits here with the scopes it is reached
+    // in; no walk recurses in proportion to the nesting of its input
+    // (ADR-030 D-1), so the stack is one entry per reference, all bounded by
+    // the admitted graph's I2 edge ceiling.
+    let mut pending = Vec::new();
+    walk.term(start, &Rc::default(), &mut BTreeSet::new(), &mut pending);
+    while let Some((id, shadow)) = pending.pop() {
+        walk.node(&id, &shadow, &mut pending);
+    }
+}
+
+/// A term still to be read, and the scopes it is read in.
+enum Reading<'t> {
+    /// Any term.
+    Term(&'t CheckedTerm),
+    /// A `case` arm: `Binding{member, Aggregate[Aggregate[binders], body]}`.
+    Arm(&'t CheckedTerm),
 }
 
 impl<'w> Walk<'_, 'w> {
-    /// `covered` collects every node the term references, so a dependency the
-    /// term does not reference can be told from one it does.
-    fn term(&mut self, term: &CheckedTerm, shadow: &Shadow, covered: &mut BTreeSet<CheckedNodeId>) {
-        match term {
-            CheckedTerm::Reference { target } => {
-                covered.insert(target.clone());
-                self.node(target, shadow);
-            }
-            CheckedTerm::Application {
-                operation,
-                arguments,
-                ..
-            } => self.application(operation.identity(), arguments, shadow, covered),
-            CheckedTerm::Aggregate { members } => {
-                for member in members {
-                    self.term(member, shadow, covered);
-                }
-            }
-            CheckedTerm::Binding { value, .. } => self.term(value, shadow, covered),
-            _ => {}
-        }
-    }
-
-    fn application(
+    /// Read `start` and every term nested in it. `covered` collects every
+    /// node the term references, so a dependency the term does not reference
+    /// can be told from one it does; each referenced node is pushed on
+    /// `pending` under the scopes it is reached in.
+    fn term(
         &mut self,
-        identity: Option<&str>,
-        arguments: &[CheckedTerm],
-        shadow: &Shadow,
+        start: &CheckedTerm,
+        shadow: &Rc<Shadow>,
         covered: &mut BTreeSet<CheckedNodeId>,
+        pending: &mut Vec<(CheckedNodeId, Rc<Shadow>)>,
     ) {
-        match opening(identity, arguments) {
-            Opening::Let { name, value, body } => {
-                self.term(value, shadow, covered);
-                self.term(body, &shadow.with_name(name), covered);
-            }
-            Opening::Query { source, name, body } => {
-                self.term(source, shadow, covered);
-                self.term(body, &shadow.with_name(name), covered);
-            }
-            Opening::Case(arms) => {
-                if let Some((scrutinee, arms)) = arms.split_first() {
-                    self.term(scrutinee, shadow, covered);
-                    for arm in arms {
-                        self.arm(arm, shadow, covered);
+        let mut reading = vec![(Reading::Term(start), Rc::clone(shadow))];
+        while let Some((next, shadow)) = reading.pop() {
+            match next {
+                Reading::Term(CheckedTerm::Reference { target }) => {
+                    covered.insert(target.clone());
+                    pending.push((target.clone(), shadow));
+                }
+                Reading::Term(CheckedTerm::Application {
+                    operation,
+                    arguments,
+                    ..
+                }) => match opening(operation.identity(), arguments) {
+                    Opening::Let { name, value, body } => {
+                        let inner = self.scoped(&shadow, name);
+                        reading.push((Reading::Term(body), inner));
+                        reading.push((Reading::Term(value), shadow));
                     }
+                    Opening::Query { source, name, body } => {
+                        let inner = self.scoped(&shadow, name);
+                        reading.push((Reading::Term(body), inner));
+                        reading.push((Reading::Term(source), shadow));
+                    }
+                    Opening::Case(arms) => {
+                        if let Some((scrutinee, arms)) = arms.split_first() {
+                            reading.extend(
+                                arms.iter()
+                                    .rev()
+                                    .map(|arm| (Reading::Arm(arm), Rc::clone(&shadow))),
+                            );
+                            reading.push((Reading::Term(scrutinee), shadow));
+                        }
+                    }
+                    Opening::None => reading.extend(
+                        arguments
+                            .iter()
+                            .rev()
+                            .map(|argument| (Reading::Term(argument), Rc::clone(&shadow))),
+                    ),
+                },
+                Reading::Term(CheckedTerm::Aggregate { members }) => reading.extend(
+                    members
+                        .iter()
+                        .rev()
+                        .map(|member| (Reading::Term(member), Rc::clone(&shadow))),
+                ),
+                Reading::Term(CheckedTerm::Binding { value, .. }) => {
+                    reading.push((Reading::Term(value), shadow));
                 }
-            }
-            Opening::None => {
-                for argument in arguments {
-                    self.term(argument, shadow, covered);
+                Reading::Term(_) => {}
+                Reading::Arm(arm) => {
+                    let CheckedTerm::Binding { value, .. } = arm else {
+                        reading.push((Reading::Term(arm), shadow));
+                        continue;
+                    };
+                    let CheckedTerm::Aggregate { members } = value.as_ref() else {
+                        reading.push((Reading::Term(value), shadow));
+                        continue;
+                    };
+                    let [CheckedTerm::Aggregate { members: binders }, body] = members.as_slice()
+                    else {
+                        reading.push((Reading::Term(value), shadow));
+                        continue;
+                    };
+                    let mut introduced = Vec::with_capacity(binders.len());
+                    for binder in binders {
+                        if let CheckedTerm::Reference { target } = binder {
+                            covered.insert(target.clone());
+                            introduced.push(target.clone());
+                        }
+                    }
+                    reading.push((Reading::Term(body), Rc::new(shadow.with_nodes(introduced))));
                 }
             }
         }
     }
 
-    /// A `case` arm: `Binding{member, Aggregate[Aggregate[binders], body]}`.
-    fn arm(&mut self, arm: &CheckedTerm, shadow: &Shadow, covered: &mut BTreeSet<CheckedNodeId>) {
-        let CheckedTerm::Binding { value, .. } = arm else {
-            return self.term(arm, shadow, covered);
-        };
-        let CheckedTerm::Aggregate { members } = value.as_ref() else {
-            return self.term(value, shadow, covered);
-        };
-        let [CheckedTerm::Aggregate { members: binders }, body] = members.as_slice() else {
-            return self.term(value, shadow, covered);
-        };
-        let mut introduced = Vec::with_capacity(binders.len());
-        for binder in binders {
-            if let CheckedTerm::Reference { target } = binder {
-                covered.insert(target.clone());
-                introduced.push(target.clone());
-            }
+    /// `shadow` with the scope of a binder named `name` opened.
+    fn scoped(&self, shadow: &Rc<Shadow>, name: &str) -> Rc<Shadow> {
+        match self.watch {
+            Some(watched) if watched != name => Rc::clone(shadow),
+            _ => Rc::new(shadow.with_name(name)),
         }
-        self.term(body, &shadow.with_nodes(introduced), covered);
     }
 
-    fn node(&mut self, id: &CheckedNodeId, shadow: &Shadow) {
+    fn node(
+        &mut self,
+        id: &CheckedNodeId,
+        shadow: &Rc<Shadow>,
+        pending: &mut Vec<(CheckedNodeId, Rc<Shadow>)>,
+    ) {
         let Some(node) = (self.lookup)(id) else {
             return;
         };
@@ -235,16 +283,16 @@ impl<'w> Walk<'_, 'w> {
                 }
             }
             ("expression", _) | ("value", _) => {
-                if !self.seen.insert((id.clone(), shadow.clone())) {
+                if !self.seen.insert((id.clone(), (**shadow).clone())) {
                     return;
                 }
                 let mut covered = BTreeSet::new();
-                self.term(&node.body, shadow, &mut covered);
+                self.term(&node.body, shadow, &mut covered, pending);
                 // A dependency the body does not reference is still part of
                 // the closure, under the scopes the node is reached in.
                 for dependency in &node.dependencies {
                     if !covered.contains(dependency) {
-                        self.node(dependency, shadow);
+                        pending.push((dependency.clone(), Rc::clone(shadow)));
                     }
                 }
             }
@@ -309,7 +357,7 @@ mod tests {
         let lookup = |id: &CheckedNodeId| nodes.get(id);
         let mut found = Vec::new();
         let start: CheckedTerm = serde_json::from_value(reference(root)).expect("a term");
-        reach_term(&lookup, &start, &mut |node| {
+        reach_term(&lookup, &start, None, &mut |node| {
             found.push(
                 crate::reader_protocol_projection::parameter_name(&node.body)
                     .unwrap_or_default()
