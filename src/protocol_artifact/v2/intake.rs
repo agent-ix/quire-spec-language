@@ -491,9 +491,8 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
         artifact::intake::sources(&package.inherited, &expected.inherited, &mut work)?;
         let registered = artifact::intake::definitions(&package.inherited, &supplied, &mut work)?;
         artifact::validate::package(&package.inherited, &registered, &mut work)?;
-        let model_schema = artifact::models::validate(
+        artifact::models::validate(
             &package.inherited,
-            expected.inherited.models,
             expected.inherited.domain_packages,
             expected.inherited.dependencies,
             &mut work,
@@ -509,7 +508,6 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
             artifact: Some(artifact::intake::retained_reference(
                 expected.inherited.artifact,
             )?),
-            model_schema,
         })
     })();
     artifact::report(work, result)

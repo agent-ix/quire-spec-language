@@ -175,7 +175,7 @@ run before the recompile:
 
 1. The entries are in strictly ascending UTF-8 byte order of `identity`, a
    repeated identity included, else `ReplayRefusal::DependencySelections`
-   (`invalid_package`/`invalid-value` at `/package/dependencies`). This
+   (`invalid_package`/`invalid-value` at `/dependencies`). This
    runs before any dependency input is built or source compiled.
 2. The proved package's `sources`, and each entry's `sources`, name exactly
    one source, else the existing `NotASource` or
@@ -197,7 +197,7 @@ run before the recompile:
    (D-1).
 5. Every entry's identity is held by the recompiled package's
    `dependency_selections`, else `ReplayRefusal::DependencySelections`
-   (`invalid_package`/`invalid-value` at `/package/dependencies`).
+   (`invalid_package`/`invalid-value` at `/dependencies`).
 
 The entry says which source is which dependency. Every refusal yields no
 verdict.

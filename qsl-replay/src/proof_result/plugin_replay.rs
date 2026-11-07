@@ -225,6 +225,7 @@ impl PluginReplayContext {
                 Ok(DependencyEntryWire {
                     identity: selection.identity.clone(),
                     sources: vec![source.to_wire()],
+                    refinement_internals: None,
                 })
             })
             .collect::<Result<Vec<_>, PluginReplayRefusal>>()?;
@@ -260,6 +261,7 @@ impl PluginReplayContext {
             package_name: self.package_name.clone(),
             profile_selections: Vec::new(),
             sources: vec![self.source.to_wire()],
+            refinement_internals: None,
             dependencies,
             replay_target: crate::RequestTargetWire::function(
                 selected_function,

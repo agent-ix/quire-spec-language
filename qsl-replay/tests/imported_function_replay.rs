@@ -145,6 +145,7 @@ fn request(
         .map(|library| DependencyEntryWire {
             identity: library.identity.clone(),
             sources: vec![("a".to_owned(), library.source.identity.to_owned())],
+            refinement_internals: None,
         })
         .collect();
     dependencies.sort_by(|left, right| left.identity.cmp(&right.identity));
@@ -160,6 +161,7 @@ fn request(
         profile_selections: vec![],
         package_name: "fixture".to_owned(),
         sources: vec![("a".to_owned(), "u".to_owned())],
+        refinement_internals: None,
         dependencies,
         replay_target: target,
         source: ReplaySource::Input(located.assign(values)),

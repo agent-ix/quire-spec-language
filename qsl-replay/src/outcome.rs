@@ -1873,6 +1873,7 @@ impl OutcomeDocument {
 /// for a fault, whose stage is untyped.
 fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
     match refusal {
+        ReplayRefusal::RefinementInternals { source, .. } => replay_stage(source),
         ReplayRefusal::Recompile(refusal) => Some(refusal.stage().into()),
         ReplayRefusal::RecompileWithProtocolResults { refusal, .. } => Some(refusal.stage().into()),
         ReplayRefusal::Fault(_)

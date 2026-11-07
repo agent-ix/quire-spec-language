@@ -11,20 +11,20 @@ relationships:
 ## Description
 
 Public Rust API controls for
-[FR-040](../functional/FR-040-check-composed-values.md), using the real native
-parser, exact supplied definition/rule registry and admitted domain-package model
-declarations through `binding::Report`. The case checks static value judgments and
+[FR-040](../functional/FR-040-check-composed-values.md), using the real source
+parser, exact supplied definitions and admitted domain-package model
+declarations through the spine check. The case checks static value judgments and
 runtime requirements without supplying observations or evaluating family bodies.
-Each numbered group below corresponds to the matching acceptance criterion.
+Each numbered group below corresponds to the matching acceptance criterion;
+groups 1, 2 and 4 to 10 verify criteria retired in QSL-499 and are retained as
+migration history, while groups 3 and 11 verify the active FR-040-AC-3 and
+FR-040-AC-11.
 
 Expected type identities, source spans, proof premises and costs come from fixed
 authored source/model contracts and the public charging rules. Missing model
 or proof capability has its own expected refusal control; that control does not
-pass the positive semantic case it blocks. Type-admission controls execute in
-`tests/composed_types.rs` and `tests/composed_type_pipeline.rs`; supported guarded
-IR discharge and exact authored correspondence execute in `tests/composed_proofs.rs`.
-Full rational, query and graph acceptance remains planned where its actual proof
-representation, runtime prerequisites or assertions are still unavailable.
+pass the positive semantic case it blocks. Supported guarded IR discharge and exact authored correspondence are exercised
+through `qsl_replay::spine::check`.
 
 ## Test Procedure
 

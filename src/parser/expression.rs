@@ -13,10 +13,8 @@
 //! the heap, bounded by the token ceiling. Nodes are added in the order the
 //! recursive formulation added them (every operand before its operator), so
 //! the node arena is unchanged.
-use super::{binary_op, c, Parser, K};
+use super::{binary_op, Parser, K};
 use crate::syntax::{BinaryOp, Builtin, ExprId, ExprKind, UnaryOp};
-use c::{QualifiedName, QueryOp, ValueKind};
-use qsl_cst::lexer::Token;
 use qsl_foundation::{Code, Diagnostic, Phase, Span, Spanned};
 
 /// What to parse next.
@@ -62,7 +60,6 @@ enum Frame {
         left: ExprId,
         comparison_seen: bool,
         op: BinaryOp,
-        operator: Token,
     },
     /// Waiting for the operand of these prefix operators.
     UnaryArgument {
@@ -74,58 +71,24 @@ enum Frame {
     Builtin {
         start: usize,
         builtin: Builtin,
-        operator_span: Span,
     },
     QuantifierDomain {
         start: usize,
         universal: bool,
         name: Spanned<String>,
-        operator_span: Span,
     },
     QuantifierPredicate {
         start: usize,
         universal: bool,
         name: Spanned<String>,
         domain: ExprId,
-        operator_span: Span,
     },
     ReachesStart {
         start: usize,
-        operator_span: Span,
     },
     ReachesTarget {
         start: usize,
         first: ExprId,
-        operator_span: Span,
-    },
-    InvokeArgument {
-        token: Token,
-        name: Spanned<String>,
-        arguments: Vec<ExprId>,
-    },
-    SizeArgument {
-        token: Token,
-        domain: QualifiedName,
-    },
-    ContainsCollection {
-        token: Token,
-    },
-    ContainsMember {
-        token: Token,
-        collection: ExprId,
-    },
-    QueryDomain {
-        token: Token,
-        op: QueryOp,
-        result: Option<QualifiedName>,
-        binder: Spanned<String>,
-    },
-    QueryBody {
-        token: Token,
-        op: QueryOp,
-        result: Option<QualifiedName>,
-        binder: Spanned<String>,
-        domain: ExprId,
     },
 }
 
@@ -263,46 +226,26 @@ impl Parser {
                 left,
                 comparison_seen,
                 op,
-                operator,
             } => {
                 let span = Span {
                     start: self.expression_span(left).start,
                     end: self.expression_span(value).end,
                 };
-                let combined = if self.composed && matches!(operator.kind, K::Slash | K::Mod) {
-                    self.add_value(
-                        ValueKind::Product {
-                            op: Spanned {
-                                value: if operator.kind == K::Slash {
-                                    c::ProductOp::Slash
-                                } else {
-                                    c::ProductOp::Mod
-                                },
-                                span: operator.span,
-                            },
-                            left,
-                            right: value,
-                        },
-                        span,
-                    )?
-                } else {
-                    self.add_operator(
-                        ExprKind::Binary {
-                            op,
-                            left,
-                            right: value,
-                        },
-                        span.start,
-                        span.end,
-                        operator.span,
-                    )?
-                };
+                let combined = self.add(
+                    ExprKind::Binary {
+                        op,
+                        left,
+                        right: value,
+                    },
+                    span.start,
+                    span.end,
+                )?;
                 self.continue_binary(minimum, combined, comparison_seen, frames)
             }
             Frame::UnaryArgument { operators } => {
                 let mut argument = value;
                 while self.eat(K::Dot) {
-                    let name = self.member()?;
+                    let name = self.identifier()?;
                     let end = self.tokens[self.at - 1].span.end;
                     argument = self.add(
                         ExprKind::Field {
@@ -314,24 +257,19 @@ impl Parser {
                     )?;
                 }
                 for (op, operator_span) in operators.into_iter().rev() {
-                    argument = self.add_operator(
+                    argument = self.add(
                         ExprKind::Unary { op, argument },
                         operator_span.start,
                         self.expression_span(argument).end,
-                        operator_span,
                     )?;
                 }
                 Ok(Next::Value(argument))
             }
             Frame::Group { start } => {
                 self.expect(K::CloseParen)?;
-                self.finish_primary(ExprKind::Group { inner: value }, start, None)
+                self.finish_primary(ExprKind::Group { inner: value }, start)
             }
-            Frame::Builtin {
-                start,
-                builtin,
-                operator_span,
-            } => {
+            Frame::Builtin { start, builtin } => {
                 self.expect(K::CloseParen)?;
                 self.finish_primary(
                     ExprKind::Call {
@@ -339,14 +277,12 @@ impl Parser {
                         argument: value,
                     },
                     start,
-                    Some(operator_span),
                 )
             }
             Frame::QuantifierDomain {
                 start,
                 universal,
                 name,
-                operator_span,
             } => {
                 self.expect(K::Colon)?;
                 frames.push(Frame::QuantifierPredicate {
@@ -354,7 +290,6 @@ impl Parser {
                     universal,
                     name,
                     domain: value,
-                    operator_span,
                 });
                 Ok(Next::Descend(Goal::Expression))
             }
@@ -363,7 +298,6 @@ impl Parser {
                 universal,
                 name,
                 domain,
-                operator_span,
             } => {
                 self.expect(K::CloseParen)?;
                 self.finish_primary(
@@ -374,28 +308,19 @@ impl Parser {
                         predicate: value,
                     },
                     start,
-                    Some(operator_span),
                 )
             }
-            Frame::ReachesStart {
-                start,
-                operator_span,
-            } => {
+            Frame::ReachesStart { start } => {
                 self.expect(K::Comma)?;
                 frames.push(Frame::ReachesTarget {
                     start,
                     first: value,
-                    operator_span,
                 });
                 Ok(Next::Descend(Goal::Expression))
             }
-            Frame::ReachesTarget {
-                start,
-                first,
-                operator_span,
-            } => {
+            Frame::ReachesTarget { start, first } => {
                 self.expect(K::Comma)?;
-                let field = self.member()?;
+                let field = self.identifier()?;
                 self.expect(K::CloseParen)?;
                 self.finish_primary(
                     ExprKind::Reaches {
@@ -404,91 +329,6 @@ impl Parser {
                         field,
                     },
                     start,
-                    Some(operator_span),
-                )
-            }
-            Frame::InvokeArgument {
-                token,
-                name,
-                mut arguments,
-            } => {
-                arguments.push(value);
-                if self.eat(K::Comma) {
-                    frames.push(Frame::InvokeArgument {
-                        token,
-                        name,
-                        arguments,
-                    });
-                    return Ok(Next::Descend(Goal::Expression));
-                }
-                self.expect(K::CloseParen)?;
-                self.finish_extended(ValueKind::Invoke { name, arguments }, &token)
-            }
-            Frame::SizeArgument { token, domain } => {
-                self.expect(K::CloseParen)?;
-                self.finish_extended(
-                    ValueKind::Size {
-                        domain,
-                        argument: value,
-                    },
-                    &token,
-                )
-            }
-            Frame::ContainsCollection { token } => {
-                self.expect(K::Comma)?;
-                frames.push(Frame::ContainsMember {
-                    token,
-                    collection: value,
-                });
-                Ok(Next::Descend(Goal::Expression))
-            }
-            Frame::ContainsMember { token, collection } => {
-                self.expect(K::CloseParen)?;
-                self.finish_extended(
-                    ValueKind::Contains {
-                        collection,
-                        member: value,
-                    },
-                    &token,
-                )
-            }
-            Frame::QueryDomain {
-                token,
-                op,
-                result,
-                binder,
-            } => {
-                self.expect(K::Colon)?;
-                frames.push(Frame::QueryBody {
-                    token,
-                    op,
-                    result,
-                    binder,
-                    domain: value,
-                });
-                Ok(Next::Descend(Goal::Expression))
-            }
-            Frame::QueryBody {
-                token,
-                op,
-                result,
-                binder,
-                domain,
-            } => {
-                self.expect(K::CloseParen)?;
-                let op = Spanned {
-                    value: op,
-                    span: token.span,
-                };
-                self.finish_extended(
-                    ValueKind::Query {
-                        op,
-                        result,
-                        binder,
-                        domain,
-                        body: value,
-                    },
-                    &token,
                 )
             }
         }
@@ -504,10 +344,7 @@ impl Parser {
         comparison_seen: bool,
         frames: &mut Vec<Frame>,
     ) -> Parsed<Next> {
-        let Some(op) = binary_op(&self.peek().kind).or_else(|| {
-            (self.composed && matches!(self.peek().kind, K::Slash | K::Mod))
-                .then_some(BinaryOp::Multiply)
-        }) else {
+        let Some(op) = binary_op(&self.peek().kind) else {
             return Ok(Next::Value(left));
         };
         if op.power() < minimum {
@@ -518,7 +355,7 @@ impl Parser {
         }
         // A conjunction starts a new comparison operand; a second relation
         // without it is deliberately invalid rather than a guessed chain.
-        let operator = self.take();
+        self.take();
         // `implies` is right-associative: its right operand may itself be an
         // `implies` chain.
         let right_minimum = op.power() + u8::from(op != BinaryOp::Implies);
@@ -527,54 +364,21 @@ impl Parser {
             left,
             comparison_seen: op.comparison(),
             op,
-            operator,
         });
         Ok(Next::Descend(Goal::Binary(right_minimum)))
     }
 
     /// Add a primary expression spanning from `start` to the last consumed
     /// token.
-    fn finish_primary(
-        &mut self,
-        kind: ExprKind,
-        start: usize,
-        operator_span: Option<Span>,
-    ) -> Parsed<Next> {
+    fn finish_primary(&mut self, kind: ExprKind, start: usize) -> Parsed<Next> {
         let end = self.tokens[self.at - 1].span.end;
         let id = self.add(kind, start, end)?;
-        if self.composed {
-            self.values[id.0].operator_span = operator_span;
-        }
-        Ok(Next::Value(id))
-    }
-
-    /// Add a composed-only primary whose keyword or name is `token`.
-    fn finish_extended(&mut self, kind: ValueKind, token: &Token) -> Parsed<Next> {
-        let id = self.add_value(kind, self.range_from(token.span.start))?;
-        self.values[id.0].operator_span = Some(token.span);
         Ok(Next::Value(id))
     }
 
     fn start_primary(&mut self, frames: &mut Vec<Frame>) -> Parsed<Next> {
-        if self.composed {
-            if let Some(next) = self.start_extended_primary(frames)? {
-                return Ok(next);
-            }
-        }
         let token = self.peek().clone();
         let start = token.span.start;
-        let operator_span = matches!(
-            token.kind,
-            K::Present
-                | K::Value
-                | K::Deref
-                | K::Size
-                | K::Pre
-                | K::Forall
-                | K::Exists
-                | K::Reaches
-        )
-        .then_some(token.span);
         let kind = match token.kind {
             K::Text(value) => {
                 self.take();
@@ -611,11 +415,7 @@ impl Parser {
                 };
                 self.take();
                 self.expect(K::OpenParen)?;
-                frames.push(Frame::Builtin {
-                    start,
-                    builtin,
-                    operator_span: token.span,
-                });
+                frames.push(Frame::Builtin { start, builtin });
                 return Ok(Next::Descend(Goal::Expression));
             }
             keyword @ (K::Forall | K::Exists) => {
@@ -627,17 +427,13 @@ impl Parser {
                     start,
                     universal: keyword == K::Forall,
                     name,
-                    operator_span: token.span,
                 });
                 return Ok(Next::Descend(Goal::Expression));
             }
             K::Reaches => {
                 self.take();
                 self.expect(K::OpenParen)?;
-                frames.push(Frame::ReachesStart {
-                    start,
-                    operator_span: token.span,
-                });
+                frames.push(Frame::ReachesStart { start });
                 return Ok(Next::Descend(Goal::Expression));
             }
             K::Identifier(model) => {
@@ -647,9 +443,7 @@ impl Parser {
                 };
                 self.take();
                 if self.is(K::OpenParen) {
-                    // Same concept as native_model/admission.rs's pure-function
-                    // check, met here at parse time instead of model admission:
-                    // the native profile does not admit user-defined functions
+                    // The native profile does not admit user-defined functions
                     // at all, as a call form or as a declaration. That is a
                     // form this profile's package structure excludes outright,
                     // not a real, catalogued capability this build lacks, so
@@ -662,9 +456,9 @@ impl Parser {
                     ));
                 }
                 if self.eat(K::Qualify) {
-                    let name = self.member()?;
+                    let name = self.identifier()?;
                     self.expect(K::Qualify)?;
-                    let variant = self.member()?;
+                    let variant = self.identifier()?;
                     ExprKind::EnumValue {
                         model,
                         name,
@@ -676,100 +470,6 @@ impl Parser {
             }
             _ => return Err(self.unexpected("expression")),
         };
-        self.finish_primary(kind, start, operator_span)
-    }
-
-    /// The composed edition's additional primaries, or `None` when the next
-    /// token does not start one.
-    fn start_extended_primary(&mut self, frames: &mut Vec<Frame>) -> Parsed<Option<Next>> {
-        let token = self.peek().clone();
-        match token.kind.clone() {
-            K::Identifier(_)
-                if self
-                    .tokens
-                    .get(self.at + 1)
-                    .is_some_and(|t| t.kind == K::OpenParen) =>
-            {
-                let name = self.identifier()?;
-                self.expect(K::OpenParen)?;
-                if self.is(K::CloseParen) {
-                    self.expect(K::CloseParen)?;
-                    let arguments = Vec::new();
-                    return self
-                        .finish_extended(ValueKind::Invoke { name, arguments }, &token)
-                        .map(Some);
-                }
-                frames.push(Frame::InvokeArgument {
-                    token,
-                    name,
-                    arguments: Vec::new(),
-                });
-                Ok(Some(Next::Descend(Goal::Expression)))
-            }
-            K::Rational => {
-                self.take();
-                self.expect(K::OpenParen)?;
-                let numerator = self.signed()?;
-                self.expect(K::Comma)?;
-                let denominator = self.signed()?;
-                self.expect(K::CloseParen)?;
-                self.finish_extended(
-                    ValueKind::Rational {
-                        numerator,
-                        denominator,
-                    },
-                    &token,
-                )
-                .map(Some)
-            }
-            K::Size
-                if self
-                    .tokens
-                    .get(self.at + 1)
-                    .is_some_and(|t| t.kind == K::Less) =>
-            {
-                self.take();
-                self.expect(K::Less)?;
-                let domain = self.qualified()?;
-                self.expect(K::Greater)?;
-                self.expect(K::OpenParen)?;
-                frames.push(Frame::SizeArgument { token, domain });
-                Ok(Some(Next::Descend(Goal::Expression)))
-            }
-            K::Contains => {
-                self.take();
-                self.expect(K::OpenParen)?;
-                frames.push(Frame::ContainsCollection { token });
-                Ok(Some(Next::Descend(Goal::Expression)))
-            }
-            K::Filter | K::Map | K::Count | K::Sum => {
-                self.take();
-                let op = match token.kind {
-                    K::Filter => QueryOp::Filter,
-                    K::Map => QueryOp::Map,
-                    K::Count => QueryOp::Count,
-                    _ => QueryOp::Sum,
-                };
-                let result = if matches!(op, QueryOp::Count | QueryOp::Sum) {
-                    self.expect(K::Less)?;
-                    let ty = self.qualified()?;
-                    self.expect(K::Greater)?;
-                    Some(ty)
-                } else {
-                    None
-                };
-                self.expect(K::OpenParen)?;
-                let binder = self.identifier()?;
-                self.expect(K::In)?;
-                frames.push(Frame::QueryDomain {
-                    token,
-                    op,
-                    result,
-                    binder,
-                });
-                Ok(Some(Next::Descend(Goal::Expression)))
-            }
-            _ => Ok(None),
-        }
+        self.finish_primary(kind, start)
     }
 }

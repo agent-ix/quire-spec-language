@@ -19,7 +19,7 @@ pub use editor::{
     DocumentNavigation, DocumentSnapshot, DocumentSymbol, FormatCorrespondence, FormatResponse,
 };
 
-use qsl_cst::{CompleteDiagnostic, Limits, ParsedSource};
+use qsl_cst::{CompleteDiagnostic, ExtensionForms, ExtensionProduction, Limits, ParsedSource};
 use qsl_foundation::selection::ProfileCatalog;
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::library::extension::HeldExtensions;

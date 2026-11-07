@@ -180,7 +180,7 @@ consumer holds `NativeModel` (quire-protocol `AdmittedModel::schema_model`).
 | --- | --- | --- |
 | Per-family parse, link, check, evaluate inputs (FR-035, FR-036, FR-040, FR-049) | S2/S3/S6a family requirements | PARTIAL per family; FR-040 and FR-036 rows carry the retained FR-046/056/057 criteria whose only tests go with the lane (QSL-1509) |
 | Multi-unit namespace (`admit_namespace`, `SourceInventory`, `SyntaxNamespace`; FR-036-AC-1, AC-2, AC-7; FR-480) | none: FR-480 unimplemented | PORT QSL-1508 |
-| `checking::source_inventory::qsl_inventory` (IR FR-052 producer) | FR-362 item 10 says it lives in `qsl_replay`; in code it does not | PORT QSL-1508 |
+| `checking::source_inventory::qsl_inventory` (IR FR-052 producer) | FR-362 item 9 says it lives in `qsl_replay`; in code it did not | PORT QSL-1508 |
 | `StaticSubject` static-meaning identity (FR-036-AC-5) | none | PORT QSL-1509 |
 | `formal_source` coordinate bridge (FR-014, TC-035 to TC-039); used by the retained compile/run command | none | KEEP; re-tag (QSL-1509) |
 | CLI `quire-spec parse` with its flags, output document, exits 20, 21, 22, 30 | `qsl_cst::parse` | PORT QSL-837 (rewire; keep flags, output and exits) |

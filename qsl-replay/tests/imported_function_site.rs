@@ -199,6 +199,7 @@ fn library_replay(
         profile_selections: vec![],
         package_name: site.library.as_str().to_owned(),
         sources: vec![source.clone()],
+        refinement_internals: None,
         dependencies: Vec::new(),
         replay_target: RequestTargetWire::function(
             function(name),

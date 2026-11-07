@@ -82,3 +82,45 @@ fn spine_crates_do_not_import_the_retained_root_frontend_or_protocol_reader() {
         );
     }
 }
+
+/// TC-1027 steps 2 and 3: after the composed lane is deleted, no source under
+/// the root crate or any layer crate names its entry points or types, and none
+/// of its source directories exist. The composed parser was the only parser
+/// besides `qsl_cst::parse` that admitted a profile line with a version or
+/// digest, so its absence is FR-362-AC-2's by-absence check.
+#[trace("FR-362-AC-2", "FR-362-AC-6", "FR-499-AC-5")]
+#[test]
+fn no_source_names_the_composed_lane() {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut roots = vec![workspace.join("src"), workspace.join("xtask/src")];
+    for entry in std::fs::read_dir(workspace).expect("read the workspace") {
+        let path = entry.expect("directory entry").path();
+        let is_layer = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("qsl-"));
+        if is_layer && path.join("src").is_dir() {
+            roots.push(path.join("src"));
+        }
+    }
+    // Assembled so that this file does not name the symbols it forbids.
+    let forbidden = [
+        ["parse", "_native"].concat(),
+        ["parse", "_native_source"].concat(),
+        ["syntax::", "composed"].concat(),
+        ["linking::", "composed"].concat(),
+        ["checking::", "composed"].concat(),
+    ];
+    let forbidden: Vec<&str> = forbidden.iter().map(String::as_str).collect();
+    for root in &roots {
+        assert_absent(root, &forbidden);
+    }
+    for directory in ["parser", "syntax", "linking", "checking"] {
+        let path = workspace.join("src").join(directory).join("composed");
+        assert!(!path.exists(), "{} still exists", path.display());
+        let file = workspace
+            .join("src")
+            .join(format!("{directory}/composed.rs"));
+        assert!(!file.exists(), "{} still exists", file.display());
+    }
+}

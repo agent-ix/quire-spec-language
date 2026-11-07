@@ -1843,6 +1843,7 @@ impl<'a> Engine<'a> {
         }
     }
 
+    #[ix_trace_rs::string_edge]
     fn terminal(&mut self, terminal: &Terminal, position: usize) -> Outcome {
         let accepted = match terminal {
             Terminal::End => {

@@ -373,12 +373,8 @@ fn a_temporal_table_is_admitted_only_when_it_matches_the_independent_selection()
     let read = read_table(&fixture, &base, &base, |_| {});
     let admitted = read.result().expect("exact table");
     assert_eq!(admitted.package(), &base);
-    // The reader retains the independently selected identity and model schema.
+    // The reader retains the independently selected identity.
     assert!(admitted.artifact().is_some());
-    assert_eq!(
-        admitted.schema_model(0).map(|model| model.artifact_bytes()),
-        Some(fixture.model.artifact_bytes())
-    );
     for binding in &admitted.package().temporal_bindings {
         assert_eq!(
             binding.definition,
