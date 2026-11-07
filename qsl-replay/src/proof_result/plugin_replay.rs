@@ -355,6 +355,7 @@ impl PluginReplayRefusal {
                 quire_canonical::ReadError::Malformed { .. }
                 | quire_canonical::ReadError::NumberOutOfRange { .. },
             ) => (Code::RuntimeInvariant, "established-invariant-broken"),
+            Self::PackageRead(_) => (Code::RuntimeInvariant, "established-invariant-broken"),
             Self::UnknownOccurrence { .. } => (Code::MissingDeclaration, "missing-name"),
             Self::NotReplayable { .. } => (Code::UnknownRequiredFeature, "unsupported-feature"),
             Self::UnresolvedDependency { .. } => (Code::MissingImport, "missing-selection"),

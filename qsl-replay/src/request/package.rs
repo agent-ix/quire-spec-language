@@ -66,7 +66,7 @@ impl ReplayPackage {
         match read_checked_package(&self.bytes, limits, evidence) {
             CheckedPackageDispatchResult::AdmittedV2(package) => Ok(package),
             CheckedPackageDispatchResult::Refused(refusal) => {
-                Err(ReplayPackageAdmissionRefusal::Refused(Box::new(refusal)))
+                Err(ReplayPackageAdmissionRefusal::from_native(refusal))
             }
             CheckedPackageDispatchResult::Incomplete(limit) => {
                 Err(ReplayPackageAdmissionRefusal::Incomplete(limit))
@@ -187,26 +187,59 @@ fn field_refusal(pointer: &str, cause: PackageMemberCause) -> ReplayRequestRefus
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ReplayPackageAdmissionRefusal {
     /// The native reader rejected the whole package, retaining all native data.
-    #[error("replay package refused at {pointer}: {refusal}", pointer = package_pointer(.0.loci.first().and_then(|locus| locus.path.as_ref()).map(|path| path.as_str())), refusal = .0)]
-    Refused(Box<CheckedPackageRefusal>),
+    #[error("replay package refused at {pointer}: {refusal}", pointer = package_pointer(.refusal.loci.first().and_then(|locus| locus.path.as_ref()).map(|path| path.as_str())), refusal = .refusal)]
+    Refused {
+        /// The complete native refusal.
+        refusal: Box<CheckedPackageRefusal>,
+        /// The native serde-owned cause spelling, retained without a copied catalog.
+        cause: Option<Box<str>>,
+    },
+    /// The native cause no longer has its published unit-variant wire shape.
+    #[error("native checked-package cause is not its catalogued string: {refusal:?}")]
+    Catalog {
+        /// The original refusal, never replaced by a fabricated native failure.
+        refusal: Box<CheckedPackageRefusal>,
+    },
     /// The native reader exhausted a caller-selected package-read ceiling.
     #[error("replay package read exhausted {:?} at {} (bound {}, consumed {})", .0.limit_kind, package_pointer(.0.path.as_ref().map(|path| path.as_str())), .0.limit, .0.consumed)]
     Incomplete(CheckedPackageIncomplete),
 }
 
 impl ReplayPackageAdmissionRefusal {
+    fn from_native(refusal: CheckedPackageRefusal) -> Self {
+        let cause = match refusal.cause {
+            None => None,
+            Some(cause) => match serde_json::to_value(cause) {
+                Ok(serde_json::Value::String(spelling)) => Some(spelling.into_boxed_str()),
+                _ => {
+                    return Self::Catalog {
+                        refusal: Box::new(refusal),
+                    }
+                }
+            },
+        };
+        Self::Refused {
+            refusal: Box::new(refusal),
+            cause,
+        }
+    }
+
     /// The QSL catalog mapping of the native reader's typed result.
     pub fn code(&self) -> qsl_foundation::Code {
         match self {
-            Self::Refused(refusal) => qsl_package::checked_package_refusal_code(refusal.code),
+            Self::Refused { refusal, .. } => {
+                qsl_package::checked_package_refusal_code(refusal.code)
+            }
+            Self::Catalog { .. } => qsl_foundation::Code::RuntimeInvariant,
             Self::Incomplete(_) => qsl_foundation::Code::StageLimitExceeded,
         }
     }
 
     /// The native reader's cause, without rewriting its vocabulary.
-    pub fn cause(&self) -> Option<&'static str> {
+    pub fn cause(&self) -> Option<&str> {
         match self {
-            Self::Refused(refusal) => refusal.cause.map(|cause| cause.as_str()),
+            Self::Refused { cause, .. } => cause.as_deref(),
+            Self::Catalog { .. } => None,
             Self::Incomplete(_) => None,
         }
     }
@@ -214,7 +247,9 @@ impl ReplayPackageAdmissionRefusal {
     /// The primary native pointer prefixed with the request's package member.
     pub fn pointer(&self) -> String {
         let path = match self {
-            Self::Refused(refusal) => refusal.loci.first().and_then(|locus| locus.path.as_ref()),
+            Self::Refused { refusal, .. } | Self::Catalog { refusal } => {
+                refusal.loci.first().and_then(|locus| locus.path.as_ref())
+            }
             Self::Incomplete(limit) => limit.path.as_ref(),
         };
         package_pointer(path.map(|path| path.as_str()))

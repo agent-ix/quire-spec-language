@@ -613,11 +613,11 @@ impl ReplayRefusal {
 
     /// The catalog cause tag under [`Self::code`], where the refusing stage
     /// or request check names one.
-    pub fn cause(&self) -> Option<&'static str> {
+    pub fn cause(&self) -> Option<&str> {
         match self {
             Self::Request(refusal) => refusal.cause(),
             Self::Package(refusal) => refusal.cause(),
-            Self::PackageEvidence(refusal) => refusal.cause(),
+            Self::PackageEvidence(_) => None,
             Self::Recompile(refusal) => refusal.cause(),
             Self::RecompileWithProtocolResults { refusal, .. } => refusal.cause(),
             Self::DomainPackages(refusal) => Some(refusal.cause.as_str()),
@@ -696,7 +696,9 @@ impl ReplayRefusal {
     #[ix_trace_rs::string_edge]
     pub fn pointer(&self) -> Option<Cow<'static, str>> {
         match self {
-            Self::Request(refusal) => refusal.pointer().map(Cow::Borrowed),
+            Self::Request(refusal) => refusal
+                .pointer()
+                .map(|pointer| Cow::Owned(pointer.to_owned())),
             Self::Package(refusal) => Some(Cow::Owned(refusal.pointer())),
             Self::WrongReplayTarget { target, .. } => {
                 Some(Cow::Borrowed(target.member().pointer()))
@@ -1973,7 +1975,10 @@ fn run_spine_units(
         spine::UnitCheckOptions {
             temporal_selections,
             continue_protocol_refusals: true,
-            refinement_internals: refinement_internals.map(internals_value).transpose()?,
+            refinement_internals: refinement_internals
+                .map(internals_value)
+                .transpose()?
+                .as_ref(),
         },
         limits,
         &cancel,

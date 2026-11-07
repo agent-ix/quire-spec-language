@@ -1304,7 +1304,7 @@ impl From<&Locus> for OutcomeLocus {
 /// One diagnostic: its typed cause, catalog code, locus and message.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct OutcomeDiagnostic {
-    cause: Option<&'static str>,
+    cause: Option<Box<str>>,
     code: String,
     locus: Option<OutcomeLocus>,
     message: String,
@@ -1314,13 +1314,13 @@ impl OutcomeDiagnostic {
     /// A diagnostic with the catalog `code` and its typed `cause` (the
     /// catalog's cause tag, where the code has one), raised at `locus`.
     pub fn new(
-        cause: Option<&'static str>,
+        cause: Option<&str>,
         code: impl Into<String>,
         locus: Option<OutcomeLocus>,
         message: impl Into<String>,
     ) -> Self {
         Self {
-            cause,
+            cause: cause.map(Into::into),
             code: code.into(),
             locus,
             message: message.into(),
@@ -1362,8 +1362,8 @@ impl OutcomeDiagnostic {
     }
 
     /// The typed cause tag.
-    pub fn cause(&self) -> Option<&'static str> {
-        self.cause
+    pub fn cause(&self) -> Option<&str> {
+        self.cause.as_deref()
     }
 
     /// The diagnostic's typed position, when present.
