@@ -319,7 +319,13 @@ pub fn write_with(
     )?;
     files.insert(
         "equality.json",
-        equality_file(&compiled, request, &package)?,
+        equality_file(
+            &compiled,
+            request,
+            &package,
+            &mut budget,
+            request.native_join,
+        )?,
     )?;
     if request.corpus == Corpus::Standard {
         let cases = corpus::build(&bytes, &selection, &evidence, environment)?;
@@ -378,6 +384,8 @@ fn equality_file(
     compiled: &Compiled,
     request: &CheckedHandoffRequest,
     package: &quire_contract_model::CheckedPackageV2,
+    budget: &mut quire_contract_model::NativeJoinBudget,
+    limits: qsl_package::NativeJoinLimits,
 ) -> Result<Vec<u8>, Error> {
     let unnameable = |what: String| Error::Unnameable { what };
     let selections =
@@ -388,7 +396,11 @@ fn equality_file(
         compiled.emit,
     )
     .map_err(|refusal| unnameable(format!("equality witness: {refusal}")))?
-    .equality_witness(package)
+    .equality_witness(package, budget)
+    .map_err(|error| match limits.refusal(error, budget) {
+        Some(denial) => Error::NativeJoinExhausted(Box::new(denial)),
+        None => unnameable("equality adapter refused without a resource denial".to_owned()),
+    })?
     .to_bytes(package)
     .map_err(|refused| unnameable(format!("equality file: {refused}")))
 }
