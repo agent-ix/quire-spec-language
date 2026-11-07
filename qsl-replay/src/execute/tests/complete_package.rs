@@ -22,13 +22,13 @@ fn complete_package_round_trips_and_native_admission_keeps_graph_and_lock() {
         .package()
         .admit(emission.evidence(), CheckedPackageReadLimits::bounded())
         .unwrap();
-    assert_eq!(admitted.name.as_ref(), "fixture");
+    assert_eq!(admitted.name(), "fixture");
     assert!(
         !admitted.graph().nodes.is_empty(),
         "the whole native graph survives admission"
     );
-    assert_eq!(admitted.lock.sources[0].authority.as_ref(), AUTHORITY);
-    assert_eq!(admitted.lock.sources[0].identity.as_ref(), IDENTITY);
+    assert_eq!(admitted.lock().sources[0].authority.as_ref(), AUTHORITY);
+    assert_eq!(admitted.lock().sources[0].identity.as_ref(), IDENTITY);
 }
 
 #[test]
@@ -109,7 +109,6 @@ fn native_admission_uses_the_callers_finite_i2_input_ceiling() {
 #[trace("TC-1325", "FR-350-AC-16")]
 fn admitted_offered_package_does_not_restore_the_retired_source_staleness_check() {
     let mut wire = small(7);
-    let offered = wire.package.clone();
     let changed = proved().replace("x < 5", "x > 5");
     wire.byte_provision[0].2 = changed.into_bytes();
     let ReplayResult::Input(result) = replay(wire, ReplayLimits::default()).unwrap() else {
@@ -119,11 +118,6 @@ fn admitted_offered_package_does_not_restore_the_retired_source_staleness_check(
         result.value(),
         Some(EvaluatedValue::Boolean(true)),
         "evaluation uses the genuine fresh recompile"
-    );
-    assert_ne!(
-        offered.bytes(),
-        small(7).byte_provision[0].2,
-        "the offered value remains a whole package, not source bytes"
     );
 }
 

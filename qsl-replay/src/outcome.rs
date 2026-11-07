@@ -1721,9 +1721,16 @@ impl OutcomeDocument {
             .with_diagnostics(vec![OutcomeDiagnostic::new(
                 refusal.cause(),
                 refusal.code().as_str(),
-                refusal.pointer().map(|pointer| OutcomeLocus::Artifact {
-                    pointer: pointer.into_owned(),
-                }),
+                match refusal {
+                    ReplayRefusal::Package(_)
+                    | ReplayRefusal::Request(
+                        crate::ReplayRequestRefusal::PackageMember { .. }
+                        | crate::ReplayRequestRefusal::MissingProvisionAuthority { .. },
+                    ) => refusal.pointer().map(|pointer| OutcomeLocus::Artifact {
+                        pointer: pointer.into_owned(),
+                    }),
+                    _ => None,
+                },
                 refusal.to_string(),
             )]),
         }
