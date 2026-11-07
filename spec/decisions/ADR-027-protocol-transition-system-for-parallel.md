@@ -79,7 +79,7 @@ join when its pure predicate is true over the branch-result map. The shared
 grammar spells it `parallel P { branch a … branch b … } join all [a, b];`
 with the complete form `join <policy> [ … ] [outstanding continue|cancel]`.
 
-The compiled protocol form (docs/compiled-protocol-v1.md) is
+The compiled protocol form (the retired `quire.compiled-protocol/1` wire) is
 `{kind:"parallel", branches, join}` inside a control tree of `sequence`,
 `choice`, `repeat`, `await`, event nodes (`send`, `receive`, `attempt`,
 `effect`, domain `event`), `check` and `commit`, with a `finish` node. Its

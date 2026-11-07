@@ -46,10 +46,8 @@ Every behavior of a path to be deleted has exactly one disposition:
 
 A row SHALL NOT read "retired" without a named COVERED successor test. A
 behavior with no successor is never removed; the planner ruling on each such row
-is PORT or KEEP. A bare id without a test is never evidence. The inventory
-behind these tables is the code-derived deletion table (326 rows) and the
-planner's rulings on its ten decisions; this requirement records the outcome,
-and the tickets named below own each PORT.
+is PORT or KEEP. A bare id without a test is never evidence. This requirement
+records the planner's rulings, and the tickets named below own each PORT.
 
 ## Order of deletion
 

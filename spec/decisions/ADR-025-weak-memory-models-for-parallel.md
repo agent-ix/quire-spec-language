@@ -62,7 +62,7 @@ relationships:
 SHALL admit every interleaving that preserves each branch's causal edges", and
 QSpec FR-228 lists `parallel-branch` and `join` among the admitted control
 constructs. The compiled protocol form is `{kind:"parallel", branches,
-join}` (docs/compiled-protocol-v1.md), with the structural edges in → each
+join}` (the retired `quire.compiled-protocol/1` wire), with the structural edges in → each
 branch and every branch → out. A branch holds protocol events. An `attempt`
 event invokes an operation of a role's model; its effect on model state is
 FR-120's successor rule: an operation applied to an argument vector, enabled

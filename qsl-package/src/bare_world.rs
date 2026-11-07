@@ -217,7 +217,8 @@ impl BarePackage<'_> {
             ));
         }
         let types = TypeEnvironment::new(closed_composites(self, composites), Vec::new())
-            .map_err(|_| fault("bare-composites-are-a-closed-environment"))?;
+            .map_err(|_| fault("bare-composites-are-a-closed-environment"))?
+            .with_units(self.units.clone());
         let ieee = qsl_semantics::value::DefinitionRole::IeeeProfile.identity();
         Ok(BareWorld {
             types,

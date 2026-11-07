@@ -4088,9 +4088,36 @@ impl<'a> Typer<'a> {
                     ValueType::Float(float),
                 )
             }
-            ValueType::Quantity(_) | ValueType::BoundedQuantity(_) => {
-                return Err(ineligible(location))
+            // FR-093 "Negation": a non-affine quantity keeps its own unit; the
+            // type-time half of the quantity core's negate refuses an affine
+            // one, as a power does.
+            ValueType::Quantity(unit) => {
+                let unit = unit.clone();
+                let probe = quire_exact::Quantity::new(
+                    Rational::from_integer(Integer::one()),
+                    unit.clone(),
+                );
+                let Some(base) = self.units.resolve(&probe) else {
+                    return Err(mismatch(location));
+                };
+                let (_, _) = evaluate_quantity_unit(
+                    QuantityOperation::Negate(base),
+                    &mut quire_exact::Meter::new(NO_CHARGE),
+                )
+                .map_err(|refusal| match refusal {
+                    QuantityRefusal::IllTyped(_) => ineligible(location),
+                    QuantityRefusal::Identity(refusal) => CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::Identity(refusal),
+                    },
+                })?;
+                (
+                    NodeKind::QuantityNegate(self.push(operand)),
+                    ValueType::Quantity(unit),
+                )
             }
+            // FR-093 "Negation": a bounded quantity is no operand of unary `-`.
+            ValueType::BoundedQuantity(_) => return Err(ineligible(location)),
             ValueType::Boolean
             | ValueType::Text(_)
             | ValueType::Enum(_)
@@ -4102,9 +4129,9 @@ impl<'a> Typer<'a> {
             | ValueType::Population(_)
             | ValueType::Uuid
             | ValueType::String
-            | ValueType::Timestamp
+            | ValueType::Timestamp => return Err(mismatch(&location.child(0))),
             // FR-497-AC-2: a carried quantity is no operand of unary `-`.
-            | ValueType::CarriedQuantity(_) => return Err(mismatch(location)),
+            ValueType::CarriedQuantity(_) => return Err(mismatch(location)),
         };
         Ok(node(kind, value_type, location))
     }

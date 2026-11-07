@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-049-AC-2/5, FR-513-AC-16: versioned assessment kind spellings.
+//! FR-513-AC-16: versioned assessment kind spellings.
 
 use ix_trace_rs::trace;
 use qsl_package::protocol_artifact_v1::{ArtifactKind, BindingKind};
 
-#[trace("TC-136", "FR-049-AC-2", "FR-049-AC-5", "FR-513-AC-16")]
+#[trace("TC-136", "FR-513-AC-16")]
 #[test]
 fn v1_assessment_kinds_keep_the_closed_wire_vocabulary() {
     for (kind, spelling) in [

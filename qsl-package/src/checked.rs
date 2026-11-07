@@ -13,7 +13,7 @@
 //! other already-checked `CheckedPackage`s (E4's dependency closure), never
 //! over an unchecked or wire-admitted value
 //! (R-10, O-15) -- there is no `From`/`Into` impl from `VerifiedPackage`,
-//! `ImportView` or any `protocol_artifact`-read value, and no struct-literal
+//! `ImportView` or any wire-read value, and no struct-literal
 //! construction reachable from outside this module (TC-244 rows 2-6).
 //!
 //! Every check-owned-type accessor (`Node`, `Signature`, and the rest of
@@ -171,10 +171,6 @@ use crate::emit::{emit_checked, Emission, EmitRefusal};
 ///     package
 /// }
 /// ```
-///
-/// Row 5, a `protocol_artifact`-read value, is at the root crate's
-/// `protocol_artifact::AdmittedPackage`: only the root crate can name both
-/// it and `CheckedPackage`.
 ///
 /// quire:canonical
 pub struct CheckedPackage {

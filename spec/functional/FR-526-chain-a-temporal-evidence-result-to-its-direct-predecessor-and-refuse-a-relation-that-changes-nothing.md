@@ -248,4 +248,4 @@ no truth), not an error (FR-523).
 
 ## References
 
-- Linear QSL-1503; deletion-table row B31.
+- Linear QSL-1503.

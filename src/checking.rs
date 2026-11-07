@@ -3,5 +3,4 @@
 
 mod types;
 
-pub(crate) use types::DomainField;
 pub use types::{DomainType, NativeType};

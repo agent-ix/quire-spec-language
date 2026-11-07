@@ -37,7 +37,7 @@ relationships:
 
 Before its M-6d retirement, the compiler emitted a complete native package
 through the versioned
-[compiled-protocol wire contract](../../docs/compiled-protocol-v1.md) after
+retired `quire.compiled-protocol/1` wire contract after
 selected type, definedness and family admission.
 
 **M-6d disposition:** this native artifact-publishing and reader boundary is
@@ -500,9 +500,9 @@ re-verify it. **FR-054**'s Description states
 "The compiler SHALL leave the frozen `/1` and `/2` bytes, readers and
 semantics unchanged"; this requirement invalidates that SHALL. Neither FR
 contains the "does not change any version-1 field" sentence — that sentence
-is [`docs/compiled-protocol-v2.md:6`](../../docs/compiled-protocol-v2.md)'s,
+is `docs/compiled-protocol-v2.md:6`'s (deleted in QSL-1808),
 the wire contract doc FR-050 owns, and it becomes false too.
-[`docs/compiled-protocol-v1.md`](../../docs/compiled-protocol-v1.md), which
+`docs/compiled-protocol-v1.md` (deleted in QSL-1808), which
 [TC-121](../test-cases/TC-121-publish-compiled-protocol-artifacts.md)'s own
 Description points an implementer at, defines the exact `ProducerObject`,
 `Correspondence` and `Model` shapes this requirement deletes and replaces,
