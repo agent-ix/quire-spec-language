@@ -101,3 +101,13 @@ Supplemental source check of commits 852a434b6 and 59144f865: no new finding. Th
 | FND | Outcome | Reason |
 | --- | --- | --- |
 | FND-001 | still-open | The owner AdapterRow(i) variant is still absent, so external row denials still use Package/form. The new root-writer one-short assertion correctly expects inline Rows and checks actual resource, bound and final package-copy locus; it does not resolve missing external row indices. |
+
+### Disposition round 3 — final writer fixture source check
+
+Frozen head c3d1c16fd5ad0e52b2c383dad6d6de422ac4a50f.
+
+Supplemental fixture-only inspection since 59144f865: no new finding. The final writer-carry fixture now supplies two authentic domain documents through their normal owner package intake and evidence APIs. ConfigVersion supplies the real temporal object selection; child_composite supplies genuine nonempty model record fields. Both temporal complete and timed profiles are retained. The oracle still independently enumerates final-node membership through the shared semantics predicates, demands nonempty declaration and field populations, compares cached indices, and checks original source/record identity and fst-to-one rename. Correctly, the named Pair declaration remains stable while its actual record-value content node changes and its old value id is absent. This is a substantive real writer rekey oracle, not a forged admitted package or a claim of strict monitor-root admission. Production implementation is unchanged. The fix8 focused run remains queued, so no runtime result is claimed. Existing AdapterRow and independent row-index findings remain open.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | still-open | Fixture changes do not add the missing owner AdapterRow(i) API; external record/member/field/union denial indices remain unresolved. |

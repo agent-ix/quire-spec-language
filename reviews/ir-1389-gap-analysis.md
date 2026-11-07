@@ -99,3 +99,13 @@ Supplemental source check of commits 852a434b6 and 59144f865: no new finding. Th
 | FND | Outcome | Reason |
 | --- | --- | --- |
 | FND-001 | still-open | Authentic later-copy allocation controls and writer-boundary resource assertions remain substantive, but the independently expected external row-index oracle still requires the actual owner AdapterRow(i) API. The revised genuine writer-carry test validates metadata against final wire membership and original/rekeyed record values without forging native admission; full native identity value/budget evidence remains in the separately admitted combined fixture. |
+
+### Disposition round 3 — final writer fixture source check
+
+Frozen head c3d1c16fd5ad0e52b2c383dad6d6de422ac4a50f.
+
+Supplemental fixture-only inspection since 59144f865: no new finding. The final writer-carry fixture now supplies two authentic domain documents through their normal owner package intake and evidence APIs. ConfigVersion supplies the real temporal object selection; child_composite supplies genuine nonempty model record fields. Both temporal complete and timed profiles are retained. The oracle still independently enumerates final-node membership through the shared semantics predicates, demands nonempty declaration and field populations, compares cached indices, and checks original source/record identity and fst-to-one rename. Correctly, the named Pair declaration remains stable while its actual record-value content node changes and its old value id is absent. This is a substantive real writer rekey oracle, not a forged admitted package or a claim of strict monitor-root admission. Production implementation is unchanged. The fix8 focused run remains queued, so no runtime result is claimed. Existing AdapterRow and independent row-index findings remain open.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | still-open | The authentic writer-carry fixture remains sound after correcting its model-field selection and actual named/value rekey expectation. The separate independently expected external row-index oracle still requires the real owner AdapterRow(i) seam; runtime fix8 is pending. |
