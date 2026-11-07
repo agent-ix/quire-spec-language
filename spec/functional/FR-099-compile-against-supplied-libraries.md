@@ -108,8 +108,8 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   only; the unit's value SHALL NOT be applied to a library's refinements nor
   a library's to the unit's.
 - A replay SHALL build the same input from the request's package reference:
-  the value at `/package/refinement_internals` for the proved package and at
-  `/package/dependencies/<n>/refinement_internals` for the `n`th dependency
+  the value at `/package/lock/refinement_internals` for the proved package and at
+  `/dependencies/<n>/refinement_internals` for the `n`th dependency
   entry (zero-based), as QSpec FR-375 locates them. A replay request that
   omits a non-empty value recompiles with the empty list and so fails the
   package identity check, because the list is part of the refinement node

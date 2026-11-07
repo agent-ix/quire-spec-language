@@ -249,6 +249,7 @@ pub(super) fn request(
         package_name: "fixture".to_owned(),
         profile_selections: Vec::new(),
         sources: vec![(AUTHORITY.to_owned(), IDENTITY.to_owned())],
+        refinement_internals: None,
         dependencies: Vec::new(),
         replay_target: target.into(),
         source: witness_source(),

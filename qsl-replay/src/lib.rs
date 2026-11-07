@@ -552,6 +552,7 @@ mod redaction_tests {
             profile_selections: vec![],
             package_name: "fixture".to_owned(),
             sources: vec![("registry".to_owned(), "pkg-a".to_owned())],
+            refinement_internals: None,
             dependencies: Vec::new(),
             replay_target: crate::RequestTargetWire::function(
                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
