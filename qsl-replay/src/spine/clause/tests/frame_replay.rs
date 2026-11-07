@@ -236,15 +236,6 @@ pub(super) fn request(
     documents: &[(DocumentRef, Vec<u8>)],
     target: ReplayTarget,
 ) -> ReplayRequestWire {
-    let byte_provision = vec![(
-        AUTHORITY.to_owned(),
-        IDENTITY.to_owned(),
-        source_bytes.to_vec(),
-    )];
-    let mut provided = vec![domain_document.to_vec()];
-    for (_, bytes) in documents {
-        provided.push(bytes.clone());
-    }
     let package = crate::compile_package(
         crate::CompileUnit {
             source: qsl_foundation::SourceIdentity::new(AUTHORITY, IDENTITY),
@@ -258,9 +249,35 @@ pub(super) fn request(
         crate::ReplayLimits::default(),
     )
     .expect("actual frame source package");
+    request_from_package(
+        package.bytes(),
+        source_bytes,
+        domain_document,
+        documents,
+        target,
+    )
+}
+
+/// A request retaining the genuine package emitted by a caller's explicit compile.
+pub(super) fn request_from_package(
+    package_bytes: &[u8],
+    source_bytes: &[u8],
+    domain_document: &[u8],
+    documents: &[(DocumentRef, Vec<u8>)],
+    target: ReplayTarget,
+) -> ReplayRequestWire {
+    let byte_provision = vec![(
+        AUTHORITY.to_owned(),
+        IDENTITY.to_owned(),
+        source_bytes.to_vec(),
+    )];
+    let mut provided = vec![domain_document.to_vec()];
+    for (_, bytes) in documents {
+        provided.push(bytes.clone());
+    }
     ReplayRequestWire {
         package: crate::ReplayPackage::read(
-            package.bytes(),
+            package_bytes,
             crate::ReplayLimits::default().input_bytes,
         )
         .unwrap(),
