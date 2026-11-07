@@ -346,6 +346,17 @@ fn a_clause_naming_an_untyped_parameter_refuses_operator_ineligible() {
         ),
         expect("ConfigVersion", "adjust", "Operation.params[0].typeRef")
     );
+    // A postcondition and a conjunction naming it refuse the same way.
+    for clause in [
+        "post P using v on Config::ConfigVersion::adjust { qty = qty }\n",
+        "pre P using v on Config::ConfigVersion::adjust { true and qty = qty }\n",
+    ] {
+        assert_eq!(
+            untyped(&document, clause),
+            expect("ConfigVersion", "adjust", "Operation.params[0].typeRef"),
+            "{clause}"
+        );
+    }
     assert!(assembled(
         &document,
         "post P using v on Config::ConfigVersion::peek { true }\n"
