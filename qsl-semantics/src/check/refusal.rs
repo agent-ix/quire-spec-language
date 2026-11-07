@@ -2658,6 +2658,10 @@ pub enum CheckCause {
         /// The span of the whole declaration.
         span: Span,
     },
+    /// A use of a member the model declares with no checked type (a bare
+    /// native `Text`, `Rational` or `Decimal`, FR-056-AC-43), naming the
+    /// owner and the declaration locus of its type reference.
+    UntypedMember(Box<UntypedMemberRefusal>),
     /// An `abstraction` declaration's name or binding refused (FR-304).
     Abstraction(Box<super::abstraction::AbstractionRefusal>),
     /// A refinement declaration's checking refused (FR-135 to FR-137).
@@ -3360,6 +3364,7 @@ impl CheckCause {
             Self::ProfileProhibitedOperator(_) | Self::LayerEquality { .. } => {
                 Code::UnsupportedConstruct
             }
+            Self::UntypedMember(_) => Code::IllTyped,
             Self::StateModel(cause) => cause.cause.code(),
             Self::TypeInvariant(cause) => cause.cause.code(),
             Self::Terminal(cause) => cause.cause.code(),
@@ -3435,6 +3440,7 @@ impl CheckCause {
     /// The closed cause tag, where the code has one.
     pub fn cause(&self) -> Option<&'static str> {
         match self {
+            Self::UntypedMember(_) => Some("operator-ineligible"),
             Self::StateModel(cause) => cause.cause.cause(),
             Self::TypeInvariant(cause) => cause.cause.cause(),
             Self::Terminal(cause) => cause.cause.cause(),
@@ -3566,6 +3572,19 @@ pub struct CheckRefusal {
     pub location: Location,
     /// The typed cause.
     pub cause: CheckCause,
+}
+
+/// A member with no checked type used in a clause (FR-056-AC-43): the object
+/// type that declares it, the member, and where its type reference is written.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct UntypedMemberRefusal {
+    /// The declaring object type's name.
+    pub owner: String,
+    /// The field or operation name.
+    pub member: String,
+    /// The locus of the type reference: `Field.typeRef`,
+    /// `Operation.params[i].typeRef` or `Operation.returns.typeRef`.
+    pub locus: String,
 }
 
 /// Refusals owned by one protocol declaration while the rest of the unit
