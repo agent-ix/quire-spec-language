@@ -35,7 +35,9 @@ pub struct ObservationRef {
 }
 
 /// An actual checked occurrence and the evidence authority used for its report.
-/// No truth, settlement or support can be supplied through this type.
+/// No caller-authored current truth, settlement or support can be supplied.
+/// A correction's actual prior report establishes predecessor authority only;
+/// its earlier outcome never supplies the current evaluation's answer.
 pub struct CheckedSubject<'a> {
     package: &'a CheckedPackageV2,
     occurrence: &'a ClauseOccurrence,

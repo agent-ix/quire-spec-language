@@ -75,7 +75,7 @@ cannot occur in a report.
 *Owner representation.* The report SHALL be immutable, with no mutator, and its
 owner representation SHALL be `Report::to_owner_bytes(&self) -> Vec<u8>` and
 `Report::from_owner_bytes(bytes: &[u8], subject: &CheckedSubject,
-observation: &ObservationRef) -> Result<Report, ReportRefusal>`. The bytes are a
+observation: &ObservationRef, budget: &mut NativeJoinBudget) -> Result<Report, ReportRefusal>`. The bytes are a
 deterministic, self-delimiting encoding: a format tag and version, then the
 binding, the outcome, the support relation and the optional predecessor in a
 fixed order, each variable-length member length-prefixed and each enumeration
