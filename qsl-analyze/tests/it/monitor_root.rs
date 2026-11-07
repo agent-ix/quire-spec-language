@@ -975,6 +975,17 @@ fn the_actual_combined_checked_unit_retains_its_source_and_time_facts() {
     let unit = authored(ROOT_SHAPES[0]);
     assert!(checked.source().text().starts_with(&unit));
     assert!(checked.source().text().len() > unit.len());
+    for entry in [
+        "monitorInit",
+        "monitorOnEvent",
+        "monitorOnWatermark",
+        "monitorOnGap",
+    ] {
+        assert!(
+            checked.source().text()[unit.len()..].contains(entry),
+            "{entry}"
+        );
+    }
     let graph = checked.package().graph();
     let clause = graph
         .temporal_clauses()
@@ -986,6 +997,14 @@ fn the_actual_combined_checked_unit_retains_its_source_and_time_facts() {
     let source = &graph.time_sources()[0];
     assert_eq!(source.model, "M");
     assert_eq!(source.unit, "ms");
+    assert_eq!(
+        source.model_node,
+        qsl_semantics::model::key::object_type_node_key(&quire_checked::key::DeclarationKey {
+            package: "example/config-version".to_owned(),
+            node: "ix://example/config-version/ConfigVersion".to_owned(),
+        })
+        .expect("the selected model object key")
+    );
     assert_eq!(source.source, qsl_semantics::check::TimeSourceKind::Dense);
     assert!(source.tick_operation_anchor.is_none());
     assert!(source.tick_operation_key.is_none());

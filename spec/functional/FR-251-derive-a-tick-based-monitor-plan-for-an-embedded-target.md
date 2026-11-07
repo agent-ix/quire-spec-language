@@ -159,6 +159,12 @@ not final writer-renamed identities or admitted order/progress authority.
 
 ### Admitted order and progress association
 
+The request SHALL receive a genuine independently admitted observation-owner
+association as an explicit input. Checked model-step facts may establish the
+model-time order; they SHALL NOT establish a static progress context in place
+of that observation authority. The observation owner's original values and
+bytes SHALL be retained without substituting a compiler-generated assertion.
+
 The public plan-root handoff SHALL expose independently admitted event-order
 and progress-association authority retained from the same final emission as
 its plan and timing obligations. The handoff SHALL preserve the original

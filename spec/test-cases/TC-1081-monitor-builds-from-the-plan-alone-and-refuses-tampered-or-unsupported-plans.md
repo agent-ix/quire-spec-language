@@ -50,6 +50,8 @@ Fixtures: the deadline claim of FR-251-AC-1 on a 20-bit 1 MHz counter with its a
 29. Produce a tick-monitor plan from genuine authored source and obtain its independently admitted order and progress-association authority through the public plan-root handoff. Compare the complete original canonical values and their owner-established final package, clause, subject and claim association, alongside the returned plan and timing obligations. Drop temporary compilation inputs and repeat the public consumer reads. Exercise clone and writer-rename behavior required by the owning admission contract, retaining the old witness rows (AC-45).
 30. Independently remove each authority, substitute a foreign admitted emission, change the selected clause/claim, change the source, replace the order and replace the progress association. Invoke the public admission path and assert each typed refusal with no partial admitted context. Do not construct an admitted authority in the test or infer it from scope, clock, entry names or numeric positions (AC-46).
 
+31. Drop the original authored source, model documents and request inputs after producing a plan root. Read its retained combined checked unit through the public API; compare the authored source prefix, generated entry names, original selected clause key, model object key, dense source kind and millisecond unit. Separately join the final clause through the emission retained rows, without treating original checker keys as final renamed identities or progress authority (AC-47).
+
 Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 
 ## Expected Results
@@ -84,3 +86,4 @@ Tag the tests `#[trace("TC-1081", "FR-251-AC-n")]`.
 - Step 28: the rows name `origin` and `value` at the renamed members and keep `origin_tick` and `amount` as declared names; the join succeeds and projects each record; each row with a declared name as `admitted_name` is refused with `MismatchedIdentityWitness`.
 - Step 29: both original canonical admitted values and every owner-established association equal the genuine final emission values, remain usable after temporary input destruction and obey the owner clone/rename contract; all older retained rows remain authentic.
 - Step 30: each invalid association returns the owning typed refusal and no partial admitted context; no label, clock row, matching index or second emission supplies missing authority.
+- Step 31: the original combined checked unit retains all compared source/time facts after input destruction; the separate final-emission selection equals the strict reader clause. This is component retention evidence and grants no admitted order/progress claim.
