@@ -512,3 +512,68 @@ fn mixed_collection_package() -> CheckedPackage {
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }
+
+#[trace("TC-1331", "FR-531-AC-33")]
+#[test]
+fn cold_integer_payloads_refuse_inside_the_real_equality_adapter_without_allocating() {
+    let emission = super::converted_equality::emitted(
+        "function same using v(a: Int[0, 340282366920938463463374607431768211457], b: Int[0, 340282366920938463463374607431768211457]): Boolean pure { a = b }",
+    );
+    let package = native(&emission);
+    let row_index = emission
+        .equality_fact_witness_rows()
+        .iter()
+        .position(|row| {
+            matches!(row.value_type(), Some(ValueType::Int(_)))
+                && matches!(row.fact(), EqualityFactWitness::OperandType { .. })
+        })
+        .expect("the genuine emission retains the integer operand type");
+    let locus = NativeJoinLocus {
+        source: NativeJoinLocusSource::ReachedRow(row_index),
+        form: "equality_fact_row",
+    };
+    let mut measure = ample();
+    let expected = emission
+        .clone()
+        .equality_witness(&package, &mut measure)
+        .expect("independent complete materialization");
+    let need = measure.consumed();
+    // Select the last denied charge in this actual operand row, so the
+    // observer reaches its numeric copy precharge rather than an earlier path
+    // string. Each probe uses a separate copy; none warms the final input.
+    let storage = (0..need.storage)
+        .filter(|storage| {
+            let candidate = emission.clone();
+            let mut budget = NativeJoinBudget::new(need.work, *storage);
+            candidate
+                .equality_witness(&package, &mut budget)
+                .expect_err("one resource remains short")
+                .locus()
+                == Some(locus)
+        })
+        .last()
+        .expect("an owned charge in the retained integer row");
+    let cold = emission.clone();
+    let mut budget = NativeJoinBudget::new(need.work, storage);
+    let _ = allocation_counter::measure(|| {});
+    let mut result = None;
+    let allocations = allocation_counter::measure(|| {
+        result = Some(cold.equality_witness(&package, &mut budget));
+    });
+    let error = result
+        .expect("real adapter ran")
+        .expect_err("numeric materialization storage denied");
+    assert_eq!(allocations.count_total, 0);
+    assert_eq!(error.code(), NativeRowErrorCode::StorageLimit);
+    assert_eq!(error.locus(), Some(locus));
+    assert_eq!(error.configured_bound(), Some(storage));
+    assert_eq!(error.denied(), budget.first_unpaid());
+    let mut exact = NativeJoinBudget::new(need.work, need.storage);
+    assert_eq!(
+        emission
+            .clone()
+            .equality_witness(&package, &mut exact)
+            .expect("cold payloads copy at their exact full allowance"),
+        expected
+    );
+}
