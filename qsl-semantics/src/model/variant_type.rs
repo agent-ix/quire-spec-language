@@ -18,6 +18,7 @@ pub(super) fn bind(context: &mut MeaningBindingContext<'_, '_>) -> Result<(), Re
         context.at,
         context.construct_shape,
         context.meanings_by_node,
+        context.unbounded_rationals,
         context.records,
     )
 }

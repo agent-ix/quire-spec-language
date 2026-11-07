@@ -4567,6 +4567,7 @@ pub(super) fn read_variant_type(
     at: &str,
     shape: Option<&str>,
     type_meanings: &HashMap<&str, &str>,
+    unbounded_rationals: &std::collections::BTreeSet<String>,
     records: &mut Vec<DomainPackageRecord>,
 ) -> Result<(), Refusals> {
     let ctx = NodeCtx::new(type_value, at);
@@ -4652,7 +4653,8 @@ pub(super) fn read_variant_type(
                     let case_ctx = NodeCtx::new(case, case_at.clone());
                     match read_value_type_ref(package, &case_ctx, type_ref, true) {
                         Ok(value_type)
-                            if variant_payload_is_value_type(&value_type, type_meanings) =>
+                            if variant_payload_is_value_type(&value_type, type_meanings)
+                                && !names_unbounded_rational(&value_type, unbounded_rationals) =>
                         {
                             Some(value_type)
                         }
@@ -4726,6 +4728,7 @@ pub(super) fn read_tuple_value_type(
     at: &str,
     shape: Option<&str>,
     type_meanings: &HashMap<&str, &str>,
+    unbounded_rationals: &std::collections::BTreeSet<String>,
     records: &mut Vec<DomainPackageRecord>,
 ) -> Result<(), Refusals> {
     let ctx = NodeCtx::new(type_value, at);
@@ -4815,6 +4818,11 @@ pub(super) fn read_tuple_value_type(
         };
         let supported = match &value_type {
             ValueTypeRef::Clock => false,
+            ValueTypeRef::Package(_)
+                if names_unbounded_rational(&value_type, unbounded_rationals) =>
+            {
+                false
+            }
             ValueTypeRef::Native(_) | ValueTypeRef::Unit(_) => true,
             ValueTypeRef::Package(key) => {
                 type_meanings.get(key.node.as_str()).is_none_or(|meaning| {
@@ -4850,6 +4858,15 @@ pub(super) fn read_tuple_value_type(
     }));
     records.extend(position_records);
     Ok(())
+}
+
+/// Whether `value_type` names the unbounded `Rational`: a Rational value type
+/// with empty `constraints`, or an alias reaching one (FR-505).
+fn names_unbounded_rational(
+    value_type: &ValueTypeRef,
+    unbounded_rationals: &std::collections::BTreeSet<String>,
+) -> bool {
+    matches!(value_type, ValueTypeRef::Package(key) if unbounded_rationals.contains(&key.node))
 }
 
 /// Whether `payload_type` resolves to an admitted model or native value type.
@@ -5033,6 +5050,10 @@ struct TypeNodeReader<'a> {
     shapes: &'a HashMap<(String, String), String>,
     type_meanings: &'a HashMap<&'a str, &'a str>,
     rational_types: &'a std::collections::BTreeSet<String>,
+    /// Rational value types with empty `constraints`, and the aliases that
+    /// reach them: the unbounded `Rational`, which a tuple position or a
+    /// variant payload cannot carry (FR-505).
+    unbounded_rationals: &'a std::collections::BTreeSet<String>,
     semantic: Option<&'a agent_ix_semantic_ir::rules::Document<'a>>,
     semantic_members: &'a HashMap<&'a str, &'a agent_ix_semantic_ir::json::Json>,
 }
@@ -5050,6 +5071,7 @@ fn read_type_node(
         shapes,
         type_meanings,
         rational_types,
+        unbounded_rationals,
         semantic,
         semantic_members,
     } = reader;
@@ -5275,6 +5297,7 @@ fn read_type_node(
             node,
             at,
             meanings_by_node: type_meanings,
+            unbounded_rationals,
             construct_shape: shapes
                 .get(&(module.to_owned(), name.to_owned()))
                 .map(String::as_str),
@@ -6239,6 +6262,34 @@ fn read_nodes_partial(
         }
         rational_types.extend(newly_resolved);
     }
+    let mut unbounded_rationals: std::collections::BTreeSet<String> = types
+        .iter()
+        .filter(|type_value| type_value.get("scalar").and_then(Value::as_str) == Some("rational"))
+        .filter(|type_value| {
+            type_value
+                .get("constraints")
+                .and_then(Value::as_array)
+                .is_none_or(Vec::is_empty)
+        })
+        .filter_map(|type_value| type_value.get("identity")?.as_str().map(str::to_owned))
+        .collect();
+    loop {
+        let reached: Vec<String> = types
+            .iter()
+            .filter(|type_value| {
+                type_value
+                    .get("target")
+                    .and_then(Value::as_str)
+                    .is_some_and(|target| unbounded_rationals.contains(target))
+            })
+            .filter_map(|type_value| type_value.get("identity")?.as_str().map(str::to_owned))
+            .filter(|identity| !unbounded_rationals.contains(identity))
+            .collect();
+        if reached.is_empty() {
+            break;
+        }
+        unbounded_rationals.extend(reached);
+    }
     let mut nodes: Vec<DocumentNode<'_>> = Vec::with_capacity(types.len() + populations.len());
     for (position, type_value) in types.iter().enumerate() {
         let at = format!("$.types[{position}]");
@@ -6274,6 +6325,7 @@ fn read_nodes_partial(
                         shapes: &shapes,
                         type_meanings: &type_meanings,
                         rational_types: &rational_types,
+                        unbounded_rationals: &unbounded_rationals,
                         semantic,
                         semantic_members: &semantic_members,
                     },
@@ -6875,6 +6927,7 @@ mod tests {
             "types[0]",
             Some("tuple"),
             &HashMap::new(),
+            &std::collections::BTreeSet::new(),
             &mut records,
         )
         .expect("the closed, ordered tuple form is admitted");
