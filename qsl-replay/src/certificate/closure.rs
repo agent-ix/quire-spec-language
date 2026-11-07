@@ -179,7 +179,8 @@ pub struct CertificateRequest<'a> {
     /// The model subject (FR-125).
     pub subject: ModelSubject<'a>,
     /// Explicit clock configurations selected for this subject's checked
-    /// temporal declarations.
+    /// temporal declarations. The subject's package was checked with these
+    /// same selections ([`crate::model_check::identity::ClauseIdentity::resolve`]).
     pub temporal_clock_selections: &'a [TemporalClockSelection],
     /// The item.
     pub item: ModelCheckItem<'a>,
@@ -337,7 +338,8 @@ pub struct ProtocolCertificateRequest<'a> {
     /// The protocol subject (FR-205).
     pub subject: ProtocolSubject<'a>,
     /// Explicit clock configurations selected for this subject's checked
-    /// temporal declarations.
+    /// temporal declarations. The subject's package was checked with these
+    /// same selections ([`crate::model_check::identity::ClauseIdentity::resolve`]).
     pub temporal_clock_selections: &'a [TemporalClockSelection],
     /// The item.
     pub item: ModelCheckItem<'a>,
@@ -403,7 +405,6 @@ fn check_protocol(
     check_protocol_bounds(&model, protocol, graph, BOUND_POSITIONS)
         .map_err(|refusal| ClosureRefusal::NotSimulated(Box::new(refusal)))?;
     let subject = &request.subject;
-    let item = &request.item;
     let live_instances = live_instance_bound(request.max_live_instances);
     let instance = activates_on_each(protocol).then_some(InstanceBound {
         value: live_instances,
@@ -417,17 +418,14 @@ fn check_protocol(
             let system = ProtocolSystem::new(model, subject, Sc)
                 .map_err(ClosureRefusal::Protocol)?
                 .with_max_live_instances(live_instances);
-            check_system(
+            check_protocol_system(
                 &system,
                 system.model(),
                 Bounds {
                     memory: None,
                     instance,
                 },
-                SubjectKind::Protocol,
-                &subject.model,
-                item,
-                request.temporal_clock_selections,
+                request,
                 proof,
                 limits,
                 cancel,
@@ -441,17 +439,14 @@ fn check_protocol(
             let system = ProtocolSystem::new(model, subject, tso)
                 .map_err(ClosureRefusal::Protocol)?
                 .with_max_live_instances(live_instances);
-            check_system(
+            check_protocol_system(
                 &system,
                 system.model(),
                 Bounds {
                     memory: Some(bound),
                     instance,
                 },
-                SubjectKind::Protocol,
-                &subject.model,
-                item,
-                request.temporal_clock_selections,
+                request,
                 proof,
                 limits,
                 cancel,
@@ -465,23 +460,46 @@ fn check_protocol(
             let system = ProtocolSystem::new(model, subject, ra)
                 .map_err(ClosureRefusal::Protocol)?
                 .with_max_live_instances(live_instances);
-            check_system(
+            check_protocol_system(
                 &system,
                 system.model(),
                 Bounds {
                     memory: Some(bound),
                     instance,
                 },
-                SubjectKind::Protocol,
-                &subject.model,
-                item,
-                request.temporal_clock_selections,
+                request,
                 proof,
                 limits,
                 cancel,
             )
         }
     }
+}
+
+/// [`check_system`] over a protocol `system` of `request`: the one place the
+/// request's clock selections reach the clause-identity re-emit of a protocol
+/// certificate check, whatever the memory model.
+fn check_protocol_system<S: SubjectSystem>(
+    system: &S,
+    model: &ModelSystem<'_>,
+    bounds: Bounds,
+    request: &ProtocolCertificateRequest<'_>,
+    proof: Proof<'_>,
+    limits: &ModelCheckLimits,
+    cancel: &Cancel,
+) -> Result<TemporalCertificateCheck, ClosureRefusal> {
+    check_system(
+        system,
+        model,
+        bounds,
+        SubjectKind::Protocol,
+        &request.subject.model,
+        &request.item,
+        request.temporal_clock_selections,
+        proof,
+        limits,
+        cancel,
+    )
 }
 
 /// The method bounds a checked subject runs under (ADR-025 MB-2, ADR-027

@@ -4711,18 +4711,26 @@ fn a_lasso_position_wraps_into_its_loop() {
     assert_eq!(observation_slot(&empty, 1), None);
 }
 
-/// FR-337 "Aggregate formula emission" item 7 through the spine: the clock
-/// selection the check stage receives reaches S3, so a `duration` window
-/// written in seconds and milliseconds of the selected package's `Time` is
-/// emitted in the selected clock unit, both bounds converted exactly
-/// (QSpec FR-370, `past[0 s, 300000 ms]` under a clock in `ms` is `0` and
-/// `300000` of `ms`).
-#[trace("TC-1267", "FR-337-AC-15")]
-#[test]
-fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
+/// A unit with a `duration` window written in seconds and milliseconds of
+/// the selected package's `Time`, with a clock in `ms` selected. The unit is
+/// named as the model package, not as a library of its own. The I2 reader
+/// looks a clause's clock unit node up in the clause's package (QuireIR
+/// `check_clause`), while the emitter writes a model-owned unit node in the
+/// model's (FR-322-AC-99), so a model-owned clock under a differently named
+/// library is refused at read-back with `unit-mismatch`; the fixture stays on
+/// the one naming the reader accepts until the IR clock-unit-node resolution
+/// is ruled on (QSL-1662).
+struct MixedUnitClock {
+    checked: crate::spine::CheckedUnit,
+    packages: qsl_semantics::model::intake::PackageInput,
+    selections: Vec<qsl_package::TemporalClockSelection>,
+    millisecond: String,
+}
+
+fn mixed_unit_clock(checked_with_selections: bool) -> MixedUnitClock {
     use crate::spine::{
-        check_with_temporal_selections_and_execution_points, package_with_temporal_selections,
-        parse, select, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
+        check_with_temporal_selections_and_execution_points, parse, select, DependencyInput,
+        ParseRequest, SpineLimits,
     };
 
     let package = super::receiver_frames::fixture::PACKAGE;
@@ -4772,7 +4780,7 @@ fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
         .find(|form| matches!(form.form(), qsl_forms::DeclarationForm::Temporal(_)))
         .map(qsl_forms::ParsedForm::span)
         .expect("the clause form");
-    let selections = [qsl_package::TemporalClockSelection::new(
+    let selections = vec![qsl_package::TemporalClockSelection::new(
         parsed.source().reference().clone(),
         span,
         qsl_package::ClockConfiguration::TimestampedEvent {
@@ -4784,9 +4792,13 @@ fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
         .into_value();
     let checked = check_with_temporal_selections_and_execution_points(
         &parsed,
-        "fixture".to_owned(),
+        package.to_owned(),
         &BTreeMap::new(),
-        &selections,
+        if checked_with_selections {
+            &selections
+        } else {
+            &[]
+        },
         &models,
         &DependencyInput::default(),
         limits,
@@ -4794,6 +4806,32 @@ fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
     )
     .unwrap_or_else(|failure| panic!("the unit checks: {failure:?}"))
     .into_value();
+    MixedUnitClock {
+        checked,
+        packages,
+        selections,
+        millisecond,
+    }
+}
+
+/// FR-337 "Aggregate formula emission" item 7 through the spine: the clock
+/// selection the check stage receives reaches S3, so a `duration` window
+/// written in seconds and milliseconds of the selected package's `Time` is
+/// emitted in the selected clock unit, both bounds converted exactly
+/// (QSpec FR-370, `past[0 s, 300000 ms]` under a clock in `ms` is `0` and
+/// `300000` of `ms`).
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
+    use crate::spine::{package_with_temporal_selections, PackageLimits};
+
+    let MixedUnitClock {
+        checked,
+        selections,
+        millisecond,
+        ..
+    } = mixed_unit_clock(true);
+    let cancel = quire_exact::Cancel::new();
     let emitted =
         package_with_temporal_selections(&checked, &selections, PackageLimits::default(), &cancel)
             .unwrap_or_else(|failure| panic!("the unit emits: {failure:?}"))
@@ -4826,4 +4864,310 @@ fn the_spine_converts_a_duration_window_to_the_selected_clock_unit() {
             "{name}"
         );
     }
+}
+
+/// QSL-1662, FR-337 "Aggregate formula emission": the model-check re-emit
+/// resolves a clause's identity from a package checked with the same clock
+/// selections, for a `duration` window written in a unit other than the
+/// clock unit. The item and closure re-emit paths resolve through this one
+/// call (`ModelCheckItem::instances_for`).
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn the_model_check_reemit_accepts_a_duration_window_in_another_unit() {
+    use crate::model_check::identity::ClauseIdentity;
+
+    let MixedUnitClock {
+        checked,
+        packages,
+        selections,
+        ..
+    } = mixed_unit_clock(true);
+    let package = checked.package();
+    let [node] = package.graph().temporal_clauses() else {
+        panic!("one clause");
+    };
+    let identity = ClauseIdentity::resolve(
+        package,
+        &packages,
+        node.clause(),
+        &selections,
+        &quire_exact::Cancel::new(),
+        qsl_package::EmitLimits::fixture(),
+    )
+    .unwrap_or_else(|refusal| panic!("the re-emit resolves the clause: {refusal}"));
+    assert!(identity.over().is_some(), "the clause ranges over `e`");
+    assert_eq!(
+        identity.occurrence(),
+        &crate::model_check::identity::node_occurrence(node)
+    );
+    // The package the re-emit wrote holds the window's bounds in the clock
+    // unit: `0` and `300000` of `ms`.
+    let emitted = qsl_package::emit_checked_with_temporal_selections(
+        package,
+        &selections,
+        qsl_package::EmitLimits::fixture(),
+    )
+    .unwrap_or_else(|refusal| panic!("the package emits: {refusal}"));
+    let wire: serde_json::Value =
+        serde_json::from_slice(emitted.package().bytes()).expect("the package is JSON");
+    let bounds = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("nodes")
+        .iter()
+        .filter(|node| node["body"]["operation"]["identity"] == "quire.op.temporal.aggregate")
+        .flat_map(|node| node["body"]["arguments"][0]["members"].as_array().cloned())
+        .flatten()
+        .filter(|member| member["name"] == "lower" || member["name"] == "upper")
+        .map(|member| {
+            (
+                member["name"].as_str().map(str::to_owned),
+                member["value"]["value"].as_str().map(str::to_owned),
+                member["value"]["type"]["path"][2]
+                    .as_str()
+                    .map(str::to_owned),
+            )
+        })
+        .collect::<Vec<_>>();
+    let ms = Some(format!(
+        "ix://{}/unit/ms",
+        super::receiver_frames::fixture::PACKAGE
+    ));
+    assert_eq!(
+        bounds,
+        [
+            (Some("lower".to_owned()), Some("0".to_owned()), ms.clone()),
+            (Some("upper".to_owned()), Some("300000".to_owned()), ms),
+        ]
+    );
+}
+
+/// QSL-1662: the re-emit does not run S3, so a package checked without the
+/// clock selection keeps its `duration` bounds in the written unit and the
+/// emitter refuses it, naming `timestamp_unit`, rather than emitting a bound
+/// that is not in the clock unit. The subject of a model check is checked with
+/// the same selections it is re-emitted with. Pinned as the current contract;
+/// a spec ruling on whether the re-emit paths re-run S3 instead is pending
+/// (QSL-1662), and this test follows it.
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn the_model_check_reemit_refuses_a_package_checked_without_the_clock_selection() {
+    use crate::model_check::identity::{ClauseIdentity, ClauseRootRefusal};
+
+    let MixedUnitClock {
+        checked,
+        packages,
+        selections,
+        ..
+    } = mixed_unit_clock(false);
+    let package = checked.package();
+    let [node] = package.graph().temporal_clauses() else {
+        panic!("one clause");
+    };
+    let refusal = ClauseIdentity::resolve(
+        package,
+        &packages,
+        node.clause(),
+        &selections,
+        &quire_exact::Cancel::new(),
+        qsl_package::EmitLimits::fixture(),
+    )
+    .expect_err("a bound in the written unit is no bound in the clock unit");
+    let ClauseRootRefusal::Package(message) = refusal else {
+        panic!("a package refusal: {refusal:?}");
+    };
+    assert!(
+        message.starts_with("temporal clock selection at ")
+            && message.ends_with("has an invalid timestamp_unit"),
+        "{message}"
+    );
+}
+
+/// A model-check letter reader no re-emit test reaches.
+struct NoLetters;
+
+impl qsl_eval::model_subject::ModelLetters for NoLetters {
+    fn atom(
+        &self,
+        _atom: qsl_semantics::check::FormulaNodeId,
+        _instance: &qsl_eval::model_subject::ModelInstance,
+        _state: &qsl_eval::simulation::model::ModelSimState,
+        _meter: &mut quire_exact::Meter,
+    ) -> Result<qsl_eval::temporal::AtomReading, qsl_eval::model_subject::AtomStop> {
+        unreachable!("the identity of the clause is resolved before any letter is read")
+    }
+
+    fn activation(
+        &self,
+        _instance: &qsl_eval::model_subject::ModelInstance,
+        _state: &qsl_eval::simulation::model::ModelSimState,
+        _meter: &mut quire_exact::Meter,
+    ) -> Result<qsl_eval::temporal::AtomReading, qsl_eval::model_subject::AtomStop> {
+        unreachable!("the identity of the clause is resolved before any letter is read")
+    }
+
+    fn activation_reads(
+        &self,
+    ) -> Result<
+        std::collections::BTreeSet<qsl_semantics::check::footprint::SymbolicLocation>,
+        qsl_semantics::check::footprint::FootprintRefusal,
+    > {
+        unreachable!("the identity of the clause is resolved before any footprint is read")
+    }
+
+    fn reads(
+        &self,
+        _atom: qsl_semantics::check::FormulaNodeId,
+    ) -> Result<
+        std::collections::BTreeSet<qsl_semantics::check::footprint::SymbolicLocation>,
+        qsl_semantics::check::footprint::FootprintRefusal,
+    > {
+        unreachable!("the identity of the clause is resolved before any footprint is read")
+    }
+}
+
+/// The model-check subject of [`mixed_unit_clock`]'s package: no population,
+/// so the identity of the clause is resolved and nothing else is read.
+fn reemit_subject<'a>(
+    package: &'a qsl_package::CheckedPackage,
+    packages: &'a qsl_semantics::model::intake::PackageInput,
+    snapshots: &'a qsl_semantics::model::observation::DocumentProvision,
+) -> qsl_eval::model_subject::ModelSubject<'a> {
+    qsl_eval::model_subject::ModelSubject {
+        simulation: qsl_eval::simulation::model::ModelSimulationRequest {
+            package,
+            packages,
+            normalization: qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+            snapshots,
+            initial: Vec::new(),
+            universes: Vec::new(),
+            observation: qsl_semantics::model::observation::ObservationLimits::default(),
+            expansion: qsl_eval::simulation::model::ExpansionLimits {
+                max_candidates: 1_000,
+            },
+            meter: quire_exact::ScalarLimits {
+                integer_bits: 1 << 20,
+                decimal_digits: 1 << 20,
+                scale_expansion: 1 << 20,
+                text_input_bytes: 1 << 20,
+                text_scalars: 1 << 20,
+                normalized_scalars: 1 << 20,
+                unit_edges: 1 << 20,
+                value_occurrences: 1 << 20,
+                work_units: 1 << 30,
+                result_units: 1 << 30,
+            },
+            emit: qsl_package::EmitLimits::fixture(),
+        },
+        proof_bounds: Vec::new(),
+    }
+}
+
+/// QSL-1662, the item path (`ModelCheckItem::instances_for`, `item.rs`): the
+/// clause's identity is resolved from the subject's package under the
+/// selections the caller passes, so a package checked with them is re-emitted
+/// and the item goes on to its instances, while the same call without them is
+/// refused as `clause-root-unresolved` before any instance is built.
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn the_item_path_passes_the_clock_selections_to_the_reemit() {
+    use crate::model_check::identity::ClauseRootRefusal;
+    use crate::model_check::item::{ItemRefusal, ModelCheckItem};
+    use qsl_eval::automaton::SubjectKind;
+
+    let MixedUnitClock {
+        checked,
+        packages,
+        selections,
+        ..
+    } = mixed_unit_clock(true);
+    let package = checked.package();
+    let [node] = package.graph().temporal_clauses() else {
+        panic!("one clause");
+    };
+    let snapshots = std::collections::BTreeMap::new();
+    let subject = reemit_subject(package, &packages, &snapshots);
+    let system = qsl_eval::simulation::model::ModelSystem::new(subject.simulation.clone())
+        .unwrap_or_else(|failure| panic!("the subject admits: {failure:?}"));
+    let item = ModelCheckItem::Clause {
+        clause: node.clause(),
+        letters: &NoLetters,
+    };
+    let cancel = quire_exact::Cancel::new();
+    let with = item.instances_for(
+        &subject,
+        &system,
+        &selections,
+        &cancel,
+        SubjectKind::Ordinary,
+        64,
+    );
+    assert!(
+        !matches!(with, Err(ItemRefusal::ClauseRoot(_))),
+        "the selections reach the re-emit: {:?}",
+        with.err()
+    );
+    let without = item.instances_for(&subject, &system, &[], &cancel, SubjectKind::Ordinary, 64);
+    assert!(
+        matches!(
+            without,
+            Err(ItemRefusal::ClauseRoot(ClauseRootRefusal::Package(_)))
+        ),
+        "a re-emit without the selections is refused: {:?}",
+        without.err()
+    );
+}
+
+/// QSL-1662, the certificate closure path (`check_closure`, `closure.rs`): the
+/// request's selections reach the clause-identity re-emit, so the check goes
+/// on to the item's instances with them and is refused as
+/// `clause-root-unresolved` without them.
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn the_closure_path_passes_the_clock_selections_to_the_reemit() {
+    use crate::certificate::closure::{
+        check_closure, CertificateRequest, ClosureCertificate, ClosureRefusal,
+    };
+    use crate::model_check::identity::ClauseRootRefusal;
+    use crate::model_check::item::{ItemRefusal, ModelCheckItem};
+
+    let MixedUnitClock {
+        checked,
+        packages,
+        selections,
+        ..
+    } = mixed_unit_clock(true);
+    let package = checked.package();
+    let [node] = package.graph().temporal_clauses() else {
+        panic!("one clause");
+    };
+    let snapshots = std::collections::BTreeMap::new();
+    let request = |selections| CertificateRequest {
+        subject: reemit_subject(package, &packages, &snapshots),
+        temporal_clock_selections: selections,
+        item: ModelCheckItem::Clause {
+            clause: node.clause(),
+            letters: &NoLetters,
+        },
+        smt_encoding: qsl_eval::smt::SmtEncodingLimits::default(),
+    };
+    let certificate = ClosureCertificate { states: Vec::new() };
+    let limits = crate::model_check::limits::ModelCheckLimits::default();
+    let cancel = quire_exact::Cancel::new();
+    let with = check_closure(&request(&selections), &certificate, &limits, &cancel);
+    assert!(
+        !matches!(with, Err(ClosureRefusal::Item(ItemRefusal::ClauseRoot(_)))),
+        "the selections reach the re-emit: {:?}",
+        with.err()
+    );
+    let without = check_closure(&request(&[]), &certificate, &limits, &cancel);
+    assert!(
+        matches!(
+            without,
+            Err(ClosureRefusal::Item(ItemRefusal::ClauseRoot(
+                ClauseRootRefusal::Package(_)
+            )))
+        ),
+        "a re-emit without the selections is refused: {:?}",
+        without.err()
+    );
 }
