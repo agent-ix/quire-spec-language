@@ -452,7 +452,7 @@ in FR-487. "Admitted" means QSL's I2 admission of the emitted package
 | FR-488-AC-9 | For a clause whose conjuncts `c0` (universal), `c1` (reads an existential variable) and `c2` (universal) are written in that order, `match` holds `c0`, `c1`, `c2`, as `CheckedHyperClause::conjuncts()` returns them, with `c1` at `hyper 0 match exists 0`. | Test (TC-1266) |
 | FR-488-AC-10 | `NonInterference` with `align skip { V::Vault::mix }` binds `align_skip` to one reference, to the `state`/`operation_anchor` node of `mix`, equal to the anchor node a state clause naming `mix` references; two listed operations give two references in written order. | Test (TC-1266) |
 | FR-488-AC-11 | Each of these gives a `hyperproperty` NodeId different from `NonInterference`'s: the two quantifiers' aliases changed; one quantifier `exists`; the quantifier order reversed; `fair weak V::Vault::step` on `a`; the same constraint on `b` (its reference in `b`'s Group, not `a`'s); an added `match` conjunct; an `align skip` list; a changed body atom. | Test (TC-1266) |
-| FR-488-AC-12 | Reformatting and a changed clause name give `NonInterference` the same NodeId; two structurally equal clause declarations share one node and have two `claim` occurrences with ordinals 0 and 1. A renamed trace variable gives a different NodeId (Q-6). | Test (TC-1266) |
+| FR-488-AC-12 | Reformatting and a changed clause name give `NonInterference` the same NodeId; two structurally equal clause declarations share one node and have two `claim` occurrences with ordinals 0 and 1. A renamed trace variable gives a different NodeId (QSpec FR-402-AC-3). | Test (TC-1266) |
 | FR-488-AC-13 | With `fair weak V::Vault::step` on `a`, the `quantifiers` Tuple holds `a`'s Group and then `b`'s; `a`'s Group binds `variable` `a`, `quantifier` `forall` and `alias` `V` and then holds one `reference` to a `temporal`/`fairness` node whose `fairness` member is `fairness_kind` `weak`, `granularity` `whole` (an unmarked granularity is `whole`, ADR-018 FA-6, FR-123) and an `operation` target naming `Vault`'s `model` node and `step`; `b`'s Group holds no reference. `fair weak whole V::Vault::step` emits identical bytes and `fair weak each V::Vault::step` a different fairness node and a different NodeId. The package is admitted. A constraint whose declaring node is a `systems_interface` is refused `unsupported_construct`/`not-yet-implemented` at the constraint. | Test (TC-1266) |
 | FR-488-AC-23 | Every slot node name of AC-5 to AC-8 matches `[A-Za-z_][A-Za-z0-9_]*`, and the encoding is injective: `slot_s` names for object parameters `a_b` with trace variable `c` and `a` with trace variable `b_c` differ (`slot_sa__b_sc` and `slot_sa_sb__c`), a non-ASCII or punctuation byte is `_x` plus two uppercase hex digits, and names built from every pair of distinct (tag, fields) over a set including `_`, `s`, `x` and digit-leading names are pairwise distinct. The I2 admission raises no structural refusal (`invalid_package`/`InvalidSemanticGraph`) at any parameter node. | Test (TC-1266) |
 | FR-488-AC-22 | Every emitted `hyperproperty` body of AC-1 to AC-13 passes strict wire validation of the flat grammar (QSpec FR-322 "Body grammar"): no term is refused `malformed_wire`, and the `quantifiers` binding is a Tuple of Groups whose members are bindings of text literals followed by references to `temporal`/`fairness` nodes, and the QSpec reader's temporal-step placement admits those references (QSpec FR-370-AC-21). | Test (TC-1266) |
@@ -469,14 +469,14 @@ in FR-487. "Admitted" means QSL's I2 admission of the emitted package
 
 ## Open QSpec questions
 
-QSpec FR-402 answers Q-1, Q-2, Q-4, Q-5, Q-7 and Q-8 (QSL-1093), and this
+QSpec FR-402 answers Q-1, Q-2, Q-4, Q-5, Q-6, Q-7 and Q-8 (QSL-1093), and this
 requirement follows it: each quantifier is one Group whose fairness is a list
 of references to `temporal`/`fairness` nodes, which QSpec FR-370 now places
 and QSpec FR-402's reader resolves (Q-1, Q-7); a subject is its package's
 `model_root` (Q-2); a constant conjunct is a reference to its literal node
 (Q-4); the body wrapper is QSpec's, excluded by every consumer from the
-single-trace claims (Q-5); and the slot names are QSpec's encoding (Q-8).
-Two questions remain open:
+single-trace claims (Q-5); the slot names are QSpec's encoding (Q-8); and renaming a trace variable is
+not spelling, so it changes the identity (Q-6). One question remains open:
 
 - **Q-3.** A field read in a package carries no observation or component
   member, so a hyper atom's per-trace read has no carrier but the slot
@@ -487,11 +487,6 @@ Two questions remain open:
   conjunct's slots, so QSL's one level rule (the slot's index in its term's
   slot list) leaves them free parameters, and the same read can have a node
   at two levels; QSpec should state the scope.
-- **Q-6.** FR-402-AC-3 says clauses that differ only in source spelling share
-  one identity. QSL's trace-variable names are bound in `quantifiers` and
-  appear in slot names (`slot_s<p>_s<t>`), so renaming a trace variable changes the
-  NodeId (FR-488-AC-12). QSpec should say whether bound-variable renaming is
-  spelling.
 
 ## Dependencies
 
