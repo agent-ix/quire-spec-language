@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-035-AC-7: a spelling the recognizer reserves as unsupported cannot name
-//! a function or predicate, nor select its profile through `using`, under
-//! `1-draft`; a longer identifier that starts with one still can. Every other
-//! name position parses as before until the QSpec ruling (QSL-1649).
+//! FR-035-AC-7: under `1-draft`, `helper`, `rec`, `cast` and `Tuple` are
+//! ordinary identifiers in every native declaration and binder name
+//! position (QSpec FR-339-AC-5, QSL-1649); lowercase `tuple`, a complete-V1
+//! reserved word, still is not.
 use ix_trace_rs::trace;
 use qsl_cst::{CompleteCause, CompleteCode, Limits, ParsedSource};
-use qsl_foundation::{SourceIdentity, Span};
+use qsl_foundation::SourceIdentity;
 
 const LANGUAGE: &str = "language \"ix:native\" edition \"1-draft\";\n";
 const PROFILE: &str = "profile v = \"quire.value.complete/v1\";\n";
-const RESERVED: [&str; 4] = ["helper", "rec", "cast", "Tuple"];
-const NEAR: [&str; 4] = ["helperz", "recount", "caster", "TupleX"];
+const SPELLINGS: [&str; 8] = [
+    "helper", "rec", "cast", "Tuple", "helperz", "recount", "caster", "TupleX",
+];
 
-/// The function and predicate name and `using` alias positions that refuse a
-/// reserved spelling. `@` marks the name; the text is a whole `1-draft` unit.
-const REFUSED: [(&str, &str); 4] = [
+/// The function and predicate name and `using` alias positions. `@` marks
+/// the name; the text is a whole `1-draft` unit.
+const FUNCTION_POSITIONS: [(&str, &str); 4] = [
     (
         "function name",
         "{P}function @ using v(x: Integer): Integer pure { x + 1 }",
@@ -33,9 +34,8 @@ const REFUSED: [(&str, &str); 4] = [
     ),
 ];
 
-/// The other native name positions, one per family: S1 still admits a
-/// reserved spelling there, unchanged, pending QSL-1649.
-const UNCHANGED: [(&str, &str); 13] = [
+/// The other native name positions, one per family.
+const OTHER_POSITIONS: [(&str, &str); 13] = [
     (
         "parameter",
         "{P}function f using v(@: Integer): Integer pure { 1 }",
@@ -75,8 +75,8 @@ fn unit(template: &str, name: &str) -> String {
 
 fn parse(text: &str) -> ParsedSource {
     qsl_cst::parse(
-        SourceIdentity::new("test", "test:reserved-declaration-names"),
-        "reserved.native",
+        SourceIdentity::new("test", "test:ordinary-identifier-spellings"),
+        "ordinary.native",
         text.as_bytes(),
         Limits::default(),
     )
@@ -85,47 +85,9 @@ fn parse(text: &str) -> ParsedSource {
 
 #[trace("TC-113", "FR-035-AC-7")]
 #[test]
-fn a_reserved_spelling_cannot_name_a_function_or_predicate_or_its_alias() {
-    for (position, template) in REFUSED {
-        let at = LANGUAGE.len()
-            + template
-                .replace("{P}", PROFILE)
-                .find('@')
-                .expect("the name position");
-        for name in RESERVED {
-            let text = unit(template, name);
-            let parsed = parse(&text);
-            assert!(!parsed.is_admissible(), "{position}: {text}");
-            let [refusal] = parsed.diagnostics() else {
-                panic!(
-                    "{position}: one refusal for {text}: {:?}",
-                    parsed.diagnostics()
-                );
-            };
-            assert_eq!(refusal.code, CompleteCode::InvalidSyntax, "{position}");
-            assert_eq!(refusal.cause, CompleteCause::UnexpectedToken, "{position}");
-            assert_eq!(
-                refusal.byte_span(),
-                Some(Span {
-                    start: at,
-                    end: at + name.len(),
-                }),
-                "{position}: {text}"
-            );
-            assert!(
-                refusal.message.contains(&format!("`{name}`")),
-                "{position}: {}",
-                refusal.message
-            );
-        }
-    }
-}
-
-#[trace("TC-113", "FR-035-AC-7")]
-#[test]
-fn a_longer_identifier_starting_with_a_reserved_spelling_names_every_position() {
-    for (position, template) in REFUSED.into_iter().chain(UNCHANGED) {
-        for name in NEAR {
+fn the_four_spellings_name_every_native_position() {
+    for (position, template) in FUNCTION_POSITIONS.into_iter().chain(OTHER_POSITIONS) {
+        for name in SPELLINGS {
             let text = unit(template, name);
             let parsed = parse(&text);
             assert!(
@@ -139,24 +101,8 @@ fn a_longer_identifier_starting_with_a_reserved_spelling_names_every_position() 
 
 #[trace("TC-113", "FR-035-AC-7")]
 #[test]
-fn other_name_positions_still_admit_a_reserved_spelling_at_s1() {
-    for (position, template) in UNCHANGED {
-        for name in RESERVED {
-            let text = unit(template, name);
-            let parsed = parse(&text);
-            assert!(
-                parsed.is_admissible(),
-                "{position}: {text}: {:?}",
-                parsed.diagnostics()
-            );
-        }
-    }
-}
-
-#[trace("TC-113", "FR-035-AC-7")]
-#[test]
-fn a_qualified_member_name_still_admits_a_reserved_spelling() {
-    for name in RESERVED {
+fn a_qualified_member_name_admits_the_four_spellings() {
+    for name in SPELLINGS {
         for declarations in [
             format!("model M = \"acme/model\";\nrecord R {{ datum: M::{name}; }}"),
             format!("function f using v(x: M::R): Integer pure {{ x.{name} }}"),
@@ -166,4 +112,17 @@ fn a_qualified_member_name_still_admits_a_reserved_spelling() {
             assert!(parsed.is_admissible(), "{text}: {:?}", parsed.diagnostics());
         }
     }
+}
+
+#[trace("TC-113", "FR-035-AC-7")]
+#[test]
+fn lowercase_tuple_still_refuses_as_a_record_name() {
+    let text = unit("{P}record @ { datum: Integer; }", "tuple");
+    let parsed = parse(&text);
+    assert!(!parsed.is_admissible(), "{text}");
+    let [refusal] = parsed.diagnostics() else {
+        panic!("one refusal for {text}: {:?}", parsed.diagnostics());
+    };
+    assert_eq!(refusal.code, CompleteCode::InvalidSyntax);
+    assert_eq!(refusal.cause, CompleteCause::UnexpectedToken);
 }

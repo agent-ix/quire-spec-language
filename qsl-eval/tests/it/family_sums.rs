@@ -103,7 +103,9 @@ fn a_quantity_sum_adds_the_summands_in_the_unit_of_n() {
     assert!(check("sum<Len>(x in two(): x) = 5 m"));
     assert!(!check("sum<Len>(x in two(): x) = 6 m"));
     assert!(check("sum<Len>(x in three(): x + 1 m) = 12 m"));
-    assert!(check("sum<Len>(x in nothing(): x) = 0 m"));
+    assert!(check(
+        "sum<Len>(x in nothing(): x) = convert<Quantity<m>>(convert<Li>(0 m))"
+    ));
 
     let refusals = package_with(&format!(
         "{UNIT}function ints using v(): Sequence<Integer>[0, 4] pure {{ sequence[1, 2] }}\nfunction f using v(): Boolean pure {{ sum<Len>(x in ints(): x) = 3 m }}\n"
@@ -271,4 +273,88 @@ fn an_inexact_float_sum_records_its_ieee_flags_at_the_sum() {
         "{losses:?}"
     );
     assert!(inexact("float64(bits: 0x3ff0000000000000)").is_empty());
+}
+
+const CARRIED: &str = "dimension Length; unit m : Length = rational(1, 1);\n\
+                       dimension Time; unit s : Time = rational(1, 1);\n\
+                       unit cm : Length = rational(1, 100) * m;\n\
+                       type Li = Quantity<m, Int[-5, 5]>;\n\
+                       type Lm = Quantity<m>;\n";
+
+/// FR-517-AC-20, QSpec FR-142-AC-33 (TC-187 U45): `sum<N>` over a carried
+/// `N` checks a summand of that very carried type, and refuses every other
+/// summand at the summand as a type mismatch; the unit sum takes a converted
+/// summand, and so does the carried sum.
+#[trace("FR-517-AC-20", "TC-1312", "QSpec-FR-142-AC-33", "QSpec-TC-187")]
+#[test]
+fn a_carried_sum_takes_a_summand_of_its_very_carried_type() {
+    let sum = |element: &str, result: &str, body: &str| {
+        format!(
+            "{CARRIED}function f using v(q: Sequence<{element}>[0, 1]): {result} pure \
+             {{ sum<{result}>(x in q: {body}) }}\n"
+        )
+    };
+    package_with(&sum("Li", "Li", "x")).expect("the carried type itself");
+    for element in [
+        "Quantity<m, Int[-5, 5; nearest-even]>",
+        "Quantity<m, Int[-4, 4]>",
+        "Quantity<cm, Int[-5, 5]>",
+        "Lm",
+        "Int[-5, 5]",
+    ] {
+        assert!(is_mismatch(&sum(element, "Li", "x")), "{element}");
+    }
+    assert!(
+        is_mismatch(&sum("Li", "Lm", "x")),
+        "a carried summand of a unit sum"
+    );
+    package_with(&sum("Li", "Lm", "convert<Quantity<m>>(x)")).expect("a converted unit summand");
+    package_with(&sum(
+        "Quantity<m, Int[-2, 2]>",
+        "Li",
+        "convert<Quantity<m, Int[-5, 5]>>(x)",
+    ))
+    .expect("a converted carried summand");
+}
+
+/// FR-517-AC-20, QSpec FR-142-AC-35, AC-36 (TC-187 U47, U48): a linked carried
+/// sum is admitted only when every prefix total, and the zero of a source that
+/// can be empty, is proved inside the carrier.
+#[trace("FR-517-AC-20", "TC-1312", "QSpec-FR-142-AC-35", "QSpec-FR-142-AC-36")]
+#[test]
+fn a_linked_carried_sum_proves_every_prefix_inside_the_carrier() {
+    let sum = |carrier: &str, source: &str| {
+        format!(
+            "{CARRIED}type Lp = Quantity<m, {carrier}>;\n\
+             function f using v(q: Sequence<Lp>{source}): Lp pure {{ sum<Lp>(x in q: x) }}\n"
+        )
+    };
+    assert_unproved_range(&sum("Int[-5, 5]", "[0, 3]"));
+    package_with(&sum("Int[-5, 5]", "[0, 1]")).expect("one summand, or none, is inside");
+    assert_unproved_range(&sum("Int[1, 5]", "[0, 1]"));
+    package_with(&sum("Int[1, 5]", "[1, 1]")).expect("one summand is inside");
+    assert_unproved_range(&sum("Decimal[-500, 500; 2, 2; exact]", "[0, 3]"));
+    package_with(&sum("Rational[-3, 7; 1, 12]", "[0, 1]")).expect("one rational summand");
+    assert_unproved_range(&sum("Rational[-3, 7; 1, 12]", "[0, 3]"));
+}
+
+/// FR-517-AC-20, QSpec FR-142-AC-34, AC-36 (TC-187 U46, U48): a carried sum of
+/// one summand is that summand and the empty sum is `0 m`, evaluated from
+/// source.
+#[trace("FR-517-AC-20", "TC-1312", "QSpec-FR-142-AC-34", "QSpec-FR-142-AC-36")]
+#[test]
+fn a_carried_sum_of_one_summand_or_none_evaluates() {
+    let check = |expression: &str| {
+        truth(&format!(
+            "{CARRIED}function one using v(): Sequence<Li>[0, 1] pure \
+             {{ sequence[convert<Li>(2 m)] }}\n\
+             function vacant using v(): Sequence<Li>[0, 1] pure {{ filter(y in one(): false) }}\n\
+             function total using v(q: Sequence<Li>[0, 1]): Li pure {{ sum<Li>(x in q: x) }}\n\
+             function back using v(c: Li): Quantity<m> pure {{ convert<Quantity<m>>(c) }}\n\
+             function f using v(): Boolean pure {{ {expression} }}\n"
+        ))
+    };
+    assert!(check("back(total(one())) = 2 m"));
+    assert!(!check("back(total(one())) = 3 m"));
+    assert!(check("back(total(vacant())) = 0 m"));
 }

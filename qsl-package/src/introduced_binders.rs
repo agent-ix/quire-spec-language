@@ -101,8 +101,9 @@ fn opening<'t>(identity: Option<&str>, arguments: &'t [CheckedTerm]) -> Opening<
     }
 }
 
-/// Whether `identity` is one of the six `quire.op.collection.sum.*`
-/// identities, one per numeric family a `sum<N>` totals (FR-145).
+/// Whether `identity` is one of the seven `quire.op.collection.sum.*`
+/// identities, one per numeric family a `sum<N>` totals (FR-145), the carried
+/// quantity included (FR-322 "Carried-quantity sum").
 pub(crate) fn is_sum_identity(identity: &str) -> bool {
     matches!(
         identity,
@@ -112,6 +113,7 @@ pub(crate) fn is_sum_identity(identity: &str) -> bool {
             | "quire.op.collection.sum.float32"
             | "quire.op.collection.sum.float64"
             | "quire.op.collection.sum.quantity"
+            | "quire.op.collection.sum.carried_quantity"
     )
 }
 

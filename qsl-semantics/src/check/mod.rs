@@ -4262,8 +4262,8 @@ impl PackageDeclarations {
                             nodes_used = used;
                             checked_temporal.push((index, checked, conditions));
                         }
-                        Err(refusal) => {
-                            refusals.push(refusal);
+                        Err(failed) => {
+                            refusals.extend(failed);
                             if cancel.tripped().is_some() {
                                 return Err(refusals);
                             }

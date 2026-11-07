@@ -625,6 +625,12 @@ fn summand_of_family(total: &ValueType, summand: &ValueType) -> bool {
         (ValueType::Quantity(total), ValueType::BoundedQuantity(summand)) => {
             total == summand.unit()
         }
+        // QSpec FR-142 "Carried quantity sum": the summand has the very
+        // carried type `N` (unit, carrier bounds and mode); none is widened,
+        // narrowed or converted implicitly.
+        (ValueType::CarriedQuantity(total), ValueType::CarriedQuantity(summand)) => {
+            total == summand
+        }
         _ => false,
     }
 }
@@ -2282,6 +2288,7 @@ impl<'a> Typer<'a> {
                     | ValueType::Decimal(_)
                     | ValueType::Float(_)
                     | ValueType::Quantity(_)
+                    | ValueType::CarriedQuantity(_)
             ),
         };
         if !admitted {
