@@ -397,3 +397,66 @@ pub(crate) fn value_type(
         | ValueType::Population(_) => Ok(()),
     }
 }
+
+#[cfg(test)]
+mod integer_budget_tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    const LOCUS: NativeJoinLocus = NativeJoinLocus {
+        source: quire_contract_model::NativeJoinLocusSource::ReachedRow(1),
+        form: "equality_fact_row",
+    };
+
+    #[trace("TC-1331", "FR-531-AC-29")]
+    #[test]
+    fn signed_integer_boundaries_charge_the_owned_storage_their_copy_actually_allocates() {
+        let _ = allocation_counter::measure(|| {});
+        for spelling in [
+            "170141183460469231731687303715884105727",
+            "-170141183460469231731687303715884105728",
+            "170141183460469231731687303715884105728",
+            "-170141183460469231731687303715884105729",
+        ] {
+            let value: Integer = spelling.parse().expect("exact signed boundary");
+            let mut budget = NativeJoinBudget::new(1_000_000, 1_000_000);
+            start(&mut budget, LOCUS.form).expect("fresh phase");
+            integer(&mut budget, LOCUS, &value).expect("copy precharge");
+            let mut copied = None;
+            let allocations = allocation_counter::measure(|| copied = Some(value.clone()));
+            assert_eq!(copied.expect("real owned copy"), value);
+            assert_eq!(
+                budget.consumed().storage > 0,
+                allocations.count_total > 0,
+                "owned storage must follow the actual signed integer representation: {spelling}"
+            );
+        }
+    }
+
+    #[trace("TC-1331", "FR-531-AC-29")]
+    #[test]
+    fn cold_fallibly_copied_integer_refuses_storage_without_warming_or_allocating() {
+        let original: Integer = "680564733841876926926749214863536422912".parse().unwrap();
+        // Exact's fallible copy deliberately returns uncached owned digits.
+        // No comparison, formatting, sizing or ample-budget visit touches it.
+        let cold = original.try_clone().expect("real fallible owner copy");
+        let mut budget = NativeJoinBudget::new(1_000_000, 0);
+        start(&mut budget, LOCUS.form).expect("fresh phase");
+        let _ = allocation_counter::measure(|| {});
+        let mut result = None;
+        let allocations = allocation_counter::measure(|| {
+            result = Some(integer(&mut budget, LOCUS, &cold));
+        });
+        let refusal = result
+            .expect("preflight ran")
+            .expect_err("owned storage is unavailable");
+        assert_eq!(
+            allocations.count_total, 0,
+            "even footprint inspection must not allocate before storage admission"
+        );
+        assert_eq!(refusal.code(), NativeRowErrorCode::StorageLimit);
+        assert_eq!(refusal.locus(), Some(LOCUS));
+        assert_eq!(budget.consumed().storage, 0);
+        assert_eq!(refusal.denied(), budget.first_unpaid());
+    }
+}
