@@ -14,11 +14,11 @@
 
 use super::binding;
 use super::binding_work;
-use super::definition_source::RegisteredDefinition;
-use super::definitions::{Cause, Selection, UseKind};
+use super::definitions::{Cause, UseKind};
 use super::models::{ImportRefusal, ModelInput};
 use super::scopes::{Anchor, BinderKind, BinderType};
 use super::{DependencyKind, DependencySite, SourceInventory, WorkLimits};
+use crate::linking::definition_source::{RegisteredDefinition, Selection};
 use crate::Limits;
 use qsl_foundation::SourceIdentity;
 

@@ -18,8 +18,8 @@ use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::{
     binding_work::Limits as BindingLimits,
     scopes::{Anchor, BinderKind},
-    DeclarationId,
 };
+use quire_spec_language::linking::declaration_id::DeclarationId;
 use quire_spec_language::model_source::{self, ModelSourceLimits};
 use quire_spec_language::native_model::{ModelLimits, NativeModel};
 use quire_spec_language::Limits;

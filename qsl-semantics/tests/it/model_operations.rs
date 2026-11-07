@@ -2334,29 +2334,13 @@ fn only_the_modifies_refusal_is_reported_when_both_members_are_invalid() {
     );
 }
 
-/// FR-103-AC-3 (TC-458 step 3, part 1, as amended -- SR-723 gap-analysis
-/// FND-003): a parameter typed `Decimal`, not `Text`, refuses
-/// `unsupported_construct`/`declaration-form` at I1 (intake), the same
-/// stage and cause a field of that type refuses at (FR-103's own Behavior:
-/// "as a field of that type does"). `NativeValueType::unsupported_parameters`
-/// is non-empty for `Decimal` (`qsl-semantics/src/model/domain_package.rs`:
-/// needs `dmin`/`dmax`), so `read_value_type_ref`
-/// (`qsl-semantics/src/model/intake.rs`) already refuses it at I1 for
-/// *every* caller (a field, an operation parameter or an operation result
-/// alike), before the assembled `OperationMemberRecord`/`FieldMemberRecord`
-/// this parameter would produce ever exists for
-/// `PackageDeclarations::assemble` to see -- `model_value_type`'s own
-/// `NativeValueType::Rational | Decimal | Text => Unmapped::Unsupported`
-/// arm (`qsl-semantics/src/check/assemble.rs`) is unreachable dead code for
-/// a package-declared operation parameter/result.
-///
-/// `ix://quire/native/Text` resolves at FCD's layer (its native vocabulary
-/// admits `Text`), so a `Text` parameter now reaches this reader; QSL's
-/// Text intake is the next slice (QSL-806). `Decimal` remains the native
-/// type this test uses.
-#[trace("TC-458", "FR-103-AC-3")]
+/// FR-103-AC-3, FR-056-AC-43 (TC-458 step 3, part 1; TC-897 step 5): a
+/// parameter typed `Decimal` is admitted once its wire policy is supplied and
+/// has no checked type; without the policy the semantic-IR validator refuses
+/// it (`DECIMAL_POLICY_MISSING`), the one refusal.
+#[trace("TC-458", "FR-103-AC-3", "TC-897")]
 #[test]
-fn a_decimal_typed_parameter_refuses_at_intake_not_assembly() {
+fn a_decimal_typed_parameter_admits_with_its_policy() {
     let mut note = parameter("note", "ix://quire/native/Decimal");
     let document_with_note = |note| {
         config_version_document(
@@ -2374,56 +2358,27 @@ fn a_decimal_typed_parameter_refuses_at_intake_not_assembly() {
     let UnitIntakeCause::Refused(refusals) = missing_policy.cause else {
         panic!("{missing_policy:?}: expected a Refused cause");
     };
-    // FR-056 retains the reader's diagnostic with its IR node, the
-    // parameter; FR-103-AC-3 adds unsupported_construct/declaration-form at
-    // the same parameter. Exactly these two.
     let parameter_node = note["identity"].as_str().unwrap();
-    assert_eq!(refusals.len(), 2, "{refusals:?}");
-    assert!(
-        refusals.iter().any(|refusal| refusal.code.as_str()
-            == "invalid_model_binding"
-            && matches!(
-                &refusal.cause,
-                qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
-                    if node == parameter_node
-            )),
-        "{refusals:?}"
-    );
-    assert!(
-        refusals.iter().any(|refusal| refusal.code.as_str() == "unsupported_construct"
-            && matches!(
-                &refusal.cause,
-                qsl_semantics::model::refusal::ModelRefusalCause::UnsupportedDeclarationForm { node, .. }
-                    if node == parameter_node
-            )),
-        "{refusals:?}"
-    );
-    // The wire policy admits this Decimal parameter at FCD's boundary;
-    // QSL's missing native parameters remain the refusal under test.
-    note["decimal"] = json!({"precision": 5, "scale": 2});
-    let document = document_with_note(note);
-    let refusal = admit(&document).expect_err("a Decimal parameter refuses at I1");
-    let UnitIntakeCause::Refused(refusals) = refusal.cause else {
-        panic!("{refusal:?}: expected a Refused cause");
-    };
     assert_eq!(refusals.len(), 1, "{refusals:?}");
-    assert_eq!(
-        refusals[0].code.as_str(),
-        "unsupported_construct",
+    assert!(
+        matches!(
+            &refusals[0].cause,
+            qsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration { node, .. }
+                if node == parameter_node
+        ) && refusals[0].code.as_str() == "invalid_model_binding",
         "{refusals:?}"
     );
-    assert_eq!(refusals[0].cause.as_str(), "declaration-form");
+    note["decimal"] = json!({"precision": 5, "scale": 2});
+    admit(&document_with_note(note)).expect("a Decimal parameter with its policy is admitted");
 }
 
-/// FR-056-AC-11 (TC-897 step 3): a parameter whose `typeRef` is the bare
-/// `ix://quire/native/Text` resolves at the pinned validator and refuses
-/// `unsupported_construct`/`declaration-form` at the parameter, naming
-/// `profile`: `Text[min, max; profile]` needs its parameters.
+/// FR-056-AC-11, FR-056-AC-43 (TC-897 steps 3 and 5): a parameter whose
+/// `typeRef` is the bare `ix://quire/native/Text` is admitted with no checked
+/// type.
 #[trace("TC-897", "FR-056-AC-11")]
 #[test]
-fn a_bare_native_text_parameter_refuses_naming_the_profile() {
+fn a_bare_native_text_parameter_is_admitted() {
     let note = parameter("note", "ix://quire/native/Text");
-    let parameter_node = note["identity"].as_str().unwrap().to_owned();
     let document = config_version_document(
         attempt_update(
             json!([note]),
@@ -2433,24 +2388,7 @@ fn a_bare_native_text_parameter_refuses_naming_the_profile() {
         Vec::new(),
         json!([]),
     );
-    let refusal = admit(&document).expect_err("a bare native Text refuses at I1");
-    let UnitIntakeCause::Refused(refusals) = refusal.cause else {
-        panic!("{refusal:?}: expected a Refused cause");
-    };
-    assert_eq!(refusals.len(), 1, "{refusals:?}");
-    assert_eq!(refusals[0].code.as_str(), "unsupported_construct");
-    let qsl_semantics::model::refusal::ModelRefusalCause::UnsupportedDeclarationForm {
-        node, ..
-    } = &refusals[0].cause
-    else {
-        panic!("declaration-form, not {:?}", refusals[0].cause);
-    };
-    assert_eq!(node, &parameter_node);
-    assert!(
-        refusals[0].detail.contains("requires parameter(s) profile"),
-        "{}",
-        refusals[0].detail
-    );
+    admit(&document).expect("a bare native Text parameter is admitted");
 }
 
 /// FR-103-AC-3 (TC-458 step 3, part 2): a parameter typed `VersionNumber`

@@ -31,10 +31,10 @@
 //! **Reconstruction rule (CK-4).** A shipped function anywhere in those
 //! crates (outside `spine`) whose signature or body names a `pub` function
 //! or `pub` inherent method of `qsl-source`, `qsl-cst` or `qsl-forms`, or
-//! the S3 stage constructor, is a `reconstruction` finding, whatever its own
+//! any S3 entry point (`S3_ENTRY_NAMES`), is a `reconstruction` finding, whatever its own
 //! signature. A qualified-self path (`<PackageDeclarations>::check`) names its
-//! self type as the owner. A method call named like the S3 stage constructor
-//! (`.check(..)`) is a finding too, whatever the receiver's type, since the
+//! self type as the owner. A method call named like an S3 entry point
+//! (`.check(..)`, `.check_with_protocol_results(..)`) is a finding too, whatever the receiver's type, since the
 //! receiver can come from a `pub` function that returns the S3 input
 //! (`checked_dispatch_operation(..)?.check(..)`) without its type being
 //! named. Paths inside a macro are read when the macro's tokens parse as
@@ -64,7 +64,7 @@ use syn::visit::Visit;
 
 use crate::definition_scan::has_cfg_test;
 use crate::error::{Error, Result};
-use crate::typestate_scan::{shipped_files, S3_CONSTRUCTOR};
+use crate::typestate_scan::{shipped_files, S3_CONSTRUCTOR, S3_ENTRY_NAMES};
 
 /// The pre-check crates (ADR-011 layers I3, 1 and 2): source directory and
 /// the crate name as a path spells it.
@@ -408,7 +408,7 @@ impl PreCheck {
         let [.., owner, last] = segments else {
             return false;
         };
-        if owner == S3_CONSTRUCTOR.receiver && last == S3_CONSTRUCTOR.name {
+        if owner == S3_CONSTRUCTOR.receiver && S3_ENTRY_NAMES.contains(&last.as_str()) {
             return true;
         }
         let Some(name) = segments.first().and_then(|first| Self::crate_named(first)) else {
@@ -814,13 +814,14 @@ impl<'ast> Visit<'ast> for StageScanner<'_, '_> {
     #[ix_trace_rs::string_edge]
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
         if let Some(function) = &self.function {
-            if node.method == S3_CONSTRUCTOR.name {
+            let method = node.method.to_string();
+            if S3_ENTRY_NAMES.contains(&method.as_str()) {
                 self.findings.insert(Finding {
                     file: self.file.to_owned(),
                     line: node.method.span().start().line,
                     rule: Rule::Reconstruction,
                     function: function.clone(),
-                    named: format!("{}::{}", S3_CONSTRUCTOR.receiver, S3_CONSTRUCTOR.name),
+                    named: format!("{}::{method}", S3_CONSTRUCTOR.receiver),
                 });
             }
         }
@@ -1172,6 +1173,53 @@ mod tests {
             scan_planted(&[("qsl-replay/src/spine/plant.rs", parse)]),
             vec![]
         );
+    }
+
+    /// TC-745 step 2 (CK-4): every S3 entry point of TC-244's constructor
+    /// table is a `reconstruction` finding, named by path and by method call.
+    #[test]
+    #[trace("TC-745", "FR-270-AC-2")]
+    fn tc_745_every_s3_entry_point_is_a_reconstruction() {
+        let planted = |file: &str, source: &str| -> Vec<Finding> {
+            scan_planted(&[(file, source)])
+                .into_iter()
+                .filter(|found| found.file == file && found.rule == Rule::Reconstruction)
+                .collect()
+        };
+        for entry in S3_ENTRY_NAMES {
+            let path = format!(
+                "fn plant(limits: CheckingLimits) {{\n    \
+                 let _ = PackageDeclarations::{entry}(declarations, limits);\n}}\n"
+            );
+            let call = format!(
+                "fn plant(view: &View) -> Result<CheckedGraph, Refusal> {{\n    \
+                 checked_dispatch_operation(view, root, clauses, source, package_name, meter)?\n        \
+                 .{entry}(limits)\n}}\n"
+            );
+            let named = format!("PackageDeclarations::{entry}");
+            assert_eq!(
+                planted(ROUTE_PLANT, &path),
+                vec![finding(
+                    ROUTE_PLANT,
+                    2,
+                    Rule::Reconstruction,
+                    "plant",
+                    &named
+                )],
+                "{entry} path"
+            );
+            assert_eq!(
+                planted(EVAL_PLANT, &call),
+                vec![finding(
+                    EVAL_PLANT,
+                    3,
+                    Rule::Reconstruction,
+                    "plant",
+                    &named
+                )],
+                "{entry} call"
+            );
+        }
     }
 
     /// TC-745 step 3: closed vocabulary, configuration and test code give no

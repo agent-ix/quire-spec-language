@@ -19,11 +19,11 @@ deleted. It writes one `SpecReview` (`analysis: architecture-evaluation`) under
 | 6 | Unsupported, incomplete and tool-failure outcomes are never promoted to success or refusal; finite evidence is not presented as unbounded proof. | FR-501 and FR-502 tests (finite window, regressing watermark), FR-329 `Lasso::Model` refusal test, FR-327-AC-8 to AC-13 tests (must be tagged first). |
 | 7 | The deletion left no stringly typed semantic dispatch or feature-local exception to the common architecture. | `git grep -nE '"(StateModel|SumCase|TemporalTrace|ProtocolClause)"' -- 'qsl-*/src' src` finds no string-matched family name in dispatch code, and the same command run on a scratch file holding `"StateModel"` under one of those paths finds it (a positive control: a grep that cannot match proves nothing); the ADR-012 contract tests and `cargo run -p arch-lint -- qualified-core --qsl .` pass. |
 | 8 | quire-protocol consumes the checked package, not a QSL handoff writer. | quire-protocol default branch: pins a QSL revision containing the successor, has no `handoff-writer` feature, `cargo check --locked --all-targets` and IT-001, IT-002, TC-003, TC-011 pass (FR-521-AC-3). |
-| 9 | Retained external surface is intact: `mapping_support_v2` and the temporal result types remain until IR-1005 and the repoint are merged. | The `temporal` module exists, or the IR and quire-protocol repoints are merged and cited (FR-521 row 5). |
+| 9 | The native owner-report route (`temporal::{evaluate_v2, Report, Trace}`) is deleted after FR-052-AC-15, AC-16, AC-19 and AC-20 have their FR-526-AC-20 to AC-28 successors and AC-17, AC-18 and AC-21 are retired with its carrier. | The root crate has no `temporal` module (TC-1293) and the tests tagged FR-526-AC-20 to AC-28 pass. |
 
 Deleted units also leave documentation behind: `docs/native-model-checking.md`,
 `docs/compiled-protocol-v1.md`, `docs/compiled-protocol-v2.md`,
-`docs/native-temporal-evaluation.md` and the rows of `docs/native-error-codes.md`
+`docs/native-temporal-evaluation.md` (deleted) and the rows of `docs/native-error-codes.md`
 for deleted codes are removed or rewritten in the deleting change (assertion 1
 reads `git ls-files docs/`).
 

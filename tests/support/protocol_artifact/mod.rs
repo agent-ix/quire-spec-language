@@ -7,12 +7,20 @@ use crate::support::native_rule_model;
 use qsl_foundation::{Source, SourceIdentity};
 use quire_contract_model as ir;
 use quire_spec_language::formal_source::FormalSource;
-use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
+use quire_spec_language::linking::definition_source::RegisteredDefinition as R;
 use quire_spec_language::model_source::{self, ModelSourceLimits};
 use quire_spec_language::native_model::{ModelLimits, NativeModel};
 use quire_spec_language::number::{NumberWire, NUMERIC_PROFILE};
 use quire_spec_language::protocol_artifact::{self as artifact, wire as w};
 use serde_json::json;
+
+/// Indices into declaration 0 of the authored compensation's graph members.
+pub struct CompensationHandles {
+    pub registered: u32,
+    pub registered_initializer: u32,
+    pub activated_initializer: u32,
+    pub retry: u32,
+}
 
 pub struct Fixture {
     pub package: w::Package,
@@ -1381,6 +1389,193 @@ impl Fixture {
         fixture
     }
 
+    /// The finite-control protocol with one authored compensation whose capture and
+    /// retry handles are the subject of the value-graph refusals. Value indices:
+    /// `first` and `second` are the two capture initializers (true), `retry` reads
+    /// the first capture. The compensation's other members reference existing
+    /// protocol elements only; they are not a complete recovery contract, so the
+    /// package as a whole is refused at the compensation (see the tests).
+    pub fn compensated() -> (Self, CompensationHandles) {
+        let mut fixture = Self::controlled();
+        let operation = fixture.export(w::ExportKind::Operation, &["Node", "step"]);
+        let profile = fixture.definition(R::EventPosition);
+        let declaration = &mut fixture.package.declarations[0];
+        let truth = declaration
+            .values
+            .iter()
+            .position(|value| matches!(value.operation, w::ValueOperation::Boolean { value: true }))
+            .expect("an authored true");
+        // Value loci are strictly increasing, so the three appended values sit in
+        // the protocol's closing text, after every authored one.
+        let end = declaration.locus.span.end;
+        let first = declaration.values.len() as u32;
+        let first_binder = declaration.binders.len() as u32;
+        let retry = first + 2;
+        let operations = [
+            w::ValueOperation::Boolean { value: true },
+            w::ValueOperation::Boolean { value: true },
+            w::ValueOperation::Read {
+                binder: handle(first_binder),
+            },
+        ];
+        for (offset, operation) in operations.into_iter().enumerate() {
+            let mut value = declaration.values[truth].clone();
+            value.locus.span = w::Span {
+                start: end - 5 + offset as u32,
+                end: end - 4 + offset as u32,
+            };
+            value.operation = operation;
+            declaration.values.push(value);
+        }
+        for (offset, (name, initializer)) in [("registered", first), ("activated", first + 1)]
+            .into_iter()
+            .enumerate()
+        {
+            let mut capture = binder(0, declaration, name, w::BinderKind::Capture, 1);
+            capture.locus.span = w::Span {
+                start: end - 9 + offset as u32,
+                end: end - 8 + offset as u32,
+            };
+            capture.initializer = w::Nullable(Some(handle(initializer)));
+            declaration.binders.push(capture);
+        }
+        identify(&mut declaration.values);
+        let locus = declaration.locus.clone();
+        let w::Body::Protocol { compensations, .. } = &mut declaration.body else {
+            unreachable!("the finite-control fixture is a protocol");
+        };
+        compensations.push(w::Compensation {
+            name: "Undo".into(),
+            forward_effect: handle(2),
+            forward: handle(0),
+            owner: handle(0),
+            operation,
+            profile,
+            clock: 0,
+            registration_anchor: handle(0),
+            registration_instance: 0,
+            registration_captures: vec![handle(first_binder)],
+            trigger: handle(0),
+            guard: handle(truth as u32),
+            activation_anchor: handle(0),
+            activation_captures: vec![handle(first_binder + 1)],
+            within: w::Interval {
+                lower: integer(0),
+                upper: integer(1),
+            },
+            maximum_attempts: integer(1),
+            attempt_type: 1,
+            earlier: handle(0),
+            later: handle(0),
+            retry: handle(retry),
+            attempt_instance: 0,
+            effect_instance: 0,
+            commit: w::Nullable(None),
+            recovery: handle(0),
+            recover: handle(truth as u32),
+            recovery_bindings: vec![],
+            locus,
+        });
+        (
+            fixture,
+            CompensationHandles {
+                registered: first_binder,
+                registered_initializer: first,
+                activated_initializer: first + 1,
+                retry,
+            },
+        )
+    }
+
+    /// The finite-control protocol (declaration 0, with event controls) beside one
+    /// authored temporal declaration `Due` (declaration 1). The activation
+    /// relation between an event control and `Due` is the caller's to author.
+    pub fn mapped() -> Self {
+        let mut fixture = Self::controlled();
+        const TEMPORAL: &str = "temporal Due using T over (view: M::Node) clock \"ticks\" on origin { eventually[0,1] holds(true) }";
+        let mut temporal = fixture.append("Due", TEMPORAL, R::EventPosition);
+        temporal.anchors[0].kind = w::AnchorKind::TemporalInstant;
+        temporal.anchors.push(w::Anchor {
+            kind: w::AnchorKind::Activation,
+            owner: w::Nullable(None),
+            binding: w::Nullable(None),
+            locus: temporal.locus.clone(),
+        });
+        temporal
+            .binders
+            .push(binder(1, &temporal, "view", w::BinderKind::Input, 0));
+        let start = temporal.locus.span.start as usize;
+        let at = start + TEMPORAL.find("true").unwrap();
+        temporal.values = vec![value(
+            1,
+            &temporal,
+            (at, "true".len()),
+            1,
+            w::ValueOperation::Boolean { value: true },
+        )];
+        identify(&mut temporal.values);
+        let mut clock = fixture.package.declarations[0].bindings[0].clone();
+        clock.name = "ticks".into();
+        clock.kind = w::BindingKind::Clock;
+        clock.value_type = w::Nullable(None);
+        clock.model = w::Nullable(None);
+        clock.subject = w::Subject::Declaration { declaration: 1 };
+        clock.anchor = owned(1, 0);
+        clock.scope = owned(1, 0);
+        clock.locus = temporal.locus.clone();
+        temporal.bindings.push(clock);
+        let node = |text: &str| w::Locus {
+            source: 0,
+            span: w::Span {
+                start: (start + TEMPORAL.find(text).unwrap()) as u32,
+                end: (start + TEMPORAL.len() - 2) as u32,
+            },
+        };
+        temporal.temporal = vec![
+            w::Temporal {
+                original_node: 1,
+                locus: node("eventually"),
+                operation: w::TemporalOperation::Unary {
+                    operator: w::TemporalUnary::Eventually,
+                    interval: w::Nullable(Some(w::Interval {
+                        lower: integer(0),
+                        upper: integer(1),
+                    })),
+                    value: owned(1, 1),
+                },
+            },
+            w::Temporal {
+                original_node: 0,
+                locus: node("holds"),
+                operation: w::TemporalOperation::Holds { value: owned(1, 0) },
+            },
+        ];
+        temporal.body = w::Body::Temporal {
+            input: owned(1, 0),
+            clock: 0,
+            activation: w::Activation::Origin {
+                anchor: owned(1, 1),
+            },
+            captures: vec![],
+            root: owned(1, 0),
+        };
+        fixture.package.declarations.push(temporal);
+        fixture
+            .package
+            .features
+            .declarations
+            .push("family.temporal".into());
+        fixture.package.features.declarations.sort();
+        fixture
+            .package
+            .features
+            .required
+            .push("quire.protocol.temporal/1".into());
+        fixture.package.features.required.sort();
+        fixture.population_requirements(&[(1, 0)]);
+        fixture
+    }
+
     /// Two separate branch-label scopes retain repeated nested control names.
     /// The records and original text are authored reader inputs, not emission.
     pub fn branched() -> Self {
@@ -1557,6 +1752,15 @@ impl Fixture {
         selected: &w::ArtifactRef,
         limits: artifact::Limits,
     ) -> artifact::Report<artifact::AdmittedPackage> {
+        self.with_expected(selected, |expected| artifact::read(bytes, expected, limits))
+    }
+
+    /// Run `then` against the independently authored complete selections.
+    pub fn with_expected<T>(
+        &self,
+        selected: &w::ArtifactRef,
+        then: impl FnOnce(&artifact::Expected<'_>) -> T,
+    ) -> T {
         let declarations: Vec<_> = self
             .package
             .declarations
@@ -1625,7 +1829,7 @@ impl Fixture {
             models: &models,
             domain_packages: &[],
         };
-        artifact::read(bytes, &expected, limits)
+        then(&expected)
     }
 
     /// Select adverse bytes explicitly so tests reach validation past identity matching;

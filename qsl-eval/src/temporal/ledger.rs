@@ -415,7 +415,7 @@ mod tests {
         admit(&ProgressLedger::new(), &binding(), assertion, positions).expect("first assertion")
     }
 
-    #[trace("FR-502-AC-1", "TC-1296")]
+    #[trace("FR-502-AC-1", "TC-1296", "FR-043-AC-12")]
     #[test]
     fn a_regressing_watermark_is_refused_and_the_ledger_keeps_the_retained_one() {
         let ledger = retaining(assertion(100, ProgressCompleteness::Incomplete), &[]);

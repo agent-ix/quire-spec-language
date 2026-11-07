@@ -68,6 +68,7 @@ time invariant body and the state-object rule stay as FR-230 states them.
    writes no `self` `parameter` node and `Known` writes one; I2 reads back the
    same `TimedModel`.
 4. No object type: `missing_declaration`/`missing-name` at the declaration.
-   Two object types, or two populations of `Call`:
-   `ambiguous_declaration`/`ambiguous-name` at the declaration. No
-   `TimedModel` in any of them.
+   Two populations of `Call`: `ambiguous_declaration`/`ambiguous-name` at
+   the declaration. Two object types: `ambiguous_declaration`/`ambiguous-name`
+   at `Config` in `time Config dense unit ms` (FR-230-AC-38's check, before
+   the declaration). Exactly one refusal and no `TimedModel` in each.

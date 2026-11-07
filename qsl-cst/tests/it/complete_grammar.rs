@@ -26,6 +26,7 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::TextProfile,
     Production::DimensionDeclaration,
     Production::DimensionTerm,
+    Production::UnitExpression,
     Production::DimensionEquivalence,
     Production::RatioTerm,
     Production::UnitDeclaration,

@@ -108,7 +108,7 @@ productions! {
     CompleteUnit, Header, Profile, ImportDeclaration, Model, Declaration,
     TypeReference, QualifiedName, ModelName, TypeName, OperationName, ParameterType,
     RoundingMode, TextProfile,
-    DimensionDeclaration, DimensionTerm,
+    DimensionDeclaration, DimensionTerm, UnitExpression,
     #[doc = "`dimension <qualified-name> ~ <qualified-name> by <ratio-term> = <ratio-term> ;`: a dimension equivalence (QSpec FR-142 \"Dimension equivalence\")."]
     DimensionEquivalence,
     #[doc = "`(<uint> | <exact-number>) <qualified-name>`: one side of a dimension equivalence's `by` clause."]

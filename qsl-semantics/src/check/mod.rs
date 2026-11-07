@@ -2268,6 +2268,7 @@ impl PackageDeclarations {
         // Carry that selection into S3 so the inherited-edge rule is
         // confined to a package with an admitted model.
         let complete_model = !self.models.is_empty();
+        let package_unit_ids = self.model_spellings.package_unit_ids();
         let scope = Scope::new(
             self.types,
             self.operations,
@@ -2278,6 +2279,7 @@ impl PackageDeclarations {
             self.dispatch_operations,
         )
         .with_variant_types(self.variant_types)
+        .with_untyped_members(self.untyped_members)
         .with_model_spellings(self.model_spellings)
         .with_source_owners(self.source_owners.clone())
         .with_model_records(self.model_records)
@@ -4262,8 +4264,8 @@ impl PackageDeclarations {
                             nodes_used = used;
                             checked_temporal.push((index, checked, conditions));
                         }
-                        Err(refusal) => {
-                            refusals.push(refusal);
+                        Err(failed) => {
+                            refusals.extend(failed);
                             if cancel.tripped().is_some() {
                                 return Err(refusals);
                             }
@@ -5855,7 +5857,8 @@ impl PackageDeclarations {
         }
         // FR-094: selected model type references root their named units even
         // when no expression reaches a unit-typed member.
-        if let Err(refusal) = lowering.model_type_unit_nodes(&check::declared_unit_ids(&self.units))
+        if let Err(refusal) = lowering
+            .model_type_unit_nodes(&check::declared_unit_ids(&self.units, &package_unit_ids))
         {
             refusals.push(refusal);
         }
@@ -9262,6 +9265,7 @@ mod tests {
     /// against (FR-088-AC-7 step 4) -- and whose `VariantId`s are minted
     /// from that same key, never a second, parallel one (FR-088-AC-10).
     #[trace("TC-259", "FR-088-AC-7")]
+    #[trace("TC-1339", "FR-534-AC-1")]
     #[test]
     fn enum_declaration_becomes_a_real_checked_type_node() {
         use crate::value::enumeration::{
@@ -9332,6 +9336,26 @@ mod tests {
         }
         .check(CheckingLimits::default())
         .expect("one enum declaration checks cleanly");
+
+        let mut checked_nodes = 0;
+        let typer = Typer::new(
+            &graph.scope,
+            &graph.functions.signatures,
+            CheckingLimits::default(),
+            &mut checked_nodes,
+            qsl_forms::ClauseKind::Body,
+        );
+        let declared = ValueType::Enum(graph.scope.enums()[0].shape());
+        assert_eq!(
+            typer.check_declared_type(
+                &declared,
+                &quire_semantic_value::location::Location::at(
+                    quire_semantic_value::location::Origin::Expression,
+                    &[1, 3]
+                )
+            ),
+            Ok(())
+        );
 
         let nodes: Vec<&CheckedTypeNode> = graph.checked_type_nodes().collect();
         assert_eq!(nodes.len(), 1, "exactly the one declared enum");

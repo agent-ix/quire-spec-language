@@ -19,9 +19,7 @@ those checked nodes directly with independently constructed traces. TC-122 and
 TC-123 remain the legacy emitted-artifact controls. The checked route does not
 relabel their procedures or replace their evidence.
 
-The executable controls are `tests/it/checked_temporal_successors.rs` and the
-strict version-2 authentication control in
-`tests/it/compiled_protocol_v2.rs`. Each checked formula test derives its
+The controls of the v1 checked evaluator, `tests/it/checked_temporal_successors.rs`, and its strict version-2 authentication control were retired by QSL-858 PR 1; the procedures below are carried by the qsl-eval successor tests FR-525 names, and the classification controls are `tests/it/mapping_support.rs` and the `qsl-package` mapping tests. Each checked formula test derives its
 valuation handles from the checked graph and supplies its expected result
 independently of the evaluator's output.
 
@@ -75,10 +73,23 @@ independently of the evaluator's output.
    profile, clock-parameter and ceiling premises to remain distinguishable.
 10. Run
     `native_v2_emission_reaches_the_strict_reader_and_authenticated_l5_adapter`
-    from `tests/it/compiled_protocol_v2.rs`. Require the exact profile, clock
-    and parameter binding to authenticate before evaluation and retain its
-    package, declaration and definition identities; each mutated binding must
-    refuse without truth or authenticated evidence.
+    from `tests/it/compiled_protocol_v2.rs`. Require the strict `/2` reader to admit the
+    emitted package; the classification of each declaration is FR-527's; the
+    authentication of a mutated binding before evaluation is FR-522's
+    (`temporal_evidence`, `temporal_identity`).
+
+11. Through `evaluate_temporal_evidence` (FR-516), run the cases of
+    FR-043-AC-15, AC-16 and AC-17: the twin occurrences of FR-516-AC-32 under
+    equal positions and valuations, and one atom valued at positions 0 and 1
+    with either value withdrawn; a request whose `occurrence` names no
+    occurrence and one with a stray atom key; and `on origin always[0,1]
+    holds(p)` with `p` true at position 0 and then unvalued there. Require
+    the subjects to differ only in `occurrence`, each withdrawn value to give
+    a missing valuation at its position and atom, `occurrence-unknown` and
+    `valuation-atom-unknown` with an empty charge log, and `True` with
+    `ClosedScope` and support at 0 and 1, then no truth and a missing
+    valuation at position 0, never `false`. Tag the tests with the criterion
+    they assert and `TC-1277`.
 
 ## Expected Results
 

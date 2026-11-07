@@ -19,7 +19,7 @@ use quire_spec_language::checking::source_inventory::{qsl_inventory, CheckedUnit
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::binding::{self};
 use quire_spec_language::linking::composed::binding_work::Limits as BindingLimits;
-use quire_spec_language::linking::composed::DeclarationId;
+use quire_spec_language::linking::declaration_id::DeclarationId;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n";

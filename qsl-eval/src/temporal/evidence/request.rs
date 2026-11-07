@@ -7,7 +7,9 @@
 
 use std::collections::BTreeMap;
 
-use qsl_package::{CheckedNodeId, CheckedOccurrence, CheckedSelection, TemporalBinding};
+use qsl_package::{
+    CheckedNodeId, CheckedOccurrence, CheckedSelection, CheckedSourceMapEntry, TemporalBinding,
+};
 
 use super::activation::{ExecutionDisposition, Instance};
 use super::binding::{AuthenticatedBinding, TraceBinding};
@@ -135,9 +137,6 @@ pub enum Relation {
 /// ```
 #[derive(Clone, Debug)]
 pub struct EvidenceRequest {
-    /// Ordered native valuation relation identity, populated by the native owner.
-    /// Empty for calls outside that route; never interpreted as truth.
-    pub native_valuations: Vec<u8>,
     /// The instance the call assesses among the resolved ones.
     pub trigger: Option<SemanticTriggerIdentity>,
     /// The correspondence evidence.
@@ -374,8 +373,12 @@ pub struct EvidenceResult {
     pub surrounding_closure: Option<ProgressClosure>,
     /// The completeness record, echoed.
     pub completeness: Option<CompletenessRecord>,
-    /// The correspondence, echoed byte for byte.
+    /// The correspondence, echoed byte for byte; it is the observation
+    /// reference, and its `authority_revision` is the revision reference.
     pub correspondence: EvidenceRef,
+    /// The checked subject the call was evaluated for, read from the package
+    /// and the request's occurrence selection.
+    pub subject: ResultSubject,
     /// The assessed trigger identity, echoed byte for byte.
     pub trigger: Option<SemanticTriggerIdentity>,
     /// The work the call charged on the thirteen counters.
@@ -398,6 +401,22 @@ pub struct EvidenceResult {
     pub instances: Vec<Instance>,
 }
 
+/// The checked subject of a result (FR-516, FR-526 "Result subject and
+/// support"): a result type, distinct from the input [`EvidenceSubject`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResultSubject {
+    /// The checked package identity.
+    pub package_identity: String,
+    /// The checked package format version the package was emitted or read at.
+    pub package_version: String,
+    /// The clause's declaration node.
+    pub clause: CheckedNodeId,
+    /// The selected occurrence.
+    pub occurrence: CheckedOccurrence,
+    /// The source-map entry of the selected occurrence.
+    pub source_map: CheckedSourceMapEntry,
+}
+
 /// An entry of the package's FR-449 activation map: the protocol clause and
 /// the temporal clause its row names.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -417,6 +436,8 @@ pub struct SubjectOccurrence<'p> {
     /// The `temporal_bindings` row keyed by the declaration and this
     /// occurrence, or `None` when the lock selects no clock configuration.
     pub clock: Option<&'p TemporalBinding>,
+    /// The package source-map entry of this occurrence (FR-515 `source_span`).
+    pub source_map: &'p CheckedSourceMapEntry,
 }
 
 /// The checked package's facts about the clause a call assesses (FR-515):
@@ -428,6 +449,8 @@ pub struct SubjectOccurrence<'p> {
 /// need not ascend by ordinal; the call pairs a request's `occurrence` with
 /// its row by the key, never by position.
 pub struct EvidenceSubject<'p> {
+    /// The checked package identity the subject was read from.
+    pub package_identity: String,
     /// The clause's declaration node.
     pub declaration: &'p CheckedNodeId,
     /// The lock's `profile_selections` row of the clause.

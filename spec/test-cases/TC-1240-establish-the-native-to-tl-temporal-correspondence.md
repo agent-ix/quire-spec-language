@@ -17,8 +17,8 @@ relationships:
 ## Description
 
 These are the public Rust API controls for the Contract IR correspondence
-requirement `quire-contract-ir:FR-350`, using the QSL `mapping_support_v2`
-classification and the strict `/2` package.
+requirement `quire-contract-ir:FR-350`, using the QSL `mapping_support`
+classification (FR-527) over the checked package.
 
 Each case compiles a real native temporal declaration and emits a strict
 `quire.compiled-protocol/2` package. It classifies the declaration through

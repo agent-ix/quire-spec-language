@@ -19,7 +19,7 @@ and refusal causes come from the authored source and the supplied observations,
 never from the evaluator's own output. Each numbered group corresponds to the
 matching acceptance criterion.
 
-Controls execute in `tests/composed_temporal_activation.rs`. The timed-refund
+The controls, `tests/composed_temporal_activation.rs`, were retired by QSL-858 PR 1 with the v1 evaluator; the successor tests are the ones FR-525 names for each criterion (qsl-eval `temporal_activation`, `temporal_rulings`). The timed-refund
 shape from the shared specification is the primary declaration: a failed order
 triggers an obligation that captures the paid amount and the payment reference.
 Capture immutability is established by Rust ownership — a retained capture record

@@ -308,6 +308,16 @@ pub enum RunRefusal {
     /// exit 30.
     #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(InternalFault),
+    /// A record's locus names a source that the caller's `sources` does not
+    /// hold, or whose bytes do not hold the region's span on UTF-8
+    /// boundaries (FR-283 "Outputs"). A run over sources the spine compiled
+    /// never reaches it; `monitor` takes `sources` as input and refuses with
+    /// it.
+    #[error("the source {reference:?} is not supplied for the region it is cited at")]
+    SourceNotSupplied {
+        /// The cited source's identity labels.
+        reference: SourceIdentity,
+    },
     /// The caller's [`Cancel`] stopped the run at one of its stages or at
     /// S6a (ADR-029 LC-3): category incomplete, exit 22, no call outcome.
     #[error("the run was cancelled: {0:?}")]
@@ -354,6 +364,7 @@ impl RunRefusal {
             | Self::Supplied(_)
             | Self::UnsupportedHelper(_)
             | Self::ObjectEnvironment(_)
+            | Self::SourceNotSupplied { .. }
             | Self::Fault(_) => "call",
             Self::Cancelled(_) => return None,
         })
@@ -383,6 +394,7 @@ impl RunRefusal {
             | Self::DanglingReference { .. }
             | Self::UnsupportedHelper(_)
             | Self::ObjectEnvironment(_)
+            | Self::SourceNotSupplied { .. }
             | Self::Fault(_) => None,
         }
     }
@@ -401,6 +413,7 @@ impl RunRefusal {
             Self::Admission { refusal, .. } => refusal.code,
             Self::Storage { failure, .. } => membership_failure_code(failure),
             Self::DanglingReference { .. } => Code::DanglingReference,
+            Self::SourceNotSupplied { .. } => Code::InvalidRuntimeInput,
             Self::Fault(_) => Code::RuntimeInvariant,
             Self::Cancelled(_) => Code::Cancelled,
             Self::Supplied(stop) => qsl_eval::value::supplied_stop_code(stop),
@@ -933,27 +946,30 @@ pub(crate) fn kernel_undefined_reason(reason: Undefined) -> &'static str {
 
 /// Resolve an FR-096 record's [`Locus`] over `sources`: a region locus
 /// renders as the path and span of the one supplied source whose
-/// reference equals the region's (FR-100). Every other locus shape, and a
-/// region matching no supplied source, is an internal failure ("a locus
-/// naming no supplied source is an internal failure", FR-100).
+/// reference equals the region's (FR-100). Every other locus shape is an
+/// internal failure; a region naming no supplied source, or one the matching
+/// source does not hold on UTF-8 boundaries, is
+/// [`RunRefusal::SourceNotSupplied`] (FR-283 "Outputs").
 pub(crate) fn resolve_locus(
     locus: &Locus,
     sources: &[Source],
 ) -> Result<CallLocus, Box<RunRefusal>> {
-    let unresolved = || {
-        Box::new(RunRefusal::Fault(InternalFault::new(
+    let Locus::Region(region) = locus else {
+        return Err(Box::new(RunRefusal::Fault(InternalFault::new(
             "spine-run",
             "locus-source-supplied",
-        )))
+        ))));
     };
-    let Locus::Region(region) = locus else {
-        return Err(unresolved());
+    let unsupplied = || {
+        Box::new(RunRefusal::SourceNotSupplied {
+            reference: SourceIdentity::new(region.source().authority(), region.source().identity()),
+        })
     };
     let source = sources
         .iter()
         .find(|source| source.reference() == region.source())
-        .ok_or_else(unresolved)?;
-    let span = source.render(region).ok_or_else(unresolved)?;
+        .ok_or_else(unsupplied)?;
+    let span = source.render(region).ok_or_else(unsupplied)?;
     Ok(CallLocus {
         file: source.path().to_owned(),
         span,

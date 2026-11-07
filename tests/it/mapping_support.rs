@@ -42,7 +42,7 @@ fn classified(package: &CheckedPackageV2) -> Vec<(Closure, Classification)> {
         .collect()
 }
 
-#[trace("TC-1322", "FR-527-AC-15")]
+#[trace("TC-1322", "FR-527-AC-15", "FR-045-AC-6")]
 #[test]
 fn the_in_process_and_the_read_back_package_classify_alike() {
     let mut seen = 0;

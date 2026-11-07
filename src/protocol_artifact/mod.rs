@@ -31,7 +31,6 @@ mod domain;
 mod encoding;
 mod intake;
 mod models;
-pub mod native;
 mod recovery;
 pub mod v2;
 pub mod v3;
@@ -48,72 +47,9 @@ pub use work::{Accumulation, Dimension, Exhaustion, Limits, Usage, ACCOUNTING_VE
 use crate::native_model::NativeModel;
 use crate::number::NumberError;
 
-/// The clock name of each temporal declaration of an admitted package, read
-/// once from the wire's `clock:` binding name at admission (ADR-012 section 9):
-/// evaluation and request derivation use these names and never re-parse the
-/// binding spelling.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct ClockNames(Vec<Option<String>>);
-
-impl ClockNames {
-    /// The clock names of every declaration of `package`, `None` for a
-    /// declaration that is not temporal or has no `clock:` binding at its
-    /// clock index.
-    pub(crate) fn of(package: &wire::Package) -> Self {
-        Self(
-            package
-                .declarations
-                .iter()
-                .map(|declaration| match &declaration.body {
-                    wire::Body::Temporal { clock, .. } => usize::try_from(*clock)
-                        .ok()
-                        .and_then(|index| declaration.bindings.get(index))
-                        .and_then(clock_binding_name)
-                        .map(str::to_owned),
-                    _ => None,
-                })
-                .collect(),
-        )
-    }
-
-    /// The clock name of `declaration`.
-    pub(crate) fn get(&self, declaration: usize) -> Option<&str> {
-        self.0.get(declaration)?.as_deref()
-    }
-
-    /// The typed clock names of every declaration of a version-2 `package`
-    /// (ADR-012 section 9): read directly from the `temporal_bindings`
-    /// delta's typed `clock_name` field, never by re-parsing the inherited
-    /// `clock:` binding-name spelling. `None` for a declaration with no
-    /// temporal binding.
-    pub(crate) fn of_v2(package: &v2::wire::Package) -> Self {
-        Self(
-            package
-                .inherited
-                .declarations
-                .iter()
-                .enumerate()
-                .map(|(index, declaration)| {
-                    if !matches!(declaration.body, wire::Body::Temporal { .. }) {
-                        return None;
-                    }
-                    let declaration_index = u32::try_from(index).ok()?;
-                    package
-                        .temporal_bindings
-                        .iter()
-                        .find(|binding| binding.declaration == declaration_index)
-                        .map(|binding| binding.clock_name.clone())
-                })
-                .collect(),
-        )
-    }
-}
-
-/// The one reader of the emitter's `clock:` binding-name spelling. Version-1
-/// admission has no other source for a declaration's clock name; version-2
-/// admission reads the typed `temporal_bindings.clock_name` field instead
-/// ([`ClockNames::of_v2`]) and uses this only to emit that field and to
-/// verify it agrees with the legacy spelling.
+/// The one reader of the emitter's `clock:` binding-name spelling. Version-2
+/// admission reads the typed `temporal_bindings.clock_name` field and uses
+/// this only to verify that the field agrees with the legacy spelling.
 #[ix_trace_rs::string_edge]
 pub(crate) fn clock_binding_name(binding: &wire::BindingRequirement) -> Option<&str> {
     binding.name.strip_prefix("clock:")
@@ -551,14 +487,9 @@ impl Candidate {
 pub struct AdmittedPackage {
     package: wire::Package,
     artifact: wire::ArtifactRef,
-    clocks: ClockNames,
 }
 
 impl AdmittedPackage {
-    pub(crate) fn clock_names(&self) -> &ClockNames {
-        &self.clocks
-    }
-
     /// Read-only wire data admitted against the supplied selection context.
     pub fn package(&self) -> &wire::Package {
         &self.package

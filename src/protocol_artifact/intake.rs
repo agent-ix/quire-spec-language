@@ -2,7 +2,7 @@
 //! FR-042: independent exact inventories and registered definition meanings.
 
 use super::{wire::*, work::Work, *};
-use crate::linking::composed::definition_source::RegisteredDefinition as Registered;
+use crate::linking::definition_source::RegisteredDefinition as Registered;
 use crate::number::NUMERIC_PROFILE;
 
 type Key<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str);
@@ -506,7 +506,6 @@ pub fn read(bytes: &[u8], expected: &Expected<'_>, limits: Limits) -> Report<Adm
             return Err(Error::Invalid(Invalid::Canonical));
         }
         Ok(AdmittedPackage {
-            clocks: super::ClockNames::of(&package),
             package,
             artifact: retained_reference(expected.artifact)?,
         })
