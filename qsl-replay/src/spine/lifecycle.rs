@@ -1588,6 +1588,7 @@ pub(crate) struct UnitCheckOptions<'a> {
     pub(crate) temporal_selections: &'a [qsl_package::TemporalClockSelection],
     pub(crate) continue_protocol_refusals: bool,
     pub(crate) refinement_internals: Option<&'a serde_json::Value>,
+    pub(crate) integer_division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
 }
 
 pub(crate) fn check_units_with_options(
@@ -1631,7 +1632,7 @@ pub(crate) fn check_units_with_options(
             limits,
             cancel,
             temporal_selections: options.temporal_selections,
-            integer_division: None,
+            integer_division: options.integer_division,
             active: Vec::new(),
             compiled: BTreeMap::new(),
             import_edges: 0,
