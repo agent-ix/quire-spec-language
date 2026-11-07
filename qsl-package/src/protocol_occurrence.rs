@@ -199,6 +199,15 @@ pub enum RoleReplication {
     },
 }
 
+/// The package and declaration identity of the Port a role is bound to.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RoleModelMember {
+    /// The identity of the package that declares the Port.
+    pub package: String,
+    /// The Port's declaration identity.
+    pub node: String,
+}
+
 /// One role slot of a protocol.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RoleSlot {
@@ -208,9 +217,11 @@ pub struct RoleSlot {
     pub path: Vec<String>,
     /// The selected model type node the role is `on` or `each` (QSpec
     /// FR-465 "Role" `model`). A role on a systems Port refers to the Port's
-    /// owning object type here; the Port's own identity is not on the
-    /// checked-package wire yet (QSL-1579).
+    /// owning object type here; the Port itself is `model_member`.
     pub model: NodeKey,
+    /// The selected Port of a role on a Port (QSpec FR-465 "Role"
+    /// `model_member`), `None` for every other role.
+    pub model_member: Option<RoleModelMember>,
     /// Static, or replicated with population, maximum and lifetime.
     pub replication: RoleReplication,
 }
@@ -831,10 +842,25 @@ fn derive(nodes: &[Raw]) -> Result<Vec<ProtocolOccurrence>, OccurrenceRefusal> {
                     }
                 }
             };
+            let model_member = match role.args.iter().find(|(name, _)| name == "model_member") {
+                None => None,
+                Some((_, Term::Group(fields))) => {
+                    let text = |name: &str| match field(fields, name) {
+                        Some(Term::Text(text)) => Ok(text.clone()),
+                        _ => Err(role.malformed("model_member")),
+                    };
+                    Some(RoleModelMember {
+                        package: text("package")?,
+                        node: text("node")?,
+                    })
+                }
+                Some(_) => return Err(role.malformed("model_member")),
+            };
             roles.push(RoleSlot {
                 key: role.key.clone(),
                 path: role.path.clone(),
                 model: role.reference("model")?.clone(),
+                model_member,
                 replication,
             });
         }
