@@ -2153,6 +2153,7 @@ impl Disposition {
                 let cause = match refusal.as_ref() {
                     super::RunRefusal::Compile(compile) => compile.cause(),
                     super::RunRefusal::Fault(_) => None,
+                    super::RunRefusal::SourceNotSupplied { .. } => Some("missing-member"),
                     super::RunRefusal::MissingDeclaration { .. }
                     | super::RunRefusal::UnsupportedResult { .. }
                     | super::RunRefusal::UnknownParameter { .. }
@@ -2235,6 +2236,9 @@ impl Disposition {
                     }
                     super::RunRefusal::ObjectEnvironment(admission) => {
                         record = record.fields(admission.fields.clone());
+                    }
+                    super::RunRefusal::SourceNotSupplied { .. } => {
+                        record = record.fields(BTreeMap::from([("field", "sources".to_owned())]));
                     }
                     super::RunRefusal::Fault(_)
                     | super::RunRefusal::Cancelled(_)

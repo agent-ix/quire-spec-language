@@ -2282,7 +2282,7 @@ pub(crate) struct StateContext {
 
 /// A meter that admits no charge: the first charge of an operation is denied,
 /// so an operation typed against it computes nothing (`Typer::power`).
-const NO_CHARGE: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
+pub(super) const NO_CHARGE: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
     integer_bits: 0,
     decimal_digits: 0,
     scale_expansion: 0,

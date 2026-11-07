@@ -18,6 +18,7 @@ use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{Meter, ObjectReference, Outcome, Value};
 use quire_semantic_value::catalog::InternalFault;
 
+use super::engine::DecisiveSearch;
 use super::finite_window::{evaluate_finite_window, TimestampedTrace, Valuation, WindowEvaluation};
 use super::{
     AtomReading, CaptureReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
@@ -53,6 +54,9 @@ pub struct ObservedRun {
     pub stopped: Option<HoldsStop>,
     /// The first undefined reading, with its locus, trace position and cause.
     pub undefined: Option<FirstUndefined>,
+    /// The violation's decisive atom, found by [`evaluate_observed_decisive`]
+    /// on the run's own evaluator and meter; `None` for every other run.
+    pub decisive: Option<DecisiveSearch>,
 }
 
 /// The expression an observed run first read as undefined: a `holds` atom,
@@ -99,7 +103,31 @@ pub fn evaluate_observed(
         environments,
         trace,
         over,
-        super::engine::Goal::Clause,
+        (super::engine::Goal::Clause, false, None),
+        meter,
+    )
+}
+
+/// [`evaluate_observed`] that also finds the decisive atom of a violation
+/// (FR-330 "The decisive atom") on the same evaluator and meter.
+/// `silent_from` is the first silent sample of a progressed trace (FR-504):
+/// it carries no observation and every `holds` atom there reads false.
+pub fn evaluate_observed_decisive(
+    package: &CheckedPackage,
+    clause: &TemporalClauseNode,
+    environments: &[ObjectEnvironment],
+    trace: TemporalTrace,
+    over: &ObjectReference,
+    silent_from: Option<u64>,
+    meter: &mut Meter,
+) -> ObservedRun {
+    evaluate_observed_goal(
+        package,
+        clause,
+        environments,
+        trace,
+        over,
+        (super::engine::Goal::Clause, true, silent_from),
         meter,
     )
 }
@@ -123,7 +151,7 @@ pub fn evaluate_observed_at(
         environments,
         trace,
         over,
-        super::engine::Goal::At(position),
+        (super::engine::Goal::At(position), false, None),
         meter,
     )
 }
@@ -134,7 +162,7 @@ fn evaluate_observed_goal(
     environments: &[ObjectEnvironment],
     trace: TemporalTrace,
     over: &ObjectReference,
-    goal: super::engine::Goal,
+    (goal, seek, silent_from): (super::engine::Goal, bool, Option<u64>),
     meter: &mut Meter,
 ) -> ObservedRun {
     let mut letters = ObservedLetters {
@@ -147,12 +175,13 @@ fn evaluate_observed_goal(
         undefined: None,
         absent: &[],
         classes: &[],
-        silent_from: None,
+        silent_from,
     };
-    let result = super::engine::run(
+    let (result, decisive) = super::engine::run_seeking(
         super::engine::Subject::of_clause(clause.clause()),
         trace,
         goal,
+        seek,
         &mut letters,
         meter,
     );
@@ -167,6 +196,7 @@ fn evaluate_observed_goal(
         result,
         stopped,
         undefined: letters.undefined,
+        decisive,
     }
 }
 

@@ -131,3 +131,4 @@ mod text_enum_identity;
 mod unbounded_declarations;
 mod union_nodes;
 mod v2_refusal_code_bridge;
+mod compound_quantity_types;

@@ -1010,25 +1010,78 @@ pub(super) fn duplicate_query_cases(
     ]
 }
 
-/// FR-046-AC-3 (TC-127), the admitted-artifact leg: the items `2, 2, 3`
-/// supplied as the receipts of `Recovery`, evaluated from the handoff files
-/// alone, keep the duplicate and the order through `filter` and `map`, and
-/// give size 3, the count of 2 as 2 and the sum 7. R is read in its
+/// The integer-model handoff of the FR-046-AC-3 fixture
+/// `unit-duplicate-queries.native`, whose `Full` and `Partial` `recover`
+/// slots host the duplicate-preserving queries over `Recovery.receipts`.
+fn duplicate_queries_recipe() -> Recipe {
+    let holder = tempfile::tempdir().expect("directory");
+    let mut request = integer_request(holder.path());
+    request.emit.source =
+        std::path::PathBuf::from("examples/checked-handoff/unit-duplicate-queries.native");
+    read_recipe(holder, &request)
+}
+
+impl Recipe {
+    /// The `recovery.predicate` of `name` with `recovered{name}` carrying
+    /// `receipts`, the one binder the fixture's slots read, as its Boolean.
+    fn recover_receipts(&self, name: &str, receipts: &[i64]) -> bool {
+        let bare = self.bare();
+        let node = self.compensation(name);
+        let selected = bare
+            .select_protocol_slot(&ProtocolSlotDescriptor::new(
+                node.clone(),
+                "recovery.predicate",
+                None,
+            ))
+            .unwrap_or_else(|failure| panic!("{name}: the slot is selected: {failure:?}"));
+        let binder = format!("recovered{name}");
+        let [source] = selected.sources() else {
+            panic!("{name}: the slot reads only {binder}");
+        };
+        assert_eq!(source.name(), binder);
+        let given = ProtocolSupply {
+            binders: vec![(
+                source.binder().clone(),
+                SuppliedValue::Value(self.recovery(&bare, receipts)).into(),
+            )],
+            observation: None,
+        };
+        let slot = ProtocolSlot {
+            node,
+            member: "recovery.predicate".to_owned(),
+            index: None,
+        };
+        let mut meter = Meter::new(UNLIMITED);
+        match bare.evaluate_protocol_slot(&slot, &given, &mut meter) {
+            Ok(qsl_eval::value::ProtocolSlotEvaluation::Evaluated(evaluation, _)) => {
+                match evaluation.outcome {
+                    quire_eval::FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(
+                        Value::Boolean(held),
+                    )) => held,
+                    other => panic!("{name}: a completed Boolean, not {other:?}"),
+                }
+            }
+            other => panic!("{name}: an evaluation, not {other:?}"),
+        }
+    }
+}
+
+/// FR-046-AC-3 (TC-127 "Admitted-artifact host"), the admitted-artifact leg: the
+/// receipts `2, 2, 3` of `Recovery`, evaluated from the handoff files alone
+/// in the `recover` slots of `unit-duplicate-queries.native`. `Full` holds:
+/// filter keeps both 2s, map keeps one result per receipt and both true
+/// results, size is 3, the count of 2 in `Count` 0..5 is 2 and the sum is 7.
+/// `Partial`, the values a deduplicating query would give, does not. Over the
+/// deduplicated receipts `2, 3` the two invert. The fixture is read in R's
 /// unit-free variant: over the unit `U` the bytes cannot project `Recovery`
-/// (`recovery_over_the_unit_u_is_a_missing_type_representation`, FR-533), and
-/// the nominal-unit leg runs on the checked route in
-/// `checked_handoff_healthy.rs`.
+/// (`recovery_over_the_unit_u_is_a_missing_type_representation`, FR-533); the
+/// nominal-unit leg runs on the checked route in `checked_handoff_healthy.rs`.
 #[trace("FR-046-AC-3", "TC-127")]
 #[test]
 fn duplicate_queries_over_the_receipts_evaluate_from_the_handoff_files() {
-    for (label, body, expected) in duplicate_query_cases("recoveredFull.receipts", "", "M::Total") {
-        let recipe = recipe_with(Some(&format!(
-            "{body}\n            and targetFull >= 0 and not activatedFull"
-        )));
-        let result = recipe.recover("Full", &[2, 2, 3], 0, false);
-        let Ok(Value::Boolean(held)) = result else {
-            panic!("{label}: a Boolean outcome, not {result:?}");
-        };
-        assert_eq!(held, expected, "{label}");
-    }
+    let recipe = duplicate_queries_recipe();
+    assert!(recipe.recover_receipts("Full", &[2, 2, 3]));
+    assert!(!recipe.recover_receipts("Partial", &[2, 2, 3]));
+    assert!(!recipe.recover_receipts("Full", &[2, 3]));
+    assert!(recipe.recover_receipts("Partial", &[2, 3]));
 }
