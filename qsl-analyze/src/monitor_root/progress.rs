@@ -294,6 +294,24 @@ impl PlanAuthorityRefusal {
 
 /// Original admitted values and capabilities bound to one immutable plan root.
 /// Neither the final emission nor its original checked context is replaceable.
+///
+/// A previously admitted context cannot be rebound to a foreign emission:
+///
+/// ```compile_fail,E0616
+/// use qsl_analyze::monitor_root::{AdmittedPlanAuthority, PlanRoot};
+/// fn replace(context: &mut AdmittedPlanAuthority, foreign: PlanRoot) {
+///     context.root = foreign;
+/// }
+/// ```
+///
+/// Its canonical admitted values are immutable:
+///
+/// ```compile_fail,E0594
+/// use qsl_analyze::monitor_root::AdmittedPlanAuthority;
+/// fn replace(context: &AdmittedPlanAuthority) {
+///     context.admitted_order()[0] = 0;
+/// }
+/// ```
 #[derive(Debug)]
 pub struct AdmittedPlanAuthority {
     root: PlanRoot,
