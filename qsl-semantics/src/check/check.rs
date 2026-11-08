@@ -3301,6 +3301,26 @@ impl<'a> Typer<'a> {
             Some(ValueType::Rational(domain)) => domain,
             Some(_) => return Err(mismatch(location)),
         };
+        // FR-039: a zero denominator is refused before any normalization work;
+        // the normalization (a gcd over both written integers) is then charged
+        // by their larger bit length against `s3.rational_bits`, so exhausting
+        // it is resource incompleteness and never a value (FR-039-AC-5).
+        if denominator.is_zero() {
+            return Err(refuse(location, CheckCause::Unproved(Obligation::Nonzero)));
+        }
+        let bits = numerator.magnitude_bits().max(denominator.magnitude_bits());
+        if bits > self.limits.rational_bits() {
+            return Err(refuse(
+                location,
+                CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+                    stage: CheckingStage::Typing,
+                    kind: CheckingLimitKind::RationalBits,
+                    limit: self.limits.rational_bits(),
+                    actual: u128::from(bits),
+                    region: None,
+                })),
+            ));
+        }
         let value = Rational::new(numerator.clone(), denominator.clone())
             .map_err(|_| refuse(location, CheckCause::Unproved(Obligation::Nonzero)))?;
         if !domain.contains(&value) {
