@@ -1,6 +1,6 @@
 ---
 id: FR-511
-title: "Keep the root number path as a compatibility re-export"
+title: "Keep the exact protocol number codec in qsl-package"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-004
@@ -14,7 +14,7 @@ relationships:
   - target: ix://agent-ix/quire-specification/FR-322
     type: references
 ---
-# FR-511: Keep the root number path as a compatibility re-export
+# FR-511: Keep the exact protocol number codec in qsl-package
 
 ## Description
 
@@ -30,7 +30,9 @@ evidence, under the standing rule that a behavior is kept until its successor
 is green. This requirement records the one disposition, which FR-499's row
 cites: **move the implementation into qsl-package while keeping the public
 root module `number` as a compatibility re-export until consumers are
-repointed; then retire FR-038.** There is no permanent keep.
+repointed.** The root module has since been deleted: quire-protocol, its one
+external consumer, no longer imports `quire_spec_language::number` (end
+condition below), so `qsl_package::number` is the codec's only path.
 
 Evidence:
 
@@ -63,50 +65,40 @@ Evidence:
 
 - `ProtocolNumber`, `ExactInteger`, `ExactRational`, `NumberComponent`,
   `NumberError`, `NumberWire` and `NUMERIC_PROFILE`, implemented in and
-  importable from `qsl_package::number::*`; the established
-  `quire_spec_language::number::*` path re-exports those exact items.
+  importable from `qsl_package::number::*` only. The root crate has no
+  `number` module.
 
 ## Behavior
 
 - The codec SHALL keep the behavior FR-038-AC-1 to AC-5 state, unchanged, when
   `protocol_artifact` is deleted.
 - The implementation SHALL live at `qsl-package/src/number.rs` with no
-  dependency on `protocol_artifact`. `src/number.rs` SHALL only re-export the
-  spine items while legacy root consumers remain. `protocol_artifact`
-  re-exports nothing of the codec and has no `number` path; quire-protocol
-  imports `quire_spec_language::number` until it next bumps its pinned revision
-  (QSL-1501).
-- The one re-export module `src/number.rs` is a transitional exemption from
-  FR-087-AC-9's rule that the root crate re-exports no layer-crate item. It
-  exists while the external quire-protocol consumer imports
-  `quire_spec_language::number::*`, and ends when quire-protocol no longer imports
-  it (the quire-protocol checked-package repoint). The observable end check is a
-  search of the external quire-protocol source for the path
-  `quire_spec_language::number` that finds no use; at that point the module, the
-  exemption and TC-1306's root-path steps are removed together. The exemption
-  covers exactly the path `src/number.rs` and exactly the FR-511 item set,
-  `ProtocolNumber`, `ExactInteger`, `ExactRational`, `NumberComponent`,
-  `NumberError`, `NumberWire` and `NUMERIC_PROFILE` (the Outputs list, the one
-  owner of this set); it covers no other module and no other item.
+  dependency on `protocol_artifact`. `protocol_artifact` is deleted and has no
+  `number` path.
+- The root crate SHALL re-export no codec item and has no `number` module
+  (FR-087-AC-9). The former transitional root re-export `src/number.rs`
+  ended under its stated end condition: a search of quire-protocol's source
+  finds no `quire_spec_language::number`, so the module, its FR-087-AC-9
+  exemption and TC-1306's root-path steps were removed together.
 - The codec SHALL NOT be used by the spine's checked-package writers or
   readers.
-- The change that removes the module SHALL wait until the successor QSL-1506 ports is
-  green and every consumer above is repointed, and SHALL retire FR-038
-  explicitly.
+- FR-038 stays live: the codec remains in qsl-package, and FR-038's integer
+  spelling is the one FR-100, FR-106 and FR-286 cite. Retiring FR-038 would
+  need those requirements to own their spelling first; removing the root path
+  does not.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-511-AC-1 | `qsl_package::number::{ProtocolNumber, ExactInteger, ExactRational, NumberComponent, NumberError, NumberWire, NUMERIC_PROFILE}` is the implementation surface; `quire_spec_language::number` re-exports those same items and profile `quire.protocol.numeric/1`; the path `protocol_artifact::number` does not resolve. `src/number.rs` re-exports exactly those items and no other. | Test (TC-1306) |
+| FR-511-AC-1 | **RETIRED (root re-export removed).** The criterion asserted that `quire_spec_language::number` re-exports the codec. Ruling: its end condition held (quire-protocol main names no `quire_spec_language::number`), so `src/number.rs` was deleted. The root crate re-exporting nothing is FR-087-AC-9 (TC-256). | Test (TC-1306), retired |
 | FR-511-AC-2 | The TC-117 vector groups (FR-038-AC-1 to AC-5) pass from `qsl_package::number` with their fixed expected strings, kinds and refusals unchanged. | Test (TC-1306) |
-| FR-511-AC-3 | The qsl-package checked-package v2 writer and reader do not use the legacy numeric codec; root compatibility consumers may import the `crate::number` re-export until QSL-1501 repoints them. | Test (TC-1306) |
-| FR-511-AC-4 | FR-038-AC-1 to AC-5 each have a tagged test in qsl-package after the move; a root integration test verifies the compatibility path resolves to the same spine types. | Test (TC-1306) |
+| FR-511-AC-3 | The qsl-package checked-package v2 writer and reader do not use the legacy numeric codec. | Test (TC-1306) |
+| FR-511-AC-4 | FR-038-AC-1 to AC-5 each have a tagged test in qsl-package after the move. | Test (TC-1306) |
 
 ## Dependencies
 
-- **Exemption:** FR-087-AC-9 and TC-256 name `src/number.rs` as the one path
-  exempt from the no-layer-crate-re-export rule, for as long as this requirement's
-  external consumer exists.
+- **Ended exemption:** FR-087-AC-9 and TC-256 once exempted `src/number.rs`
+  from the no-layer-crate-re-export rule; the exemption ended with the module.
 - **Upstream:** FR-038, TC-117, FR-493-AC-4/AC-5, the QSL-858 and QSL-1501
   consumer rulings.

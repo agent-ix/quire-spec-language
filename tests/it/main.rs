@@ -85,7 +85,6 @@ mod model_type_unit_roots;
 mod name_resolution_confinement;
 mod native_boundaries;
 mod native_run_result_root;
-mod protocol_number_root_module;
 mod replay_multi_source;
 mod request_builder;
 mod requirement_item_proof_bounds;
