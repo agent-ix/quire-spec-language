@@ -585,7 +585,10 @@ fn a_non_assume_guarantee_rule_derives_a_request_item() {
 #[test]
 fn a_composition_over_dependency_components_is_emitted_and_admitted() {
     let world = World::new();
-    let package = world.checked("assume-guarantee", CASE_ONE_MEMBERS);
+    let members = format!(
+        "{CASE_ONE_MEMBERS}environment Sched by \"scheduler\" fair weak each M::Producer::send; "
+    );
+    let package = world.checked("assume-guarantee", &members);
     let emission = emit_checked(&package).expect("the composition emits");
     assert!(emission.omitted().is_empty());
     let written = raw_wire(&emission);
@@ -596,6 +599,26 @@ fn a_composition_over_dependency_components_is_emitted_and_admitted() {
         .iter()
         .position(|node| node["semantic_form"] == "component_composition")
         .expect("the composition node is written");
+    // FR-530-AC-1: the body keeps its lists separate, none folded into
+    // another.
+    let body = &nodes[position]["body"];
+    assert_eq!(body["term"], "component_composition");
+    assert_eq!(body["rule"], "assume-guarantee");
+    let list = |name: &str| body[name].as_array().unwrap_or_else(|| panic!("{name}"));
+    let names: Vec<&str> = list("components")
+        .iter()
+        .map(|entry| entry["name"].as_str().expect("component name"))
+        .collect();
+    assert_eq!(names, ["Consumer", "Producer"]);
+    assert!(list("components")
+        .iter()
+        .all(|entry| entry["subject"].is_object()));
+    assert_eq!(list("guarantees").len(), 3);
+    assert_eq!(list("relies").len(), 1);
+    assert_eq!(list("liveness_dependencies").len(), 1);
+    assert_eq!(list("supplies").len(), 1);
+    let environment: Vec<&Value> = list("environment").iter().map(|e| &e["name"]).collect();
+    assert_eq!(environment, ["Sched"]);
     let row = written["semantic_graph"]["operand_rows"][position]
         .as_array()
         .expect("the composition's operand row");
@@ -649,4 +672,38 @@ fn a_composition_without_its_component_packages_is_not_admitted() {
         }
         other => panic!("the component packages are unsupplied: {other:?}"),
     }
+}
+
+/// FR-491 / FR-530-AC-1: a key the importer holds stays the importer's own
+/// node when a dependency holds the same key; only a key the importer does
+/// not hold is named by a dependency position.
+#[trace("FR-530-AC-1", "QSpec-FR-491-AC-6")]
+#[test]
+fn an_importers_own_key_is_not_taken_for_a_dependency_node() {
+    let (_, package) =
+        package_from_text("function add using v(x: Integer): Integer pure { (x + 1) + 2 }\n");
+    let graph = package.graph();
+    let ids = StructuralIds::default();
+    let names = |foreign: &ForeignNodes| -> Vec<Vec<NodeKey>> {
+        candidates_of(&ids, foreign, graph, None, &[])
+            .expect("candidates")
+            .values()
+            .map(|candidate| {
+                let mut names: Vec<NodeKey> = candidate.names.iter().cloned().collect();
+                names.sort();
+                names
+            })
+            .collect()
+    };
+    let own = names(&ForeignNodes::default());
+    assert!(
+        own.iter().any(|names| !names.is_empty()),
+        "the unit has operands"
+    );
+    // A dependency holds every key the importer holds, at its own positions.
+    let mut shadowing = ForeignNodes::default();
+    for (at, node) in (0_u64..).zip(graph.semantic_graph().nodes()) {
+        shadowing.positions.insert(node.key(), ("dep".into(), at));
+    }
+    assert_eq!(names(&shadowing), own, "the importer's own nodes win");
 }

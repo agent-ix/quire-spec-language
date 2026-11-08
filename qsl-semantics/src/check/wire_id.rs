@@ -1485,4 +1485,68 @@ mod tests {
         assert!(reused.consumed().work >= prefix.work);
         assert!(reused.consumed().storage >= prefix.storage);
     }
+
+    fn dependency_id() -> CheckedNodeId {
+        CheckedNodeId {
+            package: "pkg".into(),
+            path: vec![
+                CheckedNodePathSegment::Name("clause".into()),
+                CheckedNodePathSegment::Dependency {
+                    package: "test/producer".into(),
+                    node: 7,
+                },
+            ],
+            ordinal: 0,
+        }
+    }
+
+    /// FR-322 "Operand index segments": a canonical document's index segment
+    /// is a local entry, and one carrying a package is a dependency entry.
+    #[ix_trace_rs::trace("QSpec-TC-233", "QSpec-FR-322-AC-280")]
+    #[test]
+    fn canonical_entries_separate_local_and_dependency_segments() {
+        let document = serde_json::json!({
+            "a": {"package": "pkg", "ordinal": 0, "path": [{"node": 3}]},
+            "b": {"package": "pkg", "ordinal": 0, "path": [
+                {"node": 5, "package": "test/producer"}
+            ]},
+        });
+        let bytes = serde_json::to_vec(&document).unwrap();
+        assert_eq!(
+            canonical_operand_entries(&bytes, 1 << 20).unwrap(),
+            vec![
+                CheckedOperandEntry::Node(3),
+                CheckedOperandEntry::Dependency(CheckedDependencyOperand {
+                    package: "test/producer".into(),
+                    node: 5,
+                }),
+            ]
+        );
+    }
+
+    /// A key reader holds no dependency graph, so it refuses a position.
+    #[ix_trace_rs::trace("QSpec-TC-233", "QSpec-FR-322-AC-280")]
+    #[test]
+    fn a_dependency_position_has_no_key() {
+        assert_eq!(
+            StructuralKeys::default().key(&dependency_id()).unwrap_err(),
+            WireIdError::DependencyPosition {
+                package: "test/producer".to_owned(),
+                node: 7,
+            }
+        );
+    }
+
+    /// The document view keeps a dependency position as the wire writes it.
+    #[ix_trace_rs::trace("QSpec-TC-233", "QSpec-FR-322-AC-280")]
+    #[test]
+    fn the_document_view_keeps_a_dependency_position_inline() {
+        let ids = wire_ids(&chain(1));
+        let graph = WireGraph::new(&ids).unwrap();
+        let held = serde_json::to_value(dependency_id()).unwrap();
+        let value = serde_json::json!({"clause": held.clone()});
+        assert_eq!(graph.document_value_in_row(0, &value).unwrap(), value);
+        // The structural view has no key for it.
+        assert!(graph.structural_value_in_row(0, &value).is_err());
+    }
 }

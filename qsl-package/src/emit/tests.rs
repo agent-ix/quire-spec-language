@@ -1183,6 +1183,7 @@ fn written_nodes(package: &CheckedPackage) -> Vec<Value> {
             Candidate::of(
                 &StructuralIds::default(),
                 &ForeignNodes::default(),
+                &HashSet::new(),
                 node,
                 recorded.remove(&node.key()).unwrap_or_default(),
             )
@@ -1553,6 +1554,7 @@ fn a_declaration_without_its_occurrence_is_omitted() {
                 Candidate::of(
                     &StructuralIds::default(),
                     &ForeignNodes::default(),
+                    &HashSet::new(),
                     node,
                     occurrences,
                 )

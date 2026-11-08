@@ -1602,6 +1602,7 @@ impl<'g> Candidate<'g> {
     fn of(
         ids: &StructuralIds,
         foreign: &ForeignNodes,
+        local: &HashSet<NodeKey>,
         node: &'g SemanticNode,
         occurrences: Recorded<'g>,
     ) -> Result<Self, EmitRefusal> {
@@ -1655,8 +1656,9 @@ impl<'g> Candidate<'g> {
         names.insert(type_key);
         names.remove(&key);
         // A dependency's node is written as the dependency position of its
-        // package, never as a node of this graph.
-        names.retain(|name| !foreign.holds(name));
+        // package, never as a node of this graph; a key this unit holds itself
+        // stays its own node, whatever a dependency holds under the same key.
+        names.retain(|name| !foreign.holds(name) || local.contains(name));
         // A node has a few dependencies, so sorting them by structural id is
         // cheap; they are rarely deep chains of each other.
         let mut dependencies: Vec<CheckedNodeId> =
@@ -5796,12 +5798,23 @@ fn candidates_of<'g>(
     declared_forms: &'g [(SemanticNode, Location)],
 ) -> Result<Candidates<'g>, EmitRefusal> {
     let mut recorded = recorded_occurrences(graph)?;
+    let local: HashSet<NodeKey> = graph
+        .semantic_graph()
+        .nodes()
+        .map(|node| node.key())
+        .chain(abstraction.iter().flat_map(|nodes| {
+            std::iter::once(nodes.relation())
+                .chain(nodes.support())
+                .map(|node| node.key())
+        }))
+        .chain(declared_forms.iter().map(|(node, _)| node.key()))
+        .collect();
     let mut candidates: Vec<Candidate<'g>> = graph
         .semantic_graph()
         .nodes()
         .map(|node| {
             let occurrences = recorded.remove(&node.key()).unwrap_or_default();
-            Candidate::of(ids, foreign, node, occurrences)
+            Candidate::of(ids, foreign, &local, node, occurrences)
         })
         .collect::<Result<_, _>>()?;
     let graph_keys: HashSet<NodeKey> = candidates.iter().map(|c| c.key.clone()).collect();
@@ -5818,7 +5831,7 @@ fn candidates_of<'g>(
                 if graph_keys.contains(&key) || !added.insert(key.clone()) {
                     return Ok(());
                 }
-                let candidate = Candidate::of(ids, foreign, node, occurrences)?;
+                let candidate = Candidate::of(ids, foreign, &local, node, occurrences)?;
                 let at = candidates.partition_point(|existing| existing.key < candidate.key);
                 candidates.insert(at, candidate);
                 Ok(())
@@ -5864,7 +5877,7 @@ fn candidates_of<'g>(
             },
             RecordedLocation::Expression(location),
         )];
-        let candidate = Candidate::of(ids, foreign, node, declared)?;
+        let candidate = Candidate::of(ids, foreign, &local, node, declared)?;
         let at = candidates.partition_point(|existing| existing.key < candidate.key);
         candidates.insert(at, candidate);
     }
