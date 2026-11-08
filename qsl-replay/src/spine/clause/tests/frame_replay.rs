@@ -106,8 +106,10 @@ fn identities(unit: &Unit) -> (NodeKey, NodeKey, OccurrenceKey) {
 /// The wire node id of the one emitted node whose `semantic_form` is
 /// `form`: the emitted package, not the checked graph the replay reads.
 fn emitted_node(unit: &Unit, form: &str) -> quire_exact::NodeKey {
-    let package: serde_json::Value =
+    let mut package: serde_json::Value =
         serde_json::from_slice(unit.compiled.emitted.bytes()).expect("the emitted package is JSON");
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut package)
+        .expect("every operand slot names a row entry");
     let nodes: Vec<&serde_json::Value> = package["semantic_graph"]["nodes"]
         .as_array()
         .expect("the package lists its nodes")

@@ -4042,8 +4042,10 @@ fn sorted_json(mut values: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
 /// `BodyNames`/`Candidate::of` in `qsl-package`'s generic emitter compute
 /// them at emission time, never as an in-process `CheckedGraph` API).
 fn emitted_dependencies_of(compiled: &ComposedUnit, key: NodeKey) -> Vec<serde_json::Value> {
-    let wire: serde_json::Value =
+    let mut wire: serde_json::Value =
         serde_json::from_slice(compiled.emitted.bytes()).expect("emitted bytes are JSON");
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut wire)
+        .expect("every operand slot names a row entry");
     let nodes = wire["semantic_graph"]["nodes"]
         .as_array()
         .expect("semantic_graph.nodes is an array");

@@ -295,15 +295,6 @@ impl HybridProcessRequest {
             {
                 return Err(HybridProcessRequestRefusal::ClaimMismatch);
             }
-            // FR-322 "Operand index segments": the request is about `package`,
-            // so the claim's node id resolves against that package's graph.
-            // `CheckedNodeId` reads raw JSON text, never a `Value`.
-            let claim_node = serde_json::from_str::<quire_contract_model::CheckedNodeId>(
-                &item.claim["node"].to_string(),
-            )
-            .ok()
-            .and_then(|id| graph.key(&id).ok())
-            .ok_or(HybridProcessRequestRefusal::MalformedRequest)?;
             let claim_wire = item
                 .claim
                 .as_object()
@@ -320,14 +311,25 @@ impl HybridProcessRequest {
             if claim_occurrence["role"] != "claim" {
                 return Err(HybridProcessRequestRefusal::ClaimMismatch);
             }
-            let package_node = package_wire.0["semantic_graph"]["nodes"]
+            // FR-322 "Operand index segments": the claim names the node as the
+            // package writes it, operand slots included. Its position among
+            // the package's nodes is the position of the resolved node whose
+            // graph key identifies the claim.
+            let (package_position, package_node) = package_wire.0["semantic_graph"]["nodes"]
                 .as_array()
                 .and_then(|nodes| {
                     nodes
                         .iter()
-                        .find(|node| node["node_id"] == item.claim["node"])
+                        .enumerate()
+                        .find(|(_, node)| node["node_id"] == item.claim["node"])
                 })
                 .ok_or(HybridProcessRequestRefusal::ClaimMismatch)?;
+            let claim_node = package
+                .resolved_graph()
+                .nodes
+                .get(package_position)
+                .and_then(|node| graph.key(&node.node_id).ok())
+                .ok_or(HybridProcessRequestRefusal::MalformedRequest)?;
             if package_node["semantic_form"] != "temporal_clause"
                 || item.claim["node"] != package_node["node_id"]
                 || !package_node["occurrences"]
