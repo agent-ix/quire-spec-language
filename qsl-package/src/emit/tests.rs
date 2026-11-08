@@ -3970,7 +3970,7 @@ fn emit_attempt_unit(unit: &str, with_sub: bool) -> AttemptEmission {
         attempt,
         clauses,
         frame_records,
-        wire: wire(&emission),
+        wire: resolved_wire(&emission),
     }
 }
 
@@ -4394,7 +4394,7 @@ fn generated_texts<'t>(wire: &Value, text: &'t str, node: &Value) -> Vec<&'t str
 fn members_are_placed_at(declarations: &str, placed: &str) -> Emission {
     let (text, emission) = emit_from_text(declarations);
     assert_eq!(emission.omitted, []);
-    let wire = wire(&emission);
+    let wire = resolved_wire(&emission);
     let members: Vec<&Value> = nodes(&wire)
         .iter()
         .filter(|node| node["semantic_form"] == "enum_value")
@@ -4503,7 +4503,7 @@ fn a_node_two_unnamed_types_share_is_placed_at_the_least_name() {
     assert_eq!(emission.omitted, []);
     let read = read_back(&emission);
     assert!(matches!(read, Read::Verified { .. }), "{read:?}");
-    let wire = wire(&emission);
+    let wire = resolved_wire(&emission);
     let shared = only_node(&wire, "integer_range");
     assert_eq!(generated_texts(&wire, &text, &shared["node_id"]), ["P"]);
 }

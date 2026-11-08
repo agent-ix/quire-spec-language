@@ -636,6 +636,8 @@ fn a_selection_the_package_does_not_hold_is_refused() {
         &format!("{temporal}\n{other}"),
     ));
     let package = admit(&compiled);
+    let mut wire = compiled.wire.clone();
+    wire["semantic_graph"] = serde_json::to_value(package.resolved_graph()).unwrap();
     let [due, other] = clause_ids(&package).try_into().expect("two clauses");
     let due_leaf = temporal_subject(&package, &due).unwrap().predicate_leaves()[0].clone();
     let other_leaf = temporal_subject(&package, &other)
@@ -644,7 +646,7 @@ fn a_selection_the_package_does_not_hold_is_refused() {
         .clone();
 
     // A temporal node of another form: the clause's formula root.
-    let formula_root = referenced(argument(&compiled.wire, &due, 5));
+    let formula_root = referenced(argument(&wire, &due, 5));
     for not_a_clause in [formula_root, due_leaf.clone()] {
         assert_eq!(
             temporal_subject(&package, &not_a_clause).err(),

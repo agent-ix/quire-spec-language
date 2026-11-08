@@ -181,7 +181,8 @@ pub struct PlanAuthoritySelection<'a> {
 /// These caps neither account for preparation nor replenish its native budget.
 #[derive(Clone, Copy, Debug)]
 pub struct PlanAuthorityValidationCaps {
-    /// Bounds for admitting this final emission through the original IR reader.
+    /// Structural and byte bounds for the original IR reader. Read work and
+    /// read storage use the caller's native budget, not a second allowance.
     pub read: CheckedPackageReadLimits,
     /// Bounds for the canonical model-step order value.
     pub order: quire_canonical::Limits,
@@ -292,6 +293,12 @@ pub enum PlanAuthorityRefusal {
     /// The original strict reader exhausted its bound.
     #[error("the final emission read was incomplete: {0:?}")]
     ReadIncomplete(CheckedPackageIncomplete),
+    /// The strict reader's original budget denial with its paid diagnostic.
+    #[error("the final emission read exhausted its budget: {0:?}")]
+    ReadBudgetIncomplete(quire_contract_model::CheckedPackageBudgetIncomplete),
+    /// The strict reader's fixed-size denial when its diagnostic was unpaid.
+    #[error("the final emission read exhausted its budget: {0:?}")]
+    ReadExhausted(quire_contract_model::CheckedPackageReadExhausted),
     /// The strict reader's operation catalog is unreadable; nothing was judged.
     #[error("the strict reader's operation catalog is unavailable: {0}")]
     ReadCatalogUnavailable(quire_contract_model::CatalogReadError),
@@ -330,7 +337,9 @@ impl PlanAuthorityRefusal {
             Self::ReadIncomplete(_) => PlanAuthorityRefusalCode::ReadIncomplete,
             Self::ReadCatalogUnavailable(_) => PlanAuthorityRefusalCode::ReadRefused,
             Self::ClockRead(_) => PlanAuthorityRefusalCode::ClockRead,
-            Self::Budget { .. } => PlanAuthorityRefusalCode::Budget,
+            Self::Budget { .. } | Self::ReadBudgetIncomplete(_) | Self::ReadExhausted(_) => {
+                PlanAuthorityRefusalCode::Budget
+            }
             Self::Allocation(_) => PlanAuthorityRefusalCode::Allocation,
         }
     }
@@ -419,6 +428,8 @@ impl PlanRoot {
     /// Original source/claim selections are checked independently; node keys are
     /// compared structurally, and the original claim joins through this emission's
     /// retained rows to the strict reader's final clause. No second emission is made.
+    /// The caller configures the budget's work, logical-storage and strict
+    /// read-storage allowances before entry; this method preserves them.
     pub fn admit_authority(
         self,
         selection: PlanAuthoritySelection<'_>,
@@ -534,18 +545,10 @@ impl PlanRoot {
                 return Err(PlanAuthorityRefusal::ReadIncomplete(error));
             }
             CheckedPackageBudgetedDispatchResult::BudgetIncomplete(incomplete) => {
-                return Err(charge.read_denial(
-                    incomplete.denied.resource,
-                    incomplete.denied.amount,
-                    incomplete.limit,
-                ));
+                return Err(PlanAuthorityRefusal::ReadBudgetIncomplete(incomplete));
             }
             CheckedPackageBudgetedDispatchResult::Exhausted(exhausted) => {
-                return Err(charge.read_denial(
-                    exhausted.denied.resource,
-                    exhausted.denied.amount,
-                    exhausted.configured_bound,
-                ));
+                return Err(PlanAuthorityRefusal::ReadExhausted(exhausted));
             }
             CheckedPackageBudgetedDispatchResult::CatalogUnavailable(error) => {
                 return Err(PlanAuthorityRefusal::ReadCatalogUnavailable(error));

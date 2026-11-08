@@ -16,6 +16,7 @@ use crate::monitor_root::{authored, root_of, target, LIMITS};
 
 fn native_budget() -> quire_contract_model::NativeJoinBudget {
     quire_contract_model::NativeJoinBudget::new(100_000_000, 100_000_000)
+        .with_read_storage_limit(100_000_000)
 }
 
 fn native_locus() -> quire_contract_model::NativeJoinLocus {
@@ -185,6 +186,106 @@ fn genuine_tick_authority_retains_complete_original_values_and_same_emission() {
         !independent.retains(&binding),
         "equal-byte independent reads cannot replace the retained admission"
     );
+}
+
+#[trace("TC-1081", "FR-251-AC-49")]
+#[test]
+fn complete_handoffs_measure_work_logical_storage_and_read_storage_on_one_budget() {
+    use quire_contract_model::{NativeJoinBudget, NativeJoinChargeKind, PackageReadResource};
+    let handoff = |budget: &mut NativeJoinBudget| {
+        let root = tick_root();
+        let (progress, subject) = observation::admitted(Some(vec![row(&root)]));
+        let source = root.checked_unit().source().identity().clone();
+        let claim = root.plan().subject().clone();
+        root.admit_authority(
+            PlanAuthoritySelection {
+                source: &source,
+                claim: &claim,
+                observation_subject: &subject,
+                observation_clock: &observation::clock(),
+                observation_source: &observation::source(),
+            },
+            Some(progress),
+            limits(),
+            budget,
+            native_locus(),
+        )
+    };
+    let mut measured = native_budget();
+    let original = handoff(&mut measured).unwrap();
+    let need = measured.consumed();
+    let read_need = measured.read_storage_consumed();
+    assert!(need.work > 0 && need.storage > 0 && read_need > 0);
+    let mut exact =
+        NativeJoinBudget::new(need.work, need.storage).with_read_storage_limit(read_need);
+    let admitted = handoff(&mut exact).unwrap();
+    assert_eq!(admitted.admitted_order(), original.admitted_order());
+    assert_eq!(admitted.progress_context(), original.progress_context());
+    assert_eq!(exact.consumed(), need);
+    assert_eq!(exact.read_storage_consumed(), read_need);
+    for kind in [NativeJoinChargeKind::Work, NativeJoinChargeKind::Storage] {
+        let mut short = NativeJoinBudget::new(
+            need.work - u64::from(kind == NativeJoinChargeKind::Work),
+            need.storage - u64::from(kind == NativeJoinChargeKind::Storage),
+        )
+        .with_read_storage_limit(read_need);
+        let error = handoff(&mut short).unwrap_err();
+        let PlanAuthorityRefusal::Budget {
+            denied,
+            locus,
+            configured_bound,
+            consumed,
+        } = error
+        else {
+            panic!("the final materialization retains its native denial: {error:?}");
+        };
+        assert_eq!(denied.kind, kind);
+        assert_eq!(short.first_unpaid(), Some(denied));
+        assert_eq!(locus, short.first_unpaid_locus());
+        assert_eq!(consumed, short.consumed());
+        assert_eq!(
+            configured_bound,
+            match kind {
+                NativeJoinChargeKind::Work => need.work - 1,
+                NativeJoinChargeKind::Storage => need.storage - 1,
+            }
+        );
+    }
+    let read_denial = |error: PlanAuthorityRefusal, budget: &NativeJoinBudget, bound| {
+        let (denied, configured) = match error {
+            PlanAuthorityRefusal::ReadExhausted(error) => {
+                assert_eq!(Some(error.locus), budget.first_unpaid_locus());
+                (error.denied, error.configured_bound)
+            }
+            PlanAuthorityRefusal::ReadBudgetIncomplete(error) => (error.denied, error.limit),
+            other => panic!("the strict reader preserves its original resource: {other:?}"),
+        };
+        assert_eq!(denied.resource, PackageReadResource::ReadStorage);
+        assert_eq!(Some(denied.amount), budget.first_unpaid_read_storage());
+        assert_eq!(configured, bound);
+        assert!(matches!(
+            budget.first_unpaid_locus().unwrap().source,
+            quire_contract_model::NativeJoinLocusSource::PackageRead(_, _)
+        ));
+        assert!(budget.read_storage_consumed() <= bound);
+    };
+    for read_bound in [0, read_need - 1] {
+        let mut short =
+            NativeJoinBudget::new(need.work, need.storage).with_read_storage_limit(read_bound);
+        read_denial(handoff(&mut short).unwrap_err(), &short, read_bound);
+        assert!(short.consumed().work > 0);
+        assert!(short.consumed().storage > 0);
+    }
+    let read_bound = read_need * 2 - 1;
+    let mut reused =
+        NativeJoinBudget::new(need.work * 2, need.storage * 2).with_read_storage_limit(read_bound);
+    handoff(&mut reused).unwrap();
+    assert_eq!(reused.consumed(), need);
+    assert_eq!(reused.read_storage_consumed(), read_need);
+    read_denial(handoff(&mut reused).unwrap_err(), &reused, read_bound);
+    assert!(reused.consumed().work > need.work);
+    assert!(reused.consumed().storage > need.storage);
+    assert!(reused.read_storage_consumed() >= read_need);
 }
 
 #[trace("TC-1081", "FR-251-AC-46")]
