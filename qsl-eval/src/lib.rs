@@ -120,7 +120,7 @@
 //! ```no_run
 //! use quire_checked::{NodeKind, NodeRead};
 //! use quire_exact::Value;
-//! use quire_semantic_value::location::{Location, Origin};
+//! use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 //! use quire_exact::ValueType;
 //! fn canonical(value_type: &ValueType, location: &Location) {
 //!     let operation: NodeKind<usize, &Value> = NodeKind::Local(0);
@@ -142,7 +142,7 @@
 //! use qsl_semantics::model::object_environment::ObjectEnvironment;
 //! use quire_checked::{NodeKind, NodeRead};
 //! use quire_exact::{Meter, Value, ValueType};
-//! use quire_semantic_value::location::{Location, Origin};
+//! use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 //! fn rejected(package: &CheckedPackage, objects: &ObjectEnvironment, meter: &mut Meter) {
 //!     let value_type = ValueType::Boolean;
 //!     let location = Location::root(Origin::Expression);

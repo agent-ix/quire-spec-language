@@ -9,7 +9,7 @@ use quire_exact::{BoundViolation, CardinalityBound, CollectionKind, Incomplete, 
 use quire_semantic_value::catalog::{
     CatalogCoded, UndefinedCoded, UndefinedReason, UndefinedRecord,
 };
-use quire_semantic_value::location::Origin;
+use quire_semantic_value::location::ExpressionOwner as Origin;
 use std::collections::BTreeMap;
 
 #[test]

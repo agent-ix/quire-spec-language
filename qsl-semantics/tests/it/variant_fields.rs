@@ -1407,7 +1407,7 @@ fn refused_in_body(
     refusals.iter().any(|refusal| {
         &refusal.cause == cause
             && matches!(&refusal.location.origin,
-                quire_semantic_value::location::Origin::Body { function: found, .. }
+                quire_semantic_value::location::ExpressionOwner::Body { function: found, .. }
                     if found == function)
             && refusal.location.path() == path
     })
@@ -1430,7 +1430,7 @@ fn a_call_with_a_value_of_another_variant_type_refuses_at_the_argument() {
     assert!(
         !refusals.iter().any(|refusal| matches!(
             &refusal.location.origin,
-            quire_semantic_value::location::Origin::Body { function, .. } if function == "good"
+            quire_semantic_value::location::ExpressionOwner::Body { function, .. } if function == "good"
         )),
         "good takes a Tier: {refusals:?}"
     );

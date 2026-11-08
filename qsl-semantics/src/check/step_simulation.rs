@@ -39,7 +39,7 @@ use qsl_forms::StateClauseKind;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{EffectiveId, NodeKey, Origin, ValueType};
 use quire_semantic_value::declaration::TypeEnvironment;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 use quire_semantic_value::step_simulation::{StepObligation, StepRowRef, StepSimulationRecord};
 
 use super::claims::{wire, RequirementRecord};

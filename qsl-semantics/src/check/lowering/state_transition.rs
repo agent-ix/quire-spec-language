@@ -25,7 +25,7 @@ use crate::model::operation::OperationDeclaration;
 use crate::value::member::Member;
 use qsl_forms::StateClauseKind;
 use quire_checked::key::DeclarationKey;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 /// One lowered `pre` or `post` clause, as the transition pass reads it.
 pub(crate) struct TransitionClause<'a> {

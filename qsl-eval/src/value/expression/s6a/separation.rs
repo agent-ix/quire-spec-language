@@ -26,7 +26,7 @@ pub use qsl_foundation::witness::{
 use qsl_semantics::check::{ApplicationTerm, BodyTerm, CheckedGraph, Operator};
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{ObjectReference, Value};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use quire_eval::Evaluation;
 

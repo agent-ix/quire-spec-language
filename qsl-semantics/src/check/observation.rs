@@ -24,7 +24,7 @@ use std::ops::ControlFlow;
 
 use super::ir::{CheckedNode, Slot};
 use crate::model::clause_observation::Observation;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 /// The observation of every model read of one state clause body, by the
 /// read's own location.

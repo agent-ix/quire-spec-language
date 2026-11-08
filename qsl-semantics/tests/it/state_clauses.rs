@@ -24,7 +24,7 @@ use quire_checked::node::NodeKind;
 use quire_exact::ValueType;
 use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use crate::model_operations::{
     admit_and_assemble_with_body, ambiguous_operation_document, archive_population,

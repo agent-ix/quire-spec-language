@@ -880,7 +880,7 @@ fn a_halt_inside_an_imported_body_is_located_at_the_callers_call() {
     use qsl_semantics::model::object_environment::ObjectEnvironment;
     use quire_eval::FamilyOutcome;
     use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
-    use quire_semantic_value::location::{Location, Origin};
+    use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
     let geometry = library(
         "test/geometry",

@@ -60,7 +60,7 @@ use super::{
 use crate::family::{classify_domains, ClaimExtent, ClassifyFailure, Requirements};
 use qsl_foundation::bound::DomainKind;
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment, UnionMemberDeclaration};
-use quire_semantic_value::location::{Location, Origin as CheckOrigin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as CheckOrigin};
 
 /// The fault stage name this module reports.
 const STAGE: &str = "check.requirements";

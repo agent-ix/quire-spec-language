@@ -15,7 +15,7 @@ use super::reachability::{lower_with, Lowered};
 use super::*;
 use crate::checked_v2::V2ReadRefusal;
 use quire_contract_model::{CheckedPackageRefusalCause, CheckedPackageRefusalCode};
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 /// Read the complete envelope through QSL's I2 dispatch with its domain evidence.
 fn read_protocol(wire: &Value) -> Read {

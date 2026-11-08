@@ -45,7 +45,7 @@ use quire_exact::{
 use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation,
 };
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 use quire_semantic_value::quantity::{convert_quantity, ConvertedValue, QuantityTarget};
 
 use super::super::capability::Capability;
@@ -592,7 +592,7 @@ fn keep<T>(refusals: &mut Vec<CheckRefusal>, result: Result<T, CheckRefusal>) ->
 /// A refusal that is a broken invariant of this check, never of the input.
 fn broken(invariant: &'static str) -> CheckRefusal {
     CheckRefusal {
-        location: Location::root(quire_semantic_value::location::Origin::Expression),
+        location: Location::root(quire_semantic_value::location::ExpressionOwner::Expression),
         cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
             quire_semantic_value::catalog::InternalFault::new("S3", invariant),
         ))),
@@ -601,7 +601,7 @@ fn broken(invariant: &'static str) -> CheckRefusal {
 
 fn temporal_refusal(cause: TemporalCause) -> CheckRefusal {
     CheckRefusal {
-        location: Location::root(quire_semantic_value::location::Origin::Expression),
+        location: Location::root(quire_semantic_value::location::ExpressionOwner::Expression),
         cause: CheckCause::Temporal(Box::new(cause)),
     }
 }

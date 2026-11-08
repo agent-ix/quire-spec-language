@@ -616,7 +616,7 @@ fn predicate_call_errors_and_partial_division_are_checked_on_the_spine() {
     assert!(
         matches!(
             &refusals[0].location.origin,
-            quire_semantic_value::location::Origin::Body { function, .. } if function == "D"
+            quire_semantic_value::location::ExpressionOwner::Body { function, .. } if function == "D"
         ),
         "the refusal is located in D: {refusals:?}"
     );

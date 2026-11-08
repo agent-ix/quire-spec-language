@@ -30,7 +30,7 @@ use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{
     CheckedEquality, EqualityOperand, EqualityOperator, FieldRef, TypeEnvironment,
 };
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use crate::equality_file::{EqualityWitnessRefusal, ReadEqualityRows};
 use crate::introduced_binders::is_sum_identity;

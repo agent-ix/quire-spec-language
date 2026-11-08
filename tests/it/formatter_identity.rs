@@ -442,7 +442,7 @@ fn state_fixture_identity(case: usize) {
 }
 
 fn subtype_fixture_diagnostics(graph: &qsl_semantics::check::CheckedGraph, source: &str) {
-    use quire_semantic_value::location::{Location, Origin};
+    use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
     eprintln!("state fixture 13: original S3 succeeded; source={source:?}");
     for node in graph.semantic_graph().nodes() {
@@ -620,7 +620,7 @@ state_identity_tests! {
 #[trace("FR-093")]
 #[test]
 fn state_generated_occurrences_have_authored_regions() {
-    use quire_semantic_value::location::Origin;
+    use quire_semantic_value::location::ExpressionOwner as Origin;
 
     let (document, body) = state_fixture(0);
     let (source, _) = semantic_models::config_unit_with_body(&document, &body);

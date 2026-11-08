@@ -32,7 +32,7 @@ use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, PropertyForm,
 };
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use super::abstraction::name_parts;
 use super::capability::{Capability, DeclarationFamily};

@@ -13,7 +13,7 @@
 
 use quire_checked::node::{CheckedLiteral, NodeKind};
 use quire_exact::{NodeKey, Value};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use super::{identifiers, require_admitted, Binders, Lowering};
 use crate::check::extension::{

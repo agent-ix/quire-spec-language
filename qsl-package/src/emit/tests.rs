@@ -1473,7 +1473,7 @@ fn declared<'w>(wire: &'w Value, name: &str) -> &'w Value {
 fn a_record_and_a_tuple_are_written_with_their_declarations() {
     let package = declared_types(Vec::new(), Vec::new());
     for name in ["Point", "Pair"] {
-        let site = Location::root(quire_semantic_value::location::Origin::TypeDeclaration {
+        let site = Location::root(quire_semantic_value::location::ExpressionOwner::TypeDeclaration {
             name: name.to_owned(),
         });
         assert!(

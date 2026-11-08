@@ -19,7 +19,7 @@
 
 use quire_checked::node::{CheckedLiteral, NodeKind};
 use quire_exact::{EffectiveId, Identifier, NodeKey, Value, ValueType};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use super::{Binder, Binders, Lowering, PlaceStep};
 use crate::check::family::OccurrenceRole;
@@ -787,7 +787,7 @@ impl Lowering<'_> {
         }
         let (Some((first, rest)), Some(site)) = (disjuncts.split_first(), sites.first()) else {
             return Err(super::fault(
-                &Location::root(quire_semantic_value::location::Origin::Expression),
+                &Location::root(quire_semantic_value::location::ExpressionOwner::Expression),
                 KeyFault::UnkeyableRequirements,
             ));
         };

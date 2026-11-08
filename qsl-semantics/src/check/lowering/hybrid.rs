@@ -23,7 +23,7 @@
 //! every term node of a construct is located at that construct's site.
 
 use quire_exact::{Identifier, Integer, NodeKey, ValueType};
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use super::{fault, Lowering};
 use crate::check::family::OccurrenceRole;

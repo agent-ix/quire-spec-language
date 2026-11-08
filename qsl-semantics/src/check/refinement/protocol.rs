@@ -37,7 +37,7 @@ use crate::family::CheckContext;
 use crate::model::domain_package::DomainPackageRef;
 use crate::model::operation::OperationDeclaration;
 use quire_checked::key::DeclarationKey;
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 /// A step of a protocol node (ADR-027 ST-2 to ST-9) that has no operation
 /// and so needs a row of its own.

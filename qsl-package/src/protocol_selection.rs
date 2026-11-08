@@ -367,7 +367,7 @@ fn run_body<'a>(
                 .find(|body| {
                     matches!(
                         &body.root().location().origin,
-                        quire_semantic_value::location::Origin::TypeDeclaration { name }
+                        quire_semantic_value::location::ExpressionOwner::TypeDeclaration { name }
                             if *name == site
                     )
                 })?;
@@ -781,7 +781,7 @@ pub(crate) fn root_node(package: &CheckedPackage, body: &CheckedBody) -> Option<
 #[cfg(feature = "std")]
 pub(crate) fn slot_origin(body: &CheckedBody) -> Option<&str> {
     match &body.root().location().origin {
-        quire_semantic_value::location::Origin::TypeDeclaration { name } => Some(name),
+        quire_semantic_value::location::ExpressionOwner::TypeDeclaration { name } => Some(name),
         _ => None,
     }
 }

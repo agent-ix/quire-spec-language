@@ -5,7 +5,7 @@
 use qsl_semantics::check::{CheckedGraph, CheckedNode, NodeId};
 use quire_checked::node::{CheckedLiteral, NodeKind};
 use quire_exact::{Value, ValueType};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 /// A handle to one checked node, from which its operands and the bodies of
 /// the functions it calls are reached.

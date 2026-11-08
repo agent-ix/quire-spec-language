@@ -65,7 +65,7 @@ use quire_semantic_value::declaration::{CompositeShape, FieldDeclaration, TypeEn
 use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation,
 };
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 pub(crate) use rows::{
     KeyedFairnessRow, KeyedObjectRow, KeyedPopulationRow, KeyedRefinementRows, KeyedStepRow,
     KeyedStepTarget,

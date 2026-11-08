@@ -17,7 +17,7 @@ use qsl_foundation::ReductionKind;
 use qsl_semantics::check::PredicateRole;
 use qsl_semantics::check::StateGraphForm;
 use quire_exact::{NodeKey, ObjectReference, ScalarLimits};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 use serde::{Serialize, Serializer};
 
 use crate::certificate::state_graph::StateGraphCertificate;

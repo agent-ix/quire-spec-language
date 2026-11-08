@@ -26,7 +26,7 @@ use qsl_foundation::diagnostic::Code;
 use qsl_foundation::Span;
 use quire_exact::{EffectiveId, IllTypedCause, ValueType};
 use quire_semantic_value::catalog::CatalogCode;
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use super::check::DispatchOperation;
 use super::checked_dispatch::{

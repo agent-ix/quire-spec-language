@@ -9,7 +9,7 @@ use quire_exact::{
 };
 use quire_semantic_value::absence::AbsenceMode;
 use quire_semantic_value::catalog::{CatalogCode, InternalFault};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use super::check::Scope;
 use super::check::UntypedKind;

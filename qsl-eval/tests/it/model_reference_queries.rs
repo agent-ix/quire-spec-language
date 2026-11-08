@@ -56,7 +56,7 @@ use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
     FieldRef, ObjectTypeDeclaration, TypeEnvironment,
 };
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 use quire_semantic_value::object_closure::ObjectClosure;
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {

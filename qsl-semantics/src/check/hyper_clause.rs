@@ -30,7 +30,7 @@ use qsl_foundation::Span;
 use quire_exact::{EffectiveId, Identifier, NodeKey, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::{FairnessConstraint, FairnessOperation};
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use super::abstraction::{AbstractionKey, CheckedAbstractionRelation, OperationKey};
 use super::check::{HyperTyping, Signatures, Typer};

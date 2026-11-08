@@ -28,7 +28,7 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, Span};
 use quire_exact::{Identifier, NodeKey};
 use quire_semantic_value::catalog::InternalFault;
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use super::lowering::{
     generated_location, model_node_content, population_node_content, AdmittedModel, SemanticNode,

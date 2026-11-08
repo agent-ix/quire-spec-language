@@ -24,7 +24,7 @@ use qsl_semantics::check::CheckedHybridModel;
 use quire_canonical::{Document, Encode, Limits, Node, NodeRef, Sink, Writer};
 use quire_exact::{Origin, Role, Value};
 use quire_semantic_value::declaration::EnvironmentFailure;
-use quire_semantic_value::location::{Location, OperationClauseKind, Origin as Declaration};
+use quire_semantic_value::location::{ExpressionLocation as Location, OperationClauseKind, ExpressionOwner as Declaration};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::value::RawValue;
 

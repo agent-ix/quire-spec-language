@@ -2613,7 +2613,7 @@ mod tests {
     use qsl_semantics::value::DefinitionRole;
     use quire_exact::{Integer, IntegerInterval, ValueType};
     use quire_semantic_value::checking::CheckingLimits;
-    use quire_semantic_value::location::{Location, Origin};
+    use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
     use std::collections::BTreeMap;
 
     #[trace("TC-1339", "FR-534-AC-3")]
@@ -3129,7 +3129,7 @@ mod tests {
     #[test]
     fn the_event_and_workload_diagnostics_read_as_the_requirement_states_them() {
         use qsl_semantics::check::{CheckCause, CheckRefusal, ProbabilisticCause};
-        use quire_semantic_value::location::{Location, Origin};
+        use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
         let render = |cause: ProbabilisticCause| {
             CompileRefusal::Check {
                 refusals: vec![CheckRefusal {
@@ -3176,7 +3176,7 @@ mod tests {
     #[test]
     fn a_unit_mismatch_names_the_dimensions() {
         use qsl_semantics::check::{CheckCause, CheckRefusal, ProbabilisticCause};
-        use quire_semantic_value::location::{Location, Origin};
+        use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
         let refusal = CompileRefusal::Check {
             refusals: vec![CheckRefusal {
                 location: Location::root(Origin::Expression),

@@ -7,7 +7,7 @@ use quire_checked::node::NodeKind;
 use std::collections::BTreeMap;
 
 use qsl_forms::ProtocolDeclarationForm;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use super::ir::CheckedBody;
 use super::lowering::ProtocolInput;

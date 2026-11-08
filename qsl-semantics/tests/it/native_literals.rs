@@ -16,7 +16,7 @@ use qsl_semantics::check::{
 use qsl_semantics::model::intake::SelectedModels;
 use quire_exact::IllTypedCause;
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::location::Origin;
+use quire_semantic_value::location::ExpressionOwner as Origin;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
                       profile v = \"quire.value.complete/v1\";\n";

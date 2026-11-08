@@ -33,7 +33,7 @@ use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Span;
 use quire_exact::{EffectiveId, NodeKey, ValueType};
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use super::ir::{CheckedBody, CheckedNode};
 use super::refusal::{CheckCause, CheckRefusal, PredicateRole, StateGraphCause};

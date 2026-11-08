@@ -412,7 +412,7 @@ pub use checked_dispatch::{
 pub use operation_body::OperationBodyDeclaration;
 pub use operation_clause::OperationClauseDeclaration;
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 pub use region::DeclarationRegions;
 pub use settings::{
     checking_bounds, environment_bounds, set_checking_bound, set_environment_bound,
@@ -795,7 +795,7 @@ pub struct CheckedGraph {
     equality_producer_data: BTreeMap<
         (
             quire_exact::NodeKey,
-            quire_semantic_value::location::Location,
+            quire_semantic_value::location::ExpressionLocation,
         ),
         ir::EqualityProducerData,
     >,
@@ -803,7 +803,7 @@ pub struct CheckedGraph {
     equality_producer_identities: BTreeMap<
         (
             quire_exact::NodeKey,
-            quire_semantic_value::location::Location,
+            quire_semantic_value::location::ExpressionLocation,
         ),
         ir::EqualityProducerIdentity,
     >,
@@ -811,7 +811,7 @@ pub struct CheckedGraph {
     dispatch_producer_decisions: BTreeMap<
         (
             quire_exact::NodeKey,
-            quire_semantic_value::location::Location,
+            quire_semantic_value::location::ExpressionLocation,
         ),
         ir::DispatchProducerDecision,
     >,
@@ -8070,7 +8070,7 @@ impl CheckedGraph {
     ) -> &BTreeMap<
         (
             quire_exact::NodeKey,
-            quire_semantic_value::location::Location,
+            quire_semantic_value::location::ExpressionLocation,
         ),
         ir::EqualityProducerData,
     > {
@@ -8087,7 +8087,7 @@ impl CheckedGraph {
     ) -> &BTreeMap<
         (
             quire_exact::NodeKey,
-            quire_semantic_value::location::Location,
+            quire_semantic_value::location::ExpressionLocation,
         ),
         ir::EqualityProducerIdentity,
     > {
@@ -8100,7 +8100,7 @@ impl CheckedGraph {
     ) -> &BTreeMap<
         (
             quire_exact::NodeKey,
-            quire_semantic_value::location::Location,
+            quire_semantic_value::location::ExpressionLocation,
         ),
         ir::DispatchProducerDecision,
     > {
@@ -9657,8 +9657,8 @@ mod tests {
         assert_eq!(
             typer.check_declared_type(
                 &declared,
-                &quire_semantic_value::location::Location::at(
-                    quire_semantic_value::location::Origin::Expression,
+                &quire_semantic_value::location::ExpressionLocation::at(
+                    quire_semantic_value::location::ExpressionOwner::Expression,
                     &[1, 3]
                 )
             ),

@@ -42,7 +42,7 @@ use crate::value::nominal_payload::{
 use qsl_forms::{DeclaredClauseKind, NameForm};
 use quire_checked::key::DeclarationKey;
 use quire_contract_model::{ModelForm, SelectedOperationIdentity};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 use quire_semantic_value::quantity::QuantityUnit;
 use quire_semantic_value::unit::{NominalDeclaration, NominalUnitForm};
 

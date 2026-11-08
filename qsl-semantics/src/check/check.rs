@@ -96,7 +96,7 @@ use quire_semantic_value::declaration::{
     FieldDeclaration, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::{EnumDeclaration, EnumMemberIndex, EnumValue};
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 use quire_semantic_value::quantity::UnitTable;
 use quire_semantic_value::quantity::{
     check_comparable, evaluate_quantity_unit, result_unit, IdentifiedUnit, QuantityOperation,
@@ -1917,7 +1917,7 @@ impl Scope {
         nodes: &BTreeMap<quire_exact::NodeKey, quire_exact::NodeKey>,
     ) -> Result<(), CheckRefusal> {
         let fault = |invariant: &'static str| CheckRefusal {
-            location: Location::root(quire_semantic_value::location::Origin::Expression),
+            location: Location::root(quire_semantic_value::location::ExpressionOwner::Expression),
             cause: CheckCause::InternalFault(Box::new(super::refusal::KeyFault::StageFault(
                 quire_semantic_value::catalog::InternalFault::new("S3", invariant),
             ))),

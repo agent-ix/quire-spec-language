@@ -346,7 +346,7 @@ pub struct ProtocolSource {
     level: usize,
     value_type: quire_exact::ValueType,
     binder: NodeKey,
-    location: quire_semantic_value::location::Location,
+    location: quire_semantic_value::location::ExpressionLocation,
 }
 
 impl ProtocolSource {
@@ -371,7 +371,7 @@ impl ProtocolSource {
         &self.binder
     }
     /// The location of the binder's own first occurrence.
-    pub fn location(&self) -> &quire_semantic_value::location::Location {
+    pub fn location(&self) -> &quire_semantic_value::location::ExpressionLocation {
         &self.location
     }
 }

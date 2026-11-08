@@ -13,7 +13,7 @@ use quire_checked::node::NodeKind;
 use std::collections::BTreeMap;
 
 use qsl_foundation::Span;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use super::{CheckedHyperClause, TemporalCause};
 use crate::check::check::Scope;
@@ -21,7 +21,7 @@ use crate::check::ir::{CheckedNode, Slot};
 use crate::check::profile::TemporalProfile;
 use crate::check::refusal::{CheckCause, CheckRefusal};
 use crate::check::AdmittedModel;
-use quire_semantic_value::location::Origin;
+use quire_semantic_value::location::ExpressionOwner as Origin;
 
 /// The refusal of `clause` at `span`, or the first reason no package
 /// encodes it.

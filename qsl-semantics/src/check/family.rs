@@ -84,8 +84,8 @@ use quire_exact::ValueType;
 use quire_exact::{UnitDomain, UnitId};
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::CompositeShape;
-use quire_semantic_value::location::Location as CheckLocation;
-use quire_semantic_value::location::Origin as CheckOrigin;
+use quire_semantic_value::location::ExpressionLocation as CheckLocation;
+use quire_semantic_value::location::ExpressionOwner as CheckOrigin;
 
 /// The contract-level `quire_exact::Meter`'s limits, for every call site in
 /// this module and [`super`] that builds one just to satisfy
@@ -1615,7 +1615,7 @@ pub(crate) fn check_declaration_body(
 ///
 /// `S` is the span type. Complete-V1's own function forms have no lexed
 /// byte offsets to report (there is no text parser for this API-constructed
-/// family -- `check`'s [`quire_semantic_value::location::Location`] is its
+/// family -- `check`'s [`quire_semantic_value::location::ExpressionLocation`] is its
 /// existing span
 /// analogue: a declaration plus a child-index path). A test exercising this
 /// generically with a `(u32, u32)` byte-offset stand-in is still exercising
@@ -2361,7 +2361,7 @@ pub mod fixtures {
     use super::*;
     use crate::family::{CheckContext, DiagnosticSink, ScopeStack, StageLimits};
     use quire_exact::Meter;
-    use quire_semantic_value::location::Origin as CheckOrigin;
+    use quire_semantic_value::location::ExpressionOwner as CheckOrigin;
 
     /// The source reference of the empty unit admitted as (`a`, `u`,
     /// `git`, `1`): its owner `(a, u)` is the one FR-092's golden vectors
@@ -3876,7 +3876,7 @@ pub(crate) mod checking_tests {
     #[trace("QSpec-TC-191", "QSpec-FR-146-AC-8")]
     #[test]
     fn duplicate_names_are_refused_with_every_locus_in_order() {
-        use quire_semantic_value::location::{Location as BodyLocation, Origin as BodyOrigin};
+        use quire_semantic_value::location::{ExpressionLocation as BodyLocation, ExpressionOwner as BodyOrigin};
         let names = ["a", "b", "a", "c", "b", "a"];
         let refusals = crate::check::PackageDeclarations {
             functions: names
@@ -3936,7 +3936,7 @@ mod locus_tests {
     use qsl_foundation::SourceIdentity;
     use quire_exact::{Meter, ScalarLimits};
     use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
-    use quire_semantic_value::location::Origin as CheckOrigin;
+    use quire_semantic_value::location::ExpressionOwner as CheckOrigin;
 
     const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
         profile v = \"quire.value.complete/v1\";\n\

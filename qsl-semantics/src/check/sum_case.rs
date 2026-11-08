@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 
 use quire_exact::{NodeKey, ValueType};
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment, UnionMemberDeclaration};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use super::ir::{NodeId, Slot};
 use super::refusal::{CheckCause, CheckRefusal, KeyFault};

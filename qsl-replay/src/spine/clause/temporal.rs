@@ -1663,7 +1663,7 @@ pub(super) fn clause_source_ref(
 /// The checked location of the clause's activation guard.
 fn guard_location(
     node: &qsl_semantics::check::TemporalClauseNode,
-) -> Option<quire_semantic_value::location::Location> {
+) -> Option<quire_semantic_value::location::ExpressionLocation> {
     node.guard().map(|(guard, _)| guard.location().clone())
 }
 
@@ -1799,7 +1799,7 @@ pub fn name_clause_atom(
 fn window_verdict(
     verdict: qsl_eval::temporal::WindowVerdict,
     names: &dyn Fn(qsl_semantics::check::FormulaNodeId) -> Result<String, Box<RunRefusal>>,
-    guard: Option<quire_semantic_value::location::Location>,
+    guard: Option<quire_semantic_value::location::ExpressionLocation>,
 ) -> Result<Option<TemporalVerdict>, Box<RunRefusal>> {
     use qsl_eval::temporal::{IndeterminateReason, WindowVerdict};
     Ok(Some(match verdict {

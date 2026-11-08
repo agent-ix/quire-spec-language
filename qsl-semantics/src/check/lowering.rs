@@ -72,7 +72,7 @@ use quire_semantic_value::declaration::{
     CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment, UnionMemberDeclaration,
 };
 use quire_semantic_value::enumeration::EnumValue;
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 use quire_semantic_value::quantity::UnitTable;
 
 mod abstraction;

@@ -620,7 +620,7 @@ impl CheckedPackage {
     pub fn bind_abstraction_at(
         &mut self,
         bindings: &[AuthoredBinding],
-        sites: Vec<quire_semantic_value::location::Location>,
+        sites: Vec<quire_semantic_value::location::ExpressionLocation>,
     ) -> Result<(), Vec<AbstractionRefusal>> {
         let relation = self.graph.check_abstraction(bindings)?;
         self.abstraction = Some(relation.with_sites(sites));

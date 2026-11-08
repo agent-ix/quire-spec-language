@@ -528,8 +528,8 @@ fn finite_window_rows_round_trip_and_each_edit_refuses() {
         &json!({"kind": "pending-next-event", "position": 3})
     );
 
-    let guard = quire_semantic_value::location::Location::at(
-        quire_semantic_value::location::Origin::StateClause {
+    let guard = quire_semantic_value::location::ExpressionLocation::at(
+        quire_semantic_value::location::ExpressionOwner::StateClause {
             clause: "Window".to_owned(),
             index: 0,
         },

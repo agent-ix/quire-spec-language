@@ -582,6 +582,11 @@ pub(crate) fn separate(
         Err(CallFailure::Supplied(_) | CallFailure::UnsupportedHelper(_)) => {
             return Err(fault("separation-check-runs-no-supplied-phase"))
         }
+        // Only a prepared entry on another backend or a prepare limit
+        // returns these, and the checked interpreter returns neither.
+        Err(CallFailure::Unsupported(_) | CallFailure::Limit(_)) => {
+            return Err(fault("interpreter-returns-no-prepare-refusal"))
+        }
     };
     match separation {
         Separation::Holds => Ok(SeparationOutcome::Holds),

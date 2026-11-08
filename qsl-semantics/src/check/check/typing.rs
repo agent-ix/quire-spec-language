@@ -49,7 +49,7 @@ use quire_exact::{
 use quire_semantic_value::absence::AbsenceMode;
 use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::declaration::{EqualityOperand, EqualityOperator, FieldDeclaration};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 /// An operand's expected type or hint: borrowed from the declarations or
 /// the caller, or owned when an operand typed before it formed it.

@@ -4320,8 +4320,8 @@ fn an_internal_invariant_failure_is_a_fault() {
     use qsl_semantics::check::{CheckCause, CheckRefusal, KeyFault};
     let refusal = Box::new(CompileRefusal::Check {
         refusals: vec![CheckRefusal {
-            location: quire_semantic_value::location::Location::root(
-                quire_semantic_value::location::Origin::Expression,
+            location: quire_semantic_value::location::ExpressionLocation::root(
+                quire_semantic_value::location::ExpressionOwner::Expression,
             ),
             cause: CheckCause::InternalFault(Box::new(KeyFault::UnresolvedDraft)),
         }],
@@ -4354,8 +4354,8 @@ fn a_rebound_model_node_leaves_the_front_end_as_an_internal_failure_with_no_pack
     );
     let refusal = Box::new(CompileRefusal::Check {
         refusals: vec![CheckRefusal {
-            location: quire_semantic_value::location::Location::root(
-                quire_semantic_value::location::Origin::Expression,
+            location: quire_semantic_value::location::ExpressionLocation::root(
+                quire_semantic_value::location::ExpressionOwner::Expression,
             ),
             cause: CheckCause::InternalFault(Box::new(KeyFault::CorrespondenceConflict(Box::new(
                 CorrespondenceConflict::NodeRebound {
@@ -4575,8 +4575,8 @@ fn type_invariant_check_refusal(cause: qsl_semantics::check::CheckCause) -> Comp
     use qsl_semantics::check::{CheckCause, CheckRefusal, TypeInvariantRefusal};
     CompileRefusal::Check {
         refusals: vec![CheckRefusal {
-            location: quire_semantic_value::location::Location::root(
-                quire_semantic_value::location::Origin::Expression,
+            location: quire_semantic_value::location::ExpressionLocation::root(
+                quire_semantic_value::location::ExpressionOwner::Expression,
             ),
             cause: CheckCause::TypeInvariant(Box::new(TypeInvariantRefusal {
                 clause: quire_checked::key::DeclarationKey {

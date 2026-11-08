@@ -38,7 +38,7 @@ use quire_semantic_value::declaration::{
     CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration, RecursionEdges,
     StorageRequest, StorageUnit, TypeEnvironmentLimits,
 };
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 const PROFILE_V: &str = "profile v = \"quire.value.complete/v1\";\n";
 

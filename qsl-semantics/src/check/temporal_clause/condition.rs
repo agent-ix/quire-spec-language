@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 
 use qsl_forms::{ActivationForm, ClauseKind, StateClauseKind, TemporalNodeForm};
 use quire_exact::ValueType;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use super::CheckedTemporalClause;
 use crate::check::check::{bind_parameters, Scope, StateContext, Typer};

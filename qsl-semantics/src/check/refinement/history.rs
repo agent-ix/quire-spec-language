@@ -21,7 +21,7 @@ use quire_exact::{
     admit_text, EffectiveId, IllTypedCause, Meter, OptionValue, Outcome, Rational, TextPayload,
     Value, ValueType,
 };
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use super::{CheckedRow, Checker, RefinementCause, RowContext, UnsupportedFeature};
 use crate::check::check::ScopedHistory;

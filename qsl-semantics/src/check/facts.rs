@@ -37,7 +37,7 @@ use quire_exact::{
     DecimalType, Integer, IntegerInterval, NonZeroInteger, Rational, RationalDomain,
 };
 use quire_semantic_value::declaration::{EqualityOperator, FieldRef};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 /// One step of a stable path.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

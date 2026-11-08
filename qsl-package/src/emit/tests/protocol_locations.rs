@@ -12,7 +12,7 @@ use super::protocol_controls::{
 use super::*;
 use crate::ViewFailure;
 use quire_contract_model::{CheckedPackageRefusalCause, CheckedPackageRefusalCode};
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 const ROWS: &str = "/checked_term_data/protocol_locations";
 

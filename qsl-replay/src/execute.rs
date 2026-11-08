@@ -40,7 +40,7 @@ use quire_exact::{
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::EnvironmentFailure;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 use quire_semantic_value::supplied_stop::{
     SuppliedCause, SuppliedFailure, SuppliedRun, SuppliedStop, UnsupportedHelperStop,
 };
@@ -1482,6 +1482,11 @@ fn call_failure_to_replay_refusal(failure: CallFailure) -> ReplayRefusal {
         CallFailure::Supplied(stop) => ReplayRefusal::Supplied(stop),
         CallFailure::UnsupportedHelper(stop) => ReplayRefusal::UnsupportedHelper(stop),
         CallFailure::Cancelled(cause) => ReplayRefusal::Cancelled(cause),
+        // Only a prepared entry on another backend or a prepare limit
+        // returns these, and the checked interpreter returns neither.
+        CallFailure::Unsupported(_) | CallFailure::Limit(_) => ReplayRefusal::Fault(
+            InternalFault::new("call", "interpreter-returns-no-prepare-refusal"),
+        ),
     }
 }
 

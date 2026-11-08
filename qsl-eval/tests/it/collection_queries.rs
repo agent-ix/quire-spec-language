@@ -29,7 +29,7 @@ use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
 };
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 use quire_semantic_value::object_closure::ObjectClosure;
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

@@ -22,7 +22,7 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::clause_observation::Observation;
 use quire_exact::{Integer, Meter, ValueType};
-use quire_semantic_value::location::Origin;
+use quire_semantic_value::location::ExpressionOwner as Origin;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::hyper::{CheckedStepMatch, MatchReading, ParameterBinding, StepLabel, StepMatch};
