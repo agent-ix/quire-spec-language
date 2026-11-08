@@ -30,4 +30,4 @@ Tag the tests `#[trace("TC-760", "<AC id>")]`.
 - Step 2: for each request the two `Evaluation`s are equal; the mapped outcomes are `Completed(Boolean(true))` for healthy-parent and `Completed(Boolean(false))` for violating-parent, each equal to `run_clause`'s `Evaluate` disposition.
 - Step 3: each pair is equal.
 - Step 4: `CallFailure::Limit(PrepareLimitReached { setting: CodeBytes, bound: 1, actual: 2 })`, setting name `prepare.code_bytes`, category incomplete, exit 22, then `CallFailure::Fault` with the same `InternalFault`.
-- Step 5: the doctest fails to compile and the control compiles; `execute` and `call_supplied` return the same `CallFailure::Supplied` with zero evaluation consumption; under the default `SuppliedLimits`, `execute` returns step 1's `Evaluation` for `id(4)`.
+- Step 5: the doctest fails to compile and the control compiles; `execute` and `call_supplied` return the same `CallFailure::Supplied`; under the default `SuppliedLimits`, `execute` returns step 1's `Evaluation` for `id(4)`.

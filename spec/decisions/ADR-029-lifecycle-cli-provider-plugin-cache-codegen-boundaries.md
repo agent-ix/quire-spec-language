@@ -318,7 +318,7 @@ below takes its request, its limits and `&Cancel`.
 | `check` | Check and link | QSL S3, S4 | `ParsedSource`, `AdmittedModels`, the dependency input (ADR-015 D-1) | `Staged<CheckedPackage>` |
 | `check_fences` | Check every `quire` fence of a spec artifact inventory as a state invariant of the object its artifact declares (FR-355) | QSL I1 `model::intake`, S1 to S3 | the artifact inventory, the module manifests that type it | `Staged<FenceReport>` |
 | `package` | Emit the checked package | QSL S4 `package` (E4) | `&CheckedPackage` | `Staged<EmittedPackage>` with its source provision |
-| `execute` | Call a checked function or evaluate a checked clause | QSL layer 5, through §7's seam | `&CheckedPackage`, a `QualifiedName` or clause selection, arguments, `ObjectEnvironment`, accounting limits, the chosen execution backend | `Result<Evaluation<Value>, CallFailure>` |
+| `execute` | Call a checked function or evaluate a checked clause | QSL layer 5, through §7's seam | `&CheckedPackage`; a function's `QualifiedName`, argument values and `ObjectEnvironment`, or a state clause's `QualifiedName` and FR-106 `AdmittedObservations`; accounting, supplied-value and prepare limits; the chosen execution backend | `Result<Evaluation<Value>, CallFailure>` |
 | `monitor` | Check a supplied trace offline | QSL layer A | `&CheckedPackage`, clause selections, a trace (§3 OP-3) | `Staged<MonitorOutcome>` |
 | `analyze` | Decide claims over every behaviour with an in-process engine | QSL layer A | `&CheckedPackage`, claim items, subject binding, engine limits | `Staged<AnalyzeOutcome>` |
 | `lower` | Read the emitted package into target-neutral IR | Driver, with the IR reader (E5) | `EmittedPackage` | IR nodes, or IR's typed refusal |
