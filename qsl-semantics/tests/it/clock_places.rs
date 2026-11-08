@@ -1261,8 +1261,10 @@ fn a_package_sequence_type_is_an_unbounded_clock_collection() {
 /// `{0, 2, true, false}`, check. The static dimension of one `Call` counts `q`'s three slots and
 /// `r`'s two beside the record clocks, and a collection maximum of `4`
 /// instead of `3` changes the place bound and dimension. The parameter and
-/// result have the type of `Call.r` (a `Sequence` of `Timer`). Not covered:
-/// the map half (IR-1046); package identity changing with the collection
+/// result have the type of `Call.r` (a `Sequence` of `Timer`). A map type
+/// `TickMap` whose `values` is `ix://quire/native/Clock` is declared beside
+/// `Ticks` and is admitted. Not covered: a member typed by `TickMap` (a clock
+/// under a `Map` value has no place id; the Map ruling is QSL-1169), package identity changing with the collection
 /// maximum, which the checked graph does not expose here (QSL-1030 follow-up
 /// for the spec lane/IR owner of identity projection); a `Clock`-typed
 /// collection parameter or result, which `model_operation` in
@@ -1283,6 +1285,13 @@ fn a_clock_collection_field_parameter_and_result_check_with_their_bounds() {
             };
             let types = document["types"].as_array_mut().expect("types");
             types.push(sequence);
+            let mut map = wire_type(
+                &package("TickMap"),
+                "unused",
+                json!({"values": "ix://quire/native/Clock"}),
+            );
+            map["kind"] = json!("map");
+            types.push(map);
             let mut q = field("q", "ix://quire/native/Clock");
             q["multiplicity"] =
                 json!({"lower": 0, "upper": maximum, "ordered": true, "unique": false});
