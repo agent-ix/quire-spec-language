@@ -2119,3 +2119,64 @@ fn an_unread_variant_type_refuses_admission_but_not_the_slots_that_ignore_it() {
         Some("missing-type-representation")
     );
 }
+
+/// FR-533 "Observation admission", step 4: where the caller's documents
+/// declare an object type the package did not select, the bare environment
+/// declares no attributes for it, and the shared admission refuses
+/// `missing-type-representation` rather than faulting.
+#[trace("FR-533-AC-22", "TC-1333")]
+#[test]
+fn a_snapshot_object_of_an_unselected_type_is_a_missing_type_representation() {
+    let (package, _) = fixture_ep();
+    let routes = EpRoutes::new(&package, serde_json::to_vec(&document_ep()).unwrap());
+    let bare = routes.bare();
+    let model_ref = package.graph().model_selections()[0].clone();
+    let mut document = document_ep();
+    document["types"]
+        .as_array_mut()
+        .unwrap()
+        .push(model::declaration(
+            "Extra",
+            "thing",
+            serde_json::json!({
+                "identityFields": [model::id("Extra/marker")],
+                "fields": [model::field("Extra", "marker", "ix://quire/native/Boolean")],
+            }),
+        ));
+    document["populations"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "identity": model::id("extras"), "displayName": "extras",
+            "kind": {"module": model::BUSINESS, "name": "population"},
+            "members": [model::id("Extra")], "extent": "closed", "origin": model::origin("extras"),
+        }));
+    let (_, selected, mut snapshots) =
+        ep_snapshot(Some((true, &["ghost", "option-1"])), true, None, None, &[]);
+    let mut snapshot: serde_json::Value = serde_json::from_slice(&snapshots[&selected]).unwrap();
+    snapshot["populations"].as_array_mut().unwrap().push(serde_json::json!({
+        "population": model::id("extras"), "complete": true,
+        "objects": [{"key": "x1", "type": model::id("Extra"), "fields": {"marker": {"boolean": true}}}],
+    }));
+    snapshots.insert(selected.clone(), serde_json::to_vec(&snapshot).unwrap());
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
+    let ObservationAdmission::Refused(record) = bare.admit_protocol_observation(
+        &model_ref,
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    ) else {
+        panic!("the bare route refuses, not faults")
+    };
+    assert_eq!(
+        (record.catalog.code(), record.catalog.cause()),
+        ("unknown_required_feature", "unsupported-feature")
+    );
+    assert_eq!(
+        record.fields.get("reason").map(String::as_str),
+        Some("missing-type-representation")
+    );
+}
