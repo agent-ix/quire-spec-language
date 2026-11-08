@@ -50,12 +50,15 @@ pub enum ExtensionCause {
         actual: String,
     },
     /// `ambiguous_declaration`/`ambiguous-name` (QSpec FR-469): the form's
-    /// declared name is also a record type's, or an earlier form's.
+    /// declared name is also a record type's, or an earlier form's. Names
+    /// both declarations.
     AmbiguousName {
         /// The declared name.
         name: String,
         /// The span of the form's declared name.
         span: Span,
+        /// The other declaration of the name.
+        other: NamedDeclaration,
     },
     /// `ill_typed`/`type-mismatch` from `DeclarationCause::Recursion`
     /// (QSpec FR-143 "Recursion rule"): the form's node-kind clauses reach a
@@ -84,6 +87,18 @@ pub enum ExtensionCause {
         /// The clause the production expects there, when it expects one.
         expected: Option<String>,
         /// The span of the clause written, or of the whole form.
+        span: Span,
+    },
+}
+
+/// The declaration an extension form's declared name collides with.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum NamedDeclaration {
+    /// A record type of the name.
+    Record,
+    /// An earlier extension form, at the span of its declared name.
+    Form {
+        /// The span of the earlier form's declared name.
         span: Span,
     },
 }
@@ -196,8 +211,9 @@ pub(crate) struct ExtensionInput<'a> {
     pub(crate) cancel: &'a quire_exact::Cancel,
 }
 
-/// The forms of the unit by declared name: the form's index and node kind.
-type Declared = std::collections::BTreeMap<String, (usize, String)>;
+/// The forms of the unit by declared name: the form's index, node kind and
+/// the span of its declared name.
+type Declared = std::collections::BTreeMap<String, (usize, String, Span)>;
 
 /// The checked forms, each at its index among the unit's extension forms
 /// (`None` where the form was refused), and the refusals in builder order.
@@ -218,9 +234,11 @@ pub(crate) fn check_forms(
     let mut declared = Declared::new();
     for (index, form) in forms.iter().enumerate() {
         if let Some((_, production)) = production(input.held, &form.keyword.name) {
-            declared
-                .entry(form.name.name.clone())
-                .or_insert((index, production.node_kind.clone()));
+            declared.entry(form.name.name.clone()).or_insert((
+                index,
+                production.node_kind.clone(),
+                form.name.span,
+            ));
         }
     }
     let mut checked = Checked {
@@ -679,7 +697,7 @@ impl Builder<'_, '_, '_> {
                 location: location.clone(),
                 cause: CheckCause::MissingName(name.name.clone()),
             }),
-            Some((_, actual)) if actual != node_kind => Err(refusal(
+            Some((_, actual, _)) if actual != node_kind => Err(refusal(
                 self.index,
                 ExtensionCause::TypeMismatch {
                     clause: clause.name.name.clone(),
@@ -688,7 +706,7 @@ impl Builder<'_, '_, '_> {
                     actual: actual.clone(),
                 },
             )),
-            Some((target, _)) => Ok(CheckedClause {
+            Some((target, _, _)) => Ok(CheckedClause {
                 name: clause.name.name.clone(),
                 value: ClauseValue::Form(*target),
             }),
@@ -821,13 +839,18 @@ fn check_form(
     .is_empty();
     let earlier_form = declared
         .get(&form.name.name)
-        .is_some_and(|(first, _)| *first != index);
-    if record_named || earlier_form {
+        .filter(|(first, _, _)| *first != index)
+        .map(|(_, _, span)| NamedDeclaration::Form { span: *span });
+    let other = record_named
+        .then_some(NamedDeclaration::Record)
+        .or(earlier_form);
+    if let Some(other) = other {
         return Err(vec![refusal(
             index,
             ExtensionCause::AmbiguousName {
                 name: form.name.name.clone(),
                 span: form.name.span,
+                other,
             },
         )]);
     }

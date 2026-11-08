@@ -1969,6 +1969,7 @@ fn run_spine_units(
             temporal_selections,
             continue_protocol_refusals: true,
             refinement_internals,
+            extension_catalog: None,
         },
         limits,
         &cancel,

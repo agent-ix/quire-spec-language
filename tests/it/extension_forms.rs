@@ -11,7 +11,7 @@ use qsl_replay::spine::{
     check, core_vocabulary, package, parse_selecting_extensions, select, CompileRefusal,
     DependencyInput, EmittedUnit, PackageLimits, ParseRequest, ProfileCatalogInput, SpineLimits,
 };
-use qsl_semantics::check::{CheckCause, ExtensionCause};
+use qsl_semantics::check::{CheckCause, ExtensionCause, NamedDeclaration};
 use qsl_semantics::library::bundle::{
     Definition, DefinitionCatalog, DefinitionRole, PackageLimits as CatalogLimits, ReaderAuthority,
 };
@@ -240,10 +240,18 @@ fn a_clause_value_of_the_wrong_type_refuses_ill_typed_naming_the_clause_and_both
 #[trace("TC-882", "FR-354-AC-2")]
 #[test]
 fn a_source_level_refusal_is_not_an_invalid_package() {
-    for declaration in [
-        "retention Audit { subject: \"audit\" }",
-        "retention Audit { days: 30, subject: \"audit\" }",
-        "retention Audit { subject: \"audit\", }",
+    for (declaration, named, expected) in [
+        ("retention Audit { subject: \"audit\" }", "}", "days"),
+        (
+            "retention Audit { days: 30, subject: \"audit\" }",
+            "days",
+            "subject",
+        ),
+        (
+            "retention Audit { subject: \"audit\", }",
+            "}",
+            "clause-name",
+        ),
     ] {
         let refusal = compile(&held("retention"), declaration).expect_err("S1 refuses the form");
         let CompileRefusal::Source(diagnostic) = &*refusal else {
@@ -254,6 +262,17 @@ fn a_source_level_refusal_is_not_an_invalid_package() {
             diagnostic.cause.as_str(),
             "unexpected-token",
             "{declaration}"
+        );
+        // The refusal names the offending token by its span and the clause
+        // the production expects there.
+        let source = format!("{HEADER}{declaration}\n");
+        let span = diagnostic.byte_span().expect("the refusal is located");
+        let token = &source[span.start..span.end];
+        assert_eq!(token, named, "{declaration}");
+        assert!(
+            diagnostic.message.contains(expected),
+            "{declaration}: {}",
+            diagnostic.message
         );
     }
 }
@@ -340,11 +359,13 @@ fn the_declared_name_and_clause_values_enter_the_ids_and_the_span_enters_none() 
     // (its body, whose clause targets are the subnodes' ids).
     let (kind, _) = id("audit_retention", FORM);
     assert_ne!(base["body"], kind["body"]);
+    assert_eq!(base["node_id"], kind["node_id"], "a structural id");
     let (days, _) = id(
         "retention",
         "retention Audit { subject: \"audit\", days: 31 }",
     );
     assert_ne!(base["body"], days["body"]);
+    assert_eq!(base["node_id"], days["node_id"], "a structural id");
     assert_ne!(
         base["body"]["clauses"][1]["value"]["target"],
         days["body"]["clauses"][1]["value"]["target"]
@@ -352,6 +373,7 @@ fn the_declared_name_and_clause_values_enter_the_ids_and_the_span_enters_none() 
     // Two blank lines before the form move its span and change no id.
     let (moved, moved_graph) = id("retention", &format!("\n\n{FORM}"));
     assert_eq!(base["node_id"], moved["node_id"]);
+    assert_eq!(base["body"], moved["body"]);
     assert_eq!(base_graph, moved_graph);
 }
 
@@ -489,6 +511,76 @@ fn a_multi_unit_package_checks_each_units_extension_forms() {
     );
 }
 
+/// A root unit that selects `retention` and imports the supplied library
+/// `test/lib` (whose source is `library`), parsed with the plain `parse` and
+/// checked with the holding catalog.
+fn compile_with_library(library: &str) -> Result<(), Box<CompileRefusal>> {
+    let limits = SpineLimits::default();
+    let cancel = Cancel::new();
+    let refusal = |failure| {
+        qsl_replay::spine::refusal_or_fault(failure)
+            .unwrap_or_else(|fault| panic!("the front end faulted: {fault:?}"))
+    };
+    let catalog = held("retention");
+    let dependencies = DependencyInput::new([qsl_replay::spine::SuppliedLibrary {
+        identity: "test/lib".to_owned(),
+        source: SourceIdentity::new("test", "extension-forms:lib"),
+        path: "lib.native".to_owned(),
+        bytes: format!("{HEADER}{library}\n").into_bytes(),
+    }])
+    .expect("the library is supplied once");
+    let identity = identity();
+    let root = format!("{HEADER}import \"test/lib\" as l;\nrecord W {{ lo: Integer; }}\n");
+    let parsed = qsl_replay::spine::parse(
+        &ParseRequest {
+            source: &identity,
+            path: "unit.native",
+            bytes: root.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
+    let models = select(
+        &parsed,
+        &qsl_semantics::model::intake::PackageInput::default(),
+        limits.model,
+        &cancel,
+    )
+    .map_err(refusal)?
+    .into_value();
+    qsl_replay::spine::check_with_profile_catalog(
+        &parsed,
+        "extension-forms".to_owned(),
+        &models,
+        &dependencies,
+        ProfileCatalogInput {
+            catalog: &catalog,
+            limits: CatalogLimits::default(),
+        },
+        limits,
+        &cancel,
+    )
+    .map(|_| ())
+    .map_err(|failure| match failure {
+        qsl_replay::spine::ProfileCheckFailure::Check { failure, .. } => refusal(failure),
+        other => panic!("expected a check failure, got {other:?}"),
+    })
+}
+
+#[trace("TC-882", "FR-354-AC-1")]
+#[test]
+fn a_library_unit_and_a_plainly_parsed_unit_hold_the_catalogs_extensions() {
+    compile_with_library(FORM).expect("the library's form and the root's profile admit");
+    let refusal = compile_with_library("retention Lib { subject: \"s\", days: \"five\" }")
+        .expect_err("the library's form is checked, not unheld");
+    assert!(
+        format!("{refusal:?}").contains("TypeMismatch"),
+        "{refusal:?}"
+    );
+}
+
 /// An extension of `agent-ix`/`identity` with one clause-less `keyword` form.
 fn bare_extension(identity: &str, keyword: &str) -> Definition {
     extension_definition(
@@ -532,6 +624,52 @@ fn extension_rows_end_the_lock_ascending_by_identity() {
     assert!(!wire["lock"]["profile_selections"]
         .to_string()
         .contains("ext."));
+}
+
+const EXTENSION_HEADER: &str =
+    "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\n";
+
+#[trace("TC-490", "FR-110-AC-15")]
+#[test]
+fn two_header_profiles_selecting_one_extension_select_it_once() {
+    let catalog = DefinitionCatalog::new(vec![bare_extension("ext.a", "ka")]).unwrap();
+    let source =
+        format!("{EXTENSION_HEADER}profile A = \"ext.a\";\nprofile B = \"ext.a\";\nrecord W {{ lo: Integer; }}\n");
+    let emitted = compile_source(&catalog, &source).expect("both profiles resolve");
+    let wire = wire(&emitted);
+    let rows = wire["lock"]["definition_selections"]
+        .as_array()
+        .expect("selections")
+        .iter()
+        .filter(|row| row["identity"] == "ext.a")
+        .count();
+    assert_eq!(rows, 1);
+}
+
+#[trace("TC-490", "FR-110-AC-14")]
+#[test]
+fn an_extension_definition_missing_a_member_is_selected_then_refused_missing_member() {
+    let catalog =
+        DefinitionCatalog::new(vec![extension_definition("ext.a", &serde_json::json!({}))])
+            .unwrap();
+    let source = format!("{EXTENSION_HEADER}profile A = \"ext.a\";\nrecord W {{ lo: Integer; }}\n");
+    let refusal = compile_source(&catalog, &source).expect_err("the definition is invalid");
+    assert!(
+        matches!(&*refusal, CompileRefusal::Extension(_)),
+        "selected, not an unknown profile: {refusal:?}"
+    );
+    assert_eq!(refusal.code(), Code::InvalidPackage);
+    assert_eq!(refusal.cause(), Some("missing-member"));
+}
+
+#[trace("TC-490", "FR-110-AC-14")]
+#[test]
+fn a_using_alias_naming_an_extension_selects_no_layer() {
+    let catalog = DefinitionCatalog::new(vec![bare_extension("ext.a", "ka")]).unwrap();
+    let source = format!(
+        "{EXTENSION_HEADER}profile S = \"ext.a\";\npredicate Holds using S (x: Integer): Boolean {{ true }}\n"
+    );
+    compile_source(&catalog, &source).expect("admitted as for a unit that selects no layer");
 }
 
 #[trace("TC-490", "FR-110-AC-14")]
@@ -755,6 +893,12 @@ fn an_extension_form_and_a_record_of_one_name_refuse_ambiguous_name() {
     .expect_err("one name, two declarations");
     assert_eq!(refusal.code(), Code::AmbiguousDeclaration);
     assert_eq!(refusal.cause(), Some("ambiguous-name"));
+    // It names the form's declared name and the record it collides with.
+    assert!(matches!(
+        refusal_cause(&refusal),
+        ExtensionCause::AmbiguousName { name, other: NamedDeclaration::Record, .. }
+            if name == "Audit"
+    ));
     // The same refusal whichever declaration comes first.
     let reversed = compile(
         &node_kind_catalog(),
@@ -763,6 +907,23 @@ fn an_extension_form_and_a_record_of_one_name_refuse_ambiguous_name() {
     .expect_err("one name, two declarations");
     assert_eq!(reversed.code(), Code::AmbiguousDeclaration);
     assert_eq!(reversed.cause(), Some("ambiguous-name"));
+}
+
+#[trace("TC-883", "FR-354-AC-9")]
+#[test]
+fn two_extension_forms_of_one_name_refuse_naming_both_declarations() {
+    let source = format!("{HEADER}{FORM}\n{FORM}\n");
+    let refusal = compile_source(&node_kind_catalog(), &source).expect_err("one name twice");
+    let ExtensionCause::AmbiguousName { span, other, .. } = refusal_cause(&refusal) else {
+        panic!("expected an ambiguous name, got {refusal:?}");
+    };
+    let first = source.find("Audit").expect("the first declared name");
+    let second = source.rfind("Audit").expect("the second declared name");
+    assert_eq!(span.start, second);
+    let NamedDeclaration::Form { span: earlier } = other else {
+        panic!("expected the earlier form, got {other:?}");
+    };
+    assert_eq!(earlier.start, first);
 }
 
 fn extension_causes(refusal: &CompileRefusal) -> Vec<&ExtensionCause> {

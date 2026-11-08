@@ -86,7 +86,7 @@ pub use abstraction::{
 };
 pub use abstraction::{AbstractionNodeRefusal, AbstractionNodes};
 pub use dispatch_link::PendingLinks;
-pub use extension::ExtensionCause;
+pub use extension::{ExtensionCause, NamedDeclaration};
 mod facts;
 mod family;
 // The scalar limits of a caller that bounds nothing itself, for the model
