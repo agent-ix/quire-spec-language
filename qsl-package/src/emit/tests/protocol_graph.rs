@@ -942,7 +942,7 @@ fn a_fifo_key_the_reader_cannot_compare_refuses_typed() {
 fn a_model_owned_fifo_key_refuses_typed_and_a_variant_is_carried() {
     use super::variant_types::fixture;
     let document = || {
-        serde_json::to_vec(&fixture::with_types(vec![fixture::variant_type(
+        crate::emit::tests::wire_bytes(&fixture::with_types(vec![fixture::variant_type(
             "Odd",
             &["2x", "Café", "Gold Plus"],
         )]))

@@ -622,7 +622,7 @@ fn no_node_carries_the_schema_and_a_role_member_is_refused() {
             .insert_domain_package_document(package_identity(&document), &*document)
             .unwrap();
         let outcome = quire_contract_model::read_checked_package(
-            &serde_json::to_vec(wire).unwrap(),
+            &crate::emit::tests::wire_bytes(wire).unwrap(),
             quire_contract_model::CheckedPackageReadLimits::bounded(),
             &evidence,
         );

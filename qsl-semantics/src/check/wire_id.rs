@@ -516,6 +516,116 @@ fn index_segments(id: &CheckedNodeId) -> Vec<u64> {
     found
 }
 
+/// The checked-package document `wire` with every operand slot a node holds
+/// replaced by the index segment of the node its row names, and its
+/// `operand_rows` removed: the resolved form, in which a node's ids name
+/// graph positions directly (IR's `resolved_graph`). A foreign `{package, node}` key holds no slot and is
+/// left alone.
+///
+/// # Errors
+///
+/// A message when the document has no `semantic_graph.nodes` and
+/// `operand_rows` arrays, or a slot names no entry of its node's row.
+pub fn resolve_operand_slots(wire: &mut serde_json::Value) -> Result<(), String> {
+    let graph = WireGraph::of_package_value(wire)?;
+    let semantic_graph = &mut wire["semantic_graph"];
+    let nodes = semantic_graph["nodes"]
+        .as_array_mut()
+        .ok_or("the document has no semantic_graph.nodes array")?;
+    for (holder, node) in nodes.iter_mut().enumerate() {
+        *node = graph.document_value_in_row(holder, node)?;
+    }
+    semantic_graph
+        .as_object_mut()
+        .unwrap()
+        .remove("operand_rows");
+    Ok(())
+}
+
+/// The inverse of [`resolve_operand_slots`] for a document authored in
+/// resolved form: when it has `semantic_graph.nodes` and no `operand_rows`,
+/// every index segment inside a node becomes the operand slot of the node's
+/// row, numbered by first occurrence in the node's canonical (RFC 8785)
+/// member order, and `operand_rows` is added. Any other document is left alone.
+pub fn write_operand_rows(wire: &mut serde_json::Value) {
+    use serde_json::Value;
+    let Some(graph) = wire.get_mut("semantic_graph") else {
+        return;
+    };
+    if graph.get("operand_rows").is_some() {
+        return;
+    }
+    let Some(nodes) = graph.get_mut("nodes").and_then(Value::as_array_mut) else {
+        return;
+    };
+    let mut rows = Vec::with_capacity(nodes.len());
+    for node in nodes.iter_mut() {
+        let mut row: Vec<u64> = Vec::new();
+        let mut pending = vec![node];
+        while let Some(current) = pending.pop() {
+            match current {
+                Value::Array(items) => pending.extend(items.iter_mut().rev()),
+                Value::Object(object) => {
+                    let is_id = object.len() == 3
+                        && object.contains_key("package")
+                        && object.contains_key("path")
+                        && object.contains_key("ordinal");
+                    if is_id {
+                        if let Some(Value::Array(path)) = object.get_mut("path") {
+                            for segment in path.iter_mut() {
+                                let index = segment
+                                    .as_object()
+                                    .filter(|member| member.len() == 1)
+                                    .and_then(|member| member.get("node"))
+                                    .and_then(Value::as_u64);
+                                if let Some(index) = index {
+                                    let slot = row
+                                        .iter()
+                                        .position(|entry| *entry == index)
+                                        .unwrap_or_else(|| {
+                                            row.push(index);
+                                            row.len() - 1
+                                        });
+                                    *segment = serde_json::json!({ "operand": slot });
+                                }
+                            }
+                        }
+                    } else if !foreign_id_container(object) {
+                        let mut members: Vec<(&String, &mut Value)> = object.iter_mut().collect();
+                        members.sort_by(|left, right| left.0.cmp(right.0));
+                        pending.extend(members.into_iter().rev().map(|(_, member)| member));
+                    }
+                }
+                _ => {}
+            }
+        }
+        rows.push(row);
+    }
+    graph["operand_rows"] = serde_json::json!(rows);
+}
+
+/// The checked-package document `bytes` as JSON in its resolved form
+/// ([`resolve_operand_slots`]).
+///
+/// # Errors
+///
+/// The JSON reader's message, or the [`resolve_operand_slots`] refusal.
+pub fn resolved_package_value(bytes: &[u8]) -> Result<serde_json::Value, String> {
+    let mut wire: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
+    resolve_operand_slots(&mut wire)?;
+    Ok(wire)
+}
+
+fn foreign_id_container(object: &serde_json::Map<String, serde_json::Value>) -> bool {
+    (object.len() == 2
+        || (object.len() == 3
+            && object.get("term").and_then(serde_json::Value::as_str)
+                == Some("dependency_reference")))
+        && object.contains_key("package")
+        && object.contains_key("node")
+}
+
 /// One checked-package document's `semantic_graph`: the rebuilt key of every
 /// node, by graph index, and the index of every key.
 #[derive(Clone, Default)]
@@ -675,6 +785,9 @@ impl WireGraph {
     ///
     /// Refuses a missing holder, an invalid slot or an invalid graph index.
     pub fn key_in_row(&self, holder: usize, id: &CheckedNodeId) -> Result<NodeKey, WireIdError> {
+        if self.rows.is_empty() {
+            return self.key(id);
+        }
         let row = self.rows.get(holder).ok_or(WireIdError::IndexOutOfRange {
             index: holder as u64,
             len: self.rows.len(),
@@ -699,6 +812,7 @@ impl WireGraph {
         #[derive(serde::Deserialize)]
         struct Graph {
             nodes: Vec<Node>,
+            #[serde(default)]
             operand_rows: Vec<Vec<u64>>,
         }
         #[derive(serde::Deserialize)]
@@ -730,6 +844,9 @@ impl WireGraph {
             .iter()
             .map(|node| id_of_value(&node["node_id"]))
             .collect::<Result<Vec<_>, _>>()?;
+        if envelope["semantic_graph"].get("operand_rows").is_none() {
+            return Self::new(&ids).map_err(|error| error.to_string());
+        }
         let rows: Vec<Vec<u64>> =
             serde_json::from_value(envelope["semantic_graph"]["operand_rows"].clone())
                 .map_err(|error| error.to_string())?;
@@ -819,14 +936,10 @@ impl WireGraph {
         let mut value = value.clone();
         let mut pending = vec![(&mut value, holder)];
         while let Some((current, mut holder)) = pending.pop() {
-            if current.as_object().is_some_and(|object| {
-                (object.len() == 2
-                    || (object.len() == 3
-                        && object.get("term").and_then(serde_json::Value::as_str)
-                            == Some("dependency_reference")))
-                    && object.contains_key("package")
-                    && object.contains_key("node")
-            }) {
+            if current
+                .as_object()
+                .is_some_and(|object| foreign_id_container(object))
+            {
                 continue;
             }
             if holder.is_none() && !self.rows.is_empty() && current.get("node_tag").is_some() {

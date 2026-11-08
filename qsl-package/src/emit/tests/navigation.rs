@@ -85,7 +85,7 @@ fn navigation_document() -> Vec<u8> {
         ),
         object_type("Line", vec![]),
     ]);
-    serde_json::to_vec(&document).unwrap()
+    crate::emit::tests::wire_bytes(&document).unwrap()
 }
 
 const FUNCTIONS: &str = "\

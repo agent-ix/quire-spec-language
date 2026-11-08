@@ -375,7 +375,7 @@ fn required_source_record_rows_refuse_missing_fields_and_stale_native_bindings()
     missing.as_object_mut().unwrap().remove("source_records");
     assert_eq!(
         crate::ReadIdentityRows::read(
-            &serde_json::to_vec(&missing).unwrap(),
+            &crate::emit::tests::wire_bytes(&missing).unwrap(),
             &package,
             &mut crate::V2ReadLimits::fixture().native_join_budget()
         ),
@@ -386,7 +386,7 @@ fn required_source_record_rows_refuse_missing_fields_and_stale_native_bindings()
     let mut stale = good.clone();
     stale["source_records"][0]["members"][0]["admitted_name"] = json!("not-the-final-name");
     let Err(crate::IdentityFileRefusal::Native(error)) = crate::ReadIdentityRows::read(
-        &serde_json::to_vec(&stale).unwrap(),
+        &crate::emit::tests::wire_bytes(&stale).unwrap(),
         &package,
         &mut crate::V2ReadLimits::fixture().native_join_budget(),
     ) else {
@@ -399,7 +399,7 @@ fn required_source_record_rows_refuse_missing_fields_and_stale_native_bindings()
     let mut foreign = good.clone();
     foreign["source_records"][0]["source_identity"] = json!("another-selected-source");
     let Err(crate::IdentityFileRefusal::Native(error)) = crate::ReadIdentityRows::read(
-        &serde_json::to_vec(&foreign).unwrap(),
+        &crate::emit::tests::wire_bytes(&foreign).unwrap(),
         &package,
         &mut crate::V2ReadLimits::fixture().native_join_budget(),
     ) else {
@@ -416,7 +416,7 @@ fn required_source_record_rows_refuse_missing_fields_and_stale_native_bindings()
         .unwrap()
         .push(repeated);
     let Err(crate::IdentityFileRefusal::Native(error)) = crate::ReadIdentityRows::read(
-        &serde_json::to_vec(&conflicting).unwrap(),
+        &crate::emit::tests::wire_bytes(&conflicting).unwrap(),
         &package,
         &mut crate::V2ReadLimits::fixture().native_join_budget(),
     ) else {
@@ -429,7 +429,7 @@ fn required_source_record_rows_refuse_missing_fields_and_stale_native_bindings()
     let mut missing = good.clone();
     missing["source_records"] = json!([]);
     let missing = crate::ReadIdentityRows::read(
-        &serde_json::to_vec(&missing).unwrap(),
+        &crate::emit::tests::wire_bytes(&missing).unwrap(),
         &package,
         &mut crate::V2ReadLimits::fixture().native_join_budget(),
     )

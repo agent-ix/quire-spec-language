@@ -293,23 +293,19 @@ fn emit_under(package: &CheckedPackage, source: &RawSourceRef) -> Emission {
     .expect("the package emits")
 }
 
+/// The emitted package in its resolved form: each operand slot of a node is
+/// the index segment of the node its row names, so a node's ids name graph
+/// positions. [`raw_wire`] is the bytes' own JSON.
 pub(super) fn wire(emission: &Emission) -> Value {
-    serde_json::from_slice(emission.package.bytes()).expect("the wire is JSON")
+    let mut wire = raw_wire(emission);
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut wire)
+        .expect("every operand slot names a row entry");
+    wire
 }
 
-/// Inspect actual emitted bytes with each node's slots resolved through its row.
-fn resolved_wire(emission: &Emission) -> Value {
-    let mut document = wire(emission);
-    let graph = WireGraph::of_package_value(&document).expect("the emitted operand graph");
-    for (holder, node) in document["semantic_graph"]["nodes"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .enumerate()
-    {
-        *node = graph.document_value_in_row(holder, node).unwrap();
-    }
-    document
+/// The emitted package's own JSON, operand slots and rows as written.
+pub(super) fn raw_wire(emission: &Emission) -> Value {
+    serde_json::from_slice(emission.package.bytes()).expect("the wire is JSON")
 }
 
 #[trace("QSpec-TC-233", "QSpec-FR-322-AC-280", "TC-416", "FR-093-AC-9")]
@@ -318,7 +314,7 @@ fn operand_slot_rows_preserve_the_retained_document_graph() {
     let (_, emission) =
         emit_from_text("function add using v(x: Integer): Integer pure { (x + 1) + 2 }\n");
     let mut graph: CheckedSemanticGraphV2 =
-        serde_json::from_value(wire(&emission)["semantic_graph"].clone()).unwrap();
+        serde_json::from_value(raw_wire(&emission)["semantic_graph"].clone()).unwrap();
     assert_eq!(graph.nodes.len(), graph.operand_rows.len());
     assert!(graph.operand_rows.iter().any(|row| !row.is_empty()));
     for node in &mut graph.nodes {
@@ -370,6 +366,15 @@ fn operand_slot_numbering_visits_only_identity_paths_in_canonical_order() {
     })
     .unwrap();
     assert_eq!(restored[0].body, foreign);
+    let mut authored = json!({"semantic_graph": {"nodes": restored}});
+    let original = authored.clone();
+    qsl_semantics::check::wire_id::write_operand_rows(&mut authored);
+    assert!(!authored["semantic_graph"]["operand_rows"][0]
+        .as_array()
+        .unwrap()
+        .contains(&json!(99)));
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut authored).unwrap();
+    assert_eq!(authored, original);
 }
 
 #[trace("TC-416", "FR-093-AC-3", "FR-093-AC-13")]
@@ -394,8 +399,17 @@ fn fold_with_both_authored_binders_reads_back() {
     assert!(matches!(read, Read::Verified { .. }), "{read:?}");
 }
 
+/// The bytes of a document authored or edited in resolved form (index
+/// segments inside nodes, no `operand_rows`): FR-322 operand slots and rows
+/// are written for it. Any other value serializes as it is.
+pub(crate) fn wire_bytes<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, serde_json::Error> {
+    let mut value = serde_json::to_value(value)?;
+    qsl_semantics::check::wire_id::write_operand_rows(&mut value);
+    serde_json::to_vec(&value)
+}
+
 fn jcs(value: &Value) -> Vec<u8> {
-    serde_json::to_vec(value).unwrap()
+    crate::emit::tests::wire_bytes(value).unwrap()
 }
 
 fn library() -> LibraryName {
@@ -824,7 +838,7 @@ fn emitted_package_envelope_is_canonical_deterministic_and_self_identifying() {
     // Canonical: re-encoding the parsed envelope reproduces the bytes.
     let wire: Value = serde_json::from_slice(bytes).expect("the envelope is JSON");
     assert_eq!(
-        serde_json::to_vec(&wire).expect("a Value serializes"),
+        crate::emit::tests::wire_bytes(&wire).expect("a Value serializes"),
         bytes
     );
     assert_eq!(emission.package.name(), "pkg");
@@ -3371,7 +3385,7 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
             node["supertypes"] = json!(["ix://acme/orders/Gadget"]);
         }
     }
-    let cyclic = serde_json::to_vec(&cyclic).unwrap();
+    let cyclic = crate::emit::tests::wire_bytes(&cyclic).unwrap();
     let packages = qsl_semantics::model::intake::package_input([cyclic.as_slice()]).unwrap();
     let text = spine_model::unit();
     let refused = qsl_semantics::model::intake::admit_unit(
@@ -3993,7 +4007,7 @@ fn emit_attempt_unit(unit: &str, with_sub: bool) -> AttemptEmission {
         attempt,
         clauses,
         frame_records,
-        wire: resolved_wire(&emission),
+        wire: wire(&emission),
     }
 }
 
@@ -4417,7 +4431,7 @@ fn generated_texts<'t>(wire: &Value, text: &'t str, node: &Value) -> Vec<&'t str
 fn members_are_placed_at(declarations: &str, placed: &str) -> Emission {
     let (text, emission) = emit_from_text(declarations);
     assert_eq!(emission.omitted, []);
-    let wire = resolved_wire(&emission);
+    let wire = wire(&emission);
     let members: Vec<&Value> = nodes(&wire)
         .iter()
         .filter(|node| node["semantic_form"] == "enum_value")
@@ -4526,7 +4540,7 @@ fn a_node_two_unnamed_types_share_is_placed_at_the_least_name() {
     assert_eq!(emission.omitted, []);
     let read = read_back(&emission);
     assert!(matches!(read, Read::Verified { .. }), "{read:?}");
-    let wire = resolved_wire(&emission);
+    let wire = wire(&emission);
     let shared = only_node(&wire, "integer_range");
     assert_eq!(generated_texts(&wire, &text, &shared["node_id"]), ["P"]);
 }

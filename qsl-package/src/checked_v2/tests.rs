@@ -122,8 +122,12 @@ fn diagnostics() -> Value {
     json!({"catalog": artifact_ref("diag-catalog"), "entries": []})
 }
 
+/// The bytes of an envelope authored in resolved form (index segments
+/// inside nodes): FR-322 operand slots and rows are written for it.
 fn jcs(value: &Value) -> Vec<u8> {
-    serde_json::to_vec(value).unwrap()
+    let mut wire = value.clone();
+    qsl_semantics::check::wire_id::write_operand_rows(&mut wire);
+    serde_json::to_vec(&wire).unwrap()
 }
 
 /// A structurally valid `quire.checked-package/v2` envelope with one graph node.

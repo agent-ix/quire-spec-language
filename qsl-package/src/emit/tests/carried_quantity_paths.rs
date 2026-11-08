@@ -55,7 +55,7 @@ fn forms<'w>(nodes: &'w [Value], form: &str) -> Vec<&'w Value> {
 #[test]
 fn a_carried_quantity_path_holds_unit_carrier_rounding_text_and_mode() {
     let emission = emission();
-    let wire = resolved_wire(&emission);
+    let wire = wire(&emission);
     let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
     let carried = forms(nodes, "carried_quantity");
     assert_eq!(carried.len(), 3, "three carried forms, three nodes");
@@ -99,7 +99,7 @@ fn a_carried_quantity_path_holds_unit_carrier_rounding_text_and_mode() {
 #[test]
 fn a_decimal_carrier_path_repeats_equal_bound_text_as_the_qspec_vector_does() {
     let emission = emission();
-    let wire = resolved_wire(&emission);
+    let wire = wire(&emission);
     let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
     let decimal = forms(nodes, "decimal_range");
     assert_eq!(decimal.len(), 1);

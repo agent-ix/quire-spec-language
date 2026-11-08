@@ -91,7 +91,9 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
         &DependencyInput::default(),
     )
     .expect("the unit compiles and emits");
-    let wire: Value = serde_json::from_slice(original.package().bytes()).expect("a JSON wire");
+    let mut wire: Value = serde_json::from_slice(original.package().bytes()).expect("a JSON wire");
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut wire)
+        .expect("every operand slot names a row entry");
 
     let descriptor = BackendDescriptor::new(
         Candidate::new(BackendId::new("kani")),

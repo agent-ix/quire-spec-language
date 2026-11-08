@@ -41,7 +41,7 @@ struct UnitParts {
 /// (each named by its own postcondition clause) with the frames of
 /// `overrides`, and the package document.
 fn unit_of(operations: &[&str], overrides: &[(&str, Value)]) -> UnitParts {
-    let document = serde_json::to_vec(&fixture::document(operations, overrides))
+    let document = crate::emit::tests::wire_bytes(&fixture::document(operations, overrides))
         .expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
@@ -67,7 +67,7 @@ fn emit(operations: &[&str], overrides: &[(&str, Value)]) -> Emitted {
 }
 
 fn emit_document(document: Value, operations: &[&str]) -> Emitted {
-    let document = serde_json::to_vec(&document).expect("the fixture serializes");
+    let document = crate::emit::tests::wire_bytes(&document).expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
@@ -98,7 +98,7 @@ fn emit_document(document: Value, operations: &[&str]) -> Emitted {
 /// `overrides`, under a unit whose only clause is a function that names no
 /// model declaration.
 fn emit_without_operation_posts(operations: &[&str], overrides: &[(&str, Value)]) -> Emitted {
-    let document = serde_json::to_vec(&fixture::document(operations, overrides))
+    let document = crate::emit::tests::wire_bytes(&fixture::document(operations, overrides))
         .expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
@@ -274,7 +274,7 @@ fn selected_operation_effects_are_complete_canonical_and_readable() {
     );
 
     let document = package_identity(
-        &serde_json::to_vec(&fixture::document(
+        &crate::emit::tests::wire_bytes(&fixture::document(
             &operations,
             &[(
                 "same",
@@ -448,7 +448,7 @@ fn ledger_operation_effects_read_back_with_selected_type_projection() {
         .find(|operation| operation["name"] == "pay")
         .expect("Ledger declares pay");
     pay["frame"]["modifies"] = json!([ledger_fixture::id("Ledger/ledger_id")]);
-    let document = serde_json::to_vec(&document).expect("the fixture serializes");
+    let document = crate::emit::tests::wire_bytes(&document).expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
@@ -612,8 +612,8 @@ fn same_operation_name_keeps_its_document_and_declaring_identity() {
     let mut second = fixture::document(&["noop"], &[]);
     relabel(&mut second, fixture::PACKAGE, "test/orders-secondary");
     second["package"]["identity"] = json!("test/orders-secondary");
-    let first_bytes = serde_json::to_vec(&first).unwrap();
-    let second_bytes = serde_json::to_vec(&second).unwrap();
+    let first_bytes = crate::emit::tests::wire_bytes(&first).unwrap();
+    let second_bytes = crate::emit::tests::wire_bytes(&second).unwrap();
     let packages = qsl_semantics::model::intake::package_input([
         first_bytes.as_slice(),
         second_bytes.as_slice(),
@@ -681,7 +681,7 @@ fn process_and_state_machine_operations_are_carried_without_persistence_rows() {
     let mut document = k2_fixture::k2();
     k2_fixture::type_named_mut(&mut document, "Fulfilment")["operations"] =
         json!([k2_fixture::operation("Fulfilment", "start")]);
-    let document = serde_json::to_vec(&document).expect("the fixture serializes");
+    let document = crate::emit::tests::wire_bytes(&document).expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
@@ -730,7 +730,7 @@ fn inherited_operations_have_no_subtype_effect_row() {
 #[test]
 fn systems_interface_and_inherited_operations_are_not_effect_declarations() {
     let document = abstraction_fixture::document();
-    let document = serde_json::to_vec(&document).unwrap();
+    let document = crate::emit::tests::wire_bytes(&document).unwrap();
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\

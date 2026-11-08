@@ -427,7 +427,7 @@ fn retarget(
 
     let limits = quire_canonical::Limits::new(u64::MAX);
     let graph = CheckedSemanticGraphV2 {
-        graph_version: base.graph().graph_version.clone(),
+        graph_version: base.resolved_graph().graph_version.clone(),
         nodes,
     };
     let bytes = encode_checked_package_v2(

@@ -116,7 +116,7 @@ struct Compiled {
 /// The unit selecting the Switch model and the protocol profile (unless
 /// `protocol` is false), followed by `clauses`.
 fn unit(clauses: &str, protocol: bool) -> (String, qsl_semantics::model::intake::PackageInput) {
-    let document = serde_json::to_vec(&document()).expect("the fixture serializes");
+    let document = crate::emit::tests::wire_bytes(&document()).expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let profile = if protocol {
         "profile p = \"quire.protocol.finite-global/v1\";\n"
@@ -177,7 +177,9 @@ fn compile_with(clauses: &str, protocol: bool) -> Compiled {
     evidence
         .insert_domain_package_document(
             base::PACKAGE,
-            serde_json::to_vec(&document()).unwrap().as_slice(),
+            crate::emit::tests::wire_bytes(&document())
+                .unwrap()
+                .as_slice(),
         )
         .expect("a fresh evidence key");
     Compiled {
