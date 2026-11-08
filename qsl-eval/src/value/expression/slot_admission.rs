@@ -513,7 +513,7 @@ mod tests {
 
     /// QSL-1565 (FR-049-AC-2/AC-3): the kernel has no map value, so a present
     /// value at a map-typed attribute -- here a caller's integer where the
-    /// package declares `Map<Text, Integer>` -- is never admitted.
+    /// package declares `Map<String, Integer>` -- is never admitted.
     #[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
     #[test]
     fn a_present_value_at_a_map_typed_attribute_refuses_at_entry() {

@@ -4467,7 +4467,8 @@ mod locus_tests {
 
     /// A map is encoded as `"map"`, its key type, its value type, then its
     /// bound; bound presence and the key type change the figure (quire-exact
-    /// FR-386).
+    /// FR-386). The figure is the measured preimage length of FR-062-AC-12.
+    #[trace("TC-432", "FR-062-AC-12")]
     #[test]
     fn a_map_is_encoded_with_its_tag_values_and_bound() {
         let keyed = |key, bound| {

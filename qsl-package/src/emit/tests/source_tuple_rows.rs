@@ -739,8 +739,8 @@ fn a_map_row_follows_its_final_key_and_value_nodes() {
     );
 }
 
-/// A checked package whose record `R` holds `m: Map<Text, Boolean>[1, 4]` and
-/// `n: Map<Text, Int[0, 9]>`, and a function over `R`. Source text spells no
+/// A checked package whose record `R` holds `m: Map<String, Boolean>[1, 4]` and
+/// `n: Map<String, Int[0, 9]>`, and a function over `R`. Source text spells no
 /// map, so the record is declared as the checker declares it, over the
 /// declaration API the emitter tests share.
 pub(super) fn map_record_package() -> CheckedPackage {
