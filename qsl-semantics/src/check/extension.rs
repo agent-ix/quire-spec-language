@@ -159,7 +159,7 @@ pub(crate) struct CheckedClause {
 #[derive(Debug)]
 pub(crate) enum ClauseValue {
     /// An expression checked against a core type.
-    Checked(Box<CheckedExpression>),
+    Checked(Box<ClauseExpression>),
     /// A bare identifier naming the extension form at this index among the
     /// unit's extension forms (the clause's schema type is a node kind).
     Form(usize),
@@ -167,7 +167,7 @@ pub(crate) enum ClauseValue {
 
 /// An expression a clause value checked to.
 #[derive(Debug)]
-pub(crate) struct CheckedExpression {
+pub(crate) struct ClauseExpression {
     pub(crate) expected: ValueType,
     /// The bare scalar type node the clause's subnode is typed at when the
     /// schema spells a scalar word the checked type does not distinguish
@@ -512,7 +512,7 @@ impl Builder<'_, '_, '_> {
                 *self.nodes = used;
                 Ok(CheckedClause {
                     name: clause.name.name.clone(),
-                    value: ClauseValue::Checked(Box::new(CheckedExpression {
+                    value: ClauseValue::Checked(Box::new(ClauseExpression {
                         expected,
                         scalar,
                         body,
