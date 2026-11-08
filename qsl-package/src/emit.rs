@@ -7581,79 +7581,9 @@ pub(crate) fn write_operand_slots(
     Ok(rows)
 }
 
-/// Walk actual ID paths in canonical order, excluding similarly spelled data.
 fn operand_indices(bytes: &[u8], limits: EmitLimits) -> Result<Vec<u64>, EmitRefusal> {
-    use quire_canonical::{Items, Members, Node, NodeRef};
-    enum Pending<'a> {
-        Value(NodeRef<'a>),
-        Members(Members<'a>),
-        Items(Items<'a>),
-    }
-    let document = quire_canonical::read(bytes, limits.output_bytes)
-        .map_err(|_| EmitRefusal::SourceMapInvariant)?;
-    let mut pending = vec![Pending::Value(document.root())];
-    let mut indices = Vec::new();
-    while let Some(next) = pending.pop() {
-        match next {
-            Pending::Value(value) => match value.node() {
-                Node::Object(members) => {
-                    let member_count = members.clone().count();
-                    if (member_count == 2
-                        || (member_count == 3
-                            && value.get("term").is_some_and(|term| {
-                                matches!(term.node(), Node::String("dependency_reference"))
-                            })))
-                        && value.get("package").is_some()
-                        && value.get("node").is_some()
-                    {
-                        continue;
-                    }
-                    let is_id = member_count == 3
-                        && value.get("package").is_some()
-                        && value.get("ordinal").is_some()
-                        && value.get("path").is_some();
-                    if is_id {
-                        let Some(path) = value.get("path") else {
-                            continue;
-                        };
-                        let Node::Array(segments) = path.node() else {
-                            continue;
-                        };
-                        for segment in segments {
-                            if let Some(index) = segment.get("node") {
-                                let Node::Number(number) = index.node() else {
-                                    return Err(EmitRefusal::SourceMapInvariant);
-                                };
-                                indices.push(
-                                    number
-                                        .text()
-                                        .parse()
-                                        .map_err(|_| EmitRefusal::SourceMapInvariant)?,
-                                );
-                            }
-                        }
-                    } else {
-                        pending.push(Pending::Members(members));
-                    }
-                }
-                Node::Array(items) => pending.push(Pending::Items(items)),
-                Node::Null | Node::Bool(_) | Node::Number(_) | Node::String(_) => {}
-            },
-            Pending::Members(mut members) => {
-                if let Some((_, value)) = members.next() {
-                    pending.push(Pending::Members(members));
-                    pending.push(Pending::Value(value));
-                }
-            }
-            Pending::Items(mut items) => {
-                if let Some(value) = items.next() {
-                    pending.push(Pending::Items(items));
-                    pending.push(Pending::Value(value));
-                }
-            }
-        }
-    }
-    Ok(indices)
+    qsl_semantics::check::wire_id::canonical_operand_indices(bytes, limits.output_bytes)
+        .map_err(|_| EmitRefusal::SourceMapInvariant)
 }
 
 /// Retain document-held IDs for producer joins and subsequent rewrites.

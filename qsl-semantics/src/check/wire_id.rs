@@ -516,6 +516,7 @@ fn index_segments(id: &CheckedNodeId) -> Vec<u64> {
     found
 }
 
+#[cfg(any(test, feature = "test-support"))]
 /// The checked-package document `wire` with every operand slot a node holds
 /// replaced by the index segment of the node its row names, and its
 /// `operand_rows` removed: the resolved form, in which a node's ids name
@@ -542,68 +543,160 @@ pub fn resolve_operand_slots(wire: &mut serde_json::Value) -> Result<(), String>
     Ok(())
 }
 
+/// Walk node-ID paths in canonical order, excluding data and foreign graph references.
+///
+/// # Errors
+///
+/// Refuses an unreadable canonical document or a non-integer index segment.
+pub fn canonical_operand_indices(bytes: &[u8], byte_limit: u64) -> Result<Vec<u64>, String> {
+    use quire_canonical::{Items, Members, Node, NodeRef};
+    enum Pending<'a> {
+        Value(NodeRef<'a>),
+        Members(Members<'a>),
+        Items(Items<'a>),
+    }
+    let document = quire_canonical::read(bytes, byte_limit)
+        .map_err(|_| "invalid canonical operand index".to_owned())?;
+    let mut pending = vec![Pending::Value(document.root())];
+    let mut indices = Vec::new();
+    while let Some(next) = pending.pop() {
+        match next {
+            Pending::Value(value) => match value.node() {
+                Node::Object(members) => {
+                    let member_count = members.clone().count();
+                    if (member_count == 2
+                        || (member_count == 3
+                            && value.get("term").is_some_and(|term| {
+                                matches!(term.node(), Node::String("dependency_reference"))
+                            })))
+                        && value.get("package").is_some()
+                        && value.get("node").is_some()
+                    {
+                        continue;
+                    }
+                    let is_id = member_count == 3
+                        && value.get("package").is_some()
+                        && value.get("ordinal").is_some()
+                        && value.get("path").is_some();
+                    if is_id {
+                        let Some(path) = value.get("path") else {
+                            continue;
+                        };
+                        let Node::Array(segments) = path.node() else {
+                            continue;
+                        };
+                        for segment in segments {
+                            if let Some(index) = segment.get("node") {
+                                let Node::Number(number) = index.node() else {
+                                    return Err("invalid canonical operand index".to_owned());
+                                };
+                                indices.push(
+                                    number
+                                        .text()
+                                        .parse()
+                                        .map_err(|_| "invalid canonical operand index".to_owned())?,
+                                );
+                            }
+                        }
+                    } else {
+                        pending.push(Pending::Members(members));
+                    }
+                }
+                Node::Array(items) => pending.push(Pending::Items(items)),
+                Node::Null | Node::Bool(_) | Node::Number(_) | Node::String(_) => {}
+            },
+            Pending::Members(mut members) => {
+                if let Some((_, value)) = members.next() {
+                    pending.push(Pending::Members(members));
+                    pending.push(Pending::Value(value));
+                }
+            }
+            Pending::Items(mut items) => {
+                if let Some(value) = items.next() {
+                    pending.push(Pending::Items(items));
+                    pending.push(Pending::Value(value));
+                }
+            }
+        }
+    }
+    Ok(indices)
+}
+
+/// FR-322 "Operand index segments": `node`, one semantic node as JSON, with
+/// every index segment of every node id it holds replaced by an operand slot
+/// numbered by first occurrence in the node's canonical (RFC 8785) member
+/// order, and the row listing the graph index each slot names. The emitter
+/// writes every node through this walk, so an authored document and an
+/// emitted one number slots identically. An `{package, node}` foreign key
+/// keeps its index segments: they name the dependency's graph.
+pub fn number_index_segments(node: &mut serde_json::Value) -> Vec<u64> {
+    use serde_json::Value;
+    let bytes = quire_canonical::to_vec(&*node, quire_canonical::Limits::new(u64::MAX))
+        .expect("a JSON inspection value has a canonical encoding");
+    let mut row = Vec::new();
+    let mut slots = HashMap::new();
+    for index in canonical_operand_indices(&bytes, u64::MAX)
+        .expect("a resolved inspection value has integer graph indices")
+    {
+        if let std::collections::hash_map::Entry::Vacant(entry) = slots.entry(index) {
+            entry.insert(row.len() as u64);
+            row.push(index);
+        }
+    }
+    let mut pending = vec![node];
+    while let Some(current) = pending.pop() {
+        match current {
+            Value::Array(items) => pending.extend(items.iter_mut()),
+            Value::Object(object) => {
+                let is_id = object.len() == 3
+                    && object.contains_key("package")
+                    && object.contains_key("path")
+                    && object.contains_key("ordinal");
+                if is_id {
+                    if let Some(Value::Array(path)) = object.get_mut("path") {
+                        for segment in path.iter_mut() {
+                            let index = segment.as_object()
+                                .filter(|member| member.len() == 1)
+                                .and_then(|member| member.get("node"))
+                                .and_then(Value::as_u64);
+                            if let Some(index) = index {
+                                *segment = serde_json::json!({"operand": slots[&index]});
+                            }
+                        }
+                    }
+                } else if !foreign_id_container(object) {
+                    pending.extend(object.values_mut());
+                }
+            }
+            _ => {}
+        }
+    }
+    row
+}
+
 /// The inverse of [`resolve_operand_slots`] for a document authored in
 /// resolved form: when it has `semantic_graph.nodes` and no `operand_rows`,
-/// every index segment inside a node becomes the operand slot of the node's
-/// row, numbered by first occurrence in the node's canonical (RFC 8785)
-/// member order, and `operand_rows` is added. Any other document is left alone.
+/// each node is written through [`number_index_segments`] and `operand_rows`
+/// is added. Any other document is left alone.
+#[cfg(any(test, feature = "test-support"))]
 pub fn write_operand_rows(wire: &mut serde_json::Value) {
-    use serde_json::Value;
     let Some(graph) = wire.get_mut("semantic_graph") else {
         return;
     };
     if graph.get("operand_rows").is_some() {
         return;
     }
-    let Some(nodes) = graph.get_mut("nodes").and_then(Value::as_array_mut) else {
+    let Some(nodes) = graph
+        .get_mut("nodes")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
         return;
     };
-    let mut rows = Vec::with_capacity(nodes.len());
-    for node in nodes.iter_mut() {
-        let mut row: Vec<u64> = Vec::new();
-        let mut pending = vec![node];
-        while let Some(current) = pending.pop() {
-            match current {
-                Value::Array(items) => pending.extend(items.iter_mut().rev()),
-                Value::Object(object) => {
-                    let is_id = object.len() == 3
-                        && object.contains_key("package")
-                        && object.contains_key("path")
-                        && object.contains_key("ordinal");
-                    if is_id {
-                        if let Some(Value::Array(path)) = object.get_mut("path") {
-                            for segment in path.iter_mut() {
-                                let index = segment
-                                    .as_object()
-                                    .filter(|member| member.len() == 1)
-                                    .and_then(|member| member.get("node"))
-                                    .and_then(Value::as_u64);
-                                if let Some(index) = index {
-                                    let slot = row
-                                        .iter()
-                                        .position(|entry| *entry == index)
-                                        .unwrap_or_else(|| {
-                                            row.push(index);
-                                            row.len() - 1
-                                        });
-                                    *segment = serde_json::json!({ "operand": slot });
-                                }
-                            }
-                        }
-                    } else if !foreign_id_container(object) {
-                        let mut members: Vec<(&String, &mut Value)> = object.iter_mut().collect();
-                        members.sort_by(|left, right| left.0.cmp(right.0));
-                        pending.extend(members.into_iter().rev().map(|(_, member)| member));
-                    }
-                }
-                _ => {}
-            }
-        }
-        rows.push(row);
-    }
+    let rows: Vec<Vec<u64>> = nodes.iter_mut().map(number_index_segments).collect();
     graph["operand_rows"] = serde_json::json!(rows);
 }
 
+#[cfg(any(test, feature = "test-support"))]
 /// The checked-package document `bytes` as JSON in its resolved form
 /// ([`resolve_operand_slots`]).
 ///

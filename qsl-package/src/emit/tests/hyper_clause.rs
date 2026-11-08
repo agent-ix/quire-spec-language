@@ -119,8 +119,10 @@ fn node_with<'w>(wire: &'w Value, key: &Value) -> &'w Value {
         .unwrap_or_else(|| panic!("a node {key}"))
 }
 
-/// The node `term` references from within `holder`.
-fn node_via<'w>(wire: &'w Value, _holder: &Value, term: &Value) -> &'w Value {
+/// The node `term` references. `wire` is the resolved form, so every operand
+/// slot was already resolved against its own node's row (an out-of-range slot
+/// refuses there) and a reference names its node by graph position.
+fn node_via<'w>(wire: &'w Value, term: &Value) -> &'w Value {
     node_with(wire, target(term))
 }
 
@@ -224,9 +226,14 @@ fn a_hyper_clause_emits_the_hyperproperty_node_with_its_seven_bindings() {
     assert_eq!(parameters[0]["name"], "c");
     // FR-488-AC-2: the subject is the package's `model_root` node, not the
     // parameter's object type node.
-    let subject = node_via(&compiled.wire, node, &subjects[0]["value"]);
+    let subject = node_via(&compiled.wire, &subjects[0]["value"]);
     assert_eq!(subject["node_tag"], "model");
     assert_eq!(subject["semantic_form"], "model_root");
+    assert_eq!(
+        target(&subjects[0]["value"]),
+        &only_node(&compiled.wire, "model_root")["node_id"],
+        "the subject is the package's one model_root node"
+    );
     assert_ne!(
         target(&subjects[0]["value"]),
         target(&parameters[0]["value"])
@@ -273,7 +280,7 @@ fn the_body_wrapper_reads_slot_zero_and_slots_are_named_identifier_safe() {
     let compiled = compile(&unit(INFINITE, &non_interference()));
     let wire = &compiled.wire;
     let node = hyper_node(wire);
-    let wrapper = node_via(wire, node, binding(&node["body"], "body"));
+    let wrapper = node_via(wire, binding(&node["body"], "body"));
     assert_eq!(wrapper["semantic_form"], "temporal_clause");
     let arguments = &wrapper["body"]["arguments"];
     assert_eq!(
@@ -284,7 +291,7 @@ fn the_body_wrapper_reads_slot_zero_and_slots_are_named_identifier_safe() {
     assert_eq!(arguments[3]["members"], json!([]));
     assert_eq!(arguments[4]["members"], json!([]));
     let slots = slots(wire);
-    let over = node_via(wire, wrapper, &arguments[0]);
+    let over = node_via(wire, &arguments[0]);
     assert_eq!(text(binding(&over["body"], "name")), "slot_sc_sa");
     assert_eq!(binding(&over["body"], "level")["value"], "0");
     let other = slots.get("slot_sc_sb").expect("the slot c@b");
@@ -379,7 +386,7 @@ fn fairness_constraints_follow_their_quantifier_as_resolved() {
     }
     let fairness_of = |group: &Value| {
         let reference = &references(group)[0];
-        let node = node_via(&compiled.wire, hyper_node(&compiled.wire), reference);
+        let node = node_via(&compiled.wire, reference);
         assert_eq!(node["node_tag"], "temporal");
         assert_eq!(node["semantic_form"], "fairness");
         node["body"]["operation"]["member"].clone()
@@ -456,7 +463,7 @@ fn an_align_skip_operation_shares_the_state_clause_anchor() {
         .as_array()
         .unwrap();
     assert_eq!(skipped.len(), 1);
-    let anchor = node_via(&compiled.wire, node, &skipped[0]);
+    let anchor = node_via(&compiled.wire, &skipped[0]);
     assert_eq!(anchor["semantic_form"], "operation_anchor");
     assert_eq!(
         nodes(&compiled.wire)
@@ -761,7 +768,7 @@ fn two_aliases_list_their_subjects_parameters_and_slots() {
     assert_eq!(names, ["S", "N"]);
     assert_ne!(target(&subjects[0]["value"]), target(&subjects[1]["value"]));
     for subject in subjects {
-        let root = node_via(&built.wire, hyper_node(&built.wire), &subject["value"]);
+        let root = node_via(&built.wire, &subject["value"]);
         assert_eq!(root["semantic_form"], "model_root");
     }
     let parameters = binding(body, "parameters")["members"].as_array().unwrap();
@@ -841,7 +848,7 @@ fn match_conjuncts_mint_typed_step_label_slots_at_their_own_levels() {
         .as_array()
         .unwrap();
     assert_eq!(terms.len(), 5);
-    let constant = node_via(&built.wire, node, &terms[2]);
+    let constant = node_via(&built.wire, &terms[2]);
     assert_eq!(constant["node_tag"], "value");
     assert_eq!(constant["body"]["term"], "literal");
     assert_eq!(constant["body"]["value_kind"], "boolean");
@@ -1101,7 +1108,7 @@ fn the_wrapper_carries_the_profile_law_activation_and_formula() {
     let built = build(INFINITE, &["V"], &declarations);
     let wire = &built.wire;
     let node = hyper_node(wire);
-    let wrapper = node_via(wire, node, binding(&node["body"], "body"));
+    let wrapper = node_via(wire, binding(&node["body"], "body"));
     assert_eq!(
         wrapper["body"]["operation"]["laws"],
         json!([{"role": "temporal_profile", "definition": {
@@ -1111,7 +1118,7 @@ fn the_wrapper_carries_the_profile_law_activation_and_formula() {
     assert_eq!(arguments[2]["members"].as_array().unwrap().len(), 1);
     assert_eq!(arguments[2]["members"][0]["name"], "kind");
     assert_eq!(text(&arguments[2]["members"][0]["value"]), "origin");
-    let formula = node_via(wire, wrapper, &arguments[5]);
+    let formula = node_via(wire, &arguments[5]);
     assert_eq!(formula["semantic_form"], "formula");
     assert_eq!(
         formula["body"]["operation"]["identity"],
@@ -1123,7 +1130,7 @@ fn the_wrapper_carries_the_profile_law_activation_and_formula() {
         .iter()
         .find(|argument| argument["term"] == "reference")
         .expect("the formula's operand");
-    let holds = node_via(wire, formula, operand);
+    let holds = node_via(wire, operand);
     assert_eq!(holds["semantic_form"], "formula");
     // The quantifier Group's fairness reference names the object type's
     // `model` node as its `declaration`, which is not the `model_root`
@@ -1137,8 +1144,17 @@ fn the_wrapper_carries_the_profile_law_activation_and_formula() {
         .iter()
         .find(|member| member["term"] == "reference")
         .expect("a fairness reference");
-    let fairness = node_via(wire, node, reference);
+    let fairness = node_via(wire, reference);
     let declaration = &fairness["body"]["operation"]["member"]["target"]["declaration"];
+    let parameters = binding(&node["body"], "parameters")["members"]
+        .as_array()
+        .unwrap();
+    let object_type = node_via(wire, &parameters[0]["value"]);
+    assert_eq!(object_type["node_tag"], "model");
+    assert_eq!(
+        declaration, &object_type["node_id"],
+        "the fairness declaration is the parameter's object type node"
+    );
     let subjects = binding(&node["body"], "subjects")["members"]
         .as_array()
         .unwrap();
