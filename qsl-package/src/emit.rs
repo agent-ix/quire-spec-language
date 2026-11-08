@@ -7698,7 +7698,7 @@ fn write_index_segments(
 /// An `{package, node}` foreign key keeps its index segments (they name the
 /// dependency's graph), so no object holding a `package` and one other member
 /// is entered.
-pub(crate) fn write_operand_slots(
+pub fn write_operand_slots(
     nodes: &[CheckedSemanticNodeV2],
 ) -> Result<(Vec<CheckedSemanticNodeV2>, Vec<Vec<u64>>), EmitRefusal> {
     /// The ids `slotted` rewrote, as `(old, new)` pairs: both values have the

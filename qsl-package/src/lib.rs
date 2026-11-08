@@ -87,6 +87,8 @@ pub use checked_v2::{
     V2ReadRefusal, WitnessSupplyFailure,
 };
 #[cfg(feature = "std")]
+pub use emit::write_operand_slots;
+#[cfg(feature = "std")]
 pub use emit::{
     checked_occurrence, declaration_less_function_id, emit_checked, emit_checked_with_cancel,
     emit_checked_with_protocol_results,

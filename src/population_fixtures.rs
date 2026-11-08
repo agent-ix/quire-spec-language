@@ -426,9 +426,13 @@ fn retarget(
     parameter.semantic_type = to;
 
     let limits = quire_canonical::Limits::new(u64::MAX);
+    // The nodes are in resolved form: write their FR-322 operand slots and rows.
+    let (nodes, operand_rows) = qsl_package::write_operand_slots(&nodes)
+        .map_err(|error| refuse(RetargetRefusal::Encode(format!("{error:?}"))))?;
     let graph = CheckedSemanticGraphV2 {
         graph_version: base.resolved_graph().graph_version.clone(),
         nodes,
+        operand_rows,
     };
     let bytes = encode_checked_package_v2(
         base.name(),
