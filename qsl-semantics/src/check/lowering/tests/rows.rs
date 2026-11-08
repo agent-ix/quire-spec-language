@@ -968,9 +968,11 @@ fn zero_denominators_and_out_of_range_literals_refuse_with_distinct_causes() {
 
 /// QSpec FR-039-AC-5: normalizing a rational literal is charged against
 /// `s3.rational_bits` by the larger written bit length. With the limit at 64
-/// bits, a numerator of 65 bits (`2^64`) or a denominator of 65 bits refuses
-/// as a `RationalBits` stage limit (resource incompleteness), never a value,
-/// widening or Boolean; the 64-bit literals just inside admit.
+/// bits, a 65-bit numerator alone (`2^64/1`), a 65-bit denominator alone and
+/// both refuse as a `RationalBits` stage limit (resource incompleteness),
+/// never a value, widening or Boolean; the 64-bit literals just inside admit.
+/// A zero denominator still refuses as `Nonzero` first, whatever the
+/// numerator's size (FR-039: zero is rejected before normalization).
 #[trace("QSpec-FR-039-AC-5", "QSpec-TC-039")]
 #[test]
 fn rational_literal_normalization_exhausting_the_bits_limit_is_a_stage_limit() {
@@ -1015,11 +1017,23 @@ fn rational_literal_normalization_exhausting_the_bits_limit_is_a_stage_limit() {
         "a 65-bit numerator and denominator"
     );
     assert_eq!(causes(Integer::from(1_i64), power(64)), [exhausted(65)]);
+    assert_eq!(
+        causes(power(64), Integer::from(1_i64)),
+        [exhausted(65)],
+        "a 65-bit numerator alone"
+    );
+    // A zero denominator is refused before the limit is consulted (AC-2).
+    assert_eq!(
+        causes(power(64), Integer::from(0_i64)),
+        [CheckCause::Unproved(Obligation::Nonzero)],
+        "zero denominator before the limit"
+    );
     // Just inside: 2^63 / 2^63 has 64-bit parts and normalizes to 1/1.
     outcome(power(63), power(63)).expect("64-bit parts admit");
 }
 
-/// QSpec FR-039-AC-4: a literal with no expected rational type, or one
+/// QSpec FR-039-AC-4: a literal with no expected rational type, literals
+/// that leave the expected domain ambiguous, or one
 /// compared with an integer, refuses rather than choosing a domain.
 #[trace("QSpec-FR-039-AC-4", "QSpec-TC-039")]
 #[test]
@@ -1037,6 +1051,22 @@ fn a_rational_literal_never_picks_its_own_domain() {
         refused(&[], binary(BinaryOperator::Equal, half(), half())),
         [CheckCause::IllTyped(IllTypedCause::AmbiguousLiteral)]
     );
+    // Ambiguous expected types: two literals, however combined, name no one
+    // rational domain between them, so none is chosen for either.
+    let third = || Expression::rational(Integer::from(1_i64), Integer::from(3_i64));
+    for body in [
+        binary(BinaryOperator::Less, half(), third()),
+        binary(
+            BinaryOperator::Equal,
+            binary(BinaryOperator::Add, half(), third()),
+            half(),
+        ),
+    ] {
+        assert_eq!(
+            refused(&[], body),
+            [CheckCause::IllTyped(IllTypedCause::AmbiguousLiteral)]
+        );
+    }
     let fraction = rational_form(["-9", "9", "1", "9"]);
     assert_eq!(
         refused(
