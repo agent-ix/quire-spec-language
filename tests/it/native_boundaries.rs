@@ -366,11 +366,7 @@ fn format_takes_the_cst_and_depends_on_layer_1_and_f_only() {
             "use {path}"
         );
     }
-    for forbidden in [
-        "super::",
-        "self::",
-        "quire_spec_language",
-    ] {
+    for forbidden in ["super::", "self::", "quire_spec_language"] {
         assert!(
             !code.contains(forbidden),
             "qsl-cst/src/format.rs names {forbidden}"

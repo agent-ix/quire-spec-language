@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Source-map layout and byte/segment lookup over parsed source text.
 use ix_trace_rs::trace;
+use qsl_foundation::source::MAX_SOURCE_BYTES;
 use qsl_foundation::source_map::{Layout, Segment, SourceMap};
 use qsl_foundation::{Code, Source, SourceIdentity, Span};
-use qsl_foundation::source::MAX_SOURCE_BYTES;
 
 fn source(id: &str, text: &str) -> Source {
     Source::read(
