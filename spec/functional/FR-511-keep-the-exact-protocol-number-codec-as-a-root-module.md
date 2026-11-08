@@ -21,8 +21,8 @@ relationships:
 FR-038 and TC-117 specify the canonical decimal-string numeric codec
 `quire.protocol.numeric/1` (`ProtocolNumber`, `ExactInteger`, `ExactRational`,
 `NumberError`, `NumberWire`, `NUMERIC_PROFILE`) in
-`qsl-package/src/number.rs`, with the established root compatibility path at
-`src/number.rs`. FR-493-AC-4 deletes `protocol_artifact`, and
+`qsl-package/src/number.rs` (formerly also re-exported at the root path
+`src/number.rs`, now deleted). FR-493-AC-4 deletes `protocol_artifact`, and
 FR-493 gives FR-038 no disposition. FR-499 gives the codec the row "PORT
 QSL-1506; KEEP `number.rs` until then". The planner's ruling for item 9 is to
 re-home it to FR-497 or FR-322, or to keep `number.rs` explicitly, chosen with
@@ -42,19 +42,11 @@ Evidence:
    different profile. Re-homing FR-038 under either would change the bytes of
    an interchange profile that has a live reader, or leave FR-038 stating a
    wire no QSL code writes.
-2. The spine's checked-package writer and reader do not use this codec. Root
-   protocol-artifact consumers still import the compatibility path until
-   QSL-1501 repoints the external consumer.
+2. The spine's checked-package writer and reader do not use this codec.
 3. The consumers are: inside `protocol_artifact`, `wire.rs`, `v2`, `v3`,
    `models.rs`, `validate.rs`, `native/metadata.rs` and the
    native emission modules (all kept until QSL-1501, FR-513); outside it,
-   the spine vector suite
-   `qsl-package/tests/protocol_number.rs` and root compatibility test
-   `tests/it/protocol_number_root_module.rs`,
-   `tests/support/protocol_artifact/mod.rs`,
-   and quire-protocol, which imports
-   `quire_spec_language::protocol_artifact::ProtocolNumber` (its
-   `src/assessment.rs:22`) until QSL-1501 repoints it.
+   the spine vector suite `qsl-package/tests/protocol_number.rs`.
 4. The codec depends on nothing in `protocol_artifact` except its module path.
 
 ## Inputs
