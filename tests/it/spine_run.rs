@@ -678,6 +678,38 @@ fn tc_451_step_7_zero_work_units_is_incomplete() {
     );
 }
 
+/// FR-287-AC-2 (TC-771 step 2): `command` called in process, with no
+/// driver binary, maps a compile of `spine-compile.native` to FR-285 exit 0
+/// and a `seven` run with `work_units` 0 to an incomplete outcome, exit 22.
+#[test]
+#[trace("TC-771", "FR-287-AC-2")]
+fn command_library_outcomes_carry_the_exit_function_codes() {
+    let directory = tempfile::tempdir().unwrap();
+    let compile = json!({"format":"native-compile/1","request":{"models":[],"program":{
+        "source":program_source()}}});
+    std::fs::write(
+        directory.path().join("program.native"),
+        std::fs::read(SEVEN_FIXTURE).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        directory.path().join("compile.json"),
+        serde_json::to_vec(&compile).unwrap(),
+    )
+    .unwrap();
+    let bytes = quire_spec_language::command::compile(&directory.path().join("compile.json"))
+        .unwrap_or_else(|refusal| panic!("compile refused: {refusal}"));
+    assert!(!bytes.is_empty());
+
+    let program = std::fs::read(RUN_FIXTURE).unwrap();
+    let mut request = call("seven", json!([]));
+    request["accounting"] = json!({"work_units": 0});
+    spine_run_request(directory.path(), &program, request);
+    let result = quire_spec_language::command::run(&directory.path().join("request.json"))
+        .unwrap_or_else(|refusal| panic!("run refused: {refusal}"));
+    assert_eq!(result.exit_code, 22);
+}
+
 /// FR-100-AC-13 (TC-921 step 5): `run_complete` forwards the supplied
 /// `integer_bits` limit through evaluation and reports the exhausted counter.
 #[test]
