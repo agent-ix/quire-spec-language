@@ -634,7 +634,8 @@ fn root_wire_with(
     tweak: impl Fn(String) -> String,
 ) -> serde_json::Value {
     let (bytes, _) = root_bytes_with(formula, target, edit, edit_spec, tweak);
-    serde_json::from_slice(&bytes).unwrap()
+    // The resolved form: a node's ids name graph positions, not operand slots.
+    qsl_semantics::check::wire_id::resolved_package_value(&bytes).unwrap()
 }
 
 /// The bytes of the plan-root package of [`root_wire_with`], and the evidence

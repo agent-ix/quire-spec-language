@@ -771,7 +771,10 @@ fn interleaved_operation_and_protocol_fairness_preserves_source_order() {
         EmitLimits::fixture(),
     )
     .expect("mixed fairness emits with its selected TCB-01 clock");
-    let wire: Value = serde_json::from_slice(emitted.package().bytes()).expect("wire JSON");
+    // The resolved form: a node's ids name graph positions, not operand slots.
+    let wire: Value =
+        qsl_semantics::check::wire_id::resolved_package_value(emitted.package().bytes())
+            .expect("wire JSON");
     let nodes = wire["semantic_graph"]["nodes"]
         .as_array()
         .expect("semantic graph nodes");

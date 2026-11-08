@@ -85,7 +85,9 @@ fn admitted(root: &PlanRoot) -> Box<CheckedPackageV2> {
 }
 
 fn json(root: &PlanRoot) -> serde_json::Value {
-    serde_json::from_slice(root.emission().package().bytes()).unwrap()
+    // The resolved form: a node's ids name graph positions, not operand slots.
+    qsl_semantics::check::wire_id::resolved_package_value(root.emission().package().bytes())
+        .unwrap()
 }
 
 /// The first of each kind of the plan root's keys: the root and its four
