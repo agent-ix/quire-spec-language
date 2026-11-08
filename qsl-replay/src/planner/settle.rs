@@ -12,6 +12,7 @@ use std::collections::BTreeSet;
 
 use qsl_foundation::source::provenance::SourceRegion;
 use qsl_foundation::RequestIndex;
+use qsl_package::CheckedPackage;
 use serde_json::{json, Map, Value};
 
 use super::declaration::{
@@ -267,14 +268,28 @@ pub struct PlannerResult {
     pub discharge: Option<DischargeRecord>,
 }
 
-/// Settle `declaration` from `request`.
+/// Settle the declaration `request` names in `package` from `request`.
 ///
 /// # Errors
 ///
-/// [`SettleRefusal`] when the request does not belong to the declaration, a
+/// [`SettleRefusal`] when the request does not belong to the package's declaration, a
 /// composition's rule is not `assume-guarantee`, or a fairness constraint
 /// cannot be written.
 pub fn settle(
+    package: &CheckedPackage,
+    request: &SettlementRequest,
+    budget: Budget,
+) -> Result<PlannerResult, SettleRefusal> {
+    if request.package != package.graph().package_name() {
+        return Err(SettleRefusal::Mismatch);
+    }
+    let declaration = PlannerDeclaration::from_package(package, &request.item.node)
+        .map_err(|_| SettleRefusal::Mismatch)?;
+    settle_declared(&declaration, request, budget)
+}
+
+/// Settle `declaration` from `request`.
+pub(crate) fn settle_declared(
     declaration: &PlannerDeclaration,
     request: &SettlementRequest,
     budget: Budget,

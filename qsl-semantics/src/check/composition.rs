@@ -583,7 +583,11 @@ impl CheckedComposition {
                     .guarantee_key(&member.reference)
                     .map(CompositionSlotKey::ComponentGuarantee),
                 guarantee: Some(member.reference.clone()),
-                ..slot(SlotRole::ComponentGuarantee, SlotBacking::Item, member.source)
+                ..slot(
+                    SlotRole::ComponentGuarantee,
+                    SlotBacking::Item,
+                    member.source,
+                )
             });
         }
         for (role, premises) in [
@@ -629,7 +633,11 @@ impl CheckedComposition {
         for member in &self.environment {
             push(CompositionSlot {
                 environment: Some(member.name.clone()),
-                ..slot(SlotRole::Environment, SlotBacking::Environment, member.source)
+                ..slot(
+                    SlotRole::Environment,
+                    SlotBacking::Environment,
+                    member.source,
+                )
             });
         }
         if let Some(profile) = &self.lattice {
@@ -667,7 +675,9 @@ impl CheckedComposition {
         let premises = self
             .slots()
             .into_iter()
-            .filter(|slot| placement == ItemPlacement::PlannerLocal || slot.role != SlotRole::FixedPoint)
+            .filter(|slot| {
+                placement == ItemPlacement::PlannerLocal || slot.role != SlotRole::FixedPoint
+            })
             .collect();
         let mut subjects: Vec<&CheckedComponent> = self.components.iter().collect();
         subjects.sort_by(|left, right| left.name.cmp(&right.name));
@@ -1017,7 +1027,10 @@ impl Members {
                     tails.push(*from);
                 }
             }
-            let Some(source) = internal.iter().map(|(_, _, span)| *span).min_by_key(|s| s.start)
+            let Some(source) = internal
+                .iter()
+                .map(|(_, _, span)| *span)
+                .min_by_key(|s| s.start)
             else {
                 continue;
             };
@@ -1056,9 +1069,11 @@ fn strongly_connected(successors: &[Vec<usize>]) -> Vec<Vec<usize>> {
                      low: &mut Vec<usize>,
                      on_stack: &mut Vec<bool>,
                      stack: &mut Vec<usize>| {
-            if let (Some(i), Some(l), Some(s)) =
-                (index.get_mut(node), low.get_mut(node), on_stack.get_mut(node))
-            {
+            if let (Some(i), Some(l), Some(s)) = (
+                index.get_mut(node),
+                low.get_mut(node),
+                on_stack.get_mut(node),
+            ) {
                 *i = Some(*next_index);
                 *l = *next_index;
                 *s = true;
@@ -1066,16 +1081,33 @@ fn strongly_connected(successors: &[Vec<usize>]) -> Vec<Vec<usize>> {
             *next_index += 1;
             stack.push(node);
         };
-        visit(root, &mut next_index, &mut index, &mut low, &mut on_stack, &mut stack);
+        visit(
+            root,
+            &mut next_index,
+            &mut index,
+            &mut low,
+            &mut on_stack,
+            &mut stack,
+        );
         while let Some(&(node, edge)) = work.last() {
-            let next = successors.get(node).and_then(|list| list.get(edge)).copied();
+            let next = successors
+                .get(node)
+                .and_then(|list| list.get(edge))
+                .copied();
             if let Some(next) = next {
                 if let Some(top) = work.last_mut() {
                     top.1 += 1;
                 }
                 match index.get(next).copied().flatten() {
                     None => {
-                        visit(next, &mut next_index, &mut index, &mut low, &mut on_stack, &mut stack);
+                        visit(
+                            next,
+                            &mut next_index,
+                            &mut index,
+                            &mut low,
+                            &mut on_stack,
+                            &mut stack,
+                        );
                         work.push((next, 0));
                     }
                     Some(reached) if on_stack.get(next).copied().unwrap_or(false) => {
@@ -1178,8 +1210,9 @@ impl CheckedGraph {
         &self,
         form: &CompositionDeclarationForm,
     ) -> Result<CheckedComposition, CompositionRefusal> {
-        let internal =
-            |invariant| CompositionRefusal::Internal(InternalFault::new("check.composition", invariant));
+        let internal = |invariant| {
+            CompositionRefusal::Internal(InternalFault::new("check.composition", invariant))
+        };
         let missing = |what, name: &str, span| CompositionRefusal::MissingName {
             what,
             name: name.to_owned(),
@@ -1188,13 +1221,22 @@ impl CheckedGraph {
         // Check 2: the components.
         let mut components: Vec<Component<'_>> = Vec::new();
         for member in &form.components {
-            let import = self
-                .scope
-                .imported(&member.import.name)
-                .ok_or_else(|| missing(CompositionName::Import, &member.import.name, member.import.span))?;
+            let import = self.scope.imported(&member.import.name).ok_or_else(|| {
+                missing(
+                    CompositionName::Import,
+                    &member.import.name,
+                    member.import.span,
+                )
+            })?;
             let graph = import.graph.as_ref();
             let facts = component_facts(graph, import.identity.as_str(), &member.model.name)
-                .ok_or_else(|| missing(CompositionName::Model, &member.model.name, member.model.span))?;
+                .ok_or_else(|| {
+                    missing(
+                        CompositionName::Model,
+                        &member.model.name,
+                        member.model.span,
+                    )
+                })?;
             if let Some(first) = components.iter().find(|c| c.name == member.name.name) {
                 return Err(CompositionRefusal::ConflictingComponent {
                     name: member.name.name.clone(),
@@ -1225,7 +1267,13 @@ impl CheckedGraph {
             let component = components
                 .iter()
                 .find(|component| component.name == name.component.name)
-                .ok_or_else(|| missing(CompositionName::Component, &name.component.name, name.component.span))?;
+                .ok_or_else(|| {
+                    missing(
+                        CompositionName::Component,
+                        &name.component.name,
+                        name.component.span,
+                    )
+                })?;
             let absent = || missing(CompositionName::Clause, &name.clause.name, name.clause.span);
             let graph = component.graph;
             let node = graph
@@ -1297,7 +1345,9 @@ impl CheckedGraph {
                         resolve_operation(&components, &member.constraint.operation)?;
                     supplies.push(CompositionSupply {
                         kind: super::temporal_clause::checked_kind(&member.constraint),
-                        granularity: super::temporal_clause::checked_granularity(&member.constraint),
+                        granularity: super::temporal_clause::checked_granularity(
+                            &member.constraint,
+                        ),
                         context,
                         operation,
                         source: member.span,
@@ -1305,7 +1355,11 @@ impl CheckedGraph {
                 }
                 CompositionMemberForm::Environment(member) => {
                     let name = Identifier::new(&member.name.name).map_err(|_| {
-                        missing(CompositionName::Operation, &member.name.name, member.name.span)
+                        missing(
+                            CompositionName::Operation,
+                            &member.name.name,
+                            member.name.span,
+                        )
                     })?;
                     let supplies = match &member.supplies {
                         GuaranteeSuppliesForm::Fairness(constraint) => {
@@ -1365,7 +1419,10 @@ impl CheckedGraph {
 
     /// The composition, its dependency graph's cycles found and the lattice
     /// check applied.
-    #[allow(clippy::too_many_arguments, reason = "the checked composition's members")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the checked composition's members"
+    )]
     fn finish_composition(
         &self,
         name: String,
@@ -1385,7 +1442,10 @@ impl CheckedGraph {
         let cycles = members.cycles();
         let lattice = self.composition_lattice.clone();
         let refusal = (!cycles.is_empty() && lattice.is_none()).then(|| CompositionItemRefusal {
-            cycles: cycles.iter().map(|cycle| cycle.guarantees.clone()).collect(),
+            cycles: cycles
+                .iter()
+                .map(|cycle| cycle.guarantees.clone())
+                .collect(),
         });
         CheckedComposition {
             name,
@@ -1467,10 +1527,11 @@ fn resolve_operation(
         let crate::model::operation::OperationLookup::Declared {
             declaring: resolved,
             operation,
-        } = graph
-            .scope
-            .operations()
-            .resolve(graph.scope.types(), owner.clone(), operation_name.as_str())
+        } = graph.scope.operations().resolve(
+            graph.scope.types(),
+            owner.clone(),
+            operation_name.as_str(),
+        )
         else {
             continue;
         };
@@ -1611,7 +1672,13 @@ impl CheckedGraph {
                         .filter(|facts| facts.subject_node == entry.subject)
                         .map(|facts| (alias.clone(), facts))
                 })
-                .ok_or_else(|| missing(CompositionName::Model, &entry.subject.to_string(), entry.span))?;
+                .ok_or_else(|| {
+                    missing(
+                        CompositionName::Model,
+                        &entry.subject.to_string(),
+                        entry.span,
+                    )
+                })?;
             if let Some(first) = components.iter().find(|c| c.name == entry.name) {
                 return Err(CompositionRefusal::ConflictingComponent {
                     name: entry.name.clone(),
@@ -1638,39 +1705,40 @@ impl CheckedGraph {
         }
         // Check 2: the clauses the entries name.
         let mut clauses: Vec<CompositionClauseFacts> = Vec::new();
-        let mut resolve = |entry: &ReadClause, span: Span| -> Result<ClauseRef, CompositionRefusal> {
-            let component = components
-                .iter()
-                .find(|component| component.name == entry.component)
-                .ok_or_else(|| missing(CompositionName::Component, &entry.component, span))?;
-            let absent = || missing(CompositionName::Clause, &entry.clause.to_string(), span);
-            let graph = component.graph;
-            let node = graph
-                .temporal_clauses
-                .iter()
-                .find(|node| node.identity() == entry.clause)
-                .ok_or_else(absent)?;
-            let name = node.clause().name().to_owned();
-            if graph.temporal_subject_aliases.get(&name) != Some(&component.alias) {
-                return Err(absent());
-            }
-            let facts = graph
-                .guarantee_clause(node, component.alias.clone())
-                .ok_or_else(absent)?;
-            let reference = ClauseRef {
-                component: entry.component.clone(),
-                name,
-                node: facts.node.clone(),
+        let mut resolve =
+            |entry: &ReadClause, span: Span| -> Result<ClauseRef, CompositionRefusal> {
+                let component = components
+                    .iter()
+                    .find(|component| component.name == entry.component)
+                    .ok_or_else(|| missing(CompositionName::Component, &entry.component, span))?;
+                let absent = || missing(CompositionName::Clause, &entry.clause.to_string(), span);
+                let graph = component.graph;
+                let node = graph
+                    .temporal_clauses
+                    .iter()
+                    .find(|node| node.identity() == entry.clause)
+                    .ok_or_else(absent)?;
+                let name = node.clause().name().to_owned();
+                if graph.temporal_subject_aliases.get(&name) != Some(&component.alias) {
+                    return Err(absent());
+                }
+                let facts = graph
+                    .guarantee_clause(node, component.alias.clone())
+                    .ok_or_else(absent)?;
+                let reference = ClauseRef {
+                    component: entry.component.clone(),
+                    name,
+                    node: facts.node.clone(),
+                };
+                if !clauses.iter().any(|known| known.reference == reference) {
+                    clauses.push(CompositionClauseFacts {
+                        reference: reference.clone(),
+                        form: facts.form,
+                        fairness: facts.fairness,
+                    });
+                }
+                Ok(reference)
             };
-            if !clauses.iter().any(|known| known.reference == reference) {
-                clauses.push(CompositionClauseFacts {
-                    reference: reference.clone(),
-                    form: facts.form,
-                    fairness: facts.fairness,
-                });
-            }
-            Ok(reference)
-        };
         let mut guarantees = Vec::new();
         for member in &read.guarantees {
             guarantees.push(CompositionGuarantee {
@@ -1678,18 +1746,19 @@ impl CheckedGraph {
                 source: member.span,
             });
         }
-        let mut premises = |entries: &[ReadPremise]| -> Result<Vec<CompositionPremise>, CompositionRefusal> {
-            entries
-                .iter()
-                .map(|entry| {
-                    Ok(CompositionPremise {
-                        guarantee: resolve(&entry.guarantee, entry.span)?,
-                        on: resolve(&entry.on, entry.span)?,
-                        source: entry.span,
+        let mut premises =
+            |entries: &[ReadPremise]| -> Result<Vec<CompositionPremise>, CompositionRefusal> {
+                entries
+                    .iter()
+                    .map(|entry| {
+                        Ok(CompositionPremise {
+                            guarantee: resolve(&entry.guarantee, entry.span)?,
+                            on: resolve(&entry.on, entry.span)?,
+                            source: entry.span,
+                        })
                     })
-                })
-                .collect()
-        };
+                    .collect()
+            };
         let mut relies = premises(&read.relies)?;
         let mut liveness_dependencies = premises(&read.liveness_dependencies)?;
         // The source map gives source order back.
@@ -1719,7 +1788,11 @@ impl CheckedGraph {
             let operation = Identifier::new(&entry.operation)
                 .map_err(|_| missing(CompositionName::Operation, &entry.operation, entry.span))?;
             if !is_operation(&entry.context, &operation) {
-                return Err(missing(CompositionName::Operation, &entry.operation, entry.span));
+                return Err(missing(
+                    CompositionName::Operation,
+                    &entry.operation,
+                    entry.span,
+                ));
             }
             supplies.push(CompositionSupply {
                 kind: kind_of(&entry.kind).ok_or_else(|| internal("fairness-kind-is-spelled"))?,
@@ -1787,7 +1860,8 @@ impl CheckedGraph {
             });
         }
         supplies.sort_by_key(|member: &CompositionSupply| (member.source.start, member.source.end));
-        environment.sort_by_key(|member: &EnvironmentMember| (member.source.start, member.source.end));
+        environment
+            .sort_by_key(|member: &EnvironmentMember| (member.source.start, member.source.end));
         members.check_distinct(&supplies, &environment)?;
         Ok(self.finish_composition(
             read.name.clone(),

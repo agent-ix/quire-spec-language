@@ -29,7 +29,10 @@ pub(crate) const PACKAGE: &str = "pkg";
 
 /// Why a unit does not compile to a checked package.
 #[derive(Debug)]
-#[allow(dead_code, reason = "the refusal is read through `Debug` in a failure message")]
+#[allow(
+    dead_code,
+    reason = "the refusal is read through `Debug` in a failure message"
+)]
 pub(crate) enum Failure {
     Syntax(Vec<qsl_cst::CompleteDiagnostic>),
     Assembly(qsl_semantics::check::AssemblyRefusal),
@@ -210,9 +213,9 @@ impl Chain {
         package: CheckedPackage,
         node: &NodeKey,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let declaration = PlannerDeclaration::from_package(&package, node, PACKAGE)?;
+        let declaration = PlannerDeclaration::from_package(&package, node)?;
         let mut writer = qsl_route::request::RequestWriter::new();
-        let items = writer.declaration_items(package.graph(), PACKAGE);
+        let items = writer.declaration_items(package.graph());
         let keys = declared_keys(&package, node);
         Ok(Self {
             package,
@@ -227,7 +230,7 @@ impl Chain {
         self.items
             .iter()
             .find(|written| {
-                written.declaration == self.declaration.node && written.slot == Some(slot)
+                written.declaration == *self.declaration.node() && written.slot == Some(slot)
             })
             .unwrap_or_else(|| panic!("slot {slot} has a route item"))
     }
@@ -260,7 +263,7 @@ impl Chain {
     pub(crate) fn request(&self, environment: &dyn Fn(&str) -> Value) -> Value {
         let slots: Vec<Value> = self
             .declaration
-            .slots
+            .slots()
             .iter()
             .enumerate()
             .map(|(index, derived)| {
@@ -276,7 +279,7 @@ impl Chain {
                         });
                     }
                     qsl_replay::planner::SlotBacking::Environment { member: Some(name) } => {
-                        wire["record"] = environment(name);
+                        wire["record"] = environment(name.as_str());
                     }
                     _ => {}
                 }
@@ -285,10 +288,10 @@ impl Chain {
             .collect();
         json!({
             "format": qsl_replay::planner::FORMAT,
-            "package": PACKAGE,
+            "package": self.package.graph().package_name(),
             "item": {
-                "role": self.declaration.role.as_str(),
-                "node": node_wire(&self.declaration.node),
+                "role": self.declaration.role().as_str(),
+                "node": node_wire(self.declaration.node()),
             },
             "slots": slots,
         })
@@ -306,7 +309,7 @@ impl Chain {
         limits: &ReadLimits,
     ) -> Result<SettlementRequest, RequestRefusal> {
         read_settlement_request(
-            &self.declaration,
+            &self.package,
             &serde_json::to_vec(request).expect("bytes"),
             limits,
         )
@@ -315,7 +318,7 @@ impl Chain {
     /// Admit and settle `request`.
     pub(crate) fn settled(&self, request: &Value) -> PlannerResult {
         let read = self.read(request).expect("the request is admitted");
-        settle(&self.declaration, &read, Budget::default()).expect("the item settles")
+        settle(&self.package, &read, Budget::default()).expect("the item settles")
     }
 
     /// The refusal of `request`: code, cause and pointer.

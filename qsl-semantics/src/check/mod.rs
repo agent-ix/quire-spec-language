@@ -77,9 +77,9 @@ mod capability;
 mod check;
 mod checked_dispatch;
 mod claims;
+mod composition;
 mod dispatch_link;
 pub mod footprint;
-mod composition;
 mod guarantee;
 mod rust_syntax;
 pub use abstraction::{
@@ -88,6 +88,14 @@ pub use abstraction::{
     OperationKey, PopulationBinding, RustField, RustParameter, RustPath, RustReceiver,
 };
 pub use abstraction::{AbstractionNodeRefusal, AbstractionNodes};
+pub use composition::{
+    CheckedComponent, CheckedComposition, ClauseRef, ComponentGuaranteeKey, ComponentSubject,
+    CompositionClauseFacts, CompositionCycle, CompositionGuarantee, CompositionItem,
+    CompositionItemRefusal, CompositionName, CompositionPremise, CompositionRefusal,
+    CompositionSlot, CompositionSlotKey, CompositionSpans, CompositionSupply, ItemPlacement,
+    MalformedMember, ReadClause, ReadComponent, ReadComposition, ReadGuaranteeMember, ReadPremise,
+    ReadSupply,
+};
 pub use dispatch_link::PendingLinks;
 pub use guarantee::{
     check_member_values, granularity_spelling, kind_spelling, CheckedImplementationGuarantee,
@@ -95,14 +103,6 @@ pub use guarantee::{
     GuaranteeItemRefusal, GuaranteeName, GuaranteeRefusal, GuaranteeSlot, GuaranteeSpans, ItemKind,
     MeasureValue, MemberValues, ProgressMeasure, ProgressMember, ReadEnvironment, ReadGuarantee,
     ReadProgress, RustMember, SlotBacking, SlotKey, SlotRole, SubjectOperation, Supplies,
-};
-pub use composition::{
-    CheckedComponent, CheckedComposition, ClauseRef, ComponentGuaranteeKey, ComponentSubject,
-    CompositionClauseFacts, CompositionCycle, CompositionGuarantee, CompositionItem,
-    CompositionItemRefusal, CompositionName, CompositionPremise, CompositionRefusal,
-    CompositionSlot, CompositionSlotKey, CompositionSpans, CompositionSupply, ItemPlacement,
-    MalformedMember, ReadClause, ReadComponent, ReadComposition, ReadGuaranteeMember,
-    ReadPremise, ReadSupply,
 };
 pub use rust_syntax::{path_defect, PathDefect};
 mod facts;
@@ -260,10 +260,10 @@ pub use node_key::{
     Operator, Owner, SourceOwner, TupleMember, TupleTerm,
 };
 pub use node_key::{
-    EnvironmentEntry, ImplementationGuaranteeTerm, MeasureEntry, ProgressEntry, SuppliesEntry,
+    ClauseEntry, ComponentEntry, CompositionRule, CompositionTerm, PremiseEntry, SupplyEntry,
 };
 pub use node_key::{
-    ClauseEntry, ComponentEntry, CompositionRule, CompositionTerm, PremiseEntry, SupplyEntry,
+    EnvironmentEntry, ImplementationGuaranteeTerm, MeasureEntry, ProgressEntry, SuppliesEntry,
 };
 
 /// Carry a declared node identity from an admitted package name and its

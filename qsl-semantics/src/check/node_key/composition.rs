@@ -211,7 +211,12 @@ impl SupplyEntry {
     }
 
     fn sort_key(&self) -> (&NodeRef, &str, &str, &str) {
-        (&self.context, &self.operation, &self.kind, &self.granularity)
+        (
+            &self.context,
+            &self.operation,
+            &self.kind,
+            &self.granularity,
+        )
     }
 }
 
@@ -385,7 +390,10 @@ impl CompositionTerm {
                 clause: map(&entry.clause),
             }
         }
-        fn premise(entry: &PremiseEntry, map: &mut impl FnMut(&NodeRef) -> NodeRef) -> PremiseEntry {
+        fn premise(
+            entry: &PremiseEntry,
+            map: &mut impl FnMut(&NodeRef) -> NodeRef,
+        ) -> PremiseEntry {
             PremiseEntry {
                 guarantee: clause(&entry.guarantee, map),
                 on: clause(&entry.on, map),
@@ -404,7 +412,11 @@ impl CompositionTerm {
             .iter()
             .map(|entry| clause(entry, map))
             .collect();
-        let relies = self.relies.iter().map(|entry| premise(entry, map)).collect();
+        let relies = self
+            .relies
+            .iter()
+            .map(|entry| premise(entry, map))
+            .collect();
         let liveness_dependencies = self
             .liveness_dependencies
             .iter()

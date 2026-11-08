@@ -72,7 +72,9 @@ pub(crate) fn id_value(key: &NodeKey) -> Result<Value, NodeWriteRefusal> {
     serde_json::to_value(structural_id(key)).map_err(|_| NodeWriteRefusal::UnresolvedPlaceholder)
 }
 
-pub(crate) fn ref_value(reference: &qsl_semantics::check::NodeRef) -> Result<Value, NodeWriteRefusal> {
+pub(crate) fn ref_value(
+    reference: &qsl_semantics::check::NodeRef,
+) -> Result<Value, NodeWriteRefusal> {
     id_value(
         reference
             .admitted()
@@ -272,7 +274,11 @@ pub(crate) fn read_span(value: &Value, at: &str) -> Result<Span, NodeReadRefusal
     })
 }
 
-pub(crate) fn read_spans(value: &Value, count: usize, at: &str) -> Result<Vec<Span>, NodeReadRefusal> {
+pub(crate) fn read_spans(
+    value: &Value,
+    count: usize,
+    at: &str,
+) -> Result<Vec<Span>, NodeReadRefusal> {
     let entries = array(value, at)?;
     if entries.len() != count {
         return Err(NodeReadRefusal::graph(at));

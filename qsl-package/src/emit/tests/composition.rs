@@ -55,7 +55,10 @@ const CASE_ONE_MEMBERS: &str = "guarantee Producer::Sends; guarantee Consumer::D
 
 /// Why a unit does not compile to a checked package.
 #[derive(Debug)]
-#[allow(dead_code, reason = "the refusal is read through `Debug` in a failure message")]
+#[allow(
+    dead_code,
+    reason = "the refusal is read through `Debug` in a failure message"
+)]
 enum Failure {
     Syntax(Vec<qsl_cst::CompleteDiagnostic>),
     Assembly(qsl_semantics::check::AssemblyRefusal),
@@ -73,8 +76,8 @@ struct Dependency {
 fn dependency(identity: &str, clauses: &str) -> Dependency {
     let unit = format!("{MODEL_HEADER}{clauses}");
     let bytes = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
-    let models = qsl_semantics::model::intake::package_input([bytes.as_slice()])
-        .expect("the model package");
+    let models =
+        qsl_semantics::model::intake::package_input([bytes.as_slice()]).expect("the model package");
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", identity),
         "dependency.native",
@@ -161,12 +164,15 @@ fn compile_with(
         qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
     )
     .expect("an empty model selection is admitted");
-    let mut assembled = PackageDeclarations::assemble(raw, "pkg".to_owned(), built, models, imports)
-        .map_err(Failure::Assembly)?;
+    let mut assembled =
+        PackageDeclarations::assemble(raw, "pkg".to_owned(), built, models, imports)
+            .map_err(Failure::Assembly)?;
     if let Some(profile) = lattice {
         assembled = assembled.with_composition_lattice(profile);
     }
-    let graph = assembled.check(CheckingLimits::default()).map_err(Failure::Check)?;
+    let graph = assembled
+        .check(CheckingLimits::default())
+        .map_err(Failure::Check)?;
     Ok(CheckedPackage::link_with(
         graph,
         dependencies
@@ -306,7 +312,11 @@ fn a_producer_consumer_declaration_derives_its_slots_in_order() {
     assert_eq!(slots[5].backing, SlotBacking::PlannerLocal);
     let fairness = slots[5].constraint.as_ref().expect("the fairness premise");
     assert_eq!(
-        (fairness.kind(), fairness.granularity(), fairness.operation().name()),
+        (
+            fairness.kind(),
+            fairness.granularity(),
+            fairness.operation().name()
+        ),
         (FairnessKind::Weak, FairnessGranularity::Each, "send")
     );
     for (index, slot) in slots.iter().enumerate() {
@@ -316,7 +326,10 @@ fn a_producer_consumer_declaration_derives_its_slots_in_order() {
         }
     }
     // Each slot's span is the member that produced it.
-    let sources: Vec<&str> = slots.iter().map(|slot| text(&source, slot.source)).collect();
+    let sources: Vec<&str> = slots
+        .iter()
+        .map(|slot| text(&source, slot.source))
+        .collect();
     assert_eq!(sources[0], "guarantee Producer::Sends;");
     assert_eq!(sources[1], "guarantee Consumer::Done;");
     assert_eq!(sources[2], "guarantee Producer::Counted;");
@@ -324,7 +337,11 @@ fn a_producer_consumer_declaration_derives_its_slots_in_order() {
     assert_eq!(sources[4], "depends Consumer::Done on Producer::Sends;");
     assert_eq!(sources[5], "guarantee Producer::Sends;");
     assert_eq!(
-        composition.supplies().iter().map(|s| s.operation.as_str()).collect::<Vec<_>>(),
+        composition
+            .supplies()
+            .iter()
+            .map(|s| s.operation.as_str())
+            .collect::<Vec<_>>(),
         ["send"]
     );
 }
@@ -365,20 +382,35 @@ fn a_declaration_that_does_not_fit_its_packages_refuses() {
          component Consumer from Q using M; }"
             .to_owned(),
     );
-    assert_eq!(missing(&unknown_import), (CompositionName::Import, "Z".to_owned()));
+    assert_eq!(
+        missing(&unknown_import),
+        (CompositionName::Import, "Z".to_owned())
+    );
     let unknown_subject = refuse(
         "compose Sys rule interface { component Producer from P using X; \
          component Consumer from Q using M; }"
             .to_owned(),
     );
-    assert_eq!(missing(&unknown_subject), (CompositionName::Model, "X".to_owned()));
+    assert_eq!(
+        missing(&unknown_subject),
+        (CompositionName::Model, "X".to_owned())
+    );
     let unknown_clause = refuse(world.declare("interface", "guarantee Producer::Missing; "));
-    assert_eq!(missing(&unknown_clause), (CompositionName::Clause, "Missing".to_owned()));
+    assert_eq!(
+        missing(&unknown_clause),
+        (CompositionName::Clause, "Missing".to_owned())
+    );
     let unknown_component = refuse(world.declare("interface", "guarantee Nobody::Sends; "));
-    assert_eq!(missing(&unknown_component), (CompositionName::Component, "Nobody".to_owned()));
+    assert_eq!(
+        missing(&unknown_component),
+        (CompositionName::Component, "Nobody".to_owned())
+    );
     // A clause of the other component's package is no clause of this one.
     let other_package = refuse(world.declare("interface", "guarantee Producer::Done; "));
-    assert_eq!(missing(&other_package), (CompositionName::Clause, "Done".to_owned()));
+    assert_eq!(
+        missing(&other_package),
+        (CompositionName::Clause, "Done".to_owned())
+    );
     for refusal in [&unknown_import, &unknown_subject, &unknown_clause] {
         assert_eq!(refusal.code(), qsl_foundation::Code::MissingDeclaration);
         assert_eq!(refusal.cause(), "missing-name");
@@ -421,7 +453,11 @@ fn a_premise_that_does_not_fit_its_kind_refuses() {
         assert_eq!(refusal.code(), qsl_foundation::Code::InvalidModelBinding);
         assert_eq!(refusal.cause(), "malformed-declaration");
         match refusal {
-            CompositionRefusal::Malformed { reason, member, span } => {
+            CompositionRefusal::Malformed {
+                reason,
+                member,
+                span,
+            } => {
                 let written = text(&unit(&declaration), span).to_owned();
                 (reason, member, written)
             }
@@ -510,7 +546,10 @@ fn a_mutual_dependency_is_a_cycle_the_item_settles() {
     assert_eq!(profile, "fixed-point-lattice");
     assert_eq!(premises.len(), 2);
     assert_eq!(
-        roles(&slots).iter().filter(|role| **role == SlotRole::FixedPoint).count(),
+        roles(&slots)
+            .iter()
+            .filter(|role| **role == SlotRole::FixedPoint)
+            .count(),
         1
     );
 }
@@ -528,7 +567,10 @@ fn a_non_assume_guarantee_rule_derives_a_request_item() {
         let item = sole(&package).item();
         assert_eq!(item.placement, ItemPlacement::Request, "{rule}");
         let keys = |slots: &[CompositionSlot]| -> Vec<_> {
-            slots.iter().map(|slot| (slot.role, slot.key.clone())).collect()
+            slots
+                .iter()
+                .map(|slot| (slot.role, slot.key.clone()))
+                .collect()
         };
         assert_eq!(keys(&item.premises), keys(&sole(&local).slots()), "{rule}");
     }
@@ -550,14 +592,19 @@ fn the_composition_node_reads_back() {
     );
     let declaration = world.declare("assume-guarantee", &members);
     let source = unit(&declaration);
-    let package = world.compile(&declaration, None).expect("the unit compiles");
+    let package = world
+        .compile(&declaration, None)
+        .expect("the unit compiles");
     let composition = sole(&package);
     let node = write_composition(composition).expect("the node is written");
     let read = read_composition(&package, &node).expect("the node reads back");
     assert_eq!(read.components(), composition.components());
     assert_eq!(read.guarantees(), composition.guarantees());
     assert_eq!(read.relies(), composition.relies());
-    assert_eq!(read.liveness_dependencies(), composition.liveness_dependencies());
+    assert_eq!(
+        read.liveness_dependencies(),
+        composition.liveness_dependencies()
+    );
     assert_eq!(read.supplies(), composition.supplies());
     assert_eq!(read.environment(), composition.environment());
     assert_eq!(read.clauses(), composition.clauses());
@@ -582,10 +629,15 @@ fn the_composition_node_reads_back() {
     // The four lists are separate in the body.
     assert_eq!(node["body"]["relies"].as_array().map(Vec::len), Some(2));
     assert_eq!(
-        node["body"]["liveness_dependencies"].as_array().map(Vec::len),
+        node["body"]["liveness_dependencies"]
+            .as_array()
+            .map(Vec::len),
         Some(1)
     );
-    assert_eq!(node["body"]["environment"].as_array().map(Vec::len), Some(1));
+    assert_eq!(
+        node["body"]["environment"].as_array().map(Vec::len),
+        Some(1)
+    );
     assert_eq!(node["body"]["rule"], "assume-guarantee");
 
     // Two `relies` entries swapped, spans swapped with them.

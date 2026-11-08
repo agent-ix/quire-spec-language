@@ -14,9 +14,7 @@ use super::dispatch::{Construct, FormsRefusal};
 use super::guarantee_declaration::GuaranteeEnvironmentForm;
 use super::syntax::{DeclarationForm, DeclaredName, FairnessConstraintForm};
 use super::temporal_clause::fairness_form;
-use super::value::{
-    items, nodes_of, only, production_node, text, tokens_of, unexpected, Item,
-};
+use super::value::{items, nodes_of, only, production_node, text, tokens_of, unexpected, Item};
 
 /// A composition rule spelling (QSpec FR-491 "Declaration form").
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -202,10 +200,7 @@ fn declared(token: &qsl_cst::CstToken, node: &CstNode) -> Result<DeclaredName, F
     })
 }
 
-fn component(
-    cst: &LosslessCst,
-    node: &CstNode,
-) -> Result<CompositionComponentForm, FormsRefusal> {
+fn component(cst: &LosslessCst, node: &CstNode) -> Result<CompositionComponentForm, FormsRefusal> {
     let member_items = items(cst, node);
     // The contextual `component` word, then `C`, `I` and `M`.
     let [_, name, import, model] = tokens_of(&member_items, TokenKind::Identifier)[..] else {

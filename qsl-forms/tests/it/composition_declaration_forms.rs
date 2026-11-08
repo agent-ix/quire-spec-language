@@ -66,7 +66,11 @@ fn a_declaration_builds_its_members() {
         panic!("two components");
     };
     assert_eq!(
-        (&producer.name.name, &producer.import.name, &producer.model.name),
+        (
+            &producer.name.name,
+            &producer.import.name,
+            &producer.model.name
+        ),
         (&"Producer".to_owned(), &"P".to_owned(), &"M".to_owned())
     );
     assert_eq!(consumer.name.name, "Consumer");
@@ -99,8 +103,14 @@ fn a_declaration_builds_its_members() {
 fn every_rule_spelling_builds() {
     for (spelling, rule) in [
         ("assume-guarantee", CompositionRuleForm::AssumeGuarantee),
-        ("protocol-refinement", CompositionRuleForm::ProtocolRefinement),
-        ("refinement-transfer", CompositionRuleForm::RefinementTransfer),
+        (
+            "protocol-refinement",
+            CompositionRuleForm::ProtocolRefinement,
+        ),
+        (
+            "refinement-transfer",
+            CompositionRuleForm::RefinementTransfer,
+        ),
         ("interface", CompositionRuleForm::Interface),
     ] {
         let (text, unit) = build(&format!(

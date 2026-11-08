@@ -100,8 +100,9 @@ pub fn subject_text(identity: &str, assumptions: &[NodeKey]) -> Result<String, K
 
 impl PlannerDeclaration {
     /// The planner declaration of the implementation guarantee or the
-    /// `assume-guarantee` composition at `node` in `package`, whose checked
-    /// package identity text is `identity`.
+    /// `assume-guarantee` composition at `node` in `package`. The package
+    /// identity text is the checked package's own (`CheckedGraph::package_name`),
+    /// never a caller's string.
     ///
     /// # Errors
     ///
@@ -110,9 +111,9 @@ impl PlannerDeclaration {
     pub fn from_package(
         package: &CheckedPackage,
         node: &NodeKey,
-        identity: &str,
     ) -> Result<Self, DeclarationRefusal> {
         let graph = package.graph();
+        let identity = graph.package_name();
         let regions = Regions {
             source: graph.source(),
         };

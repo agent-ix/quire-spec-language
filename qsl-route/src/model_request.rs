@@ -28,7 +28,7 @@
 use std::collections::BTreeSet;
 
 use qsl_foundation::{BackendId, MemoryModelName, RequestIndex};
-use qsl_semantics::check::Capability;
+use qsl_semantics::check::{Capability, CheckedGraph};
 use qsl_semantics::family::Requirements;
 use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::fairness::PropertyForm;
@@ -37,6 +37,7 @@ use crate::deadlock::{
     by_subject, ItemObligation, ModelRefinementItem, ModelStateGraphItem, ModelTemporalItem,
     NoAnchor, ObligationKind, ProtocolTemporalItem, SubjectReading,
 };
+use crate::declaration::DeclaredItem;
 use crate::reductions::{ObligationReductions, Reductions};
 use crate::request::{AbstractSubject, DerivedLimits, ItemKind, RequestItem, RequestWriter};
 use crate::Registry;
@@ -213,6 +214,31 @@ impl<S: Clone + Eq> ModelRequest<S> {
         named: Option<&BackendId>,
         limits: &DerivedLimits,
     ) -> WrittenRequest<S> {
+        self.derived_with(registry, named, limits, None)
+    }
+
+    /// [`Self::derived`], then the premise items the guarantee and
+    /// composition declarations of `graph` derive (QSL FR-529, QSpec FR-490
+    /// "Derived items"), written after the derived items so no earlier item
+    /// moves. They are negotiated as every other item; see
+    /// [`WrittenRequest::declared`].
+    pub fn derived_with_declarations(
+        self,
+        registry: &Registry,
+        named: Option<&BackendId>,
+        limits: &DerivedLimits,
+        graph: &CheckedGraph,
+    ) -> WrittenRequest<S> {
+        self.derived_with(registry, named, limits, Some(graph))
+    }
+
+    fn derived_with(
+        self,
+        registry: &Registry,
+        named: Option<&BackendId>,
+        limits: &DerivedLimits,
+        graph: Option<&CheckedGraph>,
+    ) -> WrittenRequest<S> {
         let Self {
             mut writer,
             mut obligations,
@@ -268,10 +294,12 @@ impl<S: Clone + Eq> ModelRequest<S> {
                 );
             }
         }
+        let declared = graph.map_or_else(Vec::new, |graph| writer.declaration_items(graph));
         WrittenRequest {
             items: writer.finish(),
             obligations,
             unanchored,
+            declared,
         }
     }
 }
@@ -361,9 +389,18 @@ pub struct WrittenRequest<S> {
     items: Vec<RequestItem>,
     obligations: Vec<ItemObligation<S>>,
     unanchored: Vec<UnanchoredItem<S>>,
+    declared: Vec<DeclaredItem>,
 }
 
 impl<S: Eq> WrittenRequest<S> {
+    /// The declaration premise items written after the derived items, each
+    /// with the declaration and slot it answers; their obligation is the
+    /// declaration slot's, not a model subject's, so
+    /// [`Self::obligation`] has none for their indices.
+    pub fn declared(&self) -> &[DeclaredItem] {
+        &self.declared
+    }
+
     /// Every item, in index order.
     pub fn items(&self) -> &[RequestItem] {
         &self.items

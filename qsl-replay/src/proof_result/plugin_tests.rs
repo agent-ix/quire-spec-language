@@ -422,7 +422,10 @@ fn tc_774_cause_reader_refuses_in_order() {
         ("replay-refused", QslOnlyCause::ReplayRefused),
         ("kani_vacuous_proof", QslOnlyCause::KaniVacuousProof),
         ("premise-unproved", QslOnlyCause::PremiseUnproved),
-        ("transfer-not-preserving", QslOnlyCause::TransferNotPreserving),
+        (
+            "transfer-not-preserving",
+            QslOnlyCause::TransferNotPreserving,
+        ),
     ] {
         for body in [
             json!({"type": spelling}),

@@ -465,10 +465,7 @@ fn a_cycle_is_discharged_only_by_a_proved_fixed_point_result() {
 // ---- FR-530-AC-6; QSpec TC-983 case 5; FR-489-AC-6, 8, 9, 11 ---------------
 
 fn limits() -> ReadLimits {
-    ReadLimits {
-        plugin_backends: ["acme".to_owned()].into(),
-        ..ReadLimits::default()
-    }
+    ReadLimits::default()
 }
 
 #[trace("TC-1330", "FR-530-AC-6")]
@@ -489,13 +486,13 @@ fn trusted_assumption_only_failed_check_and_exhausted_budget_keep_distinct_outco
         "basis": {"type": "exhaustive"},
         "certification": "trusted",
     });
-    let admitted = read_settlement_request(
+    let admitted = read_declared(
         &declaration,
         &serde_json::to_vec(&trusted).expect("bytes"),
         &limits(),
     )
     .expect("admitted");
-    let result = settle(&declaration, &admitted, Budget::default()).expect("settles");
+    let result = settle_declared(&declaration, &admitted, Budget::default()).expect("settles");
     assert_eq!(result.value, PlannerValue::Proved);
     assert_eq!(result.certification, Some(Certification::Trusted));
     let entry = entry_for(&result, LIVENESS);

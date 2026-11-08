@@ -6,9 +6,9 @@
 //!
 //! The module is layer 6 `qsl-replay` (ADR-011 section 6.1), because it reads
 //! FR-331 result entries into [`TerminalRecord`](crate::TerminalRecord)s,
-//! which this crate owns (ADR-013 O-24). It reads no package: the front end
-//! builds a [`PlannerDeclaration`] from the checked package, and
-//! [`read_settlement_request`] admits a request against it.
+//! which this crate owns (ADR-013 O-24). It reads the checked package for the
+//! package identity and the declaration a request names, and nothing else of
+//! it.
 //!
 //! - [`read_result_entry`] reads one FR-331 result entry in the order QSpec
 //!   FR-331 "Result entries" gives; a plugin's entry goes through FR-290's
@@ -33,11 +33,15 @@ mod request;
 mod settle;
 
 #[cfg(test)]
+use request::read_declared;
+#[cfg(test)]
+use settle::settle_declared;
+
+#[cfg(test)]
 mod composition_tests;
 #[cfg(test)]
 mod tests;
 
-pub use from_package::{subject_text, DeclarationRefusal};
 pub use compose::{DischargeEntry, DischargeRecord, DischargeSource, Relation};
 pub use declaration::{
     ClauseFacts, ClauseForm, DerivedSlot, EnvSupplies, EnvironmentMember, ItemRole,
@@ -46,6 +50,7 @@ pub use declaration::{
 pub use entry::{
     read_result_entry, EntryCause, EntryOrigin, LimitFacts, ResultEntry, ResultEntryRefusal,
 };
+pub use from_package::{subject_text, DeclarationRefusal};
 pub use item::{read_premise_item, PremiseItem};
 pub use json::{Cause, Fault};
 pub use key::{

@@ -154,7 +154,10 @@ pub(crate) fn name_order(left: &str, right: &str) -> Ordering {
 
 /// The member names of `members` that `allowed` does not list, first in
 /// member-name order.
-pub(crate) fn first_undefined<'a>(members: &'a Map<String, Value>, allowed: &[&str]) -> Option<&'a str> {
+pub(crate) fn first_undefined<'a>(
+    members: &'a Map<String, Value>,
+    allowed: &[&str],
+) -> Option<&'a str> {
     members
         .keys()
         .map(String::as_str)

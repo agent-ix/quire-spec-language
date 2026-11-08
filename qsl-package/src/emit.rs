@@ -422,9 +422,7 @@ impl EmitRefusal {
             Self::Abstraction(AbstractionNodeRefusal::Internal(_)) => Code::RuntimeInvariant,
             Self::Abstraction(_)
             | Self::ImplementationGuarantee { .. }
-            | Self::Composition { .. } => {
-                Code::UnsupportedProjection
-            }
+            | Self::Composition { .. } => Code::UnsupportedProjection,
             Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
             Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {

@@ -231,29 +231,56 @@ pub struct DerivedSlot {
 #[derive(Clone, Debug)]
 pub struct PlannerDeclaration {
     /// Which kind of item the declaration is.
-    pub role: ItemRole,
+    pub(crate) role: ItemRole,
     /// The declaration node.
-    pub node: NodeKey,
+    pub(crate) node: NodeKey,
     /// The checked package's identity text.
-    pub package: String,
+    pub(crate) package: String,
     /// A composition's rule spelling (`assume-guarantee` is the only one the
     /// planner settles); `None` for a guarantee.
-    pub rule: Option<String>,
+    pub(crate) rule: Option<String>,
     /// The temporal clause of a guarantee; `None` for a composition.
-    pub clause: Option<ClauseFacts>,
+    pub(crate) clause: Option<ClauseFacts>,
     /// Every `RustPath` of the relation and the declaration: the
     /// implementation sources the conclusion record names.
-    pub relation_sources: Vec<String>,
+    pub(crate) relation_sources: Vec<String>,
     /// The FR-353 relation's `abstraction_relation` node (a guarantee).
-    pub relation_node: Option<NodeKey>,
+    pub(crate) relation_node: Option<NodeKey>,
     /// The declaration's environment members, in member order.
-    pub environment: Vec<EnvironmentMember>,
+    pub(crate) environment: Vec<EnvironmentMember>,
     /// The derived premise slots, in derived order.
-    pub slots: Vec<DerivedSlot>,
+    pub(crate) slots: Vec<DerivedSlot>,
     /// The scheduling constraints a composition supplies (its `supplies`
     /// members): what discharges a `fairness` slot and what a supplied
     /// guarantee's fairness set must be implied by. Empty for a guarantee.
-    pub supplies: Vec<FairnessConstraint>,
+    pub(crate) supplies: Vec<FairnessConstraint>,
+}
+
+impl PlannerDeclaration {
+    /// Which kind of item the declaration is.
+    pub const fn role(&self) -> ItemRole {
+        self.role
+    }
+
+    /// The declaration node.
+    pub const fn node(&self) -> &NodeKey {
+        &self.node
+    }
+
+    /// The checked package's identity text.
+    pub fn package(&self) -> &str {
+        &self.package
+    }
+
+    /// The declaration's environment members, in member order.
+    pub fn environment(&self) -> &[EnvironmentMember] {
+        &self.environment
+    }
+
+    /// The derived premise slots, in derived order.
+    pub fn slots(&self) -> &[DerivedSlot] {
+        &self.slots
+    }
 }
 
 impl EnvSupplies {

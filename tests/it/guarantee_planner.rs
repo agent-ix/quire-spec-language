@@ -116,7 +116,7 @@ fn chain(source: &str, name: &str) -> Chain {
 fn record(chain: &Chain) -> impl Fn(&str) -> Value {
     let context = chain
         .declaration
-        .environment
+        .environment()
         .iter()
         .find_map(|member| match &member.supplies {
             qsl_replay::planner::EnvSupplies::Fairness(premise) => {
@@ -128,7 +128,7 @@ fn record(chain: &Chain) -> impl Fn(&str) -> Value {
     let context = qsl_foundation::node_wire::node_key_to_json(&context).expect("a node");
     let members: Vec<(String, String)> = chain
         .declaration
-        .environment
+        .environment()
         .iter()
         .map(|member| (member.name.clone(), member.supplier.clone()))
         .collect();
@@ -204,7 +204,7 @@ fn the_positive_chain_settles_proved_with_its_conclusion_bound_to_the_source() {
         &format!("{CASE_ONE}{SIBLING}"),
     );
     let chain = chain(&source, "G");
-    assert_eq!(chain.declaration.slots.len(), 7);
+    assert_eq!(chain.declaration.slots().len(), 7);
     let result = chain.settled(&positive(&chain));
     assert_eq!(result.value, PlannerValue::Proved, "{:?}", result.to_wire());
     assert_eq!(result.value.basis().as_str(), "decisive-witness");
@@ -299,7 +299,7 @@ fn a_liveness_declaration_without_progress_names_the_first_no_divergence_slot() 
         Some((NO_DIVERGENCE as u64, PremiseOutcome::Absent))
     );
     assert_eq!(
-        chain.declaration.slots[NO_DIVERGENCE].role,
+        chain.declaration.slots()[NO_DIVERGENCE].role,
         SlotRole::NoDivergence
     );
     sibling_settles_unchanged(&source);
@@ -384,14 +384,14 @@ fn an_unbound_frame_refuses_the_guarantee_item_alone() {
     assert_eq!(refusal.cause(), "missing-name");
     let node = guarantee(&package, "G").node().clone();
     assert_eq!(
-        PlannerDeclaration::from_package(&package, &node, PACKAGE).err(),
+        PlannerDeclaration::from_package(&package, &node).err(),
         Some(qsl_replay::planner::DeclarationRefusal::ItemRefused {
             code: qsl_foundation::Code::MissingDeclaration,
             cause: "missing-name",
         })
     );
     // route writes no item for the refused guarantee.
-    let written = RequestWriter::new().declaration_items(package.graph(), PACKAGE);
+    let written = RequestWriter::new().declaration_items(package.graph());
     assert!(written.is_empty());
     // The other items of the package are the bound unit's.
     let bound = checked(&unit(&clauses, RELATION, ""));
@@ -603,7 +603,7 @@ fn a_relation_with_no_guarantee_has_the_records_and_route_results_it_has_without
     assert_eq!(route_of(&with), route_of(&without));
     // route writes no declaration item for the relation alone.
     assert!(RequestWriter::new()
-        .declaration_items(with.graph(), PACKAGE)
+        .declaration_items(with.graph())
         .is_empty());
 }
 
@@ -706,7 +706,7 @@ fn every_derived_item_route_writes_reads_back_with_an_equal_slot_key() {
         let node = guarantee(&package, name).node().clone();
         let chain = Chain::of(checked(&source), &node).expect("derives");
         let mut seen = 0;
-        for (index, slot) in chain.declaration.slots.iter().enumerate() {
+        for (index, slot) in chain.declaration.slots().iter().enumerate() {
             let SlotKey::Item(derived) = &slot.key else {
                 continue;
             };
@@ -722,7 +722,7 @@ fn every_derived_item_route_writes_reads_back_with_an_equal_slot_key() {
     }
     // route wrote an item for every item-backed slot, with the FR-331
     // members the slot's role gives it.
-    let written = RequestWriter::new().declaration_items(package.graph(), PACKAGE);
+    let written = RequestWriter::new().declaration_items(package.graph());
     let g = guarantee(&package, "G");
     let expected = g
         .slots(PACKAGE)
@@ -789,4 +789,100 @@ fn the_guarantee_node_reads_back_to_the_same_declaration_and_slots() {
     let read = qsl_package::read_implementation_guarantee(&package, &node).expect("it reads back");
     assert_eq!(&read, guarantee);
     assert_eq!(read.slots(PACKAGE), guarantee.slots(PACKAGE));
+}
+
+// ---- finding review: identity, route wiring, wire assumptions, origin --------
+
+/// The premise items of a package's declarations reach the finished request
+/// the production writer (`ModelRequest`) finishes, and are negotiated as
+/// every other item: each is in `items()` at its index and routes to the
+/// candidates the registry computes for its kind.
+#[trace("TC-1329", "FR-529-AC-1")]
+#[test]
+fn the_model_request_writes_and_negotiates_the_declaration_premise_items() {
+    use qsl_route::model_request::ModelRequest;
+    use qsl_route::request::DerivedLimits;
+    let package = checked(&unit(
+        &format!("{LIVENESS}{SAFETY}"),
+        RELATION,
+        &format!("{CASE_ONE}{SIBLING}"),
+    ));
+    let registry = registry_for(package.graph());
+    let request = ModelRequest::<()>::new().derived_with_declarations(
+        &registry,
+        None,
+        &DerivedLimits::default(),
+        package.graph(),
+    );
+    assert!(!request.declared().is_empty());
+    for declared in request.declared() {
+        let at = declared.item.index();
+        assert_eq!(request.items()[at.get()], declared.item);
+        assert!(request.obligation(at).is_none());
+        assert!(matches!(
+            registry.candidates(declared.item.kind(), None),
+            CandidateOutcome::Candidates(_)
+        ));
+    }
+    // Without the graph the writer adds none.
+    let plain = ModelRequest::<()>::new().derived(&registry, None, &DerivedLimits::default());
+    assert!(plain.declared().is_empty());
+}
+
+/// The package identity is the checked package's: a request naming another
+/// package is refused at `/package`.
+#[trace("TC-1329", "FR-529-AC-6")]
+#[test]
+fn the_package_identity_is_the_checked_packages_not_the_callers() {
+    let (_, chain) = liveness_chain();
+    assert_eq!(chain.package.graph().package_name(), PACKAGE);
+    let mut request = positive(&chain);
+    request["package"] = json!("other");
+    assert_eq!(chain.refusal(&request), invalid("/package"));
+}
+
+/// A model claim whose premise result names an assumption no environment
+/// record supplies settles `premise-unproved` naming the model-claim slot,
+/// from request bytes alone; any other slot's result refuses the member.
+#[trace("TC-1329", "FR-529-AC-6")]
+#[trace("QSpec-TC-986", "QSpec-FR-492-AC-12")]
+#[test]
+fn a_wire_model_claim_naming_an_unsupplied_assumption_is_premise_unproved() {
+    let (_, chain) = liveness_chain();
+    let mut request = positive(&chain);
+    request["slots"][MODEL_CLAIM]["result"]["assumptions"] = json!(["Fair"]);
+    let result = chain.settled(&request);
+    assert_eq!(result.value, PlannerValue::Inconclusive);
+    assert_eq!(
+        premise(&result).map(|(slot, _)| slot),
+        Some(MODEL_CLAIM as u64)
+    );
+    let mut elsewhere = positive(&chain);
+    elsewhere["slots"][FRAME]["result"]["assumptions"] = json!(["Fair"]);
+    assert_eq!(
+        chain.refusal(&elsewhere),
+        invalid("/slots/3/result/assumptions")
+    );
+}
+
+/// An entry's backend name decides nothing: its own certification does. A
+/// proved entry that states `uncertified` stays first-party `uncertified`
+/// whatever backend it names.
+#[trace("TC-1329", "FR-529-AC-6")]
+#[trace("QSpec-TC-986", "QSpec-FR-492-AC-8")]
+#[test]
+fn a_backend_name_does_not_make_an_entry_trusted() {
+    let (_, chain) = liveness_chain();
+    let mut request = positive(&chain);
+    set_entry(
+        &mut request,
+        FRAME,
+        chain.entry(
+            FRAME,
+            json!({"result": "proved", "backend": "acme", "basis": {"type": "exhaustive"}, "certification": "uncertified"}),
+        ),
+    );
+    let result = chain.settled(&request);
+    assert_eq!(result.value, PlannerValue::Proved);
+    assert_eq!(result.certification, Some(Certification::Uncertified));
 }

@@ -125,6 +125,7 @@ and per filled slot one `PremiseResult`:
 | `item` | the premise request item as read: subject, claim node, FR-290 kind, fairness set, `stutter_closure`, `correspondence` and FR-331 extent classification |
 | `record` | the item's `TerminalRecord`, read from the complete result entry |
 | `certification` | the record's FR-354 `Certification` when `proved`, capped as QSpec FR-492 states: an entry read from request bytes is never `certified` (a `certified` entry reads as `uncertified`); only a `PremiseResult::from_record` built in process from QSL's own `TerminalRecord` keeps `certified` |
+| `model_claim_assumptions` | on a `model-claim` slot only: the names of the environment assumptions the result was proved under, read from the premise result's optional `assumptions` member (absent means none; on any other slot the member is `invalid-value`). A name no filled `environment` record supplies settles the slot `inconclusive` (QSpec FR-492 "Slot outcome"). A `proved` entry is `trusted` when its own `certification` says so, never because of the backend name it carries |
 
 An environment slot holds an `EnvironmentRecord {name, supplier,
 supplies}` and no certification. A slot is constructed only from read bytes,

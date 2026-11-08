@@ -149,19 +149,20 @@ pub fn write_composition(composition: &CheckedComposition) -> Result<Value, Node
                 .map(|member| span_value(member.source))
         })
         .collect();
-    let premise_spans = |entries: &[PremiseEntry], members: &[qsl_semantics::check::CompositionPremise]| {
-        entries
-            .iter()
-            .filter_map(|entry| {
-                let guarantee = clause_of(entry.guarantee())?;
-                let on = clause_of(entry.on())?;
-                members
-                    .iter()
-                    .find(|member| member.guarantee == guarantee && member.on == on)
-                    .map(|member| span_value(member.source))
-            })
-            .collect::<Vec<Value>>()
-    };
+    let premise_spans =
+        |entries: &[PremiseEntry], members: &[qsl_semantics::check::CompositionPremise]| {
+            entries
+                .iter()
+                .filter_map(|entry| {
+                    let guarantee = clause_of(entry.guarantee())?;
+                    let on = clause_of(entry.on())?;
+                    members
+                        .iter()
+                        .find(|member| member.guarantee == guarantee && member.on == on)
+                        .map(|member| span_value(member.source))
+                })
+                .collect::<Vec<Value>>()
+        };
     let supply_spans: Vec<Value> = term
         .supplies()
         .iter()
@@ -369,7 +370,10 @@ pub fn read_composition(
         let at = format!("/body/supplies/{index}");
         let map = object(entry, &["kind", "granularity", "context", "operation"], &at)?;
         let kind = text(member(map, "kind", &at)?, &format!("{at}/kind"))?;
-        let granularity = text(member(map, "granularity", &at)?, &format!("{at}/granularity"))?;
+        let granularity = text(
+            member(map, "granularity", &at)?,
+            &format!("{at}/granularity"),
+        )?;
         if !matches!(kind, "weak" | "strong") || !matches!(granularity, "whole" | "each") {
             return Err(NodeReadRefusal::graph(at));
         }

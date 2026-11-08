@@ -13,8 +13,7 @@ use qsl_package::{
     V2ReadLimits,
 };
 use qsl_replay::planner::{
-    DeclarationRefusal, PlannerCause, PlannerDeclaration, PlannerResult, PlannerValue, ReadLimits,
-    SlotRole,
+    DeclarationRefusal, PlannerCause, PlannerDeclaration, PlannerResult, PlannerValue, SlotRole,
 };
 use qsl_replay::{Certification, InconclusiveCause, ItemLabel, PremiseOutcome};
 use qsl_route::request::RequestWriter;
@@ -250,7 +249,7 @@ fn positive(chain: &Chain) -> Value {
 fn a_discharged_producer_consumer_composition_settles_proved_with_its_discharge_record() {
     let world = World::new();
     let chain = world.chain("assume-guarantee", CASE_ONE_MEMBERS, None);
-    assert_eq!(chain.declaration.slots.len(), 6);
+    assert_eq!(chain.declaration.slots().len(), 6);
     let result = chain.settled(&positive(&chain));
     assert_eq!(result.value, PlannerValue::Proved);
     assert_eq!(result.value.basis().as_str(), "decisive-witness");
@@ -313,7 +312,7 @@ fn a_mutual_dependency_without_the_lattice_refuses_the_composition_item() {
     let named: Vec<String> = refusal.cycles[0].iter().map(ToString::to_string).collect();
     assert_eq!(named, ["Consumer::Done", "Producer::Sends"]);
     assert_eq!(
-        PlannerDeclaration::from_package(&package, composition.node(), PACKAGE).err(),
+        PlannerDeclaration::from_package(&package, composition.node()).err(),
         Some(DeclarationRefusal::ItemRefused {
             code: qsl_foundation::Code::InvalidModelBinding,
             cause: "malformed-declaration",
@@ -321,7 +320,7 @@ fn a_mutual_dependency_without_the_lattice_refuses_the_composition_item() {
     );
     // route writes no item for the refused composition.
     assert!(RequestWriter::new()
-        .declaration_items(package.graph(), PACKAGE)
+        .declaration_items(package.graph())
         .is_empty());
 }
 
@@ -332,7 +331,7 @@ fn a_cycle_settles_proved_only_through_a_proved_fixed_point_result() {
     let world = World::new();
     let members = format!("{CASE_ONE_MEMBERS}{MUTUAL}");
     let chain = world.chain("assume-guarantee", &members, Some("fixed-point-lattice"));
-    let slots = &chain.declaration.slots;
+    let slots = &chain.declaration.slots();
     let fixed = slots.len() - 1;
     assert_eq!(slots[fixed].role, SlotRole::FixedPoint);
     assert_eq!(slots[fixed].cycle, Some(0));
@@ -372,13 +371,9 @@ fn each_outcome_keeps_its_own_trust_basis_and_extent() {
         json!({"result": "proved", "backend": "acme", "basis": {"type": "exhaustive"}, "certification": "trusted"}),
     );
     trusted["slots"][SENDS]["result"]["result"] = plugin;
-    let limits = ReadLimits {
-        plugin_backends: ["acme".to_owned()].into(),
-        ..ReadLimits::default()
-    };
-    let read = chain.read_with(&trusted, &limits).expect("admitted");
+    let read = chain.read(&trusted).expect("admitted");
     let settled = qsl_replay::planner::settle(
-        &chain.declaration,
+        &chain.package,
         &read,
         qsl_replay::planner::Budget::default(),
     )
@@ -392,9 +387,9 @@ fn each_outcome_keeps_its_own_trust_basis_and_extent() {
         "{CASE_ONE_MEMBERS}environment Net by \"network\" fair weak each M::Producer::send; "
     );
     let assumed = world.chain("assume-guarantee", &members, None);
-    let env = assumed.declaration.slots.len() - 1;
-    assert_eq!(assumed.declaration.slots[env].role, SlotRole::Environment);
-    let context = match &assumed.declaration.environment[0].supplies {
+    let env = assumed.declaration.slots().len() - 1;
+    assert_eq!(assumed.declaration.slots()[env].role, SlotRole::Environment);
+    let context = match &assumed.declaration.environment()[0].supplies {
         qsl_replay::planner::EnvSupplies::Fairness(premise) => {
             qsl_foundation::node_wire::node_key_to_json(&premise.operation.context).expect("a node")
         }
@@ -441,10 +436,10 @@ fn each_outcome_keeps_its_own_trust_basis_and_extent() {
     let package = world.package("interface", CASE_ONE_MEMBERS, None);
     let node = package.graph().compositions()[0].node().clone();
     assert_eq!(
-        PlannerDeclaration::from_package(&package, &node, PACKAGE).err(),
+        PlannerDeclaration::from_package(&package, &node).err(),
         Some(DeclarationRefusal::NotPlannerLocal("interface"))
     );
-    let written = RequestWriter::new().declaration_items(package.graph(), PACKAGE);
+    let written = RequestWriter::new().declaration_items(package.graph());
     let own = written
         .iter()
         .find(|declared| declared.slot.is_none())
@@ -515,6 +510,6 @@ fn a_forged_or_reordered_slot_and_a_result_for_another_identity_are_refused() {
     assert_eq!(chain.refusal(&foreign), invalid("/slots/0/result"));
     // The unrelated route items of the package are unchanged by the
     // declaration: its component-guarantee items are the only ones written.
-    let written = RequestWriter::new().declaration_items(chain.package.graph(), PACKAGE);
+    let written = RequestWriter::new().declaration_items(chain.package.graph());
     assert_eq!(written.len(), 3);
 }

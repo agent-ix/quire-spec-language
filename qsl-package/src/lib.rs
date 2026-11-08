@@ -33,13 +33,13 @@ mod checked_v2;
 #[cfg(feature = "std")]
 pub mod checked_views;
 #[cfg(feature = "std")]
+mod composition;
+#[cfg(feature = "std")]
 mod emit;
 #[cfg(feature = "std")]
 mod equality_file;
 pub mod evaluation_view;
 mod export;
-#[cfg(feature = "std")]
-mod composition;
 #[cfg(feature = "std")]
 mod guarantee;
 #[cfg(feature = "std")]
@@ -91,6 +91,8 @@ pub use checked_v2::{
     UnsupportedWire, V2ReadLimits, V2ReadRefusal,
 };
 #[cfg(feature = "std")]
+pub use composition::{read_composition, write_composition};
+#[cfg(feature = "std")]
 pub use emit::{
     checked_occurrence, declaration_less_function_id, emit_checked, emit_checked_with_cancel,
     emit_checked_with_protocol_results,
@@ -113,8 +115,6 @@ pub use evaluation_view::{
     TermHandle, ViewFailure,
 };
 pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
-#[cfg(feature = "std")]
-pub use composition::{read_composition, write_composition};
 #[cfg(feature = "std")]
 pub use guarantee::{
     read_implementation_guarantee, write_implementation_guarantee, NodeReadRefusal,

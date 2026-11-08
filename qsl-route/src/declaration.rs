@@ -130,8 +130,10 @@ impl Declared {
 impl RequestWriter {
     /// Write the items the guarantee and composition declarations of `graph`
     /// derive, each with its own [`RequestIndex`], and return them in write
-    /// order. `package` is the checked package's identity text.
-    pub fn declaration_items(&mut self, graph: &CheckedGraph, package: &str) -> Vec<DeclaredItem> {
+    /// order. The package identity that fixes each slot key is the checked
+    /// package's own ([`CheckedGraph::package_name`]).
+    pub fn declaration_items(&mut self, graph: &CheckedGraph) -> Vec<DeclaredItem> {
+        let package = graph.package_name();
         let mut written = Vec::new();
         for guarantee in graph.implementation_guarantees() {
             self.guarantee_items(guarantee, package, &mut written);

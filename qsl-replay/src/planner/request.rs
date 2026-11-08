@@ -12,6 +12,7 @@
 
 use std::collections::BTreeSet;
 
+use qsl_package::CheckedPackage;
 use quire_exact::NodeKey;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 use serde_json::{Map, Value};
@@ -35,21 +36,17 @@ pub const FORMAT: &str = "quire.planner-settlement/v1";
 /// The planner's published default of `planner.max_work` (QSpec FR-461).
 pub const DEFAULT_MAX_WORK: u64 = 100_000;
 
-/// The reader's limits and the registry knowledge it needs.
+/// The reader's limits.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReadLimits {
     /// The most encoded bytes a request may hold (`replay.input_bytes`).
     pub input_bytes: u64,
-    /// The identities of the backends loaded as plugins (QSpec FR-305): their
-    /// result entries are read as `trusted` proofs (QSpec FR-331-AC-23).
-    pub plugin_backends: BTreeSet<String>,
 }
 
 impl Default for ReadLimits {
     fn default() -> Self {
         Self {
             input_bytes: DEFAULT_REPLAY_INPUT_BYTES,
-            plugin_backends: BTreeSet::new(),
         }
     }
 }
@@ -59,21 +56,21 @@ impl Default for ReadLimits {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PremiseResult {
     /// The premise request item as read.
-    pub item: PremiseItem,
+    pub(crate) item: PremiseItem,
     /// The result entry as a terminal record.
-    pub record: TerminalRecord,
+    pub(crate) record: TerminalRecord,
     /// The record's FR-354 certification when `proved`. An entry read from
     /// request bytes is never `certified`; only [`Self::from_record`] keeps
     /// it.
-    pub certification: Option<Certification>,
+    pub(crate) certification: Option<Certification>,
     /// The names of the assumptions a `model-claim` result was proved under.
     /// FR-331 carries them in no result member, so a result read from bytes
     /// has none; an in-process producer sets them.
-    pub model_claim_assumptions: BTreeSet<String>,
+    pub(crate) model_claim_assumptions: BTreeSet<String>,
     /// The entry's FR-272 diagnostic, kept as written.
-    pub diagnostic: Option<Value>,
+    pub(crate) diagnostic: Option<Value>,
     /// The limit an `incomplete` entry's `limit-reached` cause names.
-    pub limit_reached: Option<LimitFacts>,
+    pub(crate) limit_reached: Option<LimitFacts>,
 }
 
 impl PremiseResult {
@@ -137,11 +134,11 @@ pub enum RecordSupplies {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnvironmentRecord {
     /// The member's name.
-    pub name: String,
+    pub(crate) name: String,
     /// The supplier.
-    pub supplier: String,
+    pub(crate) supplier: String,
     /// What it supplies.
-    pub supplies: RecordSupplies,
+    pub(crate) supplies: RecordSupplies,
 }
 
 impl EnvironmentRecord {
@@ -187,9 +184,9 @@ pub enum SlotFill {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RequestSlot {
     /// The slot's role.
-    pub role: SlotRole,
+    pub(crate) role: SlotRole,
     /// What fills it.
-    pub fill: SlotFill,
+    pub(crate) fill: SlotFill,
 }
 
 /// What discharges a composition slot (QSpec FR-492 `discharges`).
@@ -206,18 +203,18 @@ pub enum Discharger {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Discharge {
     /// The slot index claimed discharged.
-    pub slot: usize,
+    pub(crate) slot: usize,
     /// What is claimed to discharge it.
-    pub by: Discharger,
+    pub(crate) by: Discharger,
 }
 
 /// The item a request settles.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ItemRef {
     /// `guarantee` or `composition`.
-    pub role: ItemRole,
+    pub(crate) role: ItemRole,
     /// The declaration node.
-    pub node: NodeKey,
+    pub(crate) node: NodeKey,
 }
 
 /// One admitted `quire.planner-settlement/v1` request. Built only by
@@ -226,17 +223,17 @@ pub struct ItemRef {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SettlementRequest {
     /// The checked package's identity.
-    pub package: String,
+    pub(crate) package: String,
     /// The item settled.
-    pub item: ItemRef,
+    pub(crate) item: ItemRef,
     /// The slots, in derived order.
-    pub slots: Vec<RequestSlot>,
+    pub(crate) slots: Vec<RequestSlot>,
     /// The pool of supplied component guarantee results (composition only).
-    pub guarantees: Vec<PremiseResult>,
+    pub(crate) guarantees: Vec<PremiseResult>,
     /// The explicit discharge claims (composition only).
-    pub discharges: Vec<Discharge>,
+    pub(crate) discharges: Vec<Discharge>,
     /// `limits.max_work`, when the request sets it.
-    pub max_work: Option<u64>,
+    pub(crate) max_work: Option<u64>,
 }
 
 /// A request the planner refuses; nothing is settled and no planner result is
@@ -292,34 +289,65 @@ impl From<Fault> for RequestRefusal {
 
 type Refusal = RequestRefusal;
 
-/// Read and admit one settlement request for `declaration`.
+/// Read and admit one settlement request against `package` (QSL FR-529,
+/// QSpec FR-492 "Admission"). The package identity that fixes the relation
+/// revision, and the declaration the request settles, are the checked
+/// package's own; the request names the declaration by its item node.
 ///
 /// # Errors
 ///
 /// [`RequestRefusal`] naming the first defect in QSpec FR-492's admission
-/// order.
+/// order. An item node that names no planner-local guarantee or composition
+/// of the package is `invalid-value` at `/item/node`.
 #[ix_trace_rs::string_edge]
 pub fn read_settlement_request(
+    package: &CheckedPackage,
+    bytes: &[u8],
+    limits: &ReadLimits,
+) -> Result<SettlementRequest, RequestRefusal> {
+    let document = parse_document(bytes, limits)?;
+    let Value::Object(top) = &document else {
+        return Err(Fault::new(Cause::MalformedJson, "").into());
+    };
+    let composition = top
+        .get("item")
+        .and_then(|item| item.get("role"))
+        .and_then(Value::as_str)
+        .and_then(ItemRole::parse)
+        == Some(ItemRole::Composition);
+    admit_header(composition, top, package.graph().package_name())?;
+    let declaration = declare(package, top)?;
+    admit_parsed(&declaration, top)
+}
+
+/// Read and admit one settlement request for `declaration`.
+#[cfg(test)]
+#[ix_trace_rs::string_edge]
+pub(crate) fn read_declared(
     declaration: &PlannerDeclaration,
     bytes: &[u8],
     limits: &ReadLimits,
 ) -> Result<SettlementRequest, RequestRefusal> {
-    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limits.input_bytes {
-        return Err(Fault::new(Cause::InputBytesExceeded, "").into());
-    }
-    let document = match parse_strict(bytes) {
-        Parsed::Document(document) => document,
-        Parsed::Malformed => return Err(Fault::new(Cause::MalformedJson, "").into()),
-        Parsed::Duplicate(pointer) => {
-            return Err(Fault::new(Cause::DuplicateMember, pointer).into())
-        }
-    };
+    let document = parse_document(bytes, limits)?;
     let Value::Object(top) = &document else {
         return Err(Fault::new(Cause::MalformedJson, "").into());
     };
+    admit_parsed(declaration, top)
+}
 
-    // Step 1: members and JSON kinds.
-    let composition = declaration.role == ItemRole::Composition;
+fn parse_document(bytes: &[u8], limits: &ReadLimits) -> Result<Value, Refusal> {
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limits.input_bytes {
+        return Err(Fault::new(Cause::InputBytesExceeded, "").into());
+    }
+    match parse_strict(bytes) {
+        Parsed::Document(document) => Ok(document),
+        Parsed::Malformed => Err(Fault::new(Cause::MalformedJson, "").into()),
+        Parsed::Duplicate(pointer) => Err(Fault::new(Cause::DuplicateMember, pointer).into()),
+    }
+}
+
+/// Steps 1 and 2 up to the item: members and kinds, format and package.
+fn admit_header(composition: bool, top: &Map<String, Value>, package: &str) -> Result<(), Fault> {
     let optional: &[&str] = if composition {
         &["discharges", "guarantees", "limits"]
     } else {
@@ -327,14 +355,38 @@ pub fn read_settlement_request(
     };
     check_members(top, "", &["format", "item", "package", "slots"], optional)?;
     check_shapes(top)?;
-
-    // Step 2: format, package, item.
     if string(require(top, "format", "")?, "/format")? != FORMAT {
-        return Err(Fault::invalid("/format".to_owned()).into());
+        return Err(Fault::invalid("/format".to_owned()));
     }
-    if string(require(top, "package", "")?, "/package")? != declaration.package {
-        return Err(Fault::invalid("/package".to_owned()).into());
+    if string(require(top, "package", "")?, "/package")? != package {
+        return Err(Fault::invalid("/package".to_owned()));
     }
+    Ok(())
+}
+
+/// The package's declaration the request's item names.
+fn declare(
+    package: &CheckedPackage,
+    top: &Map<String, Value>,
+) -> Result<PlannerDeclaration, Fault> {
+    let item = object(require(top, "item", "")?, "/item")?;
+    let role = string(require(item, "role", "/item")?, "/item/role")?;
+    ItemRole::parse(role).ok_or_else(|| Fault::invalid("/item/role".to_owned()))?;
+    let node = read_node(require(item, "node", "/item")?, "/item/node")?;
+    PlannerDeclaration::from_package(package, &node)
+        .map_err(|_| Fault::invalid("/item/node".to_owned()))
+}
+
+fn admit_parsed(
+    declaration: &PlannerDeclaration,
+    top: &Map<String, Value>,
+) -> Result<SettlementRequest, RequestRefusal> {
+    // Steps 1 and 2: members, kinds, format, package, item.
+    admit_header(
+        declaration.role == ItemRole::Composition,
+        top,
+        &declaration.package,
+    )?;
     let item = admit_item(declaration, top)?;
     let max_work = admit_limits(top)?;
 
@@ -348,13 +400,14 @@ pub fn read_settlement_request(
     // Step 5: each premise result, then the pool.
     let mut request_slots = Vec::with_capacity(slots.len());
     for (index, (slot, derived)) in slots.iter().zip(&declaration.slots).enumerate() {
-        request_slots.push(read_slot_result(index, slot, derived, limits)?);
+        request_slots.push(read_slot_result(index, slot, derived)?);
     }
     let mut guarantees = Vec::new();
     if let Some(pool) = top.get("guarantees") {
         for (index, entry) in array(pool, "/guarantees")?.iter().enumerate() {
             let pointer = format!("/guarantees/{index}");
-            let (item, entry_value) = read_premise_parts(entry, &pointer, limits)?;
+            let (item, entry_value) = read_premise_parts(entry, &pointer)?;
+            read_assumptions(entry, &pointer, false)?;
             guarantees.push(PremiseResult::from_entry(item, entry_value));
         }
     }
@@ -470,7 +523,7 @@ fn check_premise_result_shape(value: &Value, pointer: &str) -> Result<(), Fault>
         members,
         pointer,
         &["request", "result"],
-        &["counterexamples"],
+        &["assumptions", "counterexamples"],
     )?;
     object(
         require(members, "request", pointer)?,
@@ -483,7 +536,40 @@ fn check_premise_result_shape(value: &Value, pointer: &str) -> Result<(), Fault>
     if let Some(counterexamples) = members.get("counterexamples") {
         object(counterexamples, &child(pointer, "counterexamples"))?;
     }
+    if let Some(assumptions) = members.get("assumptions") {
+        let pointer = child(pointer, "assumptions");
+        for (index, name) in array(assumptions, &pointer)?.iter().enumerate() {
+            string(name, &format!("{pointer}/{index}"))?;
+        }
+    }
     Ok(())
+}
+
+/// The names of the environment assumptions a `model-claim` result was
+/// proved under: the premise result's optional `assumptions` member, absent
+/// meaning none. Only a `model-claim` slot's result carries it (QSpec FR-492
+/// "Slot outcome").
+fn read_assumptions(
+    value: &Value,
+    pointer: &str,
+    allowed: bool,
+) -> Result<BTreeSet<String>, Fault> {
+    let Some(assumptions) = value.get("assumptions") else {
+        return Ok(BTreeSet::new());
+    };
+    let pointer = child(pointer, "assumptions");
+    if !allowed {
+        return Err(Fault::invalid(pointer));
+    }
+    let mut names = BTreeSet::new();
+    for (index, name) in array(assumptions, &pointer)?.iter().enumerate() {
+        let member = format!("{pointer}/{index}");
+        let name = string(name, &member)?;
+        if name.is_empty() || !names.insert(name.to_owned()) {
+            return Err(Fault::invalid(member));
+        }
+    }
+    Ok(names)
 }
 
 fn check_discharge_shape(value: &Value, pointer: &str) -> Result<(), Fault> {
@@ -590,17 +676,20 @@ fn read_slot_result(
     index: usize,
     slot: &Value,
     derived: &DerivedSlot,
-    limits: &ReadLimits,
 ) -> Result<RequestSlot, Refusal> {
     let fill = match slot.get("result") {
         None => SlotFill::Unfilled,
         Some(result) => {
             let pointer = format!("/slots/{index}/result");
-            let (item, entry) = read_premise_parts(result, &pointer, limits)?;
+            let (item, entry) = read_premise_parts(result, &pointer)?;
             if SlotKey::Item(item.key.clone()) != derived.key {
                 return Err(Fault::invalid(pointer).into());
             }
-            SlotFill::Result(Box::new(PremiseResult::from_entry(item, entry)))
+            let assumptions =
+                read_assumptions(result, &pointer, derived.role == SlotRole::ModelClaim)?;
+            let mut premise = PremiseResult::from_entry(item, entry);
+            premise.model_claim_assumptions = assumptions;
+            SlotFill::Result(Box::new(premise))
         }
     };
     Ok(RequestSlot {
@@ -611,19 +700,19 @@ fn read_slot_result(
 
 /// Read a premise result `{request, result}` with FR-331's strict readers.
 #[ix_trace_rs::string_edge]
-fn read_premise_parts(
-    value: &Value,
-    pointer: &str,
-    limits: &ReadLimits,
-) -> Result<(PremiseItem, ResultEntry), Refusal> {
+fn read_premise_parts(value: &Value, pointer: &str) -> Result<(PremiseItem, ResultEntry), Refusal> {
     let members = object(value, pointer)?;
     let request_pointer = child(pointer, "request");
     let item = read_premise_item(require(members, "request", pointer)?)
         .map_err(|fault| fault.under(&request_pointer))?;
     let entry_pointer = child(pointer, "result");
     let entry_value = require(members, "result", pointer)?;
-    let origin = match entry_value.get("backend").and_then(Value::as_str) {
-        Some(backend) if limits.plugin_backends.contains(backend) => EntryOrigin::Plugin,
+    // The entry's own certification says who stands behind it (QSpec FR-331
+    // "Certification"): `trusted` is a plugin's, which the core checks
+    // nothing of. A backend name is a self-declared label and decides
+    // nothing.
+    let origin = match entry_value.get("certification").and_then(Value::as_str) {
+        Some("trusted") => EntryOrigin::Plugin,
         _ => EntryOrigin::FirstParty,
     };
     let entry = read_result_entry(

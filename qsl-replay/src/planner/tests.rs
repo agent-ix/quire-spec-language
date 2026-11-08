@@ -30,7 +30,10 @@ pub(super) fn node(label: &str) -> NodeKey {
     node_in(PACKAGE, label)
 }
 
-pub(super) fn constraint(kind: FairnessKind, granularity: FairnessGranularity) -> FairnessConstraint {
+pub(super) fn constraint(
+    kind: FairnessKind,
+    granularity: FairnessGranularity,
+) -> FairnessConstraint {
     FairnessConstraint::new(
         kind,
         FairnessOperation::new(crate::fixture_effective(7), "inc".to_owned()),
@@ -316,7 +319,7 @@ pub(super) fn read(
     declaration: &PlannerDeclaration,
     request: &Value,
 ) -> Result<SettlementRequest, RequestRefusal> {
-    read_settlement_request(
+    read_declared(
         declaration,
         &serde_json::to_vec(request).expect("bytes"),
         &ReadLimits::default(),
@@ -325,7 +328,7 @@ pub(super) fn read(
 
 pub(super) fn settled(declaration: &PlannerDeclaration, request: &Value) -> PlannerResult {
     let read = read(declaration, request).expect("the request is admitted");
-    settle(declaration, &read, Budget::default()).expect("the item settles")
+    settle_declared(declaration, &read, Budget::default()).expect("the item settles")
 }
 
 pub(super) fn refusal(
@@ -832,17 +835,14 @@ fn trust_is_the_weakest_deciding_premise_and_certified_is_never_read_from_bytes(
             "certification": "trusted",
         }),
     );
-    let limits = ReadLimits {
-        plugin_backends: ["acme".to_owned()].into(),
-        ..ReadLimits::default()
-    };
-    let admitted = read_settlement_request(
+    let limits = ReadLimits::default();
+    let admitted = read_declared(
         &declaration,
         &serde_json::to_vec(&request).expect("bytes"),
         &limits,
     )
     .expect("admitted");
-    let trusted = settle(&declaration, &admitted, Budget::default()).expect("settles");
+    let trusted = settle_declared(&declaration, &admitted, Budget::default()).expect("settles");
     assert_eq!(trusted.value, PlannerValue::Proved);
     assert_eq!(trusted.certification, Some(Certification::Trusted));
 
@@ -876,7 +876,7 @@ fn trust_is_the_weakest_deciding_premise_and_certified_is_never_read_from_bytes(
             }
         }
     }
-    let certified = settle(&declaration, &in_process, Budget::default()).expect("settles");
+    let certified = settle_declared(&declaration, &in_process, Budget::default()).expect("settles");
     assert_eq!(certified.certification, Some(Certification::Certified));
 }
 
@@ -1031,7 +1031,7 @@ fn a_model_claim_naming_an_unsupplied_assumption_is_premise_unproved() {
         panic!("the model claim is filled");
     };
     claim.model_claim_assumptions = ["Fair".to_owned()].into();
-    let result = settle(&declaration, &admitted, Budget::default()).expect("settles");
+    let result = settle_declared(&declaration, &admitted, Budget::default()).expect("settles");
     assert_eq!(result.value, PlannerValue::Inconclusive);
     assert_eq!(
         premise(&result),
@@ -1049,7 +1049,7 @@ fn a_model_claim_naming_an_unsupplied_assumption_is_premise_unproved() {
         panic!("the model claim is filled");
     };
     claim.model_claim_assumptions = ["Fair".to_owned()].into();
-    let result = settle(&declaration, &admitted, Budget::default()).expect("settles");
+    let result = settle_declared(&declaration, &admitted, Budget::default()).expect("settles");
     assert_eq!(result.value, PlannerValue::Proved);
 }
 
@@ -1186,8 +1186,7 @@ fn a_fairness_slot_with_no_frame_binding_is_not_implied() {
 fn the_document_and_its_members_are_checked_first() {
     let declaration = declaration();
     let bytes = |text: &str| {
-        read_settlement_request(&declaration, text.as_bytes(), &ReadLimits::default())
-            .expect_err("refused")
+        read_declared(&declaration, text.as_bytes(), &ReadLimits::default()).expect_err("refused")
     };
     let cause = |refusal: RequestRefusal| (refusal.code(), refusal.cause(), refusal.pointer());
     assert_eq!(
@@ -1256,11 +1255,8 @@ fn the_document_and_its_members_are_checked_first() {
         )
     );
 
-    let tight = ReadLimits {
-        input_bytes: 8,
-        ..ReadLimits::default()
-    };
-    let over = read_settlement_request(
+    let tight = ReadLimits { input_bytes: 8 };
+    let over = read_declared(
         &declaration,
         &serde_json::to_vec(&request_for(&declaration)).expect("bytes"),
         &tight,
