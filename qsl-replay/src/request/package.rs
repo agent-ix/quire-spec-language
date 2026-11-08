@@ -82,6 +82,9 @@ impl ReplayPackage {
             CheckedPackageDispatchResult::Incomplete(limit) => {
                 Err(ReplayPackageAdmissionRefusal::Incomplete(limit))
             }
+            CheckedPackageDispatchResult::CatalogUnavailable(unavailable) => Err(
+                ReplayPackageAdmissionRefusal::CatalogUnavailable(format!("{unavailable:?}")),
+            ),
         }
     }
 
@@ -214,6 +217,9 @@ pub enum ReplayPackageAdmissionRefusal {
     /// The native reader exhausted a caller-selected package-read ceiling.
     #[error("replay package read exhausted {:?} at {} (bound {}, consumed {})", .0.limit_kind, package_pointer(.0.path.as_ref().map(|path| path.as_str())), .0.limit, .0.consumed)]
     Incomplete(CheckedPackageIncomplete),
+    /// The native reader's extension catalog could not be read.
+    #[error("replay package reader catalog unavailable: {0}")]
+    CatalogUnavailable(String),
 }
 
 impl ReplayPackageAdmissionRefusal {
@@ -242,7 +248,7 @@ impl ReplayPackageAdmissionRefusal {
             Self::Refused { refusal, .. } => {
                 qsl_package::checked_package_refusal_code(refusal.code)
             }
-            Self::Catalog { .. } => qsl_foundation::Code::RuntimeInvariant,
+            Self::Catalog { .. } | Self::CatalogUnavailable(_) => qsl_foundation::Code::RuntimeInvariant,
             Self::Incomplete(_) => qsl_foundation::Code::StageLimitExceeded,
         }
     }
@@ -252,7 +258,7 @@ impl ReplayPackageAdmissionRefusal {
     pub fn cause(&self) -> Option<&str> {
         match self {
             Self::Refused { cause, .. } => cause.as_deref(),
-            Self::Catalog { .. } => None,
+            Self::Catalog { .. } | Self::CatalogUnavailable(_) => None,
             Self::Incomplete(_) => None,
         }
     }
@@ -265,6 +271,7 @@ impl ReplayPackageAdmissionRefusal {
                 refusal.loci.first().and_then(|locus| locus.path.as_ref())
             }
             Self::Incomplete(limit) => limit.path.as_ref(),
+            Self::CatalogUnavailable(_) => None,
         };
         package_pointer(path.map(|path| path.as_str()))
     }
