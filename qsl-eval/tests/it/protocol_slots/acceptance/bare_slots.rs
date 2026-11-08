@@ -98,7 +98,11 @@ fn the_bare_route_returns_the_source_value_and_charge_log_for_every_unobserved_s
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let bare = BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -387,7 +391,11 @@ fn records_with_option_and_collection_members_project_on_the_bytes_route() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let bare = BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -588,7 +596,11 @@ fn original_model_field_keys_define_one_value_across_both_environments() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let bare = BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -715,7 +727,11 @@ fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let good = BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -772,7 +788,11 @@ fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
     let other_rows = bare_rows(&other, other_read.admitted());
     let other_equality = qsl_package::emit_checked(&other, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(other_read.admitted());
+        .equality_witness(
+            other_read.admitted(),
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes foreign equality witness");
     let foreign = BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -880,7 +900,11 @@ fn the_call_reports_identity_then_equality_then_node_refusals() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let wanted = slot(&package, "Refunds", "Refund", "retry.relation", None);
     let on_bytes = bytes_slot(v2, "Refunds", "Refund", &wanted);
     let given = supply(&package, "Refunds", Vec::new(), None);
@@ -982,7 +1006,11 @@ fn a_repeat_guard_takes_the_decision_origin_of_the_source_route() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let bare = BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -1136,7 +1164,11 @@ fn replacing_a_checked_source_changes_its_result_but_not_the_bytes_slot() {
     let rows = bare_rows(&original, v2);
     let equality = qsl_package::emit_checked(&original, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let call = retry_call(&original, v2, &rows, &equality);
     let changed_slot = slot(&replacement, "Refunds", "Refund", "retry.relation", None);
     assert_eq!(
@@ -1188,7 +1220,11 @@ fn a_called_equality_body_requires_its_witness_at_the_actual_evaluation_entry() 
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let wanted = slot(&package, "Refunds", "Refund", "trigger.guard", None);
     let on_bytes = bytes_slot(v2, "Refunds", "Refund", &wanted);
     let given = supply(
@@ -1259,7 +1295,11 @@ fn a_bare_call_leaves_the_callers_charge_capture_as_it_found_it() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let call = retry_call(&package, v2, &rows, &equality);
     for enabled in [false, true] {
         let mut meter = Meter::new(UNLIMITED);
@@ -1295,7 +1335,11 @@ fn a_bare_supply_is_examined_in_binder_level_order() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let call = retry_call(&package, v2, &rows, &equality);
     let selected = call
         .bare
@@ -1369,7 +1413,11 @@ fn three_bare_calls_over_one_meter_sum_and_maximise_as_the_source_route_does() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let bare = BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -1459,7 +1507,11 @@ fn nothing_before_the_run_charges_and_a_refusal_leaves_the_meter_unchanged() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let call = retry_call(&package, v2, &rows, &equality);
     let mut meter = Meter::new(UNLIMITED);
     let first = call
@@ -1537,7 +1589,11 @@ impl<'p> EpRoutes<'p> {
         let rows = bare_rows(package, v2);
         let equality = qsl_package::emit_checked(package, EmitLimits::fixture())
             .expect("emits")
-            .equality_witness(v2);
+            .equality_witness(
+                v2,
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+            )
+            .expect("budgeted equality witness");
         Self {
             read,
             rows,

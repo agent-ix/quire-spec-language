@@ -88,6 +88,7 @@ mod name_resolution_confinement;
 mod native_boundaries;
 mod native_run_result_root;
 mod replay_multi_source;
+mod replay_refinement_internals;
 mod request_builder;
 mod requirement_item_proof_bounds;
 mod retained_criteria_matrix;

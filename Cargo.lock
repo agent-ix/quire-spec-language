@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "agent-ix-extraction-frontend"
 version = "0.2.1"
-source = "git+https://github.com/agent-ix/filament-core-data?branch=main#df5e55796db57a62e5b5984c8ec60d70049cebe0"
+source = "git+https://github.com/agent-ix/filament-core-data?branch=main#45a927b258c297159567e4be6a40b6f466a42516"
 dependencies = [
  "agent-ix-semantic-ir",
  "clap",
@@ -17,12 +17,12 @@ dependencies = [
 [[package]]
 name = "agent-ix-semantic-ir"
 version = "0.1.1"
-source = "git+https://github.com/agent-ix/filament-core-data?branch=main#df5e55796db57a62e5b5984c8ec60d70049cebe0"
+source = "git+https://github.com/agent-ix/filament-core-data?branch=main#45a927b258c297159567e4be6a40b6f466a42516"
 
 [[package]]
 name = "agent-ix-semantic-schema"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/filament-core-data?branch=main#df5e55796db57a62e5b5984c8ec60d70049cebe0"
+source = "git+https://github.com/agent-ix/filament-core-data?branch=main#45a927b258c297159567e4be6a40b6f466a42516"
 
 [[package]]
 name = "ahash"
@@ -55,6 +55,12 @@ checksum = "e5a7d05ea6aea7e9e64d25b9156ba2fee3fdd659e34e41063cd2fc7cd020d7f4"
 dependencies = [
  "cc",
 ]
+
+[[package]]
+name = "allocation-counter"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "beb9e990c0a33699f1984d85a6abead615ccc72dd8130bf3e15dcabe2ca149c9"
 
 [[package]]
 name = "allocator-api2"
@@ -1390,7 +1396,7 @@ dependencies = [
  "qsl-cst",
  "qsl-eval",
  "qsl-forms",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-package",
  "qsl-replay",
  "qsl-route",
@@ -1400,6 +1406,7 @@ dependencies = [
  "quire-contract-model",
  "quire-eval",
  "quire-exact",
+ "quire-observation",
  "quire-semantic-value",
  "serde_json",
  "thiserror",
@@ -1414,7 +1421,7 @@ dependencies = [
  "qsl-cst",
  "qsl-eval",
  "qsl-forms",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-package",
  "qsl-replay",
  "qsl-semantics",
@@ -1432,7 +1439,7 @@ version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
  "logos",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "quire-exact",
  "serde_json",
 ]
@@ -1444,7 +1451,7 @@ dependencies = [
  "ix-trace-rs",
  "qsl-cst",
  "qsl-forms",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-package",
  "qsl-semantics",
  "quire-canonical",
@@ -1465,7 +1472,7 @@ dependencies = [
  "ix-trace-rs",
  "proc-macro2",
  "qsl-cst",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "quire-exact",
  "quire-semantic-value",
  "quire-walk",
@@ -1486,6 +1493,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "qsl-foundation"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-spec-language?branch=main#786eb8f14a538b7f5b6017c81ab528fad9aeb7d3"
+dependencies = [
+ "hashbrown 0.17.1",
+ "ix-trace-rs",
+ "quire-exact",
+ "quire-semantic-value",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "qsl-inspect"
 version = "0.1.0"
 dependencies = [
@@ -1494,7 +1515,7 @@ dependencies = [
  "qsl-cst",
  "qsl-eval",
  "qsl-forms",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-package",
  "qsl-replay",
  "qsl-semantics",
@@ -1507,11 +1528,12 @@ dependencies = [
 name = "qsl-package"
 version = "0.1.0"
 dependencies = [
+ "allocation-counter",
  "ix-trace-rs",
  "jsonschema 0.17.1",
  "qsl-cst",
  "qsl-forms",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-semantics",
  "quire-canonical",
  "quire-checked",
@@ -1534,7 +1556,7 @@ dependencies = [
  "qsl-cst",
  "qsl-eval",
  "qsl-forms",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-package",
  "qsl-semantics",
  "qsl-source",
@@ -1555,7 +1577,7 @@ name = "qsl-route"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-semantics",
  "quire-checked",
  "quire-exact",
@@ -1576,7 +1598,7 @@ dependencies = [
  "proc-macro2",
  "qsl-cst",
  "qsl-forms",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsv-failing-allocator",
  "quire-canonical",
  "quire-checked",
@@ -1596,7 +1618,7 @@ name = "qsl-source"
 version = "0.1.0"
 dependencies = [
  "ix-trace-rs",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "quire-rs",
  "serde",
  "serde_json",
@@ -1668,7 +1690,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#22b659ef1a4312bb97b3473319c8d009ff0a0589"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#43ef76405f606bd61e83b8a92b589decf71ce614"
 dependencies = [
  "ix-trace-rs",
  "jsonschema 0.17.1",
@@ -1719,6 +1741,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "quire-observation"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-observation?branch=main#014eb43bccc5ea952db33e336db813d54ee26a55"
+dependencies = [
+ "qsl-foundation 0.1.0 (git+https://github.com/agent-ix/quire-spec-language?branch=main)",
+ "quire-canonical",
+ "quire-exact",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
 name = "quire-rs"
 version = "0.50.3"
 source = "git+https://github.com/agent-ix/quire-rs?rev=5b4be36d594a488b21c854051f05116eb9302d78#5b4be36d594a488b21c854051f05116eb9302d78"
@@ -1761,7 +1797,7 @@ dependencies = [
  "qsl-cst",
  "qsl-eval",
  "qsl-forms",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-package",
  "qsl-replay",
  "qsl-route",
@@ -2685,7 +2721,7 @@ dependencies = [
  "proc-macro2",
  "qsl-analyze",
  "qsl-cst",
- "qsl-foundation",
+ "qsl-foundation 0.1.0",
  "qsl-replay",
  "qsl-route",
  "qsl-semantics",

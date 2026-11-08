@@ -4764,7 +4764,11 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let bare = qsl_package::BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -5032,7 +5036,11 @@ fn a_related_call_is_located_alike_on_both_routes() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("budgeted equality witness");
     let bare = qsl_package::BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -5094,7 +5102,11 @@ fn the_two_record_related_variant_is_located_alike_in_each_clause_order() {
         let rows = bare_rows(&package, v2);
         let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
             .expect("emits")
-            .equality_witness(v2);
+            .equality_witness(
+                v2,
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+            )
+            .expect("budgeted equality witness");
         let bare = qsl_package::BarePackage::new(v2)
             .with_supply(
                 qsl_package::BareSupply {
@@ -5161,7 +5173,11 @@ fn the_bare_route_names_fixture_l_decision_slots_by_node_member_and_index() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let bare = qsl_package::BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {

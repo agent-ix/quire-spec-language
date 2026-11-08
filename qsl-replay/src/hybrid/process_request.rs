@@ -125,6 +125,7 @@ pub struct HybridProcessItem {
 impl HybridProcessItem {
     /// Construct an item from the claim locus, extent and negotiated
     /// candidates already prepared by the request writer.
+    /// The claim's node uses document-held indices, never node-local operand slots.
     pub fn new(
         request_index: RequestIndex,
         claim: Value,
@@ -312,6 +313,7 @@ impl HybridProcessRequest {
                 return Err(HybridProcessRequestRefusal::ClaimMismatch);
             }
             let package_position = claim_position(
+                &graph,
                 &package_wire.0["semantic_graph"]["nodes"],
                 &item.claim["node"],
                 claim_occurrence,
@@ -455,47 +457,41 @@ fn admit_package(
     }
 }
 
-/// FR-322 "Operand index segments": the position among the package's
-/// `nodes` of the temporal clause the request's claim names. The claim holds
-/// the node id as the package writes it, operand slots included, and a slot
-/// names an entry of its own node's row, so two nodes can write the same id
-/// for different graph nodes. The claim therefore names a node only when
-/// exactly one `temporal_clause` node writes that id and carries the claim's
-/// occurrence; an id no node writes, or one that is not a node id, is
-/// malformed, and a claim that fits no node or more than one is a mismatch.
-/// The member and form names are the wire's, so this reader is a string edge.
+/// Resolve a document-held request claim through the admitted graph (FR-322).
+/// Node-local slot IDs cannot identify a claim without their holding row.
+/// Member and form names are wire vocabulary, so this is a string edge.
 #[ix_trace_rs::string_edge]
 fn claim_position(
+    graph: &qsl_semantics::check::wire_id::WireGraph,
     nodes: &Value,
     claim_node: &Value,
     claim_occurrence: &Value,
 ) -> Result<usize, HybridProcessRequestRefusal> {
-    // `CheckedNodeId` reads raw JSON text, never a `Value`.
-    serde_json::from_str::<quire_contract_model::CheckedNodeId>(&claim_node.to_string())
+    let id: quire_contract_model::CheckedNodeId = serde_json::from_str(&claim_node.to_string())
         .map_err(|_| HybridProcessRequestRefusal::MalformedRequest)?;
-    let written: Vec<(usize, &Value)> = nodes
+    let key = graph
+        .key(&id)
+        .map_err(|_| HybridProcessRequestRefusal::ClaimMismatch)?;
+    let position = graph
+        .index_of(&key)
+        .and_then(|index| usize::try_from(index).ok())
+        .ok_or(HybridProcessRequestRefusal::ClaimMismatch)?;
+    let node = nodes
         .as_array()
-        .map(|nodes| {
-            nodes
-                .iter()
-                .enumerate()
-                .filter(|(_, node)| node["node_id"] == *claim_node)
-                .collect()
-        })
-        .unwrap_or_default();
-    if written.is_empty() {
-        return Err(HybridProcessRequestRefusal::MalformedRequest);
+        .and_then(|nodes| nodes.get(position))
+        .ok_or(HybridProcessRequestRefusal::ClaimMismatch)?;
+    if node["semantic_form"] != "temporal_clause"
+        || graph
+            .wire_value(&key)
+            .map_err(|_| HybridProcessRequestRefusal::MalformedRequest)?
+            != *claim_node
+        || !node["occurrences"]
+            .as_array()
+            .is_some_and(|rows| rows.contains(claim_occurrence))
+    {
+        return Err(HybridProcessRequestRefusal::ClaimMismatch);
     }
-    let mut fitting = written.into_iter().filter(|(_, node)| {
-        node["semantic_form"] == "temporal_clause"
-            && node["occurrences"]
-                .as_array()
-                .is_some_and(|occurrences| occurrences.contains(claim_occurrence))
-    });
-    match (fitting.next(), fitting.next()) {
-        (Some((position, _)), None) => Ok(position),
-        _ => Err(HybridProcessRequestRefusal::ClaimMismatch),
-    }
+    Ok(position)
 }
 
 const MAX_SAFE_COUNT: u64 = (1_u64 << 53) - 1;
@@ -517,55 +513,63 @@ mod deep_package_tests {
 #[cfg(test)]
 mod claim_position_tests {
     use super::*;
+    use qsl_semantics::check::wire_id::WireGraph;
     use serde_json::json;
 
-    fn id(slot: u64) -> Value {
-        json!({"package": "p", "path": ["clause", {"operand": slot}], "ordinal": 0})
+    fn fixture() -> (Value, WireGraph) {
+        let id = json!({"package": "p", "path": ["clause", {"operand": 0}], "ordinal": 0});
+        let clause = json!({"node_id": id, "semantic_form": "temporal_clause",
+            "occurrences": [{"role": "claim", "ordinal": 0}]});
+        let nodes = json!([clause.clone(), clause,
+            {"node_id": {"package": "p", "path": ["a"], "ordinal": 0}},
+            {"node_id": {"package": "p", "path": ["b"], "ordinal": 0}}]);
+        let graph = WireGraph::of_package_value(&json!({"semantic_graph": {
+            "nodes": nodes, "operand_rows": [[2], [3], [], []]
+        }}))
+        .unwrap();
+        (nodes, graph)
     }
 
-    fn clause(node_id: &Value, role: &str) -> Value {
-        json!({
-            "node_id": node_id,
-            "semantic_form": "temporal_clause",
-            "occurrences": [{"role": role, "ordinal": 0}],
-        })
-    }
-
-    /// A claim whose node no package node writes is malformed,
-    /// as is a claim whose node is not a node id.
     #[test]
-    fn an_unknown_or_unparseable_claim_node_is_malformed() {
-        let nodes = json!([clause(&id(0), "claim")]);
+    fn an_unknown_claim_is_a_mismatch_and_an_unparseable_claim_is_malformed() {
+        let (nodes, graph) = fixture();
         let occurrence = json!({"role": "claim", "ordinal": 0});
         assert_eq!(
-            claim_position(&nodes, &id(7), &occurrence),
-            Err(HybridProcessRequestRefusal::MalformedRequest)
+            claim_position(
+                &graph,
+                &nodes,
+                &json!({"package": "p", "path": ["missing"], "ordinal": 0}),
+                &occurrence
+            ),
+            Err(HybridProcessRequestRefusal::ClaimMismatch)
         );
         assert_eq!(
-            claim_position(&nodes, &json!("not-an-id"), &occurrence),
+            claim_position(&graph, &nodes, &json!("not-an-id"), &occurrence),
             Err(HybridProcessRequestRefusal::MalformedRequest)
         );
     }
 
-    /// FR-322 "Operand index segments": two nodes write the same raw id
-    /// (each node's first operand is slot 0). Only the node that is a clause
-    /// with the claim's occurrence is bound, by position; when both fit, the
-    /// claim is refused instead of bound to the first.
     #[test]
-    fn equal_raw_ids_bind_only_the_one_node_that_fits_the_claim() {
+    fn equal_raw_ids_require_the_document_identity_and_the_claim_occurrence() {
+        let (nodes, graph) = fixture();
         let occurrence = json!({"role": "claim", "ordinal": 0});
-        let other = json!({"node_id": id(0), "semantic_form": "literal", "occurrences": []});
-        let nodes = json!([other, clause(&id(0), "claim")]);
-        assert_eq!(claim_position(&nodes, &id(0), &occurrence), Ok(1));
-        let both = json!([clause(&id(0), "claim"), clause(&id(0), "claim")]);
+        assert_eq!(nodes[0]["node_id"], nodes[1]["node_id"]);
         assert_eq!(
-            claim_position(&both, &id(0), &occurrence),
+            claim_position(&graph, &nodes, &nodes[0]["node_id"], &occurrence),
             Err(HybridProcessRequestRefusal::ClaimMismatch)
         );
-        let wrong_role = json!([clause(&id(0), "anchor")]);
-        assert_eq!(
-            claim_position(&wrong_role, &id(0), &occurrence),
-            Err(HybridProcessRequestRefusal::ClaimMismatch)
-        );
+        for position in 0..2 {
+            let id = graph.wire_value(&graph.keys()[position]).unwrap();
+            assert_eq!(
+                claim_position(&graph, &nodes, &id, &occurrence),
+                Ok(position)
+            );
+            let mut wrong_role = nodes.clone();
+            wrong_role[position]["occurrences"][0]["role"] = json!("anchor");
+            assert_eq!(
+                claim_position(&graph, &wrong_role, &id, &occurrence),
+                Err(HybridProcessRequestRefusal::ClaimMismatch)
+            );
+        }
     }
 }

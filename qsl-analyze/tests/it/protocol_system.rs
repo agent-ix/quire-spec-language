@@ -144,7 +144,13 @@ impl Case {
         let unit = unit_text_with(PROTOCOL_PROFILE, &self.body).into_bytes();
         let (node, occurrence) = protocol_anchor(&self.checked, protocol);
         replay_protocol_trace(
-            request(&document(), self.documents.snapshots.iter(), &unit),
+            request(
+                &self.checked,
+                &[],
+                &document(),
+                self.documents.snapshots.iter(),
+                &unit,
+            ),
             &ProtocolTraceSubject {
                 model: ModelTraceSubject {
                     timed: None,
@@ -1783,17 +1789,21 @@ fn fill_checks_under_each_terminal_form() {
         let refusal = compiled(&fill_unit("self.v = 0", members))
             .err()
             .unwrap_or_else(|| panic!("{members} refuses"));
-        (refusal.code(), refusal.cause(), refusal.to_string())
+        (
+            refusal.code(),
+            refusal.cause().map(str::to_owned),
+            refusal.to_string(),
+        )
     };
     let (code, cause, message) = refusal("terminal any; terminal when { k.v = 1 };");
     assert_eq!(
-        (code, cause),
+        (code, cause.as_deref()),
         (Code::AmbiguousDeclaration, Some("ambiguous-name")),
         "{message}"
     );
     let (code, cause, message) = refusal("terminal when { a = a };");
     assert_eq!(
-        (code, cause),
+        (code, cause.as_deref()),
         (Code::MissingDeclaration, Some("missing-name")),
         "{message}"
     );

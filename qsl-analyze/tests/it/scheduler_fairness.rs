@@ -52,7 +52,7 @@ use crate::fill::{
     package_with_name, protocol, reachable, sc_system, single_object_document, subject,
     tcb_01_event_position_selection, unit_text, universe, v, Documents,
 };
-use crate::model_settle::{envelope_at, request_named};
+use crate::model_settle::{envelope_at, request};
 
 /// `Chatter`'s channel: unordered, of capacity 2, with delivery `unknown`,
 /// so its queued entries are duplicated and lost.
@@ -134,7 +134,6 @@ const AT_MOST_ONE: AtV = AtV(|value| value <= 1);
 
 /// A `Chatter` unit from `c.v = 0`, with its checked package.
 struct Chatter {
-    package_name: String,
     body: String,
     documents: Documents,
     initial: Vec<DocumentRef>,
@@ -165,7 +164,6 @@ impl Chatter {
         let initial = vec![documents.start("s0", &[("c", 0)])];
         let checked = package_with_name(package_name, crate::fill::PROTOCOL_PROFILE, &body);
         Self {
-            package_name: package_name.to_owned(),
             body,
             documents,
             initial,
@@ -237,8 +235,9 @@ impl Chatter {
         let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
         let subject = self.subject();
         replay_protocol_trace(
-            request_named(
-                &self.package_name,
+            request(
+                &self.checked,
+                &[],
                 &document(),
                 self.documents.snapshots.iter(),
                 &unit,

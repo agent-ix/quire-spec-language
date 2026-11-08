@@ -567,7 +567,7 @@ pub(crate) fn admit_equality_decisions(
 ) -> Result<EqualityDecisions, crate::NativeJoinFailure> {
     let mut decisions = BTreeMap::new();
     let rows = match &source {
-        ProjectionSource::Source { emission } => Some(emission.equality_rows()),
+        ProjectionSource::Source { emission } => Some(emission.equality_rows(budget)?),
         _ => None,
     };
     let Some(data) = admitted.checked_term_data() else {

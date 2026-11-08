@@ -373,10 +373,10 @@ impl World {
         source: WitnessSource,
         keys: &[&str],
     ) -> GraphReplayResult {
-        let source_wire: (String, String) = ("agent-ix".to_owned(), "graph".to_owned());
+        let original_source = self.package.graph().source();
         let byte_provision = vec![(
-            "agent-ix".to_owned(),
-            "graph".to_owned(),
+            original_source.authority().to_owned(),
+            original_source.identity().to_owned(),
             self.source.clone(),
         )];
         let mut documents = vec![self.document.clone()];
@@ -398,11 +398,20 @@ impl World {
                 over,
             },
         );
+        let temporal_clock_selections = crate::fill::tcb_01_event_position_selection(&self.package);
+        let emission = qsl_package::emit_checked_with_temporal_selections(
+            &self.package,
+            &temporal_clock_selections,
+            qsl_package::EmitLimits::fixture(),
+        )
+        .expect("the original checked graph package emits");
         let wire = ReplayRequestWire {
-            package_name: "package".to_owned(),
+            package: qsl_replay::ReplayPackage::read(
+                emission.package().bytes(),
+                ReplayLimits::default().input_bytes,
+            )
+            .expect("the emitted package is bounded JSON"),
             profile_selections: Vec::new(),
-            sources: vec![source_wire],
-            refinement_internals: None,
             dependencies: Vec::new(),
             replay_target: RequestTargetWire::default(),
             source: ReplaySource::ModelGraph(Box::new(envelope)),
@@ -428,7 +437,6 @@ impl World {
                 max_candidates: 1_000_000,
             },
         };
-        let temporal_clock_selections = crate::fill::tcb_01_event_position_selection(&self.package);
         let ReplayResult::ModelGraph(replayed) =
             qsl_replay::replay_model_graph_with_temporal_selections(
                 wire,

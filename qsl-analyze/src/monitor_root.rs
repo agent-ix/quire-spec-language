@@ -35,6 +35,14 @@ use quire_exact::Cancel;
 use crate::monitor_entries::{names, render, spec_from_plan, WIRE_FIELD_NAMES};
 use crate::monitor_plan::produce;
 
+mod order;
+mod progress;
+pub use order::{ModelStepOrder, ModelStepOrderRefusal, ModelStepOrderRefusalCode};
+pub use progress::{
+    AdmittedPlanAuthority, PlanAuthorityRefusal, PlanAuthorityRefusalCode, PlanAuthoritySelection,
+    PlanAuthorityValidationCaps, ProgressSelectionRefusalCode,
+};
+
 /// The authored unit and the selection the plan root is written for.
 #[derive(Clone, Copy, Debug)]
 pub struct PlanRootRequest<'a> {
@@ -64,12 +72,39 @@ pub struct PlanRootRequest<'a> {
 #[derive(Debug)]
 pub struct PlanRoot {
     /// The derived plan.
-    pub plan: TimedMonitorPlan,
+    plan: TimedMonitorPlan,
     /// The FR-252 timing obligations of the plan.
-    pub obligations: [TimingObligation; 2],
+    obligations: [TimingObligation; 2],
     /// The checked-package v2 bytes holding the one `temporal`/
     /// `monitor_plan` node and the four declaration-less entry functions.
-    pub emission: Emission,
+    emission: Emission,
+    checked_unit: CheckedUnit,
+}
+
+impl PlanRoot {
+    /// The immutable plan derived beside this root's emission.
+    pub fn plan(&self) -> &TimedMonitorPlan {
+        &self.plan
+    }
+
+    /// The timing obligations derived with this root's plan.
+    pub fn obligations(&self) -> &[TimingObligation; 2] {
+        &self.obligations
+    }
+
+    /// The original final emission, including its retained witness rows.
+    pub fn emission(&self) -> &Emission {
+        &self.emission
+    }
+
+    /// The original checked unit, including generated entries, from which
+    /// this root's final emission was written. This retains checked source
+    /// facts; it does not admit event order or observation progress.
+    /// Node keys are the checker's original keys, before final writer
+    /// renames. Use the emission's retained rows for final-package joins.
+    pub fn checked_unit(&self) -> &CheckedUnit {
+        &self.checked_unit
+    }
 }
 
 /// Why no plan root was produced.
@@ -245,5 +280,6 @@ pub fn emit_plan_root(
         plan,
         obligations,
         emission,
+        checked_unit: combined,
     })
 }

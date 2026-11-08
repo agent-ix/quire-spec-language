@@ -70,19 +70,42 @@ sequence, set and bounded-collection rows from one final emission. Compare
 complete native rows and original Exact identities after conversion, including
 canonical variant order. Compose equality, enum and collection adapters on one
 budget and exercise exact, one-short and zero-storage boundaries. Preserve an
-earlier first-denial locus across a later attempted conversion. A map with a key
-that the target IR collection row cannot carry refuses with its typed
-unsupported cause; it never becomes a keyless collection. Re-reading borrowed
-retained rows adds no owned-storage charge.
-Use one genuine emission retaining both a sequence and a map: converting and
-projecting the selected sequence succeeds with its original type and nodes,
-while selecting the map returns its typed unsupported cause and keeps its key.
+earlier first-denial locus across a later attempted conversion. Every external
+row-copy denial names `AdapterRow(i)` with its actual retained input index and
+channel form, including a real second-row denial followed by another attempted
+charge. The adapter does not replace it with a native `ReachedRow` locus.
+Re-reading borrowed retained rows adds no owned-storage charge.
+
+Use one genuine emission retaining both a sequence and a map with a scalar key
+and a record value. Convert the selected sequence, join its authentic rows and
+project its original native type and nodes while the unrelated map remains in
+the emission. Convert the selected map with its original `Some(key_node)`,
+value node and complete Exact `ValueType::Map`; pass those converted rows and
+that emission's original record/member witnesses through actual native joining
+and projection on the same budget. Compare original key-then-value order,
+record value identity, bound and complete map type without rebuilding them
+from the wire. The sequence's converted key remains `None`.
+
+For adverse controls, remove the actual map key, replace it with another
+retained node, and put the map's original key on the non-map sequence row.
+Require the native owner's typed refusal at the collection, charged work and
+no partial joined or projected result. Keep the untouched original rows and
+unrelated selection control unchanged. Repeat key-copy allocation admission
+and denial at exact, one-short and zero-storage boundaries; denied clones and
+their compact diagnostics allocate nothing and preserve the original
+`AdapterRow(i)` locus and allowance.
 
 For AC-31, obtain an authentic emission with nonempty source records, members
 and unions. Materialize its identity rows and compare every retained original
 declaration, field, member, union key and ordering to the producer's claims;
 then pass the rows through the actual native identity join and type projection.
-Measure the native join prefix separately from the adapter's later declaration,
+Derive expected row positions independently from the original retained slices.
+Select a later input field without renumbering its retained index and require
+an exact `AdapterRow(i)` refusal. After a paid genuine record prefix, refuse
+the later record member and union payload copies at their original outer row
+positions; verify those indices through the actual output adapter loops, and
+preserve the first denial across a later attempted complete adapter call.
+Measure producer input copies and the single native join separately from the adapter's later declaration,
 field, record/member and union copies, requiring their sum to equal the shared
 budget's cumulative consumption. Repeat with exact allowances, one below each
 resource and zero storage. A refusal returns no partial rows and preserves the

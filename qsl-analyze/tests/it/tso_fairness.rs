@@ -214,7 +214,13 @@ impl Unit {
         let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
         let subject = self.subject(selection);
         replay_protocol_trace(
-            request(&document(), self.documents.snapshots.iter(), &unit),
+            request(
+                &self.checked,
+                &[],
+                &document(),
+                self.documents.snapshots.iter(),
+                &unit,
+            ),
             &ProtocolTraceSubject {
                 model: ModelTraceSubject {
                     timed: None,
