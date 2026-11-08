@@ -40,6 +40,7 @@ use super::guarantee::{
     granularity_spelling, kind_spelling, ClauseConstraint, EnvironmentMember, ExtentClass,
     ItemKind, ReadEnvironment, SlotBacking, SlotKey, SlotRole, SubjectOperation, Supplies,
 };
+use super::lowering::SemanticNode;
 use super::node_key::{
     ClauseEntry, ComponentEntry, CompositionRule, CompositionTerm, EnvironmentEntry, NodeRef,
     PremiseEntry, SuppliesEntry, SupplyEntry,
@@ -692,6 +693,18 @@ impl CheckedComposition {
                 .collect(),
             premises,
         }
+    }
+
+    /// The checked-graph node `S` is emitted as (QSpec FR-491), and the
+    /// location of its `declaration` occurrence.
+    pub fn semantic_node(&self) -> (SemanticNode, Location) {
+        let location = Location::root(Origin::TypeDeclaration {
+            name: declaration_origin(&self.name),
+        });
+        (
+            SemanticNode::component_composition(self.key.clone(), self.term()),
+            location,
+        )
     }
 
     /// The term the composition node's body is (QSpec FR-491 "Checked-package

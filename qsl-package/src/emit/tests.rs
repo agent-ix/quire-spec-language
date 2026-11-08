@@ -344,7 +344,10 @@ fn operand_slot_numbering_visits_only_identity_paths_in_canonical_order() {
         }}
     });
     let bytes = quire_canonical::to_vec(&value, ceiling().canonical()).unwrap();
-    assert_eq!(operand_indices(&bytes, ceiling()).unwrap(), [7, 2, 7]);
+    assert_eq!(
+        operand_entries(&bytes, ceiling()).unwrap(),
+        [7, 2, 7].map(CheckedOperandEntry::Node)
+    );
     let (_, emission) = emit_from_text("function f using v(): Integer pure { 1 }\n");
     let graph = WireGraph::of_package_bytes(emission.package.bytes()).unwrap();
     let mut nodes = emission.wire_nodes;
@@ -361,7 +364,7 @@ fn operand_slot_numbering_visits_only_identity_paths_in_canonical_order() {
     let rows = write_operand_slots(&mut nodes, ceiling()).unwrap();
     let expected_rows = rows.clone();
     assert_eq!(nodes[0].body, foreign);
-    assert!(!rows[0].contains(&99));
+    assert!(!rows[0].contains(&CheckedOperandEntry::Node(99)));
     let restored = document_nodes(CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
@@ -1179,6 +1182,7 @@ fn written_nodes(package: &CheckedPackage) -> Vec<Value> {
         .map(|node| {
             Candidate::of(
                 &StructuralIds::default(),
+                &ForeignNodes::default(),
                 node,
                 recorded.remove(&node.key()).unwrap_or_default(),
             )
@@ -1190,7 +1194,14 @@ fn written_nodes(package: &CheckedPackage) -> Vec<Value> {
         .into_iter()
         .map(|candidate| candidate.wire_node(&StructuralIds::default()).unwrap())
         .collect();
-    write_index_segments(&mut nodes, &mut [], &mut [], &mut []).expect("every operand is written");
+    write_index_segments(
+        &mut nodes,
+        &mut [],
+        &mut [],
+        &mut [],
+        &ForeignNodes::default(),
+    )
+    .expect("every operand is written");
     nodes
         .iter()
         .map(|node| {
@@ -1539,7 +1550,13 @@ fn a_declaration_without_its_occurrence_is_omitted() {
                         occurrence.role != CheckedOccurrenceRole::Declaration
                     });
                 }
-                Candidate::of(&StructuralIds::default(), node, occurrences).expect("a candidate")
+                Candidate::of(
+                    &StructuralIds::default(),
+                    &ForeignNodes::default(),
+                    node,
+                    occurrences,
+                )
+                .expect("a candidate")
             })
             .collect(),
     );
@@ -2002,9 +2019,6 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             }
             Err(EmitRefusal::Abstraction(_)) => {
                 panic!("the fixture set binds no abstraction relation")
-            }
-            Err(EmitRefusal::CompositionForeignOperands { .. }) => {
-                panic!("the fixture set declares no component composition")
             }
             Err(EmitRefusal::ProbabilisticModelNotEmitted { .. }) => {
                 panic!("the fixture set declares no random parameter, reward or workload")

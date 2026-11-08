@@ -6,6 +6,7 @@
 //! item and slots are read, its node is written and read back, and every
 //! refusal carries QSpec FR-491's code and cause.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use ix_trace_rs::trace;
@@ -576,18 +577,76 @@ fn a_non_assume_guarantee_rule_derives_a_request_item() {
     assert_eq!(sole(&local).item().placement, ItemPlacement::PlannerLocal);
 }
 
-/// FR-491-AC-6 (TC-985 case 6): the v2 byte emitter refuses a package holding
-/// a composition, typed, because its component clauses are foreign nodes with
-/// operands that IR's reader cannot yet admit.
+/// FR-491-AC-6 (TC-985 case 6): the v2 byte emitter writes a composition
+/// over components of two dependencies. A foreign clause is named by its
+/// operand's dependency position in the composition's operand row, and IR's
+/// reader admits the package against the component packages.
 #[trace("FR-530-AC-1", "QSpec-TC-985", "QSpec-FR-491-AC-6")]
 #[test]
-fn a_composition_is_refused_for_its_foreign_component_operands() {
+fn a_composition_over_dependency_components_is_emitted_and_admitted() {
     let world = World::new();
     let package = world.checked("assume-guarantee", CASE_ONE_MEMBERS);
+    let emission = emit_checked(&package).expect("the composition emits");
+    assert!(emission.omitted().is_empty());
+    let written = raw_wire(&emission);
+    let nodes = written["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("nodes");
+    let position = nodes
+        .iter()
+        .position(|node| node["semantic_form"] == "component_composition")
+        .expect("the composition node is written");
+    let row = written["semantic_graph"]["operand_rows"][position]
+        .as_array()
+        .expect("the composition's operand row");
+    let dependency_positions: BTreeSet<&str> = row
+        .iter()
+        .filter_map(|entry| entry["package"].as_str())
+        .collect();
     assert_eq!(
-        emit_checked(&package).expect_err("the emission refuses"),
-        EmitRefusal::CompositionForeignOperands {
-            name: Some("Sys".to_owned())
-        }
+        dependency_positions,
+        BTreeSet::from(["test/consumer", "test/producer"]),
+        "each component clause is named by a position in its own package"
     );
+    // The importing graph holds no node of either dependency.
+    assert!(nodes.iter().all(|node| {
+        let owner = node["node_id"]["package"].as_str();
+        owner != Some("test/producer") && owner != Some("test/consumer")
+    }));
+    let bytes = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
+    let models =
+        qsl_semantics::model::intake::package_input([bytes.as_slice()]).expect("the model package");
+    crate::checked_v2::read_import_view(
+        &package,
+        &emission,
+        library(),
+        &models,
+        &mut crate::checked_v2::AdmittedPackages::default(),
+        crate::checked_v2::V2ReadLimits::fixture(),
+        crate::EmitLimits::fixture(),
+    )
+    .expect("IR admits the composition against its component packages");
+}
+
+/// FR-491-AC-6: the composition's bytes read without the component packages
+/// supplied are refused, not admitted on the strength of a position alone.
+#[trace("FR-530-AC-1", "QSpec-TC-985", "QSpec-FR-491-AC-6")]
+#[test]
+fn a_composition_without_its_component_packages_is_not_admitted() {
+    let world = World::new();
+    let package = world.checked("assume-guarantee", CASE_ONE_MEMBERS);
+    let emission = emit_checked(&package).expect("the composition emits");
+    match read_back(&emission) {
+        Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
+            assert_eq!(
+                refusal.code,
+                quire_contract_model::CheckedPackageRefusalCode::MalformedWire
+            );
+            assert!(refusal.loci[0]
+                .path
+                .as_ref()
+                .is_some_and(|path| path.as_str().starts_with("/semantic_graph/operand_rows/")));
+        }
+        other => panic!("the component packages are unsupplied: {other:?}"),
+    }
 }

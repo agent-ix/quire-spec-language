@@ -248,6 +248,26 @@ impl SemanticNode {
         )
     }
 
+    /// The `correspondence`/`component_composition` node of `term` under its
+    /// admitted structural `key` (QSpec FR-491).
+    pub(super) fn component_composition(
+        key: NodeKey,
+        term: super::node_key::CompositionTerm,
+    ) -> Self {
+        Self::declared(
+            key,
+            NodeContent {
+                owner_model: None,
+                node_tag: NodeTag::Correspondence,
+                semantic_form: "component_composition",
+                semantic_type: None,
+                declaration: None,
+                owner: None,
+                body: BodyTerm::Composition(term),
+            },
+        )
+    }
+
     /// A declared node under its admitted structural `key`, outside every
     /// recursion group.
     pub(super) fn declared(key: NodeKey, content: NodeContent) -> Self {
