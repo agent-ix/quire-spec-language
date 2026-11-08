@@ -7587,8 +7587,7 @@ fn reachable_ids(node: &mut CheckedSemanticNodeV2) -> Vec<&mut CheckedNodeId> {
 /// Write every node-held operand of `nodes` as an operand slot (FR-322): slot
 /// `k` of a node names the `k`th distinct graph index its canonical bytes
 /// hold, in byte order, and the returned row of that node lists those
-/// indices. `nodes` hold document index segments on entry, as
-/// [`write_index_segments`] leaves them.
+/// indices. On entry, every node-held operand uses a document index.
 ///
 /// # Errors
 ///
