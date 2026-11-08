@@ -45,7 +45,7 @@ use quire_exact::{
 };
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use crate::limits::AccountingLimits;
 use crate::spine::kernel_undefined_reason;

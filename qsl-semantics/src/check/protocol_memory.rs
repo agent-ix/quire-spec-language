@@ -19,7 +19,7 @@ use qsl_foundation::Span;
 use super::footprint::{FootprintRefusal, SymbolicFootprint, SymbolicLocation};
 use super::protocol_clause::{BoundAttempt, CheckedControlTree, CheckedProtocol, ProtocolNodeId};
 use super::refusal::{CheckCause, CheckRefusal, ProtocolAnchorCause};
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 /// One checked `parallel` control's source default (FR-219 "Outputs").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

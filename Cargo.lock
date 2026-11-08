@@ -1637,7 +1637,7 @@ dependencies = [
 [[package]]
 name = "qsv-failing-allocator"
 version = "0.0.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#f9b3afd689f45126c79102e51e8ed23c6a6de38a"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#0eed59b1ed2c72e1df54333d85e3da3221091e95"
 
 [[package]]
 name = "quire-canonical"
@@ -1665,7 +1665,7 @@ dependencies = [
 [[package]]
 name = "quire-checked"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-eval?branch=main#c714820c71f3b809fb323768e0fe1949a6989acd"
+source = "git+https://github.com/agent-ix/quire-eval?branch=main#a3d4a6d50222076c2e9e29a4d55bec1096693954"
 dependencies = [
  "quire-canonical",
  "quire-exact",
@@ -1678,7 +1678,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#43ef76405f606bd61e83b8a92b589decf71ce614"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#4be966196d572e46e519099fa57c1e93d4a44dae"
 dependencies = [
  "ix-trace-rs",
  "jsonschema 0.17.1",
@@ -1704,7 +1704,7 @@ dependencies = [
 [[package]]
 name = "quire-eval"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-eval?branch=main#c714820c71f3b809fb323768e0fe1949a6989acd"
+source = "git+https://github.com/agent-ix/quire-eval?branch=main#a3d4a6d50222076c2e9e29a4d55bec1096693954"
 dependencies = [
  "quire-exact",
  "quire-semantic-value",
@@ -1714,7 +1714,7 @@ dependencies = [
 [[package]]
 name = "quire-exact"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-exact?branch=main#3aa2db57f79af92fb206dde6dc46e081d70d5812"
+source = "git+https://github.com/agent-ix/quire-exact?branch=main#bd2991e79bf43ac4ec99db667c42aefcc887d2f4"
 dependencies = [
  "allocator-api2",
  "arrayvec",
@@ -1765,7 +1765,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#f9b3afd689f45126c79102e51e8ed23c6a6de38a"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#0eed59b1ed2c72e1df54333d85e3da3221091e95"
 dependencies = [
  "quire-canonical",
  "quire-exact",

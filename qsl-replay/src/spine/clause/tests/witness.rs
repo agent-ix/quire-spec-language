@@ -587,7 +587,9 @@ fn native_result_two_command_details_keep_deep_wire_diagnostic() {
 fn native_result_two_retains_refused_outcome_members() {
     use crate::spine::{CallOutcome, CallRefusal};
     use quire_semantic_value::catalog::CatalogCode;
-    use quire_semantic_value::location::{Location, Origin};
+    use quire_semantic_value::location::{
+        ExpressionLocation as Location, ExpressionOwner as Origin,
+    };
 
     let mut report = run("AllBelow", Snapshot::Low, "child");
     report.disposition = ClauseDisposition::Evaluate(CallOutcome::Refused(CallRefusal::Record {
@@ -874,7 +876,7 @@ fn occurrence(unit: &Unit, clause: &str, path: &[usize], operator: Operator) -> 
     graph
         .occurrences()
         .find(|(key, _, location)| {
-            matches!(&location.origin, quire_semantic_value::location::Origin::StateClause {
+            matches!(&location.origin, quire_semantic_value::location::ExpressionOwner::StateClause {
                 clause: name, ..
             } if name == clause)
                 && location.path() == path
@@ -1723,8 +1725,8 @@ fn tc_743_the_separation_check_names_its_failing_step() {
 #[test]
 fn tc_744_an_undefined_step_maps_to_undefined_evaluation() {
     let unit = witness_unit();
-    let at = quire_semantic_value::location::Location::at(
-        quire_semantic_value::location::Origin::StateClause {
+    let at = quire_semantic_value::location::ExpressionLocation::at(
+        quire_semantic_value::location::ExpressionOwner::StateClause {
             clause: "AllBelow".to_owned(),
             index: 0,
         },

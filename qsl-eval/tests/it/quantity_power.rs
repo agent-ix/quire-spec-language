@@ -13,7 +13,7 @@ use quire_exact::{
     Undefined,
 };
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use super::quantity_literals::{package_with, truth, UNLIMITED};
 

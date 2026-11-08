@@ -51,7 +51,7 @@ use qsl_forms::{
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::Span;
 use quire_exact::Integer;
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use super::layer::visit_located;
 use super::refusal::{

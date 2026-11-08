@@ -4,7 +4,7 @@
 use quire_eval::Evaluation;
 use quire_exact::{NodeKey, Value};
 use quire_semantic_value::catalog::CatalogCode;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use qsl_package::AdmittedProtocolObservation;
 use quire_semantic_value::admission::{ObservationAdmission, PathStep};

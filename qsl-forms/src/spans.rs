@@ -3,7 +3,7 @@
 //!
 //! A form's spans are held beside its [`Expression`] tree, one span per
 //! node, in an arena shaped exactly as [`ExprNode::children`] numbers the
-//! tree. That shape is what lets a `quire_semantic_value::location::Location`
+//! tree. That shape is what lets a `quire_semantic_value::location::ExpressionLocation`
 //! (a declaration origin plus a child-index path) reach the span of the node it names (FR-096):
 //! each path step `i` moves to child `i`.
 //!

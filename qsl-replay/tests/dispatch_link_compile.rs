@@ -31,7 +31,7 @@ use qsl_semantics::check::{CheckCause, CheckedNode};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::package_input;
 use quire_exact::Cancel;
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 use serde_json::{json, Value};
 
 const PACKAGE: &str = "example/config-version";

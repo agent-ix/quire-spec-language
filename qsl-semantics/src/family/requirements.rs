@@ -967,8 +967,11 @@ mod tests {
     #[trace("TC-437", "FR-097-AC-2")]
     #[test]
     fn tc_437_a_map_classifies_through_its_value_type() {
-        let map =
-            |values| ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(values, None)));
+        let map = |values| {
+            ValueType::Map(std::sync::Arc::new(
+                quire_exact::MapType::new(ValueType::String, values, None).expect("a leaf key"),
+            ))
+        };
         assert_eq!(extent(&map(int_0_9())), ClaimExtent::Bounded);
         let metre = ValueType::Quantity(quire_exact::UnitId::declared(node(5)));
         assert_eq!(

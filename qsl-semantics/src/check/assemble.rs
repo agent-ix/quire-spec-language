@@ -2371,23 +2371,29 @@ fn model_value_type(
                 )?)
             }
             Some(DomainPackageRecord::MapType(map)) => {
-                ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-                    model_value_type(
-                        &map.values,
-                        Multiplicity {
-                            lower: 1,
-                            upper: Some(1),
-                            ordered: false,
-                            unique: true,
-                        },
-                        records,
-                        identities,
-                        meaning_handles,
-                        variant_shapes,
-                        units,
-                    )?,
-                    None,
-                )))
+                // A package map type declares its values alone; its keys are
+                // the package's native `string` (QSpec FR-154).
+                ValueType::Map(std::sync::Arc::new(
+                    quire_exact::MapType::new(
+                        ValueType::String,
+                        model_value_type(
+                            &map.values,
+                            Multiplicity {
+                                lower: 1,
+                                upper: Some(1),
+                                ordered: false,
+                                unique: true,
+                            },
+                            records,
+                            identities,
+                            meaning_handles,
+                            variant_shapes,
+                            units,
+                        )?,
+                        None,
+                    )
+                    .expect("a leaf key"),
+                ))
             }
             // FR-360 item 3: a payload-free variant type is its enum type,
             // never a `Reference`. Payload-bearing variants use their union

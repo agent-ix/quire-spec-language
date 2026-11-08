@@ -5,7 +5,7 @@
 use ix_trace_rs::trace;
 use quire_checked::{NodeKind, NodeRead};
 use quire_exact::{Value, ValueType};
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 fn source(relative: &str) -> String {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(relative);

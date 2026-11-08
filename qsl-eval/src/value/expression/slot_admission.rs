@@ -357,10 +357,14 @@ fn widen_integer_ranges(value_type: &ValueType) -> ValueType {
                 collection.bound(),
             ))
         }
-        ValueType::Map(map) => ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-            widen_integer_ranges(map.values()),
-            map.bound(),
-        ))),
+        ValueType::Map(map) => ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(
+                map.key().clone(),
+                widen_integer_ranges(map.values()),
+                map.bound(),
+            )
+            .expect("a built map key is a leaf"),
+        )),
         other => other.clone(),
     }
 }
@@ -444,10 +448,10 @@ mod tests {
     }
 
     fn map_type() -> ValueType {
-        ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-            ValueType::Integer,
-            None,
-        )))
+        ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(ValueType::String, ValueType::Integer, None)
+                .expect("a leaf key"),
+        ))
     }
 
     /// An environment built under `caller` whose `E.u` holds `M(P { b })`
@@ -509,7 +513,7 @@ mod tests {
 
     /// QSL-1565 (FR-049-AC-2/AC-3): the kernel has no map value, so a present
     /// value at a map-typed attribute -- here a caller's integer where the
-    /// package declares `Map<Text, Integer>` -- is never admitted.
+    /// package declares `Map<String, Integer>` -- is never admitted.
     #[trace("TC-136", "FR-049-AC-2", "FR-049-AC-3")]
     #[test]
     fn a_present_value_at_a_map_typed_attribute_refuses_at_entry() {

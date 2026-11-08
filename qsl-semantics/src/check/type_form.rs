@@ -30,7 +30,7 @@ use quire_exact::{
     EffectiveId, FloatType, IeeeWidth, IllTypedCause, Integer, IntegerInterval, QuantityCarrier,
     RationalDomain, RoundingMode, TextProfile, TextType, UnitId, ValueType,
 };
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 /// What a qualified type name resolves against.
 pub(crate) trait TypeNames {

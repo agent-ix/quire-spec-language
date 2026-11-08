@@ -40,7 +40,7 @@ use qsl_forms::{
 };
 use qsl_foundation::{diagnostic::Locus, Span};
 use quire_exact::{IllTypedCause, ValueType};
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use super::check::Scope;
 use super::ir::CheckedBody;

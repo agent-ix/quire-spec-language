@@ -35,7 +35,7 @@ use quire_exact::{
 };
 use quire_semantic_value::catalog::{CatalogCode, Category, InternalFault};
 use quire_semantic_value::declaration::EnvironmentFailure;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use super::lifecycle as front_end;
 use super::{
@@ -930,6 +930,11 @@ pub(crate) fn convert_call_failure(failure: quire_eval::CallFailure) -> Box<RunR
             "call",
             "cancelled-without-a-shared-handle",
         ))),
+        // Only a prepared entry on another backend or a prepare limit
+        // returns these, and the checked interpreter returns neither.
+        CallFailure::Unsupported(_) | CallFailure::Limit(_) => Box::new(RunRefusal::Fault(
+            InternalFault::new("call", "interpreter-returns-no-prepare-refusal"),
+        )),
     }
 }
 

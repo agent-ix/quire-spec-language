@@ -11,7 +11,7 @@
 
 use quire_exact::{IllTypedCause, NodeKey, ValueType};
 use quire_semantic_value::declaration::CompositeShape;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use super::check::Typer;
 use super::imports::ImportedNames;

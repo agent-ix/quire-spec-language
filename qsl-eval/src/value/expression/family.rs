@@ -112,7 +112,7 @@ pub(crate) struct EvaluationEnv<'a> {
     /// The last hook call's `Evaluation.location` (FR-090-OQ-3 ruling): the
     /// hook's `EvalOutcome` holds no location, so the hook records it here
     /// on every `Ok` return and [`super::CheckedPackage::call`] reads it.
-    pub(crate) location: Option<quire_semantic_value::location::Location>,
+    pub(crate) location: Option<quire_semantic_value::location::ExpressionLocation>,
     /// The last hook call's `Evaluation.losses`, recorded like `location`.
     pub(crate) losses: Vec<quire_semantic_value::loss::LocatedLoss>,
     /// Whether the caller already charged this application's `function.call`

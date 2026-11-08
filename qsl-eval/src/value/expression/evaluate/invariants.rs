@@ -5,7 +5,7 @@ use super::*;
 use ix_trace_rs::trace;
 use qsl_semantics::check::CheckedBody;
 use quire_checked::node::CheckedLiteral;
-use quire_semantic_value::location::Origin;
+use quire_semantic_value::location::ExpressionOwner as Origin;
 
 #[path = "../../../../../tests/support/admitted_charge.rs"]
 mod admitted_charge;

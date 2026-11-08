@@ -14,7 +14,7 @@ use qsl_semantics::model::observation::{AdmittedInvocation, FrameVerdict, FrameW
 use quire_eval::{EvalOutcome, FamilyOutcome, FamilyResult};
 use quire_exact::{Meter, NodeKey, Outcome, Value};
 use quire_semantic_value::catalog::InternalFault;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use super::super::causes::ProtocolClauseFrameRefusal;
 use super::separation::Trail;

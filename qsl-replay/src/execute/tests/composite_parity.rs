@@ -175,7 +175,7 @@ impl Unit {
             .filter(|(node, _, location)| {
                 *node == key
                     && matches!(&location.origin,
-                        quire_semantic_value::location::Origin::Body { function: name, .. }
+                        quire_semantic_value::location::ExpressionOwner::Body { function: name, .. }
                             if name == function)
             })
             .map(|(_, origin, _)| origin.clone())

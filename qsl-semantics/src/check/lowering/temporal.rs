@@ -26,7 +26,7 @@ use std::collections::BTreeMap;
 
 use quire_checked::node::{CheckedLiteral, NodeKind};
 use quire_exact::{Identifier, Integer, NodeKey, Rational, Value, ValueType};
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use super::{fault, require_admitted, Binder, Binders, Lowering};
 use crate::check::family::OccurrenceRole;

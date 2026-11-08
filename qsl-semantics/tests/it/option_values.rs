@@ -7,7 +7,7 @@ use qsl_foundation::{Code, SourceIdentity};
 use qsl_semantics::check::{CheckCause, PackageDeclarations};
 use qsl_semantics::model::intake::SelectedModels;
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::location::Origin;
+use quire_semantic_value::location::ExpressionOwner as Origin;
 
 fn check(
     declarations: &str,

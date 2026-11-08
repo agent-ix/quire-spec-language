@@ -3585,7 +3585,8 @@ fn widen_range(value_type: &quire_exact::ValueType) -> quire_exact::ValueType {
             ))
         }
         quire_exact::ValueType::Map(map) => quire_exact::ValueType::Map(std::sync::Arc::new(
-            quire_exact::MapType::new(widen_range(map.values()), map.bound()),
+            quire_exact::MapType::new(map.key().clone(), widen_range(map.values()), map.bound())
+                .expect("a built map key is a leaf"),
         )),
         other => other.clone(),
     }

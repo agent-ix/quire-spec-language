@@ -12,7 +12,7 @@ use quire_checked::node::{CheckedLiteral, NodeKind};
 use quire_exact::{
     admit_text, Integer, Meter, Outcome, TextPayload, Timestamp, Uuid, Value, ValueType,
 };
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use super::{mismatch, node, Typer};
 use crate::check::ir::Node;

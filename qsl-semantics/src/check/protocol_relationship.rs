@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 use qsl_forms::{ProtocolConstructKind, ProtocolDeclarationForm};
 use qsl_foundation::Span;
 use quire_exact::ValueType;
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use super::check::Scope;
 use super::lowering::AdmittedModel;

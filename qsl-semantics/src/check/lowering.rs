@@ -72,7 +72,7 @@ use quire_semantic_value::declaration::{
     CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment, UnionMemberDeclaration,
 };
 use quire_semantic_value::enumeration::EnumValue;
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 use quire_semantic_value::quantity::UnitTable;
 
 mod abstraction;
@@ -2699,9 +2699,17 @@ impl<'a> Lowering<'a> {
                 return Ok(TypeStep::Descend(collection.element()));
             }
             ValueType::Map(map) => {
-                // QSpec FR-322 "Derived type forms": `Map<Text, V>`'s key is
-                // the bare Text scalar node, built before the value type.
-                let key = NodeRef::from(self.scalar("text", location)?);
+                // QSpec FR-322 "Derived type forms": the `key` binding is
+                // the node of the map's declared key type (FR-386), built
+                // before the value type. A key nests no type, so this
+                // builds one node and recurses no deeper.
+                // A String key, the only key a package map has (FR-357), is
+                // the bare Text scalar node: Contract IR reads a map row's
+                // key node as that scalar (QSpec FR-322).
+                let key = match map.key() {
+                    ValueType::String => NodeRef::from(self.scalar("text", location)?),
+                    other => self.build_type_node(other, location)?,
+                };
                 frames.push(TypeFrame::Map(map, key));
                 return Ok(TypeStep::Descend(map.values()));
             }

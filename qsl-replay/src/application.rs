@@ -18,7 +18,7 @@ use quire_exact::{
     ValueType, VariantId,
 };
 use quire_semantic_value::declaration::CompositeShape;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 use quire_semantic_value::object_closure::ObjectClosure;
 
 use crate::admitted::{context_of, AdmittedContext, AdmittedRefusal};
@@ -737,7 +737,7 @@ impl NestedCallOccurrence {
 /// The struct is exported, so a literal fails only because its fields are private:
 ///
 /// ```compile_fail
-/// fn forge(owner: qsl_semantics::library::LibraryName, location: quire_semantic_value::location::Location) {
+/// fn forge(owner: qsl_semantics::library::LibraryName, location: quire_semantic_value::location::ExpressionLocation) {
 ///     let _ = qsl_replay::NestedCallSite { owner, location };
 /// }
 /// ```
@@ -953,7 +953,7 @@ mod tests {
     use quire_eval::{Body, BodyFailure, ChildRequest, FamilyOutcome, Resume, Transition};
     use quire_exact::{Cancel, CancelCause, Integer, LimitKind, Outcome, ScalarLimits, ValueType};
     use quire_semantic_value::call::InputRefusal;
-    use quire_semantic_value::location::Location;
+    use quire_semantic_value::location::ExpressionLocation as Location;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     const HEADER: &str =
@@ -1033,7 +1033,10 @@ mod tests {
                     Some(callee) => Transition::Call(ChildRequest {
                         callee,
                         arguments,
-                        site: Location::at(quire_semantic_value::location::Origin::Expression, &[]),
+                        site: Location::at(
+                            quire_semantic_value::location::ExpressionOwner::Expression,
+                            &[],
+                        ),
                     }),
                     None => Transition::Done(Evaluation {
                         outcome: FamilyOutcome::Evaluated(Outcome::Completed(int(7))),
@@ -2025,7 +2028,7 @@ mod tests {
             assert!(!site.location().path().is_empty(), "a child path");
             assert!(matches!(
                 &site.location().origin,
-                quire_semantic_value::location::Origin::Body { function, index: 2 } if function == "twice"
+                quire_semantic_value::location::ExpressionOwner::Body { function, index: 2 } if function == "twice"
             ));
             let result = denied_nested_call(handle, &twice, &f, site.location());
             assert!(matches!(
@@ -2040,7 +2043,7 @@ mod tests {
         assert_eq!(sorted(&imported_calls), oracle(&package, &k));
         assert!(matches!(
             &imported_calls[0].1.location().origin,
-            quire_semantic_value::location::Origin::Body { function, index: 3 } if function == "k"
+            quire_semantic_value::location::ExpressionOwner::Body { function, index: 3 } if function == "k"
         ));
     }
 
@@ -2072,7 +2075,7 @@ mod tests {
             assert_ne!(&dependency_id, handle.package_name());
             assert!(matches!(
                 &site.location().origin,
-                quire_semantic_value::location::Origin::Body { function, index: 1 } if function == "outer"
+                quire_semantic_value::location::ExpressionOwner::Body { function, index: 1 } if function == "outer"
             ));
             for own in &own_functions {
                 assert!(!oracle(&handle.package, own).contains(site.location()));
@@ -2246,10 +2249,10 @@ mod tests {
                 _ => None,
             })
             .expect("the Pair composite declaration");
-        let map = ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-            ValueType::Composite(pair.clone()),
-            None,
-        )));
+        let map = ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(ValueType::String, ValueType::Composite(pair.clone()), None)
+                .expect("a leaf key"),
+        ));
         let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
             quire_exact::BoundedQuantityType::new(
                 quire_exact::UnitId::compound(vec![(

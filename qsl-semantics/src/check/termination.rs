@@ -9,7 +9,7 @@ use super::facts::{ArgumentShape, CallSite, EdgeKind};
 use super::ir::{CheckedNode, Slot};
 use super::refusal::{CheckCause, CheckRefusal, MeasureObligation};
 use quire_exact::ValueType;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 /// One element of a measure, naming the parameter it measures.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -587,7 +587,7 @@ mod tests {
 
     use super::*;
     use crate::check::ir::{BodyBuilder, CheckedBody, Node};
-    use quire_semantic_value::location::Origin;
+    use quire_semantic_value::location::ExpressionOwner as Origin;
 
     /// The earlier component partition, kept only as this module's
     /// differential oracle: a reachability set per member, then an
@@ -976,7 +976,7 @@ mod tests {
 #[cfg(test)]
 mod scaling {
     use super::*;
-    use quire_semantic_value::location::Origin;
+    use quire_semantic_value::location::ExpressionOwner as Origin;
 
     #[test]
     #[ignore = "timing lane: prints wall time, asserts only the refusal count"]

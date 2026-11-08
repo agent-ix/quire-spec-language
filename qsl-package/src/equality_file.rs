@@ -781,6 +781,7 @@ fn value_type(joins: &impl TypeKeys, value: &ValueType) -> Result<Json, Bad> {
         ])),
         ValueType::Map(map) => Ok(object(vec![
             ("kind", text("map")),
+            ("key", value_type(joins, map.key())?),
             ("values", value_type(joins, map.values())?),
             ("bound", cardinality(map.bound())),
         ])),
@@ -929,7 +930,7 @@ const VALUE_TYPES: &[(&str, &[&str])] = &[
     ("population", &["maximum"]),
     ("carried_quantity", &["unit", "carrier"]),
     ("bounded_quantity", &["unit", "min", "max"]),
-    ("map", &["values", "bound"]),
+    ("map", &["key", "values", "bound"]),
 ];
 
 #[ix_trace_rs::string_edge]
@@ -1020,7 +1021,13 @@ fn value_type_from(joins: &impl TypeKeys, json: &Json) -> Result<ValueType, Bad>
             )
         }
         "map" => ValueType::Map(
-            MapType::new(value_type_from(joins, m[0])?, cardinality_from(m[1])?).into(),
+            MapType::new(
+                value_type_from(joins, m[0])?,
+                value_type_from(joins, m[1])?,
+                cardinality_from(m[2])?,
+            )
+            .or_else(|_| malformed("a map key that nests another type"))?
+            .into(),
         ),
         _ => ValueType::Population(match m[0] {
             Json::Null => None,
@@ -1855,9 +1862,11 @@ mod tests {
             ),
             ValueType::Map(
                 MapType::new(
+                    ValueType::String,
                     ValueType::Composite(keys["V"].clone()),
                     Some(CardinalityBound::new(0, 2).unwrap()),
                 )
+                .unwrap()
                 .into(),
             ),
         ]);
@@ -2151,9 +2160,11 @@ mod tests {
         };
         let example = ValueType::Map(
             MapType::new(
+                ValueType::String,
                 bounded(None, Some(quantity(5, &unit))),
                 CardinalityBound::new(0, 4).ok(),
             )
+            .unwrap()
             .into(),
         );
         let types = vec![
@@ -2176,7 +2187,16 @@ mod tests {
             )),
             bounded(Some(quantity(-2, &unit)), Some(quantity(5, &unit))),
             bounded(None, None),
-            ValueType::Map(MapType::new(ValueType::String, None).into()),
+            ValueType::Map(
+                MapType::new(ValueType::String, ValueType::String, None)
+                    .unwrap()
+                    .into(),
+            ),
+            ValueType::Map(
+                MapType::new(ValueType::Integer, ValueType::String, None)
+                    .unwrap()
+                    .into(),
+            ),
             example.clone(),
         ];
         let mut rows = vector_rows(&keys);
@@ -2197,7 +2217,7 @@ mod tests {
         assert_eq!(ReadEqualityRows::decode(&bytes, "p", &joins).unwrap(), rows);
         assert_eq!(rows.encode(&joins).unwrap(), bytes);
         let expected: Json = serde_json::from_str(
-            r#"{ "kind": "map", "values": { "kind": "bounded_quantity", "unit": {
+            r#"{ "kind": "map", "key": { "kind": "string" }, "values": { "kind": "bounded_quantity", "unit": {
               "kind": "declared", "node": { "package": "p", "path": ["U"], "ordinal": 0 } },
               "min": null, "max": { "magnitude": { "numerator": "5", "denominator": "1" },
               "unit": { "kind": "declared", "node": { "package": "p", "path": ["U"], "ordinal": 0 } } } },
@@ -2205,6 +2225,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(value_type(&joins, &example).unwrap(), expected);
+        // FR-531-AC-18: two maps that differ only by key type name different
+        // keys, and a key that nests another type is refused on read.
+        let by_key = |key| {
+            let map = MapType::new(key, ValueType::Boolean, None).unwrap();
+            value_type(&joins, &ValueType::Map(map.into())).unwrap()
+        };
+        assert_ne!(by_key(ValueType::String), by_key(ValueType::Integer));
+        let nested: Json = serde_json::from_str(
+            r#"{ "kind": "map", "key": { "kind": "option", "element": { "kind": "boolean" } },
+              "values": { "kind": "boolean" }, "bound": null }"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            value_type_from(&joins, &nested),
+            Err(Bad::Malformed(_))
+        ));
         // A bound in another unit, and a carrier tagged other than the three.
         let text = String::from_utf8(bytes).unwrap();
         let wrong: Json = serde_json::from_str(

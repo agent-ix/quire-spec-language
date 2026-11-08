@@ -18,7 +18,7 @@ use quire_exact::Origin as BodyKey;
 use quire_exact::{Meter, Outcome, Value, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::EqualityOperator;
-use quire_semantic_value::location::Origin as BodyOrigin;
+use quire_semantic_value::location::ExpressionOwner as BodyOrigin;
 
 use super::operator_parity::ScalarIdentityMismatch;
 use super::scalar_site::{equality_operator, in_body};
@@ -175,7 +175,7 @@ pub(super) fn locate(
 /// walk on an explicit stack.
 fn equality_operands<'a>(
     body: CheckedNode<'a>,
-    location: &quire_semantic_value::location::Location,
+    location: &quire_semantic_value::location::ExpressionLocation,
 ) -> Option<(CheckedNode<'a>, CheckedNode<'a>)> {
     let mut pending = vec![body];
     while let Some(node) = pending.pop() {

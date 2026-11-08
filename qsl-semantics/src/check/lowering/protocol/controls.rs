@@ -282,7 +282,7 @@ impl Lowering<'_> {
         node: ProtocolNodeId,
         keys: &BTreeMap<ProtocolNodeId, NodeRef>,
         compensations: &BTreeMap<usize, NodeKey>,
-        location: &quire_semantic_value::location::Location,
+        location: &quire_semantic_value::location::ExpressionLocation,
     ) -> Result<(&'static str, Vec<MemberTerm>), CheckRefusal> {
         let protocol = controls.protocol;
         let form = protocol.form;
@@ -534,7 +534,7 @@ impl Lowering<'_> {
         protocol: &ProtocolInput<'_>,
         control: &CheckedControl,
         keys: &BTreeMap<ProtocolNodeId, NodeRef>,
-        location: &quire_semantic_value::location::Location,
+        location: &quire_semantic_value::location::ExpressionLocation,
     ) -> Result<Vec<MemberTerm>, CheckRefusal> {
         let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
         let form = protocol
@@ -634,7 +634,7 @@ impl Lowering<'_> {
         control: &CheckedControl,
         entry: &BTreeSet<usize>,
         keys: &BTreeMap<ProtocolNodeId, NodeRef>,
-        location: &quire_semantic_value::location::Location,
+        location: &quire_semantic_value::location::ExpressionLocation,
     ) -> Result<Vec<MemberTerm>, CheckRefusal> {
         let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
         let protocol = controls.protocol;
@@ -702,7 +702,7 @@ impl Lowering<'_> {
         control: &CheckedControl,
         entry: &BTreeSet<usize>,
         keys: &BTreeMap<ProtocolNodeId, NodeRef>,
-        location: &quire_semantic_value::location::Location,
+        location: &quire_semantic_value::location::ExpressionLocation,
     ) -> Result<Vec<MemberTerm>, CheckRefusal> {
         let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
         let protocol = controls.protocol;
@@ -785,7 +785,7 @@ impl Lowering<'_> {
         controls: &Controls<'_, '_>,
         visible: &[CheckedBody],
         entry: &BTreeSet<usize>,
-        location: &quire_semantic_value::location::Location,
+        location: &quire_semantic_value::location::ExpressionLocation,
     ) -> Result<BindingValue, CheckRefusal> {
         let mut nodes = Vec::with_capacity(visible.len());
         for body in visible {
@@ -842,7 +842,7 @@ impl Lowering<'_> {
         controls: &Controls<'_, '_>,
         node: ProtocolNodeId,
         entry: &BTreeSet<usize>,
-        location: &quire_semantic_value::location::Location,
+        location: &quire_semantic_value::location::ExpressionLocation,
     ) -> Result<MemberTerm, CheckRefusal> {
         let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
         let mut readable = entry.clone();
@@ -937,7 +937,7 @@ impl Lowering<'_> {
         controls: &Controls<'_, '_>,
         body: &CheckedBody,
         entry: &BTreeSet<usize>,
-        location: &quire_semantic_value::location::Location,
+        location: &quire_semantic_value::location::ExpressionLocation,
     ) -> Result<LeafTerm, CheckRefusal> {
         let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
         let scope = entry
@@ -957,7 +957,7 @@ impl Lowering<'_> {
         node: ProtocolNodeId,
         entry: &BTreeSet<usize>,
         own: bool,
-        location: &quire_semantic_value::location::Location,
+        location: &quire_semantic_value::location::ExpressionLocation,
     ) -> Result<LeafTerm, CheckRefusal> {
         let unchecked = || fault(location, KeyFault::UncheckedProtocolFact);
         let body = controls.bodies.get(&node).ok_or_else(unchecked)?;

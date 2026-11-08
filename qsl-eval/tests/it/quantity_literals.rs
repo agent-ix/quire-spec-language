@@ -381,7 +381,7 @@ fn a_carried_quantity_is_not_an_arithmetic_operand() {
             .filter(|refusal| {
                 matches!(
                     &refusal.location.origin,
-                    quire_semantic_value::location::Origin::Body { function: found, .. }
+                    quire_semantic_value::location::ExpressionOwner::Body { function: found, .. }
                         if found == function
                 )
             })
@@ -431,7 +431,7 @@ fn a_carried_quantity_is_not_a_summand() {
         .filter(|refusal| {
             matches!(
                 &refusal.location.origin,
-                quire_semantic_value::location::Origin::Body { function, .. }
+                quire_semantic_value::location::ExpressionOwner::Body { function, .. }
                     if function == "illegal_sum"
             )
         })

@@ -30,7 +30,7 @@ use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::declaration::{
     CheckedEquality, EqualityOperand, EqualityOperator, FieldRef, TypeEnvironment,
 };
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use crate::equality_file::{EqualityWitnessRefusal, ReadEqualityRows};
 use crate::introduced_binders::is_sum_identity;
@@ -3160,7 +3160,9 @@ mod order_tests {
             quire_exact::OriginalDeclarationKey::new("model", "Node"),
         ));
         let nested = |value_type| {
-            ValueType::option(ValueType::map(quire_exact::MapType::new(value_type, None)))
+            ValueType::option(ValueType::map(
+                quire_exact::MapType::new(ValueType::String, value_type, None).expect("a leaf key"),
+            ))
         };
         let mut projection = ReaderProtocolProjection {
             nodes: vec![ReaderProjectedNode::leaf(

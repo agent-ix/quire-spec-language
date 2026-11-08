@@ -38,7 +38,9 @@ use qsl_semantics::check::{Capability, NodeTag, PackageDeclarations};
 use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_exact::{Cancel, Integer, IntegerInterval, Origin, Role, Value};
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::location::{Location, Origin as LocationOrigin};
+use quire_semantic_value::location::{
+    ExpressionLocation as Location, ExpressionOwner as LocationOrigin,
+};
 use serde_json::Value as Json;
 
 // ---- reading the vectors ----

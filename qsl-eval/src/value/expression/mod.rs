@@ -2069,7 +2069,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
             return Ok(Separation::Unmet(SeparationStep::Quantifier));
         };
         let reads: std::collections::BTreeMap<
-            quire_semantic_value::location::Location,
+            quire_semantic_value::location::ExpressionLocation,
             qsl_semantics::model::clause_observation::Observation,
         > = declaration
             .reads()

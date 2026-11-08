@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 
 use quire_exact::{EffectiveId, NodeKey, ValueType};
 use quire_semantic_value::declaration::TypeEnvironment;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use crate::check::observation::Observations;
 use crate::check::{CheckedGraph, CheckedNode, CheckedStateClause};

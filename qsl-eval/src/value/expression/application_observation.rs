@@ -5,7 +5,7 @@ use quire_eval::{CallFailure, Evaluation, FamilyOutcome};
 use quire_exact::{
     ChargeAdmission, ChargeCapture, ChargeEvent, LimitKind, Meter, TruncatedChargeCapture, Value,
 };
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 use quire_semantic_value::loss::LocatedLoss;
 
 use super::ChargeAmounts;

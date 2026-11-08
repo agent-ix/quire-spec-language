@@ -1173,7 +1173,9 @@ fn with_lowering<T>(body: impl FnOnce(&mut Lowering<'_>) -> T) -> T {
 }
 
 fn map_of(values: ValueType) -> ValueType {
-    ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(values, None)))
+    ValueType::Map(std::sync::Arc::new(
+        quire_exact::MapType::new(ValueType::String, values, None).expect("a leaf key"),
+    ))
 }
 
 fn bounded_metre() -> ValueType {
@@ -1187,14 +1189,18 @@ fn metre() -> quire_exact::UnitId {
 }
 
 fn bounded_map_of(values: ValueType, minimum: u64, maximum: u64) -> ValueType {
-    ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-        values,
-        Some(CardinalityBound::new(minimum, maximum).unwrap()),
-    )))
+    ValueType::Map(std::sync::Arc::new(
+        quire_exact::MapType::new(
+            ValueType::String,
+            values,
+            Some(CardinalityBound::new(minimum, maximum).unwrap()),
+        )
+        .expect("a leaf key"),
+    ))
 }
 
-/// FR-092-AC-28: `Map<Text, V>` lowers to a self-typed `composite_type`/`map`
-/// node whose body is the `key` binding (the bare Text scalar node) and then
+/// FR-092-AC-28: `Map<K, V>` lowers to a self-typed `composite_type`/`map`
+/// node whose body is the `key` binding (the node of the declared key type) and then
 /// the `value` binding, and a bounded map adds a `collection_bounds` domain
 /// typed at that node. Equal operands give one node and a changed value type
 /// another, so the node is the ordered pair of its operand nodes.
@@ -1208,6 +1214,10 @@ fn a_map_type_lowers_to_a_key_then_value_composite_node() {
         bounded_map_of(ValueType::Boolean, 1, 4),
         ValueType::String,
         ValueType::Boolean,
+        ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(ValueType::Integer, ValueType::Boolean, None)
+                .expect("a leaf key"),
+        )),
     ];
     let (graph, keys) = type_nodes(
         &empty_scope(),
@@ -1215,6 +1225,11 @@ fn a_map_type_lowers_to_a_key_then_value_composite_node() {
         &types,
     );
     assert_eq!(keys[0], keys[1], "equal operands are one node");
+    assert_ne!(keys[0], keys[6], "the key type is part of the identity");
+    let integer_keyed = graph.node(keys[6].clone()).expect("the Integer-keyed map");
+    let integer_key = integer_keyed.map_operand_nodes().expect("key then value");
+    let integer_key = preimage(graph.node(integer_key[0].clone()).expect("the key node"));
+    assert_eq!(integer_key["semantic_form"], "integer");
     assert_ne!(keys[0], keys[2], "the value type is part of the identity");
     let map = preimage(graph.node(keys[0].clone()).expect("the map node"));
     assert_eq!(map["node_tag"], "composite_type");
@@ -1224,7 +1239,11 @@ fn a_map_type_lowers_to_a_key_then_value_composite_node() {
     let node = graph.node(keys[0].clone()).expect("the map node");
     let operands = node.map_operand_nodes().expect("a key then a value");
     let text = preimage(graph.node(operands[0].clone()).expect("the key node"));
-    assert_eq!(text["semantic_form"], "text");
+    assert_eq!(
+        text["semantic_form"], "text",
+        "a String key is the bare Text scalar node"
+    );
+    assert_ne!(operands[0], keys[4], "not the native String node");
     assert_eq!(
         operands[1], keys[5],
         "the value operand is the Boolean node"

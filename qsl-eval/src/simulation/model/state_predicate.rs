@@ -15,7 +15,7 @@ use qsl_semantics::check::StatePredicate;
 use qsl_semantics::model::object_environment::PlacePresences;
 use quire_exact::{Meter, ObjectReference};
 use quire_semantic_value::catalog::{UndefinedReason, UndefinedRecord};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use super::contracts::{verdict, Verdict};
 use super::walk::{exhausted, stop, walk_of};

@@ -13,7 +13,7 @@ use quire_exact::{EffectiveId, NodeKey};
 use quire_exact::{IllTyped, IllTypedCause};
 use quire_exact::{Integer, TextProfile, ValueType};
 use quire_semantic_value::call::WrongSnapshotCause;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 use quire_semantic_value::semantic_node::IdentityRefusal;
 
 /// FR-113: why a protocol's `ProtocolClause` checker refused one scoped

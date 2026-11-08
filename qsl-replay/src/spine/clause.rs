@@ -499,7 +499,7 @@ pub enum TemporalVerdict {
         at: u64,
         /// The checked source identity of the guard that could not be
         /// established.
-        guard: quire_semantic_value::location::Location,
+        guard: quire_semantic_value::location::ExpressionLocation,
     },
     /// A window aggregate outgrew `max_window_values` (FR-194; ADR-018
     /// V-7); no truth value.
@@ -1497,6 +1497,14 @@ pub(crate) fn check_clause_admitted(
             "call",
             "cancelled-without-a-handle",
         )),
+        // Only a prepared entry on another backend or a prepare limit
+        // returns these, and the checked interpreter returns neither.
+        Err(CallFailure::Unsupported(_) | CallFailure::Limit(_)) => {
+            ClauseDisposition::EvaluateFault(InternalFault::new(
+                "call",
+                "interpreter-returns-no-prepare-refusal",
+            ))
+        }
     };
     let mut report = run.report(disposition);
     if report.disposition.truth().is_some() {
@@ -1666,6 +1674,14 @@ pub(crate) fn check_frame(
             "call",
             "cancelled-without-a-handle",
         )),
+        // Only a prepared entry on another backend or a prepare limit
+        // returns these, and the checked interpreter returns neither.
+        Err(CallFailure::Unsupported(_) | CallFailure::Limit(_)) => {
+            ClauseDisposition::EvaluateFault(InternalFault::new(
+                "call",
+                "interpreter-returns-no-prepare-refusal",
+            ))
+        }
     };
     let mut report = run.report(disposition);
     report.usage = ClauseRunUsage::from_meter(&meter, admitted.usage);

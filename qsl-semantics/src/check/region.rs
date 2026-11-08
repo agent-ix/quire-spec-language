@@ -28,7 +28,7 @@ use qsl_foundation::source_map::SourceMap;
 use qsl_foundation::Span;
 
 use super::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 /// The span node each location of a checked unit reaches, remembered by the
 /// address of the location's last link and the span tree it was read in. A
@@ -640,7 +640,9 @@ mod tests {
     use super::super::{CheckCause, PackageDeclarations};
     use super::Arc;
     use quire_semantic_value::checking::CheckingLimits;
-    use quire_semantic_value::location::{Location, Origin};
+    use quire_semantic_value::location::{
+        ExpressionLocation as Location, ExpressionOwner as Origin,
+    };
 
     const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
         profile \"ix:value\" as v;\n\

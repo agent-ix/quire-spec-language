@@ -1263,9 +1263,9 @@ pub(crate) fn invariant_site(model: &str, invariant: usize, alternative: usize) 
 }
 
 /// The root location of the predicate site `site`.
-pub(crate) fn site_location(site: &str) -> quire_semantic_value::location::Location {
-    quire_semantic_value::location::Location::root(
-        quire_semantic_value::location::Origin::TypeDeclaration {
+pub(crate) fn site_location(site: &str) -> quire_semantic_value::location::ExpressionLocation {
+    quire_semantic_value::location::ExpressionLocation::root(
+        quire_semantic_value::location::ExpressionOwner::TypeDeclaration {
             name: site.to_owned(),
         },
     )
@@ -1800,8 +1800,8 @@ pub(crate) struct Inputs<'a> {
 /// `cause`, located by the span it carries.
 fn refusal(cause: CheckCause) -> CheckRefusal {
     CheckRefusal {
-        location: quire_semantic_value::location::Location::root(
-            quire_semantic_value::location::Origin::Expression,
+        location: quire_semantic_value::location::ExpressionLocation::root(
+            quire_semantic_value::location::ExpressionOwner::Expression,
         ),
         cause,
     }
@@ -4229,8 +4229,8 @@ pub(crate) fn prepare(
     // node for the value checker's measure check to reach (FR-091-AC-30).
     if let Some((cycle, name)) = reading::unmeasured_cycle(inputs.clock_reading) {
         return Err(CheckRefusal {
-            location: quire_semantic_value::location::Location::root(
-                quire_semantic_value::location::Origin::TypeDeclaration {
+            location: quire_semantic_value::location::ExpressionLocation::root(
+                quire_semantic_value::location::ExpressionOwner::TypeDeclaration {
                     name: clock_reading_site(name),
                 },
             ),

@@ -286,37 +286,39 @@ pub(super) fn clause_report(
 }
 
 /// FR-096/FR-100: `Evaluation.location`'s `origin`, rendered by kind.
-fn spine_origin(origin: &quire_semantic_value::location::Origin) -> types::SpineOrigin {
+fn spine_origin(origin: &quire_semantic_value::location::ExpressionOwner) -> types::SpineOrigin {
     match origin {
-        quire_semantic_value::location::Origin::Body { function, index } => {
+        quire_semantic_value::location::ExpressionOwner::Body { function, index } => {
             types::SpineOrigin::Body {
                 function: function.clone(),
                 index: *index,
             }
         }
-        quire_semantic_value::location::Origin::Measure { function, index } => {
+        quire_semantic_value::location::ExpressionOwner::Measure { function, index } => {
             types::SpineOrigin::Measure {
                 function: function.clone(),
                 index: *index,
             }
         }
-        quire_semantic_value::location::Origin::Expression => types::SpineOrigin::Expression,
-        quire_semantic_value::location::Origin::TypeDeclaration { name } => {
+        quire_semantic_value::location::ExpressionOwner::Expression => {
+            types::SpineOrigin::Expression
+        }
+        quire_semantic_value::location::ExpressionOwner::TypeDeclaration { name } => {
             types::SpineOrigin::TypeDeclaration { name: name.clone() }
         }
-        quire_semantic_value::location::Origin::StateClause { clause, index } => {
+        quire_semantic_value::location::ExpressionOwner::StateClause { clause, index } => {
             types::SpineOrigin::StateClause {
                 clause: clause.clone(),
                 index: *index,
             }
         }
-        quire_semantic_value::location::Origin::ProtocolAttempt { protocol, attempt } => {
+        quire_semantic_value::location::ExpressionOwner::ProtocolAttempt { protocol, attempt } => {
             types::SpineOrigin::ProtocolAttempt {
                 protocol: *protocol,
                 attempt: *attempt,
             }
         }
-        quire_semantic_value::location::Origin::ModelOperationClause {
+        quire_semantic_value::location::ExpressionOwner::ModelOperationClause {
             operation,
             kind,
             position,
@@ -332,7 +334,9 @@ fn spine_origin(origin: &quire_semantic_value::location::Origin) -> types::Spine
 }
 
 /// FR-096/FR-100: `Evaluation.location`, rendered as `{origin, path}`.
-fn spine_location(location: &quire_semantic_value::location::Location) -> types::SpineLocation {
+fn spine_location(
+    location: &quire_semantic_value::location::ExpressionLocation,
+) -> types::SpineLocation {
     types::SpineLocation {
         origin: spine_origin(&location.origin),
         path: location.path(),
@@ -686,7 +690,9 @@ mod tests {
     #[trace("TC-452", "FR-100-AC-9")]
     fn location_origin_kinds_render_kebab_case() {
         use qsl_replay::spine::CallRefusal;
-        use quire_semantic_value::location::{Location, Origin};
+        use quire_semantic_value::location::{
+            ExpressionLocation as Location, ExpressionOwner as Origin,
+        };
         let cases = [
             (
                 Origin::Body {
@@ -741,7 +747,9 @@ mod tests {
     #[trace("TC-452", "FR-100-AC-9")]
     fn refused_locus_and_location_render() {
         use qsl_replay::spine::{CallLocus, CallRefusal};
-        use quire_semantic_value::location::{Location, Origin};
+        use quire_semantic_value::location::{
+            ExpressionLocation as Location, ExpressionOwner as Origin,
+        };
         let span = qsl_foundation::LocatedSpan {
             start: qsl_foundation::Position {
                 byte: 225,

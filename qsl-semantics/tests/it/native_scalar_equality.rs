@@ -15,7 +15,7 @@ use qsl_semantics::check::{
 use qsl_semantics::model::intake::SelectedModels;
 use quire_exact::IllTypedCause;
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::location::Origin;
+use quire_semantic_value::location::ExpressionOwner as Origin;
 
 use crate::model_operations::{admit_and_assemble_with_body, tc465_document};
 

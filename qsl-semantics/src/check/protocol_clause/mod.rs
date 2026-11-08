@@ -73,7 +73,7 @@ use super::{Scope, Signatures};
 use anchors::{check_kind, resolve, scope_key, ScopeKey};
 use attempts::bind_attempts;
 use binders::shadow_refusals;
-use quire_semantic_value::location::Origin;
+use quire_semantic_value::location::ExpressionOwner as Origin;
 
 fn refusal(cause: ProtocolAnchorCause) -> CheckRefusal {
     CheckRefusal {
@@ -81,7 +81,7 @@ fn refusal(cause: ProtocolAnchorCause) -> CheckRefusal {
         // `region::DeclarationRegions::refusal_region` reads a
         // `ProtocolAnchor` cause's own span directly instead, so this
         // `Location` is never resolved.
-        location: quire_semantic_value::location::Location::root(Origin::Expression),
+        location: quire_semantic_value::location::ExpressionLocation::root(Origin::Expression),
         cause: CheckCause::ProtocolAnchor(Box::new(cause)),
     }
 }

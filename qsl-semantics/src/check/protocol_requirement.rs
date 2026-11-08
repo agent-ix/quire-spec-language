@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{ExprNode, ExpressionForm, ProtocolDeclarationForm, TemporalNodeForm};
 use qsl_foundation::Span;
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use super::refusal::{CheckCause, CheckRefusal, ProtocolAnchorCause};
 use super::temporal_clause::TemporalDeclaration;

@@ -35,7 +35,7 @@ use qsl_forms::{
 use qsl_foundation::Span;
 use quire_exact::{IllTypedCause, ValueType};
 use quire_semantic_value::declaration::CompositeShape;
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use super::check::{bind_parameters, Scope, StateContext, Typer};
 use super::facts::Definedness;

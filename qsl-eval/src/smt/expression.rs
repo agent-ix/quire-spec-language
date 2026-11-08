@@ -17,7 +17,7 @@ use quire_checked::node::{
 };
 use quire_exact::{Integer, OrderingOperator, Value, ValueType};
 use quire_semantic_value::declaration::EqualityOperator;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 use std::collections::BTreeMap;
 use std::ops::Not;
 

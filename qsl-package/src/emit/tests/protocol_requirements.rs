@@ -910,7 +910,7 @@ fn a_protocol_requiring_a_refused_temporal_adds_no_second_refusal() {
     );
     let refusals = refusals_of(PROFILES, &unit);
     let name = |refusal: &qsl_semantics::check::CheckRefusal| match &refusal.location.origin {
-        quire_semantic_value::location::Origin::TypeDeclaration { name } => name.clone(),
+        quire_semantic_value::location::ExpressionOwner::TypeDeclaration { name } => name.clone(),
         other => format!("{other:?}"),
     };
     assert!(

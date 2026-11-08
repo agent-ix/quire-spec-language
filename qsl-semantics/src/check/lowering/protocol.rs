@@ -32,7 +32,7 @@ use qsl_forms::{
 };
 use qsl_foundation::MemoryModelName;
 use quire_exact::{EffectiveId, Identifier, Integer, NodeKey, ValueType};
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 mod controls;
 
@@ -2604,12 +2604,16 @@ mod bounded_carries_tests {
     use super::*;
 
     fn map(bound: Option<(u64, u64)>) -> ValueType {
-        ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-            ValueType::Boolean,
-            bound.map(|(lower, upper)| {
-                quire_exact::CardinalityBound::new(lower, upper).expect("a bound")
-            }),
-        )))
+        ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(
+                ValueType::String,
+                ValueType::Boolean,
+                bound.map(|(lower, upper)| {
+                    quire_exact::CardinalityBound::new(lower, upper).expect("a bound")
+                }),
+            )
+            .expect("a leaf key"),
+        ))
     }
 
     /// A bounded map lowers to a `bounded_domain` (FR-092-AC-28), which IR's

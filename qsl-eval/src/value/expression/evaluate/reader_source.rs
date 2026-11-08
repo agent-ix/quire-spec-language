@@ -3,7 +3,7 @@
 
 use quire_checked::node::{CheckedLiteral, NodeKind};
 use quire_exact::{Value, ValueType};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use super::node_source::{Callee, NodeSource};
 

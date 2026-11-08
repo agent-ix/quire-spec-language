@@ -9,7 +9,7 @@ use quire_exact::{Value, ValueType};
 use quire_semantic_value::declaration::EqualityOperand;
 use quire_semantic_value::declaration::{EqualityOperator, EqualitySchedule};
 use quire_semantic_value::enumeration::EnumMemberIndex;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 use quire_semantic_value::quantity::UnitTable;
 use std::collections::BTreeSet;
 use std::convert::Infallible;
@@ -50,7 +50,7 @@ impl fmt::Debug for NodeId {
 /// ```compile_fail,E0451
 /// use qsl_semantics::check::{Node, NodeId};
 /// use quire_checked::NodeKind;
-/// use quire_semantic_value::location::Location;
+/// use quire_semantic_value::location::ExpressionLocation as Location;
 /// fn forge(kind: NodeKind<NodeId>, location: Location) -> Node {
 ///     Node { kind, value_type: quire_exact::ValueType::Boolean, location }
 /// }
@@ -405,7 +405,9 @@ impl CheckedBody {
             .map(|value_type| Node {
                 kind: NodeKind::Literal(CheckedLiteral(Value::Boolean(true))),
                 value_type,
-                location: Location::root(quire_semantic_value::location::Origin::Expression),
+                location: Location::root(
+                    quire_semantic_value::location::ExpressionOwner::Expression,
+                ),
                 equality_producer: None,
                 ordering_part: false,
             })
@@ -413,7 +415,7 @@ impl CheckedBody {
         nodes.push(Node {
             kind: kind(&ids),
             value_type: result,
-            location: Location::root(quire_semantic_value::location::Origin::Expression),
+            location: Location::root(quire_semantic_value::location::ExpressionOwner::Expression),
             equality_producer: None,
             ordering_part: false,
         });
@@ -446,7 +448,9 @@ impl CheckedBody {
                 .map(|(kind, value_type)| Node {
                     kind,
                     value_type,
-                    location: Location::root(quire_semantic_value::location::Origin::Expression),
+                    location: Location::root(
+                        quire_semantic_value::location::ExpressionOwner::Expression,
+                    ),
                     equality_producer: None,
                     ordering_part: false,
                 })
@@ -1121,7 +1125,7 @@ pub(crate) fn node_children(kind: &NodeKind<NodeId>) -> Vec<NodeId> {
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
-    use quire_semantic_value::location::Origin;
+    use quire_semantic_value::location::ExpressionOwner as Origin;
 
     /// How many nodes the deep body holds.
     const DEEP: usize = 100_000;

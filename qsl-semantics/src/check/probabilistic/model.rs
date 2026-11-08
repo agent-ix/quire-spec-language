@@ -23,7 +23,7 @@ use qsl_foundation::diagnostic::Code;
 use qsl_foundation::Span;
 use quire_exact::{EffectiveId, Identifier, Rational, Value, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use super::super::check::{bind_parameters, Scope, Signatures, Typer};
 use super::super::facts::Definedness;

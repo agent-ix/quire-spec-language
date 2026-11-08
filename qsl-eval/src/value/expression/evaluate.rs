@@ -76,7 +76,7 @@ use quire_semantic_value::declaration::{
     EqualityOperator, FieldDeclaration, FieldRef, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 use quire_semantic_value::quantity::{
     compare_quantity, convert_quantity, evaluate_quantity_unit, ConvertedValue, QuantityOperation,

@@ -39,7 +39,7 @@ use quire_eval::{CheckedClosure, Evaluation, RequestRefusal, Signature, Transiti
 use quire_exact::{Meter, NodeKey, Value, ValueType};
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 use quire_semantic_value::supplied_stop::{SuppliedLimits, SuppliedRun};
 
 use super::evaluate::Machine;

@@ -15,7 +15,7 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
 use quire_exact::IllTypedCause;
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::location::Origin;
+use quire_semantic_value::location::ExpressionOwner as Origin;
 use serde_json::Value;
 
 #[path = "../support/child_composite.rs"]

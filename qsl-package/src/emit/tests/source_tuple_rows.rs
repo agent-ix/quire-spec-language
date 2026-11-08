@@ -554,7 +554,9 @@ fn a_collection_row_that_disagrees_with_its_nodes_is_a_writer_fault() {
     );
     // A map row with no key node is not a collection row.
     let mut mixed = collection.clone();
-    mixed.value_type = ValueType::map(quire_exact::MapType::new(ValueType::Boolean, None));
+    mixed.value_type = ValueType::map(
+        quire_exact::MapType::new(ValueType::String, ValueType::Boolean, None).expect("a leaf key"),
+    );
     assert_eq!(
         join(&mixed, references.clone(), &emitted_ids),
         Err(EmitRefusal::SourceMapInvariant)
@@ -635,7 +637,9 @@ fn a_map_row_pairs_the_key_and_value_nodes_and_refuses_disagreement() {
         keys.next().expect("a value node"),
     );
     let (structural, collection) = graph.source_collections().next().expect("a collection");
-    let map_type = ValueType::map(quire_exact::MapType::new(ValueType::Boolean, None));
+    let map_type = ValueType::map(
+        quire_exact::MapType::new(ValueType::String, ValueType::Boolean, None).expect("a leaf key"),
+    );
     let map = qsl_semantics::check::SourceCollection {
         value_type: map_type.clone(),
         base: collection.base.clone(),
@@ -735,8 +739,8 @@ fn a_map_row_follows_its_final_key_and_value_nodes() {
     );
 }
 
-/// A checked package whose record `R` holds `m: Map<Text, Boolean>[1, 4]` and
-/// `n: Map<Text, Int[0, 9]>`, and a function over `R`. Source text spells no
+/// A checked package whose record `R` holds `m: Map<String, Boolean>[1, 4]` and
+/// `n: Map<String, Int[0, 9]>`, and a function over `R`. Source text spells no
 /// map, so the record is declared as the checker declares it, over the
 /// declaration API the emitter tests share.
 pub(super) fn map_record_package() -> CheckedPackage {
@@ -749,10 +753,14 @@ pub(super) fn map_record_package() -> CheckedPackage {
     let handle = NodeKey::new("pkg", vec![quire_exact::PathSegment::Text("R".into())], 0)
         .expect("a well formed key");
     let map = |values, bound: Option<(u64, u64)>| {
-        ValueType::map(MapType::new(
-            values,
-            bound.map(|(lower, upper)| CardinalityBound::new(lower, upper).expect("a bound")),
-        ))
+        ValueType::map(
+            MapType::new(
+                ValueType::String,
+                values,
+                bound.map(|(lower, upper)| CardinalityBound::new(lower, upper).expect("a bound")),
+            )
+            .expect("a leaf key"),
+        )
     };
     let digit = ValueType::Int(
         quire_exact::IntegerInterval::new(

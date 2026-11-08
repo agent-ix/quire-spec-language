@@ -65,7 +65,7 @@ use quire_semantic_value::declaration::{CompositeShape, FieldDeclaration, TypeEn
 use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation,
 };
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 pub(crate) use rows::{
     KeyedFairnessRow, KeyedObjectRow, KeyedPopulationRow, KeyedRefinementRows, KeyedStepRow,
     KeyedStepTarget,
@@ -2241,10 +2241,10 @@ fn lift(lifting: &BTreeMap<EffectiveId, EffectiveId>, value_type: &ValueType) ->
                 collection.bound(),
             ))
         }
-        ValueType::Map(map) => ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-            lift(lifting, map.values()),
-            map.bound(),
-        ))),
+        ValueType::Map(map) => ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(map.key().clone(), lift(lifting, map.values()), map.bound())
+                .expect("a built map key is a leaf"),
+        )),
         other @ (ValueType::Boolean
         | ValueType::Integer
         | ValueType::Int(_)
@@ -4432,9 +4432,9 @@ mod tests {
     }
 
     fn map_of(values: ValueType, bound: Option<quire_exact::CardinalityBound>) -> ValueType {
-        ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-            values, bound,
-        )))
+        ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(ValueType::String, values, bound).expect("a leaf key"),
+        ))
     }
 
     /// FR-135: a reference nested in a map's values is not lifted by the

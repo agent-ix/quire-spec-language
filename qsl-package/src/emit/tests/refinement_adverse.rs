@@ -10,7 +10,7 @@
 
 use qsl_foundation::Code;
 use qsl_semantics::check::{CheckCause, CheckRefusal, ProtocolConstruct};
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 use super::admission_corpus::{protocol_rows_running, rows_refinement, MAPS, PROTOCOL_ROWS};
 use super::protocol_reference::not_emitted;

@@ -2540,14 +2540,15 @@ fn value_type_source(value_type: &quire_exact::ValueType) -> String {
             format!("Quantity<{}, {carrier}>", unit_spelling(carried.unit()))
         }
         ValueType::Map(map) => {
+            let key = value_type_source(map.key());
             let values = value_type_source(map.values());
             match map.bound() {
                 Some(bound) => format!(
-                    "Map<Text, {values}>[{}, {}]",
+                    "Map<{key}, {values}>[{}, {}]",
                     bound.minimum(),
                     bound.maximum()
                 ),
-                None => format!("Map<Text, {values}>"),
+                None => format!("Map<{key}, {values}>"),
             }
         }
         ValueType::Text(text) => format!(
@@ -2612,7 +2613,9 @@ mod tests {
     use qsl_semantics::value::DefinitionRole;
     use quire_exact::{Integer, IntegerInterval, ValueType};
     use quire_semantic_value::checking::CheckingLimits;
-    use quire_semantic_value::location::{Location, Origin};
+    use quire_semantic_value::location::{
+        ExpressionLocation as Location, ExpressionOwner as Origin,
+    };
     use std::collections::BTreeMap;
 
     #[trace("TC-1339", "FR-534-AC-3")]
@@ -2805,16 +2808,16 @@ mod tests {
     #[test]
     fn map_bounded_and_carried_quantity_types_have_a_source_spelling() {
         let map = |bound| {
-            ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-                ValueType::Boolean,
-                bound,
-            )))
+            ValueType::Map(std::sync::Arc::new(
+                quire_exact::MapType::new(ValueType::String, ValueType::Boolean, bound)
+                    .expect("a leaf key"),
+            ))
         };
-        assert_eq!(super::value_type_source(&map(None)), "Map<Text, Boolean>");
+        assert_eq!(super::value_type_source(&map(None)), "Map<String, Boolean>");
         let bound = quire_exact::CardinalityBound::new(1, 4).expect("a bound");
         assert_eq!(
             super::value_type_source(&map(Some(bound))),
-            "Map<Text, Boolean>[1, 4]"
+            "Map<String, Boolean>[1, 4]"
         );
         let unit = quire_exact::UnitId::declared(
             quire_exact::NodeKey::new(
@@ -3129,7 +3132,9 @@ mod tests {
     #[test]
     fn the_event_and_workload_diagnostics_read_as_the_requirement_states_them() {
         use qsl_semantics::check::{CheckCause, CheckRefusal, ProbabilisticCause};
-        use quire_semantic_value::location::{Location, Origin};
+        use quire_semantic_value::location::{
+            ExpressionLocation as Location, ExpressionOwner as Origin,
+        };
         let render = |cause: ProbabilisticCause| {
             CompileRefusal::Check {
                 refusals: vec![CheckRefusal {
@@ -3176,7 +3181,9 @@ mod tests {
     #[test]
     fn a_unit_mismatch_names_the_dimensions() {
         use qsl_semantics::check::{CheckCause, CheckRefusal, ProbabilisticCause};
-        use quire_semantic_value::location::{Location, Origin};
+        use quire_semantic_value::location::{
+            ExpressionLocation as Location, ExpressionOwner as Origin,
+        };
         let refusal = CompileRefusal::Check {
             refusals: vec![CheckRefusal {
                 location: Location::root(Origin::Expression),

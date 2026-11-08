@@ -47,7 +47,7 @@ use qsl_foundation::bound::DomainKind;
 use quire_checked::key::DeclarationKey;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::TypeEnvironment;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 /// The observation a clause of `kind` reads (FR-104, FR-107): `current`
 /// for an invariant or constraint, `pre` for a precondition, `post` for a

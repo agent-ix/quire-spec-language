@@ -12,7 +12,7 @@ use quire_eval::FamilyOutcome;
 use quire_exact::{
     IllTypedCause, Integer, Meter, Outcome, Quantity as ExactQuantity, Rational, Value, ValueType,
 };
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use super::quantity_literals::{package_with, truth, UNLIMITED};
 

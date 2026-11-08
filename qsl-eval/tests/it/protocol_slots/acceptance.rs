@@ -5068,7 +5068,7 @@ fn a_related_call_is_located_alike_on_both_routes() {
         );
         assert_eq!(
             on_bare.origin,
-            quire_semantic_value::location::Origin::TypeDeclaration {
+            quire_semantic_value::location::ExpressionOwner::TypeDeclaration {
                 name: format!("protocol Pipeline run Main Got related 0 {side}"),
             }
         );
@@ -5132,10 +5132,11 @@ fn the_two_record_related_variant_is_located_alike_in_each_clause_order() {
             });
             (checked.checked_body().root().location().clone(), on_bare)
         };
-        let name =
-            |position: usize, side: &str| quire_semantic_value::location::Origin::TypeDeclaration {
+        let name = |position: usize, side: &str| {
+            quire_semantic_value::location::ExpressionOwner::TypeDeclaration {
                 name: format!("protocol Pipeline run Main Got related {position} {side}"),
-            };
+            }
+        };
         let mut from = Vec::new();
         for index in 0..2 {
             let (checked, bare) = located("related.from", index);

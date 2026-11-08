@@ -28,7 +28,7 @@ use quire_exact::{
 };
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,

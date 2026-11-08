@@ -758,7 +758,7 @@ fn equal_related_ends_of_distinct_records_take_their_own_origin() {
             .clone();
         assert_eq!(
             location.origin,
-            quire_semantic_value::location::Origin::TypeDeclaration { name }
+            quire_semantic_value::location::ExpressionOwner::TypeDeclaration { name }
         );
         locations.push(location);
     }
@@ -909,8 +909,8 @@ fn tied_case_guards_take_their_own_origin_in_either_label_order() {
                 "a completed evaluation has no stop location"
             );
             let projection = bare.project_protocol_slot(&selected).expect("projects");
-            let expected_location = quire_semantic_value::location::Location::at(
-                quire_semantic_value::location::Origin::TypeDeclaration {
+            let expected_location = quire_semantic_value::location::ExpressionLocation::at(
+                quire_semantic_value::location::ExpressionOwner::TypeDeclaration {
                     name: format!("{CASE}{label} guard"),
                 },
                 &[],
@@ -1579,7 +1579,7 @@ fn equality_slots_reuse_the_decisions_retained_by_exact_budget_admission() {
         .location(*position)
         .expect("the equality has its original protocol location")
         .clone();
-    let quire_semantic_value::location::Origin::TypeDeclaration {
+    let quire_semantic_value::location::ExpressionOwner::TypeDeclaration {
         name: original_origin,
     } = &original_location.origin
     else {

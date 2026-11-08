@@ -154,7 +154,7 @@ impl std::fmt::Debug for CheckedProtocolBinderKey {
 #[derive(Clone, Eq, PartialEq)]
 pub struct CheckedProtocolExpressionBindings {
     /// The checked body's root source location.
-    pub location: quire_semantic_value::location::Location,
+    pub location: quire_semantic_value::location::ExpressionLocation,
     /// Its parameter identities in local-slot order.
     pub binders: Vec<CheckedProtocolBinderKey>,
 }

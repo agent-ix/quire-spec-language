@@ -24,7 +24,7 @@ use quire_contract_model::{
 use quire_exact::NodeKey;
 use quire_exact::{Cancel, Integer, Value, ValueType};
 use quire_semantic_value::catalog::InternalFault;
-use quire_semantic_value::location::Origin as BodyOrigin;
+use quire_semantic_value::location::ExpressionOwner as BodyOrigin;
 
 use super::call::{admit_model_arguments, bind_arguments, convert_call_failure, select};
 use super::{AdmittedModels, Call, CheckedUnit, EmittedUnit, RunRefusal};

@@ -58,8 +58,8 @@ fn fault(invariant: &'static str) -> Vec<(Span, CheckRefusal)> {
     vec![(
         Span { start: 0, end: 0 },
         CheckRefusal {
-            location: quire_semantic_value::location::Location::root(
-                quire_semantic_value::location::Origin::Expression,
+            location: quire_semantic_value::location::ExpressionLocation::root(
+                quire_semantic_value::location::ExpressionOwner::Expression,
             ),
             cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
                 quire_semantic_value::catalog::InternalFault::new("check.protocol", invariant),

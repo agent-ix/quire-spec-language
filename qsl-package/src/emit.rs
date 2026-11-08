@@ -48,7 +48,7 @@ use qsl_semantics::value::{
 };
 use quire_exact::{Cancel, NodeKey, Origin, PathSegment, Role};
 use quire_semantic_value::catalog::Category;
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::ExpressionLocation as Location;
 
 use super::{CheckedPackage, EmittedPackage};
 use crate::checked::EmitLimits;
