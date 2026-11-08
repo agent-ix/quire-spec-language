@@ -11,8 +11,15 @@ Generate the cases and check one rule:
 ```sh
 cargo run --locked --example config_version_fixtures -- /tmp/config-version
 examples/config-version/requests.sh /tmp/config-version/healthy-parent ParentOrder
-cargo run --locked -- run /tmp/config-version/healthy-parent/run.json
-cargo run --locked -- compile /tmp/config-version/healthy-parent/compile.json
+```
+
+QSL builds no executable. `run.json` is a `native-run/1` request for
+`quire_spec_language::command::run`, and `compile.json` a `native-compile/1`
+request for `command::compile`; the test
+`walkthrough_requests_reproduce_the_documented_exit_codes` runs both:
+
+```sh
+cargo test --locked --test it walkthrough_requests_reproduce_the_documented_exit_codes
 ```
 
 The generator writes one directory per case. Each holds `spine-unit.native`,
@@ -45,8 +52,8 @@ clause-run request members are `models`, `program` and `clause`
 
 [`tests/it/config_version_spine.rs`](../../tests/it/config_version_spine.rs)
 checks every row through the library, and runs `healthy-parent` and
-`violating-parent` through the `run` command. With `requests.sh` the command
-line reproduces the state-rule rows directly: `healthy-parent` 0,
+`violating-parent` through `command::run`. With `requests.sh` the written
+requests reproduce the state-rule rows directly: `healthy-parent` 0,
 `violating-parent` 10, `cycle` and `self-loop` with `NoCycle` 10,
 `dangling-parent` 20 and `incomplete-population` 22. The other rows need an
 operation frame, a missing import or a work limit in the request, which the

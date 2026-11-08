@@ -4,6 +4,7 @@
 //! through `run_clause` (FR-109) over the spine files
 //! `crate::support::config_version_spine::spine` writes.
 
+use crate::command_harness::{compile_file, run_file, run_file_with_limits, Output};
 use crate::support::config_version_spine::{cases::CASES, spine, Case};
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
@@ -11,6 +12,7 @@ use qsl_replay::spine::{
     run_clause, CallOutcome, ClauseDisposition, ClauseRunRequest, ClauseRunStage,
 };
 use quire_semantic_value::catalog::Category;
+use quire_spec_language::command::RunLimits;
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, path::Path, process::Command};
 
@@ -224,17 +226,14 @@ fn current_clause_request() -> Value {
     request
 }
 
-fn run_clause_file(path: &Path, request: &Value) -> std::process::Output {
+/// `command::run` in process over `request` written beside the case.
+fn run_clause_file(path: &Path, request: &Value) -> Output {
     std::fs::write(
         path.join("request.json"),
         serde_json::to_vec(request).unwrap(),
     )
     .unwrap();
-    Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-        .arg("run")
-        .arg(path.join("request.json"))
-        .output()
-        .unwrap()
+    run_file(&path.join("request.json"))
 }
 
 fn rename_identity(value: &mut Value, old: &str, new: &str) {
@@ -343,18 +342,10 @@ fn walkthrough_requests_reproduce_the_documented_exit_codes() {
             .output()
             .unwrap();
         assert!(written.status.success(), "{}: {written:?}", case.id());
-        let run = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-            .arg("run")
-            .arg(path.join("run.json"))
-            .output()
-            .unwrap();
+        let run = run_file(&path.join("run.json"));
         assert_eq!(run.status.code(), Some(exit), "{}: {run:?}", case.id());
         if case.id() == "healthy-parent" {
-            let compiled = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-                .arg("compile")
-                .arg(path.join("compile.json"))
-                .output()
-                .unwrap();
+            let compiled = compile_file(&path.join("compile.json"));
             assert_eq!(compiled.status.code(), Some(0), "{compiled:?}");
             let package: Value = serde_json::from_slice(&compiled.stdout).unwrap();
             assert_eq!(package["contract_version"], "quire.checked-package/v2");
@@ -556,13 +547,13 @@ fn clause_run_observation_limit_reports_its_own_bound() {
         serde_json::to_vec(&request).unwrap(),
     )
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-        .arg("run")
-        .arg(path.join("request.json"))
-        .arg("--dependent-bytes")
-        .arg("8000000")
-        .output()
-        .unwrap();
+    let output = run_file_with_limits(
+        &path.join("request.json"),
+        RunLimits {
+            dependent_bytes: 8_000_000,
+            ..RunLimits::default()
+        },
+    );
     assert_eq!(output.status.code(), Some(22), "{output:?}");
     let error: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(error["details"]["limit"], "observation.document_bytes");
@@ -925,7 +916,14 @@ fn clause_run_command_reports_select_admit_and_incomplete_classes() {
 
 /// FR-312-AC-3 / FR-026-AC-4: caller byte ceilings bound the exact request
 /// and aggregate selected-file reads before the spine consumes them.
-#[trace("TC-891", "TC-1262", "FR-312-AC-3", "FR-026-AC-4", "FR-287-AC-4")]
+#[trace(
+    "TC-891",
+    "FR-312-AC-3",
+    "TC-104",
+    "FR-026-AC-4",
+    "TC-1262",
+    "FR-287-AC-4"
+)]
 #[test]
 fn clause_run_command_honors_caller_byte_ceilings() {
     let directory = tempfile::tempdir().unwrap();
@@ -946,13 +944,18 @@ fn clause_run_command_honors_caller_byte_ceilings() {
     .map(|file| std::fs::metadata(path.join(file)).unwrap().len() as usize)
     .sum::<usize>();
     let invoke = |option: &str, limit: usize| {
-        Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-            .arg("run")
-            .arg(path.join("request.json"))
-            .arg(option)
-            .arg(limit.to_string())
-            .output()
-            .unwrap()
+        let defaults = RunLimits::default();
+        let limits = match option {
+            "--dependent-bytes" => RunLimits {
+                dependent_bytes: limit,
+                ..defaults
+            },
+            _ => RunLimits {
+                request_bytes: limit,
+                ..defaults
+            },
+        };
+        run_file_with_limits(&path.join("request.json"), limits)
     };
     let failure = invoke("--dependent-bytes", dependent - 1);
     assert_eq!(failure.status.code(), Some(22), "{failure:?}");

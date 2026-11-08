@@ -1,20 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-100: CLI `run` routes a `1-draft` program through the spine.
+//! FR-100: `command::run` in process routes a `1-draft` program through the spine.
 
+use crate::command_harness::{run_file, Output};
 use ix_trace_rs::trace;
 use serde_json::{json, Value};
-use std::{
-    path::Path,
-    process::{Command, Output},
-};
+use std::path::Path;
 
+/// `command::run` in process over `<directory>/request.json`.
 fn run(directory: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_quire-spec"))
-        .arg("run")
-        .arg(directory.join("request.json"))
-        .current_dir(directory.parent().unwrap())
-        .output()
-        .unwrap()
+    run_file(&directory.join("request.json"))
 }
 
 /// The `seven`/`px` fixture (FR-027-AC-5), reused here since `seven` is
@@ -1003,6 +997,95 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
             i32::from(category.exit_code()),
             expected,
             "{function}: {category}"
+        );
+    }
+}
+
+/// Environment member naming the request file the child process runs.
+const CWD_CHILD_REQUEST: &str = "QSL_CWD_CHILD_REQUEST";
+
+/// Child half of `run_outcome_is_independent_of_working_directory`: when the
+/// parent sets the request path, run it from this process's working
+/// directory and print the exit status and stdout. Without it, a no-op.
+#[test]
+fn cwd_child_runs_request() {
+    if let Some(request) = std::env::var_os(CWD_CHILD_REQUEST) {
+        let output = run_file(Path::new(&request));
+        println!(
+            "child-result {} {}",
+            output.status.code().unwrap(),
+            String::from_utf8(output.stdout).unwrap().trim_end()
+        );
+    }
+}
+
+/// Run `request` from `directory` in a fresh process and return the child's
+/// result line.
+fn run_from(directory: &Path, request: &str) -> String {
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "spine_run::cwd_child_runs_request",
+            "--nocapture",
+        ])
+        .env(CWD_CHILD_REQUEST, request)
+        .current_dir(directory)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .find(|line| line.starts_with("child-result "))
+        .unwrap_or_else(|| panic!("no child result: {output:?}"))
+        .to_owned()
+}
+
+/// FR-026-AC-5: one request file given by its relative, parent-relative and
+/// absolute path from three working directories returns equal outcomes, its
+/// relative program path resolving against the request's directory, and an
+/// absolute program path as written.
+#[test]
+#[trace("TC-104", "FR-026-AC-5")]
+fn run_outcome_is_independent_of_working_directory() {
+    let root = tempfile::tempdir().unwrap();
+    let request_directory = root.path().join("req");
+    let other_directory = root.path().join("other");
+    std::fs::create_dir(&request_directory).unwrap();
+    std::fs::create_dir(&other_directory).unwrap();
+    let program = std::fs::read(SEVEN_FIXTURE).unwrap();
+    spine_run_request(&request_directory, &program, call("seven", json!([])));
+
+    let absolute_program = root.path().join("absolute.native");
+    std::fs::write(&absolute_program, &program).unwrap();
+    let mut source = program_source();
+    source["file"] = json!(absolute_program.to_str().unwrap());
+    let absolute_request = json!({"format":"native-run/1","request":{
+        "models":[], "program":{"source":source}, "call":call("seven", json!([]))}});
+    std::fs::write(
+        request_directory.join("absolute.json"),
+        serde_json::to_vec(&absolute_request).unwrap(),
+    )
+    .unwrap();
+
+    for name in ["request.json", "absolute.json"] {
+        let absolute = request_directory.join(name);
+        let from_request_directory = run_from(&request_directory, name);
+        assert!(
+            from_request_directory.starts_with("child-result 0 "),
+            "{from_request_directory}"
+        );
+        assert!(from_request_directory.contains("\"decimal\":\"7\""));
+        assert_eq!(
+            run_from(root.path(), &format!("req/{name}")),
+            from_request_directory
+        );
+        assert_eq!(
+            run_from(&other_directory, &format!("../req/{name}")),
+            from_request_directory
+        );
+        assert_eq!(
+            run_from(&other_directory, absolute.to_str().unwrap()),
+            from_request_directory
         );
     }
 }
