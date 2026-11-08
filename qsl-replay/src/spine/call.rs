@@ -19,6 +19,9 @@
 
 use std::collections::BTreeMap;
 
+use qsl_eval::execution::{
+    execute, ExecuteLimits, ExecuteRequest, ExecuteSelection, PrepareLimits, SuppliedBackends,
+};
 use qsl_foundation::diagnostic::StageFailure;
 use qsl_foundation::diagnostic::{Code, Locus, RefusalRecord};
 use qsl_foundation::source::Source;
@@ -89,6 +92,29 @@ pub struct Call {
     /// FR-277: the caller's supplied-value helper ceilings. An omitted
     /// ceiling is its published default.
     pub supplied: quire_semantic_value::supplied_stop::SuppliedLimits,
+    /// FR-296: the execution backend that runs the call, `Interpreter` by
+    /// default. A backend the caller did not supply refuses; no other
+    /// backend runs in its place.
+    pub backend: quire_eval::ExecutionBackendChoice,
+}
+
+impl Call {
+    /// A call on the interpreter, the default backend (FR-296).
+    #[must_use]
+    pub const fn new(
+        function: String,
+        arguments: Vec<CallArgument>,
+        accounting: ScalarLimits,
+        supplied: quire_semantic_value::supplied_stop::SuppliedLimits,
+    ) -> Self {
+        Self {
+            function,
+            arguments,
+            accounting,
+            supplied,
+            backend: quire_eval::ExecutionBackendChoice::Interpreter,
+        }
+    }
 }
 
 /// A value [`run`] completed. [`run`] refuses `unsupported_construct` before
@@ -340,6 +366,14 @@ pub enum RunRefusal {
     /// record names the code, cause, object and attribute.
     #[error("the object environment is refused: {0:?}")]
     ObjectEnvironment(Box<quire_semantic_value::admission::AdmissionRecord>),
+    /// FR-296, FR-294: the chosen backend is not supplied, or did not
+    /// prepare the entry (category unsupported, `unimplemented_capability`).
+    #[error(transparent)]
+    Unsupported(quire_eval::UnsupportedEntry),
+    /// FR-279, FR-294: `prepare` reached a `PrepareLimits` bound (category
+    /// incomplete, `stage_limit_exceeded`).
+    #[error(transparent)]
+    PrepareLimit(quire_eval::PrepareLimitReached),
 }
 
 impl RunRefusal {
@@ -364,6 +398,8 @@ impl RunRefusal {
             | Self::Supplied(_)
             | Self::UnsupportedHelper(_)
             | Self::ObjectEnvironment(_)
+            | Self::Unsupported(_)
+            | Self::PrepareLimit(_)
             | Self::SourceNotSupplied { .. }
             | Self::Fault(_) => "call",
             Self::Cancelled(_) => return None,
@@ -394,6 +430,8 @@ impl RunRefusal {
             | Self::DanglingReference { .. }
             | Self::UnsupportedHelper(_)
             | Self::ObjectEnvironment(_)
+            | Self::Unsupported(_)
+            | Self::PrepareLimit(_)
             | Self::SourceNotSupplied { .. }
             | Self::Fault(_) => None,
         }
@@ -418,6 +456,8 @@ impl RunRefusal {
             Self::Cancelled(_) => Code::Cancelled,
             Self::Supplied(stop) => qsl_eval::value::supplied_stop_code(stop),
             Self::UnsupportedHelper(_) => Code::UnsupportedConstruct,
+            Self::Unsupported(_) => Code::UnimplementedCapability,
+            Self::PrepareLimit(_) => Code::StageLimitExceeded,
             Self::ObjectEnvironment(record) => {
                 Code::from_code(record.catalog.code()).unwrap_or(Code::InvalidRuntimeInput)
             }
@@ -464,6 +504,44 @@ pub fn run(
         limits,
         call,
         objects,
+        &SuppliedBackends::default(),
+        cancel,
+        |_, _, _| Ok(()),
+    )
+    .map(|(outcome, ())| outcome)
+}
+
+/// [`run`] with the execution backends the caller supplies (FR-296): the
+/// call's `backend` names which one runs it. A backend that is not supplied
+/// refuses before any stage as [`RunRefusal::Unsupported`].
+#[allow(
+    clippy::too_many_arguments,
+    reason = "run's signature (FR-100) plus the caller's backends"
+)]
+pub fn run_with_backends(
+    source: SourceIdentity,
+    package_name: String,
+    path: &str,
+    bytes: &[u8],
+    packages: &qsl_semantics::model::intake::PackageInput,
+    dependencies: &DependencyInput,
+    limits: SpineLimits,
+    call: &Call,
+    objects: &ObjectEnvironment,
+    backends: &SuppliedBackends<'_>,
+    cancel: &Cancel,
+) -> Result<CallOutcome, Box<RunRefusal>> {
+    run_reading(
+        source,
+        package_name,
+        path,
+        bytes,
+        packages,
+        dependencies,
+        limits,
+        call,
+        objects,
+        backends,
         cancel,
         |_, _, _| Ok(()),
     )
@@ -489,9 +567,14 @@ pub(crate) fn run_reading<T>(
     limits: SpineLimits,
     call: &Call,
     objects: &ObjectEnvironment,
+    backends: &SuppliedBackends<'_>,
     cancel: &Cancel,
     read: impl FnOnce(&CheckedUnit, &EmittedUnit, &AdmittedModels) -> Result<T, Box<RunRefusal>>,
 ) -> Result<(CallOutcome, T), Box<RunRefusal>> {
+    // FR-296: a backend the caller did not supply refuses before any stage.
+    backends
+        .member(call.backend)
+        .map_err(|entry| Box::new(RunRefusal::Unsupported(entry)))?;
     let refusal = |failure| match failure {
         StageFailure::Cancelled(cause) => Box::new(RunRefusal::Cancelled(cause)),
         other => match front_end::refusal_or_fault(other) {
@@ -529,15 +612,22 @@ pub(crate) fn run_reading<T>(
         &arguments,
         objects,
     )?;
-    let evaluation = front_end::execute(
-        &checked,
-        &front_end::ExecuteRequest {
-            function: &selected.name,
-            arguments: &arguments,
-            objects,
-            supplied: call.supplied,
+    let evaluation = execute(
+        package,
+        &ExecuteRequest {
+            selection: ExecuteSelection::Function {
+                name: selected.name.clone(),
+                arguments,
+            },
+            environment: objects.clone(),
+            backend: call.backend,
         },
-        call.accounting,
+        backends,
+        &ExecuteLimits {
+            accounting: call.accounting,
+            supplied: call.supplied,
+            prepare: PrepareLimits::default(),
+        },
         cancel,
     )
     .map_err(|failure| match failure {
@@ -930,11 +1020,10 @@ pub(crate) fn convert_call_failure(failure: quire_eval::CallFailure) -> Box<RunR
             "call",
             "cancelled-without-a-shared-handle",
         ))),
-        // Only a prepared entry on another backend or a prepare limit
-        // returns these, and the checked interpreter returns neither.
-        CallFailure::Unsupported(_) | CallFailure::Limit(_) => Box::new(RunRefusal::Fault(
-            InternalFault::new("call", "interpreter-returns-no-prepare-refusal"),
-        )),
+        // FR-296, FR-279: an unsupported entry or a reached prepare limit
+        // reaches the outcome with its own catalog code.
+        CallFailure::Unsupported(entry) => Box::new(RunRefusal::Unsupported(entry)),
+        CallFailure::Limit(limit) => Box::new(RunRefusal::PrepareLimit(limit)),
     }
 }
 
@@ -1095,3 +1184,6 @@ pub(crate) fn convert_outcome(
 
 #[cfg(test)]
 pub(in crate::spine) mod tests;
+
+#[cfg(test)]
+mod execution_tests;

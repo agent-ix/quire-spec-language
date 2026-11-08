@@ -942,12 +942,12 @@ fn run_complete(
             value: quire_exact::Value::Integer(quire_exact::Integer::from(argument.value)),
         })
         .collect();
-    let spine_call = qsl_replay::spine::Call {
-        function: call.function.clone(),
+    let spine_call = qsl_replay::spine::Call::new(
+        call.function.clone(),
         arguments,
-        accounting: call_accounting(&call.accounting),
-        supplied: request.limits.supplied.unwrap_or_default(),
-    };
+        call_accounting(&call.accounting),
+        request.limits.supplied.unwrap_or_default(),
+    );
     let outcome = qsl_replay::spine::run(
         source.source().identity().clone(),
         package_name(source.source().identity()),

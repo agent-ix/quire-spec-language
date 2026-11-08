@@ -192,6 +192,7 @@ pub fn run_with_requirements(
         limits,
         call,
         objects,
+        &qsl_eval::execution::SuppliedBackends::default(),
         cancel,
         |checked, _, _| {
             let graph = checked.package().graph();

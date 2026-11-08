@@ -144,6 +144,7 @@ fn call(function: &str, arguments: Vec<CallArgument>) -> Call {
         arguments,
         accounting: default_accounting(1_000_000),
         supplied: Default::default(),
+        backend: quire_eval::ExecutionBackendChoice::Interpreter,
     }
 }
 

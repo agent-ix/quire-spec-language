@@ -55,6 +55,7 @@ fn a_consumer_runs_builds_and_settles_through_the_crate_root() {
             result_units: u64::MAX,
         },
         supplied: SuppliedLimits::default(),
+        backend: quire_eval::ExecutionBackendChoice::Interpreter,
     };
     let result = run_with_replay_context(
         SourceIdentity::new("a", "u"),
