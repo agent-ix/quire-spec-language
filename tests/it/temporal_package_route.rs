@@ -269,7 +269,9 @@ pub(super) fn run(
     asked: &EvidenceRequest,
 ) -> (Result<EvidenceResult, CallFailure>, Vec<String>) {
     let mut meter = unlimited();
-    let result = package.evaluate_temporal_evidence(clause, asked, &mut meter);
+    let result = package
+        .evaluate_temporal_evidence(clause, asked, &mut meter)
+        .map(|issued| issued.result().clone());
     (result, charges(&meter))
 }
 
@@ -536,7 +538,8 @@ fn the_call_gives_equal_results_over_both_routes_and_any_replaced_input_differs(
                 let mut meter = unlimited();
                 let result = qsl_eval::temporal::evidence::evaluate_temporal_evidence(
                     changed, &asked, &mut meter,
-                );
+                )
+                .map(|issued| issued.result().clone());
                 (result, charges(&meter))
             };
             // One `CheckedNodeId`.
@@ -600,7 +603,9 @@ fn each_clause_pairs_with_its_own_clock_row() {
             let mut foreign = request(package, other, None, 3);
             foreign.occurrence = None;
             let mut meter = unlimited();
-            let refused = package.evaluate_temporal_evidence(clause, &foreign, &mut meter);
+            let refused = package
+                .evaluate_temporal_evidence(clause, &foreign, &mut meter)
+                .map(|issued| issued.result().clone());
             assert_eq!(
                 cause(&refused.expect_err("another clause's row")),
                 "binding-mismatch"
@@ -786,7 +791,9 @@ fn twins_pair_their_rows_by_key_over_the_read_back_route() {
             sequence_authority: other.into(),
         };
         let mut meter = unlimited();
-        let refused = back.evaluate_temporal_evidence(&node, &asked, &mut meter);
+        let refused = back
+            .evaluate_temporal_evidence(&node, &asked, &mut meter)
+            .map(|issued| issued.result().clone());
         assert_eq!(
             cause(&refused.expect_err("the other row")),
             "binding-mismatch"
@@ -801,7 +808,9 @@ fn twins_pair_their_rows_by_key_over_the_read_back_route() {
     let mut asked = request(&back, &node, Some(3), 3);
     asked.occurrence = None;
     let mut meter = unlimited();
-    let refused = back.evaluate_temporal_evidence(&node, &asked, &mut meter);
+    let refused = back
+        .evaluate_temporal_evidence(&node, &asked, &mut meter)
+        .map(|issued| issued.result().clone());
     assert_eq!(
         cause(&refused.expect_err("no selector")),
         "occurrence-required"
@@ -809,7 +818,9 @@ fn twins_pair_their_rows_by_key_over_the_read_back_route() {
     assert!(meter.admitted_charges().is_empty());
     asked.occurrence = Some(claim(5));
     let mut meter = unlimited();
-    let refused = back.evaluate_temporal_evidence(&node, &asked, &mut meter);
+    let refused = back
+        .evaluate_temporal_evidence(&node, &asked, &mut meter)
+        .map(|issued| issued.result().clone());
     assert_eq!(cause(&refused.expect_err("unknown")), "occurrence-unknown");
     assert!(meter.admitted_charges().is_empty());
 
@@ -1009,7 +1020,9 @@ fn twins_pair_their_rows_by_key_over_the_bytes_only_route() {
             sequence_authority: other.into(),
         };
         let mut meter = unlimited();
-        let refused = back.evaluate_temporal_evidence(&node, &asked, &mut meter);
+        let refused = back
+            .evaluate_temporal_evidence(&node, &asked, &mut meter)
+            .map(|issued| issued.result().clone());
         assert_eq!(
             cause(&refused.expect_err("the other row")),
             "binding-mismatch"
@@ -1024,7 +1037,9 @@ fn twins_pair_their_rows_by_key_over_the_bytes_only_route() {
     let mut asked = request(&back, &node, Some(3), 3);
     asked.occurrence = None;
     let mut meter = unlimited();
-    let refused = back.evaluate_temporal_evidence(&node, &asked, &mut meter);
+    let refused = back
+        .evaluate_temporal_evidence(&node, &asked, &mut meter)
+        .map(|issued| issued.result().clone());
     assert_eq!(
         cause(&refused.expect_err("no selector")),
         "occurrence-required"
@@ -1032,7 +1047,9 @@ fn twins_pair_their_rows_by_key_over_the_bytes_only_route() {
     assert!(meter.admitted_charges().is_empty());
     asked.occurrence = Some(claim(5));
     let mut meter = unlimited();
-    let refused = back.evaluate_temporal_evidence(&node, &asked, &mut meter);
+    let refused = back
+        .evaluate_temporal_evidence(&node, &asked, &mut meter)
+        .map(|issued| issued.result().clone());
     assert_eq!(cause(&refused.expect_err("unknown")), "occurrence-unknown");
     assert!(meter.admitted_charges().is_empty());
 
@@ -1087,7 +1104,9 @@ fn each_clause_pairs_with_its_own_clock_row_over_the_bytes_only_route() {
             let mut foreign = request(package, other, None, 3);
             foreign.occurrence = None;
             let mut meter = unlimited();
-            let refused = package.evaluate_temporal_evidence(clause, &foreign, &mut meter);
+            let refused = package
+                .evaluate_temporal_evidence(clause, &foreign, &mut meter)
+                .map(|issued| issued.result().clone());
             assert_eq!(
                 cause(&refused.expect_err("another clause's row")),
                 "binding-mismatch"

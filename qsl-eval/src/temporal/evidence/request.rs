@@ -340,7 +340,10 @@ pub enum EvidenceIncomplete {
     },
 }
 
-/// The result of a temporal evidence call (FR-516 "Outputs").
+/// Read data of a temporal evidence call (FR-516 "Outputs").
+///
+/// Caller-authored or cloned data carries no evaluator authority. Borrow the
+/// original full result from [`super::EvaluatedEvidence::result`].
 #[derive(Clone, Debug)]
 pub struct EvidenceResult {
     /// The activation state.

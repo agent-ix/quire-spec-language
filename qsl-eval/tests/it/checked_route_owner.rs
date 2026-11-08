@@ -48,6 +48,7 @@ fn over(env: &Env, p: u64, reached: Valuation) -> EvidenceRequest {
 
 fn run(env: &Env, asked: &EvidenceRequest) -> Result<EvidenceResult, CallFailure> {
     evaluate_temporal_evidence(&env.subject(&[]), asked, &mut unlimited())
+        .map(|issued| issued.result().clone())
 }
 
 fn correcting(env: &Env, p: u64, reached: Valuation, previous: &EvidenceResult) -> EvidenceRequest {

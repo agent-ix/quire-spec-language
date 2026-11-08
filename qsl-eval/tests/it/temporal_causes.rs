@@ -106,7 +106,8 @@ fn an_activation_list_of_the_other_kind_is_refused() {
     );
     asked.origins = vec![origin("o1", "a")];
     let mut meter = unlimited();
-    let refused = evaluate_temporal_evidence(&each.subject(&[]), &asked, &mut meter);
+    let refused = evaluate_temporal_evidence(&each.subject(&[]), &asked, &mut meter)
+        .map(|issued| issued.result().clone());
     assert!(names_member(&refused, "origins"), "{refused:?}");
     expect_refusal(refused, "activation-list-mismatch");
     assert!(meter.admitted_charges().is_empty());
@@ -117,7 +118,8 @@ fn an_activation_list_of_the_other_kind_is_refused() {
     assert!(call(&origin_env, &origin_env.subject(&[]), &asked).is_ok());
     asked.deliveries = vec![delivery("t1", "r", "payload", &[])];
     let mut meter = unlimited();
-    let refused = evaluate_temporal_evidence(&origin_env.subject(&[]), &asked, &mut meter);
+    let refused = evaluate_temporal_evidence(&origin_env.subject(&[]), &asked, &mut meter)
+        .map(|issued| issued.result().clone());
     assert!(names_member(&refused, "deliveries"), "{refused:?}");
     expect_refusal(refused, "activation-list-mismatch");
     assert!(meter.admitted_charges().is_empty());
@@ -154,7 +156,8 @@ fn a_progress_assertion_below_the_last_position_is_inconsistent() {
         asked.completeness = completeness(1);
         let mut meter = unlimited();
         expect_refusal(
-            evaluate_temporal_evidence(&subject, &asked, &mut meter),
+            evaluate_temporal_evidence(&subject, &asked, &mut meter)
+                .map(|issued| issued.result().clone()),
             "progress-inconsistent",
         );
         assert!(meter.admitted_charges().is_empty(), "fixed: {fixed}");
@@ -162,7 +165,8 @@ fn a_progress_assertion_below_the_last_position_is_inconsistent() {
         asked.completeness = completeness(2);
         asked.decision_progress = Some(1);
         let mut meter = unlimited();
-        let result = evaluate_temporal_evidence(&subject, &asked, &mut meter);
+        let result = evaluate_temporal_evidence(&subject, &asked, &mut meter)
+            .map(|issued| issued.result().clone());
         if fixed {
             expect_refusal(result, "progress-inconsistent");
             assert!(meter.admitted_charges().is_empty());
@@ -249,7 +253,11 @@ fn an_unreadable_formula_graph_is_refused_before_anything_is_charged() {
         position.valuations.clear();
         position.instance_valuations.clear();
     }
-    assert!(evaluate_temporal_evidence(&subject, &unvalued, &mut unlimited()).is_ok());
+    assert!(
+        evaluate_temporal_evidence(&subject, &unvalued, &mut unlimited())
+            .map(|issued| issued.result().clone())
+            .is_ok()
+    );
     for (what, graph, fault) in unreadable {
         let formula = ClauseFormula::of_graph(&numbered(graph));
         assert_eq!(formula.work(), Err(fault), "{what}");
@@ -257,7 +265,8 @@ fn an_unreadable_formula_graph_is_refused_before_anything_is_charged() {
         subject.facts = subject.facts.clone().with_formula(formula);
         let mut meter = unlimited();
         expect_refusal(
-            evaluate_temporal_evidence(&subject, &asked, &mut meter),
+            evaluate_temporal_evidence(&subject, &asked, &mut meter)
+                .map(|issued| issued.result().clone()),
             "clause-unreadable",
         );
         assert!(meter.admitted_charges().is_empty(), "{what}");
@@ -276,6 +285,7 @@ fn an_unreadable_formula_graph_is_refused_before_anything_is_charged() {
         .clone()
         .with_formula(ClauseFormula::of_graph(&numbered(overflow)));
     let result = evaluate_temporal_evidence(&subject, &unvalued, &mut unlimited())
+        .map(|issued| issued.result().clone())
         .expect("an overflowing sum is a result");
     assert_eq!(result.activation, ActivationState::Unavailable);
     assert_eq!(result.truth, None);
@@ -374,7 +384,8 @@ fn each_cause_refuses_with_nothing_charged_and_its_unmet_twin_is_evaluated() {
                          met: EvidenceRequest,
                          cause: &str| {
         let mut meter = unlimited();
-        let result = evaluate_temporal_evidence(refused_subject, &refused, &mut meter);
+        let result = evaluate_temporal_evidence(refused_subject, &refused, &mut meter)
+            .map(|issued| issued.result().clone());
         expect_refusal(result, cause);
         assert!(meter.admitted_charges().is_empty(), "{cause}");
         assert!(
@@ -532,7 +543,8 @@ fn each_cause_refuses_with_nothing_charged_and_its_unmet_twin_is_evaluated() {
     let asked = origin_request(&reach, reach_p);
     let mut meter = unlimited();
     expect_refusal(
-        evaluate_temporal_evidence(&unreadable, &asked, &mut meter),
+        evaluate_temporal_evidence(&unreadable, &asked, &mut meter)
+            .map(|issued| issued.result().clone()),
         "clause-unreadable",
     );
     assert!(meter.admitted_charges().is_empty());

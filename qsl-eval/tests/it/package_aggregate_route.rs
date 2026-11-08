@@ -170,6 +170,7 @@ fn assert_truth(body: &str, samples: &[Option<AggregateSample>], expected: Truth
     with_package(body, |package, clause, env| {
         let result = package
             .evaluate_temporal_evidence(clause, &asked(env, samples), &mut unlimited())
+            .map(|issued| issued.result().clone())
             .expect("the exact aggregate comparison evaluates");
         assert_eq!(result.truth, Some(expected), "{body}");
     });
@@ -187,12 +188,14 @@ fn checked_package_aggregate_uses_samples_and_charges_window_reads() {
             let result = routes
                 .from_emission
                 .evaluate_temporal_evidence(clause, &request, &mut meter)
+                .map(|issued| issued.result().clone())
                 .expect("the aggregate evidence evaluates");
             let charges = meter.admitted_charges().to_vec();
             for package in [&routes.from_read, &routes.from_package] {
                 let mut route_meter = unlimited();
                 let route_result = package
                     .evaluate_temporal_evidence(clause, &request, &mut route_meter)
+                    .map(|issued| issued.result().clone())
                     .expect("the package read route evaluates");
                 assert_eq!(route_result.truth, result.truth);
                 assert_eq!(route_result.non_value, result.non_value);
@@ -217,6 +220,7 @@ fn checked_package_aggregate_uses_samples_and_charges_window_reads() {
             let missing = routes
                 .from_read
                 .evaluate_temporal_evidence(clause, &asked(env, &missing), &mut unlimited())
+                .map(|issued| issued.result().clone())
                 .expect("an omitted sample is missing evidence");
             assert_eq!(missing.truth, None);
             assert_eq!(
@@ -231,6 +235,7 @@ fn checked_package_aggregate_uses_samples_and_charges_window_reads() {
             let undefined = routes
                 .from_read
                 .evaluate_temporal_evidence(clause, &asked(env, &undefined), &mut unlimited())
+                .map(|issued| issued.result().clone())
                 .expect("an undefined sample is reported as a non-value");
             assert_eq!(undefined.truth, None);
             assert_eq!(
@@ -248,10 +253,10 @@ fn checked_package_aggregate_uses_samples_and_charges_window_reads() {
                 .insert(0, AggregateSample::Holds(true));
             wrong_kind.limits.valuations = 0;
             let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-            let refused =
-                routes
-                    .from_read
-                    .evaluate_temporal_evidence(clause, &wrong_kind, &mut meter);
+            let refused = routes
+                .from_read
+                .evaluate_temporal_evidence(clause, &wrong_kind, &mut meter)
+                .map(|issued| issued.result().clone());
             assert!(matches!(
                 refused,
                 Err(quire_eval::CallFailure::Admission(_))
@@ -262,6 +267,7 @@ fn checked_package_aggregate_uses_samples_and_charges_window_reads() {
                 .from_read
                 .with_max_window_values(2)
                 .evaluate_temporal_evidence(clause, &asked(env, &samples), &mut unlimited())
+                .map(|issued| issued.result().clone())
                 .expect("the window ceiling is an incomplete result");
             assert_eq!(stopped.truth, None);
             let Some(EvidenceIncomplete::WindowLimit(limit)) = stopped.incomplete else {
@@ -288,6 +294,7 @@ fn false_aggregate_result_matches_all_package_routes() {
             let result = routes
                 .from_emission
                 .evaluate_temporal_evidence(clause, &request, &mut meter)
+                .map(|issued| issued.result().clone())
                 .expect("the false aggregate evaluates");
             let charges = meter.admitted_charges().to_vec();
             assert_eq!(result.truth, Some(Truth::False));
@@ -296,6 +303,7 @@ fn false_aggregate_result_matches_all_package_routes() {
                 let mut route_meter = unlimited();
                 let route_result = package
                     .evaluate_temporal_evidence(clause, &request, &mut route_meter)
+                    .map(|issued| issued.result().clone())
                     .expect("the package read route evaluates the false result");
                 assert_eq!(route_result.truth, result.truth);
                 assert_eq!(route_result.settlement, result.settlement);
@@ -327,6 +335,7 @@ fn denied_aggregate_window_visit_keeps_counters_at_the_successful_prefix() {
                     &asked(env, &values(&[3, 4, 5, 6, 7])),
                     &mut meter,
                 )
+                .map(|issued| issued.result().clone())
                 .expect("a denied window visit is an incomplete result");
 
             assert_eq!(result.truth, None);
@@ -353,6 +362,7 @@ fn insufficient_aggregate_data_is_a_missing_non_value() {
                     &asked(env, &values(&[3, 4, 5, 6])),
                     &mut unlimited(),
                 )
+                .map(|issued| issued.result().clone())
                 .expect("insufficient aggregate data is a non-value");
             assert_eq!(result.truth, None);
             let non_value = result.non_value.expect("missing aggregate value");

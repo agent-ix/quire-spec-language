@@ -90,7 +90,9 @@ fn a_package_formula_that_differs_from_the_checked_clause_is_unreadable() {
         .expect("rows");
         let [clause] = clause_ids(&emitted).try_into().expect("one clause");
         let mut meter = unlimited();
-        let refused = emitted.evaluate_temporal_evidence(&clause, &asked, &mut meter);
+        let refused = emitted
+            .evaluate_temporal_evidence(&clause, &asked, &mut meter)
+            .map(|issued| issued.result().clone());
         assert_eq!(
             cause(&refused.expect_err("a differing formula")),
             "clause-unreadable",
@@ -106,7 +108,9 @@ fn a_package_formula_that_differs_from_the_checked_clause_is_unreadable() {
         )
         .expect("the read-back package");
         let mut meter = unlimited();
-        let refused = back.evaluate_temporal_evidence(&clause, &asked, &mut meter);
+        let refused = back
+            .evaluate_temporal_evidence(&clause, &asked, &mut meter)
+            .map(|issued| issued.result().clone());
         assert_eq!(
             cause(&refused.expect_err("a differing formula")),
             "clause-unreadable",
@@ -151,7 +155,9 @@ fn a_clause_the_package_does_not_hold_is_unresolved() {
     absent.ordinal += 1;
     for (what, id) in [("absent", absent), ("protocol clause", protocol_clause)] {
         let mut meter = unlimited();
-        let refused = package.evaluate_temporal_evidence(&id, &asked, &mut meter);
+        let refused = package
+            .evaluate_temporal_evidence(&id, &asked, &mut meter)
+            .map(|issued| issued.result().clone());
         assert_eq!(
             cause(&refused.expect_err(what)),
             "clause-root-unresolved",
@@ -396,6 +402,7 @@ fn a_clause_with_an_aggregate_atom_is_read_from_its_samples() {
         let mut meter = unlimited();
         package
             .evaluate_temporal_evidence(id, &asked, &mut meter)
+            .map(|issued| issued.result().clone())
             .expect("an aggregate clause evaluates from its samples")
     };
     assert_eq!(call(&named("Fed")).truth, Some(Truth::True));

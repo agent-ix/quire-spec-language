@@ -175,9 +175,21 @@ no truth), not an error (FR-523).
   `result_identity`, `input_identity`, correspondence or lineage.
 - A clone of a returned ledger, and a ledger moved into a later request, SHALL give
   the same admission as the ledger itself.
-- Because `result_identity` distinguishes every evidence member (FR-522) and equal
-  requests give equal results, two results with one `result_identity` are equal,
-  so an entry cannot stand for a different complete result.
+- `evaluate_temporal_evidence` SHALL return an opaque `EvaluatedEvidence` that
+  uniquely owns the complete original `EvidenceResult`. Its `result()` borrows
+  that result immutably, including checked subject, truth, support, settlement
+  and ledgers; `predecessor()` borrows this issued result's `ResultIdentity` for
+  the next correction. The current previous link remains in `relation`.
+- Only the evaluator SHALL issue this carrier. It SHALL expose no public
+  constructor, deserialization construction, mutable borrow or consuming escape
+  of its original data. Reading the result or predecessor SHALL neither evaluate
+  again nor charge work. A cloned read snapshot is ordinary caller data and
+  SHALL NOT substitute for the issued carrier.
+- `result_identity` and `matches_result_identity` bind input members only;
+  neither authenticates caller-authored truth, support, settlement or ledger.
+  The carrier binds the admitted request and checked subject to the actual
+  evaluator output by retaining that output privately. This adds no serializer,
+  predecessor bytes, result-byte storage or recursive chain.
 
 ### Lineage limit
 
@@ -233,6 +245,7 @@ no truth), not an error (FR-523).
 | FR-526-AC-27 | A `Superseding(r1)` request with changed inputs completes with the `lineage` ceiling 1, and with the ceiling 0 returns an `Ok` `Incomplete` result with `LimitReached` naming `lineage`, `value` 0 and setting `temporal_evidence.lineage`, result `lineage` 1, relation `Superseding` naming `r1.result_identity`, `activation = Unavailable`, no truth, `usage.instances` 0 and `usage.positions` 0, and a `ledger` equal (`==`) to the request's. | Test (TC-1321) |
 | FR-526-AC-28 | A `Meter` charged `U` work units by one call and then passed to AC-27's stopped call reports, after the stop, `U` plus the units of the stopped call's charge log, never less than `U`; a third call on the same meter continues from that total. | Test (TC-1321) |
 | FR-526-AC-29 | Over the clause of AC-1, a request that is AC-1's with one extra `valuations` entry keyed by an atom index the formula does not have (such as 99) at position 1 returns `Err(CallFailure::Admission)` with cause `valuation-atom-unknown`, catalog code `invalid_runtime_input`/`invalid-value` at member `valuations` and fields `atom` (that index) and `position` `1`, and an empty charge log; the same key alone at position 0 names `position` `0`; the same key in an `instance_valuations` map names member `instance_valuations`; and AC-1's request without the key is evaluated, so a stray atom key never yields a result whose `input_identity` differs from the request without it (FR-516 `valuation-atom-unknown`). | Test (TC-1321) |
+| FR-526-AC-30 | A real checked-package temporal evaluation returns an evaluator-issued immutable full-result carrier. Repeated immutable result and predecessor borrows retain the original truth, support, settlement, checked subject and ledger without further meter charges. A changed-input correction names the original carrier's identity, changes actual truth, support, settlement and latest ledger, advances lineage, and leaves the original unchanged, including after mutation of a cloned read snapshot. Compile-fail tests reject constructing the carrier, mutating its original result and substituting a mutated snapshot for an issued carrier. | Test (TC-1321) |
 
 ## Dependencies
 
