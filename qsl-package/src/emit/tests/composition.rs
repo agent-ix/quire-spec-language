@@ -18,7 +18,6 @@ use qsl_semantics::library::LibraryName;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 use super::*;
-use crate::{read_composition, write_composition};
 
 #[path = "../../../../qsl-semantics/tests/support/composition.rs"]
 #[allow(
@@ -577,144 +576,18 @@ fn a_non_assume_guarantee_rule_derives_a_request_item() {
     assert_eq!(sole(&local).item().placement, ItemPlacement::PlannerLocal);
 }
 
-/// FR-491-AC-6 (TC-985 case 6): the emitted node reads back to the same
-/// declaration, lists and slot identities, each slot's source span its
-/// member; a node whose `relies` are out of order refuses
-/// `invalid_semantic_graph`; the v2 byte emitter writes the same node.
+/// FR-491-AC-6 (TC-985 case 6): the v2 byte emitter refuses a package holding
+/// a composition, typed, because its component clauses are foreign nodes with
+/// operands that IR's reader cannot yet admit.
 #[trace("FR-530-AC-1", "QSpec-TC-985", "QSpec-FR-491-AC-6")]
 #[test]
-fn the_composition_node_reads_back() {
+fn a_composition_is_refused_for_its_foreign_component_operands() {
     let world = World::new();
-    let members = format!(
-        "{CASE_ONE_MEMBERS}guarantee Consumer::Bounded; \
-         rely Producer::Counted on Consumer::Bounded; \
-         environment Net by \"network\" fair strong each M::Consumer::receive; "
-    );
-    let declaration = world.declare("assume-guarantee", &members);
-    let source = unit(&declaration);
-    let package = world
-        .compile(&declaration, None)
-        .expect("the unit compiles");
-    let composition = sole(&package);
-    let node = write_composition(composition).expect("the node is written");
-    let read = read_composition(&package, &node).expect("the node reads back");
-    assert_eq!(read.components(), composition.components());
-    assert_eq!(read.guarantees(), composition.guarantees());
-    assert_eq!(read.relies(), composition.relies());
+    let package = world.checked("assume-guarantee", CASE_ONE_MEMBERS);
     assert_eq!(
-        read.liveness_dependencies(),
-        composition.liveness_dependencies()
-    );
-    assert_eq!(read.supplies(), composition.supplies());
-    assert_eq!(read.environment(), composition.environment());
-    assert_eq!(read.clauses(), composition.clauses());
-    assert_eq!(&read, composition);
-    assert_eq!(read.slots(), composition.slots());
-    assert_eq!(read.term(), composition.term());
-    assert_eq!(read.item(), composition.item());
-    // The members come back in source order, each slot at its member.
-    let sources: Vec<&str> = read
-        .slots()
-        .iter()
-        .map(|slot| text(&source, slot.source))
-        .collect();
-    assert!(sources.contains(&"rely Producer::Counted on Consumer::Bounded;"));
-    assert!(sources.contains(&"rely Consumer::Done on Producer::Counted;"));
-    let rely_order: Vec<String> = read
-        .relies()
-        .iter()
-        .map(|premise| premise.guarantee.to_string())
-        .collect();
-    assert_eq!(rely_order, ["Consumer::Done", "Producer::Counted"]);
-    // The four lists are separate in the body.
-    assert_eq!(node["body"]["relies"].as_array().map(Vec::len), Some(2));
-    assert_eq!(
-        node["body"]["liveness_dependencies"]
-            .as_array()
-            .map(Vec::len),
-        Some(1)
-    );
-    assert_eq!(
-        node["body"]["environment"].as_array().map(Vec::len),
-        Some(1)
-    );
-    assert_eq!(node["body"]["rule"], "assume-guarantee");
-
-    // Two `relies` entries swapped, spans swapped with them.
-    let mut swapped = node.clone();
-    swapped["body"]["relies"]
-        .as_array_mut()
-        .expect("relies")
-        .swap(0, 1);
-    swapped["source_map"]["relies"]
-        .as_array_mut()
-        .expect("spans")
-        .swap(0, 1);
-    let refusal = read_composition(&package, &swapped).expect_err("refused");
-    assert_eq!(refusal.code, "invalid_semantic_graph");
-
-    // A `dependencies` list that omits a target.
-    let mut dropped = node.clone();
-    dropped["dependencies"]
-        .as_array_mut()
-        .expect("dependencies")
-        .pop();
-    let refusal = read_composition(&package, &dropped).expect_err("refused");
-    assert_eq!(refusal.code, "invalid_semantic_graph");
-
-    // A guarantee whose clause is a node of the other component's package.
-    let mut wrong = node.clone();
-    let consumer_clause = wrong["body"]["guarantees"][1]["clause"].clone();
-    wrong["body"]["guarantees"][0]["clause"] = consumer_clause;
-    let refusal = read_composition(&package, &wrong).expect_err("refused");
-    assert_ne!(refusal.code, "");
-
-    // The v2 byte emitter writes the node.
-    let emission = emit_checked(&package).expect("the package emits");
-    let package_wire = wire(&emission);
-    let [emitted] =
-        super::owners::node_where(&package_wire, "correspondence", "component_composition")[..]
-    else {
-        panic!("one composition node");
-    };
-    // Ids are written flat in the package, so the body is compared by its
-    // spellings: every member but the node references.
-    assert_eq!(emitted["semantic_type"], emitted["node_id"]);
-    assert_eq!(
-        emitted["dependencies"].as_array().map(Vec::len),
-        node["dependencies"].as_array().map(Vec::len)
-    );
-    for (member, value) in node["body"].as_object().expect("a body") {
-        if matches!(value, Value::String(_) | Value::Array(_)) {
-            assert_eq!(
-                emitted["body"][member].as_array().map(Vec::len),
-                value.as_array().map(Vec::len),
-                "{member}"
-            );
+        emit_checked(&package).expect_err("the emission refuses"),
+        EmitRefusal::CompositionForeignOperands {
+            name: Some("Sys".to_owned())
         }
-    }
-    assert_eq!(emitted["body"]["term"], node["body"]["term"]);
-    assert_eq!(
-        emitted["occurrences"],
-        json!([{"role": "declaration", "ordinal": 0}])
     );
-    // Each component clause is named by the id its package's own emission
-    // gave it.
-    for (entry, dependency) in [
-        (&emitted["body"]["guarantees"][0], &world.consumer),
-        (&emitted["body"]["guarantees"][2], &world.producer),
-    ] {
-        let clause = &entry["clause"];
-        assert_eq!(clause["package"], dependency.identity.as_str());
-        assert!(
-            super::owners::node_where(
-                &wire(&emit_checked(&dependency.package).expect("the dependency emits")),
-                "temporal",
-                "temporal_clause",
-            )
-            .iter()
-            .any(|written| written["node_id"] == *clause),
-            "{clause}"
-        );
-    }
 }

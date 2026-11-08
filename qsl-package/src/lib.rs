@@ -32,7 +32,6 @@ mod checked_v2;
 #[cfg(feature = "std")]
 pub mod checked_views;
 #[cfg(feature = "std")]
-mod composition;
 #[cfg(feature = "std")]
 mod emit;
 #[cfg(feature = "std")]
@@ -91,7 +90,6 @@ pub use checked_v2::{
     V2ReadRefusal, WitnessSupplyFailure,
 };
 #[cfg(feature = "std")]
-pub use composition::{read_composition, write_composition};
 pub use emit::write_operand_slots;
 #[cfg(feature = "std")]
 pub use emit::{
@@ -116,11 +114,6 @@ pub use evaluation_view::{
     TermHandle, ViewFailure,
 };
 pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
-#[cfg(feature = "std")]
-pub use guarantee::{
-    read_implementation_guarantee, write_implementation_guarantee, NodeReadRefusal,
-    NodeWriteRefusal,
-};
 #[cfg(feature = "std")]
 pub use protocol_occurrence::{
     protocol_occurrence_schemas_from_read, CompensationEntry, ControlEntry, ControlOperator,

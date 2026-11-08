@@ -1898,6 +1898,9 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::Abstraction(_)) => {
                 panic!("the fixture set binds no abstraction relation")
             }
+            Err(EmitRefusal::CompositionForeignOperands { .. }) => {
+                panic!("the fixture set declares no component composition")
+            }
             Err(EmitRefusal::ProbabilisticModelNotEmitted { .. }) => {
                 panic!("the fixture set declares no random parameter, reward or workload")
             }

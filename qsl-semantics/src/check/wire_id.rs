@@ -88,9 +88,6 @@ pub enum WireIdError {
 #[derive(Debug, Default)]
 pub struct StructuralIds {
     interned: std::cell::RefCell<HashMap<NodeKey, Arc<CheckedNodeId>>>,
-    /// Nodes of imported packages, each named by the id its own package's
-    /// emission gave it.
-    imported: std::cell::RefCell<HashMap<NodeKey, CheckedNodeId>>,
 }
 
 impl StructuralIds {
@@ -108,19 +105,10 @@ impl StructuralIds {
         }
     }
 
-    /// Names the node `key` of an imported package by `id`, the id that
-    /// package's own emission gave it, for every later [`Self::id`] of `key`.
-    pub fn bind_imported(&self, key: NodeKey, id: CheckedNodeId) {
-        self.imported.borrow_mut().insert(key, id);
-    }
-
     /// The structural form of `key`: each operand is a
     /// [`CheckedNodePathSegment::Node`] holding the operand's own id, shared
     /// with every other id built here that names that operand.
     pub fn id(&self, key: &NodeKey) -> CheckedNodeId {
-        if let Some(bound) = self.imported.borrow().get(key) {
-            return bound.clone();
-        }
         let mut done = self.interned.borrow_mut();
         let path = key
             .path()

@@ -772,25 +772,6 @@ fn a_result_entry_defect_is_refused_at_its_slot_in_the_reading_order() {
     sibling_settles_unchanged(&source);
 }
 
-// ---- FR-529-AC-5: compile and read back ---------------------------------------
-
-#[trace("TC-1329", "FR-529-AC-5")]
-#[trace("QSpec-TC-984", "QSpec-FR-490-AC-1")]
-#[test]
-fn the_guarantee_node_reads_back_to_the_same_declaration_and_slots() {
-    let source = unit(
-        &format!("{LIVENESS}{SAFETY}"),
-        RELATION,
-        &format!("{CASE_ONE}{SIBLING}"),
-    );
-    let package = checked(&source);
-    let guarantee = guarantee(&package, "G");
-    let node = qsl_package::write_implementation_guarantee(guarantee).expect("the node writes");
-    let read = qsl_package::read_implementation_guarantee(&package, &node).expect("it reads back");
-    assert_eq!(&read, guarantee);
-    assert_eq!(read.slots(PACKAGE), guarantee.slots(PACKAGE));
-}
-
 // ---- finding review: identity, route wiring, wire assumptions, origin --------
 
 /// The premise items of a package's declarations reach the finished request

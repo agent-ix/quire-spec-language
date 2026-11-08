@@ -140,6 +140,16 @@ pub enum EmitRefusal {
     /// The package's abstraction relation has no node to write (FR-306).
     #[error("the abstraction relation cannot be written: {0}")]
     Abstraction(AbstractionNodeRefusal),
+    /// The package holds a `compose` declaration (QSpec FR-491): its component
+    /// subjects and clauses are nodes of imported packages, and IR's reader
+    /// admits only a foreign node id that carries no operands, which a
+    /// temporal clause's never is.
+    #[error("the component composition {name:?} names foreign component operands IR's reader cannot yet admit")]
+    CompositionForeignOperands {
+        /// The composition's declared name; `None` when the refusal is raised
+        /// from a body term, which carries no declaration name.
+        name: Option<String>,
+    },
     /// The caller's [`quire_exact::Cancel`] handle was cancelled, and the
     /// emitter stopped at its next charge (FR-276).
     #[error("the emitter was cancelled ({cause:?})")]
@@ -403,7 +413,9 @@ impl EmitRefusal {
             Self::InvalidTemporalClockValue { .. } => Code::InvalidPackage,
             Self::Encoding { .. } => Code::OutputFailure,
             Self::Abstraction(AbstractionNodeRefusal::Internal(_)) => Code::RuntimeInvariant,
-            Self::Abstraction(_) => Code::UnsupportedProjection,
+            Self::Abstraction(_) | Self::CompositionForeignOperands { .. } => {
+                Code::UnsupportedProjection
+            }
             Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
             Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
@@ -446,6 +458,7 @@ impl EmitRefusal {
             | Self::UnknownOccurrenceRole { .. }
             | Self::Encoding { .. }
             | Self::Abstraction(_)
+            | Self::CompositionForeignOperands { .. }
             | Self::Cancelled { .. }
             | Self::TimedModelNodeSetMismatch
             | Self::UnkeyedProbabilisticClaim { .. }
@@ -673,9 +686,6 @@ pub struct Emission {
     /// bare execution point) are not decodable through serde outside its
     /// admitting reader, so protocol results read these rather than the bytes.
     pub(crate) wire_nodes: Vec<CheckedSemanticNodeV2>,
-    /// The id the bytes give each written node of the checked graph, keyed by
-    /// the node's structural key: the form an importing package names it by.
-    pub(crate) node_wire_ids: HashMap<NodeKey, CheckedNodeId>,
     /// The `temporal_bindings` rows of the checked graph's temporal and
     /// hyper clauses, keyed by the graph's own clause identity.
     pub(crate) temporal_binding_rows: TemporalBindingRows,
@@ -903,7 +913,6 @@ impl DebugWith for Emission {
             equality_producer_identity_rows,
             equality_fact_witness_rows,
             wire_nodes,
-            node_wire_ids: _,
             temporal_binding_rows,
             temporal_rows,
         } = self;
@@ -1583,10 +1592,8 @@ impl BodyNames {
                     .dependencies
                     .extend(term.targets().map_err(encoding)?.iter().cloned());
             }
-            BodyTerm::Composition(term) => {
-                names
-                    .dependencies
-                    .extend(term.targets().map_err(encoding)?.iter().cloned());
+            BodyTerm::Composition(_) => {
+                return Err(EmitRefusal::CompositionForeignOperands { name: None });
             }
             BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
         }
@@ -1933,7 +1940,7 @@ fn checked_term(ids: &StructuralIds, term: &BodyTerm) -> Result<CheckedTerm, Emi
         BodyTerm::Abstraction(abstraction) => abstraction_term(ids, abstraction),
         BodyTerm::Extension(extension) => extension_term(ids, extension),
         BodyTerm::ImplementationGuarantee(guarantee) => guarantee_term(ids, guarantee),
-        BodyTerm::Composition(composition) => composition_term(ids, composition),
+        BodyTerm::Composition(_) => Err(EmitRefusal::CompositionForeignOperands { name: None }),
     }
 }
 
@@ -1944,17 +1951,6 @@ fn guarantee_term(
     guarantee: &qsl_semantics::check::ImplementationGuaranteeTerm,
 ) -> Result<CheckedTerm, EmitRefusal> {
     flat_term(ids, |id| crate::guarantee::guarantee_body(id, guarantee))
-}
-
-/// QSpec FR-491: the `component_composition` term, read from the body the
-/// composition node is written with.
-fn composition_term(
-    ids: &StructuralIds,
-    composition: &qsl_semantics::check::CompositionTerm,
-) -> Result<CheckedTerm, EmitRefusal> {
-    flat_term(ids, |id| {
-        crate::composition::composition_body(id, composition)
-    })
 }
 
 /// The IR crate does not export the member types of its guarantee and
@@ -5465,7 +5461,7 @@ pub fn emit_timed_models(
     read_index_segments(ids, &mut nodes, &mut source_map)?;
     rekey_timed_model_nodes(ids, &mut nodes, &mut source_map)?;
     let inspection_source_map = inspection_source_map(ids, &source_map)?;
-    let node_wire_ids = write_index_segments(&mut nodes, &mut source_map, &mut [], &mut [])?;
+    write_index_segments(&mut nodes, &mut source_map, &mut [], &mut [])?;
     let (slot_nodes, operand_rows) = write_operand_slots(&nodes)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: base.resolved_graph().graph_version.clone(),
@@ -5529,7 +5525,6 @@ pub fn emit_timed_models(
         equality_producer_identity_rows: Vec::new(),
         equality_fact_witness_rows: Vec::new(),
         wire_nodes: nodes,
-        node_wire_ids,
         temporal_binding_rows: TemporalBindingRows::default(),
         temporal_rows: TemporalRows::default(),
     })
@@ -5774,7 +5769,7 @@ fn candidates_of<'g>(
             add(node, generated)?;
         }
     }
-    // QSpec FR-490, FR-491: a guarantee or composition node has one
+    // QSpec FR-490: a guarantee node has one
     // `declaration` occurrence, at its declaration.
     for (node, location) in declared_forms {
         let declared = vec![(
@@ -5886,27 +5881,19 @@ fn emit_package_inner(
         return Err(refusal);
     }
     let graph = package.graph();
-    // QSpec FR-491: a composition names the nodes of its component packages
-    // by the ids those packages' own emissions gave them.
-    for composition in graph.compositions() {
-        for key in composition.term().targets().unwrap_or_default() {
-            if let Some(imported) = package.imported_node_id(&key) {
-                ids.bind_imported(key, imported);
-            }
-        }
+    // QSpec FR-491: a component's subject and clauses are nodes of an
+    // imported package, whose ids carry operands IR's reader cannot yet admit.
+    if let Some(composition) = graph.compositions().first() {
+        return Err(EmitRefusal::CompositionForeignOperands {
+            name: Some(composition.name().to_owned()),
+        });
     }
-    // QSpec FR-490, FR-491: each guarantee and composition declaration is a
-    // `correspondence` node beside the graph's own.
+    // QSpec FR-490: each guarantee declaration is a `correspondence` node
+    // beside the graph's own.
     let declared_forms: Vec<(SemanticNode, Location)> = graph
         .implementation_guarantees()
         .iter()
         .map(|guarantee| guarantee.semantic_node())
-        .chain(
-            graph
-                .compositions()
-                .iter()
-                .map(|composition| composition.semantic_node()),
-        )
         .collect();
     let abstraction = package
         .abstraction()
@@ -5924,9 +5911,7 @@ fn emit_package_inner(
     }
     let candidates = candidates_of(ids, graph, abstraction.as_ref(), &declared_forms)?;
     // Nodes the emitter writes beside the graph's own: each model root, and
-    // each model-owned time unit node a `duration` window is typed by. A
-    // composition's component subjects and clauses are nodes of its imported
-    // packages, which `check` resolved (QSpec FR-491).
+    // each model-owned time unit node a `duration` window is typed by.
     let external: HashSet<NodeKey> = graph
         .model_roots()
         .map(|(_, key)| key)
@@ -5936,12 +5921,6 @@ fn emit_package_inner(
                 .duration_window_model_nodes()
                 .map(|nominal| nominal.key.clone())
         }))
-        .chain(
-            graph
-                .compositions()
-                .iter()
-                .flat_map(|composition| composition.term().targets().unwrap_or_default()),
-        )
         .collect();
     let selected_models: BTreeSet<&str> = graph
         .model_roots()
@@ -6594,7 +6573,6 @@ fn emit_package_inner(
         equality_producer_identity_rows,
         equality_fact_witness_rows,
         wire_nodes: nodes,
-        node_wire_ids: emitted_node_ids,
         temporal_binding_rows,
         temporal_rows: TemporalRows {
             clauses: temporal_clause_refs,

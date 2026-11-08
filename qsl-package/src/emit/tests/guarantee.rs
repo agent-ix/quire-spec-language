@@ -9,12 +9,11 @@ use ix_trace_rs::trace;
 use qsl_semantics::check::{
     AbstractionKey, AbstractionRefusal, AssemblyCause, CheckCause, CheckRefusal,
     CheckedImplementationGuarantee, GuaranteeName, GuaranteeRefusal, GuaranteeSlot, ModelFamily,
-    ProgressMeasure, SlotBacking, SlotRole,
+    SlotBacking, SlotRole,
 };
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind, PropertyForm};
 
 use super::*;
-use crate::{read_implementation_guarantee, write_implementation_guarantee};
 
 #[path = "../../../../qsl-semantics/tests/support/guarantee.rs"]
 #[allow(
@@ -496,17 +495,13 @@ fn an_unbound_operation_refuses_only_the_guarantee_item() {
     assert_eq!(sole(&bound).item_refusal(), None);
 }
 
-/// FR-490-AC-7: the node written for a guarantee reads back to the same
-/// declaration, derived slots and identities; a node whose `dependencies`
-/// omit `relation`, and one whose `progress` entries are out of order, refuse
-/// `invalid_semantic_graph`; and the v2 byte emitter writes the same node, which
-/// IR's reader admits.
+/// FR-490-AC-7: the v2 byte emitter writes a guarantee as one
+/// `implementation_guarantee` node whose body holds the declaration's members
+/// in canonical order, typed by itself, with one `declaration` occurrence,
+/// and IR's reader admits the bytes.
 #[trace("FR-529-AC-5", "QSpec-TC-984", "QSpec-FR-490-AC-7")]
 #[test]
-fn the_guarantee_node_reads_back_to_the_same_declaration() {
-    let two = |source: &str| {
-        compile_with(source, &[fixture::document(&["inc", "dec"])]).expect("the unit compiles")
-    };
+fn the_guarantee_is_emitted_as_a_node_the_ir_reader_admits() {
     let source = unit(
         LIVENESS,
         RELATION_TWO,
@@ -516,71 +511,39 @@ fn the_guarantee_node_reads_back_to_the_same_declaration() {
          environment Sched by \"scheduler\" fair weak each Spec::Counter::inc; \
          environment Net by \"network\" fair Spec::Counter::dec; }\n",
     );
-    let package = two(&source);
-    let guarantee = sole(&package);
-    let node = write_implementation_guarantee(guarantee).expect("the node is written");
-    let read = read_implementation_guarantee(&package, &node).expect("the node reads back");
-    assert_eq!(&read, guarantee);
-    assert_eq!(read.slots("pkg"), guarantee.slots("pkg"));
-    assert_eq!(read.term(), guarantee.term());
-    // The members come back in source order.
-    let environment: Vec<&str> = read
-        .environment()
-        .iter()
-        .map(|member| member.name.as_str())
-        .collect();
-    assert_eq!(environment, ["Sched", "Net"]);
-    assert!(matches!(
-        &read.progress()[0].measure,
-        ProgressMeasure::Decreases(path) if path.as_str() == "counter::retries_left"
-    ));
-    // `relation` omitted from `dependencies`.
-    let relation_id = node["body"]["relation"].clone();
-    let mut dropped = node.clone();
-    dropped["dependencies"]
-        .as_array_mut()
-        .expect("dependencies")
-        .retain(|dependency| *dependency != relation_id);
-    let refusal = read_implementation_guarantee(&package, &dropped).expect_err("refused");
-    assert_eq!(refusal.code, "invalid_semantic_graph");
-
-    // Two `progress` entries swapped, spans swapped with them.
-    let mut swapped = node.clone();
-    swapped["body"]["progress"]
-        .as_array_mut()
-        .expect("progress")
-        .swap(0, 1);
-    swapped["source_map"]["progress"]
-        .as_array_mut()
-        .expect("spans")
-        .swap(0, 1);
-    let refusal = read_implementation_guarantee(&package, &swapped).expect_err("refused");
-    assert_eq!(refusal.code, "invalid_semantic_graph");
-
-    // The v2 byte emitter writes the node, and IR's reader admits the bytes.
-    let (wire, read) = emit_and_read(&package, &fixture::document(&["inc", "dec"]));
+    let document = fixture::document(&["inc", "dec"]);
+    let package =
+        compile_with(&source, std::slice::from_ref(&document)).expect("the unit compiles");
+    let (wire, read) = emit_and_read(&package, &document);
     let [emitted] =
         super::owners::node_where(&wire, "correspondence", "implementation_guarantee")[..]
     else {
         panic!("one guarantee node");
     };
-    // Ids are written flat in the package, so the body is compared by its
-    // spellings: every member but the node references.
-    assert_eq!(emitted["semantic_type"], emitted["node_id"]);
+    let body = &emitted["body"];
+    assert_eq!(body["term"], "implementation_guarantee");
+    assert_eq!(body["initial"], json!(["counter", "Counter", "new"]));
+    // `progress` ascends by operation, `environment` by name.
+    let operations: Vec<&Value> = body["progress"]
+        .as_array()
+        .expect("progress")
+        .iter()
+        .map(|entry| &entry["operation"])
+        .collect();
+    assert_eq!(operations, ["dec", "inc"]);
+    assert_eq!(body["progress"][0]["measure"], json!({"bound": 5}));
     assert_eq!(
-        emitted["dependencies"].as_array().map(Vec::len),
-        node["dependencies"].as_array().map(Vec::len)
+        body["progress"][1]["measure"],
+        json!({"decreases": ["counter", "retries_left"]})
     );
-    for (member, value) in node["body"].as_object().expect("a body") {
-        if matches!(value, Value::String(_) | Value::Array(_)) {
-            assert_eq!(
-                emitted["body"][member].as_array().map(Vec::len),
-                value.as_array().map(Vec::len),
-                "{member}"
-            );
-        }
-    }
-    assert_eq!(emitted["body"]["term"], node["body"]["term"]);
+    let names: Vec<&Value> = body["environment"]
+        .as_array()
+        .expect("environment")
+        .iter()
+        .map(|entry| &entry["name"])
+        .collect();
+    assert_eq!(names, ["Net", "Sched"]);
+    assert_eq!(emitted["semantic_type"], emitted["node_id"]);
     assert_eq!(
         emitted["occurrences"],
         json!([{"role": "declaration", "ordinal": 0}])

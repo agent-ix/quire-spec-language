@@ -1314,7 +1314,6 @@ fn finish(
         equality_producer_identity_rows: rows.equality_producer_identity_rows,
         equality_fact_witness_rows: rows.equality_fact_witness_rows,
         wire_nodes: nodes,
-        node_wire_ids: std::collections::HashMap::new(),
         temporal_binding_rows: rows.temporal_binding_rows,
         temporal_rows: rows.temporal_rows,
     })

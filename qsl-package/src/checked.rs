@@ -640,19 +640,6 @@ impl CheckedPackage {
         let _ = self.emission.set(emission.clone());
     }
 
-    /// The id a direct dependency's emission gave the node `key` of its
-    /// graph, when it has been emitted and wrote that node.
-    #[cfg(feature = "std")]
-    pub(crate) fn imported_node_id(
-        &self,
-        key: &quire_exact::NodeKey,
-    ) -> Option<quire_contract_model::CheckedNodeId> {
-        self.dependencies
-            .values()
-            .find_map(|dependency| dependency.remembered_emission()?.node_wire_ids.get(key))
-            .cloned()
-    }
-
     /// This package's emission, if it has been emitted.
     #[cfg(feature = "std")]
     pub(crate) fn remembered_emission(&self) -> Option<&Emission> {
