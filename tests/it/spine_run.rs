@@ -678,36 +678,91 @@ fn tc_451_step_7_zero_work_units_is_incomplete() {
     );
 }
 
-/// FR-287-AC-2 (TC-771 step 2): `command` called in process, with no
-/// driver binary, maps a compile of `spine-compile.native` to FR-285 exit 0
-/// and a `seven` run with `work_units` 0 to an incomplete outcome, exit 22.
+/// Environment switch that makes the test below act as its own child process.
+const COMMAND_CHILD: &str = "QSL_TC771_COMMAND_CHILD";
+
+/// FR-287-AC-2 (TC-771 step 2): `command` called in process, with no driver
+/// binary, maps a compile of `spine-compile.native` to FR-285 exit 0 and a
+/// `seven` run with `work_units` 0 to an incomplete outcome, exit 22, and
+/// neither call writes a byte to stdout or stderr.  The test re-runs itself
+/// as a child process; the child prints a marker line before and after the
+/// two calls, and the parent asserts nothing sits between the markers on
+/// either stream (no in-process fd redirection, so no race with other tests).
 #[test]
 #[trace("TC-771", "FR-287-AC-2")]
 fn command_library_outcomes_carry_the_exit_function_codes() {
-    let directory = tempfile::tempdir().unwrap();
-    let compile = json!({"format":"native-compile/1","request":{"models":[],"program":{
-        "source":program_source()}}});
-    std::fs::write(
-        directory.path().join("program.native"),
-        std::fs::read(SEVEN_FIXTURE).unwrap(),
-    )
-    .unwrap();
-    std::fs::write(
-        directory.path().join("compile.json"),
-        serde_json::to_vec(&compile).unwrap(),
-    )
-    .unwrap();
-    let bytes = quire_spec_language::command::compile(&directory.path().join("compile.json"))
-        .unwrap_or_else(|refusal| panic!("compile refused: {refusal}"));
-    assert!(!bytes.is_empty());
+    const BEGIN: &str = "TC771-BEGIN";
+    const END: &str = "TC771-END";
+    if std::env::var_os(COMMAND_CHILD).is_some() {
+        let directory = tempfile::tempdir().unwrap();
+        let compile = json!({"format":"native-compile/1","request":{"models":[],"program":{
+            "source":program_source()}}});
+        std::fs::write(
+            directory.path().join("program.native"),
+            std::fs::read(SEVEN_FIXTURE).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            directory.path().join("compile.json"),
+            serde_json::to_vec(&compile).unwrap(),
+        )
+        .unwrap();
+        let program = std::fs::read(RUN_FIXTURE).unwrap();
+        let mut request = call("seven", json!([]));
+        request["accounting"] = json!({"work_units": 0});
+        spine_run_request(directory.path(), &program, request);
 
-    let program = std::fs::read(RUN_FIXTURE).unwrap();
-    let mut request = call("seven", json!([]));
-    request["accounting"] = json!({"work_units": 0});
-    spine_run_request(directory.path(), &program, request);
-    let result = quire_spec_language::command::run(&directory.path().join("request.json"))
-        .unwrap_or_else(|refusal| panic!("run refused: {refusal}"));
-    assert_eq!(result.exit_code, 22);
+        println!("{BEGIN}");
+        eprintln!("{BEGIN}");
+        let compiled =
+            quire_spec_language::command::compile(&directory.path().join("compile.json"));
+        let ran = quire_spec_language::command::run(&directory.path().join("request.json"));
+        println!("{END}");
+        eprintln!("{END}");
+
+        // `compile` returns bytes and calls no exit function, so `Ok` with
+        // package bytes is the FR-285 success (exit 0).
+        let bytes = compiled.unwrap_or_else(|refusal| panic!("compile refused: {refusal}"));
+        assert!(!bytes.is_empty());
+        let result = ran.unwrap_or_else(|refusal| panic!("run refused: {refusal}"));
+        assert_eq!(result.exit_code, 22);
+        assert_eq!(
+            result.value.as_value()["outcome"],
+            json!({"kind": "incomplete", "limit": "work_units"})
+        );
+        return;
+    }
+
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "spine_run::command_library_outcomes_carry_the_exit_function_codes",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(COMMAND_CHILD, "1")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for (name, stream) in [("stdout", &output.stdout), ("stderr", &output.stderr)] {
+        let text = String::from_utf8_lossy(stream);
+        let begin = text
+            .find(BEGIN)
+            .unwrap_or_else(|| panic!("{name}: no begin marker"));
+        let end = text
+            .find(END)
+            .unwrap_or_else(|| panic!("{name}: no end marker"));
+        assert_eq!(
+            text[begin + BEGIN.len()..end].trim(),
+            "",
+            "{name} written between the calls"
+        );
+    }
 }
 
 /// FR-100-AC-13 (TC-921 step 5): `run_complete` forwards the supplied
