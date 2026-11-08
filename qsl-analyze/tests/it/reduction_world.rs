@@ -25,10 +25,10 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    replay_model_trace, settle_model_check, CertificateRequest, EnvelopeSource, ModelCheckItem,
-    ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ModelTraceSubject, QualifiedName,
-    ReplayLimits, ReplayRequestWire, ReplaySource, StateEnvironment, TemporalCounterexample,
-    Witness, WitnessEnvelope, WitnessPacket,
+    replay_model_trace_with_temporal_selections, settle_model_check, CertificateRequest,
+    EnvelopeSource, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement,
+    ModelTraceSubject, QualifiedName, ReplayLimits, ReplayRequestWire, ReplaySource,
+    StateEnvironment, TemporalCounterexample, Witness, WitnessEnvelope, WitnessPacket,
 };
 use qsl_route::reductions::Reductions;
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId, PackageDeclarations};
@@ -426,17 +426,6 @@ impl World {
     }
 }
 
-const AUTHORITY: &str = "agent-ix";
-
-/// The fixture package manifest's top-level name.
-const PACKAGE_NAME: &str = "package";
-
-type SourceWire = (String, String);
-
-fn source_wire(identity: &str) -> SourceWire {
-    (AUTHORITY.to_owned(), identity.to_owned())
-}
-
 fn witness_source() -> ReplaySource {
     ReplaySource::Witness(
         Witness::parse("<<<assertion|model_check|deadlock|>>>").expect("a transcript"),
@@ -456,7 +445,10 @@ fn selected() -> QualifiedName {
 /// A compiled unit as FR-128 recompiles it: its source identity,
 /// its text, its one domain package and the snapshots it provisions.
 pub(crate) struct ReplayUnit<'u> {
-    pub(crate) identity: &'u str,
+    /// The producer's original checked package, not a reconstructed descriptor.
+    pub(crate) checked: &'u CheckedPackage,
+    /// Explicit clock selections used by both emission and replay.
+    pub(crate) temporal_clock_selections: Vec<qsl_package::TemporalClockSelection>,
     pub(crate) text: &'u [u8],
     pub(crate) document: &'u [u8],
     pub(crate) snapshots: &'u qsl_semantics::model::observation::DocumentProvision,
@@ -494,20 +486,29 @@ pub(crate) fn replay_unit_result(
     clause: Option<(NodeKey, OccurrenceKey)>,
     letters: &dyn ModelLetters,
 ) -> Result<qsl_replay::ModelTraceReplayResult, qsl_replay::ReplayRefusal> {
+    let source = unit.checked.graph().source();
     let byte_provision = vec![(
-        AUTHORITY.to_owned(),
-        unit.identity.to_owned(),
+        source.authority().to_owned(),
+        source.identity().to_owned(),
         unit.text.to_vec(),
     )];
     let mut documents = vec![unit.document.to_vec()];
     for bytes in unit.snapshots.values() {
         documents.push(bytes.clone());
     }
+    let emission = qsl_package::emit_checked_with_temporal_selections(
+        unit.checked,
+        &unit.temporal_clock_selections,
+        qsl_package::EmitLimits::fixture(),
+    )
+    .expect("the original checked reduction package emits");
     let wire = ReplayRequestWire {
-        package_name: PACKAGE_NAME.to_owned(),
+        package: qsl_replay::ReplayPackage::read(
+            emission.package().bytes(),
+            ReplayLimits::default().input_bytes,
+        )
+        .expect("the emitted package is bounded JSON"),
         profile_selections: Vec::new(),
-        sources: vec![source_wire(unit.identity)],
-        refinement_internals: None,
         dependencies: Vec::new(),
         replay_target: qsl_replay::RequestTargetWire::function(
             selected(),
@@ -546,13 +547,21 @@ pub(crate) fn replay_unit_result(
         ReplayLimits::default(),
     )
     .expect("a complete packet reconstructs");
-    replay_model_trace(wire, subject, &envelope, letters, ReplayLimits::default())
+    replay_model_trace_with_temporal_selections(
+        wire,
+        subject,
+        &envelope,
+        letters,
+        &unit.temporal_clock_selections,
+        ReplayLimits::default(),
+    )
 }
 
 impl World {
     fn replay_unit(&self) -> ReplayUnit<'_> {
         ReplayUnit {
-            identity: "reduction",
+            checked: &self.package,
+            temporal_clock_selections: crate::fill::tcb_01_event_position_selection(&self.package),
             text: self.text.as_bytes(),
             document: &self.document,
             snapshots: &self.snapshots,

@@ -71,10 +71,11 @@ pub use checked::{CheckedPackage, ResolvedDependency};
 pub use checked::{EmitLimits, EmittedPackage, Import, LinkRefusal};
 #[cfg(feature = "std")]
 pub use checked_v2::{
-    clause_roots, hyper_roots, occurrence_role, read_evaluation_emission, read_evaluation_package,
-    read_hybrids, read_import_view, read_terminal, read_terminals, resolve_clause_root,
-    resolve_hyper_root, resolve_schedulability_root, resolve_state_graph_root, resolve_terminals,
-    schedulability_roots, state_graph_roots, supply_closure, AdmittedPackageRead, AdmittedPackages,
+    checked_package_refusal_code, clause_roots, hyper_roots, occurrence_role,
+    read_evaluation_emission, read_evaluation_package, read_hybrids, read_import_view,
+    read_terminal, read_terminals, resolve_clause_root, resolve_hyper_root,
+    resolve_schedulability_root, resolve_state_graph_root, resolve_terminals, schedulability_roots,
+    state_graph_roots, supply_closure, AdmittedPackageRead, AdmittedPackages,
     CheckedClockConstraint, CheckedClockGuard, CheckedClockPlace, CheckedClockReset,
     CheckedConstraintTarget, CheckedGuardPart, CheckedResetTarget, CheckedTimeInvariant,
     CheckedTimeSource, CheckedTimeSourceKind, CheckedTimedModel, CheckedUrgency, ClauseRoot,

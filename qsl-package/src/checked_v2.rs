@@ -315,7 +315,8 @@ impl V2ReadLimits {
 
     /// The ceilings IR's reader receives: every field passed through
     /// unchanged.
-    fn for_ir(self) -> CheckedPackageReadLimits {
+    #[must_use]
+    pub fn for_ir(self) -> CheckedPackageReadLimits {
         CheckedPackageReadLimits {
             bytes: u64::try_from(self.artifact_bytes).unwrap_or(u64::MAX),
             nodes: self.nodes,
@@ -559,7 +560,7 @@ impl V2ReadRefusal {
     pub fn code(&self) -> Code {
         match self {
             Self::UnsupportedVersion { .. } => Code::UnknownWire,
-            Self::Envelope { refusal, .. } => map_refusal_code(refusal.code),
+            Self::Envelope { refusal, .. } => checked_package_refusal_code(refusal.code),
             Self::Structural(refusal) => refusal.code(),
             Self::IdentityMismatch { .. } => Code::InvalidPackage,
             Self::SourceMap(_) => Code::InvalidSourceMap,
@@ -615,7 +616,8 @@ impl V2ReadRefusal {
 /// whole in [`V2ReadRefusal::Envelope`] for callers that want more than
 /// this coarse `Code`.
 ///
-fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
+#[must_use]
+pub fn checked_package_refusal_code(code: CheckedPackageRefusalCode) -> Code {
     match code {
         CheckedPackageRefusalCode::UnknownContractVersion => Code::UnknownWire,
         CheckedPackageRefusalCode::NoncanonicalWire => Code::NoncanonicalWire,

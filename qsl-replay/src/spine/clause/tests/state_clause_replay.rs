@@ -895,10 +895,7 @@ fn a_replay_target_the_entry_does_not_read_refuses_before_the_recompile() {
             Source::EntryRemoved,
         ] {
             let unit = config_version_unit();
-            let domain_document = unit.domain_document.clone();
             let documents = changed_version();
-            let bytes = documents.bytes.clone();
-            let target = request_target.clone();
             let refusal = replay(case_targeting(
                 unit,
                 "VersionUnchanged",
@@ -909,12 +906,7 @@ fn a_replay_target_the_entry_does_not_read_refuses_before_the_recompile() {
                 |wire, _| match source {
                     Source::Compiles => {}
                     Source::DoesNotCompile => {
-                        *wire = request(
-                            b"this is not a QSL unit\n",
-                            &domain_document,
-                            &bytes,
-                            target,
-                        );
+                        wire.byte_provision[0].2 = b"this is not a QSL unit\n".to_vec();
                     }
                     Source::EntryRemoved => wire.byte_provision.clear(),
                 },

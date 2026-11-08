@@ -48,7 +48,13 @@ fn settled(
     let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
     let replay = |counterexample: &TemporalCounterexample| {
         replay_model_trace(
-            request(&world.domain.document, world.snapshots.iter(), &world.unit),
+            request(
+                &world.package,
+                &[],
+                &world.domain.document,
+                world.snapshots.iter(),
+                &world.unit,
+            ),
             &ModelTraceSubject {
                 timed: None,
                 initial: world.initial.clone(),

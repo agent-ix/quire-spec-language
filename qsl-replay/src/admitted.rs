@@ -621,9 +621,9 @@ pub enum AdmittedRefusal {
 impl From<ReplayRefusal> for AdmittedRefusal {
     fn from(refusal: ReplayRefusal) -> Self {
         match refusal {
-            ReplayRefusal::RefinementInternals { source, .. } => Self::from(*source),
             ReplayRefusal::Recompile(refusal) => classify(*refusal),
-            ReplayRefusal::RecompileWithProtocolResults { refusal, .. } => classify(*refusal),
+            ReplayRefusal::RecompileWithProtocolResults { refusal, .. }
+            | ReplayRefusal::RefinementInternals { refusal, .. } => classify(*refusal),
             ReplayRefusal::DependencyInput(refusal) => {
                 classify(CompileRefusal::DependencyInput(refusal))
             }
@@ -635,6 +635,8 @@ impl From<ReplayRefusal> for AdmittedRefusal {
             // broken invariant, not a caller error. Each is named so that a
             // new variant forces a decision.
             ReplayRefusal::Request(_)
+            | ReplayRefusal::Package(_)
+            | ReplayRefusal::PackageEvidence(_)
             | ReplayRefusal::DomainPackages(_)
             | ReplayRefusal::SourceCount(_)
             | ReplayRefusal::PackageSources(_)

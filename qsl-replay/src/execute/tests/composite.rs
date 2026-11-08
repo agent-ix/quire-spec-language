@@ -730,6 +730,11 @@ fn tc_736_a_100000_term_source_and_list_replay_to_the_proving_verdict() {
                 "s3.input_bytes",
                 "s3.work_units",
                 "emit.output_bytes",
+                "i2.input_bytes",
+                "i2.nodes",
+                "i2.edges",
+                "i2.occurrences",
+                "i2.work_units",
             ]
             .map(|name| {
                 let bound = if name == "s1.input_bytes" {
@@ -913,18 +918,18 @@ fn convert_via_witness(
 /// code and cause, and the kernel class beneath.
 fn payload_refusal(
     stopped: argument::Stopped,
-) -> (
-    usize,
-    Code,
-    Option<&'static str>,
-    quire_exact::ConstructionCause,
-) {
+) -> (usize, Code, Option<String>, quire_exact::ConstructionCause) {
     match stopped {
         argument::Stopped::Refusal(refusal) => match *refusal {
             ReplayRefusal::NativePayload {
                 parameter,
                 refusal: ref kernel,
-            } => (parameter, refusal.code(), refusal.cause(), kernel.cause),
+            } => (
+                parameter,
+                refusal.code(),
+                refusal.cause().map(str::to_owned),
+                kernel.cause,
+            ),
             other => panic!("expected a native payload refusal, got {other:?}"),
         },
         other @ argument::Stopped::Supplied(_) => {
@@ -1007,7 +1012,7 @@ fn tc_1028_noncanonical_uuid_is_refused_at_the_input() {
                 (
                     0,
                     Code::InvalidRuntimeInput,
-                    Some("invalid-value"),
+                    Some("invalid-value".to_owned()),
                     quire_exact::ConstructionCause::UuidNoncanonical
                 ),
                 "{text:?}"
@@ -1049,7 +1054,12 @@ fn tc_1028_noncanonical_timestamp_is_refused_at_the_input() {
             };
             assert_eq!(
                 payload_refusal(stopped),
-                (0, Code::InvalidRuntimeInput, Some("invalid-value"), cause),
+                (
+                    0,
+                    Code::InvalidRuntimeInput,
+                    Some("invalid-value".to_owned()),
+                    cause
+                ),
                 "{text:?}"
             );
         }

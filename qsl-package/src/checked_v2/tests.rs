@@ -4031,7 +4031,7 @@ fn an_ir_wrong_snapshot_refusal_maps_to_the_wrong_snapshot_code() {
         (Ir::IllTyped, Code::IllTyped),
         (Ir::InvalidPackage, Code::InvalidPackage),
     ] {
-        assert_eq!(super::map_refusal_code(ir), qsl);
+        assert_eq!(super::checked_package_refusal_code(ir), qsl);
     }
 }
 

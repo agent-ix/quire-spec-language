@@ -111,9 +111,9 @@ list.
   `ReplayRefusal::DependencySelections` (`invalid_package`/`invalid-value`
   at `/dependencies`), before it checks any source count or builds
   any dependency input.
-- The package reference's `sources` SHALL name the proved package's source
-  units, one or more sources, each named by its authority and identity, in any order, and each
-  of its `dependencies` entries (QSpec FR-323) SHALL name that dependency's
+- The complete package's `lock.sources` SHALL name the proved package's source
+  units, one or more sources, each named by its authority and identity, in any order. Each
+  separate request `dependencies` entry (QSpec FR-323) SHALL name that dependency's
   source units the same way. The executor recompiles each list as one unit
   list in FR-480's canonical unit order, each source under its two FR-001
   labels (authority and identity). A `sources` list or an entry that is empty, names a definition
@@ -123,21 +123,24 @@ list.
 - The executor SHALL read the optional `refinement_internals` value of the
   package reference, at `/package/lock/refinement_internals`, and of each
   `dependencies` entry, at `/dependencies/<n>/refinement_internals`,
-  and hand each unchanged to the recompile as FR-099's refinement internals
-  input (the members FR-071 types). It SHALL NOT validate them itself: a
-  defect surfaces from the recompile, carried as
-  `ReplayRefusal::RefinementInternals`, which wraps the recompile refusal
-  (`ReplayRefusal::Recompile`) and keeps its code and cause.
+  and hand each well-shaped list unchanged to the recompile as FR-099's
+  refinement internals input. The bounded descriptor decoder SHALL require
+  the checked-package schema's array shape: a root value of `{}` refuses
+  `InvalidPackage`/`wrong-value-kind` at `/package/lock/refinement_internals`
+  before recompilation, without fabricating a semantic-checker result.
+  The executor SHALL NOT validate list meaning itself: a semantic defect
+  surfaces as `ReplayRefusal::RefinementInternals` retaining the complete
+  native compiler refusal, including its code, cause and relative locus.
 - The executor SHALL report the locus of such a refusal as the request
   pointer, `/package/lock/refinement_internals` for the proved package's value
   or `/dependencies/<n>/refinement_internals` for the `n`th
   dependency entry's, followed by the pointer into the value that FR-147
-  gives (QSpec FR-323-AC-17): `ReplayRefusal::RefinementInternals` holds that
-  locus and `ReplayRefusal::pointer` returns it.
-- The executor SHALL report the other dependency loci as the corpus schema
-  names them: `/dependencies` for entries out of order, repeated or reached by
-  no import, `/dependencies/<n>/sources` for the `n`th entry's source list and
-  `/package/lock/sources` for the proved package's.
+  gives (QSpec FR-323-AC-17). The boundary pointer SHALL be additional
+  request context; it SHALL NOT replace the native relative locus. For a
+  dependency, the executor SHALL locate the exact supplied entry using the
+  compiler's actual dependency-owner path, not the refinement spelling or
+  a default entry index. When the compile refusal carries genuine protocol
+  results, the executor SHALL retain them without creating an empty payload.
 - The executor SHALL build the dependency input (FR-099) from the entries:
   each entry's `identity`, and its source's labels, identity
   as path and provided bytes. It SHALL carry a dependency-input refusal,
@@ -653,7 +656,7 @@ predicate claim (ADR-031 SW-7).
 | FR-098-AC-17 | A request carrying `object_environment` for a function with no `Reference` parameter refuses `UnusedObjectEnvironment` (`invalid_runtime_input`/`unknown-member`, naming `object_environment`), whether or not the document is in the byte provision, and before a wrong-kind argument of that function is converted. | Test (TC-1042) |
 | FR-098-AC-18 | The environment document refuses with `ReplayRefusal::ObjectEnvironment` holding FR-106's record, one case per condition: an identity with no byte-provision entry (`unavailable_observation`/`missing-required-artifact`); a `pre` document (`wrong_snapshot`/`wrong-observation`); a `model` identity the package does not select (`invalid_model_binding`/`wrong-model-selection`); a repeated object key (`conflicting-identity`), reported before the dangling reference the same request's argument would raise; a non-sequence and an out-of-range element for `items` (`wrong-value-kind`, `invalid-value`); a reference field to an unlisted object of a complete population (`dangling_reference`/`absent-target-in-complete-population` at check 8); and an argument's population not marked `complete` (`incomplete_population`/`incomplete-scope` naming it at check 7). The call is never made. | Test (TC-1042) |
 | FR-098-AC-19 | Against a complete population, a reference argument whose object the environment does not list refuses `dangling_reference`/`absent-target-in-complete-population` naming position 0 and the reference, and so does one whose `object_type` is another type's, within the same universe, from the held object of the same identity (a different universe refuses earlier, at conversion, as `foreign-universe`); against a population not marked `complete`, such a reference refuses `incomplete_population`/`incomplete-scope`. In a sequence of references the first one that is not present is named, and a present reference before it is not. | Test (TC-1042) |
-| FR-098-AC-20 | A request for a proved package whose refinement `CasTwice` has the internal list `[{"refinement": "CasTwice", "internal": ["Spec::Twice::finish"]}]` carries it at `/package/lock/refinement_internals` and recompiles; a request carrying a spelling that resolves to no class (`Spec::Twice::zz` at index 0) refuses `Recompile` with `missing_declaration`/`missing-name` located at `/package/lock/refinement_internals/0/internal/0`, and the value `{}` refuses `invalid_model_binding`/`malformed-declaration` located at `/package/lock/refinement_internals`; a defective value on `dependencies` entry 1 is located at `/dependencies/1/refinement_internals/<pointer>`; and a value on a `dependencies` entry applies to that dependency's refinements only. | Test (TC-444) |
+| FR-098-AC-20 | A request for a proved package whose refinement `CasTwice` has the internal list `[{"refinement": "CasTwice", "internal": ["Spec::Twice::Done"]}]` carries it at `/package/lock/refinement_internals` and recompiles. A well-shaped list naming an unknown refinement or an unresolved internal class (`Spec::Twice::zz` at index 0) refuses `RefinementInternals`, retaining the complete native compiler refusal with its original code, cause and relative locus, and separately locating the request at `/package/lock/refinement_internals` followed by that relative pointer. A root value of `{}` is instead a bounded descriptor-decode `InvalidPackage`/`wrong-value-kind` refusal at `/package/lock/refinement_internals`, because the full checked-package carrier requires an array; it is not a fabricated S3 result. A semantic defect on dependency entry 1, with an unrelated entry 0 present, is located at `/dependencies/1/refinement_internals/<native-relative-pointer>` using the compiler's actual dependency-owner identity. Boundary pointer reads leave the complete native refusal unchanged. Each supplied dependency list applies only to that dependency's refinements, and genuine protocol results are retained only when present. | Test (TC-444) |
 | FR-098-AC-21 | TC-444's `small` request with its replay target replaced by `frame_operation` (`Config::ConfigVersion`, `attemptUpdate`) given to `replay` refuses `invalid_runtime_input`/`unknown-member` at `/replay/frame_operation` naming the target, the entry `replay` and the member `function`, before the recompile: the same request with its source edited so it does not compile refuses the same way. With its source's byte-provision entry also removed it refuses by the byte-provision rule instead (`missing_import`/`missing-selection`), which decode applies first. | Test (TC-444) |
 | FR-098-AC-22 | Over a unit declaring `function p using v(x: Int[0, 9]): Boolean pure { x > 3 }`, `function q using v(x: Int[0, 9]): Integer pure { x + 1 }` and `function r using v(x: Int[0, 9]): Integer pure { 10 mod x }`, each request carrying an `Input` assignment and an occurrence key read from the compiled package: `p` at its `declaration` occurrence with `x = 0` settles `reproduced-without-witness` with value `false` (the predicate claim); `p` at its `x > 3` record's occurrence with `x = 0` completes the application (`false`, a `Boolean`) and settles `inconclusive` with cause `Verdicts` (`violation`/`success`) and value `true`; `r` at its `10 mod x` record's occurrence with `x = 0` settles `reproduced-without-witness` with value `false`, the application being undefined there, and the same request from a `Witness` entry binding `x` to 0 settles `reproduced-with-evaluated-witness`; `r` there with `x = 3` (`1`) and `q` at its `x + 1` record's occurrence with `x = 9` (`10`, inside its result bound `Integer`) each settle `inconclusive` with cause `Verdicts` and value `true`. None carries a QSpec FR-351 record. A request for `p`'s `x > 3` claim whose `obligation_identity` was minted for `p`'s function contract settles the same way and carries that identity unchanged. | Test (TC-444) |
 | FR-098-AC-23 | Over `function s using v(x: Int[0, 9]): Integer pure { (if x > 0 then 10 mod x else 0) + 10 mod x }`, whose two `10 mod x` occurrences are two records of one node: the request at the `then` branch's occurrence with `x = 0` settles `inconclusive` with cause `NoValue`, because that occurrence is not evaluated and the call stops undefined at the other one; the request at the right operand's occurrence with `x = 0` settles `reproduced-without-witness` with value `false`; the request at the `then` branch's occurrence with `x = 3` settles `inconclusive` with cause `Verdicts`. | Test (TC-444) |
