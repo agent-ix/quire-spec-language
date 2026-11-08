@@ -2778,12 +2778,16 @@ pub(super) fn admit_population_values<'t>(
                 .ok_or_else(|| fault("object-type-has-no-effective-id"))?
                 .clone();
 
-            let declared = types.attributes(effective_type.clone()).ok_or_else(|| {
-                AdmissionFailure::Fault(quire_semantic_value::catalog::InternalFault::new(
-                    "observation-admission",
-                    "object-type-has-no-checked-attributes",
-                ))
-            })?;
+            // FR-533 "Observation admission": an environment that declares
+            // no attributes for this type (the bare route's, when the
+            // package's declaration projection omitted it) is an unmet
+            // type representation, not a fault.
+            let Some(declared) = types.attributes(effective_type.clone()) else {
+                return Err(refuse(
+                    admission_record(Code::UnknownRequiredFeature, "unsupported-feature")
+                        .with("reason", "missing-type-representation"),
+                ));
+            };
             // 6.2: a set/bag/ordered-set field of a population (not a value).
             if let Some(field) = population_collection_field(declared) {
                 return Err(refuse(

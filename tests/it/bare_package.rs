@@ -1476,6 +1476,26 @@ fn record_rows(
     (rows, measured)
 }
 
+/// What `with_supply` leaves unconsumed for the population catalog (FR-533
+/// "Observation admission"): the catalog's own work and entries, which are not
+/// added to the budget afterwards.
+pub(crate) fn catalog_room(
+    package: &quire_contract_model::CheckedPackageV2,
+) -> quire_contract_model::NativeJoinCharge {
+    let catalog = package
+        .selected_model_population_catalog(
+            quire_contract_model::CheckedModelPopulationCatalogLimits {
+                work: u64::MAX / 2,
+                entries: u64::MAX / 2,
+            },
+        )
+        .expect("an ample allowance reads the catalog");
+    quire_contract_model::NativeJoinCharge {
+        work: catalog.work(),
+        storage: catalog.entries(),
+    }
+}
+
 fn supply_on<'p>(
     read: &'p qsl_package::AdmittedPackageRead<'_>,
     rows: &'p ReadIdentityRows,
@@ -1497,6 +1517,9 @@ fn supply_on<'p>(
             qsl_package::NativeJoinFailure::UnitDefinitions { .. } => {
                 panic!("identity-only fixture has no unit rows")
             }
+            qsl_package::NativeJoinFailure::PopulationCatalog { .. } => {
+                panic!("identity-only fixture selects no model population")
+            }
             qsl_package::NativeJoinFailure::Limit(_) => unreachable!("native unwraps the envelope"),
         })
 }
@@ -1512,7 +1535,8 @@ fn with_supply_is_admitted_at_the_measured_budget_and_refused_one_short() {
     let read = built.read(&built.emission);
     let (rows, need) = record_rows(&read);
 
-    let mut exact = NativeJoinBudget::new(need.work, need.storage);
+    let room = catalog_room(read.admitted());
+    let mut exact = NativeJoinBudget::new(need.work + room.work, need.storage + room.storage);
     let admitted = supply_on(&read, &rows, &mut exact).expect("the exact budget admits");
     assert_eq!(exact.consumed(), need);
     assert!(admitted.identities().is_some());
@@ -1630,7 +1654,8 @@ fn two_joins_on_one_budget_are_charged_cumulatively() {
     let read = built.read(&built.emission);
     let (rows, need) = record_rows(&read);
 
-    let mut budget = NativeJoinBudget::new(need.work, need.storage);
+    let room = catalog_room(read.admitted());
+    let mut budget = NativeJoinBudget::new(need.work + room.work, need.storage + room.storage);
     let first = supply_on(&read, &rows, &mut budget).expect("the first join is paid for");
     assert_eq!(budget.consumed(), need);
     let second = supply_on(&read, &rows, &mut budget).expect_err("denied");
@@ -1640,14 +1665,15 @@ fn two_joins_on_one_budget_are_charged_cumulatively() {
             | quire_contract_model::ExactTypeProjectionErrorCode::ExhaustedStorage
     ));
     assert!(budget.first_unpaid().is_some());
-    assert!(budget.consumed().work <= need.work);
-    assert!(budget.consumed().storage <= need.storage);
+    assert!(budget.consumed().work <= need.work + room.work);
+    assert!(budget.consumed().storage <= need.storage + room.storage);
     first
         .world()
         .expect("the first package borrows its identities");
 
     // With room for exactly two joins the second is admitted.
-    let mut twice = NativeJoinBudget::new(need.work * 2, need.storage * 2);
+    let mut twice =
+        NativeJoinBudget::new(need.work * 2 + room.work, need.storage * 2 + room.storage);
     supply_on(&read, &rows, &mut twice).expect("first");
     supply_on(&read, &rows, &mut twice).expect("second");
     assert_eq!(twice.consumed().work, need.work * 2);
@@ -1679,7 +1705,34 @@ fn the_view_the_constructors_and_the_writer_refuse_a_budget_one_short() {
             &mut view_measure,
         )
         .expect("the witness and its native Exact projections are admitted");
-    let view_need = view_measure.consumed();
+    // View creation does not project the selected objects, which
+    // `with_supply` ends with.
+    let declarations = {
+        let bare = BarePackage::new(ample.admitted())
+            .with_supply(
+                qsl_package::BareSupply {
+                    identities: &rows,
+                    equality: None,
+                },
+                &mut NativeJoinBudget::new(1 << 30, 1 << 30),
+            )
+            .expect("an ample budget admits");
+        let mut budget = NativeJoinBudget::new(1 << 30, 1 << 30);
+        ample
+            .admitted()
+            .project_selected_type_declarations(
+                bare.identities().expect("joined identities"),
+                &[],
+                &[],
+                &mut budget,
+            )
+            .expect("the declarations project");
+        budget.consumed()
+    };
+    let view_need = quire_contract_model::NativeJoinCharge {
+        work: view_measure.consumed().work - declarations.work,
+        storage: view_measure.consumed().storage - declarations.storage,
+    };
     assert!(view_need.storage > 1);
     let limits = |work: u64, storage: u64| {
         qsl_package::V2ReadLimits::fixture()
@@ -1865,7 +1918,14 @@ fn opaque_caller_budgets_preserve_original_bounds_after_prior_joins() {
         construct(&mut measured).expect("measure genuine successful entry");
         let need = measured.consumed();
         assert!(need.work > 0 && need.storage > 0);
-        let mut exact = NativeJoinBudget::new(2 * need.work, 2 * need.storage);
+        // Only the bare entry reads the population catalog.
+        let room = if entry == 0 {
+            catalog_room(read.admitted())
+        } else {
+            quire_contract_model::NativeJoinCharge::default()
+        };
+        let mut exact =
+            NativeJoinBudget::new(2 * need.work + room.work, 2 * need.storage + room.storage);
         construct(&mut exact).expect("first exact join");
         construct(&mut exact).expect("second exact join");
         assert_eq!(exact.consumed().work, 2 * need.work);

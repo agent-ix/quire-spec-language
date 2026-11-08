@@ -21,6 +21,18 @@ pub enum NativeJoinFailure {
         /// The stage setting of the exhausted work or storage allowance.
         setting: qsl_foundation::Setting,
     },
+    /// The selected-model population catalog ran out of its allowance, the
+    /// budget's unconsumed work or storage at that point (FR-533
+    /// "Observation admission").
+    #[error("the population catalog exhausted the native join budget")]
+    PopulationCatalog {
+        /// `i2.work_units` for the work allowance, `i2.native_join_storage`
+        /// for the entries allowance.
+        setting: qsl_foundation::Setting,
+        /// The stage limit diagnostic: bound the catalog error's `limit`,
+        /// attempted total its `consumed`.
+        limit: qsl_foundation::diagnostic::LimitExceeded,
+    },
 }
 
 impl NativeJoinFailure {
@@ -28,7 +40,7 @@ impl NativeJoinFailure {
     /// Semantic refusals remain unchanged. Already attached diagnostics are
     /// retained, so a later budget use cannot rewrite their attempted count.
     pub fn with_budget(self, budget: &quire_contract_model::NativeJoinBudget) -> Self {
-        if matches!(self, Self::Limit(_)) {
+        if matches!(self, Self::Limit(_) | Self::PopulationCatalog { .. }) {
             return self;
         }
         match crate::NativeJoinLimits::from_budget(budget).refusal(self.clone(), budget) {
@@ -51,6 +63,7 @@ impl NativeJoinFailure {
     pub fn limit(&self) -> Option<&qsl_foundation::diagnostic::LimitExceeded> {
         match self {
             Self::Limit(error) => Some(&error.limit),
+            Self::PopulationCatalog { limit, .. } => Some(limit),
             Self::Projection(_) | Self::Equality(_) | Self::UnitDefinitions { .. } => None,
         }
     }
@@ -58,7 +71,9 @@ impl NativeJoinFailure {
     /// The stage setting for an actual resource denial, otherwise `None`.
     pub fn setting(&self) -> Option<qsl_foundation::Setting> {
         match self {
-            Self::UnitDefinitions { setting } => Some(*setting),
+            Self::UnitDefinitions { setting } | Self::PopulationCatalog { setting, .. } => {
+                Some(*setting)
+            }
             Self::Limit(error) => error.native.setting(),
             Self::Projection(error) => qsl_semantics::model::intake::native_budget_setting(error),
             Self::Equality(error) => match error.code {
