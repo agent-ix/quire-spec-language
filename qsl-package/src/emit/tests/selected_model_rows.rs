@@ -18,7 +18,7 @@ mod fixture;
 
 fn tuple_document(include_tuple: bool) -> Vec<u8> {
     if !include_tuple {
-        return serde_json::to_vec(&fixture::k2())
+        return crate::emit::tests::wire_bytes(&fixture::k2())
             .expect("the package without the tuple serializes");
     }
     let tuple = fixture::declaration(
@@ -49,7 +49,7 @@ fn tuple_document(include_tuple: bool) -> Vec<u8> {
             "meaning": meaning::TUPLE_VALUE_TYPE,
         },
     });
-    serde_json::to_vec(&fixture::domain_document(
+    crate::emit::tests::wire_bytes(&fixture::domain_document(
         vec![tuple],
         vec![tuple_construct],
     ))

@@ -178,7 +178,7 @@ pub fn state_graph_roots(package: &CheckedPackageV2) -> Result<Vec<StateGraphRoo
     let mut roots = Vec::new();
     let graph = super::wire_graph(package).map_err(|_| NODE_ID_FAULT)?;
     for (node, id) in package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .zip(graph.keys())
@@ -210,7 +210,7 @@ pub fn resolve_state_graph_root(
     let graph = super::wire_graph(package).map_err(|_| NODE_ID_FAULT)?;
     let Some(node) = graph
         .index_of(triple.node())
-        .and_then(|at| package.graph().nodes.get(usize::try_from(at).ok()?))
+        .and_then(|at| package.resolved_graph().nodes.get(usize::try_from(at).ok()?))
         .filter(|node| is_state_graph(node))
     else {
         return Ok(Err(unresolved()));

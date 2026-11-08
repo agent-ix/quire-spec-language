@@ -54,7 +54,7 @@ fn emit_unit(unit_body: &str) -> Emitted {
 /// The checked graph of `unit_body` over the `Tier` and `Odd` model enums,
 /// with the domain document it selects.
 fn checked_unit(unit_body: &str) -> (qsl_semantics::check::CheckedGraph, Vec<u8>) {
-    let document = serde_json::to_vec(&fixture::with_types(vec![fixture::variant_type(
+    let document = crate::emit::tests::wire_bytes(&fixture::with_types(vec![fixture::variant_type(
         "Odd", &ODD_CASES,
     )]))
     .expect("the fixture serializes");

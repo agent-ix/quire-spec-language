@@ -106,7 +106,7 @@ pub(super) fn reachability_document() -> Vec<u8> {
             "inputIdentities": ["ix://acme/orders/orders"],
         }},
     }]);
-    serde_json::to_vec(&document).unwrap()
+    crate::emit::tests::wire_bytes(&document).unwrap()
 }
 
 /// The unit holding `clauses` over the document, emitted, with the checked

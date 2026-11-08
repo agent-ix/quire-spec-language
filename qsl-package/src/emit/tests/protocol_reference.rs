@@ -647,10 +647,10 @@ fn a_whole_model_role_is_emitted_and_admitted() {
     cell["identity"] = json!("ix://acme/orders/Cell");
     cell["displayName"] = json!("Cell");
     cell["origin"]["generated"]["inputIdentities"] = json!(["ix://acme/orders/Cell"]);
-    let model_m = serde_json::to_vec(&model_m).unwrap();
+    let model_m = crate::emit::tests::wire_bytes(&model_m).unwrap();
     let mut model_n_value: Value = serde_json::from_slice(&model_m).unwrap();
     replace_strings(&mut model_n_value, "acme/orders", "acme/other-orders");
-    let model_n = serde_json::to_vec(&model_n_value).unwrap();
+    let model_n = crate::emit::tests::wire_bytes(&model_n_value).unwrap();
     let model_m_identity = package_identity(&model_m);
     let model_n_identity = package_identity(&model_n);
     assert_ne!(model_m_identity, model_n_identity);
@@ -832,7 +832,6 @@ fn a_clause_key_is_distinct_per_protocol_and_independent_of_declaration_order() 
 /// FR-383-AC-15: unrelated protocols cannot alter Fill's protocol node bytes,
 /// and changing a reachable finish node changes the clause key.
 #[trace("FR-383-AC-15", "TC-1062")]
-#[ignore = "gated on STD-653 (tracker QSL-1695): QSpec must settle canonical protocol identity across package-wide node-index changes; QSL-1620 implemented stable node keys"]
 #[test]
 fn protocol_nodes_are_stable_around_unrelated_declarations() {
     let emitted_nodes = |declarations: &str| {

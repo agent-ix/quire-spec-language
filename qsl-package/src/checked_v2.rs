@@ -496,7 +496,7 @@ pub(crate) fn compound_unit(
 ) -> Option<quire_exact::UnitId> {
     use quire_contract_model::{CheckedBindingNameKind, CheckedLiteralValue, CheckedTerm};
 
-    let node = package.graph().nodes.iter().find(|node| {
+    let node = package.resolved_graph().nodes.iter().find(|node| {
         node.node_id == *id
             && crate::wire_form::has_form(
                 node,
@@ -826,7 +826,7 @@ pub(crate) fn read_checked_package_v2(
                 }
             };
             let mut exports = Vec::new();
-            for (node, key) in package.graph().nodes.iter().zip(graph.keys()) {
+            for (node, key) in package.resolved_graph().nodes.iter().zip(graph.keys()) {
                 let Some(declaration) = &node.declaration else {
                     continue;
                 };
@@ -1394,7 +1394,7 @@ impl AdmittedPackageRead<'_> {
 fn reader_node_keys(package: &CheckedPackageV2) -> Result<BTreeSet<NodeKey>, WireIdError> {
     let graph = wire_graph(package)?;
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .map(|node| graph.key(&node.node_id))

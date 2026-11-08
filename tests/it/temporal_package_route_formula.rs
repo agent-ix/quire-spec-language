@@ -135,7 +135,7 @@ fn a_clause_the_package_does_not_hold_is_unresolved() {
     let asked = request(&package, &due, None, 3);
     let protocol_clause = read
         .admitted()
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .zip(read.admitted().node_kinds())

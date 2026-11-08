@@ -40,7 +40,7 @@ pub(super) fn package_units_document() -> Vec<u8> {
             "origin": origin,
         },
     ]);
-    serde_json::to_vec(&document).expect("the fixture stays JSON")
+    crate::emit::tests::wire_bytes(&document).expect("the fixture stays JSON")
 }
 
 #[trace("FR-230-AC-32", "FR-230-AC-38")]
@@ -50,7 +50,7 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
         serde_json::from_slice(config_version_unit::DOMAIN_PACKAGE.as_bytes())
             .expect("the fixture is JSON");
     document["types"][1]["operations"] = json!([]);
-    let document = serde_json::to_vec(&document).expect("the fixture remains JSON");
+    let document = crate::emit::tests::wire_bytes(&document).expect("the fixture remains JSON");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
@@ -466,7 +466,7 @@ fn an_authentic_selected_model_unit_round_trips_in_required_identity_handoff() {
     kind["declarations"][unit_index]["exact_identity"]["value"]["kind"] = json!("compound");
     assert_eq!(
         crate::ReadIdentityRows::read(
-            &serde_json::to_vec(&kind).unwrap(),
+            &crate::emit::tests::wire_bytes(&kind).unwrap(),
             &package,
             &mut crate::V2ReadLimits::fixture().native_join_budget()
         ),
@@ -479,7 +479,7 @@ fn an_authentic_selected_model_unit_round_trips_in_required_identity_handoff() {
         json!("foreign-package");
     assert_eq!(
         crate::ReadIdentityRows::read(
-            &serde_json::to_vec(&foreign).unwrap(),
+            &crate::emit::tests::wire_bytes(&foreign).unwrap(),
             &package,
             &mut crate::V2ReadLimits::fixture().native_join_budget()
         ),
@@ -492,7 +492,7 @@ fn an_authentic_selected_model_unit_round_trips_in_required_identity_handoff() {
     wrong["declarations"][unit_index]["exact_identity"]["kind"] = json!("record");
     assert_eq!(
         crate::ReadIdentityRows::read(
-            &serde_json::to_vec(&wrong).unwrap(),
+            &crate::emit::tests::wire_bytes(&wrong).unwrap(),
             &package,
             &mut crate::V2ReadLimits::fixture().native_join_budget()
         ),
@@ -573,7 +573,7 @@ fn three_time_dimensions_have_distinct_structural_keys() {
         "identity": "ix://example/flow/unit/sec", "name": "sec", "dimension": time,
         "scale": "1", "offset": "0", "origin": origin,
     }]);
-    let flow = serde_json::to_vec(&flow).expect("JSON");
+    let flow = crate::emit::tests::wire_bytes(&flow).expect("JSON");
     let packages =
         qsl_semantics::model::intake::package_input([rpc.as_slice(), flow.as_slice()]).unwrap();
     let identity = |unit: &str| {

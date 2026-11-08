@@ -16,7 +16,7 @@ pub(super) mod fixture;
 /// v2 emitter with nothing omitted, and a read of the bytes with the package
 /// document as evidence.
 pub(super) fn emit_unit(unit_body: &str) -> (Emission, Value, Read) {
-    let document = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
+    let document = crate::emit::tests::wire_bytes(&fixture::document()).expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
@@ -108,7 +108,7 @@ fn records_are_model_owned_nodes_and_the_call_takes_its_argument_by_ref() {
 #[trace("FR-390-AC-17")]
 #[test]
 fn selected_record_and_inherited_field_rows_join_ir_projection() {
-    let document = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
+    let document = crate::emit::tests::wire_bytes(&fixture::document()).expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\

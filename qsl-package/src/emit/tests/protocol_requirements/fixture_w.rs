@@ -97,7 +97,7 @@ pub(in crate::emit::tests) fn document() -> Vec<u8> {
     }
     document["types"] = json!(types);
     document["populations"] = json!([]);
-    serde_json::to_vec(&document).unwrap()
+    crate::emit::tests::wire_bytes(&document).unwrap()
 }
 
 pub(in crate::emit::tests) const W: &str = r#"
@@ -584,7 +584,7 @@ fn tc134_attempt_bounds_and_provenance_mutations_are_checked() {
 }
 
 fn jcs(value: &Value) -> Vec<u8> {
-    serde_json::to_vec(value).expect("wire fixture serializes")
+    crate::emit::tests::wire_bytes(value).expect("wire fixture serializes")
 }
 
 fn library() -> qsl_semantics::library::LibraryName {
@@ -954,7 +954,7 @@ fn w_relationships_are_model_nodes_sorted_and_deduplicated() {
         .as_array_mut()
         .unwrap()
         .push(second);
-    let document = serde_json::to_vec(&domain).unwrap();
+    let document = crate::emit::tests::wire_bytes(&domain).unwrap();
     let declaration = "relationship ShipmentOwner = M::OrderShipment;";
     let first = lower_with(
         document.clone(),
@@ -1631,7 +1631,7 @@ fn tc134_v1_contract_version_is_refused_with_clock_selections_present() {
         .insert_domain_package_document(package_identity(&document()[..]), &document()[..])
         .expect("a fresh evidence key");
     let outcome = read_v2(
-        &serde_json::to_vec(&forged).unwrap(),
+        &crate::emit::tests::wire_bytes(&forged).unwrap(),
         library(),
         V2ReadLimits::fixture(),
         &evidence,
@@ -1775,9 +1775,10 @@ fn w_nodes_do_not_follow_unrelated_protocols() {
 
 /// FR-383-AC-15's byte clause: W between unrelated protocols writes the same
 /// wire bytes for each of its protocol nodes as W alone. QSpec FR-322
-/// writes each operand as its index in the whole document's graph, so nodes
-/// the unrelated protocols add ahead of W's operands shift those indices.
-#[ignore = "gated on STD-653 (tracker QSL-1695): FR-322 operand index segments are document graph positions"]
+/// writes each node-held operand as a slot of the node's own operand row, so
+/// the nodes the unrelated protocols add ahead of W's operands change only
+/// the rows, never a node's bytes.
+#[trace("FR-383-AC-15", "TC-1062")]
 #[test]
 fn w_wire_bytes_do_not_follow_unrelated_protocols() {
     let alone = lower_with(document(), PROFILES_W, W);

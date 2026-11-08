@@ -35,7 +35,7 @@ const NONE: &str = "holds(c.versionNumber = 1)";
 fn clauses(package: &CheckedPackageV2) -> Vec<CheckedNodeId> {
     use quire_contract_model::{CheckedNodeKind, TemporalForm};
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .zip(package.node_kinds())
@@ -848,7 +848,7 @@ fn an_id_the_package_does_not_hold_or_that_is_no_clause_is_refused() {
     foreign.package = "foreign".into();
     foreign.ordinal = u64::MAX;
     assert!(!package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .any(|node| node.node_id == foreign));
@@ -858,7 +858,7 @@ fn an_id_the_package_does_not_hold_or_that_is_no_clause_is_refused() {
     );
 
     let mut refused = 0;
-    for (node, kind) in package.graph().nodes.iter().zip(package.node_kinds()) {
+    for (node, kind) in package.resolved_graph().nodes.iter().zip(package.node_kinds()) {
         if *kind == CheckedNodeKind::Temporal(TemporalForm::TemporalClause) {
             continue;
         }

@@ -99,7 +99,7 @@ pub fn resolve_schedulability_root<'a>(
     let graph = super::wire_graph(package).map_err(|_| NODE_ID_FAULT)?;
     let Some(node) = graph
         .index_of(triple.node())
-        .and_then(|at| package.graph().nodes.get(usize::try_from(at).ok()?))
+        .and_then(|at| package.resolved_graph().nodes.get(usize::try_from(at).ok()?))
         .filter(|node| is_schedulability(node))
     else {
         return Ok(Err(unresolved()));

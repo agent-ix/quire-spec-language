@@ -94,7 +94,7 @@ fn body_id(node: &CheckedSemanticNodeV2) -> Option<&CheckedNodeId> {
 /// `temporal`/`temporal_clause` nodes that are no clause of their own.
 pub(super) fn wrappers(package: &CheckedPackageV2) -> BTreeSet<CheckedNodeId> {
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .filter(|node| is_hyper(node))
@@ -121,7 +121,7 @@ pub fn hyper_roots(package: &CheckedPackageV2) -> Result<Vec<HyperRoot>, Interna
     let mut roots = Vec::new();
     let graph = super::wire_graph(package).map_err(|_| NODE_ID_FAULT)?;
     for (node, id) in package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .zip(graph.keys())
@@ -150,7 +150,7 @@ pub fn resolve_hyper_root(
     let graph = super::wire_graph(package).map_err(|_| unresolved())?;
     let node = graph
         .index_of(triple.node())
-        .and_then(|at| package.graph().nodes.get(usize::try_from(at).ok()?))
+        .and_then(|at| package.resolved_graph().nodes.get(usize::try_from(at).ok()?))
         .filter(|node| is_hyper(node))
         .ok_or_else(unresolved)?;
     if super::occurrence_role(triple.origin().role().as_str()) != Some(CheckedOccurrenceRole::Claim)
