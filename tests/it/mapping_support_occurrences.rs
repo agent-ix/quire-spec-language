@@ -60,7 +60,7 @@ temporal Second using t over (c: Alpha::ConfigVersion) clock "events" on origin 
     let package =
         super::emit_checked_v2::read_back(&bytes, &[original.as_bytes(), auxiliary.as_bytes()]);
     let clauses: Vec<_> = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .zip(package.node_kinds())
