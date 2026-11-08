@@ -5242,7 +5242,7 @@ fn read_type_node(
         let Some(values) = type_value.get("values").and_then(Value::as_str) else {
             return Err(ctx.malformed_in("values", "missing or not a string").into());
         };
-        let values = read_value_type_ref(package, &ctx, values, false)?;
+        let values = read_value_type_ref(package, &ctx, values, true)?;
         return Ok(vec![DomainPackageRecord::MapType(MapTypeRecord {
             key,
             values,
@@ -5906,7 +5906,11 @@ pub fn read_domain_package(
                                     .clone(),
                             )
                         }
-                        Some(kind) if matches!(kind.as_str(), Some("option" | "sequence")) => None,
+                        Some(kind)
+                            if matches!(kind.as_str(), Some("option" | "sequence" | "map")) =>
+                        {
+                            None
+                        }
                         Some(kind) if kind.as_str() == Some("alias") => {
                             // The FCD core aliases (the native Timestamp, a
                             // clock, a unit) have a reader admission but no
