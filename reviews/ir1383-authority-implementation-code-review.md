@@ -637,3 +637,24 @@ scope:
     \ fixture[\"restored_nodes\"]\n        .as_array()\n        .expect(\"QSpec restored\
     \ nodes\");\n    let (emission, wire) = compile(BRAKING2);\n    admitted(&em"
 ```
+
+## Dispositions — formatting-only round 5
+
+Candidate `e5de404dd93f79dedf884a3810f07f861bfb5f9f`. All historical findings and outcomes are preserved. The only source delta from64e7df509 is the println layout; the other changed file records prior reviewer custody.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-006 | fixed | The final println is formatted as the required multiline call. Reviewer direct scoped rustfmt --edition 2021 --check on the frozen test source exits0 under the prescribed flock/scheduling environment; the corrected coder receipt explicitly records rustfmt_exit=0. The only source change is whitespace/layout of this call; no assertion, outcome, test behavior, production, spec or dependency changes occurred. |
+
+## Current formatting disposition verdict
+
+PASS / review-cleared: FND006 now has a fixed latest outcome, with no new findings and no open findings in this review. FND004/005 remain fixed; the original four findings remain fixed. The earlier failing format receipt is historical and is not rewritten as a pass.
+
+```rust
+    println!(
+        "conformance: {} node-index vector outcomes matched",
+        cases.len()
+    );
+```
+
+Reviewer scope: the exact source diff and all eleven custody identities, with direct non-mutating rustfmt confirmation in disposition-5/fmt-check.log. No Cargo command, test, broad/deep/workspace build, aggregate gate, source edit, push, peer chase or merge was run. The13 functional exact repair receipts remain valid for unchanged assertions; this does not turn the earlier805 pass/13 fail/2 ignored package-unit run into a whole-suite PASS. Lead owns the once-only continuation of unrun gate stages after current artifact custody. User/planner merge hold remains. No new method or global matrix rerun.
