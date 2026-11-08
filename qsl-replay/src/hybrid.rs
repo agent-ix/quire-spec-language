@@ -1314,20 +1314,6 @@ mod tests {
                     SolverBudget::from_request(None, None).unwrap(),
                 )
             };
-            let ambiguous = HybridProcessRequest::compose(
-                package.bytes(),
-                &context,
-                20_000,
-                &[item(raw_nodes[position]["node_id"].clone())],
-            )
-            .unwrap();
-            assert!(
-                matches!(
-                    HybridProcessRequest::read(ambiguous.bytes(), &context),
-                    Err(HybridProcessRequestRefusal::ClaimMismatch)
-                ),
-                "a raw slot identity cannot select either genuine clause without its holder"
-            );
             let request = HybridProcessRequest::compose(
                 package.bytes(),
                 &context,
@@ -1341,6 +1327,15 @@ mod tests {
             assert_eq!(
                 graph.index_of(&admitted.items()[0].claim().node),
                 Some(position as u64)
+            );
+            let mut ambiguous: serde_json::Value = serde_json::from_slice(request.bytes()).unwrap();
+            ambiguous["items"][0]["claim"]["node"] = raw_nodes[position]["node_id"].clone();
+            assert!(
+                matches!(
+                    HybridProcessRequest::read(&serde_json::to_vec(&ambiguous).unwrap(), &context),
+                    Err(HybridProcessRequestRefusal::ClaimMismatch)
+                ),
+                "a raw slot identity cannot select either genuine clause without its holder"
             );
         }
     }
