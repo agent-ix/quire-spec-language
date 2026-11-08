@@ -892,7 +892,7 @@ fn sparse_producer_input_selection_keeps_its_retained_field_index() {
     }
 }
 
-#[trace("TC-1331", "FR-531-AC-30", "FR-531-AC-33")]
+#[trace("TC-1331", "FR-531-AC-31", "FR-531-AC-33")]
 #[test]
 fn source_witness_supplier_retains_compact_denials_without_allocating() {
     use crate::checked_v2::{

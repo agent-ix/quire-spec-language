@@ -1214,7 +1214,7 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
         "always holds(is_gold(c.tier))",
         "function is_gold using v(tier: M::Tier): Boolean pure { tier = M::Tier::Gold }",
         true,
-        "on each (q: M::ConfigVersion) when (is_gold(q.tier))",
+        "on origin",
     );
     let source = SourceIdentity::new("agent-ix", "monitor-root");
     let name = LibraryName::new("fixture").unwrap();
@@ -1233,38 +1233,123 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
         &Cancel::new(),
     )
     .expect("authored model-enum monitor emits");
-    let package = match read_checked_package(
-        root.emission().package().bytes(),
-        LIMITS,
-        root.emission().evidence(),
-    ) {
-        CheckedPackageDispatchResult::AdmittedV2(package) => package,
-        other => panic!("the genuine custom-domain plan root must read: {other:?}"),
+    // A Boolean-input monitor does not reach the atom's model type. Author
+    // genuine typed snapshot entries through the existing ClauseSource path.
+    // The Boolean atom keeps this type-closure control independent of cross-
+    // package enum equality; Tier is reached through the actual Inputs field.
+    use qsl_analyze::monitor_entries::{
+        names, render, spec_from_plan, ClauseSource, WIRE_FIELD_NAMES,
     };
+    use qsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest};
+    let mut spec = spec_from_plan(root.plan()).unwrap();
+    spec.clause = Some(ClauseSource {
+        parameters: vec![("tier".to_owned(), "M::Tier".to_owned())],
+        atoms: spec
+            .atoms
+            .iter()
+            .map(|index| (*index, "true".to_owned()))
+            .collect(),
+        guard: None,
+        profile: "v".to_owned(),
+    });
+    let typed_source = format!("{unit}\n{}", render(&spec));
+    let limits = SpineLimits::default();
+    let cancel = Cancel::new();
+    let parsed = parse(
+        &ParseRequest {
+            source: &source,
+            path: "monitor.native",
+            bytes: typed_source.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .unwrap()
+    .into_value();
+    let models = select(&parsed, &packages, limits.model, &cancel)
+        .unwrap()
+        .into_value();
+    let checked = check(
+        &parsed,
+        name.as_str().to_owned(),
+        &models,
+        &DependencyInput::default(),
+        limits,
+        &cancel,
+    )
+    .unwrap()
+    .into_value();
+    let base = qsl_package::emit_checked(checked.package(), limits.package.emit()).unwrap();
+    let mut evidence = base.evidence().clone();
+    for (identity, document) in &packages {
+        evidence
+            .insert_domain_package_document(identity.as_str(), document.as_slice())
+            .unwrap();
+    }
+    let premises = root.plan().root_premises();
+    let buffers: Vec<_> = root
+        .plan()
+        .buffers()
+        .iter()
+        .map(|(id, capacity)| (id.index(), *capacity))
+        .collect();
+    let clause = checked.package().graph().temporal_clauses()[0].identity();
+    let emission = qsl_package::emit_monitor_plan_over(
+        &base,
+        name,
+        &evidence,
+        &qsl_package::MonitorPlanWire {
+            clause: &clause,
+            formula: root.plan().program().formula(),
+            counter: &premises.counter,
+            counter_width_bits: premises.counter_width_bits,
+            max_reading_gap: premises.max_reading_gap,
+            max_event_rate: &premises.max_event_rate,
+            uncertainty: &premises.uncertainty,
+            buffers: &buffers,
+            tick_unit: root.plan().binding().unit(),
+            activation_capacity: premises.activation_capacity,
+            state: names::STATE,
+            inputs: names::INPUTS,
+            scope: names::SCOPE,
+            result: names::RESULT,
+            entries: [
+                names::INIT,
+                names::ON_EVENT,
+                names::ON_WATERMARK,
+                names::ON_GAP,
+            ],
+            renamed_records: &["Instance", "Activation", "LimitReached"],
+            renames: &WIRE_FIELD_NAMES,
+        },
+        limits.imports,
+        limits.package.emit(),
+    )
+    .expect("genuine typed snapshot plan emits");
+    let package =
+        match read_checked_package(emission.package().bytes(), LIMITS, emission.evidence()) {
+            CheckedPackageDispatchResult::AdmittedV2(package) => package,
+            other => panic!("the genuine custom-domain plan root must read: {other:?}"),
+        };
     let mut budget = NativeJoinBudget::new(100_000_000, 100_000_000);
-    let identities = root
-        .emission()
+    let identities = emission
         .identity_rows(&package, &mut budget)
         .expect("same-emission identity rows");
-    let equality = root
-        .emission()
+    let equality = emission
         .equality_witness(&package, &mut budget)
         .expect("same-emission equality rows");
-    let enums = root
-        .emission()
+    let enums = emission
         .selected_source_enum_rows(&mut budget)
         .expect("source enum adapter");
-    let model_shapes = root
-        .emission()
+    let model_shapes = emission
         .selected_ir_model_enum_shape_rows(&mut budget)
         .expect("model enum adapter");
     assert_eq!(
         model_shapes.len(),
         1,
-        "the reached activation guard parameter retains the field's original Tier type"
+        "the reached snapshot input retains the field's original Tier type"
     );
-    let collections: Vec<_> = root
-        .emission()
+    let collections: Vec<_> = emission
         .selected_source_collection_rows()
         .iter()
         .enumerate()
@@ -1289,13 +1374,13 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
             SelectedMonitorClosureRows {
                 declarations: identities.declarations(),
                 fields: identities.fields(),
-                model_tuples: root.emission().selected_tuple_declaration_rows(),
-                source_units: root.emission().selected_source_unit_rows(),
-                model_enum_declarations: root.emission().selected_model_enum_declaration_rows(),
-                model_enum_members: root.emission().selected_model_enum_member_rows(),
+                model_tuples: emission.selected_tuple_declaration_rows(),
+                source_units: emission.selected_source_unit_rows(),
+                model_enum_declarations: emission.selected_model_enum_declaration_rows(),
+                model_enum_members: emission.selected_model_enum_member_rows(),
                 model_enum_shapes: &model_shapes,
                 source_records: identities.source_records(),
-                source_tuples: root.emission().selected_source_tuple_rows(),
+                source_tuples: emission.selected_source_tuple_rows(),
                 source_unions: identities.source_unions(),
                 source_enums: &enums,
                 source_collections: &collections,
