@@ -658,3 +658,33 @@ PASS / review-cleared: FND006 now has a fixed latest outcome, with no new findin
 ```
 
 Reviewer scope: the exact source diff and all eleven custody identities, with direct non-mutating rustfmt confirmation in disposition-5/fmt-check.log. No Cargo command, test, broad/deep/workspace build, aggregate gate, source edit, push, peer chase or merge was run. The13 functional exact repair receipts remain valid for unchanged assertions; this does not turn the earlier805 pass/13 fail/2 ignored package-unit run into a whole-suite PASS. Lead owns the once-only continuation of unrun gate stages after current artifact custody. User/planner merge hold remains. No new method or global matrix rerun.
+
+## New findings (disposition pass 6)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | The root writer-budget oracle calibrated only identity_rows but used that partial allowance for complete public-writer success, omitting the following equality_witness materialization on the same native ledger. The gate failed at the supposed exact-success assertion: identity bound5992 could not pay the real equality work charge59 (attempted6051). The test therefore did not establish the complete writer exact/one-short boundary. | tests/it/bare_package.rs:1886-1960 |
+
+## Dispositions — targeted writer oracle round 6
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-007 | fixed | The repaired test retains the original identity-specific one-short assertions, then invokes actual equality_witness immediately after actual identity_rows on the same measured budget and derives complete_need from cumulative consumption. Complete one-short public writes must equal the real native equality denial, including resource/amount/locus/bound, correct stage setting and exceeded amount, and leave no directory. Exact complete bounds write identities and equality, with equality bytes equal to the genuine measured rows. No charge constants, normalization, production fallback or test weakening was added. |
+
+## Current targeted disposition verdict
+
+PASS / no open findings. Candidate74a3791c94d6a0aaab0b9e6f26acdd7850190b50 differs from fully reviewed/custody3a17b487593532a1463bd44cc1b4a94625ceec69 only in tests/it/bare_package.rs; production, dependencies, specs and SRs are identical. Prior findings remain closed and immutable.
+
+Source inspected: complete named-emission byte equality; identity-specific work/storage one-short resource/locus/bound assertions; same-ledger identity then equality measurement; actual complete one-short oracle and full NativeRowError equality; stage quantities; no-directory denials; exact writer success and complete equality-file bytes. The live writer identity_file/equality_file sequence was checked as context.
+
+```rust
+    let equality = built
+        .emission
+        .equality_witness(read.admitted(), &mut measure)
+        .expect("measure the writer's equality materialization after identities");
+    let complete_need = measure.consumed();
+    assert!(complete_need.work > need.work);
+    assert!(complete_need.storage > need.storage);
+```
+
+Evidence: original final-main gate root result569 passed/1 failed/6 existing ignored with the exact budget panic retained at4502–4512 in /tmp/IR-1383-authority-combined-final-3a17b4875.log. Coder exact test /tmp/IR-1383-writer-budget-exact.log executes1 and passes with cargo_exit=0; /tmp/IR-1383-writer-budget-fmt-check.log records rustfmt_exit=0. Reviewer inspected these real receipts and the entire single-file diff; git diff --check passes. No tests/Cargo/broad/deep/matrix/aggregate or formatting command was rerun by reviewer, as explicitly directed. Existing root matrix PASS9 bindings and all other completed gate stages are retained; the targeted repair is not a whole root rerun PASS. Lead owns only the still-unrun docs/analyze continuation after latest custody. User authorizes root admin merge after required checks; this review performs no merge and grants no new authority. No production edit, push, review clone, peer write or head chase.
