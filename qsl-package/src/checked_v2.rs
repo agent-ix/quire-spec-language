@@ -1301,7 +1301,14 @@ impl AdmittedPackageRead<'_> {
                     | Code::ConflictingIdentityWitness => {
                         witness(crate::bare::IdentityWitnessRefusal::Foreign)
                     }
-                    _ => witness(crate::bare::IdentityWitnessRefusal::Unknown),
+                    Code::UnknownNode
+                    | Code::UnavailableIdentityWitness
+                    | Code::IncompleteIdentityWitness
+                    | Code::UnresolvedSelectedDeclaration => {
+                        witness(crate::bare::IdentityWitnessRefusal::Unknown)
+                    }
+                    // A code the whole-witness validation does not produce.
+                    Code::UnsupportedExactType => fault(),
                 }
             })?;
         let slots = project_package(

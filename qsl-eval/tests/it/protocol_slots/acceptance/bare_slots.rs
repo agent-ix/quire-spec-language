@@ -706,7 +706,7 @@ fn assert_pristine(meter: &Meter) {
 /// `supplied_identities_are_validated_against_the_admitted_package` (the
 /// equality-witness reasons have no producer on the reader view, which reads
 /// its equality from the emission).
-#[trace("TC-1333", "TC-1331", "FR-533-AC-15", "FR-531-AC-5")]
+#[trace("TC-1333", "TC-1331", "FR-533-AC-15", "FR-531-AC-5", "FR-390-AC-66")]
 #[test]
 fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
     let package = fixture();
