@@ -341,8 +341,8 @@ fn ordinary_ci_cargo_lane_inherits_canonical_checkout() {
     let calls = fs::read_to_string(log).unwrap();
     assert_eq!(
         calls.lines().count(),
-        7,
-        "all ordinary default-feature Cargo commands must run"
+        8,
+        "all ordinary default-feature Cargo commands must run, including canonical-types"
     );
     for line in calls.lines() {
         let (command, exported) = line.split_once('\t').unwrap();

@@ -553,6 +553,17 @@ fn aggregate_reaches_default_then_all_features_without_changing_recipe_order() {
         expected("caller target/ci-default-features", DEFAULT_COMMANDS)
             + &expected("caller target/ci-all-features", ALL_COMMANDS)
             + &deep_calls("caller target/ci-default-features")
+            + &expected(
+                "caller target",
+                &[&[
+                    "run",
+                    "--locked",
+                    "--package",
+                    "xtask",
+                    "--",
+                    "canonical-types"
+                ]]
+            )
     );
 }
 
