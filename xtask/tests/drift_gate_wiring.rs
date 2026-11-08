@@ -31,6 +31,43 @@ const DRIFT_GATES: [(&str, &str); 6] = [
     ),
 ];
 
+/// `CI_CHECKS` entries that are build and test lanes, not drift gates. A new
+/// `CI_CHECKS` entry belongs here or in `DRIFT_GATES`.
+const NON_DRIFT_LANES: [&str; 11] = [
+    "conformance",
+    "check-no-committed-binaries",
+    "ci-default-features",
+    "ci-all-features",
+    "test-deep-format",
+    "ci-clean-build",
+    "seam-probe",
+    "refinement-versioning",
+    "cargo-deny-bans",
+    "ci-docs",
+    "build-no-std",
+];
+
+#[trace("TC-745", "FR-270-AC-6")]
+#[test]
+fn every_ci_check_is_a_drift_gate_or_a_named_lane() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask lives one level below the workspace root");
+    let makefile = fs::read_to_string(root.join("Makefile")).expect("the Makefile reads");
+    let ci = makefile
+        .lines()
+        .find_map(|line| line.strip_prefix("CI_CHECKS :="))
+        .expect("the Makefile has the CI_CHECKS aggregate list");
+    for name in ci.split_whitespace() {
+        let placed = DRIFT_GATES.iter().any(|(target, _)| *target == name)
+            || NON_DRIFT_LANES.contains(&name);
+        assert!(
+            placed,
+            "CI_CHECKS entry {name} is neither a drift gate nor a named lane"
+        );
+    }
+}
+
 #[trace("TC-745", "FR-270-AC-4")]
 #[test]
 fn every_drift_gate_is_a_make_ci_prerequisite_with_its_command() {
@@ -62,7 +99,7 @@ fn every_drift_gate_is_a_make_ci_prerequisite_with_its_command() {
 
 /// ADR-032 section 3: the gate register has one owner row per `CI_CHECKS`
 /// drift gate and no row for anything else.
-#[trace("TC-745", "FR-270-AC-4")]
+#[trace("TC-745", "FR-270-AC-6")]
 #[test]
 fn the_adr_032_gate_register_matches_the_drift_gates() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
