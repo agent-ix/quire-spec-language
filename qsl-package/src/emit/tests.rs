@@ -361,7 +361,7 @@ fn operand_slot_numbering_visits_only_identity_paths_in_canonical_order() {
     let rows = write_operand_slots(&mut nodes, ceiling()).unwrap();
     let expected_rows = rows.clone();
     assert_eq!(nodes[0].body, foreign);
-    assert!(!rows[0].contains(&99));
+    assert!(!rows[0].contains(&quire_contract_model::CheckedOperandEntry::Node(99)));
     let restored = document_nodes(CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
@@ -1924,6 +1924,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
         MonitorPlanAmbiguous,
         RefinementSubjectNotEmitted,
         RefinementIdentityEncoding,
+        LiteralEncoding,
         RefinementNotEmitted,
         UnlocatedRefinementDeclaration,
         MissingTemporalClockSelection,
@@ -1951,6 +1952,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::MonitorPlanAmbiguous { .. }) => Seen::MonitorPlanAmbiguous,
             Err(EmitRefusal::RefinementSubjectNotEmitted) => Seen::RefinementSubjectNotEmitted,
             Err(EmitRefusal::RefinementIdentityEncoding) => Seen::RefinementIdentityEncoding,
+            Err(EmitRefusal::LiteralEncoding) => Seen::LiteralEncoding,
             Err(EmitRefusal::RefinementNotEmitted) => Seen::RefinementNotEmitted,
             Err(EmitRefusal::UnlocatedRefinementDeclaration) => {
                 Seen::UnlocatedRefinementDeclaration

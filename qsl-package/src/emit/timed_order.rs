@@ -501,13 +501,15 @@ fn comparison(term: &CheckedTerm, key: &mut Vec<Token>) -> Result<(), OrderFault
 }
 
 /// A literal's value: a number as an exact rational, text by its bytes.
-fn literal_token(kind: LiteralKind, value: &serde_json::Value) -> Token {
+fn literal_token(kind: LiteralKind, value: &quire_contract_model::CheckedJson) -> Token {
     if let Some(flag) = value.as_bool() {
         return Token::Boolean(flag);
     }
-    let spelled = match value {
-        serde_json::Value::String(text) => text.clone(),
-        other => other.to_string(),
+    let spelled = match value.as_str() {
+        Some(text) => text.to_owned(),
+        None => value
+            .number_text()
+            .map_or_else(|| format!("{:?}", value), str::to_owned),
     };
     match kind {
         LiteralKind::Text => Token::Text(spelled.into()),
@@ -526,12 +528,11 @@ fn parse_rational(spelled: &str) -> Option<Rational> {
 
 fn rational(term: &CheckedTerm) -> Result<Rational, OrderFault> {
     match term {
-        CheckedTerm::Literal { value, .. } => match value {
-            serde_json::Value::String(text) => parse_rational(text),
-            serde_json::Value::Number(number) => parse_rational(&number.to_string()),
-            _ => None,
-        }
-        .ok_or(OrderFault::Malformed),
+        CheckedTerm::Literal { value, .. } => value
+            .as_str()
+            .or_else(|| value.number_text())
+            .and_then(parse_rational)
+            .ok_or(OrderFault::Malformed),
         _ => Err(OrderFault::Malformed),
     }
 }

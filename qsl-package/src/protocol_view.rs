@@ -55,7 +55,6 @@ use quire_contract_model::{
     CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef, CheckedTerm, LiteralKind,
     TemporalBinding,
 };
-use serde_json::Value;
 
 use crate::wire_form::{has_form, has_tag, WireForm, WireTag};
 
@@ -404,9 +403,9 @@ pub(crate) fn text(term: &CheckedTerm) -> Option<&str> {
     match term {
         CheckedTerm::Literal {
             value_kind: LiteralKind::Text,
-            value: Value::String(text),
+            value,
             ..
-        } => Some(text),
+        } => value.as_str(),
         _ => None,
     }
 }
@@ -415,11 +414,12 @@ pub(crate) fn integer(term: &CheckedTerm) -> Option<u64> {
     match term {
         CheckedTerm::Literal {
             value_kind: LiteralKind::Integer,
-            value: Value::String(digits),
+            value,
             ..
-        } if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) => {
-            digits.parse().ok()
-        }
+        } => value
+            .as_str()
+            .filter(|digits| !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()))
+            .and_then(|digits| digits.parse().ok()),
         _ => None,
     }
 }

@@ -736,10 +736,10 @@ fn graph_key(node: &FormulaNodeUse<'_>) -> Option<Option<IntervalKey>> {
     Some(match node.interval.as_ref() {
         None => None,
         Some(Interval::Integer { lower, upper }) => Some(IntervalKey::Steps {
-            lower: u64::try_from(lower).ok()?,
+            lower: lower.to_u64()?,
             upper: match upper {
                 None => None,
-                Some(upper) => Some(u64::try_from(upper).ok()?),
+                Some(upper) => Some(upper.to_u64()?),
             },
         }),
         Some(Interval::Timed {
@@ -750,8 +750,8 @@ fn graph_key(node: &FormulaNodeUse<'_>) -> Option<Option<IntervalKey>> {
         }) => match upper {
             Some(upper) if counts_ticks(lower, upper, lower_end, upper_end) => {
                 Some(IntervalKey::Steps {
-                    lower: u64::try_from(&lower.numerator).ok()?,
-                    upper: Some(u64::try_from(&upper.numerator).ok()?),
+                    lower: lower.numerator.to_u64()?,
+                    upper: Some(upper.numerator.to_u64()?),
                 })
             }
             _ => Some(IntervalKey::Timed {

@@ -405,9 +405,7 @@ pub(crate) fn counts_ticks(
     lower_end: &CheckedIntervalEnd,
     upper_end: &CheckedIntervalEnd,
 ) -> bool {
-    let integral = |bound: &CheckedOperationRational| {
-        u64::try_from(&bound.denominator).is_ok_and(|denominator| denominator == 1)
-    };
+    let integral = |bound: &CheckedOperationRational| bound.denominator.to_u64() == Some(1);
     *lower_end == CheckedIntervalEnd::Closed
         && *upper_end == CheckedIntervalEnd::Closed
         && integral(lower)
@@ -610,7 +608,7 @@ fn graph_shape(
         }
         Some(CheckedOperationInterval::Integer {
             upper: Some(upper), ..
-        }) => u64::try_from(upper).map_err(|_| ReachFault::Overflow)?,
+        }) => upper.to_u64().ok_or(ReachFault::Overflow)?,
         // The same predicate `shape` applies to an in-process timed
         // interval: closed ends and integral bounds count ticks.
         Some(CheckedOperationInterval::Timed {
@@ -622,7 +620,7 @@ fn graph_shape(
             if !counts_ticks(lower, upper, lower_end, upper_end) {
                 return Err(ReachFault::Timed);
             }
-            u64::try_from(&upper.numerator).map_err(|_| ReachFault::Overflow)?
+            upper.numerator.to_u64().ok_or(ReachFault::Overflow)?
         }
     };
     Ok(NodeShape {
@@ -693,12 +691,10 @@ fn plan_node(entry: &FormulaNodeUse<'_>, operands: &[usize]) -> Result<Node, Int
 /// The offsets of a package interval, as `Window::of` reads a checked one.
 fn window_of(interval: Option<&CheckedOperationInterval>) -> Result<Window, InternalFault> {
     let fault = |invariant: &'static str| InternalFault::new("temporal.facts", invariant);
-    fn tick<T>(value: &T) -> Result<u64, InternalFault>
-    where
-        for<'a> u64: TryFrom<&'a T>,
-    {
-        u64::try_from(value)
-            .map_err(|_| InternalFault::new("temporal.facts", "interval-bound-in-u64"))
+    fn tick(value: &quire_exact::Integer) -> Result<u64, InternalFault> {
+        value
+            .to_u64()
+            .ok_or_else(|| InternalFault::new("temporal.facts", "interval-bound-in-u64"))
     }
     Ok(match interval {
         None => Window::From { lower: 0 },

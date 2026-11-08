@@ -184,8 +184,8 @@ fn emits_and_admits_the_normative_three_task_claim_bodies() {
     assert_eq!(
         response.response_bound().expect("response bound").value,
         quire_contract_model::CheckedLiteralValue::Rational {
-            numerator: 12.into(),
-            denominator: 1.into(),
+            numerator: 12_i64.into(),
+            denominator: 1_i64.into(),
         }
     );
 

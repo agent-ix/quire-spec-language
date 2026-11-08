@@ -66,6 +66,16 @@ pub enum WireIdError {
         /// The slot the segment holds.
         slot: u64,
     },
+    /// A selected-dependency graph position was read as a path segment. The
+    /// wire carries it only as an operand row entry (FR-322), never in a
+    /// node id's path.
+    #[error("dependency position {package}:{node} is a row entry, not a path segment")]
+    DependencyPosition {
+        /// The selected dependency whose graph the position indexes.
+        package: Box<str>,
+        /// The position in that dependency's graph.
+        node: u64,
+    },
     /// An operand of the key is not a node of the document's graph, so the
     /// key has no wire form there.
     #[error("operand {operand} of the key is not a node of the graph")]
@@ -403,6 +413,12 @@ impl StructuralKeys {
                 CheckedNodePathSegment::Operand(slot) => {
                     Err(WireIdError::OperandSlot { slot: *slot })
                 }
+                CheckedNodePathSegment::Dependency { package, node } => {
+                    Err(WireIdError::DependencyPosition {
+                        package: package.clone(),
+                        node: *node,
+                    })
+                }
                 CheckedNodePathSegment::Node(operand) => Ok(PathSegment::Node(
                     self.by_operand[&Arc::as_ptr(operand)].1.clone(),
                 )),
@@ -479,6 +495,12 @@ fn key_with(
             Some(CheckedNodePathSegment::Operand(slot)) => {
                 return Err(WireIdError::OperandSlot { slot: *slot })
             }
+            Some(CheckedNodePathSegment::Dependency { package, node }) => {
+                return Err(WireIdError::DependencyPosition {
+                    package: package.clone(),
+                    node: *node,
+                })
+            }
             Some(CheckedNodePathSegment::Node(nested)) => stack.push(frame(nested)),
             None => {
                 let done = stack.pop().expect("the top frame exists");
@@ -507,7 +529,11 @@ fn index_segments(id: &CheckedNodeId) -> Vec<u64> {
         match segments.next() {
             Some(CheckedNodePathSegment::Index(index)) => found.push(*index),
             Some(CheckedNodePathSegment::Node(nested)) => pending.push(nested.path.iter()),
-            Some(CheckedNodePathSegment::Name(_) | CheckedNodePathSegment::Operand(_)) => {}
+            Some(
+                CheckedNodePathSegment::Name(_)
+                | CheckedNodePathSegment::Operand(_)
+                | CheckedNodePathSegment::Dependency { .. },
+            ) => {}
             None => {
                 pending.pop();
             }
