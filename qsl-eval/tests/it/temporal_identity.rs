@@ -171,6 +171,7 @@ fn a_differing_binding_is_an_admission_error_that_charges_nothing() {
         edit(&mut asked);
         let mut meter = unlimited();
         let failure = evaluate_temporal_evidence(&fixed.subject(&[]), &asked, &mut meter)
+            .map(|issued| issued.result().clone())
             .expect_err("a differing binding is an admission error, never a result");
         assert_eq!(mismatched_dimension(failure), dimension);
         assert!(meter.admitted_charges().is_empty(), "{dimension}");
@@ -185,6 +186,7 @@ fn a_differing_binding_is_an_admission_error_that_charges_nothing() {
             .expect("a clock");
     let mut meter = unlimited();
     let failure = evaluate_temporal_evidence(&stamped.subject(&[]), &asked, &mut meter)
+        .map(|issued| issued.result().clone())
         .expect_err("another timestamp unit");
     assert_eq!(mismatched_dimension(failure), "TimestampUnit");
     assert!(meter.admitted_charges().is_empty());
@@ -194,6 +196,7 @@ fn a_differing_binding_is_an_admission_error_that_charges_nothing() {
         serde_json::from_value(fixed_clock("7", "1", "ms")).expect("a clock");
     let mut meter = unlimited();
     let failure = evaluate_temporal_evidence(&fixed.subject(&[]), &asked, &mut meter)
+        .map(|issued| issued.result().clone())
         .expect_err("epoch and unit differ");
     assert_eq!(mismatched_dimension(failure), "Epoch");
     assert!(meter.admitted_charges().is_empty());
@@ -206,6 +209,7 @@ fn a_differing_binding_is_an_admission_error_that_charges_nothing() {
     .expect("a clock");
     let mut meter = unlimited();
     let failure = evaluate_temporal_evidence(&event.subject(&[]), &asked, &mut meter)
+        .map(|issued| issued.result().clone())
         .expect_err("another sequence authority");
     assert_eq!(mismatched_dimension(failure), "SequenceAuthority");
     assert!(meter.admitted_charges().is_empty());
@@ -346,6 +350,7 @@ fn each_member_of_a_request_changes_its_result_identity_and_leaves_the_first_res
             ..SCALAR_LIMITS_UNLIMITED
         });
         let result = evaluate_temporal_evidence(&base_env.subject(&[]), &base, &mut meter)
+            .map(|issued| issued.result().clone())
             .expect("a result");
         format!("{:?}", result.result_identity)
     };

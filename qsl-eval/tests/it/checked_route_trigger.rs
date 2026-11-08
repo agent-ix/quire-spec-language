@@ -79,7 +79,8 @@ pub(crate) fn refused_on(
     fields: &[(&str, String)],
 ) {
     let mut meter = unlimited();
-    let result = evaluate_temporal_evidence(subject, asked, &mut meter);
+    let result = evaluate_temporal_evidence(subject, asked, &mut meter)
+        .map(|issued| issued.result().clone());
     let Err(CallFailure::Admission(failure)) = result else {
         panic!(
             "an admission refusal `{cause}`, not {:?}",

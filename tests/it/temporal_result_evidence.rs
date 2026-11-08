@@ -206,6 +206,80 @@ fn both_request(package: &EvidencePackage<'_>, clause: &CheckedNodeId) -> Eviden
     asked
 }
 
+/// The issued carrier retains the actual complete output, including an
+/// immutable predecessor reference, without another evaluation.
+#[trace("FR-526-AC-30", "TC-1321")]
+#[test]
+fn issued_full_result_borrows_preserve_outputs_and_do_not_evaluate_again() {
+    use super::temporal_package_route::unlimited;
+    use qsl_eval::temporal::evidence::{Relation, Settlement};
+
+    let built = both();
+    let read = built.read(&built.emission);
+    let package = read_back(&read);
+    let [clause] = clause_ids(&package).try_into().expect("one clause");
+    let asked = both_request(&package, &clause);
+    let mut meter = unlimited();
+    let original = package
+        .evaluate_temporal_evidence(&clause, &asked, &mut meter)
+        .expect("an issued original");
+    let charged = format!("{:?}", meter.admitted_charges());
+    assert!(!meter.admitted_charges().is_empty());
+    let result = original.result();
+    assert_eq!(result.truth, Some(Truth::True));
+    assert_eq!(result.settlement, Some(Settlement::DecisiveWitness));
+    assert_eq!(result.support.len(), 2);
+    assert!(result.support.iter().all(|entry| entry.position == 0));
+    assert_eq!(
+        result.subject,
+        expected_subject(read.admitted(), &clause, result.subject.occurrence.ordinal)
+    );
+    let original_ledger = result.ledger.clone();
+    let predecessor = original.predecessor().clone();
+    assert_eq!(&predecessor, &result.result_identity);
+    assert!(std::ptr::eq(original.result(), original.result()));
+
+    let mut correction = asked.clone();
+    for position in &mut correction.positions {
+        position
+            .valuations
+            .values_mut()
+            .for_each(|value| *value = Valuation::False);
+    }
+    correction.relation = Relation::Superseding(predecessor.clone());
+    correction.ledger = Some(original_ledger.clone());
+    let corrected = package
+        .evaluate_temporal_evidence(&clause, &correction, &mut meter)
+        .expect("an issued correction");
+    assert_eq!(corrected.result().truth, Some(Truth::False));
+    assert_eq!(corrected.result().settlement, Some(Settlement::ClosedScope));
+    assert_ne!(corrected.result().support, original.result().support);
+    assert_ne!(corrected.result().ledger, original_ledger);
+    assert_eq!(corrected.result().lineage, 1);
+    assert_eq!(
+        corrected.result().relation,
+        Relation::Superseding(predecessor)
+    );
+    let after_correction = format!("{:?}", meter.admitted_charges());
+    assert_ne!(after_correction, charged);
+
+    let mut snapshot = original.result().clone();
+    snapshot.truth = Some(Truth::False);
+    snapshot.support.clear();
+    snapshot.settlement = None;
+    snapshot.ledger = corrected.result().ledger.clone();
+    assert_eq!(original.result().truth, Some(Truth::True));
+    assert_eq!(original.result().support.len(), 2);
+    assert_eq!(
+        original.result().settlement,
+        Some(Settlement::DecisiveWitness)
+    );
+    assert_eq!(original.result().ledger, original_ledger);
+    assert_eq!(original.result().lineage, 0);
+    assert_eq!(original.result().relation, Relation::Original);
+    assert_eq!(format!("{:?}", meter.admitted_charges()), after_correction);
+}
+
 /// FR-526-AC-22 (TC-1321 row 22): the result is `True` and `support` is
 /// exactly the two entries (position 0, `a`) and (position 0, `b`), each
 /// naming position 0's observation; a reading that merges entries by

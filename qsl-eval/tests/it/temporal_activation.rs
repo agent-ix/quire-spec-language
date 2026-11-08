@@ -932,6 +932,7 @@ pub(crate) fn call(
 ) -> Result<EvidenceResult, CallFailure> {
     let _ = env;
     evaluate_temporal_evidence(subject, request, &mut unlimited())
+        .map(|issued| issued.result().clone())
 }
 
 pub(crate) fn expect_refusal(result: Result<EvidenceResult, CallFailure>, cause: &str) {
@@ -1043,7 +1044,8 @@ fn deliveries_resolve_instances_and_a_contradiction_is_refused_uncharged() {
     let mut clash = two.clone();
     clash.deliveries[2].payload = Payload::new(b"other".as_slice());
     let mut meter = unlimited();
-    let refused = evaluate_temporal_evidence(&subject, &clash, &mut meter);
+    let refused = evaluate_temporal_evidence(&subject, &clash, &mut meter)
+        .map(|issued| issued.result().clone());
     expect_refusal(refused, "delivery-contradiction");
     assert!(meter.admitted_charges().is_empty());
 }
@@ -1232,7 +1234,8 @@ fn a_regressing_watermark_is_refused_and_the_progress_ledger_is_unchanged() {
     asked.progress_ledger = Some(kept.clone());
     asked.decision_progress = Some(50);
     let mut meter = unlimited();
-    let refused = evaluate_temporal_evidence(&subject, &asked, &mut meter);
+    let refused = evaluate_temporal_evidence(&subject, &asked, &mut meter)
+        .map(|issued| issued.result().clone());
     expect_refusal(refused, "progress-contradiction");
     assert!(meter.admitted_charges().is_empty());
     let binding = {

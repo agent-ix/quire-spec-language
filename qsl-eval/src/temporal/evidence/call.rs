@@ -258,18 +258,74 @@ pub fn evaluate_temporal_evidence(
     subject: &EvidenceSubject<'_>,
     request: &EvidenceRequest,
     meter: &mut Meter,
-) -> Result<EvidenceResult, CallFailure> {
+) -> Result<EvaluatedEvidence, CallFailure> {
     let resolved = resolve(subject, request)?;
     let facts = admit(&resolved, request, meter)?;
     let shape = resolved.shape();
     let outcome = assess(&facts, &shape, meter)?;
-    Ok(conclude(&facts, outcome, meter))
+    Ok(EvaluatedEvidence {
+        result: conclude(&facts, outcome, meter),
+    })
+}
+
+/// An immutable full result issued only by the temporal evidence evaluator.
+///
+/// The owned result binds the checked subject and admitted request to the actual
+/// truth, support, settlement and returned ledgers. Reading it performs no
+/// evaluation or metering. Cloning a read result produces ordinary data, not
+/// another issued result. Result identities alone authenticate input members,
+/// not caller-supplied output data (FR-526).
+///
+/// The carrier cannot be constructed from caller-authored data:
+/// ```compile_fail
+/// use qsl_eval::temporal::evidence::{EvaluatedEvidence, EvidenceResult};
+/// fn forge(result: EvidenceResult) -> EvaluatedEvidence {
+///     EvaluatedEvidence { result }
+/// }
+/// ```
+/// Its original result cannot be changed:
+/// ```compile_fail
+/// use qsl_eval::temporal::evidence::{EvaluatedEvidence, Truth};
+/// fn change(issued: &mut EvaluatedEvidence) {
+///     issued.result().truth = Some(Truth::False);
+/// }
+/// ```
+/// A changed snapshot cannot be substituted for an issued result:
+/// ```compile_fail
+/// use qsl_eval::temporal::evidence::{EvaluatedEvidence, Truth};
+/// fn consume(_: &EvaluatedEvidence) {}
+/// fn substitute(issued: &EvaluatedEvidence) {
+///     let mut snapshot = issued.result().clone();
+///     snapshot.truth = Some(Truth::False);
+///     consume(&snapshot);
+/// }
+/// ```
+#[derive(Debug)]
+pub struct EvaluatedEvidence {
+    result: EvidenceResult,
+}
+
+impl EvaluatedEvidence {
+    /// Borrow the complete original result, without recomputing it.
+    pub fn result(&self) -> &EvidenceResult {
+        &self.result
+    }
+
+    /// Borrow this issued result's identity for use as the direct predecessor
+    /// in the next request, including when this result is `Original`.
+    /// The previous link of the current result is in `result().relation`.
+    /// Admission still requires the latest entry in the supplied ledger.
+    pub fn predecessor(&self) -> &ResultIdentity {
+        &self.result.result_identity
+    }
 }
 
 /// Check an encoded result identity against its checked subject and request,
 /// using the same member encoder as evaluation without evaluating any positions.
 /// The work ceiling is read from the identity because it belongs to the original
 /// evaluation's meter, rather than to the reader.
+/// This checks input identity only; it does not authenticate truth, support,
+/// settlement or ledgers in a caller-held `EvidenceResult`.
 ///
 /// # Errors
 /// Returns the subject-selection or binding refusal when the supplied authority

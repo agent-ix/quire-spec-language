@@ -28,10 +28,10 @@ use qsl_semantics::check::{Activation, CheckedFormula, FormulaNode, TemporalProf
 use quire_eval::CallFailure;
 use quire_exact::Meter;
 
-use super::call::{evaluate_temporal_evidence, fault, refusal, select_occurrence};
-use super::request::{
-    ActivationRow, EvidenceRequest, EvidenceResult, EvidenceSubject, SubjectOccurrence,
+use super::call::{
+    evaluate_temporal_evidence, fault, refusal, select_occurrence, EvaluatedEvidence,
 };
+use super::request::{ActivationRow, EvidenceRequest, EvidenceSubject, SubjectOccurrence};
 use crate::temporal::facts::{atom_numbers, counts_ticks, ClauseFacts, ClauseFormula};
 use crate::temporal::ledger::LedgerBinding;
 use crate::temporal::DEFAULT_COVERED_POSITIONS;
@@ -611,7 +611,7 @@ impl<'p> EvidencePackage<'p> {
         clause: &CheckedNodeId,
         request: &EvidenceRequest,
         meter: &mut Meter,
-    ) -> Result<EvidenceResult, CallFailure> {
+    ) -> Result<EvaluatedEvidence, CallFailure> {
         let subject = self.subject(clause, request.occurrence.as_ref())?;
         evaluate_temporal_evidence(&subject, request, meter)
     }
