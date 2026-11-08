@@ -34,3 +34,18 @@ Ticket: QSL-599. Plan completion: not assessed. Every claimed AC now carries a t
 ## Coverage
 
 Plan completion: not assessed. `quoin matrix` was not available within the review window (the full-repo matrix run exceeded 300 s), so tag presence was checked by grep over `#[trace(..)]` and the semantic check was done by hand. No stubs were added. The diff adds no production code, so no ownerless code.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | The new post-work read in `run` uses `cancel.cause()`, not `cancel.tripped()`. FR-276 Behavior says the operation "shall read the handle's `tripped()` cause and return its cancelled failure". quire-exact documents `tripped` as follows: "A handle cancelled after the last charge of an operation is not tripped, and that operation's result stands." With `cause()`, an engine that finished its last charge before the cancel landed has its settled verdict (proved, refuted with a counterexample) replaced by `incomplete`/Cancelled. That item was settled, not open, so FR-276 Outputs ("items already settled keep their records") says it keeps its record. The same crate already uses `tripped()` for this decision (`qsl-analyze/src/contract_check/mod.rs:168`). Fix: read `cancel.tripped()` after work. Keep `cause()` for the pre-work check, because an already-cancelled handle must refuse before the first charge. Make the FR-276-AC-4 test's blocking engine charge via `cancel.poll()` instead of spinning on `cause()`, so the second item trips the handle the way a real engine's meter does. | qsl-analyze/src/analyze.rs:1138-1148 |
+
+## Dispositions
+
+Round 1, against fix commit 14ebd238a (head; be2d3d5a2 and 6d649c8d5 are `=` to the reviewed commits under `git range-diff`).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |

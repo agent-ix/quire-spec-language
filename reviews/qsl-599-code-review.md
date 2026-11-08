@@ -33,3 +33,13 @@ TC-784 (`value_family_end_to_end.rs`) goes through the public `qsl_replay::spine
 ## Verdict
 
 **NOT MERGEABLE as tagged.** The FR-299 TC-784 tests are sound, go through the public API, and can fail. AC-1 to AC-4 are backed as written. The `execute` leg goes through `spine::run`, which compiles and then executes on the interpreter through the execution seam. That is the `quire run` path, and `from_run(Ok) == from_call` (`outcome.rs:1793`). The FR-285-AC-6 tags are two thirds correct (FND-002). FND-001 is blocking: the FR-276-AC-4 test asserts the opposite of the AC's open-item rule.
+
+## Dispositions
+
+Round 1, against fix commit 14ebd238a (head). The branch was rebased onto 3fd46b41a; `git range-diff` shows be2d3d5a2 and 6d649c8d5 equal (`=`) to 5f54991eb and 1477a62db.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |

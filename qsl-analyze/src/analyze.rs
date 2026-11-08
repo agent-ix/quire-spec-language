@@ -1136,9 +1136,11 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
         )));
     }
     let report = work(cancel, engine);
-    // An item still open when the handle is cancelled settles `incomplete`
-    // with the cancellation cause (FR-276), whatever the engine returned.
-    if let Some(source) = cancel.cause() {
+    // An item whose charge saw the cancel was still open when the handle was
+    // cancelled and settles `incomplete` with its cause (FR-276); a handle
+    // cancelled after the item's last charge is not tripped and the verdict
+    // stands.
+    if let Some(source) = cancel.tripped() {
         return record(terminal(TerminalRecord::incomplete(
             index,
             backend,
@@ -2071,7 +2073,7 @@ mod tests {
             item(1, move |cancel| {
                 blocked.send(()).expect("the canceller waits");
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-                while cancel.cause().is_none() {
+                while !cancel.poll() {
                     assert!(
                         std::time::Instant::now() < deadline,
                         "the handle was never cancelled"
