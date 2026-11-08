@@ -1135,7 +1135,17 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
             IncompleteCause::Cancelled { source },
         )));
     }
-    settle(index, kind, engine, work(cancel, engine))
+    let report = work(cancel, engine);
+    // An item still open when the handle is cancelled settles `incomplete`
+    // with the cancellation cause (FR-276), whatever the engine returned.
+    if let Some(source) = cancel.cause() {
+        return record(terminal(TerminalRecord::incomplete(
+            index,
+            backend,
+            IncompleteCause::Cancelled { source },
+        )));
+    }
+    settle(index, kind, engine, report)
 }
 
 fn terminal(record: TerminalRecord) -> Settlement {
@@ -2014,21 +2024,23 @@ mod tests {
         assert_eq!(terminal.diagnostic(), Some(wrong));
         assert_eq!(terminal.backend(), Some(&BackendId::new("test-a")));
     }
-    /// FR-276-AC-4: a two-item request whose test engine settles the first
-    /// item and then blocks until the handle is cancelled (from a second
-    /// thread) returns the first item's record unchanged and settles the
-    /// second `incomplete` with the cancellation cause, running no work for
-    /// it.
+    /// FR-276-AC-4: the test engine settles the first item, then blocks on
+    /// the second until the handle is cancelled from another thread. The
+    /// first record is unchanged, the item still open settles `incomplete`
+    /// with the cancellation cause, and a later item runs no work.
     #[trace("TC-757", "FR-276-AC-4")]
     #[test]
-    fn a_cancel_after_the_first_item_keeps_it_and_settles_the_second_incomplete() {
-        let failed = || {
+    fn a_cancel_settles_the_item_still_open_incomplete_and_keeps_the_settled_one() {
+        fn failed() -> EngineReport {
             EngineReport::Refused(Refusal::Failed(CatalogCode::new(
                 "runtime_invariant",
                 "established-invariant-broken",
             )))
-        };
-        let item = |index, work: Box<dyn FnOnce(&Cancel) -> EngineReport>| {
+        }
+        fn item<'a>(
+            index: usize,
+            work: impl FnOnce(&Cancel) -> EngineReport + 'a,
+        ) -> AnalyzeItem<'a> {
             AnalyzeItem::new(
                 RequestIndex::new(index),
                 Capability::OperationContract,
@@ -2037,63 +2049,52 @@ mod tests {
                 "test-all",
                 work,
             )
-        };
+        }
         let mut engines = Engines::default();
         engines.with(engine_all("test-all")).expect("one engine");
-        let uncancelled = analyze_items(
-            &engines,
-            vec![item(0, Box::new(move |_| failed()))],
-            &Cancel::new(),
-        );
+        let uncancelled = analyze_items(&engines, vec![item(0, |_| failed())], &Cancel::new());
 
         let cancel = Cancel::new();
-        let (settled, wait_for_first) = std::sync::mpsc::channel();
+        let (blocked, wait_for_block) = std::sync::mpsc::channel();
         let canceller = {
             let cancel = cancel.clone();
             std::thread::spawn(move || {
-                wait_for_first.recv().expect("the first item settled");
+                wait_for_block
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .expect("the second item blocked");
                 cancel.cancel(CancelCause::Requested);
             })
         };
-        let second_ran = std::cell::Cell::new(false);
-        let blocking = {
-            let second_ran = &second_ran;
-            vec![
-                item(
-                    0,
-                    Box::new(move |cancel| {
-                        let report = failed();
-                        settled.send(()).expect("the canceller waits");
-                        while cancel.cause().is_none() {
-                            std::thread::yield_now();
-                        }
-                        report
-                    }),
-                ),
-                AnalyzeItem::new(
-                    RequestIndex::new(1),
-                    Capability::OperationContract,
-                    Some(DeclarationFamily::StateModel),
-                    Mode::Bounded,
-                    "test-all",
-                    move |_| {
-                        second_ran.set(true);
-                        failed()
-                    },
-                ),
-            ]
-        };
-        let records = analyze_items(&engines, blocking, &cancel);
+        let third_ran = std::cell::Cell::new(false);
+        let items = vec![
+            item(0, |_| failed()),
+            item(1, move |cancel| {
+                blocked.send(()).expect("the canceller waits");
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                while cancel.cause().is_none() {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "the handle was never cancelled"
+                    );
+                    std::thread::yield_now();
+                }
+                failed()
+            }),
+            item(2, |_| {
+                third_ran.set(true);
+                failed()
+            }),
+        ];
+        let records = analyze_items(&engines, items, &cancel);
         canceller.join().expect("the canceller finished");
 
-        assert_eq!(records.len(), 2);
+        let cancelled = Some(&TerminalValue::Incomplete(IncompleteCause::Cancelled {
+            source: CancelCause::Requested,
+        }));
+        assert_eq!(records.len(), 3);
         assert_eq!(records[0].terminal(), uncancelled[0].terminal());
-        assert_eq!(
-            records[1].terminal().map(TerminalRecord::value),
-            Some(&TerminalValue::Incomplete(IncompleteCause::Cancelled {
-                source: CancelCause::Requested
-            }))
-        );
-        assert!(!second_ran.get());
+        assert_eq!(records[1].terminal().map(TerminalRecord::value), cancelled);
+        assert_eq!(records[2].terminal().map(TerminalRecord::value), cancelled);
+        assert!(!third_ran.get());
     }
 }

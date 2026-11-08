@@ -404,10 +404,44 @@ fn the_run_outcome_is_the_rendering_of_executes_result() {
     }
 }
 
+/// FR-285-AC-6: a supplied `aot` stand-in whose `prepare` reaches
+/// `prepare.compile_work_units` yields `CallFailure::Limit` naming that
+/// setting, category incomplete, exit 22.
+#[trace("TC-769", "FR-285-AC-6")]
+#[test]
+fn a_compile_work_units_stop_exits_22() {
+    let unit = checked();
+    let mut aot = Stub::new();
+    aot.refuse = Some(PrepareFailure::Limit(LimitExceeded::new(
+        Setting::PrepareCompileWorkUnits,
+        1,
+        2,
+    )));
+    let backends = SuppliedBackends {
+        aot: Some(&aot),
+        jit: None,
+    };
+    let failure = qsl_eval::execution::execute(
+        unit.package(),
+        &request("seven", vec![], ExecutionBackendChoice::Aot),
+        &backends,
+        &limits(),
+        &Cancel::new(),
+    )
+    .expect_err("prepare reached its limit");
+    match &failure {
+        CallFailure::Limit(reached) => {
+            assert_eq!(reached.setting.name(), "prepare.compile_work_units");
+        }
+        other => panic!("expected Limit, got {other:?}"),
+    }
+    assert_eq!(failure.category(), Category::Incomplete);
+    assert_eq!(failure.category().exit_code(), 22);
+}
+
 /// FR-279-AC-4: a supplied `aot` stand-in whose `prepare` reaches
 /// `prepare.code_bytes` yields `CallFailure::Limit` with the leaf's record,
 /// category incomplete (exit 22); a `Fault` keeps its `InternalFault`.
-#[trace("TC-769", "FR-285-AC-6")]
 #[trace("TC-760", "FR-279-AC-4")]
 #[test]
 fn a_prepare_limit_and_a_prepare_fault_reach_the_call_failure() {
