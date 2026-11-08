@@ -196,134 +196,152 @@ fn genuine_tick_authority_retains_complete_original_values_and_same_emission() {
 fn complete_handoffs_measure_work_logical_storage_and_read_storage_on_one_budget() {
     use quire_contract_model::{NativeJoinBudget, NativeJoinChargeKind, PackageReadResource};
     for tick in [false, true] {
-    let handoff = |budget: &mut NativeJoinBudget| {
-        let root = if tick {
-            tick_root()
-        } else {
-            root_of(
-                &authored("eventually[0 ms, 3 ms] holds(c.versionNumber = 3)"),
-                "C",
-                &target(),
-            ).unwrap()
+        let handoff = |budget: &mut NativeJoinBudget| {
+            let root = if tick {
+                tick_root()
+            } else {
+                root_of(
+                    &authored("eventually[0 ms, 3 ms] holds(c.versionNumber = 3)"),
+                    "C",
+                    &target(),
+                )
+                .unwrap()
+            };
+            let (progress, subject) = observation::admitted(Some(vec![row(&root)]));
+            let source = root.checked_unit().source().identity().clone();
+            let claim = root.plan().subject().clone();
+            root.admit_authority(
+                PlanAuthoritySelection {
+                    source: &source,
+                    claim: &claim,
+                    observation_subject: &subject,
+                    observation_clock: &observation::clock(),
+                    observation_source: &observation::source(),
+                },
+                Some(progress),
+                limits(),
+                budget,
+                native_locus(),
+            )
         };
-        let (progress, subject) = observation::admitted(Some(vec![row(&root)]));
-        let source = root.checked_unit().source().identity().clone();
-        let claim = root.plan().subject().clone();
-        root.admit_authority(
-            PlanAuthoritySelection {
-                source: &source,
-                claim: &claim,
-                observation_subject: &subject,
-                observation_clock: &observation::clock(),
-                observation_source: &observation::source(),
-            },
-            Some(progress),
-            limits(),
-            budget,
-            native_locus(),
-        )
-    };
-    let mut measured = native_budget();
-    let original = handoff(&mut measured).unwrap();
-    let need = measured.consumed();
-    let read_need = measured.read_storage_consumed();
-    assert!(need.work > 0 && need.storage > 0 && read_need > 0);
-    let mut exact =
-        NativeJoinBudget::new(need.work, need.storage).with_read_storage_limit(read_need);
-    let admitted = handoff(&mut exact).unwrap();
-    assert_eq!(admitted.admitted_order(), original.admitted_order());
-    assert_eq!(admitted.progress_context(), original.progress_context());
-    assert_eq!(exact.consumed(), need);
-    assert_eq!(exact.read_storage_consumed(), read_need);
-    for kind in [NativeJoinChargeKind::Work, NativeJoinChargeKind::Storage] {
-        let mut short = NativeJoinBudget::new(
-            need.work - u64::from(kind == NativeJoinChargeKind::Work),
-            need.storage - u64::from(kind == NativeJoinChargeKind::Storage),
-        )
-        .with_read_storage_limit(read_need);
-        let error = handoff(&mut short).unwrap_err();
-        let PlanAuthorityRefusal::Budget {
-            denied,
-            locus,
-            configured_bound,
-            consumed,
-        } = error
-        else {
-            panic!("the final materialization retains its native denial: {error:?}");
+        let mut measured = native_budget();
+        let original = handoff(&mut measured).unwrap();
+        let need = measured.consumed();
+        let read_need = measured.read_storage_consumed();
+        assert!(need.work > 0 && need.storage > 0 && read_need > 0);
+        let mut exact =
+            NativeJoinBudget::new(need.work, need.storage).with_read_storage_limit(read_need);
+        let admitted = handoff(&mut exact).unwrap();
+        assert_eq!(admitted.admitted_order(), original.admitted_order());
+        assert_eq!(admitted.progress_context(), original.progress_context());
+        assert_eq!(exact.consumed(), need);
+        assert_eq!(exact.read_storage_consumed(), read_need);
+        for kind in [NativeJoinChargeKind::Work, NativeJoinChargeKind::Storage] {
+            let mut short = NativeJoinBudget::new(
+                need.work - u64::from(kind == NativeJoinChargeKind::Work),
+                need.storage - u64::from(kind == NativeJoinChargeKind::Storage),
+            )
+            .with_read_storage_limit(read_need);
+            let error = handoff(&mut short).unwrap_err();
+            let PlanAuthorityRefusal::Budget {
+                denied,
+                locus,
+                configured_bound,
+                consumed,
+            } = error
+            else {
+                panic!("the final materialization retains its native denial: {error:?}");
+            };
+            assert_eq!(denied.kind, kind);
+            assert_eq!(short.first_unpaid(), Some(denied));
+            assert_eq!(locus, short.first_unpaid_locus());
+            assert_eq!(consumed, short.consumed());
+            assert_eq!(
+                configured_bound,
+                match kind {
+                    NativeJoinChargeKind::Work => need.work - 1,
+                    NativeJoinChargeKind::Storage => need.storage - 1,
+                }
+            );
+        }
+        let read_denial = |error: PlanAuthorityRefusal, budget: &NativeJoinBudget, bound| {
+            let (denied, configured) = match error {
+                PlanAuthorityRefusal::ReadExhausted(error) => {
+                    assert_eq!(Some(error.locus), budget.first_unpaid_locus());
+                    (error.denied, error.configured_bound)
+                }
+                PlanAuthorityRefusal::ReadBudgetIncomplete(error) => (error.denied, error.limit),
+                other => panic!("the strict reader preserves its original resource: {other:?}"),
+            };
+            assert_eq!(denied.resource, PackageReadResource::ReadStorage);
+            assert_eq!(Some(denied.amount), budget.first_unpaid_read_storage());
+            assert_eq!(configured, bound);
+            assert!(matches!(
+                budget.first_unpaid_locus().unwrap().source,
+                quire_contract_model::NativeJoinLocusSource::PackageRead(_, _)
+            ));
+            assert!(budget.read_storage_consumed() <= bound);
         };
-        assert_eq!(denied.kind, kind);
-        assert_eq!(short.first_unpaid(), Some(denied));
-        assert_eq!(locus, short.first_unpaid_locus());
-        assert_eq!(consumed, short.consumed());
-        assert_eq!(
-            configured_bound,
-            match kind {
-                NativeJoinChargeKind::Work => need.work - 1,
-                NativeJoinChargeKind::Storage => need.storage - 1,
-            }
-        );
-    }
-    let read_denial = |error: PlanAuthorityRefusal, budget: &NativeJoinBudget, bound| {
-        let (denied, configured) = match error {
-            PlanAuthorityRefusal::ReadExhausted(error) => {
-                assert_eq!(Some(error.locus), budget.first_unpaid_locus());
-                (error.denied, error.configured_bound)
-            }
-            PlanAuthorityRefusal::ReadBudgetIncomplete(error) => (error.denied, error.limit),
-            other => panic!("the strict reader preserves its original resource: {other:?}"),
-        };
-        assert_eq!(denied.resource, PackageReadResource::ReadStorage);
-        assert_eq!(Some(denied.amount), budget.first_unpaid_read_storage());
-        assert_eq!(configured, bound);
-        assert!(matches!(
-            budget.first_unpaid_locus().unwrap().source,
-            quire_contract_model::NativeJoinLocusSource::PackageRead(_, _)
-        ));
-        assert!(budget.read_storage_consumed() <= bound);
-    };
-    for read_bound in [0, read_need - 1] {
-        let mut short =
-            NativeJoinBudget::new(need.work, need.storage).with_read_storage_limit(read_bound);
-        read_denial(handoff(&mut short).unwrap_err(), &short, read_bound);
-        assert!(short.consumed().work > 0);
-        assert!(short.consumed().storage > 0);
-    }
-    let read_bound = read_need * 2 - 1;
-    let mut reused =
-        NativeJoinBudget::new(need.work * 2, need.storage * 2).with_read_storage_limit(read_bound);
-    handoff(&mut reused).unwrap();
-    assert_eq!(reused.consumed(), need);
-    assert_eq!(reused.read_storage_consumed(), read_need);
-    read_denial(handoff(&mut reused).unwrap_err(), &reused, read_bound);
-    assert!(reused.consumed().work > need.work);
-    assert!(reused.consumed().storage > need.storage);
-    assert!(reused.read_storage_consumed() >= read_need);
-    for kind in [NativeJoinChargeKind::Work, NativeJoinChargeKind::Storage] {
-        let work_bound = need.work * 2 - u64::from(kind == NativeJoinChargeKind::Work);
-        let storage_bound = need.storage * 2 - u64::from(kind == NativeJoinChargeKind::Storage);
-        let mut reused = NativeJoinBudget::new(work_bound, storage_bound)
-            .with_read_storage_limit(read_need * 2);
+        for read_bound in [0, read_need - 1] {
+            let mut short =
+                NativeJoinBudget::new(need.work, need.storage).with_read_storage_limit(read_bound);
+            read_denial(handoff(&mut short).unwrap_err(), &short, read_bound);
+            assert!(short.consumed().work > 0);
+            assert!(short.consumed().storage > 0);
+        }
+        let read_bound = read_need * 2 - 1;
+        let mut reused = NativeJoinBudget::new(need.work * 2, need.storage * 2)
+            .with_read_storage_limit(read_bound);
         handoff(&mut reused).unwrap();
         assert_eq!(reused.consumed(), need);
-        let error = handoff(&mut reused).unwrap_err();
-        let PlanAuthorityRefusal::Budget { denied, locus, configured_bound, consumed } = error else {
-            panic!("the second complete handoff retains its original native denial: {error:?}");
-        };
-        assert_eq!(denied.kind, kind);
-        assert_eq!(Some(denied), reused.first_unpaid());
-        assert_eq!(locus, reused.first_unpaid_locus());
-        assert_eq!(consumed, reused.consumed());
-        assert!(consumed.work >= need.work && consumed.storage >= need.storage);
-        assert_eq!(configured_bound, if kind == NativeJoinChargeKind::Work { work_bound } else { storage_bound });
-    }
-    let mut prefixed = NativeJoinBudget::new(need.work + 3, need.storage + 5)
-        .with_read_storage_limit(read_need);
-    prefixed.accounted_charge(NativeJoinChargeKind::Work, 3, native_locus()).unwrap();
-    prefixed.accounted_charge(NativeJoinChargeKind::Storage, 5, native_locus()).unwrap();
-    handoff(&mut prefixed).unwrap();
-    assert_eq!(prefixed.consumed().work, need.work + 3);
-    assert_eq!(prefixed.consumed().storage, need.storage + 5);
-    assert_eq!(prefixed.read_storage_consumed(), read_need);
+        assert_eq!(reused.read_storage_consumed(), read_need);
+        read_denial(handoff(&mut reused).unwrap_err(), &reused, read_bound);
+        assert!(reused.consumed().work > need.work);
+        assert!(reused.consumed().storage > need.storage);
+        assert!(reused.read_storage_consumed() >= read_need);
+        for kind in [NativeJoinChargeKind::Work, NativeJoinChargeKind::Storage] {
+            let work_bound = need.work * 2 - u64::from(kind == NativeJoinChargeKind::Work);
+            let storage_bound = need.storage * 2 - u64::from(kind == NativeJoinChargeKind::Storage);
+            let mut reused = NativeJoinBudget::new(work_bound, storage_bound)
+                .with_read_storage_limit(read_need * 2);
+            handoff(&mut reused).unwrap();
+            assert_eq!(reused.consumed(), need);
+            let error = handoff(&mut reused).unwrap_err();
+            let PlanAuthorityRefusal::Budget {
+                denied,
+                locus,
+                configured_bound,
+                consumed,
+            } = error
+            else {
+                panic!("the second complete handoff retains its original native denial: {error:?}");
+            };
+            assert_eq!(denied.kind, kind);
+            assert_eq!(Some(denied), reused.first_unpaid());
+            assert_eq!(locus, reused.first_unpaid_locus());
+            assert_eq!(consumed, reused.consumed());
+            assert!(consumed.work >= need.work && consumed.storage >= need.storage);
+            assert_eq!(
+                configured_bound,
+                if kind == NativeJoinChargeKind::Work {
+                    work_bound
+                } else {
+                    storage_bound
+                }
+            );
+        }
+        let mut prefixed = NativeJoinBudget::new(need.work + 3, need.storage + 5)
+            .with_read_storage_limit(read_need);
+        prefixed
+            .accounted_charge(NativeJoinChargeKind::Work, 3, native_locus())
+            .unwrap();
+        prefixed
+            .accounted_charge(NativeJoinChargeKind::Storage, 5, native_locus())
+            .unwrap();
+        handoff(&mut prefixed).unwrap();
+        assert_eq!(prefixed.consumed().work, need.work + 3);
+        assert_eq!(prefixed.consumed().storage, need.storage + 5);
+        assert_eq!(prefixed.read_storage_consumed(), read_need);
     }
 }
 

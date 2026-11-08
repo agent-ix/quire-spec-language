@@ -125,6 +125,7 @@ pub struct HybridProcessItem {
 impl HybridProcessItem {
     /// Construct an item from the claim locus, extent and negotiated
     /// candidates already prepared by the request writer.
+    /// The claim's node uses document-held indices, never node-local operand slots.
     pub fn new(
         request_index: RequestIndex,
         claim: Value,
@@ -311,27 +312,24 @@ impl HybridProcessRequest {
             if claim_occurrence["role"] != "claim" {
                 return Err(HybridProcessRequestRefusal::ClaimMismatch);
             }
-            // FR-322 "Operand index segments": the claim names the node as the
-            // package writes it, operand slots included. Its position among
-            // the package's nodes is the position of the resolved node whose
-            // graph key identifies the claim.
-            let (package_position, package_node) = package_wire.0["semantic_graph"]["nodes"]
-                .as_array()
-                .and_then(|nodes| {
-                    nodes
-                        .iter()
-                        .enumerate()
-                        .find(|(_, node)| node["node_id"] == item.claim["node"])
-                })
+            // A request claim is document-held (FR-322). Node-local slot IDs
+            // can be byte-identical in different rows and cannot select a claim.
+            let claim_node = graph
+                .key_of_value(&item.claim["node"])
+                .map_err(|_| HybridProcessRequestRefusal::ClaimMismatch)?;
+            let package_position = graph
+                .index_of(&claim_node)
+                .and_then(|position| usize::try_from(position).ok())
                 .ok_or(HybridProcessRequestRefusal::ClaimMismatch)?;
-            let claim_node = package
-                .resolved_graph()
-                .nodes
-                .get(package_position)
-                .and_then(|node| graph.key(&node.node_id).ok())
-                .ok_or(HybridProcessRequestRefusal::MalformedRequest)?;
+            let package_node = package_wire.0["semantic_graph"]["nodes"]
+                .as_array()
+                .and_then(|nodes| nodes.get(package_position))
+                .ok_or(HybridProcessRequestRefusal::ClaimMismatch)?;
             if package_node["semantic_form"] != "temporal_clause"
-                || item.claim["node"] != package_node["node_id"]
+                || graph
+                    .wire_value(&claim_node)
+                    .map_err(|_| HybridProcessRequestRefusal::MalformedRequest)?
+                    != item.claim["node"]
                 || !package_node["occurrences"]
                     .as_array()
                     .is_some_and(|occurrences| occurrences.contains(claim_occurrence))

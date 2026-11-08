@@ -1214,7 +1214,7 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
         "always holds(is_gold(c.tier))",
         "function is_gold using v(tier: M::Tier): Boolean pure { tier = M::Tier::Gold }",
         true,
-        "on origin",
+        "on each (q: M::ConfigVersion) when (is_gold(q.tier))",
     );
     let source = SourceIdentity::new("agent-ix", "monitor-root");
     let name = LibraryName::new("fixture").unwrap();
@@ -1261,7 +1261,7 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
     assert_eq!(
         model_shapes.len(),
         1,
-        "the reached helper parameter retains the field's original Tier type"
+        "the reached activation guard parameter retains the field's original Tier type"
     );
     let collections: Vec<_> = root
         .emission()

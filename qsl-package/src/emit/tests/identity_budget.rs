@@ -891,3 +891,60 @@ fn sparse_producer_input_selection_keeps_its_retained_field_index() {
         );
     }
 }
+
+#[trace("TC-1331", "FR-531-AC-30", "FR-531-AC-33")]
+#[test]
+fn source_witness_supplier_retains_compact_denials_without_allocating() {
+    use crate::checked_v2::{
+        EvaluationWitnessSupplier, SourceWitnessSupplier, WitnessSupplyFailure,
+    };
+    let (emission, package) = fixture();
+    let supplier = SourceWitnessSupplier::new(&emission);
+    let _ = allocation_counter::measure(|| {});
+    for (work, storage, kind) in [
+        (4_000_000, 0, NativeJoinChargeKind::Storage),
+        (0, 4_000_000, NativeJoinChargeKind::Work),
+    ] {
+        let mut budget = NativeJoinBudget::new(work, storage);
+        let locus = quire_contract_model::NativeJoinLocus {
+            source: quire_contract_model::NativeJoinLocusSource::Package,
+            form: "supplier_prior_charge",
+        };
+        let prefix_kind = if kind == NativeJoinChargeKind::Work {
+            NativeJoinChargeKind::Storage
+        } else {
+            NativeJoinChargeKind::Work
+        };
+        budget.accounted_charge(prefix_kind, 7, locus).unwrap();
+        if kind == NativeJoinChargeKind::Work {
+            budget
+                .accounted_charge(
+                    kind,
+                    1,
+                    quire_contract_model::NativeJoinLocus {
+                        source: quire_contract_model::NativeJoinLocusSource::Package,
+                        form: "supplier_prior_work",
+                    },
+                )
+                .expect_err("the caller's prior work charge was denied");
+        }
+        let prefix = budget.consumed();
+        for _ in 0..2 {
+            let mut outcome = None;
+            let observed = allocation_counter::measure(|| {
+                outcome = Some(supplier.supply(&package, &mut budget));
+            });
+            let error = match outcome.unwrap().unwrap_err() {
+                WitnessSupplyFailure::Rows(error) => error,
+                other => panic!("the supplier retains the original row denial: {other:?}"),
+            };
+            assert_eq!(error.denied(), budget.first_unpaid());
+            assert_eq!(error.denied().unwrap().kind, kind);
+            assert_eq!(error.locus(), budget.first_unpaid_locus());
+            assert_eq!(error.configured_bound(), Some(0));
+            assert_eq!(budget.consumed(), prefix);
+            assert_eq!(observed.count_total, 0);
+            assert_eq!(observed.bytes_total, 0);
+        }
+    }
+}

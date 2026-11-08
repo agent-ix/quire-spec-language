@@ -866,10 +866,7 @@ mod tests {
         serde_json::to_value(OutcomeItem::from_terminal(&record)).expect("serializes")
     }
 
-    /// FR-447's `Braking` and `SlowEnough`, with the declared initial set
-    /// empty because the `Moving` condition is outside its invariant.
-    fn no_initial_state_fixture() -> (CheckedGraph, CheckedHybridClaim) {
-        const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
+    const NO_INITIAL_STATE_SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
              profile p = \"quire.temporal.infinite-trace/v1\";\n\
              dimension Time;\n\
              unit s : Time = rational(1, 1);\n\
@@ -883,10 +880,14 @@ mod tests {
              }\n\
              temporal SlowEnough using p over (h: Braking) clock \"model-time\"\
                on origin { always [0, 10] holds(h.v < 30) }\n";
+
+    /// FR-447's `Braking` and `SlowEnough`, with the declared initial set
+    /// empty because the `Moving` condition is outside its invariant.
+    fn no_initial_state_fixture() -> (CheckedGraph, CheckedHybridClaim) {
         let parsed = qsl_cst::parse(
             SourceIdentity::new("agent-ix", "qsl-1035"),
             "program.native",
-            SOURCE.as_bytes(),
+            NO_INITIAL_STATE_SOURCE.as_bytes(),
             qsl_cst::Limits::default(),
         )
         .expect("S1 reads the unit");
@@ -1253,7 +1254,10 @@ mod tests {
     #[trace("TC-705", "FR-250-AC-3")]
     #[test]
     fn process_requests_distinguish_genuine_clauses_with_identical_slot_ids() {
-        let source = "language \"ix:native\" edition \"1-draft\"; profile p = \"quire.temporal.infinite-trace/v1\"; dimension Time; unit s : Time = rational(1, 1); hybrid Braking using p { initial { mode Moving when { v = 30 }; } mode Moving invariant { v >= 0 and v <= 20 and a >= 1 and a <= 2 } flow { v' = -a; a' = 0; t' = 1; } transition to Stopped when { v = 0 } reset { v = 0 }; mode Stopped invariant { v = 0 } flow { v' = 0; a' = 0; t' = 1; } } temporal One using p over (h: Braking) clock \"model-time\" on origin { always [0, 10] holds(h.v < 30) } temporal Two using p over (h: Braking) clock \"model-time\" on origin { always [0, 10] holds(h.v < 29) }";
+        let source = format!(
+            "{}\ntemporal Two using p over (h: Braking) clock \"model-time\" on origin {{ always [0, 10] holds(h.v < 29) }}",
+            NO_INITIAL_STATE_SOURCE.replace("temporal SlowEnough", "temporal One"),
+        );
         let package = crate::compile_package(
             crate::CompileUnit {
                 source: SourceIdentity::new("test", "hybrid-claim-identity"),
@@ -1265,39 +1269,79 @@ mod tests {
             &crate::spine::DependencyInput::default(),
             crate::StageLimits::default(),
             crate::ReplayLimits::default(),
-        ).unwrap();
+        )
+        .unwrap();
         let raw: serde_json::Value = serde_json::from_slice(package.bytes()).unwrap();
-        let resolved = qsl_semantics::check::wire_id::resolved_package_value(package.bytes()).unwrap();
+        let resolved =
+            qsl_semantics::check::wire_id::resolved_package_value(package.bytes()).unwrap();
         let raw_nodes = raw["semantic_graph"]["nodes"].as_array().unwrap();
-        let graph = qsl_semantics::check::wire_id::WireGraph::of_package_bytes(package.bytes()).unwrap();
-        let positions: Vec<_> = raw_nodes.iter().enumerate().filter_map(|(position, node)| {
-            (node["semantic_form"] == "temporal_clause"
-                && node["occurrences"].as_array().unwrap().iter().any(|row| row["role"] == "claim"))
+        let graph =
+            qsl_semantics::check::wire_id::WireGraph::of_package_bytes(package.bytes()).unwrap();
+        let positions: Vec<_> = raw_nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(position, node)| {
+                (node["semantic_form"] == "temporal_clause"
+                    && node["occurrences"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|row| row["role"] == "claim"))
                 .then_some(position)
-        }).collect();
+            })
+            .collect();
         assert_eq!(positions.len(), 2);
         assert_ne!(positions[0], positions[1]);
-        assert_eq!(raw_nodes[positions[0]]["node_id"], raw_nodes[positions[1]]["node_id"]);
+        assert_eq!(
+            raw_nodes[positions[0]]["node_id"],
+            raw_nodes[positions[1]]["node_id"]
+        );
         let context = process_package_context();
-        for position in positions {
-            let occurrence = raw_nodes[position]["occurrences"].as_array().unwrap()
-                .iter().find(|row| row["role"] == "claim").unwrap();
-            let item = |node: serde_json::Value| HybridProcessItem::new(
-                RequestIndex::new(0),
-                json!({"node": node, "occurrence": occurrence}),
-                json!({"classification": "bounded", "bounds": []}),
-                json!({"type": "set", "backends": ["hybrid-fixture"]}),
-                SolverBudget::from_request(None, None).unwrap(),
+        for position in positions.into_iter().rev() {
+            let occurrence = raw_nodes[position]["occurrences"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["role"] == "claim")
+                .unwrap();
+            assert_eq!(occurrence["ordinal"], 0);
+            let item = |node: serde_json::Value| {
+                HybridProcessItem::new(
+                    RequestIndex::new(0),
+                    json!({"node": node, "occurrence": occurrence}),
+                    json!({"classification": "bounded", "bounds": []}),
+                    json!({"type": "set", "backends": ["hybrid-fixture"]}),
+                    SolverBudget::from_request(None, None).unwrap(),
+                )
+            };
+            let ambiguous = HybridProcessRequest::compose(
+                package.bytes(),
+                &context,
+                20_000,
+                &[item(raw_nodes[position]["node_id"].clone())],
+            )
+            .unwrap();
+            assert!(
+                matches!(
+                    HybridProcessRequest::read(ambiguous.bytes(), &context),
+                    Err(HybridProcessRequestRefusal::ClaimMismatch)
+                ),
+                "a raw slot identity cannot select either genuine clause without its holder"
             );
-            let ambiguous = HybridProcessRequest::compose(package.bytes(), &context, 20_000,
-                &[item(raw_nodes[position]["node_id"].clone())]).unwrap();
-            assert!(matches!(HybridProcessRequest::read(ambiguous.bytes(), &context),
-                Err(HybridProcessRequestRefusal::ClaimMismatch)),
-                "a raw slot identity cannot select either genuine clause without its holder");
-            let request = HybridProcessRequest::compose(package.bytes(), &context, 20_000,
-                &[item(resolved["semantic_graph"]["nodes"][position]["node_id"].clone())]).unwrap();
+            let request = HybridProcessRequest::compose(
+                package.bytes(),
+                &context,
+                20_000,
+                &[item(
+                    resolved["semantic_graph"]["nodes"][position]["node_id"].clone(),
+                )],
+            )
+            .unwrap();
             let admitted = HybridProcessRequest::read(request.bytes(), &context).unwrap();
-            assert_eq!(graph.index_of(&admitted.items()[0].claim().node), Some(position as u64));
+            assert_eq!(
+                graph.index_of(&admitted.items()[0].claim().node),
+                Some(position as u64)
+            );
         }
     }
 

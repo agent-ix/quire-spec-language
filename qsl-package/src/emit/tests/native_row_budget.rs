@@ -37,38 +37,6 @@ fn native(emission: &Emission) -> CheckedPackageV2 {
     super::source_union_rows::admit_bytes(emission, &wire(emission))
 }
 
-#[trace("TC-1331", "FR-531-AC-30", "FR-531-AC-33")]
-#[test]
-fn source_witness_supplier_retains_compact_denials_without_allocating() {
-    use crate::checked_v2::{EvaluationWitnessSupplier, SourceWitnessSupplier, WitnessSupplyFailure};
-    let emission = emission();
-    let package = native(&emission);
-    let supplier = SourceWitnessSupplier::new(&emission);
-    let _ = allocation_counter::measure(|| {});
-    for (work, storage, kind) in [
-        (0, 4_000_000, NativeJoinChargeKind::Work),
-        (4_000_000, 0, NativeJoinChargeKind::Storage),
-    ] {
-        let mut budget = NativeJoinBudget::new(work, storage);
-        for _ in 0..2 {
-            let mut outcome = None;
-            let observed = allocation_counter::measure(|| {
-                outcome = Some(supplier.supply(&package, &mut budget));
-            });
-            let error = match outcome.unwrap().unwrap_err() {
-                WitnessSupplyFailure::Rows(error) => error,
-                other => panic!("the supplier retains the original row denial: {other:?}"),
-            };
-            assert_eq!(error.denied(), budget.first_unpaid());
-            assert_eq!(error.denied().unwrap().kind, kind);
-            assert_eq!(error.locus(), budget.first_unpaid_locus());
-            assert_eq!(error.configured_bound(), Some(0));
-            assert_eq!(observed.count_total, 0);
-            assert_eq!(observed.bytes_total, 0);
-        }
-    }
-}
-
 fn boundaries<T: std::fmt::Debug + PartialEq>(
     mut materialize: impl FnMut(&mut NativeJoinBudget) -> Result<T, NativeRowError>,
 ) -> NativeJoinCharge {

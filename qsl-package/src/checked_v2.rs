@@ -1065,7 +1065,7 @@ pub enum WitnessSupplyFailure {
     /// The caller's native work or storage allowance was consumed.
     Exhausted(Box<quire_contract_model::ExactTypeProjectionError>),
     /// Producer row materialization was denied inline before an allocation.
-    Rows(Box<crate::NativeRowError>),
+    Rows(crate::NativeRowError),
     /// The supplier's own rows do not join the package it was built with.
     Fault,
 }
@@ -1118,9 +1118,7 @@ impl EvaluationWitnessSupplier for SourceWitnessSupplier {
                 .identity_rows(admitted, budget)
                 .map_err(|refusal| match refusal {
                     crate::IdentityFileRefusal::Native(native) => exhausted(*native),
-                    crate::IdentityFileRefusal::Rows(rows) => {
-                        WitnessSupplyFailure::Rows(Box::new(rows))
-                    }
+                    crate::IdentityFileRefusal::Rows(rows) => WitnessSupplyFailure::Rows(rows),
                     _ => WitnessSupplyFailure::Fault,
                 })?;
         let identities = rows
@@ -1149,7 +1147,7 @@ impl EvaluationWitnessSupplier for SourceWitnessSupplier {
         let enum_rows = self
             .emission
             .selected_source_enum_rows(budget)
-            .map_err(|rows| WitnessSupplyFailure::Rows(Box::new(rows)))?;
+            .map_err(WitnessSupplyFailure::Rows)?;
         let identities = identities
             .with_source_enum_rows(admitted, enum_rows, budget)
             .map_err(exhausted)?;
@@ -1303,7 +1301,7 @@ impl AdmittedPackageRead<'_> {
                 return Err(exhausted(*native, &budget))
             }
             Err(WitnessSupplyFailure::Rows(rows)) => {
-                return Err(match limits.native_join_limits().refusal(*rows, &budget) {
+                return Err(match limits.native_join_limits().refusal(rows, &budget) {
                     Some(denial) => ViewFailure::Exhausted(Box::new(denial)),
                     None => fault(),
                 })
