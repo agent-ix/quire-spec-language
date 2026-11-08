@@ -7589,7 +7589,7 @@ fn reachable_ids(node: &mut CheckedSemanticNodeV2) -> Vec<&mut CheckedNodeId> {
 /// hold, in byte order, and the returned row of that node lists those
 /// indices. `nodes` hold document index segments on entry, as
 /// [`write_index_segments`] leaves them.
-pub(crate) fn write_operand_slots(
+pub fn write_operand_slots(
     nodes: &mut [CheckedSemanticNodeV2],
     limits: EmitLimits,
 ) -> Result<Vec<Vec<u64>>, EmitRefusal> {

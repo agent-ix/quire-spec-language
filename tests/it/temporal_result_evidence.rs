@@ -286,8 +286,7 @@ fn no_support_entry_names_a_pair_without_an_admitted_valuation() {
 #[test]
 fn a_package_without_an_occurrences_source_map_entry_is_not_admitted() {
     let built = both();
-    let mut wire: serde_json::Value =
-        serde_json::from_slice(built.emission.package().bytes()).expect("JSON");
+    let mut wire = crate::support::resolved_package(built.emission.package().bytes());
     let before = wire["source_map"].as_array().expect("entries").len();
     wire["source_map"]
         .as_array_mut()

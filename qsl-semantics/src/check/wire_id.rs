@@ -516,7 +516,6 @@ fn index_segments(id: &CheckedNodeId) -> Vec<u64> {
     found
 }
 
-#[cfg(any(test, feature = "test-support"))]
 /// The checked-package document `wire` with every operand slot a node holds
 /// replaced by the index segment of the node its row names, and its
 /// `operand_rows` removed: the resolved form, in which a node's ids name
@@ -629,7 +628,6 @@ pub fn canonical_operand_indices(bytes: &[u8], byte_limit: u64) -> Result<Vec<u6
 /// uses the same canonical index walk, so an authored document and an
 /// emitted one number slots identically. An `{package, node}` foreign key
 /// keeps its index segments: they name the dependency's graph.
-#[cfg(any(test, feature = "test-support"))]
 pub fn number_index_segments(node: &mut serde_json::Value) -> Vec<u64> {
     use serde_json::Value;
     let bytes = quire_canonical::to_vec(&*node, quire_canonical::Limits::new(u64::MAX))
@@ -680,7 +678,6 @@ pub fn number_index_segments(node: &mut serde_json::Value) -> Vec<u64> {
 /// resolved form: when it has `semantic_graph.nodes` and no `operand_rows`,
 /// each node is written through [`number_index_segments`] and `operand_rows`
 /// is added. Any other document is left alone.
-#[cfg(any(test, feature = "test-support"))]
 pub fn write_operand_rows(wire: &mut serde_json::Value) {
     let Some(graph) = wire.get_mut("semantic_graph") else {
         return;

@@ -142,6 +142,9 @@ pub enum Error {
     /// Contract IR's reader reached a limit before a conclusion.
     #[error("the reader reached a limit: {0}")]
     ReaderIncomplete(String),
+    /// Contract IR's reader had no operation catalog to read the package against.
+    #[error("the reader had no operation catalog: {0}")]
+    ReaderCatalogUnavailable(String),
     /// The admitted package differs from the in-process checked unit.
     #[error("the admitted package differs from the checked unit: {detail}")]
     ReadBackDiffers {
@@ -203,7 +206,9 @@ impl Error {
         match self {
             Self::Exists { .. } => ErrorCode::Exists,
             Self::Compile(_) => ErrorCode::Compile,
-            Self::ReaderRefused(_) | Self::ReaderIncomplete(_) => ErrorCode::Reader,
+            Self::ReaderRefused(_)
+            | Self::ReaderIncomplete(_)
+            | Self::ReaderCatalogUnavailable(_) => ErrorCode::Reader,
             Self::ReadBackDiffers { .. } => ErrorCode::ReadBackDiffers,
             Self::CaseMismatch { .. } => ErrorCode::CaseMismatch,
             Self::Dependency { .. } => ErrorCode::Dependency,
@@ -300,10 +305,8 @@ pub fn write_with(
         CheckedPackageDispatchResult::Incomplete(incomplete) => {
             return Err(Error::ReaderIncomplete(format!("{incomplete:?}")))
         }
-        CheckedPackageDispatchResult::CatalogUnavailable(error) => {
-            return Err(Error::ReaderIncomplete(format!(
-                "catalog unavailable: {error}"
-            )))
+        CheckedPackageDispatchResult::CatalogUnavailable(unavailable) => {
+            return Err(Error::ReaderCatalogUnavailable(format!("{unavailable:?}")))
         }
     };
     let selection = Selection::derive(&compiled, &request.emit, &bytes)?;
