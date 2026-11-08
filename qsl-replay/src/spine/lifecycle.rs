@@ -3488,7 +3488,7 @@ impl<'a> Resolution<'a> {
                 )));
             };
             let (limits, cancel, packages) = (self.limits, self.cancel, self.packages);
-            let held = self.library_extensions(&supplied)?;
+            let held = self.library_extensions(supplied)?;
             let parsed = charged(cancel, &mut self.work.s1, || {
                 parse_unit(
                     supplied.source.clone(),

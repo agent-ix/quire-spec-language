@@ -852,7 +852,6 @@ pub enum DependencySelectionsCause {
 /// #   supplied_limits: None,
 /// #   object_environment: None,
 /// #   declared_domains: Vec::new(),
-/// #   refinement_internals: None,
 /// #   byte_provision: vec![("a".to_owned(), "u".to_owned(), unit.as_bytes().to_vec())],
 /// #   documents: vec![],
 ///     // ...every other member names the proved package and its input.
@@ -914,7 +913,6 @@ pub enum DependencySelectionsCause {
 /// #   supplied_limits: None,
 /// #   object_environment: None,
 /// #   declared_domains: Vec::new(),
-/// #   refinement_internals: None,
 /// #   byte_provision: vec![("a".to_owned(), "u".to_owned(), unit.as_bytes().to_vec())],
 /// #   documents: vec![],
 ///     // ...every other member names the proved package and its input.
