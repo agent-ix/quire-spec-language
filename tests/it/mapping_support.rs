@@ -17,7 +17,7 @@ use super::checked_handoff::{admitted, request, tree, KINDS};
 /// The temporal clauses of `package`, in graph order.
 fn clauses(package: &CheckedPackageV2) -> Vec<CheckedNodeId> {
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .zip(package.node_kinds())

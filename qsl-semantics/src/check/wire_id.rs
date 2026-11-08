@@ -2,9 +2,10 @@
 //! QSpec FR-322 "Operand index segments": the one conversion between a
 //! structural [`NodeKey`] and a checked-package [`CheckedNodeId`].
 //!
-//! A wire `node_id` holds each operand node as the index segment
+//! A document-held `node_id` holds each operand node as the index segment
 //! `{"node": i}`, `i` the operand's position in the same document's
-//! `semantic_graph.nodes`. The in-memory structural key holds the operand's
+//! `semantic_graph.nodes`. A node-held ID uses `{"operand": k}`, naming
+//! entry `k` of its holding node's operand row. The structural key holds the operand's
 //! own key instead. [`WireGraph`] is one document's graph: it rebuilds the
 //! key of every graph node once, sharing each operand key wherever it is
 //! named, and converts any id the document holds in either direction.
@@ -17,7 +18,7 @@
 //! consumes the call stack.
 
 use qsl_foundation::source::node_table::{standalone, DebugTable, DebugWith, NodeList};
-use std::collections::{HashMap, TryReserveError};
+use std::collections::{BTreeMap, HashMap, TryReserveError};
 use std::convert::Infallible;
 use std::sync::Arc;
 
@@ -30,6 +31,14 @@ use quire_exact::{InvalidNodeKey, NodeKey, PathSegment};
 /// Why a node id could not be converted.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum WireIdError {
+    /// The graph does not supply exactly one operand row per node.
+    #[error("graph has {nodes} nodes but {rows} operand rows")]
+    OperandRowCount {
+        /// Number of graph nodes.
+        nodes: usize,
+        /// Number of operand rows.
+        rows: usize,
+    },
     /// An index segment names no node of the document's graph.
     #[error("index segment {index} names no node of a {len}-node graph")]
     IndexOutOfRange {
@@ -513,6 +522,28 @@ fn index_segments(id: &CheckedNodeId) -> Vec<u64> {
 pub struct WireGraph {
     keys: Vec<NodeKey>,
     index: HashMap<NodeKey, u64>,
+    slots: BTreeMap<CheckedNodeId, Option<usize>>,
+    rows: Vec<Vec<u64>>,
+}
+
+#[derive(Clone, Copy)]
+enum IdentityView {
+    Structural,
+    Document,
+}
+
+fn resolve_slots(id: &mut CheckedNodeId, row: &[u64]) -> Result<(), WireIdError> {
+    for segment in &mut id.path {
+        if let CheckedNodePathSegment::Operand(slot) = segment {
+            let index = usize::try_from(*slot)
+                .ok()
+                .and_then(|slot| row.get(slot))
+                .copied()
+                .ok_or(WireIdError::OperandSlot { slot: *slot })?;
+            *segment = CheckedNodePathSegment::Index(index);
+        }
+    }
+    Ok(())
 }
 
 /// The keys in graph order; the index is derived from them, and a hash map's
@@ -593,11 +624,68 @@ impl WireGraph {
             .enumerate()
             .map(|(at, key)| (key.clone(), at as u64))
             .collect();
-        Ok(Self { keys, index })
+        Ok(Self {
+            keys,
+            index,
+            slots: BTreeMap::new(),
+            rows: Vec::new(),
+        })
+    }
+
+    /// Resolve node-held IDs through their corresponding operand rows.
+    ///
+    /// # Errors
+    ///
+    /// Refuses missing rows, invalid slots, graph indices and cycles.
+    pub fn with_operand_rows(
+        ids: &[CheckedNodeId],
+        rows: &[Vec<u64>],
+    ) -> Result<Self, WireIdError> {
+        if ids.len() != rows.len() {
+            return Err(WireIdError::OperandRowCount {
+                nodes: ids.len(),
+                rows: rows.len(),
+            });
+        }
+        let mut resolved = ids.to_vec();
+        for (id, row) in resolved.iter_mut().zip(rows) {
+            resolve_slots(id, row)?;
+        }
+        let mut graph = Self::new(&resolved)?;
+        graph.rows = rows.to_vec();
+        for (position, id) in ids.iter().enumerate() {
+            if id
+                .path
+                .iter()
+                .any(|segment| matches!(segment, CheckedNodePathSegment::Operand(_)))
+            {
+                graph
+                    .slots
+                    .entry(id.clone())
+                    .and_modify(|entry| *entry = None)
+                    .or_insert(Some(position));
+            }
+        }
+        Ok(graph)
+    }
+
+    /// Resolve an ID held by the node at `holder`, using that node's row.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a missing holder, an invalid slot or an invalid graph index.
+    pub fn key_in_row(&self, holder: usize, id: &CheckedNodeId) -> Result<NodeKey, WireIdError> {
+        let row = self.rows.get(holder).ok_or(WireIdError::IndexOutOfRange {
+            index: holder as u64,
+            len: self.rows.len(),
+        })?;
+        let mut resolved = id.clone();
+        resolve_slots(&mut resolved, row)?;
+        self.key(&resolved)
     }
 
     /// The graph of the checked-package document `bytes`, read from its
-    /// `semantic_graph.nodes[*].node_id` members alone.
+    /// node IDs and corresponding `semantic_graph.operand_rows`.
     ///
     /// # Errors
     ///
@@ -611,6 +699,7 @@ impl WireGraph {
         #[derive(serde::Deserialize)]
         struct Graph {
             nodes: Vec<Node>,
+            operand_rows: Vec<Vec<u64>>,
         }
         #[derive(serde::Deserialize)]
         struct Node {
@@ -618,14 +707,14 @@ impl WireGraph {
         }
         let document: Document =
             serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
-        Self::new(
-            document
-                .semantic_graph
-                .nodes
-                .iter()
-                .map(|node| &node.node_id),
-        )
-        .map_err(|error| error.to_string())
+        let ids: Vec<_> = document
+            .semantic_graph
+            .nodes
+            .into_iter()
+            .map(|node| node.node_id)
+            .collect();
+        Self::with_operand_rows(&ids, &document.semantic_graph.operand_rows)
+            .map_err(|error| error.to_string())
     }
 
     /// The graph of the checked-package document `envelope`, already parsed.
@@ -637,7 +726,14 @@ impl WireGraph {
         let nodes = envelope["semantic_graph"]["nodes"]
             .as_array()
             .ok_or("the document has no semantic_graph.nodes array")?;
-        Self::of_node_values(nodes)
+        let ids = nodes
+            .iter()
+            .map(|node| id_of_value(&node["node_id"]))
+            .collect::<Result<Vec<_>, _>>()?;
+        let rows: Vec<Vec<u64>> =
+            serde_json::from_value(envelope["semantic_graph"]["operand_rows"].clone())
+                .map_err(|error| error.to_string())?;
+        Self::with_operand_rows(&ids, &rows).map_err(|error| error.to_string())
     }
 
     /// The graph whose nodes, in graph order, are the JSON `nodes`.
@@ -683,9 +779,58 @@ impl WireGraph {
     /// The [`WireGraph::key_of_value`] refusal of the first id that does not
     /// resolve.
     pub fn structural_value(&self, value: &serde_json::Value) -> Result<serde_json::Value, String> {
+        self.identity_value(value, None, IdentityView::Structural)
+    }
+
+    /// Convert a node-held JSON value using its holder's operand row.
+    ///
+    /// # Errors
+    ///
+    /// Refuses invalid slots, graph indices or structural identities.
+    pub fn structural_value_in_row(
+        &self,
+        holder: usize,
+        value: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        self.identity_value(value, Some(holder), IdentityView::Structural)
+    }
+
+    /// Inspect a node-held JSON value with its local operand slots written
+    /// as document-held graph indices. Foreign package references retain
+    /// their own graph's indices. This is an inspection value, not V2 wire.
+    ///
+    /// # Errors
+    ///
+    /// Refuses invalid local slots, indices or structural identities.
+    pub fn document_value_in_row(
+        &self,
+        holder: usize,
+        value: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        self.identity_value(value, Some(holder), IdentityView::Document)
+    }
+
+    fn identity_value(
+        &self,
+        value: &serde_json::Value,
+        holder: Option<usize>,
+        view: IdentityView,
+    ) -> Result<serde_json::Value, String> {
         let mut value = value.clone();
-        let mut pending = vec![&mut value];
-        while let Some(current) = pending.pop() {
+        let mut pending = vec![(&mut value, holder)];
+        while let Some((current, mut holder)) = pending.pop() {
+            if current.as_object().is_some_and(|object| {
+                object.len() == 2 && object.contains_key("package") && object.contains_key("node")
+            }) {
+                continue;
+            }
+            if holder.is_none() && !self.rows.is_empty() && current.get("node_tag").is_some() {
+                let id = id_of_value(&current["node_id"])?;
+                let key = self.key(&id).map_err(|error| error.to_string())?;
+                holder = self
+                    .index_of(&key)
+                    .and_then(|index| usize::try_from(index).ok());
+            }
             let is_id = current.as_object().is_some_and(|object| {
                 object.len() == 3
                     && object.contains_key("package")
@@ -693,14 +838,28 @@ impl WireGraph {
                     && object.contains_key("ordinal")
             });
             if is_id {
-                let key = self.key_of_value(current)?;
-                *current = qsl_foundation::node_wire::node_key_to_json(&key)
-                    .map_err(|error| error.to_string())?;
+                let id = id_of_value(current)?;
+                let key = match holder {
+                    Some(holder) => self.key_in_row(holder, &id),
+                    None => self.key(&id),
+                }
+                .map_err(|error| error.to_string())?;
+                *current = match view {
+                    IdentityView::Structural => qsl_foundation::node_wire::node_key_to_json(&key)
+                        .map_err(|error| error.to_string())?,
+                    IdentityView::Document => {
+                        self.wire_value(&key).map_err(|error| error.to_string())?
+                    }
+                };
                 continue;
             }
             match current {
-                serde_json::Value::Object(object) => pending.extend(object.values_mut()),
-                serde_json::Value::Array(items) => pending.extend(items.iter_mut()),
+                serde_json::Value::Object(object) => {
+                    pending.extend(object.values_mut().map(|value| (value, holder)))
+                }
+                serde_json::Value::Array(items) => {
+                    pending.extend(items.iter_mut().map(|value| (value, holder)))
+                }
                 _ => {}
             }
         }
@@ -717,13 +876,19 @@ impl WireGraph {
         self.index.get(key).copied()
     }
 
-    /// The key of `id`, an id this document holds anywhere: each index
-    /// segment names the node of this graph at that index.
+    /// The key of a document-held `id`: each index segment names the node
+    /// of this graph at that index. A slot-form own ID also resolves when
+    /// exactly one graph node has those bytes. For other node-held IDs,
+    /// use [`Self::key_in_row`] with their holding node's position.
     ///
     /// # Errors
     ///
-    /// [`WireIdError::IndexOutOfRange`] or [`WireIdError::Key`].
+    /// [`WireIdError::IndexOutOfRange`], [`WireIdError::OperandSlot`] for an
+    /// ambiguous or unscoped slot-form ID, or [`WireIdError::Key`].
     pub fn key(&self, id: &CheckedNodeId) -> Result<NodeKey, WireIdError> {
+        if let Some(Some(position)) = self.slots.get(id) {
+            return Ok(self.keys[*position].clone());
+        }
         key_with(id, &mut |index| {
             usize::try_from(index)
                 .ok()
@@ -767,6 +932,43 @@ impl WireGraph {
 mod tests {
     use super::*;
 
+    #[ix_trace_rs::trace("QSpec-TC-233", "QSpec-FR-322-AC-280")]
+    #[test]
+    fn operand_slots_use_the_holding_rows_and_ambiguous_ids_are_refused() {
+        let keys = chain(2);
+        let mut ids = wire_ids(&keys);
+        ids[1].path.pop();
+        ids[1].path.push(CheckedNodePathSegment::Operand(0));
+        ids[2].path.pop();
+        ids[2].path.push(CheckedNodePathSegment::Operand(0));
+        assert_eq!(ids[1], ids[2]);
+        let rows = vec![vec![], vec![0], vec![1]];
+        let graph = WireGraph::with_operand_rows(&ids, &rows).unwrap();
+        assert_eq!(graph.keys(), keys);
+        assert_eq!(graph.key_in_row(1, &ids[1]).unwrap(), keys[1]);
+        assert_eq!(graph.key_in_row(2, &ids[2]).unwrap(), keys[2]);
+        assert!(matches!(
+            graph.key(&ids[1]),
+            Err(WireIdError::OperandSlot { slot: 0 })
+        ));
+        assert!(matches!(
+            WireGraph::with_operand_rows(&ids, &[vec![], vec![], vec![1]]),
+            Err(WireIdError::OperandSlot { slot: 0 })
+        ));
+        assert!(matches!(
+            WireGraph::with_operand_rows(&ids, &[vec![], vec![2], vec![1]]),
+            Err(WireIdError::Cycle { .. })
+        ));
+        assert_eq!(
+            WireGraph::with_operand_rows(&ids, &[vec![], vec![3], vec![1]]).unwrap_err(),
+            WireIdError::IndexOutOfRange { index: 3, len: 3 }
+        );
+        assert_eq!(
+            WireGraph::with_operand_rows(&ids, &[]).unwrap_err(),
+            WireIdError::OperandRowCount { nodes: 3, rows: 0 }
+        );
+    }
+
     fn text(value: &str) -> PathSegment {
         PathSegment::Text(value.to_owned())
     }
@@ -799,6 +1001,8 @@ mod tests {
     fn wire_ids(keys: &[NodeKey]) -> Vec<CheckedNodeId> {
         let graph = WireGraph {
             keys: keys.to_vec(),
+            slots: BTreeMap::new(),
+            rows: Vec::new(),
             index: keys
                 .iter()
                 .enumerate()

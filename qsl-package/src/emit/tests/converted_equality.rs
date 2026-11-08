@@ -4,6 +4,7 @@
 //! equality takes its operator family from the converted type, so IR's
 //! checked-package/v2 reader admits the package.
 
+use super::resolved_wire as wire;
 use super::*;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\

@@ -22,7 +22,7 @@ fn documents() -> Vec<Vec<u8>> {
     let mut documents = refinement_cas::documents(Variant::CAS);
     // Use the existing row-empty refinement fixture, independent of counter
     // transitions: no operation contract is needed by these two protocols.
-    for document in documents.iter_mut().take(2) {
+    for document in &mut documents {
         let mut value: Value = serde_json::from_slice(document).unwrap();
         value["populations"] = json!([]);
         for ty in value["types"].as_array_mut().unwrap() {
@@ -76,8 +76,10 @@ fn request(with_dependency: bool) -> ReplayRequestWire {
                     "Other",
                     "CasOther",
                     "",
-                    "function libraryValue using v(): Boolean pure { false }",
+                    "function libraryValue using v(x: Boolean): Boolean pure { x }",
                 )
+                // Each refinement's abstract protocol belongs to its own package.
+                .replace(refinement_cas::SPEC, refinement_cas::THIRD)
                 .into_bytes(),
             },
         ]
@@ -87,7 +89,7 @@ fn request(with_dependency: bool) -> ReplayRequestWire {
     let (imports, function) = if with_dependency {
         (
             "import \"test/aaa\" as earlier;\nimport \"test/geometry\" as g;\n",
-            "function entry using v(): Boolean pure { g::libraryValue() }",
+            "function entry using v(): Boolean pure { g::libraryValue(false) }",
         )
     } else {
         ("", "function entry using v(): Boolean pure { false }")

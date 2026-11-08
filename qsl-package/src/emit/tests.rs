@@ -297,6 +297,80 @@ pub(super) fn wire(emission: &Emission) -> Value {
     serde_json::from_slice(emission.package.bytes()).expect("the wire is JSON")
 }
 
+/// Inspect actual emitted bytes with each node's slots resolved through its row.
+fn resolved_wire(emission: &Emission) -> Value {
+    let mut document = wire(emission);
+    let graph = WireGraph::of_package_value(&document).expect("the emitted operand graph");
+    for (holder, node) in document["semantic_graph"]["nodes"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .enumerate()
+    {
+        *node = graph.document_value_in_row(holder, node).unwrap();
+    }
+    document
+}
+
+#[trace("QSpec-TC-233", "QSpec-FR-322-AC-280", "TC-416", "FR-093-AC-9")]
+#[test]
+fn operand_slot_rows_preserve_the_retained_document_graph() {
+    let (_, emission) =
+        emit_from_text("function add using v(x: Integer): Integer pure { (x + 1) + 2 }\n");
+    let mut graph: CheckedSemanticGraphV2 =
+        serde_json::from_value(wire(&emission)["semantic_graph"].clone()).unwrap();
+    assert_eq!(graph.nodes.len(), graph.operand_rows.len());
+    assert!(graph.operand_rows.iter().any(|row| !row.is_empty()));
+    for node in &mut graph.nodes {
+        for id in reachable_ids(node) {
+            assert!(id.path.iter().all(|segment| !matches!(
+                segment,
+                quire_contract_model::CheckedNodePathSegment::Index(_)
+            )));
+        }
+    }
+    assert_eq!(document_nodes(graph).unwrap(), emission.wire_nodes);
+    assert!(matches!(read_back(&emission), Read::Verified { .. }));
+}
+
+#[trace("QSpec-TC-233", "QSpec-FR-322-AC-280")]
+#[test]
+fn operand_slot_numbering_visits_only_identity_paths_in_canonical_order() {
+    let value = json!({
+        "a_data": {"node": 99},
+        "b_text": "{\"node\":88}",
+        "c_id": {"package": "p", "ordinal": 0, "path": ["derived", {"node": 7}, {"node": 2}]},
+        "d_id": {"package": "p", "ordinal": 0, "path": ["derived", {"node": 7}]},
+        "e_external": {"package": "dependency", "node": {
+            "package": "dependency", "ordinal": 0, "path": ["derived", {"node": 99}]
+        }}
+    });
+    let bytes = quire_canonical::to_vec(&value, ceiling().canonical()).unwrap();
+    assert_eq!(operand_indices(&bytes, ceiling()).unwrap(), [7, 2, 7]);
+}
+
+#[trace("TC-416", "FR-093-AC-3", "FR-093-AC-13")]
+#[test]
+fn fold_with_both_authored_binders_reads_back() {
+    let (_, emission) = emit_from_text(
+        "type Total = Integer;\n\
+         function accumulate using v(xs: Sequence<Integer>): Integer pure { \
+         fold<Total>(acc, x in xs: acc + x, identity: 0) }\n",
+    );
+    let document = wire(&emission);
+    let fold = nodes(&document)
+        .iter()
+        .find(|node| node["body"]["operation"]["identity"] == "quire.op.collection.fold")
+        .expect("the authored fold");
+    let step = &fold["body"]["arguments"][1];
+    assert_eq!(step["term"], "binding");
+    assert_eq!(step["name"], "acc");
+    assert_eq!(step["value"]["term"], "aggregate");
+    assert_eq!(step["value"]["members"][0]["name"], "x");
+    let read = read_back(&emission);
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+}
+
 fn jcs(value: &Value) -> Vec<u8> {
     serde_json::to_vec(value).unwrap()
 }
@@ -356,6 +430,11 @@ fn assert_equality_reader_outcomes(emission: &Emission, read: Read) {
         Read::Verified { admitted, .. } => admitted,
         other => panic!("expected IR package admission for equality sidecars, got {other:?}"),
     };
+    let mut wire = wire;
+    wire["semantic_graph"] = serde_json::to_value(admitted.resolved_graph()).unwrap();
+    let decisions = wire["checked_term_data"]["equality_decisions"]
+        .as_array()
+        .unwrap();
 
     let selected_rows = emission
         .equality_producer_identity_rows()

@@ -51,7 +51,7 @@ fn clause(name: &str, profile: &str, activation: &str, body: &str) -> String {
 /// The `temporal`/`temporal_clause` node ids of `package`, in graph order.
 fn clause_ids(package: &CheckedPackageV2) -> Vec<CheckedNodeId> {
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .zip(package.node_kinds())
@@ -175,11 +175,13 @@ fn each_clause_of_the_package_reads_its_node_facts() {
     for (profile, body, clock, (operation, (lower, upper))) in cases {
         let compiled = compile(&unit(profile, &clause("Due", "t", "on origin", body)));
         let package = admit(&compiled);
-        let wire = &compiled.wire;
+        let mut wire = compiled.wire.clone();
+        wire["semantic_graph"] = serde_json::to_value(package.resolved_graph()).unwrap();
+        let wire = &wire;
         let id = only_clause(&package);
         let view = temporal_subject(&package, &id).expect("the clause reads");
         let node = package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .find(|node| node.node_id == id)
@@ -284,7 +286,9 @@ fn the_activation_and_its_guard_are_read_from_the_clause() {
         .join("\n"),
     ));
     let package = admit(&compiled);
-    let wire = &compiled.wire;
+    let mut wire = compiled.wire.clone();
+    wire["semantic_graph"] = serde_json::to_value(package.resolved_graph()).unwrap();
+    let wire = &wire;
     let activation =
         |id: &CheckedNodeId| temporal_subject(&package, id).unwrap().activation().clone();
     let ids = clause_ids(&package);
@@ -461,7 +465,9 @@ fn a_holds_leaf_reads_its_kind_binders_and_span() {
         ),
     ));
     let package = admit(&compiled);
-    let wire = &compiled.wire;
+    let mut wire = compiled.wire.clone();
+    wire["semantic_graph"] = serde_json::to_value(package.resolved_graph()).unwrap();
+    let wire = &wire;
     let id = only_clause(&package);
     let subject = temporal_subject(&package, &id).unwrap();
     let [reads_n, literal] = subject.predicate_leaves() else {
@@ -727,7 +733,7 @@ fn a_protocol_clause_is_no_temporal_clause_and_requirements_name_it() {
     let lowered = lower_with(model(), PROFILES, &format!("{temporal}\n{protocol}"));
     let package: &CheckedPackageV2 = lowered.ir.as_ref().expect("the package is admitted");
     let protocol_ids: Vec<CheckedNodeId> = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .zip(package.node_kinds())

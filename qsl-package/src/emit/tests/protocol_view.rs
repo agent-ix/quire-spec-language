@@ -106,7 +106,7 @@ fn fixture() -> Fixture {
 
 fn node<'p>(package: &'p CheckedPackageV2, id: &CheckedNodeId) -> &'p CheckedSemanticNodeV2 {
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| &node.node_id == id)
@@ -127,7 +127,7 @@ fn name(package: &CheckedPackageV2, id: &CheckedNodeId) -> Vec<String> {
 
 fn clause(package: &CheckedPackageV2) -> &CheckedSemanticNodeV2 {
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| &*node.semantic_form == "protocol_clause")
@@ -647,7 +647,7 @@ fn a_control_held_twice_is_refused_not_listed_twice() {
     let clause_id = clause(package).node_id.clone();
     let main = by_name(package, "Main").node_id.clone();
     let requested = by_name(package, "Requested").node_id.clone();
-    let mut nodes = package.graph().nodes.clone();
+    let mut nodes = package.resolved_graph().nodes.clone();
     let node = nodes.iter_mut().find(|node| node.node_id == main).unwrap();
     let CheckedTerm::Application { arguments, .. } = &mut node.body else {
         panic!("an application body");
@@ -683,7 +683,7 @@ fn an_unknown_or_non_clause_node_refuses_without_a_partial_result() {
     let mut absent = clause_id.clone();
     absent.ordinal += 1000;
     let temporal = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| &*node.semantic_form == "temporal_clause")
@@ -712,7 +712,7 @@ fn an_unknown_or_non_clause_node_refuses_without_a_partial_result() {
     );
     let package = lowered.ir.as_ref().expect("the cyclic package is admitted");
     let carrier = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| &*node.semantic_form == "protocol_reference")
@@ -732,7 +732,7 @@ fn an_unknown_or_non_clause_node_refuses_without_a_partial_result() {
 
 fn by_name<'p>(package: &'p CheckedPackageV2, last: &str) -> &'p CheckedSemanticNodeV2 {
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| {
@@ -831,7 +831,7 @@ fn the_node_views_return_the_map_successors_and_refuse_a_removed_member() {
 
     // The temporal and value operation identities of the applications.
     let temporal = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| &*node.semantic_form == "temporal_clause")
@@ -841,7 +841,7 @@ fn the_node_views_return_the_map_successors_and_refuse_a_removed_member() {
         "quire.op.temporal.clause"
     );
     assert!(
-        package.graph().nodes.iter().any(|node| {
+        package.resolved_graph().nodes.iter().any(|node| {
             operation_identity(node).is_ok_and(|identity| identity == "quire.op.boolean.not")
         }),
         "the choice guard's `not` is a value operation node"
@@ -1117,7 +1117,7 @@ fn an_interval_channel_needs_no_temporal_profile_and_reads_no_clock() {
     );
     assert!(
         package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .all(|node| !matches!(&*node.semantic_form, "temporal_clause" | "clock_place")),
@@ -1158,7 +1158,7 @@ fn the_locus_and_the_clock_binding_are_the_packages_entries() {
     );
 
     let temporal = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| &*node.semantic_form == "temporal_clause")
@@ -1485,7 +1485,7 @@ fn nodes_with_maximum(
     id: &CheckedNodeId,
     replacement: Option<&dyn Fn(&mut CheckedTerm)>,
 ) -> Vec<CheckedSemanticNodeV2> {
-    let mut nodes = package.graph().nodes.clone();
+    let mut nodes = package.resolved_graph().nodes.clone();
     let node = nodes.iter_mut().find(|node| &node.node_id == id).unwrap();
     let CheckedTerm::Application { arguments, .. } = &mut node.body else {
         panic!("an application body");
@@ -1577,7 +1577,7 @@ fn a_compensation_without_a_maximum_refuses_missing_member() {
             member: "attempts.maximum"
         })
     );
-    assert_eq!(attempts_over(&package.graph().nodes, &id), Ok(2));
+    assert_eq!(attempts_over(&package.resolved_graph().nodes, &id), Ok(2));
 }
 
 /// FR-519-AC-16 (TC-1314 row 16): an absent id, a role and a control refuse

@@ -27,7 +27,7 @@ fn admit_bytes(bytes: &[u8], wire: &Value) -> Arc<CheckedPackageV2> {
 
 fn clause_ids(package: &CheckedPackageV2) -> Vec<CheckedNodeId> {
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .zip(package.node_kinds())

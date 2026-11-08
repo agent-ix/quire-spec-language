@@ -22,7 +22,7 @@ fn bytes_slot(
         wanted.node.clone()
     } else {
         let declared = v2
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .find(|node| {
@@ -34,7 +34,7 @@ fn bytes_slot(
             .expect("the owner is declared");
         if &*declared.semantic_form == "compensation" {
             qsl_semantics::check::wire_id::WireGraph::new(
-                v2.graph().nodes.iter().map(|node| &node.node_id),
+                v2.resolved_graph().nodes.iter().map(|node| &node.node_id),
             )
             .expect("wire ids")
             .key(&declared.node_id)

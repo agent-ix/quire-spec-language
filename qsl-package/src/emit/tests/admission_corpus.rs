@@ -876,7 +876,7 @@ fn check_row(row: &Row, outcomes: &[Outcome], failures: &mut Vec<String>) {
     let admitted = outcomes.iter().any(|outcome| {
         outcome.read.as_ref().is_ok_and(|read| {
             read.admitted
-                .graph()
+                .resolved_graph()
                 .nodes
                 .iter()
                 .zip(read.admitted.node_kinds())

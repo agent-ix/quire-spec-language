@@ -393,7 +393,7 @@ fn project_every_node(
     identities: &quire_contract_model::SelectedExactIdentities,
     budget: &mut NativeJoinBudget,
 ) {
-    for node in &admitted.graph().nodes {
+    for node in &admitted.resolved_graph().nodes {
         let _ = admitted.project_exact_type(&node.node_id, identities, budget);
     }
 }

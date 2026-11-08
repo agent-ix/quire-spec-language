@@ -159,7 +159,7 @@ pub fn selected_exact_identities_from_rows(
             .iter()
             .filter(|row| {
                 package
-                    .graph()
+                    .resolved_graph()
                     .nodes
                     .iter()
                     .any(|node| selected_exact_declaration_row_matches_node(row, node))
@@ -169,7 +169,7 @@ pub fn selected_exact_identities_from_rows(
             .iter()
             .filter(|row| {
                 package
-                    .graph()
+                    .resolved_graph()
                     .nodes
                     .iter()
                     .any(|node| selected_exact_field_row_matches_node(row, node))

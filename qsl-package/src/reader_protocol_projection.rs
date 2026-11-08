@@ -415,7 +415,7 @@ pub(crate) fn project_package(
     budget: &mut quire_contract_model::NativeJoinBudget,
 ) -> Result<ReaderProtocolSlots, PackageRefusal> {
     let mut projections = BTreeMap::new();
-    for node in &admitted.graph().nodes {
+    for node in &admitted.resolved_graph().nodes {
         let projection = admitted.project_exact_type(&node.node_id, &identities, budget);
         if let Err(denial) = &projection {
             if qsl_semantics::model::intake::is_native_budget_denial(denial) {
@@ -646,7 +646,7 @@ impl<'wire> WireIndex<'wire> {
             .map_err(|_| fault("reader-protocol-graph-has-structural-keys"))?;
         let mut nodes = BTreeMap::new();
         let mut ids = BTreeMap::new();
-        for node in &admitted.graph().nodes {
+        for node in &admitted.resolved_graph().nodes {
             nodes.insert(&node.node_id, node);
             let key = graph
                 .key(&node.node_id)

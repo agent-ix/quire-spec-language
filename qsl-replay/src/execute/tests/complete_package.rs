@@ -24,7 +24,7 @@ fn complete_package_round_trips_and_native_admission_keeps_graph_and_lock() {
         .unwrap();
     assert_eq!(admitted.name(), "fixture");
     assert!(
-        !admitted.graph().nodes.is_empty(),
+        !admitted.resolved_graph().nodes.is_empty(),
         "the whole native graph survives admission"
     );
     assert_eq!(admitted.lock().sources[0].authority.as_ref(), AUTHORITY);

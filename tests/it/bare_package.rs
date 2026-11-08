@@ -391,11 +391,15 @@ fn a_public_record_projection_requires_its_original_carried_native_witness() {
         .expect("the original Pair row");
     let equality = qsl_package::ReadEqualityRows::read(&files["equality.json"], &package).unwrap();
     let graph = qsl_semantics::check::wire_id::WireGraph::new(
-        package.graph().nodes.iter().map(|node| &node.node_id),
+        package
+            .resolved_graph()
+            .nodes
+            .iter()
+            .map(|node| &node.node_id),
     )
     .unwrap();
     let protocol = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| {
@@ -609,7 +613,7 @@ fn the_identity_file_refuses_what_it_cannot_join() {
         })
         .expect("R selects a record or union declaration");
     let other = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .map(|node| serde_json::to_value(&node.node_id).unwrap())
@@ -875,7 +879,7 @@ fn a_node_that_is_no_temporal_clause_is_unresolved_over_the_bare_package() {
         .expect("a clause");
     let asked = evidence_request(&evaluation, &due, None, 3);
     let other = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .map(|node| node.node_id.clone())
@@ -1514,6 +1518,9 @@ fn supply_on<'p>(
             qsl_package::NativeJoinFailure::Equality(error) => {
                 panic!("identity-only fixture has no equality read: {error:?}")
             }
+            qsl_package::NativeJoinFailure::Rows(error) => {
+                panic!("retained identity-only supply performs no producer row copy: {error:?}")
+            }
             qsl_package::NativeJoinFailure::UnitDefinitions { .. } => {
                 panic!("identity-only fixture has no unit rows")
             }
@@ -1701,7 +1708,7 @@ fn the_view_the_constructors_and_the_writer_refuse_a_budget_one_short() {
         .expect("the source supplier holds identities")
         .validate_and_rebind(ample.admitted(), &mut view_measure)
         .expect("the reader validates the supplied identities");
-    for node in &ample.admitted().graph().nodes {
+    for node in &ample.admitted().resolved_graph().nodes {
         let _ = ample
             .admitted()
             .project_exact_type(&node.node_id, &rebound, &mut view_measure);

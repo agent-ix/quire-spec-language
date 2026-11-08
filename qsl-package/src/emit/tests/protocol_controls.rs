@@ -210,7 +210,7 @@ fn protocol_nodes_and_occurrences_survive_the_whole_i2_read() {
     for node in expected {
         let key = qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).unwrap();
         let typed = admitted
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .find(|candidate| serde_json::to_value(&candidate.node_id).unwrap() == node["node_id"])

@@ -92,7 +92,7 @@ fn closed_composites<'a>(
     let mut reverse: BTreeMap<&CheckedNodeId, Vec<&CheckedNodeId>> = BTreeMap::new();
     let mut blocked = BTreeSet::new();
     let mut pending = Vec::new();
-    for node in &package.package().graph().nodes {
+    for node in &package.package().resolved_graph().nodes {
         let id = &node.node_id;
         let requires_declaration = matches!(
             package.package().node_kind(id),

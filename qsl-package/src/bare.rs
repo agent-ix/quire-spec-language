@@ -239,7 +239,7 @@ impl<'p> BarePackage<'p> {
         };
         self.supply = Some(supply);
         if let Some(Ok(identities)) = &self.joined {
-            for node in &self.package.graph().nodes {
+            for node in &self.package.resolved_graph().nodes {
                 let projection = self
                     .package
                     .project_exact_type(&node.node_id, identities, budget);
@@ -770,7 +770,7 @@ fn form_of(spelling: &str) -> Option<SelectedExactDeclarationForm> {
 fn node_references(package: &CheckedPackageV2) -> Option<BTreeMap<NodeKey, CheckedNodeId>> {
     let graph = wire_graph(package).ok()?;
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .map(|node| Some((graph.key(&node.node_id).ok()?, node.node_id.clone())))
@@ -898,7 +898,7 @@ impl ReadIdentityRows {
         }
         let graph = wire_graph(package).map_err(|_| malformed(IdentityMember::File))?;
         let held: BTreeSet<&CheckedNodeId> = package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .map(|node| &node.node_id)

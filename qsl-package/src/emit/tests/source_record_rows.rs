@@ -247,7 +247,13 @@ fn ir_admits_the_row_nodes_as_record_declarations_and_their_type_nodes() {
         panic!("IR admits the emitted package");
     };
     for row in emission.selected_source_record_rows() {
-        let named = |id: &CheckedNodeId| admitted.graph().nodes.iter().find(|n| &n.node_id == id);
+        let named = |id: &CheckedNodeId| {
+            admitted
+                .resolved_graph()
+                .nodes
+                .iter()
+                .find(|n| &n.node_id == id)
+        };
         let record = named(&row.structural_node).expect("the record node is admitted");
         assert_eq!(record.semantic_form.as_ref(), "record");
         for member in &row.members {

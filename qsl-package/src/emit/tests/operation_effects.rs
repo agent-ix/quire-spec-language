@@ -98,7 +98,7 @@ impl Emitted {
     fn declaration(&self, name: &str) -> CheckedNodeId {
         let found: Vec<_> = self
             .admitted
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .filter(|node| {
@@ -450,7 +450,7 @@ fn state_machines_processes_and_object_types_emit_rows_and_a_subtype_does_not() 
     let event = emitted.declaration("OrderPlaced");
     let event_node = emitted
         .admitted
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| node.node_id == event)

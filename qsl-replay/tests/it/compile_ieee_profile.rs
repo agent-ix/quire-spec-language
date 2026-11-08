@@ -151,7 +151,7 @@ fn strict_ir_reader_admits_the_genuine_float_source_packages() {
             panic!("strict IR admission failed: {read:?}");
         };
         assert_eq!(
-            package.graph().nodes.len(),
+            package.resolved_graph().nodes.len(),
             wire["semantic_graph"]["nodes"].as_array().unwrap().len()
         );
     }
@@ -191,7 +191,7 @@ fn strict_ir_reader_admits_fma_relations_and_float_orderings() {
                 panic!("strict IR admission failed for {source}: {read:?}");
             };
             assert_eq!(
-                package.graph().nodes.len(),
+                package.resolved_graph().nodes.len(),
                 wire["semantic_graph"]["nodes"].as_array().unwrap().len(),
                 "{source}"
             );

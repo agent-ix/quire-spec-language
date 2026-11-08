@@ -92,7 +92,7 @@ pub(crate) fn read_unit_table(
     let mut declared = Vec::new();
     for row in rows {
         let node = package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .find(|node| node.node_id == row.structural_node)

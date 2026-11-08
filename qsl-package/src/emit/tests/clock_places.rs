@@ -4,6 +4,7 @@
 //! each path, whose slot steps carry the symbolic element selector.
 
 use super::admission_corpus::config_version_unit;
+use super::resolved_wire as wire;
 use super::*;
 use crate::checked_v2::{read_checked_package_v2, CheckedTimedModel};
 use crate::emit::timed_models_of;

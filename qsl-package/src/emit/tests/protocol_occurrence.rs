@@ -224,7 +224,7 @@ fn role_slots_carry_their_selected_model_type_through_read_back() {
     let graph = crate::checked_v2::wire_graph(ir).expect("wire identities decode");
     for (_, model) in &models {
         assert!(
-            ir.graph()
+            ir.resolved_graph()
                 .nodes
                 .iter()
                 .any(|node| &*node.semantic_form == "object_type"

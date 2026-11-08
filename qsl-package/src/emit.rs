@@ -5264,7 +5264,7 @@ pub fn emit_timed_models(
 ) -> Result<Emission, EmitRefusal> {
     let ids = &StructuralIds::default();
     let expected = base
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .filter(|node| {
@@ -5290,7 +5290,7 @@ pub fn emit_timed_models(
     }
 
     let mut nodes = base
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .map(|node| {
@@ -5313,8 +5313,7 @@ pub fn emit_timed_models(
     rekey_timed_model_nodes(ids, &mut nodes, &mut source_map)?;
     let inspection_source_map = inspection_source_map(ids, &source_map)?;
     write_index_segments(&mut nodes, &mut source_map, &mut [], &mut [])?;
-    // Node-held operands stay index segments, so every operand row is empty.
-    let operand_rows = vec![Vec::new(); nodes.len()];
+    let operand_rows = write_operand_slots(&mut nodes, limits)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: base.graph().graph_version.clone(),
         nodes,
@@ -5377,7 +5376,7 @@ pub fn emit_timed_models(
         identity_row_selection: identity_rows::IdentityRowSelection::default(),
         equality_producer_identity_rows: Vec::new(),
         equality_fact_witness_rows: Vec::new(),
-        wire_nodes: semantic_graph.nodes,
+        wire_nodes: document_nodes(semantic_graph)?,
         temporal_binding_rows: TemporalBindingRows::default(),
         temporal_rows: TemporalRows::default(),
     }
@@ -6330,8 +6329,10 @@ fn emit_package_inner(
     let selected_source_record_rows = source_record_rows(graph, &emitted_node_ids)?;
     let selected_source_tuple_rows = source_tuple_rows(graph, &emitted_node_ids)?;
     let selected_source_collection_rows = source_collection_rows(graph, &emitted_node_ids)?;
-    // Node-held operands stay index segments, so every operand row is empty.
-    let operand_rows = vec![Vec::new(); nodes.len()];
+    let operation_effects = graph
+        .operation_effects()
+        .filter(|rows| operation_effects_are_carried(rows, &nodes));
+    let operand_rows = write_operand_slots(&mut nodes, limits)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
@@ -6345,9 +6346,6 @@ fn emit_package_inner(
         catalog: diagnostics_catalog(),
         entries: Vec::new(),
     };
-    let operation_effects = graph
-        .operation_effects()
-        .filter(|rows| operation_effects_are_carried(rows, &semantic_graph.nodes));
     let package = EmittedPackage::new(graph.package_name(), |name| {
         encode_checked_package_v2(
             name,
@@ -6397,7 +6395,7 @@ fn emit_package_inner(
         identity_row_selection: identity_rows::IdentityRowSelection::default(),
         equality_producer_identity_rows,
         equality_fact_witness_rows,
-        wire_nodes: semantic_graph.nodes,
+        wire_nodes: document_nodes(semantic_graph)?,
         temporal_binding_rows,
         temporal_rows: TemporalRows {
             clauses: temporal_clause_refs,
@@ -7538,6 +7536,150 @@ fn reachable_ids(node: &mut CheckedSemanticNodeV2) -> Vec<&mut CheckedNodeId> {
         }
     }
     ids
+}
+
+/// Write every node-held operand of `nodes` as an operand slot (FR-322): slot
+/// `k` of a node names the `k`th distinct graph index its canonical bytes
+/// hold, in byte order, and the returned row of that node lists those
+/// indices. `nodes` hold document index segments on entry, as
+/// [`write_index_segments`] leaves them.
+pub(crate) fn write_operand_slots(
+    nodes: &mut [CheckedSemanticNodeV2],
+    limits: EmitLimits,
+) -> Result<Vec<Vec<u64>>, EmitRefusal> {
+    use quire_contract_model::CheckedNodePathSegment as Segment;
+    let mut rows = Vec::with_capacity(nodes.len());
+    for node in nodes.iter_mut() {
+        let bytes = quire_canonical::to_vec(&*node, limits.canonical())?;
+        let mut row: Vec<u64> = Vec::new();
+        let mut slots = HashMap::new();
+        for index in operand_indices(&bytes, limits)? {
+            if let std::collections::hash_map::Entry::Vacant(entry) = slots.entry(index) {
+                entry
+                    .insert(u64::try_from(row.len()).map_err(|_| EmitRefusal::SourceMapInvariant)?);
+                row.push(index);
+            }
+        }
+        let mut changes = Vec::new();
+        for id in reachable_ids(node) {
+            let old = id.clone();
+            for segment in &mut id.path {
+                if let Segment::Index(index) = segment {
+                    let slot = slots.get(index).ok_or(EmitRefusal::SourceMapInvariant)?;
+                    *segment = Segment::Operand(*slot);
+                }
+            }
+            if old != *id {
+                changes.push((old, id.clone()));
+            }
+        }
+        for (old, new) in changes {
+            node.replace_node_id(&old, &new);
+        }
+        rows.push(row);
+    }
+    Ok(rows)
+}
+
+/// Walk actual ID paths in canonical order, excluding similarly spelled data.
+fn operand_indices(bytes: &[u8], limits: EmitLimits) -> Result<Vec<u64>, EmitRefusal> {
+    use quire_canonical::{Items, Members, Node, NodeRef};
+    enum Pending<'a> {
+        Value(NodeRef<'a>),
+        Members(Members<'a>),
+        Items(Items<'a>),
+    }
+    let document = quire_canonical::read(bytes, limits.output_bytes)
+        .map_err(|_| EmitRefusal::SourceMapInvariant)?;
+    let mut pending = vec![Pending::Value(document.root())];
+    let mut indices = Vec::new();
+    while let Some(next) = pending.pop() {
+        match next {
+            Pending::Value(value) => match value.node() {
+                Node::Object(members) => {
+                    let member_count = members.clone().count();
+                    if member_count == 2
+                        && value.get("package").is_some()
+                        && value.get("node").is_some()
+                    {
+                        continue;
+                    }
+                    let is_id = member_count == 3
+                        && value.get("package").is_some()
+                        && value.get("ordinal").is_some()
+                        && value.get("path").is_some();
+                    if is_id {
+                        let Some(path) = value.get("path") else {
+                            continue;
+                        };
+                        let Node::Array(segments) = path.node() else {
+                            continue;
+                        };
+                        for segment in segments {
+                            if let Some(index) = segment.get("node") {
+                                let Node::Number(number) = index.node() else {
+                                    return Err(EmitRefusal::SourceMapInvariant);
+                                };
+                                indices.push(
+                                    number
+                                        .text()
+                                        .parse()
+                                        .map_err(|_| EmitRefusal::SourceMapInvariant)?,
+                                );
+                            }
+                        }
+                    } else {
+                        pending.push(Pending::Members(members));
+                    }
+                }
+                Node::Array(items) => pending.push(Pending::Items(items)),
+                Node::Null | Node::Bool(_) | Node::Number(_) | Node::String(_) => {}
+            },
+            Pending::Members(mut members) => {
+                if let Some((_, value)) = members.next() {
+                    pending.push(Pending::Members(members));
+                    pending.push(Pending::Value(value));
+                }
+            }
+            Pending::Items(mut items) => {
+                if let Some(value) = items.next() {
+                    pending.push(Pending::Items(items));
+                    pending.push(Pending::Value(value));
+                }
+            }
+        }
+    }
+    Ok(indices)
+}
+
+/// Retain document-held IDs for producer joins and subsequent rewrites.
+pub(crate) fn document_nodes(
+    mut graph: CheckedSemanticGraphV2,
+) -> Result<Vec<CheckedSemanticNodeV2>, EmitRefusal> {
+    use quire_contract_model::CheckedNodePathSegment as Segment;
+    for (node, row) in graph.nodes.iter_mut().zip(&graph.operand_rows) {
+        let mut changes = Vec::new();
+        for id in reachable_ids(node) {
+            let old = id.clone();
+            for segment in &mut id.path {
+                if let Segment::Operand(slot) = segment {
+                    let index = usize::try_from(*slot)
+                        .ok()
+                        .and_then(|slot| row.get(slot))
+                        .copied()
+                        .ok_or(EmitRefusal::SourceMapInvariant)?;
+                    *segment = Segment::Index(index);
+                }
+            }
+            if old != *id {
+                changes.push((old, id.clone()));
+            }
+        }
+        for (old, new) in changes {
+            node.replace_node_id(&old, &new);
+        }
+    }
+    Ok(graph.nodes)
 }
 
 /// Whether `id` holds a segment `holds` matches.

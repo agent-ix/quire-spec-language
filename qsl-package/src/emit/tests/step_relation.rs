@@ -110,7 +110,7 @@ fn a_step_relation_emits_and_reads_back_its_execution_body() {
     .into_value()
     .admitted;
     let typed = admitted
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| node.semantic_form.as_ref() == "step_relation")
@@ -196,7 +196,7 @@ fn one_step_relation_claim_occurrence_is_admitted_by_ir() {
     .into_value()
     .admitted;
     let admitted_relation = admitted
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| node.semantic_form.as_ref() == "step_relation")

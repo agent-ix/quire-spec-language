@@ -368,7 +368,7 @@ fn emit_monitor_plan(
     limits: crate::checked::EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     let ids = &StructuralIds::default();
-    let mut nodes = base.graph().nodes.clone();
+    let mut nodes = base.resolved_graph().nodes.clone();
     let mut source_map = base.source_map().to_vec();
     read_index_segments(ids, &mut nodes, &mut source_map)?;
     // The inspection map is read from the structural form, before the
@@ -1249,14 +1249,13 @@ fn finish(
     base: &CheckedPackageV2,
     retained: &Emission,
     changes: &[(CheckedNodeId, CheckedNodeId)],
-    nodes: Vec<CheckedSemanticNodeV2>,
+    mut nodes: Vec<CheckedSemanticNodeV2>,
     source_map: Vec<CheckedSourceMapEntry>,
     inspection_source_map: qsl_foundation::source::provenance::PackageSourceMap,
     limits: crate::checked::EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     let lock = base.lock().clone();
-    // Node-held operands stay index segments, so every operand row is empty.
-    let operand_rows = vec![Vec::new(); nodes.len()];
+    let operand_rows = super::write_operand_slots(&mut nodes, limits)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: base.graph().graph_version.clone(),
         nodes,
@@ -1296,14 +1295,12 @@ fn finish(
         )
         .map_err(EmitRefusal::from)
     })?;
+    let nodes = super::document_nodes(semantic_graph)?;
     let mut rows = carry_rows(retained, changes);
-    follow_final_bindings(&mut rows.selected_source_record_rows, &semantic_graph.nodes)?;
-    follow_final_positions(&mut rows.selected_source_tuple_rows, &semantic_graph.nodes)?;
-    follow_final_collections(
-        &mut rows.selected_source_collection_rows,
-        &semantic_graph.nodes,
-    )?;
-    refresh_equality_membership(&mut rows.equality_fact_witness_rows, &semantic_graph.nodes);
+    follow_final_bindings(&mut rows.selected_source_record_rows, &nodes)?;
+    follow_final_positions(&mut rows.selected_source_tuple_rows, &nodes)?;
+    follow_final_collections(&mut rows.selected_source_collection_rows, &nodes)?;
+    refresh_equality_membership(&mut rows.equality_fact_witness_rows, &nodes);
     Ok(Emission {
         package,
         omitted: rows.omitted,
@@ -1327,7 +1324,7 @@ fn finish(
         identity_row_selection: super::identity_rows::IdentityRowSelection::default(),
         equality_producer_identity_rows: rows.equality_producer_identity_rows,
         equality_fact_witness_rows: rows.equality_fact_witness_rows,
-        wire_nodes: semantic_graph.nodes,
+        wire_nodes: nodes,
         temporal_binding_rows: rows.temporal_binding_rows,
         temporal_rows: rows.temporal_rows,
     }

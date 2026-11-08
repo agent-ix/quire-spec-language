@@ -128,7 +128,7 @@ fn read_node(
 /// [`InternalFault`] when an admitted node has a shape IR's reader admits and
 /// this read does not expect.
 pub fn read_terminals(package: &CheckedPackageV2) -> Result<Vec<ReadTerminal>, InternalFault> {
-    read_nodes(&package.graph().nodes)
+    read_nodes(&package.resolved_graph().nodes)
 }
 
 /// Every `terminal` node among `nodes`, a whole graph, in order.
