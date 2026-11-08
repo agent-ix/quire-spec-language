@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Same-emission admission of original model order and observation progress.
 
+// Original owner refusals stay inline: boxing would allocate after a budget denial.
+#![allow(clippy::result_large_err)]
+
 use qsl_semantics::check::{ModelTimeSource, TimeSourceKind};
 use quire_observation::authority::{clock, progress, SubjectSelection};
 use quire_observation::Identity;

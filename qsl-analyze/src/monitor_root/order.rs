@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-251: canonical model-step order values from the original checked owner.
 
+// Preserve inline authority refusals without allocating on a budget-denial path.
+#![allow(clippy::result_large_err)]
+
 use qsl_semantics::check::wire_id::structural_id;
 use qsl_semantics::check::{ModelTimeSource, TemporalClauseNode, TimeSourceKind};
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};

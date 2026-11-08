@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+
+// The tested boundary retains original owner refusals inline after budget denial.
+#![allow(clippy::result_large_err)]
 //! FR-251 same-emission authority through genuine observation-owner admission.
 
 mod observation;
