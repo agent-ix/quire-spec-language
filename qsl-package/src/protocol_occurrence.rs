@@ -597,19 +597,16 @@ fn in_process_nodes(package: &CheckedPackage) -> Result<Vec<Raw>, OccurrenceRefu
 /// A wire literal by its declared kind: an `integer` literal is a number or
 /// its canonical decimal string, a `string`, `text` or `enum` literal is text.
 /// A literal of one kind is never read as the other.
-fn read_literal(kind: LiteralKind, value: &serde_json::Value) -> Term {
-    match (kind, value) {
-        (LiteralKind::Integer, serde_json::Value::Number(number)) => number
-            .to_string()
-            .parse()
+fn read_literal(kind: LiteralKind, value: &quire_contract_model::CheckedJson) -> Term {
+    match kind {
+        LiteralKind::Integer => value
+            .number_text()
+            .or_else(|| value.as_str())
+            .and_then(|text| text.parse().ok())
             .map_or(Term::Other, Term::Integer),
-        (LiteralKind::Integer, serde_json::Value::String(text)) => {
-            text.parse().map_or(Term::Other, Term::Integer)
-        }
-        (
-            LiteralKind::String | LiteralKind::Text | LiteralKind::Enum,
-            serde_json::Value::String(text),
-        ) => Term::Text(text.clone()),
+        LiteralKind::String | LiteralKind::Text | LiteralKind::Enum => value
+            .as_str()
+            .map_or(Term::Other, |text| Term::Text(text.to_owned())),
         _ => Term::Other,
     }
 }
@@ -1082,8 +1079,11 @@ mod tests {
     #[trace("FR-384-AC-2", "TC-1064")]
     #[test]
     fn a_wire_literal_is_read_by_its_declared_kind() {
-        let three = serde_json::json!(3);
-        let digits = serde_json::json!("3");
+        let checked = |value: serde_json::Value| {
+            quire_contract_model::CheckedJson::from_serializable(&value).unwrap()
+        };
+        let three = checked(serde_json::json!(3));
+        let digits = checked(serde_json::json!("3"));
         assert!(matches!(
             read_literal(LiteralKind::Integer, &three),
             Term::Integer(value) if value == Integer::from(3_i64)

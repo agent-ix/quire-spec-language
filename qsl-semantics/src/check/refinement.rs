@@ -978,6 +978,8 @@ pub enum RefinementV2EncodingError {
     MissingRows,
     /// A row term's canonical bytes did not read back as a V2 term.
     Body(serde_json::Error),
+    /// A row literal's value could not be built as a checked JSON value.
+    Literal(quire_contract_model::CheckedJsonError),
     /// A row term could not be canonically encoded.
     Term(quire_canonical::Error),
     /// The refinement's structural node id is not a valid node key.
@@ -1134,6 +1136,8 @@ fn leaf_checked_term(
                         "a refinement row literal names no wire kind",
                     ))
                 })?;
+            let value = quire_contract_model::CheckedJson::from_serializable(&value)
+                .map_err(RefinementV2EncodingError::Literal)?;
             CheckedTerm::Literal {
                 type_id,
                 value_kind,

@@ -544,7 +544,16 @@ fn rename_member(v: &Value, member: &str, to: &str) -> Option<Made> {
     let clock = clock_mut(&mut w, 0)?;
     let value = clock.remove(member)?;
     clock.insert(to.to_owned(), value);
-    ok(w, malformed("/temporal_bindings/0/clock".into()))
+    // The renamed member is outside the closed clock schema, so Contract IR
+    // refuses it as an unknown member at the member itself (AD-004).
+    ok(
+        w,
+        reader(
+            "unknown_member",
+            None,
+            format!("/temporal_bindings/0/clock/{to}"),
+        ),
+    )
 }
 
 fn missing_sequence_authority(v: &Value) -> Option<Made> {

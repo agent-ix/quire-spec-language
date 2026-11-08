@@ -1943,6 +1943,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
         MonitorPlanAmbiguous,
         RefinementSubjectNotEmitted,
         RefinementIdentityEncoding,
+        LiteralEncoding,
         RefinementNotEmitted,
         UnlocatedRefinementDeclaration,
         MissingTemporalClockSelection,
@@ -1970,6 +1971,7 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::MonitorPlanAmbiguous { .. }) => Seen::MonitorPlanAmbiguous,
             Err(EmitRefusal::RefinementSubjectNotEmitted) => Seen::RefinementSubjectNotEmitted,
             Err(EmitRefusal::RefinementIdentityEncoding) => Seen::RefinementIdentityEncoding,
+            Err(EmitRefusal::LiteralEncoding) => Seen::LiteralEncoding,
             Err(EmitRefusal::RefinementNotEmitted) => Seen::RefinementNotEmitted,
             Err(EmitRefusal::UnlocatedRefinementDeclaration) => {
                 Seen::UnlocatedRefinementDeclaration

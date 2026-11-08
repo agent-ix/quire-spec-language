@@ -218,6 +218,9 @@ pub enum EmitRefusal {
     /// encoding limit or could not be encoded.
     #[error("the checked refinement identity preimage could not be encoded")]
     RefinementIdentityEncoding,
+    /// A literal's value could not be built as a checked JSON value.
+    #[error("a literal value could not be encoded as checked JSON")]
+    LiteralEncoding,
     /// A checked refinement is not supported by the current emission slice.
     #[error("the checked refinement body is not supported by the current V2 emission slice")]
     RefinementNotEmitted,
@@ -421,7 +424,7 @@ impl EmitRefusal {
             Self::TimedModelWriterInvariant(_)
             | Self::MonitorPlanInvariant(_)
             | Self::RefinementSubjectNotEmitted => Code::RuntimeInvariant,
-            Self::RefinementIdentityEncoding => Code::OutputFailure,
+            Self::RefinementIdentityEncoding | Self::LiteralEncoding => Code::OutputFailure,
             Self::RefinementNotEmitted => Code::UnsupportedConstruct,
             Self::UnlocatedRefinementDeclaration => Code::UnsupportedProjection,
             Self::SourceMapInvariant
@@ -460,6 +463,7 @@ impl EmitRefusal {
             | Self::MonitorPlanAmbiguous { .. }
             | Self::RefinementSubjectNotEmitted
             | Self::RefinementIdentityEncoding
+            | Self::LiteralEncoding
             | Self::UnlocatedRefinementDeclaration
             | Self::SourceMapInvariant
             | Self::UnresolvedNodeReference
@@ -2095,6 +2099,7 @@ fn leaf_term(ids: &StructuralIds, leaf: &LeafTerm) -> Result<CheckedTerm, EmitRe
     Ok(match leaf {
         LeafTerm::Literal { ty, value } => {
             let (value_kind, value) = literal_value(value);
+            let value = checked_literal_json(&value)?;
             CheckedTerm::Literal {
                 type_id: admitted_id(ids, ty)?,
                 value_kind,
@@ -4260,6 +4265,7 @@ fn refinement_node(
         | qsl_semantics::check::RefinementV2EncodingError::Identity(_) => {
             EmitRefusal::RefinementIdentityEncoding
         }
+        qsl_semantics::check::RefinementV2EncodingError::Literal(_) => EmitRefusal::LiteralEncoding,
     })?;
     let concrete_node = node_id(
         ids,
@@ -4647,19 +4653,34 @@ fn claim_aggregate(members: Vec<CheckedTerm>) -> CheckedTerm {
     CheckedTerm::Aggregate { members }
 }
 
-fn claim_literal(type_id: &CheckedNodeId, kind: LiteralKind, value: String) -> CheckedTerm {
-    CheckedTerm::Literal {
+fn claim_literal(
+    type_id: &CheckedNodeId,
+    kind: LiteralKind,
+    value: String,
+) -> Result<CheckedTerm, EmitRefusal> {
+    Ok(CheckedTerm::Literal {
         type_id: type_id.clone(),
         value_kind: kind,
-        value: serde_json::Value::String(value),
-    }
+        value: checked_literal_json(&value)?,
+    })
 }
 
-fn claim_text(type_id: &CheckedNodeId, value: &str) -> CheckedTerm {
+/// A literal's value as the checked-JSON handle the V2 term carries.
+fn checked_literal_json(
+    value: &impl serde::Serialize,
+) -> Result<quire_contract_model::CheckedJson, EmitRefusal> {
+    quire_contract_model::CheckedJson::from_serializable(value)
+        .map_err(|_| EmitRefusal::LiteralEncoding)
+}
+
+fn claim_text(type_id: &CheckedNodeId, value: &str) -> Result<CheckedTerm, EmitRefusal> {
     claim_literal(type_id, LiteralKind::Text, value.to_owned())
 }
 
-fn claim_quantity(type_id: &CheckedNodeId, value: &quire_exact::Rational) -> CheckedTerm {
+fn claim_quantity(
+    type_id: &CheckedNodeId,
+    value: &quire_exact::Rational,
+) -> Result<CheckedTerm, EmitRefusal> {
     claim_literal(type_id, LiteralKind::Quantity, quantity_spelling(value))
 }
 
@@ -4685,8 +4706,8 @@ fn schedulability_claim_body(
         ScheduleClaim::Response { task, bound } => (
             "response",
             SchedulingPolicy::FixedPriority,
-            claim_text(text_type, task),
-            claim_quantity(&unit_type, bound),
+            claim_text(text_type, task)?,
+            claim_quantity(&unit_type, bound)?,
         ),
     };
     let policy = match policy {
@@ -4705,34 +4726,36 @@ fn schedulability_claim_body(
             };
             let (wcet, wcet_hi) = match &task.wcet {
                 Wcet::Single(wcet) => (wcet, claim_aggregate(Vec::new())),
-                Wcet::Dual { lo, hi } => (lo, claim_quantity(&unit_type, hi)),
+                Wcet::Dual { lo, hi } => (lo, claim_quantity(&unit_type, hi)?),
             };
             let criticality = match task.criticality {
                 qsl_semantics::check::Criticality::Lo => "lo",
                 qsl_semantics::check::Criticality::Hi => "hi",
             };
-            let priority = task.priority.map_or_else(
-                || claim_aggregate(Vec::new()),
-                |value| claim_literal(integer_type, LiteralKind::Integer, value.to_string()),
-            );
+            let priority = match task.priority {
+                Some(value) => {
+                    claim_literal(integer_type, LiteralKind::Integer, value.to_string())?
+                }
+                None => claim_aggregate(Vec::new()),
+            };
             Ok(claim_aggregate(vec![
-                claim_binding("name", claim_text(text_type, &task.name)),
-                claim_binding("arrival", claim_text(text_type, arrival)),
-                claim_binding("period", claim_quantity(&unit_type, period)),
-                claim_binding("deadline", claim_quantity(&unit_type, &task.deadline)),
-                claim_binding("bcet", claim_quantity(&unit_type, &task.bcet)),
-                claim_binding("wcet", claim_quantity(&unit_type, wcet)),
+                claim_binding("name", claim_text(text_type, &task.name)?),
+                claim_binding("arrival", claim_text(text_type, arrival)?),
+                claim_binding("period", claim_quantity(&unit_type, period)?),
+                claim_binding("deadline", claim_quantity(&unit_type, &task.deadline)?),
+                claim_binding("bcet", claim_quantity(&unit_type, &task.bcet)?),
+                claim_binding("wcet", claim_quantity(&unit_type, wcet)?),
                 claim_binding("wcet_hi", wcet_hi),
-                claim_binding("criticality", claim_text(text_type, criticality)),
+                claim_binding("criticality", claim_text(text_type, criticality)?),
                 claim_binding("priority", priority),
-                claim_binding("jitter", claim_quantity(&unit_type, &task.jitter)),
-                claim_binding("blocking", claim_quantity(&unit_type, &task.blocking)),
+                claim_binding("jitter", claim_quantity(&unit_type, &task.jitter)?),
+                claim_binding("blocking", claim_quantity(&unit_type, &task.blocking)?),
             ]))
         })
         .collect::<Result<Vec<_>, EmitRefusal>>()?;
     Ok(claim_aggregate(vec![
-        claim_binding("kind", claim_text(text_type, kind)),
-        claim_binding("policy", claim_text(text_type, policy)),
+        claim_binding("kind", claim_text(text_type, kind)?),
+        claim_binding("policy", claim_text(text_type, policy)?),
         claim_binding("task", task),
         claim_binding("bound", bound),
         claim_binding("tasks", claim_aggregate(tasks)),
@@ -5350,7 +5373,8 @@ fn timed_body_operands(
             let text = value
                 .as_str()
                 .map(str::to_owned)
-                .unwrap_or_else(|| value.to_string());
+                .or_else(|| value.number_text().map(str::to_owned))
+                .ok_or(EmitRefusal::LiteralEncoding)?;
             operands.push(PathSegment::Text(text));
         }
         _ => {
@@ -7927,7 +7951,7 @@ fn operand_entries(
 pub(crate) fn document_nodes(
     mut graph: CheckedSemanticGraphV2,
 ) -> Result<Vec<CheckedSemanticNodeV2>, EmitRefusal> {
-    use quire_contract_model::CheckedNodePathSegment as Segment;
+    use quire_contract_model::{CheckedNodePathSegment as Segment, CheckedOperandEntry};
     for (node, row) in graph.nodes.iter_mut().zip(&graph.operand_rows) {
         let mut changes = Vec::new();
         for id in reachable_ids(node) {

@@ -532,7 +532,10 @@ fn an_await_after_a_compensation_is_anchored_at_the_forward_effect() {
             _ => {}
         }
     }
-    assert_eq!(kind, Some(json!("compensation")));
+    assert_eq!(
+        kind,
+        Some(quire_contract_model::CheckedJson::from_serializable(&json!("compensation")).unwrap())
+    );
     assert_eq!(target, Some(CheckedTerm::reference(refund)));
 
     assert_eq!(
@@ -954,7 +957,8 @@ fn the_channel_and_queue_views_return_delivery_and_capacity() {
             if let CheckedTerm::Binding { name, value } = argument {
                 if &**name == "delivery" {
                     if let CheckedTerm::Literal { value, .. } = &mut **value {
-                        *value = json!(text);
+                        *value = quire_contract_model::CheckedJson::from_serializable(&json!(text))
+                            .unwrap();
                     }
                 }
             }
@@ -1619,7 +1623,7 @@ fn a_zero_or_non_integer_maximum_refuses_malformed_member() {
                 panic!("the authored maximum is a literal");
             };
             *value_kind = kind;
-            *value = json!(payload);
+            *value = quire_contract_model::CheckedJson::from_serializable(&json!(payload)).unwrap();
         }
     };
     let integer = quire_contract_model::LiteralKind::Integer;
