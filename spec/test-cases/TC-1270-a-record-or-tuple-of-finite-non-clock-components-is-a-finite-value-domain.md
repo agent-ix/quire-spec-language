@@ -71,12 +71,12 @@ domain value. Read domains through `ModelSystem::domains`, successors through
 6. In further models grant, one at a time, `Reference<Clock>`,
    `Sequence<Reference<Clock>>[0, 1]`, `Sequence<Open>[0, 1]`, `Sequence<Cfg>`,
    `Set<Cfg>` (the last two with no maximum), `Map<Boolean, Boolean>` and
-   `OrderedSet<Boolean>` (with no maximum), `Map<Boolean, Clock>[0, 1]` and
-   `OrderedSet<Clock>[0, 1]`. Call `explore_model` and `sample_model`.
+   `OrderedSet<Boolean>` (with no maximum), and `Map<Boolean, Clock>[0, 1]`. Call `explore_model` and `sample_model`.
 7. In a separate model grant, each in its own field, `Map<Boolean, Boolean>[0, 1]`,
    `Map<Boolean, Boolean>[0, 2]`, `Map<Boolean, Int[0, 2]>[0, 2]`,
    `OrderedSet<Boolean>[0, 2]`, `OrderedSet<Int[0, 2]>[0, 3]` and
-   `OrderedSet<Int[0, 2]>[0, 5]`. Read each domain and its order.
+   `OrderedSet<Int[0, 2]>[0, 5]`, `OrderedSet<Clock>[0, 2]` and `OrderedSet<Clock>`
+   with no maximum. Read each domain and its order.
 
 Tag the tests `#[trace("TC-1270", "FR-120-AC-n")]`.
 
@@ -116,8 +116,7 @@ Tag the tests `#[trace("TC-1270", "FR-120-AC-n")]`.
   candidate holds none; from the empty pre-state both slots of a length-2
   candidate are 0 ms.
 - Step 6 (negative): each field (including `Map<Boolean, Boolean>` and
-  `OrderedSet<Boolean>` with no maximum, and the clock-valued `Map` and
-  `OrderedSet`) is an unbounded root and `explore_model`
+  `OrderedSet<Boolean>` with no maximum, and the clock-valued `Map`) is an unbounded root and `explore_model`
   returns `NotSimulated::RequiresBound` and `sample_model`
   `ModelSampleError::NotSimulated(RequiresBound)`, naming the field's
   `WireNodeId`, with no state expanded.
@@ -129,4 +128,5 @@ Tag the tests `#[trace("TC-1270", "FR-120-AC-n")]`.
   `{false: 0, true: 1}`, ..., `{false: 2, true: 2}`.
   `OrderedSet<Boolean>[0, 2]` has 1 + 2 + 2 = 5, in the order `[]`, `[false]`,
   `[true]`, `[false, true]`, `[true, false]`; `OrderedSet<Int[0, 2]>[0, 3]` and
-  `[0, 5]` each have 1 + 3 + 6 + 6 = 16.
+  `[0, 5]` each have 1 + 3 + 6 + 6 = 16; `OrderedSet<Clock>[0, 2]` and
+  `OrderedSet<Clock>` have 2 each, as `Set<Clock>` does.
