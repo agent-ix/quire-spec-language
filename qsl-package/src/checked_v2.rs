@@ -1033,7 +1033,7 @@ pub fn read_evaluation_package<'package>(
         domain_packages,
         limits,
         emit,
-        &SourceWitnessSupplier::new(&emission),
+        SourceWitnessSupplier::new(&emission),
     )
 }
 
@@ -1073,18 +1073,20 @@ pub trait EvaluationWitnessSupplier {
 
 /// The supplier of the source route: the identity rows `emission` carries.
 #[derive(Debug)]
-pub struct SourceWitnessSupplier<'a> {
-    emission: &'a Emission,
+pub struct SourceWitnessSupplier {
+    emission: Emission,
 }
 
-impl<'a> SourceWitnessSupplier<'a> {
+impl SourceWitnessSupplier {
     /// The supplier over the rows `emission` carries.
-    pub fn new(emission: &'a Emission) -> Self {
-        Self { emission }
+    pub fn new(emission: &Emission) -> Self {
+        Self {
+            emission: emission.clone(),
+        }
     }
 }
 
-impl EvaluationWitnessSupplier for SourceWitnessSupplier<'_> {
+impl EvaluationWitnessSupplier for SourceWitnessSupplier {
     fn supply(
         &self,
         admitted: &CheckedPackageV2,
@@ -1152,7 +1154,7 @@ pub fn read_evaluation_emission<'package>(
     domain_packages: &qsl_semantics::model::intake::PackageInput,
     limits: V2ReadLimits,
     emit: EmitLimits,
-    witnesses: &impl EvaluationWitnessSupplier,
+    witnesses: impl EvaluationWitnessSupplier + 'package,
 ) -> Result<AdmittedPackageRead<'package>, ImportViewRefusal> {
     let mut held = BTreeMap::new();
     hold_closure(package, &mut held);
@@ -1173,13 +1175,10 @@ pub fn read_evaluation_emission<'package>(
             "admitted-reader-graph-has-structural-keys",
         ))),
     })?;
-    let mut budget = limits.native_join_budget();
-    let supplied = witnesses.supply(&read.admitted, &mut budget);
     Ok(AdmittedPackageRead {
         source: package,
         emission: emission.clone(),
-        supplied,
-        budget,
+        witnesses: Box::new(witnesses),
         read,
         dependencies: AdmittedPackages(closure),
         reader_nodes,
@@ -1193,10 +1192,9 @@ pub fn read_evaluation_emission<'package>(
 pub struct AdmittedPackageRead<'package> {
     source: &'package CheckedPackage,
     emission: Emission,
-    supplied: Result<EvaluationWitnesses, WitnessSupplyFailure>,
-    /// The native pass's budget after the supplier ran; view creation
-    /// continues the same pass.
-    budget: quire_contract_model::NativeJoinBudget,
+    /// The supplier view creation asks for the identity witness, on the
+    /// same native budget as the validation and projection that follow.
+    witnesses: Box<dyn EvaluationWitnessSupplier + 'package>,
     read: V2Read,
     dependencies: AdmittedPackages,
     reader_nodes: BTreeSet<NodeKey>,
@@ -1260,7 +1258,7 @@ impl AdmittedPackageRead<'_> {
             )));
         }
         let limits = self.read.effective_limits;
-        let mut budget = self.budget.clone();
+        let mut budget = limits.native_join_budget();
         let fault = || {
             ViewFailure::Fault(InternalFault::new(
                 "FR-390",
@@ -1282,10 +1280,10 @@ impl AdmittedPackageRead<'_> {
                 ),
             ))
         };
-        let supplied = match &self.supplied {
+        let supplied = match self.witnesses.supply(&self.read.admitted, &mut budget) {
             Ok(supplied) => supplied,
             Err(WitnessSupplyFailure::Exhausted(native)) => {
-                return Err(exhausted((**native).clone(), &budget))
+                return Err(exhausted(*native, &budget))
             }
             Err(WitnessSupplyFailure::Fault) => return Err(fault()),
         };

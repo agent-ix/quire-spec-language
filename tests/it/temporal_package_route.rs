@@ -92,7 +92,7 @@ impl Built {
             &self.packages,
             limits,
             EmitLimits::fixture(),
-            &qsl_package::SourceWitnessSupplier::new(emission),
+            qsl_package::SourceWitnessSupplier::new(emission),
         )
     }
 }

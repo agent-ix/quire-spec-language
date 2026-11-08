@@ -632,7 +632,7 @@ fn reader_view_over(
         &packages,
         V2ReadLimits::fixture(),
         crate::EmitLimits::fixture(),
-        &crate::SourceWitnessSupplier::new(&emission),
+        crate::SourceWitnessSupplier::new(&emission),
     )
     .expect("the I2 reader admits the edited package");
     match read.evaluation_view() {
@@ -1056,7 +1056,7 @@ fn deep_projection(
                 &packages,
                 limits,
                 crate::EmitLimits::fixture(),
-                &crate::SourceWitnessSupplier::new(&emission),
+                crate::SourceWitnessSupplier::new(&emission),
             )
             .expect("the I2 reader admits the deep package");
             let view = read.evaluation_view().expect("the deep view is created");
@@ -1252,7 +1252,7 @@ fn supplied_identities_are_validated_against_the_admitted_package() {
         &packages,
         V2ReadLimits::fixture(),
         crate::EmitLimits::fixture(),
-        &crate::SourceWitnessSupplier::new(&emission),
+        crate::SourceWitnessSupplier::new(&emission),
     )
     .expect("a second independent read admits");
     let other = second.admitted();
@@ -1267,7 +1267,7 @@ fn supplied_identities_are_validated_against_the_admitted_package() {
             &packages,
             V2ReadLimits::fixture(),
             crate::EmitLimits::fixture(),
-            &ChosenIdentities(witnesses),
+            ChosenIdentities(witnesses),
         )
         .expect("the I2 reader admits the package");
         let Err(ViewFailure::Unsupported(view)) = read.evaluation_view() else {

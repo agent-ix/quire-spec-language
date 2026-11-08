@@ -84,7 +84,7 @@ fn with_routes<R>(
         &no_domains,
         V2ReadLimits::fixture(),
         qsl_package::EmitLimits::fixture(),
-        &qsl_package::SourceWitnessSupplier::new(&emission),
+        qsl_package::SourceWitnessSupplier::new(&emission),
     )
     .expect("the checked package reader admits the aggregate");
     let clause = read

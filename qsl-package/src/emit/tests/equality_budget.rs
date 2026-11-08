@@ -259,7 +259,7 @@ fn source_evaluation_view_preserves_the_equality_denial_and_exact_stage_limit() 
         &domains,
         limits(need.work, need.storage),
         crate::EmitLimits::fixture(),
-        &crate::SourceWitnessSupplier::new(&emission),
+        crate::SourceWitnessSupplier::new(&emission),
     )
     .expect("public source reader admits");
     read.evaluation_view()
@@ -323,7 +323,7 @@ fn source_evaluation_view_preserves_the_equality_denial_and_exact_stage_limit() 
             &domains,
             limits(work, storage),
             crate::EmitLimits::fixture(),
-            &crate::SourceWitnessSupplier::new(&emission),
+            crate::SourceWitnessSupplier::new(&emission),
         )
         .expect("I2 read still admits");
         let Err(crate::ViewFailure::Exhausted(denial)) = short.evaluation_view() else {
