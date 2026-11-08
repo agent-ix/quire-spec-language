@@ -522,8 +522,8 @@ FR-120-AC-22 to FR-120-AC-26 specify them.
   Terms with `k` greater than `p` are 0. The values SHALL be ordered by length
   first and, within a length, lexicographically over the element order with the
   first element most significant, each element in `E`'s domain order.
-  Clock slots are matched and created as for a `Set<E>` below, an element
-  keeping its insertion position.
+  Clock slots are matched and created as for a `Set<E>` below: an element is
+  matched to a pre-state element with equal non-clock components.
 - A `Map`'s or `OrderedSet`'s size is computed without enumerating its values,
   and the sizes of the `Map` and `OrderedSet` rules are held in checked
   arithmetic: a size that does not fit counts as exceeding every limit. Their

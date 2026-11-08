@@ -3586,14 +3586,74 @@ fn a_bounded_collection_of_finite_elements_is_a_finite_domain() {
     assert_eq!(granted("Cfg", None, false, true), None);
 }
 
+/// FR-120-AC-28 (TC-1270 step 7): a granted `OrderedSet` is a finite domain
+/// of distinct-element sequences, `OrderedSet<Boolean>[0, 2]` 5 values,
+/// `OrderedSet<Int[0, 2]>[0, 3]` and `[0, 5]` 16 each, `OrderedSet<Timer>[0,
+/// 2]` 1 + 4 + 12 = 17 (the clock adding no factor), and an
+/// `OrderedSet<Clock>`, with or without a declared maximum, 2. Not covered:
+/// the `Map` rules, whose key type `quire_exact::MapType` cannot hold
+/// (its keys are `Text`) and a domain package cannot declare.
+#[trace("TC-1270", "FR-120-AC-28")]
+#[test]
+fn a_granted_ordered_set_is_a_finite_domain_of_arrangements() {
+    let timer = json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}});
+    let granted = |element: String, max: Option<u64>| {
+        // A bare-clock collection holds no data, so no document lists it.
+        let mut initial = json!({"t": timer.clone()});
+        if !element.ends_with("Clock") {
+            initial["g"] = json!({"ordered-set": []});
+        }
+        let world = world_holding(
+            cells_document(
+                vec![],
+                vec![("g", element, Some(shape(max, true, true)))],
+                &["g"],
+                &[],
+            ),
+            "",
+            &only(&["work"], ""),
+            initial,
+        );
+        let held = system(&world);
+        check_model_bounds(&held, BOUND_POSITIONS).expect("a bounded root");
+        granted_values(&world, "work", "g")
+    };
+    let boolean = "ix://quire/native/Boolean".to_owned();
+    let flags = |value: &str| -> Vec<bool> {
+        value
+            .match_indices("Boolean(")
+            .map(|(at, _)| value[at + 8..].starts_with("true"))
+            .collect()
+    };
+    let values = granted(boolean, Some(2));
+    assert_eq!(
+        values.iter().map(|value| flags(value)).collect::<Vec<_>>(),
+        [
+            vec![],
+            vec![false],
+            vec![true],
+            vec![false, true],
+            vec![true, false]
+        ]
+    );
+    assert_eq!(granted(ident("Int2"), Some(3)).len(), 16);
+    assert_eq!(granted(ident("Int2"), Some(5)).len(), 16);
+    assert_eq!(granted(ident("Timer"), Some(2)).len(), 17);
+    let clock = "ix://quire/native/Clock".to_owned();
+    assert_eq!(granted(clock.clone(), Some(2)).len(), 2);
+    assert_eq!(granted(clock, None).len(), 2);
+}
+
 /// FR-120-AC-26 (TC-1270): no candidate ranges over a clock slot. From a
 /// pre-state `ts = [Timer { n: 1 }]` whose `x` is 5 ms, a granted
 /// `Sequence<Timer>[0, 2]`'s candidate `[n 1, n 2]` holds `x` 5 ms in slot
 /// 0 and a fresh 0 ms in slot 1; a granted `Set<Timer>[0, 2]` from `{ n 1 }`
 /// at 5 ms gives the candidate `{n 1, n 2}` `x` 5 ms for `n 1` (matched by
 /// equal `n`) and 0 ms for `n 2`, and `{n 2}` 0 ms, and `{n 0, n 1}` 0 ms
-/// for `n 0` and 5 ms for `n 1`, carried from slot 0 to slot 1.
-#[trace("TC-1270")]
+/// for `n 0` and 5 ms for `n 1`, carried from slot 0 to slot 1; a granted
+/// `OrderedSet<Timer>[0, 2]` matches the same way (FR-120-AC-28), and
+/// `carries_clocks` holds for the set and ordered set, not the sequence.
+#[trace("TC-1270", "FR-120-AC-28")]
 #[test]
 fn a_candidate_slot_keeps_its_matched_clock_or_is_fresh() {
     let timer =
@@ -3602,16 +3662,13 @@ fn a_candidate_slot_keeps_its_matched_clock_or_is_fresh() {
         |value: i64| Rational::new(Integer::from(value), Integer::from(1_i64)).expect("a rational");
     // Each `work` successor from `g` holding `Timer { n: 1 }` with `x` at 5
     // ms: the element `n` and the `x` of each slot of `g`, in slot order.
-    let successors = |ordered: bool| {
-        let held = if ordered {
-            json!({"sequence": [timer("1")]})
-        } else {
-            json!({"set": [timer("1")]})
-        };
+    let successors = |kind: &str| {
+        let (ordered, unique) = (kind != "set", kind != "sequence");
+        let held = json!({ kind: [timer("1")] });
         let world = world_holding(
             cells_document(
                 vec![],
-                vec![("g", ident("Timer"), Some(shape(Some(2), ordered, !ordered)))],
+                vec![("g", ident("Timer"), Some(shape(Some(2), ordered, unique)))],
                 &["g"],
                 &[],
             ),
@@ -3621,6 +3678,9 @@ fn a_candidate_slot_keeps_its_matched_clock_or_is_fresh() {
         );
         let held = system(&world);
         let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+        // Elements matched by data wherever they land carry clocks between
+        // slots; a sequence matches by position.
+        assert_eq!(timed.carries_clocks(), unique, "{kind}");
         let [initial] = &timed.initial()[..] else {
             panic!("one initial state");
         };
@@ -3679,7 +3739,7 @@ fn a_candidate_slot_keeps_its_matched_clock_or_is_fresh() {
         found
     };
     let pair = |n: &str, x: i64| (n.to_owned(), rational(x));
-    let sequences = successors(true);
+    let sequences = successors("sequence");
     assert!(
         sequences.contains(&vec![pair("1", 5), pair("2", 0)]),
         "{sequences:?}"
@@ -3689,11 +3749,36 @@ fn a_candidate_slot_keeps_its_matched_clock_or_is_fresh() {
         "{sequences:?}"
     );
     assert!(sequences.contains(&vec![]), "{sequences:?}");
-    let sets = successors(false);
+    let sets = successors("set");
     assert!(sets.contains(&vec![pair("1", 5), pair("2", 0)]), "{sets:?}");
     assert!(sets.contains(&vec![pair("2", 0)]), "{sets:?}");
     assert!(sets.contains(&vec![pair("0", 0), pair("1", 5)]), "{sets:?}");
     assert!(sets.contains(&vec![pair("1", 5)]), "{sets:?}");
+    // An ordered set matches one to one by equal `n` like a set, wherever
+    // the element lands: the reordered `[n 2, n 1]` keeps `x` 5 ms with `n
+    // 1` in slot 1 and is fresh for `n 2`; the partly matched `[n 0, n 1]`
+    // carries slot 0's clock to slot 1.
+    let ordered_sets = successors("ordered-set");
+    assert!(
+        ordered_sets.contains(&vec![pair("2", 0), pair("1", 5)]),
+        "{ordered_sets:?}"
+    );
+    assert!(
+        ordered_sets.contains(&vec![pair("0", 0), pair("1", 5)]),
+        "{ordered_sets:?}"
+    );
+    assert!(
+        ordered_sets.contains(&vec![pair("1", 5), pair("2", 0)]),
+        "{ordered_sets:?}"
+    );
+    assert!(
+        ordered_sets.contains(&vec![pair("2", 0)]),
+        "{ordered_sets:?}"
+    );
+    assert!(
+        !ordered_sets.contains(&vec![pair("2", 5), pair("1", 0)]),
+        "{ordered_sets:?}"
+    );
 }
 
 /// FR-120-AC-26 (TC-1270) end to end through EN-1: a model whose `work`
