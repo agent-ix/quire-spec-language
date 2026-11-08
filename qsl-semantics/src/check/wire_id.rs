@@ -938,7 +938,7 @@ impl WireGraph {
         while let Some((current, mut holder)) = pending.pop() {
             if current
                 .as_object()
-                .is_some_and(|object| foreign_id_container(object))
+                .is_some_and(foreign_id_container)
             {
                 continue;
             }
