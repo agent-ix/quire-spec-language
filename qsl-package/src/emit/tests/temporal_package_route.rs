@@ -88,7 +88,7 @@ fn the_emission_returns_the_clause_refs_and_rows_it_wrote() {
             );
         }
         assert_eq!(
-            crate::emit::tests::wire_bytes(rows.profile_selections()).unwrap(),
+            crate::emit::tests::wire_bytes(&rows.profile_selections()).unwrap(),
             crate::emit::tests::wire_bytes(&package.lock().profile_selections).unwrap()
         );
         assert_eq!(
