@@ -666,7 +666,10 @@ fn wire_without_member(package: &CheckedPackageV2) -> Value {
         ceiling().canonical(),
     )
     .expect("the typed writer encodes an admitted package");
-    serde_json::from_slice(&bytes).expect("the wire is JSON")
+    let mut wire = serde_json::from_slice(&bytes).expect("the wire is JSON");
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut wire)
+        .expect("every operand slot names a row entry");
+    wire
 }
 
 /// FR-496-AC-5: the member is the only difference. A package with the member

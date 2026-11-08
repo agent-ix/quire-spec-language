@@ -119,39 +119,9 @@ fn node_with<'w>(wire: &'w Value, key: &Value) -> &'w Value {
         .unwrap_or_else(|| panic!("a node {key}"))
 }
 
-/// `key` as written inside `holder`'s body, with each operand slot replaced
-/// by the graph index its row names (FR-322 "Operand index segments"), the
-/// form a node's own `node_id` takes.
-fn resolved(wire: &Value, holder: &Value, key: &Value) -> Value {
-    fn walk(value: &Value, row: &[Value]) -> Value {
-        match value {
-            Value::Object(map) if map.len() == 1 && map.contains_key("operand") => {
-                let slot = map["operand"].as_u64().expect("an operand slot");
-                let at = usize::try_from(slot).expect("a slot index");
-                json!({"node": row[at]})
-            }
-            Value::Object(map) => Value::Object(
-                map.iter()
-                    .map(|(name, inner)| (name.clone(), walk(inner, row)))
-                    .collect(),
-            ),
-            Value::Array(items) => Value::Array(items.iter().map(|inner| walk(inner, row)).collect()),
-            other => other.clone(),
-        }
-    }
-    let at = nodes(wire)
-        .iter()
-        .position(|node| node["node_id"] == holder["node_id"])
-        .expect("the holder is a node of the wire");
-    let row = wire["semantic_graph"]["operand_rows"][at]
-        .as_array()
-        .expect("the holder's operand row");
-    walk(key, row)
-}
-
 /// The node `term` references from within `holder`.
-fn node_via<'w>(wire: &'w Value, holder: &Value, term: &Value) -> &'w Value {
-    node_with(wire, &resolved(wire, holder, target(term)))
+fn node_via<'w>(wire: &'w Value, _holder: &Value, term: &Value) -> &'w Value {
+    node_with(wire, target(term))
 }
 
 fn target(term: &Value) -> &Value {
@@ -202,11 +172,7 @@ fn a_hyper_clause_has_one_name_row_on_its_wrapper() {
         panic!("one hyper clause");
     };
     let occurrence = clause.assembled_occurrence().expect("assembled");
-    let wrapper = resolved(
-        &compiled.wire,
-        hyper_node(&compiled.wire),
-        target(binding(&hyper_node(&compiled.wire)["body"], "body")),
-    );
+    let wrapper = target(binding(&hyper_node(&compiled.wire)["body"], "body")).clone();
     assert_ne!(wrapper, hyper_node(&compiled.wire)["node_id"]);
     let names = compiled.wire["temporal_clause_names"]
         .as_array()
@@ -793,10 +759,9 @@ fn two_aliases_list_their_subjects_parameters_and_slots() {
         .map(|m| m["name"].as_str().unwrap())
         .collect();
     assert_eq!(names, ["S", "N"]);
-    let hyper = hyper_node(&built.wire);
     assert_ne!(
-        resolved(&built.wire, hyper, target(&subjects[0]["value"])),
-        resolved(&built.wire, hyper, target(&subjects[1]["value"]))
+        target(&subjects[0]["value"]),
+        target(&subjects[1]["value"])
     );
     for subject in subjects {
         let root = node_via(&built.wire, hyper_node(&built.wire), &subject["value"]);
