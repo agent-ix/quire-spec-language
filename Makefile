@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries seam-probe string-edge route-lint checked-input refinement-versioning refinement-layering qualify cargo-deny-bans fuzz-deep-input test-deep-format ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push build-no-std
+.PHONY: check-no-committed-binaries seam-probe string-edge route-lint checked-input canonical-types refinement-versioning refinement-layering qualify cargo-deny-bans fuzz-deep-input test-deep-format ci ci-default-features ci-all-features ci-clean-build ci-docs conformance pre-push build-no-std
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -55,6 +55,11 @@ route-lint:
 # pre-check stage function.
 checked-input:
 	cargo run --package xtask -- checked-input
+
+# QSL-608 (FR-272): every `/// quire:canonical` type has one definition across
+# the workspace's dependency graph. Part of `ci:`.
+canonical-types:
+	cargo run --locked --package xtask -- canonical-types
 
 # FR-340/FR-344 (ADR-017 RF-2): fails when a superseding revision in the real
 # corpus does not admit a case its prior revision admitted, or when the gate
@@ -317,7 +322,7 @@ fuzz-deep-input:
 # Each aggregate prerequisite depends on validation, rather than racing it as
 # a sibling under -j (or continuing past it under -k). Standalone lane commands
 # retain their existing behavior; this ordering belongs to the aggregate gate.
-CI_CHECKS := conformance check-no-committed-binaries ci-default-features ci-all-features test-deep-format ci-clean-build seam-probe string-edge route-lint checked-input refinement-versioning cargo-deny-bans ci-docs arch-lint-api-surface-qsl arch-lint-qualified-core build-no-std
+CI_CHECKS := conformance check-no-committed-binaries ci-default-features ci-all-features test-deep-format ci-clean-build seam-probe string-edge route-lint checked-input canonical-types refinement-versioning cargo-deny-bans ci-docs arch-lint-api-surface-qsl arch-lint-qualified-core build-no-std
 CI_TARGETS := $(CI_CHECKS)
 # The public aggregate validates the native documents before the xtask wrapper
 # canonicalizes QSPEC_DIR for every child lane.

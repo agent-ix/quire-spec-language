@@ -124,7 +124,9 @@ pub use protocol_occurrence::{
     RuntimeBindingRequirement, SubjectKind,
 };
 #[cfg(feature = "std")]
-pub use protocol_occurrence_key::{OccurrenceKey, OccurrenceKeyError, WorkflowInstanceIdentity};
+pub use protocol_occurrence_key::{
+    OccurrenceKeyError, ProtocolOccurrenceKey, WorkflowInstanceIdentity,
+};
 pub use protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
 pub use quire_contract_model::{CheckedBindingNameKind, CheckedLiteralValue, CheckedTerm};
 #[cfg(feature = "std")]
