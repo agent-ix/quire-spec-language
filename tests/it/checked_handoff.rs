@@ -1548,9 +1548,9 @@ fn table() -> Vec<Row> {
         reader(
             "clock-renamed-sequence-authority",
             EP,
-            "malformed_wire",
+            "unknown_member",
             None,
-            "/temporal_bindings/0/clock",
+            "/temporal_bindings/0/clock/sequenceAuthority",
         ),
         reader(
             "clock-missing-period",
@@ -1562,9 +1562,9 @@ fn table() -> Vec<Row> {
         reader(
             "clock-renamed-period",
             FS,
-            "malformed_wire",
+            "unknown_member",
             None,
-            "/temporal_bindings/0/clock",
+            "/temporal_bindings/0/clock/sample_period",
         ),
         reader(
             "clock-missing-timestamp-unit",
@@ -1576,9 +1576,9 @@ fn table() -> Vec<Row> {
         reader(
             "clock-renamed-timestamp-unit",
             TS,
-            "malformed_wire",
+            "unknown_member",
             None,
-            "/temporal_bindings/0/clock",
+            "/temporal_bindings/0/clock/timestampUnit",
         ),
         selection(
             "definition-artifact-wire-identity",

@@ -95,11 +95,11 @@ in the same change.
 | 20 | `clock-unit` (`clock.unit`) | `v2.clock.*` | selection: another non-empty unit on the fixed-sample row | `clock.unit` |
 | 21 | `clock-timestamp-unit` (`clock.timestamp_unit`) | `v2.clock.*` | selection: another non-empty unit on the timestamped row | `clock.timestamp_unit` |
 | 22 | `clock-missing-sequence-authority` (`clock.sequence_authority`) | `json` | reader: remove the member | `malformed_wire` at the row's `clock` |
-| 23 | `clock-renamed-sequence-authority` (`clock.sequence_authority`) | `json` | reader: rename it `sequenceAuthority` | `malformed_wire` at the row's `clock` |
+| 23 | `clock-renamed-sequence-authority` (`clock.sequence_authority`) | `json` | reader: rename it `sequenceAuthority`; the renamed member is outside the closed clock schema, so Contract IR refuses it where it stands | `unknown_member` at the renamed member, `/temporal_bindings/{N}/clock/sequenceAuthority` |
 | 24 | `clock-missing-period` (`clock.period`) | `json` | reader: remove `period` | `malformed_wire` at the row's `clock` |
-| 25 | `clock-renamed-period` (`clock.period`) | `json` | reader: rename it `sample_period` | `malformed_wire` at the row's `clock` |
+| 25 | `clock-renamed-period` (`clock.period`) | `json` | reader: rename it `sample_period`; the renamed member is outside the closed clock schema, so Contract IR refuses it where it stands | `unknown_member` at the renamed member, `/temporal_bindings/{N}/clock/sample_period` |
 | 26 | `clock-missing-timestamp-unit` (`clock.timestamp_unit`) | `json` | reader: remove the member | `malformed_wire` at the row's `clock` |
-| 27 | `clock-renamed-timestamp-unit` (`clock.timestamp_unit`) | `json` | reader: rename it `timestampUnit` | `malformed_wire` at the row's `clock` |
+| 27 | `clock-renamed-timestamp-unit` (`clock.timestamp_unit`) | `json` | reader: rename it `timestampUnit`; the renamed member is outside the closed clock schema, so Contract IR refuses it where it stands | `unknown_member` at the renamed member, `/temporal_bindings/{N}/clock/timestampUnit` |
 | 28 | `definition-original-bytes` (`definition.original_bytes`) | `invalid.seal` | dropped: the checked package vouches for no source bytes, so the case has no successor | none |
 | 29 | `definition-artifact-wire-identity` (QSL main only) | `v2.definition.*` | selection: the lock definition authority differs | `definition.authority` |
 | 30 | `clock-name` (`temporal_bindings.clock_name`, QSL main only) | `v2.clock.*` | reader: a row's `clock_name` differs from the clause's clock literal | `invalid_package`/`timed-node-reference` at `/temporal_bindings/{i}/clock_name` |
