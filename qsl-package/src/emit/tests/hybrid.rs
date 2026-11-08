@@ -553,10 +553,16 @@ fn braking2_restored_nodes_match_qspec_vectors() {
         )
         .cloned()
         .collect();
-    let vectors = WireGraph::of_package_value(&json!({
+    let mut vector_document = json!({
         "semantic_graph": { "nodes": vector_nodes, "operand_rows": vector_rows }
-    }))
-    .expect("the vectors are one graph");
+    });
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut vector_document)
+        .expect("vector references resolve in their published holders");
+    let vector_nodes = vector_document["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap();
+    let (base, expected) = vector_nodes.split_at(base.len());
+    let vectors = WireGraph::of_package_value(&vector_document).expect("resolved vector graph");
     let emitted = WireGraph::of_package_value(&wire).expect("the emitted graph");
     let key_text = |graph: &WireGraph, id: &Value| graph.key_of_value(id).unwrap().to_string();
     let expected_ids: BTreeSet<String> = expected
