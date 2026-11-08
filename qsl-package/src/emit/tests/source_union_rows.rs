@@ -59,7 +59,7 @@ fn source_union_carrier_rejects_missing_stale_foreign_and_conflicting_rows() {
     let file: Value = serde_json::from_slice(&rows.to_bytes(&package).unwrap()).unwrap();
     let read = |value: &Value| {
         crate::ReadIdentityRows::read(
-            &serde_json::to_vec(value).unwrap(),
+            &crate::emit::tests::wire_bytes(value).unwrap(),
             &package,
             &mut NativeJoinBudget::new(1 << 30, 1 << 30),
         )

@@ -19,7 +19,7 @@ pub use editor::{
     DocumentNavigation, DocumentSnapshot, DocumentSymbol, FormatCorrespondence, FormatResponse,
 };
 
-use qsl_cst::{CompleteDiagnostic, ExtensionForms, ExtensionProduction, Limits, ParsedSource};
+use qsl_cst::{CompleteDiagnostic, Limits, ParsedSource};
 use qsl_foundation::selection::ProfileCatalog;
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::library::extension::HeldExtensions;
@@ -72,13 +72,13 @@ pub fn parse_with_extensions(
     held: &HeldExtensions,
     limits: Limits,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
-    let forms = ExtensionForms::new(held.iter().flat_map(|extension| {
-        extension.productions().iter().map(|production| {
-            ExtensionProduction::new(
-                production.keyword.clone(),
-                production.clauses.iter().map(|clause| clause.name.clone()),
-            )
-        })
-    }));
-    qsl_cst::parse_with_extensions(identity, path, bytes, limits, &forms)
+    let forms = qsl_replay::spine::extension_forms(held);
+    qsl_cst::parse_with_extensions(
+        identity,
+        path,
+        bytes,
+        limits,
+        &forms,
+        &quire_exact::Cancel::new(),
+    )
 }

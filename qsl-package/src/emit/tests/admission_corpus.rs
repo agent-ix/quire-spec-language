@@ -248,7 +248,7 @@ static VARIANT_DOCUMENT: std::sync::LazyLock<Vec<u8>> = std::sync::LazyLock::new
             "inputIdentities": [start],
         }},
     }]);
-    serde_json::to_vec(&document).expect("the fixture serializes")
+    crate::emit::tests::wire_bytes(&document).expect("the fixture serializes")
 });
 
 /// The domain package declaring the systems interface `Sensor`.
@@ -553,7 +553,7 @@ fn with_state_machine(base: &[u8], from: &str, package: &str) -> Vec<u8> {
                 "origin": origin(&transition_identity)
             }]
         }));
-    serde_json::to_vec(&document).expect("the state-machine model serializes")
+    crate::emit::tests::wire_bytes(&document).expect("the state-machine model serializes")
 }
 
 /// `unit` assembled against `document`, with `functions` added, checked
@@ -795,6 +795,14 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
             K::Correspondence(CorrespondenceForm::ProfileCorrespondence),
             NO_TAG,
         ),
+        (
+            K::Correspondence(CorrespondenceForm::ImplementationGuarantee),
+            "written from a `guarantee` declaration, not lowered; `emit::tests::guarantee` reads it",
+        ),
+        (
+            K::Correspondence(CorrespondenceForm::ComponentComposition),
+            "written from a `compose` declaration, not lowered; `emit::tests::composition` emits it",
+        ),
     ]
 };
 
@@ -876,7 +884,7 @@ fn check_row(row: &Row, outcomes: &[Outcome], failures: &mut Vec<String>) {
     let admitted = outcomes.iter().any(|outcome| {
         outcome.read.as_ref().is_ok_and(|read| {
             read.admitted
-                .graph()
+                .resolved_graph()
                 .nodes
                 .iter()
                 .zip(read.admitted.node_kinds())
@@ -1540,7 +1548,7 @@ fn counter_model_document(package: &str, operations: &[&str]) -> Vec<u8> {
         "operations": ops
     });
     constructs.shrink_to_fit();
-    serde_json::to_vec(&json!({
+    crate::emit::tests::wire_bytes(&json!({
         "contractVersion": "2.0.0",
         "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
@@ -2803,7 +2811,7 @@ fn rows_refinement_with(
                 .collect();
         }
     }
-    let base = serde_json::to_vec(&document).expect("the model serializes");
+    let base = crate::emit::tests::wire_bytes(&document).expect("the model serializes");
     let abstract_document =
         with_state_machine(&base, "example/config-version", "example/rows-abstract");
     let concrete_document =

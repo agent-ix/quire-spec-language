@@ -60,6 +60,22 @@ pub enum WireIdError {
         /// The key whose path holds an operand.
         key: NodeKey,
     },
+    /// An operand slot of a node-held id names no entry of the holding
+    /// node's operand row.
+    #[error("operand slot {slot} names no entry of a {len}-entry operand row")]
+    SlotOutOfRange {
+        /// The slot the segment holds.
+        slot: u64,
+        /// The holding node's row length.
+        len: usize,
+    },
+    /// An operand slot was read where no operand row applies (a document-held
+    /// id).
+    #[error("operand slot {slot} has no operand row to resolve against")]
+    NoRow {
+        /// The slot the segment holds.
+        slot: u64,
+    },
     /// The rebuilt key is not a well-formed node identity.
     #[error(transparent)]
     Key(#[from] InvalidNodeKey),
@@ -72,6 +88,9 @@ pub enum WireIdError {
 #[derive(Debug, Default)]
 pub struct StructuralIds {
     interned: std::cell::RefCell<HashMap<NodeKey, Arc<CheckedNodeId>>>,
+    /// Nodes of imported packages, each named by the id its own package's
+    /// emission gave it.
+    imported: std::cell::RefCell<HashMap<NodeKey, CheckedNodeId>>,
 }
 
 impl StructuralIds {
@@ -89,10 +108,19 @@ impl StructuralIds {
         }
     }
 
+    /// Names the node `key` of an imported package by `id`, the id that
+    /// package's own emission gave it, for every later [`Self::id`] of `key`.
+    pub fn bind_imported(&self, key: NodeKey, id: CheckedNodeId) {
+        self.imported.borrow_mut().insert(key, id);
+    }
+
     /// The structural form of `key`: each operand is a
     /// [`CheckedNodePathSegment::Node`] holding the operand's own id, shared
     /// with every other id built here that names that operand.
     pub fn id(&self, key: &NodeKey) -> CheckedNodeId {
+        if let Some(bound) = self.imported.borrow().get(key) {
+            return bound.clone();
+        }
         let mut done = self.interned.borrow_mut();
         let path = key
             .path()
@@ -209,6 +237,7 @@ impl StructuralKeys {
             .map(|segment| match segment {
                 CheckedNodePathSegment::Name(name) => Ok(PathSegment::Text(name.to_string())),
                 CheckedNodePathSegment::Index(index) => Err(WireIdError::NoGraph { index: *index }),
+                CheckedNodePathSegment::Operand(slot) => Err(WireIdError::NoRow { slot: *slot }),
                 CheckedNodePathSegment::Node(operand) => Ok(PathSegment::Node(
                     self.by_operand[&Arc::as_ptr(operand)].1.clone(),
                 )),
@@ -282,6 +311,9 @@ fn key_with(
                 let key = index(*at)?;
                 top.path.push(PathSegment::Node(key));
             }
+            Some(CheckedNodePathSegment::Operand(slot)) => {
+                return Err(WireIdError::NoRow { slot: *slot });
+            }
             Some(CheckedNodePathSegment::Node(nested)) => stack.push(frame(nested)),
             None => {
                 let done = stack.pop().expect("the top frame exists");
@@ -310,7 +342,7 @@ fn index_segments(id: &CheckedNodeId) -> Vec<u64> {
         match segments.next() {
             Some(CheckedNodePathSegment::Index(index)) => found.push(*index),
             Some(CheckedNodePathSegment::Node(nested)) => pending.push(nested.path.iter()),
-            Some(CheckedNodePathSegment::Name(_)) => {}
+            Some(CheckedNodePathSegment::Name(_) | CheckedNodePathSegment::Operand(_)) => {}
             None => {
                 pending.pop();
             }
@@ -319,12 +351,193 @@ fn index_segments(id: &CheckedNodeId) -> Vec<u64> {
     found
 }
 
+/// `id`, a node-held id, with each operand slot replaced by the index
+/// segment of the node `row` names: the form the rest of this module reads.
+fn resolve_operands(id: &CheckedNodeId, row: &[u64]) -> Result<CheckedNodeId, WireIdError> {
+    let path = id
+        .path
+        .iter()
+        .map(|segment| match segment {
+            CheckedNodePathSegment::Operand(slot) => usize::try_from(*slot)
+                .ok()
+                .and_then(|at| row.get(at))
+                .map(|entry| CheckedNodePathSegment::Index(*entry))
+                .ok_or(WireIdError::SlotOutOfRange {
+                    slot: *slot,
+                    len: row.len(),
+                }),
+            other => Ok(other.clone()),
+        })
+        .collect::<Result<_, _>>()?;
+    Ok(CheckedNodeId {
+        package: id.package.clone(),
+        path,
+        ordinal: id.ordinal,
+    })
+}
+
+/// The checked-package document `wire` with every operand slot a node holds
+/// replaced by the index segment of the node its row names, and its
+/// `operand_rows` removed: the resolved form, in which a node's ids name
+/// graph positions directly (IR's `resolved_graph`). A foreign `{package, node}` key holds no slot and is
+/// left alone.
+///
+/// # Errors
+///
+/// A message when the document has no `semantic_graph.nodes` and
+/// `operand_rows` arrays, or a slot names no entry of its node's row.
+pub fn resolve_operand_slots(wire: &mut serde_json::Value) -> Result<(), String> {
+    use serde_json::Value;
+    let graph = wire
+        .get_mut("semantic_graph")
+        .ok_or("the document has no semantic_graph")?;
+    let rows: Vec<Vec<u64>> = serde_json::from_value(
+        graph
+            .get("operand_rows")
+            .cloned()
+            .ok_or("the document has no semantic_graph.operand_rows")?,
+    )
+    .map_err(|error| error.to_string())?;
+    if let Some(members) = graph.as_object_mut() {
+        members.remove("operand_rows");
+    }
+    let nodes = graph
+        .get_mut("nodes")
+        .and_then(Value::as_array_mut)
+        .ok_or("the document has no semantic_graph.nodes array")?;
+    for (node, row) in nodes.iter_mut().zip(&rows) {
+        let mut pending = vec![node];
+        while let Some(current) = pending.pop() {
+            match current {
+                Value::Array(items) => pending.extend(items.iter_mut()),
+                Value::Object(object) => {
+                    let is_id = object.len() == 3
+                        && object.contains_key("package")
+                        && object.contains_key("path")
+                        && object.contains_key("ordinal");
+                    if is_id {
+                        if let Some(Value::Array(path)) = object.get_mut("path") {
+                            for segment in path.iter_mut() {
+                                let slot = segment
+                                    .as_object()
+                                    .filter(|member| member.len() == 1)
+                                    .and_then(|member| member.get("operand"))
+                                    .and_then(Value::as_u64);
+                                if let Some(slot) = slot {
+                                    let entry = usize::try_from(slot)
+                                        .ok()
+                                        .and_then(|at| row.get(at))
+                                        .ok_or_else(|| {
+                                            format!("operand slot {slot} has no row entry")
+                                        })?;
+                                    *segment = serde_json::json!({ "node": entry });
+                                }
+                            }
+                        }
+                    } else if object.len() != 2 || !object.contains_key("package") {
+                        pending.extend(object.values_mut());
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(())
+}
+
+/// FR-322 "Operand index segments": `node`, one semantic node as JSON, with
+/// every index segment of every node id it holds replaced by an operand slot
+/// numbered by first occurrence in the node's canonical (RFC 8785) member
+/// order, and the row listing the graph index each slot names. The emitter
+/// writes every node through this walk, so an authored document and an
+/// emitted one number slots identically. An `{package, node}` foreign key
+/// keeps its index segments: they name the dependency's graph.
+pub fn number_index_segments(node: &mut serde_json::Value) -> Vec<u64> {
+    use serde_json::Value;
+    let mut row: Vec<u64> = Vec::new();
+    let mut pending = vec![node];
+    while let Some(current) = pending.pop() {
+        match current {
+            Value::Array(items) => pending.extend(items.iter_mut().rev()),
+            Value::Object(object) => {
+                let is_id = object.len() == 3
+                    && object.contains_key("package")
+                    && object.contains_key("path")
+                    && object.contains_key("ordinal");
+                if is_id {
+                    if let Some(Value::Array(path)) = object.get_mut("path") {
+                        for segment in path.iter_mut() {
+                            let index = segment
+                                .as_object()
+                                .filter(|member| member.len() == 1)
+                                .and_then(|member| member.get("node"))
+                                .and_then(Value::as_u64);
+                            if let Some(index) = index {
+                                let slot = row
+                                    .iter()
+                                    .position(|entry| *entry == index)
+                                    .unwrap_or_else(|| {
+                                        row.push(index);
+                                        row.len() - 1
+                                    });
+                                *segment = serde_json::json!({ "operand": slot });
+                            }
+                        }
+                    }
+                } else if object.len() != 2 || !object.contains_key("package") {
+                    let mut members: Vec<(&String, &mut Value)> = object.iter_mut().collect();
+                    members.sort_by(|left, right| left.0.cmp(right.0));
+                    pending.extend(members.into_iter().rev().map(|(_, member)| member));
+                }
+            }
+            _ => {}
+        }
+    }
+    row
+}
+
+/// The inverse of [`resolve_operand_slots`] for a document authored in
+/// resolved form: when it has `semantic_graph.nodes` and no `operand_rows`,
+/// each node is written through [`number_index_segments`] and `operand_rows`
+/// is added. Any other document is left alone.
+pub fn write_operand_rows(wire: &mut serde_json::Value) {
+    let Some(graph) = wire.get_mut("semantic_graph") else {
+        return;
+    };
+    if graph.get("operand_rows").is_some() {
+        return;
+    }
+    let Some(nodes) = graph
+        .get_mut("nodes")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+    let rows: Vec<Vec<u64>> = nodes.iter_mut().map(number_index_segments).collect();
+    graph["operand_rows"] = serde_json::json!(rows);
+}
+
+#[cfg(any(test, feature = "test-support"))]
+/// The checked-package document `bytes` as JSON in its resolved form
+/// ([`resolve_operand_slots`]).
+///
+/// # Errors
+///
+/// The JSON reader's message, or the [`resolve_operand_slots`] refusal.
+pub fn resolved_package_value(bytes: &[u8]) -> Result<serde_json::Value, String> {
+    let mut wire: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
+    resolve_operand_slots(&mut wire)?;
+    Ok(wire)
+}
+
 /// One checked-package document's `semantic_graph`: the rebuilt key of every
-/// node, by graph index, and the index of every key.
+/// node, by graph index, the index of every key, and each node's operand row.
 #[derive(Clone, Default)]
 pub struct WireGraph {
     keys: Vec<NodeKey>,
     index: HashMap<NodeKey, u64>,
+    rows: Vec<Vec<u64>>,
 }
 
 /// The keys in graph order; the index is derived from them, and a hash map's
@@ -358,7 +571,31 @@ impl WireGraph {
     /// [`WireIdError::IndexOutOfRange`], [`WireIdError::Cycle`] when a node's
     /// key is defined in terms of itself, or [`WireIdError::Key`].
     pub fn new<'a>(ids: impl IntoIterator<Item = &'a CheckedNodeId>) -> Result<Self, WireIdError> {
+        Self::build(ids.into_iter().collect(), Vec::new())
+    }
+
+    /// As [`WireGraph::new`] over node ids that hold operand slots (FR-322
+    /// "Operand index segments"): `rows[i]` is node `i`'s operand row, through
+    /// which each slot of node `i`'s id and of every other node-held id of
+    /// node `i` ([`WireGraph::key_in`]) is read.
+    ///
+    /// # Errors
+    ///
+    /// [`WireIdError::SlotOutOfRange`] or the [`WireGraph::new`] refusals.
+    pub fn with_rows<'a>(
+        ids: impl IntoIterator<Item = &'a CheckedNodeId>,
+        rows: Vec<Vec<u64>>,
+    ) -> Result<Self, WireIdError> {
         let ids: Vec<&CheckedNodeId> = ids.into_iter().collect();
+        let resolved = ids
+            .iter()
+            .enumerate()
+            .map(|(at, id)| resolve_operands(id, rows.get(at).map_or(&[], Vec::as_slice)))
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::build(resolved.iter().collect(), rows)
+    }
+
+    fn build(ids: Vec<&CheckedNodeId>, rows: Vec<Vec<u64>>) -> Result<Self, WireIdError> {
         let len = ids.len();
         let position = |index: u64| {
             usize::try_from(index)
@@ -405,7 +642,7 @@ impl WireGraph {
             .enumerate()
             .map(|(at, key)| (key.clone(), at as u64))
             .collect();
-        Ok(Self { keys, index })
+        Ok(Self { keys, index, rows })
     }
 
     /// The graph of the checked-package document `bytes`, read from its
@@ -423,6 +660,8 @@ impl WireGraph {
         #[derive(serde::Deserialize)]
         struct Graph {
             nodes: Vec<Node>,
+            #[serde(default)]
+            operand_rows: Vec<Vec<u64>>,
         }
         #[derive(serde::Deserialize)]
         struct Node {
@@ -430,12 +669,13 @@ impl WireGraph {
         }
         let document: Document =
             serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
-        Self::new(
+        Self::with_rows(
             document
                 .semantic_graph
                 .nodes
                 .iter()
                 .map(|node| &node.node_id),
+            document.semantic_graph.operand_rows,
         )
         .map_err(|error| error.to_string())
     }
@@ -449,20 +689,56 @@ impl WireGraph {
         let nodes = envelope["semantic_graph"]["nodes"]
             .as_array()
             .ok_or("the document has no semantic_graph.nodes array")?;
-        Self::of_node_values(nodes)
+        let rows = envelope["semantic_graph"]["operand_rows"]
+            .as_array()
+            .map_or(&[][..], Vec::as_slice);
+        Self::of_rowed_node_values(nodes, rows)
     }
 
-    /// The graph whose nodes, in graph order, are the JSON `nodes`.
+    /// The graph whose nodes, in graph order, are the JSON `nodes`, each
+    /// holding index segments (the resolved form, with no operand rows).
     ///
     /// # Errors
     ///
     /// As [`WireGraph::of_package_bytes`].
     pub fn of_node_values(nodes: &[serde_json::Value]) -> Result<Self, String> {
+        Self::of_rowed_node_values(nodes, &[])
+    }
+
+    /// The graph whose nodes, in graph order, are the JSON `nodes`, with
+    /// operand rows the JSON `rows`.
+    ///
+    /// # Errors
+    ///
+    /// As [`WireGraph::of_package_bytes`].
+    pub fn of_rowed_node_values(
+        nodes: &[serde_json::Value],
+        rows: &[serde_json::Value],
+    ) -> Result<Self, String> {
         let ids = nodes
             .iter()
             .map(|node| id_of_value(&node["node_id"]))
             .collect::<Result<Vec<_>, _>>()?;
-        Self::new(&ids).map_err(|error| error.to_string())
+        let rows = rows
+            .iter()
+            .map(|row| serde_json::from_value(row.clone()).map_err(|error| error.to_string()))
+            .collect::<Result<Vec<Vec<u64>>, _>>()?;
+        Self::with_rows(&ids, rows).map_err(|error| error.to_string())
+    }
+
+    /// The key of the JSON node id `id` held in graph node `holder`, each
+    /// operand slot read through that node's row.
+    ///
+    /// # Errors
+    ///
+    /// The JSON reader's message, or the [`WireGraph::key_in`] refusal.
+    pub fn key_of_value_in(
+        &self,
+        holder: usize,
+        id: &serde_json::Value,
+    ) -> Result<NodeKey, String> {
+        self.key_in(holder, &id_of_value(id)?)
+            .map_err(|error| error.to_string())
     }
 
     /// The key of the JSON node id `id` this document holds.
@@ -495,6 +771,29 @@ impl WireGraph {
     /// The [`WireGraph::key_of_value`] refusal of the first id that does not
     /// resolve.
     pub fn structural_value(&self, value: &serde_json::Value) -> Result<serde_json::Value, String> {
+        self.structural_value_with(value, |id| self.key_of_value(id))
+    }
+
+    /// As [`WireGraph::structural_value`] for a value held in graph node
+    /// `holder`, whose operand slots are read through that node's row.
+    ///
+    /// # Errors
+    ///
+    /// The [`WireGraph::key_of_value_in`] refusal of the first id that does
+    /// not resolve.
+    pub fn structural_value_in(
+        &self,
+        holder: usize,
+        value: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        self.structural_value_with(value, |id| self.key_of_value_in(holder, id))
+    }
+
+    fn structural_value_with(
+        &self,
+        value: &serde_json::Value,
+        key_of: impl Fn(&serde_json::Value) -> Result<NodeKey, String>,
+    ) -> Result<serde_json::Value, String> {
         let mut value = value.clone();
         let mut pending = vec![&mut value];
         while let Some(current) = pending.pop() {
@@ -505,7 +804,7 @@ impl WireGraph {
                     && object.contains_key("ordinal")
             });
             if is_id {
-                let key = self.key_of_value(current)?;
+                let key = key_of(current)?;
                 *current = qsl_foundation::node_wire::node_key_to_json(&key)
                     .map_err(|error| error.to_string())?;
                 continue;
@@ -517,6 +816,17 @@ impl WireGraph {
             }
         }
         Ok(value)
+    }
+
+    /// The key of `id`, a node-held id of graph node `holder`: each operand
+    /// slot is read through the node's operand row.
+    ///
+    /// # Errors
+    ///
+    /// [`WireIdError::SlotOutOfRange`] or the [`WireGraph::key`] refusals.
+    pub fn key_in(&self, holder: usize, id: &CheckedNodeId) -> Result<NodeKey, WireIdError> {
+        let row = self.rows.get(holder).map_or(&[][..], Vec::as_slice);
+        self.key(&resolve_operands(id, row)?)
     }
 
     /// The rebuilt keys, in graph order.
@@ -616,6 +926,7 @@ mod tests {
                 .enumerate()
                 .map(|(at, key)| (key.clone(), at as u64))
                 .collect(),
+            rows: Vec::new(),
         };
         keys.iter().map(|key| graph.wire_id(key).unwrap()).collect()
     }

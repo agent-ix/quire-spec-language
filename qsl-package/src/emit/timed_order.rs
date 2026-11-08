@@ -328,6 +328,8 @@ impl<'g> Graph<'g> {
             | CheckedTerm::AbstractionRelation { .. }
             | CheckedTerm::Refinement { .. }
             | CheckedTerm::ExtensionForm { .. }
+            | CheckedTerm::ImplementationGuarantee { .. }
+            | CheckedTerm::ComponentComposition { .. }
             | CheckedTerm::NominalBody(_) => return Err(OrderFault::Malformed),
         }
         Ok(())

@@ -26,6 +26,7 @@ use std::collections::BTreeMap;
 
 use super::abstraction_declaration;
 use super::composition_declaration;
+use super::extension_declaration;
 use super::guarantee_declaration;
 use super::hybrid_declaration;
 use super::hyper_clause;
@@ -104,6 +105,7 @@ impl ParsedForm {
     pub fn declared_name(&self) -> Option<&str> {
         use DeclarationForm as F;
         match &self.form {
+            F::Extension(form) => Some(&form.name.name),
             F::Union(form) => Some(&form.name.name),
             F::Abstraction(form) => Some(&form.name.name),
             F::Guarantee(form) => Some(&form.name.name),
@@ -403,6 +405,10 @@ pub enum LeadingTokenKind {
     /// `hybrid`: the hybrid declaration form, holding its optional initial
     /// clause, modes, equations and transitions (FR-447).
     Hybrid,
+    /// A selected extension's leading keyword (FR-354): every selected
+    /// extension's declaration forms are this one entry (ADR-012 §5.1 row
+    /// S2), the production's own keyword and clauses being data.
+    Extension,
     /// Test-only: never constructed outside this crate's own tests, and
     /// absent from every non-test build.
     #[cfg(test)]
@@ -624,7 +630,7 @@ pub fn build_unit_with_protocol_results(
             continue;
         }
         let spelling = leading_token_spelling(cst, node).unwrap_or_default();
-        let Some(kind) = from_spelling(spelling) else {
+        let Some(kind) = leading_token_kind(cst, node, spelling) else {
             let refusal = FormsRefusal::at(
                 FormsCause::NoDispatchEntry {
                     spelling: String::from_utf8_lossy(spelling).into_owned(),
@@ -715,7 +721,7 @@ fn build_forms(cst: &LosslessCst) -> Result<Vec<ParsedForm>, FormsRefusal> {
     let mut forms = Vec::new();
     for node in declarations(cst) {
         let spelling = leading_token_spelling(cst, node).unwrap_or_default();
-        let Some(kind) = from_spelling(spelling) else {
+        let Some(kind) = leading_token_kind(cst, node, spelling) else {
             return Err(FormsRefusal::at(
                 FormsCause::NoDispatchEntry {
                     spelling: String::from_utf8_lossy(spelling).into_owned(),
@@ -794,6 +800,7 @@ fn dispatch(
         LeadingTokenKind::Probabilistic => probabilistic::probabilistic_clause(construct),
         LeadingTokenKind::StateGraph => state_graph::state_graph_claim(construct),
         LeadingTokenKind::Hybrid => hybrid_declaration::hybrid_declaration(construct),
+        LeadingTokenKind::Extension => extension_declaration::extension_declaration(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
     }
@@ -808,6 +815,73 @@ fn leading_token_spelling<'c>(cst: &'c LosslessCst, node: &CstNode) -> Option<&'
         .map(|token| token.spelling())
 }
 
+/// The dispatch-table entry the declaration `node` selects: the extension
+/// entry when S1 read the declaration as a selected extension's form (its
+/// keyword is data of the selection, not a spelling of this table), else the
+/// entry `spelling` selects.
+fn leading_token_kind(
+    cst: &LosslessCst,
+    node: &CstNode,
+    spelling: &[u8],
+) -> Option<LeadingTokenKind> {
+    let extension = node.children().iter().any(|child| match child {
+        CstElement::Node(index) => cst
+            .nodes()
+            .get(*index)
+            .is_some_and(|child| child.production() == Production::ExtensionDeclaration),
+        CstElement::Token(_) => false,
+    });
+    if extension {
+        return Some(LeadingTokenKind::Extension);
+    }
+    from_spelling(spelling)
+}
+
+/// Every leading-token spelling that selects a dispatch-table entry: the
+/// one list `from_spelling` reads and [`leading_keywords`] reports.
+const LEADING_SPELLINGS: &[(&str, LeadingTokenKind)] = &[
+    ("union", LeadingTokenKind::Union),
+    ("abstraction", LeadingTokenKind::Abstraction),
+    ("guarantee", LeadingTokenKind::Guarantee),
+    ("compose", LeadingTokenKind::Composition),
+    ("function", LeadingTokenKind::Function),
+    ("type", LeadingTokenKind::Type),
+    ("record", LeadingTokenKind::Record),
+    ("tuple", LeadingTokenKind::Tuple),
+    ("enum", LeadingTokenKind::Enum),
+    ("ordered", LeadingTokenKind::Ordered),
+    ("predicate", LeadingTokenKind::Predicate),
+    ("dimension", LeadingTokenKind::Dimension),
+    ("unit", LeadingTokenKind::Unit),
+    ("invariant", LeadingTokenKind::Invariant),
+    ("constraint", LeadingTokenKind::Constraint),
+    ("pre", LeadingTokenKind::Pre),
+    ("post", LeadingTokenKind::Post),
+    ("body", LeadingTokenKind::Body),
+    ("bound", LeadingTokenKind::Bound),
+    ("protocol", LeadingTokenKind::Protocol),
+    ("temporal", LeadingTokenKind::Temporal),
+    ("terminal", LeadingTokenKind::Terminal),
+    ("refinement", LeadingTokenKind::Refinement),
+    ("time", LeadingTokenKind::Time),
+    ("urgent", LeadingTokenKind::Urgent),
+    ("taskset", LeadingTokenKind::Taskset),
+    ("schedulable", LeadingTokenKind::Schedulable),
+    ("response", LeadingTokenKind::Response),
+    ("release", LeadingTokenKind::Release),
+    ("hyper", LeadingTokenKind::Hyper),
+    ("relation", LeadingTokenKind::Relation),
+    ("random", LeadingTokenKind::Random),
+    ("reward", LeadingTokenKind::Reward),
+    ("delay", LeadingTokenKind::Delay),
+    ("workload", LeadingTokenKind::Workload),
+    ("probabilistic", LeadingTokenKind::Probabilistic),
+    ("possible", LeadingTokenKind::StateGraph),
+    ("always", LeadingTokenKind::StateGraph),
+    ("unique", LeadingTokenKind::StateGraph),
+    ("hybrid", LeadingTokenKind::Hybrid),
+];
+
 /// Maps a leading-token spelling to its dispatch-table entry, or `None`
 /// when it selects no entry.
 fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
@@ -815,47 +889,16 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
     if spelling == test_support::PROBE_SPELLING.as_bytes() {
         return Some(LeadingTokenKind::TestProbe);
     }
-    match spelling {
-        b"union" => Some(LeadingTokenKind::Union),
-        b"abstraction" => Some(LeadingTokenKind::Abstraction),
-        b"guarantee" => Some(LeadingTokenKind::Guarantee),
-        b"compose" => Some(LeadingTokenKind::Composition),
-        b"function" => Some(LeadingTokenKind::Function),
-        b"type" => Some(LeadingTokenKind::Type),
-        b"record" => Some(LeadingTokenKind::Record),
-        b"tuple" => Some(LeadingTokenKind::Tuple),
-        b"enum" => Some(LeadingTokenKind::Enum),
-        b"ordered" => Some(LeadingTokenKind::Ordered),
-        b"predicate" => Some(LeadingTokenKind::Predicate),
-        b"dimension" => Some(LeadingTokenKind::Dimension),
-        b"unit" => Some(LeadingTokenKind::Unit),
-        b"invariant" => Some(LeadingTokenKind::Invariant),
-        b"constraint" => Some(LeadingTokenKind::Constraint),
-        b"pre" => Some(LeadingTokenKind::Pre),
-        b"post" => Some(LeadingTokenKind::Post),
-        b"body" => Some(LeadingTokenKind::Body),
-        b"bound" => Some(LeadingTokenKind::Bound),
-        b"protocol" => Some(LeadingTokenKind::Protocol),
-        b"temporal" => Some(LeadingTokenKind::Temporal),
-        b"terminal" => Some(LeadingTokenKind::Terminal),
-        b"refinement" => Some(LeadingTokenKind::Refinement),
-        b"time" => Some(LeadingTokenKind::Time),
-        b"urgent" => Some(LeadingTokenKind::Urgent),
-        b"taskset" => Some(LeadingTokenKind::Taskset),
-        b"schedulable" => Some(LeadingTokenKind::Schedulable),
-        b"response" => Some(LeadingTokenKind::Response),
-        b"release" => Some(LeadingTokenKind::Release),
-        b"hyper" => Some(LeadingTokenKind::Hyper),
-        b"relation" => Some(LeadingTokenKind::Relation),
-        b"random" => Some(LeadingTokenKind::Random),
-        b"reward" => Some(LeadingTokenKind::Reward),
-        b"delay" => Some(LeadingTokenKind::Delay),
-        b"workload" => Some(LeadingTokenKind::Workload),
-        b"probabilistic" => Some(LeadingTokenKind::Probabilistic),
-        b"possible" | b"always" | b"unique" => Some(LeadingTokenKind::StateGraph),
-        b"hybrid" => Some(LeadingTokenKind::Hybrid),
-        _ => None,
-    }
+    LEADING_SPELLINGS
+        .iter()
+        .find(|(word, _)| word.as_bytes() == spelling)
+        .map(|(_, kind)| *kind)
+}
+
+/// The spellings that begin a core declaration form, which an extension's
+/// leading keyword must not equal (QSpec FR-467 rule 2).
+pub fn leading_keywords() -> impl Iterator<Item = &'static str> {
+    LEADING_SPELLINGS.iter().map(|(word, _)| *word)
 }
 
 /// The header's declared edition literal, decoded, from the CST's own

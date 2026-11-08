@@ -51,6 +51,7 @@ mod dispatch_emission;
 mod emit_checked_v2;
 mod evaluate_reads_no_display_strings;
 mod exact_decimals;
+mod extension_forms;
 mod extension_s1_parse;
 mod family_outcome_layering;
 mod formal_source;
@@ -83,6 +84,7 @@ mod layer_crate_reexports;
 mod limit_name_patterns;
 #[cfg(feature = "checked-handoff")]
 mod mapping_support;
+mod mapping_support_occurrences;
 #[cfg(feature = "checked-handoff")]
 mod model_type_unit_roots;
 mod name_resolution_confinement;

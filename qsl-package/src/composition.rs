@@ -2,14 +2,12 @@
 //! QSL FR-530, QSpec FR-491 "Checked-package node": the strict writer and
 //! reader of a `correspondence`/`component_composition` node.
 //!
-//! The IR crate has no term for this node, so the node's JSON is written and
-//! read here, as the implementation guarantee's is: [`write_composition`]
-//! writes the node of a checked declaration, and [`read_composition`] reads it
-//! back in QSpec FR-491's reader order (identity and dependencies, the body
-//! term, canonical order, each target, then static checks 2 to 5). A target in
-//! a component's package resolves through the package's dependency closure
-//! (FR-322). The v2 byte emitter refuses a package that holds such a node
-//! ([`crate::EmitRefusal::Composition`]).
+//! [`write_composition`] writes the node of a checked declaration, and
+//! [`read_composition`] reads it back in QSpec FR-491's reader order (identity
+//! and dependencies, the body term, canonical order, each target, then static
+//! checks 2 to 5). A target in a component's package resolves through the
+//! package's dependency closure (FR-322). The v2 byte emitter writes the same
+//! body as the IR crate's `component_composition` term.
 //!
 //! The node is `{node_id, node_tag, semantic_form, semantic_type, body,
 //! dependencies, occurrences, source_map}`. Every node reference is a
@@ -27,7 +25,8 @@ use serde_json::{json, Value};
 
 use crate::guarantee::{
     array, environment_value, id_value, member, node_ref, object, read_environment_entries,
-    read_span, read_spans, span_value, text, NodeReadRefusal, NodeWriteRefusal,
+    read_span, read_spans, ref_value, span_value, text, IdWriter, NodeReadRefusal,
+    NodeWriteRefusal,
 };
 use crate::CheckedPackage;
 
@@ -36,25 +35,78 @@ const NODE_TAG: &str = "correspondence";
 /// The `semantic_form` and body `term` of a composition node.
 const FORM: &str = "component_composition";
 
-fn clause_value(entry: &ClauseEntry) -> Result<Value, NodeWriteRefusal> {
+fn clause_value(id: IdWriter<'_>, entry: &ClauseEntry) -> Result<Value, NodeWriteRefusal> {
     Ok(json!({
         "component": entry.component(),
-        "clause": ref_value(entry.clause())?,
+        "clause": ref_value(id, entry.clause())?,
     }))
 }
 
-fn ref_value(reference: &qsl_semantics::check::NodeRef) -> Result<Value, NodeWriteRefusal> {
-    id_value(
-        reference
-            .admitted()
-            .ok_or(NodeWriteRefusal::UnresolvedPlaceholder)?,
-    )
+fn premise_value(id: IdWriter<'_>, entry: &PremiseEntry) -> Result<Value, NodeWriteRefusal> {
+    Ok(json!({
+        "guarantee": clause_value(id, entry.guarantee())?,
+        "on": clause_value(id, entry.on())?,
+    }))
 }
 
-fn premise_value(entry: &PremiseEntry) -> Result<Value, NodeWriteRefusal> {
+/// The body of the composition node of `term` (QSpec FR-491 "Checked-package
+/// node"), its arrays in the term's canonical order.
+pub(crate) fn composition_body(
+    id: IdWriter<'_>,
+    term: &CompositionTerm,
+) -> Result<Value, NodeWriteRefusal> {
+    let components = term
+        .components()
+        .iter()
+        .map(|entry| {
+            Ok(json!({
+                "name": entry.name(),
+                "package": entry.package(),
+                "subject": ref_value(id, entry.subject())?,
+            }))
+        })
+        .collect::<Result<Vec<_>, NodeWriteRefusal>>()?;
+    let guarantees = term
+        .guarantees()
+        .iter()
+        .map(|entry| clause_value(id, entry))
+        .collect::<Result<Vec<_>, _>>()?;
+    let relies = term
+        .relies()
+        .iter()
+        .map(|entry| premise_value(id, entry))
+        .collect::<Result<Vec<_>, _>>()?;
+    let liveness_dependencies = term
+        .liveness_dependencies()
+        .iter()
+        .map(|entry| premise_value(id, entry))
+        .collect::<Result<Vec<_>, _>>()?;
+    let supplies = term
+        .supplies()
+        .iter()
+        .map(|entry| {
+            Ok(json!({
+                "kind": entry.kind(),
+                "granularity": entry.granularity(),
+                "context": ref_value(id, entry.context())?,
+                "operation": entry.operation(),
+            }))
+        })
+        .collect::<Result<Vec<_>, NodeWriteRefusal>>()?;
+    let environment = term
+        .environment()
+        .iter()
+        .map(|entry| environment_value(id, entry))
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(json!({
-        "guarantee": clause_value(entry.guarantee())?,
-        "on": clause_value(entry.on())?,
+        "term": FORM,
+        "rule": term.rule().as_str(),
+        "components": components,
+        "guarantees": guarantees,
+        "relies": relies,
+        "liveness_dependencies": liveness_dependencies,
+        "supplies": supplies,
+        "environment": environment,
     }))
 }
 
@@ -67,49 +119,6 @@ fn premise_value(entry: &PremiseEntry) -> Result<Value, NodeWriteRefusal> {
 pub fn write_composition(composition: &CheckedComposition) -> Result<Value, NodeWriteRefusal> {
     let term = composition.term();
     let id = id_value(composition.node())?;
-    let components = term
-        .components()
-        .iter()
-        .map(|entry| {
-            Ok(json!({
-                "name": entry.name(),
-                "package": entry.package(),
-                "subject": ref_value(entry.subject())?,
-            }))
-        })
-        .collect::<Result<Vec<_>, NodeWriteRefusal>>()?;
-    let guarantees = term
-        .guarantees()
-        .iter()
-        .map(clause_value)
-        .collect::<Result<Vec<_>, _>>()?;
-    let relies = term
-        .relies()
-        .iter()
-        .map(premise_value)
-        .collect::<Result<Vec<_>, _>>()?;
-    let liveness_dependencies = term
-        .liveness_dependencies()
-        .iter()
-        .map(premise_value)
-        .collect::<Result<Vec<_>, _>>()?;
-    let supplies = term
-        .supplies()
-        .iter()
-        .map(|entry| {
-            Ok(json!({
-                "kind": entry.kind(),
-                "granularity": entry.granularity(),
-                "context": ref_value(entry.context())?,
-                "operation": entry.operation(),
-            }))
-        })
-        .collect::<Result<Vec<_>, NodeWriteRefusal>>()?;
-    let environment = term
-        .environment()
-        .iter()
-        .map(environment_value)
-        .collect::<Result<Vec<_>, _>>()?;
     let dependencies = term
         .targets()
         .map_err(|_| NodeWriteRefusal::UnresolvedPlaceholder)?
@@ -198,16 +207,7 @@ pub fn write_composition(composition: &CheckedComposition) -> Result<Value, Node
         "node_tag": NODE_TAG,
         "semantic_form": FORM,
         "semantic_type": id,
-        "body": {
-            "term": FORM,
-            "rule": term.rule().as_str(),
-            "components": components,
-            "guarantees": guarantees,
-            "relies": relies,
-            "liveness_dependencies": liveness_dependencies,
-            "supplies": supplies,
-            "environment": environment,
-        },
+        "body": composition_body(&id_value, &term)?,
         "dependencies": dependencies,
         "occurrences": [{"role": "declaration", "ordinal": 0}],
         "source_map": {

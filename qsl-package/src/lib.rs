@@ -92,6 +92,7 @@ pub use checked_v2::{
 };
 #[cfg(feature = "std")]
 pub use composition::{read_composition, write_composition};
+pub use emit::write_operand_slots;
 #[cfg(feature = "std")]
 pub use emit::{
     checked_occurrence, declaration_less_function_id, emit_checked, emit_checked_with_cancel,

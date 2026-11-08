@@ -76,6 +76,7 @@ use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::quantity::UnitTable;
 
 mod abstraction;
+mod extension;
 mod hybrid;
 mod hyper;
 mod model;
@@ -89,6 +90,7 @@ mod temporal;
 mod terminal;
 mod timed_clause;
 
+pub(crate) use extension::ExtensionFormInput;
 pub(crate) use hybrid::{
     hybrid_location, hybrid_site, HybridClaimInput, HybridModelInput, HybridSite,
 };
@@ -222,6 +224,46 @@ impl SemanticNode {
                 declaration: None,
                 owner: None,
                 body: BodyTerm::Abstraction(term),
+            },
+        )
+    }
+
+    /// The `correspondence`/`implementation_guarantee` node of `term` under
+    /// its admitted structural `key` (QSpec FR-490).
+    pub(super) fn implementation_guarantee(
+        key: NodeKey,
+        term: super::node_key::ImplementationGuaranteeTerm,
+    ) -> Self {
+        Self::declared(
+            key,
+            NodeContent {
+                owner_model: None,
+                node_tag: NodeTag::Correspondence,
+                semantic_form: "implementation_guarantee",
+                semantic_type: None,
+                declaration: None,
+                owner: None,
+                body: BodyTerm::ImplementationGuarantee(term),
+            },
+        )
+    }
+
+    /// The `correspondence`/`component_composition` node of `term` under its
+    /// admitted structural `key` (QSpec FR-491).
+    pub(super) fn component_composition(
+        key: NodeKey,
+        term: super::node_key::CompositionTerm,
+    ) -> Self {
+        Self::declared(
+            key,
+            NodeContent {
+                owner_model: None,
+                node_tag: NodeTag::Correspondence,
+                semantic_form: "component_composition",
+                semantic_type: None,
+                declaration: None,
+                owner: None,
+                body: BodyTerm::Composition(term),
             },
         )
     }
@@ -6222,6 +6264,20 @@ impl<'a> Lowering<'a> {
     /// quantity or absent option, the enum member's nominal node for an
     /// enum member.
     fn literal(&mut self, node: CheckedNode<'_>, value: &Value) -> Result<LeafTerm, CheckRefusal> {
+        self.literal_as(node, value, node.value_type(), None)
+    }
+
+    /// [`Self::literal`] typed at the bare `scalar` type node when one is
+    /// given, else at the node of `declared`, which a literal
+    /// admitted into a declared type (an extension clause's `Int[1, 3650]`)
+    /// carries instead of the narrower type of the value alone.
+    fn literal_as(
+        &mut self,
+        node: CheckedNode<'_>,
+        value: &Value,
+        declared: &ValueType,
+        scalar: Option<&'static str>,
+    ) -> Result<LeafTerm, CheckRefusal> {
         let literal = match value {
             Value::Boolean(value) => LiteralValue::Boolean(*value),
             Value::Integer(value) => LiteralValue::Integer(value.clone()),
@@ -6235,7 +6291,7 @@ impl<'a> Lowering<'a> {
                 // FR-093: the enum member's QSpec `enum_value` node, whose
                 // key is its `VariantId` (ADR-013 O-14). A model variant
                 // type's nodes are built where it is first named, here.
-                self.type_ref(node.value_type(), node.location())?;
+                self.type_ref(declared, node.location())?;
                 let variant = member.variant();
                 let key = crate::value::enumeration::enum_value_key_in(
                     &self.package_name,
@@ -6272,9 +6328,15 @@ impl<'a> Lowering<'a> {
             | Value::Union(_) => return Err(fault(node.location(), KeyFault::UnbuiltLiteral)),
             Value::Uuid(value) => LiteralValue::Uuid(*value),
             Value::Timestamp(value) => LiteralValue::Timestamp(*value),
+            // A string written for a `Text` clause is a text literal of the
+            // bare `text` scalar (IR joins the two).
+            Value::String(value) if scalar == Some("text") => LiteralValue::Text(value.clone()),
             Value::String(value) => LiteralValue::String(value.clone()),
         };
-        let semantic_type = self.type_ref(node.value_type(), node.location())?;
+        let semantic_type = match scalar {
+            Some(form) => NodeRef::from(self.scalar(form, node.location())?),
+            None => self.type_ref(declared, node.location())?,
+        };
         self.value_node(
             node,
             "literal",
@@ -7110,6 +7172,7 @@ fn walked_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
         }
         BodyTerm::Frame(_)
         | BodyTerm::Abstraction(_)
+        | BodyTerm::Extension(_)
         | BodyTerm::ImplementationGuarantee(_)
         | BodyTerm::Composition(_) => {}
     }
@@ -7187,6 +7250,7 @@ fn named_nodes(node: &SemanticNode) -> Vec<NodeKey> {
             named.extend(term.targets().into_iter().flatten())
         }
         BodyTerm::Composition(term) => named.extend(term.targets().into_iter().flatten()),
+        BodyTerm::Extension(term) => named.extend(term.targets().into_iter().flatten()),
         BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
     }
     // A dependency's node is not a node of this graph.

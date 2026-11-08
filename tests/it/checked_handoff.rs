@@ -286,7 +286,7 @@ fn the_directory_holds_the_outputs_table() {
 
 /// The wire node id strings of the package's nodes.
 fn package_node_ids(package: &[u8]) -> Vec<Value> {
-    let wire: Value = serde_json::from_slice(package).unwrap();
+    let wire = crate::support::resolved_package(package);
     wire["semantic_graph"]["nodes"]
         .as_array()
         .unwrap()
@@ -828,7 +828,7 @@ fn the_recipe_emits_the_protocol_the_compensations_and_the_three_clock_kinds() {
             let compensations: Vec<_> = package
                 .node_kinds()
                 .iter()
-                .zip(&package.graph().nodes)
+                .zip(&package.resolved_graph().nodes)
                 .filter(|(k, _)| **k == CheckedNodeKind::Protocol(ProtocolForm::Compensation))
                 .map(|(_, node)| node)
                 .collect();
@@ -852,7 +852,7 @@ fn the_recipe_emits_the_protocol_the_compensations_and_the_three_clock_kinds() {
                 shared
                     .iter()
                     .filter(|id| {
-                        package.graph().nodes.iter().any(|node| {
+                        package.resolved_graph().nodes.iter().any(|node| {
                             &node.node_id == **id && node.node_tag.as_ref() == "protocol"
                         })
                     })
@@ -894,7 +894,11 @@ fn the_recipe_compensations_read_attempts_maximum_three_through_the_view() {
     let held = evidence(&request("event_position", Corpus::None)).unwrap();
     let package = admitted(&files["checked-package.json"], &held);
     let mut read = Vec::new();
-    for (kind, node) in package.node_kinds().iter().zip(&package.graph().nodes) {
+    for (kind, node) in package
+        .node_kinds()
+        .iter()
+        .zip(&package.resolved_graph().nodes)
+    {
         if *kind == CheckedNodeKind::Protocol(ProtocolForm::Compensation) {
             let key = serde_json::to_string(&node.node_id).unwrap();
             let name = ["Full", "Partial"]
@@ -1008,7 +1012,7 @@ fn the_extreme_rationals_are_package_values() {
         let held = evidence(&request(kind, Corpus::None)).unwrap();
         let package = admitted(&files["checked-package.json"], &held);
         let mut rational_literals = BTreeMap::new();
-        for node in &package.graph().nodes {
+        for node in &package.resolved_graph().nodes {
             let Some(literal) = node.body.literal_read() else {
                 continue;
             };
@@ -1030,7 +1034,7 @@ fn the_extreme_rationals_are_package_values() {
                 ))
             );
             let domain = package
-                .graph()
+                .resolved_graph()
                 .nodes
                 .iter()
                 .find(|node| &node.node_id == literal.type_id)
@@ -2043,7 +2047,7 @@ fn each_sidecar_compensation_row_names_its_own_templates_node() {
     for row in rows {
         let name = row["name"].as_str().unwrap();
         let node = package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .find(|node| serde_json::to_value(&node.node_id).unwrap() == row["node"])
@@ -2199,7 +2203,7 @@ fn the_clause_name_has_no_package_side_value() {
     assert_eq!(axis_of(&sidecar, &package), None);
     assert!(
         package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .all(|node| node.declaration.is_none()
@@ -2728,7 +2732,7 @@ fn the_recover_conditions_compare_the_receipt_sum_with_the_target() {
     let files = tree(&out);
     let held = evidence(&request("event_position", Corpus::None)).unwrap();
     admitted(&files["checked-package.json"], &held);
-    let wire: Value = serde_json::from_slice(&files["checked-package.json"]).unwrap();
+    let wire = crate::support::resolved_package(&files["checked-package.json"]);
     let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
 
     // The expression `value` denotes, with each reference followed to its node.

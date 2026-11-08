@@ -131,6 +131,18 @@ fn refused(unit: &str, documents: &[Value]) -> GuaranteeRefusal {
     (**refusal).clone()
 }
 
+/// The wire of `package` emitted, and IR's read of it against `document`.
+fn emit_and_read(package: &CheckedPackage, document: &Value) -> (Value, Read) {
+    let emission = emit_checked(package).expect("the package emits");
+    let bytes = serde_json::to_vec(document).expect("the fixture serializes");
+    let mut evidence = emission.evidence().clone();
+    evidence
+        .insert_domain_package_document(package_identity(&bytes), bytes.as_slice())
+        .expect("a fresh evidence key");
+    let read = read_with(&emission, &evidence);
+    (wire(&emission), read)
+}
+
 fn sole(package: &CheckedPackage) -> &CheckedImplementationGuarantee {
     let [guarantee] = package.graph().implementation_guarantees() else {
         panic!("one guarantee");
@@ -487,7 +499,8 @@ fn an_unbound_operation_refuses_only_the_guarantee_item() {
 /// FR-490-AC-7: the node written for a guarantee reads back to the same
 /// declaration, derived slots and identities; a node whose `dependencies`
 /// omit `relation`, and one whose `progress` entries are out of order, refuse
-/// `invalid_semantic_graph`; and the v2 byte emitter refuses the package.
+/// `invalid_semantic_graph`; and the v2 byte emitter writes the same node, which
+/// IR's reader admits.
 #[trace("FR-529-AC-5", "QSpec-TC-984", "QSpec-FR-490-AC-7")]
 #[test]
 fn the_guarantee_node_reads_back_to_the_same_declaration() {
@@ -544,13 +557,35 @@ fn the_guarantee_node_reads_back_to_the_same_declaration() {
     let refusal = read_implementation_guarantee(&package, &swapped).expect_err("refused");
     assert_eq!(refusal.code, "invalid_semantic_graph");
 
-    // The v2 byte emitter refuses a package holding the node, typed.
+    // The v2 byte emitter writes the node, and IR's reader admits the bytes.
+    let (wire, read) = emit_and_read(&package, &fixture::document(&["inc", "dec"]));
+    let [emitted] =
+        super::owners::node_where(&wire, "correspondence", "implementation_guarantee")[..]
+    else {
+        panic!("one guarantee node");
+    };
+    // Ids are written flat in the package, so the body is compared by its
+    // spellings: every member but the node references.
+    assert_eq!(emitted["semantic_type"], emitted["node_id"]);
     assert_eq!(
-        emit_checked(&package).expect_err("the emission refuses"),
-        EmitRefusal::ImplementationGuarantee {
-            name: Some("G".to_owned())
-        }
+        emitted["dependencies"].as_array().map(Vec::len),
+        node["dependencies"].as_array().map(Vec::len)
     );
+    for (member, value) in node["body"].as_object().expect("a body") {
+        if matches!(value, Value::String(_) | Value::Array(_)) {
+            assert_eq!(
+                emitted["body"][member].as_array().map(Vec::len),
+                value.as_array().map(Vec::len),
+                "{member}"
+            );
+        }
+    }
+    assert_eq!(emitted["body"]["term"], node["body"]["term"]);
+    assert_eq!(
+        emitted["occurrences"],
+        json!([{"role": "declaration", "ordinal": 0}])
+    );
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
 }
 
 /// FR-490-AC-8 (FR-529-AC-9): a unit holding the abstraction relation and no

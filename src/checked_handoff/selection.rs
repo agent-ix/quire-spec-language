@@ -557,7 +557,7 @@ fn has_binding(members: &[CheckedTerm], name: &str) -> bool {
 
 fn check_clause(row: &ClauseRow, package: &CheckedPackageV2) -> Result<(), SelectionRefusal> {
     let node = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| node.node_id == row.node)
@@ -575,7 +575,7 @@ fn check_clause(row: &ClauseRow, package: &CheckedPackageV2) -> Result<(), Selec
         if *kind != CheckedNodeKind::Protocol(ProtocolForm::ProtocolClause) {
             continue;
         }
-        let Some(protocol) = package.graph().nodes.get(index) else {
+        let Some(protocol) = package.resolved_graph().nodes.get(index) else {
             continue;
         };
         let requires = arguments(package, &protocol.node_id)

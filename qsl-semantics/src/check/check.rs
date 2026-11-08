@@ -599,6 +599,12 @@ pub struct PackageDeclarations {
     /// FR-447: the unit's `hybrid` declarations in declaration order, each
     /// with its `using` alias resolved by the FR-091 assembler.
     pub hybrids: Vec<super::HybridDeclaration>,
+    /// FR-354: the unit's declaration forms of selected extensions in source
+    /// order, each as S2 built it.
+    pub extension_forms: Vec<qsl_forms::ExtensionForm>,
+    /// FR-354: the extension definitions the unit selects, held after the
+    /// catalog validated them. S3 reads held definitions only.
+    pub held_extensions: crate::library::extension::HeldExtensions,
     /// FR-447: the unit's hybrid claims in declaration order, the `temporal`
     /// clauses whose `over` type names one of [`Self::hybrids`], each with its
     /// `using` alias resolved by the FR-091 assembler.
@@ -683,6 +689,14 @@ impl PackageDeclarations {
     #[must_use]
     pub fn with_composition_lattice(mut self, profile: impl Into<String>) -> Self {
         self.composition_lattice = Some(profile.into());
+        self
+    }
+
+    /// These declarations with the extension definitions the unit selects,
+    /// held after validation (FR-354 "Definition validation").
+    #[must_use]
+    pub fn with_extensions(mut self, held: crate::library::extension::HeldExtensions) -> Self {
+        self.held_extensions = held;
         self
     }
 
@@ -808,6 +822,8 @@ impl PackageDeclarations {
             emit_unwritten_timed_members: false,
             refinements: Vec::new(),
             hybrids: Vec::new(),
+            extension_forms: Vec::new(),
+            held_extensions: crate::library::extension::HeldExtensions::default(),
             hybrid_claims: Vec::new(),
             refinement_internals: None,
             clock_units: Vec::new(),
@@ -3323,6 +3339,26 @@ impl<'a> Typer<'a> {
             Some(ValueType::Rational(domain)) => domain,
             Some(_) => return Err(mismatch(location)),
         };
+        // FR-039: a zero denominator is refused before any normalization work;
+        // the normalization (a gcd over both written integers) is then charged
+        // by their larger bit length against `s3.rational_bits`, so exhausting
+        // it is resource incompleteness and never a value (FR-039-AC-5).
+        if denominator.is_zero() {
+            return Err(refuse(location, CheckCause::Unproved(Obligation::Nonzero)));
+        }
+        let bits = numerator.magnitude_bits().max(denominator.magnitude_bits());
+        if bits > self.limits.rational_bits() {
+            return Err(refuse(
+                location,
+                CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+                    stage: CheckingStage::Typing,
+                    kind: CheckingLimitKind::RationalBits,
+                    limit: self.limits.rational_bits(),
+                    actual: u128::from(bits),
+                    region: None,
+                })),
+            ));
+        }
         let value = Rational::new(numerator.clone(), denominator.clone())
             .map_err(|_| refuse(location, CheckCause::Unproved(Obligation::Nonzero)))?;
         if !domain.contains(&value) {

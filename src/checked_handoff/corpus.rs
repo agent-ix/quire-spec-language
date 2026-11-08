@@ -834,10 +834,15 @@ fn build_cases(
     evidence: &CheckedPackageEvidence,
     environment: &dyn Environment,
 ) -> Result<Cases, Error> {
-    let value: Value = serde_json::from_slice(base).map_err(|source| Error::Encode {
+    let mut value: Value = serde_json::from_slice(base).map_err(|source| Error::Encode {
         what: "checked-package.json",
         source,
     })?;
+    // FR-322 "Operand index segments": the cases are authored against the
+    // resolved form, whose node ids name graph positions, and written back
+    // with operand slots and rows.
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut value)
+        .map_err(|detail| Error::ReadBackDiffers { detail })?;
     let home = bindings(&value)
         .and_then(|rows| rows.first())
         .and_then(|row| row.get("clock")?.get("kind")?.as_str())
@@ -847,7 +852,9 @@ fn build_cases(
     let mut files = Vec::new();
     for case in cases.into_iter().filter(|case| case.home == home) {
         let made = (case.make)(&value).ok_or_else(|| mismatch(case.identity))?;
-        let bytes = serde_json::to_vec(&made.value).map_err(|source| Error::Encode {
+        let mut slotted = made.value.clone();
+        qsl_semantics::check::wire_id::write_operand_rows(&mut slotted);
+        let bytes = serde_json::to_vec(&slotted).map_err(|source| Error::Encode {
             what: "mutations case",
             source,
         })?;

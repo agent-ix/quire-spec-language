@@ -40,7 +40,7 @@ fn assert_admitted(source: &str) {
         panic!("strict IR admission failed for {source}: {read:?}");
     };
     assert_eq!(
-        package.graph().nodes.len(),
+        package.resolved_graph().nodes.len(),
         wire["semantic_graph"]["nodes"].as_array().unwrap().len()
     );
 }

@@ -30,7 +30,7 @@ fn checked_and_emitted(source: &str) -> (CheckedPackage, Value) {
 }
 
 fn domain() -> Vec<u8> {
-    serde_json::to_vec(&tc1070::document()).unwrap()
+    crate::emit::tests::wire_bytes(&tc1070::document()).unwrap()
 }
 
 fn rows(wire: &Value) -> &[Value] {

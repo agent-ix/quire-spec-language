@@ -486,7 +486,13 @@ fn occurrence(
 /// "Operand index segments"): every id the package holds resolves its index
 /// segments against this graph.
 pub(crate) fn wire_graph(package: &CheckedPackageV2) -> Result<WireGraph, WireIdError> {
-    WireGraph::new(package.graph().nodes.iter().map(|node| &node.node_id))
+    WireGraph::new(
+        package
+            .resolved_graph()
+            .nodes
+            .iter()
+            .map(|node| &node.node_id),
+    )
 }
 
 /// Exact unit identity carried by one admitted compound-unit type node.
@@ -496,7 +502,7 @@ pub(crate) fn compound_unit(
 ) -> Option<quire_exact::UnitId> {
     use quire_contract_model::{CheckedBindingNameKind, CheckedLiteralValue, CheckedTerm};
 
-    let node = package.graph().nodes.iter().find(|node| {
+    let node = package.resolved_graph().nodes.iter().find(|node| {
         node.node_id == *id
             && crate::wire_form::has_form(
                 node,
@@ -826,7 +832,7 @@ pub(crate) fn read_checked_package_v2(
                 }
             };
             let mut exports = Vec::new();
-            for (node, key) in package.graph().nodes.iter().zip(graph.keys()) {
+            for (node, key) in package.resolved_graph().nodes.iter().zip(graph.keys()) {
                 let Some(declaration) = &node.declaration else {
                     continue;
                 };
@@ -891,6 +897,9 @@ pub(crate) fn read_checked_package_v2(
             )),
             Err(fault) => refused(V2ReadRefusal::Fault(fault)),
         },
+        CheckedPackageDispatchResult::CatalogUnavailable(_) => refused(V2ReadRefusal::Fault(
+            InternalFault::new("I2", "operation-catalog-unavailable"),
+        )),
     }
 }
 
@@ -1391,7 +1400,7 @@ impl AdmittedPackageRead<'_> {
 fn reader_node_keys(package: &CheckedPackageV2) -> Result<BTreeSet<NodeKey>, WireIdError> {
     let graph = wire_graph(package)?;
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .map(|node| graph.key(&node.node_id))

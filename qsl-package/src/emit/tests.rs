@@ -293,12 +293,32 @@ fn emit_under(package: &CheckedPackage, source: &RawSourceRef) -> Emission {
     .expect("the package emits")
 }
 
+/// The emitted package in its resolved form: each operand slot of a node is
+/// the index segment of the node its row names, so a node's ids name graph
+/// positions. [`raw_wire`] is the bytes' own JSON.
 pub(super) fn wire(emission: &Emission) -> Value {
+    let mut wire = raw_wire(emission);
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut wire)
+        .expect("every operand slot names a row entry");
+    wire
+}
+
+/// The emitted package's own JSON, operand slots and rows as written.
+pub(super) fn raw_wire(emission: &Emission) -> Value {
     serde_json::from_slice(emission.package.bytes()).expect("the wire is JSON")
 }
 
+/// The bytes of a document authored or edited in resolved form (index
+/// segments inside nodes, no `operand_rows`): FR-322 operand slots and rows
+/// are written for it. Any other value serializes as it is.
+pub(crate) fn wire_bytes<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, serde_json::Error> {
+    let mut value = serde_json::to_value(value)?;
+    qsl_semantics::check::wire_id::write_operand_rows(&mut value);
+    serde_json::to_vec(&value)
+}
+
 fn jcs(value: &Value) -> Vec<u8> {
-    serde_json::to_vec(value).unwrap()
+    crate::emit::tests::wire_bytes(value).unwrap()
 }
 
 fn library() -> LibraryName {
@@ -722,7 +742,7 @@ fn emitted_package_envelope_is_canonical_deterministic_and_self_identifying() {
     // Canonical: re-encoding the parsed envelope reproduces the bytes.
     let wire: Value = serde_json::from_slice(bytes).expect("the envelope is JSON");
     assert_eq!(
-        serde_json::to_vec(&wire).expect("a Value serializes"),
+        crate::emit::tests::wire_bytes(&wire).expect("a Value serializes"),
         bytes
     );
     assert_eq!(emission.package.name(), "pkg");
@@ -1877,12 +1897,6 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             }
             Err(EmitRefusal::Abstraction(_)) => {
                 panic!("the fixture set binds no abstraction relation")
-            }
-            Err(EmitRefusal::ImplementationGuarantee { .. }) => {
-                panic!("the fixture set declares no implementation guarantee")
-            }
-            Err(EmitRefusal::Composition { .. }) => {
-                panic!("the fixture set declares no component composition")
             }
             Err(EmitRefusal::ProbabilisticModelNotEmitted { .. }) => {
                 panic!("the fixture set declares no random parameter, reward or workload")
@@ -3275,7 +3289,7 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
             node["supertypes"] = json!(["ix://acme/orders/Gadget"]);
         }
     }
-    let cyclic = serde_json::to_vec(&cyclic).unwrap();
+    let cyclic = crate::emit::tests::wire_bytes(&cyclic).unwrap();
     let packages = qsl_semantics::model::intake::package_input([cyclic.as_slice()]).unwrap();
     let text = spine_model::unit();
     let refused = qsl_semantics::model::intake::admit_unit(

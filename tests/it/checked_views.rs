@@ -44,7 +44,7 @@ fn id_of(value: &Value) -> CheckedNodeId {
 /// read from the protocol clause terms.
 fn requiring(package: &CheckedPackageV2, clause: &CheckedNodeId) -> Vec<CheckedNodeId> {
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .zip(package.node_kinds())
@@ -105,7 +105,7 @@ fn every_clause_of_each_recipe_package_reads_its_node_facts() {
 
             assert_eq!(*view.declaration(), id, "{name}");
             let node = package
-                .graph()
+                .resolved_graph()
                 .nodes
                 .iter()
                 .find(|node| node.node_id == id)
@@ -195,7 +195,7 @@ fn every_clause_of_each_recipe_package_reads_its_node_facts() {
 /// The `value`/`parameter` node named `name` in `package`, read from its term.
 fn parameter_named(package: &CheckedPackageV2, name: &str) -> CheckedNodeId {
     let found: Vec<_> = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .zip(package.node_kinds())

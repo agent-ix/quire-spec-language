@@ -2,7 +2,7 @@
 //! QSpec FR-490 "Checked-package node": the body of a
 //! `correspondence`/`implementation_guarantee` node.
 //!
-//! The IR crate has no term for this body, so the term is QSL-owned. Its
+//! The term mirrors the IR crate's body term of the same form. Its
 //! arrays are in FR-490's canonical order whatever order they were built in:
 //! [`ImplementationGuaranteeTerm::new`] sorts them, and
 //! [`ImplementationGuaranteeTerm::from_wire`] keeps the order it is given so

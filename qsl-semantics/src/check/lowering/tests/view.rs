@@ -101,6 +101,7 @@ fn body_json(body: &BodyTerm) -> Json {
         BodyTerm::Abstraction(_) => json!({"term": "abstraction_relation"}),
         BodyTerm::ImplementationGuarantee(_) => json!({"term": "implementation_guarantee"}),
         BodyTerm::Composition(_) => json!({"term": "component_composition"}),
+        BodyTerm::Extension(_) => json!({"term": "extension_form"}),
     }
 }
 

@@ -48,7 +48,9 @@ fn applications_of(function: &str, identity: &str) -> Vec<Value> {
     );
     let bytes = producer_bytes(Path::new("quantity-negation.native"), &source, &[]);
     read_back(&bytes, &[]);
-    let wire: Value = serde_json::from_slice(&bytes).expect("JSON");
+    let mut wire: Value = serde_json::from_slice(&bytes).expect("JSON");
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut wire)
+        .expect("every operand slot names a row entry");
     let mut found = Vec::new();
     applications(&wire, identity, &mut found);
     found.into_iter().cloned().collect()

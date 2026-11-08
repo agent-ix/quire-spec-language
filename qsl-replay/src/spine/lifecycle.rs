@@ -99,6 +99,7 @@ use qsl_semantics::check::{
     resolve_profiles, AdmittedImport, AssemblyCause, AssemblyError, CheckCause, CheckRefusal,
     CorrespondenceConflict, KeyFault, PackageDeclarations,
 };
+use qsl_semantics::library::extension::{CoreVocabulary, HeldExtensions};
 use qsl_semantics::library::{ImportView, LibraryName};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{
@@ -373,6 +374,7 @@ fn limit_of(
         | CompileRefusal::OperationClause { .. }
         | CompileRefusal::TypeInvariant { .. }
         | CompileRefusal::Profile { .. }
+        | CompileRefusal::Extension(_)
         | CompileRefusal::DependencyInput(_)
         | CompileRefusal::Import { .. }
         | CompileRefusal::Link(_)
@@ -467,6 +469,8 @@ pub struct ParseRequest<'a> {
 pub struct ParsedUnitSource {
     syntax: qsl_cst::ParsedSource,
     unit: ParsedUnit,
+    /// The extension definitions the unit was parsed against (FR-354).
+    extensions: HeldExtensions,
     protocol_results: Vec<super::ProtocolResult>,
     protocol_forms_refusal: Option<FormsRefusal>,
 }
@@ -1265,7 +1269,118 @@ pub fn parse(
     limits: SourceLimits,
     cancel: &Cancel,
 ) -> Result<Staged<ParsedUnitSource>, FrontEndFailure> {
-    parse_operation(request, limits, cancel, false)
+    parse_operation(request, &HeldExtensions::default(), limits, cancel, false)
+}
+
+/// S1 and S2 for a unit that selects the extensions `held` (FR-354): each
+/// held leading keyword begins a declaration form at the first token of a
+/// top-level declaration, and S2 builds the form as the `Extension` variant.
+/// The held definitions stay with the parsed unit, and S3 reads them.
+pub fn parse_with_extensions(
+    request: &ParseRequest<'_>,
+    held: &HeldExtensions,
+    limits: SourceLimits,
+    cancel: &Cancel,
+) -> Result<Staged<ParsedUnitSource>, FrontEndFailure> {
+    parse_operation(request, held, limits, cancel, false)
+}
+
+/// The names an extension's leading keywords and node kinds must not equal
+/// (QSpec FR-467 rule 2): the core grammar's reserved spellings, the leading
+/// spellings S2 dispatches on and the checked package's core node kinds. Each
+/// comes from the list its stage reads, never a copy.
+pub fn core_vocabulary() -> CoreVocabulary {
+    CoreVocabulary::new(
+        qsl_cst::grammar::base_reserved_spellings()
+            .into_iter()
+            .chain(qsl_forms::leading_keywords()),
+        qsl_semantics::check::NodeTag::ALL.map(qsl_semantics::check::NodeTag::as_str),
+    )
+}
+
+/// FR-354 "Compile path" steps 1 to 3: select the unit's extensions from its
+/// header profiles against the catalog `catalog` supplies, hold them, and
+/// parse the unit with their productions. A unit that selects no extension
+/// parses exactly as [`parse`] does.
+pub fn parse_selecting_extensions(
+    request: &ParseRequest<'_>,
+    catalog: ProfileCatalogInput<'_>,
+    limits: SourceLimits,
+    cancel: &Cancel,
+) -> Result<Staged<ParsedUnitSource>, FrontEndFailure> {
+    let source_len =
+        |identity: &SourceIdentity| (identity == request.source).then_some(request.bytes.len());
+    let held = stage(cancel, &source_len, |work| {
+        select_extensions(request, catalog, limits, cancel, &mut work.s1)
+    })?;
+    parse_with_extensions(request, &held.into_value(), limits, cancel)
+}
+
+/// FR-354 "Compile path" steps 1 and 2 for one source: read its header
+/// without any extension production, resolve each header profile the
+/// catalog holds as an `Extension` definition (the E3 classification), and
+/// hold the selected definitions against the core vocabulary. The header
+/// parse is charged to `s1`.
+fn select_extensions(
+    request: &ParseRequest<'_>,
+    catalog: ProfileCatalogInput<'_>,
+    limits: SourceLimits,
+    cancel: &Cancel,
+    s1: &mut u64,
+) -> Result<HeldExtensions, Box<CompileRefusal>> {
+    let header = charged(cancel, s1, || {
+        qsl_cst::parse_with_cancel(
+            request.source.clone(),
+            request.path,
+            request.bytes,
+            limits,
+            cancel,
+        )
+    })
+    .map_err(|diagnostic| Box::new(CompileRefusal::Source(diagnostic)))?;
+    let held_by_catalog = |identity: &str| held_extension_of(catalog, identity);
+    let mut selections: Vec<qsl_foundation::selection::DefinitionRef> = Vec::new();
+    for profile in &header.selections().profiles {
+        // A profile that refuses is reported by E3 in its own place.
+        if let Ok(found) = resolve_profiles(std::slice::from_ref(profile), &held_by_catalog) {
+            for selection in found {
+                if !selections.contains(&selection) {
+                    selections.push(selection);
+                }
+            }
+        }
+    }
+    // Step 2, against the core vocabulary.
+    catalog
+        .catalog
+        .hold_extensions(&selections, &core_vocabulary())
+        .map_err(|refusal| Box::new(CompileRefusal::Extension(refusal)))
+}
+
+/// The exact definition of `identity` when the catalog holds it as an
+/// `Extension` (FR-110 "Extension selection").
+fn held_extension_of(
+    catalog: ProfileCatalogInput<'_>,
+    identity: &str,
+) -> Option<qsl_foundation::selection::DefinitionRef> {
+    catalog
+        .catalog
+        .definition(identity)
+        .filter(|definition| definition.is_extension())
+        .map(|definition| definition.exact().clone())
+}
+
+/// The productions S1 recognises for the extensions `held`: each production's
+/// leading keyword and its clause names in source order.
+pub fn extension_forms(held: &HeldExtensions) -> qsl_cst::ExtensionForms {
+    qsl_cst::ExtensionForms::new(held.iter().flat_map(|extension| {
+        extension.productions().iter().map(|production| {
+            qsl_cst::ExtensionProduction::new(
+                production.keyword.clone(),
+                production.clauses.iter().map(|clause| clause.name.clone()),
+            )
+        })
+    }))
 }
 
 /// S1 and S2 for the compiler's continuation path: an attributable protocol
@@ -1275,11 +1390,12 @@ pub(crate) fn parse_for_continuation(
     limits: SourceLimits,
     cancel: &Cancel,
 ) -> Result<Staged<ParsedUnitSource>, FrontEndFailure> {
-    parse_operation(request, limits, cancel, true)
+    parse_operation(request, &HeldExtensions::default(), limits, cancel, true)
 }
 
 fn parse_operation(
     request: &ParseRequest<'_>,
+    held: &HeldExtensions,
     limits: SourceLimits,
     cancel: &Cancel,
     continue_protocol_refusals: bool,
@@ -1292,6 +1408,7 @@ fn parse_operation(
                 request.source.clone(),
                 request.path,
                 request.bytes,
+                held,
                 limits,
                 cancel,
             )
@@ -1457,7 +1574,21 @@ pub fn check_with_profile_catalog(
         return Err(ProfileCheckFailure::Closure { profile_uses });
     }
 
-    match check(parsed, package_name, models, dependencies, limits, cancel) {
+    let checked = check_with_context_and_temporal_selections(
+        parsed,
+        package_name,
+        &BTreeMap::new(),
+        None,
+        &[],
+        None,
+        Some(profile_catalog),
+        models,
+        dependencies,
+        limits,
+        cancel,
+        false,
+    );
+    match checked {
         Ok(staged) => {
             let work = staged.work();
             let mut checked = staged.into_value();
@@ -1588,6 +1719,7 @@ pub(crate) struct UnitCheckOptions<'a> {
     pub(crate) temporal_selections: &'a [qsl_package::TemporalClockSelection],
     pub(crate) continue_protocol_refusals: bool,
     pub(crate) refinement_internals: Option<&'a serde_json::Value>,
+    pub(crate) extension_catalog: Option<ProfileCatalogInput<'a>>,
 }
 
 pub(crate) fn check_units_with_options(
@@ -1632,6 +1764,7 @@ pub(crate) fn check_units_with_options(
             cancel,
             temporal_selections: options.temporal_selections,
             integer_division: None,
+            extension_catalog: options.extension_catalog,
             active: Vec::new(),
             compiled: BTreeMap::new(),
             import_edges: 0,
@@ -1804,6 +1937,7 @@ pub fn check_with_execution_points_and_refinement_internals(
         refinement_internals,
         &[],
         None,
+        None,
         models,
         dependencies,
         limits,
@@ -1834,6 +1968,7 @@ pub fn check_with_temporal_selections_and_execution_points(
         execution_points,
         None,
         temporal_selections,
+        None,
         None,
         models,
         dependencies,
@@ -1872,6 +2007,7 @@ pub(crate) fn check_for_continuation(
         None,
         inputs.temporal_selections,
         inputs.integer_division,
+        None,
         models,
         dependencies,
         limits,
@@ -1891,6 +2027,7 @@ fn check_with_context_and_temporal_selections(
     refinement_internals: Option<serde_json::Value>,
     temporal_selections: &[qsl_package::TemporalClockSelection],
     integer_division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
+    extension_catalog: Option<ProfileCatalogInput<'_>>,
     models: &AdmittedModels,
     dependencies: &DependencyInput,
     limits: SpineLimits,
@@ -1921,6 +2058,7 @@ fn check_with_context_and_temporal_selections(
             cancel,
             temporal_selections,
             integer_division,
+            extension_catalog,
             active: Vec::new(),
             compiled: BTreeMap::new(),
             import_edges: 0,
@@ -2327,11 +2465,16 @@ fn parse_unit(
     source: SourceIdentity,
     path: &str,
     bytes: &[u8],
+    held: &HeldExtensions,
     limits: SourceLimits,
     cancel: &Cancel,
 ) -> Result<ParsedUnitSource, StageError> {
-    let parsed = qsl_cst::parse_with_cancel(source, path, bytes, limits, cancel)
-        .map_err(|diagnostic| Box::new(CompileRefusal::Source(diagnostic)))?;
+    let parsed = if held.is_empty() {
+        qsl_cst::parse_with_cancel(source, path, bytes, limits, cancel)
+    } else {
+        qsl_cst::parse_with_extensions(source, path, bytes, limits, &extension_forms(held), cancel)
+    }
+    .map_err(|diagnostic| Box::new(CompileRefusal::Source(diagnostic)))?;
     let raw = parsed.source().reference().clone();
     let (unit, forms_refusals) = match qsl_forms::build_unit_with_protocol_results(&parsed) {
         Ok(built) => built,
@@ -2361,6 +2504,7 @@ fn parse_unit(
     Ok(ParsedUnitSource {
         syntax: parsed,
         unit,
+        extensions: held.clone(),
         protocol_results,
         protocol_forms_refusal,
     })
@@ -3166,6 +3310,9 @@ struct Resolution<'a> {
     cancel: &'a Cancel,
     temporal_selections: &'a [qsl_package::TemporalClockSelection],
     integer_division: Option<quire_checked::integer_division::AdmittedIntegerDivision>,
+    /// The catalog that holds the extensions a unit or library selects
+    /// (FR-354); `None` holds none.
+    extension_catalog: Option<ProfileCatalogInput<'a>>,
     /// The libraries whose compile is in progress, outermost first.
     active: Vec<LibraryName>,
     /// Each library whose compile completed. A library is compiled at most
@@ -3341,11 +3488,13 @@ impl<'a> Resolution<'a> {
                 )));
             };
             let (limits, cancel, packages) = (self.limits, self.cancel, self.packages);
+            let held = self.library_extensions(supplied)?;
             let parsed = charged(cancel, &mut self.work.s1, || {
                 parse_unit(
                     supplied.source.clone(),
                     &supplied.path,
                     &supplied.bytes,
+                    &held,
                     limits.source,
                     cancel,
                 )
@@ -3367,6 +3516,28 @@ impl<'a> Resolution<'a> {
         Ok(())
     }
 
+    /// The extensions the library unit `supplied` selects, held from the
+    /// compile's extension catalog (FR-354 steps 1 and 2); none without one.
+    fn library_extensions(
+        &mut self,
+        supplied: &SuppliedLibrary,
+    ) -> Result<HeldExtensions, Box<CompileRefusal>> {
+        let Some(catalog) = self.extension_catalog else {
+            return Ok(HeldExtensions::default());
+        };
+        select_extensions(
+            &ParseRequest {
+                source: &supplied.source,
+                path: &supplied.path,
+                bytes: &supplied.bytes,
+            },
+            catalog,
+            self.limits.source,
+            self.cancel,
+            &mut self.work.s1,
+        )
+    }
+
     /// One library through S1 and I1, ready to resolve its own imports.
     fn begin_library(
         &mut self,
@@ -3383,11 +3554,13 @@ impl<'a> Resolution<'a> {
         }
         let mut parsed = Vec::with_capacity(supplied.len());
         for source in supplied {
+            let held = self.library_extensions(source)?;
             let unit = charged(cancel, &mut self.work.s1, || {
                 parse_unit(
                     source.source.clone(),
                     &source.path,
                     &source.bytes,
+                    &held,
                     limits.source,
                     cancel,
                 )
@@ -3458,7 +3631,18 @@ impl<'a> Resolution<'a> {
         let models = std::mem::take(&mut frame.models);
         let admitted = std::mem::take(&mut frame.admitted);
         let links = std::mem::take(&mut frame.links);
-        resolve_profiles(&unit.selections().profiles).map_err(|refusals| {
+        // FR-110 "Extension selection": a header identity the unit's held
+        // extensions name is their selection, not a refusal.
+        let catalog = self.extension_catalog;
+        let held_extension = |identity: &str| {
+            source_units
+                .iter()
+                .flat_map(|source| source.extensions.iter())
+                .find(|held| held.definition().identity() == identity)
+                .map(|held| held.definition().clone())
+                .or_else(|| catalog.and_then(|catalog| held_extension_of(catalog, identity)))
+        };
+        resolve_profiles(&unit.selections().profiles, &held_extension).map_err(|refusals| {
             Box::new(CompileRefusal::Profile {
                 region: refusals
                     .first()
@@ -3519,6 +3703,11 @@ impl<'a> Resolution<'a> {
         if frame.raw == self.continuation_source {
             declarations.integer_division = self.integer_division;
         }
+        // FR-354: the extensions the package's units were parsed against are
+        // the ones S3 checks their forms with.
+        declarations = declarations.with_extensions(HeldExtensions::union(
+            frame.source_units.iter().map(|source| &source.extensions),
+        ));
         if let Some(value) = frame.refinement_internals.clone() {
             declarations = declarations.with_refinement_internals(value);
         }

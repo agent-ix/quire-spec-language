@@ -48,7 +48,7 @@ pub(super) fn document() -> Vec<u8> {
     people["origin"]["generated"]["generatorIdentity"] = json!("ix://acme/orders/people");
     people["origin"]["generated"]["inputIdentities"] = json!(["ix://acme/orders/people"]);
     document["populations"].as_array_mut().unwrap().push(people);
-    serde_json::to_vec(&document).unwrap()
+    crate::emit::tests::wire_bytes(&document).unwrap()
 }
 
 fn lower(clauses: &str) -> Lowered {

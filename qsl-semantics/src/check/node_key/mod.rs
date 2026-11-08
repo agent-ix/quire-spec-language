@@ -307,11 +307,34 @@ pub enum NodeTag {
     /// `presence_read` over the place references (QSpec FR-322
     /// "Presence").
     TimedModel,
+    /// `extension`: a declaration form of a selected extension (QSpec
+    /// FR-469), the one tag every extension's forms share.
+    Extension,
 }
 
 impl NodeTag {
+    /// Every node tag, the checked package's core node kinds.
+    pub const ALL: [Self; 16] = [
+        Self::ScalarType,
+        Self::CompositeType,
+        Self::BoundedDomain,
+        Self::Value,
+        Self::Expression,
+        Self::Function,
+        Self::Model,
+        Self::Relation,
+        Self::State,
+        Self::Temporal,
+        Self::Protocol,
+        Self::Claim,
+        Self::Correspondence,
+        Self::Hybrid,
+        Self::TimedModel,
+        Self::Extension,
+    ];
+
     /// The closed v2 node tag spelling used as a derived path segment.
-    pub(crate) const fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::ScalarType => "scalar_type",
             Self::CompositeType => "composite_type",
@@ -328,6 +351,7 @@ impl NodeTag {
             Self::Correspondence => "correspondence",
             Self::Hybrid => "hybrid",
             Self::TimedModel => "timed_model",
+            Self::Extension => "extension",
         }
     }
 }
@@ -489,11 +513,13 @@ pub enum BodyTerm {
     /// A `correspondence`/`abstraction_relation` node's body (QSpec FR-451).
     Abstraction(AbstractionTerm),
     /// A `correspondence`/`implementation_guarantee` node's body (QSpec
-    /// FR-490), a QSL-owned term.
+    /// FR-490).
     ImplementationGuarantee(ImplementationGuaranteeTerm),
     /// A `correspondence`/`component_composition` node's body (QSpec
-    /// FR-491), a QSL-owned term.
+    /// FR-491).
     Composition(CompositionTerm),
+    /// An `extension`/`extension_form` node's body (QSpec FR-469).
+    Extension(ExtensionTerm),
 }
 
 /// One `modifies` entry of a `state`/`frame` node's body (QSpec FR-340's
@@ -657,6 +683,10 @@ impl DebugWith for BodyTerm {
                 .finish(),
             Self::Composition(term) => f
                 .debug_tuple("Composition")
+                .field(&With(term, table))
+                .finish(),
+            Self::Extension(term) => f
+                .debug_tuple("Extension")
                 .field(&With(term, table))
                 .finish(),
         }
@@ -1208,7 +1238,8 @@ impl BodyTerm {
             | Self::Frame(_)
             | Self::Abstraction(_)
             | Self::ImplementationGuarantee(_)
-            | Self::Composition(_) => None,
+            | Self::Composition(_)
+            | Self::Extension(_) => None,
         }
     }
 
@@ -1225,6 +1256,7 @@ impl BodyTerm {
             }
             Self::Frame(_)
             | Self::Abstraction(_)
+            | Self::Extension(_)
             | Self::ImplementationGuarantee(_)
             | Self::Composition(_) => {}
         }
@@ -1243,6 +1275,7 @@ impl BodyTerm {
             }
             Self::Frame(_)
             | Self::Abstraction(_)
+            | Self::Extension(_)
             | Self::ImplementationGuarantee(_)
             | Self::Composition(_) => Vec::new(),
         }
@@ -1293,6 +1326,11 @@ impl BodyTerm {
                 }
             }
             Self::Composition(term) => {
+                for target in term.targets()? {
+                    visit(target);
+                }
+            }
+            Self::Extension(term) => {
                 for target in term.targets()? {
                     visit(target);
                 }
@@ -1354,6 +1392,7 @@ impl BodyTerm {
             Self::Abstraction(term) => term.for_each_ref(visit),
             Self::ImplementationGuarantee(term) => term.for_each_ref(visit),
             Self::Composition(term) => term.for_each_ref(visit),
+            Self::Extension(term) => term.for_each_ref(visit),
             Self::Leaf(_) | Self::Aggregate(_) => {}
         }
         self.for_each_leaf(&mut |leaf| match leaf {
@@ -1443,6 +1482,7 @@ impl BodyTerm {
                 Self::ImplementationGuarantee(term.map_refs(map))
             }
             Self::Composition(term) => Self::Composition(term.map_refs(map)),
+            Self::Extension(term) => Self::Extension(term.map_refs(map)),
         }
     }
 }
@@ -1971,12 +2011,14 @@ pub enum NodeKeyRefusal {
 
 mod abstraction;
 mod composition;
+mod extension;
 mod guarantee;
 
 pub use abstraction::{AbstractionTerm, FrameEntry, ObjectEntry, PopulationEntry};
 pub use composition::{
     ClauseEntry, ComponentEntry, CompositionRule, CompositionTerm, PremiseEntry, SupplyEntry,
 };
+pub use extension::{ExtensionClauseTerm, ExtensionTerm};
 pub use guarantee::{
     EnvironmentEntry, ImplementationGuaranteeTerm, MeasureEntry, ProgressEntry, SuppliesEntry,
 };

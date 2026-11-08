@@ -88,7 +88,10 @@ fn emitted(graph: CheckedGraph) -> serde_json::Value {
     )
     .expect("the checked unit emits");
     assert!(emission.omitted().is_empty(), "every fixture node emits");
-    serde_json::from_slice(emission.package().bytes()).expect("a v2 document")
+    let mut wire = serde_json::from_slice(emission.package().bytes()).expect("a v2 document");
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut wire)
+        .expect("every operand slot names a row entry");
+    wire
 }
 
 /// The only emitted type node with `form` in these single-parameter units.

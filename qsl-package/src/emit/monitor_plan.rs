@@ -361,7 +361,7 @@ fn emit_monitor_plan(
     limits: crate::checked::EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     let ids = &StructuralIds::default();
-    let mut nodes = base.graph().nodes.clone();
+    let mut nodes = base.resolved_graph().nodes.clone();
     let mut source_map = base.source_map().to_vec();
     read_index_segments(ids, &mut nodes, &mut source_map)?;
     // The inspection map is read from the structural form, before the
@@ -1247,9 +1247,11 @@ fn finish(
     limits: crate::checked::EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     let lock = base.lock().clone();
+    let (slot_nodes, operand_rows) = super::write_operand_slots(&nodes)?;
     let semantic_graph = CheckedSemanticGraphV2 {
-        graph_version: base.graph().graph_version.clone(),
-        nodes,
+        graph_version: base.resolved_graph().graph_version.clone(),
+        nodes: slot_nodes,
+        operand_rows,
     };
     let capability_report = base.capability_report().to_vec();
     let diagnostics = base.diagnostics().clone();
@@ -1286,12 +1288,9 @@ fn finish(
         .map_err(EmitRefusal::from)
     })?;
     let mut rows = carry_rows(retained, changes);
-    follow_final_bindings(&mut rows.selected_source_record_rows, &semantic_graph.nodes)?;
-    follow_final_positions(&mut rows.selected_source_tuple_rows, &semantic_graph.nodes)?;
-    follow_final_collections(
-        &mut rows.selected_source_collection_rows,
-        &semantic_graph.nodes,
-    )?;
+    follow_final_bindings(&mut rows.selected_source_record_rows, &nodes)?;
+    follow_final_positions(&mut rows.selected_source_tuple_rows, &nodes)?;
+    follow_final_collections(&mut rows.selected_source_collection_rows, &nodes)?;
     Ok(Emission {
         package,
         omitted: rows.omitted,
@@ -1314,7 +1313,8 @@ fn finish(
         selected_exact_field_rows: rows.selected_exact_field_rows,
         equality_producer_identity_rows: rows.equality_producer_identity_rows,
         equality_fact_witness_rows: rows.equality_fact_witness_rows,
-        wire_nodes: semantic_graph.nodes,
+        wire_nodes: nodes,
+        node_wire_ids: std::collections::HashMap::new(),
         temporal_binding_rows: rows.temporal_binding_rows,
         temporal_rows: rows.temporal_rows,
     })

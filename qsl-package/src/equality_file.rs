@@ -295,7 +295,7 @@ impl Joins {
         let graph = wire_graph(package).ok()?;
         let mut ids = BTreeMap::new();
         let mut keys = BTreeMap::new();
-        for node in &package.graph().nodes {
+        for node in &package.resolved_graph().nodes {
             let key = graph.key(&node.node_id).ok()?;
             ids.insert(key.clone(), node.node_id.clone());
             keys.insert(node.node_id.clone(), key);

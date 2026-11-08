@@ -28,7 +28,7 @@ fn document() -> Vec<u8> {
     )
     .expect("the fixture is JSON");
     document["types"][1]["operations"] = json!([]);
-    serde_json::to_vec(&document).expect("the fixture remains JSON")
+    crate::emit::tests::wire_bytes(&document).expect("the fixture remains JSON")
 }
 
 /// The unit selecting `profile` as `t`, the time source `source` and the
@@ -259,7 +259,7 @@ fn the_reader_refuses_a_supplied_row_for_a_timed_clause_at_the_row() {
         "clock": {"kind": "event_position", "sequence_authority": "test-order-events"},
     }]);
     let refusal = match read_v2(
-        &serde_json::to_vec(&supplied).unwrap(),
+        &crate::emit::tests::wire_bytes(&supplied).unwrap(),
         library(),
         V2ReadLimits::fixture(),
         &evidence_for(&wire),

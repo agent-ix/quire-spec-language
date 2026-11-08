@@ -389,6 +389,9 @@ impl DeclarationRegions {
             CheckCause::RefinementNotEmitted { span, .. } => {
                 region(&self.source, self.embedding.as_deref(), *span)
             }
+            CheckCause::Extension(cause) => {
+                region(&self.source, self.embedding.as_deref(), cause.span())
+            }
             CheckCause::Abstraction(cause) => match &**cause {
                 super::abstraction::AbstractionRefusal::UnresolvedName { span, .. } => {
                     region(&self.source, self.embedding.as_deref(), *span)

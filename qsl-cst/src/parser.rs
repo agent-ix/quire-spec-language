@@ -1936,7 +1936,7 @@ impl Terminal {
             Self::ClockType { word, .. } => format!("`{word}`"),
             Self::TypeIdentifier { except } => format!("type name other than `{except}`"),
             Self::ExtensionKeyword(word) => format!("`{word}`"),
-            Self::ExtensionClause(name) => format!("clause `{name}`"),
+            Self::ExtensionClause(name) => format!("clause-name, the clause `{name}`"),
             Self::ExtensionSeparator(next) => format!("`,` before clause `{next}`"),
             Self::End => "end of source".into(),
         }

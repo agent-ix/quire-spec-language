@@ -33,9 +33,9 @@ use qsl_foundation::{Code, SourceIdentity, Span};
 use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
 use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
-    AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProbabilisticCause,
-    ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause, TimeUnitCause,
-    TopologyRetained,
+    AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ExtensionCause,
+    ProbabilisticCause, ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause,
+    TimeUnitCause, TopologyRetained,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -52,10 +52,11 @@ pub use lifecycle::{
     admit_parsed_unit_list, check, check_units, check_units_with_refinement_internals,
     check_with_execution_points, check_with_execution_points_and_refinement_internals,
     check_with_profile_catalog, check_with_refinement_internals,
-    check_with_temporal_selections_and_execution_points, package, package_with_temporal_selections,
-    parse, preflight_unit_list, refusal_or_fault, select, select_units, AdmittedModels,
-    AdmittedUnitList, CheckedUnit, EmittedUnit, FrontEndFailure, ObligationState, PackageLimits,
-    ParseRequest, ParsedUnitSource, PendingObligation, ProfileCatalogInput, ProfileCheckFailure,
+    check_with_temporal_selections_and_execution_points, core_vocabulary, extension_forms, package,
+    package_with_temporal_selections, parse, parse_selecting_extensions, parse_with_extensions,
+    preflight_unit_list, refusal_or_fault, select, select_units, AdmittedModels, AdmittedUnitList,
+    CheckedUnit, EmittedUnit, FrontEndFailure, ObligationState, PackageLimits, ParseRequest,
+    ParsedUnitSource, PendingObligation, ProfileCatalogInput, ProfileCheckFailure,
     ProtocolCheckSite, TypeDeclaration, TypeReport, TypeRequirement,
 };
 pub(crate) use lifecycle::{
@@ -304,6 +305,10 @@ pub enum CompileRefusal {
         /// The region of the first refusal's identity literal.
         region: Option<SourceRegion>,
     },
+    /// FR-354 "Definition validation": a selected extension definition did
+    /// not validate, or its selection did not resolve in the catalog.
+    #[error("{0}")]
+    Extension(qsl_semantics::library::extension::ExtensionRefusal),
     /// E3: the FR-091 assembler refused the unit.
     #[error("the assembler refused the unit: {}", assembly_message(.refusal))]
     Assembly {
@@ -381,6 +386,7 @@ impl CompileRefusal {
             Self::Profile { refusals, .. } => refusals
                 .first()
                 .map_or(Code::RuntimeInvariant, ProfileRefusal::code),
+            Self::Extension(refusal) => refusal.code(),
             Self::Assembly { refusal, .. } => refusal
                 .errors
                 .first()
@@ -410,6 +416,7 @@ impl CompileRefusal {
                 .first()
                 .map(|error| error.cause.catalog_code().cause()),
             Self::Profile { refusals, .. } => refusals.first().map(ProfileRefusal::cause),
+            Self::Extension(refusal) => Some(refusal.cause().as_str()),
             Self::DependencyInput(refusal) => refusal.cause(),
             Self::Import { refusal, .. } => refusal.cause(),
             Self::Dependency { refusal, .. } => refusal.cause(),
@@ -482,7 +489,9 @@ impl CompileRefusal {
             | Self::DependencyInput(_)
             | Self::Import { .. } => SpineStage::Intake,
             Self::Dependency { refusal, .. } => refusal.stage(),
-            Self::Assembly { .. } | Self::Profile { .. } => SpineStage::Assembly,
+            Self::Assembly { .. } | Self::Profile { .. } | Self::Extension(_) => {
+                SpineStage::Assembly
+            }
             Self::Check { .. } => SpineStage::Check,
             Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => SpineStage::Emit,
             Self::Limit(limit) => match limit.setting() {
@@ -596,6 +605,7 @@ impl CompileRefusal {
             Self::OperationClause { .. }
             | Self::TypeInvariant { .. }
             | Self::DependencyInput(_)
+            | Self::Extension(_)
             | Self::Link(_)
             | Self::Emit(_)
             | Self::Omitted(_) => None,
@@ -1382,6 +1392,34 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     protocol, temporal, ..
                 } => format!(
                     "{message}: `requires temporal {temporal}` reaches `protocol {protocol}` again"
+                ),
+            };
+        }
+        CheckCause::Extension(cause) => {
+            message = match cause.as_ref() {
+                ExtensionCause::TypeMismatch {
+                    clause,
+                    expected,
+                    actual,
+                    ..
+                } => format!(
+                    "{message}: clause `{clause}` is checked against `{expected}` but its value is `{actual}`"
+                ),
+                ExtensionCause::AmbiguousName { name, .. } => {
+                    format!("{message}: `{name}` names an extension form and another declaration")
+                }
+                ExtensionCause::Cycle { cycle, .. } => {
+                    format!("{message}: the forms {} reach themselves", cycle.join(" -> "))
+                }
+                ExtensionCause::UnheldKeyword { keyword, .. } => {
+                    format!("{message}: `{keyword}` is the leading keyword of no selected extension")
+                }
+                ExtensionCause::ClauseOrder {
+                    found, expected, ..
+                } => format!(
+                    "{message}: found {}, expected {}",
+                    found.as_deref().map_or("no clause".to_owned(), |name| format!("clause `{name}`")),
+                    expected.as_deref().map_or("no further clause".to_owned(), |name| format!("clause `{name}`")),
                 ),
             };
         }

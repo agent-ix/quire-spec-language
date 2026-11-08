@@ -35,6 +35,7 @@ use super::abstraction::{
     name_parts, AbstractionKey, CheckedAbstractionRelation, CheckedBinding, OperationKey, RustPath,
 };
 use super::capability::{Capability, DeclarationFamily};
+use super::lowering::SemanticNode;
 use super::node_key::{
     EnvironmentEntry, ImplementationGuaranteeTerm, MeasureEntry, ProgressEntry, SuppliesEntry,
 };
@@ -852,6 +853,18 @@ impl CheckedImplementationGuarantee {
             }
         }
         slots
+    }
+
+    /// The checked-graph node `G` is emitted as (QSpec FR-490), and the
+    /// location of its `declaration` occurrence.
+    pub fn semantic_node(&self) -> (SemanticNode, Location) {
+        let location = Location::root(Origin::TypeDeclaration {
+            name: declaration_origin(&self.name),
+        });
+        (
+            SemanticNode::implementation_guarantee(self.key.clone(), self.term()),
+            location,
+        )
     }
 
     /// The term the guarantee node's body is (QSpec FR-490 "Checked-package

@@ -2,13 +2,11 @@
 //! QSL FR-529, QSpec FR-490 "Checked-package node": the strict writer and
 //! reader of a `correspondence`/`implementation_guarantee` node.
 //!
-//! The IR crate has no term for this node, so the node's JSON is written and
-//! read here: [`write_implementation_guarantee`] writes the node of a
-//! checked declaration, and [`read_implementation_guarantee`] reads it back
-//! in QSpec FR-490's reader order (identity and dependencies, the body term,
-//! canonical order, each target, then static checks 4 to 6). The v2 byte
-//! emitter refuses a package that holds such a node
-//! ([`crate::EmitRefusal::ImplementationGuarantee`]).
+//! [`write_implementation_guarantee`] writes the node of a checked
+//! declaration, and [`read_implementation_guarantee`] reads it back in QSpec
+//! FR-490's reader order (identity and dependencies, the body term, canonical
+//! order, each target, then static checks 4 to 6). The v2 byte emitter writes
+//! the same body as the IR crate's `implementation_guarantee` term.
 //!
 //! The node is `{node_id, node_tag, semantic_form, semantic_type, body,
 //! dependencies, occurrences, source_map}`. Every node reference is a
@@ -72,19 +70,25 @@ pub(crate) fn id_value(key: &NodeKey) -> Result<Value, NodeWriteRefusal> {
     serde_json::to_value(structural_id(key)).map_err(|_| NodeWriteRefusal::UnresolvedPlaceholder)
 }
 
+/// How a body writes a node id: the nested structural form of a node, or
+/// the checked package's flat wire form.
+pub(crate) type IdWriter<'a> = &'a dyn Fn(&NodeKey) -> Result<Value, NodeWriteRefusal>;
+
 pub(crate) fn ref_value(
+    id: IdWriter<'_>,
     reference: &qsl_semantics::check::NodeRef,
 ) -> Result<Value, NodeWriteRefusal> {
-    id_value(
-        reference
-            .admitted()
-            .ok_or(NodeWriteRefusal::UnresolvedPlaceholder)?,
-    )
+    id(reference
+        .admitted()
+        .ok_or(NodeWriteRefusal::UnresolvedPlaceholder)?)
 }
 
 /// One `environment` entry as its node member (QSpec FR-490 "Checked-package
 /// node"), shared with the composition node.
-pub(crate) fn environment_value(entry: &EnvironmentEntry) -> Result<Value, NodeWriteRefusal> {
+pub(crate) fn environment_value(
+    id: IdWriter<'_>,
+    entry: &EnvironmentEntry,
+) -> Result<Value, NodeWriteRefusal> {
     Ok(json!({
         "name": entry.name(),
         "supplier": entry.supplier(),
@@ -93,12 +97,47 @@ pub(crate) fn environment_value(entry: &EnvironmentEntry) -> Result<Value, NodeW
                 "fairness": {
                     "kind": kind,
                     "granularity": granularity,
-                    "context": ref_value(context)?,
+                    "context": ref_value(id, context)?,
                     "operation": operation,
                 },
             }),
-            SuppliesEntry::Assumption(node) => json!({"assumption": ref_value(node)?}),
+            SuppliesEntry::Assumption(node) => json!({"assumption": ref_value(id, node)?}),
         },
+    }))
+}
+
+/// The body of the guarantee node of `term` (QSpec FR-490 "Checked-package
+/// node"), its arrays in the term's canonical order.
+pub(crate) fn guarantee_body(
+    id: IdWriter<'_>,
+    term: &ImplementationGuaranteeTerm,
+) -> Result<Value, NodeWriteRefusal> {
+    let progress = term
+        .progress()
+        .iter()
+        .map(|entry| {
+            Ok(json!({
+                "context": ref_value(id, entry.context())?,
+                "operation": entry.operation(),
+                "measure": match entry.measure() {
+                    MeasureEntry::Decreases(segments) => json!({"decreases": segments}),
+                    MeasureEntry::Bound(count) => json!({"bound": count}),
+                },
+            }))
+        })
+        .collect::<Result<Vec<_>, NodeWriteRefusal>>()?;
+    let environment = term
+        .environment()
+        .iter()
+        .map(|entry| environment_value(id, entry))
+        .collect::<Result<Vec<_>, NodeWriteRefusal>>()?;
+    Ok(json!({
+        "term": FORM,
+        "clause": ref_value(id, term.clause())?,
+        "relation": ref_value(id, term.relation())?,
+        "initial": term.initial(),
+        "progress": progress,
+        "environment": environment,
     }))
 }
 
@@ -113,25 +152,6 @@ pub fn write_implementation_guarantee(
 ) -> Result<Value, NodeWriteRefusal> {
     let term = guarantee.term();
     let id = id_value(guarantee.node())?;
-    let progress = term
-        .progress()
-        .iter()
-        .map(|entry| {
-            Ok(json!({
-                "context": ref_value(entry.context())?,
-                "operation": entry.operation(),
-                "measure": match entry.measure() {
-                    MeasureEntry::Decreases(segments) => json!({"decreases": segments}),
-                    MeasureEntry::Bound(count) => json!({"bound": count}),
-                },
-            }))
-        })
-        .collect::<Result<Vec<_>, NodeWriteRefusal>>()?;
-    let environment = term
-        .environment()
-        .iter()
-        .map(environment_value)
-        .collect::<Result<Vec<_>, NodeWriteRefusal>>()?;
     let dependencies = term
         .targets()
         .map_err(|_| NodeWriteRefusal::UnresolvedPlaceholder)?
@@ -170,14 +190,7 @@ pub fn write_implementation_guarantee(
         "node_tag": NODE_TAG,
         "semantic_form": FORM,
         "semantic_type": id,
-        "body": {
-            "term": FORM,
-            "clause": ref_value(term.clause())?,
-            "relation": ref_value(term.relation())?,
-            "initial": term.initial(),
-            "progress": progress,
-            "environment": environment,
-        },
+        "body": guarantee_body(&id_value, &term)?,
         "dependencies": dependencies,
         "occurrences": [{"role": "declaration", "ordinal": 0}],
         "source_map": {

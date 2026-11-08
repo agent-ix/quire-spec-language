@@ -140,25 +140,6 @@ pub enum EmitRefusal {
     /// The package's abstraction relation has no node to write (FR-306).
     #[error("the abstraction relation cannot be written: {0}")]
     Abstraction(AbstractionNodeRefusal),
-    /// The package holds a `guarantee` declaration (QSpec FR-490): the IR
-    /// crate has no `implementation_guarantee` term, so the v2 bytes cannot
-    /// carry its node. Its QSL-owned node is written by
-    /// `write_implementation_guarantee`.
-    #[error("the implementation guarantee {name:?} has no v2 node to write")]
-    ImplementationGuarantee {
-        /// The guarantee's declared name; `None` when the refusal is raised
-        /// from a body term, which carries no declaration name.
-        name: Option<String>,
-    },
-    /// The package holds a `compose` declaration (QSpec FR-491): the IR crate
-    /// has no `component_composition` term, so the v2 bytes cannot carry its
-    /// node. Its QSL-owned node is written by `write_composition`.
-    #[error("the component composition {name:?} has no v2 node to write")]
-    Composition {
-        /// The composition's declared name; `None` when the refusal is raised
-        /// from a body term, which carries no declaration name.
-        name: Option<String>,
-    },
     /// The caller's [`quire_exact::Cancel`] handle was cancelled, and the
     /// emitter stopped at its next charge (FR-276).
     #[error("the emitter was cancelled ({cause:?})")]
@@ -422,9 +403,7 @@ impl EmitRefusal {
             Self::InvalidTemporalClockValue { .. } => Code::InvalidPackage,
             Self::Encoding { .. } => Code::OutputFailure,
             Self::Abstraction(AbstractionNodeRefusal::Internal(_)) => Code::RuntimeInvariant,
-            Self::Abstraction(_)
-            | Self::ImplementationGuarantee { .. }
-            | Self::Composition { .. } => Code::UnsupportedProjection,
+            Self::Abstraction(_) => Code::UnsupportedProjection,
             Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
             Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
@@ -467,8 +446,6 @@ impl EmitRefusal {
             | Self::UnknownOccurrenceRole { .. }
             | Self::Encoding { .. }
             | Self::Abstraction(_)
-            | Self::ImplementationGuarantee { .. }
-            | Self::Composition { .. }
             | Self::Cancelled { .. }
             | Self::TimedModelNodeSetMismatch
             | Self::UnkeyedProbabilisticClaim { .. }
@@ -696,6 +673,9 @@ pub struct Emission {
     /// bare execution point) are not decodable through serde outside its
     /// admitting reader, so protocol results read these rather than the bytes.
     pub(crate) wire_nodes: Vec<CheckedSemanticNodeV2>,
+    /// The id the bytes give each written node of the checked graph, keyed by
+    /// the node's structural key: the form an importing package names it by.
+    pub(crate) node_wire_ids: HashMap<NodeKey, CheckedNodeId>,
     /// The `temporal_bindings` rows of the checked graph's temporal and
     /// hyper clauses, keyed by the graph's own clause identity.
     pub(crate) temporal_binding_rows: TemporalBindingRows,
@@ -923,6 +903,7 @@ impl DebugWith for Emission {
             equality_producer_identity_rows,
             equality_fact_witness_rows,
             wire_nodes,
+            node_wire_ids: _,
             temporal_binding_rows,
             temporal_rows,
         } = self;
@@ -1496,6 +1477,7 @@ fn ir_tag(tag: NodeTag) -> CheckedNodeTag {
         NodeTag::Correspondence => CheckedNodeTag::Correspondence,
         NodeTag::Hybrid => CheckedNodeTag::Hybrid,
         NodeTag::TimedModel => CheckedNodeTag::TimedModel,
+        NodeTag::Extension => CheckedNodeTag::Extension,
     }
 }
 
@@ -1589,11 +1571,22 @@ impl BodyNames {
                     .dependencies
                     .extend(term.targets().map_err(encoding)?.iter().cloned());
             }
-            BodyTerm::ImplementationGuarantee(_) => {
-                return Err(EmitRefusal::ImplementationGuarantee { name: None });
+            // QSpec FR-469, FR-490, FR-491: `dependencies` are exactly the
+            // unique targets of the form's references.
+            BodyTerm::Extension(term) => {
+                names
+                    .dependencies
+                    .extend(term.targets().map_err(encoding)?.iter().cloned());
             }
-            BodyTerm::Composition(_) => {
-                return Err(EmitRefusal::Composition { name: None });
+            BodyTerm::ImplementationGuarantee(term) => {
+                names
+                    .dependencies
+                    .extend(term.targets().map_err(encoding)?.iter().cloned());
+            }
+            BodyTerm::Composition(term) => {
+                names
+                    .dependencies
+                    .extend(term.targets().map_err(encoding)?.iter().cloned());
             }
             BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
         }
@@ -1938,11 +1931,98 @@ fn checked_term(ids: &StructuralIds, term: &BodyTerm) -> Result<CheckedTerm, Emi
         }),
         BodyTerm::Frame(frame) => frame_term(ids, frame),
         BodyTerm::Abstraction(abstraction) => abstraction_term(ids, abstraction),
-        BodyTerm::ImplementationGuarantee(_) => {
-            Err(EmitRefusal::ImplementationGuarantee { name: None })
-        }
-        BodyTerm::Composition(_) => Err(EmitRefusal::Composition { name: None }),
+        BodyTerm::Extension(extension) => extension_term(ids, extension),
+        BodyTerm::ImplementationGuarantee(guarantee) => guarantee_term(ids, guarantee),
+        BodyTerm::Composition(composition) => composition_term(ids, composition),
     }
+}
+
+/// QSpec FR-490: the `implementation_guarantee` term, read from the body the
+/// guarantee node is written with.
+fn guarantee_term(
+    ids: &StructuralIds,
+    guarantee: &qsl_semantics::check::ImplementationGuaranteeTerm,
+) -> Result<CheckedTerm, EmitRefusal> {
+    flat_term(ids, |id| crate::guarantee::guarantee_body(id, guarantee))
+}
+
+/// QSpec FR-491: the `component_composition` term, read from the body the
+/// composition node is written with.
+fn composition_term(
+    ids: &StructuralIds,
+    composition: &qsl_semantics::check::CompositionTerm,
+) -> Result<CheckedTerm, EmitRefusal> {
+    flat_term(ids, |id| {
+        crate::composition::composition_body(id, composition)
+    })
+}
+
+/// The IR crate does not export the member types of its guarantee and
+/// composition terms, so the term is read from its JSON body. `body` writes
+/// each node reference through the id writer it is given, which here names
+/// the reference by its position in a table; the table's ids then replace the
+/// names, because a node id has no standalone JSON form.
+fn flat_term(
+    ids: &StructuralIds,
+    body: impl FnOnce(
+        crate::guarantee::IdWriter<'_>,
+    ) -> Result<serde_json::Value, crate::guarantee::NodeWriteRefusal>,
+) -> Result<CheckedTerm, EmitRefusal> {
+    use quire_contract_model::CheckedNodePathSegment as Segment;
+    let table = std::cell::RefCell::new(Vec::new());
+    let name = |key: &NodeKey| {
+        let mut table = table.borrow_mut();
+        table.push(node_id(ids, key));
+        Ok(serde_json::json!({
+            "package": "table",
+            "path": ["table", (table.len() - 1).to_string()],
+            "ordinal": 0,
+        }))
+    };
+    let body = body(&name).map_err(|_| EmitRefusal::UnresolvedNodeReference)?;
+    let mut term: CheckedTerm = serde_json::from_value(body).map_err(encoding)?;
+    let table = table.into_inner();
+    term.map_node_ids(|id| match &*id.path {
+        [Segment::Name(table_name), Segment::Name(position)]
+            if &*id.package == "table" && &**table_name == "table" =>
+        {
+            position
+                .parse::<usize>()
+                .ok()
+                .and_then(|at| table.get(at))
+                .cloned()
+        }
+        _ => None,
+    });
+    Ok(term)
+}
+
+/// QSpec FR-469: `{term: "extension_form", definition, node_kind, clauses}`,
+/// each clause a `binding` of the clause name to a `reference` to the node of
+/// its checked value.
+fn extension_term(
+    ids: &StructuralIds,
+    extension: &qsl_semantics::check::ExtensionTerm,
+) -> Result<CheckedTerm, EmitRefusal> {
+    Ok(CheckedTerm::ExtensionForm {
+        definition: CheckedArtifactRef {
+            authority: extension.definition().authority().into(),
+            identity: extension.definition().identity().into(),
+        },
+        node_kind: extension.node_kind().into(),
+        clauses: extension
+            .clauses()
+            .iter()
+            .map(|clause| {
+                Ok(CheckedTerm::Binding {
+                    name: clause.name().into(),
+                    value: Box::new(CheckedTerm::Reference {
+                        target: admitted_id(ids, clause.value())?,
+                    }),
+                })
+            })
+            .collect::<Result<_, EmitRefusal>>()?,
+    })
 }
 
 fn leaf_term(ids: &StructuralIds, leaf: &LeafTerm) -> Result<CheckedTerm, EmitRefusal> {
@@ -2633,7 +2713,8 @@ fn source_artifact(source: &RawSourceRef) -> CheckedSourceRef {
 /// that requires a selected layer; then the qualification-catalog rows
 /// QSpec FR-001 selects for those layers; then the complete-model and
 /// complete-temporal lock rows when their layers are selected; then each law
-/// definition the bodies name that is not already selected.
+/// definition the bodies name that is not already selected; then each
+/// selected extension definition, ascending by `(authority, identity)`.
 ///
 /// A unit whose header selects no layer selects the `always` rows: the
 /// lock's `without_layer` rows are for a unit that selects layers none of
@@ -2641,6 +2722,7 @@ fn source_artifact(source: &RawSourceRef) -> CheckedSourceRef {
 fn catalog_selections(
     layers: &[HeaderLayer],
     laws: &[DefinitionReference],
+    extensions: &[qsl_foundation::selection::DefinitionRef],
 ) -> (CheckedSelection, Vec<CheckedArtifactRef>) {
     // A law's `DefinitionRef` is also part of the application-node keys that
     // name the law.
@@ -2679,7 +2761,12 @@ fn catalog_selections(
                 .into_iter()
                 .flatten(),
         )
-        .chain(laws.iter().cloned());
+        .chain(laws.iter().cloned())
+        // FR-110 "Lock rows" item 3: the extensions, last, already ascending.
+        .chain(extensions.iter().map(|extension| DefinitionReference {
+            authority: extension.authority().to_owned(),
+            identity: extension.identity().to_owned(),
+        }));
     let mut definitions: Vec<CheckedArtifactRef> = Vec::new();
     for definition in selected {
         let definition = artifact(&definition);
@@ -5337,7 +5424,7 @@ pub fn emit_timed_models(
 ) -> Result<Emission, EmitRefusal> {
     let ids = &StructuralIds::default();
     let expected = base
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .filter(|node| {
@@ -5363,7 +5450,7 @@ pub fn emit_timed_models(
     }
 
     let mut nodes = base
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .map(|node| {
@@ -5385,10 +5472,12 @@ pub fn emit_timed_models(
     read_index_segments(ids, &mut nodes, &mut source_map)?;
     rekey_timed_model_nodes(ids, &mut nodes, &mut source_map)?;
     let inspection_source_map = inspection_source_map(ids, &source_map)?;
-    write_index_segments(&mut nodes, &mut source_map, &mut [], &mut [])?;
+    let node_wire_ids = write_index_segments(&mut nodes, &mut source_map, &mut [], &mut [])?;
+    let (slot_nodes, operand_rows) = write_operand_slots(&nodes)?;
     let semantic_graph = CheckedSemanticGraphV2 {
-        graph_version: base.graph().graph_version.clone(),
-        nodes,
+        graph_version: base.resolved_graph().graph_version.clone(),
+        nodes: slot_nodes,
+        operand_rows,
     };
     let capability_report = base.capability_report().to_vec();
     let diagnostics = base.diagnostics().clone();
@@ -5446,7 +5535,8 @@ pub fn emit_timed_models(
         selected_exact_field_rows: Vec::new(),
         equality_producer_identity_rows: Vec::new(),
         equality_fact_witness_rows: Vec::new(),
-        wire_nodes: semantic_graph.nodes,
+        wire_nodes: nodes,
+        node_wire_ids,
         temporal_binding_rows: TemporalBindingRows::default(),
         temporal_rows: TemporalRows::default(),
     })
@@ -5630,6 +5720,7 @@ fn candidates_of<'g>(
     ids: &StructuralIds,
     graph: &'g CheckedGraph,
     abstraction: Option<&'g AbstractionNodes>,
+    declared_forms: &'g [(SemanticNode, Location)],
 ) -> Result<Candidates<'g>, EmitRefusal> {
     let mut recorded = recorded_occurrences(graph)?;
     let mut candidates: Vec<Candidate<'g>> = graph
@@ -5689,6 +5780,20 @@ fn candidates_of<'g>(
                 .collect();
             add(node, generated)?;
         }
+    }
+    // QSpec FR-490, FR-491: a guarantee or composition node has one
+    // `declaration` occurrence, at its declaration.
+    for (node, location) in declared_forms {
+        let declared = vec![(
+            CheckedOccurrence {
+                role: CheckedOccurrenceRole::Declaration,
+                ordinal: 0,
+            },
+            RecordedLocation::Expression(location),
+        )];
+        let candidate = Candidate::of(ids, node, declared)?;
+        let at = candidates.partition_point(|existing| existing.key < candidate.key);
+        candidates.insert(at, candidate);
     }
     Ok(Candidates::new(candidates))
 }
@@ -5788,17 +5893,28 @@ fn emit_package_inner(
         return Err(refusal);
     }
     let graph = package.graph();
-    // QSpec FR-490: the IR crate has no node for a guarantee declaration.
-    if let Some(guarantee) = graph.implementation_guarantees().first() {
-        return Err(EmitRefusal::ImplementationGuarantee {
-            name: Some(guarantee.name().to_owned()),
-        });
+    // QSpec FR-491: a composition names the nodes of its component packages
+    // by the ids those packages' own emissions gave them.
+    for composition in graph.compositions() {
+        for key in composition.term().targets().unwrap_or_default() {
+            if let Some(imported) = package.imported_node_id(&key) {
+                ids.bind_imported(key, imported);
+            }
+        }
     }
-    if let Some(composition) = graph.compositions().first() {
-        return Err(EmitRefusal::Composition {
-            name: Some(composition.name().to_owned()),
-        });
-    }
+    // QSpec FR-490, FR-491: each guarantee and composition declaration is a
+    // `correspondence` node beside the graph's own.
+    let declared_forms: Vec<(SemanticNode, Location)> = graph
+        .implementation_guarantees()
+        .iter()
+        .map(|guarantee| guarantee.semantic_node())
+        .chain(
+            graph
+                .compositions()
+                .iter()
+                .map(|composition| composition.semantic_node()),
+        )
+        .collect();
     let abstraction = package
         .abstraction()
         .map(|relation| graph.abstraction_nodes(relation))
@@ -5813,9 +5929,11 @@ fn emit_package_inner(
             profile: graph.header_layers().last().map(|layer| layer.identity()),
         });
     }
-    let candidates = candidates_of(ids, graph, abstraction.as_ref())?;
+    let candidates = candidates_of(ids, graph, abstraction.as_ref(), &declared_forms)?;
     // Nodes the emitter writes beside the graph's own: each model root, and
-    // each model-owned time unit node a `duration` window is typed by.
+    // each model-owned time unit node a `duration` window is typed by. A
+    // composition's component subjects and clauses are nodes of its imported
+    // packages, which `check` resolved (QSpec FR-491).
     let external: HashSet<NodeKey> = graph
         .model_roots()
         .map(|(_, key)| key)
@@ -5825,6 +5943,12 @@ fn emit_package_inner(
                 .duration_window_model_nodes()
                 .map(|nominal| nominal.key.clone())
         }))
+        .chain(
+            graph
+                .compositions()
+                .iter()
+                .flat_map(|composition| composition.term().targets().unwrap_or_default()),
+        )
         .collect();
     let selected_models: BTreeSet<&str> = graph
         .model_roots()
@@ -6296,7 +6420,8 @@ fn emit_package_inner(
         laws.push(profile.definition().clone());
     }
 
-    let (edition, definition_selections) = catalog_selections(graph.header_layers(), &laws);
+    let (edition, definition_selections) =
+        catalog_selections(graph.header_layers(), &laws, graph.extension_selections());
     let root = DefinitionRole::Root.identity();
     let lock = CheckedPackageLockV2 {
         sources: sources.into_iter().collect(),
@@ -6409,9 +6534,11 @@ fn emit_package_inner(
     let selected_source_record_rows = source_record_rows(graph, &emitted_node_ids)?;
     let selected_source_tuple_rows = source_tuple_rows(graph, &emitted_node_ids)?;
     let selected_source_collection_rows = source_collection_rows(graph, &emitted_node_ids)?;
+    let (slot_nodes, operand_rows) = write_operand_slots(&nodes)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
-        nodes,
+        nodes: slot_nodes,
+        operand_rows,
     };
     let capability_report = [CheckedCapability {
         feature: root.into(),
@@ -6423,7 +6550,7 @@ fn emit_package_inner(
     };
     let operation_effects = graph
         .operation_effects()
-        .filter(|rows| operation_effects_are_carried(rows, &semantic_graph.nodes));
+        .filter(|rows| operation_effects_are_carried(rows, &nodes));
     let package = EmittedPackage::new(graph.package_name(), |name| {
         encode_checked_package_v2(
             name,
@@ -6449,7 +6576,8 @@ fn emit_package_inner(
         )
         .map_err(EmitRefusal::from)
     })?;
-    let evidence = own_evidence(&lock);
+    let mut evidence = own_evidence(&lock);
+    supply_extension_definitions(&mut evidence, graph, &order)?;
     Ok(Emission {
         package,
         omitted,
@@ -6472,7 +6600,8 @@ fn emit_package_inner(
         selected_exact_field_rows: graph.selected_exact_field_rows().to_vec(),
         equality_producer_identity_rows,
         equality_fact_witness_rows,
-        wire_nodes: semantic_graph.nodes,
+        wire_nodes: nodes,
+        node_wire_ids: emitted_node_ids,
         temporal_binding_rows,
         temporal_rows: TemporalRows {
             clauses: temporal_clause_refs,
@@ -7728,6 +7857,77 @@ fn write_index_segments(
     Ok(graph_wire)
 }
 
+/// FR-322 "Operand index segments": the wire form of nodes whose ids hold
+/// index segments ([`write_index_segments`]). Every id inside a node is
+/// node-held, so each index segment becomes the operand slot of the node's
+/// operand row, numbered by first occurrence in the node's canonical (RFC 8785)
+/// order; the row lists the graph index each slot names. A node's bytes then
+/// depend only on its own members, not on the graph around it.
+///
+/// An `{package, node}` foreign key keeps its index segments (they name the
+/// dependency's graph), so no object holding a `package` and one other member
+/// is entered.
+pub fn write_operand_slots(
+    nodes: &[CheckedSemanticNodeV2],
+) -> Result<(Vec<CheckedSemanticNodeV2>, Vec<Vec<u64>>), EmitRefusal> {
+    /// The ids `slotted` rewrote, as `(old, new)` pairs: both values have the
+    /// one shape, so equal positions hold the same id.
+    fn rewritten(
+        old: &serde_json::Value,
+        slotted: &serde_json::Value,
+        pairs: &mut Vec<(serde_json::Value, serde_json::Value)>,
+    ) {
+        use serde_json::Value;
+        match (old, slotted) {
+            (Value::Array(old), Value::Array(slotted)) => {
+                for (old, slotted) in old.iter().zip(slotted) {
+                    rewritten(old, slotted, pairs);
+                }
+            }
+            (Value::Object(old), Value::Object(slotted)) => {
+                if old.len() == 3 && old.contains_key("package") && old.contains_key("path") {
+                    if old != slotted
+                        && !pairs
+                            .iter()
+                            .any(|(seen, _)| seen == &Value::Object(old.clone()))
+                    {
+                        pairs.push((Value::Object(old.clone()), Value::Object(slotted.clone())));
+                    }
+                } else {
+                    for (name, old) in old {
+                        if let Some(slotted) = slotted.get(name) {
+                            rewritten(old, slotted, pairs);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut written = Vec::with_capacity(nodes.len());
+    let mut rows = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        let value = serde_json::to_value(node).map_err(|_| EmitRefusal::SourceMapInvariant)?;
+        let mut slotted = value.clone();
+        // The one walk: the reader's test-support writer numbers slots with it.
+        let row = qsl_semantics::check::wire_id::number_index_segments(&mut slotted);
+        let mut pairs = Vec::new();
+        rewritten(&value, &slotted, &mut pairs);
+        let mut node = node.clone();
+        for (old, new) in &pairs {
+            // `CheckedNodeId` reads raw JSON text, never a `Value`.
+            let old: CheckedNodeId = serde_json::from_str(&old.to_string())
+                .map_err(|_| EmitRefusal::SourceMapInvariant)?;
+            let new: CheckedNodeId = serde_json::from_str(&new.to_string())
+                .map_err(|_| EmitRefusal::SourceMapInvariant)?;
+            node.replace_node_id(&old, &new);
+        }
+        written.push(node);
+        rows.push(row);
+    }
+    Ok((written, rows))
+}
+
 /// The inverse of [`write_index_segments`] over an admitted package's nodes:
 /// every wire id each node reaches is replaced, in that node, by the
 /// structural id of the node it names, so the emitter's identity work
@@ -7768,6 +7968,40 @@ fn read_index_segments(
     for entry in source_map.iter_mut() {
         if holds_segment(&entry.node_id, is_index) {
             entry.node_id = structural(&entry.node_id)?;
+        }
+    }
+    Ok(())
+}
+
+/// FR-354 "Reading": each held extension definition that an `extension` node
+/// of the package names, under its `DefinitionRef`, with exactly its two
+/// FR-467 members. Reader input only; no package byte depends on it.
+fn supply_extension_definitions(
+    evidence: &mut CheckedPackageEvidence,
+    graph: &CheckedGraph,
+    order: &[&Candidate<'_>],
+) -> Result<(), EmitRefusal> {
+    for (selection, definition) in graph
+        .extension_selections()
+        .iter()
+        .zip(graph.extension_definitions())
+    {
+        let named = order.iter().any(|candidate| {
+            matches!(
+                candidate.node.body(),
+                BodyTerm::Extension(extension) if extension.definition() == selection
+            )
+        });
+        if named {
+            evidence
+                .insert_extension_definition(
+                    CheckedArtifactRef {
+                        authority: selection.authority().into(),
+                        identity: selection.identity().into(),
+                    },
+                    definition.clone(),
+                )
+                .map_err(encoding)?;
         }
     }
     Ok(())

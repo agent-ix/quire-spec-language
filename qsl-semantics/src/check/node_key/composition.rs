@@ -2,7 +2,7 @@
 //! QSpec FR-491 "Checked-package node": the body of a
 //! `correspondence`/`component_composition` node.
 //!
-//! The IR crate has no term for this body, so the term is QSL-owned. Its
+//! The term mirrors the IR crate's body term of the same form. Its
 //! arrays are in FR-491's canonical order whatever order they were built in:
 //! [`CompositionTerm::new`] sorts them, and [`CompositionTerm::from_wire`]
 //! keeps the order it is given so a reader can refuse an out-of-order node.

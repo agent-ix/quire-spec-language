@@ -580,7 +580,7 @@ fn a_non_assume_guarantee_rule_derives_a_request_item() {
 /// FR-491-AC-6 (TC-985 case 6): the emitted node reads back to the same
 /// declaration, lists and slot identities, each slot's source span its
 /// member; a node whose `relies` are out of order refuses
-/// `invalid_semantic_graph`; the v2 byte emitter refuses the package, typed.
+/// `invalid_semantic_graph`; the v2 byte emitter writes the same node.
 #[trace("FR-530-AC-1", "QSpec-TC-985", "QSpec-FR-491-AC-6")]
 #[test]
 fn the_composition_node_reads_back() {
@@ -669,11 +669,52 @@ fn the_composition_node_reads_back() {
     let refusal = read_composition(&package, &wrong).expect_err("refused");
     assert_ne!(refusal.code, "");
 
-    // The v2 byte emitter refuses a package holding the node, typed.
+    // The v2 byte emitter writes the node.
+    let emission = emit_checked(&package).expect("the package emits");
+    let package_wire = wire(&emission);
+    let [emitted] =
+        super::owners::node_where(&package_wire, "correspondence", "component_composition")[..]
+    else {
+        panic!("one composition node");
+    };
+    // Ids are written flat in the package, so the body is compared by its
+    // spellings: every member but the node references.
+    assert_eq!(emitted["semantic_type"], emitted["node_id"]);
     assert_eq!(
-        emit_checked(&package).expect_err("the emission refuses"),
-        EmitRefusal::Composition {
-            name: Some("Sys".to_owned())
-        }
+        emitted["dependencies"].as_array().map(Vec::len),
+        node["dependencies"].as_array().map(Vec::len)
     );
+    for (member, value) in node["body"].as_object().expect("a body") {
+        if matches!(value, Value::String(_) | Value::Array(_)) {
+            assert_eq!(
+                emitted["body"][member].as_array().map(Vec::len),
+                value.as_array().map(Vec::len),
+                "{member}"
+            );
+        }
+    }
+    assert_eq!(emitted["body"]["term"], node["body"]["term"]);
+    assert_eq!(
+        emitted["occurrences"],
+        json!([{"role": "declaration", "ordinal": 0}])
+    );
+    // Each component clause is named by the id its package's own emission
+    // gave it.
+    for (entry, dependency) in [
+        (&emitted["body"]["guarantees"][0], &world.consumer),
+        (&emitted["body"]["guarantees"][2], &world.producer),
+    ] {
+        let clause = &entry["clause"];
+        assert_eq!(clause["package"], dependency.identity.as_str());
+        assert!(
+            super::owners::node_where(
+                &wire(&emit_checked(&dependency.package).expect("the dependency emits")),
+                "temporal",
+                "temporal_clause",
+            )
+            .iter()
+            .any(|written| written["node_id"] == *clause),
+            "{clause}"
+        );
+    }
 }
