@@ -966,6 +966,59 @@ fn zero_denominators_and_out_of_range_literals_refuse_with_distinct_causes() {
     }
 }
 
+/// QSpec FR-039-AC-5: normalizing a rational literal is charged against
+/// `s3.rational_bits` by the larger written bit length. With the limit at 64
+/// bits, a numerator of 65 bits (`2^64`) or a denominator of 65 bits refuses
+/// as a `RationalBits` stage limit (resource incompleteness), never a value,
+/// widening or Boolean; the 64-bit literals just inside admit.
+#[trace("QSpec-FR-039-AC-5", "QSpec-TC-039")]
+#[test]
+fn rational_literal_normalization_exhausting_the_bits_limit_is_a_stage_limit() {
+    let power = |bits: u64| Integer::from(2_i64).pow(&Integer::from(bits));
+    let outcome = |numerator: Integer, denominator: Integer| {
+        let literal = function(
+            "lit",
+            &[],
+            rational_form(["-9", "9", "1", "9"]),
+            None,
+            Expression::rational(numerator, denominator),
+        );
+        PackageDeclarations {
+            functions: vec![literal],
+            ..PackageDeclarations::new(
+                fixture_source(),
+                "fixture",
+                qsl_foundation::IdentityLimits::default(),
+            )
+        }
+        .check(CheckingLimits::default().with_rational_bits(64))
+    };
+    let exhausted = |actual: u128| {
+        CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+            stage: CheckingStage::Typing,
+            kind: CheckingLimitKind::RationalBits,
+            limit: 64,
+            actual,
+            region: None,
+        }))
+    };
+    let causes = |numerator, denominator| {
+        outcome(numerator, denominator)
+            .expect_err("the normalization exceeds the limit")
+            .into_iter()
+            .map(|refusal| refusal.cause)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        causes(power(64), power(64)),
+        [exhausted(65)],
+        "a 65-bit numerator and denominator"
+    );
+    assert_eq!(causes(Integer::from(1_i64), power(64)), [exhausted(65)]);
+    // Just inside: 2^63 / 2^63 has 64-bit parts and normalizes to 1/1.
+    outcome(power(63), power(63)).expect("64-bit parts admit");
+}
+
 /// QSpec FR-039-AC-4: a literal with no expected rational type, or one
 /// compared with an integer, refuses rather than choosing a domain.
 #[trace("QSpec-FR-039-AC-4", "QSpec-TC-039")]
