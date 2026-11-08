@@ -1473,6 +1473,7 @@ fn ir_tag(tag: NodeTag) -> CheckedNodeTag {
         NodeTag::Correspondence => CheckedNodeTag::Correspondence,
         NodeTag::Hybrid => CheckedNodeTag::Hybrid,
         NodeTag::TimedModel => CheckedNodeTag::TimedModel,
+        NodeTag::Extension => CheckedNodeTag::Extension,
     }
 }
 
@@ -1562,6 +1563,13 @@ impl BodyNames {
             // QSpec FR-451: `dependencies` are exactly the unique set of every
             // `type`, `population` and `context` target of the body.
             BodyTerm::Abstraction(term) => {
+                names
+                    .dependencies
+                    .extend(term.targets().map_err(encoding)?.iter().cloned());
+            }
+            // QSpec FR-469: `dependencies` are exactly the unique targets of
+            // the form's clause references.
+            BodyTerm::Extension(term) => {
                 names
                     .dependencies
                     .extend(term.targets().map_err(encoding)?.iter().cloned());
@@ -1909,7 +1917,36 @@ fn checked_term(ids: &StructuralIds, term: &BodyTerm) -> Result<CheckedTerm, Emi
         }),
         BodyTerm::Frame(frame) => frame_term(ids, frame),
         BodyTerm::Abstraction(abstraction) => abstraction_term(ids, abstraction),
+        BodyTerm::Extension(extension) => extension_term(ids, extension),
     }
+}
+
+/// QSpec FR-469: `{term: "extension_form", definition, node_kind, clauses}`,
+/// each clause a `binding` of the clause name to a `reference` to the node of
+/// its checked value.
+fn extension_term(
+    ids: &StructuralIds,
+    extension: &qsl_semantics::check::ExtensionTerm,
+) -> Result<CheckedTerm, EmitRefusal> {
+    Ok(CheckedTerm::ExtensionForm {
+        definition: CheckedArtifactRef {
+            authority: extension.definition().authority().into(),
+            identity: extension.definition().identity().into(),
+        },
+        node_kind: extension.node_kind().into(),
+        clauses: extension
+            .clauses()
+            .iter()
+            .map(|clause| {
+                Ok(CheckedTerm::Binding {
+                    name: clause.name().into(),
+                    value: Box::new(CheckedTerm::Reference {
+                        target: admitted_id(ids, clause.value())?,
+                    }),
+                })
+            })
+            .collect::<Result<_, EmitRefusal>>()?,
+    })
 }
 
 fn leaf_term(ids: &StructuralIds, leaf: &LeafTerm) -> Result<CheckedTerm, EmitRefusal> {
@@ -2600,7 +2637,8 @@ fn source_artifact(source: &RawSourceRef) -> CheckedSourceRef {
 /// that requires a selected layer; then the qualification-catalog rows
 /// QSpec FR-001 selects for those layers; then the complete-model and
 /// complete-temporal lock rows when their layers are selected; then each law
-/// definition the bodies name that is not already selected.
+/// definition the bodies name that is not already selected; then each
+/// selected extension definition, ascending by `(authority, identity)`.
 ///
 /// A unit whose header selects no layer selects the `always` rows: the
 /// lock's `without_layer` rows are for a unit that selects layers none of
@@ -2608,6 +2646,7 @@ fn source_artifact(source: &RawSourceRef) -> CheckedSourceRef {
 fn catalog_selections(
     layers: &[HeaderLayer],
     laws: &[DefinitionReference],
+    extensions: &[qsl_foundation::selection::DefinitionRef],
 ) -> (CheckedSelection, Vec<CheckedArtifactRef>) {
     // A law's `DefinitionRef` is also part of the application-node keys that
     // name the law.
@@ -2646,7 +2685,12 @@ fn catalog_selections(
                 .into_iter()
                 .flatten(),
         )
-        .chain(laws.iter().cloned());
+        .chain(laws.iter().cloned())
+        // FR-110 "Lock rows" item 3: the extensions, last, already ascending.
+        .chain(extensions.iter().map(|extension| DefinitionReference {
+            authority: extension.authority().to_owned(),
+            identity: extension.identity().to_owned(),
+        }));
     let mut definitions: Vec<CheckedArtifactRef> = Vec::new();
     for definition in selected {
         let definition = artifact(&definition);
@@ -6252,7 +6296,8 @@ fn emit_package_inner(
         laws.push(profile.definition().clone());
     }
 
-    let (edition, definition_selections) = catalog_selections(graph.header_layers(), &laws);
+    let (edition, definition_selections) =
+        catalog_selections(graph.header_layers(), &laws, graph.extension_selections());
     let root = DefinitionRole::Root.identity();
     let lock = CheckedPackageLockV2 {
         sources: sources.into_iter().collect(),
@@ -6405,7 +6450,8 @@ fn emit_package_inner(
         )
         .map_err(EmitRefusal::from)
     })?;
-    let evidence = own_evidence(&lock);
+    let mut evidence = own_evidence(&lock);
+    supply_extension_definitions(&mut evidence, graph, &order)?;
     Ok(Emission {
         package,
         omitted,
@@ -7724,6 +7770,40 @@ fn read_index_segments(
     for entry in source_map.iter_mut() {
         if holds_segment(&entry.node_id, is_index) {
             entry.node_id = structural(&entry.node_id)?;
+        }
+    }
+    Ok(())
+}
+
+/// FR-354 "Reading": each held extension definition that an `extension` node
+/// of the package names, under its `DefinitionRef`, with exactly its two
+/// FR-467 members. Reader input only; no package byte depends on it.
+fn supply_extension_definitions(
+    evidence: &mut CheckedPackageEvidence,
+    graph: &CheckedGraph,
+    order: &[&Candidate<'_>],
+) -> Result<(), EmitRefusal> {
+    for (selection, definition) in graph
+        .extension_selections()
+        .iter()
+        .zip(graph.extension_definitions())
+    {
+        let named = order.iter().any(|candidate| {
+            matches!(
+                candidate.node.body(),
+                BodyTerm::Extension(extension) if extension.definition() == selection
+            )
+        });
+        if named {
+            evidence
+                .insert_extension_definition(
+                    CheckedArtifactRef {
+                        authority: selection.authority().into(),
+                        identity: selection.identity().into(),
+                    },
+                    definition.clone(),
+                )
+                .map_err(encoding)?;
         }
     }
     Ok(())

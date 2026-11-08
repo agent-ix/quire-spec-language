@@ -262,19 +262,20 @@ pub fn parse_with_cancel(
     parser::parse(source, limits, cancel, &ExtensionForms::default())
 }
 
-/// [`parse`] where each of `forms` is also a declaration form of the unit
-/// (FR-354). A leading keyword of `forms` is recognised only as the first
-/// token of a top-level declaration; everywhere else the same word stays an
-/// ordinary identifier.
+/// [`parse_with_cancel`] where each of `forms` is also a declaration form of
+/// the unit (FR-354). A leading keyword of `forms` is recognised only as the
+/// first token of a top-level declaration; everywhere else the same word
+/// stays an ordinary identifier.
 pub fn parse_with_extensions(
     identity: SourceIdentity,
     path: impl Into<String>,
     bytes: &[u8],
     limits: Limits,
     forms: &ExtensionForms,
+    cancel: &Cancel,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
     let source = diagnostic::read_source(identity, path, bytes, limits.source_bytes)?;
-    parser::parse(source, limits, &Cancel::new(), forms)
+    parser::parse(source, limits, cancel, forms)
 }
 
 /// Parse an already admitted exact source.

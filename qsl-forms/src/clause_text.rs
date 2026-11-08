@@ -12,7 +12,7 @@ use qsl_cst::{CompleteDiagnostic, Limits};
 use qsl_foundation::SourceIdentity;
 
 use crate::dispatch::{build_unit, FormsRefusal};
-use crate::syntax::{DeclarationForm, Expression};
+use crate::syntax::{DeclarationForm, Expression, TypeForm};
 
 /// Why a clause text did not become an [`Expression`].
 #[derive(Clone, Debug)]
@@ -47,6 +47,41 @@ pub fn parse_clause_text(text: &str, limits: Limits) -> Result<Expression, Claus
     match (forms.next(), forms.next()) {
         (Some(parsed), None) => match parsed.into_form() {
             DeclarationForm::StateClause(clause) => Ok(clause.body),
+            _ => Err(ClauseTextRefusal::NotOneExpression),
+        },
+        _ => Err(ClauseTextRefusal::NotOneExpression),
+    }
+}
+
+/// The type `text` spells, read by the production a function parameter's
+/// type uses. An extension's typed-node schema spells each clause's core
+/// `type-ref` this way (QSpec FR-467 "Members"); the text is wrapped in the
+/// one declaration the grammar has that carries a type, and the parameter's
+/// type is read back out, so S1 and S2 read a type exactly as they do in a
+/// unit.
+pub fn parse_type_text(text: &str) -> Result<TypeForm, ClauseTextRefusal> {
+    let unit = format!(
+        "language \"ix:native\" edition \"1-draft\";\nprofile p = \"quire.value.complete/v1\";\nfunction t using p(x: {text}): Boolean pure {{ true }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("type-text", "type-ref"),
+        "type.native",
+        unit.as_bytes(),
+        Limits::default(),
+    )
+    .map_err(ClauseTextRefusal::Source)?;
+    let built = build_unit(&parsed).map_err(ClauseTextRefusal::Forms)?;
+    let (_, forms) = built.into_parts();
+    let mut forms = forms.into_iter();
+    match (forms.next(), forms.next()) {
+        (Some(parsed), None) => match parsed.into_form() {
+            DeclarationForm::Function(function) => {
+                let mut parameters = function.parameters.into_iter();
+                match (parameters.next(), parameters.next()) {
+                    (Some((_, value_type)), None) => Ok(value_type),
+                    _ => Err(ClauseTextRefusal::NotOneExpression),
+                }
+            }
             _ => Err(ClauseTextRefusal::NotOneExpression),
         },
         _ => Err(ClauseTextRefusal::NotOneExpression),
