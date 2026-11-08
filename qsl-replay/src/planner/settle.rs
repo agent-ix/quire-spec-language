@@ -275,6 +275,7 @@ pub struct PlannerResult {
 /// [`SettleRefusal`] when the request does not belong to the package's declaration, a
 /// composition's rule is not `assume-guarantee`, or a fairness constraint
 /// cannot be written.
+#[ix_trace_rs::string_edge]
 pub fn settle(
     package: &CheckedPackage,
     request: &SettlementRequest,

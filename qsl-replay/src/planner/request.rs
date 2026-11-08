@@ -347,6 +347,7 @@ fn parse_document(bytes: &[u8], limits: &ReadLimits) -> Result<Value, Refusal> {
 }
 
 /// Steps 1 and 2 up to the item: members and kinds, format and package.
+#[ix_trace_rs::string_edge]
 fn admit_header(composition: bool, top: &Map<String, Value>, package: &str) -> Result<(), Fault> {
     let optional: &[&str] = if composition {
         &["discharges", "guarantees", "limits"]
