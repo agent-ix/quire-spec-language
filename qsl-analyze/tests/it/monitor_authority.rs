@@ -587,13 +587,24 @@ fn exact_canonical_bounds_succeed_and_one_short_preserves_owner_failures() {
 #[test]
 fn progress_owner_admission_keeps_its_exact_and_one_short_resource_limits() {
     let root = tick_root();
-    let (view, _) = observation::admitted(Some(vec![row(&root)]));
-    let owner_document_bytes = view.bytes().len();
     let mut limits = authority::Limits::owner_max();
-    limits.max_output_bytes = owner_document_bytes;
-    let (exact, _) = observation::admitted_with_progress_limits(Some(vec![row(&root)]), limits)
-        .expect("exact owner admission output ceiling");
-    assert_eq!(exact.bytes().len(), owner_document_bytes);
+    let mut fixed_point = None;
+    // The owner document records its effective ceiling, so changing that
+    // ceiling can change the serialized size. Measure through derive and read
+    // with the same limits until the successful output fills its allowance.
+    for _ in 0..16 {
+        let (view, _) = observation::admitted_with_progress_limits(Some(vec![row(&root)]), limits)
+            .expect("calibration admits through the real owner boundary");
+        let measured = view.bytes().len();
+        assert!(measured <= limits.max_output_bytes);
+        if measured == limits.max_output_bytes {
+            fixed_point = Some(view);
+            break;
+        }
+        limits.max_output_bytes = measured;
+    }
+    let exact = fixed_point.expect("owner output-ceiling calibration converges within 16 reads");
+    assert_eq!(exact.bytes().len(), limits.max_output_bytes);
     limits.max_output_bytes -= 1;
     let error =
         observation::admitted_with_progress_limits(Some(vec![row(&root)]), limits).unwrap_err();
