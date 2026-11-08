@@ -49,3 +49,18 @@ Round 1, against fix commit 14ebd238a (head; be2d3d5a2 and 6d649c8d5 are `=` to 
 | --- | --- | --- |
 | FND-001 | fixed | - |
 | FND-002 | fixed | - |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | FR-286-AC-7 (merged text, b700b6c75) also states "The existing Boolean/Integer completions remain unchanged; no Reference completion is emitted as a `/2` clause truth or a Population payload", and its verification is Test (TC-792). The new `tc_792_reference_completions_serialize_the_returned_reference` asserts the document half only. The production branches that keep a Reference completion out of a clause truth have no test: the `/2` native result maps it to internal failure with `clause-completes-reference` (`qsl-replay/src/spine/native_result.rs:2427-2432`), and so do `ClauseDisposition::category` (`qsl-replay/src/spine/clause.rs:381`) and the state-clause and frame-check faults (`qsl-replay/src/execute/state_clause.rs:311`, `qsl-replay/src/execute/frame.rs:287`). A grep for `clause-completes-reference` or `state-clause-completes-a-boolean` finds no test. Add a test that feeds a `ClauseDisposition::Evaluate(Completed(Reference))` to the `/2` result writer and to `ClauseDisposition::truth`/`category`, and asserts no truth and no completed outcome. Tag it FR-286-AC-7. The Boolean/Integer half is carried by the retained scalar tests. | qsl-replay/src/spine/call/tests.rs:2414-2501 |
+| FND-005 | low | FND-003's semantics have no test that tells `tripped()` from `cause()`. The FR-276-AC-4 test's blocking engine polls, so it passes under either read, and a regression back to `cause()` would go unnoticed. Add one item whose work cancels the handle (or lets the canceller run) after its last charge, without polling again, and assert that its engine verdict stands. | qsl-analyze/src/analyze.rs:1138-1149 |
+
+## Dispositions (round 2)
+
+Round 2, against a97c9d447 (head). FR-270 / TC-745 after #2582 is consistent: the three deleted tests carried FR-270-AC-6 (removed) and the Makefile text-match clause removed from FR-270-AC-4. `tc_745_the_workspace_passes_and_a_plant_fails_the_command` (`xtask/src/checked_input.rs:1293`) still backs the remaining FR-270-AC-4 real gate run. Stack note: this branch's base 3fd46b41a does not contain b700b6c75, so on the branch FR-286-AC-7 still reads "one compiled package artifact" and ADR-032 §3 still names the deleted file. Both resolve once the stack is rebased on or merged into main.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-003 | fixed | - |

@@ -2099,4 +2099,49 @@ mod tests {
         assert_eq!(records[2].terminal().map(TerminalRecord::value), cancelled);
         assert!(!third_ran.get());
     }
+    /// FR-276 Behavior: the operation reads the handle's `tripped()` cause. A
+    /// handle cancelled after an item's last charge is not tripped, so that
+    /// item's verdict stands.
+    #[trace("TC-757", "FR-276-AC-4")]
+    #[test]
+    fn a_cancel_after_the_last_charge_leaves_the_verdict_standing() {
+        let failed = || {
+            EngineReport::Refused(Refusal::Failed(CatalogCode::new(
+                "runtime_invariant",
+                "established-invariant-broken",
+            )))
+        };
+        let mut engines = Engines::default();
+        engines.with(engine_all("test-all")).expect("one engine");
+        let cancel = Cancel::new();
+        let item = AnalyzeItem::new(
+            RequestIndex::new(0),
+            Capability::OperationContract,
+            Some(DeclarationFamily::StateModel),
+            Mode::Bounded,
+            "test-all",
+            |cancel: &Cancel| {
+                assert!(!cancel.poll(), "the item's last charge sees no cancel");
+                cancel.cancel(CancelCause::Requested);
+                failed()
+            },
+        );
+        let records = analyze_items(&engines, vec![item], &cancel);
+
+        assert_eq!(cancel.cause(), Some(CancelCause::Requested));
+        assert_eq!(cancel.tripped(), None);
+        let expected = analyze_items(
+            &engines,
+            vec![AnalyzeItem::new(
+                RequestIndex::new(0),
+                Capability::OperationContract,
+                Some(DeclarationFamily::StateModel),
+                Mode::Bounded,
+                "test-all",
+                |_| failed(),
+            )],
+            &Cancel::new(),
+        );
+        assert_eq!(records[0].terminal(), expected[0].terminal());
+    }
 }
