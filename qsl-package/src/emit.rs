@@ -7701,14 +7701,58 @@ fn write_index_segments(
 pub(crate) fn write_operand_slots(
     nodes: &[CheckedSemanticNodeV2],
 ) -> Result<(Vec<CheckedSemanticNodeV2>, Vec<Vec<u64>>), EmitRefusal> {
+    /// The ids `slotted` rewrote, as `(old, new)` pairs: both values have the
+    /// one shape, so equal positions hold the same id.
+    fn rewritten(
+        old: &serde_json::Value,
+        slotted: &serde_json::Value,
+        pairs: &mut Vec<(serde_json::Value, serde_json::Value)>,
+    ) {
+        use serde_json::Value;
+        match (old, slotted) {
+            (Value::Array(old), Value::Array(slotted)) => {
+                for (old, slotted) in old.iter().zip(slotted) {
+                    rewritten(old, slotted, pairs);
+                }
+            }
+            (Value::Object(old), Value::Object(slotted)) => {
+                if old.len() == 3 && old.contains_key("package") && old.contains_key("path") {
+                    if old != slotted
+                        && !pairs
+                            .iter()
+                            .any(|(seen, _)| seen == &Value::Object(old.clone()))
+                    {
+                        pairs.push((Value::Object(old.clone()), Value::Object(slotted.clone())));
+                    }
+                } else {
+                    for (name, old) in old {
+                        if let Some(slotted) = slotted.get(name) {
+                            rewritten(old, slotted, pairs);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
     let mut written = Vec::with_capacity(nodes.len());
     let mut rows = Vec::with_capacity(nodes.len());
     for node in nodes {
-        let mut value = serde_json::to_value(node).map_err(|_| EmitRefusal::SourceMapInvariant)?;
-        let row = qsl_semantics::check::wire_id::number_index_segments(&mut value);
-        // `CheckedNodeId` reads raw JSON text, never a `Value`.
-        let node = serde_json::from_str(&value.to_string())
-            .map_err(|_| EmitRefusal::SourceMapInvariant)?;
+        let value = serde_json::to_value(node).map_err(|_| EmitRefusal::SourceMapInvariant)?;
+        let mut slotted = value.clone();
+        // The one walk: the reader's test-support writer numbers slots with it.
+        let row = qsl_semantics::check::wire_id::number_index_segments(&mut slotted);
+        let mut pairs = Vec::new();
+        rewritten(&value, &slotted, &mut pairs);
+        let mut node = node.clone();
+        for (old, new) in &pairs {
+            // `CheckedNodeId` reads raw JSON text, never a `Value`.
+            let old: CheckedNodeId = serde_json::from_str(&old.to_string())
+                .map_err(|_| EmitRefusal::SourceMapInvariant)?;
+            let new: CheckedNodeId = serde_json::from_str(&new.to_string())
+                .map_err(|_| EmitRefusal::SourceMapInvariant)?;
+            node.replace_node_id(&old, &new);
+        }
         written.push(node);
         rows.push(row);
     }
