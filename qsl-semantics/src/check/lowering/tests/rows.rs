@@ -966,7 +966,8 @@ fn zero_denominators_and_out_of_range_literals_refuse_with_distinct_causes() {
     }
 }
 
-/// QSpec FR-039-AC-4: a literal with no expected rational type, or one
+/// QSpec FR-039-AC-4: a literal with no expected rational type, literals
+/// that leave the expected domain ambiguous, or one
 /// compared with an integer, refuses rather than choosing a domain.
 #[trace("QSpec-FR-039-AC-4", "QSpec-TC-039")]
 #[test]
@@ -984,6 +985,22 @@ fn a_rational_literal_never_picks_its_own_domain() {
         refused(&[], binary(BinaryOperator::Equal, half(), half())),
         [CheckCause::IllTyped(IllTypedCause::AmbiguousLiteral)]
     );
+    // Ambiguous expected types: two literals, however combined, name no one
+    // rational domain between them, so none is chosen for either.
+    let third = || Expression::rational(Integer::from(1_i64), Integer::from(3_i64));
+    for body in [
+        binary(BinaryOperator::Less, half(), third()),
+        binary(
+            BinaryOperator::Equal,
+            binary(BinaryOperator::Add, half(), third()),
+            half(),
+        ),
+    ] {
+        assert_eq!(
+            refused(&[], body),
+            [CheckCause::IllTyped(IllTypedCause::AmbiguousLiteral)]
+        );
+    }
     let fraction = rational_form(["-9", "9", "1", "9"]);
     assert_eq!(
         refused(
