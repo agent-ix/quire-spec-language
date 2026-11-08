@@ -22,7 +22,7 @@ use super::{
     own_evidence, read_index_segments, write_index_segments, CheckedNodeId, CheckedOccurrence,
     CheckedOccurrenceRole, CheckedPackageSidecarsRef, CheckedPackageSourceCorrespondenceRef,
     CheckedPackageV2, CheckedSemanticGraphV2, CheckedSourceMapEntry, Emission, EmitRefusal,
-    EmittedPackage, OmittedNode, StructuralIds, GRAPH_V2,
+    EmittedPackage, ForeignNodes, OmittedNode, StructuralIds, GRAPH_V2,
 };
 
 /// What the writer needs of one plan.
@@ -389,7 +389,13 @@ fn emit_monitor_plan(
             name: "the selected temporal clause".to_owned(),
         });
     }
-    write_index_segments(&mut nodes, &mut source_map, &mut [], &mut [])?;
+    write_index_segments(
+        &mut nodes,
+        &mut source_map,
+        &mut [],
+        &mut [],
+        &ForeignNodes::default(),
+    )?;
     // The generated nodes belong to the package being compiled, which the
     // selected clause is a node of (a domain package's nodes may come first).
     let package: String = nodes[clause_at].node_id.package.to_string();

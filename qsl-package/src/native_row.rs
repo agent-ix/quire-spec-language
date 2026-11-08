@@ -192,6 +192,7 @@ pub(crate) fn node(
         work(budget, locus, 1)?;
         match segment {
             CheckedNodePathSegment::Name(value) => text(budget, locus, value)?,
+            CheckedNodePathSegment::Dependency { package, .. } => text(budget, locus, package)?,
             CheckedNodePathSegment::Node(_)
             | CheckedNodePathSegment::Index(_)
             | CheckedNodePathSegment::Operand(_) => {}

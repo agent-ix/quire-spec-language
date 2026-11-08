@@ -23,8 +23,8 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use quire_contract_model::{
-    CheckedNodeId, CheckedNodePathSegment, NativeJoinBudget, NativeJoinChargeKind,
-    NativeJoinDeniedCharge, NativeJoinLocus,
+    CheckedDependencyOperand, CheckedNodeId, CheckedNodePathSegment, CheckedOperandEntry,
+    NativeJoinBudget, NativeJoinChargeKind, NativeJoinDeniedCharge, NativeJoinLocus,
 };
 use quire_exact::{InvalidNodeKey, NodeKey, PathSegment};
 
@@ -65,6 +65,16 @@ pub enum WireIdError {
     OperandSlot {
         /// The slot the segment holds.
         slot: u64,
+    },
+    /// A dependency position was read where only keys are admitted: it names
+    /// a node by its position in a dependency's graph, which this reader never
+    /// holds.
+    #[error("dependency position {package}#{node} has no dependency graph to resolve against")]
+    DependencyPosition {
+        /// The selected dependency the position is in.
+        package: String,
+        /// The position in that dependency's graph.
+        node: u64,
     },
     /// An operand of the key is not a node of the document's graph, so the
     /// key has no wire form there.
@@ -403,6 +413,12 @@ impl StructuralKeys {
                 CheckedNodePathSegment::Operand(slot) => {
                     Err(WireIdError::OperandSlot { slot: *slot })
                 }
+                CheckedNodePathSegment::Dependency { package, node } => {
+                    Err(WireIdError::DependencyPosition {
+                        package: package.to_string(),
+                        node: *node,
+                    })
+                }
                 CheckedNodePathSegment::Node(operand) => Ok(PathSegment::Node(
                     self.by_operand[&Arc::as_ptr(operand)].1.clone(),
                 )),
@@ -479,6 +495,12 @@ fn key_with(
             Some(CheckedNodePathSegment::Operand(slot)) => {
                 return Err(WireIdError::OperandSlot { slot: *slot })
             }
+            Some(CheckedNodePathSegment::Dependency { package, node }) => {
+                return Err(WireIdError::DependencyPosition {
+                    package: package.to_string(),
+                    node: *node,
+                })
+            }
             Some(CheckedNodePathSegment::Node(nested)) => stack.push(frame(nested)),
             None => {
                 let done = stack.pop().expect("the top frame exists");
@@ -507,7 +529,11 @@ fn index_segments(id: &CheckedNodeId) -> Vec<u64> {
         match segments.next() {
             Some(CheckedNodePathSegment::Index(index)) => found.push(*index),
             Some(CheckedNodePathSegment::Node(nested)) => pending.push(nested.path.iter()),
-            Some(CheckedNodePathSegment::Name(_) | CheckedNodePathSegment::Operand(_)) => {}
+            Some(
+                CheckedNodePathSegment::Name(_)
+                | CheckedNodePathSegment::Operand(_)
+                | CheckedNodePathSegment::Dependency { .. },
+            ) => {}
             None => {
                 pending.pop();
             }
@@ -542,13 +568,20 @@ pub fn resolve_operand_slots(wire: &mut serde_json::Value) -> Result<(), String>
     Ok(())
 }
 
-/// Walk node-ID paths in canonical order, excluding data and foreign graph references.
+/// Walk node-ID paths in canonical order, excluding data and foreign graph
+/// references: every document index segment `{"node": i}` is an
+/// [`CheckedOperandEntry::Node`], and every dependency position
+/// `{"node": j, "package": p}` held in a path is an
+/// [`CheckedOperandEntry::Dependency`].
 ///
 /// # Errors
 ///
 /// Refuses an unreadable canonical document or a non-integer index segment.
 #[ix_trace_rs::string_edge]
-pub fn canonical_operand_indices(bytes: &[u8], byte_limit: u64) -> Result<Vec<u64>, String> {
+pub fn canonical_operand_entries(
+    bytes: &[u8],
+    byte_limit: u64,
+) -> Result<Vec<CheckedOperandEntry>, String> {
     use quire_canonical::{Items, Members, Node, NodeRef};
     enum Pending<'a> {
         Value(NodeRef<'a>),
@@ -561,49 +594,62 @@ pub fn canonical_operand_indices(bytes: &[u8], byte_limit: u64) -> Result<Vec<u6
     let mut indices = Vec::new();
     while let Some(next) = pending.pop() {
         match next {
-            Pending::Value(value) => {
-                match value.node() {
-                    Node::Object(members) => {
-                        let member_count = members.clone().count();
-                        if (member_count == 2
-                            || (member_count == 3
-                                && value.get("term").is_some_and(|term| {
-                                    matches!(term.node(), Node::String("dependency_reference"))
-                                })))
-                            && value.get("package").is_some()
-                            && value.get("node").is_some()
-                        {
-                            continue;
-                        }
-                        let is_id = member_count == 3
-                            && value.get("package").is_some()
-                            && value.get("ordinal").is_some()
-                            && value.get("path").is_some();
-                        if is_id {
-                            let Some(path) = value.get("path") else {
-                                continue;
-                            };
-                            let Node::Array(segments) = path.node() else {
-                                continue;
-                            };
-                            for segment in segments {
-                                if let Some(index) = segment.get("node") {
-                                    let Node::Number(number) = index.node() else {
-                                        return Err("invalid canonical operand index".to_owned());
-                                    };
-                                    indices.push(number.text().parse().map_err(|_| {
-                                        "invalid canonical operand index".to_owned()
-                                    })?);
-                                }
-                            }
-                        } else {
-                            pending.push(Pending::Members(members));
-                        }
+            Pending::Value(value) => match value.node() {
+                Node::Object(members) => {
+                    let member_count = members.clone().count();
+                    if (member_count == 2
+                        || (member_count == 3
+                            && value.get("term").is_some_and(|term| {
+                                matches!(term.node(), Node::String("dependency_reference"))
+                            })))
+                        && value.get("package").is_some()
+                        && value.get("node").is_some()
+                    {
+                        continue;
                     }
-                    Node::Array(items) => pending.push(Pending::Items(items)),
-                    Node::Null | Node::Bool(_) | Node::Number(_) | Node::String(_) => {}
+                    let is_id = member_count == 3
+                        && value.get("package").is_some()
+                        && value.get("ordinal").is_some()
+                        && value.get("path").is_some();
+                    if is_id {
+                        let Some(path) = value.get("path") else {
+                            continue;
+                        };
+                        let Node::Array(segments) = path.node() else {
+                            continue;
+                        };
+                        for segment in segments {
+                            if let Some(index) = segment.get("node") {
+                                let Node::Number(number) = index.node() else {
+                                    return Err("invalid canonical operand index".to_owned());
+                                };
+                                let node: u64 = number
+                                    .text()
+                                    .parse()
+                                    .map_err(|_| "invalid canonical operand index".to_owned())?;
+                                indices.push(match segment.get("package") {
+                                    None => CheckedOperandEntry::Node(node),
+                                    Some(package) => {
+                                        let Node::String(package) = package.node() else {
+                                            return Err(
+                                                "invalid canonical dependency package".to_owned()
+                                            );
+                                        };
+                                        CheckedOperandEntry::Dependency(CheckedDependencyOperand {
+                                            package: package.into(),
+                                            node,
+                                        })
+                                    }
+                                });
+                            }
+                        }
+                    } else {
+                        pending.push(Pending::Members(members));
+                    }
                 }
-            }
+                Node::Array(items) => pending.push(Pending::Items(items)),
+                Node::Null | Node::Bool(_) | Node::Number(_) | Node::String(_) => {}
+            },
             Pending::Members(mut members) => {
                 if let Some((_, value)) = members.next() {
                     pending.push(Pending::Members(members));
@@ -634,8 +680,13 @@ pub fn number_index_segments(node: &mut serde_json::Value) -> Vec<u64> {
         .expect("a JSON inspection value has a canonical encoding");
     let mut row = Vec::new();
     let mut slots = HashMap::new();
-    for index in canonical_operand_indices(&bytes, u64::MAX)
+    for index in canonical_operand_entries(&bytes, u64::MAX)
         .expect("a resolved inspection value has integer graph indices")
+        .into_iter()
+        .filter_map(|entry| match entry {
+            CheckedOperandEntry::Node(index) => Some(index),
+            CheckedOperandEntry::Dependency(_) => None,
+        })
     {
         if let std::collections::hash_map::Entry::Vacant(entry) = slots.entry(index) {
             entry.insert(u64::try_from(row.len()).expect("operand row length fits a graph index"));
@@ -725,7 +776,7 @@ pub struct WireGraph {
     keys: Vec<NodeKey>,
     index: HashMap<NodeKey, u64>,
     slots: BTreeMap<CheckedNodeId, Option<usize>>,
-    rows: Vec<Vec<u64>>,
+    rows: Vec<Vec<CheckedOperandEntry>>,
 }
 
 #[derive(Clone, Copy)]
@@ -734,15 +785,22 @@ enum IdentityView {
     Document,
 }
 
-fn resolve_slots(id: &mut CheckedNodeId, row: &[u64]) -> Result<(), WireIdError> {
+fn resolve_slots(id: &mut CheckedNodeId, row: &[CheckedOperandEntry]) -> Result<(), WireIdError> {
     for segment in &mut id.path {
         if let CheckedNodePathSegment::Operand(slot) = segment {
-            let index = usize::try_from(*slot)
+            let entry = usize::try_from(*slot)
                 .ok()
                 .and_then(|slot| row.get(slot))
-                .copied()
                 .ok_or(WireIdError::OperandSlot { slot: *slot })?;
-            *segment = CheckedNodePathSegment::Index(index);
+            *segment = match entry {
+                CheckedOperandEntry::Node(index) => CheckedNodePathSegment::Index(*index),
+                CheckedOperandEntry::Dependency(CheckedDependencyOperand { package, node }) => {
+                    CheckedNodePathSegment::Dependency {
+                        package: package.clone(),
+                        node: *node,
+                    }
+                }
+            };
         }
     }
     Ok(())
@@ -841,7 +899,7 @@ impl WireGraph {
     /// Refuses missing rows, invalid slots, graph indices and cycles.
     pub fn with_operand_rows(
         ids: &[CheckedNodeId],
-        rows: &[Vec<u64>],
+        rows: &[Vec<CheckedOperandEntry>],
     ) -> Result<Self, WireIdError> {
         if ids.len() != rows.len() {
             return Err(WireIdError::OperandRowCount {
@@ -877,16 +935,26 @@ impl WireGraph {
     ///
     /// Refuses a missing holder, an invalid slot or an invalid graph index.
     pub fn key_in_row(&self, holder: usize, id: &CheckedNodeId) -> Result<NodeKey, WireIdError> {
+        self.key(&self.resolved_in_row(holder, id)?)
+    }
+
+    /// `id`, held by the node at `holder`, with each operand slot replaced by
+    /// what that node's row names: an index segment, or a dependency position.
+    fn resolved_in_row(
+        &self,
+        holder: usize,
+        id: &CheckedNodeId,
+    ) -> Result<CheckedNodeId, WireIdError> {
+        let mut resolved = id.clone();
         if self.rows.is_empty() {
-            return self.key(id);
+            return Ok(resolved);
         }
         let row = self.rows.get(holder).ok_or(WireIdError::IndexOutOfRange {
             index: holder as u64,
             len: self.rows.len(),
         })?;
-        let mut resolved = id.clone();
         resolve_slots(&mut resolved, row)?;
-        self.key(&resolved)
+        Ok(resolved)
     }
 
     /// The graph of the checked-package document `bytes`, read from its
@@ -905,7 +973,7 @@ impl WireGraph {
         struct Graph {
             nodes: Vec<Node>,
             #[serde(default)]
-            operand_rows: Vec<Vec<u64>>,
+            operand_rows: Vec<Vec<CheckedOperandEntry>>,
         }
         #[derive(serde::Deserialize)]
         struct Node {
@@ -939,7 +1007,7 @@ impl WireGraph {
         if envelope["semantic_graph"].get("operand_rows").is_none() {
             return Self::new(&ids).map_err(|error| error.to_string());
         }
-        let rows: Vec<Vec<u64>> =
+        let rows: Vec<Vec<CheckedOperandEntry>> =
             serde_json::from_value(envelope["semantic_graph"]["operand_rows"].clone())
                 .map_err(|error| error.to_string())?;
         Self::with_operand_rows(&ids, &rows).map_err(|error| error.to_string())
@@ -1046,11 +1114,23 @@ impl WireGraph {
             });
             if is_id {
                 let id = id_of_value(current)?;
-                let key = match holder {
-                    Some(holder) => self.key_in_row(holder, &id),
-                    None => self.key(&id),
+                let id = match holder {
+                    Some(holder) => self
+                        .resolved_in_row(holder, &id)
+                        .map_err(|error| error.to_string())?,
+                    None => id,
+                };
+                // A dependency position names a node of another package's
+                // graph: the document view keeps it as the wire writes it.
+                let names_dependency = id
+                    .path
+                    .iter()
+                    .any(|segment| matches!(segment, CheckedNodePathSegment::Dependency { .. }));
+                if names_dependency && matches!(view, IdentityView::Document) {
+                    *current = serde_json::to_value(&id).map_err(|error| error.to_string())?;
+                    continue;
                 }
-                .map_err(|error| error.to_string())?;
+                let key = self.key(&id).map_err(|error| error.to_string())?;
                 *current = match view {
                     IdentityView::Structural => qsl_foundation::node_wire::node_key_to_json(&key)
                         .map_err(|error| error.to_string())?,
@@ -1149,7 +1229,8 @@ mod tests {
         ids[2].path.pop();
         ids[2].path.push(CheckedNodePathSegment::Operand(0));
         assert_eq!(ids[1], ids[2]);
-        let rows = vec![vec![], vec![0], vec![1]];
+        let row = |index| vec![CheckedOperandEntry::Node(index)];
+        let rows = vec![vec![], row(0), row(1)];
         let graph = WireGraph::with_operand_rows(&ids, &rows).unwrap();
         assert_eq!(graph.keys(), keys);
         assert_eq!(graph.key_in_row(1, &ids[1]).unwrap(), keys[1]);
@@ -1159,15 +1240,15 @@ mod tests {
             Err(WireIdError::OperandSlot { slot: 0 })
         ));
         assert!(matches!(
-            WireGraph::with_operand_rows(&ids, &[vec![], vec![], vec![1]]),
+            WireGraph::with_operand_rows(&ids, &[vec![], vec![], row(1)]),
             Err(WireIdError::OperandSlot { slot: 0 })
         ));
         assert!(matches!(
-            WireGraph::with_operand_rows(&ids, &[vec![], vec![2], vec![1]]),
+            WireGraph::with_operand_rows(&ids, &[vec![], row(2), row(1)]),
             Err(WireIdError::Cycle { .. })
         ));
         assert_eq!(
-            WireGraph::with_operand_rows(&ids, &[vec![], vec![3], vec![1]]).unwrap_err(),
+            WireGraph::with_operand_rows(&ids, &[vec![], row(3), row(1)]).unwrap_err(),
             WireIdError::IndexOutOfRange { index: 3, len: 3 }
         );
         assert_eq!(
@@ -1403,5 +1484,69 @@ mod tests {
         ));
         assert!(reused.consumed().work >= prefix.work);
         assert!(reused.consumed().storage >= prefix.storage);
+    }
+
+    fn dependency_id() -> CheckedNodeId {
+        CheckedNodeId {
+            package: "pkg".into(),
+            path: vec![
+                CheckedNodePathSegment::Name("clause".into()),
+                CheckedNodePathSegment::Dependency {
+                    package: "test/producer".into(),
+                    node: 7,
+                },
+            ],
+            ordinal: 0,
+        }
+    }
+
+    /// FR-322 "Operand index segments": a canonical document's index segment
+    /// is a local entry, and one carrying a package is a dependency entry.
+    #[ix_trace_rs::trace("QSpec-TC-233", "QSpec-FR-322-AC-280")]
+    #[test]
+    fn canonical_entries_separate_local_and_dependency_segments() {
+        let document = serde_json::json!({
+            "a": {"package": "pkg", "ordinal": 0, "path": [{"node": 3}]},
+            "b": {"package": "pkg", "ordinal": 0, "path": [
+                {"node": 5, "package": "test/producer"}
+            ]},
+        });
+        let bytes = serde_json::to_vec(&document).unwrap();
+        assert_eq!(
+            canonical_operand_entries(&bytes, 1 << 20).unwrap(),
+            vec![
+                CheckedOperandEntry::Node(3),
+                CheckedOperandEntry::Dependency(CheckedDependencyOperand {
+                    package: "test/producer".into(),
+                    node: 5,
+                }),
+            ]
+        );
+    }
+
+    /// A key reader holds no dependency graph, so it refuses a position.
+    #[ix_trace_rs::trace("QSpec-TC-233", "QSpec-FR-322-AC-280")]
+    #[test]
+    fn a_dependency_position_has_no_key() {
+        assert_eq!(
+            StructuralKeys::default().key(&dependency_id()).unwrap_err(),
+            WireIdError::DependencyPosition {
+                package: "test/producer".to_owned(),
+                node: 7,
+            }
+        );
+    }
+
+    /// The document view keeps a dependency position as the wire writes it.
+    #[ix_trace_rs::trace("QSpec-TC-233", "QSpec-FR-322-AC-280")]
+    #[test]
+    fn the_document_view_keeps_a_dependency_position_inline() {
+        let ids = wire_ids(&chain(1));
+        let graph = WireGraph::new(&ids).unwrap();
+        let held = serde_json::to_value(dependency_id()).unwrap();
+        let value = serde_json::json!({"clause": held.clone()});
+        assert_eq!(graph.document_value_in_row(0, &value).unwrap(), value);
+        // The structural view has no key for it.
+        assert!(graph.structural_value_in_row(0, &value).is_err());
     }
 }

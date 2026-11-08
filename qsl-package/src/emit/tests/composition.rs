@@ -6,6 +6,7 @@
 //! item and slots are read, its node is written and read back, and every
 //! refusal carries QSpec FR-491's code and cause.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use ix_trace_rs::trace;
@@ -576,18 +577,133 @@ fn a_non_assume_guarantee_rule_derives_a_request_item() {
     assert_eq!(sole(&local).item().placement, ItemPlacement::PlannerLocal);
 }
 
-/// FR-491-AC-6 (TC-985 case 6): the v2 byte emitter refuses a package holding
-/// a composition, typed, because its component clauses are foreign nodes with
-/// operands that IR's reader cannot yet admit.
+/// FR-491-AC-6 (TC-985 case 6): the v2 byte emitter writes a composition
+/// over components of two dependencies. A foreign clause is named by its
+/// operand's dependency position in the composition's operand row, and IR's
+/// reader admits the package against the component packages.
 #[trace("FR-530-AC-1", "QSpec-TC-985", "QSpec-FR-491-AC-6")]
 #[test]
-fn a_composition_is_refused_for_its_foreign_component_operands() {
+fn a_composition_over_dependency_components_is_emitted_and_admitted() {
+    let world = World::new();
+    let members = format!(
+        "{CASE_ONE_MEMBERS}environment Sched by \"scheduler\" fair weak each M::Producer::send; "
+    );
+    let package = world.checked("assume-guarantee", &members);
+    let emission = emit_checked(&package).expect("the composition emits");
+    assert!(emission.omitted().is_empty());
+    let written = raw_wire(&emission);
+    let nodes = written["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("nodes");
+    let position = nodes
+        .iter()
+        .position(|node| node["semantic_form"] == "component_composition")
+        .expect("the composition node is written");
+    // FR-530-AC-1: the body keeps its lists separate, none folded into
+    // another.
+    let body = &nodes[position]["body"];
+    assert_eq!(body["term"], "component_composition");
+    assert_eq!(body["rule"], "assume-guarantee");
+    let list = |name: &str| body[name].as_array().unwrap_or_else(|| panic!("{name}"));
+    let names: Vec<&str> = list("components")
+        .iter()
+        .map(|entry| entry["name"].as_str().expect("component name"))
+        .collect();
+    assert_eq!(names, ["Consumer", "Producer"]);
+    assert!(list("components")
+        .iter()
+        .all(|entry| entry["subject"].is_object()));
+    assert_eq!(list("guarantees").len(), 3);
+    assert_eq!(list("relies").len(), 1);
+    assert_eq!(list("liveness_dependencies").len(), 1);
+    assert_eq!(list("supplies").len(), 1);
+    let environment: Vec<&Value> = list("environment").iter().map(|e| &e["name"]).collect();
+    assert_eq!(environment, ["Sched"]);
+    let row = written["semantic_graph"]["operand_rows"][position]
+        .as_array()
+        .expect("the composition's operand row");
+    let dependency_positions: BTreeSet<&str> = row
+        .iter()
+        .filter_map(|entry| entry["package"].as_str())
+        .collect();
+    assert_eq!(
+        dependency_positions,
+        BTreeSet::from(["test/consumer", "test/producer"]),
+        "each component clause is named by a position in its own package"
+    );
+    // The importing graph holds no node of either dependency.
+    assert!(nodes.iter().all(|node| {
+        let owner = node["node_id"]["package"].as_str();
+        owner != Some("test/producer") && owner != Some("test/consumer")
+    }));
+    let bytes = serde_json::to_vec(&fixture::document()).expect("the fixture serializes");
+    let models =
+        qsl_semantics::model::intake::package_input([bytes.as_slice()]).expect("the model package");
+    crate::checked_v2::read_import_view(
+        &package,
+        &emission,
+        library(),
+        &models,
+        &mut crate::checked_v2::AdmittedPackages::default(),
+        crate::checked_v2::V2ReadLimits::fixture(),
+        crate::EmitLimits::fixture(),
+    )
+    .expect("IR admits the composition against its component packages");
+}
+
+/// FR-491-AC-6: the composition's bytes read without the component packages
+/// supplied are refused, not admitted on the strength of a position alone.
+#[trace("FR-530-AC-1", "QSpec-TC-985", "QSpec-FR-491-AC-6")]
+#[test]
+fn a_composition_without_its_component_packages_is_not_admitted() {
     let world = World::new();
     let package = world.checked("assume-guarantee", CASE_ONE_MEMBERS);
-    assert_eq!(
-        emit_checked(&package).expect_err("the emission refuses"),
-        EmitRefusal::CompositionForeignOperands {
-            name: Some("Sys".to_owned())
+    let emission = emit_checked(&package).expect("the composition emits");
+    match read_back(&emission) {
+        Read::Refused(crate::checked_v2::V2ReadRefusal::Envelope { refusal, .. }) => {
+            assert_eq!(
+                refusal.code,
+                quire_contract_model::CheckedPackageRefusalCode::MalformedWire
+            );
+            assert!(refusal.loci[0]
+                .path
+                .as_ref()
+                .is_some_and(|path| path.as_str().starts_with("/semantic_graph/operand_rows/")));
         }
+        other => panic!("the component packages are unsupplied: {other:?}"),
+    }
+}
+
+/// FR-491 / FR-530-AC-1: a key the importer holds stays the importer's own
+/// node when a dependency holds the same key; only a key the importer does
+/// not hold is named by a dependency position.
+#[trace("FR-530-AC-1", "QSpec-FR-491-AC-6")]
+#[test]
+fn an_importers_own_key_is_not_taken_for_a_dependency_node() {
+    let (_, package) =
+        package_from_text("function add using v(x: Integer): Integer pure { (x + 1) + 2 }\n");
+    let graph = package.graph();
+    let ids = StructuralIds::default();
+    let names = |foreign: &ForeignNodes| -> Vec<Vec<NodeKey>> {
+        candidates_of(&ids, foreign, graph, None, &[])
+            .expect("candidates")
+            .values()
+            .map(|candidate| {
+                let mut names: Vec<NodeKey> = candidate.names.iter().cloned().collect();
+                names.sort();
+                names
+            })
+            .collect()
+    };
+    let own = names(&ForeignNodes::default());
+    assert!(
+        own.iter().any(|names| !names.is_empty()),
+        "the unit has operands"
     );
+    // A dependency holds every key the importer holds, at its own positions.
+    let mut shadowing = ForeignNodes::default();
+    for (at, node) in (0_u64..).zip(graph.semantic_graph().nodes()) {
+        shadowing.positions.insert(node.key(), ("dep".into(), at));
+    }
+    assert_eq!(names(&shadowing), own, "the importer's own nodes win");
 }
