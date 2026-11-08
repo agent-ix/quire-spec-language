@@ -326,7 +326,7 @@ fn deep_brackets_parse_under_raised_ceilings_with_the_limits_recorded() {
 /// `source_bytes` dimension. A zero allowance refuses any non-empty source,
 /// naming the bound; the source's own length admits (exact) and one byte short
 /// refuses (see `a_caller_raised_source_byte_ceiling_admits_past_the_default`).
-#[trace("TC-1316", "FR-521-AC-5")]
+#[trace("TC-1316", "FR-001-AC-4", "FR-521-AC-5")]
 #[test]
 fn a_zero_source_byte_allowance_refuses_a_non_empty_source() {
     let text = "// x\n";

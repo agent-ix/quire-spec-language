@@ -867,11 +867,11 @@ mod tests {
         );
     }
 
-    /// FR-087-AC-8 and AC-10 (TC-247 steps 1-3, 6 and 7; step 4 by field
+    /// FR-087-AC-8 (TC-247 steps 1-3, 6 and 7; step 4 by field
     /// name only): the one `EmittedPackage` is the canonical one in
     /// `qsl-package` (the native-v1 namesake is deleted); no root-crate file
     /// imports a canonical and a lane-private namesake together.
-    #[trace("TC-247", "FR-087-AC-8", "FR-087-AC-10")]
+    #[trace("TC-247", "FR-087-AC-8")]
     #[test]
     fn tc_247_namesakes_stay_distinct_and_never_share_a_scope() {
         let items = qsl_items();

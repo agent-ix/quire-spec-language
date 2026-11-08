@@ -72,10 +72,21 @@ fn a_parenthesized_expression_spans_its_parentheses() {
 #[trace("TC-019", "FR-002-AC-6")]
 #[test]
 fn a_bounded_malformed_corpus_returns_a_parse_or_a_diagnostic() {
-    let check = |bytes: &[u8]| {
-        if let Ok(parsed) = parse(bytes) {
-            if parsed.is_admissible() {
-                assert_eq!(parsed.source().text().as_bytes(), bytes);
+    let check = |bytes: &[u8]| match parse(bytes) {
+        Ok(parsed) if parsed.is_admissible() => {
+            assert_eq!(parsed.source().text().as_bytes(), bytes);
+        }
+        Ok(parsed) => {
+            for diagnostic in parsed.diagnostics() {
+                let region = diagnostic.region.as_ref().expect("a located diagnostic");
+                assert!(region.start() <= region.end());
+                assert!(usize::try_from(region.end()).unwrap() <= bytes.len());
+            }
+        }
+        Err(refusal) => {
+            if let Some(region) = refusal.region.as_ref() {
+                assert!(region.start() <= region.end());
+                assert!(usize::try_from(region.end()).unwrap() <= bytes.len());
             }
         }
     };

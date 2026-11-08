@@ -1128,7 +1128,7 @@ fn atom_over(condition: &str) -> String {
 /// a body is typed under the value profile, so the value forms a body may
 /// use check: the members of a declared enum, calls of declared functions and
 /// `let`.
-#[trace("TC-597")]
+#[trace("TC-597", "FR-013-AC-3")]
 #[test]
 fn a_body_may_use_enum_members_declared_functions_and_let() {
     for (declarations, label) in [
@@ -1161,7 +1161,7 @@ fn a_body_may_use_enum_members_declared_functions_and_let() {
 /// The same forms refuse when they are misused: a member of no enum, an enum
 /// compared with an integer, a call of no function or with the wrong
 /// arguments, and a `let` binder used past its body.
-#[trace("TC-597")]
+#[trace("TC-597", "FR-013-AC-3")]
 #[test]
 fn misused_enum_members_calls_and_let_binders_refuse() {
     let missing = |declarations: String| match body_outcome(&declarations) {

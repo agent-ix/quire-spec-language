@@ -3760,7 +3760,7 @@ fn assert_budget_field(
 }
 
 /// FR-277-AC-1 (TC-758 step 1) for `parse`: each field of the source limits.
-#[trace("TC-758", "FR-277-AC-1")]
+#[trace("TC-758", "FR-001-AC-4", "FR-002-AC-4", "FR-277-AC-1")]
 #[test]
 fn parse_names_the_source_limit_field_it_reached() {
     let bytes = FIXTURE.as_bytes();
