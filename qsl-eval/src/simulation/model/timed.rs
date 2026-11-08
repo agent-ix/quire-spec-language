@@ -775,8 +775,8 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
 
     /// Whether a step of the model may carry a clock between slots
     /// ([`GuardedStep::carries`]): a step writes a clock collection whole
-    /// (FR-230 "Collection-valued writes"), or a clock lies below a set or
-    /// bag slot of elements with data, which a step matches by equal data
+    /// (FR-230 "Collection-valued writes"), or a clock lies below a set,
+    /// ordered set or bag slot of elements with data, which a step matches by equal data
     /// wherever they land (FR-120-AC-26). The refinement zone checker has
     /// not yet mapped these carried clock places.
     pub fn carries_clocks(&self) -> bool {
@@ -788,9 +788,9 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 // A collection of bare clocks: its slots hold no data, so
                 // they keep their clocks by position.
                 [PlaceStep::Field(_), PlaceStep::Slot(_)] => false,
-                path => path
-                    .iter()
-                    .any(|step| matches!(step, PlaceStep::Slot(shape) if !shape.ordered)),
+                path => path.iter().any(
+                    |step| matches!(step, PlaceStep::Slot(shape) if !shape.ordered || shape.unique),
+                ),
             })
     }
 
@@ -2100,7 +2100,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                             quire_exact::Value::Collection(after),
                         ) => {
                             let element = after.elements().get(slot)?;
-                            let from = if shape.ordered {
+                            let from = if shape.ordered && !shape.unique {
                                 (slot < before.elements().len()).then_some(slot)
                             } else {
                                 // One to one, in ascending slot order.

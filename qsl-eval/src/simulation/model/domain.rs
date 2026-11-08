@@ -399,6 +399,15 @@ pub(super) enum Domain {
         max: u64,
         repeat: bool,
     },
+    /// An `OrderedSet` with a declared maximum (FR-120-AC-28): its values by
+    /// length, then each length's sequences of distinct elements in
+    /// lexicographic element order, the first element most significant.
+    Arrangements {
+        collection: CollectionType,
+        element: Box<Domain>,
+        min: u64,
+        max: u64,
+    },
     /// A random parameter's support, in declared order (FR-187, ADR-024
     /// PM-1): its finite domain whatever its declared type.
     Listed(Vec<Value>),
@@ -446,7 +455,7 @@ impl Domain {
                     .collect(),
             )),
             // FR-120-AC-26: a sequence, set or bag with a declared maximum
-            // over a finite element; an ordered set stays unbounded.
+            // over a finite element, an ordered set by its arrangements.
             ValueType::Collection(collection) => {
                 let bound = collection.bound()?;
                 let element = Box::new(Self::of(collection.element(), objects, types, orders)?);
@@ -466,7 +475,12 @@ impl Domain {
                         min,
                         max,
                     }),
-                    CollectionKind::OrderedSet => None,
+                    CollectionKind::OrderedSet => Some(Self::Arrangements {
+                        collection,
+                        element,
+                        min,
+                        max,
+                    }),
                 }
             }
             _ => None,
@@ -500,6 +514,14 @@ impl Domain {
                 let base = element.len();
                 (*min..=*max).fold(0u128, |total, count| {
                     total.saturating_add(combinations(base, u128::from(count), *repeat))
+                })
+            }
+            Self::Arrangements {
+                element, min, max, ..
+            } => {
+                let base = element.len();
+                (*min..=*max).fold(0u128, |total, length| {
+                    total.saturating_add(arrangements(base, u128::from(length)))
                 })
             }
         }
@@ -610,8 +632,58 @@ impl Domain {
                 }
                 None
             }
+            Self::Arrangements {
+                collection,
+                element,
+                min,
+                max,
+            } => {
+                let base = element.len();
+                let mut remaining = index;
+                for length in *min..=*max {
+                    let length = u128::from(length);
+                    let total = arrangements(base, length);
+                    if remaining >= total {
+                        remaining -= total;
+                        continue;
+                    }
+                    // Each position takes the least unused element whose
+                    // completions cover `remaining`.
+                    let mut used: Vec<u128> = Vec::new();
+                    let mut elements = Vec::new();
+                    for position in 0..length {
+                        let block = arrangements(base - position - 1, length - position - 1);
+                        // The `rank`-th unused index, counting past the
+                        // used ones (kept ascending).
+                        let mut digit = remaining / block;
+                        remaining %= block;
+                        for taken in &used {
+                            if *taken <= digit {
+                                digit += 1;
+                            }
+                        }
+                        used.push(digit);
+                        used.sort_unstable();
+                        elements.push(element.nth(digit)?);
+                    }
+                    return Some(from_admitted(collection.clone(), elements));
+                }
+                None
+            }
         }
     }
+}
+
+/// The number of `length`-element sequences of distinct values drawn from
+/// `base` values, P(`base`, `length`), saturating at `u128::MAX`; 0 when
+/// `length` exceeds `base`.
+fn arrangements(base: u128, length: u128) -> u128 {
+    if length > base {
+        return 0;
+    }
+    (0..length)
+        .try_fold(1u128, |total, step| total.checked_mul(base - step))
+        .unwrap_or(u128::MAX)
 }
 
 /// The number of `count`-element subsets of `base` values, or of
@@ -1072,6 +1144,71 @@ mod tests {
         assert_eq!(
             String::from_utf8(written).expect("UTF-8"),
             r#"{"fields":[{"name":"e","value":{"type":"boolean","value":false}},{"name":"o","value":null}],"name":"{\"node\":\"[2]\",\"package\":\"fixture\"}","type":"record"}"#
+        );
+    }
+
+    /// FR-120-AC-28: an `OrderedSet<E>[0, N]` is every sequence of up to `N`
+    /// distinct elements, by length and then lexicographically: 1 + 2 + 2
+    /// for `Boolean` and `[0, 2]`, and 1 + 3 + 6 + 6 = 16 for `Int[0, 2]`
+    /// with `[0, 3]` and with `[0, 5]`.
+    #[trace("TC-1270", "FR-120-AC-28")]
+    #[test]
+    fn a_bounded_ordered_set_ranges_over_distinct_arrangements() {
+        let ordered = |element: ValueType, max: u64| {
+            ValueType::collection(CollectionType::new(
+                CollectionKind::OrderedSet,
+                element,
+                Some(CardinalityBound::new(0, max).expect("bound")),
+            ))
+        };
+        let render = |value_type: &ValueType| -> Vec<String> {
+            let domain = Domain::of(value_type, &[], &types(), &RecordOrders::new())
+                .expect("a finite domain");
+            let values: Vec<String> = (0..domain.len())
+                .map(|index| format!("{:?}", domain.nth(index).expect("in range")))
+                .collect();
+            assert!(domain.nth(domain.len()).is_none());
+            values
+        };
+        let booleans = render(&ordered(ValueType::Boolean, 2));
+        assert_eq!(booleans.len(), 5);
+        let flags = |value: &str| -> Vec<bool> {
+            value
+                .match_indices("Boolean(")
+                .map(|(at, _)| value[at + 8..].starts_with("true"))
+                .collect()
+        };
+        let shapes: Vec<Vec<bool>> = booleans.iter().map(|value| flags(value)).collect();
+        assert_eq!(
+            shapes,
+            [
+                vec![],
+                vec![false],
+                vec![true],
+                vec![false, true],
+                vec![true, false]
+            ]
+        );
+        let small = render(&ordered(int(0, 2), 3));
+        assert_eq!(small.len(), 16);
+        let digits = |value: &str| -> String {
+            value
+                .match_indices("Integer(Integer(")
+                .map(|(at, _)| value[at + 16..].chars().next().unwrap_or('?'))
+                .collect()
+        };
+        let order: Vec<String> = small.iter().map(|value| digits(value)).collect();
+        let wide: Vec<String> = render(&ordered(int(0, 2), 5))
+            .iter()
+            .map(|value| digits(value))
+            .collect();
+        assert_eq!(wide, order);
+        assert_eq!(
+            order,
+            [
+                "", "0", "1", "2", "01", "02", "10", "12", "20", "21", "012", "021", "102", "120",
+                "201", "210"
+            ]
         );
     }
 }

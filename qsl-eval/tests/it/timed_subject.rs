@@ -3586,6 +3586,64 @@ fn a_bounded_collection_of_finite_elements_is_a_finite_domain() {
     assert_eq!(granted("Cfg", None, false, true), None);
 }
 
+/// FR-120-AC-28 (TC-1270 step 7): a granted `OrderedSet` is a finite domain
+/// of distinct-element sequences, `OrderedSet<Boolean>[0, 2]` 5 values,
+/// `OrderedSet<Int[0, 2]>[0, 3]` and `[0, 5]` 16 each, `OrderedSet<Timer>[0,
+/// 2]` 1 + 4 + 12 = 17 (the clock adding no factor), and an
+/// `OrderedSet<Clock>`, with or without a declared maximum, 2. Not covered:
+/// the `Map` rules, whose key type `quire_exact::MapType` cannot hold
+/// (its keys are `Text`) and a domain package cannot declare.
+#[trace("TC-1270", "FR-120-AC-28")]
+#[test]
+fn a_granted_ordered_set_is_a_finite_domain_of_arrangements() {
+    let timer = json!({"record": {"type": ident("Timer"), "fields": {"n": {"integer": "0"}}}});
+    let granted = |element: String, max: Option<u64>| {
+        // A bare-clock collection holds no data, so no document lists it.
+        let mut initial = json!({"t": timer.clone()});
+        if !element.ends_with("Clock") {
+            initial["g"] = json!({"ordered-set": []});
+        }
+        let world = world_holding(
+            cells_document(
+                vec![],
+                vec![("g", element, Some(shape(max, true, true)))],
+                &["g"],
+                &[],
+            ),
+            "",
+            &only(&["work"], ""),
+            initial,
+        );
+        let held = system(&world);
+        check_model_bounds(&held, BOUND_POSITIONS).expect("a bounded root");
+        granted_values(&world, "work", "g")
+    };
+    let boolean = "ix://quire/native/Boolean".to_owned();
+    let flags = |value: &str| -> Vec<bool> {
+        value
+            .match_indices("Boolean(")
+            .map(|(at, _)| value[at + 8..].starts_with("true"))
+            .collect()
+    };
+    let values = granted(boolean, Some(2));
+    assert_eq!(
+        values.iter().map(|value| flags(value)).collect::<Vec<_>>(),
+        [
+            vec![],
+            vec![false],
+            vec![true],
+            vec![false, true],
+            vec![true, false]
+        ]
+    );
+    assert_eq!(granted(ident("Int2"), Some(3)).len(), 16);
+    assert_eq!(granted(ident("Int2"), Some(5)).len(), 16);
+    assert_eq!(granted(ident("Timer"), Some(2)).len(), 17);
+    let clock = "ix://quire/native/Clock".to_owned();
+    assert_eq!(granted(clock.clone(), Some(2)).len(), 2);
+    assert_eq!(granted(clock, None).len(), 2);
+}
+
 /// FR-120-AC-26 (TC-1270): no candidate ranges over a clock slot. From a
 /// pre-state `ts = [Timer { n: 1 }]` whose `x` is 5 ms, a granted
 /// `Sequence<Timer>[0, 2]`'s candidate `[n 1, n 2]` holds `x` 5 ms in slot
