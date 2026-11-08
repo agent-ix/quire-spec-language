@@ -1194,6 +1194,11 @@ fn misused_enum_members_calls_and_let_binders_refuse() {
             Code::MissingDeclaration,
         ),
         (relation_over("let n = true in n = x.i"), Code::IllTyped),
+        // A field the step's model declares nowhere.
+        (
+            relation_over("x.no_such_field = 1"),
+            Code::MissingDeclaration,
+        ),
     ] {
         let faults = missing(declarations.clone());
         assert_eq!(faults.len(), 1, "{declarations}: {faults:?}");
