@@ -104,7 +104,7 @@ pub struct Call {
 impl Call {
     /// A call on the interpreter, the default backend (FR-296).
     #[must_use]
-    pub const fn new(
+    pub fn new(
         function: String,
         arguments: Vec<CallArgument>,
         accounting: ScalarLimits,
@@ -115,7 +115,7 @@ impl Call {
             arguments,
             accounting,
             supplied,
-            backend: quire_eval::ExecutionBackendChoice::Interpreter,
+            backend: quire_eval::ExecutionBackendChoice::default(),
             prepare: PrepareLimits::DEFAULT,
         }
     }

@@ -1296,6 +1296,24 @@ fn an_entry_the_chosen_backend_lists_unsupported_is_returned() {
     assert_eq!(jit.interpreted.get(), 0);
 }
 
+/// FR-296-AC-4: `ExecutionBackendChoice::default()` is `Interpreter`, and a
+/// call built without a choice carries it.
+#[trace("TC-781", "FR-296-AC-4")]
+#[test]
+fn the_default_backend_choice_is_the_interpreter() {
+    assert_eq!(
+        ExecutionBackendChoice::default(),
+        ExecutionBackendChoice::Interpreter
+    );
+    let call = Call::new(
+        "seven".to_owned(),
+        vec![],
+        default_accounting(1_000_000),
+        Default::default(),
+    );
+    assert_eq!(call.backend, ExecutionBackendChoice::default());
+}
+
 /// FR-296-AC-4: a `jit` stand-in passed as `SuppliedBackends { jit: Some(..) }`
 /// through the blanket implementation runs `seven` when `jit` is chosen and
 /// is the only backend whose `prepare` is called.
