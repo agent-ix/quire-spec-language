@@ -64,3 +64,14 @@ Round 2, against a97c9d447 (head). FR-270 / TC-745 after #2582 is consistent: th
 | FND | Outcome | Reason |
 | --- | --- | --- |
 | FND-003 | fixed | - |
+
+## Dispositions (round 3)
+
+Round 3 (final), against 1e8e19e09 (head; a97c9d447 is its parent).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+
+FND-004 note: `tc_792_a_reference_completion_is_not_a_clause_truth` (`qsl-replay/src/spine/clause/tests.rs:4920-4954`) covers the `/2` writer (`clause-completes-reference`, no truth, no outcome) and `ClauseDisposition::category`/`truth`. That is the AC's "`/2` clause truth". The Population-payload half holds by construction: a run completion carries no Population payload (FR-100). The Reference arms in `execute/state_clause.rs:311` and `execute/frame.rs:287` sit inside `replay_state_clause`/`replay_frame`, reached only through a compiled clause whose body the checker types Boolean (FR-104). No seam injects a disposition there. They are defensive arms that keep an exhaustive match over `CallValue` total and fail closed. That is acceptable, and testing them would need a production seam this AC does not justify.

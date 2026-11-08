@@ -45,3 +45,5 @@ Round 1, against fix commit 14ebd238a (head). The branch was rebased onto 3fd46b
 | FND-003 | fixed | - |
 
 Round 2, against a97c9d447 (head; 14ebd238a is its parent). No finding was still open, so no rows were added. I reviewed the new parts and they are clean: the `tripped()` post-work read and the `poll()`-charging test engine in `qsl-analyze/src/analyze.rs`; `tc_792_reference_completions_serialize_the_returned_reference` in `qsl-replay/src/spine/call/tests.rs`; and the deletion of `xtask/tests/drift_gate_wiring.rs`. Nothing else references `DRIFT_GATES`, `NON_DRIFT_LANES` or the file, apart from ADR-032 §3 on this branch, which spec PR #2582 (b700b6c75, on main) removes.
+
+Round 3 (final), against 1e8e19e09. No findings were open. The two new tests (`a_cancel_after_the_last_charge_leaves_the_verdict_standing`, `tc_792_a_reference_completion_is_not_a_clause_truth`) reviewed clean. `.unwrap()` in `spine/clause/tests.rs` follows that file's existing convention.
