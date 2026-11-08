@@ -535,7 +535,7 @@ fn formal_labels_are_validated_but_not_recorded_by_a_spine_compile() {
     assert_eq!(failure["stage"], "request", "{failure}");
 }
 
-/// FR-493-AC-2 / FR-027-AC-7 (TC-1276, TC-435): the CLI refuses both
+/// FR-493-AC-2 / FR-027-AC-7 (TC-1276, TC-435): `command::compile` refuses both
 /// the retired `0-draft` edition and an unrecognized edition at S1.
 #[test]
 #[trace("TC-1276", "FR-493-AC-2", "TC-435", "FR-027-AC-7")]

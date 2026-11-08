@@ -66,3 +66,21 @@ The loss of test coverage from the deleted test files is recorded in the gap-ana
 ## Coverage
 
 All 15 changed files in the PR were read. Focused checks were run with the shared target and debug=0: `cargo test --test it no_binary` (pass), `cargo test -p checked-closure-consumer` (1 unit test passes; the doc-tests run 0), `cargo test -p xtask ci_clean_build` (3 pass) and `cargo clippy --workspace --all-targets` (clean). The full `make ci` gate was not run, as the brief requires. FND-001 and FND-002 were derived from `evaluate_declared` in xtask/src/test_suites.rs (lines 1082-1110) together with the measured empty doc-test suite.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | compile_command.rs doc comment on the FR-493-AC-2 test still says "the CLI refuses" although the CLI is gone and the test calls command::compile in process | tests/it/compile_command.rs:538 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The src/main.rs EmptySuite is removed from WORKSPACE_EMPTY in xtask/src/test_suites.rs. |
+| FND-002 | fixed | A Doctests EmptySuite for tests/fixtures/checked-closure-consumer/src/lib.rs with NO_DOC_EXAMPLE is added. |
+| FND-003 | fixed | no_binary.rs now uses Path::strip_prefix(workspace_root) and starts_with("tools"). |
+| FND-004 | fixed | examples/config-version/README.md no longer runs cargo run -- run/compile; it points at the in-process test. |
+| FND-005 | fixed | README now documents library calls (qsl_cst::parse/format, command::run, command::compile) and no longer shows driver commands with request files; the remaining statement that quire-driver serves parse, format, run and compile is a general pointer, not a command line. |
+| FND-006 | fixed | grep for quire-spec in the tree finds no remaining binary reference; doc comments, docs, figures.py and layers svgs are updated. |
+| FND-007 | still-open | Stale doc comment; trivial wording fix. |

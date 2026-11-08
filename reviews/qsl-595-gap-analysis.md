@@ -74,3 +74,30 @@ Deleted test to remaining coverage:
 | FND-011 | high | FR-289-AC-1 (empty versus three-manifest registry gives byte-equal package output) has no test; TC-773 remains only on other ACs | tests/it/main.rs:45 |
 | FND-012 | high | FR-031-AC-6 (extraction request refusals) has no test; TC-109 has no tests | src/command.rs:462 |
 | FND-013 | high | FR-493-AC-2 (compile of 0-draft or unknown edition refuses unknown_edition at profile with no package bytes) has no test | src/command.rs:459 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-014 | medium | FR-002-AC-7 lost its only tagged test: the exact quire-outcome/1 parse document is still asserted in tests/it/parse_operation.rs but the test is not tagged TC-012 / FR-002-AC-7 | tests/it/parse_operation.rs:53 |
+| FND-015 | medium | FR-287-AC-4 and FR-287-AC-5 (tagged on main) are untagged at head; the behavior is driver-side (TC-1262) and no tracked driver test or ticket is recorded in this PR | spec/functional/FR-287-reach-qsl-through-the-driver-cli.md |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | no_binary.rs command_returns_typed_outcomes_without_stream_writes tags TC-771 FR-287-AC-2 and asserts exit 0 and 22 in process. |
+| FND-002 | fixed | The bin test now asserts default_run is null and that no non-tool member has a normal or build dependency on a developer-tool package. |
+| FND-003 | fixed | quire matrix shows FR-027 ACs tagged at head in compile_command.rs; none lost versus main. |
+| FND-004 | fixed | FR-026-AC-4 is tagged in compile_command.rs; FR-026-AC-5 is tagged on the new run_outcome_is_independent_of_working_directory, which spawns child test processes from different working directories and compares equal results; not vacuous. |
+| FND-005 | fixed | FR-100-AC-1 is tagged in spine_run.rs and FR-100-AC-2 is retained. |
+| FND-006 | fixed | FR-312 ACs are tagged at head; none lost versus main. |
+| FND-007 | fixed | FR-010-AC-1/2/4/6/7/9/11 are tagged in tests/it/parse_operation.rs. |
+| FND-008 | fixed | FR-002-AC-1 is tagged TC-012 on the fixture parse test, which asserts admissibility, no diagnostics and exact bytes. |
+| FND-009 | fixed | parse_takes_caller_limits (TC-750 FR-256-AC-5) asserts the default limits refuse a 100,000-deep source with stage_limit_exceeded exit 22, the raised limits parse it exit 0, and work_units 16/24/256 give 22/0/0; equivalent to the deleted cli_deep_parse. |
+| FND-010 | fixed | FR-267-AC-3 is tagged in spine_run.rs. |
+| FND-011 | fixed | FR-289-AC-1 is tagged in spine_run.rs and compares empty versus three-manifest registries. |
+| FND-012 | fixed | FR-031-AC-6 is tagged in compile_command.rs. |
+| FND-013 | fixed | compile_command.rs retired_and_unknown_editions_refuse_before_emitting_package_bytes tags FR-493-AC-2 and asserts exit 20, empty stdout, unknown_edition at stage profile for 0-draft and 7-draft. |
+| FND-014 | still-open | Add #[trace("TC-012", "FR-002-AC-7")] to the fixture parse test. |
+| FND-015 | still-open | Either record a deferral to the driver TC-1262 work with a ticket id, or re-tag the in-process run_with_limits test for the FR-026 byte limits; AC-5 is driver-only and needs the deferral. |

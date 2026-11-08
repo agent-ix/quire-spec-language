@@ -916,7 +916,14 @@ fn clause_run_command_reports_select_admit_and_incomplete_classes() {
 
 /// FR-312-AC-3 / FR-026-AC-4: caller byte ceilings bound the exact request
 /// and aggregate selected-file reads before the spine consumes them.
-#[trace("TC-891", "FR-312-AC-3", "TC-104", "FR-026-AC-4")]
+#[trace(
+    "TC-891",
+    "FR-312-AC-3",
+    "TC-104",
+    "FR-026-AC-4",
+    "TC-1262",
+    "FR-287-AC-4"
+)]
 #[test]
 fn clause_run_command_honors_caller_byte_ceilings() {
     let directory = tempfile::tempdir().unwrap();

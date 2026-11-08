@@ -50,7 +50,7 @@ fn document_value(document: &OutcomeDocument) -> Value {
 /// admissible `ParsedSource` holding its exact bytes, and its outcome document
 /// is `parse`, last stage S2, success, exit code 0.
 #[test]
-#[trace("TC-012", "FR-002-AC-1")]
+#[trace("TC-012", "FR-002-AC-1", "FR-002-AC-7")]
 #[trace("TC-015", "FR-010-AC-1")]
 fn the_fixture_parses_to_an_admissible_source_and_a_success_document() {
     let identity = SourceIdentity::new("agent-ix", "test:parent");
