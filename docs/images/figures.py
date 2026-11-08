@@ -279,7 +279,6 @@ REPOS = [
     (0, 2, "quire-observation", "qualified observations", False),
     (1, 2, "quire-protocol", "protocol conformance", False),
     (2, 2, "quire-analyze", "SMT consistency", False),
-    (3, 2, "quire-eval", "evaluation core", False),
     (0, 3, "quire-mltl", "MLTL over observations", False),
 ]
 FEEDS = [
@@ -292,7 +291,7 @@ FEEDS = [
     ("quire-observation", "quire-protocol"),
     ("quire-observation", "quire-mltl"),
 ]
-SHARED = ["quire-exact", "quire-semantic-value", "quire-walk", "quire-canonical",
+SHARED = ["quire-eval", "quire-exact", "quire-semantic-value", "quire-walk", "quire-canonical",
           "quire-verification-contracts"]
 
 
@@ -306,9 +305,9 @@ def ecosystem(here="quire-spec-language"):
         "the compiler, quire-spec-language, then quire-contract-ir, quire-contract-codegen and "
         "quire-contract-runtime. quire-spec-language also feeds quire-protocol, and "
         "quire-contract-ir feeds quire-analyze. quire-observation feeds quire-protocol and "
-        "quire-mltl. quire-eval is the evaluation core. Above the chain, quire-driver runs it, quire-integration tests it and "
+        "quire-mltl. Above the chain, quire-driver runs it, quire-integration tests it and "
         "quire-verification plans verification. Below it, shared libraries used throughout: "
-        "quire-exact, quire-semantic-value, quire-walk, quire-canonical and "
+        "quire-eval, quire-exact, quire-semantic-value, quire-walk, quire-canonical and "
         "quire-verification-contracts.",
     )
     w, h, step = 176, 50, 201
