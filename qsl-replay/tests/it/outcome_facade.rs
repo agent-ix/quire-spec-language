@@ -11,7 +11,7 @@ use quire_semantic_value::catalog::Category;
 
 /// FR-286-AC-3: a `prove` document built and written through the facade
 /// carries its items in request order under the `quire-outcome/1` format.
-#[trace("TC-770", "FR-286-AC-3")]
+#[trace("TC-770", "FR-286-AC-3", "FR-270-AC-5")]
 #[test]
 fn a_driver_writes_a_prove_document_through_the_facade() {
     let backend = BackendId::new("outcome-backend");

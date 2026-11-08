@@ -1264,7 +1264,7 @@ mod envelope_tests {
     /// transcript and every O-25 member exactly, and two occurrences of the
     /// same node id stay distinguishable by role/ordinal after the round
     /// trip.
-    #[trace("TC-182", "FR-070-AC-3")]
+    #[trace("TC-182", "FR-070-AC-3", "FR-270-AC-5")]
     #[test]
     fn tc_182_round_trip_preserves_every_o25_member_and_the_transcript() {
         let envelope_a =
@@ -1315,7 +1315,7 @@ mod envelope_tests {
     /// limits travel as `run_limits` (B-2) and its per-parameter finite
     /// domains as typed `FiniteBound`s (B-4); each round-trips as itself,
     /// and a packet without `run_limits` refuses by that member's name.
-    #[trace("TC-182", "FR-070-AC-3")]
+    #[trace("TC-182", "FR-070-AC-3", "FR-270-AC-5")]
     #[test]
     fn tc_182_run_limits_and_declared_domains_round_trip_as_their_own_kinds() {
         let mut packet = full_packet(0);
