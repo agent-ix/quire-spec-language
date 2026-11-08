@@ -130,6 +130,19 @@ A type joins the canonical set when its owner tags it, and from then on the
 scan finds any other definition of it, so the gate needs no upkeep as types
 move between crates.
 
+### 3. Gate register
+
+Each drift gate has one owner, who answers for its failures. The gate's command is its `Makefile` recipe and its place in `make ci` is its `CI_CHECKS` entry, which `xtask/tests/drift_gate_wiring.rs` pins; the register holds nothing else.
+
+| Gate | Owner |
+| --- | --- |
+| checked-input | QSL code lead |
+| string-edge | QSL code lead |
+| route-lint | QSL code lead |
+| canonical-types | QSL code lead |
+| arch-lint-api-surface-qsl | QSL code lead |
+| arch-lint-qualified-core | QSL code lead |
+
 ## Rulings
 
 Owner rulings, 2026-10-01, recorded on the owning ticket.

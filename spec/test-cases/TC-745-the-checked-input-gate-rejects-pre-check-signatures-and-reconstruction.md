@@ -14,7 +14,7 @@ Verify FR-270 by planting forbidden signatures and stage calls in copies of
 the scanned trees, planting look-alikes that are allowed, and running the
 gate over the real workspace.
 
-Scope: FR-270-AC-1 to FR-270-AC-4.
+Scope: FR-270-AC-1 to FR-270-AC-5.
 
 ## Test Procedure
 
@@ -44,8 +44,12 @@ otherwise.
    entry over a copy with step 1's first item planted in `qsl-eval`.
    Inspect the `Makefile`: `ci:` lists `checked-input`, and its recipe runs
    `cargo xtask checked-input`.
+5. Run the witness round-trip tests of TC-182, the `/2` frame round-trip
+   tests of TC-742 and the outcome-document test of TC-770, which carry
+   `FR-270-AC-5`.
 
-Tag the tests `#[trace("TC-745", "FR-270-AC-n")]`.
+Tag the tests `#[trace("TC-745", "FR-270-AC-n")]`; the three existing
+round-trip tests also carry `FR-270-AC-5`.
 
 ## Expected Results
 
@@ -57,3 +61,4 @@ Tag the tests `#[trace("TC-745", "FR-270-AC-n")]`.
   plants together.
 - Step 4: no finding and exit 0; the planted copy fails with a finding exit
   status; the `ci:` wiring is as stated.
+- Step 5: every listed test passes under `make ci`'s default-features lane.
