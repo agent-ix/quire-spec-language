@@ -34,6 +34,10 @@ an old tag unbuildable without any change in QSL. The gate finds that.
   does not run step 5, because the examples a tag's README documents change
   between releases. A tag that does not exist refuses, exit 2, before
   cloning.
+- The current release tag is the newest tag `make tag-release` created. The
+  tags made before this gate existed (`v0.1.0`, `v0.2.0`) are retired and
+  are not checked. Until `make tag-release` has created a tag, AC-1 is run
+  at the tag NFR-018-AC-3 creates in its scratch repository.
 - `make tag-release TAG=<tag>` runs `make clean-clone-check` at `HEAD`,
   creates the annotated tag at `HEAD` only when it passes, and otherwise
   exits non-zero and creates no tag. Publishing the tag and its GitHub
@@ -43,20 +47,20 @@ an old tag unbuildable without any change in QSL. The gate finds that.
 
 | Metric | Target | Threshold | Method |
 | --- | --- | --- | --- |
-| Failed steps of `make release-check` at the newest release tag | 0 | 0 | Test |
+| Failed steps of `make release-check` at the current release tag | 0 | 0 | Test |
 | Tags `make tag-release` creates at a commit whose clean-clone gate fails | 0 | 0 | Test |
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| NFR-018-AC-1 | `make release-check` at the repository's newest `v*` tag passes: the clean clone at the tag's commit builds with `--locked` and every package source passes NFR-017's source check. | Test (TC-1399) |
+| NFR-018-AC-1 | `make release-check` at the current release tag passes: the clean clone at the tag's commit builds with `--locked` and every package source passes NFR-017's source check. | Test (TC-1399) |
 | NFR-018-AC-2 | `make release-check` at a scratch tag on a commit whose `Cargo.lock` records a git revision absent from that dependency's repository fails, naming the dependency and the revision; at a tag name that does not exist it refuses, exit 2, and clones nothing. | Test (TC-1399) |
 | NFR-018-AC-3 | In a scratch repository, `make tag-release TAG=v9.9.9` at a commit whose `Cargo.lock` lacks a declared dependency exits non-zero and `git tag -l v9.9.9` is empty; at a commit where the gate passes it creates the annotated tag `v9.9.9` at `HEAD`. | Test (TC-1399) |
 
 ## Verification
 
-TC-1399 runs the gate at the newest tag and at the scratch tags.
+TC-1399 runs the gate at the current release tag and at the scratch tags.
 
 ## Dependencies
 

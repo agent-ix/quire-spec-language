@@ -17,6 +17,8 @@ relationships:
     type: relates_to
   - target: ix://agent-ix/quire-spec-language/FR-563
     type: relates_to
+  - target: ix://agent-ix/quire-spec-language/FR-568
+    type: relates_to
   - target: ix://agent-ix/quire-spec-language/NFR-017
     type: relates_to
   - target: ix://agent-ix/quire-specification/FR-306
@@ -25,8 +27,8 @@ relationships:
 # ADR-035: JIT code generator: Cranelift behind the execution-backend seam, with the criteria that would reopen it
 
 Status: Accepted. The owner decided RES-56: `qsl-jit` uses Cranelift for
-now, behind the ExecutionBackend seam (FR-294). CG-4 (unsafe code in
-`qsl-jit`) remains an open ruling.
+now, behind the ExecutionBackend seam (FR-294). The planner ruled CG-4:
+exactly one confined unsafe module in `qsl-jit` (FR-568).
 
 ## Context
 
@@ -124,14 +126,49 @@ numbers are recorded and the decision stands. If condition 3 holds, the
 reopened decision includes not building the JIT: EB-8's `jit` choice then
 keeps refusing as not supplied (FR-296).
 
-### CG-4 Unsafe code in `qsl-jit` (open ruling)
+### CG-4 Unsafe code in `qsl-jit` (ruled: one confined module)
 
-Entering generated machine code requires `unsafe`. Every QSL crate today
-declares `unsafe_code = "forbid"`. This record proposes that `qsl-jit` is the
-one exception: `unsafe` confined to one module that maps generated code and
-enters it, every other `qsl-jit` module and every other QSL crate keeping
-`forbid`. This is an open ruling: it needs the owner's decision before
-`qsl-jit` is built, and the ruling is recorded here when made.
+Entering generated machine code requires `unsafe`. Every other QSL crate
+declares `unsafe_code = "forbid"`. Ruling: `qsl-jit` holds exactly one module
+that may contain unsafe code, `qsl_jit::exec`. The crate declares
+`unsafe_code = "deny"` at its root and `#[allow(unsafe_code)]` appears only on
+`mod exec`; no other module of `qsl-jit` and no other QSL crate contains
+unsafe code. The `arch-lint unsafe-confinement` check enforces the allowed
+module list, which holds that one entry (FR-568).
+
+**Safety contract of `qsl_jit::exec`.** The unsafe code may only:
+
+1. take, from Cranelift's JIT module, the address of a finalized function of
+   the prepared value that owns the module;
+2. convert that address to the one entry signature `qsl-jit` generates for
+   every entry (`extern "C" fn(*const EntryFrame) -> u32`, the frame holding
+   the argument handles, the `KernelTable`, the meter and `&Cancel`);
+3. call it once per `call` or `evaluate`, with a frame the safe wrapper
+   built;
+4. release the code memory when the prepared value is dropped.
+
+It allocates no other memory, makes no system call of its own and touches no
+global state.
+
+The safe wrapper, `PreparedJit`, upholds these invariants on every path into
+`exec`:
+
+- the address belongs to a function of this `PreparedJit`, whose code memory
+  stays mapped for as long as the `&PreparedJit` borrow the call holds, so no
+  call can outlive the code;
+- every entry is generated with the one entry signature, and the wrapper
+  converts only addresses it recorded at generation for that signature;
+- the frame and every handle in it are valid for the whole call and are not
+  aliased mutably elsewhere;
+- the generated code calls only `KernelTable` entries and blocks of the same
+  prepared value (FR-561), so control never leaves memory the wrapper owns
+  except into the kernel table;
+- the status the entry returns is read through the closed status type the
+  kernel table uses; any other value is a `Fault`.
+
+How it is tested is FR-568's acceptance criteria: the module-list check, a
+`compile_fail` test that a call cannot outlive its `PreparedJit`, the
+signature check, the FR-561 call-target check and the FR-563 parity gate.
 
 ## Consequences
 

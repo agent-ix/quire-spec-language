@@ -79,7 +79,9 @@ item `supported` on and FR-057's routing routed it to. The driver passes
 `Engines::qsl()`. The
 driver's PV-3 `Provider::run` for a QSL engine adapts to this entry: it
 converts its `ProviderRequest` items and the request's `deadline_ms` to
-`RoutedItem`s and `AnalyzeLimits`, passes the run's `CheckedPackage` and
+`RoutedItem`s and `AnalyzeLimits` (`deadline_ms` becomes
+`AnalyzeLimits.deadline`, and the driver, which owns the timer, cancels the
+run's `Cancel` with `CancelCause::Deadline` when it expires; FR-281), passes the run's `CheckedPackage` and
 subject binding, drops `emitted`, which `prove` passes as `None` when
 `package` refuses to emit and as `Some` otherwise, and returns the records
 as its `ProviderResults`. The entry runs each item on its routed engine and
@@ -104,7 +106,7 @@ since a claim's workload or reward makes its package one S4 refuses.
 For the provider entry: the run's `CheckedPackage` from `check` (FR-278),
 the `SubjectBinding` (FR-120, FR-281), the `RoutedItem`s of the FR-331
 provider request routed to QSL engines, the `AnalyzeLimits` holding the
-request's `deadline_ms`, and `&Cancel`. The entry takes no `emitted` and reads no `package`,
+request's `deadline_ms` as `deadline`, and `&Cancel`. The entry takes no `emitted` and reads no `package`,
 `package_id`, `dependencies` or `provision` member: the checked package and
 its resolved dependencies are already in process (QSpec FR-331, "In-process
 providers").
