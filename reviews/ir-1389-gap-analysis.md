@@ -144,3 +144,25 @@ scope:
 | FND | Outcome | Reason |
 | --- | --- | --- |
 | FND-001 | still-open | The authentic later-copy, writer-carry and public boundary tests now have focused runtime evidence. The independently expected original external row-index assertion still requires the actual owner AdapterRow(i) seam. |
+
+## Disposition round 5 — combined stack
+
+Candidate `a122d51a2e6d1e4a2f250b801bbddc9cdde1c5d0`. Historical finding text is unchanged.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The original later-copy and original external AdapterRow index gap is fixed. output_adapter_denials_use_the_original_row_channel_indices derives Tagged/Shape positions from authentic retained slices, runs actual output loops after native joining, observes paid storage prefix and retains the first denial across another complete adapter call. sparse_producer_input_selection_keeps_its_retained_field_index selects an authentic later field index without renumbering and checks both work and storage. Earlier later-copy allocation controls retain zero denied allocations. |
+
+Current original text:
+
+```rust
+assert_eq!(budget.first_unpaid_locus(), Some(expected));
+```
+
+## Current evidence and limitations
+
+Computed `quire matrix --scope . --format json` produced zero JSON bytes after more than seven minutes of CPU work and was explicitly stopped with SIGTERM. A scoped manual tag/test/source inventory was used; repository-wide untagged counts, matrix completeness and a global matrix PASS are unavailable. Plan completion: not assessed.
+
+Focused reviewer runtime receipts are in this scratchpad. Coder clippy/fmt receipts are secondary; the user assigned the aggregate checks, cargo deny and final gate to the lead, so they were not duplicated. Standalone hybrid_probe.rs uses public APIs linked to the freshly built current qsl_replay library, outside the frozen tree, and reproduces wrong-claim binding without mutating the candidate. No review clone, source edit, commit or push was made.
+
+Focused frozen-head checks: original AdapterRow output, sparse retained field index, tick complete three-resource handoff, root refinement false replay, dependency-isolated refinement false replay, hyper fairness references and two-alias model-root subjects each passed one exact test. Map/sequence actual native projection and cold equality payload tests also passed. The model-enum native closure check FAILED at monitor_root.rs:1308 (expected one Tier row; actual []); historical IR1388 gap FND001 remains still-open. These are focused checks only.

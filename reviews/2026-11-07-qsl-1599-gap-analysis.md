@@ -278,3 +278,25 @@ bindings:
 ## Matrix Availability
 
 Repository-wide matrix result unavailable: quire matrix --scope . --format json --strict was stopped after more than seven minutes of CPU work without JSON output (exit 143; matrix.stderr contains module-discovery warnings only). Scoped manual requirement-to-test inventory was completed; it found the AC20 behavioral coverage gap above. No repository-wide matrix PASS or untagged-criterion count is claimed. Full computed-matrix verification remains open.
+
+## Disposition round 1 — combined stack
+
+Candidate `a122d51a2e6d1e4a2f250b801bbddc9cdde1c5d0`. Historical finding text is unchanged.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The genuine root-value and dependency-isolation gap is fixed. The fixture constructs genuine protocols and checked root/dependency refinements against distinct abstract model owners; normal compilation creates the real refinement class. The unchanged complete replay returns Boolean(false) and ReproducedWithoutWitness. A root unresolved internal class retains the real missing-name and /0/internal/0 native cause. The dependency control includes unrelated entry0, supplies CasOther only to entry1, misassigns CasTwice as an adverse control, checks /dependencies/1/refinement_internals/0/refinement, and the original correctly assigned request replays false. |
+
+Current original text:
+
+```rust
+assert_eq!(input.value(), Some(EvaluatedValue::Boolean(false)));
+```
+
+## Current evidence and limitations
+
+Computed `quire matrix --scope . --format json` produced zero JSON bytes after more than seven minutes of CPU work and was explicitly stopped with SIGTERM. A scoped manual tag/test/source inventory was used; repository-wide untagged counts, matrix completeness and a global matrix PASS are unavailable. Plan completion: not assessed.
+
+Focused reviewer runtime receipts are in this scratchpad. Coder clippy/fmt receipts are secondary; the user assigned the aggregate checks, cargo deny and final gate to the lead, so they were not duplicated. Standalone hybrid_probe.rs uses public APIs linked to the freshly built current qsl_replay library, outside the frozen tree, and reproduces wrong-claim binding without mutating the candidate. No review clone, source edit, commit or push was made.
+
+Focused frozen-head checks: original AdapterRow output, sparse retained field index, tick complete three-resource handoff, root refinement false replay, dependency-isolated refinement false replay, hyper fairness references and two-alias model-root subjects each passed one exact test. Map/sequence actual native projection and cold equality payload tests also passed. The model-enum native closure check FAILED at monitor_root.rs:1308 (expected one Tier row; actual []); historical IR1388 gap FND001 remains still-open. These are focused checks only.

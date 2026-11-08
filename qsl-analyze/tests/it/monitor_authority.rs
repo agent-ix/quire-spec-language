@@ -195,8 +195,17 @@ fn genuine_tick_authority_retains_complete_original_values_and_same_emission() {
 #[test]
 fn complete_handoffs_measure_work_logical_storage_and_read_storage_on_one_budget() {
     use quire_contract_model::{NativeJoinBudget, NativeJoinChargeKind, PackageReadResource};
+    for tick in [false, true] {
     let handoff = |budget: &mut NativeJoinBudget| {
-        let root = tick_root();
+        let root = if tick {
+            tick_root()
+        } else {
+            root_of(
+                &authored("eventually[0 ms, 3 ms] holds(c.versionNumber = 3)"),
+                "C",
+                &target(),
+            ).unwrap()
+        };
         let (progress, subject) = observation::admitted(Some(vec![row(&root)]));
         let source = root.checked_unit().source().identity().clone();
         let claim = root.plan().subject().clone();
@@ -289,6 +298,33 @@ fn complete_handoffs_measure_work_logical_storage_and_read_storage_on_one_budget
     assert!(reused.consumed().work > need.work);
     assert!(reused.consumed().storage > need.storage);
     assert!(reused.read_storage_consumed() >= read_need);
+    for kind in [NativeJoinChargeKind::Work, NativeJoinChargeKind::Storage] {
+        let work_bound = need.work * 2 - u64::from(kind == NativeJoinChargeKind::Work);
+        let storage_bound = need.storage * 2 - u64::from(kind == NativeJoinChargeKind::Storage);
+        let mut reused = NativeJoinBudget::new(work_bound, storage_bound)
+            .with_read_storage_limit(read_need * 2);
+        handoff(&mut reused).unwrap();
+        assert_eq!(reused.consumed(), need);
+        let error = handoff(&mut reused).unwrap_err();
+        let PlanAuthorityRefusal::Budget { denied, locus, configured_bound, consumed } = error else {
+            panic!("the second complete handoff retains its original native denial: {error:?}");
+        };
+        assert_eq!(denied.kind, kind);
+        assert_eq!(Some(denied), reused.first_unpaid());
+        assert_eq!(locus, reused.first_unpaid_locus());
+        assert_eq!(consumed, reused.consumed());
+        assert!(consumed.work >= need.work && consumed.storage >= need.storage);
+        assert_eq!(configured_bound, if kind == NativeJoinChargeKind::Work { work_bound } else { storage_bound });
+    }
+    let mut prefixed = NativeJoinBudget::new(need.work + 3, need.storage + 5)
+        .with_read_storage_limit(read_need);
+    prefixed.accounted_charge(NativeJoinChargeKind::Work, 3, native_locus()).unwrap();
+    prefixed.accounted_charge(NativeJoinChargeKind::Storage, 5, native_locus()).unwrap();
+    handoff(&mut prefixed).unwrap();
+    assert_eq!(prefixed.consumed().work, need.work + 3);
+    assert_eq!(prefixed.consumed().storage, need.storage + 5);
+    assert_eq!(prefixed.read_storage_consumed(), read_need);
+    }
 }
 
 #[trace("TC-1081", "FR-251-AC-46")]
