@@ -19,6 +19,16 @@ relationships:
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-296
     type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-560
+    type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-561
+    type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-562
+    type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-563
+    type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-566
+    type: exercises
 ---
 # US-030: Add providers, plugins and faster execution backends without changing results
 
@@ -64,10 +74,13 @@ EB-8).
 - **Then** the plugin's item settles `failed` with a tool-failure cause and
   the other item keeps its own result.
 
-### US-030-EX-4: RETIRED (QSpec #513 removes the result cache)
+### US-030-EX-4: A second identical run recomputes every result
 
-**RETIRED (QSpec #513 removes the result cache).** This example described a
-second identical proof run reading a result cache. There is no result cache.
+- **Given** a finished prove run over a source with a provider and a plugin
+  installed.
+- **When** the author runs the same request again.
+- **Then** every item is computed again and nothing is read from an earlier
+  run (QSpec FR-306).
 
 ### US-030-EX-5: The JIT returns what the interpreter returns
 
@@ -84,4 +97,4 @@ only useful if they never change a verdict.
 
 ## Traceability (Informative)
 
-FR-288 to FR-291 and FR-294 to FR-296.
+FR-288 to FR-291, FR-294 to FR-296, FR-560 to FR-563 and FR-566.

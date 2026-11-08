@@ -1413,7 +1413,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-269](functional/FR-269-settle-a-witness-disagreement-as-a-typed-cause.md) | FR |
 | [FR-278](functional/FR-278-parse-select-check-and-package-as-library-operations.md) | FR |
 | [FR-279](functional/FR-279-execute-a-checked-entry-as-a-library-operation.md) | FR |
-| [FR-299](functional/FR-299-run-one-source-end-to-end-through-cli-library-provider-and-cache.md) | FR |
+| [FR-299](functional/FR-299-serve-one-value-family-source-through-every-qsl-library-operation-the-cli-calls.md) | FR |
 | [US-029](usecase/US-029-drive-the-lifecycle-through-one-cli-or-the-library.md) | US |
 | [US-030](usecase/US-030-extend-quire-without-changing-results.md) | US |
 | [FR-298](functional/FR-298-render-outcomes-and-views-from-typed-values.md) | FR |

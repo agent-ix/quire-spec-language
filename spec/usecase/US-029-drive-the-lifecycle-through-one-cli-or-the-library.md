@@ -37,6 +37,12 @@ relationships:
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-299
     type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-564
+    type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-565
+    type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-567
+    type: exercises
 ---
 # US-029: Drive the Quire lifecycle through one CLI or the library and get one outcome and exit code
 
@@ -110,4 +116,4 @@ alone.
 
 ## Traceability (Informative)
 
-FR-275 to FR-287, FR-297 to FR-299.
+FR-275 to FR-287, FR-297 to FR-299, FR-564, FR-565 and FR-567.

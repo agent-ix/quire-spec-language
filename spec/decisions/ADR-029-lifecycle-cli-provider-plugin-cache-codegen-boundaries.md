@@ -49,6 +49,8 @@ relationships:
     type: relates_to
   - target: ix://agent-ix/quire-specification/FR-462
     type: relates_to
+  - target: ix://agent-ix/quire-spec-language/ADR-035
+    type: relates_to
 ---
 # ADR-029: Lifecycle, CLI, provider, plugin and code-generation boundaries (ARCH-50)
 
@@ -230,6 +232,11 @@ their dependency closure:
      renderers (§9). It depends on layers 6, 5, 4, 3, F, SV and K.
    - QSL layer X, crate `qsl-jit`: the JIT execution backend (§7). It
      depends on layers 5, 4, 3, F, SV, K and the chosen code generator.
+   - QSL crate `qsl-conformance`, above layers A, P and X: the lifecycle
+     conformance matrix cases (FR-564, FR-565) and the parity runner with
+     its program generator (FR-295, FR-563). The driver depends on it for
+     the CLI half of the matrix and for `quire-aot`'s parity
+     (amendment 2026-11-08).
    - Driver repository: `quire-plugin-host` (§5),
      `quire-aot` (§7) and the binary crate `quire-cli`.
 
@@ -773,7 +780,7 @@ to FR-109's `run_clause`. Three backends implement the seam:
 | Backend | Crate | `prepare` | `call` and `evaluate` |
 |---|---|---|---|
 | Interpreter | `qsl-eval` | Accepts every entry S6a accepts | S6a, `CheckedPackageEvaluation::call_supplied` and `evaluate_clause` |
-| AOT | `quire-aot` (driver repository) | `lower`, then `generate` with the AOT target, then a build with the toolchain the caller names | Runs the built executable as a child process over PL-3 framing |
+| AOT | `quire-aot` (driver repository, IR lane) | `lower`, then `generate` with the AOT target, then a build with the toolchain the caller names | Runs the built executable as a child process over PL-3 framing |
 | JIT | `qsl-jit` (QSL layer X) | Translates the checked entries to machine code in memory | Calls the generated code |
 
 **EB-2 Checked-only input.** `prepare` takes `&CheckedPackage`, which only S4
@@ -829,9 +836,18 @@ generated artifact is FR-331 `artifacts` bytes with a source map keyed by
 occurrence key. QSL emits no target-specific code. A runtime monitor is
 another `generate` target behind the same boundary.
 
+The AOT backend is the crate `quire-aot` in the driver repository, owned by
+the IR lane, not a QSL crate. QSL's part of AOT is the seam (FR-294), the
+parity rules (FR-295) and the parity runner the driver runs over it (FR-563)
+(amendment 2026-11-08).
+
 **EB-7 Building the JIT.** This record fixes the seam and EB-4. `qsl-jit` is
 built after the engines stabilize. A benchmark picks the code generator,
-Cranelift or LLVM, and EB-4 binds either one.
+Cranelift or LLVM, and EB-4 binds either one. ADR-035 states the decision
+criteria and the RES-56 measurement that settles the choice; until it
+reports, neither generator is accepted. FR-560 fixes the JIT's coverage,
+FR-561 its kernel-call boundary and FR-562 its fast-path rule
+(amendment 2026-11-08).
 
 ### 8. Selecting a backend
 
