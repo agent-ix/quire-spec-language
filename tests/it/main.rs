@@ -81,6 +81,7 @@ mod layer_crate_reexports;
 mod limit_name_patterns;
 #[cfg(feature = "checked-handoff")]
 mod mapping_support;
+mod mapping_support_occurrences;
 #[cfg(feature = "checked-handoff")]
 mod model_type_unit_roots;
 mod name_resolution_confinement;
