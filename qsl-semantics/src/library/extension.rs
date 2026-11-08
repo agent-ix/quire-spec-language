@@ -13,6 +13,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use ix_trace_rs::string_edge;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::Code;
 use quire_contract_model::CheckedExtensionDefinition;
@@ -386,6 +387,7 @@ impl DefinitionCatalog {
     /// Reports the first violated rule over all selected definitions and no
     /// later one: a missing member (rule 1), then a keyword or node-kind
     /// collision (rule 2), then a dependency cycle (rule 3).
+    #[string_edge]
     pub fn hold_extensions(
         &self,
         selected: &[DefinitionRef],

@@ -13,6 +13,7 @@
 //! parameter's type uses. A type that names a node kind of the catalog is
 //! checked as that node kind's declaration reference.
 
+use ix_trace_rs::string_edge;
 use qsl_forms::{
     parse_type_text, BuiltinType, ClauseKind, ExprNode, ExpressionForm, ExtensionClauseForm,
     ExtensionForm, TypeFormHead,
@@ -544,6 +545,7 @@ impl Builder<'_, '_, '_> {
     /// are unbounded, so the value's own inferred type stands as the
     /// expected type, provided it is of that scalar. `Err` carries the
     /// value's actual spelling.
+    #[string_edge]
     fn unbounded_type(
         &mut self,
         clause: &ExtensionClauseForm,
@@ -606,6 +608,7 @@ impl Builder<'_, '_, '_> {
     /// the core `TypeReference` production, of which only `Int[lo, hi]`
     /// (no rounding mode) and a `QualifiedName` are supported, the name being
     /// a node kind of a held extension or else a record type.
+    #[string_edge]
     fn expected_type(&self, type_ref: &str, location: &Location) -> ClauseType {
         if let Some((value_type, scalar)) = scalar_word(type_ref) {
             return ClauseType::Value(value_type, scalar);
