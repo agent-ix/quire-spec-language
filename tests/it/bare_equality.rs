@@ -777,8 +777,7 @@ fn tied_case_guards_take_their_own_origin_in_either_label_order() {
     let original = read(&request, &files["checked-package.json"]);
     assert_eq!(decision_origins(&original).len(), 1);
     for labels_follow_source in [false, true] {
-        let mut wire: Value =
-            serde_json::from_slice(&files["checked-package.json"]).expect("package");
+        let mut wire = crate::support::resolved_package(&files["checked-package.json"]);
         let nodes = wire["semantic_graph"]["nodes"]
             .as_array_mut()
             .expect("nodes");
@@ -853,7 +852,7 @@ fn tied_case_guards_take_their_own_origin_in_either_label_order() {
             };
             row["location"]["origin"]["name"] = format!("{CASE}{renamed} guard").into();
         }
-        let package = read(&request, &serde_json::to_vec(&wire).expect("bytes"));
+        let package = read(&request, &crate::support::slotted_package_bytes(&wire));
         let identities = ReadIdentityRows::read(
             &files["identities.json"],
             &package,

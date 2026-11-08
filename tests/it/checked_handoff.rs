@@ -286,7 +286,7 @@ fn the_directory_holds_the_outputs_table() {
 
 /// The wire node id strings of the package's nodes.
 fn package_node_ids(package: &[u8]) -> Vec<Value> {
-    let wire: Value = serde_json::from_slice(package).unwrap();
+    let wire = crate::support::resolved_package(package);
     wire["semantic_graph"]["nodes"]
         .as_array()
         .unwrap()
@@ -2732,7 +2732,7 @@ fn the_recover_conditions_compare_the_receipt_sum_with_the_target() {
     let files = tree(&out);
     let held = evidence(&request("event_position", Corpus::None)).unwrap();
     admitted(&files["checked-package.json"], &held);
-    let wire: Value = serde_json::from_slice(&files["checked-package.json"]).unwrap();
+    let wire = crate::support::resolved_package(&files["checked-package.json"]);
     let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
 
     // The expression `value` denotes, with each reference followed to its node.

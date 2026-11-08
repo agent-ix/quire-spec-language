@@ -364,7 +364,6 @@ fn resolve_operands(id: &CheckedNodeId, row: &[u64]) -> Result<CheckedNodeId, Wi
     })
 }
 
-#[cfg(any(test, feature = "test-support"))]
 /// The checked-package document `wire` with every operand slot a node holds
 /// replaced by the index segment of the node its row names, and its
 /// `operand_rows` removed: the resolved form, in which a node's ids name
@@ -489,7 +488,6 @@ pub fn number_index_segments(node: &mut serde_json::Value) -> Vec<u64> {
 /// resolved form: when it has `semantic_graph.nodes` and no `operand_rows`,
 /// each node is written through [`number_index_segments`] and `operand_rows`
 /// is added. Any other document is left alone.
-#[cfg(any(test, feature = "test-support"))]
 pub fn write_operand_rows(wire: &mut serde_json::Value) {
     let Some(graph) = wire.get_mut("semantic_graph") else {
         return;
