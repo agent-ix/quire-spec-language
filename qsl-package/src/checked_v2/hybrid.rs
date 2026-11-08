@@ -105,7 +105,7 @@ fn shape<T>(found: Option<T>) -> Result<T, HybridReadError> {
 ///
 /// [`HybridReadError`].
 pub fn read_hybrids(package: &CheckedPackageV2, limit: u64) -> Result<HybridRead, HybridReadError> {
-    let nodes = &package.graph().nodes;
+    let nodes = &package.resolved_graph().nodes;
     let kinds = package.node_kinds();
     let positions: BTreeMap<&CheckedNodeId, usize> = nodes
         .iter()
@@ -443,7 +443,7 @@ impl Reader<'_> {
 
     fn node(&self, id: &CheckedNodeId) -> Result<&CheckedSemanticNodeV2, HybridReadError> {
         let position = shape(self.positions.get(id))?;
-        shape(self.package.graph().nodes.get(*position))
+        shape(self.package.resolved_graph().nodes.get(*position))
     }
 
     fn kind(&self, id: &CheckedNodeId) -> Result<CheckedNodeKind, HybridReadError> {

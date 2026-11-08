@@ -879,7 +879,7 @@ fn bounded_quantity_emission_round_trips_with_exact_bounds_and_dependencies() {
             .position(|node| node["semantic_form"] == "bounded_quantity")
             .expect("bounded node");
         let expected_path = format!("/semantic_graph/nodes/{position}{suffix}");
-        let bytes = serde_json::to_vec(&bad).expect("wire JSON");
+        let bytes = crate::emit::tests::wire_bytes(&bad).expect("wire JSON");
         let CheckedPackageDispatchResult::Refused(refusal) =
             read_checked_package(&bytes, CheckedPackageReadLimits::bounded(), &evidence)
         else {

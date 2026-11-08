@@ -253,7 +253,7 @@ fn acme_document() -> Vec<u8> {
         ),
         object_type("Sub", &["Order"], vec![operation("Sub", "size")]),
     ]);
-    serde_json::to_vec(&document).unwrap()
+    crate::emit::tests::wire_bytes(&document).unwrap()
 }
 
 /// Clause functions of `Order.size` (precondition `true`, body `7`),

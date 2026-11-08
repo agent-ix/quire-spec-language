@@ -51,7 +51,7 @@ fn clause(name: &str, profile: &str, activation: &str, body: &str) -> String {
 /// The `temporal`/`temporal_clause` node ids of `package`, in graph order.
 fn clause_ids(package: &CheckedPackageV2) -> Vec<CheckedNodeId> {
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .zip(package.node_kinds())
@@ -179,7 +179,7 @@ fn each_clause_of_the_package_reads_its_node_facts() {
         let id = only_clause(&package);
         let view = temporal_subject(&package, &id).expect("the clause reads");
         let node = package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .find(|node| node.node_id == id)
@@ -727,7 +727,7 @@ fn a_protocol_clause_is_no_temporal_clause_and_requirements_name_it() {
     let lowered = lower_with(model(), PROFILES, &format!("{temporal}\n{protocol}"));
     let package: &CheckedPackageV2 = lowered.ir.as_ref().expect("the package is admitted");
     let protocol_ids: Vec<CheckedNodeId> = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .zip(package.node_kinds())

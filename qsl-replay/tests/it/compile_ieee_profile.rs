@@ -36,7 +36,10 @@ fn compile(text: &str) -> Result<AdmittedCompilation, AdmittedRefusal> {
 
 fn wire(text: &str) -> Value {
     let compiled = compile(text).unwrap_or_else(|error| panic!("{text}\n{error:?}"));
-    serde_json::from_slice(compiled.package().bytes()).expect("emitted JSON")
+    let mut wire = serde_json::from_slice(compiled.package().bytes()).expect("emitted JSON");
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut wire)
+        .expect("every operand slot names a row entry");
+    wire
 }
 
 fn ieee_selection(wire: &Value) -> Vec<&Value> {
@@ -151,7 +154,7 @@ fn strict_ir_reader_admits_the_genuine_float_source_packages() {
             panic!("strict IR admission failed: {read:?}");
         };
         assert_eq!(
-            package.graph().nodes.len(),
+            package.resolved_graph().nodes.len(),
             wire["semantic_graph"]["nodes"].as_array().unwrap().len()
         );
     }
@@ -191,7 +194,7 @@ fn strict_ir_reader_admits_fma_relations_and_float_orderings() {
                 panic!("strict IR admission failed for {source}: {read:?}");
             };
             assert_eq!(
-                package.graph().nodes.len(),
+                package.resolved_graph().nodes.len(),
                 wire["semantic_graph"]["nodes"].as_array().unwrap().len(),
                 "{source}"
             );
@@ -1037,7 +1040,9 @@ fn fma_base_wire() -> Value {
 /// Read `wire` through the strict V2 reader: `Ok` when it is admitted, else
 /// the refusal's `(code, cause)` as the published tags.
 fn strict_read(wire: &Value) -> Result<(), (String, String)> {
-    let bytes = serde_json::to_vec(wire).unwrap();
+    let mut slotted = wire.clone();
+    qsl_semantics::check::wire_id::write_operand_rows(&mut slotted);
+    let bytes = serde_json::to_vec(&slotted).unwrap();
     let mut evidence = CheckedPackageEvidence::new();
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());

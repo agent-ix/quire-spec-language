@@ -640,7 +640,7 @@ fn read_term(
 fn read_nodes(package: &CheckedPackageV2) -> Result<Vec<Raw>, OccurrenceRefusal> {
     let graph = wire_graph(package).map_err(OccurrenceRefusal::Identity)?;
     let mut nodes = Vec::new();
-    for node in &package.graph().nodes {
+    for node in &package.resolved_graph().nodes {
         if CheckedNodeTag::from_wire(&node.node_tag) != Some(CheckedNodeTag::Protocol) {
             continue;
         }

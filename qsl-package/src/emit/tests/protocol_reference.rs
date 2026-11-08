@@ -647,10 +647,10 @@ fn a_whole_model_role_is_emitted_and_admitted() {
     cell["identity"] = json!("ix://acme/orders/Cell");
     cell["displayName"] = json!("Cell");
     cell["origin"]["generated"]["inputIdentities"] = json!(["ix://acme/orders/Cell"]);
-    let model_m = serde_json::to_vec(&model_m).unwrap();
+    let model_m = crate::emit::tests::wire_bytes(&model_m).unwrap();
     let mut model_n_value: Value = serde_json::from_slice(&model_m).unwrap();
     replace_strings(&mut model_n_value, "acme/orders", "acme/other-orders");
-    let model_n = serde_json::to_vec(&model_n_value).unwrap();
+    let model_n = crate::emit::tests::wire_bytes(&model_n_value).unwrap();
     let model_m_identity = package_identity(&model_m);
     let model_n_identity = package_identity(&model_n);
     assert_ne!(model_m_identity, model_n_identity);
@@ -832,11 +832,11 @@ fn a_clause_key_is_distinct_per_protocol_and_independent_of_declaration_order() 
 /// FR-383-AC-15: unrelated protocols cannot alter Fill's protocol node bytes,
 /// and changing a reachable finish node changes the clause key.
 #[trace("FR-383-AC-15", "TC-1062")]
-#[ignore = "gated on STD-653 (tracker QSL-1695): QSpec must settle canonical protocol identity across package-wide node-index changes; QSL-1620 implemented stable node keys"]
 #[test]
 fn protocol_nodes_are_stable_around_unrelated_declarations() {
     let emitted_nodes = |declarations: &str| {
-        let (_, wire, read) = emit_model_unit(&selecting(declarations), None);
+        let (emission, resolved_wire, read) = emit_model_unit(&selecting(declarations), None);
+        let wire = crate::emit::tests::raw_wire(&emission);
         assert!(matches!(read, Read::Verified { .. }), "{read:?}");
         let mut owned: Vec<Value> = nodes(&wire)
             .iter()
@@ -852,6 +852,37 @@ fn protocol_nodes_are_stable_around_unrelated_declarations() {
             })
             .expect("the Fill protocol clause")["node_id"]
             .clone();
+        let clause_wire = {
+            let at = nodes(&wire)
+                .iter()
+                .position(|node| node["node_id"] == clause)
+                .expect("the clause is a node");
+            nodes(&resolved_wire)[at]["node_id"].clone()
+        };
+        // The clause and every node it reaches through dependencies, each
+        // with every id it holds resolved to its structural key: node bytes
+        // alone name no node (FR-322).
+        let graph = WireGraph::of_package_value(&resolved_wire).unwrap();
+        let resolved_nodes = nodes(&resolved_wire);
+        let mut pending = vec![resolved_nodes
+            .iter()
+            .position(|node| node["node_id"] == clause_wire)
+            .expect("the clause is a node")];
+        let mut reached = std::collections::BTreeSet::new();
+        let mut closure = Vec::new();
+        while let Some(at) = pending.pop() {
+            if !reached.insert(at) {
+                continue;
+            }
+            let node = &resolved_nodes[at];
+            closure.push(graph.structural_value(node).unwrap().to_string());
+            for dependency in node["dependencies"].as_array().unwrap() {
+                let key = graph.key_of_value(dependency).unwrap();
+                pending.push(graph.index_of(&key).unwrap() as usize);
+            }
+        }
+        closure.sort();
+        let clause = closure;
         (owned, clause)
     };
 

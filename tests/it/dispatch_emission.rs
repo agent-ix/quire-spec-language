@@ -391,14 +391,14 @@ fn producer_dispatch_table_reads_with_ordered_candidate_witnesses() {
         Some("/checked_term_data/dispatch_tables/0/candidates/0")
     );
     let graph_ids: Vec<_> = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .map(|node| node.node_id.clone())
         .collect();
     assert_eq!(
         graph_ids.len(),
-        package.graph().nodes.len(),
+        package.resolved_graph().nodes.len(),
         "graph node identities remain unique"
     );
     let mut without_carrier = wire.clone();

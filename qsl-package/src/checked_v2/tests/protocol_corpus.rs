@@ -50,7 +50,7 @@ fn conformance_protocol_vector_positive_packages_are_admitted() {
         );
         for node in matching {
             let retained = admitted
-                .graph()
+                .resolved_graph()
                 .nodes
                 .iter()
                 .find(|candidate| {

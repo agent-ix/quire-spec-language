@@ -111,7 +111,7 @@ impl Recipe {
     }
 
     fn compensation(&self, name: &str) -> NodeKey {
-        let nodes = &self.package.graph().nodes;
+        let nodes = &self.package.resolved_graph().nodes;
         let node = nodes
             .iter()
             .find(|node| {
@@ -464,7 +464,7 @@ fn a_supply_for_an_introduced_binder_is_refused_as_unknown() {
             None,
         ))
         .expect("selects");
-    let nodes = &recipe.package.graph().nodes;
+    let nodes = &recipe.package.resolved_graph().nodes;
     let graph =
         qsl_semantics::check::wire_id::WireGraph::new(nodes.iter().map(|node| &node.node_id))
             .expect("wire ids");
@@ -1192,7 +1192,7 @@ fn a_source_unit_row_naming_no_unit_node_refuses_the_bare_route() {
     let row = recipe.unit_row();
     let protocol = recipe
         .package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| &*node.semantic_form == "compensation")

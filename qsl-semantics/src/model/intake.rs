@@ -136,7 +136,7 @@ pub fn selected_exact_identities_from_rows(
         declaration_rows
             .iter()
             .filter(|row| {
-                package.graph().nodes.iter().any(|node| {
+                package.resolved_graph().nodes.iter().any(|node| {
                     node.node_id == row.structural_node
                         && DeclarationNodeKind::of(node)
                             == Some(DeclarationNodeKind::of_form(row.form))
@@ -146,7 +146,7 @@ pub fn selected_exact_identities_from_rows(
         field_rows
             .iter()
             .filter(|row| {
-                package.graph().nodes.iter().any(|node| {
+                package.resolved_graph().nodes.iter().any(|node| {
                     node.node_id == row.record_node
                         && DeclarationNodeKind::of(node)
                             == Some(DeclarationNodeKind::RecordValueType)

@@ -103,7 +103,7 @@ fn division_owner_selection_reaches_public_compile_source_execution_and_strict_r
             other => panic!("actual emitted package admits independently: {other:?}"),
         };
         let mut found = 0;
-        for node in &read.graph().nodes {
+        for node in &read.resolved_graph().nodes {
             let Some(CheckedTerm::Application { operation, .. }) = read.term(&node.node_id) else {
                 continue;
             };

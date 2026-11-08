@@ -86,6 +86,7 @@ pub use abstraction::{
 };
 pub use abstraction::{AbstractionNodeRefusal, AbstractionNodes};
 pub use dispatch_link::PendingLinks;
+pub use extension::{ExtensionCause, NamedDeclaration};
 mod facts;
 mod family;
 // The scalar limits of a caller that bounds nothing itself, for the model
@@ -120,6 +121,7 @@ mod lowering;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
 pub use lowering::{protocol_site, ProtocolSite, RelatedSide};
+mod extension;
 mod hybrid;
 mod hyper_clause;
 mod node_key;
@@ -232,7 +234,9 @@ pub use lowering::{
     model_root_key, AdmittedModel, ForeignView, ModelClause, SemanticGraph, SemanticNode,
     SourceCollection, SourceEnumDeclaration, SourceEnumMember,
 };
-pub use node_key::{AbstractionTerm, FrameEntry, ObjectEntry, PopulationEntry};
+pub use node_key::{
+    AbstractionTerm, ExtensionClauseTerm, ExtensionTerm, FrameEntry, ObjectEntry, PopulationEntry,
+};
 pub use node_key::{
     AggregateTerm, ApplicationTerm, Binding, BindingValue, BodyTerm, FrameDeletesScoped,
     FrameField, FrameModifies, FrameScope, FrameTerm, GroupMember, GroupTerm, InvalidModelOwner,
@@ -831,6 +835,12 @@ pub struct CheckedGraph {
     /// FR-110: the header-selectable layers the unit's header profiles
     /// resolve to, ascending.
     header_layers: Vec<crate::value::layer::HeaderLayer>,
+    /// FR-110 "Extension selection": the extension definitions the unit
+    /// selects, ascending by `(authority, identity)`.
+    extension_selections: Vec<qsl_foundation::selection::DefinitionRef>,
+    /// The selected extensions' definitions as IR's reader holds them, in
+    /// the order of `extension_selections`.
+    extension_definitions: Vec<quire_contract_model::CheckedExtensionDefinition>,
     /// FR-230: checked time sources, in source declaration order.
     time_sources: Vec<ModelTimeSource>,
     /// FR-230/FR-251: exact checked time-unit scales used for timed clauses.
@@ -998,6 +1008,8 @@ impl DebugWith for CheckedGraph {
             protocol_population_types,
             model_roots,
             header_layers,
+            extension_selections,
+            extension_definitions,
             time_sources,
             time_units,
             state_clauses,
@@ -1106,6 +1118,8 @@ impl DebugWith for CheckedGraph {
             )
             .field("model_roots", &NodeList(model_roots.iter(), table))
             .field("header_layers", &header_layers)
+            .field("extension_selections", &extension_selections)
+            .field("extension_definitions", &extension_definitions)
             .field("time_sources", &Seq(time_sources, table))
             .field("time_units", &With(time_units, table))
             .field("state_clauses", &Seq(state_clauses, table))
@@ -2630,6 +2644,19 @@ impl PackageDeclarations {
             .collect();
         let protocol_profile = self.protocol_profile;
         let header_layers = self.header_layers;
+        let mut held_extensions: Vec<_> = self.held_extensions.iter().collect();
+        held_extensions.sort_by(|a, b| {
+            let (a, b) = (a.definition(), b.definition());
+            (a.authority(), a.identity()).cmp(&(b.authority(), b.identity()))
+        });
+        let extension_selections: Vec<_> = held_extensions
+            .iter()
+            .map(|held| held.definition().clone())
+            .collect();
+        let extension_definitions: Vec<_> = held_extensions
+            .iter()
+            .map(|held| held.checked_definition().clone())
+            .collect();
         let models = self.models;
         let operation_effects = checked_model_operation_effects(&models);
         let model_inputs = self.model_inputs;
@@ -4335,6 +4362,23 @@ impl PackageDeclarations {
         );
         refusals.extend(checked_probabilistic.refusals);
         let probabilistic_model = checked_probabilistic.model;
+        // FR-354: each declaration form of a selected extension, checked
+        // against the typed-node schema entry of its production.
+        let extension_input = extension::ExtensionInput {
+            scope: &scope,
+            signatures: &signatures,
+            held: &self.held_extensions,
+            limits,
+            cancel,
+        };
+        let checked_extensions = extension::check_forms(
+            &self.extension_forms,
+            &extension_input,
+            &mut probabilistic_cx,
+            &mut nodes_used,
+        );
+        refusals.extend(checked_extensions.refusals);
+        let checked_extension_forms = checked_extensions.forms;
         // QSL FR-249: the `release` declarations, resolved against the task
         // sets and the operations of the admitted models.
         if task_sets_admitted {
@@ -5696,10 +5740,35 @@ impl PackageDeclarations {
             if align.len() != clause.align_skip().len() {
                 continue;
             }
+            let mut subject_roots = Vec::with_capacity(clause.aliases().len());
+            for alias in clause.aliases() {
+                let root = scope
+                    .declared_model(&models, clause.name(), alias.as_str())
+                    .and_then(|model| model_root_key(model.selection()).ok());
+                match root {
+                    Some(root) => subject_roots.push(root),
+                    None => refusals.push(CheckRefusal {
+                        location: hyper_clause::lowering::hyper_location(
+                            index,
+                            hyper_clause::lowering::Site::Claim,
+                        ),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+                            quire_semantic_value::catalog::InternalFault::new(
+                                "S4",
+                                "hyper-subject-model-root-keyed",
+                            ),
+                        ))),
+                    }),
+                }
+            }
+            if subject_roots.len() != clause.aliases().len() {
+                continue;
+            }
             match lowering.hyper_clause(&lowering::HyperClauseInput {
                 index,
                 clause,
                 align_skip: align,
+                subject_roots: &subject_roots,
             }) {
                 Ok(lowered) => lowered_hyper.push(lowered),
                 Err(refusal) => refusals.push(refusal),
@@ -5755,6 +5824,40 @@ impl PackageDeclarations {
                     Ok(lowered) => lowered_hybrid_claims.push((index, lowered)),
                     Err(refusal) => refusals.push(refusal),
                 }
+            }
+        }
+        // FR-354, QSpec FR-469: each checked declaration form of a selected
+        // extension, after every function its clause values may call.
+        // A node-kind clause references its target form's node, so each
+        // form is lowered after the forms it names.
+        let mut lowered_extensions: Vec<Option<quire_exact::NodeKey>> =
+            vec![None; checked_extension_forms.len()];
+        let mut pending: Vec<usize> = (0..checked_extension_forms.len()).collect();
+        while !pending.is_empty() {
+            let before = pending.len();
+            pending.retain(|&index| {
+                let Some(form) = &checked_extension_forms[index] else {
+                    return false;
+                };
+                let ready = form.clauses.iter().all(|clause| match clause.value {
+                    extension::ClauseValue::Form(target) => lowered_extensions[target].is_some(),
+                    extension::ClauseValue::Checked(_) => true,
+                });
+                if !ready {
+                    return true;
+                }
+                match lowering.extension_form(&lowering::ExtensionFormInput {
+                    index,
+                    form,
+                    lowered: &lowered_extensions,
+                }) {
+                    Ok(key) => lowered_extensions[index] = Some(key),
+                    Err(refusal) => refusals.push(refusal),
+                }
+                false
+            });
+            if pending.len() == before {
+                break;
             }
         }
         // FR-411, QSpec FR-476: each checked `terminal` declaration, after
@@ -6273,6 +6376,14 @@ impl PackageDeclarations {
             }
             for skipped in 0..clause.align_skip().len() {
                 type_spans.insert(hyper_site(index, Site::AlignSkip(skipped)), clause.span());
+            }
+            for (quantifier, spans) in clause.fairness_spans().iter().enumerate() {
+                for (constraint, span) in spans.iter().enumerate() {
+                    type_spans.insert(
+                        hyper_site(index, Site::Fairness(quantifier, constraint)),
+                        *span,
+                    );
+                }
             }
             for (part, at) in clause.conjuncts() {
                 let (conjunct, make): (_, fn(usize, usize) -> Site) = match part {
@@ -7143,6 +7254,8 @@ impl PackageDeclarations {
             protocol_population_types,
             model_roots,
             header_layers,
+            extension_selections,
+            extension_definitions,
             time_sources: self.time_sources,
             time_units: time_units.clone(),
             state_clauses,
@@ -8000,6 +8113,19 @@ impl CheckedGraph {
     /// `requires` closure of these.
     pub fn header_layers(&self) -> &[crate::value::layer::HeaderLayer] {
         &self.header_layers
+    }
+
+    /// FR-110 "Extension selection": the extension definitions the unit
+    /// selects, ascending by `(authority, identity)`. The lock's
+    /// `definition_selections` end with these rows.
+    pub fn extension_selections(&self) -> &[qsl_foundation::selection::DefinitionRef] {
+        &self.extension_selections
+    }
+
+    /// The selected extensions' definitions as IR's reader holds them, in
+    /// the order of [`Self::extension_selections`].
+    pub fn extension_definitions(&self) -> &[quire_contract_model::CheckedExtensionDefinition] {
+        &self.extension_definitions
     }
 
     /// FR-001: the canonical first `RawSourceRef` of the checked package,

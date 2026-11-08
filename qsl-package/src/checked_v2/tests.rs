@@ -122,8 +122,12 @@ fn diagnostics() -> Value {
     json!({"catalog": artifact_ref("diag-catalog"), "entries": []})
 }
 
+/// The bytes of an envelope authored in resolved form (index segments
+/// inside nodes): FR-322 operand slots and rows are written for it.
 fn jcs(value: &Value) -> Vec<u8> {
-    serde_json::to_vec(value).unwrap()
+    let mut wire = value.clone();
+    qsl_semantics::check::wire_id::write_operand_rows(&mut wire);
+    serde_json::to_vec(&wire).unwrap()
 }
 
 /// A structurally valid `quire.checked-package/v2` envelope with one graph node.
@@ -1235,7 +1239,10 @@ pub(crate) fn read_fixture_graph(
     match read_fixture_wire(fixture, &envelope).1 {
         Read::Verified { .. } => {
             let package = admitted_fixture(fixture, &envelope);
-            Ok((package.graph().nodes.clone(), package.source_map().to_vec()))
+            Ok((
+                package.resolved_graph().nodes.clone(),
+                package.source_map().to_vec(),
+            ))
         }
         Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => {
             Err((refusal.code, locus_pointer(&refusal)))
@@ -1611,7 +1618,7 @@ fn conformance_timed_model_nodes_are_retained_by_i2() {
     assert_eq!(admitted.name(), name);
 
     let wire_nodes = envelope["semantic_graph"]["nodes"].as_array().unwrap();
-    let retained = &admitted.graph().nodes;
+    let retained = &admitted.resolved_graph().nodes;
     let expected_timed = wire_nodes
         .iter()
         .filter(|node| node["node_tag"] == "timed_model")
@@ -1713,7 +1720,7 @@ fn conformance_tick_timed_model_has_operation_anchor_and_no_clock_places() {
     assert_eq!(operation["node_tag"], "state");
     assert_eq!(operation["semantic_form"], "operation_anchor");
     assert!(admitted
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .any(|node| serde_json::to_value(&node.node_id).unwrap() == *operation_id));
@@ -1982,7 +1989,7 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
 
     let mut changed_path = original.clone();
     let audit_key = admitted
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| {
@@ -2017,7 +2024,7 @@ fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
 
     let id_for = |package: &quire_contract_model::CheckedPackageV2, form: &str| {
         package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .find(|node| {
@@ -2206,7 +2213,7 @@ fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimens
         let Read::Verified { admitted, .. } = outcome else {
             panic!("{name}: complete positive read expected, got {outcome:?}");
         };
-        for node in &admitted.graph().nodes {
+        for node in &admitted.resolved_graph().nodes {
             if node.node_tag.as_ref() == "scalar_type" && node.semantic_form.as_ref() == "unit" {
                 let value = serde_json::to_value(node).expect("admitted node serializes");
                 assert_eq!(

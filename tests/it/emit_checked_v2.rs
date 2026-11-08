@@ -164,7 +164,7 @@ fn the_switch_example_pair_emits_a_transition_and_is_admitted() {
 /// The admitted graph node `id` names.
 fn node<'a>(package: &'a CheckedPackageV2, id: &CheckedNodeId) -> &'a CheckedSemanticNodeV2 {
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| &node.node_id == id)
@@ -234,7 +234,7 @@ fn the_switch_transition_reads_back_typed_subject_input_post_claim_and_source() 
     assert_eq!(params[0]["typeRef"], "ix://quire/native/Boolean");
 
     let transitions: Vec<_> = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .filter(|node| {
@@ -492,7 +492,7 @@ fn the_typed_inputs_keep_the_declared_order_of_two_parameters() {
     let bytes = emit(&Request::parse(&command).unwrap()).expect("the two-input form emits");
     let package = read_back(&bytes, &[&document]);
     let transition = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| node.semantic_form.as_ref() == "transition")

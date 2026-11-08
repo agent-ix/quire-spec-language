@@ -155,6 +155,9 @@ pub(crate) enum Site {
     ExistentialSlot(usize, usize),
     /// The `align skip` operation at this index.
     AlignSkip(usize),
+    /// The fairness constraint at the second index of the quantifier at the
+    /// first.
+    Fairness(usize, usize),
     /// A relation claim, indexed among model relations.
     Relation(usize),
     /// A model relation's body.
@@ -180,6 +183,9 @@ pub(crate) fn hyper_site(clause: usize, site: Site) -> String {
             format!("hyper {clause} match exists {index} slot {slot}")
         }
         Site::AlignSkip(index) => format!("hyper {clause} align {index}"),
+        Site::Fairness(quantifier, index) => {
+            format!("hyper {clause} quantifier {quantifier} fairness {index}")
+        }
         Site::Relation(index) => format!("relation {index}"),
         Site::RelationBody(index) => format!("relation {index} body"),
         Site::RelationExecution(index, execution) => {

@@ -5,9 +5,9 @@
 //! `match` conjuncts with their step-label slots.
 //!
 //! The node's body is the aggregate of FR-402's seven bindings. Its
-//! `quantifiers` binding is a Tuple of Groups (a quantifier Group, then a
-//! fairness Group per constraint), the one shape FR-322's body grammar
-//! admits for that content (FR-488 "Grammar fit"). The body wrapper is a
+//! `quantifiers` binding is a Tuple of quantifier Groups, each ending in
+//! references to its variable's fairness nodes (FR-488 "Grammar fit"), and
+//! its `subjects` are the `model_root` nodes of the selected packages. The body wrapper is a
 //! `temporal`/`temporal_clause` node over the first atom slot, with fixed
 //! clock, activation, captures and fairness arguments.
 //!
@@ -19,7 +19,6 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::string_edge;
 use quire_exact::{Identifier, NodeKey, ValueType};
-use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 use quire_semantic_value::location::Location;
 
 use super::temporal::{stage_fault, FormulaCondition, FormulaInput};
@@ -33,6 +32,7 @@ use crate::check::node_key::{
     MemberTerm, NodeTag, Operation, OperationLaw, Operator, TupleMember, TupleTerm,
 };
 use crate::check::refusal::CheckRefusal;
+use crate::value::member::FairnessTarget;
 
 /// One checked hyper clause over `behaviours`, as lowering reads it.
 pub(crate) struct HyperClauseInput<'a> {
@@ -43,6 +43,9 @@ pub(crate) struct HyperClauseInput<'a> {
     /// The `operation_anchor` node of each `align skip` operation, in the
     /// order written.
     pub(crate) align_skip: &'a [NodeKey],
+    /// The `model_root` node of the package each alias of
+    /// `clause.aliases()` selects, in that order (QSpec FR-402).
+    pub(crate) subject_roots: &'a [NodeKey],
 }
 
 /// One checked FR-180 step relation and the already keyed nodes it joins.
@@ -380,7 +383,7 @@ impl Lowering<'_> {
 
         // The seven bindings of QSpec FR-402, in order.
         let domain = self.text_literal("behaviours", &claim)?;
-        let subjects = self.subjects(clause, &claim)?;
+        let subjects = self.subjects(clause, input.subject_roots, &claim)?;
         let mut parameters = Vec::with_capacity(clause.parameters().len());
         for (parameter, object) in clause.parameters().iter().zip(clause.parameter_objects()) {
             let node = self.object_node(object.clone(), &claim)?;
@@ -389,7 +392,7 @@ impl Lowering<'_> {
                 LeafTerm::reference(node),
             )));
         }
-        let quantifiers = self.quantifiers(clause, &claim)?;
+        let quantifiers = self.quantifiers(input, &boolean, &claim)?;
         let conjuncts = self.conjuncts(input)?;
         let align_skip = GroupTerm::references(input.align_skip.iter().cloned());
         let key = self.insert(
@@ -416,91 +419,69 @@ impl Lowering<'_> {
     }
 
     /// `subjects`: one `binding(alias, reference)` per alias in order of
-    /// first naming, to the model node of the object type of the alias's
-    /// first object parameter (FR-488 Q-2).
+    /// first naming, to the `model_root` node of the package the alias
+    /// selects (QSpec FR-402).
     fn subjects(
         &mut self,
         clause: &CheckedHyperClause,
+        roots: &[NodeKey],
         claim: &Location,
     ) -> Result<GroupTerm, CheckRefusal> {
-        let mut members = Vec::with_capacity(clause.aliases().len());
-        for alias in clause.aliases() {
-            let object = clause
-                .parameters()
-                .iter()
-                .zip(clause.parameter_objects())
-                .find(|(parameter, _)| &parameter.alias == alias)
-                .map(|(_, object)| object.clone())
-                .ok_or_else(|| stage_fault(claim, "alias-binds-a-parameter"))?;
-            let node = self.object_node(object, claim)?;
+        if roots.len() != clause.aliases().len() {
+            return Err(stage_fault(claim, "alias-selects-a-model-root"));
+        }
+        let mut members = Vec::with_capacity(roots.len());
+        for (alias, root) in clause.aliases().iter().zip(roots) {
             members.push(GroupMember::Binding(Binding::new(
                 alias.as_str(),
-                LeafTerm::reference(node),
+                LeafTerm::reference(root.clone()),
             )));
         }
         Ok(GroupTerm::new(members))
     }
 
-    /// `quantifiers`: a Tuple of Groups, one quantifier Group per quantifier
-    /// in source order, each followed by a fairness Group per constraint of
-    /// its resolved fairness set.
+    /// `quantifiers`: a Tuple of one Group per quantifier in source order
+    /// (QSpec FR-402): `variable`, `quantifier` and `alias` bindings, then a
+    /// reference to the `temporal`/`fairness` node of each constraint of the
+    /// variable's resolved fairness set.
     fn quantifiers(
         &mut self,
-        clause: &CheckedHyperClause,
+        input: &HyperClauseInput<'_>,
+        boolean: &NodeKey,
         claim: &Location,
     ) -> Result<TupleTerm, CheckRefusal> {
+        let clause = input.clause;
         let mut members = Vec::new();
-        for quantifier in clause.quantifiers() {
-            let text = |lowering: &mut Self, value: &str| lowering.text_literal(value, claim);
-            let kind = text(self, "quantifier")?;
-            let variable = text(self, &quantifier.variable)?;
+        for (position, quantifier) in clause.quantifiers().iter().enumerate() {
+            let variable = self.text_literal(&quantifier.variable, claim)?;
             let spelling = if quantifier.is_universal() {
                 "forall"
             } else {
                 "exists"
             };
-            let spelling = text(self, spelling)?;
-            let alias = text(self, quantifier.alias.as_str())?;
-            members.push(TupleMember::Group(GroupTerm::new(vec![
-                GroupMember::Binding(Binding::new("kind", kind)),
+            let spelling = self.text_literal(spelling, claim)?;
+            let alias = self.text_literal(quantifier.alias.as_str(), claim)?;
+            let mut group = vec![
                 GroupMember::Binding(Binding::new("variable", variable)),
                 GroupMember::Binding(Binding::new("quantifier", spelling)),
                 GroupMember::Binding(Binding::new("alias", alias)),
-            ])));
-            for constraint in &quantifier.fairness {
+            ];
+            for (index, constraint) in quantifier.fairness.iter().enumerate() {
+                let location = hyper_location(input.index, Site::Fairness(position, index));
                 let operation = constraint.operation();
-                let declaration = self.object_node(operation.declaring_type(), claim)?;
-                Identifier::new(operation.name().to_owned())
-                    .map_err(|_| stage_fault(claim, "fairness-operation-named"))?;
-                let kind = text(self, "fairness")?;
-                let variable = text(self, &quantifier.variable)?;
-                let fairness_kind = text(
-                    self,
-                    match constraint.kind() {
-                        FairnessKind::Weak => "weak",
-                        FairnessKind::Strong => "strong",
-                    },
+                let declaration = self.object_node(operation.declaring_type(), &location)?;
+                let name = Identifier::new(operation.name().to_owned())
+                    .map_err(|_| stage_fault(&location, "fairness-operation-named"))?;
+                let node = self.fairness_node(
+                    constraint.kind(),
+                    constraint.granularity(),
+                    FairnessTarget::Operation { declaration, name },
+                    boolean,
+                    &location,
                 )?;
-                let granularity = text(
-                    self,
-                    match constraint.granularity() {
-                        FairnessGranularity::Whole => "whole",
-                        FairnessGranularity::Each => "each",
-                    },
-                )?;
-                let name = text(self, operation.name())?;
-                members.push(TupleMember::Group(GroupTerm::new(vec![
-                    GroupMember::Binding(Binding::new("kind", kind)),
-                    GroupMember::Binding(Binding::new("variable", variable)),
-                    GroupMember::Binding(Binding::new("fairness_kind", fairness_kind)),
-                    GroupMember::Binding(Binding::new("granularity", granularity)),
-                    GroupMember::Binding(Binding::new(
-                        "declaration",
-                        LeafTerm::reference(declaration),
-                    )),
-                    GroupMember::Binding(Binding::new("name", name)),
-                ])));
+                group.push(GroupMember::Leaf(LeafTerm::reference(node)));
             }
+            members.push(TupleMember::Group(GroupTerm::new(group)));
         }
         Ok(TupleTerm::new(members))
     }

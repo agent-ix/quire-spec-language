@@ -53,7 +53,7 @@ language; [FR-467](ix://agent-ix/quire-specification/FR-467) owns the
 grammar schema and typed-node schema members of an extension definition,
 their validation, the production's source shape and its source-level
 refusals; [FR-469](ix://agent-ix/quire-specification/FR-469) owns the
-checked-package `extension` node, its key preimage and the
+checked-package `extension` node, its structural node id and the
 reader joins; [FR-322](ix://agent-ix/quire-specification/FR-322) owns the
 graph, the body grammar and the reader's first-refusal order. Where this
 requirement names a wire form or a refusal code, the QSpec requirement is
@@ -207,13 +207,12 @@ The emitter SHALL write each admitted form as QSpec FR-469 states:
   `source_map` region spans the whole form, from the leading keyword through
   the closing brace, and `dependencies` exactly the unique node-key-ascending
   clause targets;
-- the node keyed by FR-092 rule 3 with FR-469's `quire.structural-node/v1`
-  `ExtensionFormNode` preimage `{version, node_tag: "extension",
-  semantic_form: "extension_form", semantic_type: null, declaration,
-  recursion: null, owner, body}`, `body` holding each clause reference's
-  target as its node key, so the definition identity, the node kind, the
-  declared name, the owner and every clause subnode's key enter the node id,
-  and the source span enters neither;
+- the node identified by the structural id of FR-469 and FR-092, the
+  `{package, path, ordinal}` whose `path` is the node's `declaration` path,
+  so the declared name and the declaring package enter the node id and the
+  source span does not; the definition identity, the node kind and each
+  clause value enter the node's `body`, whose clause references target the
+  clause subnodes' ids, never the node id;
 - the extension definition's `DefinitionRef` as the `extension` node's `definition`.
 
 ### Reading
@@ -270,7 +269,7 @@ The emitter SHALL write each admitted form as QSpec FR-469 states:
 | FR-354-AC-3 | An extension definition with no typed-node schema refuses `invalid_package`/`missing-member` naming it. A production with leading keyword `function` refuses `invalid_package`/`conflicting-definition` naming the extension, the core grammar and `function`; two selected extensions with one leading keyword, or one node kind, refuse the same way naming both. Two extensions depending on each other refuse `invalid_package`/`definition-cycle` naming both in path order. | Test (TC-883) |
 | FR-354-AC-4 | A unit declaring the `retention` form without selecting the extension refuses `unsupported_construct`/`declaration-form` naming `retention`, its span and the unit's selections, and refuses identically over a catalog with and without the `retention` extension. A unit that selects the extension, names a parameter `retention` inside a function body and declares a record member named `retention` compiles, with `retention` an ordinary identifier in both places. | Test (TC-883) |
 | FR-354-AC-5 | A unit that selects no extension has an equal checked package identity over a catalog with and without the `retention` extension, and the AC-1 package identity is equal with two registered backends and with none. Contract IR's `read_checked_package` given the AC-1 package's bytes with the evidence `qsl_replay::spine::admission_evidence` builds for it, which holds the `retention` definition, admits it; with a `CheckedPackageEvidence` built from the same emission's required features, domain-package documents and dependency closure but with no `insert_extension_definition` call, it refuses `unknown_required_capability` with no cause, never `unknown_required_feature`, naming the `Audit` node's `node_id`, at `Locus::Artifact` with the pointer `/semantic_graph/nodes/{i}/body/definition`, and the package's bytes are those it was given. | Test (TC-884) |
-| FR-354-AC-6 | The AC-1 emission holds one `extension`/`extension_form` node with `declaration` `["Audit"]`, the unit's `SourceOwner`, the `retention` definition's `DefinitionRef`, `node_kind` `retention`, the clause bindings `subject` and `days` in that order, each a `reference` to a subnode typed `Text` and `Int[1, 3650]`, `dependencies` exactly those two subnodes in node-key order, and one `declaration` occurrence whose `source_map` region spans the whole form. The node id recomputes from its `ExtensionFormNode` preimage; recompiling with a different declared name, node kind or clause value changes the node id, and recompiling the unit with the form moved by inserted blank lines changes neither. | Test (TC-882) |
+| FR-354-AC-6 | The AC-1 emission holds one `extension`/`extension_form` node with `declaration` `["Audit"]`, the unit's `SourceOwner`, the `retention` definition's `DefinitionRef`, `node_kind` `retention`, the clause bindings `subject` and `days` in that order, each a `reference` to a subnode typed `Text` and `Int[1, 3650]`, `dependencies` exactly those two subnodes in node-key order, and one `declaration` occurrence whose `source_map` region spans the whole form. The node id is the structural id of FR-469 and FR-092, with no preimage; recompiling with a different declared name changes the node id, recompiling with a different node kind or clause value changes the node's `body` and leaves its node id, and recompiling the unit with the form moved by inserted blank lines changes neither. | Test (TC-882) |
 | FR-354-AC-7 | An extension whose typed-node schema gives one clause each of `Boolean`, `Integer`, `Text`, `Int[0, 9]` and a record type `Window` the unit declares (`record Window { lo: Integer; }`) admits a form whose clause values are `true`, `7`, `"x"`, `3` and `Window { lo: 1 }`; the same extension with the `i` clause spelled `Sequence<Integer>` is held (Definition validation does not refuse it) and its form refuses at S3 `ill_typed`/`type-mismatch` naming `i`, the expected spelling `Sequence<Integer>` and the value's own type as actual. | Test (TC-882) |
 | FR-354-AC-8 | With a second selected extension whose production `archive <name> { policy: <expr> }` types `policy` by node kind `retention`, `archive Logs { policy: Audit }` declared before `retention Audit { subject: "audit", days: 30 }` admits, its `policy` binding a `reference` to the `Audit` node; `policy: Missing` refuses `missing_declaration`/`missing-name` naming `Missing`; `policy: Other` where `Other` is an `archive` form refuses `ill_typed`/`type-mismatch` naming `policy`, expected `retention` and actual `archive`. An extension whose production `link <name> { to: <expr> }` types `to` by node kind `link` refuses `link A { to: B }` with `link B { to: A }` `ill_typed`/`type-mismatch` from `DeclarationCause::Recursion`, naming the cycle at `A` and at `B`, and refuses `link C { to: C }` the same at `C`. | Test (TC-882) |
 | FR-354-AC-9 | A unit that declares `retention Audit { subject: "audit", days: 30 }` and `record Audit { n: Integer; }` refuses `ambiguous_declaration`/`ambiguous-name` naming both declarations. | Test (TC-883) |

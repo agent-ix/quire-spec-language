@@ -464,8 +464,11 @@ fn split_d10_clauses_match_the_single_order_oracle_in_every_link_order() {
                 let second_emission =
                     qsl_package::emit_checked(opposite[0].package(), EmitLimits::fixture())
                         .expect("D10 package emits in opposite order");
-                let first_wire: Value = serde_json::from_slice(first_emission.package().bytes())
-                    .expect("canonical package wire is JSON");
+                let mut first_wire: Value =
+                    serde_json::from_slice(first_emission.package().bytes())
+                        .expect("canonical package wire is JSON");
+                qsl_semantics::check::wire_id::resolve_operand_slots(&mut first_wire)
+                    .expect("every operand slot names a row entry");
                 let second_wire: Value = serde_json::from_slice(second_emission.package().bytes())
                     .expect("opposite-order package wire is JSON");
                 assert_eq!(

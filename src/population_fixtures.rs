@@ -395,7 +395,7 @@ fn retarget(
 ) -> Result<VariantFixture, Error> {
     let refuse = |refusal| Error::Retarget(refusal);
     let [first, second, ..] = SAME_TYPE_BINDINGS;
-    let mut nodes = base.graph().nodes.clone();
+    let mut nodes = base.resolved_graph().nodes.clone();
     let population = |max: u64| -> Result<CheckedNodeId, Error> {
         let found: Vec<&CheckedSemanticNodeV2> = nodes
             .iter()
@@ -426,9 +426,13 @@ fn retarget(
     parameter.semantic_type = to;
 
     let limits = quire_canonical::Limits::new(u64::MAX);
+    // The nodes are in resolved form: write their FR-322 operand slots and rows.
+    let (nodes, operand_rows) = qsl_package::write_operand_slots(&nodes)
+        .map_err(|error| refuse(RetargetRefusal::Encode(format!("{error:?}"))))?;
     let graph = CheckedSemanticGraphV2 {
-        graph_version: base.graph().graph_version.clone(),
+        graph_version: base.resolved_graph().graph_version.clone(),
         nodes,
+        operand_rows,
     };
     let bytes = encode_checked_package_v2(
         base.name(),
@@ -606,7 +610,7 @@ mod tests {
     /// The population nodes of an admitted package, as `(node, max)`.
     fn populations(package: &CheckedPackageV2) -> Vec<(&CheckedSemanticNodeV2, u64)> {
         package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .zip(package.node_kinds())
@@ -639,7 +643,7 @@ mod tests {
 
     fn node<'a>(package: &'a CheckedPackageV2, id: &CheckedNodeId) -> &'a CheckedSemanticNodeV2 {
         package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .find(|node| node.node_id == *id)
@@ -664,7 +668,7 @@ mod tests {
             .map(|(population, _)| &population.node_id)
             .collect();
         package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .filter(|node| &*node.node_tag == "value" && &*node.semantic_form == "parameter")
@@ -756,7 +760,10 @@ mod tests {
             ),
             (0, 2)
         );
-        assert_eq!(base.graph().nodes.len(), retargeted.graph().nodes.len());
+        assert_eq!(
+            base.resolved_graph().nodes.len(),
+            retargeted.resolved_graph().nodes.len()
+        );
     }
 
     #[trace("FR-093-AC-19", "TC-416")]
