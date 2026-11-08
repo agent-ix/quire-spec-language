@@ -15,7 +15,7 @@ Integration, P1, in `qsl-replay`'s tests built with
 generated Markdown through `qsl_source::extract` and run the extracted body
 through `qsl_replay::spine::run_clause` over FR-108's fixtures; and, in the
 root crate's tests built with `--features qsl-replay/quire-extraction`, run
-the actual `quire-spec` binary's extraction mode. Scope: FR-031-AC-1 to
+the library `command::run` extraction mode. Scope: FR-031-AC-1 to
 FR-031-AC-4, FR-031-AC-6 to FR-031-AC-10 and FR-267-AC-17.
 
 ## Test Procedure

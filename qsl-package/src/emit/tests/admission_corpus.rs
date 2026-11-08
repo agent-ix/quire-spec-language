@@ -801,7 +801,7 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         ),
         (
             K::Correspondence(CorrespondenceForm::ComponentComposition),
-            "a `compose` declaration is refused at emit: its foreign component operands are not admissible yet",
+            "written from a `compose` declaration, not lowered; `emit::tests::composition` reads it",
         ),
     ]
 };

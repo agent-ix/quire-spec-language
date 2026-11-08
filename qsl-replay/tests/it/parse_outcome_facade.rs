@@ -62,6 +62,7 @@ fn diagnostic(refusal: &CompileRefusal) -> Value {
 /// Parsing the admitted fixture produces syntax only, without a package or
 /// evaluation payload.
 #[trace("FR-286-AC-3")]
+#[trace("TC-015", "FR-010-AC-1")]
 #[test]
 fn a_driver_serializes_parse_success_at_s2_without_artifacts() {
     let source = identity();
@@ -88,6 +89,7 @@ fn a_driver_serializes_parse_success_at_s2_without_artifacts() {
 /// Both S1 syntax refusal and S2 unsupported forms retain the actual
 /// producer's code, cause, message and located source region.
 #[trace("FR-278-AC-2", "FR-286-AC-3")]
+#[trace("TC-015", "FR-010-AC-2", "FR-010-AC-9")]
 #[test]
 fn a_driver_serializes_parse_refusals_with_the_original_locus() {
     let source = identity();
@@ -148,6 +150,7 @@ fn a_driver_serializes_parse_refusals_with_the_original_locus() {
 /// Each real source limit settles as incomplete at S1 with the reached
 /// limit's own diagnostic, and mints no output identity.
 #[trace("FR-277-AC-1", "FR-286-AC-3")]
+#[trace("TC-015", "FR-010-AC-4")]
 #[test]
 fn a_driver_serializes_each_reached_parse_limit() {
     let source = identity();
