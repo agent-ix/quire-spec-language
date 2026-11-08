@@ -936,10 +936,7 @@ impl WireGraph {
         let mut value = value.clone();
         let mut pending = vec![(&mut value, holder)];
         while let Some((current, mut holder)) = pending.pop() {
-            if current
-                .as_object()
-                .is_some_and(foreign_id_container)
-            {
+            if current.as_object().is_some_and(foreign_id_container) {
                 continue;
             }
             if holder.is_none() && !self.rows.is_empty() && current.get("node_tag").is_some() {
