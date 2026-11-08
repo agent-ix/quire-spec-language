@@ -1044,6 +1044,7 @@ mod tests {
             package_name: "fixture".to_owned(),
             profile_selections: vec![],
             sources: vec![("a".to_owned(), "u".to_owned())],
+            refinement_internals: None,
             dependencies: Vec::new(),
             replay_target: crate::RequestTargetWire::function(function, declaration),
             source: ReplaySource::Input(assignments),

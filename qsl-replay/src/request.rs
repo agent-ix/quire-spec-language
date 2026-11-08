@@ -228,6 +228,7 @@ impl ByteProvision {
 pub struct DependencyEntry {
     identity: LibraryName,
     sources: Vec<DefinitionSourceRef>,
+    refinement_internals: Option<serde_json::Value>,
 }
 
 impl DependencyEntry {
@@ -239,6 +240,11 @@ impl DependencyEntry {
     pub fn sources(&self) -> &[DefinitionSourceRef] {
         &self.sources
     }
+    /// The dependency's own `refinement_internals` value, unchecked; `None`
+    /// when the member is absent, meaning the empty list (QSpec FR-307).
+    pub fn refinement_internals(&self) -> Option<&serde_json::Value> {
+        self.refinement_internals.as_ref()
+    }
 }
 
 /// A [`DependencyEntry`] in wire-packet shape: `identity`,
@@ -249,6 +255,9 @@ pub struct DependencyEntryWire {
     pub identity: String,
     /// The dependency's lock `sources`.
     pub sources: Vec<SourceRefWire>,
+    /// The dependency's own `refinement_internals` value; absent means the
+    /// empty list. Kept unchecked: the recompile reports a defect.
+    pub refinement_internals: Option<serde_json::Value>,
 }
 
 /// FR-071/ADR-013 O-26: the typed replay request. Every
@@ -257,6 +266,7 @@ pub struct DependencyEntryWire {
 pub struct ReplayRequest {
     package_name: String,
     sources: Vec<DefinitionSourceRef>,
+    refinement_internals: Option<serde_json::Value>,
     dependencies: Vec<DependencyEntry>,
     replay_target: Option<ReplayTarget>,
     over: Option<ReplayOverBinding>,
@@ -281,6 +291,11 @@ impl ReplayRequest {
     /// The package's declared source references.
     pub fn sources(&self) -> &[DefinitionSourceRef] {
         &self.sources
+    }
+    /// The proved package's lock `refinement_internals` value, unchecked;
+    /// `None` when the member is absent, meaning the empty list.
+    pub fn refinement_internals(&self) -> Option<&serde_json::Value> {
+        self.refinement_internals.as_ref()
     }
     /// The package reference's `dependencies`, in request order (QSpec
     /// FR-323, ADR-015 D-4).
@@ -395,6 +410,9 @@ pub struct ReplayRequestWire {
     pub profile_selections: Vec<ProfileSelection>,
     /// `(authority, identity)` per declared source reference.
     pub sources: Vec<SourceRefWire>,
+    /// The proved package's lock `refinement_internals` value; absent means
+    /// the empty list. Kept unchecked: the recompile reports a defect.
+    pub refinement_internals: Option<serde_json::Value>,
     /// The package reference's `dependencies`, one per entry of the proved
     /// package's `dependency_selections`.
     pub dependencies: Vec<DependencyEntryWire>,
@@ -793,7 +811,11 @@ impl ReplayRequest {
                     .into_iter()
                     .map(DefinitionSourceRef::from_wire)
                     .collect::<Vec<_>>();
-                Ok::<_, ReplayRequestRefusal>(DependencyEntry { identity, sources })
+                Ok::<_, ReplayRequestRefusal>(DependencyEntry {
+                    identity,
+                    sources,
+                    refinement_internals: entry.refinement_internals,
+                })
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -832,6 +854,7 @@ impl ReplayRequest {
         Ok(Self {
             package_name: wire.package_name,
             sources,
+            refinement_internals: wire.refinement_internals,
             dependencies,
             replay_target,
             over,
@@ -866,6 +889,7 @@ impl ReplayRequest {
                 .iter()
                 .map(DefinitionSourceRef::to_wire)
                 .collect(),
+            refinement_internals: self.refinement_internals.clone(),
             dependencies: self
                 .dependencies
                 .iter()
@@ -876,6 +900,7 @@ impl ReplayRequest {
                         .iter()
                         .map(DefinitionSourceRef::to_wire)
                         .collect(),
+                    refinement_internals: entry.refinement_internals.clone(),
                 })
                 .collect(),
             replay_target,
@@ -946,6 +971,7 @@ mod tests {
                 "finite-state".to_owned(),
             )],
             sources: vec![("registry".to_owned(), "pkg-a".to_owned())],
+            refinement_internals: None,
             dependencies: Vec::new(),
             replay_target: RequestTargetWire::function(
                 QualifiedName::new(vec![
@@ -1036,6 +1062,7 @@ mod tests {
             DependencyEntryWire {
                 identity: identity.to_owned(),
                 sources: vec![("registry".to_owned(), format!("lib-{fill}"))],
+                refinement_internals: None,
             },
             bytes,
         )
@@ -1051,6 +1078,35 @@ mod tests {
             wire.dependencies.push(entry);
         }
         wire
+    }
+
+    /// FR-071-AC-13 (TC-186), QSpec FR-323-AC-17: the proved package's and a
+    /// dependency's `refinement_internals` values round-trip exactly and
+    /// unchecked; an absent member stays absent.
+    #[trace("TC-186", "FR-071-AC-13")]
+    #[test]
+    fn tc_186_refinement_internals_round_trip() {
+        let package =
+            serde_json::json!([{"refinement": "CasTwice", "internal": ["Spec::Twice::finish"]}]);
+        let own = serde_json::json!([{"refinement": "Other", "internal": []}]);
+        let (mut entry, bytes) = dependency("test/a", 0x0A);
+        entry.refinement_internals = Some(own.clone());
+        let mut wire = with_dependencies(vec![(entry, bytes)]);
+        wire.refinement_internals = Some(package.clone());
+        let request = ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap();
+        assert_eq!(request.refinement_internals(), Some(&package));
+        assert_eq!(request.dependencies()[0].refinement_internals(), Some(&own));
+        let wire = request.to_wire();
+        assert_eq!(wire.refinement_internals, Some(package));
+        assert_eq!(wire.dependencies[0].refinement_internals, Some(own));
+
+        let absent = ReplayRequest::decode(
+            with_dependencies(vec![dependency("test/a", 0x0A)]),
+            crate::ReplayLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(absent.refinement_internals(), None);
+        assert_eq!(absent.dependencies()[0].refinement_internals(), None);
     }
 
     /// FR-071-AC-9 (TC-186): two `dependencies` entries round-trip exactly,

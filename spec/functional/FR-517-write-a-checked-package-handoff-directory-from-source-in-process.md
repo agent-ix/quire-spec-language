@@ -35,7 +35,7 @@ accepted source pass the compiler stages and produce a handoff that quire-protoc
 consumes unchanged, written in process by a library call into a new directory,
 deterministically, behind a feature in the normal dependency surface. The writer
 `protocol_artifact::handoff::{write_v1, write_v2}` did this for the
-`quire.compiled-protocol/1` and `/2` wires. The deletion table (rows PA A20 to
+`quire.compiled-protocol/1` and `/2` wires. The retired deletion table (rows PA A20 to
 A22, W4 to W7, AC-10, AC-15) found no successor when this requirement was
 written: nothing in the checked-package path wrote a directory, a selection
 sidecar or a mutation manifest, and quire-protocol never read a checked package

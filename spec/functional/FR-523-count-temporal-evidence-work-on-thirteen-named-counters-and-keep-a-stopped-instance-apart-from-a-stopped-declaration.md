@@ -238,5 +238,5 @@ at each eligible position and one scan per position).
 
 ## References
 
-- Linear QSL-1502; deletion-table rows B13 and B16; the retired native temporal
+- Linear QSL-1502; the retired native temporal
   request limits (QSL-303).

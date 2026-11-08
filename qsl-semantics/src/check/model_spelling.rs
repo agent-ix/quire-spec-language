@@ -165,35 +165,30 @@ impl ModelSpellings {
             .collect()
     }
 
-    /// The unit `name` written bare in `unit` (the primary unit when `None`),
-    /// when no unit of the compiling unit declares it: the one unit of that
-    /// name the packages the unit selects declare in their own documents
-    /// (FR-505-AC-9). Two different units of the name leave it unresolved.
+    /// The identities of every package `unit` (the primary unit when `None`)
+    /// selects that declares a unit of the bare name `name`, in the order the
+    /// unit's `model` declarations select them. It only names packages in the
+    /// unresolved-unit-name diagnostic: a bare name never resolves to one
+    /// (FR-505-AC-12).
     #[ix_trace_rs::string_edge]
-    pub(crate) fn declared_unit(
+    pub(crate) fn declaring_packages(
         &self,
         unit: Option<&RawSourceRef>,
         name: &str,
-    ) -> Option<quire_exact::UnitId> {
-        if name.contains("::") {
-            return None;
-        }
-        let aliases = self.units.get(unit.or(self.primary.as_ref())?)?;
-        let mut found: Option<&quire_exact::UnitId> = None;
-        for index in aliases.values() {
-            let Some(held) = self
-                .packages
-                .get(*index)
-                .and_then(|package| package.units.get(name))
-            else {
-                continue;
-            };
-            match found {
-                Some(other) if other != held => return None,
-                _ => found = Some(held),
-            }
-        }
-        found.cloned()
+    ) -> Vec<String> {
+        let Some(aliases) = unit
+            .or(self.primary.as_ref())
+            .and_then(|unit| self.units.get(unit))
+        else {
+            return Vec::new();
+        };
+        let indices: BTreeSet<usize> = aliases.values().copied().collect();
+        indices
+            .into_iter()
+            .filter_map(|index| self.packages.get(index))
+            .filter(|package| package.units.contains_key(name))
+            .map(|package| package.selection.identity.clone())
+            .collect()
     }
 
     /// The package `unit` (the primary unit when `None`) binds its model

@@ -121,6 +121,7 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
         profile_selections: envelope.profile_selections().to_vec(),
         package_name: "fixture".to_owned(),
         sources: vec![source_wire],
+        refinement_internals: None,
         dependencies: Vec::new(),
         replay_target: RequestTargetWire::function(inc(), envelope.occurrence_key().clone()),
         source: envelope.source().clone().into(),

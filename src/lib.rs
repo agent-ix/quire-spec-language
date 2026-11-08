@@ -14,7 +14,6 @@ pub mod number;
 mod parser;
 #[cfg(feature = "population-fixtures")]
 pub mod population_fixtures;
-pub mod protocol_artifact;
 pub mod syntax;
 
 // The shared integration-test support below names this crate by its package

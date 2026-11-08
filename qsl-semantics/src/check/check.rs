@@ -1074,6 +1074,12 @@ impl<'a> SourceScope<'a> {
         self.scope.unit_named(self.source, name)
     }
 
+    /// The packages declaring the bare unit `name`; see
+    /// [`Scope::unit_packages`].
+    pub(crate) fn unit_packages(&self, name: &str) -> Vec<String> {
+        self.scope.unit_packages(self.source, name)
+    }
+
     /// The object type `name` names in this unit; see
     /// [`Scope::object_type_named`].
     pub(crate) fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
@@ -1195,7 +1201,7 @@ impl FormedUnits {
 /// The units `graph` declares by their declared name, read from `declared`,
 /// the table built over the same graph, leaving out the units of a selected
 /// package (`packages`), which a bare name reaches only when exactly one
-/// package declares it ([`ModelSpellings::declared_unit`]).
+/// package declares it ([`ModelSpellings::declaring_packages`]).
 fn unit_ids_by_name(
     graph: &quire_semantic_value::unit::UnitGraph,
     declared: &quire_semantic_value::quantity::UnitTable,
@@ -1658,13 +1664,14 @@ impl Scope {
     ) -> Option<quire_exact::UnitId> {
         match self.model_spellings.spelled(source, name) {
             Spelled::Model(_) => self.model_spellings.unit(source, name),
-            Spelled::Other => self
-                .index
-                .units
-                .get(name)
-                .cloned()
-                .or_else(|| self.model_spellings.declared_unit(source, name)),
+            Spelled::Other => self.index.units.get(name).cloned(),
         }
+    }
+
+    /// The selected packages that declare a unit of the bare name `name`,
+    /// for the unresolved-unit-name diagnostic.
+    pub(crate) fn unit_packages(&self, source: Option<&RawSourceRef>, name: &str) -> Vec<String> {
+        self.model_spellings.declaring_packages(source, name)
     }
 
     /// This scope with the unit's protocol declarations named `names`, in
@@ -4094,9 +4101,36 @@ impl<'a> Typer<'a> {
                     ValueType::Float(float),
                 )
             }
-            ValueType::Quantity(_) | ValueType::BoundedQuantity(_) => {
-                return Err(ineligible(location))
+            // FR-093 "Negation": a non-affine quantity keeps its own unit; the
+            // type-time half of the quantity core's negate refuses an affine
+            // one, as a power does.
+            ValueType::Quantity(unit) => {
+                let unit = unit.clone();
+                let probe = quire_exact::Quantity::new(
+                    Rational::from_integer(Integer::one()),
+                    unit.clone(),
+                );
+                let Some(base) = self.units.resolve(&probe) else {
+                    return Err(mismatch(location));
+                };
+                let (_, _) = evaluate_quantity_unit(
+                    QuantityOperation::Negate(base),
+                    &mut quire_exact::Meter::new(NO_CHARGE),
+                )
+                .map_err(|refusal| match refusal {
+                    QuantityRefusal::IllTyped(_) => ineligible(location),
+                    QuantityRefusal::Identity(refusal) => CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::Identity(refusal),
+                    },
+                })?;
+                (
+                    NodeKind::QuantityNegate(self.push(operand)),
+                    ValueType::Quantity(unit),
+                )
             }
+            // FR-093 "Negation": a bounded quantity is no operand of unary `-`.
+            ValueType::BoundedQuantity(_) => return Err(ineligible(location)),
             ValueType::Boolean
             | ValueType::Text(_)
             | ValueType::Enum(_)
@@ -4108,9 +4142,9 @@ impl<'a> Typer<'a> {
             | ValueType::Population(_)
             | ValueType::Uuid
             | ValueType::String
-            | ValueType::Timestamp
+            | ValueType::Timestamp => return Err(mismatch(&location.child(0))),
             // FR-497-AC-2: a carried quantity is no operand of unary `-`.
-            | ValueType::CarriedQuantity(_) => return Err(mismatch(location)),
+            ValueType::CarriedQuantity(_) => return Err(mismatch(location)),
         };
         Ok(node(kind, value_type, location))
     }

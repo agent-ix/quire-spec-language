@@ -191,6 +191,7 @@ pub(crate) fn request_named<'a>(
         package_name: package_name.to_owned(),
         profile_selections: Vec::new(),
         sources: vec![source_wire()],
+        refinement_internals: None,
         dependencies: Vec::new(),
         replay_target: qsl_replay::RequestTargetWire::function(
             selected(),

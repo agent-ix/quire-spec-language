@@ -12,7 +12,7 @@ relationships:
 
 Planned public Rust controls for the full
 [FR-042](../functional/FR-042-publish-compiled-protocol-artifacts.md) artifact
-boundary, using the exact [wire contract](../../docs/compiled-protocol-v1.md).
+boundary, using the retired `quire.compiled-protocol/1` wire contract.
 The positive emitter fixture starts with native Quire source, an admitted domain
 package and actual definition contracts; a hand-built wire fixture exercises only
 reader behavior. The first fourteen groups below correspond to the first fourteen

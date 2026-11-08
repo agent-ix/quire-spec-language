@@ -15,7 +15,7 @@ with an S3 refusal emits no node of its own and no package for the unit while
 the other protocols keep their results (TC-1297), that QSL's I2 reader returns the emitted
 protocol equal to the in-process checked clause, that it refuses each mutated
 emitted package with QSpec's code at QSpec's locus, and that emission has no
-limit or depth of its own. Scope: FR-383-AC-17 to FR-383-AC-21 and FR-383-AC-32 to FR-383-AC-61 and FR-383-AC-63.
+limit or depth of its own. Scope: FR-383-AC-17 to FR-383-AC-21, FR-383-AC-32 to FR-383-AC-61, FR-383-AC-63 to FR-383-AC-66.
 
 Catches a stale key repaired by a name lookup, a protocol dropped silently
 when its temporal profile is missing, a
@@ -106,6 +106,9 @@ as passing. The test is traced `TC-1063` and `FR-383-AC-20`.
 | L4c | fixtures E, L and E-C emitted | no row has a `protocol_attempt` origin (AC-41) |
 | L4a | Inspection of the emitter | no row derived from a source region, node order or operand position, and none defaulted (AC-42) |
 | L4d | fixture L emitted; its variant whose `Got` ends call one identity function | case guards under `... Decide case yes guard` and `... case no guard`, `visible[0]` under `... decision 2641..2650` and no other `decision` origin; the variant's ends under `... Got related 0 from` and `... related 0 to` (AC-63) |
+| L4e | fixture L's two-record variant: fixture L with the declaration `function identityRef using v(x: M::Node): M::Node pure { x }` (the identity function of the identity-call variant) added and `Got`'s clause replaced by `related by Owns (identityRef(view), view)` and `related by Owns (identityRef(view), identityRef(view))`, compiled in each source order of the two clauses | the shared `from` call's rows under `... Got related 0 from` and `... related 1 from`; the call `to` end's rows under `... related <k> to`, `k` its record's emitted position, equal in both orders; no `to` row for the reference end; each origin holds rows of one end (AC-64) |
+| L4f | row L4e's two compiles | no checked `Location` and no row under a `related <start> <end>` origin (AC-65) |
+| L4g | row L4e's variant with its second clause written twice | the same nodes, `identityRef(view)` occurrences, source-map rows and `protocol_locations` rows as the variant without the repeat (AC-66) |
 | L5 | row L1's package with the retry-origin `earlier.tally` row of `Refund` keyed to occurrence 1 removed | admitted by the reader (AC-43) |
 | L6 | row L1's package with the occurrence-1 retry-origin `earlier.tally` row's `term_ordinal` changed from 0 to 1 | refused `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` (AC-44) |
 | L6a | row L1's package with the occurrence-1 retry-origin `earlier.tally` row rekeyed to occurrence 0 at `term_ordinal` 2 | refused `invalid_package`/`invalid-value` at `/checked_term_data/protocol_locations` (AC-45) |

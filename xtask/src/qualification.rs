@@ -838,7 +838,6 @@ fn execute_vector(
                         VectorOutcome::Incomplete
                     }
                 }
-                adapters::Partition::AdapterUnavailable => VectorOutcome::Unsupported,
                 adapters::Partition::ToolFailure => VectorOutcome::ToolFailure,
             };
             (
@@ -1010,17 +1009,14 @@ fn render_text(report: &Report) -> String {
 }
 
 fn parse_unique_json(bytes: &[u8]) -> std::result::Result<Value, String> {
-    use quire_canonical::{Malformed, Node, NodeRef, ReadError};
+    use quire_canonical::{Node, NodeRef, ReadError};
 
     // The file was admitted under the caller's byte ceiling. The shared
     // reader's arena and every conversion stack are bounded by those bytes;
     // neither introduces a second, hidden nesting ceiling.
     let byte_bound = u64::try_from(bytes.len()).map_err(|error| error.to_string())?;
     let document = quire_canonical::read(bytes, byte_bound).map_err(|error| match error {
-        ReadError::Malformed {
-            kind: Malformed::DuplicateName,
-            offset,
-        } => {
+        ReadError::DuplicateName { offset, .. } => {
             // The owner reports the start of the later member's JSON
             // string. Decode only that scalar to preserve its actual name,
             // including escapes, without walking the untrusted tree again.

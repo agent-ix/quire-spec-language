@@ -158,16 +158,29 @@ pub enum ReplayRefusal {
     SourceCount(usize),
     /// FR-480: the package reference's source list is empty, repeats an
     /// owner, or names a document from the byte provision.
-    #[error("invalid_package/invalid-value at /package/sources: {0}")]
+    #[error("invalid_package/invalid-value at /package/lock/sources: {0}")]
     PackageSources(&'static str),
     /// FR-098: one dependency entry's source list is empty, repeats an owner,
     /// or names a definition document.
-    #[error("invalid_package/invalid-value at /package/dependencies/{index}/sources: {reason}")]
+    #[error("invalid_package/invalid-value at /dependencies/{index}/sources: {reason}")]
     DependencySources {
         /// The dependency entry's zero-based index.
         index: usize,
         /// Why the source list is invalid.
         reason: &'static str,
+    },
+    /// A defect of a `refinement_internals` value found by the recompile
+    /// (QSpec FR-323-AC-17): `source` is the recompile refusal, and `locus`
+    /// is the RFC 6901 pointer into the request, either
+    /// `/package/lock/refinement_internals<pointer>` or
+    /// `/dependencies/<n>/refinement_internals<pointer>`.
+    #[error("{source} (at {locus})")]
+    RefinementInternals {
+        /// The request pointer of the offending value.
+        locus: String,
+        /// The recompile refusal, a `Recompile` or
+        /// `RecompileWithProtocolResults`.
+        source: Box<ReplayRefusal>,
     },
     /// The recompile refused at one spine stage, or reached one of the
     /// stage limits the request carries (`stage_limit_exceeded`).
@@ -189,8 +202,8 @@ pub enum ReplayRefusal {
     /// ADR-015 D-4 rules 1 and 6: the package reference's `dependencies`
     /// are not in strictly ascending UTF-8 byte order of identity, or name
     /// an identity the recompiled package does not select
-    /// (`invalid_package`/`invalid-value` at `/package/dependencies`).
-    #[error("invalid_package/invalid-value at /package/dependencies: {0}")]
+    /// (`invalid_package`/`invalid-value` at `/dependencies`).
+    #[error("invalid_package/invalid-value at /dependencies: {0}")]
     DependencySelections(DependencySelectionsCause),
     /// ADR-015 D-4 rule 3: the `dependencies` entries do not form a
     /// dependency input (ADR-015 D-1).
@@ -545,6 +558,7 @@ impl ReplayRefusal {
             Self::PackageSources(_) => Code::InvalidPackage,
             Self::DependencySources { .. } => Code::InvalidPackage,
             Self::InvalidPackageName(_) => Code::InvalidRequest,
+            Self::RefinementInternals { source, .. } => source.code(),
             Self::Recompile(refusal) => refusal.code(),
             Self::RecompileWithProtocolResults { refusal, .. } => refusal.code(),
             Self::DomainPackages(refusal) => refusal.code,
@@ -608,6 +622,7 @@ impl ReplayRefusal {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::Request(refusal) => refusal.cause(),
+            Self::RefinementInternals { source, .. } => source.cause(),
             Self::Recompile(refusal) => refusal.cause(),
             Self::RecompileWithProtocolResults { refusal, .. } => refusal.cause(),
             Self::DomainPackages(refusal) => Some(refusal.cause.as_str()),
@@ -673,6 +688,7 @@ impl ReplayRefusal {
     /// stage could attribute the result to protocol declarations.
     pub fn protocol_results(&self) -> Option<&[spine::ProtocolResult]> {
         match self {
+            Self::RefinementInternals { source, .. } => source.protocol_results(),
             Self::RecompileWithProtocolResults {
                 protocol_results, ..
             } => Some(protocol_results),
@@ -719,9 +735,11 @@ impl ReplayRefusal {
                 _ => Cow::Borrowed("/replay/obligation_identity"),
             }),
             Self::ObservedTemporalInput { pointer, .. } => Some(Cow::Borrowed(pointer)),
-            Self::PackageSources(_) => Some(Cow::Borrowed("/package/sources")),
+            Self::RefinementInternals { locus, .. } => Some(Cow::Owned(locus.clone())),
+            Self::DependencySelections(_) => Some(Cow::Borrowed("/dependencies")),
+            Self::PackageSources(_) => Some(Cow::Borrowed("/package/lock/sources")),
             Self::DependencySources { index, .. } => {
-                Some(Cow::Owned(format!("/package/dependencies/{index}/sources")))
+                Some(Cow::Owned(format!("/dependencies/{index}/sources")))
             }
             _ => None,
         }
@@ -881,6 +899,7 @@ pub enum DependencySelectionsCause {
 /// #       "a".to_owned(),
 /// #       "u".to_owned(),
 /// #   )],
+/// #   refinement_internals: None,
 /// #   dependencies: Vec::new(),
 /// #   source: ReplaySource::Input(vec![CanonicalAssignment {
 /// #       parameter: site.site.parameters[0].1.clone(),
@@ -1743,6 +1762,16 @@ pub(crate) fn recompile_with_temporal_selections(
                 .map_err(ReplayRefusal::DependencyInput)
         },
     )?;
+    // Each dependency's own `refinement_internals` value goes to the
+    // recompile unchanged (QSpec FR-323-AC-17); an absent member is the
+    // empty list.
+    let dependencies = dependencies
+        .with_refinement_internals(request.dependencies().iter().filter_map(|entry| {
+            entry
+                .refinement_internals()
+                .map(|value| (entry.identity().as_str().to_owned(), value.clone()))
+        }))
+        .map_err(ReplayRefusal::DependencyInput)?;
     for source in &sources {
         dependencies
             .check_unit_owner(&labels(source))
@@ -1769,7 +1798,9 @@ pub(crate) fn recompile_with_temporal_selections(
         &dependencies,
         temporal_selections,
         limits.spine,
-    )?;
+        request.refinement_internals(),
+    )
+    .map_err(|refusal| locate_refinement_internals(refusal, request.dependencies()))?;
     // Rule 6: every entry names a selection of the recompiled closure.
     let selections = compiled.checked.package().dependency_selections();
     for entry in request.dependencies() {
@@ -1882,6 +1913,7 @@ fn run_spine_units(
     dependencies: &DependencyInput,
     temporal_selections: &[qsl_package::TemporalClockSelection],
     limits: SpineLimits,
+    refinement_internals: Option<&serde_json::Value>,
 ) -> Result<Recompiled, ReplayRefusal> {
     #[cfg(test)]
     SPINE_RUNS.with(|runs| runs.set(runs.get() + 1));
@@ -1934,7 +1966,7 @@ fn run_spine_units(
         spine::UnitCheckOptions {
             temporal_selections,
             continue_protocol_refusals: true,
-            refinement_internals: None,
+            refinement_internals,
         },
         limits,
         &cancel,
@@ -1962,6 +1994,65 @@ fn run_spine_units(
         packages: packages.clone(),
         model_limits: limits.model,
     })
+}
+
+/// Wrap a recompile refusal that is a defect of a `refinement_internals`
+/// value with its request locus (QSpec FR-323-AC-17): the proved package's
+/// value at `/package/lock/refinement_internals`, the `n`th dependency
+/// entry's at `/dependencies/<n>/refinement_internals`, each followed by the
+/// pointer into the value the check reports (FR-147).
+fn locate_refinement_internals(
+    refusal: ReplayRefusal,
+    entries: &[crate::request::DependencyEntry],
+) -> ReplayRefusal {
+    let locus = match &refusal {
+        ReplayRefusal::Recompile(compile) => internals_locus(compile, entries),
+        ReplayRefusal::RecompileWithProtocolResults { refusal, .. } => {
+            internals_locus(refusal, entries)
+        }
+        _ => None,
+    };
+    match locus {
+        Some(locus) => ReplayRefusal::RefinementInternals {
+            locus,
+            source: Box::new(refusal),
+        },
+        None => refusal,
+    }
+}
+
+/// The request locus of a `refinement_internals` defect the recompile
+/// refused with, `None` for any other refusal.
+fn internals_locus(
+    compile: &CompileRefusal,
+    entries: &[crate::request::DependencyEntry],
+) -> Option<String> {
+    let defect_pointer = |refusal: &CompileRefusal| match refusal {
+        CompileRefusal::Check { refusals, .. } => match &refusals.first()?.cause {
+            qsl_semantics::check::CheckCause::Refinement(cause) => match &cause.cause {
+                qsl_semantics::check::RefinementCause::InternalList(defect) => {
+                    Some(defect.pointer.clone())
+                }
+                _ => None,
+            },
+            _ => None,
+        },
+        _ => None,
+    };
+    match compile {
+        CompileRefusal::Dependency { path, refusal } => {
+            let pointer = defect_pointer(refusal)?;
+            let owner = path.last()?;
+            let index = entries.iter().position(|entry| entry.identity() == owner)?;
+            Some(format!(
+                "/dependencies/{index}/refinement_internals{pointer}"
+            ))
+        }
+        other => {
+            let pointer = defect_pointer(other)?;
+            Some(format!("/package/lock/refinement_internals{pointer}"))
+        }
+    }
 }
 
 /// A source reference's two FR-001 labels.

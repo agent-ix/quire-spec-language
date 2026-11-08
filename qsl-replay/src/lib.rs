@@ -395,6 +395,15 @@ pub use spine::{
     Call, CallArgument, CallIncomplete, CallLocus, CallOutcome, CallRefusal, CallValue,
     ClauseRunStage, CompileRefusal, RunRefusal, SpineLimits,
 };
+// FR-535: the bounded `native-run-result/2` consumer boundary, so CG reads and
+// writes the exact result bytes without naming `spine` (ADR-011 FB-05).
+pub use spine::{
+    read_native_run_result_bounded, write_clause_run_result, CallLocationRead, CallLocusRead,
+    CallOriginRead, ClauseDisposition, ClauseRunRecord, ClauseRunReport, ClauseRunUsage,
+    CommandErrorRecord, ConsequentSourceEvents, NativeRunLimits, NativeRunOutcome,
+    NativeRunReadError, NativeRunResult, NativeRunResultError, RefusalLocusRead, SourceRefRead,
+    SpanRead, TemporalRecord,
+};
 // The input refusal a `ReplayRefusal::Input` and a value-parity
 // `ValueParityResult::RefusedInput` carry.
 pub use quire_semantic_value::call::InputRefusal;
@@ -559,6 +568,7 @@ mod redaction_tests {
             profile_selections: vec![],
             package_name: "fixture".to_owned(),
             sources: vec![("registry".to_owned(), "pkg-a".to_owned())],
+            refinement_internals: None,
             dependencies: Vec::new(),
             replay_target: crate::RequestTargetWire::function(
                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
