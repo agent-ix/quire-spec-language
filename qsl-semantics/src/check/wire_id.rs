@@ -364,6 +364,7 @@ fn resolve_operands(id: &CheckedNodeId, row: &[u64]) -> Result<CheckedNodeId, Wi
     })
 }
 
+#[cfg(any(test, feature = "test-support"))]
 /// The checked-package document `wire` with every operand slot a node holds
 /// replaced by the index segment of the node its row names, and its
 /// `operand_rows` removed: the resolved form, in which a node's ids name
@@ -433,68 +434,80 @@ pub fn resolve_operand_slots(wire: &mut serde_json::Value) -> Result<(), String>
     Ok(())
 }
 
+/// FR-322 "Operand index segments": `node`, one semantic node as JSON, with
+/// every index segment of every node id it holds replaced by an operand slot
+/// numbered by first occurrence in the node's canonical (RFC 8785) member
+/// order, and the row listing the graph index each slot names. The emitter
+/// writes every node through this walk, so an authored document and an
+/// emitted one number slots identically. An `{package, node}` foreign key
+/// keeps its index segments: they name the dependency's graph.
+pub fn number_index_segments(node: &mut serde_json::Value) -> Vec<u64> {
+    use serde_json::Value;
+    let mut row: Vec<u64> = Vec::new();
+    let mut pending = vec![node];
+    while let Some(current) = pending.pop() {
+        match current {
+            Value::Array(items) => pending.extend(items.iter_mut().rev()),
+            Value::Object(object) => {
+                let is_id = object.len() == 3
+                    && object.contains_key("package")
+                    && object.contains_key("path")
+                    && object.contains_key("ordinal");
+                if is_id {
+                    if let Some(Value::Array(path)) = object.get_mut("path") {
+                        for segment in path.iter_mut() {
+                            let index = segment
+                                .as_object()
+                                .filter(|member| member.len() == 1)
+                                .and_then(|member| member.get("node"))
+                                .and_then(Value::as_u64);
+                            if let Some(index) = index {
+                                let slot = row
+                                    .iter()
+                                    .position(|entry| *entry == index)
+                                    .unwrap_or_else(|| {
+                                        row.push(index);
+                                        row.len() - 1
+                                    });
+                                *segment = serde_json::json!({ "operand": slot });
+                            }
+                        }
+                    }
+                } else if object.len() != 2 || !object.contains_key("package") {
+                    let mut members: Vec<(&String, &mut Value)> = object.iter_mut().collect();
+                    members.sort_by(|left, right| left.0.cmp(right.0));
+                    pending.extend(members.into_iter().rev().map(|(_, member)| member));
+                }
+            }
+            _ => {}
+        }
+    }
+    row
+}
+
 /// The inverse of [`resolve_operand_slots`] for a document authored in
 /// resolved form: when it has `semantic_graph.nodes` and no `operand_rows`,
-/// every index segment inside a node becomes the operand slot of the node's
-/// row, numbered by first occurrence in the node's canonical (RFC 8785)
-/// member order, and `operand_rows` is added. Any other document is left alone.
+/// each node is written through [`number_index_segments`] and `operand_rows`
+/// is added. Any other document is left alone.
+#[cfg(any(test, feature = "test-support"))]
 pub fn write_operand_rows(wire: &mut serde_json::Value) {
-    use serde_json::Value;
     let Some(graph) = wire.get_mut("semantic_graph") else {
         return;
     };
     if graph.get("operand_rows").is_some() {
         return;
     }
-    let Some(nodes) = graph.get_mut("nodes").and_then(Value::as_array_mut) else {
+    let Some(nodes) = graph
+        .get_mut("nodes")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
         return;
     };
-    let mut rows = Vec::with_capacity(nodes.len());
-    for node in nodes.iter_mut() {
-        let mut row: Vec<u64> = Vec::new();
-        let mut pending = vec![node];
-        while let Some(current) = pending.pop() {
-            match current {
-                Value::Array(items) => pending.extend(items.iter_mut().rev()),
-                Value::Object(object) => {
-                    let is_id = object.len() == 3
-                        && object.contains_key("package")
-                        && object.contains_key("path")
-                        && object.contains_key("ordinal");
-                    if is_id {
-                        if let Some(Value::Array(path)) = object.get_mut("path") {
-                            for segment in path.iter_mut() {
-                                let index = segment
-                                    .as_object()
-                                    .filter(|member| member.len() == 1)
-                                    .and_then(|member| member.get("node"))
-                                    .and_then(Value::as_u64);
-                                if let Some(index) = index {
-                                    let slot = row
-                                        .iter()
-                                        .position(|entry| *entry == index)
-                                        .unwrap_or_else(|| {
-                                            row.push(index);
-                                            row.len() - 1
-                                        });
-                                    *segment = serde_json::json!({ "operand": slot });
-                                }
-                            }
-                        }
-                    } else if object.len() != 2 || !object.contains_key("package") {
-                        let mut members: Vec<(&String, &mut Value)> = object.iter_mut().collect();
-                        members.sort_by(|left, right| left.0.cmp(right.0));
-                        pending.extend(members.into_iter().rev().map(|(_, member)| member));
-                    }
-                }
-                _ => {}
-            }
-        }
-        rows.push(row);
-    }
+    let rows: Vec<Vec<u64>> = nodes.iter_mut().map(number_index_segments).collect();
     graph["operand_rows"] = serde_json::json!(rows);
 }
 
+#[cfg(any(test, feature = "test-support"))]
 /// The checked-package document `bytes` as JSON in its resolved form
 /// ([`resolve_operand_slots`]).
 ///

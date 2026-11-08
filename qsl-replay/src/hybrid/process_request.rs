@@ -311,33 +311,17 @@ impl HybridProcessRequest {
             if claim_occurrence["role"] != "claim" {
                 return Err(HybridProcessRequestRefusal::ClaimMismatch);
             }
-            // FR-322 "Operand index segments": the claim names the node as the
-            // package writes it, operand slots included. Its position among
-            // the package's nodes is the position of the resolved node whose
-            // graph key identifies the claim.
-            let (package_position, package_node) = package_wire.0["semantic_graph"]["nodes"]
-                .as_array()
-                .and_then(|nodes| {
-                    nodes
-                        .iter()
-                        .enumerate()
-                        .find(|(_, node)| node["node_id"] == item.claim["node"])
-                })
-                .ok_or(HybridProcessRequestRefusal::ClaimMismatch)?;
+            let package_position = claim_position(
+                &package_wire.0["semantic_graph"]["nodes"],
+                &item.claim["node"],
+                claim_occurrence,
+            )?;
             let claim_node = package
                 .resolved_graph()
                 .nodes
                 .get(package_position)
                 .and_then(|node| graph.key(&node.node_id).ok())
                 .ok_or(HybridProcessRequestRefusal::MalformedRequest)?;
-            if package_node["semantic_form"] != "temporal_clause"
-                || item.claim["node"] != package_node["node_id"]
-                || !package_node["occurrences"]
-                    .as_array()
-                    .is_some_and(|occurrences| occurrences.contains(claim_occurrence))
-            {
-                return Err(HybridProcessRequestRefusal::ClaimMismatch);
-            }
             let claim = hybrids
                 .claims
                 .iter()
@@ -471,6 +455,47 @@ fn admit_package(
     }
 }
 
+/// FR-322 "Operand index segments": the position among the package's
+/// `nodes` of the temporal clause the request's claim names. The claim holds
+/// the node id as the package writes it, operand slots included, and a slot
+/// names an entry of its own node's row, so two nodes can write the same id
+/// for different graph nodes. The claim therefore names a node only when
+/// exactly one `temporal_clause` node writes that id and carries the claim's
+/// occurrence; an id no node writes, or one that is not a node id, is
+/// malformed, and a claim that fits no node or more than one is a mismatch.
+fn claim_position(
+    nodes: &Value,
+    claim_node: &Value,
+    claim_occurrence: &Value,
+) -> Result<usize, HybridProcessRequestRefusal> {
+    // `CheckedNodeId` reads raw JSON text, never a `Value`.
+    serde_json::from_str::<quire_contract_model::CheckedNodeId>(&claim_node.to_string())
+        .map_err(|_| HybridProcessRequestRefusal::MalformedRequest)?;
+    let written: Vec<(usize, &Value)> = nodes
+        .as_array()
+        .map(|nodes| {
+            nodes
+                .iter()
+                .enumerate()
+                .filter(|(_, node)| node["node_id"] == *claim_node)
+                .collect()
+        })
+        .unwrap_or_default();
+    if written.is_empty() {
+        return Err(HybridProcessRequestRefusal::MalformedRequest);
+    }
+    let mut fitting = written.into_iter().filter(|(_, node)| {
+        node["semantic_form"] == "temporal_clause"
+            && node["occurrences"]
+                .as_array()
+                .is_some_and(|occurrences| occurrences.contains(claim_occurrence))
+    });
+    match (fitting.next(), fitting.next()) {
+        (Some((position, _)), None) => Ok(position),
+        _ => Err(HybridProcessRequestRefusal::ClaimMismatch),
+    }
+}
+
 const MAX_SAFE_COUNT: u64 = (1_u64 << 53) - 1;
 
 #[cfg(test)]
@@ -484,5 +509,64 @@ mod deep_package_tests {
         assert!(serde_json::from_slice::<Value>(text.as_bytes()).is_err());
         let value = DeepValue(read_deep_value(text.as_bytes()).expect("reads"));
         assert!(value.0.is_array());
+    }
+}
+
+#[cfg(test)]
+mod claim_position_tests {
+    use super::*;
+    use ix_trace_rs::trace;
+    use serde_json::json;
+
+    fn id(slot: u64) -> Value {
+        json!({"package": "p", "path": ["clause", {"operand": slot}], "ordinal": 0})
+    }
+
+    fn clause(node_id: &Value, role: &str) -> Value {
+        json!({
+            "node_id": node_id,
+            "semantic_form": "temporal_clause",
+            "occurrences": [{"role": role, "ordinal": 0}],
+        })
+    }
+
+    /// FR-250-AC-3: a claim whose node no package node writes is malformed,
+    /// as is a claim whose node is not a node id.
+    #[trace("TC-705", "FR-250-AC-3")]
+    #[test]
+    fn an_unknown_or_unparseable_claim_node_is_malformed() {
+        let nodes = json!([clause(&id(0), "claim")]);
+        let occurrence = json!({"role": "claim", "ordinal": 0});
+        assert_eq!(
+            claim_position(&nodes, &id(7), &occurrence),
+            Err(HybridProcessRequestRefusal::MalformedRequest)
+        );
+        assert_eq!(
+            claim_position(&nodes, &json!("not-an-id"), &occurrence),
+            Err(HybridProcessRequestRefusal::MalformedRequest)
+        );
+    }
+
+    /// FR-322 "Operand index segments": two nodes write the same raw id
+    /// (each node's first operand is slot 0). Only the node that is a clause
+    /// with the claim's occurrence is bound, by position; when both fit, the
+    /// claim is refused instead of bound to the first.
+    #[trace("TC-705", "FR-250-AC-3")]
+    #[test]
+    fn equal_raw_ids_bind_only_the_one_node_that_fits_the_claim() {
+        let occurrence = json!({"role": "claim", "ordinal": 0});
+        let other = json!({"node_id": id(0), "semantic_form": "literal", "occurrences": []});
+        let nodes = json!([other, clause(&id(0), "claim")]);
+        assert_eq!(claim_position(&nodes, &id(0), &occurrence), Ok(1));
+        let both = json!([clause(&id(0), "claim"), clause(&id(0), "claim")]);
+        assert_eq!(
+            claim_position(&both, &id(0), &occurrence),
+            Err(HybridProcessRequestRefusal::ClaimMismatch)
+        );
+        let wrong_role = json!([clause(&id(0), "anchor")]);
+        assert_eq!(
+            claim_position(&wrong_role, &id(0), &occurrence),
+            Err(HybridProcessRequestRefusal::ClaimMismatch)
+        );
     }
 }

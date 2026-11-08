@@ -7701,73 +7701,14 @@ fn write_index_segments(
 pub(crate) fn write_operand_slots(
     nodes: &[CheckedSemanticNodeV2],
 ) -> Result<(Vec<CheckedSemanticNodeV2>, Vec<Vec<u64>>), EmitRefusal> {
-    use quire_contract_model::CheckedNodePathSegment as Segment;
-    use serde_json::Value;
-    fn is_id(object: &serde_json::Map<String, Value>) -> bool {
-        object.len() == 3
-            && object.contains_key("package")
-            && object.contains_key("path")
-            && object.contains_key("ordinal")
-    }
     let mut written = Vec::with_capacity(nodes.len());
     let mut rows = Vec::with_capacity(nodes.len());
     for node in nodes {
-        let value = serde_json::to_value(node).map_err(|_| EmitRefusal::SourceMapInvariant)?;
-        let mut row: Vec<u64> = Vec::new();
-        let mut renames: Vec<(CheckedNodeId, CheckedNodeId)> = Vec::new();
-        let mut seen: HashSet<String> = HashSet::new();
-        // Depth-first in canonical member order: the stack holds values still
-        // to visit, last pushed first.
-        let mut pending = vec![&value];
-        while let Some(current) = pending.pop() {
-            match current {
-                Value::Array(items) => pending.extend(items.iter().rev()),
-                Value::Object(object) if is_id(object) => {
-                    let text = current.to_string();
-                    if !seen.insert(text.clone()) {
-                        continue;
-                    }
-                    let old: CheckedNodeId =
-                        serde_json::from_str(&text).map_err(|_| EmitRefusal::SourceMapInvariant)?;
-                    let path = old
-                        .path
-                        .iter()
-                        .map(|segment| match segment {
-                            Segment::Index(index) => {
-                                let slot = row
-                                    .iter()
-                                    .position(|entry| entry == index)
-                                    .unwrap_or_else(|| {
-                                        row.push(*index);
-                                        row.len() - 1
-                                    });
-                                Segment::Operand(slot as u64)
-                            }
-                            other => other.clone(),
-                        })
-                        .collect();
-                    let new = CheckedNodeId {
-                        package: old.package.clone(),
-                        path,
-                        ordinal: old.ordinal,
-                    };
-                    if new != old {
-                        renames.push((old, new));
-                    }
-                }
-                Value::Object(object) if object.len() == 2 && object.contains_key("package") => {}
-                Value::Object(object) => {
-                    let mut members: Vec<(&String, &Value)> = object.iter().collect();
-                    members.sort_by(|left, right| left.0.cmp(right.0));
-                    pending.extend(members.into_iter().rev().map(|(_, member)| member));
-                }
-                _ => {}
-            }
-        }
-        let mut node = node.clone();
-        for (old, new) in &renames {
-            node.replace_node_id(old, new);
-        }
+        let mut value = serde_json::to_value(node).map_err(|_| EmitRefusal::SourceMapInvariant)?;
+        let row = qsl_semantics::check::wire_id::number_index_segments(&mut value);
+        // `CheckedNodeId` reads raw JSON text, never a `Value`.
+        let node = serde_json::from_str(&value.to_string())
+            .map_err(|_| EmitRefusal::SourceMapInvariant)?;
         written.push(node);
         rows.push(row);
     }
