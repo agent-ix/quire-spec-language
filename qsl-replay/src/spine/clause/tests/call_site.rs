@@ -18,9 +18,10 @@ use super::*;
 use crate::spine::OperationName;
 use crate::FrameOperation;
 use crate::{
-    call_site, CallSite, CallSiteRefusal, ClauseName, ClauseSite, NodeKey, OccurrenceKey,
-    OperationSite, Origin, QualifiedName, Role,
+    call_site, CallSite, CallSiteRefusal, ClauseName, ClauseSite, NodeKey, OperationSite, Origin,
+    QualifiedName, Role,
 };
+use qsl_foundation::source::provenance::OccurrenceKey;
 
 fn wire(node: NodeKey) -> NodeKey {
     node.clone()

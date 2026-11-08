@@ -512,7 +512,7 @@ pub(crate) fn replay_unit_result(
         dependencies: Vec::new(),
         replay_target: qsl_replay::RequestTargetWire::function(
             selected(),
-            qsl_replay::OccurrenceKey::new(
+            qsl_foundation::source::provenance::OccurrenceKey::new(
                 crate::fixture_ids::node_key([7]),
                 qsl_replay::Origin::new(qsl_replay::Role::new("declaration"), 0),
             ),

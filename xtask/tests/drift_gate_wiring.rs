@@ -10,13 +10,17 @@ use std::path::Path;
 use ix_trace_rs::trace;
 
 /// `(make target, recipe line)` for each drift gate that gates `make ci`.
-const DRIFT_GATES: [(&str, &str); 5] = [
+const DRIFT_GATES: [(&str, &str); 6] = [
     (
         "checked-input",
         "\tcargo run --package xtask -- checked-input",
     ),
     ("string-edge", "\tcargo run --package xtask -- string-edge"),
     ("route-lint", "\tcargo run --package xtask -- route-lint"),
+    (
+        "canonical-types",
+        "\tcargo run --locked --package xtask -- canonical-types",
+    ),
     (
         "arch-lint-api-surface-qsl",
         "\tcargo run --locked -p arch-lint -- api-surface --qsl . --qsl-only",

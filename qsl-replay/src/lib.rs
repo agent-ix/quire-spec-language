@@ -357,13 +357,6 @@ pub use quire_contract_model::{std001_code, Std001Code};
 pub use spine::{
     DependencyInput, DependencyInputRefusal, OperationName, SourceHolder, SuppliedLibrary,
 };
-// The O-07 occurrence key and O-12 source region these envelopes carry
-// (#213 S-4), re-exported so CG, which reaches QSL only through this crate
-// (ADR-011 FB-05), can name them. CG builds an occurrence key from a node id
-// and the `Origin` re-exported below; a source region's constructor inputs
-// (`qsl_foundation`'s `RawSourceRef`, `Revision` and `InvalidProvenance`)
-// are not re-exported, so CG builds no source region.
-pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 // The kernel identity types a `ReplayRequestWire`'s or a frame
 // counterexample's members are built from -- `quire_exact`'s identifier,
 // occurrence origin and role, and value-accounting limits -- re-exported so

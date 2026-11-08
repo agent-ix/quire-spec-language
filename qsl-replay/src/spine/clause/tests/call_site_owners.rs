@@ -407,7 +407,7 @@ fn assert_generated_frame(unit: &str, document: &[u8], site: &OperationSite, own
     );
     assert_eq!(
         site.frame_occurrence.clone(),
-        crate::OccurrenceKey::new(
+        qsl_foundation::source::provenance::OccurrenceKey::new(
             site.frame.clone(),
             crate::Origin::new(crate::Role::new("generated"), 0)
         )

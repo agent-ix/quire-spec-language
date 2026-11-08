@@ -11,11 +11,11 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_replay::spine::{self, default_accounting, ParseRequest};
 use qsl_replay::{
     run_with_requirements, Call, CallArgument, CallOutcome, DependencyInput, Integer,
-    ObjectEnvironment, OccurrenceKey, RunRefusal, RunWithRequirements, SourceIdentity, SpineLimits,
-    Value,
+    ObjectEnvironment, RunRefusal, RunWithRequirements, SourceIdentity, SpineLimits, Value,
 };
 use quire_exact::Cancel;
 use quire_semantic_value::supplied_stop::SuppliedLimits;

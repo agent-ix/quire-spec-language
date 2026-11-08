@@ -36,7 +36,7 @@ impl<'a> WorkflowInstanceIdentity<'a> {
 
 /// One validated runtime key, borrowing every concrete caller-supplied value.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OccurrenceKey<'a> {
+pub struct ProtocolOccurrenceKey<'a> {
     protocol: NodeKey,
     workflow: WorkflowInstanceIdentity<'a>,
     control: NodeKey,
@@ -44,7 +44,7 @@ pub struct OccurrenceKey<'a> {
     repeat_ordinals: &'a [Integer],
 }
 
-impl<'a> OccurrenceKey<'a> {
+impl<'a> ProtocolOccurrenceKey<'a> {
     /// The `protocol_clause` node of the schema the key was bound against.
     pub fn protocol(&self) -> &NodeKey {
         &self.protocol
@@ -128,7 +128,7 @@ impl ProtocolOccurrenceSchema {
         control: &NodeKey,
         owner: &ControlOwner,
         repeat_ordinals: &'a [Integer],
-    ) -> Result<OccurrenceKey<'a>, OccurrenceKeyError> {
+    ) -> Result<ProtocolOccurrenceKey<'a>, OccurrenceKeyError> {
         let entry = self
             .controls
             .iter()
@@ -170,7 +170,7 @@ impl ProtocolOccurrenceSchema {
                 });
             }
         }
-        Ok(OccurrenceKey {
+        Ok(ProtocolOccurrenceKey {
             protocol: self.workflow.clone(),
             workflow,
             control: entry.key.clone(),

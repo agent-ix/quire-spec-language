@@ -192,6 +192,12 @@ opt-level = 3
 [profile.dev.package.quire-exact]
 opt-level = 3
 
+# quire-observation depends on this repository's `qsl-foundation` through a
+# git dependency on `main`. Patching that source to the workspace member keeps
+# one `qsl-foundation` in the graph, so its canonical types are defined once.
+[patch."https://github.com/agent-ix/quire-spec-language"]
+qsl-foundation = { path = "qsl-foundation" }
+
 # Protocol exploration (QSL-1438: the LT-16 litmus test) spends its time in
 # qsl-eval, which compiles at opt-level 3. Its protocol system is generic over
 # the memory model, and a generic function compiles in the crate that
