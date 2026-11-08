@@ -422,3 +422,45 @@ Computed `quire matrix --scope . --format json` produced zero JSON bytes after m
 Focused reviewer runtime receipts are in this scratchpad. Coder clippy/fmt receipts are secondary; the user assigned the aggregate checks, cargo deny and final gate to the lead, so they were not duplicated. Standalone hybrid_probe.rs uses public APIs linked to the freshly built current qsl_replay library, outside the frozen tree, and reproduces wrong-claim binding without mutating the candidate. No review clone, source edit, commit or push was made.
 
 Focused frozen-head checks: original AdapterRow output, sparse retained field index, tick complete three-resource handoff, root refinement false replay, dependency-isolated refinement false replay, hyper fairness references and two-alias model-root subjects each passed one exact test. Map/sequence actual native projection and cold equality payload tests also passed. The model-enum native closure check FAILED at monitor_root.rs:1308 (expected one Tier row; actual []); historical IR1388 gap FND001 remains still-open. These are focused checks only.
+
+## Disposition round 3 — frozen combined candidate
+
+Candidate `323de3d51f2009318166d5e6cd1275c71632111d`; main `8c0574211700c6d8552c4b7f2b939c338bdca56a`; user-frozen peer `349675273a242204362f6c65557229f831545b36`; normal owner lock `211baac39337cecd2bdd874659b63a044e53bb68`. Historical findings and outcome rows remain unchanged.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | fixed | WitnessSupplyFailure::Rows now retains NativeRowError inline at both supplier mapping sites and the consumer accepts that same payload. The actual genuine source supplier regression observes zero allocations/bytes for denied storage and preserved prior work denial, with original bounds/locus and unchanged paid prefix on repeated calls. |
+| FND-003 | fixed | claim_position resolves a document-held request identity against the admitted resolved graph, verifies its exact document wire value and claim occurrence, and selects that graph position. No raw first-match fallback remains. The genuine One/Two collision regression selects the second first, verifies both distinct positions, and rejects externally supplied ambiguous raw slot IDs. |
+
+## Current disposition verdict
+
+PASS for the examined fixes and bounded composition, with no new findings. All original still-open findings in this artifact now have fixed latest outcomes. The lead owns the pending single aggregate gate; this review does not authorize merge or remove the user/planner hold.
+
+Bounded composition since a122d51a2 examined: d77e657fa/d68182906/66df3c18a repairs; normal IR211baac3 adoption; peer shared canonical iterative operand-index walk and claim_position composition; fixed user-frozen peer349675273 root checked-handoff CatalogUnavailable and resolved mutation-authoring delta; final public writer docs and explicit limits. Native admission receives original authored wire. Foreign package/dependency graph indices remain untouched. Positive hyper subject/fairness assertions are retained, and execute keeps supplied refinement internals with the incoming extension_catalog option. Published main8c0574211 extension semantics are upstream context, not a new review of that already-landed feature. No new defect found in these changed boundaries. No later peer head was fetched or reviewed.
+
+The previous unavailable global matrix was not rerun. Scoped trace/oracle bindings were rechecked against source; no global matrix pass is claimed. Plan completion: not assessed. Mutation verification did not alter frozen source: supplied prior red/green receipts were examined as secondary evidence. Focused reviewer test receipts and the requested legacy canonical-bound control are recorded separately in this directory. No source edit, push, review clone, peer chase or aggregate gate occurred.
+
+## Fixed source excerpts
+
+FND-002
+
+```rust
+    Rows(crate::NativeRowError),
+```
+
+FND-003
+
+```rust
+    let key = graph
+        .key(&id)
+        .map_err(|_| HybridProcessRequestRefusal::ClaimMismatch)?;
+    let position = graph
+        .index_of(&key)
+        .and_then(|index| usize::try_from(index).ok())
+        .ok_or(HybridProcessRequestRefusal::ClaimMismatch)?;
+```
+
+
+## Reviewer runtime confirmation
+
+At the frozen candidate, five individual exact tests passed (one test executed each): actual source supplier compact-denial allocation observation; two genuine hybrid clauses with equal raw IDs and distinct document-held claims; genuine typed Tier complete native closure plus direct Exact enum projection; complete dense and tick three-resource measured handoffs; and the existing exact canonical bounds success/one-short owner-refusal oracle. Logs: supplier.log, hybrid.log, enum.log, dense-tick.log, legacy-canonical.log in this disposition directory. Each Cargo invocation used the prescribed flock/scheduling/environment and this existing target. The legacy helper explicitly configures finite read storage and its original full value/borrow/typed refusal assertions pass under the adopted owner reader. No aggregate gate was run.
