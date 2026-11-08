@@ -76,3 +76,22 @@ Fix round 1, in the same PR:
 - FND-010: fixed. CG-3 compares only default-eligible candidates.
 - FND-011: fixed. US-035 exercises FR-567; FR-567 depends on FR-352.
 - FND-012: fixed. FR-299's reference line reworded.
+
+## Follow-up review (ADR-035 accepted, FR-255 path)
+
+A short base review of the follow-up diff, which accepts ADR-035 with
+Cranelift (the RES-56 owner decision) and corrects FR-255's `RenderLimits`
+path, found three issues, all fixed in the same commit:
+
+- ADR-035 Context still said EB-7 leaves the choice to a benchmark. It now
+  says that was the original wording, and EB-7 now names Cranelift.
+- CG-1 asserted that Cranelift meets every criterion without measuring it.
+  The Phase 4a spike now confirms each criterion, and a failure is reopen
+  condition 1.
+- CG-1 item 1 still allowed a system-library generator behind a feature,
+  which contradicts the decision that LLVM is not used. That allowance is
+  removed.
+
+The ADR-035 decision and FR-255's path (`qsl_replay::RenderLimits`,
+re-exported at the `qsl-replay` crate root) are otherwise consistent with
+FR-294, FR-295, FR-560 to FR-563 and the code. CG-4 stays an open ruling.

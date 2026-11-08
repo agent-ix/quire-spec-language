@@ -104,7 +104,8 @@ here:
 3. One pluggable execution-backend seam holds the interpreter, AOT and JIT,
    with result parity and checked-only input. This record specifies the seam
    and the JIT semantics. The JIT is built after the engines stabilize, and
-   a benchmark picks its code generator.
+   a benchmark picks its code generator (RES-56, since decided for Cranelift:
+   ADR-035).
 4. First-party backends are compile-time Rust traits. Third-party providers
    use one out-of-process wire. A plugin's `proved` result cannot be
    replayed, so it is labelled trusted.
@@ -843,10 +844,9 @@ parity rules (FR-295) and the parity runner the driver runs over it (FR-563)
 (amendment 2026-11-08).
 
 **EB-7 Building the JIT.** This record fixes the seam and EB-4. `qsl-jit` is
-built after the engines stabilize. A benchmark picks the code generator,
-Cranelift or LLVM, and EB-4 binds either one. ADR-035 states the decision
-criteria and the RES-56 measurement that settles the choice; until it
-reports, neither generator is accepted. FR-560 fixes the JIT's coverage,
+built after the engines stabilize. Its code generator is Cranelift, for now,
+behind the seam (ADR-035, deciding RES-56, with the criteria that would
+reopen it); EB-4 binds whichever generator `qsl-jit` uses. FR-560 fixes the JIT's coverage,
 FR-561 its kernel-call boundary and FR-562 its fast-path rule
 (amendment 2026-11-08).
 
@@ -1004,7 +1004,7 @@ except the ADR-011 amendment, which is applied in place.
   library operations, provider negotiation that leaves results unchanged,
   the plugin wire and checked-only AOT and JIT).
 - Implementation tickets it unblocks: QSL-14, QSL-10, QSL-66, QSL-89.
-- The JIT code-generator benchmark (Cranelift or LLVM): RES-56.
+- The JIT code-generator decision: RES-56, recorded in ADR-035 (Cranelift).
 - Version and provenance records in QSpec FR-301, FR-305 and FR-306 that
   this design does not use: QSL-395.
 - Owner rulings of 2026-10-01: recorded on QSL-390.
