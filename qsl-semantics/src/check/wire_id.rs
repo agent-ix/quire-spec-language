@@ -548,6 +548,7 @@ pub fn resolve_operand_slots(wire: &mut serde_json::Value) -> Result<(), String>
 /// # Errors
 ///
 /// Refuses an unreadable canonical document or a non-integer index segment.
+#[ix_trace_rs::string_edge]
 pub fn canonical_operand_indices(bytes: &[u8], byte_limit: u64) -> Result<Vec<u64>, String> {
     use quire_canonical::{Items, Members, Node, NodeRef};
     enum Pending<'a> {
@@ -626,9 +627,10 @@ pub fn canonical_operand_indices(bytes: &[u8], byte_limit: u64) -> Result<Vec<u6
 /// every index segment of every node id it holds replaced by an operand slot
 /// numbered by first occurrence in the node's canonical (RFC 8785) member
 /// order, and the row listing the graph index each slot names. The emitter
-/// writes every node through this walk, so an authored document and an
+/// uses the same canonical index walk, so an authored document and an
 /// emitted one number slots identically. An `{package, node}` foreign key
 /// keeps its index segments: they name the dependency's graph.
+#[cfg(any(test, feature = "test-support"))]
 pub fn number_index_segments(node: &mut serde_json::Value) -> Vec<u64> {
     use serde_json::Value;
     let bytes = quire_canonical::to_vec(&*node, quire_canonical::Limits::new(u64::MAX))
@@ -639,7 +641,7 @@ pub fn number_index_segments(node: &mut serde_json::Value) -> Vec<u64> {
         .expect("a resolved inspection value has integer graph indices")
     {
         if let std::collections::hash_map::Entry::Vacant(entry) = slots.entry(index) {
-            entry.insert(row.len() as u64);
+            entry.insert(u64::try_from(row.len()).expect("operand row length fits a graph index"));
             row.push(index);
         }
     }

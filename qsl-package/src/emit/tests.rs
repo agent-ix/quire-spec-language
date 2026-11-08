@@ -357,6 +357,7 @@ fn operand_slot_numbering_visits_only_identity_paths_in_canonical_order() {
         foreign_value
     );
     let rows = write_operand_slots(&mut nodes, ceiling()).unwrap();
+    let expected_rows = rows.clone();
     assert_eq!(nodes[0].body, foreign);
     assert!(!rows[0].contains(&99));
     let restored = document_nodes(CheckedSemanticGraphV2 {
@@ -369,6 +370,10 @@ fn operand_slot_numbering_visits_only_identity_paths_in_canonical_order() {
     let mut authored = json!({"semantic_graph": {"nodes": restored}});
     let original = authored.clone();
     qsl_semantics::check::wire_id::write_operand_rows(&mut authored);
+    assert_eq!(
+        authored["semantic_graph"]["operand_rows"],
+        serde_json::to_value(expected_rows).unwrap()
+    );
     assert!(!authored["semantic_graph"]["operand_rows"][0]
         .as_array()
         .unwrap()
