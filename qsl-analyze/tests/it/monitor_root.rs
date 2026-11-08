@@ -1371,6 +1371,34 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
         .monitor_plans()
         .next()
         .expect("one genuine plan root");
+    // The order value is QSL's model-step order for this root; the progress
+    // association is the real observation owner's admitted value for the
+    // root's own claim row. IR borrows both without decoding them.
+    let order = root
+        .model_step_order(quire_canonical::Limits::new(1 << 20))
+        .expect("QSL admits the model-step order");
+    let (progress, _subject) = crate::monitor_authority::observation::admitted(Some(vec![
+        crate::monitor_authority::row(&root),
+    ]));
+    let association = progress
+        .association_canonical_bytes()
+        .expect("the owner retained its association value");
+    assert!(matches!(
+        root.checked_unit().package().graph().time_sources()[0].source,
+        qsl_semantics::check::TimeSourceKind::Dense
+    ));
+    let authority = quire_contract_model::SelectedMonitorAuthorityRow::try_new(
+        package.admission_binding(),
+        plan.clause().clone(),
+        quire_contract_model::CheckedOccurrence {
+            role: quire_contract_model::CheckedOccurrenceRole::Claim,
+            ordinal: root.plan().subject().occurrence().origin().ordinal(),
+        },
+        quire_contract_model::SelectedMonitorTimeSource::Dense,
+        order.bytes(),
+        association,
+    )
+    .expect("a claim row with both admitted values");
     let closure = plan
         .project_selected_type_closure(
             SelectedMonitorClosureRows {
@@ -1388,6 +1416,7 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
                 source_collections: &collections,
                 equality_applications: equality.applications(),
                 equality_facts: equality.facts(),
+                authority: &authority,
             },
             &mut budget,
         )

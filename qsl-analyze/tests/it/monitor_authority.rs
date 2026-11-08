@@ -4,7 +4,7 @@
 #![allow(clippy::result_large_err)]
 //! FR-251 same-emission authority through genuine observation-owner admission.
 
-mod observation;
+pub(crate) mod observation;
 
 use ix_trace_rs::trace;
 use qsl_analyze::monitor_root::{
@@ -46,7 +46,7 @@ fn node(key: quire_exact::NodeKey) -> progress::NodeIdentity {
     progress::NodeIdentity::from_key(key, authority::Limits::owner_max()).unwrap()
 }
 
-fn row(root: &PlanRoot) -> progress::AssociationRow {
+pub(crate) fn row(root: &PlanRoot) -> progress::AssociationRow {
     let source = &root.checked_unit().package().graph().time_sources()[0];
     let claim = root.plan().subject();
     progress::AssociationRow {

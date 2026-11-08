@@ -25,7 +25,7 @@ pub(super) fn source() -> Identity {
     id("source:monitor-events")
 }
 
-pub(super) fn admitted(
+pub(crate) fn admitted(
     rows: Option<Vec<progress::AssociationRow>>,
 ) -> (progress::View, SubjectSelection) {
     admitted_with_progress_limits(rows, Limits::owner_max()).expect("real progress owner admission")
