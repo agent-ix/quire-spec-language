@@ -51,3 +51,13 @@ scope:
   role: examined
   excerpt: "The caller picks the execution backend in the `execute` request (ADR-029 EB-8). The choice is one of the seam's closed set: `interpreter`, `aot` or `jit`, with `interpreter` as the default."
 ```
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 9d3a3f2af: `call_failure` matches both prepare settings explicitly and returns `CallFailure::Fault` for any other setting or for a counter past u64. The new test `a_limit_that_is_not_a_prepare_limit_is_a_fault` covers both cases. |
+| FND-002 | fixed | 9d3a3f2af: `Call.prepare` (default `PrepareLimits::DEFAULT`) reaches `execute` through `run_reading`. `the_calls_prepare_limits_reach_the_supplied_backend` shows a JIT stand-in refusing one below each count and completing at the count, through `run_with_backends`. The CLI and xtask still use `Call::new`'s default limits. That has no observable effect, because neither can supply an aot/jit backend (the driver owns `--engine`) and the interpreter charges nothing. It is outside this PR's scope and is not a defect. |
+| FND-003 | fixed | 9d3a3f2af: the Unsupported refusal record writes a `location` field (`CallLocationWire` as JSON), and the new native-result test checks it. |
+| FND-004 | deferred | The coordinator is routing this to the spec lane: the FR-279/FR-294 signatures should gain `supplied` and drop `ExecuteLimits::default()`. No code change is needed. |
+| FND-005 | fixed | 9d3a3f2af: `run` delegates to `run_with_backends` with `&SuppliedBackends::default()`. |

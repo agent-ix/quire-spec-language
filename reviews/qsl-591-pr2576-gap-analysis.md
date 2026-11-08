@@ -52,3 +52,19 @@ scope:
 - {id: FR-296-AC-4, path: spec/functional/FR-296-select-the-execution-backend-in-the-request.md, role: examined, excerpt: "`ExecutionBackendChoice::default()` is `Interpreter`; a test JIT passed as `SuppliedBackends { aot: None, jit: Some(&jit) }` through the blanket `SuppliedBackend` implementation runs `seven` when `jit` is chosen and is the only backend whose `prepare` is called"}
 - {id: FR-279-AC-2, path: spec/functional/FR-279-execute-a-checked-entry-as-a-library-operation.md, role: context_only, excerpt: "`execute` with a clause selection over FR-109's ConfigVersion unit returns the `Evaluation` `qsl_replay::spine::run_clause` reports for the same clause and input."}
 ```
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | The new unchecked-expression `compile_fail,E0308` doctest imports `qsl_forms::syntax::Expression`, but `syntax` is a private module (`mod syntax;`). The import fails with E0603 for a reason unrelated to the seam. The doctest passes only because rustc also reports E0308 once privacy fails. Import the public re-export, `qsl_forms::Expression`. | qsl-eval/src/execution.rs:37-45 (import at :40) |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 9d3a3f2af: ParsedSource and unchecked-expression `compile_fail` doctests were added, plus `prepare_admits_a_checked_package`, the traced FR-294-AC-2 control. The AOT `generate` clause stays with the driver repo. The import path of the expression doctest is FND-006. |
+| FND-002 | fixed | 9d3a3f2af: a `Translator` backend walks the checked body of `tally`, which is FR-262-AC-1's `count` body under another name because `count` is a grammar keyword, so the checked node shape is the same. It logs each charge followed by its node or block, checks that the refused charge translated nothing (nodes-1), and checks one below and at each count, no prepared value on a limit, and the cancel from a second thread. |
+| FND-003 | fixed | 9d3a3f2af: a real `prepare` over four checked entries lists the first untranslatable construct of each in node order (let, Decimal, an application of `id`, and an application before a `let`). Each location is the refused checked node's own `node.location()`, carried verbatim through `unsupported()` and `payload()`. The test checks that the locations are pairwise distinct rather than comparing each with an independently looked-up node location. That is acceptable, because the seam's duty is to carry the location and the test backend's choice of node is scaffolding. |
+| FND-004 | fixed | 9d3a3f2af: the FR-100-AC-1 (`seven` to 7), AC-4 (`lt` with b before a, `flag`, `id`) and AC-6 requests are covered, and the run's outcome and `execute`'s rendering are compared as `spine-run-result/1` outcome JSON against FR-100's literal values. The JSON comes from a test-local mirror, because the document writer lives in the root crate, which qsl-replay cannot depend on. tests/it/spine_run.rs covers the real writer. |
+| FND-005 | fixed | 9d3a3f2af: `the_native_result_renders_the_unsupported_and_prepare_limit_refusals` checks backend, construct, construct_name, location, setting, bound and actual in the written clause-run document. |

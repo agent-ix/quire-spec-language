@@ -37,7 +37,7 @@
 //!
 //! ```compile_fail,E0308
 //! use qsl_eval::execution::{ExecutionBackend, Interpreter, PrepareLimits};
-//! use qsl_forms::syntax::Expression;
+//! use qsl_forms::Expression;
 //! use quire_exact::Cancel;
 //! fn unchecked(backend: Interpreter, expression: &Expression, cancel: &Cancel) {
 //!     let _ = backend.prepare(expression, &[], &PrepareLimits::default(), cancel);
