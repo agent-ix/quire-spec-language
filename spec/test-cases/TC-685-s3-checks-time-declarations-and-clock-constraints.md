@@ -12,7 +12,7 @@ relationships:
 
 Verify that S3 admits the `time` member, `Clock` fields, resets, clock constraints, time invariants and urgency, records them on the checked state model, and refuses every misuse at its span.
 
-Scope: FR-230-AC-1 to FR-230-AC-5 and FR-230-AC-7 to FR-230-AC-57. Every unit of steps 1 to 7 and 10 to 38 (step 29 excepted: it operates on emitted packages) carries the header `profile t = "quire.temporal.complete/v1";`; step 8 carries none, and step 9 checks the header unit beside the unit that selects `quire.model.complete/v1` alone.
+Scope: FR-230-AC-1 to FR-230-AC-5, FR-230-AC-7 to FR-230-AC-57 and FR-230-AC-62. Every unit of steps 1 to 7 and 10 to 39 (step 29 excepted: it operates on emitted packages) carries the header `profile t = "quire.temporal.complete/v1";`; step 8 carries none, and step 9 checks the header unit beside the unit that selects `quire.model.complete/v1` alone.
 
 ## Test Procedure
 
@@ -37,7 +37,7 @@ For each input in steps 1 to 5, read its S2 forms before the S3 check. Assert th
 15. Check `reset(c: Clock)` with a frame naming `Call.x` and with an empty frame, and `check(c: Clock)` (FR-230-AC-13).
 16. Check the `time tick` and untimed fields `t: Timer` and `ts: Sequence<Timer>` of FR-230-AC-14 and the unit declarations that raise no refusal.
 17. Check the `Quantity<ms>` positions of FR-230-AC-15, the domain package of FR-230-AC-16 and the unit positions of FR-230-AC-17, each with its refused variants.
-18. Check the clock collections, the static dimension and the `Map<Timer, Int>` key of FR-230-AC-19.
+18. Check the clock collections, including the package map type `m` (key `Text`, values `Timer`, bound `[0, 2]`), the static dimension, and the package map types whose key is `Timer`, `Cfg` and `Option<Text>` of FR-230-AC-19.
 19. Check the collection-valued writes and their refusals of FR-230-AC-20.
 20. Check the selectors, quantified reads, resets by selection, time invariant bodies and refused queries of FR-230-AC-21.
 21. Check the `Option<Clock>` positions of FR-230-AC-22.
@@ -56,6 +56,9 @@ For each input in steps 1 to 5, read its S2 forms before the S3 check. Assert th
 34. Check the derived presence of FR-230-AC-51: `present(other.v)`, `present(self.q[i])` and `present(e)` in a `forall` and an `exists` body over two objects, with no member added to any declaration and the refusals of QSpec FR-322-AC-156.
 35. Step each vector `FP-01`..`FP-14` of QSpec's `clock-presence-frame-vectors.json` (FR-230-AC-52): `v: Option<Clock>` or `st: Mode` in `work`'s frame, the vector's pre-state, its requirement and its write as `work`'s postcondition, and for `FP-11` and `FP-12` a precondition `not present(..)` establishing the place absent; then compare each vector's result with its twin's.
 36. Emit and read back the urgency of FR-230-AC-53: an `urgent when` over a data predicate and an `urgent O`, then an `urgent when` reading a clock presence.
+37. Check the quantified time invariant of FR-230-AC-56 over `ts: Sequence<Timer>[0, 3]`, its `exists` form and the quantified presence predicate, reading the S2 form first (FR-393-AC-9).
+38. Check the mixed-bound time invariant of FR-230-AC-57, reading the S2 form first.
+39. Over FR-230-AC-19's `m` with a snapshot whose `m` holds the keys `"b"` and `"a"`, check the key places, the emitted `clock_place` of `m.x`, the reset `self.m["a"].x = 0 ms` with a frame naming `m` and an operation whose frame does not name `m`, `ref(self.m["a"].x)`, `deref(self.r) >= 1 ms` with a clock `x` beside `m`, and a snapshot `Reference<Clock>` naming the `clock_place` of `m.x` (FR-230-AC-62).
 
 Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 
@@ -78,7 +81,7 @@ Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 - Step 15: one instance per place of `Call.x`, naming it; `invalid_timed_model`/`clock-write`; one instance per clock place.
 - Step 16: `clock-without-dense-time` for the tick and untimed fields; no refusal for the declarations.
 - Step 17: every position checks and is typed by the one unit node; `ill_typed`/`type-mismatch`; `missing_declaration`/`missing-name`; the package clocks of FR-230-AC-16; the `Quantity<M::ms>` positions, and `missing_declaration`/`missing-name` naming each member path.
-- Step 18: the places and shapes, the dimension `11` for one object with `s` adding none, `s` with at most one element, `ts` typed over the `Timer` data node, and `ill_typed`/`operator-ineligible` at the map key.
+- Step 18: the places and shapes, `Call.m.[key].x` selected by key with a `Map` shape of `max` 2, the dimension `11` for one object with `s` adding none, `s` with at most one element, `ts` typed over the `Timer` data node, and `ill_typed`/`operator-ineligible` at the key type of each of the three refused map types.
 - Step 19: the provenance records of AC-20 and `clock-write` at each refused occurrence and position.
 - Step 20: the resets, the guard entries by size, the convex parts for `exists`, `unproved-presence` at `1`, `time-invariant-shape` for the `exists` body and `clock-read-outside-constraint` for `=`, `contains` and `count`, with `size` and `e.n` admitted.
 - Step 21: each `Option<Clock>` position as stated, with the instances of `arm`, the place expressions of `maybe` and the refusals.
@@ -99,3 +102,4 @@ Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 - Step 36: two `urgency` nodes in declared order, each located at its declaration, the `when` one referencing the located expression node of its predicate with `self` a level-0 `parameter`, the `operation` one naming the model node and `attemptUpdate`, both read back by I2; the presence urgency refused `TimedModelNotEmitted` (AC-53).
 - Step 37: S2 retains a quantified invariant bound as the typed `ForAll` form with binder, collection, clock expression, comparison, quantity and source span, in source order alongside any ordinary bound (FR-393-AC-9). At S3, the bounded sequence fixture emits one invariant binder reference and one template upper-bound constraint whose slot term is that binder; the bound applies only to live slots and imposes no bound for an empty sequence (AC-56; CL-59/CL-62). The `Exists` invariant parses then refuses `invalid_timed_model`/`time-invariant-shape`; element-presence quantified invariant refusal emits no partial nodes (AC-56; FR-322-AC-295; FR-415-AC-24). The point-qualified clause control remains refused under FR-230-AC-50 / FR-342-AC-11.
 - Step 38: The mixed-bound invariant parses into the source-ordered `ForAll` and ordinary `Clock` forms at S2 (FR-393-AC-9), then refuses `invalid_timed_model`/`time-invariant-shape` at S3 with no partial timed nodes (FR-230-AC-57). This prevents the unquantified bound from inheriting the quantified binder's empty-collection scope.
+- Step 39: the instances of `"a"` then `"b"` at clock 0, each guarded by its key; one `clock_place` whose slot selector references the `Text` key type node; the reset of the `"a"` instance only and no reset without `m` in the frame; `ill_typed`/`type-mismatch` at the `ref`; convex parts over `Call.x` only; and `invalid_runtime_input`/`invalid-value` for the snapshot identity (AC-62).

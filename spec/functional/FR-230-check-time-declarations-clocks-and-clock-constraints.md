@@ -123,7 +123,8 @@ pub struct ClockField {
 
 pub enum PlaceStep {
     Field(Name), Index(usize), Case(Name),
-    Slot(CollectionShape),                  // an element place of a clock collection: one entry for each clock of the element
+    Slot(CollectionShape),                  // an element place of a clock collection: one entry for each clock of the element;
+                                            // selected by position, or by key when the shape's kind is Map
 }
 
 pub struct CollectionShape { pub kind: CollectionKind, pub min: u64, pub max: Option<u64> }   // None: no declared maximum
@@ -657,12 +658,23 @@ what each such position means.
 - **Clock collections.** The checker SHALL admit a clock-bearing type as the element of a `Set`,
   `Bag`, `Sequence`, `OrderedSet` or as the value of a `Map`, nested in `Option`, in another
   collection, in a record, and as a member whose multiplicity is not `[1, 1]`,
-  following QSpec FR-415 "Clock collections". It SHALL refuse a clock-bearing `Map` key
-  `ill_typed`/`operator-ineligible` at the key type, because a key is an immutable lookup value
-  and a clock advances with time. The places of a clock collection SHALL be listed in "Places"
+  following QSpec FR-415 "Clock collections". QSL source spells no `Map`, so a `Map` reaches the
+  checker as a domain package map type, which declares its key type, its value type and its
+  bound. The key type SHALL be a scalar data type (QSpec FR-322 `Map<K,V>`, `K` a scalar key
+  type). The checker SHALL refuse every other key type `ill_typed`/`operator-ineligible` at the
+  map type's key type: a clock-bearing key (`Clock`, an alias of it, a record such as
+  `Timer { x: Clock; n: Int }`), a record, tuple or union key with no clock (a `Composite`), and
+  an `Option`, collection or `Map` key. A key is an immutable lookup value with a canonical
+  order, and a clock advances with time. The places of a clock collection SHALL be listed in "Places"
   with a `Slot(CollectionShape)` step, one `ClockField` for each clock of the element type, in
-  element-type declaration order; a slot `j` is live exactly while the collection holds it, and
-  the guard of a slot place is that presence test, composed with the guards above it.
+  element-type declaration order. For a `Sequence`, `Set`, `Bag` or `OrderedSet` the instance
+  at a slot step is selected by the element's zero-based position, and a slot `j` is live
+  exactly while the collection holds it. For a `Map` the shape's kind is `Map`, the clock type
+  is the map's value type, and the instance is selected by the entry's **key**, written
+  `[key]` in a place list (`Call.m.[key].x`). The key is never a position. The slot step's
+  selector in the `clock_place` node is a reference to the key type node (QSpec FR-322
+  "Timed-model nodes"). A key place is live exactly while the map holds the key. The guard of
+  a slot or key place is that presence test, composed with the guards above it.
   The static clock dimension of the model SHALL be, for each object and each clock collection,
   the declared maximum (the collection type's bound `u`, the member's multiplicity upper bound)
   times the clocks of one element, summed with the places outside collections; a collection with
@@ -693,11 +705,22 @@ what each such position means.
   `NotSimulated::RequiresBound`, which FR-120 applies only to `domains()` of an
   unbounded frame-granted value. A `Map` is not a pure-clock collection: its
   keys are data the snapshot carries, so its entries come from the snapshot.
+  Its live key places are those of the keys the snapshot's map holds, in
+  ascending key order, and each present initial clock is 0.
   A `Map` with a declared maximum and finite non-clock key and value is a
-  finite value domain (FR-120); a clock-bearing value stays unbounded there.
+  finite value domain (FR-120). A clock-bearing value stays unbounded there,
+  because FR-120 matches clock slots by position or by equal non-clock
+  components and never by key. A frame that grants such a `Map` therefore
+  returns `NotSimulated::RequiresBound`. A `Map` that no frame grants
+  changes only by the resets by selection and the collection-valued writes
+  below, so its key places keep their clocks across every step that does not
+  write them.
 - **Element identity.** A `Set`, `Bag` or `OrderedSet` of a clock-bearing element type SHALL
   decide uniqueness and multiplicity by equality of the data parts (QSpec FR-144), so the
-  checker SHALL record `Set<Clock>` as holding at most one element, and SHALL refuse `=` and
+  checker SHALL record `Set<Clock>` as holding at most one element. A `Map` of a clock-bearing
+  value type SHALL decide an entry's identity by its key alone: a key occurs at most once, the
+  key places of an entry are those of its key, and a write of an entry for a key the map holds
+  replaces that entry. The checker SHALL refuse `=` and
   `!=` over a clock collection, `contains`, `convert` and any other query that compares
   elements as values, and `count`, `fold`, `reduce`, `sum`, `map` and `filter` whose body reads
   a clock, `invalid_timed_model`/`clock-read-outside-constraint` at the read. The data fields of
@@ -780,11 +803,15 @@ what each such position means.
   names no place of another. QSpec FR-415 states the same id as the state key, and
   nothing is vendored here. The `clock_place` node key names the template of the
   path and is the same for every instance; `<slots>` is the concrete position of
-  the instance at each `Slot` step and is never part of any node. A place under a `Map` value (`self.m[k].x`) is selected by key, which
-  a decimal index cannot name, so it has no place id and `ref` of one is
-  refused `ill_typed`/`type-mismatch`: a `Map` with a clock-bearing value is an
-  unbounded domain in FR-120, which gives no encoding for the place, so the
-  refusal stands.
+  the instance at each `Slot` step and is never part of any node. A place under
+  a `Map` value (`self.m[k].x`) is selected by key ("Clock collections"). A
+  decimal slot index cannot name a key, so the place SHALL have no place id.
+  The checker SHALL refuse `ref` of such a place `ill_typed`/`type-mismatch` at
+  the `ref`, and `deref(r)` SHALL denote none. A snapshot `Reference<Clock>`
+  whose identity names the `clock_place` of a place under a `Map` value, with
+  any `<slots>`, SHALL be refused `invalid_runtime_input`/`invalid-value`. The
+  clocks of such a place are reached by selection by key and through `forall`
+  and `exists` over the map, never through a reference.
   The same value is carried in a field, a parameter, a result, a record
   component and a collection element, and `Option<Reference<Clock>>` is absent
   or one place id. The domain-package target form of a `reference` whose
@@ -918,7 +945,7 @@ declaration and `clock-type` for a `Clock` in a type position. An unqualified
 | FR-230-AC-16 | A domain package `acme/rpc` with a clock field `Call.x`, an operation `reset` whose parameter is `ix://quire/native/Clock`, an operation `clk` whose result is `ix://quire/native/Clock`, an alias `Stopwatch` whose `target` is `ix://quire/native/Clock` with a field `Call.s` typed `Stopwatch`, an optional clock field `Call.w` and a record `Timer` with a clock field `x` held by `Call.t` checks to the clocks `Call.x`, `Call.s`, `Call.w` (guarded) and `Call.t.x`; `reset`'s postcondition `c = 0` with a frame naming `Call.x` checks as in FR-230-AC-13. A package sequence type whose `items` is `ix://quire/native/Clock`, a map type whose `values` is `ix://quire/native/Clock` and a field `Call.q` typed `ix://quire/native/Clock` with multiplicity `{0, 3, true, false}` check to the clock collections of FR-230-AC-19. | Test |
 | FR-230-AC-17 | A domain package `acme/rpc` with a unit `ms` and an alias `D` whose `target` is `ix://quire/unit/acme/rpc/ms`, a sequence type with that `items`, a map type with that `values`, a field, an operation parameter and an operation result typed by it checks to `Quantity<M::ms>` at each position (with `model M = "acme/rpc"`); the same alias, `items` or `values` naming `ix://quire/unit/ghost` refuses `missing_declaration`/`missing-name` naming the member and its path (`TypeDefinition.target`, `TypeDefinition.items`, `TypeDefinition.values`). | Test |
 | FR-230-AC-18 | With the domain packages `acme/rpc` (alias `R`, base dimension `Time`, root `s`, unit `ms` of `1/1000` of `s`) and `acme/flow` (alias `F`, base dimension `Time`, root `sec`) both selected and a source that also declares `dimension Time; unit s : Time = 1;` and no dimension equivalence: `time dense unit R::ms` checks with the `acme/rpc` `Time` as the model's time dimension and `x <= 3 R::ms` and `period 1/2 R::s` check; `time dense unit F::sec` checks with the `acme/flow` `Time` as the time dimension, and the source `time dense unit s` checks with the source `Time` as the time dimension; the three models have three different package identities. Under `time dense unit R::ms`, `x <= 3 F::sec` and `x <= 3 s` refuse `ill_typed`/`type-mismatch` at the constant; under `time tick O period 1 F::sec unit R::ms` the period refuses `ill_typed`/`type-mismatch`; a unit `len` of a base dimension `Length` and a unit of a derived `Duration = R::Time` each still refuse `time dense unit` with `ill_typed`/`type-mismatch`. | Test |
-| FR-230-AC-19 | Over a dense model whose object type `Call` has `ts: Sequence<Timer>[0, 3]` (`Timer { x: Clock; n: Int }`), `b: Bag<Clock>[0, 2]`, `s: Set<Clock>`, `m: Map<Text, Timer>[0, 2]`, `o: Option<Sequence<Clock>[0, 2]>` and `q: Sequence<Option<Clock>>[0, 2]`, the checker lists the places `Call.ts.[slot].x`, `Call.b.[slot]`, `Call.s.[slot]`, `Call.m.[slot].x`, `Call.o.[slot]` (guarded by `present(o)`) and `Call.q.[slot]` (guarded by `present` of the element), each with its `CollectionShape`; the static clock dimension of one object is `3 + 2 + 0 + 2 + 2 + 2` (the unbounded `s` adds no static bound, `max: None`); `s` holds at most one element and `b` one for each occurrence; `ts` is typed by the `collection_bounds` node over the sequence of the `Timer` data node listing `n` only; `m: Map<Timer, Int>` refuses `ill_typed`/`operator-ineligible` at the key type. | Test |
+| FR-230-AC-19 | Over a dense model whose object type `Call` has `ts: Sequence<Timer>[0, 3]` (`Timer { x: Clock; n: Int }`), `b: Bag<Clock>[0, 2]`, `s: Set<Clock>`, `m` typed by a domain package map type whose key is `Text`, whose values are `Timer` and whose bound is `[0, 2]` (`Map<Text, Timer>[0, 2]`), `o: Option<Sequence<Clock>[0, 2]>` and `q: Sequence<Option<Clock>>[0, 2]`, the checker lists the places `Call.ts.[slot].x`, `Call.b.[slot]`, `Call.s.[slot]`, `Call.m.[key].x` (selected by key, guarded by `m` holding the key), `Call.o.[slot]` (guarded by `present(o)`) and `Call.q.[slot]` (guarded by `present` of the element), each with its `CollectionShape` (that of `m` of kind `Map`, `min` 0, `max` 2); the static clock dimension of one object is `3 + 2 + 0 + 2 + 2 + 2` (the unbounded `s` adds no static bound, `max: None`); `s` holds at most one element and `b` one for each occurrence; `ts` is typed by the `collection_bounds` node over the sequence of the `Timer` data node listing `n` only. A package map type whose key is `Timer` (`Map<Timer, Int>`), one whose key is the record `Cfg { a: Boolean }`, which holds no clock, and one whose key is `Option<Text>` each refuse `ill_typed`/`operator-ineligible` at the map type's key type. | Test |
 | FR-230-AC-20 | `self.ts = filter(e in self.ts: e.n > 1)` checks with the provenance `Carried` from each surviving slot; `self.ts = flatten(sequence[sequence[Timer { x: 0 ms, n: 9 }], self.ts])` checks with `Fresh { x = 0 }` at slot 0 and `Carried` from slot `j` at slot `j + 1`; `self.st = set[Timer { x: 0 ms, n: 1 }, Timer { x: 5 ms, n: 1 }]` records one `Fresh { x = 0 }` occurrence, the first; `self.ts = sequence[Timer { x: self.u, n: 1 }]` (a clock read as a component) and `self.ts = sequence[Timer { x: self.ts[0].x, n: 1 }]` refuse `invalid_timed_model`/`clock-write` at the occurrence; `self.ts` written in an `invariant` clause or a `let` refuses `clock-write`; a frame that does not name `ts` leaves it unchanged. | Test |
 | FR-230-AC-21 | `self.ts[1].x = 0 ms` checks as a reset of slot 1 and refuses `undefined_expression`/`unproved-presence` at `1` unless the precondition establishes `1 < size(self.ts)`; `self.m[k].x = 0 ms` resets by key and `self.m[k] = Timer { x: 0 ms, n: 1 }` replaces the entry with a fresh one; `forall(e in self.ts: e.n > 1 implies e.x = 0 ms)` records a reset with the data predicate `e.n > 1`; the guard `forall(e in self.ts: e.x <= 3 ms)` records one entry for each size 0 to 3 with the conjunction over the live slots (true for size 0); `exists(e in self.ts: e.n = 2 and e.x >= 1 ms)` records one convex part for each slot with the data predicate "holds the slot" and `n = 2`; a time invariant body `forall(e in self.ts: e.x <= 3 ms)` records `x <= 3` on each live slot and a body `exists(...)` refuses `time-invariant-shape`; `self.a = self.b`, `contains(self.ts, t)` and `count<Int>(e in self.ts: e.x >= 1 ms)` over clock collections refuse `clock-read-outside-constraint`, while `size(self.ts) > 1` and `e.n` check as data reads. | Test |
 | FR-230-AC-22 | `Option<Clock>` is covered in the admitted positions: a field, an operation parameter `arm(c: Option<Clock>)` with `c = 0 ms` (one instance for each guarded place, each making its place present), a function result `maybe(o: Timer): Option<Clock>` with the body `o.x` (a place expression) and the body `absent` (an inactive place), an alias target, a record component, `Option<Timer>` with `value(self.o).x >= 1 ms` refusing `undefined_expression`/`unproved-presence` unless `present(self.o)` holds, `Sequence<Option<Clock>>` with a slot whose `value` needs both the slot's and the element's presence, and `Option<Sequence<Clock>>` whose slots are live only while the option is present. A direct `Clock` variant payload is refused at package admission per QSpec FR-154-AC-25. | Test |
@@ -961,6 +988,7 @@ declaration and `clock-type` for a `Clock` in a type position. An unqualified
 | FR-230-AC-59 | Over AC-58's model, each declaration below the only time invariant or urgency declaration of its model, at a discrete state whose `calls` holds `c1` (`inflight` true, `waiting` false) and `c2` (`inflight` false, `waiting` true), with `x = 0` on both: `HasCalls` applies to neither object and bounds no clock, so a delay of 5 is admissible; `time invariant AnyInflight when { exists(c in Config::calls : c.inflight) } { self.x <= 1 ms }` reads no `self` and applies to both objects, so a delay of 1 is admissible and a delay of `1 + 1/1000` is not; `urgent CallsExist` makes the state urgent, so no positive delay is admissible, and with `c2.waiting` false instead it does not hold and a delay of 5 is admissible. `urgent Known` is evaluated once for each of `c1` and `c2` with `self` bound to it and holds of both. At a discrete state whose `calls` holds no object, `urgent Idle when { count(c in Config::calls where c.waiting) = 0 }` holds once at the state and makes it urgent, and `AnyInflight` and `time invariant AllInflight when { forall(c in Config::calls : c.inflight) } { self.x <= 1 ms }` bound no clock, so with either alone the state is quiescent. Each predicate gives the same truth as its `allInstances<Config::Call>(Config::calls)` spelling at the same state. | Test (TC-1334) |
 | FR-230-AC-60 | The package emitted for a unit holding AC-58's `HasCalls`, `CallsExist` and `Known` and the precondition `pre UsesCalls using v on Config::Call::reply { forall(c in Config::calls : true) }` holds exactly one `relation`/`population` reference node, keyed by `calls`' declaration key, which the `time_invariant` predicate of `HasCalls`, the `when` `urgency` predicates of `CallsExist` and `Known` (`Known` through its `lookup` application) and the precondition all reference; `CallsExist`'s predicate writes no `self` `parameter` node and `Known`'s writes one. I2 admits the package and reads back the same `TimedModel`, each predicate with its population operand. | Test (TC-1334) |
 | FR-230-AC-61 | A `time invariant when` or an `urgent when` in a timed model whose populations cover no object type refuses `missing_declaration`/`missing-name` at the declaration, and one in a timed model whose populations cover `Call` by two populations (`calls` and `archive`) refuses `ambiguous_declaration`/`ambiguous-name` at the declaration. A timed model whose populations cover two object types (`calls` of `Call` and `servers` of `Server`) has two candidate model nodes, so it refuses earlier, `ambiguous_declaration`/`ambiguous-name` at `Config` in `time Config dense unit ms` (FR-230-AC-38), and the declaration is never checked. Each case reports exactly that one refusal and no `TimedModel`, whether or not the predicate names a population. | Test (TC-1334) |
+| FR-230-AC-62 | Over FR-230-AC-19's `m` and a snapshot whose `m` holds the keys `"b"` and `"a"`, the live instances of `Call.m.[key].x` are those of `"a"` and then `"b"`, each with initial clock 0 and guarded by `m` holding its key. The emitted `clock_place` of `m.x` is one node whose slot step's selector references the `Text` key type node and not the `Integer` type node. With a precondition establishing that `m` holds `"a"` and a frame naming `m`, `self.m["a"].x = 0 ms` resets the `"a"` instance only, and the `"b"` instance keeps its clock; an operation whose frame does not name `m` resets neither. `ref(self.m["a"].x)` refuses `ill_typed`/`type-mismatch` at the `ref`. With `Call` also holding a clock `x` and a field `r: Reference<Clock>`, `deref(self.r) >= 1 ms` checks to the convex parts over the instances of `Call.x` only. A snapshot `Reference<Clock>` whose identity names the `clock_place` of `m.x` with `<slots>` `0` refuses `invalid_runtime_input`/`invalid-value`. | Test |
 
 ## Dependencies
 
