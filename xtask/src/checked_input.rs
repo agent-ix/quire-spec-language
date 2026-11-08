@@ -88,14 +88,18 @@ const CONTRACT_MODEL: &str = "quire_contract_model";
 /// authentication), `SourceIdentity` (FR-514's `qsl_inventory`).
 /// `NativeJoinBudget` is the caller-owned native allowance every stage entry
 /// that joins identities takes; it holds a bound and a charge, no node or
-/// term.
-const ADDRESSING_TYPES: [&str; 6] = [
+/// term. `CheckedPackageEvidence` and `CheckedPackageReadLimits` are the
+/// caller-supplied evidence and ceilings the I2 reader takes (FR-336's
+/// `ReplayPackage::admit`); neither holds a checked node or term.
+const ADDRESSING_TYPES: [&str; 8] = [
     "CheckedNodeId",
     "CheckedOccurrence",
     "TemporalBinding",
     "ClockConfiguration",
     "SourceIdentity",
     "NativeJoinBudget",
+    "CheckedPackageEvidence",
+    "CheckedPackageReadLimits",
 ];
 
 /// The stage-entry crates: layer 5 `qsl-eval`, layer R `qsl-route` and the

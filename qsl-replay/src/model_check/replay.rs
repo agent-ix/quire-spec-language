@@ -1049,7 +1049,7 @@ impl ProtocolReplay<'_> {
 }
 
 /// The recompiled package and its library name.
-type ReplayPackage<'p> = (&'p CheckedPackage, LibraryName);
+type PackageWithLibrary<'p> = (&'p CheckedPackage, LibraryName);
 
 /// FR-128's recompile and subject re-admission, then
 /// `replay` over the recompiled package, the subject's simulation request
@@ -1059,7 +1059,7 @@ fn replay_on(
     temporal_selections: &[qsl_package::TemporalClockSelection],
     replay_limits: ReplayLimits,
     replay: impl for<'p> FnOnce(
-        ReplayPackage<'p>,
+        PackageWithLibrary<'p>,
         &dyn Fn(&ModelTraceSubject) -> ModelSimulationRequest<'p>,
         ScalarLimits,
     ) -> Result<
