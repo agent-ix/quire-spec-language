@@ -966,7 +966,6 @@ fn zero_denominators_and_out_of_range_literals_refuse_with_distinct_causes() {
     }
 }
 
-/// QSpec FR-039-AC-5: normalizing a rational literal is charged against
 /// `s3.rational_bits` by the larger written bit length. With the limit at 64
 /// bits, a 65-bit numerator alone (`2^64/1`), a 65-bit denominator alone and
 /// both refuse as a `RationalBits` stage limit (resource incompleteness),
