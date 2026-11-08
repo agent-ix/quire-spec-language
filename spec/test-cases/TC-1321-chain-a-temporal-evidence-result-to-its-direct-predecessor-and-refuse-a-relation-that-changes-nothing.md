@@ -47,7 +47,7 @@ Verify FR-526-AC-1 to FR-526-AC-30. Results `r1`, `r2`, `r3` are evaluated from 
 | 29 | 29 | row 1's request with a `valuations` entry for an atom index the formula does not have (such as 99) at position 1; the same at position 0; the same in an `instance_valuations` map; row 1's request unchanged | `Err(CallFailure::Admission)`, cause `valuation-atom-unknown`, `invalid_runtime_input`/`invalid-value` at member `valuations` with `atom` and `position` `1`; `position` `0`; member `instance_valuations`; each an empty charge log; the unchanged request evaluates |
 | 30 | 30 | a real emitted/read checked-package original and changed-input correction; repeated carrier borrows; mutation of a cloned snapshot; compile-fail construction, mutation and snapshot substitution | original truth, support, settlement, subject and ledger remain unchanged; correction changes actual outputs and latest ledger, names original identity and advances lineage; borrows make no meter charges; all three compile-fail examples on `EvaluatedEvidence` fail |
 
-Tag the test `#[trace("FR-526-AC-1", ..., "FR-526-AC-29", "TC-1321")]`; rows 6 to 11 and 25 also carry FR-052-AC-12 and FR-516-AC-13; AC-13 is Inspection and carries no tag.
+Tag the test `#[trace("FR-526-AC-1", ..., "FR-526-AC-30", "TC-1321")]`; rows 6 to 11 and 25 also carry FR-052-AC-12 and FR-516-AC-13; AC-13 is Inspection and carries no tag.
 
 ## Expected Results
 
