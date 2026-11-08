@@ -322,7 +322,12 @@ impl<'p> BarePackage<'p> {
                     form: refusal.form,
                     work: refusal.work,
                     denied: refusal.denied,
-                    configured_bound: None,
+                    configured_bound: refusal.denied.map(|charge| match charge.kind {
+                        quire_contract_model::NativeJoinChargeKind::Work => budget.work_limit(),
+                        quire_contract_model::NativeJoinChargeKind::Storage => {
+                            budget.storage_limit()
+                        }
+                    }),
                 };
                 if qsl_semantics::model::intake::is_native_budget_denial(&refusal) {
                     return Err(crate::NativeJoinFailure::from(refusal).with_budget(budget));

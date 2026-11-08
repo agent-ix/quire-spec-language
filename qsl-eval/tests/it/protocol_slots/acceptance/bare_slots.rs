@@ -1969,3 +1969,153 @@ fn an_observation_belongs_to_the_bare_package_value_that_admitted_it() {
     );
     assert_pristine(&bare_meter);
 }
+
+/// FR-533-AC-5 (e): a snapshot whose `OtherLinks` instance has a `Node`
+/// object as its source end refuses `wrong-value-kind` on both routes with
+/// equal `relationship`, `instance` and `end` fields and path. Check 6.8
+/// refuses it before the extent traversal that names types, so the record
+/// carries no `type` or `declared` field to differ ("Names of object types").
+#[trace("FR-533-AC-5", "TC-1333")]
+#[test]
+fn a_relationship_end_of_the_wrong_object_type_refuses_as_on_the_source_route() {
+    let (package, _) = fixture_ep();
+    let routes = EpRoutes::new(&package, serde_json::to_vec(&document_ep()).unwrap());
+    let bare = routes.bare();
+    let model = package.graph().model_selections()[0].clone();
+    let (packages, selected, mut snapshots) =
+        ep_snapshot(Some((true, &["ghost", "option-1"])), true, None, None, &[]);
+    let mut snapshot: serde_json::Value = serde_json::from_slice(&snapshots[&selected]).unwrap();
+    snapshot["relationships"][0]["instances"] = serde_json::json!([{
+        "source": {"population": model::id("nodes"), "key": "n5"},
+        "target": {"population": model::id("otherNodes"), "key": "nested-1"},
+    }]);
+    snapshots.insert(selected.clone(), serde_json::to_vec(&snapshot).unwrap());
+    let limits = qsl_semantics::model::accounting::ModelNormalizationLimits::default();
+    let ObservationAdmission::Refused(source) =
+        package.evaluation_view().admit_protocol_observation(
+            &model,
+            &packages,
+            limits,
+            &snapshots,
+            &selected,
+            ObservationLimits::default(),
+        )
+    else {
+        panic!("the source route refuses the end")
+    };
+    let ObservationAdmission::Refused(bytes) = bare.admit_protocol_observation(
+        &model,
+        &packages,
+        limits,
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    ) else {
+        panic!("the bare route refuses the end")
+    };
+    assert_eq!(
+        (bytes.catalog.code(), bytes.catalog.cause()),
+        ("invalid_runtime_input", "wrong-value-kind")
+    );
+    assert_eq!(bytes, source);
+    for field in ["relationship", "instance", "end"] {
+        assert!(bytes.fields.contains_key(field), "{field}");
+    }
+    assert!(!bytes.fields.contains_key("type") && !bytes.fields.contains_key("declared"));
+    assert!(bytes.path.is_empty());
+}
+
+/// FR-533-AC-22 (variant): over a copy of fixture E-P's model that adds one
+/// variant type no slot reads, `with_supply` succeeds, `Refund.trigger.guard`
+/// evaluates to the source route's value and charge log, and the bare
+/// admission refuses `missing-type-representation` where the source route
+/// admits the same snapshot.
+#[trace("FR-533-AC-22", "TC-1333")]
+#[test]
+fn an_unread_variant_type_refuses_admission_but_not_the_slots_that_ignore_it() {
+    use qsl_semantics::model::intake::meaning;
+    let mut document = document_ep();
+    document["constructs"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "kind": {"module": model::BUSINESS, "name": "tier"},
+            "moduleVersion": "1.0.0",
+            "construct": {
+                "identity": "none", "shape": "enumeration",
+                "members": {"variants": "required"}, "meaning": meaning::VARIANT_TYPE,
+            },
+        }));
+    let case = |name: &str, line: u64| {
+        serde_json::json!({
+            "identity": model::id(&format!("variant/Odd-{name}")),
+            "name": name,
+            "origin": {"source": {
+                "sourceIdentity": model::id("spec"), "path": "spec.qspec",
+                "startLine": line, "startColumn": 3,
+            }},
+        })
+    };
+    document["types"]
+        .as_array_mut()
+        .unwrap()
+        .push(model::declaration(
+            "Odd",
+            "tier",
+            serde_json::json!({"variants": [case("A", 10), case("B", 11)]}),
+        ));
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let (package, _) = fixture_from_document(SOURCE, &bytes);
+    let routes = EpRoutes::new(&package, bytes.clone());
+    let bare = routes.bare();
+    let wanted = slot(&package, "Refunds", "Refund", "trigger.guard", None);
+    let on_bytes = bytes_slot(routes.read.admitted(), "Refunds", "Refund", &wanted);
+    let values = vec![("trigger", flag(&package, false)), ("target", int(5))];
+    let given = supply(&package, "Refunds", values, None);
+    let mut source_meter = Meter::new(UNLIMITED);
+    let source = package.evaluate_protocol_slot(&wanted, &given, &mut source_meter);
+    let mut bare_meter = Meter::new(UNLIMITED);
+    let bytes_result = bare.evaluate_protocol_slot(&on_bytes, &given, &mut bare_meter);
+    assert!(matches!(source, Ok(ProtocolSlotEvaluation::Evaluated(..))));
+    assert_eq!(without_location(&source), without_location(&bytes_result));
+    charges_and_usage_match("variant trigger guard", &source_meter, &bare_meter);
+
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
+    let (_, selected, snapshots) =
+        ep_snapshot(Some((true, &["ghost", "option-1"])), true, None, None, &[]);
+    let model_ref = package.graph().model_selections()[0].clone();
+    let limits = qsl_semantics::model::accounting::ModelNormalizationLimits::default();
+    assert!(matches!(
+        package.evaluation_view().admit_protocol_observation(
+            &model_ref,
+            &packages,
+            limits,
+            &snapshots,
+            &selected,
+            ObservationLimits::default(),
+        ),
+        ObservationAdmission::Admitted(_)
+    ));
+    let ObservationAdmission::Refused(record) = bare.admit_protocol_observation(
+        &model_ref,
+        &packages,
+        limits,
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    ) else {
+        panic!("the bare route refuses, not faults")
+    };
+    assert_eq!(
+        (record.catalog.code(), record.catalog.cause()),
+        ("unknown_required_feature", "unsupported-feature")
+    );
+    assert_eq!(
+        record.fields.get("package").map(String::as_str),
+        Some(routes.read.admitted().name())
+    );
+    assert_eq!(
+        record.fields.get("reason").map(String::as_str),
+        Some("missing-type-representation")
+    );
+}

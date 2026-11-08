@@ -52,6 +52,18 @@ impl BareWorld {
     }
 }
 
+/// Whether a value of `value_type` can hold an object reference: a
+/// reference, or an option, collection or map of one.
+fn holds_reference(value_type: &ValueType) -> bool {
+    match value_type {
+        ValueType::Reference(_) => true,
+        ValueType::Option(inner) => holds_reference(inner),
+        ValueType::Collection(collection) => holds_reference(collection.element()),
+        ValueType::Map(map) => holds_reference(map.values()),
+        _ => false,
+    }
+}
+
 fn fault(invariant: &'static str) -> BareSelectionFailure {
     BareSelectionFailure::from(crate::protocol_selection::SlotSelectionFailure::Fault(
         InternalFault::new("FR-533", invariant),
@@ -223,11 +235,27 @@ impl BarePackage<'_> {
                 ),
             ));
         }
-        let object_nodes = identities.declaration_rows().filter_map(|row| {
-            matches!(row.exact_identity, SelectedExactIdentity::Object(_))
-                .then_some(&row.structural_node)
-        });
-        let objects = self.object_declarations().unwrap_or(&[]).to_vec();
+        // An object whose declaration was refused is not represented, so a
+        // record that names it stays out of the closed environment.
+        let objects = self.object_declarations();
+        let object_nodes = identities
+            .declaration_rows()
+            .filter(|row| {
+                objects.is_ok() && matches!(row.exact_identity, SelectedExactIdentity::Object(_))
+            })
+            .map(|row| &row.structural_node);
+        if objects.is_err() {
+            // No object is declared, so a record that holds a reference is
+            // not representable; it refuses where a slot reads it.
+            composites.retain(|(_, declaration)| match declaration.shape() {
+                CompositeShape::Record(fields) => !fields
+                    .iter()
+                    .any(|field| holds_reference(field.value_type())),
+                CompositeShape::Tuple(positions) => !positions.iter().any(holds_reference),
+                CompositeShape::Union(_) => true,
+            });
+        }
+        let objects = objects.unwrap_or(&[]).to_vec();
         let types =
             TypeEnvironment::new(closed_composites(self, composites, object_nodes), objects)
                 .map_err(|_| fault("bare-composites-are-a-closed-environment"))?

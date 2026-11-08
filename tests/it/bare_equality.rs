@@ -1534,7 +1534,8 @@ fn equality_slots_reuse_the_decisions_retained_by_exact_budget_admission() {
         .with_supply(supply, &mut measure)
         .expect("measure complete entry");
     let need = measure.consumed();
-    let mut exact = NativeJoinBudget::new(need.work, need.storage);
+    let room = super::bare_package::catalog_room(&package);
+    let mut exact = NativeJoinBudget::new(need.work + room.work, need.storage + room.storage);
     let bare = BarePackage::new(&package)
         .with_supply(supply, &mut exact)
         .expect("exact budget admits");
