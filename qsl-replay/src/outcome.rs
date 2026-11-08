@@ -1307,7 +1307,7 @@ impl From<&Locus> for OutcomeLocus {
 /// One diagnostic: its typed cause, catalog code, locus and message.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct OutcomeDiagnostic {
-    cause: Option<&'static str>,
+    cause: Option<Box<str>>,
     code: String,
     locus: Option<OutcomeLocus>,
     message: String,
@@ -1317,13 +1317,13 @@ impl OutcomeDiagnostic {
     /// A diagnostic with the catalog `code` and its typed `cause` (the
     /// catalog's cause tag, where the code has one), raised at `locus`.
     pub fn new(
-        cause: Option<&'static str>,
+        cause: Option<&str>,
         code: impl Into<String>,
         locus: Option<OutcomeLocus>,
         message: impl Into<String>,
     ) -> Self {
         Self {
-            cause,
+            cause: cause.map(Into::into),
             code: code.into(),
             locus,
             message: message.into(),
@@ -1365,8 +1365,8 @@ impl OutcomeDiagnostic {
     }
 
     /// The typed cause tag.
-    pub fn cause(&self) -> Option<&'static str> {
-        self.cause
+    pub fn cause(&self) -> Option<&str> {
+        self.cause.as_deref()
     }
 
     /// The diagnostic's typed position, when present.
@@ -1724,7 +1724,19 @@ impl OutcomeDocument {
             .with_diagnostics(vec![OutcomeDiagnostic::new(
                 refusal.cause(),
                 refusal.code().as_str(),
-                None,
+                match refusal {
+                    ReplayRefusal::Package(_)
+                    | ReplayRefusal::RefinementInternals { .. }
+                    | ReplayRefusal::PackageSources(_)
+                    | ReplayRefusal::DependencySources { .. }
+                    | ReplayRefusal::DependencySelections(_)
+                    | ReplayRefusal::Request(crate::ReplayRequestRefusal::PackageMember {
+                        ..
+                    }) => refusal.pointer().map(|pointer| OutcomeLocus::Artifact {
+                        pointer: pointer.into_owned(),
+                    }),
+                    _ => None,
+                },
                 refusal.to_string(),
             )]),
         }
@@ -1876,14 +1888,16 @@ impl OutcomeDocument {
 /// for a fault, whose stage is untyped.
 fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
     match refusal {
-        ReplayRefusal::RefinementInternals { source, .. } => replay_stage(source),
         ReplayRefusal::Recompile(refusal) => Some(refusal.stage().into()),
-        ReplayRefusal::RecompileWithProtocolResults { refusal, .. } => Some(refusal.stage().into()),
+        ReplayRefusal::RecompileWithProtocolResults { refusal, .. }
+        | ReplayRefusal::RefinementInternals { refusal, .. } => Some(refusal.stage().into()),
         ReplayRefusal::Fault(_)
         | ReplayRefusal::InvalidPackageName(_)
         | ReplayRefusal::ObservedTemporalRefusal(qsl_eval::temporal::TemporalRefusal::Fault(_))
         | ReplayRefusal::Admission(AdmissionFailure::Fault(_)) => None,
         ReplayRefusal::Request(_)
+        | ReplayRefusal::Package(_)
+        | ReplayRefusal::PackageEvidence(_)
         | ReplayRefusal::DomainPackages(_)
         | ReplayRefusal::LimitAboveReader(_)
         | ReplayRefusal::SourceCount(_)
@@ -2812,7 +2826,7 @@ mod tests {
                                 None,
                                 0,
                             ),
-                            package_name: "fixture".to_owned(),
+                            package: crate::request::raw_package_descriptor("fixture", &[]),
                             function: Some(
                                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
                             ),

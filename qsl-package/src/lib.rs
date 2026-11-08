@@ -43,6 +43,8 @@ mod guarantee;
 #[cfg(feature = "std")]
 mod introduced_binders;
 #[cfg(feature = "std")]
+mod native_row;
+#[cfg(feature = "std")]
 pub mod number;
 #[cfg(feature = "std")]
 mod protocol_activation;
@@ -74,10 +76,11 @@ pub use checked::{CheckedPackage, ResolvedDependency};
 pub use checked::{EmitLimits, EmittedPackage, Import, LinkRefusal};
 #[cfg(feature = "std")]
 pub use checked_v2::{
-    clause_roots, hyper_roots, occurrence_role, read_evaluation_emission, read_evaluation_package,
-    read_hybrids, read_import_view, read_terminal, read_terminals, resolve_clause_root,
-    resolve_hyper_root, resolve_schedulability_root, resolve_state_graph_root, resolve_terminals,
-    schedulability_roots, state_graph_roots, supply_closure, AdmittedPackageRead, AdmittedPackages,
+    checked_package_refusal_code, clause_roots, hyper_roots, occurrence_role,
+    read_evaluation_emission, read_evaluation_package, read_hybrids, read_import_view,
+    read_terminal, read_terminals, resolve_clause_root, resolve_hyper_root,
+    resolve_schedulability_root, resolve_state_graph_root, resolve_terminals, schedulability_roots,
+    state_graph_roots, supply_closure, AdmittedPackageRead, AdmittedPackages,
     CheckedClockConstraint, CheckedClockGuard, CheckedClockPlace, CheckedClockReset,
     CheckedConstraintTarget, CheckedGuardPart, CheckedResetTarget, CheckedTimeInvariant,
     CheckedTimeSource, CheckedTimeSourceKind, CheckedTimedModel, CheckedUrgency, ClauseRoot,
@@ -114,6 +117,8 @@ pub use evaluation_view::{
     TermHandle, ViewFailure,
 };
 pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
+#[cfg(feature = "std")]
+pub use native_row::{NativeRowError, NativeRowErrorCode};
 #[cfg(feature = "std")]
 pub use protocol_occurrence::{
     protocol_occurrence_schemas_from_read, CompensationEntry, ControlEntry, ControlOperator,

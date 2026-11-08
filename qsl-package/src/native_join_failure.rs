@@ -14,6 +14,9 @@ pub enum NativeJoinFailure {
     /// A resource denial with its owner error and original configured ceiling.
     #[error(transparent)]
     Limit(Box<crate::NativeJoinLimitError>),
+    /// QSL producer row materialization refused before an allocation.
+    #[error(transparent)]
+    Rows(#[from] crate::NativeRowError),
     /// The read of the package's unit definitions (FR-533) ran out of the
     /// native allowance; `setting` names the exhausted allowance.
     #[error("the unit definition read exhausted the native join budget")]
@@ -64,7 +67,10 @@ impl NativeJoinFailure {
         match self {
             Self::Limit(error) => Some(&error.limit),
             Self::PopulationCatalog { limit, .. } => Some(limit),
-            Self::Projection(_) | Self::Equality(_) | Self::UnitDefinitions { .. } => None,
+            Self::Projection(_)
+            | Self::Equality(_)
+            | Self::Rows(_)
+            | Self::UnitDefinitions { .. } => None,
         }
     }
 
@@ -76,6 +82,14 @@ impl NativeJoinFailure {
             }
             Self::Limit(error) => error.native.setting(),
             Self::Projection(error) => qsl_semantics::model::intake::native_budget_setting(error),
+            Self::Rows(error) => error.denied().map(|charge| match charge.kind {
+                quire_contract_model::NativeJoinChargeKind::Work => {
+                    qsl_foundation::Setting::I2WorkUnits
+                }
+                quire_contract_model::NativeJoinChargeKind::Storage => {
+                    qsl_foundation::Setting::I2NativeJoinStorage
+                }
+            }),
             Self::Equality(error) => match error.code {
                 quire_contract_model::AdmittedEqualityReadErrorCode::WorkLimit => {
                     Some(qsl_foundation::Setting::I2WorkUnits)

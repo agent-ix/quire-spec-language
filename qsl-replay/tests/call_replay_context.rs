@@ -283,7 +283,7 @@ fn member_request(
             assign(parameter.clone(), x),
         )
         .expect("the oracle builds it too");
-    assert_eq!(ours.package_name, theirs.package_name);
+    assert_eq!(ours.package, theirs.package);
     assert_eq!(ours.obligation_identity, theirs.obligation_identity);
     assert_eq!(ours.replay_target, theirs.replay_target);
     assert_eq!(ours.dependencies, theirs.dependencies);
@@ -300,7 +300,10 @@ fn member_request(
     assert_eq!(ours.state_environment, theirs.state_environment);
     assert_eq!(ours.supplied_limits, theirs.supplied_limits);
     assert_eq!(ours.object_environment, theirs.object_environment);
-    assert_eq!(ours.package_name, result.package_name().as_str());
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(ours.package.bytes()).unwrap()["name"],
+        result.package_name().as_str()
+    );
     assert_eq!(
         ours.replay_target
             .members
@@ -374,7 +377,7 @@ fn an_undefined_calls_member_refutes_and_an_incomplete_calls_request_is_unchange
     let completed = run_q(&source);
     let expected = member_request(&source, &completed, "q", 9);
     let built = member_request(&source, &incomplete, "q", 9);
-    assert_eq!(built.package_name, expected.package_name);
+    assert_eq!(built.package, expected.package);
     assert_eq!(built.obligation_identity, expected.obligation_identity);
     assert_eq!(built.replay_target, expected.replay_target);
     assert_eq!(built.byte_provision, expected.byte_provision);

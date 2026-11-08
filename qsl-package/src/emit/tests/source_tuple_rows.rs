@@ -289,7 +289,11 @@ const ENUMS: &str = "enum Status { READY, DONE }\n\
 fn a_source_enum_carries_its_checked_shape_and_ir_joins_it() {
     let (package, emission, wire) = emitted(ENUMS);
     let admitted = admit_bytes(&emission, &wire);
-    let rows = emission.selected_source_enum_rows();
+    let rows = emission
+        .selected_source_enum_rows(&mut quire_contract_model::NativeJoinBudget::new(
+            10_000_000, 10_000_000,
+        ))
+        .expect("budgeted source enum rows");
     assert_eq!(rows.len(), 2);
     for (name, ordered, cases) in [
         ("Status", false, ["DONE", "READY"].as_slice()),
@@ -344,7 +348,10 @@ fn ir_refuses_an_enum_row_with_a_reordered_or_missing_variant_or_flipped_flag() 
     let (_, emission, wire) = emitted(ENUMS);
     let admitted = admit_bytes(&emission, &wire);
     let level = emission
-        .selected_source_enum_rows()
+        .selected_source_enum_rows(&mut quire_contract_model::NativeJoinBudget::new(
+            10_000_000, 10_000_000,
+        ))
+        .expect("budgeted source enum rows")
         .into_iter()
         .find(|row| row.members.len() == 3)
         .expect("Level");
@@ -418,7 +425,11 @@ const NESTED: &str = "enum Color { RED, BLUE }\n\
 #[test]
 fn nested_enum_tuple_and_collection_elements_are_paired_with_their_final_nodes() {
     let (package, emission, wire) = emitted(NESTED);
-    let enum_row = &emission.selected_source_enum_rows()[0];
+    let enum_row = &emission
+        .selected_source_enum_rows(&mut quire_contract_model::NativeJoinBudget::new(
+            10_000_000, 10_000_000,
+        ))
+        .expect("budgeted source enum rows")[0];
     let color = enum_row.declaration.structural_node.clone();
     let inner = row_of(&package, &emission, "Inner");
     assert_eq!(inner.positions[0].type_node, color);

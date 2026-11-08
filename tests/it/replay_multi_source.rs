@@ -67,6 +67,77 @@ fn reference(identity: &str) -> (String, String) {
     (AUTHORITY.to_owned(), identity.to_owned())
 }
 
+fn with_sources(bytes: &[u8], sources: Vec<(String, String)>) -> qsl_replay::ReplayPackage {
+    let mut package: Value = serde_json::from_slice(bytes).unwrap();
+    package["lock"]["sources"] = Value::Array(
+        sources
+            .into_iter()
+            .map(|(authority, identity)| json!({"authority": authority, "identity": identity}))
+            .collect(),
+    );
+    let encoded = serde_json::to_vec(&package).unwrap();
+    let document = quire_canonical::read(&encoded, ReplayLimits::default().input_bytes).unwrap();
+    let bytes = quire_canonical::to_vec(
+        &document.root(),
+        quire_canonical::Limits::new(ReplayLimits::default().input_bytes),
+    )
+    .unwrap();
+    qsl_replay::ReplayPackage::read(&bytes, ReplayLimits::default().input_bytes).unwrap()
+}
+
+fn positive_multi_unit_package() -> Vec<u8> {
+    let identities = [
+        SourceIdentity::new(AUTHORITY, FIRST_ID),
+        SourceIdentity::new(AUTHORITY, SECOND_ID),
+    ];
+    let units = [FIRST.as_bytes(), SECOND.as_bytes()];
+    let parsed = identities
+        .iter()
+        .zip(units)
+        .map(|(source, bytes)| {
+            spine::parse(
+                &ParseRequest {
+                    source,
+                    path: source.label(qsl_foundation::SourceLabel::Identity),
+                    bytes,
+                },
+                SourceLimits::default(),
+                &Cancel::new(),
+            )
+            .unwrap()
+            .into_value()
+        })
+        .collect();
+    let dependencies = DependencyInput::default();
+    let admitted = spine::admit_parsed_unit_list(parsed, &dependencies).unwrap();
+    let packages = package_input(std::iter::empty::<&[u8]>()).unwrap();
+    let models = spine::select_units(
+        &admitted,
+        &packages,
+        ModelNormalizationLimits::default(),
+        SourceLimits::default(),
+        &Cancel::new(),
+    )
+    .unwrap()
+    .into_value();
+    let checked = spine::check_units(
+        &admitted,
+        "fixture".to_owned(),
+        &models,
+        &dependencies,
+        spine::SpineLimits::default(),
+        &Cancel::new(),
+    )
+    .unwrap()
+    .into_value();
+    spine::package(&checked[0], spine::PackageLimits::default(), &Cancel::new())
+        .unwrap()
+        .into_value()
+        .package()
+        .bytes()
+        .to_vec()
+}
+
 fn request(source_order: Vec<&str>, documents: Vec<Vec<u8>>) -> ReplayRequestWire {
     let first_identity = SourceIdentity::new(AUTHORITY, FIRST_ID);
     let selection = call_site(
@@ -82,10 +153,11 @@ fn request(source_order: Vec<&str>, documents: Vec<Vec<u8>>) -> ReplayRequestWir
     let site = selection.site;
     let target = RequestTargetWire::function(selected(), site.declaration.clone());
     ReplayRequestWire {
-        package_name: "fixture".to_owned(),
+        package: with_sources(
+            &positive_multi_unit_package(),
+            source_order.into_iter().map(reference).collect(),
+        ),
         profile_selections: Vec::new(),
-        sources: source_order.into_iter().map(reference).collect(),
-        refinement_internals: None,
         dependencies: Vec::new(),
         replay_target: target,
         source: ReplaySource::Input(Vec::new()),
@@ -362,10 +434,8 @@ fn d10_replay(reverse: bool) -> (qsl_replay::StateClauseReplayResult, Vec<u8>) {
         snapshot.clone(),
     ));
     let wire = ReplayRequestWire {
-        package_name: "d10-package".to_owned(),
+        package: with_sources(&package_bytes, references),
         profile_selections: Vec::new(),
-        sources: references,
-        refinement_internals: None,
         dependencies: Vec::new(),
         replay_target: RequestTargetWire::state_clause(target),
         source: ReplaySource::Input(Vec::new()),
@@ -449,10 +519,9 @@ fn multi_source_dependency_request(
         byte_provision.push(source);
     }
     let wire = ReplayRequestWire {
-        package_name: "fixture".to_owned(),
+        package: qsl_replay::ReplayPackage::read(&package, ReplayLimits::default().input_bytes)
+            .unwrap(),
         profile_selections: Vec::new(),
-        sources: vec![reference(FIRST_ID)],
-        refinement_internals: None,
         dependencies: vec![dependency],
         replay_target: target,
         source: ReplaySource::Input(Vec::new()),

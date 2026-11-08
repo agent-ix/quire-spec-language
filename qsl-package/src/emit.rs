@@ -678,6 +678,8 @@ pub struct Emission {
     /// acquisition.
     pub(crate) selected_exact_field_rows: Vec<quire_contract_model::SelectedExactFieldRow>,
     /// Exact QSL identity witnesses for emitted equality occurrences.
+    // Final-emission producer membership, computed before budgeted materialization.
+    identity_row_selection: identity_rows::IdentityRowSelection,
     pub(crate) equality_producer_identity_rows: Vec<EqualityProducerEmissionRow>,
     /// Per-fact equality witnesses joined to final structural node ids.
     pub(crate) equality_fact_witness_rows: Vec<EqualityFactWitnessRow>,
@@ -749,6 +751,15 @@ pub struct TemporalBindingRows {
 }
 
 impl TemporalBindingRows {
+    /// The retained checked clause keys, occurrence ordinals and emitted
+    /// declaration identities, borrowed in their original row order.
+    ///
+    /// Callers with an explicit work allowance can charge each comparison
+    /// before searching, without copying or reconstructing this table.
+    pub fn declaration_rows(&self) -> &[(NodeKey, u64, quire_contract_model::CheckedNodeId)] {
+        &self.declarations
+    }
+
     /// The row of `declaration`'s claim occurrence `occurrence`, `None` when
     /// the lock selects no clock configuration for it.
     pub fn get(
@@ -910,6 +921,7 @@ impl DebugWith for Emission {
             selected_source_collection_rows,
             selected_exact_declaration_rows,
             selected_exact_field_rows,
+            identity_row_selection: _,
             equality_producer_identity_rows,
             equality_fact_witness_rows,
             wire_nodes,
@@ -991,6 +1003,9 @@ pub struct EqualityFactWitnessRow {
     owner: Option<CheckedNodeOwner>,
     value_type: Option<quire_exact::ValueType>,
     fact: EqualityFactWitness,
+    // Derived eligibility in this final emission, not an admission claim. It
+    // avoids building a temporary identity index in the budgeted row adapter.
+    selected_for_emission: bool,
 }
 
 /// The exact producer fact represented by an equality witness row.
@@ -1264,28 +1279,6 @@ impl Emission {
         &self.selected_source_tuple_rows
     }
 
-    /// Complete source enum rows in the form IR's `with_source_enum_rows`
-    /// joins: each declaration with its cases in the shape's canonical
-    /// order, assembled from the declaration and member rows.
-    pub fn selected_source_enum_rows(&self) -> Vec<quire_contract_model::SelectedSourceEnumRow> {
-        self.selected_enum_declaration_rows
-            .iter()
-            .map(|declaration| {
-                let mut members: Vec<_> = self
-                    .selected_enum_member_rows
-                    .iter()
-                    .filter(|member| member.declaration_node == declaration.structural_node)
-                    .cloned()
-                    .collect();
-                members.sort_by_key(|member| declaration.shape.rank(&member.variant));
-                quire_contract_model::SelectedSourceEnumRow {
-                    declaration: declaration.clone(),
-                    members,
-                }
-            })
-            .collect()
-    }
-
     /// The model-owned enum shape rows (FR-092 "Model enum shape rows"), in
     /// ascending declaration-key order.
     pub fn selected_model_enum_shape_rows(&self) -> &[SelectedModelEnumShapeRow] {
@@ -1318,50 +1311,16 @@ impl Emission {
     /// # Errors
     ///
     /// The native typed stage-row refusal when declaration or field claims do
-    /// not join the admitted package.
+    /// not join the admitted package, or an inline
+    /// [`crate::IdentityFileRefusal::Rows`] denial before an unpaid producer copy.
+    /// The same caller budget pays the producer inputs, one native join and
+    /// the returned owned rows without restoring prior consumption.
     pub fn identity_rows(
         &self,
         package: &CheckedPackageV2,
         budget: &mut quire_contract_model::NativeJoinBudget,
     ) -> Result<crate::ReadIdentityRows, crate::IdentityFileRefusal> {
-        let joined = qsl_semantics::model::intake::selected_exact_identities_from_rows(
-            package,
-            &self.selected_exact_declaration_rows,
-            &self.selected_exact_field_rows,
-            budget,
-        )
-        .map_err(|error| crate::IdentityFileRefusal::Native(Box::new(error)))?;
-        let records = self
-            .selected_source_record_rows
-            .iter()
-            .map(|row| quire_contract_model::SelectedSourceRecordRow {
-                structural_node: row.structural_node.clone(),
-                source_authority: row.source_authority.clone(),
-                source_identity: row.source_identity.clone(),
-                qualified_declaration: row.qualified_declaration.clone(),
-                record_key: row.record_key.clone(),
-                members: row
-                    .members
-                    .iter()
-                    .map(
-                        |member| quire_contract_model::SelectedSourceRecordMemberRow {
-                            original_member_identity: member.original_member_identity.clone(),
-                            admitted_name: member.admitted_name.clone(),
-                            presence: member.presence,
-                            type_node: member.type_node.clone(),
-                            value_type: member.value_type.clone(),
-                        },
-                    )
-                    .collect(),
-            })
-            .collect();
-        Ok(crate::ReadIdentityRows::of_rows(
-            package,
-            joined.declaration_rows().cloned().collect(),
-            joined.field_rows().to_vec(),
-            records,
-            self.selected_source_union_rows.clone(),
-        ))
+        self.materialize_identity_rows(package, budget)
     }
 
     /// QSL-owned identity rows keyed by equality application and occurrence.
@@ -2972,6 +2931,7 @@ fn equality_fact_witness_rows(
                 owner,
                 value_type,
                 fact,
+                selected_for_emission: true,
             });
             Ok(())
         };
@@ -5462,10 +5422,10 @@ pub fn emit_timed_models(
     rekey_timed_model_nodes(ids, &mut nodes, &mut source_map)?;
     let inspection_source_map = inspection_source_map(ids, &source_map)?;
     write_index_segments(&mut nodes, &mut source_map, &mut [], &mut [])?;
-    let (slot_nodes, operand_rows) = write_operand_slots(&nodes)?;
+    let operand_rows = write_operand_slots(&mut nodes, limits)?;
     let semantic_graph = CheckedSemanticGraphV2 {
-        graph_version: base.resolved_graph().graph_version.clone(),
-        nodes: slot_nodes,
+        graph_version: base.graph().graph_version.clone(),
+        nodes,
         operand_rows,
     };
     let capability_report = base.capability_report().to_vec();
@@ -5522,12 +5482,14 @@ pub fn emit_timed_models(
         selected_source_collection_rows: Vec::new(),
         selected_exact_declaration_rows: Vec::new(),
         selected_exact_field_rows: Vec::new(),
+        identity_row_selection: identity_rows::IdentityRowSelection::default(),
         equality_producer_identity_rows: Vec::new(),
         equality_fact_witness_rows: Vec::new(),
-        wire_nodes: nodes,
+        wire_nodes: document_nodes(semantic_graph)?,
         temporal_binding_rows: TemporalBindingRows::default(),
         temporal_rows: TemporalRows::default(),
-    })
+    }
+    .with_identity_row_selection())
 }
 
 /// [`emit_checked`] under the caller's [`Cancel`] handle, polled once at
@@ -6506,10 +6468,13 @@ fn emit_package_inner(
     let selected_source_record_rows = source_record_rows(graph, &emitted_node_ids)?;
     let selected_source_tuple_rows = source_tuple_rows(graph, &emitted_node_ids)?;
     let selected_source_collection_rows = source_collection_rows(graph, &emitted_node_ids)?;
-    let (slot_nodes, operand_rows) = write_operand_slots(&nodes)?;
+    let operation_effects = graph
+        .operation_effects()
+        .filter(|rows| operation_effects_are_carried(rows, &nodes));
+    let operand_rows = write_operand_slots(&mut nodes, limits)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
-        nodes: slot_nodes,
+        nodes,
         operand_rows,
     };
     let capability_report = [CheckedCapability {
@@ -6520,9 +6485,6 @@ fn emit_package_inner(
         catalog: diagnostics_catalog(),
         entries: Vec::new(),
     };
-    let operation_effects = graph
-        .operation_effects()
-        .filter(|rows| operation_effects_are_carried(rows, &nodes));
     let package = EmittedPackage::new(graph.package_name(), |name| {
         encode_checked_package_v2(
             name,
@@ -6570,16 +6532,18 @@ fn emit_package_inner(
         selected_source_collection_rows,
         selected_exact_declaration_rows: graph.selected_exact_declaration_rows().to_vec(),
         selected_exact_field_rows: graph.selected_exact_field_rows().to_vec(),
+        identity_row_selection: identity_rows::IdentityRowSelection::default(),
         equality_producer_identity_rows,
         equality_fact_witness_rows,
-        wire_nodes: nodes,
+        wire_nodes: document_nodes(semantic_graph)?,
         temporal_binding_rows,
         temporal_rows: TemporalRows {
             clauses: temporal_clause_refs,
             profile_selections: lock.profile_selections,
             bindings: temporal_bindings,
         },
-    })
+    }
+    .with_identity_row_selection())
 }
 
 /// FR-092 "Source enum identity rows": one declaration row per emitted
@@ -7670,11 +7634,12 @@ fn temporal_binding_rows(
 /// The ids `node` holds that this emitter can reach through IR's public
 /// types: its own id, `semantic_type`, `owner_model`, `dependencies`, and
 /// every id of a body term with public members (reference targets, literal
-/// and result types, frame nodes, dependency nodes, and the terms of
+/// and result types, frame nodes, and the terms of
 /// aggregates, bindings, extension clauses and operation anchors). A member
 /// declaration or population an operation record names is a dependency
 /// (FR-093 rule 2). An id held anywhere else stays structural, and IR's
 /// encoder then refuses the package, so a gap fails loudly, never silently.
+/// Foreign dependency references retain their dependency graph's IDs.
 fn reachable_ids(node: &mut CheckedSemanticNodeV2) -> Vec<&mut CheckedNodeId> {
     let CheckedSemanticNodeV2 {
         node_id,
@@ -7702,7 +7667,6 @@ fn reachable_ids(node: &mut CheckedSemanticNodeV2) -> Vec<&mut CheckedNodeId> {
             }
             CheckedTerm::Aggregate { members } => pending.extend(members.iter_mut()),
             CheckedTerm::Binding { value, .. } => pending.push(value),
-            CheckedTerm::DependencyReference { node, .. } => ids.push(node),
             CheckedTerm::Frame {
                 creates, deletes, ..
             } => ids.extend(creates.iter_mut().chain(deletes.iter_mut())),
@@ -7712,6 +7676,88 @@ fn reachable_ids(node: &mut CheckedSemanticNodeV2) -> Vec<&mut CheckedNodeId> {
         }
     }
     ids
+}
+
+/// Write every node-held operand of `nodes` as an operand slot (FR-322): slot
+/// `k` of a node names the `k`th distinct graph index its canonical bytes
+/// hold, in byte order, and the returned row of that node lists those
+/// indices. On entry, every node-held operand uses a document index.
+///
+/// # Errors
+///
+/// Returns the canonical output-limit failure or an identity invariant refusal.
+/// Earlier nodes may already be rewritten on failure; discard that conversion.
+pub fn write_operand_slots(
+    nodes: &mut [CheckedSemanticNodeV2],
+    limits: EmitLimits,
+) -> Result<Vec<Vec<u64>>, EmitRefusal> {
+    use quire_contract_model::CheckedNodePathSegment as Segment;
+    let mut rows = Vec::with_capacity(nodes.len());
+    for node in nodes.iter_mut() {
+        let bytes = quire_canonical::to_vec(&*node, limits.canonical())?;
+        let mut row: Vec<u64> = Vec::new();
+        let mut slots = HashMap::new();
+        for index in operand_indices(&bytes, limits)? {
+            if let std::collections::hash_map::Entry::Vacant(entry) = slots.entry(index) {
+                entry
+                    .insert(u64::try_from(row.len()).map_err(|_| EmitRefusal::SourceMapInvariant)?);
+                row.push(index);
+            }
+        }
+        let mut changes = Vec::new();
+        for id in reachable_ids(node) {
+            let old = id.clone();
+            for segment in &mut id.path {
+                if let Segment::Index(index) = segment {
+                    let slot = slots.get(index).ok_or(EmitRefusal::SourceMapInvariant)?;
+                    *segment = Segment::Operand(*slot);
+                }
+            }
+            if old != *id {
+                changes.push((old, id.clone()));
+            }
+        }
+        for (old, new) in changes {
+            node.replace_node_id(&old, &new);
+        }
+        rows.push(row);
+    }
+    Ok(rows)
+}
+
+fn operand_indices(bytes: &[u8], limits: EmitLimits) -> Result<Vec<u64>, EmitRefusal> {
+    qsl_semantics::check::wire_id::canonical_operand_indices(bytes, limits.output_bytes)
+        .map_err(|_| EmitRefusal::SourceMapInvariant)
+}
+
+/// Retain document-held IDs for producer joins and subsequent rewrites.
+pub(crate) fn document_nodes(
+    mut graph: CheckedSemanticGraphV2,
+) -> Result<Vec<CheckedSemanticNodeV2>, EmitRefusal> {
+    use quire_contract_model::CheckedNodePathSegment as Segment;
+    for (node, row) in graph.nodes.iter_mut().zip(&graph.operand_rows) {
+        let mut changes = Vec::new();
+        for id in reachable_ids(node) {
+            let old = id.clone();
+            for segment in &mut id.path {
+                if let Segment::Operand(slot) = segment {
+                    let index = usize::try_from(*slot)
+                        .ok()
+                        .and_then(|slot| row.get(slot))
+                        .copied()
+                        .ok_or(EmitRefusal::SourceMapInvariant)?;
+                    *segment = Segment::Index(index);
+                }
+            }
+            if old != *id {
+                changes.push((old, id.clone()));
+            }
+        }
+        for (old, new) in changes {
+            node.replace_node_id(&old, &new);
+        }
+    }
+    Ok(graph.nodes)
 }
 
 /// Whether `id` holds a segment `holds` matches.
@@ -7828,77 +7874,6 @@ fn write_index_segments(
     Ok(graph_wire)
 }
 
-/// FR-322 "Operand index segments": the wire form of nodes whose ids hold
-/// index segments ([`write_index_segments`]). Every id inside a node is
-/// node-held, so each index segment becomes the operand slot of the node's
-/// operand row, numbered by first occurrence in the node's canonical (RFC 8785)
-/// order; the row lists the graph index each slot names. A node's bytes then
-/// depend only on its own members, not on the graph around it.
-///
-/// An `{package, node}` foreign key keeps its index segments (they name the
-/// dependency's graph), so no object holding a `package` and one other member
-/// is entered.
-pub fn write_operand_slots(
-    nodes: &[CheckedSemanticNodeV2],
-) -> Result<(Vec<CheckedSemanticNodeV2>, Vec<Vec<u64>>), EmitRefusal> {
-    /// The ids `slotted` rewrote, as `(old, new)` pairs: both values have the
-    /// one shape, so equal positions hold the same id.
-    fn rewritten(
-        old: &serde_json::Value,
-        slotted: &serde_json::Value,
-        pairs: &mut Vec<(serde_json::Value, serde_json::Value)>,
-    ) {
-        use serde_json::Value;
-        match (old, slotted) {
-            (Value::Array(old), Value::Array(slotted)) => {
-                for (old, slotted) in old.iter().zip(slotted) {
-                    rewritten(old, slotted, pairs);
-                }
-            }
-            (Value::Object(old), Value::Object(slotted)) => {
-                if old.len() == 3 && old.contains_key("package") && old.contains_key("path") {
-                    if old != slotted
-                        && !pairs
-                            .iter()
-                            .any(|(seen, _)| seen == &Value::Object(old.clone()))
-                    {
-                        pairs.push((Value::Object(old.clone()), Value::Object(slotted.clone())));
-                    }
-                } else {
-                    for (name, old) in old {
-                        if let Some(slotted) = slotted.get(name) {
-                            rewritten(old, slotted, pairs);
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    let mut written = Vec::with_capacity(nodes.len());
-    let mut rows = Vec::with_capacity(nodes.len());
-    for node in nodes {
-        let value = serde_json::to_value(node).map_err(|_| EmitRefusal::SourceMapInvariant)?;
-        let mut slotted = value.clone();
-        // The one walk: the reader's test-support writer numbers slots with it.
-        let row = qsl_semantics::check::wire_id::number_index_segments(&mut slotted);
-        let mut pairs = Vec::new();
-        rewritten(&value, &slotted, &mut pairs);
-        let mut node = node.clone();
-        for (old, new) in &pairs {
-            // `CheckedNodeId` reads raw JSON text, never a `Value`.
-            let old: CheckedNodeId = serde_json::from_str(&old.to_string())
-                .map_err(|_| EmitRefusal::SourceMapInvariant)?;
-            let new: CheckedNodeId = serde_json::from_str(&new.to_string())
-                .map_err(|_| EmitRefusal::SourceMapInvariant)?;
-            node.replace_node_id(&old, &new);
-        }
-        written.push(node);
-        rows.push(row);
-    }
-    Ok((written, rows))
-}
-
 /// The inverse of [`write_index_segments`] over an admitted package's nodes:
 /// every wire id each node reaches is replaced, in that node, by the
 /// structural id of the node it names, so the emitter's identity work
@@ -7988,6 +7963,8 @@ fn own_evidence(lock: &CheckedPackageLockV2) -> CheckedPackageEvidence {
     evidence
 }
 
+mod selected_rows;
+
 #[cfg(test)]
 pub(crate) mod tests;
 
@@ -7996,6 +7973,7 @@ pub(crate) mod equality_reader;
 /// IR's `requires-bound` at the pinned IR revision.
 #[cfg(test)]
 mod extent_agreement;
+mod identity_rows;
 mod monitor_plan;
 pub(crate) mod protocol_locations;
 pub use monitor_plan::{declaration_less_function_id, emit_monitor_plan_over, MonitorPlanWire};

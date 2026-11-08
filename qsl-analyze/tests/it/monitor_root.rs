@@ -78,11 +78,16 @@ pub(crate) fn read_back(bytes: &[u8], evidence: &CheckedPackageEvidence) -> Box<
 }
 
 fn admitted(root: &PlanRoot) -> Box<CheckedPackageV2> {
-    read_back(root.emission.package().bytes(), root.emission.evidence())
+    read_back(
+        root.emission().package().bytes(),
+        root.emission().evidence(),
+    )
 }
 
 fn json(root: &PlanRoot) -> serde_json::Value {
-    serde_json::from_slice(root.emission.package().bytes()).unwrap()
+    // The resolved form: a node's ids name graph positions, not operand slots.
+    qsl_semantics::check::wire_id::resolved_package_value(root.emission().package().bytes())
+        .unwrap()
 }
 
 /// The first of each kind of the plan root's keys: the root and its four
@@ -129,7 +134,7 @@ fn the_authored_unit_is_taken_to_a_plan_root_the_strict_reader_admits() {
         .map(|buffer| buffer.capacity().to_owned())
         .collect();
     let expected: Vec<String> = root
-        .plan
+        .plan()
         .buffers()
         .iter()
         .map(|(_, capacity)| capacity.to_string())
@@ -195,10 +200,10 @@ fn the_returned_plan_is_the_one_the_root_carries() {
     let unit = authored(ROOT_SHAPES[0]);
     let root = root_of(&unit, "C", &target()).unwrap();
     let again = root_of(&unit, "C", &target()).unwrap();
-    assert_eq!(root.plan, again.plan);
-    assert_eq!(root.plan.id(), again.plan.id());
-    assert_eq!(root.plan.root_premises().counter, "counter");
-    assert_eq!(root.obligations.len(), 2);
+    assert_eq!(root.plan(), again.plan());
+    assert_eq!(root.plan().id(), again.plan().id());
+    assert_eq!(root.plan().root_premises().counter, "counter");
+    assert_eq!(root.obligations().len(), 2);
 }
 
 /// Emitting the same unit twice gives byte-identical packages, and the
@@ -210,8 +215,8 @@ fn emitting_twice_gives_identical_bytes_and_keys() {
     let first = root_of(&unit, "C", &target()).unwrap();
     let second = root_of(&unit, "C", &target()).unwrap();
     assert_eq!(
-        first.emission.package().bytes(),
-        second.emission.package().bytes()
+        first.emission().package().bytes(),
+        second.emission().package().bytes()
     );
     assert_eq!(keys(&admitted(&first)), keys(&admitted(&second)));
 }
@@ -491,24 +496,24 @@ fn the_root_key_covers_the_bodies_of_called_helpers() {
     let atom = root_of(&helper_unit(2, 2), "C", &target()).expect("atom helper body");
     let guard = root_of(&helper_unit(1, 3), "C", &target()).expect("guard helper body");
     assert_eq!(
-        one.plan.id(),
-        again.plan.id(),
+        one.plan().id(),
+        again.plan().id(),
         "an equal helper body gives an equal PlanId"
     );
     for (what, other) in [("atom", &atom), ("guard", &guard)] {
         assert_eq!(
-            other.plan.program().atoms(),
-            one.plan.program().atoms(),
+            other.plan().program().atoms(),
+            one.plan().program().atoms(),
             "the {what} case keeps every atom body"
         );
         assert_eq!(
-            other.plan.program().guard(),
-            one.plan.program().guard(),
+            other.plan().program().guard(),
+            one.plan().program().guard(),
             "the {what} case keeps the guard body"
         );
         assert_ne!(
-            other.plan.id(),
-            one.plan.id(),
+            other.plan().id(),
+            one.plan().id(),
             "a swapped {what} helper body changes the PlanId"
         );
     }
@@ -610,7 +615,7 @@ fn the_root_key_covers_the_bodies_of_called_helpers() {
 fn the_plan_root_retains_the_acquisitions_witness_rows() {
     let unit = authored(ROOT_SHAPES[0]);
     let root = root_of(&unit, "C", &target()).expect("the plan root");
-    let emission = &root.emission;
+    let emission = root.emission();
 
     let domain = Domain::config_version();
     let packages =
@@ -689,7 +694,7 @@ fn the_plan_root_retains_the_acquisitions_witness_rows() {
 }
 
 fn ir_source_record_rows(root: &PlanRoot) -> Vec<quire_contract_model::SelectedSourceRecordRow> {
-    root.emission
+    root.emission()
         .selected_source_record_rows()
         .iter()
         .map(|row| quire_contract_model::SelectedSourceRecordRow {
@@ -730,7 +735,7 @@ fn retained_source_record_rows_name_the_final_bindings_and_the_ir_join_accepts_t
     let package = admitted(&root);
     let rows = ir_source_record_rows(&root);
     let handoff = root
-        .emission
+        .emission()
         .identity_rows(&package, &mut native_budget)
         .expect("the final emission retains required handoff facts");
     let bytes = handoff
@@ -834,10 +839,10 @@ fn the_subject_occurrence_selects_the_emitted_clause_claim_after_the_writer_reke
     let mut selected = Vec::new();
     for clause in ["C", "D"] {
         let root = root_of(&unit, clause, &target()).expect(clause);
-        let subject = root.plan.subject();
+        let subject = root.plan().subject();
         let ordinal = subject.occurrence().origin().ordinal();
         let declaration = root
-            .emission
+            .emission()
             .temporal_binding_rows()
             .declaration(subject.clause_node(), ordinal)
             .expect("the subject selects an emitted declaration")
@@ -854,7 +859,7 @@ fn the_subject_occurrence_selects_the_emitted_clause_claim_after_the_writer_reke
         assert_eq!(row.name.as_ref(), subject.clause_name());
         assert_eq!(row.name.as_ref(), clause);
         assert!(
-            root.emission
+            root.emission()
                 .temporal_binding_rows()
                 .declaration(subject.clause_node(), ordinal + 1)
                 .is_none(),
@@ -885,7 +890,7 @@ fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them(
     let unit = unit_source(ROOT_SHAPES[0], extra, true, "on origin");
     let root = root_of(&unit, "C", &target()).expect("the plan root");
     let package = admitted(&root);
-    let rows = root.emission.selected_source_tuple_rows().to_vec();
+    let rows = root.emission().selected_source_tuple_rows().to_vec();
     let declared = |name: &str| {
         rows.iter()
             .any(|row| row.qualified_declaration.last().map(AsRef::as_ref) == Some(name))
@@ -901,7 +906,10 @@ fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them(
         assert_eq!(projected.source_tuple_view(), Some(row));
     }
     // The enum and collection rows follow the same rekey.
-    let enum_rows = root.emission.selected_source_enum_rows();
+    let enum_rows = root
+        .emission()
+        .selected_source_enum_rows(&mut native_budget)
+        .expect("budgeted enum rows");
     let color = enum_rows
         .iter()
         .find(|row| {
@@ -927,7 +935,7 @@ fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them(
         &quire_exact::ValueType::Enum(color.declaration.shape.clone())
     );
     let collection = root
-        .emission
+        .emission()
         .selected_source_collection_rows()
         .iter()
         .find(|row| row.element_node == color.declaration.structural_node)
@@ -960,4 +968,442 @@ fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them(
         error.code,
         ExactTypeProjectionErrorCode::MismatchedIdentityWitness
     );
+}
+
+/// The final emitter's original checked owner survives temporary producer
+/// inputs. Original checker keys remain distinct from final writer joins.
+#[trace("TC-1081", "FR-251-AC-47")]
+#[test]
+fn the_actual_combined_checked_unit_retains_its_source_and_time_facts() {
+    let root = {
+        let unit = authored(ROOT_SHAPES[0]);
+        root_of(&unit, "C", &target()).expect("the plan root")
+    };
+    let checked = root.checked_unit();
+    let unit = authored(ROOT_SHAPES[0]);
+    assert!(checked.source().text().starts_with(&unit));
+    assert!(checked.source().text().len() > unit.len());
+    for entry in [
+        "monitorInit",
+        "monitorOnEvent",
+        "monitorOnWatermark",
+        "monitorOnGap",
+    ] {
+        assert!(
+            checked.source().text()[unit.len()..].contains(entry),
+            "{entry}"
+        );
+    }
+    let graph = checked.package().graph();
+    let clause = graph
+        .temporal_clauses()
+        .iter()
+        .find(|node| node.clause().name() == "C")
+        .expect("the retained selected clause");
+    assert_eq!(&clause.identity(), root.plan().subject().clause_node());
+    assert_eq!(graph.time_sources().len(), 1);
+    let source = &graph.time_sources()[0];
+    assert_eq!(source.model, "M");
+    assert_eq!(source.unit, "ms");
+    assert_eq!(
+        source.model_node,
+        qsl_semantics::model::key::object_type_node_key(&quire_checked::key::DeclarationKey {
+            package: "example/config-version".to_owned(),
+            node: "ix://example/config-version/ConfigVersion".to_owned(),
+        })
+        .expect("the selected model object key")
+    );
+    assert_eq!(source.source, qsl_semantics::check::TimeSourceKind::Dense);
+    assert!(source.tick_operation_anchor.is_none());
+    assert!(source.tick_operation_key.is_none());
+    assert!(source
+        .nominal_nodes
+        .iter()
+        .any(|node| node.key == source.unit_node));
+    let package = admitted(&root);
+    let declaration = root
+        .emission()
+        .temporal_binding_rows()
+        .declaration(
+            root.plan().subject().clause_node(),
+            root.plan().subject().occurrence().origin().ordinal(),
+        )
+        .expect("the final clause selection");
+    assert_eq!(
+        package.monitor_plans().next().unwrap().clause(),
+        declaration
+    );
+}
+
+/// Model-step order encodes original checked facts, rather than one opaque ID.
+#[trace("TC-1081", "FR-251-AC-48")]
+#[test]
+fn model_step_order_is_a_complete_canonical_value_with_exact_encoding_limits() {
+    use qsl_analyze::monitor_root::ModelStepOrderRefusalCode;
+    use qsl_semantics::check::wire_id::structural_id;
+    let root = root_of(&authored(ROOT_SHAPES[0]), "C", &target()).unwrap();
+    let order = root
+        .model_step_order(quire_canonical::Limits::new(1 << 20))
+        .unwrap();
+    let source = &root.checked_unit().package().graph().time_sources()[0];
+    let expected = serde_json::json!({
+        "kind": "model-step",
+        "model": structural_id(&source.model_node),
+        "unit": structural_id(&source.unit_node),
+        "dimension": structural_id(&source.time_dimension),
+        "source": {"kind": "dense"},
+    });
+    let actual: serde_json::Value = serde_json::from_slice(order.bytes()).unwrap();
+    assert_eq!(actual, expected);
+    let size = u64::try_from(order.bytes().len()).unwrap();
+    assert_eq!(
+        root.model_step_order(quire_canonical::Limits::new(size))
+            .unwrap(),
+        order
+    );
+    let error = root
+        .model_step_order(quire_canonical::Limits::new(size - 1))
+        .unwrap_err();
+    assert_eq!(error.code, ModelStepOrderRefusalCode::Encoding);
+    let Some(quire_canonical::Error::Limit(limit)) = error.encoding else {
+        panic!("the original native canonical limit is retained");
+    };
+    assert_eq!(limit.kind, quire_canonical::LimitKind::CanonicalBytes);
+    assert_eq!(limit.bound, size - 1);
+    assert_eq!(limit.required, size);
+    let clone = order.clone();
+    drop(root);
+    assert_eq!(clone.bytes(), order.bytes());
+}
+
+#[trace("TC-1081", "FR-251-AC-48")]
+#[test]
+fn model_step_order_retains_digital_operation_and_period_and_distinguishes_sources() {
+    use qsl_semantics::check::wire_id::structural_id;
+    let dense = authored(ROOT_SHAPES[0]);
+    let units = [
+        dense.clone(),
+        dense.replace("time M dense unit ms;", "time M dense unit s;"),
+        dense.replace(
+            "time M dense unit ms;",
+            "time M tick M::ConfigVersion::attemptUpdate period 1 ms unit ms;",
+        ),
+        dense.replace(
+            "time M dense unit ms;",
+            "time M tick M::ConfigVersion::attemptUpdate period 2 ms unit ms;",
+        ),
+    ];
+    let mut values = Vec::new();
+    for (index, unit) in units.iter().enumerate() {
+        let root = root_of(unit, "C", &target()).unwrap();
+        let order = root
+            .model_step_order(quire_canonical::Limits::new(1 << 20))
+            .unwrap();
+        let source = &root.checked_unit().package().graph().time_sources()[0];
+        let value: serde_json::Value = serde_json::from_slice(order.bytes()).unwrap();
+        assert_eq!(
+            value["model"],
+            serde_json::to_value(structural_id(&source.model_node)).unwrap()
+        );
+        assert_eq!(
+            value["unit"],
+            serde_json::to_value(structural_id(&source.unit_node)).unwrap()
+        );
+        assert_eq!(
+            value["dimension"],
+            serde_json::to_value(structural_id(&source.time_dimension)).unwrap()
+        );
+        if index >= 2 {
+            let operation = source
+                .tick_operation_anchor
+                .as_ref()
+                .expect("checked digital operation");
+            assert_eq!(
+                value["source"],
+                serde_json::json!({
+                    "kind": "tick", "operation": structural_id(operation),
+                    "period": {"numerator": (index - 1).to_string(), "denominator": "1"},
+                })
+            );
+        } else {
+            assert_eq!(value["source"], serde_json::json!({"kind": "dense"}));
+        }
+        values.push(order);
+    }
+    for (index, value) in values.iter().enumerate() {
+        for other in &values[index + 1..] {
+            assert_ne!(
+                value, other,
+                "source kind, unit and period remain order-value components"
+            );
+        }
+    }
+}
+
+/// Renaming a checked source alias preserves the selected model-step value;
+/// source-content authentication remains the separate progress association.
+#[trace("TC-1081", "FR-251-AC-48")]
+#[test]
+fn source_aliases_are_not_model_step_order_authority() {
+    let unit = authored(ROOT_SHAPES[0]);
+    let renamed = unit
+        .replace("model M =", "model Renamed =")
+        .replace("time M ", "time Renamed ")
+        .replace("M::", "Renamed::");
+    let first = root_of(&unit, "C", &target()).unwrap();
+    let second = root_of(&renamed, "C", &target()).unwrap();
+    assert_ne!(
+        first.checked_unit().source().text(),
+        second.checked_unit().source().text()
+    );
+    assert_eq!(
+        first
+            .model_step_order(quire_canonical::Limits::new(1 << 20))
+            .unwrap(),
+        second
+            .model_step_order(quire_canonical::Limits::new(1 << 20))
+            .unwrap()
+    );
+}
+
+/// Converted model shapes enter the actual IR selected monitor closure with
+/// the same budget that paid for their QSL-owned materialization.
+#[trace("TC-1331", "FR-531-AC-30")]
+#[test]
+fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure() {
+    use quire_contract_model::{NativeJoinBudget, SelectedMonitorClosureRows};
+    use serde_json::json;
+
+    let domain = Domain::config_version();
+    let mut document: serde_json::Value = serde_json::from_slice(&domain.document).unwrap();
+    let tier = format!("ix://{}/Tier", domain.package);
+    document["constructs"].as_array_mut().unwrap().push(json!({
+        "kind": {"module": domain.package, "name": "tier"},
+        "moduleVersion": "1.0.0",
+        "construct": {"identity": "none", "shape": "enumeration",
+            "members": {"variants": "required"},
+            "meaning": qsl_semantics::model::intake::meaning::VARIANT_TYPE}
+    }));
+    let mut declaration = document["types"][0].clone();
+    declaration["identity"] = json!(tier);
+    declaration["displayName"] = json!("Tier");
+    declaration["kind"]["name"] = json!("tier");
+    declaration.as_object_mut().unwrap().remove("scalar");
+    declaration["constraints"] = json!([]);
+    declaration["variants"] = ["Gold", "Standard"]
+        .into_iter()
+        .map(|case| {
+            json!({
+                "identity": format!("ix://{}/variant/Tier-{case}", domain.package),
+                "name": case,
+                "origin": {"source": {"sourceIdentity": document["source"]["identity"],
+                    "path": "fixture.qspec", "startLine": 1, "startColumn": 1}}
+            })
+        })
+        .collect();
+    document["types"].as_array_mut().unwrap().push(declaration);
+    let mut field = document["types"][1]["fields"][0].clone();
+    field["identity"] = json!(format!("ix://{}/ConfigVersion/tier", domain.package));
+    field["name"] = json!("tier");
+    field["typeRef"] = json!(tier);
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .unwrap()
+        .push(field);
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
+    let unit = unit_source(
+        "always holds(is_gold(c.tier))",
+        "function is_gold using v(tier: M::Tier): Boolean pure { tier = M::Tier::Gold }",
+        true,
+        "on origin",
+    );
+    let source = SourceIdentity::new("agent-ix", "monitor-root");
+    let name = LibraryName::new("fixture").unwrap();
+    let root = emit_plan_root(
+        &PlanRootRequest {
+            source: &source,
+            path: "monitor.native",
+            bytes: unit.as_bytes(),
+            packages: &packages,
+            package_name: &name,
+            limits: SpineLimits::default(),
+            clause: "C",
+            target: &target(),
+            settings: &TimingObligationSettings::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("authored model-enum monitor emits");
+    // A Boolean-input monitor does not reach the atom's model type. Author
+    // genuine typed snapshot entries through the existing ClauseSource path.
+    // The Boolean atom keeps this type-closure control independent of cross-
+    // package enum equality; Tier is reached through the actual Inputs field.
+    use qsl_analyze::monitor_entries::{
+        names, render, spec_from_plan, ClauseSource, WIRE_FIELD_NAMES,
+    };
+    use qsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest};
+    let mut spec = spec_from_plan(root.plan()).unwrap();
+    spec.clause = Some(ClauseSource {
+        parameters: vec![("tier".to_owned(), "M::Tier".to_owned())],
+        atoms: spec
+            .atoms
+            .iter()
+            .map(|index| (*index, "true".to_owned()))
+            .collect(),
+        guard: None,
+        profile: "v".to_owned(),
+    });
+    let typed_source = format!("{unit}\n{}", render(&spec));
+    let limits = SpineLimits::default();
+    let cancel = Cancel::new();
+    let parsed = parse(
+        &ParseRequest {
+            source: &source,
+            path: "monitor.native",
+            bytes: typed_source.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .unwrap()
+    .into_value();
+    let models = select(&parsed, &packages, limits.model, &cancel)
+        .unwrap()
+        .into_value();
+    let checked = check(
+        &parsed,
+        name.as_str().to_owned(),
+        &models,
+        &DependencyInput::default(),
+        limits,
+        &cancel,
+    )
+    .unwrap()
+    .into_value();
+    let base = qsl_package::emit_checked(checked.package(), limits.package.emit()).unwrap();
+    let mut evidence = base.evidence().clone();
+    for (identity, document) in &packages {
+        evidence
+            .insert_domain_package_document(identity.as_str(), document.as_slice())
+            .unwrap();
+    }
+    let premises = root.plan().root_premises();
+    let buffers: Vec<_> = root
+        .plan()
+        .buffers()
+        .iter()
+        .map(|(id, capacity)| (id.index(), *capacity))
+        .collect();
+    let clause = checked.package().graph().temporal_clauses()[0].identity();
+    let emission = qsl_package::emit_monitor_plan_over(
+        &base,
+        name,
+        &evidence,
+        &qsl_package::MonitorPlanWire {
+            clause: &clause,
+            formula: root.plan().program().formula(),
+            counter: &premises.counter,
+            counter_width_bits: premises.counter_width_bits,
+            max_reading_gap: premises.max_reading_gap,
+            max_event_rate: &premises.max_event_rate,
+            uncertainty: &premises.uncertainty,
+            buffers: &buffers,
+            tick_unit: root.plan().binding().unit(),
+            activation_capacity: premises.activation_capacity,
+            state: names::STATE,
+            inputs: names::INPUTS,
+            scope: names::SCOPE,
+            result: names::RESULT,
+            entries: [
+                names::INIT,
+                names::ON_EVENT,
+                names::ON_WATERMARK,
+                names::ON_GAP,
+            ],
+            renamed_records: &["Instance", "Activation", "LimitReached"],
+            renames: &WIRE_FIELD_NAMES,
+        },
+        limits.imports,
+        limits.package.emit(),
+    )
+    .expect("genuine typed snapshot plan emits");
+    let package =
+        match read_checked_package(emission.package().bytes(), LIMITS, emission.evidence()) {
+            CheckedPackageDispatchResult::AdmittedV2(package) => package,
+            other => panic!("the genuine custom-domain plan root must read: {other:?}"),
+        };
+    let mut budget = NativeJoinBudget::new(100_000_000, 100_000_000);
+    let identities = emission
+        .identity_rows(&package, &mut budget)
+        .expect("same-emission identity rows");
+    let equality = emission
+        .equality_witness(&package, &mut budget)
+        .expect("same-emission equality rows");
+    let enums = emission
+        .selected_source_enum_rows(&mut budget)
+        .expect("source enum adapter");
+    let model_shapes = emission
+        .selected_ir_model_enum_shape_rows(&mut budget)
+        .expect("model enum adapter");
+    assert_eq!(
+        model_shapes.len(),
+        1,
+        "the reached snapshot input retains the field's original Tier type"
+    );
+    let collections: Vec<_> = emission
+        .selected_source_collection_rows()
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            row.to_ir(
+                &mut budget,
+                quire_contract_model::NativeJoinLocus {
+                    source: quire_contract_model::NativeJoinLocusSource::AdapterRow(index),
+                    form: "monitor_source_collection_row",
+                },
+            )
+            .expect("monitor result sequence converts")
+        })
+        .collect();
+    let prefix = budget.consumed();
+    let plan = package
+        .monitor_plans()
+        .next()
+        .expect("one genuine plan root");
+    let closure = plan
+        .project_selected_type_closure(
+            SelectedMonitorClosureRows {
+                declarations: identities.declarations(),
+                fields: identities.fields(),
+                model_tuples: emission.selected_tuple_declaration_rows(),
+                source_units: emission.selected_source_unit_rows(),
+                model_enum_declarations: emission.selected_model_enum_declaration_rows(),
+                model_enum_members: emission.selected_model_enum_member_rows(),
+                model_enum_shapes: &model_shapes,
+                source_records: identities.source_records(),
+                source_tuples: emission.selected_source_tuple_rows(),
+                source_unions: identities.source_unions(),
+                source_enums: &enums,
+                source_collections: &collections,
+                equality_applications: equality.applications(),
+                equality_facts: equality.facts(),
+            },
+            &mut budget,
+        )
+        .expect("IR admits and projects converted authentic model shapes");
+    assert_eq!(closure.model_enums(), model_shapes.as_slice());
+    let projected = package
+        .project_exact_type(
+            &model_shapes[0].structural_node,
+            closure.identities(),
+            &mut budget,
+        )
+        .expect("the joined authentic model enum projects through native IR");
+    assert_eq!(
+        projected.value_type(),
+        &quire_exact::ValueType::Enum(model_shapes[0].shape.clone())
+    );
+    assert!(budget.consumed().work > prefix.work);
+    assert!(budget.consumed().storage > prefix.storage);
 }

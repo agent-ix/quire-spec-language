@@ -188,17 +188,18 @@ from the admitted envelope carries the same members.
 ### What the claim identity holds
 
 `replay_value_parity` takes the request, the `ValueClaim` and the
-`ReplayLimits`. Its `claim()` holds the obligation identity, the
-`package_id`, the `function` target, the occurrence key, the `source`, the
+`ReplayLimits`. Its `claim()` holds the obligation identity, the complete
+raw `package`, the `function` target, the occurrence key, the `source`, the
 effective accounting limits, the effective supplied-value ceilings (A, H
-and B) and the generated outcome, and
-nothing else. The other retained inputs
-enter the claim through these members: the sources, the
-dependencies, the byte provision and the package's clause-profile entries through
-`package_id`, which the replay checks against the package it recompiles
-from them; the semantic profile selections are fixed empty by the form,
-and the replay refuses a request carrying any (Behavior); the stage limits through the effective accounting limits; the
-proof bounds and declared domains and the empty state and object
+and B), and the generated outcome. The package is retained even on a refusal;
+reading its descriptor is not native admission. It retains the original locked
+source labels, dependency selections and clause-profile entries as values,
+without a package hash or a source-content identity gate. The byte provision
+supplies the genuine fresh recompile under FR-098; FR-098-AC-3's retired
+staleness check has no replacement. The request's semantic profile selections
+are fixed empty by the form, and replay refuses a request carrying any
+(Behavior); the stage limits enter the claim through the effective accounting
+limits. The proof bounds and declared domains and the empty state and object
 environments are fixed by the form, and no environment is read by the
 call, so neither can change an outcome. The generator
 identity is provenance, as on every replay request, and is not a member

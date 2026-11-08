@@ -1330,8 +1330,13 @@ fn observed_replay_request(
         crate::QualifiedName::new(vec![Identifier::new(name).expect("fixture name")])
             .expect("qualified name"),
     );
-    let mut wire =
-        super::frame_replay::request(&source_bytes, domain_document, &documents, target.clone());
+    let mut wire = super::frame_replay::request_from_package(
+        compiled.emitted.package().bytes(),
+        &source_bytes,
+        domain_document,
+        &documents,
+        target.clone(),
+    );
     wire.replay_target.over = Some(ReplayOverBinding {
         population: fixture::id("counters"),
         key: "c1".to_owned(),

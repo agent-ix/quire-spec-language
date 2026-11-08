@@ -13,6 +13,7 @@
 
 use quire_exact::NodeKey;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use super::{InconclusiveCause, TerminalRecord, TerminalValue};
 use crate::execute::{process_provider_obligation, BoundEntries, IdentityEncodeError};
@@ -48,7 +49,7 @@ struct FunctionDeclaration {
 /// `check` resolved for it, if it resolved one.
 #[derive(Clone, Debug)]
 struct DependencySelection {
-    identity: String,
+    identity: crate::LibraryName,
     source: Option<DefinitionSourceRef>,
 }
 
@@ -58,9 +59,10 @@ struct DependencySelection {
 /// replay's own recompile (FR-098).
 #[derive(Clone, Debug)]
 pub struct PluginReplayContext {
-    package_name: String,
-    source: DefinitionSourceRef,
+    package: Vec<u8>,
+    package_input_bytes: u64,
     dependencies: Vec<DependencySelection>,
+    library_packages: Arc<BTreeMap<crate::LibraryName, qsl_package::EmittedPackage>>,
     functions: BTreeMap<NodeKey, FunctionDeclaration>,
     /// Every requirement record of the package, with the function whose
     /// application claim it is when `replay` can select that function by
@@ -114,7 +116,7 @@ impl PluginReplayContext {
             .dependency_selections()
             .keys()
             .map(|identity| DependencySelection {
-                identity: identity.as_str().to_owned(),
+                identity: identity.clone(),
                 source: checked.library_source(identity).map(source_reference),
             })
             .collect();
@@ -145,9 +147,10 @@ impl PluginReplayContext {
             .map(|(setting, bound)| (setting.name().to_owned(), bound))
             .collect();
         Self {
-            package_name: graph.package_name().to_owned(),
-            source: source_reference(checked.source()),
+            package: emitted.package().bytes().to_vec(),
+            package_input_bytes: limits.replay.input_bytes,
             dependencies,
+            library_packages: Arc::clone(checked.shared_library_packages()),
             functions,
             requirements: graph
                 .requirements()
@@ -217,15 +220,34 @@ impl PluginReplayContext {
             .dependencies
             .iter()
             .map(|selection| {
-                let source = selection.source.as_ref().ok_or_else(|| {
+                selection.source.as_ref().ok_or_else(|| {
                     PluginReplayRefusal::UnresolvedDependency {
-                        identity: selection.identity.clone(),
+                        identity: selection.identity.as_str().to_owned(),
                     }
                 })?;
+                let package = self
+                    .library_packages
+                    .get(&selection.identity)
+                    .ok_or_else(|| {
+                        PluginReplayRefusal::Fault(InternalFault::new(
+                            "plugin-replay",
+                            "selected-library-has-its-emitted-package",
+                        ))
+                    })?;
+                let lock = dependency_lock(package.bytes())?;
                 Ok(DependencyEntryWire {
-                    identity: selection.identity.clone(),
-                    sources: vec![source.to_wire()],
-                    refinement_internals: None,
+                    identity: selection.identity.as_str().to_owned(),
+                    sources: lock
+                        .sources
+                        .iter()
+                        .map(|source| {
+                            (
+                                source.authority.as_ref().to_owned(),
+                                source.identity.as_ref().to_owned(),
+                            )
+                        })
+                        .collect(),
+                    refinement_internals: lock.refinement_internals,
                 })
             })
             .collect::<Result<Vec<_>, PluginReplayRefusal>>()?;
@@ -258,10 +280,9 @@ impl PluginReplayContext {
         let name = name.ok_or_else(fault)?;
         let selected_function = QualifiedName::new(vec![name]).map_err(|_| fault())?;
         Ok(ReplayRequestWire {
-            package_name: self.package_name.clone(),
+            package: crate::ReplayPackage::read(&self.package, self.package_input_bytes)
+                .map_err(PluginReplayRefusal::PackageRead)?,
             profile_selections: Vec::new(),
-            sources: vec![self.source.to_wire()],
-            refinement_internals: None,
             dependencies,
             replay_target: crate::RequestTargetWire::function(
                 selected_function,
@@ -286,11 +307,33 @@ impl PluginReplayContext {
     }
 }
 
+// The producer owns this package's shape; this projects only its lock and does
+// not admit it or infer an absent list from its semantic graph.
+fn dependency_lock(
+    bytes: &[u8],
+) -> Result<quire_contract_model::CheckedPackageLockV2, PluginReplayRefusal> {
+    let invalid = || {
+        PluginReplayRefusal::Fault(InternalFault::new(
+            "plugin-replay",
+            "emitted-library-lock-has-its-owner-shape",
+        ))
+    };
+    let fields: BTreeMap<&str, &serde_json::value::RawValue> =
+        serde_json::from_slice(bytes).map_err(|_| invalid())?;
+    let lock = fields.get("lock").ok_or_else(invalid)?;
+    let lock: quire_contract_model::CheckedPackageLockV2 =
+        serde_json::from_str(lock.get()).map_err(|_| invalid())?;
+    Ok(lock)
+}
+
 /// A plugin counterexample [`PluginReplayContext::request`] could not build a
 /// replay request for. [`Self::NotReplayable`] settles the item
 /// `inconclusive`; every other refusal settles it `failed`.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum PluginReplayRefusal {
+    /// The emitted package could not be retained under the caller's replay-input ceiling.
+    #[error(transparent)]
+    PackageRead(quire_canonical::ReadError),
     /// The occurrence key is neither the `declaration` occurrence of a
     /// checked function declaration nor the occurrence of a requirement
     /// record of the package.
@@ -343,6 +386,17 @@ impl PluginReplayRefusal {
     /// closed table. `item_index` is the result item's index.
     pub fn diagnostic(&self, item_index: usize) -> OutcomeDiagnostic {
         let (code, cause) = match self {
+            Self::PackageRead(quire_canonical::ReadError::Limit(_)) => {
+                (Code::StageLimitExceeded, "replay.input_bytes")
+            }
+            Self::PackageRead(quire_canonical::ReadError::Allocation { .. }) => {
+                (Code::ResourceExhausted, "storage")
+            }
+            Self::PackageRead(
+                quire_canonical::ReadError::Malformed { .. }
+                | quire_canonical::ReadError::NumberOutOfRange { .. },
+            ) => (Code::RuntimeInvariant, "established-invariant-broken"),
+            Self::PackageRead(_) => (Code::RuntimeInvariant, "established-invariant-broken"),
             Self::UnknownOccurrence { .. } => (Code::MissingDeclaration, "missing-name"),
             Self::NotReplayable { .. } => (Code::UnknownRequiredFeature, "unsupported-feature"),
             Self::UnresolvedDependency { .. } => (Code::MissingImport, "missing-selection"),
@@ -372,7 +426,8 @@ impl PluginReplayRefusal {
                     Code::UnknownRequiredFeature,
                 )),
             ),
-            Self::UnknownOccurrence { .. }
+            Self::PackageRead(_)
+            | Self::UnknownOccurrence { .. }
             | Self::UnresolvedDependency { .. }
             | Self::DuplicateBoundKey { .. }
             | Self::NotACallItem { .. }

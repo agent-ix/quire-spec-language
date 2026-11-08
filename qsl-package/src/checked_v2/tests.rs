@@ -998,6 +998,15 @@ fn read_fixture(path: &std::path::Path) -> Value {
         .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display()))
 }
 
+/// An inspection or authoring copy of a valid document. Raw owner-vector
+/// mutations must continue through `read_fixture_wire` without this conversion.
+fn resolved_fixture(value: &Value) -> Value {
+    let mut resolved = value.clone();
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut resolved)
+        .expect("valid fixture operand rows resolve in their holders");
+    resolved
+}
+
 /// Supplies, as extension definition evidence, every definition QSpec
 /// publishes in `extension-definitions.json` under `the QSpec checkout` for a
 /// `definition_selections` entry of `envelope`, except those in `withheld`
@@ -1617,7 +1626,8 @@ fn conformance_timed_model_nodes_are_retained_by_i2() {
     };
     assert_eq!(admitted.name(), name);
 
-    let wire_nodes = envelope["semantic_graph"]["nodes"].as_array().unwrap();
+    let inspection = resolved_fixture(&envelope);
+    let wire_nodes = inspection["semantic_graph"]["nodes"].as_array().unwrap();
     let retained = &admitted.resolved_graph().nodes;
     let expected_timed = wire_nodes
         .iter()
@@ -1709,9 +1719,10 @@ fn conformance_tick_timed_model_has_operation_anchor_and_no_clock_places() {
     assert!(timed.invariants.is_empty());
     assert!(timed.urgencies.is_empty());
     assert!(timed.constraints.is_empty());
-    let source = &envelope["semantic_graph"]["nodes"][44];
+    let inspection = resolved_fixture(&envelope);
+    let source = &inspection["semantic_graph"]["nodes"][44];
     let operation_id = &source["body"]["members"][3]["value"]["target"];
-    let operation = envelope["semantic_graph"]["nodes"]
+    let operation = inspection["semantic_graph"]["nodes"]
         .as_array()
         .unwrap()
         .iter()
@@ -1796,7 +1807,9 @@ fn conformance_typed_timed_model_writer_emits_an_admitted_package() {
 fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
     let (directory, _) =
         qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
-    let mut envelope = read_fixture(&directory.join("positive-timed-model-nodes.json"));
+    let mut envelope = resolved_fixture(&read_fixture(
+        &directory.join("positive-timed-model-nodes.json"),
+    ));
     let graph_before = WireGraph::of_package_value(&envelope).expect("the fixture graph");
     let nodes = envelope["semantic_graph"]["nodes"].as_array_mut().unwrap();
     let mut timed_indices = Vec::new();
@@ -1923,7 +1936,9 @@ fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {
 fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {
     let (directory, _) =
         qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
-    let mut base_wire = read_fixture(&directory.join("positive-timed-model-nodes.json"));
+    let mut base_wire = resolved_fixture(&read_fixture(
+        &directory.join("positive-timed-model-nodes.json"),
+    ));
 
     // Add a second unit with the same time dimension so the unit mutation is
     // a valid selected-time-unit change, not a deliberately ill-typed edge.
@@ -2202,9 +2217,12 @@ fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimens
                 _ => {}
             }
         }
+        let inspection = resolved_fixture(&envelope);
+        let inspection_graph =
+            WireGraph::of_package_value(&inspection).expect("resolved fixture graph");
         visit(
-            &envelope["semantic_graph"],
-            &graph,
+            &inspection["semantic_graph"],
+            &inspection_graph,
             &ids,
             name,
             envelope["name"].as_str().unwrap(),
@@ -2246,8 +2264,12 @@ fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimens
 fn conformance_timed_model_vectors_keep_their_published_refusal_loci() {
     let (directory, _) =
         qspec_v2_fixtures().expect("QSPEC_DIR must name a quire-specification checkout");
-    let base = read_fixture(&directory.join("positive-timed-model-nodes.json"));
-    let tick_base = read_fixture(&directory.join("positive-tick-timed-model-nodes.json"));
+    let base = resolved_fixture(&read_fixture(
+        &directory.join("positive-timed-model-nodes.json"),
+    ));
+    let tick_base = resolved_fixture(&read_fixture(
+        &directory.join("positive-tick-timed-model-nodes.json"),
+    ));
     let vectors = read_fixture(&directory.join("../timed-model-node-vectors.json"));
     let indexes = &vectors["node_indexes"];
     for row in vectors["schema_refusals"].as_array().unwrap() {
@@ -2592,10 +2614,15 @@ fn assert_admitted_binder_round_trip(
         .expect("the patched graph node index")
         .parse::<usize>()
         .expect("the patched graph node index is numeric");
-    let node = &package["semantic_graph"]["nodes"][node_index];
+    let inspection = resolved_fixture(package);
+    let node = &inspection["semantic_graph"]["nodes"][node_index];
     let node_id = serde_json::from_value::<CheckedNodeId>(node["node_id"].clone())
         .expect("the timed clause node has an identity");
-    let expected_binders = case["patch"][0]["value"]["value"]["members"]
+    let graph = WireGraph::of_package_value(package).expect("admitted fixture graph");
+    let patched_binding = graph
+        .document_value_in_row(node_index, &case["patch"][0]["value"])
+        .expect("binder references resolve in the patched clause holder");
+    let expected_binders = patched_binding["value"]["members"]
         .as_array()
         .expect("the vector publishes its binder references")
         .iter()
@@ -2942,7 +2969,7 @@ fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
             node["node_tag"] == "temporal" && node["semantic_form"] == "temporal_clause"
         })
         .expect("the all-families fixture holds a temporal clause");
-    let mut package = base.clone();
+    let mut package = resolved_fixture(base);
     let profile = package["semantic_graph"]["nodes"][clause]["body"]["operation"]["laws"][0]
         ["definition"]["identity"]
         .as_str()
@@ -3474,6 +3501,10 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
                 .as_array_mut()
                 .expect("nodes")
                 .push(second_frame.clone());
+            candidate["semantic_graph"]["operand_rows"]
+                .as_array_mut()
+                .expect("operand rows")
+                .push(mutation["second_frame_operand_row"].clone());
         }
         let expected_code = match mutation["expected_code"].as_str().expect("expected_code") {
             "missing_declaration" => CheckedPackageRefusalCode::MissingDeclaration,
@@ -3518,8 +3549,10 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
 }
 
 /// QSpec FR-322 "Operand index segments" (TC-233 NI-01..NI-12): each
-/// `node-index-vectors.json` case, its RFC 6902 patch applied to the base
-/// package, is refused `malformed_wire` by QSL's whole I2 read. A schema-invalid
+/// `node-index-vectors.json` case applies its RFC 6902 patch to the raw base.
+/// Malformed cases retain their whole-I2 refusal and locus; the published
+/// partial-stage controls also check holder-dependent keys, duplicate identity,
+/// and insertion preserving original bytes and keys. A schema-invalid
 /// operand (a nested `node_id` object, a negative, string or fractional
 /// index, an extra or missing member, an index segment in a
 /// `dependency_reference` node) is refused within the patched member; an
@@ -3543,11 +3576,66 @@ fn conformance_node_index_vectors_refuse_malformed_wire() {
     assert!(!cases.is_empty(), "node-index-vectors.json holds no case");
     for case in cases {
         let id = &case["id"];
-        assert_eq!(case["expected"], "malformed_wire", "{id}: expected outcome");
-        let locus = case["locus"].as_str().expect("a locus");
+        let expected = case["expected"].as_str().expect("published outcome");
         let mut package = base.clone();
         apply_json_patch(&mut package, &case["patch"]);
         let (_, outcome) = read_fixture_wire(fixture, &package);
+        if expected == "passes_operand_and_duplicate_checks" || expected == "passes_operand_checks"
+        {
+            let graph =
+                WireGraph::of_package_value(&package).expect("published operand checks pass");
+            let nodes = package["semantic_graph"]["nodes"].as_array().unwrap();
+            if expected == "passes_operand_and_duplicate_checks" {
+                assert_eq!(nodes[4], nodes[2], "{id}: equal node bytes");
+                assert_ne!(
+                    graph.keys()[4],
+                    graph.keys()[2],
+                    "{id}: different held keys"
+                );
+                assert_eq!(
+                    graph
+                        .keys()
+                        .iter()
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .len(),
+                    nodes.len(),
+                    "{id}: no duplicate structural key"
+                );
+            } else {
+                let before = WireGraph::of_package_value(&base).expect("base graph");
+                for (old, node) in base["semantic_graph"]["nodes"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .enumerate()
+                {
+                    assert_eq!(nodes[old + 1], *node, "{id}: original node bytes");
+                    assert_eq!(
+                        graph.keys()[old + 1],
+                        before.keys()[old],
+                        "{id}: original structural key"
+                    );
+                }
+                assert_eq!(nodes.len(), before.keys().len() + 2);
+            }
+            assert!(
+                !matches!(&outcome, Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) if refusal.code == CheckedPackageRefusalCode::MalformedWire),
+                "{id}: operand checks reach semantic admission: {outcome:?}"
+            );
+            continue;
+        }
+        let locus = case["locus"].as_str().expect("a refusal locus");
+        if expected == "invalid_semantic_graph" {
+            let graph =
+                WireGraph::of_package_value(&package).expect("duplicate keys pass operand checks");
+            let duplicate = (1..graph.keys().len())
+                .find(|at| graph.keys()[..*at].contains(&graph.keys()[*at]))
+                .expect("duplicate structural key");
+            assert_eq!(locus, format!("/semantic_graph/nodes/{duplicate}/node_id"));
+            assert_timed_refusal(&outcome, expected, None, locus, id);
+            continue;
+        }
+        assert_eq!(expected, "malformed_wire", "{id}: published refusal");
         match case["schema"].as_str().expect("a schema outcome") {
             "invalid" => {
                 let Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) = &outcome else {
@@ -3565,7 +3653,10 @@ fn conformance_node_index_vectors_refuse_malformed_wire() {
             other => panic!("{id}: unknown schema outcome {other}"),
         }
     }
-    println!("conformance: {} node-index vectors refused", cases.len());
+    println!(
+        "conformance: {} node-index vector outcomes matched",
+        cases.len()
+    );
 }
 
 /// A `model`/`object_type` node (FR-340's `creates`/`deletes`-eligible, and
@@ -4038,7 +4129,7 @@ fn an_ir_wrong_snapshot_refusal_maps_to_the_wrong_snapshot_code() {
         (Ir::IllTyped, Code::IllTyped),
         (Ir::InvalidPackage, Code::InvalidPackage),
     ] {
-        assert_eq!(super::map_refusal_code(ir), qsl);
+        assert_eq!(crate::checked_package_refusal_code(ir), qsl);
     }
 }
 

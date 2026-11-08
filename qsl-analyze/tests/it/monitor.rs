@@ -5,15 +5,15 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::monitor::{
-    monitor, MonitorClause, MonitorLimits, MonitorOutcome, MonitorRefusal, MonitorRequest,
-    MonitorTrace, MonitorVerdict, TRACE_FORMAT,
+    monitor, monitor_with_evaluator, MonitorClause, MonitorLimits, MonitorOutcome, MonitorRefusal,
+    MonitorRequest, MonitorTrace, MonitorVerdict, TRACE_FORMAT,
 };
 use qsl_foundation::diagnostic::StageFailure;
 use qsl_package::CheckedPackage;
 use qsl_replay::spine::{
     run_clause, ClauseDisposition, ClauseRunReport, ClauseRunRequest, ClauseRunSelection,
-    ClauseRunSource, DependencyInput, OverObject, SpineLimits, TemporalUndefinedCause,
-    TemporalVerdict, TraceInput,
+    ClauseRunSource, DependencyInput, OverObject, PackageTemporalRequest, SpineLimits,
+    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TraceInput,
 };
 use qsl_replay::{OutcomeDocument, OutcomeItem, OutcomeStage};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -106,6 +106,25 @@ impl World {
         accounting: ScalarLimits,
         cancel: &Cancel,
     ) -> Result<MonitorOutcome, StageFailure<MonitorRefusal>> {
+        self.run_with(
+            qsl_replay::spine::run_package_temporal,
+            names,
+            key,
+            trace,
+            accounting,
+            cancel,
+        )
+    }
+
+    fn run_with(
+        &self,
+        evaluator: qsl_analyze::monitor::TraceEvaluator,
+        names: &[&str],
+        key: &str,
+        trace: &[u8],
+        accounting: ScalarLimits,
+        cancel: &Cancel,
+    ) -> Result<MonitorOutcome, StageFailure<MonitorRefusal>> {
         let request = MonitorRequest {
             clauses: names
                 .iter()
@@ -129,7 +148,8 @@ impl World {
             accounting,
             max_window_values: qsl_eval::temporal::DEFAULT_MAX_WINDOW_VALUES,
         };
-        monitor(&self.package, &request, &limits, cancel).map(|staged| staged.into_value())
+        monitor_with_evaluator(evaluator, &self.package, &request, &limits, cancel)
+            .map(|staged| staged.into_value())
     }
 
     fn finite(&mut self, names: &[&str], values: &[i64]) -> MonitorOutcome {
@@ -708,6 +728,7 @@ fn admission_of_every_position_precedes_any_clause_run() {
 
 /// FR-330-AC-3: an `over` that names no object and a lasso under a bounded
 /// profile are the clause's own admit refusals, not a position's admission.
+#[trace("TC-766", "FR-283-AC-13")]
 #[test]
 fn a_clause_refused_at_admit_is_no_position_failure() {
     let mut world = world(&[("P", "", ALWAYS_SMALL)]);
@@ -737,6 +758,18 @@ fn a_clause_refused_at_admit_is_no_position_failure() {
         panic!("a refusal");
     };
     assert_eq!(record.catalog.cause(), "invalid-value");
+
+    // An unknown name ahead of the bounded clause is reported first.
+    let refusal = refused(bounded.run(
+        &["Absent", "Reach"],
+        trace.as_bytes(),
+        UNLIMITED,
+        &Cancel::new(),
+    ));
+    assert!(
+        matches!(&refusal, MonitorRefusal::UnknownClause { name } if name == "Absent"),
+        "{refusal:?}"
+    );
 }
 
 /// FR-001-AC-6: U+200B is not whitespace, so a label of it is not blank; the
@@ -753,4 +786,80 @@ fn a_zero_width_label_is_not_blank() {
         matches!(refusal, MonitorRefusal::Admission { position: 0, .. }),
         "{refusal:?}"
     );
+}
+
+/// A trace evaluator that is the real one except that it returns
+/// `TemporalRefusal::Fault` for the clause `Broken`.
+fn faulting_evaluator(request: &PackageTemporalRequest<'_>) -> ClauseRunReport {
+    let mut report = qsl_replay::spine::run_package_temporal(request);
+    if request.name == "Broken" {
+        report.disposition = ClauseDisposition::TemporalRefusal(TemporalTraceRefusal::Fault(
+            quire_semantic_value::catalog::InternalFault::new("test", "a-broken-invariant"),
+        ));
+    }
+    report
+}
+
+/// FR-283-AC-13: a trace evaluator that faults for one selected clause fails
+/// the whole request with `StageFailure::Fault`, no record for any clause.
+#[trace("TC-766", "FR-283-AC-13")]
+#[test]
+fn an_evaluator_fault_for_one_clause_fails_the_whole_request() {
+    let mut world = world(&[("Safe", "", ALWAYS_SMALL), ("Broken", "", ALWAYS_SMALL)]);
+    let prefix = world.positions("f", &[0, 1]);
+    let trace = json!({"format": TRACE_FORMAT, "prefix": prefix}).to_string();
+    let run = |evaluator, names: &[&str]| {
+        world.run_with(
+            evaluator,
+            names,
+            "c1",
+            trace.as_bytes(),
+            UNLIMITED,
+            &Cancel::new(),
+        )
+    };
+    let result = run(faulting_evaluator, &["Safe", "Broken"]);
+    let Err(StageFailure::Fault(fault)) = result else {
+        panic!("a whole-request fault, got {result:?}");
+    };
+    assert!(
+        format!("{fault:?}").contains("a-broken-invariant"),
+        "{fault:?}"
+    );
+
+    // Without the fault the same two clauses each report a record.
+    let outcome = run(qsl_replay::spine::run_package_temporal, &["Safe", "Broken"])
+        .expect("the request completes");
+    assert_eq!(outcome.records.len(), 2);
+}
+
+/// FR-283-AC-13: every clause of a bounded-profile package is refused over a
+/// lasso, so the request names the first selected clause and holds no record.
+/// A unit selects one temporal profile, so no clause that evaluates the lasso
+/// can precede a bounded one.
+#[trace("TC-766", "FR-283-AC-13")]
+#[test]
+fn a_bounded_lasso_request_refuses_at_its_first_clause_with_no_record() {
+    let mut world = bounded_world(&[
+        ("Safe", "", "always[0,2] holds(c.value < 3)"),
+        ("Reach", "", REACH_TWO),
+    ]);
+    let head = world.positions("p", &[0, 1]);
+    let tail = world.positions("l", &[2]);
+    let trace = json!({"format": TRACE_FORMAT, "prefix": head, "loop": tail}).to_string();
+    let refusal = refused(world.run(
+        &["Safe", "Reach"],
+        trace.as_bytes(),
+        UNLIMITED,
+        &Cancel::new(),
+    ));
+    let MonitorRefusal::ClauseRefused { clause, failure } = refusal else {
+        panic!("a clause refusal, not {refusal:?}");
+    };
+    assert_eq!(clause, "Safe");
+    let qsl_semantics::model::observation::AdmissionFailure::Refused(record) = *failure else {
+        panic!("a refusal");
+    };
+    assert_eq!(record.catalog.code(), "invalid_runtime_input");
+    assert_eq!(record.catalog.cause(), "invalid-value");
 }

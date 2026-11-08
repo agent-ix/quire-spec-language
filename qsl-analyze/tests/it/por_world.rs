@@ -556,7 +556,10 @@ impl Fixture {
         };
         replay_unit(
             &ReplayUnit {
-                identity: "por",
+                checked: &self.package,
+                temporal_clock_selections: crate::fill::tcb_01_event_position_selection(
+                    &self.package,
+                ),
                 text: self.text.as_bytes(),
                 document: &self.document,
                 snapshots: &self.snapshots,

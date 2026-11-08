@@ -26,6 +26,7 @@ use admitted_charge::admitted_charge_points;
 
 mod application_claim;
 mod child_composite;
+mod complete_package;
 mod composite;
 mod composite_parity;
 mod native_scalar;
@@ -166,9 +167,8 @@ fn request(
 ) -> ReplayRequestWire {
     ReplayRequestWire {
         profile_selections: vec![],
-        package_name: "fixture".to_owned(),
-        sources: vec![(AUTHORITY.to_owned(), IDENTITY.to_owned())],
-        refinement_internals: None,
+        package: crate::ReplayPackage::read(compiled.emitted.bytes(), 1 << 30)
+            .expect("actual emitted replay package"),
         dependencies: Vec::new(),
         replay_target: crate::RequestTargetWire::function(
             function.clone(),
@@ -967,7 +967,9 @@ fn tc_444_stage_limits_bound_the_recompile() {
 #[test]
 fn tc_444_a_blank_label_refuses_at_the_source_stage() {
     let mut blank = small(7);
-    blank.sources[0].0 = "   ".to_owned();
+    blank.package = crate::request::mutate_raw_package(&blank.package, |package| {
+        package["lock"]["sources"][0]["authority"] = serde_json::json!("   ")
+    });
     blank.byte_provision[0].0 = "   ".to_owned();
     let refused = replay(blank, ReplayLimits::default()).unwrap_err();
     let ReplayRefusal::Recompile(refusal) = &refused else {
@@ -999,8 +1001,12 @@ fn tc_444_the_package_reference_replays_multiple_sources() {
     );
     let other = other.into_bytes();
     let mut two = small(7);
-    two.sources
-        .push((AUTHORITY.to_owned(), "test:other".to_owned()));
+    two.package = crate::request::mutate_raw_package(&two.package, |package| {
+        package["lock"]["sources"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"authority": AUTHORITY, "identity": "test:other"}))
+    });
     two.byte_provision
         .push((AUTHORITY.to_owned(), "test:other".to_owned(), other));
     replay(two, ReplayLimits::default()).expect("both referenced sources recompile together");
@@ -1522,6 +1528,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
     )
     .expect_err("test/zzz is not selected");
     assert_eq!(refused.code(), Code::InvalidPackage);
+    assert_eq!(refused.pointer().as_deref(), Some("/dependencies"));
     assert!(
         matches!(
             &refused,
@@ -1609,100 +1616,6 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
         ),
         "{refusal:?}"
     );
-}
-
-/// QSpec FR-323-AC-17 (TC-277 BP-15): the proved package's lock value and a
-/// dependency entry's own value both reach the recompile unchanged. A value
-/// naming a refinement no unit declares refuses `missing_declaration`/
-/// `missing-name` located at `/package/lock/refinement_internals<pointer>`
-/// for the package's value and at `/dependencies/<n>/refinement_internals<pointer>`
-/// for the dependency's; the empty list replays as the absent member does.
-#[trace("QSpec-FR-323-AC-17", "QSpec-TC-277", "FR-375-AC-12")]
-#[test]
-fn refinement_internals_reach_the_recompile_with_schema_loci() {
-    let importing = Importing::new();
-    let units_bytes = importing.units.as_bytes();
-    let defective = serde_json::json!([{"refinement": "NoSuchRefinement", "internal": []}]);
-
-    let mut wire = importing.request(vec![importing.units_entry()], &[units_bytes]);
-    wire.refinement_internals = Some(defective.clone());
-    let refused =
-        replay(wire, ReplayLimits::default()).expect_err("the package value is defective");
-    assert_eq!(refused.code(), Code::MissingDeclaration);
-    assert_eq!(refused.cause(), Some("missing-name"));
-    assert_eq!(
-        refused.pointer().as_deref(),
-        Some("/package/lock/refinement_internals/0/refinement")
-    );
-
-    let mut dependency = importing.units_entry();
-    dependency.refinement_internals = Some(defective);
-    let refused = replay(
-        importing.request(vec![dependency], &[units_bytes]),
-        ReplayLimits::default(),
-    )
-    .expect_err("the dependency value is defective");
-    assert_eq!(refused.code(), Code::MissingDeclaration);
-    assert_eq!(refused.cause(), Some("missing-name"));
-    assert_eq!(
-        refused.pointer().as_deref(),
-        Some("/dependencies/0/refinement_internals/0/refinement")
-    );
-
-    let mut dependency = importing.units_entry();
-    dependency.refinement_internals = Some(serde_json::json!([]));
-    let mut wire = importing.request(vec![dependency], &[units_bytes]);
-    wire.refinement_internals = Some(serde_json::json!([]));
-    let ReplayResult::Input(result) =
-        replay(wire, ReplayLimits::default()).expect("empty lists replay")
-    else {
-        panic!("Input arm");
-    };
-    assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
-}
-
-/// QSpec FR-323-AC-17: a `refinement_internals` defect that reaches the
-/// replay as `RecompileWithProtocolResults` is wrapped with its locus too.
-#[trace("QSpec-FR-323-AC-17", "QSpec-TC-277")]
-#[test]
-fn a_protocol_results_refusal_with_an_internals_defect_is_wrapped() {
-    use qsl_semantics::check::{
-        CheckCause, CheckRefusal, ListDefect, ListDefectKind, RefinementCause, RefinementRefusal,
-    };
-    use quire_semantic_value::location::{Location, Origin};
-    let compile = CompileRefusal::Check {
-        refusals: vec![CheckRefusal {
-            location: Location::root(Origin::Expression),
-            cause: CheckCause::Refinement(Box::new(RefinementRefusal {
-                refinement: String::new(),
-                span: qsl_foundation::Span { start: 0, end: 0 },
-                cause: RefinementCause::InternalList(ListDefect {
-                    kind: ListDefectKind::Missing,
-                    pointer: "/0/refinement".to_owned(),
-                    first: None,
-                }),
-            })),
-        }],
-        region: None,
-    };
-    let wrapped = locate_refinement_internals(
-        ReplayRefusal::RecompileWithProtocolResults {
-            refusal: Box::new(compile),
-            protocol_results: Vec::new(),
-        },
-        &[],
-    );
-    assert!(matches!(
-        &wrapped,
-        ReplayRefusal::RefinementInternals { source, .. }
-            if matches!(**source, ReplayRefusal::RecompileWithProtocolResults { .. })
-    ));
-    assert_eq!(
-        wrapped.pointer().as_deref(),
-        Some("/package/lock/refinement_internals/0/refinement")
-    );
-    assert_eq!(wrapped.code(), Code::MissingDeclaration);
-    assert_eq!(wrapped.protocol_results(), Some(&[][..]));
 }
 
 /// SR-746 FND-002 (FR-096-AC-15): `call_failure_to_replay_refusal`, the
@@ -2596,7 +2509,9 @@ fn tc_904_a_value_report_carries_the_sent_claim_on_every_outcome() {
         ..UNLIMITED
     };
     let mut stale = parity("inc", 3);
-    stale.package_name = String::new();
+    stale.package = crate::request::mutate_raw_package(&stale.package, |package| {
+        package["name"] = serde_json::json!("")
+    });
     let mut undecodable = parity("inc", 3);
     undecodable.backend = String::new();
     let cases = [
@@ -3245,7 +3160,9 @@ mod operator_arm {
         let mut missing_node = claim(add(2, 1), completed(3));
         missing_node.node = crate::fixture_node(1);
         let mut stale = parity("inc", 3);
-        stale.package_name = String::new();
+        stale.package = crate::request::mutate_raw_package(&stale.package, |package| {
+            package["name"] = serde_json::json!("")
+        });
         let mut undecodable = parity("inc", 3);
         undecodable.backend = String::new();
         let cases = [

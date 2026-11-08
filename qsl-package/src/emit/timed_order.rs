@@ -327,6 +327,8 @@ impl<'g> Graph<'g> {
             | CheckedTerm::Frame { .. }
             | CheckedTerm::AbstractionRelation { .. }
             | CheckedTerm::Refinement { .. }
+            | CheckedTerm::ImplementationGuarantee { .. }
+            | CheckedTerm::ComponentComposition { .. }
             | CheckedTerm::ExtensionForm { .. }
             | CheckedTerm::ImplementationGuarantee { .. }
             | CheckedTerm::ComponentComposition { .. }

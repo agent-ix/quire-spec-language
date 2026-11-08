@@ -23,7 +23,7 @@ stays unbounded and returns `NotSimulated::RequiresBound`; and that a sequence w
 over a finite or pure-clock element is a finite value domain ordered length first, while a sequence with no
 declared maximum is unbounded.
 
-Scope: FR-120-AC-22 to FR-120-AC-26.
+Scope: FR-120-AC-22 to FR-120-AC-26 and FR-120-AC-28.
 
 ## Test Procedure
 
@@ -70,8 +70,13 @@ domain value. Read domains through `ModelSystem::domains`, successors through
    holds `{ {x: 5 ms, n: 1} }`.
 6. In further models grant, one at a time, `Reference<Clock>`,
    `Sequence<Reference<Clock>>[0, 1]`, `Sequence<Open>[0, 1]`, `Sequence<Cfg>`,
-   `Set<Cfg>` (the last two with no maximum) and `Map<Boolean, Boolean>[0, 1]`.
-   Call `explore_model` and `sample_model`.
+   `Set<Cfg>` (the last two with no maximum), `Map<Boolean, Boolean>` and
+   `OrderedSet<Boolean>` (with no maximum), and `Map<Boolean, Clock>[0, 1]`. Call `explore_model` and `sample_model`.
+7. In a separate model grant, each in its own field, `Map<Boolean, Boolean>[0, 1]`,
+   `Map<Boolean, Boolean>[0, 2]`, `Map<Boolean, Int[0, 2]>[0, 2]`,
+   `OrderedSet<Boolean>[0, 2]`, `OrderedSet<Int[0, 2]>[0, 3]` and
+   `OrderedSet<Int[0, 2]>[0, 5]`, `OrderedSet<Clock>[0, 2]` and `OrderedSet<Clock>`
+   with no maximum. Read each domain and its order.
 
 Tag the tests `#[trace("TC-1270", "FR-120-AC-n")]`.
 
@@ -110,7 +115,18 @@ Tag the tests `#[trace("TC-1270", "FR-120-AC-n")]`.
   candidate holds `x` 5 ms in slot 0 and 0 ms in slot 1, and a length-0
   candidate holds none; from the empty pre-state both slots of a length-2
   candidate are 0 ms.
-- Step 6 (negative): each field is an unbounded root and `explore_model`
+- Step 6 (negative): each field (including `Map<Boolean, Boolean>` and
+  `OrderedSet<Boolean>` with no maximum, and the clock-valued `Map`) is an unbounded root and `explore_model`
   returns `NotSimulated::RequiresBound` and `sample_model`
   `ModelSampleError::NotSimulated(RequiresBound)`, naming the field's
   `WireNodeId`, with no state expanded.
+- Step 7 (FR-120-AC-28): no unbounded root. `Map<Boolean, Boolean>[0, 1]` has
+  1 + 2 * 2 = 5 values and `[0, 2]` has 1 + 2 * 2 + 1 * 4 = 9;
+  `Map<Boolean, Int[0, 2]>[0, 2]` has 1 + 2 * 3 + 1 * 9 = 16, ordered by entry
+  count, then keys (`false` first), then values: the empty map, `{false: 0}` to
+  `{false: 2}`, `{true: 0}` to `{true: 2}`, then `{false: 0, true: 0}`,
+  `{false: 0, true: 1}`, ..., `{false: 2, true: 2}`.
+  `OrderedSet<Boolean>[0, 2]` has 1 + 2 + 2 = 5, in the order `[]`, `[false]`,
+  `[true]`, `[false, true]`, `[true, false]`; `OrderedSet<Int[0, 2]>[0, 3]` and
+  `[0, 5]` each have 1 + 3 + 6 + 6 = 16; `OrderedSet<Clock>[0, 2]` and
+  `OrderedSet<Clock>` have 2 each, as `Set<Clock>` does.

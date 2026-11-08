@@ -2103,7 +2103,7 @@ mod tests {
     fn function_claim(assignments: Vec<CanonicalAssignment>) -> ScalarClaim {
         ScalarClaim::Function(Box::new(crate::ValueIdentity {
             obligation: crate::ObligationIdentity::new(crate::fixture_node(1), None, 0),
-            package_name: "fixture".to_owned(),
+            package: crate::request::raw_package_descriptor("fixture", &[]),
             function: Some(
                 crate::QualifiedName::new(vec![quire_exact::Identifier::new("f").unwrap()])
                     .unwrap(),

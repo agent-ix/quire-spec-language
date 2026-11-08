@@ -275,7 +275,7 @@ impl Val {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Member {
+enum Membership {
     All,
     Some,
     No,
@@ -370,28 +370,28 @@ impl<'f> TickMonitorReference<'f> {
         self.shape.node(node).is_some_and(|shape| shape.future)
     }
 
-    fn member(&self, node: usize, dmin: i128, dmax: i128, same: bool) -> Member {
+    fn member(&self, node: usize, dmin: i128, dmax: i128, same: bool) -> Membership {
         let Some(bound) = self.spec.bounds.get(&node) else {
-            return Member::All;
+            return Membership::All;
         };
         if same {
             let zero = q(0);
             let above = zero > bound.lower || (zero == bound.lower && bound.lower_closed);
             let below = zero < bound.upper || (zero == bound.upper && bound.upper_closed);
             return if above && below {
-                Member::All
+                Membership::All
             } else {
-                Member::No
+                Membership::No
             };
         }
         let lo = q(dmin).sub(self.width());
         let hi = q(dmax).add(self.width());
         if lo >= bound.lower && hi <= bound.upper {
-            Member::All
+            Membership::All
         } else if hi <= bound.lower || lo >= bound.upper {
-            Member::No
+            Membership::No
         } else {
-            Member::Some
+            Membership::Some
         }
     }
 
@@ -403,11 +403,11 @@ impl<'f> TickMonitorReference<'f> {
             .is_some_and(|bound| q(self.hz).sub(&q(tick)).sub(self.width()) >= bound.upper)
     }
 
-    fn member_val(member: Member) -> Val {
+    fn member_val(member: Membership) -> Val {
         match member {
-            Member::All => Val::TRUE,
-            Member::Some => Val::UNKNOWN,
-            Member::No => Val::FALSE,
+            Membership::All => Val::TRUE,
+            Membership::Some => Val::UNKNOWN,
+            Membership::No => Val::FALSE,
         }
     }
 
@@ -516,7 +516,7 @@ impl<'f> TickMonitorReference<'f> {
                 // History before the marker is gone: an event there could have
                 // been in the window, and nothing says whether it was.
                 let before = start - 1;
-                if self.member(node, tick - before, tick - before, false) != Member::No {
+                if self.member(node, tick - before, tick - before, false) != Membership::No {
                     acc = acc.or(Val::UNKNOWN);
                 }
             }
@@ -736,7 +736,7 @@ impl<'f> TickMonitorReference<'f> {
                         cell.t_first - open.t_first,
                         cell.t_last - open.t_first,
                         false,
-                    ) != Member::No
+                    ) != Membership::No
             } else {
                 other > index
                     && self.member(
@@ -744,7 +744,7 @@ impl<'f> TickMonitorReference<'f> {
                         open.t_first - cell.t_last,
                         open.t_first - cell.t_first,
                         false,
-                    ) != Member::No
+                    ) != Membership::No
             }
         })
     }
