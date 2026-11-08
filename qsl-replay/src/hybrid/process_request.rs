@@ -463,6 +463,8 @@ fn admit_package(
 /// exactly one `temporal_clause` node writes that id and carries the claim's
 /// occurrence; an id no node writes, or one that is not a node id, is
 /// malformed, and a claim that fits no node or more than one is a mismatch.
+/// The member and form names are the wire's, so this reader is a string edge.
+#[ix_trace_rs::string_edge]
 fn claim_position(
     nodes: &Value,
     claim_node: &Value,
@@ -515,7 +517,6 @@ mod deep_package_tests {
 #[cfg(test)]
 mod claim_position_tests {
     use super::*;
-    use ix_trace_rs::trace;
     use serde_json::json;
 
     fn id(slot: u64) -> Value {
@@ -530,9 +531,8 @@ mod claim_position_tests {
         })
     }
 
-    /// FR-250-AC-3: a claim whose node no package node writes is malformed,
+    /// A claim whose node no package node writes is malformed,
     /// as is a claim whose node is not a node id.
-    #[trace("TC-705", "FR-250-AC-3")]
     #[test]
     fn an_unknown_or_unparseable_claim_node_is_malformed() {
         let nodes = json!([clause(&id(0), "claim")]);
@@ -551,7 +551,6 @@ mod claim_position_tests {
     /// (each node's first operand is slot 0). Only the node that is a clause
     /// with the claim's occurrence is bound, by position; when both fit, the
     /// claim is refused instead of bound to the first.
-    #[trace("TC-705", "FR-250-AC-3")]
     #[test]
     fn equal_raw_ids_bind_only_the_one_node_that_fits_the_claim() {
         let occurrence = json!({"role": "claim", "ordinal": 0});
