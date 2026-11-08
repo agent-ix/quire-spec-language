@@ -11,12 +11,19 @@ use qsl_foundation::diagnostic::Staged;
 
 /// The bodies of the emitted package's semantic nodes.
 fn bodies(emission: &Emission) -> Vec<Value> {
-    let package = crate::emit::tests::wire(emission);
+    let package: Value =
+        serde_json::from_slice(emission.package.bytes()).expect("the package bytes are JSON");
+    let graph = WireGraph::of_package_value(&package).expect("the emitted operand graph");
     package["semantic_graph"]["nodes"]
         .as_array()
         .expect("a semantic graph of nodes")
         .iter()
-        .map(|node| node["body"].clone())
+        .enumerate()
+        .map(|(holder, node)| {
+            graph
+                .structural_value_in_row(holder, &node["body"])
+                .unwrap()
+        })
         .collect()
 }
 

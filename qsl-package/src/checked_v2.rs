@@ -197,6 +197,7 @@ impl NativeJoinLimits {
         };
         let bound = match native.native() {
             crate::NativeJoinFailure::Projection(error) => error.configured_bound.unwrap_or(bound),
+            crate::NativeJoinFailure::Rows(error) => error.configured_bound().unwrap_or(bound),
             crate::NativeJoinFailure::Equality(_)
             | crate::NativeJoinFailure::Limit(_)
             | crate::NativeJoinFailure::UnitDefinitions { .. }
@@ -888,6 +889,9 @@ pub(crate) fn read_checked_package_v2(
                 },
             })
         }
+        CheckedPackageDispatchResult::CatalogUnavailable(_) => refused(V2ReadRefusal::Fault(
+            InternalFault::new("I2", "operation-catalog-unavailable"),
+        )),
         CheckedPackageDispatchResult::Incomplete(CheckedPackageIncomplete {
             limit_kind: kind,
             limit,
@@ -899,9 +903,6 @@ pub(crate) fn read_checked_package_v2(
             )),
             Err(fault) => refused(V2ReadRefusal::Fault(fault)),
         },
-        CheckedPackageDispatchResult::CatalogUnavailable(_) => refused(V2ReadRefusal::Fault(
-            InternalFault::new("I2", "operation-catalog-unavailable"),
-        )),
     }
 }
 
@@ -1063,6 +1064,8 @@ pub struct EvaluationWitnesses {
 pub enum WitnessSupplyFailure {
     /// The caller's native work or storage allowance was consumed.
     Exhausted(Box<quire_contract_model::ExactTypeProjectionError>),
+    /// Producer row materialization was denied inline before an allocation.
+    Rows(crate::NativeRowError),
     /// The supplier's own rows do not join the package it was built with.
     Fault,
 }
@@ -1115,6 +1118,7 @@ impl EvaluationWitnessSupplier for SourceWitnessSupplier {
                 .identity_rows(admitted, budget)
                 .map_err(|refusal| match refusal {
                     crate::IdentityFileRefusal::Native(native) => exhausted(*native),
+                    crate::IdentityFileRefusal::Rows(rows) => WitnessSupplyFailure::Rows(rows),
                     _ => WitnessSupplyFailure::Fault,
                 })?;
         let identities = rows
@@ -1139,13 +1143,13 @@ impl EvaluationWitnessSupplier for SourceWitnessSupplier {
                     budget,
                 )
             })
-            .and_then(|joined| {
-                joined.with_source_enum_rows(
-                    admitted,
-                    self.emission.selected_source_enum_rows(),
-                    budget,
-                )
-            })
+            .map_err(exhausted)?;
+        let enum_rows = self
+            .emission
+            .selected_source_enum_rows(budget)
+            .map_err(WitnessSupplyFailure::Rows)?;
+        let identities = identities
+            .with_source_enum_rows(admitted, enum_rows, budget)
             .map_err(exhausted)?;
         Ok(EvaluationWitnesses {
             identities: Some(identities),
@@ -1295,6 +1299,12 @@ impl AdmittedPackageRead<'_> {
             Ok(supplied) => supplied,
             Err(WitnessSupplyFailure::Exhausted(native)) => {
                 return Err(exhausted(*native, &budget))
+            }
+            Err(WitnessSupplyFailure::Rows(rows)) => {
+                return Err(match limits.native_join_limits().refusal(rows, &budget) {
+                    Some(denial) => ViewFailure::Exhausted(Box::new(denial)),
+                    None => fault(),
+                })
             }
             Err(WitnessSupplyFailure::Fault) => return Err(fault()),
         };

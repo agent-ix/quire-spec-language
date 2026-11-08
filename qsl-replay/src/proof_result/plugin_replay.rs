@@ -220,7 +220,7 @@ impl PluginReplayContext {
             .dependencies
             .iter()
             .map(|selection| {
-                let source = selection.source.as_ref().ok_or_else(|| {
+                selection.source.as_ref().ok_or_else(|| {
                     PluginReplayRefusal::UnresolvedDependency {
                         identity: selection.identity.as_str().to_owned(),
                     }
@@ -234,10 +234,20 @@ impl PluginReplayContext {
                             "selected-library-has-its-emitted-package",
                         ))
                     })?;
+                let lock = dependency_lock(package.bytes())?;
                 Ok(DependencyEntryWire {
                     identity: selection.identity.as_str().to_owned(),
-                    sources: vec![source.to_wire()],
-                    refinement_internals: dependency_internals(package.bytes())?,
+                    sources: lock
+                        .sources
+                        .iter()
+                        .map(|source| {
+                            (
+                                source.authority.as_ref().to_owned(),
+                                source.identity.as_ref().to_owned(),
+                            )
+                        })
+                        .collect(),
+                    refinement_internals: lock.refinement_internals,
                 })
             })
             .collect::<Result<Vec<_>, PluginReplayRefusal>>()?;
@@ -299,9 +309,9 @@ impl PluginReplayContext {
 
 // The producer owns this package's shape; this projects only its lock and does
 // not admit it or infer an absent list from its semantic graph.
-fn dependency_internals(
+fn dependency_lock(
     bytes: &[u8],
-) -> Result<Option<Vec<quire_contract_model::CheckedRefinementInternal>>, PluginReplayRefusal> {
+) -> Result<quire_contract_model::CheckedPackageLockV2, PluginReplayRefusal> {
     let invalid = || {
         PluginReplayRefusal::Fault(InternalFault::new(
             "plugin-replay",
@@ -313,7 +323,7 @@ fn dependency_internals(
     let lock = fields.get("lock").ok_or_else(invalid)?;
     let lock: quire_contract_model::CheckedPackageLockV2 =
         serde_json::from_str(lock.get()).map_err(|_| invalid())?;
-    Ok(lock.refinement_internals)
+    Ok(lock)
 }
 
 /// A plugin counterexample [`PluginReplayContext::request`] could not build a

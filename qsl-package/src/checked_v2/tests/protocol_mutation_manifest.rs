@@ -471,7 +471,8 @@ fn replay_row(
                 .iter()
                 .map(|node| serde_json::to_value(node).expect("a node value"))
                 .collect();
-            let base_nodes = base["semantic_graph"]["nodes"]
+            let inspection = resolved_fixture(base);
+            let base_nodes = inspection["semantic_graph"]["nodes"]
                 .as_array()
                 .map(Vec::as_slice)
                 .unwrap_or_default();

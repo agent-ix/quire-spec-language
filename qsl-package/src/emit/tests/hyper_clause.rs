@@ -1183,7 +1183,10 @@ fn lookups_of_what_is_no_hyper_clause_are_unresolved() {
         .expect("the slot is a node of the wire");
     let slot = qsl_semantics::check::wire_id::WireGraph::of_package_value(&built.wire)
         .unwrap()
-        .key_of_value_in(holder, &slot_node["node_id"])
+        .key_in_row(
+            holder,
+            &serde_json::from_value(slot_node["node_id"].clone()).expect("a typed slot id"),
+        )
         .expect("a structural slot key");
     for key in [
         claim(

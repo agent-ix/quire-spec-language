@@ -144,9 +144,9 @@ fn request(
     let mut dependencies: Vec<DependencyEntryWire> = libraries
         .iter()
         .map(|library| DependencyEntryWire {
+            refinement_internals: None,
             identity: library.identity.clone(),
             sources: vec![("a".to_owned(), library.source.identity.to_owned())],
-            refinement_internals: None,
         })
         .collect();
     dependencies.sort_by(|left, right| left.identity.cmp(&right.identity));

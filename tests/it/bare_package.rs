@@ -1518,6 +1518,9 @@ fn supply_on<'p>(
             qsl_package::NativeJoinFailure::Equality(error) => {
                 panic!("identity-only fixture has no equality read: {error:?}")
             }
+            qsl_package::NativeJoinFailure::Rows(error) => {
+                panic!("retained identity-only supply performs no producer row copy: {error:?}")
+            }
             qsl_package::NativeJoinFailure::UnitDefinitions { .. } => {
                 panic!("identity-only fixture has no unit rows")
             }
@@ -1789,8 +1792,8 @@ fn the_view_the_constructors_and_the_writer_refuse_a_budget_one_short() {
 }
 
 /// FR-531-AC-24 (writer half, TC-1331): a handoff request whose native join
-/// limits cannot pay for the identity join is refused with the typed denial
-/// and writes no directory; the fixture limits write it.
+/// limits cannot pay for the complete identity materialization pass is refused
+/// with the typed denial and writes no directory; exact limits write it.
 #[trace("TC-1331", "FR-531-AC-24")]
 #[test]
 fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join() {
@@ -1799,6 +1802,17 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
     let scratch = tempfile::tempdir().expect("tempdir");
     let built = recipe("event_position");
     let read = built.read(&built.emission);
+    // Copied package names are part of the real allowance. Calibrate the
+    // producer and public writer over the same complete named emission.
+    let package_name = built.emission.package().name().to_owned();
+    let mut same_request = request("event_position", Corpus::None);
+    same_request.emit.package_name = package_name.clone();
+    assert_eq!(
+        quire_spec_language::emit_checked_v2::emit(&same_request.emit)
+            .expect("actual public writer emission"),
+        built.emission.package().bytes(),
+        "the budget oracle and writer must use exactly the same producer package",
+    );
     let mut measure = quire_contract_model::NativeJoinBudget::new(1 << 30, 1 << 30);
     built
         .emission
@@ -1817,6 +1831,7 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
         ),
     ] {
         let mut asked = request("event_position", Corpus::None);
+        asked.emit.package_name = package_name.clone();
         asked.native_join = limits;
         let target = scratch.path().join(format!("{code:?}"));
         match write(&asked, &target) {
@@ -1825,8 +1840,26 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
                 let Error::NativeJoinExhausted(denial) = error else {
                     unreachable!()
                 };
-                assert!(
-                    matches!(&denial.native, qsl_package::NativeJoinFailure::Projection(native) if native.code == code)
+                let qsl_package::NativeJoinFailure::Rows(native) = &denial.native else {
+                    panic!(
+                        "the final producer copy retains its compact cause: {:?}",
+                        denial.native
+                    )
+                };
+                assert_eq!(
+                    native.code(),
+                    if code == Code::ExhaustedWork {
+                        qsl_package::NativeRowErrorCode::WorkLimit
+                    } else {
+                        qsl_package::NativeRowErrorCode::StorageLimit
+                    }
+                );
+                assert_eq!(
+                    native.locus(),
+                    Some(quire_contract_model::NativeJoinLocus {
+                        source: quire_contract_model::NativeJoinLocusSource::Package,
+                        form: "identity_package_output",
+                    })
                 );
                 assert_eq!(
                     denial.limit.setting().name(),
@@ -1842,6 +1875,7 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
                     limits.storage
                 };
                 assert_eq!(denial.limit.configured_bound(), bound);
+                assert_eq!(native.configured_bound(), Some(bound));
                 assert!(denial.limit.actual() > u128::from(bound));
                 assert!(denial.to_string().contains(denial.limit.setting().name()));
             }
@@ -1849,11 +1883,76 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
         }
         assert!(!target.exists(), "a refused write leaves no directory");
     }
+    // The complete writer continues from identities into equality on this
+    // same ledger, including when no equality applications were emitted.
+    let equality = built
+        .emission
+        .equality_witness(read.admitted(), &mut measure)
+        .expect("measure the writer's equality materialization after identities");
+    let complete_need = measure.consumed();
+    assert!(complete_need.work > need.work);
+    assert!(complete_need.storage > need.storage);
+    for (work, storage, code, setting) in [
+        (
+            complete_need.work - 1,
+            complete_need.storage,
+            qsl_package::NativeRowErrorCode::WorkLimit,
+            "i2.work_units",
+        ),
+        (
+            complete_need.work,
+            complete_need.storage - 1,
+            qsl_package::NativeRowErrorCode::StorageLimit,
+            "i2.native_join_storage",
+        ),
+    ] {
+        let mut oracle = quire_contract_model::NativeJoinBudget::new(work, storage);
+        built
+            .emission
+            .identity_rows(read.admitted(), &mut oracle)
+            .expect("the complete-writer boundary still pays for identities");
+        let expected = built
+            .emission
+            .equality_witness(read.admitted(), &mut oracle)
+            .expect_err("one-short complete allowance refuses during equality");
+        assert_eq!(expected.code(), code);
+        assert_eq!(expected.denied(), oracle.first_unpaid());
+        assert_eq!(expected.locus(), oracle.first_unpaid_locus());
+        let mut asked = request("event_position", Corpus::None);
+        asked.emit.package_name = package_name.clone();
+        asked.native_join = qsl_package::NativeJoinLimits::new(work, storage);
+        let target = scratch.path().join(format!("complete-{work}-{storage}"));
+        match write(&asked, &target) {
+            Err(Error::NativeJoinExhausted(denial)) => {
+                let qsl_package::NativeJoinFailure::Rows(actual) = &denial.native else {
+                    panic!("the public writer retains the measured equality denial");
+                };
+                assert_eq!(*actual, expected, "resource, amount, locus and full bound");
+                assert_eq!(denial.limit.setting().name(), setting);
+                let bound = expected.configured_bound().expect("a budget bound");
+                assert_eq!(denial.limit.configured_bound(), bound);
+                assert!(denial.limit.actual() > u128::from(bound));
+            }
+            other => panic!("expected the measured equality denial, got {other:?}"),
+        }
+        assert!(
+            !target.exists(),
+            "a refused complete write leaves no directory"
+        );
+    }
     let target = scratch.path().join("written");
     let mut exact = request("event_position", Corpus::None);
-    exact.native_join = qsl_package::NativeJoinLimits::new(need.work, need.storage);
-    write(&exact, &target).expect("exact work and storage write the directory");
+    exact.emit.package_name = package_name;
+    exact.native_join =
+        qsl_package::NativeJoinLimits::new(complete_need.work, complete_need.storage);
+    write(&exact, &target).expect("exact complete work and storage write the directory");
     assert!(target.join("identities.json").exists());
+    assert_eq!(
+        std::fs::read(target.join("equality.json")).expect("written equality file"),
+        equality
+            .to_bytes(read.admitted())
+            .expect("measured equality file")
+    );
 }
 
 /// Original opaque ceilings and cumulative attempted totals survive every

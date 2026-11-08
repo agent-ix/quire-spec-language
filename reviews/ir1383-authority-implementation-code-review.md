@@ -1,0 +1,719 @@
+---
+id: SR-202611070458156
+title: "IR-1383 authority code-review"
+type: SpecReview
+analysis: code-review
+scope: "agent-ix/quire-spec-language; IR-1383 IR-1388 IR-1389 QSL-1599 PR2489 combined full origin/main...HEAD, including PR2542"
+review_set: subset
+---
+
+## Summary
+
+Reviewed the implementation at 818ff2bcc9c20208c530d2cbb43a2ee994414248 against the merged FR-251/TC-1081 authority contract and actual observation PR49 API. Original native errors, structural NodeIdentity/ClaimOccurrence and owner View values are retained; no mirror authority or document-byte substitute was found.
+
+## Verdict
+
+**CONDITIONAL** — Fix each recorded finding and qualify genuine positive admission before merge. The code lead owns the one final aggregate gate.
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | low | A correct existing claim with a different independently selected observation source is filtered out before check_time_source_fields and returns Selection(Claim). The public Source code documents this actual mismatch but is unreachable through admit_authority. Distinguish no matching claim from a matching claim whose observation source differs, and assert exact Selection(Source). | qsl-analyze/src/monitor_root/progress.rs:390-403 |
+
+## Coverage
+
+Plan completion: not assessed
+
+Rust review covers API ownership, read-only PlanRoot/AdmittedPlanAuthority, typed errors, finite reader/canonical limits, structural node/occurrence equality, original versus final-emission joins, public getters and complete owner value retention. QSL SourceIdentity and observation Identity are deliberately distinct domains and are independently selected. The final package is strictly read from this immutable root's own final emission/evidence; its AdmissionBinding cannot be replaced through a public setter. Source and test changes contain no unsafe or CI weakening. First-party dependency manifests remain branch=main. No applicable AssuranceProfile was found.
+
+The positive fixture genuinely constructs a StaticProducerBundle, uses owner admission, canonical record/population identities, derives and strict-reads progress before supplying View. Runtime success still requires the positive tests to pass; no owner capability is inferred from a name, digest, arbitrary JSON or component-only comparison.
+
+Computed matrix was attempted with a 30-second bound; result is recorded separately. Manual criterion/test/code correspondence checks direct paired trace tags. No whole-repository completion or computed coverage credit is asserted. No spec/plan file is changed relative to current main, so spec-review methods are not applicable; merged FR-251/TC-1081 are the context.
+
+## Validation evidence
+
+Coder compile/check passed in /tmp/IR-1383-authority-check.log. At the original runtime checkpoint /tmp/IR-1383-authority-tests.log reports three passing negatives and two genuine positive failures at strict IR admission. No reviewer Cargo build or aggregate gate was started in the shared ticket worktree. Later fixes require this reviewer's explicit disposition.
+
+## Examined scope
+
+- `FR-251-AC-45` — `spec/functional/FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md`: From a genuine authored tick-monitor unit, the public plan-root handoff returns the complete QSL-admitted model-step order and the observation owner's original canonical association VALUE, bound to the same final emission as its plan and two timing obligations. A public consumer compares the complete values and original source, structural clause node, claim role and ordinal, selected subject and checked model-time facts; the final emission temporal binding join equals its plan-root clause and the strict reader declaration. Both values and owner capabilities remain usable after temporary compil
+- `FR-251-AC-46` — `spec/functional/FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md`: Independently omit the checked order premise and progress association; substitute a foreign admitted emission; change the structural clause node, claim role, claim ordinal or original source; change the selected subject, observation source, clock identity/revision, model, structural model/unit/dimension/digital-operation node, unit, source kind, digital operation or exact period; and substitute order or progress values. Each candidate returns its typed missing-premise, owner refusal or mismatched-selection condition and no partial admitted context. Exact owner canonical-association byte bounds
+- `FR-251-AC-47` — `spec/functional/FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md`: After original source, model and request inputs are dropped, a public consumer reads the actual combined checked unit retained by the plan root: its exact source includes the authored unit and generated entries, its selected clause equals the plan subject, and its checked time source retains the selected model node, source kind and unit. These are explicitly original checker facts, not final renamed identities or admitted order/progress.
+- `FR-251-AC-48` — `spec/functional/FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md`: A genuine dense model-time monitor root yields the complete specified canonical model-step value, with the actual checked model/unit/dimension identities. A digital source retains its exact period and checked tick-operation anchor. Changed source kind, unit or period changes the value. Exact-byte-ceiling encoding succeeds and one byte less returns Encoding with the original native canonical limit and no partial order value.
+- `Cargo.lock` — `Cargo.lock`: Reviewed the complete changed file and relevant callers/owner contracts.
+- `qsl-analyze/Cargo.toml` — `qsl-analyze/Cargo.toml`: Reviewed the complete changed file and relevant callers/owner contracts.
+- `qsl-analyze/src/monitor_root.rs` — `qsl-analyze/src/monitor_root.rs`: Reviewed the complete changed file and relevant callers/owner contracts.
+- `qsl-analyze/src/monitor_root/order.rs` — `qsl-analyze/src/monitor_root/order.rs`: Reviewed the complete changed file and relevant callers/owner contracts.
+- `qsl-analyze/src/monitor_root/progress.rs` — `qsl-analyze/src/monitor_root/progress.rs`: Reviewed the complete changed file and relevant callers/owner contracts.
+- `qsl-analyze/src/monitor_root/progress/tests.rs` — `qsl-analyze/src/monitor_root/progress/tests.rs`: Reviewed the complete changed file and relevant callers/owner contracts.
+- `qsl-analyze/tests/it/main.rs` — `qsl-analyze/tests/it/main.rs`: Reviewed the complete changed file and relevant callers/owner contracts.
+- `qsl-analyze/tests/it/monitor_authority.rs` — `qsl-analyze/tests/it/monitor_authority.rs`: Reviewed the complete changed file and relevant callers/owner contracts.
+- `qsl-analyze/tests/it/monitor_authority/observation.rs` — `qsl-analyze/tests/it/monitor_authority/observation.rs`: Reviewed the complete changed file and relevant callers/owner contracts.
+- `qsl-analyze/tests/it/monitor_root.rs` — `qsl-analyze/tests/it/monitor_root.rs`: Reviewed the complete changed file and relevant callers/owner contracts.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The source mismatch is distinguished from absent claim before canonical authority issuance. The genuine independent selector control asserts exact Selection(Source) and passes. |
+
+## Current outcome
+
+**PASS** on c7368900224daca67789bc6c03f8b25e4b9df868 — All original findings are fixed. Re-reviewed the full implementation and the new writer evidence delta. The final context consumes one immutable original PlanRoot and retains that exact final emission, original checked unit, actual strict-reader package, QSL model-step value, original observation View and its complete bounded canonical association value. QSL source and observation source are distinct domains; no equality or invented field conflates them. Full structural node and actual claim occurrence fields are compared, then the retained temporal row joins to the strict reader's final clause. No mirror authority, synthetic evidence, source re-emission or arbitrary document-byte substitution is introduced.
+
+The producer evidence fix clones the actual CheckedPackageEvidence supplied to the original strict base read, preserving admitted domain/dependency capabilities. The private writer's final package serializes the same base lock, so supporting base.lock.required_features at this boundary names precisely that final lock; no additional fabricated record or authority is synthesized. New strict reads use only returned emission evidence.
+
+## Final focused evidence
+
+/tmp/IR-1383-authority-tests.log: seven genuine authority tests pass (0 failures, 8.62s), including real tick positive/full owner values, dense/tick retained evidence without reinjection, isolated independent claim controls, exact source diagnostic, foreign/missing selections and canonical exact/one-short bounds. /tmp/IR-1383-authority-clippy.log: qsl-analyze library/test-target Clippy passes with warnings denied (16.72s). Read-only compile-fail documentation covers root and admitted-order immutability; the lead's final gate includes qsl-analyze documentation and the existing monitor-root suite. No duplicate reviewer Cargo or aggregate gate was run. Computed matrix timed out at 30s with no JSON (exit124); manual scoped trace review is recorded, without computed coverage credit or whole-repository completion claim.
+
+## Additional examined scope
+
+- `qsl-package/src/emit/monitor_plan.rs`: actual evidence retention at the publication boundary and unchanged final lock.
+
+Additional focused results verified on the same clean c73689002 source: nineteen existing monitor-root tests, one private checked-source component test, and both immutable-context compile-fail doctests pass in the corresponding /tmp/IR-1383-authority-{existing-roots,components,docs}.log files. No further source changes or reviewer builds.
+
+## Final combined-head verification
+
+**PASS** on 199530b4a62b008d1e3101da0690181d5742c508 — Rechecked the composed current-main diff. The only intervening upstream delta is five unrelated specification Markdown files under FR-290/FR-529/FR-530 and TC-1329/TC-1330. All Rust sources, manifests and Cargo.lock are identical to the genuinely tested c73689002 head. No new findings; all round-one dispositions remain fixed. No duplicate Cargo test or review comment is needed for this source-equivalent composition.
+
+## Combined stack final examination
+
+Frozen candidate `a122d51a2e6d1e4a2f250b801bbddc9cdde1c5d0`; full `origin/main...HEAD` against main `d32cfd898`. PR2542 `b698d5d40` is included. This supersedes narrower historical scope without rewriting historical findings.
+
+FAIL / HOLD — new medium allocation-boundary defect FND-002 and reproduced high wrong-claim binding FND-003. Rust/style, public API, wire conversion, original typed refusal paths, shared ledgers and conflict composition inspected. No new unsafe code, CI weakening, compatibility layer, vendor or pin found. Inline large-error allowances in authority modules correctly avoid denial allocation. Frozen branch not edited. Historical FND-001 remains fixed.
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | medium | SourceWitnessSupplier boxes the compact NativeRowError after identity_rows or selected_source_enum_rows has denied the caller's storage/work charge. With a genuine emission and zero remaining storage, identity_rows returns its allocation-free Rows denial, but supply immediately executes Box::new(rows), allocating an uncharged error after refusal. Keep the compact denial inline through WitnessSupplyFailure and cover the actual supplier boundary with allocation observation. | qsl-package/src/checked_v2.rs:1122; qsl-package/src/checked_v2.rs:1152 |
+| FND-003 | high | HybridProcessRequest::read selects the first raw slot-form node_id match, so two different genuine hybrid clauses whose local slot IDs have identical bytes bind to the first clause. An unchanged public-API probe compiling One (h.v < 30) and Two (h.v < 29) produces distinct graph positions 24 and 25 with equal wire own IDs and claim ordinal 0; reading the second item succeeds but returns position 24. This can solve or settle a different obligation. Resolve the request as a document-held identity or require an unambiguous holder; never choose the first byte-equal node. | qsl-replay/src/hybrid/process_request.rs:324 |
+
+## Dispositions — combined round 2
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | still-open | New defect verified by the reachable unconditional Box::new in the actual source supplier; no frozen-source mutation or runtime allocation probe was performed. |
+| FND-003 | still-open | Reproduced by the non-mutating standalone public-API probe in hybrid_probe.rs; hybrid-probe.log records second expected graph position 25 becoming actual position 24. Current freshly built qsl_replay rlib was linked, no source edits or review clone. |
+
+## Examined combined scope
+
+```yaml
+scope:
+- id: FR-251-AC-45
+  path: spec/functional/FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md
+  role: examined
+  excerpt: From a genuine authored tick-monitor unit, the public plan-root handoff
+    returns the complete QSL-admitted model-step order and the observation owner's
+    original canonical association VALUE, bound to the same final emission as its
+    plan and two timing obligations. A public consumer compares the complete values
+    and original source, structural clause node, claim role and ordinal, selected
+    subject and checked model-time facts; the final emission temporal binding join
+    equals its plan-root clause and the strict reader declaration. The handoff exposes
+    the actual emitting package's original opaque IR Ad
+- id: FR-251-AC-46
+  path: spec/functional/FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md
+  role: examined
+  excerpt: Independently omit the checked order premise and progress association;
+    substitute a foreign admitted emission; change the structural clause node, claim
+    role, claim ordinal or original source; change the selected subject, observation
+    source, clock identity/revision, model, structural model/unit/dimension/digital-operation
+    node, unit, source kind, digital operation or exact period; and substitute order
+    or progress values. Each candidate returns its typed missing-premise, owner refusal
+    or mismatched-selection condition and no partial admitted context. Owner admission
+    at its exact supported docume
+- id: FR-251-AC-47
+  path: spec/functional/FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md
+  role: examined
+  excerpt: 'After original source, model and request inputs are dropped, a public
+    consumer reads the actual combined checked unit retained by the plan root: its
+    exact source includes the authored unit and generated entries, its selected clause
+    equals the plan subject, and its checked time source retains the selected model
+    node, source kind and unit. These are explicitly original checker facts, not final
+    renamed identities or admitted order/progress.'
+- id: FR-251-AC-48
+  path: spec/functional/FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md
+  role: examined
+  excerpt: A genuine dense model-time monitor root yields the complete specified canonical
+    model-step value, with the actual checked model/unit/dimension identities. A digital
+    source retains its exact period and checked tick-operation anchor. Changed source
+    kind, unit or period changes the value. Exact-byte-ceiling encoding succeeds and
+    one byte less returns Encoding with the original native canonical limit and no
+    partial order value.
+- id: FR-251-AC-49
+  path: spec/functional/FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md
+  role: examined
+  excerpt: 'The authority handoff and order materialization receive the caller''s
+    one mutable NativeJoinBudget, precharge every specified selection/materialization
+    work and logical-storage step, and preserve previous consumption when used before
+    row adaptation and native closure preparation. Measure genuine dense and tick
+    handoffs at ample allowance: exact combined work and storage succeed; one short
+    independently preserves the first unpaid native kind, full amount, original bound
+    and non-owning locus without a context. Precharge part of the same budget before
+    entry, then demonstrate that two individually '
+- id: FR-251-AC-50
+  path: spec/functional/FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md
+  role: examined
+  excerpt: A genuine dense authority returns its original checked ModelTimeSource
+    by borrow and no IR tick period; a genuine tick authority returns its original
+    checked source and an actual borrowed IR CheckedRational with the exact same checked
+    numerator/denominator. The source borrow names the same element of the immutable
+    retained checked-unit source slice. The IR period comes from the selected same-package
+    clock's validated canonical period components, compared against the checked association
+    and copied once under the original shared budget; exact storage for the actual
+    IR container and two component
+- id: FR-531-AC-28
+  path: spec/functional/FR-531-evaluate-from-a-checked-package-read-from-its-bytes-alone.md
+  role: examined
+  excerpt: Producer and bytes-only equality admission pass the caller's same `NativeJoinBudget`
+    through IR's admitted equality reader after identity/type projection. Decisions
+    and non-resource witness refusals are retained for later unmetered selection and
+    projection. Successful reads consume native work and storage cumulatively; exact
+    measured bounds admit, and one unit less in either resource refuses with the original
+    typed IR equality denial and recorded first unpaid charge, never an unknown witness
+    or internal fault. Reusing an admitted slot consumes no additional native allowance.
+- id: FR-531-AC-29
+  path: spec/functional/FR-531-evaluate-from-a-checked-package-read-from-its-bytes-alone.md
+  role: examined
+  excerpt: Materializing an authentic emission's equality witness with a shared native
+    budget preserves every application, fact and source-unit row, including original
+    identities and order. The source admission and handoff paths use the same budgeted
+    row builder. Exact measured work and storage allowances return the complete witness;
+    one unit less in either resource refuses without allocating the denied material
+    or a diagnostic, retains the first unpaid resource, amount and original locus,
+    and returns no partial witness. Two individually affordable materializations that
+    exceed one shared allowance refuse
+- id: FR-531-AC-30
+  path: spec/functional/FR-531-evaluate-from-a-checked-package-read-from-its-bytes-alone.md
+  role: examined
+  excerpt: 'Source-enum materialization and QSL-to-IR model-enum-shape and selected-collection
+    conversion preserve original structural/declaration/member identities, canonical
+    case order and complete Exact types on one shared native budget. Exact measured
+    bounds admit; work or storage one short and zero storage return allocation-free
+    compact denials at the first unpaid locus with prior consumption intact. A later
+    conversion cannot reset a preceding adapter''s charges or replace its first denial.
+    A selected source map preserves its original optional key node and complete Exact
+    map value type through actual '
+- id: FR-531-AC-31
+  path: spec/functional/FR-531-evaluate-from-a-checked-package-read-from-its-bytes-alone.md
+  role: examined
+  excerpt: An authentic emission with source records, record members and unions produces
+    complete identity rows equal to the original producer claims after native joining
+    and QSL materialization. The measured work and storage include the QSL producer
+    input copies, the single native join and each later QSL declaration, field, record/member
+    and union copy. Exact allowances admit; one unit below either measured allowance
+    refuses at its first unpaid step with no partial identity rows, the original configured
+    bound and the admitted prefix intact. Denied external row copies retain AdapterRow(i)
+    at their origin
+- id: FR-531-AC-32
+  path: spec/functional/FR-531-evaluate-from-a-checked-package-read-from-its-bytes-alone.md
+  role: examined
+  excerpt: A real tick-monitor plan's retained context supplies the same emission's
+    plan, obligations, admitted order and progress association to the actual native
+    row join and selected type-closure projection. The resulting native nodes, original
+    declaration/member identities and Exact types equal those of that emission. Substituting
+    another genuine emission's context, even with identical authored names, or omitting
+    required order/progress authority returns a typed refusal and no executable context.
+    Borrowing retained context leaves native storage consumption unchanged.
+- id: FR-531-AC-33
+  path: spec/functional/FR-531-evaluate-from-a-checked-package-read-from-its-bytes-alone.md
+  role: examined
+  excerpt: Allocation observation encloses only the adapter/conversion call, with
+    fixture preparation and assertions outside it. A successful owned materialization
+    performs observed allocations; a denial before its first allocation performs none,
+    and a later denial allocates neither the denied material nor an owned diagnostic.
+    The controls include fresh owner-produced lazy numeric payloads, values `2^127`
+    and `-(2^127 + 1)`, and larger heap-backed values without prior warming or formatting.
+    These values remain exact on successful copies; insufficient work/storage retains
+    the first real row locus and orig
+- id: FR-071-AC-7
+  path: spec/functional/FR-071-implement-typed-replay-request.md
+  role: examined
+  excerpt: A request whose encoded size exceeds the configured reader bound refuses,
+    and no truncated or partially-populated request is returned.
+- id: FR-098-AC-7
+  path: spec/functional/FR-098-execute-a-replay-request.md
+  role: examined
+  excerpt: A request whose `dependencies` entries are swapped, or repeat one identity,
+    refuses `ReplayRefusal::DependencySelections` (`invalid_package`/`invalid-value`
+    at `/dependencies`) before any recompile; one carrying an extra entry no import
+    reaches refuses `DependencySelections` after the recompile; two entries whose
+    sources share one authority and identity refuse `ReplayRefusal::DependencyInput`
+    (`invalid_package`/`conflicting-definition`); one lacking an entry refuses `ReplayRefusal::Recompile`
+    carrying `missing_import`/`missing-selection` at the import; an entry naming two
+    sources of one librar
+- id: FR-098-AC-20
+  path: spec/functional/FR-098-execute-a-replay-request.md
+  role: examined
+  excerpt: 'A request for a proved package whose refinement `CasTwice` has the internal
+    list `[{"refinement": "CasTwice", "internal": ["Spec::Twice::Done"]}]` carries
+    it at `/package/lock/refinement_internals` and recompiles. A well-shaped list
+    naming an unknown refinement or an unresolved internal class (`Spec::Twice::zz`
+    at index 0) refuses `RefinementInternals`, retaining the complete native compiler
+    refusal with its original code, cause and relative locus, and separately locating
+    the request at `/package/lock/refinement_internals` followed by that relative
+    pointer. A root value of `{}` is instead a bo'
+- id: FR-350-AC-16
+  path: spec/functional/FR-350-run-the-conformance-corpus-against-qsl.md
+  role: examined
+  excerpt: 'A `replay-request` file whose `package` is the checked-package document
+    named `orders` with `contract_version` `quire.checked-package/v2`, whose `lock.sources`
+    holds the one `{authority, identity}` entry `("repo", "orders.qsl")`, and whose
+    `dependencies` holds `{identity: "lib/money", sources: [("repo", "money.qsl")]}`,
+    decodes to a request with package name `orders`, that one source and one dependency
+    entry with `identity` `lib/money` and its one source, and no version member; the
+    same file with `package` removed, with `package` set to the string `"orders"`,
+    with `contract_version` set to `qu'
+- id: FR-350-AC-17
+  path: spec/functional/FR-350-run-the-conformance-corpus-against-qsl.md
+  role: examined
+  excerpt: 'A `byte_provision` row whose `bytes_path` is `missing.bin` (absent from
+    the vector directory), `unlisted.bin` (present but not listed as `kind: bytes`),
+    `/etc/hostname` (absolute) or `../x.bin` (parent-traversing) is a `tool-failure`
+    with cause `corpus-decode` and pointer `/byte_provision/0/bytes_path`, and no
+    request is constructed; a listed `kind: bytes` path is read as raw bytes.'
+- id: FR-350-AC-18
+  path: spec/functional/FR-350-run-the-conformance-corpus-against-qsl.md
+  role: examined
+  excerpt: A `stage_limits` map holding the key `depth` (no FR-255 setting of that
+    name) is a `tool-failure` with cause `corpus-decode` and pointer `/stage_limits/depth`;
+    the key `s1.input_bytes` with the value `"1024"` decodes to the entry `("s1.input_bytes",
+    1024)`.
+- id: FR-480-AC-7
+  path: spec/functional/FR-480-compile-and-link-a-package-from-several-source-units.md
+  role: examined
+  excerpt: 'AC-1''s package replays: an FR-098 request whose package reference lists
+    `U1` and `U2` in canonical unit order, with both sources in the byte provision,
+    recompiles to the same structural package and replays the D10 call. The same reference
+    with the two sources reversed recompiles to the same structural package and replays;
+    with one source repeated it refuses before any recompile, `invalid_package`/`invalid-value`
+    at `/package/lock/sources`. A reference naming a definition document refuses before
+    any recompile.'
+- id: FR-484
+  path: spec/functional/FR-484-identify-a-function-value-parity-claim-and-retain-its-replay-inputs.md
+  role: examined
+  excerpt: 'A function-value parity claim says that the generated code of a
+
+    non-`Boolean` function `f` returns QSL''s exact `f(b)` at the parameter
+
+    bindings `b` it was run at (FR-357, function level). Its obligation is the
+
+    whole function: on every argument vector the declared signature of `f`
+
+    admits, the generated outcome equals QSL''s exact one. A counterexample is
+
+    one such vector together with the generated outcome observed there.
+
+
+    QSL SHALL own this obligation''s identity. It SHALL define the preimage,
+
+    mint it as the preimage value itself, compared by structural equality
+
+    (ADR-013 O-09), hand it to the cla'
+- id: FR-488
+  path: spec/functional/FR-488-emit-a-checked-hyper-clause-as-a-v2-hyperproperty-node.md
+  role: examined
+  excerpt: "The S4 package emitter (ADR-011 layer 4 `package`, edge E4) SHALL emit\
+    \ each\nchecked hyper clause over `behaviours` (FR-172) as one\n`quire.checked-semantic-graph/v2`\
+    \ node with `node_tag: \"claim\"` and\n`semantic_form: \"hyperproperty\"`, whose\
+    \ body is the seven-binding aggregate\nQSpec FR-402 states, together with the\
+    \ nodes that aggregate references: the\nclause's object-parameter and subject\
+    \ model nodes, its `match` conjunct\nnodes, its `align skip` operation anchors\
+    \ and its body's formula nodes.\nQSL's I2 reader reads the node back, and the\
+    \ checked clause exposes its\n`claim` occurrence (\xA7 \"Outputs\")."
+- id: TC-1081
+  path: spec/test-cases/TC-1081-monitor-builds-from-the-plan-alone-and-refuses-tampered-or-unsupported-plans.md
+  role: examined
+  excerpt: 'Verify that the executable monitor plan of FR-251 is self-sufficient,
+    that admission refuses any plan not derived from the selected clause and target,
+    that built monitors do not share state, that executing the plan agrees with QSL''s
+    reference evaluator, and that every build, admission and execution fault is a
+    typed non-verdict result.
+
+
+    Scope: FR-251-AC-4 to FR-251-AC-12, FR-251-AC-14, FR-251-AC-15, FR-251-AC-17,
+    FR-251-AC-19, FR-251-AC-21, FR-251-AC-23 to FR-251-AC-25, FR-251-AC-27 to FR-251-AC-30,
+    FR-251-AC-32 to FR-251-AC-39, FR-251-AC-41, FR-251-AC-42, FR-251-AC-43 through
+    FR-251-AC-50.'
+- id: TC-1325
+  path: spec/test-cases/TC-1325-the-runner-decodes-a-replay-request-file.md
+  role: examined
+  excerpt: 'Verify FR-350-AC-11 to FR-350-AC-14 and FR-350-AC-16 to FR-350-AC-18 (AC-15
+    is retired) over fixture `replay-request` files. A wrong implementation this test
+    catches: an adapter that executes no replay vector, one that keeps revision labels,
+    one that reports a malformed corpus file as a QSL refusal.'
+- id: TC-1331
+  path: spec/test-cases/TC-1331-evaluate-from-a-checked-package-read-from-its-bytes-alone.md
+  role: examined
+  excerpt: 'Verify the bytes-only entry and its selected-monitor preparation boundary.
+
+    Scope: FR-531-AC-1 through FR-531-AC-33. **R** is the package of FR-517.
+
+    The isolated bytes-only consumer test crate depends on `quire-contract-model`,
+
+    `qsl-package` and `qsl-eval` only. Producer transport and selected-monitor
+
+    preparation tests additionally obtain authentic final emissions, admitted model
+
+    inputs and the FR-251 plan context through their public QSL APIs before handing
+
+    rows or bytes to the consumer.'
+- id: QSpec-FR-402-AC-5
+  path: agent-ix/quire-specification/spec/objects/interfaces/FR-402-hyperproperty-obligation-identity.md
+  role: examined
+  excerpt: A `behaviours` clause's `quantifiers` binding is a Tuple of one quantifier
+    Group per quantifier, each Group binding `variable`, `quantifier` and `alias`
+    to text literals and then holding one `reference` per fairness constraint to its
+    `temporal`/`fairness` node; with `fair weak V::Vault::step` on `a` of TC-337 HB-01,
+    `a`'s Group holds one reference and `b`'s none; the body passes strict wire validation
+    of FR-322's grammar with no `malformed_wire`, and the reader admits the package.
+    A finite-domain clause's Groups bind `variable` and `quantifier` only and its
+    `subjects` is empty.
+- id: QSpec-FR-402-AC-6
+  path: agent-ix/quire-specification/spec/objects/interfaces/FR-402-hyperproperty-obligation-identity.md
+  role: examined
+  excerpt: 'Each `subjects` binding references the `model`/`model_root` node of the
+    package its alias selects: two aliases'' clauses over one object type of each
+    package reference two roots, and a clause whose alias binds no object parameter
+    has that alias''s root as its subject; a `subjects` target that is a `model`/`object_type`
+    node refuses `invalid_model_binding`/`malformed-declaration` at the target; a
+    quantifier `alias` naming no subject refuses `missing_declaration`/`missing-name`
+    at the `alias` binding; a `subjects` binding no Group names, and a body of six
+    bindings, each refuse `invalid_semantic_gr'
+- id: QSpec-FR-402-AC-7
+  path: agent-ix/quire-specification/spec/objects/interfaces/FR-402-hyperproperty-obligation-identity.md
+  role: examined
+  excerpt: 'Each quantifier fairness refusal is located at the reference `/semantic_graph/nodes/{n}/body/members/3/value/members/{g}/members/{m}`:
+    a fairness node whose target is a `protocol_root` target refuses `invalid_model_binding`/`malformed-declaration`;
+    one whose `operation` target names no effective operation refuses `missing_declaration`/`missing-name`;
+    one whose declaring node belongs to another alias''s package refuses `invalid_model_binding`/`malformed-declaration`;
+    and a non-empty quantifier fairness set under a body wrapper whose profile is
+    `quire.temporal.event-position.false-extension/v1` r'
+```
+
+## Validation boundaries
+
+The lead owns the single final combined gate after fixes. No aggregate gate, workspace build, make ci or Kani was run by this reviewer. Full mutation testing was prohibited on the frozen branch; static old-code sensitivity was checked from the oracles. Coder receipts were inspected as secondary evidence and are not substituted for reviewer runtime results.
+
+
+Combined additional examined unit:
+
+```yaml
+scope:
+- id: FR-447-AC-4
+  path: spec/functional/FR-447-check-a-hybrid-declaration-and-lower-it-to-a-hybrid-provider-request.md
+  role: examined
+  excerpt: The request writer writes for `SlowEnough` one item of kind `temporal-satisfaction`,
+    extent `bounded`, carrying the hybrid-dynamics requirement, whose `claim` names
+    `SlowEnough`'s emitted `temporal_clause` node and its `claim` occurrence; with
+    an in-process fixture hybrid provider registered the item routes to it, which
+    reads `Braking` from the checked package; with only a process fixture hybrid provider
+    registered the item routes to it, which receives the package's v2 bytes and reads
+    `Braking` and `SlowEnough` from their QSpec FR-481 nodes; with none registered
+    it settles `unsupported`, `unsu
+```
+
+## Current evidence and limitations
+
+Computed `quire matrix --scope . --format json` produced zero JSON bytes after more than seven minutes of CPU work and was explicitly stopped with SIGTERM. A scoped manual tag/test/source inventory was used; repository-wide untagged counts, matrix completeness and a global matrix PASS are unavailable. Plan completion: not assessed.
+
+Focused reviewer runtime receipts are in this scratchpad. Coder clippy/fmt receipts are secondary; the user assigned the aggregate checks, cargo deny and final gate to the lead, so they were not duplicated. Standalone hybrid_probe.rs uses public APIs linked to the freshly built current qsl_replay library, outside the frozen tree, and reproduces wrong-claim binding without mutating the candidate. No review clone, source edit, commit or push was made.
+
+Focused frozen-head checks: original AdapterRow output, sparse retained field index, tick complete three-resource handoff, root refinement false replay, dependency-isolated refinement false replay, hyper fairness references and two-alias model-root subjects each passed one exact test. Map/sequence actual native projection and cold equality payload tests also passed. The model-enum native closure check FAILED at monitor_root.rs:1308 (expected one Tier row; actual []); historical IR1388 gap FND001 remains still-open. These are focused checks only.
+
+## Disposition round 3 — frozen combined candidate
+
+Candidate `323de3d51f2009318166d5e6cd1275c71632111d`; main `8c0574211700c6d8552c4b7f2b939c338bdca56a`; user-frozen peer `349675273a242204362f6c65557229f831545b36`; normal owner lock `211baac39337cecd2bdd874659b63a044e53bb68`. Historical findings and outcome rows remain unchanged.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | fixed | WitnessSupplyFailure::Rows now retains NativeRowError inline at both supplier mapping sites and the consumer accepts that same payload. The actual genuine source supplier regression observes zero allocations/bytes for denied storage and preserved prior work denial, with original bounds/locus and unchanged paid prefix on repeated calls. |
+| FND-003 | fixed | claim_position resolves a document-held request identity against the admitted resolved graph, verifies its exact document wire value and claim occurrence, and selects that graph position. No raw first-match fallback remains. The genuine One/Two collision regression selects the second first, verifies both distinct positions, and rejects externally supplied ambiguous raw slot IDs. |
+
+## Current disposition verdict
+
+PASS for the examined fixes and bounded composition, with no new findings. All original still-open findings in this artifact now have fixed latest outcomes. The lead owns the pending single aggregate gate; this review does not authorize merge or remove the user/planner hold.
+
+Bounded composition since a122d51a2 examined: d77e657fa/d68182906/66df3c18a repairs; normal IR211baac3 adoption; peer shared canonical iterative operand-index walk and claim_position composition; fixed user-frozen peer349675273 root checked-handoff CatalogUnavailable and resolved mutation-authoring delta; final public writer docs and explicit limits. Native admission receives original authored wire. Foreign package/dependency graph indices remain untouched. Positive hyper subject/fairness assertions are retained, and execute keeps supplied refinement internals with the incoming extension_catalog option. Published main8c0574211 extension semantics are upstream context, not a new review of that already-landed feature. No new defect found in these changed boundaries. No later peer head was fetched or reviewed.
+
+The previous unavailable global matrix was not rerun. Scoped trace/oracle bindings were rechecked against source; no global matrix pass is claimed. Plan completion: not assessed. Mutation verification did not alter frozen source: supplied prior red/green receipts were examined as secondary evidence. Focused reviewer test receipts and the requested legacy canonical-bound control are recorded separately in this directory. No source edit, push, review clone, peer chase or aggregate gate occurred.
+
+## Fixed source excerpts
+
+FND-002
+
+```rust
+    Rows(crate::NativeRowError),
+```
+
+FND-003
+
+```rust
+    let key = graph
+        .key(&id)
+        .map_err(|_| HybridProcessRequestRefusal::ClaimMismatch)?;
+    let position = graph
+        .index_of(&key)
+        .and_then(|index| usize::try_from(index).ok())
+        .ok_or(HybridProcessRequestRefusal::ClaimMismatch)?;
+```
+
+
+## Reviewer runtime confirmation
+
+At the frozen candidate, five individual exact tests passed (one test executed each): actual source supplier compact-denial allocation observation; two genuine hybrid clauses with equal raw IDs and distinct document-held claims; genuine typed Tier complete native closure plus direct Exact enum projection; complete dense and tick three-resource measured handoffs; and the existing exact canonical bounds success/one-short owner-refusal oracle. Logs: supplier.log, hybrid.log, enum.log, dense-tick.log, legacy-canonical.log in this disposition directory. Each Cargo invocation used the prescribed flock/scheduling/environment and this existing target. The legacy helper explicitly configures finite read storage and its original full value/borrow/typed refusal assertions pass under the adopted owner reader. No aggregate gate was run.
+
+## New findings (disposition pass 4)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | The gate exposed stale slot-holder harness assumptions: twelve tests compared raw node-local slot IDs/whole nodes against document-resolved admitted nodes, authored valid-base mutations without fresh operand rows, omitted the published second-frame row, or compared hybrid vector references without their holders. They failed before exercising the intended retained-node, native-refusal, binder or typed round-trip oracles. | qsl-package/src/checked_v2/tests.rs:1626-1657,1807-1932,2614-2634,3501-3508 |
+| FND-005 | medium | The node-index harness assumed every published case was malformed_wire. Published NI22 and NI24 are partial-stage operand/identity property controls, while NI23 expects invalid_semantic_graph at a duplicate node identity; the blanket assertion prevented their intended oracles from executing. | qsl-package/src/checked_v2/tests.rs:3576-3639 |
+| FND-006 | low | The final description/output-only commit leaves a println call unformatted, so the required rustfmt check fails on the frozen candidate. The supplied gatefix-fmt-check.log contains this exact diff rather than a passing format result. Run the formatter and retain its successful check before clearing this repair. | qsl-package/src/checked_v2/tests.rs:3656 |
+
+## Dispositions — gate repair round 4
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-004 | fixed | Valid bases are resolved explicitly for inspection or intentional mutation authoring, then existing jcs writes fresh rows; raw malformed vector entry points remain unchanged. Frame append includes its published row. CL57/59 binder patch references use the actual holder. Protocol and hybrid controls retain complete like-form structural/node equality and typed positive assertions. All thirteen formerly failed exact tests passed in inspected receipts. |
+| FND-005 | fixed | Published NI22/23/24 outcomes and patches were independently read. NI22 asserts equal complete node bytes, different holder-derived keys and uniqueness; NI23 checks the actual duplicate key and published full-reader refusal/locus; NI24 compares every original complete node and structural key after insertion and the extra node count. Original malformed vectors remain raw with their cause/locus assertions. Reviewer exact rerun passes all 22 published cases. |
+| FND-006 | still-open | Reviewer non-mutating rustfmt --edition 2021 --check qsl-package/src/checked_v2/tests.rs exits 1 at the final candidate, requesting a multiline println. Functional assertions pass; source remains frozen and was not edited. |
+
+## Gate repair verdict and exact scope
+
+CONDITIONAL / HOLD: the gate-detected harness defects FND004/005 are fixed without weakening the examined published oracles. New FND006 is still-open: final frozen formatting fails. The original four findings remain fixed from round 3. Candidate 64e7df50910be74c6713dbb39f8a6e0282fbbe95 differs from custody head14752796e in four test files only; production/spec/dependency/SR tree is unchanged.
+
+Examined all four diffs: checked_v2/tests.rs, checked_v2/tests/protocol_corpus.rs, checked_v2/tests/protocol_mutation_manifest.rs, emit/tests/hybrid.rs. Independently inspected published node-index NI22/23/24, timed mutation schema rows, frame second_frame_operand_row and complete protocol/hybrid comparisons. No original raw malformed vectors were automatically repaired; valid-base inspection/authoring normalization is explicit. No ignored test or production workaround was added.
+
+The initial aggregate package unit run remains FAILED: 805 passed, 13 failed, 2 existing ignored; completed deep tests are not rerun. All13 repair receipts execute exactly one test and pass; this is not a whole package-unit rerun PASS. Reviewer additionally ran exactly the node-index filter, which passed one test and all22 published vector outcomes. Reviewer rustfmt check exits1, retained in disposition-4/fmt-check.log; the supplied fmt-check log also contains the failing diff. Earlier gate stages and unrun integration/replay/root/docs stages remain distinguished; lead owns continuation after repair clearance. No aggregate/broad/deep/workspace build, source edit, push, peer chase or merge occurred.
+
+```yaml
+scope:
+- id: checked_v2::tests::a_no_clock_dense_timed_model_needs_no_integer_literal_type
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {\n  \
+    \  let (directory, _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR must name\
+    \ a quire-specification checkout\");\n    let mut envelope = resolved_fixture(&read_fixture(\n\
+    \        &directory.join(\"positive-timed-model-nodes.json\"),\n    ));\n    let\
+    \ graph_before = WireGraph::of_package_value(&envelope).expect(\"the fixture graph\"\
+    );\n    let nodes = envelope[\"semantic_graph\"][\"nodes\"].as_array_mut().unwrap();\n\
+    \    let mut timed_indices = Vec::new();\n    let mut source_index = None;\n \
+    \   let mut root_index = None;\n    for (index, node) in"
+- id: checked_v2::tests::changed_timed_inputs_rekey_and_read_back_the_mutated_model
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {\n  \
+    \  let (directory, _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR must name\
+    \ a quire-specification checkout\");\n    let mut base_wire = resolved_fixture(&read_fixture(\n\
+    \        &directory.join(\"positive-timed-model-nodes.json\"),\n    ));\n\n  \
+    \  // Add a second unit with the same time dimension so the unit mutation is\n\
+    \    // a valid selected-time-unit change, not a deliberately ill-typed edge.\n\
+    \    let alternate_unit = {\n        let nodes = base_wire[\"semantic_graph\"\
+    ][\"nodes\"].as_array_mut().unwrap();\n        let unit_index = nodes"
+- id: checked_v2::tests::conformance_fr340_frame_mutations_match_qspec_vectors
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn conformance_fr340_frame_mutations_match_qspec_vectors() {\n    let\
+    \ (directory, _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR must name a\
+    \ quire-specification checkout\");\n    let vectors = read_fixture(&directory.join(\"\
+    ../node-identity-vectors.json\"));\n    let mutations = vectors[\"frame_mutations\"\
+    ]\n        .as_array()\n        .expect(\"frame_mutations\");\n    assert!(\n\
+    \        !mutations.is_empty(),\n        \"node-identity-vectors.json holds no\
+    \ frame_mutations vector\"\n    );\n    let base = read_fixture(&directory.join(\"\
+    positive-all-families.json\"));\n    let index = frame_node_index(&base);\n\n "
+- id: checked_v2::tests::conformance_hybrid_and_timed_positive_references_close_and_units_match_dimensions
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimensions()\
+    \ {\n    let (directory, _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR\
+    \ must name a quire-specification checkout\");\n    for name in [\n        \"\
+    positive-all-families.json\",\n        \"positive-timed-model-nodes.json\",\n\
+    \    ] {\n        let envelope = read_fixture(&directory.join(name));\n      \
+    \  let nodes = envelope[\"semantic_graph\"][\"nodes\"].as_array().unwrap();\n\
+    \        let graph = WireGraph::of_package_value(&envelope).expect(\"fixture node\
+    \ ids\");\n        let ids = graph\n            .keys()\n            .iter()\n\
+    \ "
+- id: checked_v2::tests::conformance_i2_read_over_qspec_checked_package_v2_fixtures
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {\n  \
+    \  let (directory, paths) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR must\
+    \ name a quire-specification checkout\");\n    let mut unsorted = 0_usize;\n \
+    \   for path in &paths {\n        let envelope = read_fixture(path);\n       \
+    \ let keys: Vec<NodeKey> = WireGraph::of_package_value(&envelope)\n          \
+    \  .expect(\"fixture node identities\")\n            .keys()\n            .to_vec();\n\
+    \        if !keys.is_sorted() {\n            unsorted += 1;\n        }\n     \
+    \   match read_fixture_wire(&published_fixture(path), &envelope) {\n         \
+    \   (n"
+- id: checked_v2::tests::conformance_node_index_vectors_refuse_malformed_wire
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn conformance_node_index_vectors_refuse_malformed_wire() {\n    let (directory,\
+    \ _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR must name a quire-specification\
+    \ checkout\");\n    let proposals = directory.parent().expect(\"the proposal directory\"\
+    );\n    let vectors = read_fixture(&proposals.join(\"node-index-vectors.json\"\
+    ));\n    let fixture = vectors[\"base\"].as_str().expect(\"a base fixture\");\n\
+    \    let base = read_fixture(&proposals.join(fixture));\n    let cases = vectors[\"\
+    cases\"].as_array().expect(\"NI cases\");\n    assert!(!cases.is_empty(), \"node-index-vectors.json\
+    \ holds no case\");\n    for case in"
+- id: checked_v2::tests::conformance_tick_timed_model_has_operation_anchor_and_no_clock_places
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn conformance_tick_timed_model_has_operation_anchor_and_no_clock_places()\
+    \ {\n    let (directory, _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR\
+    \ must name a quire-specification checkout\");\n    let envelope = read_fixture(&directory.join(\"\
+    positive-tick-timed-model-nodes.json\"));\n    let (name, outcome) = read_fixture_wire(TICK_TIMED_MODEL_NODES,\
+    \ &envelope);\n    let Read::Verified {\n        admitted,\n        timed_models,\n\
+    \        ..\n    } = outcome\n    else {\n        panic!(\"tick timed fixture\
+    \ must pass the real IR reader: {outcome:?}\");\n    };\n    assert_eq!(admitted.name(),\
+    \ name);\n    let ["
+- id: checked_v2::tests::conformance_timed_clause_vectors_keep_their_published_outcomes
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn conformance_timed_clause_vectors_keep_their_published_outcomes() {\n\
+    \    let (directory, _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR must\
+    \ name a quire-specification checkout\");\n    let proposals = directory.parent().expect(\"\
+    the proposal directory\");\n    let vectors = read_fixture(&proposals.join(\"\
+    timed-clause-node-vectors.json\"));\n    let mut replayed = 0_usize;\n    for\
+    \ case in vectors[\"cases\"].as_array().expect(\"CL cases\") {\n        let id\
+    \ = &case[\"id\"];\n        let fixture = case[\"fixture\"]\n            .as_str()\n\
+    \            .unwrap_or(\"fixtures/positive-timed-clause-nodes.json\");\n   "
+- id: checked_v2::tests::conformance_timed_model_nodes_are_retained_by_i2
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn conformance_timed_model_nodes_are_retained_by_i2() {\n    let (directory,\
+    \ _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR must name a quire-specification\
+    \ checkout\");\n    let envelope = read_fixture(&directory.join(\"positive-timed-model-nodes.json\"\
+    ));\n    let (name, outcome) = read_fixture_wire(TIMED_MODEL_NODES, &envelope);\n\
+    \    let Read::Verified {\n        admitted,\n        timed_models,\n        ..\n\
+    \    } = outcome\n    else {\n        panic!(\"timed fixture must pass the real\
+    \ IR reader: {outcome:?}\");\n    };\n    assert_eq!(admitted.name(), name);\n\
+    \n    let inspection = resolved_fixture(&envel"
+- id: checked_v2::tests::conformance_timed_model_vectors_keep_their_published_refusal_loci
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn conformance_timed_model_vectors_keep_their_published_refusal_loci()\
+    \ {\n    let (directory, _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR\
+    \ must name a quire-specification checkout\");\n    let base = resolved_fixture(&read_fixture(\n\
+    \        &directory.join(\"positive-timed-model-nodes.json\"),\n    ));\n    let\
+    \ tick_base = resolved_fixture(&read_fixture(\n        &directory.join(\"positive-tick-timed-model-nodes.json\"\
+    ),\n    ));\n    let vectors = read_fixture(&directory.join(\"../timed-model-node-vectors.json\"\
+    ));\n    let indexes = &vectors[\"node_indexes\"];\n    for row in vectors[\"\
+    schema_refusals\"].a"
+- id: checked_v2::tests::protocol_corpus::conformance_protocol_vector_positive_packages_are_admitted
+  path: qsl-package/src/checked_v2/tests/protocol_corpus.rs
+  role: examined
+  excerpt: "fn conformance_protocol_vector_positive_packages_are_admitted() {\n  \
+    \  let directory = qspec_directory().expect(\"QSPEC_DIR must name a quire-specification\
+    \ checkout\");\n    let fixtures = directory.join(\"proposals/checked-package-v2/fixtures\"\
+    );\n    let vectors = read_fixture(&fixtures.join(\"protocol-node-vectors.json\"\
+    ));\n    let positives = vectors[\"positive\"]\n        .as_array()\n        .expect(\"\
+    positive protocol vectors\");\n    assert!(\n        !positives.is_empty(),\n\
+    \        \"protocol corpus contains positive packages\"\n    );\n    let mut failures\
+    \ = Vec::new();\n    for row in positives {\n        "
+- id: checked_v2::tests::protocol_mutation_manifest::conformance_protocol_mutation_manifest_replays_through_i2
+  path: qsl-package/src/checked_v2/tests/protocol_mutation_manifest.rs
+  role: examined
+  excerpt: "fn conformance_protocol_mutation_manifest_replays_through_i2() {\n   \
+    \ let directory = fixtures_directory();\n    let manifest = read_fixture(&directory.join(\"\
+    protocol-node-mutation-manifest.json\"));\n    let layout = read_fixture(&directory.join(\"\
+    protocol-node-layout-rows.json\"));\n    assert_eq!(\n        manifest[\"version\"\
+    ],\n        \"quire.protocol-node-mutation-manifest/v1\"\n    );\n    let base\
+    \ = read_fixture(&directory.join(manifest[\"base\"][\"fixture\"].as_str().expect(\"\
+    a base\")));\n    let manifest_rows = manifest[\"rows\"].as_array().expect(\"\
+    manifest rows\");\n    let layout_rows = layout[\"rows\"].as_"
+- id: emit::tests::hybrid::braking2_restored_nodes_match_qspec_vectors
+  path: qsl-package/src/emit/tests/hybrid.rs
+  role: examined
+  excerpt: "fn braking2_restored_nodes_match_qspec_vectors() {\n    let qspec =\n\
+    \        std::env::var_os(\"QSPEC_DIR\").expect(\"QSPEC_DIR must name a quire-specification\
+    \ checkout\");\n    let qspec = std::path::PathBuf::from(qspec);\n    let path\
+    \ = qspec.join(\"proposals/checked-package-v2/hybrid-node-vectors.json\");\n \
+    \   let fixture: Value = serde_json::from_slice(&std::fs::read(path).expect(\"\
+    QSpec vectors\"))\n        .expect(\"QSpec vector JSON\");\n    let expected =\
+    \ fixture[\"restored_nodes\"]\n        .as_array()\n        .expect(\"QSpec restored\
+    \ nodes\");\n    let (emission, wire) = compile(BRAKING2);\n    admitted(&em"
+```
+
+## Dispositions — formatting-only round 5
+
+Candidate `e5de404dd93f79dedf884a3810f07f861bfb5f9f`. All historical findings and outcomes are preserved. The only source delta from64e7df509 is the println layout; the other changed file records prior reviewer custody.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-006 | fixed | The final println is formatted as the required multiline call. Reviewer direct scoped rustfmt --edition 2021 --check on the frozen test source exits0 under the prescribed flock/scheduling environment; the corrected coder receipt explicitly records rustfmt_exit=0. The only source change is whitespace/layout of this call; no assertion, outcome, test behavior, production, spec or dependency changes occurred. |
+
+## Current formatting disposition verdict
+
+PASS / review-cleared: FND006 now has a fixed latest outcome, with no new findings and no open findings in this review. FND004/005 remain fixed; the original four findings remain fixed. The earlier failing format receipt is historical and is not rewritten as a pass.
+
+```rust
+    println!(
+        "conformance: {} node-index vector outcomes matched",
+        cases.len()
+    );
+```
+
+Reviewer scope: the exact source diff and all eleven custody identities, with direct non-mutating rustfmt confirmation in disposition-5/fmt-check.log. No Cargo command, test, broad/deep/workspace build, aggregate gate, source edit, push, peer chase or merge was run. The13 functional exact repair receipts remain valid for unchanged assertions; this does not turn the earlier805 pass/13 fail/2 ignored package-unit run into a whole-suite PASS. Lead owns the once-only continuation of unrun gate stages after current artifact custody. User/planner merge hold remains. No new method or global matrix rerun.
+
+## New findings (disposition pass 6)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | The root writer-budget oracle calibrated only identity_rows but used that partial allowance for complete public-writer success, omitting the following equality_witness materialization on the same native ledger. The gate failed at the supposed exact-success assertion: identity bound5992 could not pay the real equality work charge59 (attempted6051). The test therefore did not establish the complete writer exact/one-short boundary. | tests/it/bare_package.rs:1886-1960 |
+
+## Dispositions — targeted writer oracle round 6
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-007 | fixed | The repaired test retains the original identity-specific one-short assertions, then invokes actual equality_witness immediately after actual identity_rows on the same measured budget and derives complete_need from cumulative consumption. Complete one-short public writes must equal the real native equality denial, including resource/amount/locus/bound, correct stage setting and exceeded amount, and leave no directory. Exact complete bounds write identities and equality, with equality bytes equal to the genuine measured rows. No charge constants, normalization, production fallback or test weakening was added. |
+
+## Current targeted disposition verdict
+
+PASS / no open findings. Candidate74a3791c94d6a0aaab0b9e6f26acdd7850190b50 differs from fully reviewed/custody3a17b487593532a1463bd44cc1b4a94625ceec69 only in tests/it/bare_package.rs; production, dependencies, specs and SRs are identical. Prior findings remain closed and immutable.
+
+Source inspected: complete named-emission byte equality; identity-specific work/storage one-short resource/locus/bound assertions; same-ledger identity then equality measurement; actual complete one-short oracle and full NativeRowError equality; stage quantities; no-directory denials; exact writer success and complete equality-file bytes. The live writer identity_file/equality_file sequence was checked as context.
+
+```rust
+    let equality = built
+        .emission
+        .equality_witness(read.admitted(), &mut measure)
+        .expect("measure the writer's equality materialization after identities");
+    let complete_need = measure.consumed();
+    assert!(complete_need.work > need.work);
+    assert!(complete_need.storage > need.storage);
+```
+
+Evidence: original final-main gate root result569 passed/1 failed/6 existing ignored with the exact budget panic retained at4502–4512 in /tmp/IR-1383-authority-combined-final-3a17b4875.log. Coder exact test /tmp/IR-1383-writer-budget-exact.log executes1 and passes with cargo_exit=0; /tmp/IR-1383-writer-budget-fmt-check.log records rustfmt_exit=0. Reviewer inspected these real receipts and the entire single-file diff; git diff --check passes. No tests/Cargo/broad/deep/matrix/aggregate or formatting command was rerun by reviewer, as explicitly directed. Existing root matrix PASS9 bindings and all other completed gate stages are retained; the targeted repair is not a whole root rerun PASS. Lead owns only the still-unrun docs/analyze continuation after latest custody. User authorizes root admin merge after required checks; this review performs no merge and grants no new authority. No production edit, push, review clone, peer write or head chase.
+
+## New findings (disposition pass 7)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | The progress-owner output-limit oracle measured document length under owner-max limits, then changed max_output_bytes and expected the newly derived document to have the old length. The owner serializes effective limits into the document and rederives under the supplied read limits, so changing the ceiling changes its encoded length. The tail gate failed the supposed exact-bound assertion with actual7739 versus expected7742. | qsl-analyze/tests/it/monitor_authority.rs:588-615 |
+
+## Dispositions — targeted owner-output oracle round 7
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-008 | fixed | The test now calibrates only through genuine admitted_with_progress_limits derivation and reading under the same supplied limits, original root and association row. Each actual successful output size becomes the next ceiling, with a16-read convergence guard. It requires a genuine fixed point and exact bytes==ceiling, then requires ResourceIncomplete at one byte less. No hardcoded size/JSON length math, copied charge, altered document read, production bypass or weakened final inequality is used. |
+
+## Current targeted disposition verdict — round 7
+
+PASS / no open findings. Candidate711ebeea329e9d5f81b08ff3a52a4f50b480823a differs frome61e4f474 only in the examined progress-owner budget test. Production and dependencies remain identical to3a17; previous bare-package repair and review custody remain retained. All older findings/outcomes remain unchanged and closed.
+
+The complete test diff, original failing tail and helper were examined. observation.rs177–178 passes the identical progress_limits to progress::derive and progress::read. Published owner014eb43 common.rs LimitsWire/Envelope retains effective limits in the canonical document; this accounts for the changed output size without guessed JSON arithmetic. The final exact equality, real one-byte-short owner call and original ResourceIncomplete assertion remain active. The bounded loop fails rather than silently accepting missing convergence.
+
+```rust
+    let exact = fixed_point.expect("owner output-ceiling calibration converges within 16 reads");
+    assert_eq!(exact.bytes().len(), limits.max_output_bytes);
+    limits.max_output_bytes -= 1;
+    let error =
+        observation::admitted_with_progress_limits(Some(vec![row(&root)]), limits).unwrap_err();
+    assert_eq!(error.code(), authority::ErrorCode::ResourceIncomplete);
+```
+
+Evidence: /tmp/IR-1383-authority-final-tail-e61e4f474.log retains13authority pass/1 fail; it is not relabeled a broad PASS. /tmp/IR-1383-progress-output-exact.log executes the one affected test and passes1 with cargo_exit=0; /tmp/IR-1383-progress-output-fmt-check.log records rustfmt_exit=0. Reviewer inspected the actual source/receipts and git diff --check exits0; no Cargo/test/matrix/broad/deep/aggregate or format command was rerun as explicitly directed. Earlier completed gate results remain retained; only the lead’s unrun analyze-doc stage and latest custody remain before its user-authorized admin merge. No source edit, push, review clone, peer write/head chase or merge performed by reviewer. No new methods or global matrix rerun.

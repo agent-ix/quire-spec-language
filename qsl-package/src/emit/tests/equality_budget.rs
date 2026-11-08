@@ -26,11 +26,18 @@ fn producer_and_bytes_equality_share_exact_owner_charges_and_denials() {
     let [row] = emission.equality_producer_identity_rows() else {
         panic!("one equality")
     };
-    let witness = emission.equality_witness(&admitted);
+    let witness = emission
+        .equality_witness(&admitted, &mut NativeJoinBudget::new(1_000_000, 1_000_000))
+        .expect("budgeted witness");
     let bytes = witness
         .to_bytes(&admitted)
         .expect("authentic equality bytes");
     let read = ReadEqualityRows::read(&bytes, &admitted).expect("bytes read");
+    let mut materialize = NativeJoinBudget::new(1_000_000, 1_000_000);
+    emission
+        .equality_rows(&mut materialize)
+        .expect("actual producer materialization");
+    let prefix = materialize.consumed();
     let mut measure = NativeJoinBudget::new(1_000_000, 1_000_000);
     let expected = emission
         .admitted_equality(
@@ -48,28 +55,36 @@ fn producer_and_bytes_equality_share_exact_owner_charges_and_denials() {
         expected.operator(),
         quire_semantic_value::declaration::EqualityOperator::Equal
     );
-    let need = measure.consumed();
-    assert!(need.work > 0 && need.storage > 0);
-    let mut exact = NativeJoinBudget::new(need.work, need.storage);
-    let actual = read
-        .decision(&admitted, row.checked_node(), &mut exact)
-        .unwrap_or_else(|_| panic!("exact bytes budget admits"));
-    assert_eq!(actual, expected);
-    assert_eq!(exact.consumed(), need);
-    for (work, storage, kind, code) in [
-        (
-            need.work - 1,
-            need.storage,
-            NativeJoinChargeKind::Work,
-            Code::WorkLimit,
-        ),
-        (
-            need.work,
-            need.storage - 1,
-            NativeJoinChargeKind::Storage,
-            Code::StorageLimit,
-        ),
+    let total = measure.consumed();
+    let owner = measure
+        .last_success_delta()
+        .expect("the owner reader records its own delta");
+    assert_eq!(total.work, prefix.work + owner.work);
+    assert_eq!(total.storage, prefix.storage + owner.storage);
+    let mut exact = NativeJoinBudget::new(owner.work, owner.storage);
+    assert_eq!(
+        read.decision(&admitted, row.checked_node(), &mut exact)
+            .unwrap_or_else(|failure| match failure {
+                EqualityDecisionFailure::Witness(error) =>
+                    panic!("exact bytes witness refused: {error:?}"),
+                EqualityDecisionFailure::Exhausted(error) =>
+                    panic!("exact bytes budget refused: {error:?}"),
+            }),
+        expected
+    );
+    assert_eq!(exact.consumed(), owner);
+    for (kind, code) in [
+        (NativeJoinChargeKind::Work, Code::WorkLimit),
+        (NativeJoinChargeKind::Storage, Code::StorageLimit),
     ] {
+        let (work, storage, owner_work, owner_storage) = match kind {
+            NativeJoinChargeKind::Work => {
+                (total.work - 1, total.storage, owner.work - 1, owner.storage)
+            }
+            NativeJoinChargeKind::Storage => {
+                (total.work, total.storage - 1, owner.work, owner.storage - 1)
+            }
+        };
         let mut producer = NativeJoinBudget::new(work, storage);
         let failure = emission
             .admitted_equality(
@@ -78,28 +93,40 @@ fn producer_and_bytes_equality_share_exact_owner_charges_and_denials() {
                 row.occurrence(),
                 &mut producer,
             )
-            .expect_err("one short refuses producer");
-        assert_eq!(failure.code, code);
-        assert_eq!(producer.first_unpaid().expect("denial").kind, kind);
-        let mut bytes = NativeJoinBudget::new(work, storage);
-        let Err(EqualityDecisionFailure::Exhausted(failure)) =
+            .expect_err("one short refuses the native reader after the admitted adapter prefix");
+        let NativeJoinFailure::Equality(native) = failure.native() else {
+            panic!("row materialization fits; the actual owner read refuses")
+        };
+        assert_eq!(native.code, code);
+        let mut bytes = NativeJoinBudget::new(owner_work, owner_storage);
+        let Err(EqualityDecisionFailure::Exhausted(native)) =
             read.decision(&admitted, row.checked_node(), &mut bytes)
         else {
-            panic!("one short is typed native exhaustion")
+            panic!("one short is the original native exhaustion")
         };
-        assert_eq!(failure.code, code);
-        assert_eq!(bytes.consumed(), producer.consumed());
-        assert_eq!(bytes.first_unpaid(), producer.first_unpaid());
+        assert_eq!(native.code, code);
+        assert_eq!(
+            producer.consumed().work,
+            prefix.work + bytes.consumed().work
+        );
+        assert_eq!(
+            producer.consumed().storage,
+            prefix.storage + bytes.consumed().storage
+        );
+        assert_eq!(producer.first_unpaid(), bytes.first_unpaid());
     }
-    let mut shared = NativeJoinBudget::new(need.work * 2 - 1, need.storage * 2);
+    let mut shared = NativeJoinBudget::new(total.work * 2 - 1, total.storage * 2);
     emission
         .admitted_equality(&admitted, row.checked_node(), row.occurrence(), &mut shared)
         .expect("first read");
     let first = shared.consumed();
     let error = emission
         .admitted_equality(&admitted, row.checked_node(), row.occurrence(), &mut shared)
-        .expect_err("second read uses remaining allowance");
-    assert_eq!(error.code, Code::WorkLimit);
+        .expect_err("second read spends the same allowance");
+    let NativeJoinFailure::Equality(native) = error.native() else {
+        panic!("second row prefix fits before the owner denial")
+    };
+    assert_eq!(native.code, Code::WorkLimit);
     assert!(shared.consumed().work >= first.work);
     assert_eq!(
         shared.first_unpaid().expect("unpaid work").kind,
@@ -117,7 +144,9 @@ fn bare_admission_retains_equality_and_reports_its_denial_after_projection() {
     let identities = emission
         .identity_rows(&admitted, &mut NativeJoinBudget::new(1_000_000, 1_000_000))
         .expect("original identities");
-    let witness = emission.equality_witness(&admitted);
+    let witness = emission
+        .equality_witness(&admitted, &mut NativeJoinBudget::new(1_000_000, 1_000_000))
+        .expect("budgeted witness");
     let bytes = witness.to_bytes(&admitted).expect("owner bytes");
     let equality = ReadEqualityRows::read(&bytes, &admitted).expect("read owner bytes");
     let supply = BareSupply {
