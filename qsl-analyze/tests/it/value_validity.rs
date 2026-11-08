@@ -26,13 +26,12 @@ use qsl_analyze::external_provider::{
     provider_item, ExternalProvider, ProviderRequest, ProviderVerdict,
 };
 use qsl_analyze::value_check::{manifest, ValueRequest};
-use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::RequestIndex;
 use qsl_package::CheckedPackage;
 use qsl_replay::value_check::{ParameterDomain, Selection, ValueTarget, Verdict, Violation};
 use qsl_replay::{
     Certification, DisagreementCause, IncompleteCause, InconclusiveCause, ModelCheckLimit,
-    ProofBasis, TerminalValue,
+    OccurrenceKey, ProofBasis, TerminalValue,
 };
 use qsl_route::Mode;
 use qsl_semantics::check::{Capability, NodeTag, PackageDeclarations};

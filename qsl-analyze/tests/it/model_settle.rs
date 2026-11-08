@@ -182,7 +182,7 @@ pub(crate) fn request<'a>(
         dependencies: Vec::new(),
         replay_target: qsl_replay::RequestTargetWire::function(
             selected(),
-            qsl_foundation::source::provenance::OccurrenceKey::new(
+            qsl_replay::OccurrenceKey::new(
                 crate::fixture_ids::node_key([7]),
                 qsl_replay::Origin::new(qsl_replay::Role::new("declaration"), 0),
             ),

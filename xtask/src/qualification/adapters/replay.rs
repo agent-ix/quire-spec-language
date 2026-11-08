@@ -196,7 +196,7 @@ fn decode(
             .as_bool()
             .ok_or_else(|| Failure::decode("/replay_target/arguments", "expected a Boolean"))?,
         occurrence_key: optional(&target["occurrence_key"], |value| {
-            Ok(qsl_foundation::source::provenance::OccurrenceKey::new(
+            Ok(qsl_replay::OccurrenceKey::new(
                 node(
                     &value["node_id"],
                     "/replay_target/occurrence_key/node_id",

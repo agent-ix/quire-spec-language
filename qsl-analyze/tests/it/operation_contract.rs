@@ -16,14 +16,13 @@ use qsl_analyze::analyze::{
 use qsl_analyze::contract_check::{manifest, ContractRequest};
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_forms::StateClauseKind;
-use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::RequestIndex;
 use qsl_replay::contract_check::{
     select_contract, CaseVerdict, ContractCase, ContractObligation, ContractSelection,
     ContractTarget, ReadCounterexample,
 };
 use qsl_replay::{
-    Certification, IncompleteCause, InconclusiveCause, ModelCheckLimit, ProofBasis,
+    Certification, IncompleteCause, InconclusiveCause, ModelCheckLimit, OccurrenceKey, ProofBasis,
     ReportedInconclusiveCause, TerminalValue, UnavailabilityCause,
 };
 use qsl_semantics::check::{Capability, DeclarationFamily};

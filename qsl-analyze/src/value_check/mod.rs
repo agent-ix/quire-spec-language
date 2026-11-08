@@ -414,7 +414,7 @@ pub fn check_value(
 #[derive(Debug)]
 pub struct ValueCounterexample {
     /// The claim's `{node, occurrence}`.
-    pub claim: qsl_foundation::source::provenance::OccurrenceKey,
+    pub claim: qsl_replay::OccurrenceKey,
     /// The parameters' node identities, in the order of the assignment.
     pub parameters: Vec<quire_exact::NodeKey>,
     /// The reproduced violation.
@@ -427,7 +427,7 @@ pub(crate) enum ValueReport {
     Found(
         ValueOutcome,
         Vec<quire_exact::NodeKey>,
-        qsl_foundation::source::provenance::OccurrenceKey,
+        qsl_replay::OccurrenceKey,
     ),
     /// An arm `unsupported` outcome.
     Unsupported(ClaimForm, ValueCheckUnsupported),
@@ -662,8 +662,8 @@ mod tests {
         ));
     }
 
-    fn claim_key() -> qsl_foundation::source::provenance::OccurrenceKey {
-        qsl_foundation::source::provenance::OccurrenceKey::new(
+    fn claim_key() -> qsl_replay::OccurrenceKey {
+        qsl_replay::OccurrenceKey::new(
             crate::test_ids::node_key([1]),
             quire_exact::Origin::new(quire_exact::Role::new("claim"), 0),
         )
