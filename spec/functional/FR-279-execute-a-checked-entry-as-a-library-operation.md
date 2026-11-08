@@ -55,9 +55,12 @@ consistent design for three reasons: the seam takes a `CheckedPackage` and
 returns `Evaluation<Value>`, so it can neither run `run_clause`'s source
 front end nor carry the decision trail `run_clause` reports; FR-106
 admission needs the document provisions, package input and observation
-limits, which belong to a request, not to a prepared backend; and the spine
-is a replay path, which runs only through S6a (ADR-029 EB-3), so it never
-takes a chosen backend.
+limits, which belong to a request, not to a prepared backend; and
+`run_clause` is a replay path, and replay runs only through S6a (ADR-029
+EB-3), so `run_clause` takes no chosen backend. EB-3 restricts replay
+only: a function call through the spine's function entries
+(`qsl_replay::spine::run`, `run_with_backends`) is execution, not replay,
+and runs on the call's chosen backend as FR-296 states.
 
 ## Inputs
 

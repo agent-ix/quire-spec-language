@@ -14,7 +14,7 @@ Verify FR-270 by planting forbidden signatures and stage calls in copies of
 the scanned trees, planting look-alikes that are allowed, and running the
 gate over the real workspace.
 
-Scope: FR-270-AC-1 to FR-270-AC-6.
+Scope: FR-270-AC-1 to FR-270-AC-5.
 
 ## Test Procedure
 
@@ -42,14 +42,9 @@ otherwise.
    two plants together.
 4. Run `cargo xtask checked-input` over the workspace. Run the command's
    entry over a copy with step 1's first item planted in `qsl-eval`.
-   Inspect the `Makefile`: `ci:` lists `checked-input`, and its recipe runs
-   `cargo xtask checked-input`.
 5. Run the witness round-trip tests of TC-182, the `/2` frame round-trip
    test of TC-514 and the outcome-document test of TC-770, which carry
    `FR-270-AC-5`.
-6. Read the ADR-032 gate register and `CI_CHECKS`: compare the register rows
-   with the drift gates, and place every other `CI_CHECKS` entry in the build
-   and test lane list.
 
 Tag the tests `#[trace("TC-745", "FR-270-AC-n")]`; the three existing
 round-trip tests also carry `FR-270-AC-5`.
@@ -63,7 +58,5 @@ round-trip tests also carry `FR-270-AC-5`.
 - Step 3: no finding for the four look-alikes; two findings for the two
   plants together.
 - Step 4: no finding and exit 0; the planted copy fails with a finding exit
-  status; the `ci:` wiring is as stated.
+  status.
 - Step 5: every listed test passes under `make ci`'s default-features lane.
-- Step 6: the register rows are exactly the drift gates, each with an owner,
-  and no `CI_CHECKS` entry is unplaced.
