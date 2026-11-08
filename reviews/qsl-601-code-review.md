@@ -50,3 +50,21 @@ projection, the DOT refusal guard, the inclusive byte bound arithmetic and the
 | FND-004 | low | Invariant panics: `Rendered::as_str` `expect`s UTF-8 over a `Vec<u8>`, and `render_view_text` round-trips `String -> Vec<u8> -> String::from_utf8(..).expect`. Holding a `String` in `Rendered` and returning `String` from `render_diagnostic_lines` removes both panic sites. | qsl-inspect/src/render.rs:139-161, 686-691 |
 | FND-005 | low | When an outcome document has any diagnostic, its items (and their `proved` certification) are not rendered as text at all; FR-298 requires a `proved` record's certification beside its verdict. Confidence low: depends on whether a document can carry both. | qsl-inspect/src/render.rs:287-301 |
 | FND-006 | low | `render_view_dot`'s `_ => Vec::new()` arm silently emits an empty `digraph view {}` for a non-graph view if the guard in `render_view` ever drifts; prefer a typed graph-view split so the unsupported case is unrepresentable. | qsl-inspect/src/render.rs:772-777 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | The authoritative view JSON is now explicit but lossy: a requirement record serializes only occurrence, owner and extent roots, dropping `requirements`, `result_bound`, `conversion_context`, `path_condition` and `references`, and the node `body` is omitted. FR-297 does not require the body (node view: kind, type, source regions, requirements), and neither FR-297 nor FR-298 defines the view JSON schema, so this is not a spec violation; but "JSON is the authoritative form" of a view whose requirement records FR-297 says equal the package's own is weakened with only a docs note. Needs a tracked spec decision (ticket) on the view JSON schema. | qsl-inspect/src/render.rs:464-469, 732-745, 447-455; docs/inspect-render.md |
+| FND-008 | low | docs/inspect-render.md's "Re-land" section records PR and branch history (#1677 merged into a stale branch), which belongs in git/PR history per the repo's CLAUDE.md ("Use ordinary Git history ... Do not create ... working history"); and step 3 says the refusal is "at `bound + n`" where the code reports `used + n`. | docs/inspect-render.md:7-18, 40-41 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `Writer::try_unit` polls `Cancel` before formatting each unit, formats one unit, charges it against `render.output_bytes`, then appends; output is held once in a `String` (render.rs:192-240). JSON stays one unit as FR-298 states. |
+| FND-002 | fixed | View JSON is explicit serde structs and wire labels; no `Debug` strings (render.rs:411-976); certification reads `trusted`/`uncertified` in both forms (test at 1580-1597). Residual lossiness filed as FND-007. |
+| FND-003 | fixed | Item labels go through `wire_label` (serde) (render.rs:335-341, 393-407). |
+| FND-004 | fixed | `Rendered` holds a `String`; both `expect` sites removed; outcome JSON UTF-8 failure maps to a fault (render.rs:152-176, 271-276). |
+| FND-005 | fixed | Items render after diagnostics; test covers a document with both (render.rs:393-407, 1816-1835). |
+| FND-006 | fixed | `render_view_observed` matches `(form, view)` exhaustively; no catch-all (render.rs:317-331). |

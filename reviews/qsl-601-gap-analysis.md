@@ -68,3 +68,14 @@ backed by tests that fail on a wrong result.
 - AC-11: partial (FND-006).
 - Reverse gap: no production code in the diff lacks an owning FR-298 statement; the `qsl-replay` accessors serve AC-2. No stubs.
 - Semantic review: not run.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `json_bytes_of_every_outcome_and_view_are_pinned_independent_of_text_and_dot` pins exact JSON for the AC-1 refusal, AC-2 proved records and counterexample, AC-2/AC-7 lasso and AC-3 graph, rendering text and DOT between two JSON renders (render.rs:1222-1228, 1506-1578). The renderer is not pluggable, so a golden pin is the realizable form; it fails if JSON starts to depend on text, DOT or `Debug`. The pin was taken from a first run, so it fixes current output rather than an independently derived expectation. |
+| FND-002 | fixed | Package view and the node view of `seven` from the real spine fixture, plus outcome and counterexample, each refuse DOT with category refusal and exit 20, and text/JSON render (render.rs:1599-1704). |
+| FND-003 | fixed | AC-9 runs through `render_view_observed` with a second thread cancelling while the observer blocks at charge 1,000; asserts `Deadline`, exit 22, 1,000 observed, at most one charge after cancel; `Requested` is checked through `render_view_observed` for all three forms and through `render_outcome` (render.rs:1890-1981). |
+| FND-004 | fixed | Asserts `LimitKind::InputBytes`, `stage_limit_exceeded`/`input-bytes-exceeded`, `render.output_bytes`, exit 22 and the charge count (render.rs:1837-1888). |
+| FND-005 | fixed | Past-end case uses source length + 1 and checks the at-length case still resolves (render.rs:1442-1457). |
+| FND-006 | fixed | Distinct references resolve independently; same-reference keeps `a.qsl`; `compile_fail` doctests for a build from a map and an insert under a caller key (render.rs:102-115, 1460-1485). |
