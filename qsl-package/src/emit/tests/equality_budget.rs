@@ -3,6 +3,8 @@
 
 use super::*;
 use crate::equality_file::EqualityDecisionFailure;
+use crate::reader_protocol_projection::{admit_equality_decisions, ProjectionSource};
+use crate::EvaluationWitnessSupplier;
 use crate::{BarePackage, BareSupply, NativeJoinFailure, ReadEqualityRows};
 use quire_contract_model::{
     AdmittedEqualityReadErrorCode as Code, NativeJoinBudget, NativeJoinChargeKind,
@@ -126,7 +128,15 @@ fn bare_admission_retains_equality_and_reports_its_denial_after_projection() {
     let bare = BarePackage::new(&admitted)
         .with_supply(supply, &mut measure)
         .expect("full admission");
-    let need = measure.consumed();
+    let full = measure.consumed();
+    let declarations = declaration_cost(&admitted, supply);
+    assert!(declarations.work > 0 && declarations.storage > 0);
+    // Equality is admitted before the declarations, so its denials are the
+    // budgets short of what precedes them.
+    let need = quire_contract_model::NativeJoinCharge {
+        work: full.work - declarations.work,
+        storage: full.storage - declarations.storage,
+    };
     let [row] = equality.applications() else {
         panic!("one original row")
     };
@@ -142,8 +152,8 @@ fn bare_admission_retains_equality_and_reports_its_denial_after_projection() {
         quire_semantic_value::declaration::EqualitySchedule::Text
     );
     bare.world().expect("world uses admitted projections");
-    assert_eq!(measure.consumed(), need);
-    let mut exact = NativeJoinBudget::new(need.work, need.storage);
+    assert_eq!(measure.consumed(), full);
+    let mut exact = NativeJoinBudget::new(full.work, full.storage);
     let exact_bare = BarePackage::new(&admitted)
         .with_supply(supply, &mut exact)
         .expect("exact complete pass");
@@ -156,16 +166,23 @@ fn bare_admission_retains_equality_and_reports_its_denial_after_projection() {
             .expect("decision"),
         &expected
     );
-    assert_eq!(exact.consumed(), need);
+    assert_eq!(exact.consumed(), full);
+    // One short of the whole pass is denied by the declaration projection.
+    for (work, storage) in [(full.work - 1, full.storage), (full.work, full.storage - 1)] {
+        let error = BarePackage::new(&admitted)
+            .with_supply(supply, &mut NativeJoinBudget::new(work, storage))
+            .expect_err("one short in the declarations");
+        assert!(matches!(error.native(), NativeJoinFailure::Projection(_)));
+    }
     for (work, storage, kind, code) in [
         (
             need.work - 1,
-            need.storage,
+            full.storage,
             NativeJoinChargeKind::Work,
             Code::WorkLimit,
         ),
         (
-            need.work,
+            full.work,
             need.storage - 1,
             NativeJoinChargeKind::Storage,
             Code::StorageLimit,
@@ -210,17 +227,24 @@ fn source_evaluation_view_preserves_the_equality_denial_and_exact_stage_limit() 
         panic!("owner admits")
     };
     let mut measure = NativeJoinBudget::new(1_000_000, 1_000_000);
-    let identities = emission
-        .identity_rows(&admitted, &mut measure)
-        .expect("producer row join");
-    let equality = emission.equality_witness(&admitted);
-    let supply = BareSupply {
-        identities: &identities,
-        equality: Some(&equality),
-    };
-    BarePackage::new(&admitted)
-        .with_supply(supply, &mut measure)
-        .expect("same complete native pass");
+    // The pass view creation owns: the supplier's join, the reader's
+    // validation of what it supplied, then the equality admission.
+    let rebound = crate::SourceWitnessSupplier::new(&emission)
+        .supply(&admitted, &mut measure)
+        .expect("the source supplier joins its rows")
+        .identities
+        .expect("the source supplier holds identities")
+        .validate_and_rebind(&admitted, &mut measure)
+        .expect("the reader validates the supplied identities");
+    project_every_node(&admitted, &rebound, &mut measure);
+    admit_equality_decisions(
+        &admitted,
+        ProjectionSource::Source {
+            emission: &emission,
+        },
+        &mut measure,
+    )
+    .expect("same complete native pass");
     let need = measure.consumed();
     let domains = BTreeMap::new();
     let limits = |work, storage| {
@@ -235,6 +259,7 @@ fn source_evaluation_view_preserves_the_equality_denial_and_exact_stage_limit() 
         &domains,
         limits(need.work, need.storage),
         crate::EmitLimits::fixture(),
+        crate::SourceWitnessSupplier::new(&emission),
     )
     .expect("public source reader admits");
     read.evaluation_view()
@@ -257,13 +282,23 @@ fn source_evaluation_view_preserves_the_equality_denial_and_exact_stage_limit() 
     ] {
         // The same original row-production prefix that evaluation_view owns.
         let mut expected_budget = NativeJoinBudget::new(work, storage);
-        emission
-            .identity_rows(&admitted, &mut expected_budget)
-            .expect("prefix admits");
-        let error = BarePackage::new(&admitted)
-            .with_supply(supply, &mut expected_budget)
-            .expect_err("equality is the denied tail");
-        let NativeJoinFailure::Equality(expected) = error.native() else {
+        let rebound = crate::SourceWitnessSupplier::new(&emission)
+            .supply(&admitted, &mut expected_budget)
+            .expect("prefix admits")
+            .identities
+            .expect("the source supplier holds identities")
+            .validate_and_rebind(&admitted, &mut expected_budget)
+            .expect("the reader validates the supplied identities");
+        project_every_node(&admitted, &rebound, &mut expected_budget);
+        let error = admit_equality_decisions(
+            &admitted,
+            ProjectionSource::Source {
+                emission: &emission,
+            },
+            &mut expected_budget,
+        )
+        .expect_err("equality is the denied tail");
+        let NativeJoinFailure::Equality(expected) = &error else {
             panic!("owner equality denial")
         };
         assert_eq!(expected.code, code);
@@ -288,15 +323,48 @@ fn source_evaluation_view_preserves_the_equality_denial_and_exact_stage_limit() 
             &domains,
             limits(work, storage),
             crate::EmitLimits::fixture(),
+            crate::SourceWitnessSupplier::new(&emission),
         )
         .expect("I2 read still admits");
         let Err(crate::ViewFailure::Exhausted(denial)) = short.evaluation_view() else {
             panic!("public view must expose exhaustion")
         };
-        assert_eq!(denial.native, NativeJoinFailure::Equality(expected.clone()));
+        assert_eq!(denial.native, error.clone());
         assert_eq!(denial.limit.configured_bound(), bound);
         assert_eq!(denial.limit.setting().name(), setting);
         assert_eq!(denial.limit.actual(), u128::from(consumed) + unpaid.amount);
         assert_eq!(denial.catalog_code().code(), "stage_limit_exceeded");
+    }
+}
+
+/// What the selected-object declaration projection, the last charge of
+/// `with_supply` (FR-533 "Observation admission"), costs on its own.
+fn declaration_cost(
+    admitted: &quire_contract_model::CheckedPackageV2,
+    supply: BareSupply<'_>,
+) -> quire_contract_model::NativeJoinCharge {
+    let bare = BarePackage::new(admitted)
+        .with_supply(supply, &mut NativeJoinBudget::new(1_000_000, 1_000_000))
+        .expect("full admission");
+    let mut budget = NativeJoinBudget::new(1_000_000, 1_000_000);
+    admitted
+        .project_selected_type_declarations(
+            bare.identities().expect("joined identities"),
+            &[],
+            supply.equality.map_or(&[], |rows| rows.source_units()),
+            &mut budget,
+        )
+        .expect("the declarations project");
+    budget.consumed()
+}
+
+/// The per-node projection that view creation charges after validation.
+fn project_every_node(
+    admitted: &quire_contract_model::CheckedPackageV2,
+    identities: &quire_contract_model::SelectedExactIdentities,
+    budget: &mut NativeJoinBudget,
+) {
+    for node in &admitted.graph().nodes {
+        let _ = admitted.project_exact_type(&node.node_id, identities, budget);
     }
 }

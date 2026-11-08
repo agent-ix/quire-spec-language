@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Source-map layout and byte/segment lookup over parsed source text.
 use ix_trace_rs::trace;
+use qsl_foundation::source::MAX_SOURCE_BYTES;
 use qsl_foundation::source_map::{Layout, Segment, SourceMap};
 use qsl_foundation::{Code, Source, SourceIdentity, Span};
-use quire_spec_language::{parse_source, Limits};
 
 fn source(id: &str, text: &str) -> Source {
     Source::read(
@@ -13,7 +13,7 @@ fn source(id: &str, text: &str) -> Source {
         },
         format!("{id}.txt"),
         text.as_bytes(),
-        Limits::default().source_bytes,
+        MAX_SOURCE_BYTES,
     )
     .unwrap()
 }
@@ -50,7 +50,7 @@ fn bytes(source: &Source, locations: &[qsl_foundation::LocatedSpan]) -> String {
         .collect()
 }
 
-#[trace("TC-011", "FR-001-AC-1", "FR-001-AC-2", "FR-001-AC-4")]
+#[trace("TC-011", "FR-001-AC-4")]
 #[test]
 fn source_byte_ceiling_is_a_stage_limit() {
     let id = SourceIdentity {
@@ -72,7 +72,6 @@ fn source_byte_ceiling_is_a_stage_limit() {
 #[trace("TC-011", "FR-001-AC-4")]
 #[test]
 fn a_caller_raised_byte_limit_is_enforced_as_given() {
-    use qsl_foundation::source::MAX_SOURCE_BYTES;
     let id = SourceIdentity {
         authority: "test".into(),
         identity: "raised".into(),
@@ -430,9 +429,8 @@ fn malformed_segment_and_query_ranges_never_panic_or_partially_succeed() {
 
 #[trace("TC-014")]
 #[test]
-fn parser_refusal_maps_back_through_a_real_indented_body() {
-    let text = include_str!("../fixtures/parent.native")
-        .replace("not reaches(self, self, parent)", "always(true)");
+fn a_parse_refusal_maps_back_through_a_real_indented_body() {
+    let text = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction f using v(a: Integer, b: Integer, c: Integer): Boolean pure { a < b < c }\n";
     let body_text = text.trim_end_matches('\n');
     let body = source("body", body_text);
     let mut document = String::from("# Original café\r\n```native\r\n");
@@ -470,26 +468,29 @@ fn parser_refusal_maps_back_through_a_real_indented_body() {
         100,
     )
     .unwrap();
-    let error = parse_source(body.clone(), Limits::default()).unwrap_err();
-    assert_eq!(error.code, Code::UnsupportedConstruct);
-    let mapped = map
-        .map_span(
-            &body,
-            Span {
-                start: error.span.start.byte,
-                end: error.span.end.byte,
-            },
-        )
-        .unwrap();
-    assert_eq!(bytes(&original, &mapped), "always");
-    assert_eq!(mapped[0].start.byte, document.find("always").unwrap());
-    assert_eq!(mapped[0].start.line, error.span.start.line + 2);
-    assert_eq!(mapped[0].start.column, error.span.start.column + 2);
+    let refusal = qsl_cst::parse(
+        body.identity().clone(),
+        "body.native",
+        body.text().as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("valid UTF-8 within the ceiling");
+    let region = refusal.diagnostics()[0]
+        .region
+        .as_ref()
+        .expect("a located refusal");
+    let (start, end) = (
+        usize::try_from(region.start()).unwrap(),
+        usize::try_from(region.end()).unwrap(),
+    );
+    let mapped = map.map_span(&body, Span { start, end }).unwrap();
+    assert_eq!(bytes(&original, &mapped), &body_text[start..end]);
+    assert_eq!(mapped[0].start.byte, document.find("< c").unwrap());
 }
 
 #[trace("TC-014")]
 #[test]
-fn extracted_bytes_need_a_distinct_identity_and_respect_parse_limits() {
+fn extracted_bytes_need_a_distinct_identity() {
     let original = source("original", "ab");
     let body = source("original", "b");
     assert!(SourceMap::verify(
@@ -501,16 +502,4 @@ fn extracted_bytes_need_a_distinct_identity_and_respect_parse_limits() {
         1
     )
     .is_err());
-    let body = source("body", "true");
-    // The source's own byte ceiling is a stage limit
-    // (`stage_limit_exceeded`), incomplete work (ADR-029 CB-4).
-    assert!(parse_source(
-        body,
-        Limits {
-            source_bytes: 1,
-            ..Limits::default()
-        }
-    )
-    .unwrap_err()
-    .is_incomplete());
 }

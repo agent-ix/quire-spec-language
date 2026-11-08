@@ -82,12 +82,13 @@ pub use checked_v2::{
     CheckedClockConstraint, CheckedClockGuard, CheckedClockPlace, CheckedClockReset,
     CheckedConstraintTarget, CheckedGuardPart, CheckedResetTarget, CheckedTimeInvariant,
     CheckedTimeSource, CheckedTimeSourceKind, CheckedTimedModel, CheckedUrgency, ClauseRoot,
-    ClauseRootUnresolved, ClockComparison, ClockPathStep, HybridRead, HybridReadError, HyperRoot,
-    HyperRootUnresolved, ImportViewRefusal, NativeJoinLimits, PackageTerminal,
-    PackageTerminalDeclaration, ReadHybridClaim, ReadHybridModel, ReadTerminal,
-    ReadTerminalDeclaration, ResolvedClockPathStep, SchedulabilityRoot, SourceMapDefect,
-    StateGraphKind, StateGraphRoot, TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata,
-    UnsupportedWire, V2ReadLimits, V2ReadRefusal,
+    ClauseRootUnresolved, ClockComparison, ClockPathStep, EvaluationWitnessSupplier,
+    EvaluationWitnesses, HybridRead, HybridReadError, HyperRoot, HyperRootUnresolved,
+    ImportViewRefusal, NativeJoinLimits, PackageTerminal, PackageTerminalDeclaration,
+    ReadHybridClaim, ReadHybridModel, ReadTerminal, ReadTerminalDeclaration, ResolvedClockPathStep,
+    SchedulabilityRoot, SourceMapDefect, SourceWitnessSupplier, StateGraphKind, StateGraphRoot,
+    TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata, UnsupportedWire, V2ReadLimits,
+    V2ReadRefusal, WitnessSupplyFailure,
 };
 #[cfg(feature = "std")]
 pub use composition::{read_composition, write_composition};

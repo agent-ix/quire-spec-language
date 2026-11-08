@@ -162,10 +162,10 @@ fn the_native_model_module_is_absent() {
 
 /// FR-499-AC-2, AC-3 and FR-515-AC-9: the compiled-protocol readers are
 /// deleted, so no root source declares or names `protocol_artifact` (its
-/// `wire`, `checked_predicate` and `temporal_subject` paths included), the
-/// registry has no finite-global protocol definition, and no root source
+/// `wire`, `checked_predicate` and `temporal_subject` paths included), and no root source
 /// names `DeclarationKind::Protocol`, `Family::Protocol`,
-/// `RegisteredDefinition::Protocol` or `crate::temporal`.
+/// `RegisteredDefinition::Protocol` or `crate::temporal`. The registry that
+/// listed the finite-global protocol definition is itself deleted (QSL-1810).
 #[trace("FR-499-AC-2", "FR-499-AC-3", "FR-515-AC-9", "TC-1293", "TC-1310")]
 #[test]
 fn no_root_source_names_the_deleted_protocol_reader_or_protocol_definition() {
@@ -195,10 +195,78 @@ fn no_root_source_names_the_deleted_protocol_reader_or_protocol_definition() {
             );
         }
     }
+}
+
+/// Names in `directory` whose first dot-separated component is `stem`
+/// (`parser.rs` and `parser/` for `parser`).
+fn entries_named(directory: &Path, stem: &str) -> Vec<String> {
+    std::fs::read_dir(directory)
+        .unwrap_or_else(|error| panic!("read {}: {error}", directory.display()))
+        .map(|entry| entry.expect("directory entry").file_name())
+        .filter_map(|name| name.to_str().map(str::to_owned))
+        .filter(|name| name.split('.').next() == Some(stem))
+        .collect()
+}
+
+/// FR-493-AC-3, FR-499-AC-5 (QSL-1810): the root `0-draft` front end is
+/// deleted. `src/parser*`, `src/syntax*`, `src/linking*` and `src/checking*`
+/// do not exist and no root source or test names its entry points, types or
+/// module paths. The positive control proves that the scan sees the retained
+/// root modules and that the symbol check fires on a name that is present.
+#[trace("FR-493-AC-3", "FR-499-AC-5", "TC-1276")]
+#[test]
+fn the_zero_draft_front_end_is_absent() {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let src = workspace.join("src");
+
+    // Positive control: the same directory scan finds the retained modules.
+    for retained in ["command", "complete", "formal_source", "number"] {
+        assert!(
+            !entries_named(&src, retained).is_empty(),
+            "the scan finds no retained src/{retained}: the by-absence check is vacuous"
+        );
+    }
+    let lib = std::fs::read_to_string(src.join("lib.rs")).expect("read src/lib.rs");
     assert!(
-        quire_spec_language::linking::definition_source::RegisteredDefinition::all()
-            .iter()
-            .all(|definition| definition.identity() != "quire.protocol.finite-global/v1"),
-        "the registry names no finite-global protocol definition"
+        mentions_symbol(&lib, "formal_source"),
+        "the symbol scan misses a name that src/lib.rs declares"
     );
+
+    for stem in ["parser", "syntax", "linking", "checking"] {
+        let found = entries_named(&src, stem);
+        assert!(found.is_empty(), "src still has {found:?}");
+    }
+
+    // Assembled so that this file does not name the symbols it forbids.
+    let forbidden = [
+        ["Link", "Limits"].concat(),
+        ["Linked", "Package"].concat(),
+        ["Native", "Type"].concat(),
+        ["Domain", "Type"].concat(),
+        ["quire_spec_language::", "parse"].concat(),
+        ["quire_spec_language::", "link"].concat(),
+        ["quire_spec_language::", "syntax"].concat(),
+        ["quire_spec_language::", "linking"].concat(),
+        ["quire_spec_language::", "checking"].concat(),
+        ["crate::", "syntax"].concat(),
+        ["crate::", "linking"].concat(),
+        ["crate::", "checking"].concat(),
+        ["crate::", "parser"].concat(),
+    ];
+    let forbidden: Vec<&str> = forbidden.iter().map(String::as_str).collect();
+    assert_absent(&src, &forbidden);
+    assert_absent(&workspace.join("xtask/src"), &forbidden);
+    for path in rust_sources(&workspace.join("tests")) {
+        if path.ends_with("tests/it/spine_deletion_boundaries.rs") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).expect("read test source");
+        for symbol in &forbidden {
+            assert!(
+                !mentions_symbol(&source, symbol),
+                "{} names the deleted front end {symbol}",
+                path.display()
+            );
+        }
+    }
 }
