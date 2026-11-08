@@ -1537,6 +1537,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
         ),
         "{refused:?}"
     );
+    assert_eq!(refused.pointer().as_deref(), Some("/dependencies"));
 
     // Swapped, and repeated: refused before any recompile, so even a
     // second entry that would not compile is never read.

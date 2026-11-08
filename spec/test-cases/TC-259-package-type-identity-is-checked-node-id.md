@@ -22,8 +22,7 @@ reference site, not a second declaration) of the same declared type within
 one package resolve to that one declaration's node id. This criterion is
 not about declaring a type twice: a structurally identical second
 declaration under a colliding name is refused as a duplicate declaration
-(a name-binding concern, this repository's own precedent being
-`checking::composed::proofs::CorrespondenceError::DuplicateDeclaration`),
+(a name-binding concern, refused where names are bound),
 never admitted as a second occurrence sharing the first declaration's id;
 step 4 below tests two reference sites to one declaration. Scope:
 FR-088-AC-7.

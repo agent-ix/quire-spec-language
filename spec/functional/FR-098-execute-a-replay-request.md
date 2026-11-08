@@ -141,6 +141,10 @@ list.
   compiler's actual dependency-owner path, not the refinement spelling or
   a default entry index. When the compile refusal carries genuine protocol
   results, the executor SHALL retain them without creating an empty payload.
+- The executor SHALL report the other dependency loci as the corpus schema
+  names them: `/dependencies` for entries out of order, repeated or reached by
+  no import, `/dependencies/<n>/sources` for the `n`th entry's source list and
+  `/package/lock/sources` for the proved package's.
 - The executor SHALL build the dependency input (FR-099) from the entries:
   each entry's `identity`, and its source's labels, identity
   as path and provided bytes. It SHALL carry a dependency-input refusal,

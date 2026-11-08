@@ -571,6 +571,14 @@ fn read_refusal(error: quire_canonical::ReadError, bound: u64, actual: u64) -> M
             MemberPath::new(MemberRoot::Package),
             format!("package document is malformed JSON at byte {offset}: {kind}"),
         ),
+        // A repeated name is malformed I-JSON at the later member's name.
+        quire_canonical::ReadError::DuplicateName { offset, .. } => malformed_declaration(
+            "$".to_owned(),
+            None,
+            None,
+            MemberPath::new(MemberRoot::Package),
+            format!("package document is malformed JSON at byte {offset}: duplicate member name"),
+        ),
         quire_canonical::ReadError::Limit(_) => input_bytes_exceeded(bound, actual),
         quire_canonical::ReadError::Allocation { requested } => allocation_failed(requested),
         quire_canonical::ReadError::NumberOutOfRange {

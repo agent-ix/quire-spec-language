@@ -19,9 +19,10 @@ pub use editor::{
     DocumentNavigation, DocumentSnapshot, DocumentSymbol, FormatCorrespondence, FormatResponse,
 };
 
-use qsl_cst::{CompleteDiagnostic, Limits, ParsedSource};
+use qsl_cst::{CompleteDiagnostic, ExtensionForms, ExtensionProduction, Limits, ParsedSource};
 use qsl_foundation::selection::ProfileCatalog;
 use qsl_foundation::SourceIdentity;
+use qsl_semantics::library::extension::HeldExtensions;
 use qsl_semantics::value::HeaderLayer;
 
 /// The current build's header-selectable layer identities for CST tooling.
@@ -58,4 +59,26 @@ pub fn parse_with_catalog(
         ));
     }
     Ok(base)
+}
+
+/// Parse a unit whose selected extensions are `held` (FR-354). S1 reads the
+/// held definitions' productions only: a held leading keyword begins a
+/// declaration form at the first token of a top-level declaration and is an
+/// ordinary identifier anywhere else.
+pub fn parse_with_extensions(
+    identity: SourceIdentity,
+    path: impl Into<String>,
+    bytes: &[u8],
+    held: &HeldExtensions,
+    limits: Limits,
+) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
+    let forms = ExtensionForms::new(held.iter().flat_map(|extension| {
+        extension.productions().iter().map(|production| {
+            ExtensionProduction::new(
+                production.keyword.clone(),
+                production.clauses.iter().map(|clause| clause.name.clone()),
+            )
+        })
+    }));
+    qsl_cst::parse_with_extensions(identity, path, bytes, limits, &forms)
 }

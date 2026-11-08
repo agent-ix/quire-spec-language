@@ -27,8 +27,8 @@ relationships:
 The composed protocol surface wrote a channel as `... ordering <o> delivery
 [lo,hi];`, with `lo` and `hi` natural numbers, `lo <= hi`. The interval is a
 per-send cardinality: the number of deliveries one send produces, not elapsed
-time (`docs/compiled-protocol-v1.md`, "Channel delivery bounds are per-send
-cardinalities, not elapsed time"). The composed emitter wrote it into the
+time (the retired `quire.compiled-protocol/1` wire contract: channel delivery bounds are per-send
+cardinalities, not elapsed time). The composed emitter wrote it into the
 channel's delivery bounds (FR-048-AC-2). The spine writes a channel's delivery
 as one of four policy words (`unknown`, `at-most-once`, `at-least-once`,
 `exactly-once-premise`) plus `capacity` and `overflow`, so the interval can be

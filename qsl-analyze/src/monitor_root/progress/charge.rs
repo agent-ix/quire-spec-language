@@ -28,6 +28,31 @@ impl Charge<'_> {
             .map_err(|denied| self.denial(denied))
     }
 
+    /// The `Budget` refusal of a strict-read denial: the budgeted reader's own
+    /// denied resource and full amount, the read's configured bound, and the
+    /// caller budget's actual consumption and first-unpaid locus.
+    pub(in crate::monitor_root) fn read_denial(
+        &self,
+        resource: quire_contract_model::PackageReadResource,
+        amount: u128,
+        configured_bound: u64,
+    ) -> PlanAuthorityRefusal {
+        PlanAuthorityRefusal::Budget {
+            denied: NativeJoinDeniedCharge {
+                kind: match resource {
+                    quire_contract_model::PackageReadResource::Work => NativeJoinChargeKind::Work,
+                    quire_contract_model::PackageReadResource::ReadStorage => {
+                        NativeJoinChargeKind::Storage
+                    }
+                },
+                amount,
+            },
+            locus: self.budget.first_unpaid_locus().or(Some(self.locus)),
+            configured_bound,
+            consumed: self.budget.consumed(),
+        }
+    }
+
     fn denial(&self, denied: NativeJoinDeniedCharge) -> PlanAuthorityRefusal {
         PlanAuthorityRefusal::Budget {
             denied,

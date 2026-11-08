@@ -86,12 +86,16 @@ const CONTRACT_MODEL: &str = "quire_contract_model";
 /// `CheckedOccurrence` (FR-516's `evaluate_temporal_evidence` and
 /// `subject`), `TemporalBinding` and `ClockConfiguration` (FR-522's clock
 /// authentication), `SourceIdentity` (FR-514's `qsl_inventory`).
-const ADDRESSING_TYPES: [&str; 5] = [
+/// `NativeJoinBudget` is the caller-owned native allowance every stage entry
+/// that joins identities takes; it holds a bound and a charge, no node or
+/// term.
+const ADDRESSING_TYPES: [&str; 6] = [
     "CheckedNodeId",
     "CheckedOccurrence",
     "TemporalBinding",
     "ClockConfiguration",
     "SourceIdentity",
+    "NativeJoinBudget",
 ];
 
 /// The stage-entry crates: layer 5 `qsl-eval`, layer R `qsl-route` and the

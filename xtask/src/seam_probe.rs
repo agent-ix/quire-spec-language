@@ -46,13 +46,12 @@
 //! QSL owns the first two; `#[cfg(seam_probe)]` on
 //! `crate::check::Capability` (defined in `capability.rs` itself, which also
 //! carries its own match's probe arm and so is not a seam-probe location)
-//! makes both non-exhaustive under the probe build: `requests::families`
-//! (requirement derivation per family) and `qsl-route`'s `advertises_kind`
-//! helper `same_kind` (registry advertisement check). The CG `negotiate_*`
+//! makes the match in `qsl-route`'s `advertises_kind` helper `same_kind`
+//! (registry advertisement check) non-exhaustive under the probe build. The CG `negotiate_*`
 //! arm is quire-contract-codegen#86's own seam, not probed here.
 //!
-//! This tool's checked-in list therefore covers exactly the one S1 and two
-//! S7 locations QSL's own code adds, and reports that scope honestly rather
+//! This tool's checked-in list therefore covers exactly the one S1 and one
+//! S7 location QSL's own code adds, and reports that scope honestly rather
 //! than as "AC-6 satisfied."
 
 use std::collections::BTreeSet;
@@ -104,12 +103,11 @@ pub struct SeamLocation {
 /// the same change (FR-063-AC-1/AC-2), or `xtask seam-probe` fails.
 ///
 /// S7 (#185): the applicability table's own
-/// `Capability::applies_to_declaration` match, `requests::families`
-/// (requirement derivation per family, `src/linking/composed/requests.rs`)
-/// and `qsl-route`'s `advertises_kind` helper `same_kind` (registry
-/// advertisement check). `applies_to_declaration` deliberately leaves the
+/// `Capability::applies_to_declaration` match and `qsl-route`'s
+/// `advertises_kind` helper `same_kind` (registry advertisement check).
+/// `applies_to_declaration` deliberately leaves the
 /// `#[cfg(seam_probe)]` variant unhandled, so a kind without an applicability
-/// row cannot compile. The other two match names were confirmed empirically
+/// row cannot compile. The other match name was confirmed empirically
 /// by running this tool under `--cfg seam_probe` and reading rustc's
 /// `E0004` locations: `same_kind` is a bare `fn` nested inside
 /// `advertises_kind`'s body, not an `impl` method, so it resolves unqualified.
@@ -185,10 +183,6 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
         SeamLocation {
             file: "qsl-semantics/src/check/refusal.rs".to_owned(),
             item: "CheckCause::code".to_owned(),
-        },
-        SeamLocation {
-            file: "src/linking/composed/requests.rs".to_owned(),
-            item: "families".to_owned(),
         },
         SeamLocation {
             file: "qsl-route/src/lib.rs".to_owned(),

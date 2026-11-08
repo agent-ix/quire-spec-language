@@ -2621,10 +2621,16 @@ fn x04_quantities_order_and_add_only_in_one_unit() {
             );
         }
     }
-    assert_eq!(
-        cause(&negation("x")),
-        CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
+    // FR-093-AC-49: the unary `-` over a non-affine quantity keeps its unit.
+    let (negated, _) = run_in(
+        &package,
+        &parameters,
+        &negation("x"),
+        None,
+        arguments(),
+        UNLIMITED,
     );
+    completed_as(&negated, &metre(-1));
 }
 
 /// One unit declared by a graph the evaluating package does not hold: its

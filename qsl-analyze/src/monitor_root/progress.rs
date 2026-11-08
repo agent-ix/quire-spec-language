@@ -153,10 +153,10 @@ mod time_source;
 use qsl_foundation::SourceIdentity;
 use qsl_replay::MonitorSubject;
 use quire_contract_model::{
-    read_checked_package, AdmissionBinding, CheckedMonitorClockReadError, CheckedOccurrence,
-    CheckedOccurrenceRole, CheckedPackageDispatchResult, CheckedPackageIncomplete,
-    CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageV2, CheckedRational,
-    NativeJoinBudget, NativeJoinCharge, NativeJoinDeniedCharge, NativeJoinLocus,
+    read_checked_package_with_budget, AdmissionBinding, CheckedMonitorClockReadError,
+    CheckedOccurrence, CheckedOccurrenceRole, CheckedPackageBudgetedDispatchResult,
+    CheckedPackageIncomplete, CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageV2,
+    CheckedRational, NativeJoinBudget, NativeJoinCharge, NativeJoinDeniedCharge, NativeJoinLocus,
 };
 
 use super::{order::selected_time_source_charged, ModelStepOrder, ModelStepOrderRefusal, PlanRoot};
@@ -292,6 +292,9 @@ pub enum PlanAuthorityRefusal {
     /// The original strict reader exhausted its bound.
     #[error("the final emission read was incomplete: {0:?}")]
     ReadIncomplete(CheckedPackageIncomplete),
+    /// The strict reader's operation catalog is unreadable; nothing was judged.
+    #[error("the strict reader's operation catalog is unavailable: {0}")]
+    ReadCatalogUnavailable(quire_contract_model::CatalogReadError),
     /// The actual owner clock lookup refused under the shared native ledger.
     #[error(transparent)]
     ClockRead(#[from] CheckedMonitorClockReadError),
@@ -325,6 +328,7 @@ impl PlanAuthorityRefusal {
             Self::Progress(_) => PlanAuthorityRefusalCode::Progress,
             Self::ReadRefused(_) => PlanAuthorityRefusalCode::ReadRefused,
             Self::ReadIncomplete(_) => PlanAuthorityRefusalCode::ReadIncomplete,
+            Self::ReadCatalogUnavailable(_) => PlanAuthorityRefusalCode::ReadRefused,
             Self::ClockRead(_) => PlanAuthorityRefusalCode::ClockRead,
             Self::Budget { .. } => PlanAuthorityRefusalCode::Budget,
             Self::Allocation(_) => PlanAuthorityRefusalCode::Allocation,
@@ -514,17 +518,37 @@ impl PlanRoot {
             }
         }
         let declaration = declaration.ok_or(PlanAuthorityRefusal::FinalEmission)?;
-        let package = match read_checked_package(
+        // The strict V2 read pays the caller's own shared native budget, so a
+        // read denial is this refusal's `Budget`, never a free allocation.
+        let package = match read_checked_package_with_budget(
             self.emission().package().bytes(),
             validation.read,
             self.emission().evidence(),
+            &mut *charge.budget,
         ) {
-            CheckedPackageDispatchResult::AdmittedV2(package) => package,
-            CheckedPackageDispatchResult::Refused(error) => {
+            CheckedPackageBudgetedDispatchResult::AdmittedV2(package) => package,
+            CheckedPackageBudgetedDispatchResult::Refused(error) => {
                 return Err(PlanAuthorityRefusal::ReadRefused(error));
             }
-            CheckedPackageDispatchResult::Incomplete(error) => {
+            CheckedPackageBudgetedDispatchResult::Incomplete(error) => {
                 return Err(PlanAuthorityRefusal::ReadIncomplete(error));
+            }
+            CheckedPackageBudgetedDispatchResult::BudgetIncomplete(incomplete) => {
+                return Err(charge.read_denial(
+                    incomplete.denied.resource,
+                    incomplete.denied.amount,
+                    incomplete.limit,
+                ));
+            }
+            CheckedPackageBudgetedDispatchResult::Exhausted(exhausted) => {
+                return Err(charge.read_denial(
+                    exhausted.denied.resource,
+                    exhausted.denied.amount,
+                    exhausted.configured_bound,
+                ));
+            }
+            CheckedPackageBudgetedDispatchResult::CatalogUnavailable(error) => {
+                return Err(PlanAuthorityRefusal::ReadCatalogUnavailable(error));
             }
         };
         let checked_tick_period = {

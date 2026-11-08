@@ -46,7 +46,7 @@ actual results.
 FR-046-AC-3's admitted-artifact leg runs through an existing protocol slot, not
 a new bytes-route call: the `recovery.predicate` slots of
 `examples/checked-handoff/unit-duplicate-queries.native`, read in recipe R's
-unit-free variant with the integer model, written to a handoff directory and
+unit-bearing form over the unit `U`, written to a handoff directory and
 evaluated by `BarePackage::evaluate_protocol_slot` (FR-531, FR-533). The one
 binder each slot reads is a `M::Recovery` record whose Collection member
 `receipts` carries the items. `Full` is one conjunction: filter(amount=2) has size 2 and

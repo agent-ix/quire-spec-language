@@ -175,7 +175,7 @@ entry defines no result type of its own.
 | activation map | `activation_relation(package)` (FR-449 rows) | the same |
 | package identity of a progress binding and of a result identity | the package's `name()` | the source identity labels |
 | protocol slot, binders, binder types and levels, locations, callees | the admitted protocol nodes and `protocol_locations` rows (FR-390, FR-464) | the source `CheckedBody` and checked package |
-| model selections and type environment of an observation | the package's `model_root` nodes and the caller's domain package documents | the source graph's model selections and scope |
+| model selections, population types and type environment of an observation | the package's `model_root` selections, its selected-model population catalog and its selected object declarations, with the caller's domain package documents (FR-533 "Observation admission") | the source graph's model selections, protocol population types and scope |
 | dependency closure | the direct dependencies the package retains from its read evidence | the source package's closure |
 | clause name, capture names and capture value types | the occurrence's `temporal_clause_names` row, the captures argument's binding names and the typed result types of the capture initializer terms | the source clause's `name()` and `captures()` |
 | arithmetic exactness and bounds | the lock and the nodes' types | the same, through the source |
@@ -218,7 +218,7 @@ from the bare package, or is listed here with the reason it needs source:
 | `with_progress_capacity`, `with_max_window_values`, `rows`, `temporal_subject`, `profile`, `clock`, `clock_of`, `subject`, `evaluate_temporal_evidence` | available; the rows are the package's own |
 | the construction refusals of `PackageMismatch` | `AmbiguousName` applies; `ClauseRow`, `ProfileSelections` and `Bindings` need an `Emission` and have no bare route (FR-532) |
 | `evaluate_protocol_slot` and `evaluate_selected_protocol_slot` | available; FR-533 |
-| `AdmittedEvaluationView::admit_protocol_observation` | available; FR-533 |
+| `AdmittedEvaluationView::admit_protocol_observation` | available as `BarePackage::admit_protocol_observation`; FR-533 "Observation admission" |
 | `call`, `call_supplied`, `call_observing_applications` (call by `QualifiedName`) | unmet parity: a `QualifiedName` is a source declaration name, which the package does not hold (FR-515 `name()`); a call by the callee's node identity is the slot route's own dispatch |
 | `evaluate` (a `CheckedExpression`) | unmet parity: its argument is a source-checked value a bytes-only consumer cannot hold; the slot call is its package form |
 | `evaluate_holds`, `evaluate_holds_traced`, `evaluate_guard`, `evaluate_hyper_holds`, `evaluate_step_predicate`, `evaluate_clause`, `evaluate_clause_set`, `evaluate_value_invariants`, `check_separation`, `evaluate_frame`, `evaluate_collection_write` | unmet parity: each takes a source-checked clause, node or state clause; the evidence route takes the `holds` valuations as request facts (FR-516), and no consumer of the handoff evaluates the others |

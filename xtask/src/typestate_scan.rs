@@ -673,16 +673,11 @@ mod tests {
         ("ImportView", "qsl-semantics/src/library/mod.rs"),
     ];
 
-    /// The root-crate namesakes FR-087-AC-8 and AC-10 name: lane-private
-    /// types that retire with their lanes, not second definitions.
-    const LANE_PRIVATE_NAMESAKES: [(&str, &str); 1] = [("CheckedPackage", "src/checking.rs")];
-
     /// FR-087-AC-1 (TC-243 steps 1-3) and ADR-013 T-1: each stage-output
     /// type has one definition in the layer crates, in the file that owns
     /// it, with every field private and no type or const generic
-    /// parameter; elsewhere in the QSL crates the only namesakes are the
-    /// two lane-private ones. Private fields stay readable by the owning
-    /// module's own child modules, so this does not prove step 4's
+    /// parameter; elsewhere in the QSL crates there is no namesake. Private
+    /// fields stay readable by the owning module's own child modules, so this does not prove step 4's
     /// accessor-only reads; TC-244's constructor allow-list covers the
     /// constructor half.
     #[trace("TC-243", "FR-087-AC-1")]
@@ -710,19 +705,17 @@ mod tests {
             for field in &definition.fields {
                 assert!(field.private, "{name}.{:?} is not private", field.name);
             }
-            for namesake in other {
-                assert!(
-                    LANE_PRIVATE_NAMESAKES.contains(&(name, namesake.file.as_str())),
-                    "{name} has a second definition at {}",
-                    namesake.file
-                );
-            }
+            let namesakes: Vec<&str> = other.iter().map(|item| item.file.as_str()).collect();
+            assert!(
+                namesakes.is_empty(),
+                "{name} has a second definition at {namesakes:?}"
+            );
         }
     }
 
     /// Every item allowed to hand back an owned stage-output type, by
     /// (file, `Self` type, name), and why.
-    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 16] = [
+    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 17] = [
         // S3: the checker, every entry point of `S3_ENTRY_NAMES`.
         (
             S3_CONSTRUCTOR.file,
@@ -753,6 +746,14 @@ mod tests {
             S3_CONSTRUCTOR.file,
             Some(S3_CONSTRUCTOR.receiver),
             "check_retaining_protocols",
+        ),
+        // S3: the protocol continuation's refusals reported on the graph the
+        // checker returned; it takes an owned `CheckedGraph`, hands the same
+        // one back and never clears its refusals, so it forges none.
+        (
+            S3_CONSTRUCTOR.file,
+            Some("CheckedGraph"),
+            "with_unit_refusals",
         ),
         // S4: the link step, and its dependency-bearing form (E4).
         ("qsl-package/src/checked.rs", Some("CheckedPackage"), "link"),
@@ -824,13 +825,12 @@ mod tests {
     /// FR-087-AC-1's constructor half and FR-087-AC-2 (TC-244 step 0): in
     /// the QSL crates, the only items returning an owned `CheckedGraph`,
     /// `CheckedPackage`, `EmittedPackage` or
-    /// `ImportView` (the lane-private `checking::CheckedPackage` included)
-    /// are the named stage constructors; a `From` impl, decoder or other
+    /// `ImportView` are the named stage constructors; a `From` impl, decoder or other
     /// conversion into one fails here. Out-parameters are not seen.
     #[trace("TC-244", "FR-087-AC-2", "TC-243", "FR-087-AC-1")]
     #[test]
     fn tc_244_only_the_named_stage_constructors_return_stage_types() {
-        let mut expected: BTreeSet<(String, Option<String>, String)> = STAGE_CONSTRUCTORS
+        let expected: BTreeSet<(String, Option<String>, String)> = STAGE_CONSTRUCTORS
             .iter()
             .map(|(file, self_type, name)| {
                 (
@@ -840,8 +840,6 @@ mod tests {
                 )
             })
             .collect();
-        // The lane-private checker returns its own `checking::CheckedPackage`.
-        expected.insert(("src/checking.rs".to_owned(), None, "check".to_owned()));
         assert_eq!(stage_returners(&qsl_items()), expected);
     }
 
@@ -869,11 +867,11 @@ mod tests {
         );
     }
 
-    /// FR-087-AC-8 and AC-10 (TC-247 steps 1-3, 6 and 7; step 4 by field
+    /// FR-087-AC-8 (TC-247 steps 1-3, 6 and 7; step 4 by field
     /// name only): the one `EmittedPackage` is the canonical one in
     /// `qsl-package` (the native-v1 namesake is deleted); no root-crate file
     /// imports a canonical and a lane-private namesake together.
-    #[trace("TC-247", "FR-087-AC-8", "FR-087-AC-10")]
+    #[trace("TC-247", "FR-087-AC-8")]
     #[test]
     fn tc_247_namesakes_stay_distinct_and_never_share_a_scope() {
         let items = qsl_items();

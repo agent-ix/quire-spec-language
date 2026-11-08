@@ -59,13 +59,27 @@ pub struct PackageRows {
 }
 
 impl PackageRows {
-    /// The rows of `package`.
+    /// The rows of the package `read` admitted.
     ///
     /// # Errors
     ///
     /// [`PackageMismatch::AmbiguousName`] when two `temporal_clause_names`
     /// rows pair to one `{ declaration, occurrence }`.
-    pub fn of_package(package: &CheckedPackageV2) -> Result<Self, PackageMismatch> {
+    pub fn of_read(read: &AdmittedPackageRead<'_>) -> Result<Self, PackageMismatch> {
+        Self::of_admitted(read.admitted())
+    }
+
+    /// The rows of a package read from its bytes alone.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::of_read`].
+    pub fn of_bare(bare: &BarePackage<'_>) -> Result<Self, PackageMismatch> {
+        Self::of_admitted(bare.package())
+    }
+
+    /// The rows of a package the I2 reader already admitted.
+    fn of_admitted(package: &CheckedPackageV2) -> Result<Self, PackageMismatch> {
         let mut names: Vec<ClauseName> = Vec::new();
         for row in package.temporal_clause_names().unwrap_or_default() {
             if names.iter().any(|held| {
@@ -175,7 +189,7 @@ impl<'p> EvidencePackage<'p> {
         read: &'p AdmittedPackageRead<'p>,
         budget: &mut NativeJoinBudget,
     ) -> Result<Self, PackageMismatch> {
-        let rows = PackageRows::of_package(read.admitted())?;
+        let rows = PackageRows::of_read(read)?;
         let held = emission.temporal_rows();
         let graph = read.source().graph();
         if !held.clauses().iter().all(|found| {
@@ -222,7 +236,7 @@ impl<'p> EvidencePackage<'p> {
         read: &'p AdmittedPackageRead<'p>,
         budget: &mut NativeJoinBudget,
     ) -> Result<Self, PackageMismatch> {
-        let rows = PackageRows::of_package(read.admitted())?;
+        let rows = PackageRows::of_read(read)?;
         let graph = read.source().graph();
         let mut clauses: Vec<TemporalClauseRef> = Vec::new();
         for row in &rows.names {
@@ -269,7 +283,7 @@ impl<'p> EvidencePackage<'p> {
         bare: &'p BarePackage<'p>,
         budget: &mut NativeJoinBudget,
     ) -> Result<Self, PackageMismatch> {
-        let rows = PackageRows::of_package(bare.package())?;
+        let rows = PackageRows::of_bare(bare)?;
         let retained = bare.exact_type_projections();
         let complete = rows.names.iter().all(|row| {
             match temporal_subject(bare.package(), &row.declaration) {

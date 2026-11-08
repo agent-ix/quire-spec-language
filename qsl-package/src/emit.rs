@@ -5313,9 +5313,12 @@ pub fn emit_timed_models(
     rekey_timed_model_nodes(ids, &mut nodes, &mut source_map)?;
     let inspection_source_map = inspection_source_map(ids, &source_map)?;
     write_index_segments(&mut nodes, &mut source_map, &mut [], &mut [])?;
+    // Node-held operands stay index segments, so every operand row is empty.
+    let operand_rows = vec![Vec::new(); nodes.len()];
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: base.graph().graph_version.clone(),
         nodes,
+        operand_rows,
     };
     let capability_report = base.capability_report().to_vec();
     let diagnostics = base.diagnostics().clone();
@@ -6327,9 +6330,12 @@ fn emit_package_inner(
     let selected_source_record_rows = source_record_rows(graph, &emitted_node_ids)?;
     let selected_source_tuple_rows = source_tuple_rows(graph, &emitted_node_ids)?;
     let selected_source_collection_rows = source_collection_rows(graph, &emitted_node_ids)?;
+    // Node-held operands stay index segments, so every operand row is empty.
+    let operand_rows = vec![Vec::new(); nodes.len()];
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
+        operand_rows,
     };
     let capability_report = [CheckedCapability {
         feature: root.into(),

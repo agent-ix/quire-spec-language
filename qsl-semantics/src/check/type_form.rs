@@ -45,6 +45,13 @@ pub(crate) trait TypeNames {
     /// "Quantity type reference"): only `Quantity<u>` looks here.
     fn unit_named(&self, name: &str) -> Option<UnitId>;
 
+    /// The identities of the selected packages that declare a unit of the
+    /// bare name `name`, in selection order: what an unresolved unit name
+    /// reports (FR-505-AC-12).
+    fn unit_packages(&self, _name: &str) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Admitted units available to source type expressions.
     fn unit_value(&self, _id: UnitId) -> Option<quire_semantic_value::quantity::QuantityUnit> {
         None
@@ -74,6 +81,10 @@ impl TypeNames for SourceScope<'_> {
 
     fn unit_named(&self, name: &str) -> Option<UnitId> {
         SourceScope::unit_named(self, name)
+    }
+
+    fn unit_packages(&self, name: &str) -> Vec<String> {
+        SourceScope::unit_packages(self, name)
     }
 }
 
@@ -137,6 +148,14 @@ pub enum TypeFormFault {
     MissingName(String),
     /// A qualified name binds no type.
     MissingQualifiedName(qsl_forms::NameForm),
+    /// A bare unit name the compiling unit does not declare (FR-505-AC-12),
+    /// with the selected packages that declare a unit of that name.
+    UnresolvedUnitName {
+        /// The name as written.
+        name: String,
+        /// The identities of the declaring packages, in selection order.
+        packages: Vec<String>,
+    },
     /// The qualified name binds more than one type.
     AmbiguousName(String),
     /// A bound is missing, is not a number or a grammar spelling, or the
@@ -182,6 +201,9 @@ impl TypeFormError {
         let cause = match self.fault {
             TypeFormFault::MissingName(name) => CheckCause::MissingName(name),
             TypeFormFault::MissingQualifiedName(name) => CheckCause::MissingQualifiedName(name),
+            TypeFormFault::UnresolvedUnitName { name, packages } => {
+                CheckCause::UnresolvedUnitName { name, packages }
+            }
             TypeFormFault::AmbiguousName(name) => CheckCause::AmbiguousName {
                 name,
                 loci: vec![location.clone()],
@@ -477,7 +499,10 @@ pub(super) fn quantity_unit(
             let cause = if name.is_qualified() {
                 TypeFormFault::MissingQualifiedName(name.clone())
             } else {
-                TypeFormFault::MissingName(name.name.clone())
+                TypeFormFault::UnresolvedUnitName {
+                    name: name.name.clone(),
+                    packages: names.unit_packages(&name.name),
+                }
             };
             TypeFormError {
                 fault: cause,

@@ -220,4 +220,4 @@ The `result_identity` of every outcome follows the identity rule below.
 ## References
 
 - Linear QSL-1502 (this requirement), QSL-858 (deletion of `src/temporal` waits on
-  it), deletion-table rows B3, B13 and B15.
+  it).

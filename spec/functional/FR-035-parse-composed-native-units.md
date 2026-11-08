@@ -47,33 +47,30 @@ If a selected edition is unavailable, then the parser SHALL return the typed unk
 
 If a syntax budget is exhausted, then the parser SHALL return `stage_limit_exceeded` with the budget's `<kind>-exceeded` cause (`quire.native.diagnostics/v1`; the token budget is `token-count-exceeded`) without an admitted unit.
 
-The compiler SHALL preserve the historical `0-draft` grammar and profile behavior for historical selections.
+Qualified model/member positions accept edition-reserved ASCII words under the
+shared grammar; native binder positions do not. The parser does not scan a second
+expression string inside `holds`, guards, captures, queries or choreography
+nodes. It retains explicit grouping, precedence, the temporal-constant versus
+`holds(true)` distinction and all authored selectors. Parsing a valid form is
+separate from admitting its selected profile; balanced text is never a
+substitute for a family syntax tree.
 
-Extend the current Logos token recognizer and structured/Pratt parser. Qualified
-model/member positions accept edition-reserved ASCII words under the shared
-grammar; native binder positions do not. Do not scan a second expression string
-inside `holds`, guards, captures, queries or choreography nodes. Retain explicit
-grouping, precedence, temporal-constant versus `holds(true)` distinction and all
-authored selectors. Parsing a valid new form is separate from admitting its
-selected profile; balanced text is never a substitute for a family AST.
+The result makes the selected edition and declaration kinds inspectable without
+downcasting opaque strings or inferring kinds from diagnostic messages.
 
-This requirement adds an explicit composed path. Existing finite-state syntax,
-package formats and fixture bytes are not reinterpreted as composed artifacts.
-The choice of Rust API names is an implementation detail; its result type must
-make the selected edition and declaration kinds inspectable without downcasting
-opaque strings or inferring kinds from diagnostic messages.
+**QSL-499 disposition:** the dedicated composed-unit parser is deleted under ADR-011, ADR-033 and FR-499. Source is parsed by the lossless CST parser (FR-002), which builds the located declaration, expression and protocol control forms (FR-308, FR-257) that the spine checks; FR-035-AC-1, AC-4 and AC-5 are retired and retained as migration history. AC-2, AC-3 and AC-7 stay active, reworded to the spine parser: they have no other owner for the nonchained-comparison and value-argument refusals, the `result`/`retry` binder refusal, and the `1-draft` identifier spellings. FR-035-AC-6 is retired in QSL-1809 (below).
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-035-AC-1 | A complete unit containing a reusable predicate, state clause, temporal clause and protocol declaration produces four inspectable declaration kinds, with their original profile selectors and source spans. | Test (TC-113) |
-| FR-035-AC-2 | Precedence, nonchained comparisons and temporal relations match the shared grammar; temporal syntax in a value argument, malformed family bodies and trailing garbage refuse without a successful unit. | Test (TC-113) |
-| FR-035-AC-3 | A model member spelled `result` or `retry` parses in its qualified position; the same reserved spelling as a native binder refuses in the composed edition. An identifier newly reserved there retains its historical `0-draft` treatment. | Test (TC-113) |
-| FR-035-AC-4 | CRLF, comments and escaped multibyte text retain exact original bytes and correct byte spans; an escaped string's decoded offset cannot replace its source location. | Test (TC-113) |
-| FR-035-AC-5 | Exact syntax limits admit the otherwise valid unit; the next required token/node/source-byte step above a lowered limit returns `stage_limit_exceeded`/`<kind>-exceeded` (a token is `token-count-exceeded`), with no recovery path bypass. | Test (TC-113) |
-| FR-035-AC-6 | Historical source, formatted output, refusal codes and package identities retain their unchanged historical expectations; a composed selector is never silently replaced with the historical profile. | Test (TC-113) |
-| FR-035-AC-7 | Under `1-draft`, the exact spellings `helper`, `rec`, `cast` and `Tuple` are ordinary identifiers in every native declaration and binder name position and in every reference to such a name (QSpec FR-339-AC-5; the QSpec shared grammar does not reserve them, [QSL-1649](https://linear.app/agent-ix/issue/QSL-1649)): for each spelling `w`, `function w using v(x: Integer): Integer pure { x }` parses and checks, and `function c using v(): Integer pure { w(1) }` evaluates `c()` to `1`; `w` as the `using` profile alias, a parameter, a `let` binder, a record name and its field, an enum member, a type-alias name and a model selection alias (in a unit that also declares a function) each parses and checks with no `invalid_syntax` and no `unsupported_construct`; and with `profile w = "quire.value.complete/v1";`, `function f using w(x: Integer): Integer pure { x }` is admitted with its profile alias resolved to the profile `w` selects. The recognizer's unsupported-spelling class does not apply to them under `1-draft`. Lowercase `tuple`, a complete-V1 reserved word, still refuses `invalid_syntax`/`unexpected-token` as a record name. Under `0-draft` the four exact spellings keep their historical `unsupported_construct` classification unchanged. | Test (TC-113) |
+| FR-035-AC-1 | **RETIRED in QSL-499; historical only.** A complete unit containing a reusable predicate, state clause, temporal clause and protocol declaration produces four inspectable declaration kinds, with their original profile selectors and source spans. | Test (TC-113) |
+| FR-035-AC-2 | Nonchained comparisons refuse; temporal syntax in a value argument, malformed family bodies and trailing garbage refuse without a successful unit. Precedence, associativity and temporal-relation grouping match the shared grammar, as the CST builds them (FR-002). | Test (TC-113) |
+| FR-035-AC-3 | Under `1-draft`, the reserved spellings `result` and `retry` refuse at the spine parser as a native binder (`invalid_syntax`/`unexpected-token`); a neighbouring unreserved spelling is an ordinary binder; as a qualified model member (`M::T::result`, `M::T::retry`) they parse in their qualified position. | Test (TC-113) |
+| FR-035-AC-4 | **RETIRED in QSL-499; historical only.** CRLF, comments and escaped multibyte text retain exact original bytes and correct byte spans; an escaped string's decoded offset cannot replace its source location. | Test (TC-113) |
+| FR-035-AC-5 | **RETIRED in QSL-499; historical only.** Exact syntax limits admit the otherwise valid unit; the next required token/node/source-byte step above a lowered limit returns `stage_limit_exceeded`/`<kind>-exceeded` (a token is `token-count-exceeded`), with no recovery path bypass. | Test (TC-113) |
+| FR-035-AC-6 | **RETIRED in QSL-1809; historical only.** Historical source, formatted output, refusal codes and package identities retain their unchanged historical expectations; a composed selector is never silently replaced with the historical profile. Ruling: the composed and `0-draft` editions it names are gone (ADR-011, FR-499; FR-513 retired-path rules), so there is no historical profile to preserve or to be replaced; identity of `1-draft` source and formatted output is FR-003-AC-9. | Test (TC-113) |
+| FR-035-AC-7 | Under `1-draft`, the exact spellings `helper`, `rec`, `cast` and `Tuple` are ordinary identifiers in every native declaration and binder name position and in every reference to such a name (QSpec FR-339-AC-5; the QSpec shared grammar does not reserve them, [QSL-1649](https://linear.app/agent-ix/issue/QSL-1649)): for each spelling `w`, `function w using v(x: Integer): Integer pure { x }` parses and checks, and `function c using v(): Integer pure { w(1) }` evaluates `c()` to `1`; `w` as the `using` profile alias, a parameter, a `let` binder, a record name and its field, an enum member, a type-alias name and a model selection alias (in a unit that also declares a function) each parses and checks with no `invalid_syntax` and no `unsupported_construct`; and with `profile w = "quire.value.complete/v1";`, `function f using w(x: Integer): Integer pure { x }` is admitted with its profile alias resolved to the profile `w` selects. The recognizer's unsupported-spelling class does not apply to them under `1-draft`. Lowercase `tuple`, a complete-V1 reserved word, still refuses `invalid_syntax`/`unexpected-token` as a record name. | Test (TC-113) |
 
 ## Dependencies
 

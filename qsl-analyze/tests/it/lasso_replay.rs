@@ -308,7 +308,7 @@ fn a_lasso_on_which_the_claim_holds_disagrees() {
 /// `ModelSystem` and production replay; a terminal stutter at a nonterminal
 /// state is also refused.
 ///
-#[trace("TC-523", "TC-839", "FR-329-AC-3")]
+#[trace("TC-523", "TC-839", "FR-329-AC-3", "FR-499-AC-3")]
 #[test]
 fn a_lasso_that_does_not_close_or_does_not_stutter_at_a_terminal_state_refuses() {
     let fixture = counter(document_with_ranged_parameter(), "", FORMULA);

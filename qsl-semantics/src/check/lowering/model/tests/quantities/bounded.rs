@@ -248,3 +248,41 @@ fn bounded_quantity_ordering_keeps_dimension_and_unit_refusals() {
         "existing dimensional refusal: {refusals:?}"
     );
 }
+
+/// FR-093 "Negation" (FR-093-AC-49, TC-1285): a bounded quantity is no
+/// operand of the unary `-`; it refuses `ill_typed`/`operator-ineligible`.
+#[trace("FR-093-AC-49", "TC-1285")]
+#[test]
+fn bounded_quantity_negation_is_operator_ineligible() {
+    let length = bounded(
+        UnitId::declared(node_key(METRE)),
+        Some(rational(0, 1)),
+        Some(rational(2, 1)),
+    );
+    let declarations = PackageDeclarations {
+        types: TypeEnvironment::default().with_units(units()),
+        aliases: vec![
+            ("Bounded".into(), length),
+            ("Length".into(), quantity(METRE)),
+        ],
+        functions: vec![function(
+            "negated",
+            &[("a", named("Bounded"))],
+            named("Length"),
+            Expression::negate(name("a")),
+        )],
+        ..PackageDeclarations::new(
+            fixture_source(),
+            "fixture",
+            qsl_foundation::IdentityLimits::default(),
+        )
+    };
+    let refusals = declarations
+        .check(CheckingLimits::default())
+        .expect_err("a bounded operand refuses");
+    assert_eq!(refusals.len(), 1, "{refusals:?}");
+    assert_eq!(
+        refusals[0].cause,
+        CheckCause::IllTyped(quire_exact::IllTypedCause::OperatorIneligible)
+    );
+}

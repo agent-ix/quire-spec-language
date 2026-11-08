@@ -365,36 +365,116 @@ fn decide_origin(
         .map(|slot| slot.origin().map(str::to_owned))
 }
 
-/// FR-533-AC-12 (numeric half): origins renamed to `999..1005`,
-/// `1000..1004` and `1001..1002` are taken in numeric `(start, end)` order,
-/// so the visible entry takes `999..1005`; the bytes order would give it
-/// `1000..1004`.
+const CASE: &str = "protocol Pipeline run Main Decide case ";
+
+/// The refusal of the projection of the slot `member[index]` of `Pipeline`'s
+/// `control`, which is where a missing `protocol_locations` row under the
+/// slot's origin is found (FR-533-AC-14); `None` when it projects.
+fn projection_refusal(
+    package: &CheckedPackageV2,
+    files: &BTreeMap<String, Vec<u8>>,
+    control: &str,
+    member: &str,
+    index: usize,
+) -> Option<BareSelectionFailure> {
+    let identities = ReadIdentityRows::read(
+        &files["identities.json"],
+        package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("rows");
+    let bare = BarePackage::new(package)
+        .with_supply(
+            BareSupply {
+                identities: &identities,
+                equality: None,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
+    let slot = bare
+        .select_protocol_slot(&ProtocolSlotDescriptor::new(
+            node_key(package, "Pipeline", control),
+            member.to_owned(),
+            Some(index),
+        ))
+        .expect("the slot selects");
+    bare.project_protocol_slot(&slot).err()
+}
+
+/// FR-533-AC-11, FR-383-AC-63: a slot is selected by (control node, member,
+/// index) alone, and only a `visible` entry takes a span-named origin; each
+/// case guard takes the origin its label names, and no row is under any
+/// other `decision` origin.
+#[trace("FR-533-AC-11", "FR-383-AC-63", "TC-1333", "TC-1063")]
+#[test]
+fn fixture_l_slots_take_their_own_origins() {
+    let (_holder, request, files) = handoff(tc1070::SOURCE);
+    let package = read(&request, &files["checked-package.json"]);
+    let [visible] = decision_origins(&package).try_into().expect("one origin");
+    assert_eq!(visible, format!("{DECISION}2641..2650"));
+    assert_eq!(
+        decide_origin(&package, &files, "visible", 0).expect("selects"),
+        Some(visible)
+    );
+    assert_eq!(
+        decide_origin(&package, &files, "cases.guard", 0).expect("selects"),
+        Some(format!("{CASE}no guard"))
+    );
+    assert_eq!(
+        decide_origin(&package, &files, "cases.guard", 1).expect("selects"),
+        Some(format!("{CASE}yes guard"))
+    );
+}
+
+/// FR-533-AC-12 (numeric half): with the origins `999..1005` and
+/// `1000..1004` added, each holding a copy of the `visible` entry's rows
+/// numbered on after the group's existing `term_ordinal` values, the visible
+/// entry takes `999..1005` (numeric `(start, end)` order; the bytes order
+/// would give it `1000..1004`) and the case guards keep their `case` origins.
 #[trace("FR-533-AC-12", "TC-1333")]
 #[test]
-fn renamed_origins_are_taken_in_numeric_order_not_byte_order() {
+fn added_origins_are_taken_in_numeric_order_not_byte_order() {
     let (_holder, request, files) = handoff(tc1070::SOURCE);
     let original = read(&request, &files["checked-package.json"]);
-    let [first, second, third] = decision_origins(&original)
-        .try_into()
-        .expect("three origins");
-    let renamed = [
-        (first, "999..1005"),
-        (second, "1000..1004"),
-        (third, "1001..1002"),
-    ];
+    let [visible] = decision_origins(&original).try_into().expect("one origin");
     let package = edited(&request, &files, |rows| {
-        for row in rows {
-            let name = origin_name(row).to_owned();
-            if let Some((_, span)) = renamed.iter().find(|(old, _)| *old == name) {
-                row["location"]["origin"]["name"] = format!("{DECISION}{span}").into();
+        // The rows of one (application, occurrence) group are consecutive and
+        // ascending by `term_ordinal`: each copy goes after its group's last
+        // row, numbered on after the existing values.
+        let group = |row: &Value| format!("{}{}", row["application"], row["occurrence"]);
+        let copies: Vec<Value> = rows
+            .iter()
+            .filter(|row| origin_name(row) == visible)
+            .cloned()
+            .collect();
+        let mut ordered = Vec::with_capacity(rows.len());
+        let mut held = std::mem::take(rows).into_iter().peekable();
+        while let Some(row) = held.next() {
+            let key = group(&row);
+            let mut ordinal = row["term_ordinal"].as_u64().expect("ordinal") + 1;
+            ordered.push(row);
+            while held.peek().is_some_and(|next| group(next) == key) {
+                let next = held.next().expect("peeked");
+                ordinal = next["term_ordinal"].as_u64().expect("ordinal") + 1;
+                ordered.push(next);
+            }
+            for span in ["999..1005", "1000..1004"] {
+                for copy in copies.iter().filter(|copy| group(copy) == key) {
+                    let mut row = copy.clone();
+                    row["location"]["origin"]["name"] = format!("{DECISION}{span}").into();
+                    row["term_ordinal"] = ordinal.into();
+                    ordinal += 1;
+                    ordered.push(row);
+                }
             }
         }
+        *rows = ordered;
     });
-    let want = |span: &str| Some(format!("{DECISION}{span}"));
     let origin = |member, index| decide_origin(&package, &files, member, index).expect("selects");
-    assert_eq!(origin("visible", 0), want("999..1005"));
-    assert_eq!(origin("cases.guard", 1), want("1000..1004"));
-    assert_eq!(origin("cases.guard", 0), want("1001..1002"));
+    assert_eq!(origin("visible", 0), Some(format!("{DECISION}999..1005")));
+    assert_eq!(origin("cases.guard", 0), Some(format!("{CASE}no guard")));
+    assert_eq!(origin("cases.guard", 1), Some(format!("{CASE}yes guard")));
 }
 
 fn binding_mut<'a>(group: &'a mut Value, name: &str) -> &'a mut Value {
@@ -406,11 +486,12 @@ fn binding_mut<'a>(group: &'a mut Value, name: &str) -> &'a mut Value {
         .expect("named binding")["value"]
 }
 
-/// A genuine reference-valued call makes the two related ends non-leaf
-/// walks. Their origin names are then renamed, without changing any keys.
-#[trace("TC-1333", "FR-533-AC-14")]
+/// FR-533-AC-14, FR-383-AC-63: a genuine reference-valued call makes the two
+/// related ends non-leaf walks; they are named by their record's position, not
+/// by a span, and the bytes route builds the same names.
+#[trace("TC-1333", "FR-533-AC-14", "FR-383-AC-63")]
 #[test]
-fn related_calls_resolve_equal_walks_in_numeric_origin_order() {
+fn related_calls_are_named_by_record_position() {
     use qsl_eval::value::{
         CheckedPackageEvaluation, ProtocolSlot, ProtocolSlotEvaluation, ProtocolSupply,
         SuppliedValue,
@@ -440,18 +521,11 @@ fn related_calls_resolve_equal_walks_in_numeric_origin_order() {
     origins.sort();
     origins.dedup();
     assert_eq!(
-        origins.len(),
-        2,
-        "both authentic related ends have an application walk"
+        origins,
+        [format!("{RELATED}0 from"), format!("{RELATED}0 to")],
+        "both authentic related ends have an application walk, under their positions"
     );
-    let package = edited(&request, &files, |rows| {
-        for row in rows {
-            if let Some(index) = origins.iter().position(|name| name == origin_name(row)) {
-                row["location"]["origin"]["name"] =
-                    format!("{RELATED}{}", ["99 100", "100 105"][index]).into();
-            }
-        }
-    });
+    let package = original;
     let identities = ReadIdentityRows::read(
         &files["identities.json"],
         &package,
@@ -469,7 +543,7 @@ fn related_calls_resolve_equal_walks_in_numeric_origin_order() {
         .expect("the fixture budget admits the supply");
     let mut roots = Vec::new();
     let mut charges = Vec::new();
-    for (member, span) in [("related.from", "99 100"), ("related.to", "100 105")] {
+    for (member, side) in [("related.from", "from"), ("related.to", "to")] {
         let slot = ProtocolSlot {
             node: node_key(&package, "Pipeline", "Got"),
             member: member.into(),
@@ -482,7 +556,10 @@ fn related_calls_resolve_equal_walks_in_numeric_origin_order() {
                 slot.index,
             ))
             .expect("the related call selects");
-        assert_eq!(selected.origin(), Some(format!("{RELATED}{span}").as_str()));
+        assert_eq!(
+            selected.origin(),
+            Some(format!("{RELATED}0 {side}").as_str())
+        );
         roots.push(selected.root().clone());
         let supply = ProtocolSupply {
             binders: selected
@@ -516,17 +593,185 @@ fn related_calls_resolve_equal_walks_in_numeric_origin_order() {
         "the producer emits one shared call root"
     );
     assert_eq!(charges[0], charges[1]);
+
+    // A copy whose rows of `related 0 to` are removed refuses at the call
+    // for `related.to[0]` and leaves `related.from[0]` selectable.
+    let without_to = edited(&request, &files, |rows| {
+        rows.retain(|row| origin_name(row) != format!("{RELATED}0 to"));
+    });
+    assert!(projection_refusal(&without_to, &files, "Got", "related.from", 0).is_none());
+    let Some(BareSelectionFailure::Unsupported(view)) =
+        projection_refusal(&without_to, &files, "Got", "related.to", 0)
+    else {
+        panic!("the end has no rows");
+    };
+    assert!(matches!(
+        view.reason(),
+        qsl_package::UnsupportedReason::MissingLocationProjection(_)
+    ));
+}
+
+/// FR-533-AC-21 (vectors): QSpec's published protocol-location vectors
+/// `PL-04-case-guard`, `PL-04b-case-guard-shared`, `PL-05-related-end` and
+/// `PL-05b-related-end-shared` carry the origin names `protocol_site` builds
+/// for a case guard and a `related` end.
+#[trace("FR-533-AC-21", "FR-383-AC-63", "TC-1333", "TC-1063")]
+#[test]
+fn the_published_pl_04_and_pl_05_vectors_carry_the_names_the_checker_builds() {
+    use qsl_semantics::check::{protocol_site, ProtocolSite, RelatedSide};
+    let qspec =
+        std::env::var_os("QSPEC_DIR").expect("QSPEC_DIR must name a quire-specification checkout");
+    let vectors: Value = serde_json::from_slice(
+        &std::fs::read(
+            Path::new(&qspec).join("proposals/checked-package-v2/checked-term-data-vectors.json"),
+        )
+        .expect("the published vectors"),
+    )
+    .expect("json");
+    let path = ["Main".to_owned(), "Pick".to_owned()];
+    let got = ["Main".to_owned(), "Got".to_owned()];
+    let want = [
+        (
+            "PL-04-case-guard",
+            protocol_site("Handshake", ProtocolSite::CaseGuard(&path, "yes")),
+        ),
+        (
+            "PL-04b-case-guard-shared",
+            protocol_site("Handshake", ProtocolSite::CaseGuard(&path, "no")),
+        ),
+        (
+            "PL-05-related-end",
+            protocol_site(
+                "Handshake",
+                ProtocolSite::RelatedEnd(&got, 0, RelatedSide::From),
+            ),
+        ),
+        (
+            "PL-05b-related-end-shared",
+            protocol_site(
+                "Handshake",
+                ProtocolSite::RelatedEnd(&got, 1, RelatedSide::From),
+            ),
+        ),
+    ];
+    let rows = vectors["positive"]["protocol_locations"]
+        .as_array()
+        .expect("rows");
+    for (id, name) in want {
+        let row = rows.iter().find(|row| row["id"] == id).expect("vector");
+        assert_eq!(origin_name(row), name, "{id}");
+    }
+}
+
+/// FR-383-AC-63: `related` records that collapse onto one emitted record
+/// share one position, so their ends write the rows of that position once:
+/// the package of two identical clauses holds the rows of the package of one.
+#[trace("FR-383-AC-63", "TC-1063")]
+#[test]
+fn related_records_that_collapse_write_their_rows_once() {
+    let source = |clauses: &str| {
+        tc1070::SOURCE
+            .replace("profile S = \"quire.state.graph/v1\";", "profile S = \"quire.state.graph/v1\";\nprofile v = \"quire.value.complete/v1\";")
+            .replace("model M = \"test/orders\";", "model M = \"test/orders\";\nfunction identityRef using v(x: M::Node): M::Node pure { x }")
+            .replace("related by Owns (view, view)", clauses)
+    };
+    let rows_of = |source: &str| {
+        let (_holder, request, files) = handoff(source);
+        let package = read(&request, &files["checked-package.json"]);
+        let mut rows: Vec<(String, usize)> = Vec::new();
+        for row in &package
+            .checked_term_data()
+            .expect("term data")
+            .protocol_locations
+        {
+            if let quire_contract_model::CheckedProtocolLocationOrigin::TypeDeclaration { name } =
+                &row.location.origin
+            {
+                if name.contains(" related ") {
+                    match rows.iter_mut().find(|(held, _)| held == &**name) {
+                        Some((_, count)) => *count += 1,
+                        None => rows.push((name.to_string(), 1)),
+                    }
+                }
+            }
+        }
+        rows.sort();
+        rows
+    };
+    let once = "related by Owns (identityRef(view), identityRef(view))";
+    let twice = format!("{once} {once}");
+    let single = rows_of(&source(once));
+    assert_eq!(single.len(), 2, "{single:?}");
+    assert_eq!(rows_of(&source(&twice)), single);
+}
+
+/// FR-533-AC-13 (related half): two records of one relationship whose `from`
+/// ends are one call application and whose `to` ends differ each pair with
+/// their own end, `related.from[0]` under `related 0 from` and
+/// `related.from[1]` under `related 1 from`, which locate the walk at
+/// distinct origins.
+#[trace("TC-1333", "FR-533-AC-13", "FR-383-AC-63")]
+#[test]
+fn equal_related_ends_of_distinct_records_take_their_own_origin() {
+    let source = tc1070::SOURCE
+        .replace("profile S = \"quire.state.graph/v1\";", "profile S = \"quire.state.graph/v1\";\nprofile v = \"quire.value.complete/v1\";")
+        .replace("model M = \"test/orders\";", "model M = \"test/orders\";\nfunction identityRef using v(x: M::Node): M::Node pure { x }")
+        .replace("protocol Pipeline using P over (view: M::Node) on origin {", "protocol Pipeline using P over (view: M::Node) on origin {\n capture peer: M::Node = view;")
+        .replace("related by Owns (view, view)", "related by Owns (identityRef(view), peer) related by Owns (identityRef(view), view)");
+    assert_ne!(source, tc1070::SOURCE);
+    let (_holder, request, files) = handoff(&source);
+    let package = read(&request, &files["checked-package.json"]);
+    let identities = ReadIdentityRows::read(
+        &files["identities.json"],
+        &package,
+        &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+    )
+    .expect("identities");
+    let bare = BarePackage::new(&package)
+        .with_supply(
+            BareSupply {
+                identities: &identities,
+                equality: None,
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
+    let mut locations = Vec::new();
+    for index in 0..2 {
+        let slot = bare
+            .select_protocol_slot(&ProtocolSlotDescriptor::new(
+                node_key(&package, "Pipeline", "Got"),
+                "related.from".to_owned(),
+                Some(index),
+            ))
+            .expect("selects");
+        let name = format!("protocol Pipeline run Main Got related {index} from");
+        assert_eq!(slot.origin(), Some(name.as_str()));
+        let projection = bare.project_protocol_slot(&slot).expect("projects");
+        let location = projection
+            .location(projection.root())
+            .expect("the call is located")
+            .clone();
+        assert_eq!(
+            location.origin,
+            quire_semantic_value::location::Origin::TypeDeclaration { name }
+        );
+        locations.push(location);
+    }
+    assert_ne!(locations[0], locations[1]);
 }
 
 /// Two genuine case slots share a walk only in this admitted package copy:
-/// the source checker correctly refuses identical exhaustive guards.
+/// the source checker correctly refuses identical exhaustive guards. Each
+/// takes the origin its own case's label names, in either label order, and
+/// reads the `Location` of its own origin's rows.
 #[trace("TC-1333", "FR-533-AC-13")]
 #[test]
-fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
+fn tied_case_guards_take_their_own_origin_in_either_label_order() {
     use qsl_eval::value::{CheckedPackageEvaluation, ProtocolSlot, ProtocolSlotEvaluation};
     let (_holder, request, files) = handoff(tc1070::SOURCE);
     let original = read(&request, &files["checked-package.json"]);
-    assert_eq!(decision_origins(&original).len(), 3);
+    assert_eq!(decision_origins(&original).len(), 1);
     for labels_follow_source in [false, true] {
         let mut wire: Value =
             serde_json::from_slice(&files["checked-package.json"]).expect("package");
@@ -587,11 +832,22 @@ fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
             .as_array_mut()
             .expect("locations");
         rows.retain(|row| row["application"] != removed);
+        let labels = if labels_follow_source {
+            ["b", "a"]
+        } else {
+            ["no", "yes"]
+        };
         for row in rows
             .iter_mut()
-            .filter(|row| origin_name(row).starts_with(DECISION))
+            .filter(|row| origin_name(row).starts_with(CASE))
         {
             row["location"]["path"] = serde_json::json!([]);
+            let renamed = if origin_name(row) == format!("{CASE}no guard") {
+                labels[0]
+            } else {
+                labels[1]
+            };
+            row["location"]["origin"]["name"] = format!("{CASE}{renamed} guard").into();
         }
         let package = read(&request, &serde_json::to_vec(&wire).expect("bytes"));
         let identities = ReadIdentityRows::read(
@@ -616,7 +872,13 @@ fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
             vec![("ready", quire_exact::Value::Boolean(true))],
         );
         let mut charges = Vec::new();
-        for (index, span) in [(0, "2676..2685"), (1, "2735..2748")] {
+        let expected = if labels_follow_source {
+            ["a", "b"]
+        } else {
+            ["no", "yes"]
+        };
+        let mut locations = Vec::new();
+        for (index, label) in expected.into_iter().enumerate() {
             let slot = ProtocolSlot {
                 node: node_key(&package, "Pipeline", "Decide"),
                 member: "cases.guard".into(),
@@ -631,7 +893,7 @@ fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
                 .expect("tied slot selects");
             assert_eq!(
                 selected.origin(),
-                Some(format!("{DECISION}{span}").as_str())
+                Some(format!("{CASE}{label} guard").as_str())
             );
             let supply = supply_of(&selected, vec![("got", got.clone())]);
             let mut meter = quire_exact::Meter::new(UNLIMITED);
@@ -646,21 +908,23 @@ fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
             let projection = bare.project_protocol_slot(&selected).expect("projects");
             let expected_location = quire_semantic_value::location::Location::at(
                 quire_semantic_value::location::Origin::TypeDeclaration {
-                    name: format!("{DECISION}{span}"),
+                    name: format!("{CASE}{label} guard"),
                 },
                 &[],
             );
             assert_eq!(
                 projection.location(projection.root()),
                 Some(&expected_location),
-                "the visit retains its exact paired location"
+                "the visit retains its own origin's paired location"
             );
+            locations.push(expected_location);
             charges.push((
                 format!("{binder_charges:?}"),
                 meter.admitted_charges().to_vec(),
             ));
             assert!(is_boolean(&completed(result), true));
         }
+        assert_ne!(locations[0], locations[1], "the two slots read two origins");
         assert_eq!(
             charges[0], charges[1],
             "origin pairing does not change ordered charges"
@@ -668,30 +932,34 @@ fn tied_case_calls_preserve_values_and_charges_but_exchange_origins() {
     }
 }
 
-/// FR-533-AC-14 (missing candidate half): with the first origin's rows
-/// removed, `visible[0]` (rank 0, one candidate) takes the second origin and
-/// `cases.guard[1]` (rank 1, none) refuses `MissingLocationProjection` at the
-/// `Node` locus of the `got.ready` application.
+/// FR-533-AC-14 (missing rows half): with the rows of `case yes guard`
+/// removed, `cases.guard[1]` refuses `MissingLocationProjection` at the
+/// `Node` locus of the `got.ready` application and `cases.guard[0]` and
+/// `visible[0]` are unaffected; with the rows of the `decision` origin
+/// removed, `visible[0]` refuses the same.
 #[trace("TC-1333", "FR-533-AC-14")]
 #[test]
-fn a_slot_whose_rank_exceeds_its_candidates_refuses_missing_location_projection() {
+fn a_slot_without_rows_under_its_origin_refuses_missing_location_projection() {
     use qsl_package::UnsupportedReason;
     let (_holder, request, files) = handoff(tc1070::SOURCE);
     let original = read(&request, &files["checked-package.json"]);
-    let [first, second, _] = decision_origins(&original)
-        .try_into()
-        .expect("three origins");
+    let [visible] = decision_origins(&original).try_into().expect("one origin");
     let package = edited(&request, &files, |rows| {
-        rows.retain(|row| origin_name(row) != first);
+        rows.retain(|row| origin_name(row) != format!("{CASE}yes guard"));
     });
     assert_eq!(
         decide_origin(&package, &files, "visible", 0).expect("selects"),
-        Some(second)
+        Some(visible)
     );
-    let Err(BareSelectionFailure::Unsupported(view)) =
-        decide_origin(&package, &files, "cases.guard", 1)
+    assert_eq!(
+        decide_origin(&package, &files, "cases.guard", 0).expect("selects"),
+        Some(format!("{CASE}no guard"))
+    );
+    assert!(projection_refusal(&package, &files, "Decide", "cases.guard", 0).is_none());
+    let Some(BareSelectionFailure::Unsupported(view)) =
+        projection_refusal(&package, &files, "Decide", "cases.guard", 1)
     else {
-        panic!("the slot has no origin");
+        panic!("the slot has no rows under its origin");
     };
     // Selection takes no meter and charges nothing; the refusal is a Node
     // locus at the application, and no slot (no partial view) is returned.
@@ -770,7 +1038,7 @@ fn a_slot_whose_rank_exceeds_its_candidates_refuses_missing_location_projection(
             &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
         )
         .expect("the fixture budget admits the supply");
-    for (member, index) in [("visible", 0), ("cases.guard", 1)] {
+    for (member, index) in [("visible", 0)] {
         let slot = ProtocolSlot {
             node: node_key(&all_missing, "Pipeline", "Decide"),
             member: member.into(),
@@ -1266,7 +1534,8 @@ fn equality_slots_reuse_the_decisions_retained_by_exact_budget_admission() {
         .with_supply(supply, &mut measure)
         .expect("measure complete entry");
     let need = measure.consumed();
-    let mut exact = NativeJoinBudget::new(need.work, need.storage);
+    let room = super::bare_package::catalog_room(&package);
+    let mut exact = NativeJoinBudget::new(need.work + room.work, need.storage + room.storage);
     let bare = BarePackage::new(&package)
         .with_supply(supply, &mut exact)
         .expect("exact budget admits");

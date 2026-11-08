@@ -220,6 +220,7 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::PopulationBinding,
     Production::FrameBinding,
     Production::ParameterBinding,
+    Production::ExtensionDeclaration,
 ];
 
 fn source(declarations: &str) -> String {
@@ -459,13 +460,19 @@ fn every_named_production_has_positive_boundary_and_located_negative_vectors() {
         }
     }
 
-    let missing: Vec<_> = Production::all()
+    // An extension form exists only in a parse given a selected extension's
+    // forms, which this core corpus has none of: `extension_forms.rs` covers it.
+    let core: Vec<_> = Production::all()
         .iter()
-        .filter(|production| !occurrences.contains_key(production))
+        .filter(|production| **production != Production::ExtensionDeclaration)
+        .collect();
+    let missing: Vec<_> = core
+        .iter()
+        .filter(|production| !occurrences.contains_key(**production))
         .collect();
     assert!(missing.is_empty(), "uncovered productions: {missing:?}");
 
-    for production in Production::all() {
+    for production in core {
         let (id, source, span) = occurrences.get(production).unwrap();
         assert!(span.start < source.len(), "{production:?} must own a token");
         let mut invalid = source.clone().into_bytes();

@@ -124,6 +124,30 @@ pub enum ProtocolSite<'a> {
     /// A `visible` entry, guard, invariant or variant of the `choice` or
     /// `repeat` at this path, told apart by its source span.
     Decision(&'a [String], qsl_foundation::Span),
+    /// The guard of the case of this label of the `choice` at this path
+    /// (QSpec FR-322-AC-388).
+    CaseGuard(&'a [String], &'a str),
+    /// The `from` or `to` end of the record at this position of the emitted
+    /// `related` array of the control at this path (QSpec FR-322-AC-388).
+    RelatedEnd(&'a [String], usize, RelatedSide),
+}
+
+/// Which end of a `related` record a site names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RelatedSide {
+    /// The `from` end.
+    From,
+    /// The `to` end.
+    To,
+}
+
+impl RelatedSide {
+    fn word(self) -> &'static str {
+        match self {
+            Self::From => "from",
+            Self::To => "to",
+        }
+    }
 }
 
 /// The `Origin::TypeDeclaration` name of `site` of protocol `protocol`.
@@ -163,6 +187,17 @@ pub fn protocol_site(protocol: &str, site: ProtocolSite<'_>) -> String {
             path.join(" "),
             span.start,
             span.end
+        ),
+        ProtocolSite::CaseGuard(path, label) => {
+            format!(
+                "protocol {protocol} run {} case {label} guard",
+                path.join(" ")
+            )
+        }
+        ProtocolSite::RelatedEnd(path, position, side) => format!(
+            "protocol {protocol} run {} related {position} {}",
+            path.join(" "),
+            side.word()
         ),
     }
 }
@@ -1235,7 +1270,9 @@ impl Lowering<'_> {
     /// in source order. A role on a model type refers to that type's model
     /// node. A static role's `replication` Group is empty; a replicated role's
     /// holds its population, `max`, binder, lifetime and, for `until`, the
-    /// term. A whole-model role uses its selected package identity as text.
+    /// term. A whole-model role uses its selected package identity as text. A
+    /// role on a Port adds the `model_member` Group of the Port's `package`
+    /// and `node` texts.
     fn role_nodes(
         &mut self,
         protocol: &ProtocolInput<'_>,
@@ -1267,11 +1304,25 @@ impl Lowering<'_> {
             } else {
                 empty_group()
             };
+            let selected_port = match &role.model_member {
+                Some(port) => Some(BindingValue::Group(GroupTerm::new(vec![
+                    member("package", self.text_literal(&port.package, &location)?),
+                    member("node", self.text_literal(&port.node, &location)?),
+                ]))),
+                None => None,
+            };
             let declaration = vec![
                 identifier(name, &location)?,
                 identifier("role", &location)?,
                 identifier(&role.name, &location)?,
             ];
+            let mut bindings = vec![
+                MemberTerm::bound("model", model),
+                MemberTerm::binding("replication", replication),
+            ];
+            if let Some(port) = selected_port {
+                bindings.push(MemberTerm::binding("model_member", port));
+            }
             let key = self.protocol_member(
                 &location,
                 "role",
@@ -1282,10 +1333,7 @@ impl Lowering<'_> {
                     Operator::ProtocolControl,
                     operation.clone(),
                     boolean.clone(),
-                    vec![
-                        MemberTerm::bound("model", model),
-                        MemberTerm::binding("replication", replication),
-                    ],
+                    bindings,
                 ),
             )?;
             roles.push((role.name.clone(), key));

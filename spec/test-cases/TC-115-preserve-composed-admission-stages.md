@@ -26,7 +26,7 @@ disposition. These are compiler controls, not temporal-engine qualification.
    clause requiring stale dependencies to refuse rather than inherit the new
    meaning; QSL has no staleness check (FR-005-AC-4).
 3. Request two required pairs, `operation-contract` and
-   `temporal-satisfaction`. Supply `negotiate_*` settlements as fixture records:
+   `temporal-satisfaction`. Supply settled dispositions as fixture records:
    `operation-contract` settles `supported` and `temporal-satisfaction` settles
    `unsupported` for an empty candidate set. Inspect both clause/capability
    entries and the aggregate joined from the FR-331 accounting records on

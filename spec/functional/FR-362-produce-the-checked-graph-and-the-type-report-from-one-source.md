@@ -75,8 +75,7 @@ comparing copied source references.
    (FR-110). The one grammar refuses a profile line that carries any clause
    after the identity. Profiles resolve through the layer table; a revision never belongs to the
    source.
-8. **Moved families.** The producer admits a family only once its
-   type phase runs in S3 over S2 forms. S2 builds a form for a `relation`
+8. **Relation and hyper clauses.** S2 builds a form for a `relation`
    clause and for a `hyper` clause over `behaviours`, and S3 checks them
    (FR-171, FR-172); S2 refuses neither with `NoDispatchEntry` or
    `UnrepresentedConstruct`. A checked `relation` clause over model
@@ -94,26 +93,8 @@ comparing copied source references.
    cause or, for its temporal operators, fairness and profile selection, a
    typed temporal cause, and is never refused `NotEmitted`. A `hyper` clause over a finite
    trace domain and a `relation` over names that are not model operations keep
-   the finite reading of QSpec FR-191 (FR-171, FR-172). A construct of a family
-   whose type phase has not moved is refused with `unsupported_construct` at
-   the construct, and no unit is read by two parsers.
-9. **Composed requirements during the migration.** FR-035, FR-036, FR-040 and
-   FR-049 stay normative for the composed lane until it is retired. The PR that
-   moves a family retires or amends the parts of those requirements and of
-   their test cases that name that family, and deletes that family's composed
-   parser arm, syntax, linker and checker. This requirement amends none of them.
-   Retiring the composed lane is open work tracked as QSL-868, not owed by the
-   change that moved `relation` and `hyper`: the composed lane
-   (`src/linking/composed`, `src/checking/composed`, `src/parser/composed*`,
-   `src/syntax/composed*` and the callers of `parse_native` and
-   `parse_native_source`) is still present and is retired family by family.
-   The order in which the families and the other old-architecture units are
-   deleted, and the gate each waits for, is ADR-011's "Deletion order of the
-   remaining old-architecture units". A family's composed arms are deleted
-   only when every row of that family in `docs/deletion-table.md` is green (or
-   PARTIAL/PORT with its owning ticket closed and the row updated to green),
-   kept, or retired under a cited ruling (FR-499).
-10. **The inventory.** The owner-issued source inventory of QSL's checked
+      the finite reading of QSpec FR-191 (FR-171, FR-172).
+9. **The inventory.** The owner-issued source inventory of QSL's checked
    requirements and pending obligations is built from the checked unit and
    from nothing else. A unit that the S3 type phase refuses is an error outcome
    of `check` and yields no partial inventory rows. This is a different case
@@ -122,12 +103,11 @@ comparing copied source references.
    inventory stays `Incomplete`, retains the partial rows and carries the typed
    cause (IR FR-052-AC-10); FR-514 states the rows and the cause. The spine has
    no unfinished-admission stop, so the spine never produces the IR's
-   `TypeAdmissionUnfinished`; the composed-lane inventory does until QSL-830
-   deletes it (IR-1304 removes the cause). The inventory's
+   `TypeAdmissionUnfinished`. The inventory's
    identity binds the checked unit's whole source reference; its
    authored-document key semantics follow QSpec FR-202. The encoding of a row's
    identity belongs to the FR that owns the inventory rows.
-11. **Several source units.** A package of several source units (FR-480) has
+10. **Several source units.** A package of several source units (FR-480) has
     one checked unit per source unit. Each carries its own source reference and
     the type report of its own parse. The shared graph lists every unit's
     source reference in `sources` (FR-001); each entry conforms to the
@@ -139,11 +119,11 @@ comparing copied source references.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-362-AC-1 | For a source the grammar admits, the producer returns one `CheckedUnit` containing the graph, type report and the source's single `RawSourceRef`; the graph and type report come from that source's one parse. The carried reference holds the source's `authority` and `identity` labels. | Test (TC-1026) |
-| FR-362-AC-2 | For a source whose profile line carries any clause after the identity, `qsl_cst::parse` returns a recovered `ParsedSource` with an `invalid_syntax` diagnostic at that token, and `build_unit` and the producer refuse it with `invalid_syntax`; no other parser admits it. | Test |
+| FR-362-AC-2 | For a source whose profile line carries any clause after the identity, `qsl_cst::parse` returns a recovered `ParsedSource` with an `invalid_syntax` diagnostic at that token, and `build_unit` and the producer refuse it with `invalid_syntax`; no other parser admits it, and no parser in the workspace admits a profile line with a `version` or `digest`. | Test |
 | FR-362-AC-3 | The producer does not accept separately supplied graph, type report and formal source inputs, and exposes no graph/report/source mismatch constructor or typed refusal. Its sole `CheckedUnit` is created from the one source parse. | Inspection |
 | FR-362-AC-4 | A producer-created checked unit yields the inventory rows derived from its own graph and type report. | Test |
 | FR-362-AC-5 | No type, function or flag copies the checked unit's source reference to compare it against graph or type-report fields. | Inspection |
-| FR-362-AC-6 | The producer and the type phase it runs call no composed entry point (`parse_native`, `parse_native_source`) and name no composed type (`ComposedUnit`, `syntax::composed`), and no conversion from `ParsedUnit` to a composed tree exists. Retiring those symbols and the composed linker and checker is open work tracked as QSL-868. | Inspection |
+| FR-362-AC-6 | The producer and the type phase it runs call no composed entry point (`parse_native`, `parse_native_source`) and name no composed type (`ComposedUnit`, `syntax::composed`), and no conversion from `ParsedUnit` to a composed tree exists; the composed parser, syntax, linker and checker do not exist. | Test |
 | FR-362-AC-7 | A unit that holds a `predicate`, a `relation` clause over model operations whose body checks and a `hyper` clause over `behaviours` whose body checks yields both a graph and a type report, the graph holding the relation's `claim`/`step_relation` node (FR-180) and the hyper clause's `claim`/`hyperproperty` node (FR-488). The same unit with the `hyper` clause carrying a fairness constraint under a bounded temporal profile is refused only as `NotEmitted` for that clause (a typed temporal cause naming the clause and the span of its constraint) and produces no graph and no type report. S2 refuses neither clause with `NoDispatchEntry` or `UnrepresentedConstruct`. A clause with a fault is refused with its typed hyper cause, or its typed temporal cause for temporal operators, fairness and profile selection, and never with `NotEmitted`. No second parser reads the unit. | Test (TC-1026) |
 | FR-362-AC-8 | A unit that the S3 type phase refuses is an error outcome of `check` and yields no inventory rows. A unit whose check stops on a stage limit yields an `Incomplete` inventory that retains the partial rows and carries the typed cause, as FR-514-AC-3 states. | Test |
 
@@ -155,7 +135,6 @@ comparing copied source references.
   profile selection by identity. QSpec FR-202-AC-2 owns authored-document key
   equality; QSpec FR-322 and its source-map definition own the checked-package
   source-map contract.
-- FR-035, FR-036, FR-040 and FR-049 state the composed lane's parse, link,
-  check and evaluation inputs. They stay normative for unmoved families and are
-  retired family by family (item 9).
+- FR-035, FR-036, FR-040 and FR-049 state the parse, link, check and evaluation
+  inputs of the composed lane, which is deleted.
 - ADR-011 states the stage order and the deletion of the composed lane.

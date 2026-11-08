@@ -300,6 +300,11 @@ pub fn write_with(
         CheckedPackageDispatchResult::Incomplete(incomplete) => {
             return Err(Error::ReaderIncomplete(format!("{incomplete:?}")))
         }
+        CheckedPackageDispatchResult::CatalogUnavailable(error) => {
+            return Err(Error::ReaderIncomplete(format!(
+                "catalog unavailable: {error}"
+            )))
+        }
     };
     let selection = Selection::derive(&compiled, &request.emit, &bytes)?;
     environment

@@ -4733,6 +4733,16 @@ struct MixedUnitClock {
 }
 
 fn mixed_unit_clock(checked_with_selections: bool) -> MixedUnitClock {
+    mixed_unit_clock_in(
+        super::receiver_frames::fixture::PACKAGE,
+        checked_with_selections,
+    )
+}
+
+/// [`mixed_unit_clock`] with the unit compiled as `library`, a package other
+/// than the model package that owns the time units (QSpec FR-370-AC-20: the
+/// clock unit node is the unit's own node in its owning package).
+fn mixed_unit_clock_in(library: &str, checked_with_selections: bool) -> MixedUnitClock {
     use crate::spine::{
         check_with_temporal_selections_and_execution_points, parse, select, DependencyInput,
         ParseRequest, SpineLimits,
@@ -4797,7 +4807,7 @@ fn mixed_unit_clock(checked_with_selections: bool) -> MixedUnitClock {
         .into_value();
     let checked = check_with_temporal_selections_and_execution_points(
         &parsed,
-        package.to_owned(),
+        library.to_owned(),
         &BTreeMap::new(),
         if checked_with_selections {
             &selections
@@ -5072,9 +5082,7 @@ fn reemit_subject<'a>(
 /// selections the caller passes, so a package checked with them is re-emitted
 /// and the item goes on to its instances, while the same call without them is
 /// refused as `clause-root-unresolved` before any instance is built.
-#[trace("TC-1267", "FR-337-AC-15")]
-#[test]
-fn the_item_path_passes_the_clock_selections_to_the_reemit() {
+fn item_path_reemits_in(library: &str) {
     use crate::model_check::identity::ClauseRootRefusal;
     use crate::model_check::item::{ItemRefusal, ModelCheckItem};
     use qsl_eval::automaton::SubjectKind;
@@ -5084,7 +5092,7 @@ fn the_item_path_passes_the_clock_selections_to_the_reemit() {
         packages,
         selections,
         ..
-    } = mixed_unit_clock(true);
+    } = mixed_unit_clock_in(library, true);
     let package = checked.package();
     let [node] = package.graph().temporal_clauses() else {
         panic!("one clause");
@@ -5122,13 +5130,26 @@ fn the_item_path_passes_the_clock_selections_to_the_reemit() {
     );
 }
 
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn the_item_path_passes_the_clock_selections_to_the_reemit() {
+    item_path_reemits_in(super::receiver_frames::fixture::PACKAGE);
+}
+
+/// QSL-1662: the same path with the unit compiled in a library other than the
+/// model package that owns the time units. The owning package itself is
+/// asserted by the identity-path test (QSpec FR-370-AC-20).
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn the_item_path_places_the_clock_unit_in_the_owning_package() {
+    item_path_reemits_in(OTHER_LIBRARY);
+}
+
 /// QSL-1662, the certificate closure path (`check_closure`, `closure.rs`): the
 /// request's selections reach the clause-identity re-emit, so the check goes
 /// on to the item's instances with them and is refused as
 /// `clause-root-unresolved` without them.
-#[trace("TC-1267", "FR-337-AC-15")]
-#[test]
-fn the_closure_path_passes_the_clock_selections_to_the_reemit() {
+fn closure_path_reemits_in(library: &str) {
     use crate::certificate::closure::{
         check_closure, CertificateRequest, ClosureCertificate, ClosureRefusal,
     };
@@ -5140,7 +5161,7 @@ fn the_closure_path_passes_the_clock_selections_to_the_reemit() {
         packages,
         selections,
         ..
-    } = mixed_unit_clock(true);
+    } = mixed_unit_clock_in(library, true);
     let package = checked.package();
     let [node] = package.graph().temporal_clauses() else {
         panic!("one clause");
@@ -5175,4 +5196,83 @@ fn the_closure_path_passes_the_clock_selections_to_the_reemit() {
         "a re-emit without the selections is refused: {:?}",
         without.err()
     );
+}
+
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn the_closure_path_passes_the_clock_selections_to_the_reemit() {
+    closure_path_reemits_in(super::receiver_frames::fixture::PACKAGE);
+}
+
+/// QSL-1662: the same path with the unit compiled in a library other than the
+/// model package that owns the time units. The owning package itself is
+/// asserted by the identity-path test (QSpec FR-370-AC-20).
+#[trace("TC-1267", "FR-337-AC-15")]
+#[test]
+fn the_closure_path_places_the_clock_unit_in_the_owning_package() {
+    closure_path_reemits_in(OTHER_LIBRARY);
+}
+
+/// The library a unit is compiled as when it is not the model package.
+const OTHER_LIBRARY: &str = "acme/orders";
+
+/// QSL-1662, QSpec FR-370-AC-20, the identity path: a `duration` window
+/// `past[0 M::s, 300000 M::ms]` under a clock in `M::ms`, in a library other
+/// than the model package that owns the time units, re-emits with both bounds
+/// typed by the model's own `ms` node and reads back.
+#[trace("TC-1267", "FR-370-AC-20")]
+#[test]
+fn the_identity_path_places_the_clock_unit_in_its_owning_package() {
+    use crate::model_check::identity::ClauseIdentity;
+
+    let MixedUnitClock {
+        checked,
+        packages,
+        selections,
+        millisecond,
+    } = mixed_unit_clock_in(OTHER_LIBRARY, true);
+    let package = checked.package();
+    let [node] = package.graph().temporal_clauses() else {
+        panic!("one clause");
+    };
+    let identity = ClauseIdentity::resolve(
+        package,
+        &packages,
+        node.clause(),
+        &selections,
+        &quire_exact::Cancel::new(),
+        qsl_package::EmitLimits::fixture(),
+    )
+    .unwrap_or_else(|refusal| panic!("the re-emit resolves the clause: {refusal}"));
+    assert!(identity.over().is_some(), "the clause ranges over `e`");
+    let emitted = qsl_package::emit_checked_with_temporal_selections(
+        package,
+        &selections,
+        qsl_package::EmitLimits::fixture(),
+    )
+    .unwrap_or_else(|refusal| panic!("the package emits: {refusal}"));
+    let wire: serde_json::Value =
+        serde_json::from_slice(emitted.package().bytes()).expect("the package is JSON");
+    let owners = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("nodes")
+        .iter()
+        .filter(|node| node["body"]["operation"]["identity"] == "quire.op.temporal.aggregate")
+        .flat_map(|node| node["body"]["arguments"][0]["members"].as_array().cloned())
+        .flatten()
+        .filter(|member| member["name"] == "lower" || member["name"] == "upper")
+        .map(|member| {
+            (
+                member["value"]["type"]["package"]
+                    .as_str()
+                    .map(str::to_owned),
+                member["value"]["type"]["path"][2]
+                    .as_str()
+                    .map(str::to_owned),
+            )
+        })
+        .collect::<Vec<_>>();
+    let model = Some(super::receiver_frames::fixture::PACKAGE.to_owned());
+    let unit = Some(millisecond);
+    assert_eq!(owners, [(model.clone(), unit.clone()), (model, unit)]);
 }

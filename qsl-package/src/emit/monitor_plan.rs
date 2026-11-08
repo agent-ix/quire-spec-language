@@ -1255,9 +1255,12 @@ fn finish(
     limits: crate::checked::EmitLimits,
 ) -> Result<Emission, EmitRefusal> {
     let lock = base.lock().clone();
+    // Node-held operands stay index segments, so every operand row is empty.
+    let operand_rows = vec![Vec::new(); nodes.len()];
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: base.graph().graph_version.clone(),
         nodes,
+        operand_rows,
     };
     let capability_report = base.capability_report().to_vec();
     let diagnostics = base.diagnostics().clone();

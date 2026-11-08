@@ -515,7 +515,13 @@ fn result_outside_a_postcondition_refuses_wrong_anchor() {
 
 /// TC-459 step 4 / FR-104-AC-7, over a package whose `attemptUpdate` frame
 /// also modifies `parent`.
-#[trace("TC-459", "FR-104-AC-7", "QSpec-V1-EXPR-021")]
+#[trace(
+    "TC-459",
+    "FR-104-AC-7",
+    "QSpec-V1-EXPR-021",
+    "FR-006-AC-1",
+    "FR-006-AC-2"
+)]
 #[test]
 fn postconditions_of_an_operation_that_modifies_parent() {
     let document = config_version_document(
@@ -712,7 +718,7 @@ fn missing_and_ambiguous_names_refuse_at_their_locus() {
 }
 
 /// TC-460 rows 2, 3, 5-8, 10 / FR-104-AC-3, AC-4.
-#[trace("TC-460", "FR-104-AC-3", "FR-104-AC-4")]
+#[trace("TC-460", "FR-104-AC-3", "FR-104-AC-4", "FR-006-AC-5")]
 #[test]
 fn ill_typed_and_operator_ineligible_clauses_refuse() {
     let document = config_version_document(

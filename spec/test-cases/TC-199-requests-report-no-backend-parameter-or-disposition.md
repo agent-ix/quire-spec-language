@@ -10,38 +10,12 @@ relationships:
 
 ## Description
 
-Verify, at the type level, that `linking::composed::requests::report`'s
-signature takes no `Backend`-shaped parameter, and that its returned
-disposition type (or any type reachable from it) contains no
-`UnsupportedCapability` variant and no `UnsupportedFamily` variant. Scope:
-FR-077-AC-1, FR-077-AC-2.
-
-Catches an implementation that keeps an optional `backend: Option<Backend>`
-parameter "for compatibility" (a parameter of the forbidden shape, even if
-always passed `None`), and an implementation that renames
-`UnsupportedCapability`/`UnsupportedFamily` to a differently spelled
-variant (e.g. `CapabilityUnavailable`) that still exists and is still
-produced from backend-support state, which would pass a naive grep for the
-old names but not the intent of the removal.
+**RETIRED (`linking::composed::requests::report` is deleted with the composed linker under ADR-011, ADR-033 and FR-499: requested clause/capability pairs are now admitted under FR-057, whose admission entry point takes no registry or backend parameter (FR-057-AC-5, TC-155).)** There is no successor test case.
 
 ## Test Procedure
 
-1. Call `requests::report` with a representative set of admitted requested
-   pairs, supplying no backend argument, and confirm the call compiles and
-   returns a complete report.
-2. Attempt to construct a call to `requests::report` that supplies backend
-   information of any kind (a `Backend` value, a registry reference, or an
-   `Option` wrapping either) and confirm no such call compiles.
-3. Enumerate every variant of the disposition type `requests::report`
-   returns (and of every type nested inside it) and compare the full
-   variant name list against the forbidden names `UnsupportedCapability`
-   and `UnsupportedFamily`, and confirm no variant's documented semantics
-   is "this pair's capability/family is unsupported because no backend
-   covers it" regardless of name.
+**RETIRED.**
 
 ## Expected Results
 
-Step 1 succeeds. Step 2 fails to compile for every backend-shaped
-parameter attempted. Step 3 finds no variant named `UnsupportedCapability`
-or `UnsupportedFamily`, and no variant whose semantics depend on backend
-registration state.
+**RETIRED.**

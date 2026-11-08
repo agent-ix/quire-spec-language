@@ -8,9 +8,8 @@
 //!
 //! This crate depends on layer 3 (`qsl-semantics`), F (`qsl-foundation`), K
 //! (`quire-exact`) and `quire-contract-model` for the v2 wire vocabulary. It never names the root crate or a
-//! SEAM-1 module (`checking`, `linking`, `native_model`, or the root crate's
-//! native-v1 `package`): Cargo refuses the first, and the root crate is the
-//! only home of the second. The layer-5 evaluator and every later layer
+//! SEAM-1 module (the root crate's `checking` or `linking`): Cargo refuses the
+//! first, and the root crate is the only home of the second. The layer-5 evaluator and every later layer
 //! depend on this crate, never the other way.
 
 // NFR-015: with `std` disabled the crate is `no_std` + `alloc` and keeps the
@@ -23,6 +22,8 @@ extern crate alloc;
 mod bare;
 #[cfg(feature = "std")]
 mod bare_slot;
+#[cfg(feature = "std")]
+mod bare_units;
 #[cfg(feature = "std")]
 mod bare_world;
 mod checked;
@@ -80,12 +81,13 @@ pub use checked_v2::{
     CheckedClockConstraint, CheckedClockGuard, CheckedClockPlace, CheckedClockReset,
     CheckedConstraintTarget, CheckedGuardPart, CheckedResetTarget, CheckedTimeInvariant,
     CheckedTimeSource, CheckedTimeSourceKind, CheckedTimedModel, CheckedUrgency, ClauseRoot,
-    ClauseRootUnresolved, ClockComparison, ClockPathStep, HybridRead, HybridReadError, HyperRoot,
-    HyperRootUnresolved, ImportViewRefusal, NativeJoinLimits, PackageTerminal,
-    PackageTerminalDeclaration, ReadHybridClaim, ReadHybridModel, ReadTerminal,
-    ReadTerminalDeclaration, ResolvedClockPathStep, SchedulabilityRoot, SourceMapDefect,
-    StateGraphKind, StateGraphRoot, TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata,
-    UnsupportedWire, V2ReadLimits, V2ReadRefusal,
+    ClauseRootUnresolved, ClockComparison, ClockPathStep, EvaluationWitnessSupplier,
+    EvaluationWitnesses, HybridRead, HybridReadError, HyperRoot, HyperRootUnresolved,
+    ImportViewRefusal, NativeJoinLimits, PackageTerminal, PackageTerminalDeclaration,
+    ReadHybridClaim, ReadHybridModel, ReadTerminal, ReadTerminalDeclaration, ResolvedClockPathStep,
+    SchedulabilityRoot, SourceMapDefect, SourceWitnessSupplier, StateGraphKind, StateGraphRoot,
+    TerminalResolveRefusal, TimedLiteralTypes, TimedNodeMetadata, UnsupportedWire, V2ReadLimits,
+    V2ReadRefusal, WitnessSupplyFailure,
 };
 #[cfg(feature = "std")]
 pub use emit::{
@@ -116,8 +118,8 @@ pub use native_row::{NativeRowError, NativeRowErrorCode};
 pub use protocol_occurrence::{
     protocol_occurrence_schemas_from_read, CompensationEntry, ControlEntry, ControlOperator,
     ControlOwner, OccurrenceRefusal, PopulationName, ProtocolOccurrence, ProtocolOccurrenceSchema,
-    RepeatDimension, RoleLifetime, RoleReplication, RoleSlot, RuntimeBindingRequirement,
-    SubjectKind,
+    RepeatDimension, RoleLifetime, RoleModelMember, RoleReplication, RoleSlot,
+    RuntimeBindingRequirement, SubjectKind,
 };
 #[cfg(feature = "std")]
 pub use protocol_occurrence_key::{OccurrenceKey, OccurrenceKeyError, WorkflowInstanceIdentity};

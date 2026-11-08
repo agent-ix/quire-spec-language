@@ -80,9 +80,8 @@ observable obligation of each FR-362 and FR-480 criterion.
     the IR reports this cause as `TypeWorkExhausted` (IR FR-052-AC-10) and the
     mapping of "The IR identities" below applies;
   - for any other refusal, an error and no inventory rows.
-- The spine produces no stop for "admission unfinished"; the spine never
-  produces the IR's `TypeAdmissionUnfinished` cause. The legacy composed-lane
-  inventory does until QSL-830 deletes it (IR-1304 removes the cause).
+- The spine produces no stop for "admission unfinished"; no QSL code produces
+  the IR's `TypeAdmissionUnfinished` cause (IR-1304 removes the cause).
 
 ### Requirement forms
 
@@ -216,7 +215,6 @@ FR-480's criteria belong to four pieces of work (QSL-1508):
   capability-kind obligation member and the exhaustion stage, setting, observed
   and optional prior, requested and site fields are in the IR carrier.
 - **Contract IR FR-052 (decided):** IR FR-052 as amended by IR#854 keeps the
-  `TypeAdmissionUnfinished` cause, scoped to QSL's legacy composed-lane
-  inventory; IR-1304 retires it once QSL-830 deletes that lane. The spine
-  never produces it. The obligation FR-052-AC-10 (partial rows and a typed
+  `TypeAdmissionUnfinished` cause for the legacy composed-lane inventory,
+  which is deleted; IR-1304 retires the cause. No QSL code produces it. The obligation FR-052-AC-10 (partial rows and a typed
   cause on exhaustion) is kept here.

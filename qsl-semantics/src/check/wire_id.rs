@@ -50,6 +50,13 @@ pub enum WireIdError {
         /// The index the segment holds.
         index: u64,
     },
+    /// An operand slot was read where only keys are admitted: a slot names an
+    /// entry of the holding node's operand row, which this reader never holds.
+    #[error("operand slot {slot} has no operand row to resolve against")]
+    OperandSlot {
+        /// The slot the segment holds.
+        slot: u64,
+    },
     /// An operand of the key is not a node of the document's graph, so the
     /// key has no wire form there.
     #[error("operand {operand} of the key is not a node of the graph")]
@@ -384,6 +391,9 @@ impl StructuralKeys {
             .map(|segment| match segment {
                 CheckedNodePathSegment::Name(name) => Ok(PathSegment::Text(name.to_string())),
                 CheckedNodePathSegment::Index(index) => Err(WireIdError::NoGraph { index: *index }),
+                CheckedNodePathSegment::Operand(slot) => {
+                    Err(WireIdError::OperandSlot { slot: *slot })
+                }
                 CheckedNodePathSegment::Node(operand) => Ok(PathSegment::Node(
                     self.by_operand[&Arc::as_ptr(operand)].1.clone(),
                 )),
@@ -457,6 +467,9 @@ fn key_with(
                 let key = index(*at)?;
                 top.path.push(PathSegment::Node(key));
             }
+            Some(CheckedNodePathSegment::Operand(slot)) => {
+                return Err(WireIdError::OperandSlot { slot: *slot })
+            }
             Some(CheckedNodePathSegment::Node(nested)) => stack.push(frame(nested)),
             None => {
                 let done = stack.pop().expect("the top frame exists");
@@ -485,7 +498,7 @@ fn index_segments(id: &CheckedNodeId) -> Vec<u64> {
         match segments.next() {
             Some(CheckedNodePathSegment::Index(index)) => found.push(*index),
             Some(CheckedNodePathSegment::Node(nested)) => pending.push(nested.path.iter()),
-            Some(CheckedNodePathSegment::Name(_)) => {}
+            Some(CheckedNodePathSegment::Name(_) | CheckedNodePathSegment::Operand(_)) => {}
             None => {
                 pending.pop();
             }

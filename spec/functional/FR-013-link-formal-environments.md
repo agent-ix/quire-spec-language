@@ -54,16 +54,18 @@ require their concrete semantic mapping and return unsupported_construct in this
 profile. Snapshot availability, guarded unwraps, scalar inference, unit/type
 equality and Boolean roots remain FR-006's subsequent checking phase.
 
+**QSL-1810 disposition:** the `0-draft` linker carrier of the criteria retired below (`link`, `LinkedPackage`, `LinkLimits` and `src/linking*`) is deleted under ADR-011 M-6c, ADR-033 and FR-499. Each retired criterion is retained as migration history and is not an active acceptance obligation; import resolution on the spine is owned by FR-099 and FR-111.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-013-AC-1 | LinkedPackage preserves exact source identity, bytes and all native/formal declaration loci after successful exact import selection. | Test (TC-030) |
+| FR-013-AC-1 | **RETIRED in QSL-1810; historical only.** LinkedPackage preserves exact source identity, bytes and all native/formal declaration loci after successful exact import selection. Ruling: the `link` stage, `LinkedPackage` and `LinkLimits` were the `0-draft` front end deleted in QSL-1810 (ADR-011 M-6c, ADR-033, FR-499); the spine resolves imports against supplied libraries and definition bundles under FR-099 and FR-111, which own no formal-environment linkage, so there is nothing left to assert. | Test (TC-030) |
 | FR-013-AC-2 | **RETIRED (import digest removed).** An import is selected by its exact package, requirement and revision, and no digest exists to substitute. | Test (TC-030), retired |
-| FR-013-AC-3 | Lexical scopes, record fields, values and enum variants resolve to their exact local or owner-qualified identities; a missing reference refuses without a package. | Test (TC-031) |
-| FR-013-AC-4 | Unsupported reference/operation mappings refuse with unsupported_construct and never yield a package or Boolean result. | Test (TC-032) |
-| FR-013-AC-5 | Exact caller limits are admitted, a required next operation above a configured limit returns resource_exhausted, an input above a default links once that limit is raised to fit it, and zero does not disable a limit. | Test (TC-033) |
-| FR-013-AC-6 | Ambiguity diagnostics retain every conflicting formal declaration locus, and prior calls or candidate order cannot expose partial linkage. | Test (TC-034) |
+| FR-013-AC-3 | The spine checker resolves lexical scopes, record fields, values and enum variants to their exact local or owner-qualified identities; a reference to a member of no enum, a function that is not declared or a `let` binder used past its body refuses `missing_declaration` without a checked result. (The `0-draft` linker that first asserted this was deleted in QSL-1810; the criterion is carried by the layer-3 checker.) | Test (TC-031) |
+| FR-013-AC-4 | **RETIRED in QSL-1810; historical only.** Unsupported reference/operation mappings refuse with unsupported_construct and never yield a package or Boolean result. Ruling: the `link` stage, `LinkedPackage` and `LinkLimits` were the `0-draft` front end deleted in QSL-1810 (ADR-011 M-6c, ADR-033, FR-499); the spine resolves imports against supplied libraries and definition bundles under FR-099 and FR-111, which own no formal-environment linkage, so there is nothing left to assert. | Test (TC-032) |
+| FR-013-AC-5 | **RETIRED in QSL-1810; historical only.** Exact caller limits are admitted, a required next operation above a configured limit returns resource_exhausted, an input above a default links once that limit is raised to fit it, and zero does not disable a limit. Ruling: the `link` stage, `LinkedPackage` and `LinkLimits` were the `0-draft` front end deleted in QSL-1810 (ADR-011 M-6c, ADR-033, FR-499); the spine resolves imports against supplied libraries and definition bundles under FR-099 and FR-111, which own no formal-environment linkage, so there is nothing left to assert. | Test (TC-033) |
+| FR-013-AC-6 | **RETIRED in QSL-1810; historical only.** Ambiguity diagnostics retain every conflicting formal declaration locus, and prior calls or candidate order cannot expose partial linkage. Ruling: the `link` stage, `LinkedPackage` and `LinkLimits` were the `0-draft` front end deleted in QSL-1810 (ADR-011 M-6c, ADR-033, FR-499); the spine resolves imports against supplied libraries and definition bundles under FR-099 and FR-111, which own no formal-environment linkage, so there is nothing left to assert. | Test (TC-034) |
 
 ## Dependencies
 
