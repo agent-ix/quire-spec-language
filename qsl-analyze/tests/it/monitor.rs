@@ -708,6 +708,7 @@ fn admission_of_every_position_precedes_any_clause_run() {
 
 /// FR-330-AC-3: an `over` that names no object and a lasso under a bounded
 /// profile are the clause's own admit refusals, not a position's admission.
+#[trace("TC-766", "FR-283-AC-13")]
 #[test]
 fn a_clause_refused_at_admit_is_no_position_failure() {
     let mut world = world(&[("P", "", ALWAYS_SMALL)]);
@@ -737,6 +738,18 @@ fn a_clause_refused_at_admit_is_no_position_failure() {
         panic!("a refusal");
     };
     assert_eq!(record.catalog.cause(), "invalid-value");
+
+    // An unknown name ahead of the bounded clause is reported first.
+    let refusal = refused(bounded.run(
+        &["Absent", "Reach"],
+        trace.as_bytes(),
+        UNLIMITED,
+        &Cancel::new(),
+    ));
+    assert!(
+        matches!(&refusal, MonitorRefusal::UnknownClause { name } if name == "Absent"),
+        "{refusal:?}"
+    );
 }
 
 /// FR-001-AC-6: U+200B is not whitespace, so a label of it is not blank; the

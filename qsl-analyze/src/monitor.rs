@@ -956,6 +956,7 @@ fn read_ref(item: NodeRef<'_>, pointer: &str) -> Result<DocumentRef, Defect> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ix_trace_rs::trace;
 
     fn fault() -> InternalFault {
         InternalFault::new("test", "a-broken-invariant")
@@ -972,6 +973,7 @@ mod tests {
 
     /// FR-283-AC-13, Outputs: a `TemporalRefusal::Fault` fails the whole
     /// request with `StageFailure::Fault`, never a record.
+    #[trace("TC-766", "FR-283-AC-13")]
     #[test]
     fn a_trace_evaluator_fault_fails_the_request() {
         let disposition = ClauseDisposition::TemporalRefusal(TemporalTraceRefusal::Fault(fault()));

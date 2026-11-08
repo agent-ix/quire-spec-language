@@ -66,6 +66,12 @@ fn window_unit() -> String {
            temporal Window2 using t over (c: M::Counter) clock \"ms\" on origin { eventually[0,5] holds(c.value > 1) }\n"
 }
 
+/// FR-501-AC-7's `until` clause under the finite-window profile.
+fn until_unit() -> String {
+    header("quire.temporal.timestamped-event.finite-window/v1")
+        + "temporal Until using t over (c: M::Counter) clock \"ms\" on origin { holds(c.value > 0) until[0,1] holds(c.value > 1) }\n"
+}
+
 fn identity() -> SourceIdentity {
     SourceIdentity::new("agent-ix", "monitor-inputs")
 }
@@ -165,6 +171,7 @@ fn compile_with(documents: &Documents, text: String, dependencies: &DependencyIn
 struct World {
     event: Compiled,
     window: Compiled,
+    until: Compiled,
     documents: Documents,
 }
 
@@ -173,6 +180,7 @@ fn world() -> World {
     World {
         event: compile(&documents, event_unit()),
         window: compile(&documents, window_unit()),
+        until: compile(&documents, until_unit()),
         documents,
     }
 }
@@ -1414,4 +1422,46 @@ fn a_missing_library_domain_package_is_refused_at_the_closure_stage() {
             ])
         )
     );
+}
+
+/// FR-283-AC-13: over FR-501-AC-7's trace (stamps 0, 1, 1, no order keys) as a
+/// `Typed` `Timestamped` trace with an agreeing `binding`, `until` reports a
+/// `TraceRefused` record `invalid_runtime_input`/`invalid-value` at position 2,
+/// category refusal, exit 20.
+#[trace("TC-766", "FR-283-AC-13")]
+#[test]
+fn a_tied_stamp_without_order_keys_is_a_trace_refused_record() {
+    let mut world = world();
+    let refs = world.refs("u", &[0, 1, 2]);
+    let mut trace = window(refs, &[0, 1, 1], 5, binding("ms"));
+    if let TraceInput::Timestamped { window, .. } = &mut trace {
+        window.missing_valuations.clear();
+    }
+    let outcome = world
+        .run(
+            &world.until,
+            vec![model_clause("Until")],
+            MonitorTrace::Typed(&trace),
+            &world.until.sources,
+            &world.until.selections,
+            &limits(1 << 20),
+        )
+        .expect("the request completes");
+    let record = only(&outcome);
+    assert_eq!(record.verdict, MonitorVerdict::TraceRefused);
+    assert_eq!(record.category, Category::Refusal);
+    assert_eq!(record.report().disposition.exit_code(), 20);
+    let ClauseDisposition::TemporalRefusal(refusal) = &record.report().disposition else {
+        panic!("a trace refusal, got {:?}", record.report().disposition);
+    };
+    assert!(
+        matches!(
+            refusal,
+            spine::TemporalTraceRefusal::SameStampOrderUnavailable { position: 2 }
+        ),
+        "{refusal:?}"
+    );
+    let code = refusal.catalog_code();
+    assert_eq!(code.code(), "invalid_runtime_input");
+    assert_eq!(code.cause(), "invalid-value");
 }
