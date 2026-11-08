@@ -1960,39 +1960,32 @@ fn composition_term(
 /// The IR crate does not export the member types of its guarantee and
 /// composition terms, so the term is read from its JSON body. `body` writes
 /// each node reference through the id writer it is given, which here names
-/// the reference by its position in a table; the table's ids then replace the
-/// names, because a node id has no standalone JSON form.
+/// the reference by its position in a table (the id's `ordinal`); the table's
+/// ids then replace the names, because a node id has no standalone JSON form.
 fn flat_term(
     ids: &StructuralIds,
     body: impl FnOnce(
         crate::guarantee::IdWriter<'_>,
     ) -> Result<serde_json::Value, crate::guarantee::NodeWriteRefusal>,
 ) -> Result<CheckedTerm, EmitRefusal> {
-    use quire_contract_model::CheckedNodePathSegment as Segment;
     let table = std::cell::RefCell::new(Vec::new());
     let name = |key: &NodeKey| {
         let mut table = table.borrow_mut();
         table.push(node_id(ids, key));
         Ok(serde_json::json!({
-            "package": "table",
-            "path": ["table", (table.len() - 1).to_string()],
-            "ordinal": 0,
+            "package": "",
+            "path": [""],
+            "ordinal": table.len() - 1,
         }))
     };
     let body = body(&name).map_err(|_| EmitRefusal::UnresolvedNodeReference)?;
     let mut term: CheckedTerm = serde_json::from_value(body).map_err(encoding)?;
     let table = table.into_inner();
-    term.map_node_ids(|id| match &*id.path {
-        [Segment::Name(table_name), Segment::Name(position)]
-            if &*id.package == "table" && &**table_name == "table" =>
-        {
-            position
-                .parse::<usize>()
-                .ok()
-                .and_then(|at| table.get(at))
-                .cloned()
-        }
-        _ => None,
+    term.map_node_ids(|id| {
+        usize::try_from(id.ordinal)
+            .ok()
+            .and_then(|at| table.get(at))
+            .cloned()
     });
     Ok(term)
 }
