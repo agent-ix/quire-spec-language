@@ -8,8 +8,9 @@ use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::{
-    check, core_vocabulary, package, parse_selecting_extensions, select, CompileRefusal,
-    DependencyInput, EmittedUnit, PackageLimits, ParseRequest, ProfileCatalogInput, SpineLimits,
+    admission_evidence, check, core_vocabulary, package, parse_selecting_extensions, select,
+    AdmittedModels, CheckedUnit, CompileRefusal, DependencyInput, EmittedUnit, PackageLimits,
+    ParseRequest, ProfileCatalogInput, SpineLimits,
 };
 use qsl_semantics::check::{CheckCause, ExtensionCause, NamedDeclaration};
 use qsl_semantics::library::bundle::{
@@ -74,6 +75,15 @@ fn compile_source(
     held: &DefinitionCatalog,
     source: &str,
 ) -> Result<EmittedUnit, Box<CompileRefusal>> {
+    compile_parts(held, source).map(|(_, _, emitted)| emitted)
+}
+
+/// As [`compile_source`], keeping the selected models and the checked unit
+/// that `admission_evidence` reads.
+fn compile_parts(
+    held: &DefinitionCatalog,
+    source: &str,
+) -> Result<(AdmittedModels, CheckedUnit, EmittedUnit), Box<CompileRefusal>> {
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
     let refusal = |failure| {
@@ -114,9 +124,10 @@ fn compile_source(
     )
     .map_err(refusal)?
     .into_value();
-    Ok(package(&checked, PackageLimits::default(), &cancel)
+    let emitted = package(&checked, PackageLimits::default(), &cancel)
         .map_err(refusal)?
-        .into_value())
+        .into_value();
+    Ok((models, checked, emitted))
 }
 
 fn wire(emitted: &EmittedUnit) -> Value {
@@ -973,37 +984,73 @@ fn an_extension_keyword_equal_to_a_core_leading_keyword_refuses_conflicting_defi
 
 #[trace("TC-884", "FR-354-AC-5")]
 #[test]
-fn the_package_reads_back_under_the_emissions_evidence_and_not_without_the_definition() {
+fn the_package_reads_back_under_admission_evidence_and_not_without_the_definition() {
     use quire_contract_model::{
         read_checked_package, CheckedPackageDispatchResult, CheckedPackageEvidence,
-        CheckedPackageReadLimits,
+        CheckedPackageReadLimits, CheckedPackageRefusalCode,
     };
-    let emitted = compile(&held("retention"), FORM).expect("the unit compiles");
+    let (models, checked, emitted) =
+        compile_parts(&held("retention"), &format!("{HEADER}{FORM}\n")).expect("the unit compiles");
     let bytes = emitted.package().bytes();
-    let read = read_checked_package(
-        bytes,
-        CheckedPackageReadLimits::bounded(),
-        emitted.evidence(),
-    );
+    let evidence = admission_evidence(
+        &models,
+        &checked,
+        &emitted,
+        SpineLimits::default().imports,
+        qsl_package::EmitLimits::fixture(),
+    )
+    .expect("the admission evidence assembles");
+    let read = read_checked_package(bytes, CheckedPackageReadLimits::bounded(), &evidence);
     assert!(
         matches!(read, CheckedPackageDispatchResult::AdmittedV2(_)),
         "{read:?}"
     );
+
     // The same features, no `insert_extension_definition`.
-    let mut bare = CheckedPackageEvidence::new();
     let wire = wire(&emitted);
+    let mut bare = CheckedPackageEvidence::new();
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         bare.support_feature(feature.as_str().unwrap());
     }
-    let refused = read_checked_package(bytes, CheckedPackageReadLimits::bounded(), &bare);
-    assert!(
-        !matches!(refused, CheckedPackageDispatchResult::AdmittedV2(_)),
-        "an extension node whose definition the reader does not hold is refused"
+    let before = bytes.to_vec();
+    let CheckedPackageDispatchResult::Refused(refusal) =
+        read_checked_package(bytes, CheckedPackageReadLimits::bounded(), &bare)
+    else {
+        panic!("an extension node whose definition the reader does not hold is refused");
+    };
+    assert_eq!(
+        refusal.code,
+        CheckedPackageRefusalCode::UnknownRequiredCapability
     );
-    assert!(
-        format!("{refused:?}").contains("UnknownRequiredCapability"),
-        "{refused:?}"
+    assert!(refusal.cause.is_none(), "{refusal:?}");
+    let index = nodes(&wire)
+        .iter()
+        .position(|node| node["node_tag"] == "extension")
+        .unwrap();
+    let pointer = refusal.loci.first().and_then(|locus| locus.path.as_ref());
+    assert_eq!(
+        pointer.map(ToString::to_string),
+        Some(format!("/semantic_graph/nodes/{index}/body/definition"))
     );
+    assert_eq!(
+        serde_json::to_value(refusal.locus.as_ref()).unwrap(),
+        extension_node(&wire)["node_id"]
+    );
+    assert_eq!(
+        bytes,
+        before.as_slice(),
+        "the package's bytes are unchanged"
+    );
+}
+
+#[trace("TC-884", "FR-354-AC-5")]
+#[test]
+fn a_unit_selecting_no_extension_has_one_identity_over_catalogs_with_and_without_it() {
+    let source = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\nrecord Window { lo: Integer; }\n";
+    let with = compile_source(&held("retention"), source).expect("compiles over the held catalog");
+    let without = compile_source(&DefinitionCatalog::new(Vec::new()).unwrap(), source)
+        .expect("compiles over an empty catalog");
+    assert_eq!(with.package().bytes(), without.package().bytes());
 }
 
 #[trace("TC-882", "FR-354-AC-7")]
