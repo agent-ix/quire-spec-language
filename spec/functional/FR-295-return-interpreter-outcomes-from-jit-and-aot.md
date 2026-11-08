@@ -151,12 +151,12 @@ from `prepare`.
 
 ## Overlap
 
-The driver repository owns `quire-aot` and the AOT target with CG; a
-benchmark picks the JIT's code generator, which these rules bind either way.
+The driver repository owns `quire-aot` and the AOT target with CG. The JIT's
+code generator is Cranelift (ADR-035); these rules bind any generator.
 
 ## References
 
 - QSL-393 (V1-A06a): checked-only AOT and JIT.
 - QSL-390 (ARCH-50): owner ruling 3, recorded on the ticket.
-- RES-56: the JIT code-generator benchmark, which these rules do not depend on.
+- RES-56 and ADR-035: the JIT code generator (Cranelift), which these rules do not depend on.
 - QSpec FR-306 (STD-141): the QSpec half.

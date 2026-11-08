@@ -49,6 +49,8 @@ relationships:
     type: relates_to
   - target: ix://agent-ix/quire-specification/FR-462
     type: relates_to
+  - target: ix://agent-ix/quire-spec-language/ADR-035
+    type: relates_to
 ---
 # ADR-029: Lifecycle, CLI, provider, plugin and code-generation boundaries (ARCH-50)
 
@@ -102,7 +104,8 @@ here:
 3. One pluggable execution-backend seam holds the interpreter, AOT and JIT,
    with result parity and checked-only input. This record specifies the seam
    and the JIT semantics. The JIT is built after the engines stabilize, and
-   a benchmark picks its code generator.
+   a benchmark picks its code generator (RES-56, since decided for Cranelift:
+   ADR-035).
 4. First-party backends are compile-time Rust traits. Third-party providers
    use one out-of-process wire. A plugin's `proved` result cannot be
    replayed, so it is labelled trusted.
@@ -230,6 +233,12 @@ their dependency closure:
      renderers (§9). It depends on layers 6, 5, 4, 3, F, SV and K.
    - QSL layer X, crate `qsl-jit`: the JIT execution backend (§7). It
      depends on layers 5, 4, 3, F, SV, K and the chosen code generator.
+   - QSL crate `qsl-conformance`, above layers A and P: the lifecycle
+     conformance matrix cases (FR-564, FR-565) and the parity runner with
+     its program generator (FR-295, FR-563). It does not depend on
+     `qsl-jit`; `cargo xtask parity` links both. The driver depends on it for
+     the CLI half of the matrix and for `quire-aot`'s parity
+     (amendment 2026-11-08).
    - Driver repository: `quire-plugin-host` (§5),
      `quire-aot` (§7) and the binary crate `quire-cli`.
 
@@ -773,7 +782,7 @@ to FR-109's `run_clause`. Three backends implement the seam:
 | Backend | Crate | `prepare` | `call` and `evaluate` |
 |---|---|---|---|
 | Interpreter | `qsl-eval` | Accepts every entry S6a accepts | S6a, `CheckedPackageEvaluation::call_supplied` and `evaluate_clause` |
-| AOT | `quire-aot` (driver repository) | `lower`, then `generate` with the AOT target, then a build with the toolchain the caller names | Runs the built executable as a child process over PL-3 framing |
+| AOT | `quire-aot` (driver repository, IR lane) | `lower`, then `generate` with the AOT target, then a build with the toolchain the caller names | Runs the built executable as a child process over PL-3 framing |
 | JIT | `qsl-jit` (QSL layer X) | Translates the checked entries to machine code in memory | Calls the generated code |
 
 **EB-2 Checked-only input.** `prepare` takes `&CheckedPackage`, which only S4
@@ -829,9 +838,17 @@ generated artifact is FR-331 `artifacts` bytes with a source map keyed by
 occurrence key. QSL emits no target-specific code. A runtime monitor is
 another `generate` target behind the same boundary.
 
+The AOT backend is the crate `quire-aot` in the driver repository, owned by
+the IR lane, not a QSL crate. QSL's part of AOT is the seam (FR-294), the
+parity rules (FR-295) and the parity runner the driver runs over it (FR-563)
+(amendment 2026-11-08).
+
 **EB-7 Building the JIT.** This record fixes the seam and EB-4. `qsl-jit` is
-built after the engines stabilize. A benchmark picks the code generator,
-Cranelift or LLVM, and EB-4 binds either one.
+built after the engines stabilize. Its code generator is Cranelift, for now,
+behind the seam (ADR-035, deciding RES-56, with the criteria that would
+reopen it); EB-4 binds whichever generator `qsl-jit` uses. FR-560 fixes the JIT's coverage,
+FR-561 its kernel-call boundary and FR-562 its fast-path rule
+(amendment 2026-11-08).
 
 ### 8. Selecting a backend
 
@@ -987,7 +1004,7 @@ except the ADR-011 amendment, which is applied in place.
   library operations, provider negotiation that leaves results unchanged,
   the plugin wire and checked-only AOT and JIT).
 - Implementation tickets it unblocks: QSL-14, QSL-10, QSL-66, QSL-89.
-- The JIT code-generator benchmark (Cranelift or LLVM): RES-56.
+- The JIT code-generator decision: RES-56, recorded in ADR-035 (Cranelift).
 - Version and provenance records in QSpec FR-301, FR-305 and FR-306 that
   this design does not use: QSL-395.
 - Owner rulings of 2026-10-01: recorded on QSL-390.

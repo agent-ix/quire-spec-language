@@ -13,6 +13,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-311
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-567
+    type: references
 ---
 # FR-353: Settle the complete-V1 qualification verdict
 
@@ -20,7 +22,8 @@ relationships:
 
 When the `qualify` repository gate finishes a conformance run, the gate SHALL
 report QSL qualified for the run's scope if and only if every capability in
-that scope is `passed` (FR-351) and the scope is nonempty.
+that scope is `passed` (FR-351), the scope is nonempty, and the
+`lifecycle-matrix` and `parity` parts FR-567 adds pass.
 
 The label `complete-v1: qualified` denotes a `qualified` verdict over the
 default scope defined by

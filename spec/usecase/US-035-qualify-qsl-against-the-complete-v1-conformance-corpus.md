@@ -11,6 +11,8 @@ relationships:
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-353
     type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-567
+    type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-354
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-003
