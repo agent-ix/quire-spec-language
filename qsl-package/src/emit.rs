@@ -5304,7 +5304,7 @@ pub fn emit_timed_models(
 ) -> Result<Emission, EmitRefusal> {
     let ids = &StructuralIds::default();
     let expected = base
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .filter(|node| {
@@ -5330,7 +5330,7 @@ pub fn emit_timed_models(
     }
 
     let mut nodes = base
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .map(|node| {
@@ -5353,9 +5353,11 @@ pub fn emit_timed_models(
     rekey_timed_model_nodes(ids, &mut nodes, &mut source_map)?;
     let inspection_source_map = inspection_source_map(ids, &source_map)?;
     write_index_segments(&mut nodes, &mut source_map, &mut [], &mut [])?;
+    let (slot_nodes, operand_rows) = write_operand_slots(&nodes)?;
     let semantic_graph = CheckedSemanticGraphV2 {
-        graph_version: base.graph().graph_version.clone(),
-        nodes,
+        graph_version: base.resolved_graph().graph_version.clone(),
+        nodes: slot_nodes,
+        operand_rows,
     };
     let capability_report = base.capability_report().to_vec();
     let diagnostics = base.diagnostics().clone();
@@ -5413,7 +5415,7 @@ pub fn emit_timed_models(
         selected_exact_field_rows: Vec::new(),
         equality_producer_identity_rows: Vec::new(),
         equality_fact_witness_rows: Vec::new(),
-        wire_nodes: semantic_graph.nodes,
+        wire_nodes: nodes,
         temporal_binding_rows: TemporalBindingRows::default(),
         temporal_rows: TemporalRows::default(),
     })
@@ -6365,9 +6367,11 @@ fn emit_package_inner(
     let selected_source_record_rows = source_record_rows(graph, &emitted_node_ids)?;
     let selected_source_tuple_rows = source_tuple_rows(graph, &emitted_node_ids)?;
     let selected_source_collection_rows = source_collection_rows(graph, &emitted_node_ids)?;
+    let (slot_nodes, operand_rows) = write_operand_slots(&nodes)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
-        nodes,
+        nodes: slot_nodes,
+        operand_rows,
     };
     let capability_report = [CheckedCapability {
         feature: root.into(),
@@ -6379,7 +6383,7 @@ fn emit_package_inner(
     };
     let operation_effects = graph
         .operation_effects()
-        .filter(|rows| operation_effects_are_carried(rows, &semantic_graph.nodes));
+        .filter(|rows| operation_effects_are_carried(rows, &nodes));
     let package = EmittedPackage::new(graph.package_name(), |name| {
         encode_checked_package_v2(
             name,
@@ -6428,7 +6432,7 @@ fn emit_package_inner(
         selected_exact_field_rows: graph.selected_exact_field_rows().to_vec(),
         equality_producer_identity_rows,
         equality_fact_witness_rows,
-        wire_nodes: semantic_graph.nodes,
+        wire_nodes: nodes,
         temporal_binding_rows,
         temporal_rows: TemporalRows {
             clauses: temporal_clause_refs,
@@ -7682,6 +7686,91 @@ fn write_index_segments(
         sidecar(&mut row.declaration)?;
     }
     Ok(graph_wire)
+}
+
+/// FR-322 "Operand index segments": the wire form of nodes whose ids hold
+/// index segments ([`write_index_segments`]). Every id inside a node is
+/// node-held, so each index segment becomes the operand slot of the node's
+/// operand row, numbered by first occurrence in the node's canonical (RFC 8785)
+/// order; the row lists the graph index each slot names. A node's bytes then
+/// depend only on its own members, not on the graph around it.
+///
+/// An `{package, node}` foreign key keeps its index segments (they name the
+/// dependency's graph), so no object holding a `package` and one other member
+/// is entered.
+pub(crate) fn write_operand_slots(
+    nodes: &[CheckedSemanticNodeV2],
+) -> Result<(Vec<CheckedSemanticNodeV2>, Vec<Vec<u64>>), EmitRefusal> {
+    use quire_contract_model::CheckedNodePathSegment as Segment;
+    use serde_json::Value;
+    fn is_id(object: &serde_json::Map<String, Value>) -> bool {
+        object.len() == 3
+            && object.contains_key("package")
+            && object.contains_key("path")
+            && object.contains_key("ordinal")
+    }
+    let mut written = Vec::with_capacity(nodes.len());
+    let mut rows = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        let value = serde_json::to_value(node).map_err(|_| EmitRefusal::SourceMapInvariant)?;
+        let mut row: Vec<u64> = Vec::new();
+        let mut renames: Vec<(CheckedNodeId, CheckedNodeId)> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        // Depth-first in canonical member order: the stack holds values still
+        // to visit, last pushed first.
+        let mut pending = vec![&value];
+        while let Some(current) = pending.pop() {
+            match current {
+                Value::Array(items) => pending.extend(items.iter().rev()),
+                Value::Object(object) if is_id(object) => {
+                    let text = current.to_string();
+                    if !seen.insert(text.clone()) {
+                        continue;
+                    }
+                    let old: CheckedNodeId = serde_json::from_str(&text)
+                        .map_err(|_| EmitRefusal::SourceMapInvariant)?;
+                    let path = old
+                        .path
+                        .iter()
+                        .map(|segment| match segment {
+                            Segment::Index(index) => {
+                                let slot = row.iter().position(|entry| entry == index).unwrap_or_else(
+                                    || {
+                                        row.push(*index);
+                                        row.len() - 1
+                                    },
+                                );
+                                Segment::Operand(slot as u64)
+                            }
+                            other => other.clone(),
+                        })
+                        .collect();
+                    let new = CheckedNodeId {
+                        package: old.package.clone(),
+                        path,
+                        ordinal: old.ordinal,
+                    };
+                    if new != old {
+                        renames.push((old, new));
+                    }
+                }
+                Value::Object(object) if object.len() == 2 && object.contains_key("package") => {}
+                Value::Object(object) => {
+                    let mut members: Vec<(&String, &Value)> = object.iter().collect();
+                    members.sort_by(|left, right| left.0.cmp(right.0));
+                    pending.extend(members.into_iter().rev().map(|(_, member)| member));
+                }
+                _ => {}
+            }
+        }
+        let mut node = node.clone();
+        for (old, new) in &renames {
+            node.replace_node_id(old, new);
+        }
+        written.push(node);
+        rows.push(row);
+    }
+    Ok((written, rows))
 }
 
 /// The inverse of [`write_index_segments`] over an admitted package's nodes:

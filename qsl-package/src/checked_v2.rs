@@ -486,7 +486,7 @@ fn occurrence(
 /// "Operand index segments"): every id the package holds resolves its index
 /// segments against this graph.
 pub(crate) fn wire_graph(package: &CheckedPackageV2) -> Result<WireGraph, WireIdError> {
-    WireGraph::new(package.graph().nodes.iter().map(|node| &node.node_id))
+    WireGraph::new(package.resolved_graph().nodes.iter().map(|node| &node.node_id))
 }
 
 /// Exact unit identity carried by one admitted compound-unit type node.
@@ -891,6 +891,9 @@ pub(crate) fn read_checked_package_v2(
             )),
             Err(fault) => refused(V2ReadRefusal::Fault(fault)),
         },
+        CheckedPackageDispatchResult::CatalogUnavailable(_) => refused(V2ReadRefusal::Fault(
+            InternalFault::new("I2", "operation-catalog-unavailable"),
+        )),
     }
 }
 
