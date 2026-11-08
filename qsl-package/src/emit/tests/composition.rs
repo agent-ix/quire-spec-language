@@ -673,7 +673,7 @@ fn the_composition_node_reads_back() {
     assert_eq!(
         emit_checked(&package).expect_err("the emission refuses"),
         EmitRefusal::Composition {
-            name: "Sys".to_owned()
+            name: Some("Sys".to_owned())
         }
     );
 }

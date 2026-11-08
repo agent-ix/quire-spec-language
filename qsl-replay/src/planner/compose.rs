@@ -21,7 +21,7 @@ use serde_json::{json, Map, Value};
 use super::declaration::{
     strength_implies, DerivedSlot, PlannerDeclaration, SlotBacking, SlotRole,
 };
-use super::key::{ExtentClass, FairnessKey, KeyWireError};
+use super::key::{ClaimKind, ExtentClass, FairnessKey, KeyWireError, TemporalItemKind};
 use super::request::{Discharger, PremiseResult, SettlementRequest, SlotFill};
 use super::settle::{
     decide, fairness_value, fold_certification, item_outcome, Budget, PlannerCause, PlannerResult,
@@ -477,9 +477,15 @@ impl Composition<'_> {
         let Some(temporal) = &entry.item.key.temporal else {
             return false;
         };
+        // FR-489 "Implication": FR-363 gives the guarantee the premise's form,
+        // so a `rely` takes a safety `temporal-satisfaction` formula and a
+        // `liveness-dependency` one over the stutter closure.
         ItemLabel::of(entry.record.value()) == ItemLabel::Proved
             && temporal.subject == *subject
             && entry.item.key.claim.node() == clause
+            && entry.item.key.kind == ClaimKind::TemporalSatisfaction
+            && temporal.item_kind == TemporalItemKind::Formula
+            && temporal.stutter_closure == (derived.role == SlotRole::LivenessDependency)
             && temporal.fairness.iter().all(|key| {
                 Parts::of(key).is_some_and(|needed| {
                     self.supplies

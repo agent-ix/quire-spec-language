@@ -548,7 +548,7 @@ fn the_guarantee_node_reads_back_to_the_same_declaration() {
     assert_eq!(
         emit_checked(&package).expect_err("the emission refuses"),
         EmitRefusal::ImplementationGuarantee {
-            name: "G".to_owned()
+            name: Some("G".to_owned())
         }
     );
 }

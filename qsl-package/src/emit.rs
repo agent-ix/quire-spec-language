@@ -146,16 +146,18 @@ pub enum EmitRefusal {
     /// `write_implementation_guarantee`.
     #[error("the implementation guarantee {name:?} has no v2 node to write")]
     ImplementationGuarantee {
-        /// The guarantee's declared name.
-        name: String,
+        /// The guarantee's declared name; `None` when the refusal is raised
+        /// from a body term, which carries no declaration name.
+        name: Option<String>,
     },
     /// The package holds a `compose` declaration (QSpec FR-491): the IR crate
     /// has no `component_composition` term, so the v2 bytes cannot carry its
     /// node. Its QSL-owned node is written by `write_composition`.
     #[error("the component composition {name:?} has no v2 node to write")]
     Composition {
-        /// The composition's declared name.
-        name: String,
+        /// The composition's declared name; `None` when the refusal is raised
+        /// from a body term, which carries no declaration name.
+        name: Option<String>,
     },
     /// The caller's [`quire_exact::Cancel`] handle was cancelled, and the
     /// emitter stopped at its next charge (FR-276).
@@ -1588,14 +1590,10 @@ impl BodyNames {
                     .extend(term.targets().map_err(encoding)?.iter().cloned());
             }
             BodyTerm::ImplementationGuarantee(_) => {
-                return Err(EmitRefusal::ImplementationGuarantee {
-                    name: String::new(),
-                });
+                return Err(EmitRefusal::ImplementationGuarantee { name: None });
             }
             BodyTerm::Composition(_) => {
-                return Err(EmitRefusal::Composition {
-                    name: String::new(),
-                });
+                return Err(EmitRefusal::Composition { name: None });
             }
             BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
         }
@@ -1940,12 +1938,10 @@ fn checked_term(ids: &StructuralIds, term: &BodyTerm) -> Result<CheckedTerm, Emi
         }),
         BodyTerm::Frame(frame) => frame_term(ids, frame),
         BodyTerm::Abstraction(abstraction) => abstraction_term(ids, abstraction),
-        BodyTerm::ImplementationGuarantee(_) => Err(EmitRefusal::ImplementationGuarantee {
-            name: String::new(),
-        }),
-        BodyTerm::Composition(_) => Err(EmitRefusal::Composition {
-            name: String::new(),
-        }),
+        BodyTerm::ImplementationGuarantee(_) => {
+            Err(EmitRefusal::ImplementationGuarantee { name: None })
+        }
+        BodyTerm::Composition(_) => Err(EmitRefusal::Composition { name: None }),
     }
 }
 
@@ -5795,12 +5791,12 @@ fn emit_package_inner(
     // QSpec FR-490: the IR crate has no node for a guarantee declaration.
     if let Some(guarantee) = graph.implementation_guarantees().first() {
         return Err(EmitRefusal::ImplementationGuarantee {
-            name: guarantee.name().to_owned(),
+            name: Some(guarantee.name().to_owned()),
         });
     }
     if let Some(composition) = graph.compositions().first() {
         return Err(EmitRefusal::Composition {
-            name: composition.name().to_owned(),
+            name: Some(composition.name().to_owned()),
         });
     }
     let abstraction = package

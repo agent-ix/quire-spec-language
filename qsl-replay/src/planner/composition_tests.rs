@@ -65,8 +65,11 @@ fn done() -> ItemKey {
     guarantee_key(CONSUMER, "Done", &[])
 }
 
+/// A safety guarantee is not checked over the stutter closure (FR-491).
 fn safe() -> ItemKey {
-    guarantee_key(PRODUCER, "Safe", &[])
+    let mut key = guarantee_key(PRODUCER, "Safe", &[]);
+    key.temporal.as_mut().expect("temporal").stutter_closure = false;
+    key
 }
 
 fn pool_slot(
@@ -342,7 +345,7 @@ fn a_producer_consumer_composition_with_every_premise_discharged_settles_proved(
 fn a_supplied_guarantee_that_does_not_imply_the_premise_leaves_it_undischarged() {
     let declaration = declaration();
     let strong_each = constraint(FairnessKind::Strong, FairnessGranularity::Each);
-    let mismatches: [(&str, ItemKey); 6] = [
+    let mismatches: [(&str, ItemKey); 8] = [
         // The dependency's guarantee over `Consumer` instead of `Producer`.
         (
             "another subject",
@@ -373,6 +376,27 @@ fn a_supplied_guarantee_that_does_not_imply_the_premise_leaves_it_undischarged()
         (
             "a same-named guarantee of another package",
             guarantee_key(THIRD, "Sends", &[weak_each()]),
+        ),
+        (
+            "another item kind",
+            ItemKey {
+                temporal: Some(TemporalKey {
+                    item_kind: TemporalItemKind::DeadlockFreedom,
+                    stutter_closure: false,
+                    ..sends().temporal.expect("temporal")
+                }),
+                ..sends()
+            },
+        ),
+        (
+            "no stutter closure",
+            ItemKey {
+                temporal: Some(TemporalKey {
+                    stutter_closure: false,
+                    ..sends().temporal.expect("temporal")
+                }),
+                ..sends()
+            },
         ),
         // Fairness no supplied constraint implies.
         (
@@ -722,4 +746,34 @@ fn a_rely_slot_with_only_an_environment_discharger_is_premise_unproved_assumptio
     // The `environment` premise itself is supplied and listed.
     assert_eq!(wire["slots"][ENVIRONMENT]["value"], "supplied");
     assert!(!discharged(&result, RELY));
+}
+
+/// FR-489 "Implication": a guarantee of the peer clause with another item
+/// kind, or checked over the stutter closure, does not discharge a safety
+/// `rely` (admission refuses a `temporal` member on any other claim kind).
+#[test]
+fn a_rely_is_discharged_only_by_a_guarantee_of_the_premises_form() {
+    let declaration = declaration();
+    let temporal = safe().temporal.expect("temporal");
+    let wrong_forms = [
+        ItemKey {
+            temporal: Some(TemporalKey {
+                stutter_closure: true,
+                ..temporal.clone()
+            }),
+            ..safe()
+        },
+        ItemKey {
+            temporal: Some(TemporalKey {
+                item_kind: TemporalItemKind::DeadlockFreedom,
+                ..temporal
+            }),
+            ..safe()
+        },
+    ];
+    for wrong in wrong_forms {
+        let result = settled(&declaration, &request(&declaration, &[sends(), wrong]));
+        assert!(!discharged(&result, RELY));
+        assert!(discharged(&result, LIVENESS));
+    }
 }

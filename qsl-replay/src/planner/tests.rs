@@ -484,6 +484,11 @@ fn a_dropped_swapped_relabelled_slot_or_another_package_is_invalid_value() {
         .expect("slots")
         .push(duplicate);
     assert_eq!(refusal(&declaration, &extra), invalid("/slots/7"));
+
+    // A short list names the first missing slot, not the whole list.
+    let mut short = request_for(&declaration);
+    short["slots"].as_array_mut().expect("slots").pop();
+    assert_eq!(refusal(&declaration, &short), invalid("/slots/6"));
 }
 
 // ---- case 3; FR-492-AC-3 ---------------------------------------------------

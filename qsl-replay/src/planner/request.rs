@@ -641,7 +641,7 @@ fn admit_slot_keys(declaration: &PlannerDeclaration, slots: &[Value]) -> Result<
         }
     }
     match slots.len().cmp(&declaration.slots.len()) {
-        std::cmp::Ordering::Less => Err(Fault::invalid("/slots".to_owned())),
+        std::cmp::Ordering::Less => Err(Fault::invalid(format!("/slots/{}", slots.len()))),
         std::cmp::Ordering::Greater => Err(Fault::invalid(format!(
             "/slots/{}",
             declaration.slots.len()
