@@ -8,9 +8,8 @@
 //!
 //! This crate depends on layer 3 (`qsl-semantics`), F (`qsl-foundation`), K
 //! (`quire-exact`) and `quire-contract-model` for the v2 wire vocabulary. It never names the root crate or a
-//! SEAM-1 module (`checking`, `linking`, `native_model`, or the root crate's
-//! native-v1 `package`): Cargo refuses the first, and the root crate is the
-//! only home of the second. The layer-5 evaluator and every later layer
+//! SEAM-1 module (the root crate's `checking` or `linking`): Cargo refuses the
+//! first, and the root crate is the only home of the second. The layer-5 evaluator and every later layer
 //! depend on this crate, never the other way.
 
 // NFR-015: with `std` disabled the crate is `no_std` + `alloc` and keeps the

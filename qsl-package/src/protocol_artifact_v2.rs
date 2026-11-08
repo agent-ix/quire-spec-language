@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Version 2 refusal-code vocabulary shared with the legacy protocol reader.
+//! Version 2 refusal-code vocabulary (FR-513-AC-17).
 
 /// Stable refusal code for the closed version 2 header and binding vocabulary.
 ///
-/// The legacy reader retains richer refusal enums for its compatibility API;
-/// its `code()` method maps those variants here so code spellings have one
-/// source of truth.
+/// This table is the one source of the `v2.header.*` and `v2.binding.*`
+/// spellings; the legacy v2 reader that once mapped onto it is deleted.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[non_exhaustive]
 pub enum RefusalCode {
