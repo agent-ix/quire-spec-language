@@ -183,8 +183,8 @@ checks every package against that list.
 </picture>
 
 **Editions.** This README covers the `1-draft` edition, the complete version-1
-language. The retired `0-draft` edition is refused by `compile`; its historical
-parser is being removed separately. Do not write new rules in it.
+language. The retired `0-draft` edition is refused by `compile`, and its
+historical parser is deleted. Do not write new rules in it.
 
 ## Compiler stages
 

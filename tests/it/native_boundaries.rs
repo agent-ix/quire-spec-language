@@ -5,18 +5,19 @@ use qsl_cst::format::{
     format, format_with_limit, format_with_limits, FormatLimits, FormatRefusal, OUTPUT_BYTE_CEILING,
 };
 use qsl_cst::ParsedSource;
-use qsl_foundation::{Code, Diagnostic, Phase, SourceIdentity};
-use quire_spec_language::{parse, Limits};
+use qsl_foundation::source::MAX_SOURCE_BYTES;
+use qsl_foundation::{Code, Diagnostic, Phase, Source, SourceIdentity};
 
-fn parse_text(text: &str) -> Result<quire_spec_language::ParsedUnit, Box<Diagnostic>> {
-    parse(
+/// A refusal from the one source intake, as a `Box<Diagnostic>`.
+fn refuse_source(bytes: &[u8]) -> Result<Source, Box<Diagnostic>> {
+    Source::read(
         SourceIdentity {
             authority: "test".into(),
             identity: "test:boundary".into(),
         },
         "boundary.native",
-        text.as_bytes(),
-        Limits::default(),
+        bytes,
+        MAX_SOURCE_BYTES,
     )
 }
 
@@ -365,14 +366,7 @@ fn format_takes_the_cst_and_depends_on_layer_1_and_f_only() {
             "use {path}"
         );
     }
-    for forbidden in [
-        "super::",
-        "self::",
-        "quire_spec_language",
-        "ParsedUnit",
-        "syntax::",
-        "parser::",
-    ] {
+    for forbidden in ["super::", "self::", "quire_spec_language"] {
         assert!(
             !code.contains(forbidden),
             "qsl-cst/src/format.rs names {forbidden}"
@@ -390,7 +384,7 @@ fn format_takes_the_cst_and_depends_on_layer_1_and_f_only() {
 
 #[trace("FR-003-AC-7", "FR-003-AC-8", "TC-404")]
 #[test]
-fn format_formats_complete_v1_source_the_arena_parser_refuses() {
+fn format_formats_complete_v1_source() {
     let text = concat!(
         "language \"ix:native\" edition \"1-draft\";\n",
         "profile v = \"quire.value.complete/v1\";\n",
@@ -399,7 +393,6 @@ fn format_formats_complete_v1_source_the_arena_parser_refuses() {
         "  // the nested block keeps this comment\n",
         "  if p.x > p.y then p.x else p.y }\n",
     );
-    assert!(parse_text(text).is_err());
     let parsed = parse_complete(text);
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     let formatted = format(&parsed).unwrap();
@@ -480,17 +473,17 @@ fn only_runtime_invariant_exits_as_tool_failure() {
 #[test]
 fn native_diagnostic_propagates_as_an_error_and_codes_roundtrip() {
     fn caller() -> Result<(), Box<dyn std::error::Error>> {
-        parse_text("language \"other\" edition \"0-draft\";")?;
+        refuse_source(b"a\xffb")?;
         Ok(())
     }
     let error = caller().unwrap_err();
     // The public API returns Box<Diagnostic>; standard `?` preserves that type.
     let diagnostic = error.downcast_ref::<Box<Diagnostic>>().unwrap();
-    assert_eq!(diagnostic.code, Code::UnknownLanguage);
+    assert_eq!(diagnostic.code, Code::InvalidUtf8);
     assert_eq!(diagnostic.source.identity, "test:boundary");
     assert_eq!(
         error.to_string(),
-        format!("unknown_language: {}", diagnostic.message)
+        format!("invalid_utf8: {}", diagnostic.message)
     );
     assert!(error.source().is_none());
     let mut seen = std::collections::BTreeSet::new();
