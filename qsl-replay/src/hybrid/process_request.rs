@@ -457,7 +457,9 @@ fn admit_package(
 ) -> Result<Box<CheckedPackageV2>, HybridProcessRequestRefusal> {
     match read_checked_package(bytes, context.limits, &context.evidence) {
         CheckedPackageDispatchResult::AdmittedV2(package) => Ok(package),
-        CheckedPackageDispatchResult::Refused(_) | CheckedPackageDispatchResult::Incomplete(_) => {
+        CheckedPackageDispatchResult::Refused(_)
+        | CheckedPackageDispatchResult::Incomplete(_)
+        | CheckedPackageDispatchResult::CatalogUnavailable(_) => {
             Err(HybridProcessRequestRefusal::PackageRefused)
         }
     }
