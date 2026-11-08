@@ -352,7 +352,7 @@ fn typed_orders_document() -> Vec<u8> {
     fields.push(field("uid", "UUID", "required"));
     fields.push(field("at", "Timestamp", "required"));
     fields.push(field("flag", "Boolean", "optional"));
-    serde_json::to_vec(&document).unwrap()
+    crate::emit::tests::wire_bytes(&document).unwrap()
 }
 
 /// FR-465 "Role" / FR-464 `parameter`: a capture's declared type is the

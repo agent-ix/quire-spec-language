@@ -316,7 +316,7 @@ struct Index<'p> {
 
 impl<'p> Index<'p> {
     fn new(package: &'p CheckedPackageV2) -> Self {
-        Self::of(&package.graph().nodes)
+        Self::of(&package.resolved_graph().nodes)
     }
 
     fn of(nodes: &'p [Node]) -> Self {
@@ -639,7 +639,7 @@ pub fn attempts_maximum(
     package: &CheckedPackageV2,
     compensation: &CheckedNodeId,
 ) -> Result<u64, ViewRefusal> {
-    attempts_over(&package.graph().nodes, compensation)
+    attempts_over(&package.resolved_graph().nodes, compensation)
 }
 
 /// [`attempts_maximum`] over the graph nodes themselves.
@@ -674,7 +674,7 @@ pub fn causal_relation(
     package: &CheckedPackageV2,
     protocol: &CheckedNodeId,
 ) -> Result<CausalRelation, ViewRefusal> {
-    relation_over(&package.graph().nodes, protocol)
+    relation_over(&package.resolved_graph().nodes, protocol)
 }
 
 /// [`causal_relation`] over the graph nodes themselves.

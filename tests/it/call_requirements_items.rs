@@ -178,7 +178,9 @@ fn predicate_calls_from_each_clause_family_share_one_checked_callee() {
     )
     .expect("the four checked call contexts admit and emit");
     let bytes = emitted.package().bytes();
-    let wire: serde_json::Value = serde_json::from_slice(bytes).expect("checked package JSON");
+    let mut wire: serde_json::Value = serde_json::from_slice(bytes).expect("checked package JSON");
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut wire)
+        .expect("every operand slot names a row entry");
     let nodes = wire["semantic_graph"]["nodes"]
         .as_array()
         .expect("semantic nodes");

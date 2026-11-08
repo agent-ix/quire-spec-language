@@ -154,7 +154,7 @@ fn selected_object_closure_projects_standard_e_and_unused_ep_objects() {
         );
         let graph_node = extended
             .package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .find(|node| node.node_id == rows[0].structural_node)
@@ -351,7 +351,7 @@ fn selected_object_closure_refuses_a_model_reference_whose_object_node_is_absent
         .find(|row| row.original_identity.as_ref() == tc1070::model::id("Other"))
         .expect("Other has its real emitted declaration");
     let other_json = serde_json::to_value(&other.structural_node).expect("node reference");
-    let mut package: Value = serde_json::from_slice(&fixture.bytes).expect("original package");
+    let mut package = crate::support::resolved_package(&fixture.bytes);
     let nodes = package["semantic_graph"]["nodes"]
         .as_array_mut()
         .expect("nodes");
@@ -363,7 +363,7 @@ fn selected_object_closure_refuses_a_model_reference_whose_object_node_is_absent
         .expect("source map")
         .retain(|entry| entry["node_id"] != other_json);
     let package = admitted(
-        &serde_json::to_vec(&package).expect("changed package"),
+        &crate::support::slotted_package_bytes(&package),
         &fixture.evidence,
     );
     let identities = SelectedExactIdentities::from_stage_rows(

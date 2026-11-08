@@ -27,7 +27,7 @@ fn admit_bytes(bytes: &[u8], wire: &Value) -> Arc<CheckedPackageV2> {
 
 fn clause_ids(package: &CheckedPackageV2) -> Vec<CheckedNodeId> {
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .zip(package.node_kinds())
@@ -88,8 +88,8 @@ fn the_emission_returns_the_clause_refs_and_rows_it_wrote() {
             );
         }
         assert_eq!(
-            serde_json::to_vec(rows.profile_selections()).unwrap(),
-            serde_json::to_vec(&package.lock().profile_selections).unwrap()
+            crate::emit::tests::wire_bytes(&rows.profile_selections()).unwrap(),
+            crate::emit::tests::wire_bytes(&package.lock().profile_selections).unwrap()
         );
         assert_eq!(
             rows.bindings(),
@@ -188,7 +188,7 @@ fn renumbered(
         }
         rows.sort_by_key(|row| row["occurrence"].as_u64());
     }
-    let bytes = serde_json::to_vec(&wire).expect("the wire encodes");
+    let bytes = crate::emit::tests::wire_bytes(&wire).expect("the wire encodes");
     (bytes, wire)
 }
 

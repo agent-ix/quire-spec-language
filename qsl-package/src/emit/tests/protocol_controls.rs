@@ -210,7 +210,7 @@ fn protocol_nodes_and_occurrences_survive_the_whole_i2_read() {
     for node in expected {
         let key = qsl_foundation::node_wire::node_key_from_json(&node["node_id"]).unwrap();
         let typed = admitted
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .find(|candidate| serde_json::to_value(&candidate.node_id).unwrap() == node["node_id"])
@@ -1363,7 +1363,7 @@ fn expression_with_operation<'a>(
 #[test]
 #[trace("TC-1074", "FR-390-AC-12")]
 fn activation_capture_self_and_foreign_reads_are_refused_by_the_reader() {
-    let document = serde_json::to_vec(&tc1070::document()).unwrap();
+    let document = crate::emit::tests::wire_bytes(&tc1070::document()).unwrap();
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let graph = assemble_with_models(tc1070::SOURCE.as_bytes(), &packages)
         .expect("E assembles")
@@ -1468,7 +1468,7 @@ pub(super) fn expression_occurrences_of_node_at(
 #[trace("TC-1063", "FR-383-AC-61")]
 #[test]
 fn each_position_of_an_application_has_its_own_occurrence_in_document_order() {
-    let document = serde_json::to_vec(&tc1070::document()).unwrap();
+    let document = crate::emit::tests::wire_bytes(&tc1070::document()).unwrap();
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let graph = assemble_with_models(tc1070::SOURCE.as_bytes(), &packages)
         .expect("E assembles")
@@ -1533,7 +1533,7 @@ protocol Composed using P over (view: M::Node) on origin {
 #[trace("TC-1063", "FR-383-AC-61")]
 #[test]
 fn e_c_shared_constraint_has_occurrence_zero_at_tried_and_one_at_picked() {
-    let document = serde_json::to_vec(&tc1070::document()).unwrap();
+    let document = crate::emit::tests::wire_bytes(&tc1070::document()).unwrap();
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let graph = assemble_with_models(E_C_TRIED_PICKED.as_bytes(), &packages)
         .expect("E-C fragment assembles")

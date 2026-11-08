@@ -40,7 +40,7 @@ pub(super) fn clocked_document_with(collection: bool) -> Vec<u8> {
     if collection {
         fields.push(field("s", 0, 3, true, false));
     }
-    serde_json::to_vec(&document).expect("the fixture stays JSON")
+    crate::emit::tests::wire_bytes(&document).expect("the fixture stays JSON")
 }
 
 /// The unit selecting [`clocked_document`] under a dense time source, with
@@ -395,7 +395,7 @@ pub(super) fn vector_document() -> Vec<u8> {
         held["presence"] = json!("optional");
         fields.push(held);
     }
-    serde_json::to_vec(&document).expect("the fixture stays JSON")
+    crate::emit::tests::wire_bytes(&document).expect("the fixture stays JSON")
 }
 
 /// [`read_back`] of the unit with `body` after [`clocked_unit`]'s text.
@@ -686,7 +686,7 @@ fn an_urgency_reading_element_presences_is_not_emitted() {
     q["origin"]["generated"]["generatorIdentity"] = json!(identity);
     q["origin"]["generated"]["inputIdentities"] = json!([identity]);
     fields.push(q);
-    let document = serde_json::to_vec(&document).expect("JSON");
+    let document = crate::emit::tests::wire_bytes(&document).expect("JSON");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = clocked_unit("urgent All when { forall(e in self.q : present(e)) };\n");
     let refusals = assemble_with_models(unit.as_bytes(), &packages)

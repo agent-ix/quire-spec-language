@@ -35,7 +35,7 @@ const NONE: &str = "holds(c.versionNumber = 1)";
 fn clauses(package: &CheckedPackageV2) -> Vec<CheckedNodeId> {
     use quire_contract_model::{CheckedNodeKind, TemporalForm};
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .zip(package.node_kinds())
@@ -577,7 +577,9 @@ fn the_reader_refuses_a_package_with_no_profile_selection_row() {
 
 /// The outcome of reading `wire`'s canonical bytes.
 fn read_wire_outcome(wire: &Value) -> Read {
-    let bytes = quire_canonical::to_vec(wire, ceiling().canonical()).expect("canonical");
+    let mut slotted = wire.clone();
+    qsl_semantics::check::wire_id::write_operand_rows(&mut slotted);
+    let bytes = quire_canonical::to_vec(&slotted, ceiling().canonical()).expect("canonical");
     read_v2(&bytes, library(), V2ReadLimits::fixture(), &evidence(wire))
 }
 
@@ -848,7 +850,7 @@ fn an_id_the_package_does_not_hold_or_that_is_no_clause_is_refused() {
     foreign.package = "foreign".into();
     foreign.ordinal = u64::MAX;
     assert!(!package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .any(|node| node.node_id == foreign));
@@ -858,7 +860,12 @@ fn an_id_the_package_does_not_hold_or_that_is_no_clause_is_refused() {
     );
 
     let mut refused = 0;
-    for (node, kind) in package.graph().nodes.iter().zip(package.node_kinds()) {
+    for (node, kind) in package
+        .resolved_graph()
+        .nodes
+        .iter()
+        .zip(package.node_kinds())
+    {
         if *kind == CheckedNodeKind::Temporal(TemporalForm::TemporalClause) {
             continue;
         }

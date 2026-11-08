@@ -239,7 +239,7 @@ fn slot_term<'n>(
     let capture_name = |record: &'n CheckedTerm| -> Result<String, SlotSelectionFailure> {
         let binder = reference(member_of(record, "binder")?).ok_or_else(no)?;
         let node = package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .find(|candidate| &candidate.node_id == binder)
@@ -395,7 +395,7 @@ impl<'p> BarePackage<'p> {
         let (_supply, identities) = self.witness()?;
         let graph = wire_graph(package).map_err(|_| fault("bare-package-has-structural-keys"))?;
         let nodes: BTreeMap<&CheckedNodeId, &Node> = package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .map(|node| (&node.node_id, node))

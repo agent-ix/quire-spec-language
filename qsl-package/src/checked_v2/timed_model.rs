@@ -435,7 +435,7 @@ impl CheckedTimedModel {
     /// longer agrees with that admitted shape.
     pub fn from_admitted(package: &CheckedPackageV2) -> Result<Vec<Self>, &'static str> {
         let nodes = package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .filter(|node| {

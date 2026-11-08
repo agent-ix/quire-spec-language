@@ -53,7 +53,7 @@ impl Built {
 
     /// This unit with its emission's package bytes replaced by `wire`.
     pub(super) fn with_wire(self, wire: &Value) -> Built {
-        let bytes = serde_json::to_vec(wire).expect("the wire encodes");
+        let bytes = crate::support::slotted_package_bytes(wire);
         Built {
             emission: self.emission.clone().with_package_bytes(bytes),
             ..self
@@ -679,7 +679,7 @@ pub(super) fn twins() -> Built {
         ),
         &[("First", "first-authority"), ("Second", "second-authority")],
     );
-    let mut wire: Value = serde_json::from_slice(built.emission.package().bytes()).expect("JSON");
+    let mut wire = crate::support::resolved_package(built.emission.package().bytes());
     let renumber = |ordinal: &Value| -> Value {
         match ordinal.as_u64() {
             Some(0) => Value::from(7),
@@ -707,7 +707,7 @@ pub(super) fn twins() -> Built {
         }
         rows.sort_by_key(|row| row["occurrence"].as_u64());
     }
-    let bytes = serde_json::to_vec(&wire).expect("the wire encodes");
+    let bytes = crate::support::slotted_package_bytes(&wire);
     Built {
         emission: built.emission.clone().with_package_bytes(bytes),
         ..built
@@ -882,9 +882,9 @@ fn instance_bound_atoms_are_derived_and_equal_over_both_routes() {
 
 /// Edit the wire of `built` with `edit` and present the bytes as its emission.
 pub(super) fn edited(built: Built, edit: impl FnOnce(&mut Value)) -> Built {
-    let mut wire: Value = serde_json::from_slice(built.emission.package().bytes()).expect("JSON");
+    let mut wire = crate::support::resolved_package(built.emission.package().bytes());
     edit(&mut wire);
-    let bytes = serde_json::to_vec(&wire).expect("the wire encodes");
+    let bytes = crate::support::slotted_package_bytes(&wire);
     Built {
         emission: built.emission.clone().with_package_bytes(bytes),
         ..built
