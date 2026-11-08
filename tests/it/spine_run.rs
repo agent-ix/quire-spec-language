@@ -727,7 +727,7 @@ fn command_library_outcomes_carry_the_exit_function_codes() {
         return;
     }
 
-    let output = Command::new(std::env::current_exe().unwrap())
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
             "spine_run::command_library_outcomes_carry_the_exit_function_codes",
