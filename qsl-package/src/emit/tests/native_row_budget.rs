@@ -651,47 +651,66 @@ fn cold_integer_adapter_controls(emission: Emission) -> crate::ReadEqualityRows 
         assert_eq!(error.locus(), budget.first_unpaid_locus());
         assert_eq!(error.configured_bound(), Some(0));
     }
-    // Select the last denied charge in this actual operand row, so the
-    // observer reaches its numeric copy precharge rather than an earlier path
-    // string. Each probe uses a separate copy; none warms the final input.
-    let storage = (0..need.storage)
-        .rev()
-        .find(|storage| {
-            let candidate = emission.clone();
-            let mut budget = NativeJoinBudget::new(need.work, *storage);
-            candidate
-                .equality_witness(&package, &mut budget)
-                .expect_err("one resource remains short")
-                .locus()
-                == Some(locus)
-        })
-        .expect("an owned charge in the retained integer row");
-    let cold = emission.clone();
-    let mut budget = NativeJoinBudget::new(need.work, storage);
-    let _ = allocation_counter::measure(|| {});
-    let mut result = None;
-    let allocations = allocation_counter::measure(|| {
-        result = Some(cold.equality_witness(&package, &mut budget));
-    });
-    let error = result
-        .expect("real adapter ran")
-        .expect_err("numeric materialization storage denied");
-    assert_eq!(allocations.count_total, 0);
-    assert_eq!(allocations.bytes_total, 0);
-    assert_eq!(error.code(), NativeRowErrorCode::StorageLimit);
-    assert_eq!(error.locus(), Some(locus));
-    assert_eq!(error.configured_bound(), Some(storage));
-    assert_eq!(error.denied(), budget.first_unpaid());
-    let prefix = budget.consumed();
-    let mut retried = None;
-    let repeated = allocation_counter::measure(|| {
-        retried = Some(cold.equality_witness(&package, &mut budget));
-    });
-    assert_eq!(retried.expect("adapter retried"), Err(error));
-    assert_eq!(repeated.count_total, 0);
-    assert_eq!(repeated.bytes_total, 0);
-    assert_eq!(budget.consumed(), prefix);
-    assert_eq!(budget.first_unpaid_locus(), Some(locus));
+    for (kind, total, code) in [
+        (
+            NativeJoinChargeKind::Work,
+            need.work,
+            NativeRowErrorCode::WorkLimit,
+        ),
+        (
+            NativeJoinChargeKind::Storage,
+            need.storage,
+            NativeRowErrorCode::StorageLimit,
+        ),
+    ] {
+        // Reach the last charge in the actual numeric operand row. Probes use
+        // separate owned copies, leaving the observed input's lazy cache cold.
+        let limits = |bound| match kind {
+            NativeJoinChargeKind::Work => (bound, need.storage),
+            NativeJoinChargeKind::Storage => (need.work, bound),
+        };
+        let bound = (0..total)
+            .rev()
+            .find(|bound| {
+                let candidate = emission.clone();
+                let (work, storage) = limits(*bound);
+                let mut budget = NativeJoinBudget::new(work, storage);
+                candidate
+                    .equality_witness(&package, &mut budget)
+                    .expect_err("one resource remains short")
+                    .locus()
+                    == Some(locus)
+            })
+            .expect("a real charge in the retained integer row");
+        let cold = emission.clone();
+        let (work, storage) = limits(bound);
+        let mut budget = NativeJoinBudget::new(work, storage);
+        let mut result = None;
+        let allocations = allocation_counter::measure(|| {
+            result = Some(cold.equality_witness(&package, &mut budget));
+        });
+        let error = result
+            .expect("real adapter ran")
+            .expect_err("numeric row denied");
+        assert_eq!(allocations.count_total, 0);
+        assert_eq!(allocations.bytes_total, 0);
+        assert_eq!(error.code(), code);
+        assert_eq!(error.locus(), Some(locus));
+        assert_eq!(error.configured_bound(), Some(bound));
+        assert_eq!(error.denied(), budget.first_unpaid());
+        assert_eq!(error.denied().expect("first real unpaid charge").kind, kind);
+        let prefix = budget.consumed();
+        assert!(prefix.work > 0 && prefix.storage > 0);
+        let mut retried = None;
+        let repeated = allocation_counter::measure(|| {
+            retried = Some(cold.equality_witness(&package, &mut budget));
+        });
+        assert_eq!(retried.expect("adapter retried"), Err(error));
+        assert_eq!(repeated.count_total, 0);
+        assert_eq!(repeated.bytes_total, 0);
+        assert_eq!(budget.consumed(), prefix);
+        assert_eq!(budget.first_unpaid_locus(), Some(locus));
+    }
     let mut exact = NativeJoinBudget::new(need.work, need.storage);
     let fresh = emission.clone();
     let mut copied = None;
