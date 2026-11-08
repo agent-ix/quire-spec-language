@@ -47,6 +47,7 @@ pub use plugin_read::{
     read_plugin_certification, read_plugin_hybrid_counterexample, read_plugin_inconclusive_cause,
     read_plugin_inconclusive_cause_over,
 };
+pub(crate) use plugin_read::{child, first_undefined, name_order};
 pub use plugin_replay::{PluginReplayContext, PluginReplayRefusal};
 pub use tool_failure::ToolFailure;
 
@@ -55,6 +56,10 @@ pub use tool_failure::ToolFailure;
 pub(crate) const REPLAY_PARITY_KIND: &str = "replay-parity";
 /// The wire spelling of `replay-refused`.
 pub(crate) const REPLAY_REFUSED_KIND: &str = "replay-refused";
+/// The wire spelling of `premise-unproved`, a planner-only cause.
+pub(crate) const PREMISE_UNPROVED_KIND: &str = "premise-unproved";
+/// The wire spelling of `transfer-not-preserving`, a planner-only cause.
+pub(crate) const TRANSFER_NOT_PRESERVING_KIND: &str = "transfer-not-preserving";
 /// The wire spelling of `kani-vacuous-proof`.
 pub(crate) const KANI_VACUOUS_PROOF_KIND: &str = "kani-vacuous-proof";
 
@@ -988,6 +993,55 @@ pub enum InconclusiveCause {
         /// The instance-limited states.
         states: u64,
     },
+    /// QSpec FR-380, FR-488 and FR-492, `premise-unproved{premise, result}`: a
+    /// premise slot of a planner-local item is neither `proved` nor
+    /// `supplied`. Only `planner` constructs it; no provider's entry carries
+    /// it (QSL FR-529).
+    PremiseUnproved {
+        /// The premise slot index (for a transfer item, the premise item's
+        /// `request_index`).
+        premise: u64,
+        /// The premise's outcome.
+        result: PremiseOutcome,
+    },
+    /// QSpec FR-380, FR-488 and FR-492,
+    /// `transfer-not-preserving{reason}`: a stuttering or fairness fact of the
+    /// transfer fails. Only `planner` constructs it (QSL FR-529).
+    TransferNotPreserving {
+        /// Which fact fails.
+        reason: TransferReason,
+    },
+}
+
+/// The `result` of a `premise-unproved` cause (QSpec FR-331): the premise's
+/// FR-331 result value, `absent` for an unfilled slot, or `assumption` for a
+/// premise supplied only as an assumption.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PremiseOutcome {
+    /// The premise's result value.
+    Label(crate::outcome::ItemLabel),
+    /// The slot is unfilled.
+    Absent,
+    /// The premise is supplied only as an assumption.
+    Assumption,
+}
+
+/// The `reason` of a `transfer-not-preserving` cause (QSpec FR-331).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TransferReason {
+    /// `fragment`: the clause lies outside the stuttering-invariant fragment
+    /// at `operator`, the first such operator in clause order.
+    Fragment {
+        /// The operator's spelling.
+        operator: String,
+    },
+    /// `fairness`: no supplied premise implies `constraint`.
+    Fairness {
+        /// The unimplied `F_P` constraint.
+        constraint: FairnessConstraint,
+    },
+    /// `stutter-closure`: the liveness premise is over maximal behaviours.
+    StutterClosure,
 }
 
 /// The domain-specific identity retained by a stale-dependency result.
@@ -1094,6 +1148,8 @@ impl InconclusiveCause {
             Self::ReductionHorizon { .. } => "reduction-horizon",
             Self::MemoryBoundReached { .. } => "memory-bound-reached",
             Self::InstanceBoundReached { .. } => "instance-bound-reached",
+            Self::PremiseUnproved { .. } => PREMISE_UNPROVED_KIND,
+            Self::TransferNotPreserving { .. } => TRANSFER_NOT_PRESERVING_KIND,
         }
     }
 
@@ -1125,7 +1181,9 @@ impl InconclusiveCause {
             | Self::ConstraintReached { .. }
             | Self::ReductionHorizon { .. }
             | Self::MemoryBoundReached { .. }
-            | Self::InstanceBoundReached { .. } => 0,
+            | Self::InstanceBoundReached { .. }
+            | Self::PremiseUnproved { .. }
+            | Self::TransferNotPreserving { .. } => 0,
             Self::SymmetryBroken { population, cause } => {
                 let SymmetryBrokenCause::InitialStatesNotClosed { generator, .. } = cause;
                 let moved: usize = generator

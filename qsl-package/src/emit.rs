@@ -140,6 +140,23 @@ pub enum EmitRefusal {
     /// The package's abstraction relation has no node to write (FR-306).
     #[error("the abstraction relation cannot be written: {0}")]
     Abstraction(AbstractionNodeRefusal),
+    /// The package holds a `guarantee` declaration (QSpec FR-490): the IR
+    /// crate has no `implementation_guarantee` term, so the v2 bytes cannot
+    /// carry its node. Its QSL-owned node is written by
+    /// `write_implementation_guarantee`.
+    #[error("the implementation guarantee {name:?} has no v2 node to write")]
+    ImplementationGuarantee {
+        /// The guarantee's declared name.
+        name: String,
+    },
+    /// The package holds a `compose` declaration (QSpec FR-491): the IR crate
+    /// has no `component_composition` term, so the v2 bytes cannot carry its
+    /// node. Its QSL-owned node is written by `write_composition`.
+    #[error("the component composition {name:?} has no v2 node to write")]
+    Composition {
+        /// The composition's declared name.
+        name: String,
+    },
     /// The caller's [`quire_exact::Cancel`] handle was cancelled, and the
     /// emitter stopped at its next charge (FR-276).
     #[error("the emitter was cancelled ({cause:?})")]
@@ -403,7 +420,11 @@ impl EmitRefusal {
             Self::InvalidTemporalClockValue { .. } => Code::InvalidPackage,
             Self::Encoding { .. } => Code::OutputFailure,
             Self::Abstraction(AbstractionNodeRefusal::Internal(_)) => Code::RuntimeInvariant,
-            Self::Abstraction(_) => Code::UnsupportedProjection,
+            Self::Abstraction(_)
+            | Self::ImplementationGuarantee { .. }
+            | Self::Composition { .. } => {
+                Code::UnsupportedProjection
+            }
             Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
             Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
@@ -446,6 +467,8 @@ impl EmitRefusal {
             | Self::UnknownOccurrenceRole { .. }
             | Self::Encoding { .. }
             | Self::Abstraction(_)
+            | Self::ImplementationGuarantee { .. }
+            | Self::Composition { .. }
             | Self::Cancelled { .. }
             | Self::TimedModelNodeSetMismatch
             | Self::UnkeyedProbabilisticClaim { .. }
@@ -1566,6 +1589,16 @@ impl BodyNames {
                     .dependencies
                     .extend(term.targets().map_err(encoding)?.iter().cloned());
             }
+            BodyTerm::ImplementationGuarantee(_) => {
+                return Err(EmitRefusal::ImplementationGuarantee {
+                    name: String::new(),
+                });
+            }
+            BodyTerm::Composition(_) => {
+                return Err(EmitRefusal::Composition {
+                    name: String::new(),
+                });
+            }
             BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
         }
         for leaf in body.leaves() {
@@ -1909,6 +1942,12 @@ fn checked_term(ids: &StructuralIds, term: &BodyTerm) -> Result<CheckedTerm, Emi
         }),
         BodyTerm::Frame(frame) => frame_term(ids, frame),
         BodyTerm::Abstraction(abstraction) => abstraction_term(ids, abstraction),
+        BodyTerm::ImplementationGuarantee(_) => Err(EmitRefusal::ImplementationGuarantee {
+            name: String::new(),
+        }),
+        BodyTerm::Composition(_) => Err(EmitRefusal::Composition {
+            name: String::new(),
+        }),
     }
 }
 
@@ -5755,6 +5794,17 @@ fn emit_package_inner(
         return Err(refusal);
     }
     let graph = package.graph();
+    // QSpec FR-490: the IR crate has no node for a guarantee declaration.
+    if let Some(guarantee) = graph.implementation_guarantees().first() {
+        return Err(EmitRefusal::ImplementationGuarantee {
+            name: guarantee.name().to_owned(),
+        });
+    }
+    if let Some(composition) = graph.compositions().first() {
+        return Err(EmitRefusal::Composition {
+            name: composition.name().to_owned(),
+        });
+    }
     let abstraction = package
         .abstraction()
         .map(|relation| graph.abstraction_nodes(relation))

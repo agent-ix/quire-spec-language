@@ -37,6 +37,10 @@ mod equality_file;
 pub mod evaluation_view;
 mod export;
 #[cfg(feature = "std")]
+mod composition;
+#[cfg(feature = "std")]
+mod guarantee;
+#[cfg(feature = "std")]
 mod introduced_binders;
 #[cfg(feature = "std")]
 pub mod number;
@@ -107,6 +111,13 @@ pub use evaluation_view::{
     TermHandle, ViewFailure,
 };
 pub use export::{export_bindings, BoundItem, ExportRefusal, UnboundElement};
+#[cfg(feature = "std")]
+pub use composition::{read_composition, write_composition};
+#[cfg(feature = "std")]
+pub use guarantee::{
+    read_implementation_guarantee, write_implementation_guarantee, NodeReadRefusal,
+    NodeWriteRefusal,
+};
 #[cfg(feature = "std")]
 pub use protocol_occurrence::{
     protocol_occurrence_schemas_from_read, CompensationEntry, ControlEntry, ControlOperator,

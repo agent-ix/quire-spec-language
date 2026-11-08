@@ -65,6 +65,7 @@ mod model_check;
 mod monitor_plan;
 mod object_environment;
 mod outcome;
+pub mod planner;
 mod probability_certificate;
 mod product_action;
 mod proof_result;
@@ -334,6 +335,10 @@ pub use product_action::{
     FreeDelayActionRow, FreeDelayRow, FreeDelaysRace, FreeRacer, GivenRacer, NotMixedRace,
     ProductAction, ProductActionError, ProductActionRefusal, Schedule,
 };
+pub use planner::{
+    read_premise_item, read_result_entry, read_settlement_request, Budget, PlannerDeclaration,
+    PlannerResult, PremiseItem, PremiseResult, ResultEntry, SettlementRequest,
+};
 pub use proof_result::{
     read_backend_provider_envelope, read_first_party_solver_basis, read_plugin_assignments,
     read_plugin_basis, read_plugin_cause_kind, read_plugin_certification,
@@ -342,10 +347,12 @@ pub use proof_result::{
     Certification, DeclineCode, EmptyEnvelopeSet, ExactBinding, ExactEntry, ExactOrBounds,
     ExactRational, Extremum, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
     MemoryBoundMember, PluginReplayContext, PluginReplayRefusal, PluginResultRefusal, ProofBasis,
-    ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, Proviso, QslOnlyCause,
+    PremiseOutcome, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, Proviso,
+    QslOnlyCause,
     ReportedInconclusiveCause, SettlementBasis, StaleIdentity, StatedInstanceBound,
     StatedMemoryBound, StatisticalRequestRefusal, SymmetryBrokenCause, SymmetryRefusal,
-    TerminalRecord, TerminalRecordRefusal, TerminalValue, ToolFailure, UnavailabilityCause,
+    TerminalRecord, TerminalRecordRefusal, TerminalValue, ToolFailure, TransferReason,
+    UnavailabilityCause,
     ValueCheckUnsupported, ValueFault, WeakAccessFailure,
 };
 pub use qsl_foundation::{BackendId, Code, RequestIndex};

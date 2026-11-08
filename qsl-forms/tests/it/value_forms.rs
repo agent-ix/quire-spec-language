@@ -55,6 +55,8 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::DimensionEquivalence(_)
         | DeclarationForm::Unit(_)
         | DeclarationForm::Abstraction(_)
+        | DeclarationForm::Guarantee(_)
+        | DeclarationForm::Composition(_)
         | DeclarationForm::StateClause(_)
         | DeclarationForm::OperationBody(_)
         | DeclarationForm::PopulationBound(_)
@@ -255,6 +257,8 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::DimensionEquivalence(_) => "dimension_equivalence",
             DeclarationForm::Unit(_) => "unit",
             DeclarationForm::Abstraction(_) => "abstraction",
+            DeclarationForm::Guarantee(_) => "guarantee",
+            DeclarationForm::Composition(_) => "composition",
             DeclarationForm::StateClause(_) => "state_clause",
             DeclarationForm::OperationBody(_) => "operation_body",
             DeclarationForm::PopulationBound(_) => "population_bound",

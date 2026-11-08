@@ -531,6 +531,16 @@ pub struct PackageDeclarations {
     /// FR-304: the unit's `abstraction` declarations in declaration order,
     /// each as S2 built it, for `CheckedGraph::abstraction`.
     pub abstractions: Vec<qsl_forms::AbstractionDeclarationForm>,
+    /// QSpec FR-490: the unit's `guarantee` declarations in declaration
+    /// order, each as S2 built it, for `CheckedGraph::implementation_guarantees`.
+    pub guarantees: Vec<qsl_forms::GuaranteeDeclarationForm>,
+    /// QSpec FR-491: the unit's `compose` declarations in declaration order,
+    /// each as S2 built it, for `CheckedGraph::compositions`.
+    pub compositions: Vec<qsl_forms::CompositionDeclarationForm>,
+    /// QSpec FR-491 "Dependency graph and cycles": the profile the unit
+    /// selects that declares FR-176's monotone complete lattice, initial
+    /// element and convergence rule, when it selects one.
+    pub composition_lattice: Option<String>,
     /// FR-311, FR-392: the unit's `random`, `reward`, `workload` and
     /// `probabilistic` declarations in declaration order, each as S2 built
     /// it, for the `Probabilistic` family's check (FR-185, FR-186).
@@ -667,6 +677,15 @@ impl PackageDeclarations {
         self
     }
 
+    /// These declarations with the profile `profile` the unit selects that
+    /// declares FR-176's monotone complete lattice, initial element and
+    /// convergence rule (QSpec FR-491 "Dependency graph and cycles").
+    #[must_use]
+    pub fn with_composition_lattice(mut self, profile: impl Into<String>) -> Self {
+        self.composition_lattice = Some(profile.into());
+        self
+    }
+
     /// These declarations with the selected timestamped-event clock unit of
     /// each clause `units` names (FR-337 "Aggregate formula emission").
     #[must_use]
@@ -770,6 +789,9 @@ impl PackageDeclarations {
             protocol_attempts: Vec::new(),
             temporal_clauses: Vec::new(),
             abstractions: Vec::new(),
+            guarantees: Vec::new(),
+            compositions: Vec::new(),
+            composition_lattice: None,
             probabilistic: Vec::new(),
             state_graph_claims: Vec::new(),
             temporal_selections: Vec::new(),

@@ -440,6 +440,8 @@ fn declaration_profile(form: &DeclarationForm) -> Option<&str> {
         F::StateGraphClaim(form) => Some(&form.profile.alias),
         F::Hybrid(form) => Some(&form.profile.alias),
         F::Union(_)
+        | F::Guarantee(_)
+        | F::Composition(_)
         | F::Alias(_)
         | F::Record(_)
         | F::Tuple(_)

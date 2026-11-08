@@ -421,6 +421,8 @@ fn tc_774_cause_reader_refuses_in_order() {
         ("replay-parity", QslOnlyCause::ReplayParity),
         ("replay-refused", QslOnlyCause::ReplayRefused),
         ("kani_vacuous_proof", QslOnlyCause::KaniVacuousProof),
+        ("premise-unproved", QslOnlyCause::PremiseUnproved),
+        ("transfer-not-preserving", QslOnlyCause::TransferNotPreserving),
     ] {
         for body in [
             json!({"type": spelling}),
@@ -451,8 +453,6 @@ fn tc_774_cause_reader_refuses_in_order() {
         "symmetry-broken",
         "lasso-not-concretized",
         "no-admitted-behaviour",
-        "transfer-not-preserving",
-        "premise-unproved",
     ] {
         assert_eq!(
             read_plugin_inconclusive_cause(&json!({"type": spelling})),

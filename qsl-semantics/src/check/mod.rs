@@ -79,6 +79,9 @@ mod checked_dispatch;
 mod claims;
 mod dispatch_link;
 pub mod footprint;
+mod composition;
+mod guarantee;
+mod rust_syntax;
 pub use abstraction::{
     AbstractionKey, AbstractionRefusal, AuthoredBinding, CheckedAbstractionRelation,
     CheckedBinding, CheckedFrameBinding, FrameBinding, FrameNodes, MalformedEntry, ObjectBinding,
@@ -86,6 +89,22 @@ pub use abstraction::{
 };
 pub use abstraction::{AbstractionNodeRefusal, AbstractionNodes};
 pub use dispatch_link::PendingLinks;
+pub use guarantee::{
+    check_member_values, granularity_spelling, kind_spelling, CheckedImplementationGuarantee,
+    ClauseConstraint, Correspondence, EnvironmentMember, ExtentClass, GuaranteeClause,
+    GuaranteeItemRefusal, GuaranteeName, GuaranteeRefusal, GuaranteeSlot, GuaranteeSpans, ItemKind,
+    MeasureValue, MemberValues, ProgressMeasure, ProgressMember, ReadEnvironment, ReadGuarantee,
+    ReadProgress, RustMember, SlotBacking, SlotKey, SlotRole, SubjectOperation, Supplies,
+};
+pub use composition::{
+    CheckedComponent, CheckedComposition, ClauseRef, ComponentGuaranteeKey, ComponentSubject,
+    CompositionClauseFacts, CompositionCycle, CompositionGuarantee, CompositionItem,
+    CompositionItemRefusal, CompositionName, CompositionPremise, CompositionRefusal,
+    CompositionSlot, CompositionSlotKey, CompositionSpans, CompositionSupply, ItemPlacement,
+    MalformedMember, ReadClause, ReadComponent, ReadComposition, ReadGuaranteeMember,
+    ReadPremise, ReadSupply,
+};
+pub use rust_syntax::{path_defect, PathDefect};
 mod facts;
 mod family;
 // The scalar limits of a caller that bounds nothing itself, for the model
@@ -238,6 +257,12 @@ pub use node_key::{
     InvalidSourceOwner, LawRole, LeafSegment, LeafTerm, LiteralValue, MemberTerm, ModelOwner,
     NodeKeyRefusal, NodeRef, NodeTag, Operation, OperationLaw, OperationLeaf, OperationMode,
     Operator, Owner, SourceOwner, TupleMember, TupleTerm,
+};
+pub use node_key::{
+    EnvironmentEntry, ImplementationGuaranteeTerm, MeasureEntry, ProgressEntry, SuppliesEntry,
+};
+pub use node_key::{
+    ClauseEntry, ComponentEntry, CompositionRule, CompositionTerm, PremiseEntry, SupplyEntry,
 };
 
 /// Carry a declared node identity from an admitted package name and its
@@ -856,6 +881,26 @@ pub struct CheckedGraph {
     /// FR-304: the relation the `abstraction` declarations check to, when
     /// the unit holds any.
     abstraction: Option<CheckedAbstractionRelation>,
+    /// QSpec FR-490: the unit's `guarantee` declarations, in declaration
+    /// order, checked into [`Self::guarantees`].
+    guarantee_forms: Vec<qsl_forms::GuaranteeDeclarationForm>,
+    /// QSpec FR-490: the checked `guarantee` declarations, in declaration
+    /// order.
+    guarantees: Vec<guarantee::CheckedImplementationGuarantee>,
+    /// QSpec FR-491: the unit's `compose` declarations, in declaration
+    /// order, checked into [`Self::compositions`].
+    composition_forms: Vec<qsl_forms::CompositionDeclarationForm>,
+    /// QSpec FR-491: the checked `compose` declarations, in declaration
+    /// order.
+    compositions: Vec<composition::CheckedComposition>,
+    /// QSpec FR-491: the profile that declares FR-176's lattice, when the
+    /// unit selects one.
+    composition_lattice: Option<String>,
+    /// QSpec FR-490: the model alias of each temporal clause's subject, by
+    /// the clause's name.
+    temporal_subject_aliases: BTreeMap<String, String>,
+    /// QSpec FR-490: the names of the unit's `predicate` declarations.
+    predicate_names: std::collections::BTreeSet<String>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
     /// FR-383: the unit's protocol names in authored declaration order,
@@ -1007,6 +1052,13 @@ impl DebugWith for CheckedGraph {
             abstractions,
             model_names,
             abstraction,
+            guarantee_forms,
+            guarantees,
+            composition_forms,
+            compositions,
+            composition_lattice,
+            temporal_subject_aliases,
+            predicate_names,
             protocols,
             protocol_order,
             protocol_refusals,
@@ -1115,6 +1167,13 @@ impl DebugWith for CheckedGraph {
             .field("abstractions", &abstractions)
             .field("model_names", &model_names)
             .field("abstraction", &Maybe(abstraction, table))
+            .field("guarantee_forms", &guarantee_forms)
+            .field("guarantees", &guarantees)
+            .field("composition_forms", &composition_forms)
+            .field("compositions", &compositions)
+            .field("composition_lattice", &composition_lattice)
+            .field("temporal_subject_aliases", &temporal_subject_aliases)
+            .field("predicate_names", &predicate_names)
             .field("protocols", &Seq(protocols, table))
             .field("protocol_order", protocol_order)
             .field("protocol_refusals", protocol_refusals)
@@ -2639,6 +2698,24 @@ impl PackageDeclarations {
         let (model_owners, owner_types) = model_owner_tables(&models);
         let model_non_owners = model_non_owner_tables(&models);
         let model_names = abstraction::model_names(&models);
+        // QSpec FR-490: the model alias of each temporal clause's subject, and
+        // the unit's `predicate` declarations.
+        let temporal_subject_aliases: BTreeMap<String, String> = self
+            .temporal_clauses
+            .iter()
+            .filter_map(|clause| {
+                Some((
+                    clause.form.name.name.clone(),
+                    CheckedGraph::subject_alias_of(&clause.form.over.value_type.head)?,
+                ))
+            })
+            .collect();
+        let predicate_names: std::collections::BTreeSet<String> = self
+            .functions
+            .iter()
+            .filter(|function| function.kind() == qsl_forms::DeclarationKind::Predicate)
+            .map(|function| function.name.clone())
+            .collect();
         let model_populations = model_population_tables(&models);
         let population_bounds = checked_population_bounds(&models);
         let population_keys = population_key_table(&models);
@@ -7103,6 +7180,13 @@ impl PackageDeclarations {
             timed_models,
             refinements,
             abstractions: self.abstractions,
+            guarantee_forms: self.guarantees,
+            guarantees: Vec::new(),
+            composition_forms: self.compositions,
+            compositions: Vec::new(),
+            composition_lattice: self.composition_lattice,
+            temporal_subject_aliases,
+            predicate_names,
             model_names,
             protocol_classes,
             protocols: checked_protocols,
@@ -7165,6 +7249,38 @@ impl PackageDeclarations {
                     .map(|(index, refusal)| CheckRefusal {
                         location: graph.abstraction_location(index),
                         cause: CheckCause::Abstraction(Box::new(refusal)),
+                    })
+                    .collect());
+            }
+        }
+        // QSpec FR-490: the unit's `guarantee` declarations check against the
+        // relation and the temporal clauses.
+        match graph.check_declared_guarantees() {
+            Ok(guarantees) => graph.guarantees = guarantees,
+            Err(found) => {
+                return Err(found
+                    .into_iter()
+                    .map(|(index, refusal)| CheckRefusal {
+                        location: graph.guarantee_location(index),
+                        cause: CheckCause::Abstraction(Box::new(AbstractionRefusal::Guarantee(
+                            Box::new(refusal),
+                        ))),
+                    })
+                    .collect());
+            }
+        }
+        // QSpec FR-491: the unit's `compose` declarations check against the
+        // imported component packages.
+        match graph.check_declared_compositions() {
+            Ok(compositions) => graph.compositions = compositions,
+            Err(found) => {
+                return Err(found
+                    .into_iter()
+                    .map(|(index, refusal)| CheckRefusal {
+                        location: graph.composition_location(index),
+                        cause: CheckCause::Abstraction(Box::new(AbstractionRefusal::Composition(
+                            Box::new(refusal),
+                        ))),
                     })
                     .collect());
             }

@@ -400,6 +400,12 @@ pub enum AbstractionRefusal {
     /// An admitted operation declares a parameter whose name is not an
     /// identifier: a broken check invariant.
     Internal(InternalFault),
+    /// A `guarantee` declaration refused (QSpec FR-490), a `Relation` family
+    /// declaration beside the relation.
+    Guarantee(Box<super::guarantee::GuaranteeRefusal>),
+    /// A `compose` declaration refused (QSpec FR-491), a `Relation` family
+    /// declaration beside the relation.
+    Composition(Box<super::composition::CompositionRefusal>),
 }
 
 impl AbstractionRefusal {
@@ -413,6 +419,8 @@ impl AbstractionRefusal {
             | Self::ConflictingField { .. }
             | Self::MalformedDeclaration { .. } => Code::InvalidModelBinding,
             Self::Internal(_) => Code::RuntimeInvariant,
+            Self::Guarantee(refusal) => refusal.code(),
+            Self::Composition(refusal) => refusal.code(),
         }
     }
 
@@ -425,6 +433,8 @@ impl AbstractionRefusal {
             }
             Self::MalformedDeclaration { .. } => "malformed-declaration",
             Self::Internal(_) => "established-invariant-broken",
+            Self::Guarantee(refusal) => refusal.cause(),
+            Self::Composition(refusal) => refusal.cause(),
         }
     }
 }
@@ -449,6 +459,16 @@ impl ModelNames {
     /// The identity of the domain package the alias selects.
     pub(super) fn package(&self) -> &str {
         &self.package
+    }
+
+    /// The declaration the alias exports as `name`.
+    pub(super) fn export(&self, name: &Identifier) -> Option<&DeclarationKey> {
+        self.exports.get(name)
+    }
+
+    /// Every declaration the alias exports, in name order.
+    pub(super) fn exports(&self) -> impl Iterator<Item = &DeclarationKey> {
+        self.exports.values()
     }
 }
 
@@ -489,7 +509,7 @@ fn receiver_of(spelling: &str) -> RustReceiver {
 }
 
 /// The parts of `name`, a `::`-separated model name, when it has `count`.
-fn name_parts(name: &NameForm, count: usize) -> Option<Vec<Identifier>> {
+pub(super) fn name_parts(name: &NameForm, count: usize) -> Option<Vec<Identifier>> {
     let parts: Vec<Identifier> = name
         .name
         .split("::")

@@ -304,6 +304,26 @@ productions! {
     FrameBinding,
     #[doc = "`<member> to <string>`: one operation parameter's Rust parameter."]
     ParameterBinding,
+    #[doc = "`guarantee <identifier> of <identifier> using <identifier> { <guarantee-initial> <guarantee-member>* }`: an implementation guarantee declaration (QSpec FR-490); `guarantee` is a keyword only as a declaration's first token."]
+    GuaranteeDeclaration,
+    #[doc = "`initial to <string> ;`: the Rust function whose result is an implementation initial state."]
+    GuaranteeInitial,
+    #[doc = "`progress <operation-name> (decreases <string> | bound <integer>) ;`: one operation's no-divergence premise."]
+    GuaranteeProgress,
+    #[doc = "`environment <identifier> by <string> (<fairness> | assumes <qualified-name> ;)`: one environment premise."]
+    GuaranteeEnvironment,
+    #[doc = "`compose <identifier> rule <composition-rule> { <component>{2,} <composition-member>* }`: a component composition declaration (QSpec FR-491); `compose` is a keyword only as a declaration's first token."]
+    CompositionDeclaration,
+    #[doc = "`component <identifier> from <identifier> using <identifier> ;`: one component of a composition."]
+    CompositionComponent,
+    #[doc = "`guarantee <model-name> ;`: a component guarantee of the composed claim."]
+    CompositionGuarantee,
+    #[doc = "`rely <model-name> on <model-name> ;`: a `relies` premise."]
+    CompositionRely,
+    #[doc = "`depends <model-name> on <model-name> ;`: a `liveness_dependencies` premise."]
+    CompositionDepends,
+    #[doc = "`supplies <fairness>`: a fairness constraint the composition supplies."]
+    CompositionSupplies,
     #[doc = "`<leading-keyword> <identifier> { [<clause-name> : <expression> {, <clause-name> : <expression>}] }`: one declaration form of a selected extension, read from its grammar schema (FR-354, QSpec FR-467 \"Production\"). It exists only in a parse given the extension's forms."]
     ExtensionDeclaration,
 }

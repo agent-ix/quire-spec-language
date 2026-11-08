@@ -25,6 +25,8 @@ use qsl_foundation::{Code, Span};
 use std::collections::BTreeMap;
 
 use super::abstraction_declaration;
+use super::composition_declaration;
+use super::guarantee_declaration;
 use super::hybrid_declaration;
 use super::hyper_clause;
 use super::probabilistic;
@@ -104,6 +106,8 @@ impl ParsedForm {
         match &self.form {
             F::Union(form) => Some(&form.name.name),
             F::Abstraction(form) => Some(&form.name.name),
+            F::Guarantee(form) => Some(&form.name.name),
+            F::Composition(form) => Some(&form.name.name),
             F::Function(form) => Some(form.name.as_str()),
             F::Alias(form) => Some(&form.name.name),
             F::Record(form) => Some(&form.name.name),
@@ -301,6 +305,12 @@ pub enum LeadingTokenKind {
     /// `abstraction`: the abstraction relation declaration form (FR-304,
     /// QSpec FR-450).
     Abstraction,
+    /// `guarantee`: the implementation guarantee declaration form (QSpec
+    /// FR-490).
+    Guarantee,
+    /// `compose`: the component composition declaration form (QSpec
+    /// FR-491).
+    Composition,
     /// `function`: the `Value` function form.
     Function,
     /// `type`: the `Value` alias form.
@@ -749,6 +759,8 @@ fn dispatch(
     match kind {
         LeadingTokenKind::Union => sum_case::union_declaration(construct),
         LeadingTokenKind::Abstraction => abstraction_declaration::declaration(construct),
+        LeadingTokenKind::Guarantee => guarantee_declaration::declaration(construct),
+        LeadingTokenKind::Composition => composition_declaration::declaration(construct),
         LeadingTokenKind::Function => value::function(construct),
         LeadingTokenKind::Type => value::alias(construct),
         LeadingTokenKind::Record => value::record(construct),
@@ -806,6 +818,8 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
     match spelling {
         b"union" => Some(LeadingTokenKind::Union),
         b"abstraction" => Some(LeadingTokenKind::Abstraction),
+        b"guarantee" => Some(LeadingTokenKind::Guarantee),
+        b"compose" => Some(LeadingTokenKind::Composition),
         b"function" => Some(LeadingTokenKind::Function),
         b"type" => Some(LeadingTokenKind::Type),
         b"record" => Some(LeadingTokenKind::Record),

@@ -7099,7 +7099,10 @@ fn walked_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
             walk.text(application.operator.wire_name());
             walk.node(&application.result_type);
         }
-        BodyTerm::Frame(_) | BodyTerm::Abstraction(_) => {}
+        BodyTerm::Frame(_)
+        | BodyTerm::Abstraction(_)
+        | BodyTerm::ImplementationGuarantee(_)
+        | BodyTerm::Composition(_) => {}
     }
     if let Some(semantic_type) = &content.semantic_type {
         walk.node(semantic_type);
@@ -7171,6 +7174,10 @@ fn named_nodes(node: &SemanticNode) -> Vec<NodeKey> {
             );
         }
         BodyTerm::Abstraction(term) => named.extend(term.targets().into_iter().flatten()),
+        BodyTerm::ImplementationGuarantee(term) => {
+            named.extend(term.targets().into_iter().flatten())
+        }
+        BodyTerm::Composition(term) => named.extend(term.targets().into_iter().flatten()),
         BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
     }
     // A dependency's node is not a node of this graph.

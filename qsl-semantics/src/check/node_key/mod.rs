@@ -488,6 +488,12 @@ pub enum BodyTerm {
     Frame(FrameTerm),
     /// A `correspondence`/`abstraction_relation` node's body (QSpec FR-451).
     Abstraction(AbstractionTerm),
+    /// A `correspondence`/`implementation_guarantee` node's body (QSpec
+    /// FR-490), a QSL-owned term.
+    ImplementationGuarantee(ImplementationGuaranteeTerm),
+    /// A `correspondence`/`component_composition` node's body (QSpec
+    /// FR-491), a QSL-owned term.
+    Composition(CompositionTerm),
 }
 
 /// One `modifies` entry of a `state`/`frame` node's body (QSpec FR-340's
@@ -643,6 +649,14 @@ impl DebugWith for BodyTerm {
             Self::Frame(term) => f.debug_tuple("Frame").field(&With(term, table)).finish(),
             Self::Abstraction(term) => f
                 .debug_tuple("Abstraction")
+                .field(&With(term, table))
+                .finish(),
+            Self::ImplementationGuarantee(term) => f
+                .debug_tuple("ImplementationGuarantee")
+                .field(&With(term, table))
+                .finish(),
+            Self::Composition(term) => f
+                .debug_tuple("Composition")
                 .field(&With(term, table))
                 .finish(),
         }
@@ -1189,7 +1203,12 @@ impl BodyTerm {
     pub fn application_term(&self) -> Option<&ApplicationTerm> {
         match self {
             Self::Application(application) => Some(application),
-            Self::Leaf(_) | Self::Aggregate(_) | Self::Frame(_) | Self::Abstraction(_) => None,
+            Self::Leaf(_)
+            | Self::Aggregate(_)
+            | Self::Frame(_)
+            | Self::Abstraction(_)
+            | Self::ImplementationGuarantee(_)
+            | Self::Composition(_) => None,
         }
     }
 
@@ -1204,7 +1223,10 @@ impl BodyTerm {
                     member.for_each_leaf(visit);
                 }
             }
-            Self::Frame(_) | Self::Abstraction(_) => {}
+            Self::Frame(_)
+            | Self::Abstraction(_)
+            | Self::ImplementationGuarantee(_)
+            | Self::Composition(_) => {}
         }
     }
 
@@ -1219,7 +1241,10 @@ impl BodyTerm {
             | Self::Aggregate(AggregateTerm { members: arguments }) => {
                 arguments.iter().flat_map(MemberTerm::leaves).collect()
             }
-            Self::Frame(_) | Self::Abstraction(_) => Vec::new(),
+            Self::Frame(_)
+            | Self::Abstraction(_)
+            | Self::ImplementationGuarantee(_)
+            | Self::Composition(_) => Vec::new(),
         }
     }
 
@@ -1258,6 +1283,16 @@ impl BodyTerm {
                 }
             }
             Self::Abstraction(term) => {
+                for target in term.targets()? {
+                    visit(target);
+                }
+            }
+            Self::ImplementationGuarantee(term) => {
+                for target in term.targets()? {
+                    visit(target);
+                }
+            }
+            Self::Composition(term) => {
                 for target in term.targets()? {
                     visit(target);
                 }
@@ -1317,6 +1352,8 @@ impl BodyTerm {
                 }
             }
             Self::Abstraction(term) => term.for_each_ref(visit),
+            Self::ImplementationGuarantee(term) => term.for_each_ref(visit),
+            Self::Composition(term) => term.for_each_ref(visit),
             Self::Leaf(_) | Self::Aggregate(_) => {}
         }
         self.for_each_leaf(&mut |leaf| match leaf {
@@ -1402,6 +1439,10 @@ impl BodyTerm {
                 deletes_scoped: deletes_scoped.clone(),
             }),
             Self::Abstraction(term) => Self::Abstraction(term.map_refs(map)),
+            Self::ImplementationGuarantee(term) => {
+                Self::ImplementationGuarantee(term.map_refs(map))
+            }
+            Self::Composition(term) => Self::Composition(term.map_refs(map)),
         }
     }
 }
@@ -1929,8 +1970,16 @@ pub enum NodeKeyRefusal {
 }
 
 mod abstraction;
+mod composition;
+mod guarantee;
 
 pub use abstraction::{AbstractionTerm, FrameEntry, ObjectEntry, PopulationEntry};
+pub use composition::{
+    ClauseEntry, ComponentEntry, CompositionRule, CompositionTerm, PremiseEntry, SupplyEntry,
+};
+pub use guarantee::{
+    EnvironmentEntry, ImplementationGuaranteeTerm, MeasureEntry, ProgressEntry, SuppliesEntry,
+};
 
 #[cfg(test)]
 mod ref_tests;

@@ -396,6 +396,8 @@ fn source_and_types(g: &mut Grammar) {
         r(P::SynthesisDeclaration),
         r(P::VerificationPlan),
         r(P::AbstractionDeclaration),
+        r(P::GuaranteeDeclaration),
+        r(P::CompositionDeclaration),
     ];
     let mut declarations = declarations;
     if g.contains_key(&P::ExtensionDeclaration) {
@@ -2996,6 +2998,132 @@ fn abstraction(g: &mut Grammar) {
         ]),
     );
     g.insert(P::ParameterBinding, s(vec![member(), x("to"), text()]));
+    guarantee(g);
+    composition(g);
+}
+
+/// QSpec FR-490's `guarantee-decl`. Every word it introduces is a contextual
+/// word spelled only in its position; the two Rust positions are quoted
+/// strings, so an unquoted path is a syntax defect at its token.
+fn guarantee(g: &mut Grammar) {
+    g.insert(
+        P::GuaranteeDeclaration,
+        s(vec![
+            literal("guarantee"),
+            ident(),
+            x("of"),
+            ident(),
+            x("using"),
+            ident(),
+            x("{"),
+            r(P::GuaranteeInitial),
+            star(c(vec![r(P::GuaranteeProgress), r(P::GuaranteeEnvironment)])),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::GuaranteeInitial,
+        s(vec![literal("initial"), x("to"), text(), x(";")]),
+    );
+    g.insert(
+        P::GuaranteeProgress,
+        s(vec![
+            literal("progress"),
+            r(P::OperationName),
+            c(vec![
+                s(vec![literal("decreases"), text()]),
+                s(vec![literal("bound"), uint()]),
+            ]),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::GuaranteeEnvironment,
+        s(vec![
+            literal("environment"),
+            ident(),
+            x("by"),
+            text(),
+            c(vec![
+                r(P::Fairness),
+                s(vec![literal("assumes"), r(P::QualifiedName), x(";")]),
+            ]),
+        ]),
+    );
+}
+
+/// QSpec FR-491's `composition-decl`. Every word it introduces is a
+/// contextual word spelled only in its position; the four rule spellings are
+/// hyphenated single spellings. At least two `component` members are grammar,
+/// so a declaration with one is a syntax defect at the token that should have
+/// begun the second.
+fn composition(g: &mut Grammar) {
+    g.insert(
+        P::CompositionDeclaration,
+        s(vec![
+            literal("compose"),
+            ident(),
+            literal("rule"),
+            c(vec![
+                literal("assume-guarantee"),
+                literal("protocol-refinement"),
+                literal("refinement-transfer"),
+                literal("interface"),
+            ]),
+            x("{"),
+            r(P::CompositionComponent),
+            r(P::CompositionComponent),
+            star(r(P::CompositionComponent)),
+            star(c(vec![
+                r(P::CompositionGuarantee),
+                r(P::CompositionRely),
+                r(P::CompositionDepends),
+                r(P::CompositionSupplies),
+                r(P::GuaranteeEnvironment),
+            ])),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::CompositionComponent,
+        s(vec![
+            literal("component"),
+            ident(),
+            x("from"),
+            ident(),
+            x("using"),
+            ident(),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::CompositionGuarantee,
+        s(vec![literal("guarantee"), r(P::ModelName), x(";")]),
+    );
+    g.insert(
+        P::CompositionRely,
+        s(vec![
+            literal("rely"),
+            r(P::ModelName),
+            x("on"),
+            r(P::ModelName),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::CompositionDepends,
+        s(vec![
+            literal("depends"),
+            r(P::ModelName),
+            x("on"),
+            r(P::ModelName),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::CompositionSupplies,
+        s(vec![literal("supplies"), r(P::Fairness)]),
+    );
 }
 
 #[cfg(test)]
