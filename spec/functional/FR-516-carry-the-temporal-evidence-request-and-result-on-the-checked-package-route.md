@@ -118,7 +118,9 @@ instance is identified by the trigger identity (FR-053).
 
 Entry: `EvidencePackage::evaluate_temporal_evidence(&self, clause:
 &CheckedNodeId, request: &EvidenceRequest, meter: &mut Meter) ->
-Result<EvidenceResult, CallFailure>`; **Refusal has one outcome.** Every refusal of the call itself is
+Result<EvaluatedEvidence, CallFailure>`. The opaque carrier borrows its original
+`EvidenceResult` through `result()` (FR-526 predecessor authority).
+**Refusal has one outcome.** Every refusal of the call itself is
 `Err(CallFailure::Admission)`, nothing is charged and no result exists: a clause
 not held by the package or not a temporal clause, a request that fails
 construction (an empty trigger identity), a selection or supply refused before S6a
