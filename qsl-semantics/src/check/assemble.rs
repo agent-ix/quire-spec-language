@@ -936,6 +936,10 @@ struct Unit {
     /// Each `abstraction` declaration (FR-304), in source order, for
     /// `CheckedGraph::abstraction` to check at S3.
     abstractions: Vec<qsl_forms::AbstractionDeclarationForm>,
+    /// Each `guarantee` declaration (QSpec FR-490), in source order.
+    guarantees: Vec<qsl_forms::GuaranteeDeclarationForm>,
+    /// Each `compose` declaration (QSpec FR-491), in source order.
+    compositions: Vec<qsl_forms::CompositionDeclarationForm>,
     /// Each `hyper` clause and `relation`, in source order, for
     /// `check::hyper_clause` to resolve at S3.
     hyper_clauses: Vec<super::hyper_clause::HyperDeclaration>,
@@ -982,6 +986,8 @@ impl Unit {
             protocols: Vec::new(),
             temporal_clauses: Vec::new(),
             abstractions: Vec::new(),
+            guarantees: Vec::new(),
+            compositions: Vec::new(),
             hyper_clauses: Vec::new(),
             probabilistic: Vec::new(),
             terminals: Vec::new(),
@@ -1024,6 +1030,10 @@ impl Unit {
             match form {
                 DeclarationForm::Function(function) => unit.functions.push(*function),
                 DeclarationForm::Abstraction(abstraction) => unit.abstractions.push(*abstraction),
+                DeclarationForm::Guarantee(guarantee) => unit.guarantees.push(*guarantee),
+                DeclarationForm::Composition(composition) => {
+                    unit.compositions.push(*composition);
+                }
                 DeclarationForm::Alias(alias) => {
                     unit.declare(&alias.name, Declared::Alias(unit.aliases.len()));
                     unit.aliases.push(alias);
@@ -4049,6 +4059,8 @@ impl PackageDeclarations {
             &selections.profiles,
             &model_gate::Declarations {
                 abstractions: &unit.abstractions,
+                guarantees: &unit.guarantees,
+                compositions: &unit.compositions,
                 functions: &unit.functions,
                 state_clauses: &unit.state_clauses,
                 operation_bodies: &unit.operation_bodies,
@@ -5109,6 +5121,20 @@ impl PackageDeclarations {
             )
         }));
         package.abstractions = unit.abstractions;
+        declared_type_spans.extend(unit.guarantees.iter().map(|guarantee| {
+            (
+                super::guarantee::declaration_origin(&guarantee.name.name),
+                guarantee.name.span,
+            )
+        }));
+        package.guarantees = unit.guarantees;
+        declared_type_spans.extend(unit.compositions.iter().map(|composition| {
+            (
+                super::composition::declaration_origin(&composition.name.name),
+                composition.name.span,
+            )
+        }));
+        package.compositions = unit.compositions;
         // FR-354: a form is located under its own spaced name.
         declared_type_spans.extend(
             unit.extensions

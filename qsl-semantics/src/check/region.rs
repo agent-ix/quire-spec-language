@@ -396,6 +396,18 @@ impl DeclarationRegions {
                 super::abstraction::AbstractionRefusal::UnresolvedName { span, .. } => {
                     region(&self.source, self.embedding.as_deref(), *span)
                 }
+                super::abstraction::AbstractionRefusal::Guarantee(guarantee) => {
+                    match guarantee.span() {
+                        Some(span) => region(&self.source, self.embedding.as_deref(), span),
+                        None => self.region(&refusal.location),
+                    }
+                }
+                super::abstraction::AbstractionRefusal::Composition(composition) => {
+                    match composition.span() {
+                        Some(span) => region(&self.source, self.embedding.as_deref(), span),
+                        None => self.region(&refusal.location),
+                    }
+                }
                 _ => self.region(&refusal.location),
             },
             // A defect of the `refinement_internals` value is located inside

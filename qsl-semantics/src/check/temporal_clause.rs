@@ -1768,7 +1768,7 @@ pub(crate) fn checked_constraint(
 }
 
 /// `written`'s kind: an unmarked kind is `weak` (ADR-018 FA-6).
-fn checked_kind(written: &FairnessConstraintForm) -> FairnessKind {
+pub(crate) fn checked_kind(written: &FairnessConstraintForm) -> FairnessKind {
     match written.kind {
         None | Some(FormKind::Weak) => FairnessKind::Weak,
         Some(FormKind::Strong) => FairnessKind::Strong,
@@ -1776,7 +1776,7 @@ fn checked_kind(written: &FairnessConstraintForm) -> FairnessKind {
 }
 
 /// `written`'s granularity: an unmarked granularity is `whole` (FA-6).
-fn checked_granularity(written: &FairnessConstraintForm) -> FairnessGranularity {
+pub(crate) fn checked_granularity(written: &FairnessConstraintForm) -> FairnessGranularity {
     match written.granularity {
         None | Some(FormGranularity::Whole) => FairnessGranularity::Whole,
         Some(FormGranularity::Each) => FairnessGranularity::Each,

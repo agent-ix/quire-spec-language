@@ -8,7 +8,7 @@
 
 use super::{
     Certification, InconclusiveCause, ProofBasis, TerminalRecord, TerminalValue,
-    REPLAY_PARITY_KIND, REPLAY_REFUSED_KIND,
+    PREMISE_UNPROVED_KIND, REPLAY_PARITY_KIND, REPLAY_REFUSED_KIND, TRANSFER_NOT_PRESERVING_KIND,
 };
 use crate::execute::ReplayRefusal;
 use crate::hybrid::{ClaimHorizon, SolverCoverage};
@@ -29,6 +29,11 @@ pub enum QslOnlyCause {
     ReplayRefused,
     /// `kani_vacuous_proof`, spelled as the plugin wire spells it.
     KaniVacuousProof,
+    /// `premise-unproved`: only the verification planner settles it (QSpec
+    /// FR-331 "planner-only cause", QSL FR-529).
+    PremiseUnproved,
+    /// `transfer-not-preserving`: only the verification planner settles it.
+    TransferNotPreserving,
 }
 
 /// The plugin wire's spelling of the vacuity cause. QSpec FR-331 keeps the
@@ -46,6 +51,8 @@ impl QslOnlyCause {
             Self::ReplayParity => REPLAY_PARITY_KIND,
             Self::ReplayRefused => REPLAY_REFUSED_KIND,
             Self::KaniVacuousProof => PLUGIN_WIRE_KANI_VACUOUS_PROOF,
+            Self::PremiseUnproved => PREMISE_UNPROVED_KIND,
+            Self::TransferNotPreserving => TRANSFER_NOT_PRESERVING_KIND,
         }
     }
 }
@@ -206,6 +213,8 @@ pub fn read_plugin_cause_kind(kind: &str) -> Result<(), PluginResultRefusal> {
         REPLAY_PARITY_KIND => QslOnlyCause::ReplayParity,
         REPLAY_REFUSED_KIND => QslOnlyCause::ReplayRefused,
         PLUGIN_WIRE_KANI_VACUOUS_PROOF => QslOnlyCause::KaniVacuousProof,
+        PREMISE_UNPROVED_KIND => QslOnlyCause::PremiseUnproved,
+        TRANSFER_NOT_PRESERVING_KIND => QslOnlyCause::TransferNotPreserving,
         _ => return Ok(()),
     };
     Err(PluginResultRefusal::QslOnlyCause(claimed))
@@ -363,6 +372,12 @@ impl TerminalRecord {
             InconclusiveCause::ReplayRefused(_) => Err(PluginResultRefusal::QslOnlyCause(
                 QslOnlyCause::ReplayRefused,
             )),
+            InconclusiveCause::PremiseUnproved { .. } => Err(PluginResultRefusal::QslOnlyCause(
+                QslOnlyCause::PremiseUnproved,
+            )),
+            InconclusiveCause::TransferNotPreserving { .. } => Err(
+                PluginResultRefusal::QslOnlyCause(QslOnlyCause::TransferNotPreserving),
+            ),
             other => Ok(Self::with_backend(
                 request_index,
                 plugin,

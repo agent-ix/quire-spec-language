@@ -13,7 +13,8 @@
 use std::collections::BTreeSet;
 
 use qsl_forms::{
-    AbstractionDeclarationForm, FunctionDeclaration, OperationBodyForm, StateClauseForm,
+    AbstractionDeclarationForm, CompositionDeclarationForm, FunctionDeclaration,
+    GuaranteeDeclarationForm, OperationBodyForm, StateClauseForm,
 };
 use qsl_foundation::selection::ProfileSelection;
 
@@ -26,6 +27,10 @@ use crate::value::layer::{HeaderLayer, LayerForm};
 pub enum ModelFamily {
     /// An `abstraction` declaration (`abstraction-decl`).
     Abstraction,
+    /// A `guarantee` declaration (`guarantee-decl`).
+    Guarantee,
+    /// A `compose` declaration (`composition-decl`).
+    Composition,
     /// A `body` operation-body declaration.
     OperationBody,
     /// A postfix `receiver.member(args)` operation call.
@@ -55,6 +60,8 @@ impl ModelFamily {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Abstraction => "abstraction",
+            Self::Guarantee => "guarantee",
+            Self::Composition => "composition",
             Self::OperationBody => "operation-body",
             Self::DispatchCall => "dispatch-call",
             Self::Lookup => "lookup",
@@ -64,7 +71,9 @@ impl ModelFamily {
     /// The `quire.native.diagnostics/v1` cause tag of the family's refusal.
     pub fn refusal_cause(self) -> &'static str {
         match self {
-            Self::Abstraction | Self::OperationBody => "declaration-form",
+            Self::Abstraction | Self::Guarantee | Self::Composition | Self::OperationBody => {
+                "declaration-form"
+            }
             Self::DispatchCall | Self::Lookup => "expression-form",
         }
     }
@@ -75,6 +84,10 @@ impl ModelFamily {
 pub enum OwnerKind {
     /// An `abstraction` declaration.
     Abstraction,
+    /// A `guarantee` declaration.
+    Guarantee,
+    /// A `compose` declaration.
+    Composition,
     /// A `function` or `predicate` declaration.
     Function,
     /// An `invariant`, `pre` or `post` state clause.
@@ -128,6 +141,8 @@ pub(super) fn selects_model(profiles: &[ProfileSelection]) -> bool {
 /// The declarations of a unit the gate reads.
 pub(super) struct Declarations<'a> {
     pub(super) abstractions: &'a [AbstractionDeclarationForm],
+    pub(super) guarantees: &'a [GuaranteeDeclarationForm],
+    pub(super) compositions: &'a [CompositionDeclarationForm],
     pub(super) functions: &'a [FunctionDeclaration],
     pub(super) state_clauses: &'a [StateClauseForm],
     pub(super) operation_bodies: &'a [OperationBodyForm],
@@ -162,6 +177,22 @@ pub(super) fn refusals(
             OwnerKind::Abstraction,
             &abstraction.name.name,
             abstraction.span,
+        );
+    }
+    for guarantee in declarations.guarantees {
+        refuse(
+            ModelFamily::Guarantee,
+            OwnerKind::Guarantee,
+            &guarantee.name.name,
+            guarantee.span,
+        );
+    }
+    for composition in declarations.compositions {
+        refuse(
+            ModelFamily::Composition,
+            OwnerKind::Composition,
+            &composition.name.name,
+            composition.span,
         );
     }
     for function in declarations.functions {

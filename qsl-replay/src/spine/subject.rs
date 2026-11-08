@@ -441,6 +441,8 @@ fn declaration_profile(form: &DeclarationForm) -> Option<&str> {
         F::Hybrid(form) => Some(&form.profile.alias),
         F::Extension(_)
         | F::Union(_)
+        | F::Guarantee(_)
+        | F::Composition(_)
         | F::Alias(_)
         | F::Record(_)
         | F::Tuple(_)

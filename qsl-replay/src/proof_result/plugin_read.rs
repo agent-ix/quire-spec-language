@@ -107,12 +107,10 @@ const UNSUPPORTED_CAUSE: &[&str] = &[
     "symmetry-broken",
     "lasso-not-concretized",
     "no-admitted-behaviour",
-    "transfer-not-preserving",
-    "premise-unproved",
 ];
 
 /// A pointer to `name` under `base`, with `~` and `/` escaped (RFC 6901).
-fn child(base: &str, name: &str) -> String {
+pub(crate) fn child(base: &str, name: &str) -> String {
     format!("{base}/{}", name.replace('~', "~0").replace('/', "~1"))
 }
 
@@ -150,13 +148,16 @@ fn unknown_member(pointer: String) -> PluginResultRefusal {
 }
 
 /// RFC 8785 member-name order: by UTF-16 code unit.
-fn name_order(left: &str, right: &str) -> Ordering {
+pub(crate) fn name_order(left: &str, right: &str) -> Ordering {
     left.encode_utf16().cmp(right.encode_utf16())
 }
 
 /// The member names of `members` that `allowed` does not list, first in
 /// member-name order.
-fn first_undefined<'a>(members: &'a Map<String, Value>, allowed: &[&str]) -> Option<&'a str> {
+pub(crate) fn first_undefined<'a>(
+    members: &'a Map<String, Value>,
+    allowed: &[&str],
+) -> Option<&'a str> {
     members
         .keys()
         .map(String::as_str)

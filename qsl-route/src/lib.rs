@@ -50,6 +50,7 @@
 //! both of those.
 
 pub mod deadlock;
+pub mod declaration;
 pub mod model_request;
 pub mod reductions;
 pub mod request;

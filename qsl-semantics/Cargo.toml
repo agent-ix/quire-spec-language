@@ -44,6 +44,9 @@ serde_json = { version = "1.0.151", features = ["unbounded_depth", "raw_value"] 
 quire-canonical = { workspace = true, features = ["std", "serde_json"] }
 serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.20"
+# QSpec FR-450 "Rust spellings": the identifier syntax of a `guarantee` declaration's Rust strings.
+unicode-ident = "1.0.24"
+unicode-normalization = "0.1.25"
 agent-ix-extraction-frontend = { git = "https://github.com/agent-ix/filament-core-data", branch = "main" }
 agent-ix-semantic-ir = { git = "https://github.com/agent-ix/filament-core-data", branch = "main" }
 # `model::intake::lift_document` calls FCD's `lift`, which always writes its

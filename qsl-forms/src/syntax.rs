@@ -4887,6 +4887,12 @@ pub enum DeclarationForm {
     /// An `abstraction` declaration (FR-304), boxed for the same reason as
     /// [`Self::Function`].
     Abstraction(Box<super::abstraction_declaration::AbstractionDeclarationForm>),
+    /// A `guarantee` declaration (QSpec FR-490), boxed like
+    /// [`Self::Abstraction`].
+    Guarantee(Box<super::guarantee_declaration::GuaranteeDeclarationForm>),
+    /// A `compose` declaration (QSpec FR-491), boxed like
+    /// [`Self::Guarantee`].
+    Composition(Box<super::composition_declaration::CompositionDeclarationForm>),
     /// A `function` declaration, boxed: it is several times the size of
     /// the other forms.
     Function(Box<FunctionDeclaration>),

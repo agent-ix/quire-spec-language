@@ -25,7 +25,9 @@ use qsl_foundation::{Code, Span};
 use std::collections::BTreeMap;
 
 use super::abstraction_declaration;
+use super::composition_declaration;
 use super::extension_declaration;
+use super::guarantee_declaration;
 use super::hybrid_declaration;
 use super::hyper_clause;
 use super::probabilistic;
@@ -106,6 +108,8 @@ impl ParsedForm {
             F::Extension(form) => Some(&form.name.name),
             F::Union(form) => Some(&form.name.name),
             F::Abstraction(form) => Some(&form.name.name),
+            F::Guarantee(form) => Some(&form.name.name),
+            F::Composition(form) => Some(&form.name.name),
             F::Function(form) => Some(form.name.as_str()),
             F::Alias(form) => Some(&form.name.name),
             F::Record(form) => Some(&form.name.name),
@@ -303,6 +307,12 @@ pub enum LeadingTokenKind {
     /// `abstraction`: the abstraction relation declaration form (FR-304,
     /// QSpec FR-450).
     Abstraction,
+    /// `guarantee`: the implementation guarantee declaration form (QSpec
+    /// FR-490).
+    Guarantee,
+    /// `compose`: the component composition declaration form (QSpec
+    /// FR-491).
+    Composition,
     /// `function`: the `Value` function form.
     Function,
     /// `type`: the `Value` alias form.
@@ -755,6 +765,8 @@ fn dispatch(
     match kind {
         LeadingTokenKind::Union => sum_case::union_declaration(construct),
         LeadingTokenKind::Abstraction => abstraction_declaration::declaration(construct),
+        LeadingTokenKind::Guarantee => guarantee_declaration::declaration(construct),
+        LeadingTokenKind::Composition => composition_declaration::declaration(construct),
         LeadingTokenKind::Function => value::function(construct),
         LeadingTokenKind::Type => value::alias(construct),
         LeadingTokenKind::Record => value::record(construct),
@@ -830,6 +842,8 @@ fn leading_token_kind(
 const LEADING_SPELLINGS: &[(&str, LeadingTokenKind)] = &[
     ("union", LeadingTokenKind::Union),
     ("abstraction", LeadingTokenKind::Abstraction),
+    ("guarantee", LeadingTokenKind::Guarantee),
+    ("compose", LeadingTokenKind::Composition),
     ("function", LeadingTokenKind::Function),
     ("type", LeadingTokenKind::Type),
     ("record", LeadingTokenKind::Record),

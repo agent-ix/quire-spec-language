@@ -220,6 +220,16 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::PopulationBinding,
     Production::FrameBinding,
     Production::ParameterBinding,
+    Production::GuaranteeDeclaration,
+    Production::GuaranteeInitial,
+    Production::GuaranteeProgress,
+    Production::GuaranteeEnvironment,
+    Production::CompositionDeclaration,
+    Production::CompositionComponent,
+    Production::CompositionGuarantee,
+    Production::CompositionRely,
+    Production::CompositionDepends,
+    Production::CompositionSupplies,
     Production::ExtensionDeclaration,
 ];
 
@@ -247,6 +257,8 @@ fn corpus() -> Vec<(&'static str, String)> {
         // The last quoted string of the unit is a `ParameterBinding`'s, so its
         // right-boundary mutation leaves a string no later quote closes.
         ("abstraction", source("abstraction Link using Complete { type M::Thing to \"store::Thing\" { ready to \"is_ready\"; }; population M::Things to \"things\"; operation M::Thing::act to \"store::act\" receiver \"self\" (amount to \"amount\"); }")),
+        ("guarantee", source("guarantee G of P using A { initial to \"f\"; progress M::T::o decreases \"m\"; progress M::T::p bound 3; environment E by \"s\" fair weak each M::T::o; environment N by \"n\" assumes Pred; }")),
+        ("composition", source("compose Sys rule assume-guarantee { component A from P using M; component B from Q using M; guarantee A::G; guarantee B::H; rely B::H on A::G; depends B::H on A::G; supplies fair weak each M::T::o; environment E by \"s\" assumes Pred; }")),
         ("sum-case", source("union Shape { Empty, Circle(Integer), Rect(Integer, Integer), } function area using Complete(s: Shape): Integer pure { case s { Circle(r): r; Shape::Rect(w, h): w * h; Empty: 0; } }")),
         (
             "values",

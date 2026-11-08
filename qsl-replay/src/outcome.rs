@@ -674,7 +674,10 @@ impl ItemCause {
                 | InconclusiveCause::SufficientTestFailed
                 | InconclusiveCause::NoAdmittedBehaviour
                 | InconclusiveCause::LassoNotConcretized
-                | InconclusiveCause::SolverInconclusive { .. },
+                | InconclusiveCause::SolverInconclusive { .. }
+                // Planner-only causes: the planner result writes their payload.
+                | InconclusiveCause::PremiseUnproved { .. }
+                | InconclusiveCause::TransferNotPreserving { .. },
             ) => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReductionNotPreserving {
                 reduction,

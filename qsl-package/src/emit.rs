@@ -140,6 +140,16 @@ pub enum EmitRefusal {
     /// The package's abstraction relation has no node to write (FR-306).
     #[error("the abstraction relation cannot be written: {0}")]
     Abstraction(AbstractionNodeRefusal),
+    /// The package holds a `compose` declaration (QSpec FR-491): its component
+    /// subjects and clauses are nodes of imported packages, and IR's reader
+    /// admits only a foreign node id that carries no operands, which a
+    /// temporal clause's never is.
+    #[error("the component composition {name:?} names foreign component operands IR's reader cannot yet admit")]
+    CompositionForeignOperands {
+        /// The composition's declared name; `None` when the refusal is raised
+        /// from a body term, which carries no declaration name.
+        name: Option<String>,
+    },
     /// The caller's [`quire_exact::Cancel`] handle was cancelled, and the
     /// emitter stopped at its next charge (FR-276).
     #[error("the emitter was cancelled ({cause:?})")]
@@ -403,7 +413,9 @@ impl EmitRefusal {
             Self::InvalidTemporalClockValue { .. } => Code::InvalidPackage,
             Self::Encoding { .. } => Code::OutputFailure,
             Self::Abstraction(AbstractionNodeRefusal::Internal(_)) => Code::RuntimeInvariant,
-            Self::Abstraction(_) => Code::UnsupportedProjection,
+            Self::Abstraction(_) | Self::CompositionForeignOperands { .. } => {
+                Code::UnsupportedProjection
+            }
             Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
             Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
@@ -446,6 +458,7 @@ impl EmitRefusal {
             | Self::UnknownOccurrenceRole { .. }
             | Self::Encoding { .. }
             | Self::Abstraction(_)
+            | Self::CompositionForeignOperands { .. }
             | Self::Cancelled { .. }
             | Self::TimedModelNodeSetMismatch
             | Self::UnkeyedProbabilisticClaim { .. }
@@ -1526,12 +1539,20 @@ impl BodyNames {
                     .dependencies
                     .extend(term.targets().map_err(encoding)?.iter().cloned());
             }
-            // QSpec FR-469: `dependencies` are exactly the unique targets of
-            // the form's clause references.
+            // QSpec FR-469, FR-490, FR-491: `dependencies` are exactly the
+            // unique targets of the form's references.
             BodyTerm::Extension(term) => {
                 names
                     .dependencies
                     .extend(term.targets().map_err(encoding)?.iter().cloned());
+            }
+            BodyTerm::ImplementationGuarantee(term) => {
+                names
+                    .dependencies
+                    .extend(term.targets().map_err(encoding)?.iter().cloned());
+            }
+            BodyTerm::Composition(_) => {
+                return Err(EmitRefusal::CompositionForeignOperands { name: None });
             }
             BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
         }
@@ -1877,7 +1898,51 @@ fn checked_term(ids: &StructuralIds, term: &BodyTerm) -> Result<CheckedTerm, Emi
         BodyTerm::Frame(frame) => frame_term(ids, frame),
         BodyTerm::Abstraction(abstraction) => abstraction_term(ids, abstraction),
         BodyTerm::Extension(extension) => extension_term(ids, extension),
+        BodyTerm::ImplementationGuarantee(guarantee) => guarantee_term(ids, guarantee),
+        BodyTerm::Composition(_) => Err(EmitRefusal::CompositionForeignOperands { name: None }),
     }
+}
+
+/// QSpec FR-490: the `implementation_guarantee` term, read from the body the
+/// guarantee node is written with.
+fn guarantee_term(
+    ids: &StructuralIds,
+    guarantee: &qsl_semantics::check::ImplementationGuaranteeTerm,
+) -> Result<CheckedTerm, EmitRefusal> {
+    flat_term(ids, |id| crate::guarantee::guarantee_body(id, guarantee))
+}
+
+/// The IR crate does not export the member types of its guarantee and
+/// composition terms, so the term is read from its JSON body. `body` writes
+/// each node reference through the id writer it is given, which here names
+/// the reference by its position in a table (the id's `ordinal`); the table's
+/// ids then replace the names, because a node id has no standalone JSON form.
+fn flat_term(
+    ids: &StructuralIds,
+    body: impl FnOnce(
+        crate::guarantee::IdWriter<'_>,
+    ) -> Result<serde_json::Value, crate::guarantee::NodeWriteRefusal>,
+) -> Result<CheckedTerm, EmitRefusal> {
+    let table = std::cell::RefCell::new(Vec::new());
+    let name = |key: &NodeKey| {
+        let mut table = table.borrow_mut();
+        table.push(node_id(ids, key));
+        Ok(serde_json::json!({
+            "package": "",
+            "path": [""],
+            "ordinal": table.len() - 1,
+        }))
+    };
+    let body = body(&name).map_err(|_| EmitRefusal::UnresolvedNodeReference)?;
+    let mut term: CheckedTerm = serde_json::from_value(body).map_err(encoding)?;
+    let table = table.into_inner();
+    term.map_node_ids(|id| {
+        usize::try_from(id.ordinal)
+            .ok()
+            .and_then(|at| table.get(at))
+            .cloned()
+    });
+    Ok(term)
 }
 
 /// QSpec FR-469: `{term: "extension_form", definition, node_kind, clauses}`,
@@ -5605,6 +5670,7 @@ fn candidates_of<'g>(
     ids: &StructuralIds,
     graph: &'g CheckedGraph,
     abstraction: Option<&'g AbstractionNodes>,
+    declared_forms: &'g [(SemanticNode, Location)],
 ) -> Result<Candidates<'g>, EmitRefusal> {
     let mut recorded = recorded_occurrences(graph)?;
     let mut candidates: Vec<Candidate<'g>> = graph
@@ -5664,6 +5730,20 @@ fn candidates_of<'g>(
                 .collect();
             add(node, generated)?;
         }
+    }
+    // QSpec FR-490: a guarantee node has one
+    // `declaration` occurrence, at its declaration.
+    for (node, location) in declared_forms {
+        let declared = vec![(
+            CheckedOccurrence {
+                role: CheckedOccurrenceRole::Declaration,
+                ordinal: 0,
+            },
+            RecordedLocation::Expression(location),
+        )];
+        let candidate = Candidate::of(ids, node, declared)?;
+        let at = candidates.partition_point(|existing| existing.key < candidate.key);
+        candidates.insert(at, candidate);
     }
     Ok(Candidates::new(candidates))
 }
@@ -5763,6 +5843,20 @@ fn emit_package_inner(
         return Err(refusal);
     }
     let graph = package.graph();
+    // QSpec FR-491: a component's subject and clauses are nodes of an
+    // imported package, whose ids carry operands IR's reader cannot yet admit.
+    if let Some(composition) = graph.compositions().first() {
+        return Err(EmitRefusal::CompositionForeignOperands {
+            name: Some(composition.name().to_owned()),
+        });
+    }
+    // QSpec FR-490: each guarantee declaration is a `correspondence` node
+    // beside the graph's own.
+    let declared_forms: Vec<(SemanticNode, Location)> = graph
+        .implementation_guarantees()
+        .iter()
+        .map(|guarantee| guarantee.semantic_node())
+        .collect();
     let abstraction = package
         .abstraction()
         .map(|relation| graph.abstraction_nodes(relation))
@@ -5777,7 +5871,7 @@ fn emit_package_inner(
             profile: graph.header_layers().last().map(|layer| layer.identity()),
         });
     }
-    let candidates = candidates_of(ids, graph, abstraction.as_ref())?;
+    let candidates = candidates_of(ids, graph, abstraction.as_ref(), &declared_forms)?;
     // Nodes the emitter writes beside the graph's own: each model root, and
     // each model-owned time unit node a `duration` window is typed by.
     let external: HashSet<NodeKey> = graph

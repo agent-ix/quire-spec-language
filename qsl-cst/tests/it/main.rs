@@ -6,10 +6,12 @@
 mod abstraction_declaration;
 mod complete_cst;
 mod complete_grammar;
+mod composition_declaration;
 mod cst_identity;
 mod decimal_constructor;
 mod deep_sources;
 mod expression_syntax;
+mod guarantee_declaration;
 mod hyper_clause;
 mod limits;
 mod model_source;

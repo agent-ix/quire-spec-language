@@ -228,6 +228,26 @@ impl SemanticNode {
         )
     }
 
+    /// The `correspondence`/`implementation_guarantee` node of `term` under
+    /// its admitted structural `key` (QSpec FR-490).
+    pub(super) fn implementation_guarantee(
+        key: NodeKey,
+        term: super::node_key::ImplementationGuaranteeTerm,
+    ) -> Self {
+        Self::declared(
+            key,
+            NodeContent {
+                owner_model: None,
+                node_tag: NodeTag::Correspondence,
+                semantic_form: "implementation_guarantee",
+                semantic_type: None,
+                declaration: None,
+                owner: None,
+                body: BodyTerm::ImplementationGuarantee(term),
+            },
+        )
+    }
+
     /// A declared node under its admitted structural `key`, outside every
     /// recursion group.
     pub(super) fn declared(key: NodeKey, content: NodeContent) -> Self {
@@ -7130,7 +7150,11 @@ fn walked_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
             walk.text(application.operator.wire_name());
             walk.node(&application.result_type);
         }
-        BodyTerm::Frame(_) | BodyTerm::Abstraction(_) | BodyTerm::Extension(_) => {}
+        BodyTerm::Frame(_)
+        | BodyTerm::Abstraction(_)
+        | BodyTerm::Extension(_)
+        | BodyTerm::ImplementationGuarantee(_)
+        | BodyTerm::Composition(_) => {}
     }
     if let Some(semantic_type) = &content.semantic_type {
         walk.node(semantic_type);
@@ -7202,6 +7226,10 @@ fn named_nodes(node: &SemanticNode) -> Vec<NodeKey> {
             );
         }
         BodyTerm::Abstraction(term) => named.extend(term.targets().into_iter().flatten()),
+        BodyTerm::ImplementationGuarantee(term) => {
+            named.extend(term.targets().into_iter().flatten())
+        }
+        BodyTerm::Composition(term) => named.extend(term.targets().into_iter().flatten()),
         BodyTerm::Extension(term) => named.extend(term.targets().into_iter().flatten()),
         BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
     }

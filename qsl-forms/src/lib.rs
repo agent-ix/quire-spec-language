@@ -30,8 +30,10 @@
 
 mod abstraction_declaration;
 mod clause_text;
+mod composition_declaration;
 mod dispatch;
 mod extension_declaration;
+mod guarantee_declaration;
 mod hybrid_declaration;
 mod hyper_clause;
 mod probabilistic;
@@ -54,9 +56,18 @@ pub use abstraction_declaration::{
     ObjectBindingForm, ParameterBindingForm, PopulationBindingForm, RustSpelling,
 };
 pub use clause_text::{parse_clause_text, parse_type_text, ClauseTextRefusal};
+pub use composition_declaration::{
+    ComponentClauseForm, CompositionComponentForm, CompositionDeclarationForm,
+    CompositionGuaranteeForm, CompositionMemberForm, CompositionPremiseForm, CompositionRuleForm,
+    CompositionSuppliesForm,
+};
 pub use dispatch::{
     build_unit, build_unit_with_protocol_results, leading_keywords, FormsCause, FormsRefusal,
     LeadingTokenKind, ParsedForm, ParsedUnit, ProtocolFormsRefusal,
+};
+pub use guarantee_declaration::{
+    GuaranteeDeclarationForm, GuaranteeEnvironmentForm, GuaranteeInitialForm, GuaranteeMeasureForm,
+    GuaranteeMemberForm, GuaranteeProgressForm, GuaranteeSuppliesForm,
 };
 pub use hyper_clause::{
     AlignSkipForm, ExecutionBindingForm, HyperBehavioursForm, HyperFiniteForm, ModelRelationForm,

@@ -396,6 +396,8 @@ fn is_symbol(production: Production) -> bool {
             | Production::SynthesisDeclaration
             | Production::VerificationPlan
             | Production::AbstractionDeclaration
+            | Production::GuaranteeDeclaration
+            | Production::CompositionDeclaration
     )
 }
 

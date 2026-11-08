@@ -48,7 +48,8 @@ use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, FiniteBoundKind,
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{ReductionKind, RequestIndex};
 use qsl_semantics::check::{
-    Capability, PathGuard, RequirementMap, RequirementRecord, TerminalKeys,
+    Capability, Correspondence, ExtentClass, PathGuard, RequirementMap, RequirementRecord,
+    TerminalKeys,
 };
 use qsl_semantics::family::{ClaimExtent, Requirements, UnsupportedItem};
 use qsl_semantics::library::LibraryName;
@@ -56,6 +57,7 @@ use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::NodeKey;
 use quire_semantic_value::catalog::{CatalogCode, CatalogCoded};
 
+use crate::declaration::{Declared, ItemPremise};
 use crate::reductions::Reductions;
 use crate::{CandidateOutcome, CandidateSet, EvidenceKind, ItemEvidence, Registry};
 use qsl_foundation::BackendId;
@@ -305,9 +307,33 @@ pub struct RequestItem {
     item_kind: Option<ItemKind>,
     abstract_subject: Option<AbstractSubject>,
     derived: Option<DerivedPart>,
+    correspondence: Option<Correspondence>,
+    stutter_closure: bool,
+    premises: Vec<ItemPremise>,
 }
 
 impl RequestItem {
+    /// The FR-331 `correspondence` member of an `operation-contract` item an
+    /// implementation guarantee derives (QSL FR-529); `None` for every other
+    /// item.
+    pub fn correspondence(&self) -> Option<&Correspondence> {
+        self.correspondence.as_ref()
+    }
+
+    /// Whether the item carries FR-331's `stutter_closure`: the model-claim
+    /// item of a liveness clause an implementation guarantee derives (QSL
+    /// FR-529).
+    pub fn stutter_closure(&self) -> bool {
+        self.stutter_closure
+    }
+
+    /// The FR-331 `premises` member of a `composition` item a composition
+    /// declaration derives (QSL FR-530), in order; empty for every other
+    /// item.
+    pub fn premises(&self) -> &[ItemPremise] {
+        &self.premises
+    }
+
     /// The FR-368 `item_kind` of a temporal item over a model subject;
     /// `None` for an item written with no model subject.
     pub fn item_kind(&self) -> Option<ItemKind> {
@@ -615,8 +641,40 @@ impl RequestWriter {
                 limits,
                 terminals,
             }),
+            correspondence: None,
+            stutter_closure: false,
+            premises: Vec::new(),
         });
         index
+    }
+
+    /// Write one declared item and return it.
+    pub(crate) fn declared_item(&mut self, declared: Declared) -> RequestItem {
+        let index = RequestIndex::new(self.items.len());
+        let item = RequestItem {
+            index,
+            occurrence: declared.occurrence,
+            kind: declared.kind,
+            hybrid_dynamics: false,
+            extent: match declared.extent {
+                ExtentClass::Bounded => ExtentClassification::Bounded,
+                ExtentClass::Unbounded => ExtentClassification::Unbounded {
+                    finite_bound_available: false,
+                },
+            },
+            domains: Vec::new(),
+            unsupported: None,
+            reductions: self.reductions.selected(),
+            property_form: declared.property_form,
+            item_kind: declared.item_kind,
+            abstract_subject: None,
+            derived: None,
+            correspondence: declared.correspondence,
+            stutter_closure: declared.stutter_closure,
+            premises: declared.premises,
+        };
+        self.items.push(item.clone());
+        item
     }
 
     fn push(&mut self, written: Written, requirements: &Requirements) -> RequestIndex {
@@ -634,6 +692,9 @@ impl RequestWriter {
             item_kind: written.item_kind,
             abstract_subject: written.abstract_subject,
             derived: None,
+            correspondence: None,
+            stutter_closure: false,
+            premises: Vec::new(),
         });
         index
     }

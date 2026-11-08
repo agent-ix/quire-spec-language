@@ -32,11 +32,14 @@ mod checked_v2;
 #[cfg(feature = "std")]
 pub mod checked_views;
 #[cfg(feature = "std")]
+#[cfg(feature = "std")]
 mod emit;
 #[cfg(feature = "std")]
 mod equality_file;
 pub mod evaluation_view;
 mod export;
+#[cfg(feature = "std")]
+mod guarantee;
 #[cfg(feature = "std")]
 mod introduced_binders;
 #[cfg(feature = "std")]

@@ -1482,6 +1482,16 @@ impl<'c> Mapping<'c> {
             | Production::PopulationBinding
             | Production::FrameBinding
             | Production::ParameterBinding
+            | Production::GuaranteeDeclaration
+            | Production::GuaranteeInitial
+            | Production::GuaranteeProgress
+            | Production::GuaranteeEnvironment
+            | Production::CompositionDeclaration
+            | Production::CompositionComponent
+            | Production::CompositionGuarantee
+            | Production::CompositionRely
+            | Production::CompositionDepends
+            | Production::CompositionSupplies
             | Production::DeliveryInterval
             | Production::AggregateAtom
             | Production::AggregateTerm
@@ -2209,6 +2219,16 @@ impl<'c> Mapping<'c> {
             | Production::PopulationBinding
             | Production::FrameBinding
             | Production::ParameterBinding
+            | Production::GuaranteeDeclaration
+            | Production::GuaranteeInitial
+            | Production::GuaranteeProgress
+            | Production::GuaranteeEnvironment
+            | Production::CompositionDeclaration
+            | Production::CompositionComponent
+            | Production::CompositionGuarantee
+            | Production::CompositionRely
+            | Production::CompositionDepends
+            | Production::CompositionSupplies
             | Production::DeliveryInterval
             | Production::AggregateAtom
             | Production::AggregateTerm
