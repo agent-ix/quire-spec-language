@@ -903,9 +903,6 @@ pub(crate) fn read_checked_package_v2(
             )),
             Err(fault) => refused(V2ReadRefusal::Fault(fault)),
         },
-        CheckedPackageDispatchResult::CatalogUnavailable(_) => refused(V2ReadRefusal::Fault(
-            InternalFault::new("I2", "operation-catalog-unavailable"),
-        )),
     }
 }
 
