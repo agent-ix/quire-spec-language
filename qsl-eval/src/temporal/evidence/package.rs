@@ -28,7 +28,7 @@ use qsl_semantics::check::{Activation, CheckedFormula, FormulaNode, TemporalProf
 use quire_eval::CallFailure;
 use quire_exact::Meter;
 
-use super::call::{evaluate_temporal_evidence, refusal, select_occurrence};
+use super::call::{evaluate_temporal_evidence, fault, refusal, select_occurrence};
 use super::request::{
     ActivationRow, EvidenceRequest, EvidenceResult, EvidenceSubject, SubjectOccurrence,
 };
@@ -59,13 +59,27 @@ pub struct PackageRows {
 }
 
 impl PackageRows {
-    /// The rows of `package`.
+    /// The rows of the package `read` admitted.
     ///
     /// # Errors
     ///
     /// [`PackageMismatch::AmbiguousName`] when two `temporal_clause_names`
     /// rows pair to one `{ declaration, occurrence }`.
-    pub fn of_package(package: &CheckedPackageV2) -> Result<Self, PackageMismatch> {
+    pub fn of_read(read: &AdmittedPackageRead<'_>) -> Result<Self, PackageMismatch> {
+        Self::of_admitted(read.admitted())
+    }
+
+    /// The rows of a package read from its bytes alone.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::of_read`].
+    pub fn of_bare(bare: &BarePackage<'_>) -> Result<Self, PackageMismatch> {
+        Self::of_admitted(bare.package())
+    }
+
+    /// The rows of a package the I2 reader already admitted.
+    fn of_admitted(package: &CheckedPackageV2) -> Result<Self, PackageMismatch> {
         let mut names: Vec<ClauseName> = Vec::new();
         for row in package.temporal_clause_names().unwrap_or_default() {
             if names.iter().any(|held| {
@@ -125,7 +139,7 @@ pub enum PackageMismatch {
     /// package joined the source's selected identities (FR-358). IR's own
     /// refusal; the identities are neither empty nor unknown.
     #[error("the native join budget was consumed: {0}")]
-    Exhausted(Box<qsl_package::ExactTypeProjectionError>),
+    Exhausted(Box<qsl_package::NativeJoinFailure>),
 }
 
 /// The source a route that holds one keeps for the cross-check of FR-515:
@@ -175,7 +189,7 @@ impl<'p> EvidencePackage<'p> {
         read: &'p AdmittedPackageRead<'p>,
         budget: &mut NativeJoinBudget,
     ) -> Result<Self, PackageMismatch> {
-        let rows = PackageRows::of_package(read.admitted())?;
+        let rows = PackageRows::of_read(read)?;
         let held = emission.temporal_rows();
         let graph = read.source().graph();
         if !held.clauses().iter().all(|found| {
@@ -222,7 +236,7 @@ impl<'p> EvidencePackage<'p> {
         read: &'p AdmittedPackageRead<'p>,
         budget: &mut NativeJoinBudget,
     ) -> Result<Self, PackageMismatch> {
-        let rows = PackageRows::of_package(read.admitted())?;
+        let rows = PackageRows::of_read(read)?;
         let graph = read.source().graph();
         let mut clauses: Vec<TemporalClauseRef> = Vec::new();
         for row in &rows.names {
@@ -269,7 +283,7 @@ impl<'p> EvidencePackage<'p> {
         bare: &'p BarePackage<'p>,
         budget: &mut NativeJoinBudget,
     ) -> Result<Self, PackageMismatch> {
-        let rows = PackageRows::of_package(bare.package())?;
+        let rows = PackageRows::of_bare(bare)?;
         let retained = bare.exact_type_projections();
         let complete = rows.names.iter().all(|row| {
             match temporal_subject(bare.package(), &row.declaration) {
@@ -312,7 +326,9 @@ impl<'p> EvidencePackage<'p> {
             Some(Err(refusal))
                 if qsl_semantics::model::intake::is_native_budget_denial(&refusal) =>
             {
-                return Err(PackageMismatch::Exhausted(Box::new(refusal)));
+                return Err(PackageMismatch::Exhausted(Box::new(
+                    qsl_package::NativeJoinFailure::from(refusal).with_budget(budget),
+                )));
             }
             Some(Err(_)) | None => SelectedExactIdentities::empty(),
         };
@@ -349,7 +365,9 @@ impl<'p> EvidencePackage<'p> {
                     Err(denial)
                         if qsl_semantics::model::intake::is_native_budget_denial(&denial) =>
                     {
-                        return Err(PackageMismatch::Exhausted(Box::new(denial)));
+                        return Err(PackageMismatch::Exhausted(Box::new(
+                            qsl_package::NativeJoinFailure::from(denial).with_budget(budget),
+                        )));
                     }
                     projection => projection,
                 };
@@ -466,23 +484,30 @@ impl<'p> EvidencePackage<'p> {
             )
         };
         let view = self.temporal_subject(clause).map_err(|_| unresolved())?;
-        let held: Vec<(CheckedOccurrence, Option<&TemporalBinding>)> = view
+        let occurrences: Vec<SubjectOccurrence<'_>> = view
             .occurrences()
             .iter()
             .map(|found| {
-                (
-                    CheckedOccurrence {
+                let source_map = self
+                    .package
+                    .source_map()
+                    .iter()
+                    .find(|entry| {
+                        entry.node_id == found.node
+                            && entry.role == found.role
+                            && entry.ordinal == found.ordinal
+                    })
+                    .ok_or_else(|| fault("admitted-occurrence-has-a-source-map-entry"))?;
+                Ok(SubjectOccurrence {
+                    occurrence: CheckedOccurrence {
                         role: found.role.clone(),
                         ordinal: found.ordinal,
                     },
-                    self.clock_of(found),
-                )
+                    clock: self.clock_of(found),
+                    source_map,
+                })
             })
-            .collect();
-        let occurrences: Vec<SubjectOccurrence<'_>> = held
-            .into_iter()
-            .map(|(occurrence, clock)| SubjectOccurrence { occurrence, clock })
-            .collect();
+            .collect::<Result<_, CallFailure>>()?;
         let chosen = select_occurrence(&occurrences, occurrence)?;
         let ordinal = chosen.occurrence.ordinal;
         let clock_name: Box<str> = chosen
@@ -554,6 +579,7 @@ impl<'p> EvidencePackage<'p> {
         );
         let key = view.declaration_key().ok_or_else(unresolved)?;
         Ok(EvidenceSubject {
+            package_identity: self.package.name().to_owned(),
             declaration: &named.declaration,
             profile: profile_row,
             occurrences,

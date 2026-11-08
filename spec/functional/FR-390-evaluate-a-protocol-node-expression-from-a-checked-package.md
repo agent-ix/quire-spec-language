@@ -421,6 +421,20 @@ value-type vocabulary SHALL NOT be presumed to represent every kernel
 evaluation type vocabulary, with no QSL-owned type mirror, guessed identity
 or fallback to an unchecked or serialized interpretation.
 
+Reader view creation SHALL take its selected identity witness from a required
+`EvaluationWitnessSupplier`, supplied to `read_evaluation_emission` with no
+optional default. The supplier runs after the I2 read admitted the package and
+returns the complete native `SelectedExactIdentities`, or none. The read SHALL
+validate the supplied identities against the admitted package with the native
+whole-witness validation (`validate_and_rebind`) under the pass's native budget,
+and SHALL NOT trust a caller-written package tag. Creation SHALL report a
+supplier with none as `MissingIdentityWitness`, identities the package
+contradicts (another package's, or rows that conflict with its declarations) as
+`ForeignIdentityWitness`, and identities that do not cover or resolve in the
+package as `UnknownIdentityWitness`, each at the `Package` locus before any node
+is projected; an exhausted native allowance is a limit refusal, never a witness
+reason. The source route's supplier is the identity rows its emission carries.
+
 `ViewFailure` SHALL be the layer-4 closed enum
 `Unsupported(UnsupportedView)`, `Limit(LimitExceeded)` or `Fault(InternalFault)`.
 `UnsupportedView` SHALL carry the catalog pair
@@ -573,9 +587,9 @@ own order; no source span is part of that identity. The slot descriptor the
 selector returns SHALL carry the slot's root node key and the slot's
 type-declaration origin name (its site name, FR-383), and the reader SHALL take both
 from it. The source span that FR-383's registry writes into the site name of a
-`related` end, a `visible` entry or a case guard is an alias of the slot under which
-the source route finds its rows, not a second identity: a package read by a
-consumer that holds no source resolves those origins from the package alone, by the
+`visible` entry is an alias of the slot under which the source route finds its
+rows, not a second identity: a package read by a consumer that holds no source
+resolves those origins from the package alone, by the
 rule of FR-533 "Slot naming on the bytes route", and the two routes select the same
 slot for the same triple. FR-383 gives every slot of a package its own site name, so
 an application held by two slots has rows of two origins and the reader separates
@@ -879,9 +893,10 @@ value; check 6 does not apply to it.
 | FR-390-AC-63 | In fixture E-C, the handle of the case node of `Composed.case` reads the `Location` of its own admitted node, equal to the checked package's, and no row names it. | Test (TC-1070) |
 | FR-390-AC-64 | The `Unavailable` result's read location is `Some(location)` for a view backed by the in-process checked package, and for a reader-backed view `Some(location)` when the read's leaf node carries a location of its own (QSpec FR-322-AC-310) and `None` when the admitted wire carries none for it; QSL supplies no location the wire did not. Over TC-1072 row 1 read through each backing, the first two give the read of `activated` located and the third gives `Unavailable` naming the binder and the cause with `None`. | Test (TC-1072) |
 | FR-390-AC-65 | For every slot of TC-1070 fixtures E, E-C and L the source route's selected descriptor and the bytes route's agree on the triple (node, member, index), the root node key and the origin; the bytes route's descriptor carries no span, and in fixture L `Decide.visible[0]` and `Decide.cases.guard[1]`, which share the root `got.ready`, select distinct origins. | Test (TC-1070) |
-| FR-390-AC-66 | The bytes route reports `MissingIdentityWitness`, `ForeignIdentityWitness`, `UnknownIdentityWitness` and the three equality-witness reasons as `CallAdmissionLocus::Package`, and the in-process reader view reports the same three as the `Package` locus of `UnsupportedView`; neither reports a `Node` or `Binder` locus for them. | Test (TC-1070) |
+| FR-390-AC-66 | The bytes route reports `MissingIdentityWitness`, `ForeignIdentityWitness`, `UnknownIdentityWitness` and the three equality-witness reasons as `CallAdmissionLocus::Package`, and the in-process reader view reports the same three identity-witness reasons as the `Package` locus of `UnsupportedView`; neither reports a `Node` or `Binder` locus for them. | Test (TC-1070) |
 | FR-390-AC-67 | View creation reports the first unsupported projection by package identity, then locus (`Package` before `Node`), then node key, then reason. A package with a `MissingTypeRepresentation` at a `Node` locus and a `ForeignIdentityWitness` reports `ForeignIdentityWitness`; with `MissingLiteralProjection` at a `Node` locus and `MissingEqualityWitness` reports `MissingEqualityWitness`; with `ForeignIdentityWitness` and `MissingEqualityWitness` (both `Package`) reports `ForeignIdentityWitness`, the reason order breaking the tie; with `MissingIdentityWitness` and `MissingEqualityWitness` reports `MissingIdentityWitness`. The three equality-witness reasons never co-occur over one supply: over a slot that reaches an equality application, a supply with no equality rows reports `MissingEqualityWitness` alone; rows of another package report `ForeignEqualityWitness` alone, also when those rows hold no row of the application; and the package's own rows with the row of the reached application removed report `UnknownEqualityWitness` alone. The equality-witness reasons are at the `Package` locus and charge nothing. | Test (TC-1070) |
 | FR-390-AC-68 | Over recipe **R**'s `Full` recovery predicate (`sum(receipt in recovered.receipts: receipt) = target and not activated`), the slot lists the sources `target`, `activated` and `recovered` and not `receipt`, on the bare route; the same holds with the `sum` replaced by a `let` binder bound to it, with two nested collection queries of distinct names, with each of `forall`, `exists`, `filter` and `map`, and with a binder the body never reads (alone and nested), none of those binders being a source. The genuine `case Shape::Circle(sum<M::Total>(receipt in recoveredFull.receipts: receipt)) { Empty: targetFull; Circle(r): r; }` form in `Full`'s recovery predicate is admitted by the strict reader, its arm binder `r` is not a source on either route, and source and bare routes return equal Boolean outcomes and ordered charge logs for matching, mismatching, empty and activated supplies. A supply that adds a key for the introduced binder refuses `invalid_runtime_input`/`unknown-member` before any charge, and the predicate evaluates to the value its text states over a supply of the three sources. A query binder named as a readable source is refused by the checker as `AmbiguousName`. | Test (TC-1071, TC-1333) |
+| FR-390-AC-69 | Over the emitted-and-admitted package of TC-1070 fixture E, a supplier that returns no identities gives `MissingIdentityWitness`; a supplier that returns the identities of a different admitted package, whether a second read of the same bytes or another fixture's package, gives `ForeignIdentityWitness`; a supplier that returns the package's own identities with a field row removed gives `UnknownIdentityWitness`; each at the `Package` locus of `UnsupportedView`. | Test (TC-1070) |
 
 ## Dependencies
 

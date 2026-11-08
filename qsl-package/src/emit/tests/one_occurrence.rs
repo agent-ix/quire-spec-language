@@ -158,7 +158,7 @@ fn a_boolean_value_clause_expression_is_admitted_by_the_v2_reader() {
         other => panic!("Contract IR admits the Boolean clause: {other:?}"),
     };
     let admitted_expression = admitted
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| {

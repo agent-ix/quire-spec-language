@@ -452,7 +452,7 @@ impl Charge {
 /// itself grow with that work; the const assertion below holds that in every
 /// production build. The meter also shares the caller's
 /// [`Cancel`] handle, which is a reference count and not per-charge state.
-/// The ordered charge log ([`Meter::admitted_charges`]) exists only under
+/// The ordered charge log (`Meter::admitted_charges`) exists only under
 /// the `test-support` feature, which only a dev-dependency may enable.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Meter {

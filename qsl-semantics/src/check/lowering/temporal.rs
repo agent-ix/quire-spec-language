@@ -205,6 +205,42 @@ pub(crate) struct LoweredTemporalClause {
 }
 
 impl Lowering<'_> {
+    /// The `temporal`/`fairness` node of one fairness member (QSpec FR-370),
+    /// with its `expression` occurrence at `location`. FR-337 mints a
+    /// clause's fairness argument through it and FR-488 a quantifier's
+    /// references, so a constraint both name is one node.
+    pub(super) fn fairness_node(
+        &mut self,
+        kind: quire_semantic_value::fairness::FairnessKind,
+        granularity: quire_semantic_value::fairness::FairnessGranularity,
+        target: FairnessTarget,
+        boolean: &NodeKey,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let key = self.insert(
+            location,
+            NodeTag::Temporal,
+            "fairness",
+            Some(boolean.clone()),
+            None,
+            BodyTerm::application(
+                Operator::TemporalFairness,
+                Operation {
+                    member: Some(Member::Fairness {
+                        kind,
+                        granularity,
+                        target,
+                    }),
+                    ..Operation::plain("quire.op.temporal.fair")
+                },
+                boolean.clone(),
+                Vec::new(),
+            ),
+        )?;
+        self.record(key.clone(), OccurrenceRole::Expression, location.clone());
+        Ok(key)
+    }
+
     /// Lower and key the temporal clause `input`, recording its one `claim`
     /// occurrence at its declared name, an `expression` occurrence of each
     /// formula and fairness node, and the `over` parameter's occurrences.
@@ -399,27 +435,7 @@ impl Lowering<'_> {
                 }
             };
             let location = at(TemporalSite::Fairness(source));
-            let key = self.insert(
-                &location,
-                NodeTag::Temporal,
-                "fairness",
-                Some(boolean.clone()),
-                None,
-                BodyTerm::application(
-                    Operator::TemporalFairness,
-                    Operation {
-                        member: Some(Member::Fairness {
-                            kind,
-                            granularity,
-                            target,
-                        }),
-                        ..Operation::plain("quire.op.temporal.fair")
-                    },
-                    boolean.clone(),
-                    Vec::new(),
-                ),
-            )?;
-            self.record(key.clone(), OccurrenceRole::Expression, location);
+            let key = self.fairness_node(kind, granularity, target, &boolean, &location)?;
             fairness.push(key);
         }
 

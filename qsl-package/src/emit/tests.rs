@@ -54,9 +54,11 @@ mod equality_budget;
 mod golden;
 mod hybrid;
 mod hyper_clause;
+mod identity_budget;
 mod inventory_ceilings;
 mod large_cycle;
 mod mapping_support;
+mod native_row_budget;
 mod navigation;
 mod one_occurrence;
 mod operation_effects;
@@ -291,12 +293,128 @@ fn emit_under(package: &CheckedPackage, source: &RawSourceRef) -> Emission {
     .expect("the package emits")
 }
 
+/// The emitted package in its resolved form: each operand slot of a node is
+/// the index segment of the node its row names, so a node's ids name graph
+/// positions. [`raw_wire`] is the bytes' own JSON.
 pub(super) fn wire(emission: &Emission) -> Value {
+    let mut wire = raw_wire(emission);
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut wire)
+        .expect("every operand slot names a row entry");
+    wire
+}
+
+/// The emitted package's own JSON, operand slots and rows as written.
+pub(super) fn raw_wire(emission: &Emission) -> Value {
     serde_json::from_slice(emission.package.bytes()).expect("the wire is JSON")
 }
 
+#[trace("QSpec-TC-233", "QSpec-FR-322-AC-280", "TC-416", "FR-093-AC-9")]
+#[test]
+fn operand_slot_rows_preserve_the_retained_document_graph() {
+    let (_, emission) =
+        emit_from_text("function add using v(x: Integer): Integer pure { (x + 1) + 2 }\n");
+    let mut graph: CheckedSemanticGraphV2 =
+        serde_json::from_value(raw_wire(&emission)["semantic_graph"].clone()).unwrap();
+    assert_eq!(graph.nodes.len(), graph.operand_rows.len());
+    assert!(graph.operand_rows.iter().any(|row| !row.is_empty()));
+    for node in &mut graph.nodes {
+        for id in reachable_ids(node) {
+            assert!(id.path.iter().all(|segment| !matches!(
+                segment,
+                quire_contract_model::CheckedNodePathSegment::Index(_)
+            )));
+        }
+    }
+    assert_eq!(document_nodes(graph).unwrap(), emission.wire_nodes);
+    assert!(matches!(read_back(&emission), Read::Verified { .. }));
+}
+
+#[trace("QSpec-TC-233", "QSpec-FR-322-AC-280")]
+#[test]
+fn operand_slot_numbering_visits_only_identity_paths_in_canonical_order() {
+    let value = json!({
+        "a_data": {"node": 99},
+        "b_text": "{\"node\":88}",
+        "c_id": {"package": "p", "ordinal": 0, "path": ["derived", {"node": 7}, {"node": 2}]},
+        "d_id": {"package": "p", "ordinal": 0, "path": ["derived", {"node": 7}]},
+        "e_external": {"package": "dependency", "node": {
+            "package": "dependency", "ordinal": 0, "path": ["derived", {"node": 99}]
+        }}
+    });
+    let bytes = quire_canonical::to_vec(&value, ceiling().canonical()).unwrap();
+    assert_eq!(operand_indices(&bytes, ceiling()).unwrap(), [7, 2, 7]);
+    let (_, emission) = emit_from_text("function f using v(): Integer pure { 1 }\n");
+    let graph = WireGraph::of_package_bytes(emission.package.bytes()).unwrap();
+    let mut nodes = emission.wire_nodes;
+    let foreign = CheckedTerm::DependencyReference {
+        package: "dependency".into(),
+        node: serde_json::from_value(value["e_external"]["node"].clone()).unwrap(),
+    };
+    nodes[0].body = foreign.clone();
+    let foreign_value = serde_json::to_value(&foreign).unwrap();
+    assert_eq!(
+        graph.document_value_in_row(0, &foreign_value).unwrap(),
+        foreign_value
+    );
+    let rows = write_operand_slots(&mut nodes, ceiling()).unwrap();
+    let expected_rows = rows.clone();
+    assert_eq!(nodes[0].body, foreign);
+    assert!(!rows[0].contains(&99));
+    let restored = document_nodes(CheckedSemanticGraphV2 {
+        graph_version: GRAPH_V2.into(),
+        nodes,
+        operand_rows: rows,
+    })
+    .unwrap();
+    assert_eq!(restored[0].body, foreign);
+    let mut authored = json!({"semantic_graph": {"nodes": restored}});
+    let original = authored.clone();
+    qsl_semantics::check::wire_id::write_operand_rows(&mut authored);
+    assert_eq!(
+        authored["semantic_graph"]["operand_rows"],
+        serde_json::to_value(expected_rows).unwrap()
+    );
+    assert!(!authored["semantic_graph"]["operand_rows"][0]
+        .as_array()
+        .unwrap()
+        .contains(&json!(99)));
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut authored).unwrap();
+    assert_eq!(authored, original);
+}
+
+#[trace("TC-416", "FR-093-AC-3", "FR-093-AC-13")]
+#[test]
+fn fold_with_both_authored_binders_reads_back() {
+    let (_, emission) = emit_from_text(
+        "type Total = Integer;\n\
+         function accumulate using v(xs: Sequence<Integer>): Integer pure { \
+         fold<Total>(acc, x in xs: acc + x, identity: 0) }\n",
+    );
+    let document = wire(&emission);
+    let fold = nodes(&document)
+        .iter()
+        .find(|node| node["body"]["operation"]["identity"] == "quire.op.collection.fold")
+        .expect("the authored fold");
+    let step = &fold["body"]["arguments"][1];
+    assert_eq!(step["term"], "binding");
+    assert_eq!(step["name"], "acc");
+    assert_eq!(step["value"]["term"], "aggregate");
+    assert_eq!(step["value"]["members"][0]["name"], "x");
+    let read = read_back(&emission);
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+}
+
+/// The bytes of a document authored or edited in resolved form (index
+/// segments inside nodes, no `operand_rows`): FR-322 operand slots and rows
+/// are written for it. Any other value serializes as it is.
+pub(crate) fn wire_bytes<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, serde_json::Error> {
+    let mut value = serde_json::to_value(value)?;
+    qsl_semantics::check::wire_id::write_operand_rows(&mut value);
+    serde_json::to_vec(&value)
+}
+
 fn jcs(value: &Value) -> Vec<u8> {
-    serde_json::to_vec(value).unwrap()
+    crate::emit::tests::wire_bytes(value).unwrap()
 }
 
 fn library() -> LibraryName {
@@ -354,6 +472,11 @@ fn assert_equality_reader_outcomes(emission: &Emission, read: Read) {
         Read::Verified { admitted, .. } => admitted,
         other => panic!("expected IR package admission for equality sidecars, got {other:?}"),
     };
+    let mut wire = wire;
+    wire["semantic_graph"] = serde_json::to_value(admitted.resolved_graph()).unwrap();
+    let decisions = wire["checked_term_data"]["equality_decisions"]
+        .as_array()
+        .unwrap();
 
     let selected_rows = emission
         .equality_producer_identity_rows()
@@ -720,7 +843,7 @@ fn emitted_package_envelope_is_canonical_deterministic_and_self_identifying() {
     // Canonical: re-encoding the parsed envelope reproduces the bytes.
     let wire: Value = serde_json::from_slice(bytes).expect("the envelope is JSON");
     assert_eq!(
-        serde_json::to_vec(&wire).expect("a Value serializes"),
+        crate::emit::tests::wire_bytes(&wire).expect("a Value serializes"),
         bytes
     );
     assert_eq!(emission.package.name(), "pkg");
@@ -911,6 +1034,71 @@ fn a_float_sum_carries_the_ieee_law_and_its_rounding_mode() {
         operation["laws"],
         json!([{"role": "ieee_profile",
                 "definition": {"authority": ieee.authority, "identity": ieee.identity}}])
+    );
+}
+
+/// FR-517-AC-20, FR-093-AC-20: `sum<N>` over a carried quantity lowers to
+/// `quire.op.collection.sum.carried_quantity` carrying the carrier's rounding
+/// mode and no law (QSpec FR-322 "Carried-quantity sum"). IR's reader does not
+/// yet read the identity's `carried_member` constraint, so the wire is
+/// inspected without a read-back.
+#[trace("FR-517-AC-20", "FR-093-AC-20", "TC-416")]
+#[test]
+fn a_carried_sum_lowers_to_its_identity_with_the_carriers_rounding_mode() {
+    let text = "language \"ix:native\" edition \"1-draft\";\n\
+        profile v = \"quire.value.complete/v1\";\n\
+        dimension Length;\nunit m : Length = rational(1, 1);\n\
+        type Li = Quantity<m, Int[-5, 5]>;\n\
+        type Ld = Quantity<m, Decimal[-500, 500; 2, 2; nearest-even]>;\n\
+        type Lr = Quantity<m, Rational[-3, 7; 1, 12]>;\n\
+        function li using v(s: Sequence<Li>[0, 1]): Li pure { sum<Li>(x in s: x) }\n\
+        function ld using v(s: Sequence<Ld>[0, 1]): Ld pure { sum<Ld>(x in s: x) }\n\
+        function lr using v(s: Sequence<Lr>[0, 1]): Lr pure { sum<Lr>(x in s: x) }\n";
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "pkg".to_owned(),
+        unit,
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("the assembler builds the declarations");
+    let package = CheckedPackage::link(
+        declarations
+            .check(CheckingLimits::default())
+            .expect("the carried sums check"),
+    );
+    let wire = wire(&emit(&package));
+    let mut modes: Vec<String> = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| {
+            node["body"]["operation"]["identity"]
+                == json!("quire.op.collection.sum.carried_quantity")
+        })
+        .map(|node| {
+            let operation = &node["body"]["operation"];
+            assert_eq!(operation["laws"], json!([]));
+            operation["mode"].to_string()
+        })
+        .collect();
+    modes.sort();
+    assert_eq!(
+        modes,
+        [
+            json!({"kind": "rounding", "value": "exact"}).to_string(),
+            json!({"kind": "rounding", "value": "exact"}).to_string(),
+            json!({"kind": "rounding", "value": "nearest-even"}).to_string(),
+        ]
     );
 }
 
@@ -2818,11 +3006,16 @@ fn assemble_with_models(
     unit: &[u8],
     packages: &qsl_semantics::model::intake::PackageInput,
 ) -> Result<PackageDeclarations, String> {
+    // S1's size and work limits are raised to fit a unit past their defaults.
+    let mut limits = qsl_cst::Limits::default();
+    limits.source_bytes = limits.source_bytes.max(unit.len());
+    limits.tokens = limits.tokens.max(unit.len());
+    limits.nodes = limits.nodes.max(unit.len().saturating_mul(16));
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model"),
         "program.native",
         unit,
-        qsl_cst::Limits::default(),
+        limits,
     )
     .expect("S1 admits the unit");
     assert_eq!(parsed.diagnostics(), []);
@@ -3197,7 +3390,7 @@ fn normalization_refusals_and_limits_stop_intake_at_the_declaration() {
             node["supertypes"] = json!(["ix://acme/orders/Gadget"]);
         }
     }
-    let cyclic = serde_json::to_vec(&cyclic).unwrap();
+    let cyclic = crate::emit::tests::wire_bytes(&cyclic).unwrap();
     let packages = qsl_semantics::model::intake::package_input([cyclic.as_slice()]).unwrap();
     let text = spine_model::unit();
     let refused = qsl_semantics::model::intake::admit_unit(

@@ -44,6 +44,26 @@ pub(crate) trait TypeNames {
     /// The unit declared under `name`, in the unit namespace (QSpec FR-142
     /// "Quantity type reference"): only `Quantity<u>` looks here.
     fn unit_named(&self, name: &str) -> Option<UnitId>;
+
+    /// The identities of the selected packages that declare a unit of the
+    /// bare name `name`, in selection order: what an unresolved unit name
+    /// reports (FR-505-AC-12).
+    fn unit_packages(&self, _name: &str) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Admitted units available to source type expressions.
+    fn unit_value(&self, _id: UnitId) -> Option<quire_semantic_value::quantity::QuantityUnit> {
+        None
+    }
+
+    /// Record a newly formed unit, or identify one already held by this scope.
+    fn retain_unit(
+        &self,
+        unit: quire_semantic_value::quantity::QuantityUnit,
+    ) -> Result<UnitId, quire_semantic_value::semantic_node::IdentityRefusal> {
+        unit.id()
+    }
 }
 
 impl TypeNames for SourceScope<'_> {
@@ -55,8 +75,16 @@ impl TypeNames for SourceScope<'_> {
         self.scope.object_type_named(self.source, name)
     }
 
+    fn unit_value(&self, id: UnitId) -> Option<quire_semantic_value::quantity::QuantityUnit> {
+        self.scope.types().units().get(id).cloned()
+    }
+
     fn unit_named(&self, name: &str) -> Option<UnitId> {
         SourceScope::unit_named(self, name)
+    }
+
+    fn unit_packages(&self, name: &str) -> Vec<String> {
+        SourceScope::unit_packages(self, name)
     }
 }
 
@@ -69,6 +97,8 @@ pub enum IntegerSite {
     Upper,
     /// An integer literal of an expression.
     Literal,
+    /// An explicit quantity type unit exponent.
+    UnitExponent,
 }
 
 /// The i128 limit an integer crosses.
@@ -118,6 +148,14 @@ pub enum TypeFormFault {
     MissingName(String),
     /// A qualified name binds no type.
     MissingQualifiedName(qsl_forms::NameForm),
+    /// A bare unit name the compiling unit does not declare (FR-505-AC-12),
+    /// with the selected packages that declare a unit of that name.
+    UnresolvedUnitName {
+        /// The name as written.
+        name: String,
+        /// The identities of the declaring packages, in selection order.
+        packages: Vec<String>,
+    },
     /// The qualified name binds more than one type.
     AmbiguousName(String),
     /// A bound is missing, is not a number or a grammar spelling, or the
@@ -142,6 +180,10 @@ pub enum TypeFormFault {
     /// The `Clock` type, which S2 builds (FR-393) and no S3 check resolves
     /// yet (FR-230).
     ClockNotChecked,
+    /// A quantity unit operation rejected by the owning quantity core.
+    UnitArithmetic(IllTypedCause),
+    /// A compound unit identity refused its bounded structural encoding.
+    UnitIdentity(quire_semantic_value::semantic_node::IdentityRefusal),
 }
 
 /// A [`TypeFormFault`] and the span of the type form it concerns.
@@ -159,6 +201,9 @@ impl TypeFormError {
         let cause = match self.fault {
             TypeFormFault::MissingName(name) => CheckCause::MissingName(name),
             TypeFormFault::MissingQualifiedName(name) => CheckCause::MissingQualifiedName(name),
+            TypeFormFault::UnresolvedUnitName { name, packages } => {
+                CheckCause::UnresolvedUnitName { name, packages }
+            }
             TypeFormFault::AmbiguousName(name) => CheckCause::AmbiguousName {
                 name,
                 loci: vec![location.clone()],
@@ -168,6 +213,10 @@ impl TypeFormError {
                 construct: super::refusal::TimedConstruct::Clock,
                 span: self.span,
             },
+            TypeFormFault::UnitArithmetic(_) => {
+                return CheckRefusal::ill_typed(location, IllTypedCause::OperatorIneligible)
+            }
+            TypeFormFault::UnitIdentity(cause) => CheckCause::Identity(cause),
             TypeFormFault::Malformed
             | TypeFormFault::EmptyInterval
             | TypeFormFault::DenominatorBelowOne
@@ -425,17 +474,7 @@ fn resolve_builtin<'f>(
                 [target, carrier] => (target, Some(carrier)),
                 _ => return Err(malformed(form)),
             };
-            let TypeFormHead::Name(name) = &target.head else {
-                return Err(malformed(form));
-            };
-            let unit = names.unit_named(&name.name).ok_or_else(|| {
-                let cause = if name.is_qualified() {
-                    TypeFormFault::MissingQualifiedName(name.clone())
-                } else {
-                    TypeFormFault::MissingName(name.name.clone())
-                };
-                fault(target, cause)
-            })?;
+            let unit = quantity_unit(names, target)?;
             match carrier {
                 None => Ok(ValueType::Quantity(unit)),
                 Some(carrier) => {
@@ -445,6 +484,92 @@ fn resolve_builtin<'f>(
         }
     };
     leaf.map(Step::Leaf)
+}
+
+/// Resolve each named factor, including factors raised to zero.
+pub(super) fn quantity_unit(
+    names: &impl TypeNames,
+    target: &TypeForm,
+) -> Result<UnitId, TypeFormError> {
+    use quire_semantic_value::quantity::{
+        evaluate_quantity_unit, result_unit, QuantityOperation, QuantityRefusal, UnitOperation,
+    };
+    let resolve = |name: &NameForm| {
+        names.unit_named(&name.name).ok_or_else(|| {
+            let cause = if name.is_qualified() {
+                TypeFormFault::MissingQualifiedName(name.clone())
+            } else {
+                TypeFormFault::UnresolvedUnitName {
+                    name: name.name.clone(),
+                    packages: names.unit_packages(&name.name),
+                }
+            };
+            TypeFormError {
+                fault: cause,
+                span: name.span,
+            }
+        })
+    };
+    let terms = match &target.head {
+        TypeFormHead::Name(name) => return resolve(name),
+        TypeFormHead::UnitExpression(terms) if !terms.is_empty() => terms,
+        _ => return Err(malformed(target)),
+    };
+    let mut result = None;
+    for term in terms {
+        let id = resolve(&term.name)?;
+        let exponent = term
+            .exponent
+            .as_ref()
+            .map(|(value, _)| value.clone())
+            .unwrap_or_else(|| Integer::from(1_i64));
+        if let Some(outside) = IntegerOutsideI128::of(IntegerSite::UnitExponent, &exponent) {
+            return Err(TypeFormError {
+                fault: TypeFormFault::IntegerOutsideI128(outside),
+                span: term
+                    .exponent
+                    .as_ref()
+                    .map_or(target.span, |(_, span)| *span),
+            });
+        }
+        let unit = names
+            .unit_value(id.clone())
+            .ok_or_else(|| malformed(target))?;
+        let mut table = quire_semantic_value::quantity::UnitTable::default();
+        table
+            .insert(unit)
+            .map_err(|cause| fault(target, TypeFormFault::UnitIdentity(cause)))?;
+        let probe = quire_exact::Quantity::new(
+            quire_exact::Rational::from_integer(Integer::from(1_i64)),
+            id,
+        );
+        let base = table.resolve(&probe).ok_or_else(|| malformed(target))?;
+        let (_, powered) = evaluate_quantity_unit(
+            QuantityOperation::Power(base, &exponent),
+            &mut quire_exact::Meter::new(super::check::NO_CHARGE),
+        )
+        .map_err(|refusal| {
+            fault(
+                target,
+                match refusal {
+                    QuantityRefusal::IllTyped(cause) => TypeFormFault::UnitArithmetic(cause.cause),
+                    QuantityRefusal::Identity(cause) => TypeFormFault::UnitIdentity(cause),
+                },
+            )
+        })?;
+        result = Some(match result {
+            None => powered.unit().clone(),
+            Some(previous) => result_unit(UnitOperation::Multiply, &previous, powered.unit())
+                .map_err(|cause| fault(target, TypeFormFault::UnitArithmetic(cause.cause)))?,
+        });
+    }
+    let id = names
+        .retain_unit(result.ok_or_else(|| malformed(target))?)
+        .map_err(|cause| fault(target, TypeFormFault::UnitIdentity(cause)))?;
+    if names.unit_value(id.clone()).is_none() {
+        return Err(malformed(target));
+    }
+    Ok(id)
 }
 
 /// Resolve `Quantity<u, C>`'s bounded scalar carrier. The `Int` spelling may
@@ -561,6 +686,7 @@ fn resolve_head<'f>(names: &impl TypeNames, form: &'f TypeForm) -> Result<Step<'
             Ok(Step::Leaf(ValueType::Population(maximum)))
         }
         TypeFormHead::Name(name) => named_type(names, name, form).map(Step::Leaf),
+        TypeFormHead::UnitExpression(_) => Err(malformed(form)),
     }
 }
 

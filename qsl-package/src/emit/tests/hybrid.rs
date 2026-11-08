@@ -542,7 +542,27 @@ fn braking2_restored_nodes_match_qspec_vectors() {
     use qsl_semantics::check::wire_id::WireGraph;
     let base = fixture["nodes"].as_array().expect("QSpec base nodes");
     let vector_nodes: Vec<Value> = base.iter().chain(expected).cloned().collect();
-    let vectors = WireGraph::of_node_values(&vector_nodes).expect("the vectors are one graph");
+    let vector_rows: Vec<Value> = fixture["operand_rows"]
+        .as_array()
+        .expect("QSpec base operand rows")
+        .iter()
+        .chain(
+            fixture["restored_operand_rows"]
+                .as_array()
+                .expect("QSpec restored operand rows"),
+        )
+        .cloned()
+        .collect();
+    let mut vector_document = json!({
+        "semantic_graph": { "nodes": vector_nodes, "operand_rows": vector_rows }
+    });
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut vector_document)
+        .expect("vector references resolve in their published holders");
+    let vector_nodes = vector_document["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap();
+    let (base, expected) = vector_nodes.split_at(base.len());
+    let vectors = WireGraph::of_package_value(&vector_document).expect("resolved vector graph");
     let emitted = WireGraph::of_package_value(&wire).expect("the emitted graph");
     let key_text = |graph: &WireGraph, id: &Value| graph.key_of_value(id).unwrap().to_string();
     let expected_ids: BTreeSet<String> = expected

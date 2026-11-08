@@ -445,7 +445,13 @@ fn replay_reproduces_an_undefined_capture_located_at_it() {
     };
     let replay = |payload: TemporalCounterexample| {
         replay_model_trace(
-            request(document, world.snapshot_bytes(), &world.unit),
+            request(
+                &world.package,
+                &[],
+                document,
+                world.snapshot_bytes(),
+                &world.unit,
+            ),
             &subject,
             &envelope_at(payload, identity.clone(), occurrence.clone()),
             &letters,

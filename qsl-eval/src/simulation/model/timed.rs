@@ -341,19 +341,35 @@ pub enum TimedStop {
     },
 }
 
+/// What a time invariant's or an `urgent when`'s alternatives hold of at a
+/// state.
+struct Holding {
+    /// The objects of the context of which an alternative reading `self`
+    /// holds, in object order.
+    objects: Vec<ObjectReference>,
+    /// Whether an alternative reading no `self` holds at the state, which it
+    /// does once for the state and not for any object.
+    at_state: bool,
+}
+
 /// A timed member's predicate with no truth value at a state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UndecidedReading {
     /// The member.
     pub site: TimedSite,
-    /// The object it was read about.
-    pub object: ObjectReference,
+    /// The object it was read about; `None` for a predicate that reads no
+    /// `self`, which is read once at the state.
+    pub object: Option<ObjectReference>,
     /// Why it had none, when it was undefined.
     pub cause: Option<UndefinedCause>,
 }
 
 impl TimedStop {
-    fn undecided(site: TimedSite, object: ObjectReference, cause: Option<UndefinedCause>) -> Self {
+    fn undecided(
+        site: TimedSite,
+        object: Option<ObjectReference>,
+        cause: Option<UndefinedCause>,
+    ) -> Self {
         Self::Undecided(Box::new(UndecidedReading {
             site,
             object,
@@ -1238,7 +1254,26 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         states
     }
 
-    /// Each predicate at `state` about each object of `context`'s universe:
+    /// The truth of `reading` for `object`, or the stop an undecided one is.
+    fn truth(
+        reading: PredicateReading,
+        object: Option<&ObjectReference>,
+        site: &dyn Fn() -> TimedSite,
+    ) -> Result<bool, TimedStop> {
+        match reading {
+            PredicateReading::True => Ok(true),
+            PredicateReading::False => Ok(false),
+            PredicateReading::Undefined { cause, .. } if absent(&cause) => Ok(false),
+            PredicateReading::Undefined { cause, .. } => {
+                Err(TimedStop::undecided(site(), object.cloned(), Some(cause)))
+            }
+            PredicateReading::Refused(_) => {
+                Err(TimedStop::undecided(site(), object.cloned(), None))
+            }
+        }
+    }
+
+    /// The predicate at `state` about each object of `context`'s universe:
     /// `true` when it holds, `false` when it does not or the state holds no
     /// such object.
     fn about(
@@ -1246,16 +1281,12 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         state: &ModelSimState,
         predicate: &CheckedTimedPredicate,
         context: EffectiveId,
-        site: impl Fn() -> TimedSite,
+        site: &dyn Fn() -> TimedSite,
     ) -> Result<Vec<(ObjectReference, bool)>, TimedStop> {
         let objects = self.objects.get(&context).map_or(&[][..], Vec::as_slice);
         let bound: Vec<_> = objects
             .iter()
-            .map(|object| (predicate, Some(object)))
-            .collect();
-        let bound: Vec<_> = bound
-            .into_iter()
-            .map(|(predicate, over)| (predicate, over, Vec::new()))
+            .map(|object| (predicate, Some(object), Vec::new()))
             .collect();
         let readings = self.system.state_predicates_with(
             state,
@@ -1266,20 +1297,26 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             .iter()
             .zip(readings)
             .map(|(object, reading)| {
-                let holds = match reading {
-                    PredicateReading::True => true,
-                    PredicateReading::False => false,
-                    PredicateReading::Undefined { cause, .. } if absent(&cause) => false,
-                    PredicateReading::Undefined { cause, .. } => {
-                        return Err(TimedStop::undecided(site(), object.clone(), Some(cause)))
-                    }
-                    PredicateReading::Refused(_) => {
-                        return Err(TimedStop::undecided(site(), object.clone(), None))
-                    }
-                };
-                Ok((object.clone(), holds))
+                Ok((object.clone(), Self::truth(reading, Some(object), site)?))
             })
             .collect()
+    }
+
+    /// The predicate, which reads no `self`, once at `state` (FR-230 "Time
+    /// invariants and urgency").
+    fn at_state(
+        &self,
+        state: &ModelSimState,
+        predicate: &CheckedTimedPredicate,
+        site: &dyn Fn() -> TimedSite,
+    ) -> Result<bool, TimedStop> {
+        let readings = self.system.state_predicates_with(
+            state,
+            &[(predicate, None, Vec::new())],
+            self.place_presences(state.state()),
+        )?;
+        let [reading] = <[PredicateReading; 1]>::try_from(readings).map_err(|_| stop(BROKEN))?;
+        Self::truth(reading, None, site)
     }
 
     /// The upper bounds of every time invariant that applies at `state`,
@@ -1293,7 +1330,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     pub fn invariants(&self, state: &ModelSimState) -> Result<Vec<PlaceConstraint>, TimedStop> {
         let mut bounds = Vec::new();
         for invariant in self.model.invariants() {
-            let holding = self.holding(
+            let holding = self.applying(
                 state,
                 invariant.alternatives(),
                 invariant.context(),
@@ -1318,7 +1355,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
     /// As [`Self::invariants`].
     pub fn broken_invariant(&self, state: &TimedState) -> Result<Option<String>, TimedStop> {
         for invariant in self.model.invariants() {
-            let holding = self.holding(
+            let holding = self.applying(
                 &state.discrete,
                 invariant.alternatives(),
                 invariant.context(),
@@ -1338,22 +1375,44 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         Ok(None)
     }
 
-    /// The objects of type `context` at `state` of which one of
-    /// `alternatives` holds: its data predicate holds of the object and the
-    /// object's `Option<Clock>` places have the presences it requires
-    /// (FR-230 "Presence bit"), in object order.
-    fn holding(
+    /// The objects of type `context` a time invariant with `alternatives`
+    /// applies to at `state`: those of which one alternative holds, and every
+    /// object when an alternative that reads no `self` holds at the state.
+    fn applying(
         &self,
         state: &ModelSimState,
         alternatives: &[qsl_semantics::check::StateAlternative],
         context: EffectiveId,
         site: &dyn Fn() -> TimedSite,
     ) -> Result<Vec<ObjectReference>, TimedStop> {
+        let holding = self.holding(state, alternatives, context.clone(), site)?;
+        if holding.at_state {
+            return Ok(self.objects.get(&context).cloned().unwrap_or_default());
+        }
+        Ok(holding.objects)
+    }
+
+    /// What `alternatives` hold of at `state`: the objects of type `context`
+    /// of which one holds (its data predicate holds of the object and the
+    /// object's `Option<Clock>` places have the presences it requires, FR-230
+    /// "Presence bit"), in object order, and whether an alternative that
+    /// reads no `self` holds once at the state.
+    fn holding(
+        &self,
+        state: &ModelSimState,
+        alternatives: &[qsl_semantics::check::StateAlternative],
+        context: EffectiveId,
+        site: &dyn Fn() -> TimedSite,
+    ) -> Result<Holding, TimedStop> {
         let mut holding: Vec<ObjectReference> = Vec::new();
+        let mut at_state = false;
         for alternative in alternatives {
-            for (object, holds) in
-                self.about(state, alternative.predicate(), context.clone(), site)?
-            {
+            let predicate = alternative.predicate();
+            if alternative.presences().is_empty() && !predicate.reads_self() {
+                at_state = at_state || self.at_state(state, predicate, site)?;
+                continue;
+            }
+            for (object, holds) in self.about(state, predicate, context.clone(), site)? {
                 if holds
                     && !holding.contains(&object)
                     && self.presences_hold(state, &object, alternative.presences().iter().copied())
@@ -1364,7 +1423,10 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
         }
         let objects = self.objects.get(&context).map_or(&[][..], Vec::as_slice);
         holding.sort_by_key(|object| objects.iter().position(|held| held == object));
-        Ok(holding)
+        Ok(Holding {
+            objects: holding,
+            at_state,
+        })
     }
 
     /// `constraints` over `object`'s places live at `state`: a clock place
@@ -1424,7 +1486,7 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
                 let holding = self.holding(state, alternatives, context.clone(), &|| {
                     TimedSite::Urgency { name: name.clone() }
                 })?;
-                if !holding.is_empty() {
+                if holding.at_state || !holding.objects.is_empty() {
                     return Ok(true);
                 }
             }
@@ -2365,17 +2427,19 @@ impl<'s, 'a> TimedSystem<'s, 'a> {
             &[(predicate, Some(object), elements)],
             self.place_presences(state.state()),
         )?[..] else {
-            return Err(TimedStop::undecided(site(), object.clone(), None));
+            return Err(TimedStop::undecided(site(), Some(object.clone()), None));
         };
         match reading {
             PredicateReading::True => Ok(true),
             PredicateReading::False => Ok(false),
             PredicateReading::Undefined { cause, .. } => Err(TimedStop::undecided(
                 site(),
-                object.clone(),
+                Some(object.clone()),
                 Some(cause.clone()),
             )),
-            PredicateReading::Refused(_) => Err(TimedStop::undecided(site(), object.clone(), None)),
+            PredicateReading::Refused(_) => {
+                Err(TimedStop::undecided(site(), Some(object.clone()), None))
+            }
         }
     }
 

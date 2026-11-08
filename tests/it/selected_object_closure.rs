@@ -154,7 +154,7 @@ fn selected_object_closure_projects_standard_e_and_unused_ep_objects() {
         );
         let graph_node = extended
             .package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .find(|node| node.node_id == rows[0].structural_node)
@@ -351,7 +351,7 @@ fn selected_object_closure_refuses_a_model_reference_whose_object_node_is_absent
         .find(|row| row.original_identity.as_ref() == tc1070::model::id("Other"))
         .expect("Other has its real emitted declaration");
     let other_json = serde_json::to_value(&other.structural_node).expect("node reference");
-    let mut package: Value = serde_json::from_slice(&fixture.bytes).expect("original package");
+    let mut package = crate::support::resolved_package(&fixture.bytes);
     let nodes = package["semantic_graph"]["nodes"]
         .as_array_mut()
         .expect("nodes");
@@ -363,7 +363,7 @@ fn selected_object_closure_refuses_a_model_reference_whose_object_node_is_absent
         .expect("source map")
         .retain(|entry| entry["node_id"] != other_json);
     let package = admitted(
-        &serde_json::to_vec(&package).expect("changed package"),
+        &crate::support::slotted_package_bytes(&package),
         &fixture.evidence,
     );
     let identities = SelectedExactIdentities::from_stage_rows(
@@ -391,4 +391,57 @@ fn selected_object_closure_refuses_a_model_reference_whose_object_node_is_absent
         ExactTypeProjectionErrorCode::UnresolvedSelectedDeclaration
     );
     assert_eq!(refusal.form.as_deref(), Some("selected_document_type"));
+}
+
+/// FR-533-AC-22 (catalog budget): a native budget that pays every earlier
+/// join of `with_supply` and the declaration projection but not the
+/// population catalog makes `with_supply` return `PopulationCatalog`, with the
+/// catalog error's bound and attempted total, and no `BarePackage`.
+#[trace("FR-533-AC-22", "TC-1333")]
+#[test]
+fn a_budget_short_of_the_population_catalog_is_the_catalog_failure() {
+    use quire_contract_model::{
+        CheckedModelPopulationCatalogError as CatalogError,
+        CheckedModelPopulationCatalogLimitKind as Kind, CheckedModelPopulationCatalogLimits,
+        NativeJoinBudget,
+    };
+    let fixture = fixture(&tc1070::document_ep());
+    let supply = qsl_package::BareSupply {
+        identities: &fixture.rows,
+        equality: None,
+    };
+    let mut measure = NativeJoinBudget::new(10_000_000, 10_000_000);
+    qsl_package::BarePackage::new(&fixture.package)
+        .with_supply(supply, &mut measure)
+        .expect("a large budget pays every read");
+    let paid = measure.consumed();
+    let error = qsl_package::BarePackage::new(&fixture.package)
+        .with_supply(supply, &mut NativeJoinBudget::new(paid.work, paid.storage))
+        .expect_err("nothing is left for the catalog");
+    let qsl_package::NativeJoinFailure::PopulationCatalog { setting, limit } = error else {
+        panic!("the catalog is the failing read: {error:?}")
+    };
+    let Err(CatalogError::Limit {
+        kind,
+        limit: bound,
+        consumed,
+        ..
+    }) = fixture
+        .package
+        .selected_model_population_catalog(CheckedModelPopulationCatalogLimits {
+            work: 0,
+            entries: 0,
+        })
+    else {
+        panic!("a zero allowance cannot read the catalog")
+    };
+    assert_eq!(
+        setting,
+        match kind {
+            Kind::Work => qsl_foundation::Setting::I2WorkUnits,
+            Kind::Entries => qsl_foundation::Setting::I2NativeJoinStorage,
+        }
+    );
+    assert_eq!(limit.configured_bound(), bound);
+    assert_eq!(limit.actual(), u128::from(consumed));
 }

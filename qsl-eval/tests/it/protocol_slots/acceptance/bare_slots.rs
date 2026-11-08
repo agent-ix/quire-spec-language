@@ -22,7 +22,7 @@ fn bytes_slot(
         wanted.node.clone()
     } else {
         let declared = v2
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .find(|node| {
@@ -34,7 +34,7 @@ fn bytes_slot(
             .expect("the owner is declared");
         if &*declared.semantic_form == "compensation" {
             qsl_semantics::check::wire_id::WireGraph::new(
-                v2.graph().nodes.iter().map(|node| &node.node_id),
+                v2.resolved_graph().nodes.iter().map(|node| &node.node_id),
             )
             .expect("wire ids")
             .key(&declared.node_id)
@@ -98,7 +98,11 @@ fn the_bare_route_returns_the_source_value_and_charge_log_for_every_unobserved_s
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let bare = BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -387,7 +391,11 @@ fn records_with_option_and_collection_members_project_on_the_bytes_route() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let bare = BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -588,7 +596,11 @@ fn original_model_field_keys_define_one_value_across_both_environments() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let bare = BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -700,10 +712,13 @@ fn assert_pristine(meter: &Meter) {
 /// rows, are each `unknown_required_feature`/`unsupported-feature` at
 /// `CallAdmissionLocus::Package`, never `Node` or `Binder`; a missing node is
 /// `Node`, a missing member `Member`; each leaves the meter untouched.
-/// The in-process reader view's `UnsupportedView` half of FR-390-AC-66 is not
-/// asserted here; the `Package` locus of `UnsupportedView` is covered by the
-/// qsl-package order test and the remainder is open.
-#[trace("TC-1333", "TC-1331", "FR-533-AC-15", "FR-531-AC-5")]
+/// This is the bytes-route half of FR-390-AC-66. The in-process reader view's
+/// half, the same three identity witness reasons as the `Package` locus of
+/// `UnsupportedView`, is asserted by the qsl-package test
+/// `supplied_identities_are_validated_against_the_admitted_package` (the
+/// equality-witness reasons have no producer on the reader view, which reads
+/// its equality from the emission).
+#[trace("TC-1333", "TC-1331", "FR-533-AC-15", "FR-531-AC-5", "FR-390-AC-66")]
 #[test]
 fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
     let package = fixture();
@@ -712,7 +727,11 @@ fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let good = BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -769,7 +788,11 @@ fn every_witness_refusal_of_the_call_is_at_the_package_locus() {
     let other_rows = bare_rows(&other, other_read.admitted());
     let other_equality = qsl_package::emit_checked(&other, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(other_read.admitted());
+        .equality_witness(
+            other_read.admitted(),
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes foreign equality witness");
     let foreign = BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -877,7 +900,11 @@ fn the_call_reports_identity_then_equality_then_node_refusals() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let wanted = slot(&package, "Refunds", "Refund", "retry.relation", None);
     let on_bytes = bytes_slot(v2, "Refunds", "Refund", &wanted);
     let given = supply(&package, "Refunds", Vec::new(), None);
@@ -979,7 +1006,11 @@ fn a_repeat_guard_takes_the_decision_origin_of_the_source_route() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let bare = BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -1133,7 +1164,11 @@ fn replacing_a_checked_source_changes_its_result_but_not_the_bytes_slot() {
     let rows = bare_rows(&original, v2);
     let equality = qsl_package::emit_checked(&original, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let call = retry_call(&original, v2, &rows, &equality);
     let changed_slot = slot(&replacement, "Refunds", "Refund", "retry.relation", None);
     assert_eq!(
@@ -1185,7 +1220,11 @@ fn a_called_equality_body_requires_its_witness_at_the_actual_evaluation_entry() 
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let wanted = slot(&package, "Refunds", "Refund", "trigger.guard", None);
     let on_bytes = bytes_slot(v2, "Refunds", "Refund", &wanted);
     let given = supply(
@@ -1256,7 +1295,11 @@ fn a_bare_call_leaves_the_callers_charge_capture_as_it_found_it() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let call = retry_call(&package, v2, &rows, &equality);
     for enabled in [false, true] {
         let mut meter = Meter::new(UNLIMITED);
@@ -1292,7 +1335,11 @@ fn a_bare_supply_is_examined_in_binder_level_order() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let call = retry_call(&package, v2, &rows, &equality);
     let selected = call
         .bare
@@ -1366,7 +1413,11 @@ fn three_bare_calls_over_one_meter_sum_and_maximise_as_the_source_route_does() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let bare = BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -1456,7 +1507,11 @@ fn nothing_before_the_run_charges_and_a_refusal_leaves_the_meter_unchanged() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let call = retry_call(&package, v2, &rows, &equality);
     let mut meter = Meter::new(UNLIMITED);
     let first = call
@@ -1517,4 +1572,670 @@ fn nothing_before_the_run_charges_and_a_refusal_leaves_the_meter_unchanged() {
         ("invalid_runtime_input", "missing-member")
     );
     assert_eq!(meter, before, "supply admission");
+}
+
+/// The E-P package of fixture source `source` and model document `domain`,
+/// read back, with the bare route over its handoff.
+struct EpRoutes<'p> {
+    read: qsl_package::AdmittedPackageRead<'p>,
+    rows: qsl_package::ReadIdentityRows,
+    equality: qsl_package::ReadEqualityRows,
+}
+
+impl<'p> EpRoutes<'p> {
+    fn new(package: &'p CheckedPackage, domain: Vec<u8>) -> Self {
+        let read = read_checked_package_with_model_document(package, &domain);
+        let v2 = read.admitted();
+        let rows = bare_rows(package, v2);
+        let equality = qsl_package::emit_checked(package, EmitLimits::fixture())
+            .expect("emits")
+            .equality_witness(
+                v2,
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+            )
+            .expect("budgeted equality witness");
+        Self {
+            read,
+            rows,
+            equality,
+        }
+    }
+
+    /// A new `BarePackage` value over the package's bytes.
+    fn bare(&self) -> BarePackage<'_> {
+        BarePackage::new(self.read.admitted())
+            .with_supply(
+                qsl_package::BareSupply {
+                    identities: &self.rows,
+                    equality: Some(&self.equality),
+                },
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+            )
+            .expect("the fixture budget admits the supply")
+    }
+}
+
+/// The four references and the four-occurrence attribution of TC-1070's E-P
+/// receipt, as `nested_reference_provenance_drives_the_named_population_admission`
+/// builds them.
+fn ep_references(
+    package: &CheckedPackage,
+    view: &qsl_semantics::model::normalize::EffectiveView,
+) -> (Value, Vec<ProtocolReferenceOccurrence>) {
+    let peer = other_reference(view, "ghost");
+    let nested = other_reference(view, "nested-1");
+    let optional = other_reference(view, "option-1");
+    let sequence = other_reference(view, "sequence-1");
+    let receipt = ep_receipt(package, [&peer, &nested, &optional, &sequence]);
+    let occurrence = |path: Vec<PathStep>, population: &str| ProtocolReferenceOccurrence {
+        path,
+        population: population_node(population),
+    };
+    let references = vec![
+        occurrence(vec![PathStep::Field("peer".into())], "otherSpare"),
+        occurrence(
+            vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("nested".into()),
+            ],
+            "otherNodes",
+        ),
+        occurrence(
+            vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("optional".into()),
+                PathStep::OptionValue,
+            ],
+            "otherSpare",
+        ),
+        occurrence(
+            vec![
+                PathStep::Field("bundle".into()),
+                PathStep::Field("sequence".into()),
+                PathStep::Index(0),
+            ],
+            "otherNodes",
+        ),
+    ];
+    (receipt, references)
+}
+
+fn registration_capture(package: &CheckedPackage) -> ProtocolSlot {
+    slot(
+        package,
+        "Refunds",
+        "Refund",
+        "registration_captures",
+        Some(0),
+    )
+}
+
+/// FR-533-AC-5 (a)-(d): over fixture E-P with the same domain documents,
+/// snapshot and limits on both routes, the bare admission returns the source
+/// admission, a slot call over either route's admitted observation gives the
+/// same result and charges, the bare host's population types and the bare
+/// environment equal the source's, and a model the package does not select
+/// refuses `wrong-model-selection` with no fields, also without a supply.
+#[trace("FR-533-AC-5", "FR-390-AC-21", "TC-1333")]
+#[test]
+fn the_bare_observation_admission_equals_the_source_admission_on_e_p() {
+    let (package, view) = fixture_ep();
+    let routes = EpRoutes::new(&package, serde_json::to_vec(&document_ep()).unwrap());
+    let bare = routes.bare();
+    let source_view = package.evaluation_view();
+    let model = package.graph().model_selections()[0].clone();
+    assert_eq!(bare.model_selections(), vec![model.clone()]);
+    let (receipt, references) = ep_references(&package, &view);
+    let wanted = registration_capture(&package);
+    let on_bytes = bytes_slot(routes.read.admitted(), "Refunds", "Refund", &wanted);
+    let limits = qsl_semantics::model::accounting::ModelNormalizationLimits::default();
+    type OtherSpare<'a> = Option<(bool, &'a [&'a str])>;
+    let states: [(OtherSpare, bool); 4] = [
+        (Some((true, &["ghost", "option-1"])), true),
+        (Some((false, &[])), false),
+        (None, false),
+        (Some((true, &[])), false),
+    ];
+    for (state, evaluates) in states {
+        let (packages, selected, snapshots) = ep_snapshot(state, true, None, None, &[]);
+        let on_source = source_view.admit_protocol_observation(
+            &model,
+            &packages,
+            limits,
+            &snapshots,
+            &selected,
+            ObservationLimits::default(),
+        );
+        let on_bare = bare.admit_protocol_observation(
+            &model,
+            &packages,
+            limits,
+            &snapshots,
+            &selected,
+            ObservationLimits::default(),
+        );
+        match (&on_source, &on_bare) {
+            (ObservationAdmission::Admitted(source), ObservationAdmission::Admitted(bytes)) => {
+                assert_eq!(source.usage(), bytes.usage());
+                assert_eq!(source.populations(), bytes.populations());
+                assert_eq!(
+                    source.environment().references(),
+                    bytes.environment().references()
+                );
+            }
+            (ObservationAdmission::Refused(source), ObservationAdmission::Refused(bytes)) => {
+                assert_eq!(source, bytes);
+            }
+            (ObservationAdmission::Incomplete(source), ObservationAdmission::Incomplete(bytes)) => {
+                assert_eq!(source, bytes);
+            }
+            other => panic!("the routes admit differently: {other:?}"),
+        }
+        let given =
+            |observation| ep_supply(&package, receipt.clone(), references.clone(), observation);
+        let mut source_meter = Meter::new(UNLIMITED);
+        let source =
+            package.evaluate_protocol_slot(&wanted, &given(Some(&on_source)), &mut source_meter);
+        let mut bare_meter = Meter::new(UNLIMITED);
+        let bytes = bare.evaluate_protocol_slot(&on_bytes, &given(Some(&on_bare)), &mut bare_meter);
+        assert_eq!(without_location(&source), without_location(&bytes));
+        charges_and_usage_match("E-P registration capture", &source_meter, &bare_meter);
+        if evaluates {
+            assert_value_eq!(completed(bytes.unwrap()), int(5));
+        } else {
+            assert!(bytes.is_err(), "the other states refuse");
+        }
+    }
+    // (b) A reference attributed to a population of another model, and to a
+    // population of this model that no slot reads, refuses as the source does.
+    let (packages, selected, snapshots) =
+        ep_snapshot(Some((true, &["ghost", "option-1"])), true, None, None, &[]);
+    let on_source = source_view.admit_protocol_observation(
+        &model,
+        &packages,
+        limits,
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    );
+    let on_bare = bare.admit_protocol_observation(
+        &model,
+        &packages,
+        limits,
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    );
+    let other_model = NodeKey::new(
+        "other/model",
+        vec![
+            quire_exact::PathSegment::Text("relation".into()),
+            quire_exact::PathSegment::Text("population".into()),
+            quire_exact::PathSegment::Text("ix://other/model/externalOthers".into()),
+        ],
+        0,
+    )
+    .unwrap();
+    for (population, cause) in [
+        (population_node("elsewhereNodes"), "wrong-value-kind"),
+        (other_model, "wrong-model-selection"),
+    ] {
+        let mut supplied = references.clone();
+        supplied[0].population = population;
+        let given =
+            |observation| ep_supply(&package, receipt.clone(), supplied.clone(), observation);
+        let mut source_meter = Meter::new(UNLIMITED);
+        let source =
+            package.evaluate_protocol_slot(&wanted, &given(Some(&on_source)), &mut source_meter);
+        let mut bare_meter = Meter::new(UNLIMITED);
+        let bytes = bare.evaluate_protocol_slot(&on_bytes, &given(Some(&on_bare)), &mut bare_meter);
+        assert_eq!(without_location(&source), without_location(&bytes));
+        let (_, found, _, _) = refusal_of(bytes);
+        assert_eq!(found, cause);
+        assert_pristine(&bare_meter);
+    }
+    // (c) Population types and the type environment.
+    let world = bare.world().expect("world");
+    for name in ["nodes", "otherNodes", "otherSpare", "elsewhereNodes"] {
+        let node = population_node(name);
+        let (source_declaration, source_members) = package
+            .graph()
+            .protocol_population_types(&node)
+            .unwrap_or_else(|| panic!("{name} is a source population"));
+        let (bare_declaration, bare_members) = bare
+            .population_types(&node)
+            .unwrap_or_else(|| panic!("{name} is in the catalog"));
+        assert_eq!(source_declaration, bare_declaration, "{name}");
+        assert_eq!(
+            source_members
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>(),
+            bare_members
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>(),
+            "{name}"
+        );
+    }
+    let identity = |name: &str| {
+        view.type_identities()[&quire_checked::key::DeclarationKey {
+            package: model::PACKAGE.to_owned(),
+            node: model::id(name),
+        }]
+            .clone()
+    };
+    let attributes = |types: &quire_semantic_value::declaration::TypeEnvironment, name: &str| {
+        types
+            .attributes(identity(name))
+            .map(|set| {
+                set.iter()
+                    .map(|attribute| {
+                        (
+                            attribute.field().name().to_owned(),
+                            attribute.field().value_type().clone(),
+                            attribute.field().presence(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| panic!("{name} declares attributes"))
+    };
+    for name in ["Node", "Other", "Elsewhere"] {
+        assert_eq!(
+            attributes(package.graph().scope().types(), name),
+            attributes(world.types(), name),
+            "{name}"
+        );
+        for sup in ["Node", "Other", "Elsewhere"] {
+            assert_eq!(
+                package
+                    .graph()
+                    .scope()
+                    .types()
+                    .conforms(identity(name), identity(sup)),
+                world.types().conforms(identity(name), identity(sup)),
+                "{name} conforms to {sup}"
+            );
+        }
+    }
+    // (d) A model the package does not select.
+    let unselected = qsl_semantics::model::domain_package::DomainPackageRef {
+        identity: "other/model".to_owned(),
+    };
+    let on_source = source_view.admit_protocol_observation(
+        &unselected,
+        &packages,
+        limits,
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    );
+    let ObservationAdmission::Refused(record) = on_source else {
+        panic!("the source route refuses an unselected model")
+    };
+    assert_eq!(
+        (record.catalog.code(), record.catalog.cause()),
+        ("invalid_model_binding", "wrong-model-selection")
+    );
+    assert!(record.fields.is_empty() && record.path.is_empty() && record.kernel.is_none());
+    let without_supply = BarePackage::new(routes.read.admitted());
+    for route in [&bare, &without_supply] {
+        let on_bare = route.admit_protocol_observation(
+            &unselected,
+            &packages,
+            limits,
+            &snapshots,
+            &selected,
+            ObservationLimits::default(),
+        );
+        let ObservationAdmission::Refused(found) = on_bare else {
+            panic!("the bare route refuses an unselected model")
+        };
+        assert_eq!(found, record);
+    }
+}
+
+/// FR-533-AC-6: an observation is its admitting `BarePackage` value's alone.
+/// Another model's package refuses it at the population check, and another
+/// `BarePackage` value over the same bytes refuses it, each as the source
+/// route does for the same pair, and the call leaves the meter untouched.
+#[trace("FR-533-AC-6", "TC-1333")]
+#[test]
+fn an_observation_belongs_to_the_bare_package_value_that_admitted_it() {
+    let (package, view) = fixture_ep();
+    let routes = EpRoutes::new(&package, serde_json::to_vec(&document_ep()).unwrap());
+    let (receipt, references) = ep_references(&package, &view);
+    let wanted = registration_capture(&package);
+    let on_bytes = bytes_slot(routes.read.admitted(), "Refunds", "Refund", &wanted);
+    let limits = qsl_semantics::model::accounting::ModelNormalizationLimits::default();
+    let (packages, selected, snapshots) =
+        ep_snapshot(Some((true, &["ghost", "option-1"])), true, None, None, &[]);
+    let model = package.graph().model_selections()[0].clone();
+    let admit = |bare: &BarePackage<'_>| {
+        bare.admit_protocol_observation(
+            &model,
+            &packages,
+            limits,
+            &snapshots,
+            &selected,
+            ObservationLimits::default(),
+        )
+    };
+    let own = routes.bare();
+    let other = routes.bare();
+    let observation = admit(&own);
+    let given = |observation| ep_supply(&package, receipt.clone(), references.clone(), observation);
+    let mut meter = Meter::new(UNLIMITED);
+    assert_value_eq!(
+        completed(
+            own.evaluate_protocol_slot(&on_bytes, &given(Some(&observation)), &mut meter)
+                .unwrap()
+        ),
+        int(5)
+    );
+    let forward = binder(&package, "Refunds", "forward");
+    let mut meter = Meter::new(UNLIMITED);
+    let refused = other.evaluate_protocol_slot(&on_bytes, &given(Some(&observation)), &mut meter);
+    let (code, cause, _, locus) = refusal_of(refused);
+    assert_eq!(
+        (code.as_str(), cause.as_str(), locus),
+        (
+            "invalid_model_binding",
+            "wrong-model-selection",
+            CallAdmissionLocus::Binder(forward.clone())
+        )
+    );
+    assert_pristine(&meter);
+
+    // The same source with its model renamed, as a second package.
+    let rename = |text: &str| text.replace(model::PACKAGE, "test/orders-copy");
+    let copy_document = rename(&serde_json::to_string(&document_ep()).unwrap());
+    let (copy, copy_view) = fixture_from_document(&rename(SOURCE), copy_document.as_bytes());
+    let copy_routes = EpRoutes::new(&copy, copy_document.into_bytes());
+    let copy_bare = copy_routes.bare();
+    let copy_model = copy.graph().model_selections()[0].clone();
+    assert_ne!(copy_model, model);
+    // The copy's value, with the first package's population keys.
+    let in_copy = |key: &str| {
+        let declaration = quire_checked::key::DeclarationKey {
+            package: "test/orders-copy".to_owned(),
+            node: model::id("Other").replace(model::PACKAGE, "test/orders-copy"),
+        };
+        ObjectReference::new(
+            copy_view
+                .object_universe_of(&declaration)
+                .unwrap()
+                .identity()
+                .unwrap(),
+            copy_view.type_identities()[&declaration].clone(),
+            ObjectId::new(key).unwrap(),
+        )
+    };
+    let copy_receipt = ep_receipt(
+        &copy,
+        [
+            &in_copy("ghost"),
+            &in_copy("nested-1"),
+            &in_copy("option-1"),
+            &in_copy("sequence-1"),
+        ],
+    );
+    let source_observation = package.evaluation_view().admit_protocol_observation(
+        &model,
+        &packages,
+        limits,
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    );
+    let copy_wanted = registration_capture(&copy);
+    let copy_on_bytes = bytes_slot(
+        copy_routes.read.admitted(),
+        "Refunds",
+        "Refund",
+        &copy_wanted,
+    );
+    let supplied = |target: &CheckedPackage, observation| {
+        ep_supply(
+            target,
+            copy_receipt.clone(),
+            references.clone(),
+            observation,
+        )
+    };
+    let mut source_meter = Meter::new(UNLIMITED);
+    let on_source = copy.evaluate_protocol_slot(
+        &copy_wanted,
+        &supplied(&copy, Some(&source_observation)),
+        &mut source_meter,
+    );
+    let mut bare_meter = Meter::new(UNLIMITED);
+    let on_bare = copy_bare.evaluate_protocol_slot(
+        &copy_on_bytes,
+        &supplied(&copy, Some(&observation)),
+        &mut bare_meter,
+    );
+    // The source route's record for the same pair of packages and supply.
+    assert_eq!(without_location(&on_source), without_location(&on_bare));
+    let (code, cause, _, locus) = refusal_of(on_bare);
+    assert_eq!(
+        (code.as_str(), cause.as_str(), locus),
+        (
+            "foreign_reference",
+            "foreign-universe",
+            CallAdmissionLocus::Binder(binder(&copy, "Refunds", "forward"))
+        ),
+        "the first observation's universes are no universe of the copy's references"
+    );
+    assert_pristine(&bare_meter);
+}
+
+/// FR-533-AC-5 (e): a snapshot whose `OtherLinks` instance has a `Node`
+/// object as its source end refuses `wrong-value-kind` on both routes with
+/// equal `relationship`, `instance` and `end` fields and path. Check 6.8
+/// refuses it before the extent traversal that names types, so the record
+/// carries no `type` or `declared` field to differ ("Names of object types").
+#[trace("FR-533-AC-5", "TC-1333")]
+#[test]
+fn a_relationship_end_of_the_wrong_object_type_refuses_as_on_the_source_route() {
+    let (package, _) = fixture_ep();
+    let routes = EpRoutes::new(&package, serde_json::to_vec(&document_ep()).unwrap());
+    let bare = routes.bare();
+    let model = package.graph().model_selections()[0].clone();
+    let (packages, selected, mut snapshots) =
+        ep_snapshot(Some((true, &["ghost", "option-1"])), true, None, None, &[]);
+    let mut snapshot: serde_json::Value = serde_json::from_slice(&snapshots[&selected]).unwrap();
+    snapshot["relationships"][0]["instances"] = serde_json::json!([{
+        "source": {"population": model::id("nodes"), "key": "n5"},
+        "target": {"population": model::id("otherNodes"), "key": "nested-1"},
+    }]);
+    snapshots.insert(selected.clone(), serde_json::to_vec(&snapshot).unwrap());
+    let limits = qsl_semantics::model::accounting::ModelNormalizationLimits::default();
+    let ObservationAdmission::Refused(source) =
+        package.evaluation_view().admit_protocol_observation(
+            &model,
+            &packages,
+            limits,
+            &snapshots,
+            &selected,
+            ObservationLimits::default(),
+        )
+    else {
+        panic!("the source route refuses the end")
+    };
+    let ObservationAdmission::Refused(bytes) = bare.admit_protocol_observation(
+        &model,
+        &packages,
+        limits,
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    ) else {
+        panic!("the bare route refuses the end")
+    };
+    assert_eq!(
+        (bytes.catalog.code(), bytes.catalog.cause()),
+        ("invalid_runtime_input", "wrong-value-kind")
+    );
+    assert_eq!(bytes, source);
+    for field in ["relationship", "instance", "end"] {
+        assert!(bytes.fields.contains_key(field), "{field}");
+    }
+    assert!(!bytes.fields.contains_key("type") && !bytes.fields.contains_key("declared"));
+    assert!(bytes.path.is_empty());
+}
+
+/// FR-533-AC-22 (variant): over a copy of fixture E-P's model that adds one
+/// variant type no slot reads, `with_supply` succeeds, `Refund.trigger.guard`
+/// evaluates to the source route's value and charge log, and the bare
+/// admission refuses `missing-type-representation` where the source route
+/// admits the same snapshot.
+#[trace("FR-533-AC-22", "TC-1333")]
+#[test]
+fn an_unread_variant_type_refuses_admission_but_not_the_slots_that_ignore_it() {
+    use qsl_semantics::model::intake::meaning;
+    let mut document = document_ep();
+    document["constructs"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "kind": {"module": model::BUSINESS, "name": "tier"},
+            "moduleVersion": "1.0.0",
+            "construct": {
+                "identity": "none", "shape": "enumeration",
+                "members": {"variants": "required"}, "meaning": meaning::VARIANT_TYPE,
+            },
+        }));
+    let case = |name: &str, line: u64| {
+        serde_json::json!({
+            "identity": model::id(&format!("variant/Odd-{name}")),
+            "name": name,
+            "origin": {"source": {
+                "sourceIdentity": model::id("spec"), "path": "spec.qspec",
+                "startLine": line, "startColumn": 3,
+            }},
+        })
+    };
+    document["types"]
+        .as_array_mut()
+        .unwrap()
+        .push(model::declaration(
+            "Odd",
+            "tier",
+            serde_json::json!({"variants": [case("A", 10), case("B", 11)]}),
+        ));
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let (package, _) = fixture_from_document(SOURCE, &bytes);
+    let routes = EpRoutes::new(&package, bytes.clone());
+    let bare = routes.bare();
+    let wanted = slot(&package, "Refunds", "Refund", "trigger.guard", None);
+    let on_bytes = bytes_slot(routes.read.admitted(), "Refunds", "Refund", &wanted);
+    let values = vec![("trigger", flag(&package, false)), ("target", int(5))];
+    let given = supply(&package, "Refunds", values, None);
+    let mut source_meter = Meter::new(UNLIMITED);
+    let source = package.evaluate_protocol_slot(&wanted, &given, &mut source_meter);
+    let mut bare_meter = Meter::new(UNLIMITED);
+    let bytes_result = bare.evaluate_protocol_slot(&on_bytes, &given, &mut bare_meter);
+    assert!(matches!(source, Ok(ProtocolSlotEvaluation::Evaluated(..))));
+    assert_eq!(without_location(&source), without_location(&bytes_result));
+    charges_and_usage_match("variant trigger guard", &source_meter, &bare_meter);
+
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
+    let (_, selected, snapshots) =
+        ep_snapshot(Some((true, &["ghost", "option-1"])), true, None, None, &[]);
+    let model_ref = package.graph().model_selections()[0].clone();
+    let limits = qsl_semantics::model::accounting::ModelNormalizationLimits::default();
+    assert!(matches!(
+        package.evaluation_view().admit_protocol_observation(
+            &model_ref,
+            &packages,
+            limits,
+            &snapshots,
+            &selected,
+            ObservationLimits::default(),
+        ),
+        ObservationAdmission::Admitted(_)
+    ));
+    let ObservationAdmission::Refused(record) = bare.admit_protocol_observation(
+        &model_ref,
+        &packages,
+        limits,
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    ) else {
+        panic!("the bare route refuses, not faults")
+    };
+    assert_eq!(
+        (record.catalog.code(), record.catalog.cause()),
+        ("unknown_required_feature", "unsupported-feature")
+    );
+    assert_eq!(
+        record.fields.get("package").map(String::as_str),
+        Some(routes.read.admitted().name())
+    );
+    assert_eq!(
+        record.fields.get("reason").map(String::as_str),
+        Some("missing-type-representation")
+    );
+}
+
+/// FR-533 "Observation admission", step 4: where the caller's documents
+/// declare an object type the package did not select, the bare environment
+/// declares no attributes for it, and the shared admission refuses
+/// `missing-type-representation` rather than faulting.
+#[trace("FR-533-AC-22", "TC-1333")]
+#[test]
+fn a_snapshot_object_of_an_unselected_type_is_a_missing_type_representation() {
+    let (package, _) = fixture_ep();
+    let routes = EpRoutes::new(&package, serde_json::to_vec(&document_ep()).unwrap());
+    let bare = routes.bare();
+    let model_ref = package.graph().model_selections()[0].clone();
+    let mut document = document_ep();
+    document["types"]
+        .as_array_mut()
+        .unwrap()
+        .push(model::declaration(
+            "Extra",
+            "thing",
+            serde_json::json!({
+                "identityFields": [model::id("Extra/marker")],
+                "fields": [model::field("Extra", "marker", "ix://quire/native/Boolean")],
+            }),
+        ));
+    document["populations"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "identity": model::id("extras"), "displayName": "extras",
+            "kind": {"module": model::BUSINESS, "name": "population"},
+            "members": [model::id("Extra")], "extent": "closed", "origin": model::origin("extras"),
+        }));
+    let (_, selected, mut snapshots) =
+        ep_snapshot(Some((true, &["ghost", "option-1"])), true, None, None, &[]);
+    let mut snapshot: serde_json::Value = serde_json::from_slice(&snapshots[&selected]).unwrap();
+    snapshot["populations"].as_array_mut().unwrap().push(serde_json::json!({
+        "population": model::id("extras"), "complete": true,
+        "objects": [{"key": "x1", "type": model::id("Extra"), "fields": {"marker": {"boolean": true}}}],
+    }));
+    snapshots.insert(selected.clone(), serde_json::to_vec(&snapshot).unwrap());
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
+    let ObservationAdmission::Refused(record) = bare.admit_protocol_observation(
+        &model_ref,
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    ) else {
+        panic!("the bare route refuses, not faults")
+    };
+    assert_eq!(
+        (record.catalog.code(), record.catalog.cause()),
+        ("unknown_required_feature", "unsupported-feature")
+    );
+    assert_eq!(
+        record.fields.get("reason").map(String::as_str),
+        Some("missing-type-representation")
+    );
 }

@@ -30,7 +30,7 @@ fn document(parameter: bool) -> Vec<u8> {
                 "inputIdentities": [identity]}},
         }]);
     }
-    serde_json::to_vec(&document).expect("JSON")
+    crate::emit::tests::wire_bytes(&document).expect("JSON")
 }
 
 /// The checked unit over `document` with `body`, and the unit's text.
@@ -503,7 +503,7 @@ fn peer_document() -> Vec<u8> {
     peer["origin"]["generated"]["generatorIdentity"] = json!(identity);
     peer["origin"]["generated"]["inputIdentities"] = json!([identity]);
     config["fields"].as_array_mut().expect("fields").push(peer);
-    serde_json::to_vec(&document).expect("JSON")
+    crate::emit::tests::wire_bytes(&document).expect("JSON")
 }
 
 /// FR-230-AC-10, QSpec FR-322 "Clause nodes" and "Presence": a constraint
@@ -576,7 +576,7 @@ fn presence_document() -> Vec<u8> {
     v["origin"]["generated"]["generatorIdentity"] = json!(identity);
     v["origin"]["generated"]["inputIdentities"] = json!([identity]);
     fields.push(v);
-    serde_json::to_vec(&document).expect("JSON")
+    crate::emit::tests::wire_bytes(&document).expect("JSON")
 }
 
 /// `present(p)` of the place `name`: a `presence_read` application of
@@ -1101,7 +1101,7 @@ fn timer_document() -> Vec<u8> {
         .as_array_mut()
         .expect("modifies")
         .push(json!("ix://example/config-version/ConfigVersion/ts"));
-    serde_json::to_vec(&document).expect("JSON")
+    crate::emit::tests::wire_bytes(&document).expect("JSON")
 }
 
 /// FR-230 "Resets by selection", QSpec FR-322 "Clause nodes"
@@ -1224,7 +1224,7 @@ fn slot_presence_document() -> Vec<u8> {
         .as_array_mut()
         .expect("modifies")
         .push(json!(identity));
-    serde_json::to_vec(&document).expect("JSON")
+    crate::emit::tests::wire_bytes(&document).expect("JSON")
 }
 
 /// QSpec FR-322-AC-267 `SD-02`: `forall(e in self.q: present(e) implies e
@@ -1332,7 +1332,7 @@ fn dropping_document() -> Vec<u8> {
         .as_array_mut()
         .expect("modifies")
         .push(json!("ix://example/config-version/ConfigVersion/v"));
-    serde_json::to_vec(&document).expect("JSON")
+    crate::emit::tests::wire_bytes(&document).expect("JSON")
 }
 
 /// QSpec FR-322-AC-267 (STD-560, `excluded_forms`): the forms the checked

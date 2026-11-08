@@ -45,6 +45,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-120
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-391
+    type: depends_on
 ---
 # FR-230: Check a state model's time declaration, clocks, clock constraints, time invariants and urgency
 
@@ -287,17 +289,72 @@ place(s) required by its declared bounds.
   A lower bound or an equality in the body SHALL refuse
   `invalid_timed_model`/`time-invariant-shape`.
 - `urgent when P` SHALL check `P` as a state predicate (FR-104).
-- The predicates of `time invariant when` and `urgent when` SHALL read the
-  timed model's single state object as `self`; S3 does not yet give either
-  predicate a named-population binding (FR-391), a scope deferred to
-  QSL-1659. Until then, a declared named population used by `allInstances`,
-  `lookup`, a quantifier domain or a population form (`count`, `sum`, a
-  query or an accumulation) in either predicate SHALL refuse
-  `unsupported_construct`/`not-yet-implemented` at the first population
-  reference in source order, naming the missing timed-predicate population
-  scope. The timed model SHALL not be emitted. Population reads in
-  a unit-level state clause, including a timed operation's precondition, and
-  in a `holds` atom retain FR-391's scope and behavior.
+- **State object.** The predicates of `time invariant when` and `urgent when`
+  SHALL read the timed model's state object as `self`, typed
+  `Reference<M::T>`, where `T` is the one object type the model's
+  populations cover and exactly one population of the model covers `T`
+  (the predicate's **context population**). Where the populations cover no
+  object type, the checker SHALL refuse the declaration
+  `missing_declaration`/`missing-name` at its span; where one type is
+  covered by two or more populations, it SHALL refuse
+  `ambiguous_declaration`/`ambiguous-name` at its span. Populations that
+  cover several object types give the alias several candidate model nodes,
+  so the `time M` declaration refuses first, `ambiguous_declaration`/
+  `ambiguous-name` at `M` (FR-230-AC-38), and the predicate is not checked. A `max` constraint
+  on clocks (Clock constraints on a type) has the predicate `true` and the
+  owner type of the clocks it bounds as its context. Unlike FR-124's
+  `terminal when`, which binds `self` only when `P` reads it, the timed state
+  object is required by the declaration itself, whether or not `P` reads
+  `self`, because the declaration's bounds and urgency range over that
+  object's places and every predicate is checked against it.
+- **Population scope.** The data predicate `P` of a `time invariant when` and
+  of an `urgent when` SHALL be a population position of FR-391. A two-segment
+  `Name` `M::R` there SHALL resolve, type and lower as FR-391 resolves, types
+  and lowers it in a unit-level invariant read at `current`, except that
+  `M` SHALL be the timed model's own model alias: the predicate is evaluated
+  at that model's discrete state, which holds no other alias's population, so
+  `A::Q` with `A` another model alias of the unit SHALL refuse
+  `missing_declaration`/`missing-name` at `Q`, as a name of no population of
+  the timed model's domain package. It is read as the
+  population operand of `allInstances<T>(M::R)` and `lookup<T>(M::R, r)`,
+  typed `Population<U>[N]`, and as the domain of a quantifier or of a
+  population form (`count`, `sum`, `exists`, `all`, `only`), read as
+  `Set<Reference<U>>[0,N]`; any other use is governed as FR-391 governs it in
+  a unit-level invariant. Under the state-object
+  rule the model has one population, so the population `R` names is the
+  context population and adds no second domain (FR-391 "Requirements"); it
+  is already a root of the model subject (FR-120 "Bounds"), and a context
+  population with no universe is FR-120's unbounded `Population(None)` root
+  that the timed engines refuse `RequiresBound` before exploring a state
+  (FR-239, FR-126 "Pre-check"). A name `M::Q` whose `Q` the domain package
+  does not declare as a population SHALL refuse as FR-391 refuses it, and a
+  population read in a value position SHALL refuse
+  `ill_typed`/`operator-ineligible` at the name (FR-391-AC-3).
+- **Bodies read no population.** A time invariant's body SHALL stay a
+  conjunction of upper bounds on clocks of `self` (and on the slots of a
+  clock collection of `self`, Clock collections): a quantified bound whose
+  domain is a population (`forall(c in M::R : c.x <= 3 ms)`) has no clock
+  collection of `self` as its domain and SHALL refuse
+  `invalid_timed_model`/`time-invariant-shape` at the time invariant.
+- **Evaluation.** At a discrete state `s` (FR-231), `P` SHALL be evaluated by
+  the one clause evaluator (FR-107) over `s`'s observation, reading each
+  named population from `s`'s current snapshot exactly as FR-391
+  "Evaluation" reads it for a `current` invariant; every object of the
+  model state reads the same population binding. A `P` that reads `self`
+  SHALL be evaluated once for each object of `T` at `s`, with `self` bound
+  to it: a time invariant applies to that object's places when `P` holds of
+  it, and `s` is urgent when an `urgent when` predicate holds of some object
+  of `T`. A `P` that does not read `self` SHALL be evaluated once at `s`: a
+  time invariant whose `P` holds at `s` applies to the places of every object
+  of `T` at `s`, and an `urgent when` whose `P` holds at `s` makes `s`
+  urgent whatever objects `s` holds, including none (QSpec FR-415
+  "Urgency": no positive delay at a state where `P` holds). A time invariant
+  that holds at a state with no object of `T` bounds no place, and for
+  quiescence (FR-231) it does not apply there: a time invariant applies at
+  `s` exactly when it bounds at least one place at `s`.
+- Population reads in a unit-level state clause, including a timed
+  operation's precondition, and in a `holds` atom retain FR-391's scope and
+  behavior.
 - `urgent O` SHALL resolve `O` to an operation of the model, and SHALL
   refuse an `O` whose guard reads a clock with `invalid_timed_model`/
   `urgent-guard-reads-clock` at the declaration's span, naming the clock
@@ -564,6 +621,18 @@ what each such position means.
   `presence_read` (Presence reads, above); one that reads the presences of a
   clock collection's elements SHALL be refused `TimedModelNotEmitted` and
   never emitted without it.
+  **Population reads in timed predicates.** A named population read in the
+  predicate of a `time_invariant` or a `when` `urgency` SHALL be written
+  inside that predicate's expression exactly as FR-391 writes it in a state
+  clause: the population-reference operand term lowers to QSpec FR-322's
+  population reference (the `relation`/`population` node keyed by the
+  population's declaration key), with the `all_instances` or `lookup`
+  application over it and the quantifier or population form over that
+  application. Every read of one population in the package, in a timed
+  predicate or in any clause, references its one node. A predicate that reads
+  no `self` writes no `self` `parameter` node. The I2 read-back SHALL
+  reconstruct the same checked predicate, with the same population
+  operand, from these nodes.
   The remaining node data records guards;
   reset target and exact converted value; guard/invariant constraint terms;
   urgency predicate or operation; and every bound's comparison, exact value
@@ -885,7 +954,10 @@ declaration and `clock-type` for a `Clock` in a type position. An unqualified
 | FR-230-AC-52 | Over `v: Option<Clock>` in an operation's frame, the QSpec clock-presence-frame vectors FP-01, FP-03, FP-05, FP-07, FP-09, FP-11 and FP-13 step as published: a requirement of an absent place with no write has no successor and refuses `invalid_timed_model`/`clock-presence-unwritten` when the precondition establishes absence; a write makes it present with its clock, a write of `absent` drops it, and an unwritten `v` keeps its bit and clock (QSpec FR-415-AC-21, TC-367 CK-31). | Test |
 | FR-230-AC-53 | A dense model whose only timed members are its clock `x`, `urgent Busy when { self.versionNumber > 0 }` and `urgent Prompt Config::ConfigVersion::attemptUpdate` emits two `urgency` nodes listed in declared order, each located at its declaration: the `when` one references the located Boolean expression node of the predicate, whose `self` is a level-0 `parameter` node, and the `operation` one the model node and `attemptUpdate`; I2 admits and reads both back. Two declarations of equal content are one node listed once with an occurrence at each declaration. `urgent Armed when { present(self.v) }` over `v: Option<Clock>` references the `presence_read` of `v`'s template and `self`; `urgent All when { forall(e in self.q : present(e)) }` over `q: Sequence<Option<Clock>>[0, 2]` is refused `TimedModelNotEmitted`. | Test |
 | FR-230-AC-54 | Over `x: Clock`, `pre { self.x >= 1 ms and self.versionNumber > 0 or self.x < 5 ms }` emits one `clock_guard` of `attemptUpdate`'s no-point anchor with two parts (the expression node of `self.versionNumber > 0` with `ge 1/1`, and `true` with `lt 5/1`), `post { self.x = 0 ms }` one `clock_reset` of kind `place` with owner `self` and condition `true`, and `time invariant Bounded when { self.versionNumber >= 0 } { self.x <= 9 ms }` one `time_invariant` with the bound `le 9/1`; each clause node is located at its source and the root lists every clause and constraint once, in declared order. A constraint written twice is one node with two occurrences; `self.x = 2 ms` writes `eq`. Over `attemptUpdate(c: Clock)`, `c >= 1 ms` is a constraint and `c = 0 ms` a reset of kind `parameter` naming the anchor and `c`. With `peer: ConfigVersion` and `peer_clock(o) { o.peer.x }`, `peer_clock(self) <= 2 ms` is a constraint of kind `place` on `x` whose owner is the `record.project` of `peer` over the `model.deref` of `self`. Over `v: Option<Clock>`, `present(self.v)` is a `presence_read` over `v`'s template and `self`, S3's place key being the key IR derives: the predicate of the part of `present(self.v) and value(self.v) >= 1 ms`, the whole predicate of `time invariant when { present(self.v) }`, and conjoined with `self.versionNumber > 0` in an `urgent when`; `present(self.peer.v)` takes the owner `self.peer`. Two guarded preconditions of `attemptUpdate`, `self.x >= 1 ms or self.x > 7 ms` and `self.versionNumber > 0 and self.x < 5 ms`, emit one `clock_guard` with two parts, each the predicate `self.versionNumber > 0` and the constraints of both; with a data predicate on each side the part's predicate is their `quire.op.boolean.and`. Over `q: Sequence<Option<Clock>>[0, 2]`, `post { forall(e in self.q: present(e) implies e = 0 ms) }` is one `clock_reset` of `q`'s element place whose one binder `e` is its slot term and whose condition is the `presence_read` of that place at `self` and `e` (QSpec `SD-02`). `post { present(self.v) }` over `v: Option<Clock>` writes no clause node and its postcondition is the `presence_read` of `v`'s place at `self` (QSpec `CW-05`); `post { self.v != absent }` is refused `TimedModelNotEmitted` at the comparison. | Test |
-| FR-230-AC-58 | In a timed model whose domain package declares `calls`, `time invariant HasCalls when { forall(c in Config::calls : true) } { self.x <= 1 ms }`, `urgent CallsExist when { exists(c in Config::calls : true) }`, a time invariant predicate `exists(c in allInstances<Config::Call>(Config::calls) : true)`, `urgent Known when { present(lookup<Config::Call>(Config::calls, self) absent empty) }`, a time invariant predicate `count<Config::VersionNumber>(c in Config::calls : true) > 0` and an `urgent when` predicate `sum<Config::VersionNumber>(c in Config::calls : c.n) > 0` each refuse `unsupported_construct`/`not-yet-implemented` at `Config::calls`, naming the missing timed-predicate population scope, and produce no `TimedModel`. A predicate `exists(c in Config::calls : true) and present(lookup<Config::Call>(Config::calls, self) absent empty)` is refused at the first `Config::calls`. Time invariant and urgency predicates that read only `self` still check. The same named-population reads in a unit-level precondition remain admitted under FR-391. | Test (TC-1334) |
+| FR-230-AC-58 | In a dense timed model (model alias `Config`, object type `Call` with `inflight: Boolean`, `waiting: Boolean`, `n: Int[0, 2]` and clock `x`, the one population `calls`, `time dense unit ms`), `time invariant HasCalls when { forall(c in Config::calls : c.inflight) } { self.x <= 1 ms }`, `urgent CallsExist when { exists(c in Config::calls : c.waiting) }`, a time invariant predicate `exists(c in allInstances<Config::Call>(Config::calls) : c.inflight)`, `urgent Known when { present(lookup<Config::Call>(Config::calls, self) absent empty) }`, a time invariant predicate `count(c in Config::calls where c.waiting) < 2` and an `urgent when` predicate `sum(c in Config::calls : c.n) > 0` each check and produce a `TimedModel` holding the declaration: each population operand is typed `Population<Call>`, each domain and the `allInstances` result `Set<Reference<Call>>`, every read is at `current`, and the predicate's only population domain is `calls`, the context population, with no second domain. A predicate `exists(c in Config::calls : c.waiting) and present(lookup<Config::Call>(Config::calls, self) absent empty)` checks with both reads naming `calls`. In a predicate, `exists(c in Config::nothing : true)` refuses `missing_declaration`/`missing-name` at `nothing`, and with a second model alias `Other` of the unit whose domain package declares a population `jobs`, `exists(j in Other::jobs : true)` refuses `missing_declaration`/`missing-name` at `jobs`; `Config::calls = Config::calls` refuses `ill_typed`/`operator-ineligible` at the first `Config::calls`; and the time invariant body `forall(c in Config::calls : c.x <= 3 ms)` refuses `invalid_timed_model`/`time-invariant-shape`, each with no `TimedModel`. Predicates that read only `self`, and the same population reads in a unit-level precondition (FR-391), still check. | Test (TC-1334) |
+| FR-230-AC-59 | Over AC-58's model, each declaration below the only time invariant or urgency declaration of its model, at a discrete state whose `calls` holds `c1` (`inflight` true, `waiting` false) and `c2` (`inflight` false, `waiting` true), with `x = 0` on both: `HasCalls` applies to neither object and bounds no clock, so a delay of 5 is admissible; `time invariant AnyInflight when { exists(c in Config::calls : c.inflight) } { self.x <= 1 ms }` reads no `self` and applies to both objects, so a delay of 1 is admissible and a delay of `1 + 1/1000` is not; `urgent CallsExist` makes the state urgent, so no positive delay is admissible, and with `c2.waiting` false instead it does not hold and a delay of 5 is admissible. `urgent Known` is evaluated once for each of `c1` and `c2` with `self` bound to it and holds of both. At a discrete state whose `calls` holds no object, `urgent Idle when { count(c in Config::calls where c.waiting) = 0 }` holds once at the state and makes it urgent, and `AnyInflight` and `time invariant AllInflight when { forall(c in Config::calls : c.inflight) } { self.x <= 1 ms }` bound no clock, so with either alone the state is quiescent. Each predicate gives the same truth as its `allInstances<Config::Call>(Config::calls)` spelling at the same state. | Test (TC-1334) |
+| FR-230-AC-60 | The package emitted for a unit holding AC-58's `HasCalls`, `CallsExist` and `Known` and the precondition `pre UsesCalls using v on Config::Call::reply { forall(c in Config::calls : true) }` holds exactly one `relation`/`population` reference node, keyed by `calls`' declaration key, which the `time_invariant` predicate of `HasCalls`, the `when` `urgency` predicates of `CallsExist` and `Known` (`Known` through its `lookup` application) and the precondition all reference; `CallsExist`'s predicate writes no `self` `parameter` node and `Known`'s writes one. I2 admits the package and reads back the same `TimedModel`, each predicate with its population operand. | Test (TC-1334) |
+| FR-230-AC-61 | A `time invariant when` or an `urgent when` in a timed model whose populations cover no object type refuses `missing_declaration`/`missing-name` at the declaration, and one in a timed model whose populations cover `Call` by two populations (`calls` and `archive`) refuses `ambiguous_declaration`/`ambiguous-name` at the declaration. A timed model whose populations cover two object types (`calls` of `Call` and `servers` of `Server`) has two candidate model nodes, so it refuses earlier, `ambiguous_declaration`/`ambiguous-name` at `Config` in `time Config dense unit ms` (FR-230-AC-38), and the declaration is never checked. Each case reports exactly that one refusal and no `TimedModel`, whether or not the predicate names a population. | Test (TC-1334) |
 
 ## Dependencies
 
@@ -893,7 +965,9 @@ declaration and `clock-type` for a `Clock` in a type position. An unqualified
 - [FR-103](FR-103-admit-model-operations-and-frames-on-the-spine.md)
   (operations and frames), [FR-104](FR-104-check-state-clauses.md) (state
   predicates), [FR-124](FR-124-declare-intended-terminal-states-and-derive-deadlock-freedom.md)
-  (the sibling `terminal` declaration).
+  (the sibling `terminal` declaration),
+  [FR-391](FR-391-name-a-population-in-a-state-clause.md) (the population
+  scope of the `time invariant when` and `urgent when` predicates).
 - QSpec FR-142 (dimensions, units and exact unit conversion, read from the
   admitted package) and QSpec FR-205 (exact quantities).
 - [FR-361](FR-361-gate-model-constructs-on-the-model-profile-selection.md)

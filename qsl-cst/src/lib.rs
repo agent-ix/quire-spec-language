@@ -24,6 +24,7 @@
 
 pub mod cst;
 pub mod diagnostic;
+pub mod extension;
 pub mod format;
 pub mod grammar;
 pub mod lexer;
@@ -35,6 +36,7 @@ pub use cst::{
     RecoveryKind, SignificantContent, SourceChange, TokenClass, TokenKind,
 };
 pub use diagnostic::{CompleteCause, CompleteCode, CompleteDiagnostic, HostCause};
+pub use extension::{ExtensionForms, ExtensionProduction};
 pub use lexer::{declared_edition, DeclaredEdition, Limits};
 
 /// The one edition the complete-V1 grammar admits (its `Header` rule).
@@ -257,7 +259,23 @@ pub fn parse_with_cancel(
     cancel: &Cancel,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
     let source = diagnostic::read_source(identity, path, bytes, limits.source_bytes)?;
-    parser::parse(source, limits, cancel)
+    parser::parse(source, limits, cancel, &ExtensionForms::default())
+}
+
+/// [`parse_with_cancel`] where each of `forms` is also a declaration form of
+/// the unit (FR-354). A leading keyword of `forms` is recognised only as the
+/// first token of a top-level declaration; everywhere else the same word
+/// stays an ordinary identifier.
+pub fn parse_with_extensions(
+    identity: SourceIdentity,
+    path: impl Into<String>,
+    bytes: &[u8],
+    limits: Limits,
+    forms: &ExtensionForms,
+    cancel: &Cancel,
+) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
+    let source = diagnostic::read_source(identity, path, bytes, limits.source_bytes)?;
+    parser::parse(source, limits, cancel, forms)
 }
 
 /// Parse an already admitted exact source.
@@ -265,5 +283,5 @@ pub fn parse_source(
     source: Source,
     limits: Limits,
 ) -> Result<ParsedSource, Box<CompleteDiagnostic>> {
-    parser::parse(source, limits, &Cancel::new())
+    parser::parse(source, limits, &Cancel::new(), &ExtensionForms::default())
 }

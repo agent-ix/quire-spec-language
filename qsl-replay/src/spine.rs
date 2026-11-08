@@ -33,9 +33,9 @@ use qsl_foundation::{Code, SourceIdentity, Span};
 use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
 use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
-    AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProbabilisticCause,
-    ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause, TimeUnitCause,
-    TopologyRetained,
+    AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ExtensionCause,
+    ProbabilisticCause, ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause,
+    TimeUnitCause, TopologyRetained,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -52,10 +52,11 @@ pub use lifecycle::{
     admit_parsed_unit_list, check, check_units, check_units_with_refinement_internals,
     check_with_execution_points, check_with_execution_points_and_refinement_internals,
     check_with_profile_catalog, check_with_refinement_internals,
-    check_with_temporal_selections_and_execution_points, package, package_with_temporal_selections,
-    parse, preflight_unit_list, refusal_or_fault, select, select_units, AdmittedModels,
-    AdmittedUnitList, CheckedUnit, EmittedUnit, FrontEndFailure, ObligationState, PackageLimits,
-    ParseRequest, ParsedUnitSource, PendingObligation, ProfileCatalogInput, ProfileCheckFailure,
+    check_with_temporal_selections_and_execution_points, core_vocabulary, extension_forms, package,
+    package_with_temporal_selections, parse, parse_selecting_extensions, parse_with_extensions,
+    preflight_unit_list, refusal_or_fault, select, select_units, AdmittedModels, AdmittedUnitList,
+    CheckedUnit, EmittedUnit, FrontEndFailure, ObligationState, PackageLimits, ParseRequest,
+    ParsedUnitSource, PendingObligation, ProfileCatalogInput, ProfileCheckFailure,
     ProtocolCheckSite, TypeDeclaration, TypeReport, TypeRequirement,
 };
 pub(crate) use lifecycle::{
@@ -192,19 +193,22 @@ pub use call::{
 
 pub(crate) mod clause;
 pub use clause::{
-    admit_progress, run_clause, run_clause_with_temporal_selections, run_package_temporal,
-    run_trace_subject_clause, temporal_batch_exit_code, temporal_batch_outcome,
-    AuthenticatedTemporalSelection, ClauseArgument, ClauseArgumentValue, ClauseDisposition,
-    ClauseRunRefusal, ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource,
-    ClauseRunStage, ConsequentEventRefusal, ConsequentSourceEvent, ConsequentSourceEvents,
-    ConsequentState, ContradictedDimension, FiniteWindowAssessment, FiniteWindowPremises,
-    FiniteWindowReport, FiniteWindowSupport, LedgerBinding, ObservedPosition, OperationName,
-    OverObject, PackageTemporalRequest, ProgressAssertion, ProgressClosure, ProgressCompleteness,
-    ProgressContradiction, ProgressLedger, ProgressLedgerEntry, ProgressLimitReached,
-    ProgressLowerBoundary, ProgressRefusal, ProgressValue, TemporalIndeterminateReason,
-    TemporalPositionRefusal, TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict,
-    TemporalWindowRefusal, TimestampedCover, TimestampedMissingValuation, TimestampedObservation,
-    TimestampedOrderKey, TimestampedWindow, TraceBinding, TraceInput, TraceSubjectClauseRequest,
+    admit_progress, authenticate_emission, authenticate_package_trace, name_clause_atom,
+    run_clause, run_clause_with_temporal_selections, run_package_temporal,
+    run_package_trace_subject, run_trace_subject_clause, temporal_batch_exit_code,
+    temporal_batch_outcome, AuthenticatedTemporalSelection, AuthenticationFailure, ClauseArgument,
+    ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest,
+    ClauseRunSelection, ClauseRunSource, ClauseRunStage, ClauseRunUsage, ConsequentEventRefusal,
+    ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState, ContradictedDimension,
+    FiniteWindowAssessment, FiniteWindowPremises, FiniteWindowReport, FiniteWindowSupport,
+    LedgerBinding, ObservedPosition, OperationName, OverObject, PackageAuthentication,
+    PackageTemporalRequest, PackageTraceSubjectRequest, PackagesStage, ProgressAssertion,
+    ProgressClosure, ProgressCompleteness, ProgressContradiction, ProgressLedger,
+    ProgressLedgerEntry, ProgressLimitReached, ProgressLowerBoundary, ProgressRefusal,
+    ProgressValue, TemporalAuthentication, TemporalIndeterminateReason, TemporalPositionRefusal,
+    TemporalTraceRefusal, TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal,
+    TimestampedCover, TimestampedMissingValuation, TimestampedObservation, TimestampedOrderKey,
+    TimestampedWindow, TraceBinding, TraceInput, TraceSubjectClauseRequest,
 };
 mod refinement;
 pub use refinement::{
@@ -215,12 +219,13 @@ mod native_result;
 mod protocol_proof;
 pub(crate) use native_result::{item_record, ReasonWire};
 pub use native_result::{
-    read_native_run_result, write_clause_run_result, CallLocationRead, CallLocusRead,
-    CallOriginRead, ClauseRunRecord, ClosureRead, CommandErrorRecord, CounterexampleRead,
-    DimensionRead, EffectiveIdRead, FairnessGranularityRead, FairnessKindRead,
-    FairnessOperationRead, FairnessRead, GuardRead, IndeterminateReasonRead, NativeRunOutcome,
-    NativeRunReadError, NativeRunResult, NativeRunResultError, PositionRead, ProgressValueRead,
-    RefusalLocusRead, SourceRefRead, SpanRead, TemporalRecord, UndefinedLocusRead,
+    read_native_run_result, read_native_run_result_bounded, write_clause_run_result,
+    CallLocationRead, CallLocusRead, CallOriginRead, ClauseRunRecord, ClosureRead,
+    CommandErrorRecord, CounterexampleRead, DimensionRead, EffectiveIdRead,
+    FairnessGranularityRead, FairnessKindRead, FairnessOperationRead, FairnessRead, GuardRead,
+    IndeterminateReasonRead, NativeRunLimits, NativeRunOutcome, NativeRunReadError,
+    NativeRunResult, NativeRunResultError, PositionRead, ProgressValueRead, RefusalLocusRead,
+    SourceRefRead, SpanRead, TemporalRecord, UndefinedLocusRead,
 };
 pub use protocol_proof::{
     ProtocolProofCause, ProtocolProofCorrespondence, ProtocolProofDisposition,
@@ -300,6 +305,10 @@ pub enum CompileRefusal {
         /// The region of the first refusal's identity literal.
         region: Option<SourceRegion>,
     },
+    /// FR-354 "Definition validation": a selected extension definition did
+    /// not validate, or its selection did not resolve in the catalog.
+    #[error("{0}")]
+    Extension(qsl_semantics::library::extension::ExtensionRefusal),
     /// E3: the FR-091 assembler refused the unit.
     #[error("the assembler refused the unit: {}", assembly_message(.refusal))]
     Assembly {
@@ -377,6 +386,7 @@ impl CompileRefusal {
             Self::Profile { refusals, .. } => refusals
                 .first()
                 .map_or(Code::RuntimeInvariant, ProfileRefusal::code),
+            Self::Extension(refusal) => refusal.code(),
             Self::Assembly { refusal, .. } => refusal
                 .errors
                 .first()
@@ -406,6 +416,7 @@ impl CompileRefusal {
                 .first()
                 .map(|error| error.cause.catalog_code().cause()),
             Self::Profile { refusals, .. } => refusals.first().map(ProfileRefusal::cause),
+            Self::Extension(refusal) => Some(refusal.cause().as_str()),
             Self::DependencyInput(refusal) => refusal.cause(),
             Self::Import { refusal, .. } => refusal.cause(),
             Self::Dependency { refusal, .. } => refusal.cause(),
@@ -437,12 +448,17 @@ impl CompileRefusal {
             // reports its retained charge.
             Self::Check { refusals, .. } => {
                 let mut fields = refusals
-                    .iter()
-                    .find_map(|refusal| match refusal.cause.unwrapped() {
-                        CheckCause::DispatchLink(cause) => {
-                            cause.denial.as_ref().map(|denial| denial.catalog_fields())
-                        }
-                        _ => None,
+                    .first()
+                    .and_then(|refusal| refusal.cause.type_check_fields())
+                    .or_else(|| {
+                        refusals
+                            .iter()
+                            .find_map(|refusal| match refusal.cause.unwrapped() {
+                                CheckCause::DispatchLink(cause) => {
+                                    cause.denial.as_ref().map(|denial| denial.catalog_fields())
+                                }
+                                _ => None,
+                            })
                     })
                     .unwrap_or_default();
                 // FR-366: a refusal in a type-level invariant names the
@@ -473,7 +489,9 @@ impl CompileRefusal {
             | Self::DependencyInput(_)
             | Self::Import { .. } => SpineStage::Intake,
             Self::Dependency { refusal, .. } => refusal.stage(),
-            Self::Assembly { .. } | Self::Profile { .. } => SpineStage::Assembly,
+            Self::Assembly { .. } | Self::Profile { .. } | Self::Extension(_) => {
+                SpineStage::Assembly
+            }
             Self::Check { .. } => SpineStage::Check,
             Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => SpineStage::Emit,
             Self::Limit(limit) => match limit.setting() {
@@ -587,6 +605,7 @@ impl CompileRefusal {
             Self::OperationClause { .. }
             | Self::TypeInvariant { .. }
             | Self::DependencyInput(_)
+            | Self::Extension(_)
             | Self::Link(_)
             | Self::Emit(_)
             | Self::Omitted(_) => None,
@@ -808,6 +827,20 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
     let message = match &first.cause {
         AssemblyCause::EmptyUnitList => "the package has no source units".to_owned(),
         AssemblyCause::UnresolvedTypeName { name } => format!("no declaration is named `{name}`"),
+        AssemblyCause::UnresolvedUnitName { name, packages } => {
+            if packages.is_empty() {
+                format!("no unit is named `{name}`")
+            } else {
+                let spellings = packages
+                    .iter()
+                    .map(|package| format!("`{package}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "no unit of this unit is named `{name}`; the selected packages {spellings} each declare one, reached as `Alias::{name}`"
+                )
+            }
+        }
         AssemblyCause::ImportedTypeName { name } => {
             format!("`{name}` names an imported declaration, which stands only as a callee")
         }
@@ -1359,6 +1392,34 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     protocol, temporal, ..
                 } => format!(
                     "{message}: `requires temporal {temporal}` reaches `protocol {protocol}` again"
+                ),
+            };
+        }
+        CheckCause::Extension(cause) => {
+            message = match cause.as_ref() {
+                ExtensionCause::TypeMismatch {
+                    clause,
+                    expected,
+                    actual,
+                    ..
+                } => format!(
+                    "{message}: clause `{clause}` is checked against `{expected}` but its value is `{actual}`"
+                ),
+                ExtensionCause::AmbiguousName { name, .. } => {
+                    format!("{message}: `{name}` names an extension form and another declaration")
+                }
+                ExtensionCause::Cycle { cycle, .. } => {
+                    format!("{message}: the forms {} reach themselves", cycle.join(" -> "))
+                }
+                ExtensionCause::UnheldKeyword { keyword, .. } => {
+                    format!("{message}: `{keyword}` is the leading keyword of no selected extension")
+                }
+                ExtensionCause::ClauseOrder {
+                    found, expected, ..
+                } => format!(
+                    "{message}: found {}, expected {}",
+                    found.as_deref().map_or("no clause".to_owned(), |name| format!("clause `{name}`")),
+                    expected.as_deref().map_or("no further clause".to_owned(), |name| format!("clause `{name}`")),
                 ),
             };
         }
@@ -2553,6 +2614,158 @@ mod tests {
     use quire_semantic_value::checking::CheckingLimits;
     use quire_semantic_value::location::{Location, Origin};
     use std::collections::BTreeMap;
+
+    #[trace("TC-1339", "FR-534-AC-3")]
+    #[test]
+    fn declared_type_storage_requests_reach_compile_diagnostics() {
+        use qsl_semantics::check::{
+            CheckingStage, PredicateRole, SlotKind, StateGraphCause, StateModelRefusal,
+            TemporalCause,
+        };
+        use quire_semantic_value::declaration::{StorageRequest, StorageUnit};
+        for (amount, unit, name) in [
+            (13, StorageUnit::Bytes, "bytes"),
+            (31, StorageUnit::AdditionalElements, "additional-elements"),
+        ] {
+            let request = StorageRequest::new(amount, unit);
+            for (cause, field, tag) in [
+                (
+                    CheckCause::TypeCheckAllocation(request),
+                    "requested",
+                    "allocation-failed",
+                ),
+                (
+                    CheckCause::TypeCheckCapacity(request),
+                    "upstream",
+                    "reservation-size-overflow",
+                ),
+            ] {
+                let span = Span { start: 2, end: 5 };
+                let wrapped = [
+                    cause.clone(),
+                    CheckCause::StateModel(Box::new(StateModelRefusal {
+                        cause: cause.clone(),
+                        receiver: None,
+                    })),
+                    CheckCause::StateGraph(Box::new(StateGraphCause::Predicate {
+                        role: PredicateRole::Target,
+                        span,
+                        cause: Box::new(cause.clone()),
+                    })),
+                    CheckCause::Temporal(Box::new(TemporalCause::TimedPredicate {
+                        span,
+                        cause: Box::new(cause.clone()),
+                    })),
+                    CheckCause::Temporal(Box::new(TemporalCause::Multiple {
+                        causes: vec![
+                            TemporalCause::TimedPredicate {
+                                span,
+                                cause: Box::new(cause.clone()),
+                            },
+                            TemporalCause::TimedPredicate {
+                                span,
+                                cause: Box::new(CheckCause::IllTyped(
+                                    quire_exact::IllTypedCause::TypeMismatch,
+                                )),
+                            },
+                        ],
+                    })),
+                    CheckCause::ProtocolAnchor(Box::new(ProtocolAnchorCause::KeyClause {
+                        channel: "channel".to_owned(),
+                        span,
+                        cause: Box::new(cause.clone()),
+                    })),
+                    CheckCause::ProtocolAnchor(Box::new(ProtocolAnchorCause::SlotClause {
+                        node: "slot".to_owned(),
+                        slot: SlotKind::Condition,
+                        span,
+                        cause: Box::new(cause),
+                    })),
+                ];
+                for cause in wrapped {
+                    let location = Location::at(Origin::Expression, &[7, 2]);
+                    assert_eq!(cause.type_check_stage(), Some(CheckingStage::Typing));
+                    let refusal = CompileRefusal::Check {
+                        refusals: vec![CheckRefusal {
+                            cause,
+                            location: location.clone(),
+                        }],
+                        region: None,
+                    };
+                    assert_eq!(refusal.code(), Code::ResourceExhausted);
+                    assert_eq!(refusal.cause(), Some(tag));
+                    assert_eq!(refusal.stage(), SpineStage::Check);
+                    assert_eq!(
+                        refusal.fields(),
+                        Some(BTreeMap::from([(field, format!("{name}:{amount}"))]))
+                    );
+                    let CompileRefusal::Check { refusals, .. } = refusal else {
+                        unreachable!()
+                    };
+                    assert_eq!(refusals[0].location, location);
+                    assert_eq!(
+                        refusals[0].cause.type_check_stage(),
+                        Some(CheckingStage::Typing)
+                    );
+                }
+            }
+        }
+    }
+
+    #[trace("TC-1339", "FR-534-AC-3")]
+    #[test]
+    fn temporal_multiple_projects_only_its_first_reported_cause() {
+        use qsl_semantics::check::TemporalCause;
+        use quire_semantic_value::declaration::{StorageRequest, StorageUnit};
+        let span = Span { start: 1, end: 4 };
+        let cause = CheckCause::Temporal(Box::new(TemporalCause::Multiple {
+            causes: vec![
+                TemporalCause::TimedPredicate {
+                    span,
+                    cause: Box::new(CheckCause::IllTyped(
+                        quire_exact::IllTypedCause::TypeMismatch,
+                    )),
+                },
+                TemporalCause::TimedPredicate {
+                    span,
+                    cause: Box::new(CheckCause::TypeCheckAllocation(StorageRequest::new(
+                        9,
+                        StorageUnit::Bytes,
+                    ))),
+                },
+            ],
+        }));
+        assert_eq!(cause.type_check_stage(), None);
+        let refusal = CompileRefusal::Check {
+            refusals: vec![CheckRefusal {
+                location: Location::root(Origin::Expression),
+                cause,
+            }],
+            region: None,
+        };
+        assert_eq!(refusal.code(), Code::IllTyped);
+        assert_eq!(refusal.cause(), Some("type-mismatch"));
+        assert_eq!(refusal.fields(), None);
+        let refusal = CompileRefusal::Check {
+            refusals: vec![
+                CheckRefusal {
+                    location: Location::root(Origin::Expression),
+                    cause: CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
+                },
+                CheckRefusal {
+                    location: Location::root(Origin::Expression),
+                    cause: CheckCause::TypeCheckCapacity(StorageRequest::new(
+                        23,
+                        StorageUnit::AdditionalElements,
+                    )),
+                },
+            ],
+            region: None,
+        };
+        assert_eq!(refusal.code(), Code::IllTyped);
+        assert_eq!(refusal.cause(), Some("type-mismatch"));
+        assert_eq!(refusal.fields(), None);
+    }
 
     /// FR-255-AC-15/16 (TC-721): the outer import limits own the published
     /// native-join storage default and accept the named setting independently.

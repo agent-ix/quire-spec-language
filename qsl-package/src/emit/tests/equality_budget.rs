@@ -3,6 +3,8 @@
 
 use super::*;
 use crate::equality_file::EqualityDecisionFailure;
+use crate::reader_protocol_projection::{admit_equality_decisions, ProjectionSource};
+use crate::EvaluationWitnessSupplier;
 use crate::{BarePackage, BareSupply, NativeJoinFailure, ReadEqualityRows};
 use quire_contract_model::{
     AdmittedEqualityReadErrorCode as Code, NativeJoinBudget, NativeJoinChargeKind,
@@ -24,11 +26,18 @@ fn producer_and_bytes_equality_share_exact_owner_charges_and_denials() {
     let [row] = emission.equality_producer_identity_rows() else {
         panic!("one equality")
     };
-    let witness = emission.equality_witness(&admitted);
+    let witness = emission
+        .equality_witness(&admitted, &mut NativeJoinBudget::new(1_000_000, 1_000_000))
+        .expect("budgeted witness");
     let bytes = witness
         .to_bytes(&admitted)
         .expect("authentic equality bytes");
     let read = ReadEqualityRows::read(&bytes, &admitted).expect("bytes read");
+    let mut materialize = NativeJoinBudget::new(1_000_000, 1_000_000);
+    emission
+        .equality_rows(&mut materialize)
+        .expect("actual producer materialization");
+    let prefix = materialize.consumed();
     let mut measure = NativeJoinBudget::new(1_000_000, 1_000_000);
     let expected = emission
         .admitted_equality(
@@ -46,28 +55,36 @@ fn producer_and_bytes_equality_share_exact_owner_charges_and_denials() {
         expected.operator(),
         quire_semantic_value::declaration::EqualityOperator::Equal
     );
-    let need = measure.consumed();
-    assert!(need.work > 0 && need.storage > 0);
-    let mut exact = NativeJoinBudget::new(need.work, need.storage);
-    let actual = read
-        .decision(&admitted, row.checked_node(), &mut exact)
-        .unwrap_or_else(|_| panic!("exact bytes budget admits"));
-    assert_eq!(actual, expected);
-    assert_eq!(exact.consumed(), need);
-    for (work, storage, kind, code) in [
-        (
-            need.work - 1,
-            need.storage,
-            NativeJoinChargeKind::Work,
-            Code::WorkLimit,
-        ),
-        (
-            need.work,
-            need.storage - 1,
-            NativeJoinChargeKind::Storage,
-            Code::StorageLimit,
-        ),
+    let total = measure.consumed();
+    let owner = measure
+        .last_success_delta()
+        .expect("the owner reader records its own delta");
+    assert_eq!(total.work, prefix.work + owner.work);
+    assert_eq!(total.storage, prefix.storage + owner.storage);
+    let mut exact = NativeJoinBudget::new(owner.work, owner.storage);
+    assert_eq!(
+        read.decision(&admitted, row.checked_node(), &mut exact)
+            .unwrap_or_else(|failure| match failure {
+                EqualityDecisionFailure::Witness(error) =>
+                    panic!("exact bytes witness refused: {error:?}"),
+                EqualityDecisionFailure::Exhausted(error) =>
+                    panic!("exact bytes budget refused: {error:?}"),
+            }),
+        expected
+    );
+    assert_eq!(exact.consumed(), owner);
+    for (kind, code) in [
+        (NativeJoinChargeKind::Work, Code::WorkLimit),
+        (NativeJoinChargeKind::Storage, Code::StorageLimit),
     ] {
+        let (work, storage, owner_work, owner_storage) = match kind {
+            NativeJoinChargeKind::Work => {
+                (total.work - 1, total.storage, owner.work - 1, owner.storage)
+            }
+            NativeJoinChargeKind::Storage => {
+                (total.work, total.storage - 1, owner.work, owner.storage - 1)
+            }
+        };
         let mut producer = NativeJoinBudget::new(work, storage);
         let failure = emission
             .admitted_equality(
@@ -76,28 +93,40 @@ fn producer_and_bytes_equality_share_exact_owner_charges_and_denials() {
                 row.occurrence(),
                 &mut producer,
             )
-            .expect_err("one short refuses producer");
-        assert_eq!(failure.code, code);
-        assert_eq!(producer.first_unpaid().expect("denial").kind, kind);
-        let mut bytes = NativeJoinBudget::new(work, storage);
-        let Err(EqualityDecisionFailure::Exhausted(failure)) =
+            .expect_err("one short refuses the native reader after the admitted adapter prefix");
+        let NativeJoinFailure::Equality(native) = failure.native() else {
+            panic!("row materialization fits; the actual owner read refuses")
+        };
+        assert_eq!(native.code, code);
+        let mut bytes = NativeJoinBudget::new(owner_work, owner_storage);
+        let Err(EqualityDecisionFailure::Exhausted(native)) =
             read.decision(&admitted, row.checked_node(), &mut bytes)
         else {
-            panic!("one short is typed native exhaustion")
+            panic!("one short is the original native exhaustion")
         };
-        assert_eq!(failure.code, code);
-        assert_eq!(bytes.consumed(), producer.consumed());
-        assert_eq!(bytes.first_unpaid(), producer.first_unpaid());
+        assert_eq!(native.code, code);
+        assert_eq!(
+            producer.consumed().work,
+            prefix.work + bytes.consumed().work
+        );
+        assert_eq!(
+            producer.consumed().storage,
+            prefix.storage + bytes.consumed().storage
+        );
+        assert_eq!(producer.first_unpaid(), bytes.first_unpaid());
     }
-    let mut shared = NativeJoinBudget::new(need.work * 2 - 1, need.storage * 2);
+    let mut shared = NativeJoinBudget::new(total.work * 2 - 1, total.storage * 2);
     emission
         .admitted_equality(&admitted, row.checked_node(), row.occurrence(), &mut shared)
         .expect("first read");
     let first = shared.consumed();
     let error = emission
         .admitted_equality(&admitted, row.checked_node(), row.occurrence(), &mut shared)
-        .expect_err("second read uses remaining allowance");
-    assert_eq!(error.code, Code::WorkLimit);
+        .expect_err("second read spends the same allowance");
+    let NativeJoinFailure::Equality(native) = error.native() else {
+        panic!("second row prefix fits before the owner denial")
+    };
+    assert_eq!(native.code, Code::WorkLimit);
     assert!(shared.consumed().work >= first.work);
     assert_eq!(
         shared.first_unpaid().expect("unpaid work").kind,
@@ -115,7 +144,9 @@ fn bare_admission_retains_equality_and_reports_its_denial_after_projection() {
     let identities = emission
         .identity_rows(&admitted, &mut NativeJoinBudget::new(1_000_000, 1_000_000))
         .expect("original identities");
-    let witness = emission.equality_witness(&admitted);
+    let witness = emission
+        .equality_witness(&admitted, &mut NativeJoinBudget::new(1_000_000, 1_000_000))
+        .expect("budgeted witness");
     let bytes = witness.to_bytes(&admitted).expect("owner bytes");
     let equality = ReadEqualityRows::read(&bytes, &admitted).expect("read owner bytes");
     let supply = BareSupply {
@@ -126,7 +157,15 @@ fn bare_admission_retains_equality_and_reports_its_denial_after_projection() {
     let bare = BarePackage::new(&admitted)
         .with_supply(supply, &mut measure)
         .expect("full admission");
-    let need = measure.consumed();
+    let full = measure.consumed();
+    let declarations = declaration_cost(&admitted, supply);
+    assert!(declarations.work > 0 && declarations.storage > 0);
+    // Equality is admitted before the declarations, so its denials are the
+    // budgets short of what precedes them.
+    let need = quire_contract_model::NativeJoinCharge {
+        work: full.work - declarations.work,
+        storage: full.storage - declarations.storage,
+    };
     let [row] = equality.applications() else {
         panic!("one original row")
     };
@@ -142,8 +181,8 @@ fn bare_admission_retains_equality_and_reports_its_denial_after_projection() {
         quire_semantic_value::declaration::EqualitySchedule::Text
     );
     bare.world().expect("world uses admitted projections");
-    assert_eq!(measure.consumed(), need);
-    let mut exact = NativeJoinBudget::new(need.work, need.storage);
+    assert_eq!(measure.consumed(), full);
+    let mut exact = NativeJoinBudget::new(full.work, full.storage);
     let exact_bare = BarePackage::new(&admitted)
         .with_supply(supply, &mut exact)
         .expect("exact complete pass");
@@ -156,16 +195,23 @@ fn bare_admission_retains_equality_and_reports_its_denial_after_projection() {
             .expect("decision"),
         &expected
     );
-    assert_eq!(exact.consumed(), need);
+    assert_eq!(exact.consumed(), full);
+    // One short of the whole pass is denied by the declaration projection.
+    for (work, storage) in [(full.work - 1, full.storage), (full.work, full.storage - 1)] {
+        let error = BarePackage::new(&admitted)
+            .with_supply(supply, &mut NativeJoinBudget::new(work, storage))
+            .expect_err("one short in the declarations");
+        assert!(matches!(error.native(), NativeJoinFailure::Projection(_)));
+    }
     for (work, storage, kind, code) in [
         (
             need.work - 1,
-            need.storage,
+            full.storage,
             NativeJoinChargeKind::Work,
             Code::WorkLimit,
         ),
         (
-            need.work,
+            full.work,
             need.storage - 1,
             NativeJoinChargeKind::Storage,
             Code::StorageLimit,
@@ -175,10 +221,23 @@ fn bare_admission_retains_equality_and_reports_its_denial_after_projection() {
         let error = BarePackage::new(&admitted)
             .with_supply(supply, &mut budget)
             .expect_err("one short in equality");
-        let NativeJoinFailure::Equality(native) = error else {
+        let NativeJoinFailure::Equality(native) = error.native() else {
             panic!("actual equality cause after identity/type prefix")
         };
         assert_eq!(native.code, code);
+        let diagnostic = error
+            .limit()
+            .expect("bare entry retains the stage diagnostic");
+        let (bound, consumed) = if kind == NativeJoinChargeKind::Work {
+            (work, budget.consumed().work)
+        } else {
+            (storage, budget.consumed().storage)
+        };
+        assert_eq!(diagnostic.configured_bound(), bound);
+        assert_eq!(
+            diagnostic.actual(),
+            u128::from(consumed) + budget.first_unpaid().expect("unpaid").amount
+        );
         assert_eq!(native.consumed_work, budget.consumed().work);
         assert!(budget.consumed().work > 0 && budget.consumed().storage > 0);
         assert_eq!(budget.first_unpaid().expect("first unpaid").kind, kind);
@@ -197,17 +256,24 @@ fn source_evaluation_view_preserves_the_equality_denial_and_exact_stage_limit() 
         panic!("owner admits")
     };
     let mut measure = NativeJoinBudget::new(1_000_000, 1_000_000);
-    let identities = emission
-        .identity_rows(&admitted, &mut measure)
-        .expect("producer row join");
-    let equality = emission.equality_witness(&admitted);
-    let supply = BareSupply {
-        identities: &identities,
-        equality: Some(&equality),
-    };
-    BarePackage::new(&admitted)
-        .with_supply(supply, &mut measure)
-        .expect("same complete native pass");
+    // The pass view creation owns: the supplier's join, the reader's
+    // validation of what it supplied, then the equality admission.
+    let rebound = crate::SourceWitnessSupplier::new(&emission)
+        .supply(&admitted, &mut measure)
+        .expect("the source supplier joins its rows")
+        .identities
+        .expect("the source supplier holds identities")
+        .validate_and_rebind(&admitted, &mut measure)
+        .expect("the reader validates the supplied identities");
+    project_every_node(&admitted, &rebound, &mut measure);
+    admit_equality_decisions(
+        &admitted,
+        ProjectionSource::Source {
+            emission: &emission,
+        },
+        &mut measure,
+    )
+    .expect("same complete native pass");
     let need = measure.consumed();
     let domains = BTreeMap::new();
     let limits = |work, storage| {
@@ -222,6 +288,7 @@ fn source_evaluation_view_preserves_the_equality_denial_and_exact_stage_limit() 
         &domains,
         limits(need.work, need.storage),
         crate::EmitLimits::fixture(),
+        crate::SourceWitnessSupplier::new(&emission),
     )
     .expect("public source reader admits");
     read.evaluation_view()
@@ -244,13 +311,23 @@ fn source_evaluation_view_preserves_the_equality_denial_and_exact_stage_limit() 
     ] {
         // The same original row-production prefix that evaluation_view owns.
         let mut expected_budget = NativeJoinBudget::new(work, storage);
-        emission
-            .identity_rows(&admitted, &mut expected_budget)
-            .expect("prefix admits");
-        let error = BarePackage::new(&admitted)
-            .with_supply(supply, &mut expected_budget)
-            .expect_err("equality is the denied tail");
-        let NativeJoinFailure::Equality(expected) = error else {
+        let rebound = crate::SourceWitnessSupplier::new(&emission)
+            .supply(&admitted, &mut expected_budget)
+            .expect("prefix admits")
+            .identities
+            .expect("the source supplier holds identities")
+            .validate_and_rebind(&admitted, &mut expected_budget)
+            .expect("the reader validates the supplied identities");
+        project_every_node(&admitted, &rebound, &mut expected_budget);
+        let error = admit_equality_decisions(
+            &admitted,
+            ProjectionSource::Source {
+                emission: &emission,
+            },
+            &mut expected_budget,
+        )
+        .expect_err("equality is the denied tail");
+        let NativeJoinFailure::Equality(expected) = &error else {
             panic!("owner equality denial")
         };
         assert_eq!(expected.code, code);
@@ -275,15 +352,48 @@ fn source_evaluation_view_preserves_the_equality_denial_and_exact_stage_limit() 
             &domains,
             limits(work, storage),
             crate::EmitLimits::fixture(),
+            crate::SourceWitnessSupplier::new(&emission),
         )
         .expect("I2 read still admits");
         let Err(crate::ViewFailure::Exhausted(denial)) = short.evaluation_view() else {
             panic!("public view must expose exhaustion")
         };
-        assert_eq!(denial.native, NativeJoinFailure::Equality(expected));
+        assert_eq!(denial.native, error.clone());
         assert_eq!(denial.limit.configured_bound(), bound);
         assert_eq!(denial.limit.setting().name(), setting);
         assert_eq!(denial.limit.actual(), u128::from(consumed) + unpaid.amount);
         assert_eq!(denial.catalog_code().code(), "stage_limit_exceeded");
+    }
+}
+
+/// What the selected-object declaration projection, the last charge of
+/// `with_supply` (FR-533 "Observation admission"), costs on its own.
+fn declaration_cost(
+    admitted: &quire_contract_model::CheckedPackageV2,
+    supply: BareSupply<'_>,
+) -> quire_contract_model::NativeJoinCharge {
+    let bare = BarePackage::new(admitted)
+        .with_supply(supply, &mut NativeJoinBudget::new(1_000_000, 1_000_000))
+        .expect("full admission");
+    let mut budget = NativeJoinBudget::new(1_000_000, 1_000_000);
+    admitted
+        .project_selected_type_declarations(
+            bare.identities().expect("joined identities"),
+            &[],
+            supply.equality.map_or(&[], |rows| rows.source_units()),
+            &mut budget,
+        )
+        .expect("the declarations project");
+    budget.consumed()
+}
+
+/// The per-node projection that view creation charges after validation.
+fn project_every_node(
+    admitted: &quire_contract_model::CheckedPackageV2,
+    identities: &quire_contract_model::SelectedExactIdentities,
+    budget: &mut NativeJoinBudget,
+) {
+    for node in &admitted.resolved_graph().nodes {
+        let _ = admitted.project_exact_type(&node.node_id, identities, budget);
     }
 }

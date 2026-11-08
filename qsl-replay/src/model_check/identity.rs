@@ -55,7 +55,12 @@ impl ClauseIdentity {
     /// The identity of `clause` in `package`, read from the package's
     /// emitted `quire.checked-package/v2` bytes through the I2 lookup.
     /// `domain_packages` is FR-056's package input the read checks the
-    /// package's model selections against.
+    /// package's model selections against. The emission does not run S3, so
+    /// `package` was checked with the same `temporal_clock_selections`
+    /// (`PackageDeclarations::with_clock_units`): a `duration` window in a
+    /// unit other than the clock unit is converted there (FR-337
+    /// "Aggregate formula emission"), and a package checked without them
+    /// refuses at emission with `InvalidTemporalClockValue`.
     ///
     /// # Errors
     ///

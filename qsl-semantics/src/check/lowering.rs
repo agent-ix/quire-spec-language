@@ -76,6 +76,7 @@ use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::quantity::UnitTable;
 
 mod abstraction;
+mod extension;
 mod hybrid;
 mod hyper;
 mod model;
@@ -89,6 +90,7 @@ mod temporal;
 mod terminal;
 mod timed_clause;
 
+pub(crate) use extension::ExtensionFormInput;
 pub(crate) use hybrid::{
     hybrid_location, hybrid_site, HybridClaimInput, HybridModelInput, HybridSite,
 };
@@ -110,7 +112,7 @@ pub(crate) use protocol::{
     compensation_origin, declaration_origin, protocol_location, AttemptNodes, CompensationNodes,
     ProtocolInput,
 };
-pub use protocol::{protocol_site, ProtocolSite};
+pub use protocol::{protocol_site, ProtocolSite, RelatedSide};
 pub(crate) use state::{
     protocol_attempt_operation_location, protocol_attempt_operation_site,
     state_clause_name_location, state_clause_name_site, state_operation_location,
@@ -895,6 +897,11 @@ pub(crate) struct Lowered {
     /// The S4 identities of each protocol's clause and emitted members,
     /// retained for FR-390's checked-body selector.
     pub(crate) protocol_members: BTreeMap<String, protocol::AdmittedProtocolMembers>,
+    /// The slot expressions whose site name is built from the emitted control
+    /// node: each `related` end's root location as the checker gave it, and
+    /// the name its record's position in the emitted array gives it
+    /// (QSpec FR-322-AC-388). `check` relocates the end under that name.
+    pub(crate) related_renames: Vec<(Location, String)>,
     /// QSL equality facts retained by the checked equality application's key
     /// and source occurrence. Structural keys can be reused by distinct
     /// occurrences whose authored conversion decisions differ.
@@ -1050,6 +1057,8 @@ pub(crate) struct Lowering<'a> {
     /// Exact source-parameter mapping for each protocol expression body.
     protocol_expression_binders:
         BTreeMap<String, Vec<crate::check::protocol_clause::CheckedProtocolExpressionBindings>>,
+    /// See [`Lowered::related_renames`].
+    related_renames: Vec<(Location, String)>,
     /// The protocol whose S4 bodies are being lowered, when any.
     active_protocol: Option<String>,
 }
@@ -1084,6 +1093,16 @@ pub(crate) fn admitted_step_relation_key(
         0,
     )
     .map_err(|refusal| fault(location, KeyFault::ModelRootKey(refusal.to_string())))
+}
+
+/// The rounding mode of a carried quantity: its carrier's, `exact` for a
+/// rational carrier (QSpec FR-142 "Carried quantity").
+fn carrier_rounding(carried: &quire_exact::CarriedQuantityType) -> quire_exact::RoundingMode {
+    match carried.carrier() {
+        quire_exact::QuantityCarrier::Decimal(decimal) => decimal.rounding(),
+        quire_exact::QuantityCarrier::Integer { rounding, .. } => *rounding,
+        quire_exact::QuantityCarrier::Rational(_) => quire_exact::RoundingMode::Exact,
+    }
 }
 
 /// The original identity of a model variant whose owner path is
@@ -2050,6 +2069,7 @@ impl<'a> Lowering<'a> {
             refused_temporals: BTreeSet::new(),
             protocol_binder_keys: BTreeMap::new(),
             protocol_expression_binders: BTreeMap::new(),
+            related_renames: Vec::new(),
             active_protocol: None,
             unsettled_protocols: Vec::new(),
         }
@@ -2154,6 +2174,7 @@ impl<'a> Lowering<'a> {
             // Ranked first, so collecting compares each key with one neighbour.
             composites,
             protocol_members,
+            related_renames: self.related_renames,
             equality_producer_data: self.equality_producer_data,
             equality_producer_identities: self.equality_producer_identities,
             dispatch_producer_decisions: self.dispatch_producer_decisions,
@@ -4891,13 +4912,7 @@ impl<'a> Lowering<'a> {
                     // FR-093 / FR-497 quantity conversions carry the target
                     // carrier's mode, or exact for an uncarried Quantity.
                     let rounding = if let ValueType::CarriedQuantity(carried) = &target {
-                        match carried.carrier() {
-                            quire_exact::QuantityCarrier::Decimal(decimal) => decimal.rounding(),
-                            quire_exact::QuantityCarrier::Integer { rounding, .. } => *rounding,
-                            quire_exact::QuantityCarrier::Rational(_) => {
-                                quire_exact::RoundingMode::Exact
-                            }
-                        }
+                        carrier_rounding(carried)
                     } else {
                         quire_exact::RoundingMode::Exact
                     };
@@ -4997,12 +5012,18 @@ impl<'a> Lowering<'a> {
                                 None,
                                 Some(quire_exact::RoundingMode::Exact),
                             ),
+                            // FR-322 "Carried-quantity sum": the mode is the
+                            // carrier's, which the summand and result pin.
+                            ValueType::CarriedQuantity(carried) => (
+                                "quire.op.collection.sum.carried_quantity",
+                                None,
+                                Some(carrier_rounding(carried)),
+                            ),
                             ValueType::Integer | ValueType::Int(_) => {
                                 ("quire.op.collection.sum.integer", None, None)
                             }
                             // Typing admits no other total (FR-145).
                             ValueType::Boolean
-                            | ValueType::CarriedQuantity(_)
                             | ValueType::BoundedQuantity(_)
                             | ValueType::Text(_)
                             | ValueType::String
@@ -6203,6 +6224,20 @@ impl<'a> Lowering<'a> {
     /// quantity or absent option, the enum member's nominal node for an
     /// enum member.
     fn literal(&mut self, node: CheckedNode<'_>, value: &Value) -> Result<LeafTerm, CheckRefusal> {
+        self.literal_as(node, value, node.value_type(), None)
+    }
+
+    /// [`Self::literal`] typed at the bare `scalar` type node when one is
+    /// given, else at the node of `declared`, which a literal
+    /// admitted into a declared type (an extension clause's `Int[1, 3650]`)
+    /// carries instead of the narrower type of the value alone.
+    fn literal_as(
+        &mut self,
+        node: CheckedNode<'_>,
+        value: &Value,
+        declared: &ValueType,
+        scalar: Option<&'static str>,
+    ) -> Result<LeafTerm, CheckRefusal> {
         let literal = match value {
             Value::Boolean(value) => LiteralValue::Boolean(*value),
             Value::Integer(value) => LiteralValue::Integer(value.clone()),
@@ -6216,7 +6251,7 @@ impl<'a> Lowering<'a> {
                 // FR-093: the enum member's QSpec `enum_value` node, whose
                 // key is its `VariantId` (ADR-013 O-14). A model variant
                 // type's nodes are built where it is first named, here.
-                self.type_ref(node.value_type(), node.location())?;
+                self.type_ref(declared, node.location())?;
                 let variant = member.variant();
                 let key = crate::value::enumeration::enum_value_key_in(
                     &self.package_name,
@@ -6253,9 +6288,15 @@ impl<'a> Lowering<'a> {
             | Value::Union(_) => return Err(fault(node.location(), KeyFault::UnbuiltLiteral)),
             Value::Uuid(value) => LiteralValue::Uuid(*value),
             Value::Timestamp(value) => LiteralValue::Timestamp(*value),
+            // A string written for a `Text` clause is a text literal of the
+            // bare `text` scalar (IR joins the two).
+            Value::String(value) if scalar == Some("text") => LiteralValue::Text(value.clone()),
             Value::String(value) => LiteralValue::String(value.clone()),
         };
-        let semantic_type = self.type_ref(node.value_type(), node.location())?;
+        let semantic_type = match scalar {
+            Some(form) => NodeRef::from(self.scalar(form, node.location())?),
+            None => self.type_ref(declared, node.location())?,
+        };
         self.value_node(
             node,
             "literal",
@@ -7089,7 +7130,7 @@ fn walked_operands(content: &NodeContent) -> Vec<quire_exact::PathSegment> {
             walk.text(application.operator.wire_name());
             walk.node(&application.result_type);
         }
-        BodyTerm::Frame(_) | BodyTerm::Abstraction(_) => {}
+        BodyTerm::Frame(_) | BodyTerm::Abstraction(_) | BodyTerm::Extension(_) => {}
     }
     if let Some(semantic_type) = &content.semantic_type {
         walk.node(semantic_type);
@@ -7161,6 +7202,7 @@ fn named_nodes(node: &SemanticNode) -> Vec<NodeKey> {
             );
         }
         BodyTerm::Abstraction(term) => named.extend(term.targets().into_iter().flatten()),
+        BodyTerm::Extension(term) => named.extend(term.targets().into_iter().flatten()),
         BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
     }
     // A dependency's node is not a node of this graph.

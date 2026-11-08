@@ -485,6 +485,7 @@ fn forms_refusal_is_attributed_to_its_declaration_and_source() {
             source,
             "unit.native",
             bytes.as_bytes(),
+            &super::HeldExtensions::default(),
             SourceLimits::default(),
             &cancel,
         )
@@ -803,34 +804,86 @@ fn spine_refuses_every_invisible_guard_atom_even_in_a_skipped_operand() {
         CheckCause::ProtocolAnchor(cause)
             if matches!(cause.as_ref(), ProtocolAnchorCause::WrongObservation { .. })
     )));
+}
 
-    // The same spelling in another owner is rejected as a shadow before the
-    // guard can accidentally bind to that owner's value.
-    let (same_name_direct, same_name) = check_skipped(
-        "protocol Flow using Complete over (input: M::Widget) on origin {\n\
-           role R on M::Widget; role S on M::Widget;\n\
-           channel ch from R to S carries Plain ordering unordered delivery unknown capacity 2 overflow block;\n\
-           run parallel Both {\n\
-             branch left sequence Left { event Earlier by R as (rx: Plain) { true }; }\n\
-             branch right sequence Right { send Tx via ch as (tx: Plain) { true };\n\
-               receive Rx via ch of Tx as (rx: Plain) { true };\n\
-               choice Pick by R visible () { case yes when { true or rx.ready } sequence Yes { }\n\
-                 case no when { false } sequence No { } } }\n\
-           } join all [left, right];\n\
+/// TC-1308 row 22b (FR-513-AC-12, FR-113, FR-218-AC-17/18): a same-spelled
+/// name of another owner is not a visible-entry case. A second binder of a
+/// used name refuses `ambiguous_declaration`/`ambiguous-name` at that binder,
+/// naming the first, and a guard that reads a name bound only in another
+/// protocol refuses `missing_declaration`/`missing-name` at the read.
+#[trace("FR-048-AC-4", "FR-513-AC-12", "TC-1308")]
+#[test]
+fn spine_refuses_a_same_spelled_binder_and_an_other_protocol_read() {
+    use qsl_semantics::check::{CheckCause, ProtocolAnchorCause, ShadowedDeclaration};
+
+    let refusals = |protocols: &str| {
+        let source = format!(
+            "{HEADER}model M = \"acme/orders\";\n\
+             record Plain {{ ready: Boolean; }}\n\
+             {protocols}"
+        );
+        let failure = protocol_check_stage(source.as_bytes(), CheckingLimits::default())
+            .expect_err("the spine refuses the guard");
+        let refusal = refusal_or_fault(failure).expect("a typed S3 refusal");
+        let CompileRefusal::Check { refusals, .. } = *refusal else {
+            panic!("the spine reaches protocol checking: {refusal:?}");
+        };
+        refusals
+    };
+
+    for guard in ["rx.ready", "true or rx.ready"] {
+        let found = refusals(&format!(
+            "protocol Flow using Complete over (input: M::Widget) on origin {{\n\
+               role R on M::Widget; role S on M::Widget;\n\
+               channel ch from R to S carries Plain ordering unordered delivery unknown capacity 2 overflow block;\n\
+               run parallel Both {{\n\
+                 branch left sequence Left {{ event Earlier by R as (rx: Plain) {{ true }}; }}\n\
+                 branch right sequence Right {{ send Tx via ch as (tx: Plain) {{ true }};\n\
+                   receive Rx via ch of Tx as (rx: Plain) {{ true }};\n\
+                   choice Pick by R visible () {{ case yes when {{ {guard} }} sequence Yes {{ }}\n\
+                     case no when {{ false }} sequence No {{ }} }} }}\n\
+               }} join all [left, right];\n\
+               finish End as (outcome: Boolean) {{ true }};\n\
+             }}"
+        ));
+        let shadow = found.iter().find(|refusal| {
+            matches!(
+                &refusal.cause,
+                CheckCause::ProtocolAnchor(cause)
+                    if matches!(cause.as_ref(),
+                        ProtocolAnchorCause::Shadow {
+                            name,
+                            shadowed: ShadowedDeclaration::Binder(_),
+                            ..
+                        } if name == "rx")
+            )
+        });
+        let shadow = shadow.unwrap_or_else(|| panic!("second `rx` binder refuses: {found:?}"));
+        assert_eq!(shadow.cause.code().as_str(), "ambiguous_declaration");
+        assert_eq!(shadow.cause.cause(), Some("ambiguous-name"));
+    }
+
+    let found = refusals(
+        "protocol First using Complete over (input: M::Widget) on origin {\n\
+           role R on M::Widget;\n\
+           run sequence Main { event Early by R as (rx: Plain) { true }; }\n\
+           finish End as (outcome: Boolean) { true };\n\
+         }\n\
+         protocol Second using Complete over (input: M::Widget) on origin {\n\
+           role R on M::Widget;\n\
+           run sequence Main { choice Pick by R visible () {\n\
+             case yes when { true or rx.ready } sequence Yes { }\n\
+             case no when { false } sequence No { } } }\n\
            finish End as (outcome: Boolean) { true };\n\
          }",
-        false,
     );
-    assert!(same_name.iter().any(|refusal| matches!(
-        &refusal.cause,
-        CheckCause::ProtocolAnchor(cause)
-            if matches!(cause.as_ref(), ProtocolAnchorCause::Shadow { .. })
-    )));
-    assert!(same_name_direct.iter().any(|refusal| matches!(
-        &refusal.cause,
-        CheckCause::ProtocolAnchor(cause)
-            if matches!(cause.as_ref(), ProtocolAnchorCause::Shadow { .. })
-    )));
+    assert!(
+        found.iter().any(|refusal| {
+            refusal.cause.code().as_str() == "missing_declaration"
+                && refusal.cause.cause() == Some("missing-name")
+        }),
+        "the other-protocol read refuses missing-name: {found:?}"
+    );
 }
 
 /// FR-048-AC-4 / FR-513-AC-12 / TC-1308 successor: the spine retains the
@@ -1160,7 +1213,7 @@ fn profile_aware_spine_check_refuses_an_omitted_protocol_definition() {
 
 /// FR-040-AC-11 / TC-119 row 11: a typed protocol check value is discharged
 /// only through exact QSL source/clause and formal Handler correspondence.
-#[trace("FR-040-AC-11", "TC-119")]
+#[trace("FR-040-AC-8", "FR-040-AC-11", "TC-119")]
 #[test]
 fn protocol_check_proof_retains_goals_and_refuses_adverse_correspondence() {
     use quire_contract_model as ir;
@@ -2206,6 +2259,7 @@ fn a_continued_protocol_refusal_has_no_subject_or_partial_reference_rows() {
     let checked = super::check_for_continuation(
         &parsed,
         super::ContinuationInputs {
+            integer_division: None,
             package_name: "fixture".to_owned(),
             execution_points: &BTreeMap::new(),
             temporal_selections: &[],
@@ -2269,6 +2323,7 @@ fn check_units_continues_past_a_protocol_refusal_only_when_asked() {
                 temporal_selections: &[],
                 continue_protocol_refusals,
                 refinement_internals: None,
+                extension_catalog: None,
             },
             SpineLimits::default(),
             &cancel,
@@ -3707,7 +3762,7 @@ fn assert_budget_field(
 }
 
 /// FR-277-AC-1 (TC-758 step 1) for `parse`: each field of the source limits.
-#[trace("TC-758", "FR-277-AC-1")]
+#[trace("TC-758", "FR-001-AC-4", "FR-002-AC-4", "FR-277-AC-1")]
 #[test]
 fn parse_names_the_source_limit_field_it_reached() {
     let bytes = FIXTURE.as_bytes();

@@ -18,6 +18,8 @@ pub(super) struct MeaningBindingContext<'a, 'm> {
     pub(super) node: &'a str,
     pub(super) at: &'a str,
     pub(super) meanings_by_node: &'a HashMap<&'m str, &'m str>,
+    /// The unbounded `Rational` value types of the document (FR-505).
+    pub(super) unbounded_rationals: &'a std::collections::BTreeSet<String>,
     /// The `shape` of the type's own construct, when it declares one.
     pub(super) construct_shape: Option<&'a str>,
     pub(super) records: &'a mut Vec<DomainPackageRecord>,

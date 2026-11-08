@@ -55,6 +55,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
+#[cfg(test)]
+mod declared_type_tests;
 mod native_literal;
 mod typing;
 use typing::TypedOperand;
@@ -413,6 +415,8 @@ pub struct PackageDeclarations {
     pub enums: Vec<EnumBinding>,
     /// The admitted models' variant types, ascending by effective identity.
     pub variant_types: Vec<VariantTypeDeclaration>,
+    /// The members the models declare with no checked type (FR-056-AC-43).
+    pub untyped_members: Vec<UntypedMember>,
     /// `type Name = T;` aliases, which create no declaration identity.
     pub aliases: Vec<(String, ValueType)>,
     /// Each package-owned type name's spelling under a further `model`
@@ -585,6 +589,12 @@ pub struct PackageDeclarations {
     /// FR-447: the unit's `hybrid` declarations in declaration order, each
     /// with its `using` alias resolved by the FR-091 assembler.
     pub hybrids: Vec<super::HybridDeclaration>,
+    /// FR-354: the unit's declaration forms of selected extensions in source
+    /// order, each as S2 built it.
+    pub extension_forms: Vec<qsl_forms::ExtensionForm>,
+    /// FR-354: the extension definitions the unit selects, held after the
+    /// catalog validated them. S3 reads held definitions only.
+    pub held_extensions: crate::library::extension::HeldExtensions,
     /// FR-447: the unit's hybrid claims in declaration order, the `temporal`
     /// clauses whose `over` type names one of [`Self::hybrids`], each with its
     /// `using` alias resolved by the FR-091 assembler.
@@ -663,6 +673,14 @@ impl PackageDeclarations {
         self
     }
 
+    /// These declarations with the extension definitions the unit selects,
+    /// held after validation (FR-354 "Definition validation").
+    #[must_use]
+    pub fn with_extensions(mut self, held: crate::library::extension::HeldExtensions) -> Self {
+        self.held_extensions = held;
+        self
+    }
+
     /// These declarations with the selected timestamped-event clock unit of
     /// each clause `units` names (FR-337 "Aggregate formula emission").
     #[must_use]
@@ -737,6 +755,7 @@ impl PackageDeclarations {
             operations: OperationTable::default(),
             enums: Vec::new(),
             variant_types: Vec::new(),
+            untyped_members: Vec::new(),
             aliases: Vec::new(),
             model_spellings: super::model_spelling::ModelSpellings::default(),
             alias_names: std::collections::BTreeMap::new(),
@@ -781,6 +800,8 @@ impl PackageDeclarations {
             emit_unwritten_timed_members: false,
             refinements: Vec::new(),
             hybrids: Vec::new(),
+            extension_forms: Vec::new(),
+            held_extensions: crate::library::extension::HeldExtensions::default(),
             hybrid_claims: Vec::new(),
             refinement_internals: None,
             clock_units: Vec::new(),
@@ -999,6 +1020,8 @@ pub struct Scope {
     /// The package-owned type names each unit's model aliases spell (FR-480
     /// "Selections and imports").
     model_spellings: ModelSpellings,
+    /// The members the models declare with no checked type (FR-056-AC-43).
+    untyped_members: Vec<UntypedMember>,
     /// The source unit of each top-level declaration, by declared name; a
     /// name with no entry is the primary unit's.
     source_owners: BTreeMap<String, RawSourceRef>,
@@ -1043,6 +1066,12 @@ impl<'a> SourceScope<'a> {
     /// The unit `name` names in this unit; see [`Scope::unit_named`].
     pub(crate) fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
         self.scope.unit_named(self.source, name)
+    }
+
+    /// The packages declaring the bare unit `name`; see
+    /// [`Scope::unit_packages`].
+    pub(crate) fn unit_packages(&self, name: &str) -> Vec<String> {
+        self.scope.unit_packages(self.source, name)
     }
 
     /// The object type `name` names in this unit; see
@@ -1164,13 +1193,17 @@ impl FormedUnits {
 }
 
 /// The units `graph` declares by their declared name, read from `declared`,
-/// the table built over the same graph.
+/// the table built over the same graph, leaving out the units of a selected
+/// package (`packages`), which a bare name reaches only when exactly one
+/// package declares it ([`ModelSpellings::declaring_packages`]).
 fn unit_ids_by_name(
     graph: &quire_semantic_value::unit::UnitGraph,
     declared: &quire_semantic_value::quantity::UnitTable,
+    packages: &[quire_exact::UnitId],
 ) -> BTreeMap<String, quire_exact::UnitId> {
     graph
         .units()
+        .filter(|unit| !packages.contains(&unit.id()))
         .filter_map(|unit| {
             let name = declared
                 .nominal_node(&unit.key())
@@ -1183,15 +1216,76 @@ fn unit_ids_by_name(
         .collect()
 }
 
+/// The units a domain package declares in its own document, by their authored
+/// name: the unit table a type of that package resolves its `unit` against
+/// (FR-505-AC-7, AC-9), whether or not the compiling unit declares a unit of
+/// the same name (the compiling unit's own unit of that name takes the name).
+pub(crate) fn model_unit_ids(
+    model: &crate::check::AdmittedModel,
+) -> BTreeMap<String, quire_exact::UnitId> {
+    model
+        .units
+        .iter()
+        .filter_map(|unit| {
+            let key = crate::check::assemble::package_unit_key(model, unit)?;
+            Some((unit.name.clone(), quire_exact::UnitId::declared(key)))
+        })
+        .collect()
+}
+
+/// The units a type of `model` resolves its `unit` against: `declared`, the
+/// compiling unit's own units, then the units the package's document declares
+/// for the names the compiling unit leaves free (FR-505-AC-7, AC-9).
+pub(crate) fn package_unit_ids(
+    declared: &BTreeMap<String, quire_exact::UnitId>,
+    model: &crate::check::AdmittedModel,
+) -> BTreeMap<String, quire_exact::UnitId> {
+    let mut units = declared.clone();
+    for (name, id) in model_unit_ids(model) {
+        units.entry(name).or_insert(id);
+    }
+    units
+}
+
 /// The units `graph` declares by their declared name (QSpec FR-142
 /// "Quantity type reference": the unit namespace `Quantity<u>` looks up).
 pub(crate) fn declared_unit_ids(
     graph: &quire_semantic_value::unit::UnitGraph,
+    packages: &[quire_exact::UnitId],
 ) -> BTreeMap<String, quire_exact::UnitId> {
     unit_ids_by_name(
         graph,
         &quire_semantic_value::quantity::UnitTable::declared(graph),
+        packages,
     )
+}
+
+/// Whether an untyped member is a field or an operation.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum UntypedKind {
+    /// A field.
+    Field,
+    /// An operation, untyped in a parameter or its result.
+    Operation,
+}
+
+/// A member of a model's object type declared with no checked type: a bare
+/// native `Text`, `Rational` or `Decimal` (FR-056-AC-43). It is admitted, and
+/// refused where a clause or an input names it.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct UntypedMember {
+    /// The declaring object type.
+    pub owner: quire_exact::EffectiveId,
+    /// The declaring object type's name.
+    pub owner_name: String,
+    /// The member name.
+    pub name: String,
+    /// Field or operation.
+    pub kind: UntypedKind,
+    /// Where its type reference is written.
+    pub locus: String,
+    /// For an operation, each parameter of no checked type and its locus.
+    pub parameters: Vec<(String, String)>,
 }
 
 impl ScopeIndex {
@@ -1288,6 +1382,7 @@ impl Scope {
             relationships: Relationships::default(),
             enums,
             variant_types: Vec::new(),
+            untyped_members: Vec::new(),
             operations,
             ieee_profile,
             ieee_operation: false,
@@ -1438,6 +1533,24 @@ impl Scope {
     }
 
     /// This scope with the admitted models' variant types.
+    pub(crate) fn with_untyped_members(mut self, untyped: Vec<UntypedMember>) -> Self {
+        self.untyped_members = untyped;
+        self
+    }
+
+    /// The member `name` of kind `kind` that `owner` declares with no checked
+    /// type.
+    pub(crate) fn untyped_member(
+        &self,
+        owner: &quire_exact::EffectiveId,
+        name: &str,
+        kind: UntypedKind,
+    ) -> Option<&UntypedMember> {
+        self.untyped_members
+            .iter()
+            .find(|member| member.kind == kind && &member.owner == owner && member.name == name)
+    }
+
     pub(crate) fn with_variant_types(mut self, variant_types: Vec<VariantTypeDeclaration>) -> Self {
         self.index.variant_types(&variant_types);
         self.variant_types = variant_types;
@@ -1525,7 +1638,10 @@ impl Scope {
             return self;
         }
         let declared = quire_semantic_value::quantity::UnitTable::declared(graph);
-        self.index.units.extend(unit_ids_by_name(graph, &declared));
+        let packages = self.model_spellings.package_unit_ids();
+        self.index
+            .units
+            .extend(unit_ids_by_name(graph, &declared, &packages));
         let mut units = self.types.units().clone();
         units.append(declared);
         self.types = std::mem::take(&mut self.types).with_units(units);
@@ -1544,6 +1660,12 @@ impl Scope {
             Spelled::Model(_) => self.model_spellings.unit(source, name),
             Spelled::Other => self.index.units.get(name).cloned(),
         }
+    }
+
+    /// The selected packages that declare a unit of the bare name `name`,
+    /// for the unresolved-unit-name diagnostic.
+    pub(crate) fn unit_packages(&self, source: Option<&RawSourceRef>, name: &str) -> Vec<String> {
+        self.model_spellings.declaring_packages(source, name)
     }
 
     /// This scope with the unit's protocol declarations named `names`, in
@@ -2226,6 +2348,14 @@ impl NamedScope {
         }
     }
 
+    /// This scope narrowed to the populations of the model alias `alias`:
+    /// a population of another alias is then missing at its second segment.
+    pub(crate) fn of_alias(mut self, alias: &str) -> Self {
+        self.populations
+            .retain(|population| alias_of(&population.name) == Some(alias));
+        self
+    }
+
     /// The population `name` spells, when it spells one.
     pub(crate) fn named(&self, name: &str) -> Option<&NamedPopulation> {
         self.populations
@@ -2282,7 +2412,7 @@ pub(crate) struct StateContext {
 
 /// A meter that admits no charge: the first charge of an operation is denied,
 /// so an operation typed against it computes nothing (`Typer::power`).
-const NO_CHARGE: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
+pub(super) const NO_CHARGE: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
     integer_bits: 0,
     decimal_digits: 0,
     scale_expansion: 0,
@@ -3067,8 +3197,8 @@ impl<'a> Typer<'a> {
     ) -> Result<(), CheckRefusal> {
         self.scope
             .types
-            .check_type(value_type)
-            .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
+            .try_check_type(value_type)
+            .map_err(|refusal| CheckRefusal::from_type_check(location, refusal))?;
         let mut pending = vec![value_type];
         while let Some(value_type) = pending.pop() {
             match value_type {
@@ -3187,6 +3317,26 @@ impl<'a> Typer<'a> {
             Some(ValueType::Rational(domain)) => domain,
             Some(_) => return Err(mismatch(location)),
         };
+        // FR-039: a zero denominator is refused before any normalization work;
+        // the normalization (a gcd over both written integers) is then charged
+        // by their larger bit length against `s3.rational_bits`, so exhausting
+        // it is resource incompleteness and never a value (FR-039-AC-5).
+        if denominator.is_zero() {
+            return Err(refuse(location, CheckCause::Unproved(Obligation::Nonzero)));
+        }
+        let bits = numerator.magnitude_bits().max(denominator.magnitude_bits());
+        if bits > self.limits.rational_bits() {
+            return Err(refuse(
+                location,
+                CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+                    stage: CheckingStage::Typing,
+                    kind: CheckingLimitKind::RationalBits,
+                    limit: self.limits.rational_bits(),
+                    actual: u128::from(bits),
+                    region: None,
+                })),
+            ));
+        }
         let value = Rational::new(numerator.clone(), denominator.clone())
             .map_err(|_| refuse(location, CheckCause::Unproved(Obligation::Nonzero)))?;
         if !domain.contains(&value) {
@@ -3965,9 +4115,36 @@ impl<'a> Typer<'a> {
                     ValueType::Float(float),
                 )
             }
-            ValueType::Quantity(_) | ValueType::BoundedQuantity(_) => {
-                return Err(ineligible(location))
+            // FR-093 "Negation": a non-affine quantity keeps its own unit; the
+            // type-time half of the quantity core's negate refuses an affine
+            // one, as a power does.
+            ValueType::Quantity(unit) => {
+                let unit = unit.clone();
+                let probe = quire_exact::Quantity::new(
+                    Rational::from_integer(Integer::one()),
+                    unit.clone(),
+                );
+                let Some(base) = self.units.resolve(&probe) else {
+                    return Err(mismatch(location));
+                };
+                let (_, _) = evaluate_quantity_unit(
+                    QuantityOperation::Negate(base),
+                    &mut quire_exact::Meter::new(NO_CHARGE),
+                )
+                .map_err(|refusal| match refusal {
+                    QuantityRefusal::IllTyped(_) => ineligible(location),
+                    QuantityRefusal::Identity(refusal) => CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::Identity(refusal),
+                    },
+                })?;
+                (
+                    NodeKind::QuantityNegate(self.push(operand)),
+                    ValueType::Quantity(unit),
+                )
             }
+            // FR-093 "Negation": a bounded quantity is no operand of unary `-`.
+            ValueType::BoundedQuantity(_) => return Err(ineligible(location)),
             ValueType::Boolean
             | ValueType::Text(_)
             | ValueType::Enum(_)
@@ -3979,9 +4156,9 @@ impl<'a> Typer<'a> {
             | ValueType::Population(_)
             | ValueType::Uuid
             | ValueType::String
-            | ValueType::Timestamp
+            | ValueType::Timestamp => return Err(mismatch(&location.child(0))),
             // FR-497-AC-2: a carried quantity is no operand of unary `-`.
-            | ValueType::CarriedQuantity(_) => return Err(mismatch(location)),
+            ValueType::CarriedQuantity(_) => return Err(mismatch(location)),
         };
         Ok(node(kind, value_type, location))
     }

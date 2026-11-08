@@ -35,7 +35,7 @@ accepted source pass the compiler stages and produce a handoff that quire-protoc
 consumes unchanged, written in process by a library call into a new directory,
 deterministically, behind a feature in the normal dependency surface. The writer
 `protocol_artifact::handoff::{write_v1, write_v2}` did this for the
-`quire.compiled-protocol/1` and `/2` wires. The deletion table (rows PA A20 to
+`quire.compiled-protocol/1` and `/2` wires. The retired deletion table (rows PA A20 to
 A22, W4 to W7, AC-10, AC-15) found no successor when this requirement was
 written: nothing in the checked-package path wrote a directory, a selection
 sidecar or a mutation manifest, and quire-protocol never read a checked package
@@ -335,7 +335,7 @@ unrelated values of `U`. `capture targetFull: M::Total` therefore checks.
 `sum<N>` checks a summand of the numeric family of `N` (FR-517-AC-20): an
 integer total takes any integer summand, a rational total any rational, a decimal
 total any decimal, and a float or quantity total a summand of that very float
-type or unit (a bounded quantity of the unit is a quantity of it); a carried quantity is not a summand (QSL-1784). It lowers
+type or unit (a bounded quantity of the unit is a quantity of it), and a carried-quantity total a summand of that very carried type. It lowers
 to the family's `quire.op.collection.sum.<family>` identity (FR-093) and
 evaluates by the family's addition under the value-accounting collection sum
 schedule: a total the checker cannot prove inside `N`'s domain is refused as an unproved range (FR-046, FR-100),
@@ -378,7 +378,7 @@ the three directories. The packages hold:
 | FR-517-AC-17 | `Inventory::read` over the bytes `write` produced for **R** returns rows equal to those of the in-process outcome, and over each refusal vector of "The inventory file" returns the stated `InventoryReadError` and no value; two reads of equal bytes return equal results. | Test (TC-1312) |
 | FR-517-AC-18 | A measurement unit that the selected model's types name is part of the emitted package even when no expression of the compiled source reaches it: the package holds its `dimension` and `unit` nodes, and Contract IR's reader admits a package whose model `typeRef` names it. Over **R**'s model with `Amount` and `Total` as aliases of `ix://quire/unit/U`, a source that reads no unit-typed member is written and admitted. | Test (TC-1312) |
 | FR-517-AC-19 | A model alias is a source type name: over **R**'s model, `sum<M::Total>` and `capture targetFull: M::Total` resolve to the alias's unit-bearing type, and neither refuses `UnresolvedTypeName`. The capture checks, and the sum checks as a quantity sum (FR-517-AC-20). The alias's original `min`/`max` bounds remain selected-model member constraints and enforce the same endpoint values as before, without widening them or imposing them on other aliases of `U`. | Test (TC-1312) |
-| FR-517-AC-20 | `sum<N>` checks a summand of any numeric family QSpec FR-145 and FR-322 give a `quire.op.collection.sum` identity for (integer, rational, decimal, float and `Quantity<U>`; the carried-quantity family is excluded, tracked by QSL-1784), and lowers to that family's identity; over **R**, the `Healthy` invariant's receipt sum over `Quantity<U>` checks and evaluates to the sum of the receipts' magnitudes in `U`. | Test (TC-1312) |
+| FR-517-AC-20 | `sum<N>` checks a summand of any numeric family QSpec FR-145 and FR-322 give a `quire.op.collection.sum` identity for (integer, rational, decimal, float, `Quantity<U>` and the carried-quantity family), and lowers to that family's identity; over **R**, the `Healthy` invariant's receipt sum over `Quantity<U>` checks and evaluates to the sum of the receipts' magnitudes in `U`, and a `sum<N>` whose `N` is a carried `Quantity<U, C>` over summands of that very type checks, lowers to `quire.op.collection.sum.carried_quantity` and evaluates (QSpec FR-142-AC-33 to AC-38). | Test (TC-1312) |
 | FR-517-AC-21 | The handoff directory written for TC-1070 fixture E contains `equality.json`, whose bytes equal the encoding FR-531 states of the rows of the in-process unit, with the three row lists non-empty (the unit holds integer `=` applications) and each row's node members naming nodes of `checked-package.json`; the directory written for the unit of the inventory vector (`unit.native`, which holds no `==` or `!=` application) contains `equality.json` with the three lists empty; two writes of equal requests give byte-identical files. | Test (TC-1312) |
 | FR-517-AC-22 | A writer given a unit whose equality rows name a node the package does not hold returns `Error::Unnameable` and writes nothing, as for `inventory.json`; the written file holds no source text, no digest and no member the encoding of FR-531 does not list. | Test (TC-1312) |
 | FR-517-AC-23 | The writer emits the required `identities/3` source-record and source-union lists from the same final emission as the package: original opaque keys, final structural/type references, original member identities and order round-trip through native joins. The reader requires both lists and refuses the old format or an omitted list; no optional compatibility path or source fallback supplies them. | Test (TC-1312) |

@@ -448,7 +448,13 @@ impl Case {
         let unit = unit_text_with(self.profiles, &self.body).into_bytes();
         let (node, occurrence) = crate::model_settle::protocol_anchor(&self.checked, "SB");
         replay_protocol_trace(
-            request(&document(), self.documents.snapshots.iter(), &unit),
+            request(
+                &self.checked,
+                &[],
+                &document(),
+                self.documents.snapshots.iter(),
+                &unit,
+            ),
             &self.trace_subject(selection),
             &envelope_at(payload, node, occurrence),
             self.letters,
@@ -489,7 +495,13 @@ impl Case {
         let clause_node = node.identity().clone();
         let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
         replay_protocol_trace(
-            request(&document(), self.documents.snapshots.iter(), &unit),
+            request(
+                &self.checked,
+                &[],
+                &document(),
+                self.documents.snapshots.iter(),
+                &unit,
+            ),
             &self.trace_subject(selection),
             &envelope_at(payload, clause_node, occurrence),
             self.letters,

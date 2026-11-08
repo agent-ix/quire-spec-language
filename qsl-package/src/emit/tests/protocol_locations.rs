@@ -30,7 +30,7 @@ fn checked_and_emitted(source: &str) -> (CheckedPackage, Value) {
 }
 
 fn domain() -> Vec<u8> {
-    serde_json::to_vec(&tc1070::document()).unwrap()
+    crate::emit::tests::wire_bytes(&tc1070::document()).unwrap()
 }
 
 fn rows(wire: &Value) -> &[Value] {
@@ -632,6 +632,7 @@ fn reader_view_over(
         &packages,
         V2ReadLimits::fixture(),
         crate::EmitLimits::fixture(),
+        crate::SourceWitnessSupplier::new(&emission),
     )
     .expect("the I2 reader admits the edited package");
     match read.evaluation_view() {
@@ -992,5 +993,338 @@ fn the_reader_projects_nested_let_binders_into_distinct_slots() {
             assert_eq!(*inner_slot, *outer_slot + 1);
             assert_eq!(projection.frame_slots(), *inner_slot + 1);
         },
+    );
+}
+
+/// [`E_C_LET_IF`] with `prelude` (functions, under profile `v`) declared
+/// before the protocol and a `Deep` control whose constraint is `constraint`.
+fn with_deep_control(prelude: &str, constraint: &str) -> String {
+    E_C_LET_IF
+        .replace(
+            "model M = \"test/orders\";\n",
+            &format!(
+                "profile v = \"quire.value.complete/v1\";\nmodel M = \"test/orders\";\n{prelude}"
+            ),
+        )
+        .replace(
+            "    LET\n",
+            &format!(
+                "attempt Deep by Service on M::Node::step contracts [] \
+                 as (dm: M::Tick) {{ {constraint} }};\n"
+            ),
+        )
+}
+
+/// `source`, emitted, read back by IR and given its reader view on a thread
+/// with a `stack` byte stack, under limits raised to fit it; `check` reads the
+/// projection of the `Deep` control's constraint on that thread.
+fn deep_projection(
+    source: String,
+    stack: usize,
+    check: impl FnOnce(&crate::ReaderProtocolProjection) + Send + 'static,
+) {
+    std::thread::Builder::new()
+        .name("deep-projection".to_owned())
+        .stack_size(stack)
+        .spawn(move || {
+            let packages =
+                qsl_semantics::model::intake::package_input([domain().as_slice()]).unwrap();
+            let graph = assemble_with_models(source.as_bytes(), &packages)
+                .expect("the deep unit assembles")
+                .check(
+                    CheckingLimits::new(u64::MAX)
+                        .with_input_bytes(u64::MAX)
+                        .with_work_budget(u64::MAX),
+                )
+                .expect("the deep unit checks");
+            let package = CheckedPackage::link(graph);
+            let emission = emit_checked(&package).expect("the deep unit emits");
+            let name = emission.package.name().to_owned();
+            let limits = V2ReadLimits {
+                artifact_bytes: emission.package.bytes().len(),
+                nodes: u64::MAX,
+                edges: u64::MAX,
+                occurrences: u64::MAX,
+                diagnostics: u64::MAX,
+                work: u64::MAX,
+                storage: 1 << 30,
+            };
+            let read = crate::read_evaluation_emission(
+                &package,
+                &emission,
+                LibraryName::new(name).unwrap(),
+                &packages,
+                limits,
+                crate::EmitLimits::fixture(),
+                crate::SourceWitnessSupplier::new(&emission),
+            )
+            .expect("the I2 reader admits the deep package");
+            let view = read.evaluation_view().expect("the deep view is created");
+            let slots = view.reader_slots().expect("a reader-backed view");
+            let Some(crate::ReaderSlot::Projected(projection)) =
+                slots.slot_named(&composed("Deep"))
+            else {
+                panic!("the deep control is projected");
+            };
+            check(projection);
+        })
+        .expect("the worker thread starts")
+        .join()
+        .expect("the projection does not overflow");
+}
+
+/// How many additions the deep slot expression chains.
+const DEEP_TERMS: usize = 4_000;
+
+/// The number of nodes on the leftmost path from `node`.
+fn left_depth(projection: &crate::ReaderProtocolProjection, mut node: usize) -> usize {
+    let mut depth = 0;
+    while let Some([left, ..]) = projection.children(node) {
+        depth += 1;
+        node = *left;
+    }
+    depth
+}
+
+/// TC-902 step 1 (FR-356-AC-5) for view creation: the reader projection of an
+/// admitted slot expression 4,000 additions deep builds on a 512 KiB stack,
+/// whatever its depth, with one projected node per admitted application.
+#[trace("TC-902", "FR-356-AC-5")]
+#[test]
+fn a_slot_expression_4000_deep_projects_on_a_small_stack() {
+    let constraint = format!("{}dm.count >= 1", "1 + ".repeat(DEEP_TERMS));
+    deep_projection(
+        with_deep_control("", &constraint),
+        512 * 1024,
+        |projection| {
+            // `terms` additions, the read of `dm.count` and the comparison.
+            assert_eq!(projection.term_locations().len(), DEEP_TERMS + 2);
+            assert_eq!(left_depth(projection, projection.root()), DEEP_TERMS + 1);
+        },
+    );
+}
+
+/// TC-902 step 1 (FR-356-AC-5) for view creation: a function body of 100,000
+/// chained additions, which the wire writes once however often it is called,
+/// is projected on a 512 KiB stack. The view entry ranks the source and
+/// reader node keys once, so the cost grows with the chain, not with its
+/// square.
+#[trace("TC-902", "FR-356-AC-5")]
+#[test]
+fn a_function_body_100000_deep_projects_on_a_small_stack() {
+    const TERMS: usize = 100_000;
+    let function = format!(
+        "function f using v(x: Integer): Integer pure {{ {}x }}\n",
+        "x + ".repeat(TERMS - 1)
+    );
+    deep_projection(
+        with_deep_control(&function, "f(dm.count + 1) >= 1"),
+        512 * 1024,
+        |projection| {
+            let f = projection.function(0).expect("the function table holds f");
+            assert_eq!(f.name, "f");
+            assert_eq!(left_depth(projection, f.body), TERMS - 1);
+            assert!(projection.function(1).is_none());
+        },
+    );
+}
+
+/// FR-390 "Projection storage and traversal": a call of 5,000 operands
+/// projects each operand once, in time linear in the operands.
+#[trace("TC-1070", "FR-390-AC-68")]
+#[test]
+fn a_call_of_5000_operands_projects_each_operand_once() {
+    const OPERANDS: usize = 5_000;
+    let params = (0..OPERANDS)
+        .map(|n| format!("p{n}: Integer"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let function = format!("function g using v({params}): Integer pure {{ p0 }}\n");
+    let operands = vec!["dm.count + 1"; OPERANDS].join(", ");
+    deep_projection(
+        with_deep_control(&function, &format!("g({operands}) >= 1")),
+        512 * 1024,
+        |projection| {
+            let Some(&[call, _]) = projection.children(projection.root()) else {
+                panic!("the comparison has the call and a literal");
+            };
+            let operands = projection.children(call).expect("the call is projected");
+            assert_eq!(operands.len(), OPERANDS);
+            for operand in operands {
+                assert_eq!(projection.children(*operand).map(<[usize]>::len), Some(2));
+            }
+        },
+    );
+}
+
+/// TC-902 step 1 (FR-356-AC-5) for view creation: nested `let`s 2,000 deep
+/// project on a 512 KiB stack, each `let` in the body of the one outside it
+/// on the next frame slot, and the frame holds them all.
+#[trace("TC-902", "FR-356-AC-5")]
+#[test]
+fn nested_lets_2000_deep_project_on_the_next_frame_slots_on_a_small_stack() {
+    const LETS: usize = 2_000;
+    let worker = std::thread::Builder::new()
+        .name("deep-lets".to_owned())
+        .stack_size(512 * 1024)
+        .spawn(|| {
+            let mut chain = String::from("let c0 = dm.count in ");
+            for level in 1..LETS {
+                chain.push_str(&format!("let c{level} = c{} in ", level - 1));
+            }
+            chain.push_str(&format!("c{} >= 1", LETS - 1));
+            let source = E_C_LET_IF.replace(
+                "    LET\n",
+                &format!(
+                    "attempt Deep by Service on M::Node::step contracts [] \
+                     as (dm: M::Tick) {{ {chain} }};\n"
+                ),
+            );
+            reader_view_over(
+                &source,
+                |_| {},
+                |slots| {
+                    let slots = slots.expect("the admitted nested lets are projected");
+                    let Some(crate::ReaderSlot::Projected(projection)) =
+                        slots.slot_named(&composed("Deep"))
+                    else {
+                        panic!("the nested lets are projected");
+                    };
+                    let mut node = projection.root();
+                    let mut first = None;
+                    for level in 0..LETS {
+                        let Some(quire_checked::node::NodeKind::Let { slot, body, .. }) =
+                            projection.kind(node)
+                        else {
+                            panic!("level {level} is a projected let");
+                        };
+                        let first = *first.get_or_insert(*slot);
+                        assert_eq!(*slot, first + level, "the let at level {level}");
+                        node = *body;
+                    }
+                    assert_eq!(projection.frame_slots(), first.unwrap_or(0) + LETS);
+                },
+            );
+        })
+        .expect("the worker thread starts");
+    worker.join().expect("the projection does not overflow");
+}
+
+/// A supplier whose witnesses are chosen by the test, so the reader's own
+/// validation, not a supplier flag, decides the refusal.
+struct ChosenIdentities<F>(F);
+
+impl<F> crate::EvaluationWitnessSupplier for ChosenIdentities<F>
+where
+    F: Fn(
+        &quire_contract_model::CheckedPackageV2,
+        &mut quire_contract_model::NativeJoinBudget,
+    ) -> Option<quire_contract_model::SelectedExactIdentities>,
+{
+    fn supply(
+        &self,
+        admitted: &quire_contract_model::CheckedPackageV2,
+        budget: &mut quire_contract_model::NativeJoinBudget,
+    ) -> Result<crate::EvaluationWitnesses, crate::WitnessSupplyFailure> {
+        Ok(crate::EvaluationWitnesses {
+            identities: (self.0)(admitted, budget),
+        })
+    }
+}
+
+/// FR-390-AC-69: the reader validates the supplied identities against the
+/// admitted package; none is missing, another package's are foreign, and the
+/// package's own with a field row removed are unknown, each at the `Package`
+/// locus.
+#[trace("TC-1070", "FR-390-AC-69", "FR-390-AC-66")]
+#[test]
+fn supplied_identities_are_validated_against_the_admitted_package() {
+    use crate::reader_protocol_projection::{UnsupportedReason, ViewLocus};
+    use quire_contract_model::SelectedExactIdentities;
+    let (package, _) = checked_and_emitted(tc1070::SOURCE);
+    let emission = emit_checked(&package).expect("fixture emits");
+    let document = domain();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let second = crate::read_evaluation_emission(
+        &package,
+        &emission,
+        LibraryName::new(emission.package.name()).unwrap(),
+        &packages,
+        V2ReadLimits::fixture(),
+        crate::EmitLimits::fixture(),
+        crate::SourceWitnessSupplier::new(&emission),
+    )
+    .expect("a second independent read admits");
+    let other = second.admitted();
+    let reason = |witnesses: &dyn Fn(
+        &quire_contract_model::CheckedPackageV2,
+        &mut quire_contract_model::NativeJoinBudget,
+    ) -> Option<SelectedExactIdentities>| {
+        let read = crate::read_evaluation_emission(
+            &package,
+            &emission,
+            LibraryName::new(emission.package.name()).unwrap(),
+            &packages,
+            V2ReadLimits::fixture(),
+            crate::EmitLimits::fixture(),
+            ChosenIdentities(witnesses),
+        )
+        .expect("the I2 reader admits the package");
+        let Err(ViewFailure::Unsupported(view)) = read.evaluation_view() else {
+            panic!("view creation refuses an invalid witness")
+        };
+        assert_eq!(view.locus(), &ViewLocus::Package);
+        view.reason().clone()
+    };
+    assert_eq!(
+        reason(&|_, _| None),
+        UnsupportedReason::MissingIdentityWitness
+    );
+    assert_eq!(
+        reason(&|_, budget| {
+            let rows = emission.identity_rows(other, budget).expect("other rows");
+            Some(rows.selected(other, budget).expect("other identities"))
+        }),
+        UnsupportedReason::ForeignIdentityWitness
+    );
+    // A genuinely different package: its own emission, admitted on its own.
+    let different = super::converted_equality::emitted(
+        "function same using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure { a = b }",
+    );
+    let Read::Verified {
+        admitted: different_admitted,
+        ..
+    } = read_back(&different)
+    else {
+        panic!("the different package admits")
+    };
+    assert_eq!(
+        reason(&|_, budget| {
+            let rows = different
+                .identity_rows(&different_admitted, budget)
+                .expect("different rows");
+            Some(
+                rows.selected(&different_admitted, budget)
+                    .expect("different identities"),
+            )
+        }),
+        UnsupportedReason::ForeignIdentityWitness
+    );
+    assert_eq!(
+        reason(&|admitted, budget| {
+            let rows = emission.identity_rows(admitted, budget).expect("own rows");
+            let mut fields = rows.fields().to_vec();
+            fields.pop().expect("fixture E selects a record field");
+            Some(
+                SelectedExactIdentities::from_stage_rows(
+                    admitted,
+                    rows.declarations().iter().cloned(),
+                    fields,
+                    budget,
+                )
+                .expect("a field-less stage still joins"),
+            )
+        }),
+        UnsupportedReason::UnknownIdentityWitness
     );
 }

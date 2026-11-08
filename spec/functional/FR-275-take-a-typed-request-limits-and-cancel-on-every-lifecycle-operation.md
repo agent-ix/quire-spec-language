@@ -44,7 +44,7 @@ qualification runner call it. The driver-owned operations `lower`, `generate` an
 | `package` | `&CheckedPackage` | `Staged<EmittedPackage>` | FR-278 |
 | `execute` | `&CheckedPackage`, a function or clause selection, arguments, `ObjectEnvironment`, the execution backend | `Result<Evaluation<Value>, CallFailure>` | FR-279 |
 | `analyze` | `&CheckedPackage`, claim items, subject binding, engine settings | `Staged<AnalyzeOutcome>` | FR-281 |
-| `monitor` | `&CheckedPackage`, clause selections, a trace document | `Staged<MonitorOutcome>` | FR-283 |
+| `monitor` | `&CheckedPackage`, clause selections, a `MonitorTrace` | `Staged<MonitorOutcome>` | FR-283 |
 | `replay` | `ReplayRequest` with its byte provision | `Staged<ReplayResult>` | FR-098 |
 | `inspect` | a package, outcome or graph, and a view selector | `Staged<View>` | FR-297 |
 | `render` | an outcome or `View`, the output form, and `RenderSources`, the source byte provision | `Staged<Rendered>`, the rendered bytes | FR-298 |

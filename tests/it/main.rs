@@ -40,46 +40,27 @@ mod selected_object_closure;
 pub(crate) mod support;
 
 mod abstraction_relation_inert;
-mod assessment_artifact_kinds;
+mod architecture_fixture_spine;
 mod call_replay_context_items;
 mod call_requirements_items;
-mod checked_temporal_successors;
-mod clause_kind_canonical;
-mod compiled_protocol_v2;
+mod checked_clause_kind_unique;
 mod complete_cst;
 mod complete_editor;
-mod composed_admission_stages;
-mod composed_binding;
-mod composed_definition_source;
-mod composed_definitions;
-mod composed_domain_models;
-mod composed_linking;
-mod composed_models;
-mod composed_namespace;
-mod composed_proofs;
-mod composed_query_proofs;
-mod composed_scopes;
-mod composed_syntax;
-mod composed_temporal_activation;
-mod composed_temporal_evaluation;
-mod composed_temporal_limits;
-mod composed_temporal_mapping;
-mod composed_temporal_mapping_v2;
-mod composed_type_pipeline;
-mod composed_types;
 mod config_version_spine;
-mod deep_sources;
 mod dimension_node_v2;
 mod dispatch_emission;
 mod emit_checked_v2;
 mod evaluate_reads_no_display_strings;
 mod exact_decimals;
+mod extension_forms;
+mod extension_s1_parse;
 mod family_outcome_layering;
 mod formal_source;
 mod formatter_identity;
+mod port_role_identity;
 mod producer_unit_identity;
+mod quantity_negation_v2;
 mod quantity_power_v2;
-mod retired_checked_views_paths;
 mod string_edge_marker;
 mod value_parity_profile_selections;
 // The handoff writer is behind its feature; the all-features lane runs this.
@@ -95,50 +76,39 @@ mod checked_handoff;
 mod checked_handoff_healthy;
 #[cfg(feature = "checked-handoff")]
 mod checked_views;
+mod compound_quantity_types;
 mod fairness_item_path;
 mod hybrid_request_items;
 mod layer_crate_reexports;
 mod limit_name_patterns;
-mod linking;
-mod located_json;
 #[cfg(feature = "checked-handoff")]
 mod mapping_support;
-mod model_source;
+mod mapping_support_occurrences;
 #[cfg(feature = "checked-handoff")]
 mod model_type_unit_roots;
 mod name_resolution_confinement;
 mod native_boundaries;
-mod native_checking;
-#[cfg(feature = "checked-handoff")]
-mod native_full_predecessor;
-mod native_linking;
-mod native_model;
-mod native_model_profiles;
-mod native_model_qualification;
-#[cfg(feature = "checked-handoff")]
-mod native_owner_report;
-mod nesting_levels;
-mod parser;
-mod protocol_artifact;
-mod protocol_number_root_module;
+mod native_run_result_root;
 mod replay_multi_source;
+mod replay_refinement_internals;
 mod request_builder;
 mod requirement_item_proof_bounds;
+mod retained_criteria_matrix;
 mod retired_mapped_extraction;
 mod retired_native_runtime;
 mod seam5_retired;
-mod source_inventory;
 mod source_map;
 mod spine_deletion_boundaries;
+mod spine_retained_criteria;
 mod spine_run;
 mod temporal_negotiation;
 #[cfg(feature = "checked-handoff")]
 mod temporal_package_route;
 #[cfg(feature = "checked-handoff")]
 mod temporal_package_route_formula;
+#[cfg(feature = "checked-handoff")]
+mod temporal_result_evidence;
+mod temporal_v1_retired;
 mod text_enum_identity;
 mod unbounded_declarations;
 mod union_nodes;
-mod v2_refusal_code_bridge;
-#[cfg(feature = "checked-handoff")]
-mod valuation_evidence;

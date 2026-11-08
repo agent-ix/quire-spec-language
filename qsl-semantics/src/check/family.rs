@@ -795,6 +795,7 @@ fn measure_model_target(out: &mut DeclarationMeter, root: &qsl_forms::TypeForm) 
     let mut pending = vec![root];
     while let Some(form) = pending.pop() {
         out.write_str(match &form.head {
+            TypeFormHead::UnitExpression(_) => "unit-expression",
             TypeFormHead::Name(name) => &name.name,
             TypeFormHead::Collection(kind) => collection_kind_tag(*kind),
             TypeFormHead::Population => "Population",
@@ -813,6 +814,16 @@ fn measure_model_target(out: &mut DeclarationMeter, root: &qsl_forms::TypeForm) 
                 BuiltinType::Clock => "Clock",
             },
         });
+        if let TypeFormHead::UnitExpression(terms) = &form.head {
+            out.write_u64(quire_exact::length_amount(terms.len()));
+            for term in terms {
+                out.write_str(&term.name.name);
+                match &term.exponent {
+                    Some((exponent, _)) => out.write_str(&exponent.to_string()),
+                    None => out.write_str("1"),
+                }
+            }
+        }
         out.write_u64(quire_exact::length_amount(form.arguments.len()));
         out.write_u64(quire_exact::length_amount(form.bounds.len()));
         for bound in &form.bounds {
@@ -1811,6 +1822,20 @@ impl<S> OccurrenceMap<S> {
         }
         spans.0.push((ordinal, span));
         Ok(Origin::new(role.kernel_role(), ordinal))
+    }
+
+    /// Replace every recorded span for which `relocate` returns a new one,
+    /// keeping each occurrence's ordinal.
+    pub(crate) fn relocate(&mut self, relocate: impl Fn(&S) -> Option<S>) {
+        for roles in self.spans.values_mut() {
+            for spans in roles.values_mut() {
+                for (_, span) in &mut spans.0 {
+                    if let Some(moved) = relocate(span) {
+                        *span = moved;
+                    }
+                }
+            }
+        }
     }
 
     /// Renumber the `role` occurrences of each node of `nodes` into

@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use crate::checked_v2::wire_graph;
 
 mod carried;
+mod observation;
 use carried::{SourceRecordJson, SourceUnionJson};
 
 /// The format of `identities.json` (FR-531 "The identity file").
@@ -66,7 +67,22 @@ pub struct BarePackage<'p> {
     joined: Option<Result<SelectedExactIdentities, IdentityWitnessRefusal>>,
     projections: BTreeMap<CheckedNodeId, Result<ExactTypeProjection, ExactTypeProjectionError>>,
     equality: crate::reader_protocol_projection::EqualityDecisions,
+    /// The source-owned units' definitions the supply's equality rows select
+    /// (FR-533), empty when the rows select none.
+    pub(crate) units: quire_semantic_value::quantity::UnitTable,
+    /// The identity an observation this package admits carries (FR-533
+    /// "Observation admission"); one per value, never copied.
+    owner: std::sync::Arc<()>,
+    /// The selected object declarations the bare environment declares, or
+    /// the refusal of their projection, retained for admission (FR-533).
+    objects: Result<Vec<quire_semantic_value::declaration::ObjectTypeDeclaration>, ()>,
+    /// The population catalog: the declaration and member types of each
+    /// selected population node, or the refusal of the read.
+    populations: Result<BTreeMap<NodeKey, PopulationTypes>, ()>,
 }
+
+/// The declaration and member types of one selected population.
+pub(crate) type PopulationTypes = (quire_checked::key::DeclarationKey, Vec<EffectiveId>);
 
 /// What a protocol-slot call reads beside the package (FR-531).
 #[derive(Clone, Copy, Debug)]
@@ -87,6 +103,105 @@ impl<'p> BarePackage<'p> {
             joined: None,
             projections: BTreeMap::new(),
             equality: BTreeMap::new(),
+            units: quire_semantic_value::quantity::UnitTable::default(),
+            owner: std::sync::Arc::new(()),
+            objects: Ok(Vec::new()),
+            populations: Ok(BTreeMap::new()),
+        }
+    }
+
+    /// The identity of this value as an observation owner.
+    pub(crate) fn owner(&self) -> std::sync::Arc<()> {
+        std::sync::Arc::clone(&self.owner)
+    }
+
+    /// The model identities the package selects, ascending (FR-533).
+    pub fn model_selections(&self) -> Vec<qsl_semantics::model::domain_package::DomainPackageRef> {
+        self.package
+            .selected_model_packages()
+            .map(
+                |identity| qsl_semantics::model::domain_package::DomainPackageRef {
+                    identity: identity.to_owned(),
+                },
+            )
+            .collect()
+    }
+
+    /// The declaration and member types of the selected population `node`,
+    /// from the package's population catalog; `None` for a node no selected population has.
+    pub fn population_types(
+        &self,
+        node: &NodeKey,
+    ) -> Option<(&quire_checked::key::DeclarationKey, &[EffectiveId])> {
+        let (declaration, members) = self.populations.as_ref().ok()?.get(node)?;
+        Some((declaration, members.as_slice()))
+    }
+
+    /// The selected object declarations, or `Err` when their projection or
+    /// the catalog was refused (FR-533 "Observation admission", step 3).
+    pub(crate) fn object_declarations(
+        &self,
+    ) -> Result<&[quire_semantic_value::declaration::ObjectTypeDeclaration], ()> {
+        self.populations.as_ref().map_err(|_| ())?;
+        self.objects.as_deref().map_err(|_| ())
+    }
+
+    /// `identities` extended with the source-owned units the equality rows
+    /// select (FR-533): IR joins the rows, then the units' definitions are
+    /// read from the package's nodes. Rows IR does not join, or definitions
+    /// that are no unit graph, are an unknown identity witness; an exhausted
+    /// native allowance is the caller's, never a defect of the rows.
+    fn join_source_units(
+        &self,
+        identities: SelectedExactIdentities,
+        equality: Option<&crate::equality_file::ReadEqualityRows>,
+        budget: &mut NativeJoinBudget,
+    ) -> Result<
+        (
+            Result<SelectedExactIdentities, IdentityWitnessRefusal>,
+            quire_semantic_value::quantity::UnitTable,
+        ),
+        crate::NativeJoinFailure,
+    > {
+        let none = quire_semantic_value::quantity::UnitTable::default();
+        // Another package's rows are the equality stage's refusal to report.
+        let Some(equality) = equality.filter(|equality| {
+            equality.package_name() == self.package.name() && !equality.source_units().is_empty()
+        }) else {
+            return Ok((Ok(identities), none));
+        };
+        let extended = match identities.with_admitted_type_rows(
+            self.package,
+            &[],
+            equality.source_units(),
+            budget,
+        ) {
+            Ok(extended) => extended,
+            Err(denial) if qsl_semantics::model::intake::is_native_budget_denial(&denial) => {
+                return Err(crate::NativeJoinFailure::from(denial).with_budget(budget))
+            }
+            Err(_) => return Ok((Err(IdentityWitnessRefusal::Unknown), none)),
+        };
+        match crate::bare_units::read_unit_table(self.package, equality.source_units(), budget) {
+            Ok(units) => Ok((Ok(extended), units)),
+            Err(crate::bare_units::UnitDefinitionRefusal::Read(
+                quire_contract_model::nominal_reads::NominalReadCode::LimitReached,
+            )) => {
+                // A native read that reports its allowance exhausted records the
+                // unpaid charge; without one the denial is no allowance of this
+                // pass, and the witness is refused rather than given a setting.
+                let setting = match budget.first_unpaid().map(|charge| charge.kind) {
+                    Some(quire_contract_model::NativeJoinChargeKind::Work) => {
+                        qsl_foundation::Setting::I2WorkUnits
+                    }
+                    Some(quire_contract_model::NativeJoinChargeKind::Storage) => {
+                        qsl_foundation::Setting::I2NativeJoinStorage
+                    }
+                    None => return Ok((Err(IdentityWitnessRefusal::Unknown), none)),
+                };
+                Err(crate::NativeJoinFailure::UnitDefinitions { setting }.with_budget(budget))
+            }
+            Err(_) => Ok((Err(IdentityWitnessRefusal::Unknown), none)),
         }
     }
 
@@ -102,26 +217,37 @@ impl<'p> BarePackage<'p> {
     /// `ExhaustedStorage` for identity/type projection, or its `WorkLimit` or
     /// `StorageLimit` for equality admission. No package is returned when
     /// `budget` runs out; the denial is never an unknown witness, a fault or
-    /// an empty identity set.
+    /// an empty identity set. Resource denials carry a
+    /// [`crate::NativeJoinFailure::Limit`] diagnostic with the original owner
+    /// error, caller-configured ceiling, setting and cumulative attempted charge.
     pub fn with_supply(
         mut self,
         supply: BareSupply<'p>,
         budget: &mut NativeJoinBudget,
     ) -> Result<Self, crate::NativeJoinFailure> {
         self.joined = match supply.identities.selected(self.package, budget) {
-            Ok(identities) => Some(Ok(identities)),
+            Ok(identities) => {
+                let (joined, units) =
+                    self.join_source_units(identities, supply.equality, budget)?;
+                self.units = units;
+                Some(joined)
+            }
             Err(IdentityJoinFailure::Witness(defect)) => Some(Err(defect)),
-            Err(IdentityJoinFailure::Exhausted(denial)) => return Err((*denial).into()),
+            Err(IdentityJoinFailure::Exhausted(denial)) => {
+                return Err(crate::NativeJoinFailure::from(*denial).with_budget(budget))
+            }
         };
         self.supply = Some(supply);
         if let Some(Ok(identities)) = &self.joined {
-            for node in &self.package.graph().nodes {
+            for node in &self.package.resolved_graph().nodes {
                 let projection = self
                     .package
                     .project_exact_type(&node.node_id, identities, budget);
                 if let Err(denial) = &projection {
                     if qsl_semantics::model::intake::is_native_budget_denial(denial) {
-                        return Err(denial.clone().into());
+                        return Err(
+                            crate::NativeJoinFailure::from(denial.clone()).with_budget(budget)
+                        );
                     }
                 }
                 self.projections.insert(node.node_id.clone(), projection);
@@ -134,9 +260,149 @@ impl<'p> BarePackage<'p> {
                     equality: self.supply.as_ref().and_then(|supply| supply.equality),
                 },
                 budget,
-            )?;
+            )
+            .map_err(|failure| failure.with_budget(budget))?;
+            self.read_selected_objects(budget)?;
+            self.read_population_catalog(budget)?;
         }
         Ok(self)
+    }
+
+    /// The selected objects, projected once under `budget` (FR-533
+    /// "Observation admission"). A budget denial is the caller's; any other
+    /// refusal is retained for admission.
+    fn read_selected_objects(
+        &mut self,
+        budget: &mut NativeJoinBudget,
+    ) -> Result<(), crate::NativeJoinFailure> {
+        let Some(Ok(identities)) = &self.joined else {
+            return Ok(());
+        };
+        let source_units = self
+            .supply
+            .as_ref()
+            .and_then(|supply| supply.equality)
+            .map(|equality| equality.source_units())
+            .unwrap_or(&[]);
+        match self
+            .package
+            .project_selected_type_declarations(identities, &[], source_units, budget)
+        {
+            Ok(declarations) => {
+                self.objects = Ok(declarations
+                    .objects()
+                    .iter()
+                    .map(|object| {
+                        let attributes = object
+                            .declared_fields()
+                            .iter()
+                            .map(|field| {
+                                quire_semantic_value::declaration::FieldDeclaration::new(
+                                    field.name(),
+                                    field.value_type().clone(),
+                                    field.presence(),
+                                )
+                            })
+                            .collect();
+                        quire_semantic_value::declaration::ObjectTypeDeclaration::new(
+                            object.effective_id().clone(),
+                            object.original_identity(),
+                            attributes,
+                        )
+                        .with_supertypes(object.supertypes().to_vec())
+                    })
+                    .collect());
+                Ok(())
+            }
+            Err(refusal) => {
+                let refusal = quire_contract_model::ExactTypeProjectionError {
+                    code: refusal.code,
+                    requested: None,
+                    at: refusal.at,
+                    form: refusal.form,
+                    work: refusal.work,
+                    denied: refusal.denied,
+                    configured_bound: refusal.denied.map(|charge| match charge.kind {
+                        quire_contract_model::NativeJoinChargeKind::Work => budget.work_limit(),
+                        quire_contract_model::NativeJoinChargeKind::Storage => {
+                            budget.storage_limit()
+                        }
+                    }),
+                };
+                if qsl_semantics::model::intake::is_native_budget_denial(&refusal) {
+                    return Err(crate::NativeJoinFailure::from(refusal).with_budget(budget));
+                }
+                self.objects = Err(());
+                Ok(())
+            }
+        }
+    }
+
+    /// The population catalog, read once with the budget's unconsumed work
+    /// as its work allowance and its unconsumed storage as its entries
+    /// allowance; its charges are not added to the budget (FR-533).
+    fn read_population_catalog(
+        &mut self,
+        budget: &NativeJoinBudget,
+    ) -> Result<(), crate::NativeJoinFailure> {
+        use quire_contract_model::{
+            CheckedModelPopulationCatalogError as CatalogError,
+            CheckedModelPopulationCatalogLimitKind as Kind,
+            CheckedModelPopulationCatalogLimits as Limits,
+        };
+        let limits = Limits {
+            work: budget.work_limit().saturating_sub(budget.consumed().work),
+            entries: budget
+                .storage_limit()
+                .saturating_sub(budget.consumed().storage),
+        };
+        let catalog = match self.package.selected_model_population_catalog(limits) {
+            Ok(catalog) => catalog,
+            Err(CatalogError::Limit {
+                kind,
+                limit,
+                consumed,
+                ..
+            }) => {
+                let setting = match kind {
+                    Kind::Work => qsl_foundation::Setting::I2WorkUnits,
+                    Kind::Entries => qsl_foundation::Setting::I2NativeJoinStorage,
+                };
+                return Err(crate::NativeJoinFailure::PopulationCatalog {
+                    setting,
+                    limit: qsl_foundation::diagnostic::LimitExceeded::new(
+                        setting,
+                        limit,
+                        u128::from(consumed),
+                    ),
+                });
+            }
+            Err(_) => {
+                self.populations = Err(());
+                return Ok(());
+            }
+        };
+        let mut populations = BTreeMap::new();
+        for root in catalog.roots() {
+            for population in root.populations() {
+                let declaration = quire_checked::key::DeclarationKey {
+                    package: root.model_identity().to_owned(),
+                    node: population.original_identity().to_owned(),
+                };
+                let Ok(node) = qsl_semantics::model::key::population_node_key(&declaration) else {
+                    self.populations = Err(());
+                    return Ok(());
+                };
+                let members = population
+                    .members()
+                    .iter()
+                    .map(|member| member.normalized_type_identity().clone())
+                    .collect();
+                populations.insert(node, (declaration, members));
+            }
+        }
+        self.populations = Ok(populations);
+        Ok(())
     }
 
     pub(crate) fn equality_decisions(
@@ -243,6 +509,9 @@ pub enum IdentityFileRefusal {
     /// IR refused the original producer rows at its typed structural locus.
     #[error("the identity file has an invalid native witness: {0:?}")]
     Native(Box<quire_contract_model::ExactTypeProjectionError>),
+    /// An allocation-free producer adapter denial with the original budget locus.
+    #[error(transparent)]
+    Rows(#[from] crate::NativeRowError),
 }
 
 /// The member of an identity file a refusal names (FR-531 "The identity file").
@@ -501,7 +770,7 @@ fn form_of(spelling: &str) -> Option<SelectedExactDeclarationForm> {
 fn node_references(package: &CheckedPackageV2) -> Option<BTreeMap<NodeKey, CheckedNodeId>> {
     let graph = wire_graph(package).ok()?;
     package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .map(|node| Some((graph.key(&node.node_id).ok()?, node.node_id.clone())))
@@ -629,7 +898,7 @@ impl ReadIdentityRows {
         }
         let graph = wire_graph(package).map_err(|_| malformed(IdentityMember::File))?;
         let held: BTreeSet<&CheckedNodeId> = package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .map(|node| &node.node_id)

@@ -51,6 +51,15 @@ impl Built {
         }
     }
 
+    /// This unit with its emission's package bytes replaced by `wire`.
+    pub(super) fn with_wire(self, wire: &Value) -> Built {
+        let bytes = crate::support::slotted_package_bytes(wire);
+        Built {
+            emission: self.emission.clone().with_package_bytes(bytes),
+            ..self
+        }
+    }
+
     pub(super) fn read(&self, emission: &Emission) -> AdmittedPackageRead<'_> {
         self.try_read(emission)
             .expect("the reader admits the emission")
@@ -83,6 +92,7 @@ impl Built {
             &self.packages,
             limits,
             EmitLimits::fixture(),
+            qsl_package::SourceWitnessSupplier::new(emission),
         )
     }
 }
@@ -206,7 +216,6 @@ pub(super) fn request(
         .and_then(|found| found.clock)
         .expect("a clocked clause");
     EvidenceRequest {
-        native_valuations: Vec::new(),
         trigger: Some(id("o1")),
         correspondence: EvidenceRef::named("corr"),
         positions: (0..ticks)
@@ -333,7 +342,7 @@ fn both_routes_hold_the_emissions_rows_and_ids() {
         let rows = built.emission.temporal_rows();
         assert_eq!(
             emitted.rows(),
-            &PackageRows::of_package(read.admitted()).expect("the package's rows")
+            &PackageRows::of_read(&read).expect("the package's rows")
         );
         assert_eq!(
             serde_json::to_vec(emitted.rows().bindings()).unwrap(),
@@ -670,7 +679,7 @@ pub(super) fn twins() -> Built {
         ),
         &[("First", "first-authority"), ("Second", "second-authority")],
     );
-    let mut wire: Value = serde_json::from_slice(built.emission.package().bytes()).expect("JSON");
+    let mut wire = crate::support::resolved_package(built.emission.package().bytes());
     let renumber = |ordinal: &Value| -> Value {
         match ordinal.as_u64() {
             Some(0) => Value::from(7),
@@ -698,7 +707,7 @@ pub(super) fn twins() -> Built {
         }
         rows.sort_by_key(|row| row["occurrence"].as_u64());
     }
-    let bytes = serde_json::to_vec(&wire).expect("the wire encodes");
+    let bytes = crate::support::slotted_package_bytes(&wire);
     Built {
         emission: built.emission.clone().with_package_bytes(bytes),
         ..built
@@ -873,9 +882,9 @@ fn instance_bound_atoms_are_derived_and_equal_over_both_routes() {
 
 /// Edit the wire of `built` with `edit` and present the bytes as its emission.
 pub(super) fn edited(built: Built, edit: impl FnOnce(&mut Value)) -> Built {
-    let mut wire: Value = serde_json::from_slice(built.emission.package().bytes()).expect("JSON");
+    let mut wire = crate::support::resolved_package(built.emission.package().bytes());
     edit(&mut wire);
-    let bytes = serde_json::to_vec(&wire).expect("the wire encodes");
+    let bytes = crate::support::slotted_package_bytes(&wire);
     Built {
         emission: built.emission.clone().with_package_bytes(bytes),
         ..built

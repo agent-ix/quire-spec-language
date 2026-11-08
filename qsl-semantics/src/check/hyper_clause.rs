@@ -1068,6 +1068,18 @@ pub enum HyperCause {
         /// The operand's span.
         span: Span,
     },
+    /// A body reads a member its model declares with no checked type
+    /// (FR-056-AC-43). `ill_typed`/`operator-ineligible`, at the read.
+    BodyUntypedMember {
+        /// The declaring object type's name.
+        owner: String,
+        /// The member.
+        member: String,
+        /// Where its type reference is written.
+        locus: String,
+        /// The read's span.
+        span: Span,
+    },
     /// A contextual rational literal has no expected type.
     BodyAmbiguousLiteral {
         /// The literal's span.
@@ -1128,6 +1140,7 @@ impl HyperCause {
             | Self::DuplicateName { span, .. }
             | Self::BodyMissing { span, .. }
             | Self::BodyIllTyped { span }
+            | Self::BodyUntypedMember { span, .. }
             | Self::BodyAmbiguousLiteral { span }
             | Self::BodyUnproved { span, .. }
             | Self::BodyShadows { span, .. }
@@ -1166,6 +1179,7 @@ impl HyperCause {
             | Self::ParameterNotAnObject { .. }
             | Self::UnindexedRead { .. }
             | Self::BodyIllTyped { .. }
+            | Self::BodyUntypedMember { .. }
             | Self::BodyAmbiguousLiteral { .. }
             | Self::MismatchedTrace { .. } => Code::IllTyped,
         }
@@ -1199,6 +1213,7 @@ impl HyperCause {
             | Self::UnindexedRead { .. }
             | Self::BodyIllTyped { .. }
             | Self::MismatchedTrace { .. } => "type-mismatch",
+            Self::BodyUntypedMember { .. } => "operator-ineligible",
             Self::BodyAmbiguousLiteral { .. } => "ambiguous-literal",
             Self::BodyUnproved { obligation, .. } => match obligation {
                 Obligation::Nonzero => "unproved-nonzero",
@@ -1935,6 +1950,25 @@ fn body_refusal_at(
             name.to_owned()
         })
     });
+    let untyped = match &refusal.cause {
+        CheckCause::StateModel(state) => match &state.cause {
+            CheckCause::UntypedMember(untyped) => Some((**untyped).clone()),
+            _ => None,
+        },
+        CheckCause::UntypedMember(untyped) => Some((**untyped).clone()),
+        _ => None,
+    };
+    if let Some(untyped) = untyped {
+        return Found::Typed(
+            HyperCause::BodyUntypedMember {
+                owner: untyped.owner,
+                member: untyped.member,
+                locus: untyped.locus,
+                span,
+            },
+            location,
+        );
+    }
     let cause = match refusal.cause {
         CheckCause::MissingName(_) if missing_member.is_some() => HyperCause::BodyMissing {
             name: missing_member.expect("checked above"),
@@ -3505,6 +3539,7 @@ pub fn check_hyper_clauses(
     .with_complete_model(!package.models.is_empty())
     .with_model_spellings(package.model_spellings.clone())
     .with_source_owners(package.source_owners.clone())
+    .with_untyped_members(package.untyped_members.clone())
     .with_declared_units(&package.units);
     // The declared functions' signatures, which a body's calls resolve
     // against; a function that does not resolve is left out.

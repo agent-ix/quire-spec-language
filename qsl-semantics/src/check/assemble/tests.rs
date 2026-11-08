@@ -1583,6 +1583,36 @@ fn zero_one_required_gives_the_bounded_collection_not_option() {
     assert_eq!(declaration.presence(), Presence::Required);
 }
 
+/// FR-016-AC-10's `present(x.f)` clause, retired with the root domain checker:
+/// a required `[0, 1]` field is a bounded collection (the test above), not an
+/// `Option`, so `present` over a value of that type refuses
+/// `ill_typed`/`type-mismatch` while `present` over an `Option` checks.
+#[trace("TC-443", "FR-056-AC-10")]
+#[test]
+fn present_over_a_zero_one_collection_refuses_ill_typed() {
+    let check = |declarations: &str| {
+        let text = text(
+            &PROFILE_V.replace("quire.value.complete", "quire.model.complete"),
+            declarations,
+        );
+        assemble_as("a", "u", &text)
+            .expect("the unit assembles")
+            .check(CheckingLimits::default())
+    };
+    let refusals =
+        check("function f using v(x: Sequence<Integer>[0, 1]): Boolean pure { present(x) }")
+            .expect_err("a bounded collection has no presence");
+    assert!(
+        refusals.iter().any(|refusal| matches!(
+            refusal.cause,
+            CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+        )),
+        "{refusals:?}"
+    );
+    check("function g using v(x: Option<Integer>): Boolean pure { present(x) }")
+        .expect("`present` over an Option checks");
+}
+
 #[trace("TC-443", "FR-056-AC-10")]
 #[test]
 fn zero_five_required_gives_the_bounded_collection() {
@@ -1810,7 +1840,7 @@ fn rational_value_types_project_with_bounds_and_nominal_unit() {
             &variants,
             &units,
         ),
-        Err(Unmapped::Unsupported)
+        Err(Unmapped::Untyped(_))
     ));
     assert_eq!(
         model_value_type(
@@ -2031,8 +2061,9 @@ fn option_type_projects_through_signature_alias_sequence_map_tuple_variant_unit_
             _ => None,
         })
         .unwrap();
-    let declaration =
-        model_operation(operation, &by_key, &identities, &handles, &variants, &units).unwrap();
+    let declaration = model_operation(operation, &by_key, &identities, &handles, &variants, &units)
+        .unwrap()
+        .0;
     assert_eq!(
         declaration.parameters(),
         &[("value".to_owned(), ValueType::option(ValueType::Integer))]
@@ -3375,7 +3406,7 @@ fn a_quantity_type_form_resolves_to_its_unit_and_refuses_a_non_unit_name() {
             panic!("{name}: one error, not {found:?}")
         };
         assert!(
-            matches!(&error.cause, AssemblyCause::UnresolvedTypeName { name: found } if found == name),
+            matches!(&error.cause, AssemblyCause::UnresolvedUnitName { name: found, packages } if found == name && packages.is_empty()),
             "{name}: {error:?}"
         );
         assert_eq!(
@@ -3540,10 +3571,10 @@ fn quantity_literal_refusals_carry_their_codes_and_locations() {
             "ill_typed/type-mismatch",
         ),
         (
-            "function m using v(d: Quantity<ms>): Boolean pure { d = -3 ms }",
+            "function m using v(b: Boolean): Boolean pure { -b }",
             default,
-            "-3 ms",
-            "ill_typed/operator-ineligible",
+            "b",
+            "ill_typed/type-mismatch",
         ),
         (
             "function g using v(): Boolean pure { f(3 ghost) }",
@@ -3678,7 +3709,7 @@ fn quantity_literal_refusals_name_the_name_and_the_limit() {
             CheckingLimits::default(),
         );
         assert!(
-            matches!(&cause, CheckCause::MissingName(found) if found == name),
+            matches!(&cause, CheckCause::UnresolvedUnitName { name: found, packages } if found == name && packages.is_empty()),
             "{name}: {cause:?}"
         );
     }
@@ -5338,6 +5369,215 @@ fn aggregate_dimension_equivalence_keeps_its_declaring_source_owner() {
             region.source(),
             &source_b,
             "{name}'s type declaration region uses its declaring source"
+        );
+    }
+}
+
+const COMPOUND_TYPE_UNITS: &str = "dimension Mass; dimension Length; dimension Time;
+unit kg : Mass = rational(1, 1); unit m : Length = rational(1, 1); unit s : Time = rational(1, 1);
+dimension Energy = Mass * Length^2 * Time^-2; unit J : Energy = rational(1, 1);";
+
+#[trace("TC-483", "FR-091-AC-74")]
+#[test]
+fn compound_quantity_types_keep_exact_canonical_identity_and_held_unit_metadata() {
+    use quire_semantic_value::quantity::QuantityUnit;
+    let source = format!("{COMPOUND_TYPE_UNITS}
+        function u25 using v(q: Quantity<kg*m^2*s^-2>): Quantity<kg*m^2*s^-2> pure {{ q }}
+        function reordered using v(q: Quantity<s^-2*kg*m*m>): Quantity<kg*m^2*s^-2> pure {{ q }}
+        function converted using v(q: Quantity<J>): Quantity<kg*m^2*s^-2> pure {{ convert<Quantity<kg*m^2*s^-2>>(q) }}
+        function bare using v(q: Quantity<kg>): Quantity<kg> pure {{ q }}
+        function power using v(q: Quantity<kg^1>): Quantity<kg*m^0> pure {{ q }}
+        function empty using v(q: Quantity<m*m^-1>): Quantity<m^0> pure {{ q }}
+        function carried using v(q: Quantity<kg, Int[0, 10]>): Quantity<kg, Int[0, 10]> pure {{ q }}");
+    let package = assemble(&source).1.expect("compound type assembly");
+    let roots: BTreeMap<_, _> = package
+        .units
+        .units()
+        .map(|unit| {
+            let name = package
+                .types
+                .units()
+                .nominal_node(&unit.key())
+                .unwrap()
+                .declaration
+                .qualified_declaration[0]
+                .clone();
+            (name, unit.key())
+        })
+        .collect();
+    let signature_unit = |index| match &package.resolved_signatures.get(index).unwrap().0[0].1 {
+        ValueType::Quantity(id) => id.clone(),
+        other => panic!("quantity: {other:?}"),
+    };
+    let u25 = signature_unit(0);
+    assert_eq!(u25, signature_unit(1));
+    assert_ne!(u25, signature_unit(2));
+    let Some(QuantityUnit::Compound(unit)) = package.types.units().get(u25.clone()) else {
+        panic!("held compound metadata")
+    };
+    let actual: BTreeMap<_, _> = unit
+        .terms()
+        .map(|(root, exponent)| (root, exponent.to_string()))
+        .collect();
+    assert_eq!(
+        actual,
+        [
+            (roots["kg"].clone(), "1".to_owned()),
+            (roots["m"].clone(), "2".to_owned()),
+            (roots["s"].clone(), "-2".to_owned())
+        ]
+        .into()
+    );
+    let bare = signature_unit(3);
+    let power = signature_unit(4);
+    assert_ne!(bare, power);
+    assert!(matches!(
+        package.types.units().get(bare),
+        Some(QuantityUnit::Declared(_))
+    ));
+    let Some(QuantityUnit::Compound(unit)) = package.types.units().get(power) else {
+        panic!("explicit power stays compound")
+    };
+    assert_eq!(
+        unit.terms()
+            .map(|(root, n)| (root, n.to_string()))
+            .collect::<Vec<_>>(),
+        [(roots["kg"].clone(), "1".to_owned())]
+    );
+    let Some(QuantityUnit::Compound(unit)) = package.types.units().get(signature_unit(5)) else {
+        panic!("empty compound")
+    };
+    assert_eq!(unit.terms().count(), 0);
+    let carried = &package.resolved_signatures.get(6).unwrap().0[0].1;
+    assert!(matches!(carried, ValueType::CarriedQuantity(_)));
+    let checked = package
+        .check(CheckingLimits::default())
+        .expect("compound types check and key");
+    assert_eq!(
+        first_parameter(&checked, "u25"),
+        ValueType::Quantity(u25.clone())
+    );
+    let empty = quire_semantic_value::quantity::UnitTable::default();
+    let mut retained = quire_semantic_value::quantity::UnitScope::new(&empty);
+    checked.evaluation_units.seed(&mut retained);
+    assert!(matches!(retained.get(u25), Some(QuantityUnit::Compound(_))));
+}
+
+#[trace("TC-483", "FR-091-AC-75")]
+#[test]
+fn compound_quantity_type_unknown_units_refuse_at_the_factor_even_at_zero_power() {
+    for spelling in ["kg*ghost^2", "ghost^0", "Mass^0"] {
+        let source = format!("{COMPOUND_TYPE_UNITS} function f using v(q: Quantity<{spelling}>): Boolean pure {{ true }}");
+        let (text, found) = errors(&source);
+        let [error] = found.as_slice() else {
+            panic!("one missing factor: {found:?}")
+        };
+        let factor = if spelling.contains("ghost") {
+            "ghost"
+        } else {
+            "Mass"
+        };
+        assert!(
+            matches!(&error.cause, AssemblyCause::UnresolvedUnitName { name, packages } if name == factor && packages.is_empty())
+        );
+        assert_eq!(
+            error.cause.catalog_code().to_string(),
+            "missing_declaration/missing-name"
+        );
+        assert_eq!(error.span, last(&text, factor));
+    }
+}
+
+#[trace("TC-483", "FR-091-AC-75")]
+#[test]
+fn compound_quantity_type_exponents_obey_i128_without_narrowing() {
+    for exponent in [
+        i128::MIN.to_string(),
+        i128::MAX.to_string(),
+        "18446744073709551616".to_owned(),
+    ] {
+        let source = format!("{COMPOUND_TYPE_UNITS} function f using v(q: Quantity<m^{exponent}>): Quantity<m^{exponent}> pure {{ q }}");
+        let package = assemble(&source).1.expect("i128 exponent assembles");
+        let ValueType::Quantity(id) = &package.resolved_signatures.get(0).unwrap().0[0].1 else {
+            panic!("quantity")
+        };
+        let Some(quire_semantic_value::quantity::QuantityUnit::Compound(unit)) =
+            package.types.units().get(id.clone())
+        else {
+            panic!("compound")
+        };
+        assert_eq!(unit.terms().next().unwrap().1.to_string(), exponent);
+        package
+            .check(CheckingLimits::default())
+            .expect("wide exponent checks");
+    }
+    for exponent in [
+        "170141183460469231731687303715884105728",
+        "-170141183460469231731687303715884105729",
+    ] {
+        let source = format!("{COMPOUND_TYPE_UNITS} function f using v(q: Quantity<m^{exponent}>): Boolean pure {{ true }}");
+        let (_, found) = errors(&source);
+        assert!(
+            matches!(&found[0].cause, AssemblyCause::IllFormedBounds(TypeFormFault::IntegerOutsideI128(outside)) if outside.site == crate::check::IntegerSite::UnitExponent && outside.value == exponent)
+        );
+    }
+}
+
+#[trace("TC-483", "FR-091-AC-75")]
+#[test]
+fn compound_quantity_type_factors_reuse_the_quantity_cores_affine_refusal() {
+    let units = "dimension Temperature; unit K : Temperature = rational(1, 1); unit C : Temperature = rational(1, 1) * K + rational(27315, 100);";
+    for expression in ["C^1", "C^0", "K*C"] {
+        let (_, found) = errors(&format!(
+            "{units} function f using v(q: Quantity<{expression}>): Boolean pure {{ true }}"
+        ));
+        let [error] = found.as_slice() else {
+            panic!("one affine refusal: {found:?}")
+        };
+        assert!(matches!(
+            error.cause,
+            AssemblyCause::IllFormedBounds(TypeFormFault::UnitArithmetic(
+                quire_exact::IllTypedCause::AffineUnitArithmetic
+            ))
+        ));
+        assert_eq!(
+            error.cause.catalog_code().to_string(),
+            "ill_typed/operator-ineligible"
+        );
+    }
+}
+
+/// FR-056-AC-43, FR-505-AC-6 (TC-897 step 3, TC-1300): a bare native `Text`,
+/// `Rational` or `Decimal` has no checked type -- the member is declared with
+/// no kernel type and refused where used. Read below the semantic-IR
+/// validator, whose pinned native set names no `Rational`.
+#[trace("TC-897")]
+#[test]
+fn a_bare_native_text_rational_or_decimal_maps_to_no_checked_type() {
+    let single = Multiplicity {
+        lower: 1,
+        upper: Some(1),
+        ordered: false,
+        unique: true,
+    };
+    let none = BTreeMap::new();
+    for native in [
+        NativeValueType::Text,
+        NativeValueType::Rational,
+        NativeValueType::Decimal,
+    ] {
+        let mapped = model_value_type(
+            &ValueTypeRef::Native(native),
+            single,
+            &none,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        );
+        assert!(
+            matches!(mapped, Err(super::Unmapped::Untyped(_))),
+            "{native:?}"
         );
     }
 }

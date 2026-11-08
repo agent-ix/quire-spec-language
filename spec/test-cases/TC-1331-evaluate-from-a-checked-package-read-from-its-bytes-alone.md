@@ -7,12 +7,24 @@ relationships:
     type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-517
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-251
+    type: references
+  - target: ix://agent-ix/quire-contract-ir/FR-357
+    type: references
+  - target: ix://agent-ix/quire-contract-ir/FR-358
+    type: references
 ---
 # TC-1331: Evaluate from a checked package read from its bytes alone
 
 ## Description
 
-Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-27. **R** is the package of FR-517; the test crate depends on `quire-contract-model`, `qsl-package` and `qsl-eval` only. The producer transport tests also exercise authentic final emission source-union rows before handing their bytes to this entry.
+Verify the bytes-only entry and its selected-monitor preparation boundary.
+Scope: FR-531-AC-1 through FR-531-AC-33. **R** is the package of FR-517.
+The isolated bytes-only consumer test crate depends on `quire-contract-model`,
+`qsl-package` and `qsl-eval` only. Producer transport and selected-monitor
+preparation tests additionally obtain authentic final emissions, admitted model
+inputs and the FR-251 plan context through their public QSL APIs before handing
+rows or bytes to the consumer.
 
 ## Test Procedure
 
@@ -40,13 +52,99 @@ Verify the bytes-only entry. Scope: FR-531-AC-1 to FR-531-AC-27. **R** is the pa
 | 20 | 21 | a fixture's `with_supply` on a budget measured at (W, S), then (W - 1, S) and (W, S - 1) | the package; `ExhaustedWork`; `ExhaustedStorage`; consumed counters as IR reports; never `UnknownIdentityWitness`, a fault or an empty set |
 | 21 | 22 | foreign rows, unknown rows and no supply through an admitting budget; unknown rows through a budget one unit short | the three witness refusals at the slot call; the budget denial from `with_supply` |
 | 22 | 23 | two `with_supply` on one budget; selection, world and projection calls on the first package | cumulative counters; the second refused at the first crossing charge; no further native charge from the calls |
-| 23 | 24 | independently measure each entry's native work W and storage S: evaluation view, `from_read`, `from_emission`, handoff writer; run each at (W, S), (W - 1, S), (W, S - 1) | exact bounds succeed; work and storage one short respectively refuse with the correct setting and `ViewFailure::Exhausted`, `PackageMismatch::Exhausted` or `Error::NativeJoinExhausted`; a refused writer leaves no directory |
+| 23 | 24 | for `with_supply`, `from_read` and `from_emission`, also reuse one budget for two joins at (2W, 2S), (2W - 1, 2S) and (2W, 2S - 1); independently measure each entry's native work W and storage S: evaluation view, `from_read`, `from_emission`, handoff writer; run each at (W, S), (W - 1, S), (W, S - 1) | exact bounds succeed; work and storage one short respectively refuse with the correct setting and `ViewFailure::Exhausted`, `PackageMismatch::Exhausted` or `Error::NativeJoinExhausted`; a refused writer leaves no directory; opaque-budget denials preserve the original configured bound, native locus and setting, and actual is cumulative consumed plus first unpaid charge |
 | 24 | 25 | signature inspection of the six entries; a search for `NativeJoinBudget::new` in library sources | mutable-reference parameters; none below an entry; no `Copy` or `Clone` on `BarePackage` |
 
 For AC-26, write and read an authentic source-union emission with nullary and positional payload members, comparing complete original rows and native joined rows and byte-identical rewrites. For AC-27, reject format `/2`, absent `source_unions`, empty member identities, stale member names, foreign source owners and conflicting repeated rows with typed refusals and no partial read. Verify absent union witnesses through the bare union refusal tests.
 
-Tag the test `#[trace("TC-1331", "FR-531-AC-1", ..., "FR-531-AC-27")]`.
+For AC-29, compare the complete equality application, fact and source-unit rows
+of an authentic final emission at ample and exact measured native allowances.
+Exercise its source-admission and handoff-writing paths. Repeat on one budget,
+then lower each resource by one and try zero storage, asserting the typed first
+unpaid kind, amount and locus, cumulative admitted prefix and absence of an
+authoritative partial witness. Observe the adapter's allocations so a denied
+materialization step and compact refusal cannot allocate their payloads.
+
+For AC-30, use source ordered and unordered enums, a model enum shape and
+sequence, set and bounded-collection rows from one final emission. Compare
+complete native rows and original Exact identities after conversion, including
+canonical variant order. Compose equality, enum and collection adapters on one
+budget and exercise exact, one-short and zero-storage boundaries. Preserve an
+earlier first-denial locus across a later attempted conversion. Every external
+row-copy denial names `AdapterRow(i)` with its actual retained input index and
+channel form, including a real second-row denial followed by another attempted
+charge. The adapter does not replace it with a native `ReachedRow` locus.
+Re-reading borrowed retained rows adds no owned-storage charge.
+
+Use one genuine emission retaining both a sequence and a map with a scalar key
+and a record value. Convert the selected sequence, join its authentic rows and
+project its original native type and nodes while the unrelated map remains in
+the emission. Convert the selected map with its original `Some(key_node)`,
+value node and complete Exact `ValueType::Map`; pass those converted rows and
+that emission's original record/member witnesses through actual native joining
+and projection on the same budget. Compare original key-then-value order,
+record value identity, bound and complete map type without rebuilding them
+from the wire. The sequence's converted key remains `None`.
+
+For adverse controls, remove the actual map key, replace it with another
+retained node, and put the map's original key on the non-map sequence row.
+Require the native owner's typed refusal at the collection, charged work and
+no partial joined or projected result. Keep the untouched original rows and
+unrelated selection control unchanged. Repeat key-copy allocation admission
+and denial at exact, one-short and zero-storage boundaries; denied clones and
+their compact diagnostics allocate nothing and preserve the original
+`AdapterRow(i)` locus and allowance.
+
+For AC-31, obtain an authentic emission with nonempty source records, members
+and unions. Materialize its identity rows and compare every retained original
+declaration, field, member, union key and ordering to the producer's claims;
+then pass the rows through the actual native identity join and type projection.
+Derive expected row positions independently from the original retained slices.
+Select a later input field without renumbering its retained index and require
+an exact `AdapterRow(i)` refusal. After a paid genuine record prefix, refuse
+the later record member and union payload copies at their original outer row
+positions; verify those indices through the actual output adapter loops, and
+preserve the first denial across a later attempted complete adapter call.
+Measure producer input copies and the single native join separately from the adapter's later declaration,
+field, record/member and union copies, requiring their sum to equal the shared
+budget's cumulative consumption. Repeat with exact allowances, one below each
+resource and zero storage. A refusal returns no partial rows and preserves the
+original configured bound, admitted prefix and first unpaid row locus. Compose
+a second adapter on that same budget and require no restored allowance.
+
+For AC-32, build two genuine tick-monitor emissions with the same authored
+names but distinct original package/model identities. Through FR-251's public
+plan context, obtain the first emission's plan, obligations, admitted order and
+progress association. Join its converted selected rows through Contract IR and
+perform the actual selected type-closure projection. Compare complete native
+values, original node/declaration/member identities and Exact types. Present
+the second emission's association or omit each required authority in turn;
+require the typed refusal and no executable context, without fabricating a
+plan, graph or owner receipt. Dropping producer preparation objects does not
+change the retained context. Borrowed context reads add no owned-storage charge.
+
+For AC-33, use a real allocation observer, warmed independently from its payload
+fixtures. Prepare fresh owner-produced lazy numeric values, including `2^127`,
+`-(2^127 + 1)` and larger heap-backed values, without displaying or inspecting
+them before the measured call. Observe only materialization or conversion;
+retain its result and perform assertions after observation ends. Require
+observed allocations on a successful owned copy. Denial before the first
+allocation observes none; a later denial may retain allocations admitted before
+its first stop but allocates no denied payload or owned diagnostic. Exercise
+second-row work and storage denials, asserting the actual row locus and original
+bound remain unchanged after an attempted different charge or adapter call.
+Native budget construction and a fresh observer are not replacements for those
+shared-budget controls.
+
+Bind each new test with a two-id attribute such as
+`#[trace("TC-1331", "FR-531-AC-29")]` or
+`#[trace("TC-1331", "FR-531-AC-30")]`. Bind AC-31, AC-32 and AC-33 with their own
+two-id attributes; a source-enum locus test names AC-30 rather than the equality
+materialization criterion.
 
 ## Expected Results
 
-Each row's Expected column.
+Each row's Expected column and each added criterion's complete value, refusal,
+provenance and accounting assertions. Materialized rows alone grant no native
+admission or execution authority. This procedure does not claim that a pending
+implementation, generated backend or whole IR-721 campaign has passed.

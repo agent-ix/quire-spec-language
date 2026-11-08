@@ -164,9 +164,6 @@ protocol Orders using P over (view: M::WorkflowView) on each (started: M::StartV
 }
 ```
 
-The full example, with compensation, retries and timeouts, is
-[`tests/fixtures/composed-choreography.native`](tests/fixtures/composed-choreography.native).
-
 | Profile | Family |
 | --- | --- |
 | `quire.value.complete/v1` | values, records, functions, predicates |
@@ -186,8 +183,8 @@ checks every package against that list.
 </picture>
 
 **Editions.** This README covers the `1-draft` edition, the complete version-1
-language. The retired `0-draft` edition is refused by `compile`; its historical
-parser is being removed separately. Do not write new rules in it.
+language. The retired `0-draft` edition is refused by `compile`, and its
+historical parser is deleted. Do not write new rules in it.
 
 ## Compiler stages
 
@@ -420,8 +417,7 @@ Other directories:
   stage design.
 - [`docs/`](docs/): reference pages, including the
   [library notes](docs/library-notes.md),
-  [diagnostic codes](docs/native-error-codes.md),
-  [compiled protocol wire format](docs/compiled-protocol-v2.md).
+  [diagnostic codes](docs/native-error-codes.md).
 
 ## Contributing
 

@@ -62,6 +62,12 @@ fn annotated(document: &[u8]) -> Vec<u8> {
 
 /// `document` with `ConfigVersion.peers`, an unordered set of `ConfigVersion`.
 fn with_peers(document: &[u8]) -> Vec<u8> {
+    with_peer_collection(document, true)
+}
+
+/// `document` with `ConfigVersion.peers`, an unordered set (`unique`) or bag
+/// of `ConfigVersion`.
+fn with_peer_collection(document: &[u8], unique: bool) -> Vec<u8> {
     let mut envelope: serde_json::Value = serde_json::from_slice(document).expect("valid JSON");
     let peers = format!("{CONFIG_VERSION}/peers");
     envelope["types"]
@@ -79,7 +85,7 @@ fn with_peers(document: &[u8]) -> Vec<u8> {
             "presence": "required",
             "nullable": false,
             "defaultKind": "none",
-            "multiplicity": {"lower": 0, "upper": 5, "ordered": false, "unique": true},
+            "multiplicity": {"lower": 0, "upper": 5, "ordered": false, "unique": unique},
             "origin": {
                 "generated": {
                     "generatorIdentity": peers,
@@ -204,6 +210,31 @@ fn a_counting_fold_over_references_checks_in_both_units() {
     );
     check(&with_peers(&document()), &body).expect("unannotated counting fold checks");
     check(&annotated(&with_peers(&document())), &body).expect("annotated counting fold checks");
+}
+
+/// The counting `fold` over a `Bag` of references checks in both units, and
+/// the order-dependent `fold` over that `Bag` refuses as over a `Set`.
+#[trace("TC-565", "FR-150-AC-2")]
+#[test]
+fn a_counting_fold_over_a_bag_of_references_checks_and_a_chooser_refuses() {
+    let bag = with_peer_collection(&document(), false);
+    let count = format!(
+        "{FLAG}invariant Count using v on Config::ConfigVersion at current {{ \
+           fold<Tally>(acc, p in self.peers: acc + 1, identity: 0) <= 5 }}\n"
+    );
+    check(&bag, &count).expect("unannotated counting fold over a Bag checks");
+    check(&annotated(&bag), &count).expect("annotated counting fold over a Bag checks");
+
+    let last = format!(
+        "{FLAG}invariant Last using v on Config::ConfigVersion at current {{ not {LAST_PEER} }}\n"
+    );
+    let payload = identity_refusal(&annotated(&bag), &last, LAST_PEER);
+    assert_eq!(payload.node, IdentityNode::Fold);
+    let unannotated = check(&bag, &last).expect_err("refuses as today");
+    assert_eq!(
+        causes(&unannotated),
+        [(Code::IllTyped, Some("operator-ineligible"))]
+    );
 }
 
 /// `reduce`, and a conversion of a reference, refuse the same way.

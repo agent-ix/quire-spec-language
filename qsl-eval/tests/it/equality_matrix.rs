@@ -2153,6 +2153,7 @@ fn e27_structural_mismatch_and_cardinality_short_circuit_pair_counts() {
 }
 
 #[trace("QSpec-TC-194", "QSpec-FR-149-AC-9")]
+#[trace("TC-1339", "FR-534-AC-1")]
 #[test]
 fn e28_equality_on_ieee_bearing_types_is_operator_ineligible() {
     let env = TypeEnvironment::new(
@@ -2183,7 +2184,12 @@ fn e28_equality_on_ieee_bearing_types_is_operator_ineligible() {
         ValueType::Float(FloatType::exact(IeeeWidth::Binary64)),
         2,
     ));
-    assert_eq!(env.check_type(&set), Err(ineligible));
+    assert_eq!(
+        env.try_check_type(&set),
+        Err(quire_semantic_value::declaration::TypeCheckError::Refused(
+            ineligible
+        ))
+    );
 }
 
 #[trace("QSpec-TC-194", "QSpec-FR-149-AC-10")]
@@ -2615,10 +2621,16 @@ fn x04_quantities_order_and_add_only_in_one_unit() {
             );
         }
     }
-    assert_eq!(
-        cause(&negation("x")),
-        CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
+    // FR-093-AC-49: the unary `-` over a non-affine quantity keeps its unit.
+    let (negated, _) = run_in(
+        &package,
+        &parameters,
+        &negation("x"),
+        None,
+        arguments(),
+        UNLIMITED,
     );
+    completed_as(&negated, &metre(-1));
 }
 
 /// One unit declared by a graph the evaluating package does not hold: its

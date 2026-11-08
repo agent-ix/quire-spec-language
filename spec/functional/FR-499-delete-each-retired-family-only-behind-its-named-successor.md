@@ -46,10 +46,8 @@ Every behavior of a path to be deleted has exactly one disposition:
 
 A row SHALL NOT read "retired" without a named COVERED successor test. A
 behavior with no successor is never removed; the planner ruling on each such row
-is PORT or KEEP. A bare id without a test is never evidence. The inventory
-behind these tables is the code-derived deletion table (326 rows) and the
-planner's rulings on its ten decisions; this requirement records the outcome,
-and the tickets named below own each PORT.
+is PORT or KEEP. A bare id without a test is never evidence. This requirement
+records the planner's rulings, and the tickets named below own each PORT.
 
 ## Order of deletion
 
@@ -68,7 +66,7 @@ and the tickets named below own each PORT.
    owns `native/temporal_v2.rs` and `temporal_v3.rs`, the handoff writer, the
    examples, committed snapshots and the `handoff-writer` feature. QSL-838 owns
    `decode, domain, encoding, intake, models, recovery,
-   validate, value_graph, wire, work, v2/*, v3/*`. QSL-858 owns `src/temporal*`. `number.rs` is owned by none of them: FR-511 moves it to the root module `number` until the QSL-1506 port is green.
+   validate, value_graph, wire, work, v2/*, v3/*`. QSL-858 owns `src/temporal*`. `number.rs` is owned by none of them: FR-511 moved the codec to `qsl_package::number`; the transitional root module `number` is deleted.
    No file has two owners.
 4. QSL-841 lands after QSL-840: six `native/*` files still match
    `DeclarationKind::Protocol`.
@@ -95,10 +93,12 @@ and the tickets named below own each PORT.
 
 ## QSL-858: `src/temporal`
 
-Public surface kept (ruling 2) until IR repoints (IR-1005) and quire-protocol
-repoints (QSL-1501): `temporal::{mapping_support_v2, Classification,
-AuthenticatedSelection, Trace, Report, evaluate_v2}` and
-`Closure, Completeness, Execution, Evidence, Position, OrderKey`. The
+`temporal::{mapping_support_v2, Classification, AuthenticatedSelection}` and
+the profile enum were deleted by QSL-858 PR 2 (consumers import
+`qsl_eval::temporal`, not this crate's). Still kept: the native owner-report route
+`temporal::{Trace, Report, evaluate_v2}` and `Closure, Completeness, Execution,
+Evidence, Position, OrderKey`, whose FR-052-AC-15 to AC-21 criteria have no
+FR-525 successor. The
 quire-protocol conformance kernel (`src/conformance/kernel.rs:1198-1271`) uses
 them at its pinned revision.
 
@@ -124,7 +124,7 @@ The per-criterion map of FR-042 is FR-500. Rows for the rest of the module:
 | --- | --- | --- |
 | `read`, `v2::read`, `v3::read` strict reader and refusal of mutated bytes (FR-042-AC-7) | FR-383-AC-19, AC-20 over the I2 reader (FR-264) | COVERED for the checked package only; the 25 legacy `/1` per-axis mutation tests have no analogue. KEEP until FR-521 row 7 is green (FR-515, FR-517, FR-518) |
 | v2 refusal vocabulary `v2.header.*`, `v2.binding.*` (FR-050-AC-2, AC-3); `v2::encode_candidate` byte determinism (FR-050-AC-5) | none | PORT QSL-1506 (quire-protocol `tc_011` matches the code strings) |
-| `ProtocolNumber`, `NUMERIC_PROFILE="quire.protocol.numeric/1"` codec (FR-038, TC-117) | none (FR-497 and FR-322 cover carried quantities, not this codec); FR-511 states the disposition | PORT QSL-1506; KEEP `number.rs` as the root module `number` (FR-511) until that port is green |
+| `ProtocolNumber`, `NUMERIC_PROFILE="quire.protocol.numeric/1"` codec (FR-038, TC-117) | none (FR-497 and FR-322 cover carried quantities, not this codec); FR-511 states the disposition | PORTED QSL-1506 to `qsl_package::number`; the root module `number` is deleted (FR-511) |
 | Occurrence-key schema, key binder, `NodeRole`, nested repeat ordinals (FR-048-AC-1, FR-384, `occurrence.rs`, TC-132, TC-1064) | FR-384-AC-1 to AC-3 and AC-11 to AC-14: `ProtocolOccurrenceSchema::bind`, `WorkflowInstanceIdentity`, `OccurrenceKeyError` in qsl-package (QSL-1790) | GREEN; `occurrence.rs` is deleted |
 | `ArtifactKind`/`BindingKind` wire spellings (FR-049-AC-2, AC-5; TC-136) | none | PORT QSL-1506 |
 | `/3` authored control-temporal map (FR-054-AC-1 to AC-4) | FR-449, TC-1194 | PARTIAL: one legacy test (`compiled_protocol_v2.rs:1313`) tags AC-1 to AC-4; AC-2 to AC-4 PORT QSL-1506 |
@@ -178,7 +178,7 @@ consumer holds `NativeModel` (quire-protocol `AdmittedModel::schema_model`).
 | --- | --- | --- |
 | Per-family parse, link, check, evaluate inputs (FR-035, FR-036, FR-040, FR-049) | S2/S3/S6a family requirements | PARTIAL per family; FR-040 and FR-036 rows carry the retained FR-046/056/057 criteria whose only tests go with the lane (QSL-1509) |
 | Multi-unit namespace (`admit_namespace`, `SourceInventory`, `SyntaxNamespace`; FR-036-AC-1, AC-2, AC-7; FR-480) | none: FR-480 unimplemented | PORT QSL-1508 |
-| `checking::source_inventory::qsl_inventory` (IR FR-052 producer) | FR-362 item 10 says it lives in `qsl_replay`; in code it does not | PORT QSL-1508 |
+| `checking::source_inventory::qsl_inventory` (IR FR-052 producer) | FR-362 item 9 says it lives in `qsl_replay`; in code it did not | PORT QSL-1508 |
 | `StaticSubject` static-meaning identity (FR-036-AC-5) | none | PORT QSL-1509 |
 | `formal_source` coordinate bridge (FR-014, TC-035 to TC-039); used by the retained compile/run command | none | KEEP; re-tag (QSL-1509) |
 | CLI `quire-spec parse` with its flags, output document, exits 20, 21, 22, 30 | `qsl_cst::parse` | PORT QSL-837 (rewire; keep flags, output and exits) |

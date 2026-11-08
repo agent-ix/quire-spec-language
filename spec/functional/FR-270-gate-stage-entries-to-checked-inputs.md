@@ -61,7 +61,9 @@ and only a stage constructor produces one. The gate is a prerequisite of
   exact type name: `CheckedNodeId` and `CheckedOccurrence` (the occurrence
   `{ role, ordinal }` of FR-516), `TemporalBinding` and `ClockConfiguration`
   (the `temporal_bindings` row of FR-522), and `SourceIdentity` (the
-  selected formal identity of FR-514). None holds a checked node or term,
+  selected formal identity of FR-514), and `NativeJoinBudget` (the
+  caller-owned native allowance a stage entry that joins identities takes).
+  None holds a checked node or term,
   so none can be executed without that reader. Every other
   `quire-contract-model` type stays in the set, also beside an exempt one.
 - The gate SHALL treat as configuration, outside the set, a type that a

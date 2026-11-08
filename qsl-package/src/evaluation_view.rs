@@ -100,7 +100,7 @@ impl<'package> AdmittedEvaluationView<'package> {
             Ok((environment, usage)) => {
                 let populations = environment.population_completeness().clone();
                 ObservationAdmission::Admitted(AdmittedProtocolObservation {
-                    package: self.package,
+                    package: Some(self.package),
                     view_identity: Arc::clone(&self.identity),
                     #[cfg(feature = "std")]
                     reader: self.reader.clone(),
@@ -412,7 +412,7 @@ impl SelectedProtocolTerm<'_, '_> {
 
 /// A native denial with the stage's original ceiling and attempted charge.
 #[cfg(feature = "std")]
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("{limit}: {native}")]
 pub struct NativeJoinLimitError {
     /// The native refusal, including its structural locus and admitted work.
@@ -473,7 +473,10 @@ pub enum ViewFailure {
 /// ```
 #[derive(Clone)]
 pub struct AdmittedProtocolObservation<'view> {
-    package: &'view CheckedPackage,
+    /// The in-process package that admitted this observation; `None` when a
+    /// `BarePackage` did (FR-533 "Observation admission").
+    package: Option<&'view CheckedPackage>,
+    /// The identity of the admitting view or `BarePackage` value.
     view_identity: Arc<()>,
     #[cfg(feature = "std")]
     reader: Option<ReaderBacking<'view>>,
@@ -487,7 +490,8 @@ impl<'view> AdmittedProtocolObservation<'view> {
     /// Whether this authority was admitted by the exact in-process package
     /// instance now evaluating it.
     pub fn is_for_package(&self, package: &CheckedPackage) -> bool {
-        core::ptr::eq(self.package, package)
+        self.package
+            .is_some_and(|admitting| core::ptr::eq(admitting, package))
     }
 
     /// Whether this authority was admitted through this exact evaluation view.
@@ -495,14 +499,43 @@ impl<'view> AdmittedProtocolObservation<'view> {
         Arc::ptr_eq(&self.view_identity, &view.identity)
     }
 
-    /// The admitted evaluation view, retaining its exact ownership identity.
-    pub fn evaluation_view(&self) -> AdmittedEvaluationView<'view> {
-        AdmittedEvaluationView {
-            package: self.package,
+    /// The admitted evaluation view, retaining its exact ownership identity;
+    /// `None` for an observation a `BarePackage` admitted, which has no view.
+    pub fn evaluation_view(&self) -> Option<AdmittedEvaluationView<'view>> {
+        Some(AdmittedEvaluationView {
+            package: self.package?,
             identity: Arc::clone(&self.view_identity),
             #[cfg(feature = "std")]
             reader: self.reader.clone(),
+        })
+    }
+
+    /// The observation `owner` admitted through
+    /// [`crate::BarePackage::admit_protocol_observation`].
+    #[cfg(feature = "std")]
+    pub(crate) fn admitted_by_bare(
+        owner: Arc<()>,
+        model_selection: DomainPackageRef,
+        identity: DocumentRef,
+        observation: Observation,
+        usage: AdmissionUsage,
+    ) -> Self {
+        Self {
+            package: None,
+            view_identity: owner,
+            reader: None,
+            model_selection,
+            identity,
+            observation,
+            usage,
         }
+    }
+
+    /// Whether this authority was admitted by this exact `BarePackage`
+    /// value.
+    #[cfg(feature = "std")]
+    pub fn is_for_bare_package(&self, package: &crate::BarePackage<'_>) -> bool {
+        self.package.is_none() && Arc::ptr_eq(&self.view_identity, &package.owner())
     }
 
     /// FR-106 admission usage, separate from S6a evaluation charges.

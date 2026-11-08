@@ -12,7 +12,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_semantics::check::{protocol_site, ProtocolSite};
+use qsl_semantics::check::{protocol_site, ProtocolSite, RelatedSide};
 use quire_contract_model::{CheckedNodeId, CheckedPackageV2, CheckedSemanticNodeV2, CheckedTerm};
 use quire_exact::{NodeKey, ValueType};
 use quire_semantic_value::catalog::InternalFault;
@@ -152,42 +152,25 @@ fn fault(invariant: &'static str) -> SlotSelectionFailure {
 enum Site {
     /// The whole name is known from the node.
     Exact(String),
+    /// The whole name is built from the node, and the slot has it only where
+    /// its root holds an application to locate: a case guard or a `related`
+    /// end (QSpec FR-322-AC-388).
+    Structural(String),
     /// The name ends in a source span the bytes do not carry: the control's
-    /// site (`protocol P run path`) and the kind of tail.
-    Spanned(String, Tail),
+    /// site (`protocol P run path`) followed by `decision <start>..<end>`,
+    /// the name of a `visible` entry or a `repeat` guard.
+    Spanned(String),
 }
 
-/// The tail of a span-named site.
-#[derive(Clone, Copy)]
-enum Tail {
-    /// `related <start> <end>`.
-    Related,
-    /// `decision <start>..<end>`: a `visible` entry, case guard or repeat guard.
-    Decision,
-}
-
-impl Tail {
-    /// The spelling that follows the control's site and a space.
-    fn word(self) -> &'static str {
-        match self {
-            Self::Related => "related ",
-            Self::Decision => "decision ",
-        }
-    }
-
-    /// The numeric `(start, end)` of the name after `word`.
-    fn parse(self, rest: &str) -> Option<(u64, u64)> {
-        let (start, end) = match self {
-            Self::Related => rest.split_once(' ')?,
-            Self::Decision => rest.split_once("..")?,
-        };
-        let number = |text: &str| {
-            (!text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()))
-                .then(|| text.parse().ok())
-                .flatten()
-        };
-        Some((number(start)?, number(end)?))
-    }
+/// The numeric `(start, end)` of the span after `decision `.
+fn decision_span(rest: &str) -> Option<(u64, u64)> {
+    let (start, end) = rest.split_once("..")?;
+    let number = |text: &str| {
+        (!text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| text.parse().ok())
+            .flatten()
+    };
+    Some((number(start)?, number(end)?))
 }
 
 fn names(node: &Node) -> Vec<&str> {
@@ -256,7 +239,7 @@ fn slot_term<'n>(
     let capture_name = |record: &'n CheckedTerm| -> Result<String, SlotSelectionFailure> {
         let binder = reference(member_of(record, "binder")?).ok_or_else(no)?;
         let node = package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .find(|candidate| &candidate.node_id == binder)
@@ -314,17 +297,21 @@ fn slot_term<'n>(
                 _ => return Err(no()),
             }
         }
-        (Op::Choice, "cases.guard") => (
-            member_of(record("cases")?, "guard")?,
-            Site::Spanned(control(), Tail::Decision),
-        ),
+        (Op::Choice, "cases.guard") => {
+            let case = record("cases")?;
+            let label = member_of(case, "label").and_then(|label| text(label).ok_or_else(no))?;
+            (
+                member_of(case, "guard")?,
+                Site::Structural(protocol_site(p, ProtocolSite::CaseGuard(&path, label))),
+            )
+        }
         (Op::Choice | Op::Repeat, "visible") => (
             at(arg("visible")?)?
                 .get(index.ok_or_else(no)?)
                 .ok_or_else(no)?,
-            Site::Spanned(control(), Tail::Decision),
+            Site::Spanned(control()),
         ),
-        (Op::Repeat, "guard") => (arg("guard")?, Site::Spanned(control(), Tail::Decision)),
+        (Op::Repeat, "guard") => (arg("guard")?, Site::Spanned(control())),
         (Op::Check, "condition") => (arg("condition")?, exact(ProtocolSite::ControlBody(&path))),
         (
             Op::Send | Op::Receive | Op::Attempt | Op::Effect | Op::Event | Op::Commit,
@@ -334,14 +321,17 @@ fn slot_term<'n>(
             Op::Send | Op::Receive | Op::Attempt | Op::Effect | Op::Event,
             "related.from" | "related.to",
         ) => {
-            let end = if member == "related.from" {
-                "from"
+            let (end, side) = if member == "related.from" {
+                ("from", RelatedSide::From)
             } else {
-                "to"
+                ("to", RelatedSide::To)
             };
             (
                 member_of(record("related")?, end)?,
-                Site::Spanned(control(), Tail::Related),
+                Site::Structural(protocol_site(
+                    p,
+                    ProtocolSite::RelatedEnd(&path, index.ok_or_else(no)?, side),
+                )),
             )
         }
         (Op::Finish, "constraint") => (arg("constraint")?, exact(ProtocolSite::FinishBody(own()?))),
@@ -363,8 +353,8 @@ struct Resolved<'p> {
 }
 
 /// The slots of one control that a span-named origin may be shared by, in the
-/// rank order of FR-533 rule 4: `visible`, `cases.guard`, then the `related`
-/// ends by record (`from[0]`, `to[0]`, `from[1]`, ...).
+/// rank order of FR-533 rule 4: the `visible` entries, then a `repeat`'s
+/// guard.
 #[ix_trace_rs::string_edge]
 fn tied_order<'n>(
     node: &'n Node,
@@ -372,36 +362,19 @@ fn tied_order<'n>(
     key: &NodeKey,
     package: &'n CheckedPackageV2,
 ) -> Vec<ProtocolSlotDescriptor> {
-    let mut slots: Vec<((usize, usize), ProtocolSlotDescriptor)> = Vec::new();
-    for (member, rank) in [
-        ("visible", 0),
-        ("cases.guard", 1),
-        ("related.from", 2),
-        ("related.to", 2),
-    ] {
-        for index in 0.. {
-            let descriptor = ProtocolSlotDescriptor::new(key.clone(), member, Some(index));
-            if slot_term(node, op, &descriptor, package).is_err() {
-                break;
-            }
-            let order = match member {
-                "related.from" => 2 * index,
-                "related.to" => 2 * index + 1,
-                _ => index,
-            };
-            slots.push(((rank, order), descriptor));
+    let mut slots = Vec::new();
+    for index in 0.. {
+        let descriptor = ProtocolSlotDescriptor::new(key.clone(), "visible", Some(index));
+        if slot_term(node, op, &descriptor, package).is_err() {
+            break;
         }
+        slots.push(descriptor);
     }
-    // A `repeat`'s guard is its only decision slot besides `visible`.
     let guard = ProtocolSlotDescriptor::new(key.clone(), "guard", None);
     if slot_term(node, op, &guard, package).is_ok() {
-        slots.push(((1, 0), guard));
+        slots.push(guard);
     }
-    slots.sort_by_key(|(order, _)| *order);
     slots
-        .into_iter()
-        .map(|(_, descriptor)| descriptor)
-        .collect()
 }
 
 impl<'p> BarePackage<'p> {
@@ -422,7 +395,7 @@ impl<'p> BarePackage<'p> {
         let (_supply, identities) = self.witness()?;
         let graph = wire_graph(package).map_err(|_| fault("bare-package-has-structural-keys"))?;
         let nodes: BTreeMap<&CheckedNodeId, &Node> = package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .map(|node| (&node.node_id, node))
@@ -477,6 +450,7 @@ impl<'p> BarePackage<'p> {
                     &CheckedTerm::Reference {
                         target: root.clone(),
                     },
+                    None,
                     &mut |parameter| {
                         found.insert(&parameter.node_id);
                     },
@@ -532,28 +506,27 @@ impl<'p> BarePackage<'p> {
         let root = graph
             .key(slot.root)
             .map_err(|_| fault("bare-package-has-structural-keys"))?;
+        let binders = |sources: &[BareSource]| -> Vec<NodeKey> {
+            sources.iter().map(|source| source.binder.clone()).collect()
+        };
+        let visits = |root: &NodeKey, sources: &[BareSource]| {
+            walker
+                .visits(root, &binders(sources))
+                .map_err(|failure| match failure {
+                    WalkFailure::Unsupported(view) => {
+                        BareSelectionFailure::Unsupported(Box::new(view))
+                    }
+                    WalkFailure::Equality(refusal) => BareSelectionFailure::Equality(refusal),
+                    WalkFailure::Fault(failure) => SlotSelectionFailure::Fault(failure).into(),
+                })
+        };
         let origin = match &slot.site {
             Site::Exact(name) => Some(name.clone()),
-            Site::Spanned(control, tail) => {
-                let prefix = format!("{control} {}", tail.word());
-                let binders = |sources: &[BareSource]| -> Vec<NodeKey> {
-                    sources.iter().map(|source| source.binder.clone()).collect()
-                };
-                let visits = |root: &NodeKey, sources: &[BareSource]| {
-                    walker
-                        .visits(root, &binders(sources))
-                        .map_err(|failure| match failure {
-                            WalkFailure::Unsupported(view) => {
-                                BareSelectionFailure::Unsupported(Box::new(view))
-                            }
-                            WalkFailure::Equality(refusal) => {
-                                BareSelectionFailure::Equality(refusal)
-                            }
-                            WalkFailure::Fault(failure) => {
-                                SlotSelectionFailure::Fault(failure).into()
-                            }
-                        })
-                };
+            Site::Structural(name) => {
+                (!visits(&root, &slot.sources)?.is_empty()).then(|| name.clone())
+            }
+            Site::Spanned(control) => {
+                let prefix = format!("{control} decision ");
                 let own = visits(&root, &slot.sources)?;
                 if own.is_empty() {
                     // A leaf root: no application, no row, no origin.
@@ -567,7 +540,6 @@ impl<'p> BarePackage<'p> {
                             .filter(|(_, held)| **held == own)
                             .map(|(name, _)| *name),
                         &prefix,
-                        *tail,
                     );
                     // Rule 4: this slot's rank among the control's slots
                     // that share its walk.
@@ -584,7 +556,7 @@ impl<'p> BarePackage<'p> {
                         let Ok(key) = graph.key(sibling.root) else {
                             continue;
                         };
-                        if matches!(&sibling.site, Site::Spanned(held, held_tail) if held == control && held_tail.word() == tail.word())
+                        if matches!(&sibling.site, Site::Spanned(held) if held == control)
                             && visits(&key, &sibling.sources)? == own
                         {
                             rank += 1;
@@ -666,17 +638,13 @@ impl<'p> BarePackage<'p> {
     }
 }
 
-/// The origins among `names` that the control's span family spells with
-/// `prefix` and a span of `form`, in ascending numeric `(start, end)` order,
-/// parsing both as decimal integers and not comparing the names' bytes
-/// (FR-533 rule 4).
-fn ordered_candidates<'a>(
-    names: impl Iterator<Item = &'a str>,
-    prefix: &str,
-    form: Tail,
-) -> Vec<&'a str> {
+/// The origins among `names` that the control's `decision` family spells with
+/// `prefix` and a span, in ascending numeric `(start, end)` order, parsing
+/// both as decimal integers and not comparing the names' bytes (FR-533
+/// rule 4).
+fn ordered_candidates<'a>(names: impl Iterator<Item = &'a str>, prefix: &str) -> Vec<&'a str> {
     let mut spanned: Vec<((u64, u64), &str)> = names
-        .filter_map(|name| Some((form.parse(name.strip_prefix(prefix)?)?, name)))
+        .filter_map(|name| Some((decision_span(name.strip_prefix(prefix)?)?, name)))
         .collect();
     spanned.sort();
     spanned.into_iter().map(|(_, name)| name).collect()
@@ -723,25 +691,21 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
 
-    /// FR-533-AC-12, FR-533-AC-14: candidates are ordered by numeric
-    /// `(start, end)`, not by the bytes of their names, for a `decision` and
-    /// a `related` span, and a name outside the family is no candidate.
-    #[trace("FR-533-AC-12", "FR-533-AC-14", "TC-1333")]
+    /// FR-533-AC-12: candidates are ordered by numeric `(start, end)`, not by
+    /// the bytes of their names, and a name outside the `decision` family is
+    /// no candidate.
+    #[trace("FR-533-AC-12", "TC-1333")]
     #[test]
     fn candidates_are_ordered_numerically_by_start_then_end() {
         let decision = [
             "protocol P run M C decision 1000..1004",
             "protocol P run M C decision 999..1005",
             "protocol P run M C decision 1001..1002",
-            "protocol P run M C related 1 2",
+            "protocol P run M C case yes guard",
             "protocol P run M D decision 1..2",
             "protocol P run M C decision x..9",
         ];
-        let got = ordered_candidates(
-            decision.iter().copied(),
-            "protocol P run M C decision ",
-            Tail::Decision,
-        );
+        let got = ordered_candidates(decision.iter().copied(), "protocol P run M C decision ");
         assert_eq!(
             got,
             [
@@ -750,23 +714,6 @@ mod tests {
                 "protocol P run M C decision 1001..1002",
             ]
         );
-        let related = [
-            "protocol P run M G related 100 105",
-            "protocol P run M G related 99 100",
-        ];
-        assert_eq!(
-            ordered_candidates(
-                related.iter().copied(),
-                "protocol P run M G related ",
-                Tail::Related
-            ),
-            [
-                "protocol P run M G related 99 100",
-                "protocol P run M G related 100 105"
-            ],
-            "related.from[0] takes `99 100`, related.to[0] takes `100 105`"
-        );
-        assert_eq!(Tail::Related.parse("1  2"), None);
-        assert_eq!(Tail::Decision.parse("1..2..3"), None);
+        assert_eq!(decision_span("1..2..3"), None);
     }
 }

@@ -106,8 +106,8 @@ that instance's entry.
 
 `EvidenceLedger` is the caller-held value that FR-502's `ProgressLedger` is the
 pattern of: the request carries it and the result returns the updated one. Its
-`instances` table is keyed by the obligation (the package identity and the
-clause) and the trigger identity. Each entry holds the retained payload, the
+`instances` table is keyed by the obligation (the package identity, the
+clause and the clause occurrence) and the trigger identity. Each entry holds the retained payload, the
 receipts in arrival order and the `CaptureEnvironment`. FR-526 extends the same
 value with the table of latest results. The ledger holds no result bytes, only
 flat entries, and the caller owns its size.
@@ -338,4 +338,4 @@ No output holds a truth value.
 
 ## References
 
-- Linear QSL-1503; deletion-table rows B17, B18, B20, B21, B22.
+- Linear QSL-1503.

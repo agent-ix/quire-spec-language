@@ -333,7 +333,7 @@ mod tests {
     ];
 
     #[test]
-    #[trace("TC-1302", "FR-507-AC-1")]
+    #[trace("TC-1302", "TC-115", "FR-507-AC-1", "FR-057-AC-11")]
     fn capability_applicability_is_total_over_the_twelve_by_seven_matrix() {
         let applicable = [
             (Capability::ValueValidity, DeclarationFamily::Value),

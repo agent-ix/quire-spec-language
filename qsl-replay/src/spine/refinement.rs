@@ -210,6 +210,10 @@ impl CompileRefusal {
             )
             .reaching(Some(ReachedLimit::of(limit)))],
             Self::Omitted(_) => vec![RefusalCause::new(Code::UnsupportedProjection, None)],
+            Self::Extension(refusal) => vec![RefusalCause::new(
+                refusal.code(),
+                Some(refusal.cause().as_str()),
+            )],
         }
     }
 }
@@ -226,6 +230,7 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::IdentityLimit(limit)
         | AssemblyCause::DecimalScaleLimit(limit) => Some(ReachedLimit::of(limit)),
         AssemblyCause::UnresolvedTypeName { .. }
+        | AssemblyCause::UnresolvedUnitName { .. }
         | AssemblyCause::ImportedTypeName { .. }
         | AssemblyCause::AmbiguousTypeName { .. }
         | AssemblyCause::IllFormedBounds(_)
@@ -315,6 +320,8 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         CheckCause::Identity(
             IdentityRefusal::Allocation { .. } | IdentityRefusal::NonCanonical,
         )
+        | CheckCause::TypeCheckAllocation(_)
+        | CheckCause::TypeCheckCapacity(_)
         | CheckCause::ProfileProhibitedOperator(_)
         | CheckCause::LayerEquality { .. }
         | CheckCause::StateModel(_)
@@ -328,6 +335,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::MissingName(_)
         | CheckCause::ExecutionPointBinding(_)
         | CheckCause::MissingQualifiedName(_)
+        | CheckCause::UnresolvedUnitName { .. }
         | CheckCause::MissingSegment { .. }
         | CheckCause::MissingSelf
         | CheckCause::ClockReadingCall(_)
@@ -357,7 +365,9 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::ProtocolReference(_)
         | CheckCause::ProtocolObligation(_)
         | CheckCause::TerminalWithoutObjectType { .. }
+        | CheckCause::UntypedMember(_)
         | CheckCause::Abstraction(_)
+        | CheckCause::Extension(_)
         | CheckCause::RefinementNotEmitted { .. }
         | CheckCause::Probabilistic(_)
         | CheckCause::TimedNotChecked { .. }
@@ -429,6 +439,7 @@ fn group(refusal: &CompileRefusal) -> Group {
             UnitIntakeCause::Refused(_) | UnitIntakeCause::Invariant => Group::Setup,
         },
         CompileRefusal::Profile { .. }
+        | CompileRefusal::Extension(_)
         | CompileRefusal::UnitList(_)
         | CompileRefusal::DependencyInput(_)
         | CompileRefusal::Dependency { .. } => Group::Setup,

@@ -40,7 +40,7 @@ pub(super) fn clocked_document_with(collection: bool) -> Vec<u8> {
     if collection {
         fields.push(field("s", 0, 3, true, false));
     }
-    serde_json::to_vec(&document).expect("the fixture stays JSON")
+    crate::emit::tests::wire_bytes(&document).expect("the fixture stays JSON")
 }
 
 /// The unit selecting [`clocked_document`] under a dense time source, with
@@ -395,7 +395,7 @@ pub(super) fn vector_document() -> Vec<u8> {
         held["presence"] = json!("optional");
         fields.push(held);
     }
-    serde_json::to_vec(&document).expect("the fixture stays JSON")
+    crate::emit::tests::wire_bytes(&document).expect("the fixture stays JSON")
 }
 
 /// [`read_back`] of the unit with `body` after [`clocked_unit`]'s text.
@@ -686,7 +686,7 @@ fn an_urgency_reading_element_presences_is_not_emitted() {
     q["origin"]["generated"]["generatorIdentity"] = json!(identity);
     q["origin"]["generated"]["inputIdentities"] = json!([identity]);
     fields.push(q);
-    let document = serde_json::to_vec(&document).expect("JSON");
+    let document = crate::emit::tests::wire_bytes(&document).expect("JSON");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = clocked_unit("urgent All when { forall(e in self.q : present(e)) };\n");
     let refusals = assemble_with_models(unit.as_bytes(), &packages)
@@ -792,4 +792,86 @@ fn two_units_timing_two_packages_under_one_alias_emit_their_own_clock_places() {
         .collect();
     places.sort_unstable();
     assert_eq!(places, [1, 2]);
+}
+
+/// FR-230-AC-60 (TC-1334), QSpec FR-322 "Population references": a time
+/// invariant, two `urgent when` declarations and a precondition that name
+/// the one population `config_history` reference one `relation`/`population`
+/// node; `CallsExist` writes no `self` parameter node and `Known` writes
+/// one; I2 admits the package and reads the same predicates back.
+#[trace("TC-1334", "FR-230-AC-60")]
+#[test]
+fn a_timed_predicate_population_is_the_one_shared_reference_node() {
+    let document = clocked_document_with(false);
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let body = "time invariant HasCalls when { \
+                forall(c in Config::config_history : c.versionNumber > 0) } { self.x <= 1 ms }\n\
+                urgent CallsExist when { exists(c in Config::config_history : c.versionNumber > 0) };\n\
+                urgent Known when { present(lookup<Config::ConfigVersion>(\
+                Config::config_history, self) absent empty) };\n\
+                pre UsesCalls using v on Config::ConfigVersion::attemptUpdate { \
+                forall(c in Config::config_history : true) }\n";
+    let graph = assemble_with_models(clocked_unit(body).as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    let wire = wire(&emission);
+    let [population] = nodes(&wire)
+        .iter()
+        .filter(|node| node["node_tag"] == "relation" && node["semantic_form"] == "population")
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("exactly one population reference node");
+    };
+    let by_id = |digest: &Value| {
+        nodes(&wire)
+            .iter()
+            .find(|node| &node["node_id"] == digest)
+            .unwrap_or_else(|| panic!("node {digest}"))
+    };
+    let reads_population = |node: &Value| {
+        reached(&wire, node)
+            .iter()
+            .any(|reached| reached["node_id"] == population["node_id"])
+    };
+    let reads_self = |node: &Value| {
+        reached(&wire, node).iter().any(|node| {
+            node["semantic_form"] == "parameter" && member(&node["body"], "name")["value"] == "self"
+        })
+    };
+    let [invariant] = nodes(&wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "time_invariant")
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one time invariant");
+    };
+    assert!(reads_population(by_id(
+        &member(&invariant["body"], "predicate")["target"]
+    )));
+    let urgencies: Vec<&Value> = nodes(&wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "urgency")
+        .collect();
+    let [exists, known] = urgencies[..] else {
+        panic!("two urgencies");
+    };
+    let exists = by_id(&member(&exists["body"], "predicate")["target"]);
+    let known = by_id(&member(&known["body"], "predicate")["target"]);
+    assert!(reads_population(exists) && reads_population(known));
+    assert!(!reads_self(exists), "`CallsExist` writes no self parameter");
+    assert!(reads_self(known), "`Known` writes a self parameter");
+    let clauses: Vec<&Value> = nodes(&wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "state_clause" && reads_population(node))
+        .collect();
+    assert_eq!(clauses.len(), 1, "the precondition references the node");
+
+    let typed = read_back_with(&document, body)
+        .unwrap_or_else(|failure| panic!("the I2 read admits the package: {failure}"));
+    let [timed] = typed.as_slice() else {
+        panic!("one timed model reads back");
+    };
+    assert_eq!((timed.invariants.len(), timed.urgencies.len()), (1, 2));
 }

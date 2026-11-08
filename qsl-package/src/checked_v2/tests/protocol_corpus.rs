@@ -31,7 +31,8 @@ fn conformance_protocol_vector_positive_packages_are_admitted() {
             ));
             continue;
         };
-        let matching = envelope["semantic_graph"]["nodes"]
+        let inspection = resolved_fixture(&envelope);
+        let matching = inspection["semantic_graph"]["nodes"]
             .as_array()
             .unwrap()
             .iter()
@@ -50,7 +51,7 @@ fn conformance_protocol_vector_positive_packages_are_admitted() {
         );
         for node in matching {
             let retained = admitted
-                .graph()
+                .resolved_graph()
                 .nodes
                 .iter()
                 .find(|candidate| {

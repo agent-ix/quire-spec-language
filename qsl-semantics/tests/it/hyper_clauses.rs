@@ -24,7 +24,7 @@ use serde_json::json;
 
 use crate::model_operations::{
     config_version_document_with_operations, empty_frame, operation, operation_parameter,
-    parse_and_build, version_number_identity,
+    parse_and_build, version_number_identity, wire_field,
 };
 
 const INFINITE: &str = "quire.temporal.infinite-trace/v1";
@@ -42,7 +42,26 @@ fn vault() -> Vec<u8> {
         empty_frame(),
     );
     let mix = operation("mix", json!([]), None, empty_frame());
-    config_version_document_with_operations(vec![step, mix])
+    let document = config_version_document_with_operations(vec![step, mix]);
+    // `memo`: a bare native Text, a member of no checked type (FR-056-AC-43).
+    let mut value: serde_json::Value = serde_json::from_slice(&document).expect("fixture JSON");
+    let owner = value["types"]
+        .as_array_mut()
+        .expect("types")
+        .iter_mut()
+        .find(|ty| ty["identity"] == format!("ix://{VAULT}/ConfigVersion"))
+        .expect("ConfigVersion");
+    owner["fields"]
+        .as_array_mut()
+        .expect("fields")
+        .push(wire_field(
+            &format!("ix://{VAULT}/ConfigVersion/memo"),
+            "memo",
+            "ix://quire/native/Text",
+            "optional",
+            0,
+        ));
+    serde_json::to_vec(&value).expect("fixture encoding")
 }
 
 /// A device model under the package identity `identity`: `tick(load)`.
@@ -1109,7 +1128,7 @@ fn atom_over(condition: &str) -> String {
 /// a body is typed under the value profile, so the value forms a body may
 /// use check: the members of a declared enum, calls of declared functions and
 /// `let`.
-#[trace("TC-597")]
+#[trace("TC-597", "FR-013-AC-3")]
 #[test]
 fn a_body_may_use_enum_members_declared_functions_and_let() {
     for (declarations, label) in [
@@ -1142,7 +1161,7 @@ fn a_body_may_use_enum_members_declared_functions_and_let() {
 /// The same forms refuse when they are misused: a member of no enum, an enum
 /// compared with an integer, a call of no function or with the wrong
 /// arguments, and a `let` binder used past its body.
-#[trace("TC-597")]
+#[trace("TC-597", "FR-013-AC-3")]
 #[test]
 fn misused_enum_members_calls_and_let_binders_refuse() {
     let missing = |declarations: String| match body_outcome(&declarations) {
@@ -1175,6 +1194,11 @@ fn misused_enum_members_calls_and_let_binders_refuse() {
             Code::MissingDeclaration,
         ),
         (relation_over("let n = true in n = x.i"), Code::IllTyped),
+        // A field the step's model declares nowhere.
+        (
+            relation_over("x.no_such_field = 1"),
+            Code::MissingDeclaration,
+        ),
     ] {
         let faults = missing(declarations.clone());
         assert_eq!(faults.len(), 1, "{declarations}: {faults:?}");
@@ -1919,5 +1943,29 @@ fn a_timed_interval_in_a_hyper_clause_refuses_by_how_the_clause_counts() {
     assert_eq!(
         (cause.code(), cause.tag()),
         (Code::UnsupportedConstruct, "not-yet-implemented")
+    );
+}
+
+/// FR-056-AC-43 in a relation body (TC-597): reading a member the model
+/// declares with no checked type (`x.self.memo`, a bare native Text) refuses
+/// `ill_typed`/`operator-ineligible` at the read, naming the type and
+/// `Field.typeRef`, not as a missing name.
+#[trace("TC-597")]
+#[test]
+fn a_relation_body_reading_a_member_of_no_checked_type_refuses_operator_ineligible() {
+    let body = "x.self.memo = x.self.memo";
+    let (text, cause) = hyper_cause(&["V"], &format!("{BAD_RELATION}{body} }}"));
+    assert_eq!(
+        cause,
+        HyperCause::BodyUntypedMember {
+            owner: "ConfigVersion".into(),
+            member: "memo".into(),
+            locus: "Field.typeRef".into(),
+            span: first(&text, "x.self.memo"),
+        }
+    );
+    assert_eq!(
+        (cause.code(), cause.tag()),
+        (Code::IllTyped, "operator-ineligible")
     );
 }

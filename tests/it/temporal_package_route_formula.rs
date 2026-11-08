@@ -76,6 +76,9 @@ fn a_package_formula_that_differs_from_the_checked_clause_is_unreadable() {
             "{what}: the unaltered clause"
         );
 
+        // The read owns its witness supplier, so it ends before `built` moves.
+        drop(unaltered);
+        drop(read);
         let other = event_clauses(&body, &[("Only", "only-authority")]);
         let changed = built.with_emission_of(other);
         let read = changed.read(&changed.emission);
@@ -132,7 +135,7 @@ fn a_clause_the_package_does_not_hold_is_unresolved() {
     let asked = request(&package, &due, None, 3);
     let protocol_clause = read
         .admitted()
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .zip(read.admitted().node_kinds())

@@ -466,12 +466,13 @@ fn replay_row(
                 return Err(format!("expected admission, read {outcome:?}"));
             };
             let nodes: Vec<Value> = admitted
-                .graph()
+                .resolved_graph()
                 .nodes
                 .iter()
                 .map(|node| serde_json::to_value(node).expect("a node value"))
                 .collect();
-            let base_nodes = base["semantic_graph"]["nodes"]
+            let inspection = resolved_fixture(base);
+            let base_nodes = inspection["semantic_graph"]["nodes"]
                 .as_array()
                 .map(Vec::as_slice)
                 .unwrap_or_default();

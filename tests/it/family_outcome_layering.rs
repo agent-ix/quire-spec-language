@@ -555,12 +555,18 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         root.dev.iter().any(|dependency| dependency == "qsl-route"),
         "the root crate's tests name qsl-route through a dev dependency"
     );
-    // The native temporal report adapter now calls layer 5 directly.
+    // No shipped root-crate module evaluates temporal evidence: the root
+    // crate names `qsl-eval` as a dev dependency only.
     assert!(
-        root.normal
+        !root
+            .normal
             .iter()
             .any(|dependency| dependency == "qsl-eval"),
-        "native reports evaluate through the existing layer-5 owner"
+        "the root crate has a normal dependency on qsl-eval; it is a dev dependency only"
+    );
+    assert!(
+        root.dev.iter().any(|dependency| dependency == "qsl-eval"),
+        "the root crate's tests drive the temporal evidence call through a dev dependency"
     );
     assert!(
         !root.build.iter().any(|dependency| dependency == "qsl-eval"),

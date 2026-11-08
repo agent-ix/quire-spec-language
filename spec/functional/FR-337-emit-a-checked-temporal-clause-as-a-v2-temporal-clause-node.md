@@ -556,6 +556,7 @@ FR-488 and FR-447.
 | FR-337-AC-26 | A Timed clause over a model with no `time` declaration refuses at S3 (`ModelTimeOnUntimedModel`, located at the clause's `model-time` clock text) and no package is written. | Test (TC-1326) |
 | FR-337-AC-27 | A clock selection of any kind supplied for a Timed clause is refused as a surplus selection at the clause's span, `invalid_package`/`timed-node-reference`, and no package is written. | Test (TC-1326) |
 | FR-337-AC-28 | A `temporal_bindings` row supplied for a Timed clause in an otherwise emitted package refuses in the reader `invalid_package`/`timed-node-reference` at `/temporal_bindings/0`; the package without the row is admitted. | Test (TC-1326) |
+| FR-337-AC-29 | A unit compiled as package `acme/orders` with `model M = "acme/rpc"` (base dimension `Time`, units `s` and `ms`), whose timestamped-event clause has `count over past[0 M::s, 300000 M::ms] >= 1` under a clock in `ix://acme/rpc/unit/ms`, emits both bounds typed by the node `{package: "acme/rpc", path: ["scalar_type", "unit", "ix://acme/rpc/unit/ms"], ordinal: 0}`, which carries the `ModelOwner` of `acme/rpc`; the package holds exactly one node with that path, and the clause node's `node_id.package` is `acme/orders`. | Test (TC-1267) |
 
 ### Aggregate formula emission
 
@@ -613,7 +614,17 @@ ceiling SHALL bound each bound's converted value as well as its written
 magnitude, and a converted value past it SHALL be refused
 `LimitExceeded(S3RationalBits)` at the bound. A model-owned clock unit node and its dimension are written
 by the emitter, with an empty body, the model owner and a `generated`
-occurrence at the clause, as a timed source's are. Without a selected
+occurrence at the clause, as a timed source's are. The clock unit node is
+the unit's one model-owned node, and its `node_id.package` is the identity of
+the domain package that declares `T` (QSpec FR-322 "Structural node
+identity"), not the clause node's package: in a unit compiled as package
+`acme/orders` with `model M = "acme/rpc"`, a window under a clock in `M::ms`
+types both bounds by the node `{package: "acme/rpc", path: ["scalar_type",
+"unit", "ix://acme/rpc/unit/ms"], ordinal: 0}`. The emitter SHALL NOT write a
+second `scalar_type`/`unit` node, in the clause's package or any other, to
+stand for the clock unit, so the bounds and every other quantity of that
+unit name one node; a reader matches the bounds' `type` against the clock
+unit by path, as QSpec FR-370-AC-20 states. Without a selected
 clock, or when no time unit has the clock unit node, S3 converts both
 bounds to the lower bound's written unit. The emitter SHALL refuse a clause
 whose `duration` window's unit node is not the clock unit node with
@@ -621,12 +632,6 @@ whose `duration` window's unit node is not the clock unit node with
 package. A source-declared unit's node path is its declared name, never
 `["scalar_type", "unit", T]`, so a `duration` window emits only in the time
 units of a selected model package (`M::s`, `M::ms`).
-
-Remaining work: QSL-1662. The model-check re-emit paths (identity, item and
-certificate closure) re-emit a supplied checked package with clock
-selections but do not re-run S3 with them, so a package checked without
-the clock whose bound unit differs from the clock unit is refused
-`InvalidTemporalClockValue`; the result is a refusal, never a wrong verdict.
 
 The bindings are inputs of the node's structural identity, so a change of any
 binding changes the formula node, and an omitted `min_count` and `min_count 1`

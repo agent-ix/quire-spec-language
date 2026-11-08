@@ -391,11 +391,15 @@ fn a_public_record_projection_requires_its_original_carried_native_witness() {
         .expect("the original Pair row");
     let equality = qsl_package::ReadEqualityRows::read(&files["equality.json"], &package).unwrap();
     let graph = qsl_semantics::check::wire_id::WireGraph::new(
-        package.graph().nodes.iter().map(|node| &node.node_id),
+        package
+            .resolved_graph()
+            .nodes
+            .iter()
+            .map(|node| &node.node_id),
     )
     .unwrap();
     let protocol = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| {
@@ -609,7 +613,7 @@ fn the_identity_file_refuses_what_it_cannot_join() {
         })
         .expect("R selects a record or union declaration");
     let other = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .map(|node| serde_json::to_value(&node.node_id).unwrap())
@@ -784,10 +788,10 @@ fn from_package_returns_only_the_ambiguous_name_mismatch() {
         assert!(!body.contains(variant), "{variant}");
     }
     let rows = package
-        .split("pub fn of_package")
+        .split("fn of_admitted")
         .nth(1)
         .and_then(|rest| rest.split("pub fn names").next())
-        .expect("of_package");
+        .expect("of_admitted");
     assert!(rows.contains("PackageMismatch::AmbiguousName"));
     for variant in ["ClauseRow", "ProfileSelections", "Bindings"] {
         assert!(
@@ -875,7 +879,7 @@ fn a_node_that_is_no_temporal_clause_is_unresolved_over_the_bare_package() {
         .expect("a clause");
     let asked = evidence_request(&evaluation, &due, None, 3);
     let other = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .map(|node| node.node_id.clone())
@@ -1476,6 +1480,26 @@ fn record_rows(
     (rows, measured)
 }
 
+/// What `with_supply` leaves unconsumed for the population catalog (FR-533
+/// "Observation admission"): the catalog's own work and entries, which are not
+/// added to the budget afterwards.
+pub(crate) fn catalog_room(
+    package: &quire_contract_model::CheckedPackageV2,
+) -> quire_contract_model::NativeJoinCharge {
+    let catalog = package
+        .selected_model_population_catalog(
+            quire_contract_model::CheckedModelPopulationCatalogLimits {
+                work: u64::MAX / 2,
+                entries: u64::MAX / 2,
+            },
+        )
+        .expect("an ample allowance reads the catalog");
+    quire_contract_model::NativeJoinCharge {
+        work: catalog.work(),
+        storage: catalog.entries(),
+    }
+}
+
 fn supply_on<'p>(
     read: &'p qsl_package::AdmittedPackageRead<'_>,
     rows: &'p ReadIdentityRows,
@@ -1489,11 +1513,21 @@ fn supply_on<'p>(
             },
             budget,
         )
-        .map_err(|failure| match failure {
-            qsl_package::NativeJoinFailure::Projection(error) => *error,
+        .map_err(|failure| match failure.native() {
+            qsl_package::NativeJoinFailure::Projection(error) => (**error).clone(),
             qsl_package::NativeJoinFailure::Equality(error) => {
                 panic!("identity-only fixture has no equality read: {error:?}")
             }
+            qsl_package::NativeJoinFailure::Rows(error) => {
+                panic!("retained identity-only supply performs no producer row copy: {error:?}")
+            }
+            qsl_package::NativeJoinFailure::UnitDefinitions { .. } => {
+                panic!("identity-only fixture has no unit rows")
+            }
+            qsl_package::NativeJoinFailure::PopulationCatalog { .. } => {
+                panic!("identity-only fixture selects no model population")
+            }
+            qsl_package::NativeJoinFailure::Limit(_) => unreachable!("native unwraps the envelope"),
         })
 }
 
@@ -1508,7 +1542,8 @@ fn with_supply_is_admitted_at_the_measured_budget_and_refused_one_short() {
     let read = built.read(&built.emission);
     let (rows, need) = record_rows(&read);
 
-    let mut exact = NativeJoinBudget::new(need.work, need.storage);
+    let room = catalog_room(read.admitted());
+    let mut exact = NativeJoinBudget::new(need.work + room.work, need.storage + room.storage);
     let admitted = supply_on(&read, &rows, &mut exact).expect("the exact budget admits");
     assert_eq!(exact.consumed(), need);
     assert!(admitted.identities().is_some());
@@ -1626,7 +1661,8 @@ fn two_joins_on_one_budget_are_charged_cumulatively() {
     let read = built.read(&built.emission);
     let (rows, need) = record_rows(&read);
 
-    let mut budget = NativeJoinBudget::new(need.work, need.storage);
+    let room = catalog_room(read.admitted());
+    let mut budget = NativeJoinBudget::new(need.work + room.work, need.storage + room.storage);
     let first = supply_on(&read, &rows, &mut budget).expect("the first join is paid for");
     assert_eq!(budget.consumed(), need);
     let second = supply_on(&read, &rows, &mut budget).expect_err("denied");
@@ -1636,14 +1672,15 @@ fn two_joins_on_one_budget_are_charged_cumulatively() {
             | quire_contract_model::ExactTypeProjectionErrorCode::ExhaustedStorage
     ));
     assert!(budget.first_unpaid().is_some());
-    assert!(budget.consumed().work <= need.work);
-    assert!(budget.consumed().storage <= need.storage);
+    assert!(budget.consumed().work <= need.work + room.work);
+    assert!(budget.consumed().storage <= need.storage + room.storage);
     first
         .world()
         .expect("the first package borrows its identities");
 
     // With room for exactly two joins the second is admitted.
-    let mut twice = NativeJoinBudget::new(need.work * 2, need.storage * 2);
+    let mut twice =
+        NativeJoinBudget::new(need.work * 2 + room.work, need.storage * 2 + room.storage);
     supply_on(&read, &rows, &mut twice).expect("first");
     supply_on(&read, &rows, &mut twice).expect("second");
     assert_eq!(twice.consumed().work, need.work * 2);
@@ -1658,23 +1695,24 @@ fn the_view_the_constructors_and_the_writer_refuse_a_budget_one_short() {
     use quire_contract_model::{ExactTypeProjectionErrorCode as Code, NativeJoinBudget};
     let built = record_capture();
     let ample = built.read(&built.emission);
-    // The source view and supplied bare entry both join the final rows and
-    // retain their native Exact projections. Measure those real entry calls
-    // on one ledger, including the emission's preceding row-production join.
+    // View creation runs one native pass: the source supplier's identities
+    // (the emission's row production and joins), the reader's validation of
+    // them, then the retained Exact projection of every node. Measure those
+    // steps on one ledger.
+    use qsl_package::EvaluationWitnessSupplier;
     let mut view_measure = NativeJoinBudget::new(1 << 30, 1 << 30);
-    let rows = built
-        .emission
-        .identity_rows(ample.admitted(), &mut view_measure)
-        .expect("the emission's rows join");
-    BarePackage::new(ample.admitted())
-        .with_supply(
-            qsl_package::BareSupply {
-                identities: &rows,
-                equality: None,
-            },
-            &mut view_measure,
-        )
-        .expect("the witness and its native Exact projections are admitted");
+    let rebound = qsl_package::SourceWitnessSupplier::new(&built.emission)
+        .supply(ample.admitted(), &mut view_measure)
+        .expect("the supplier joins its rows")
+        .identities
+        .expect("the source supplier holds identities")
+        .validate_and_rebind(ample.admitted(), &mut view_measure)
+        .expect("the reader validates the supplied identities");
+    for node in &ample.admitted().resolved_graph().nodes {
+        let _ = ample
+            .admitted()
+            .project_exact_type(&node.node_id, &rebound, &mut view_measure);
+    }
     let view_need = view_measure.consumed();
     assert!(view_need.storage > 1);
     let limits = |work: u64, storage: u64| {
@@ -1740,7 +1778,12 @@ fn the_view_the_constructors_and_the_writer_refuse_a_budget_one_short() {
         ] {
             let mut one_short = NativeJoinBudget::new(work, storage);
             match construct(&mut one_short) {
-                Err(PackageMismatch::Exhausted(denial)) => assert_eq!(denial.code, code),
+                Err(PackageMismatch::Exhausted(denial)) => {
+                    assert!(
+                        matches!(denial.native(), qsl_package::NativeJoinFailure::Projection(native) if native.code == code)
+                    );
+                    assert!(denial.limit().is_some());
+                }
                 other => panic!("expected the {code:?} denial, got {:?}", other.err()),
             }
             assert!(one_short.first_unpaid().is_some());
@@ -1749,8 +1792,8 @@ fn the_view_the_constructors_and_the_writer_refuse_a_budget_one_short() {
 }
 
 /// FR-531-AC-24 (writer half, TC-1331): a handoff request whose native join
-/// limits cannot pay for the identity join is refused with the typed denial
-/// and writes no directory; the fixture limits write it.
+/// limits cannot pay for the complete identity materialization pass is refused
+/// with the typed denial and writes no directory; exact limits write it.
 #[trace("TC-1331", "FR-531-AC-24")]
 #[test]
 fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join() {
@@ -1759,6 +1802,17 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
     let scratch = tempfile::tempdir().expect("tempdir");
     let built = recipe("event_position");
     let read = built.read(&built.emission);
+    // Copied package names are part of the real allowance. Calibrate the
+    // producer and public writer over the same complete named emission.
+    let package_name = built.emission.package().name().to_owned();
+    let mut same_request = request("event_position", Corpus::None);
+    same_request.emit.package_name = package_name.clone();
+    assert_eq!(
+        quire_spec_language::emit_checked_v2::emit(&same_request.emit)
+            .expect("actual public writer emission"),
+        built.emission.package().bytes(),
+        "the budget oracle and writer must use exactly the same producer package",
+    );
     let mut measure = quire_contract_model::NativeJoinBudget::new(1 << 30, 1 << 30);
     built
         .emission
@@ -1777,6 +1831,7 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
         ),
     ] {
         let mut asked = request("event_position", Corpus::None);
+        asked.emit.package_name = package_name.clone();
         asked.native_join = limits;
         let target = scratch.path().join(format!("{code:?}"));
         match write(&asked, &target) {
@@ -1785,8 +1840,26 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
                 let Error::NativeJoinExhausted(denial) = error else {
                     unreachable!()
                 };
-                assert!(
-                    matches!(&denial.native, qsl_package::NativeJoinFailure::Projection(native) if native.code == code)
+                let qsl_package::NativeJoinFailure::Rows(native) = &denial.native else {
+                    panic!(
+                        "the final producer copy retains its compact cause: {:?}",
+                        denial.native
+                    )
+                };
+                assert_eq!(
+                    native.code(),
+                    if code == Code::ExhaustedWork {
+                        qsl_package::NativeRowErrorCode::WorkLimit
+                    } else {
+                        qsl_package::NativeRowErrorCode::StorageLimit
+                    }
+                );
+                assert_eq!(
+                    native.locus(),
+                    Some(quire_contract_model::NativeJoinLocus {
+                        source: quire_contract_model::NativeJoinLocusSource::Package,
+                        form: "identity_package_output",
+                    })
                 );
                 assert_eq!(
                     denial.limit.setting().name(),
@@ -1802,6 +1875,7 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
                     limits.storage
                 };
                 assert_eq!(denial.limit.configured_bound(), bound);
+                assert_eq!(native.configured_bound(), Some(bound));
                 assert!(denial.limit.actual() > u128::from(bound));
                 assert!(denial.to_string().contains(denial.limit.setting().name()));
             }
@@ -1809,9 +1883,169 @@ fn the_writer_refuses_native_join_limits_that_cannot_pay_for_the_identity_join()
         }
         assert!(!target.exists(), "a refused write leaves no directory");
     }
+    // The complete writer continues from identities into equality on this
+    // same ledger, including when no equality applications were emitted.
+    let equality = built
+        .emission
+        .equality_witness(read.admitted(), &mut measure)
+        .expect("measure the writer's equality materialization after identities");
+    let complete_need = measure.consumed();
+    assert!(complete_need.work > need.work);
+    assert!(complete_need.storage > need.storage);
+    for (work, storage, code, setting) in [
+        (
+            complete_need.work - 1,
+            complete_need.storage,
+            qsl_package::NativeRowErrorCode::WorkLimit,
+            "i2.work_units",
+        ),
+        (
+            complete_need.work,
+            complete_need.storage - 1,
+            qsl_package::NativeRowErrorCode::StorageLimit,
+            "i2.native_join_storage",
+        ),
+    ] {
+        let mut oracle = quire_contract_model::NativeJoinBudget::new(work, storage);
+        built
+            .emission
+            .identity_rows(read.admitted(), &mut oracle)
+            .expect("the complete-writer boundary still pays for identities");
+        let expected = built
+            .emission
+            .equality_witness(read.admitted(), &mut oracle)
+            .expect_err("one-short complete allowance refuses during equality");
+        assert_eq!(expected.code(), code);
+        assert_eq!(expected.denied(), oracle.first_unpaid());
+        assert_eq!(expected.locus(), oracle.first_unpaid_locus());
+        let mut asked = request("event_position", Corpus::None);
+        asked.emit.package_name = package_name.clone();
+        asked.native_join = qsl_package::NativeJoinLimits::new(work, storage);
+        let target = scratch.path().join(format!("complete-{work}-{storage}"));
+        match write(&asked, &target) {
+            Err(Error::NativeJoinExhausted(denial)) => {
+                let qsl_package::NativeJoinFailure::Rows(actual) = &denial.native else {
+                    panic!("the public writer retains the measured equality denial");
+                };
+                assert_eq!(*actual, expected, "resource, amount, locus and full bound");
+                assert_eq!(denial.limit.setting().name(), setting);
+                let bound = expected.configured_bound().expect("a budget bound");
+                assert_eq!(denial.limit.configured_bound(), bound);
+                assert!(denial.limit.actual() > u128::from(bound));
+            }
+            other => panic!("expected the measured equality denial, got {other:?}"),
+        }
+        assert!(
+            !target.exists(),
+            "a refused complete write leaves no directory"
+        );
+    }
     let target = scratch.path().join("written");
     let mut exact = request("event_position", Corpus::None);
-    exact.native_join = qsl_package::NativeJoinLimits::new(need.work, need.storage);
-    write(&exact, &target).expect("exact work and storage write the directory");
+    exact.emit.package_name = package_name;
+    exact.native_join =
+        qsl_package::NativeJoinLimits::new(complete_need.work, complete_need.storage);
+    write(&exact, &target).expect("exact complete work and storage write the directory");
     assert!(target.join("identities.json").exists());
+    assert_eq!(
+        std::fs::read(target.join("equality.json")).expect("written equality file"),
+        equality
+            .to_bytes(read.admitted())
+            .expect("measured equality file")
+    );
+}
+
+/// Original opaque ceilings and cumulative attempted totals survive every
+/// caller-budget entry, including a budget reused after successful admission.
+#[trace("TC-1331", "FR-531-AC-21")]
+#[trace("TC-1331", "FR-531-AC-24")]
+#[test]
+fn opaque_caller_budgets_preserve_original_bounds_after_prior_joins() {
+    use qsl_eval::temporal::evidence::{EvidencePackage, PackageMismatch};
+    use qsl_package::{NativeJoinFailure, NativeJoinLimits};
+    use quire_contract_model::{ExactTypeProjectionErrorCode as Code, NativeJoinBudget};
+    let built = record_capture();
+    let read = built.read(&built.emission);
+    let (rows, _) = record_rows(&read);
+    for entry in 0..3 {
+        let construct = |budget: &mut NativeJoinBudget| -> Result<(), NativeJoinFailure> {
+            if entry == 0 {
+                BarePackage::new(read.admitted())
+                    .with_supply(
+                        qsl_package::BareSupply {
+                            identities: &rows,
+                            equality: None,
+                        },
+                        budget,
+                    )
+                    .map(|_| ())
+            } else {
+                let result = if entry == 1 {
+                    EvidencePackage::from_read(&read, budget)
+                } else {
+                    EvidencePackage::from_emission(&built.emission, &read, budget)
+                };
+                result.map(|_| ()).map_err(|failure| match failure {
+                    PackageMismatch::Exhausted(error) => *error,
+                    other => panic!("authentic fixture refused before join: {other:?}"),
+                })
+            }
+        };
+        let mut measured = NativeJoinBudget::new(1 << 30, 1 << 30);
+        construct(&mut measured).expect("measure genuine successful entry");
+        let need = measured.consumed();
+        assert!(need.work > 0 && need.storage > 0);
+        // Only the bare entry reads the population catalog.
+        let room = if entry == 0 {
+            catalog_room(read.admitted())
+        } else {
+            quire_contract_model::NativeJoinCharge::default()
+        };
+        let mut exact =
+            NativeJoinBudget::new(2 * need.work + room.work, 2 * need.storage + room.storage);
+        construct(&mut exact).expect("first exact join");
+        construct(&mut exact).expect("second exact join");
+        assert_eq!(exact.consumed().work, 2 * need.work);
+        assert_eq!(exact.consumed().storage, 2 * need.storage);
+        for (work, storage, code, setting) in [
+            (
+                2 * need.work - 1,
+                2 * need.storage,
+                Code::ExhaustedWork,
+                "i2.work_units",
+            ),
+            (
+                2 * need.work,
+                2 * need.storage - 1,
+                Code::ExhaustedStorage,
+                "i2.native_join_storage",
+            ),
+        ] {
+            let mut budget = NativeJoinBudget::new(work, storage);
+            construct(&mut budget).expect("first join precharges the caller budget");
+            let error = construct(&mut budget).expect_err("second join is one unit short");
+            let NativeJoinFailure::Projection(native) = error.native() else {
+                panic!("identity fixture must preserve the native projection refusal");
+            };
+            assert_eq!(native.code, code);
+            let (bound, consumed) = if code == Code::ExhaustedWork {
+                (work, budget.consumed().work)
+            } else {
+                (storage, budget.consumed().storage)
+            };
+            assert_eq!(native.configured_bound, Some(bound));
+            let diagnostic = error.limit().expect("admission attaches stage diagnostic");
+            assert_eq!(diagnostic.setting().name(), setting);
+            assert_eq!(diagnostic.configured_bound(), bound);
+            let unpaid = budget
+                .first_unpaid()
+                .expect("owner records first unpaid charge");
+            assert_eq!(diagnostic.actual(), u128::from(consumed) + unpaid.amount);
+            assert!(diagnostic.actual() > u128::from(bound));
+            assert_eq!(
+                NativeJoinLimits::from_budget(&budget),
+                NativeJoinLimits::new(work, storage)
+            );
+        }
+    }
 }

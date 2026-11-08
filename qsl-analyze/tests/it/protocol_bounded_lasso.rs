@@ -67,7 +67,13 @@ fn replay(
     let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
     let subject = case.subject("P");
     replay_protocol_trace_with_temporal_selections(
-        request(&document(), case.documents.snapshots.iter(), &unit),
+        request(
+            &case.checked,
+            &case.temporal_clock_selections,
+            &document(),
+            case.documents.snapshots.iter(),
+            &unit,
+        ),
         &ProtocolTraceSubject {
             model: ModelTraceSubject {
                 timed: None,

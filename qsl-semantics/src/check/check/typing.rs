@@ -625,6 +625,12 @@ fn summand_of_family(total: &ValueType, summand: &ValueType) -> bool {
         (ValueType::Quantity(total), ValueType::BoundedQuantity(summand)) => {
             total == summand.unit()
         }
+        // QSpec FR-142 "Carried quantity sum": the summand has the very
+        // carried type `N` (unit, carrier bounds and mode); none is widened,
+        // narrowed or converted implicitly.
+        (ValueType::CarriedQuantity(total), ValueType::CarriedQuantity(summand)) => {
+            total == summand
+        }
         _ => false,
     }
 }
@@ -1142,7 +1148,12 @@ impl<'a> Typer<'a> {
                         cause: if quantity.unit.is_qualified() {
                             CheckCause::MissingQualifiedName(quantity.unit.clone())
                         } else {
-                            CheckCause::MissingName(quantity.unit.name.clone())
+                            CheckCause::UnresolvedUnitName {
+                                name: quantity.unit.name.clone(),
+                                packages: self
+                                    .scope
+                                    .unit_packages(self.source_owner.as_ref(), &quantity.unit.name),
+                            }
                         },
                     });
                 };
@@ -2080,7 +2091,17 @@ impl<'a> Typer<'a> {
                     ));
                 }
                 let source = typed.value_type.clone();
+                // A carried quantity is the quantity of its unit with a
+                // restricted carrier (FR-497), so the exact conversion the
+                // equality admits starts from that quantity.
+                let compared_source = match &source {
+                    ValueType::CarriedQuantity(carried) => {
+                        ValueType::Quantity(carried.unit().clone())
+                    }
+                    other => other.clone(),
+                };
                 let operand = EqualityOperand::converted(source.clone(), target.clone());
+                let compared = EqualityOperand::converted(compared_source, target.clone());
                 // A conversion that changes the type is its own typed node,
                 // so FR-093 lowers it as a `numeric.convert` operand and
                 // the equality compares at the converted type.
@@ -2104,8 +2125,8 @@ impl<'a> Typer<'a> {
                 Ok((
                     TypedOperand {
                         node,
-                        authored: operand.clone(),
-                        checked: operand,
+                        authored: compared.clone(),
+                        checked: compared,
                         stored,
                         source_type: source,
                         conversion_target: Some(target.clone()),
@@ -2282,6 +2303,7 @@ impl<'a> Typer<'a> {
                     | ValueType::Decimal(_)
                     | ValueType::Float(_)
                     | ValueType::Quantity(_)
+                    | ValueType::CarriedQuantity(_)
             ),
         };
         if !admitted {

@@ -22,6 +22,9 @@ pub enum CompleteCause {
     InvalidToken,
     /// `invalid_syntax`: a string literal with a malformed escape.
     InvalidEscape,
+    /// `unsupported_construct`: a top-level declaration begins with a word that
+    /// is neither a core keyword nor a selected extension's leading keyword.
+    DeclarationForm,
     /// `unknown_language`, `unknown_edition` or `unknown_profile`: the
     /// selection is not supported by this consumer.
     UnsupportedSelection,
@@ -107,6 +110,7 @@ impl CompleteCause {
             Self::UnexpectedEnd => "unexpected-end",
             Self::InvalidToken => "invalid-token",
             Self::InvalidEscape => "invalid-escape",
+            Self::DeclarationForm => "declaration-form",
             Self::UnsupportedSelection => "unsupported-selection",
             Self::InsufficientNextCharge => "insufficient-next-charge",
             Self::MissingSelection => "missing-selection",
@@ -147,6 +151,7 @@ impl CompleteCause {
             | Self::UnexpectedEnd
             | Self::InvalidToken
             | Self::InvalidEscape => code == CompleteCode::InvalidSyntax,
+            Self::DeclarationForm => code == CompleteCode::UnsupportedConstruct,
             Self::UnsupportedSelection => matches!(
                 code,
                 CompleteCode::UnknownLanguage

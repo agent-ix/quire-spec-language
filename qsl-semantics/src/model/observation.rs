@@ -1601,7 +1601,8 @@ fn read_error_refusal(
         }
         // Any other refusal of the shared reader settles at the document
         // root before any member is read (FR-106 check 1.3, FR-106-AC-3, AC-32, AC-38).
-        quire_canonical::ReadError::Malformed { .. } => Some(refuse(
+        quire_canonical::ReadError::Malformed { .. }
+        | quire_canonical::ReadError::DuplicateName { .. } => Some(refuse(
             admission_record(Code::InvalidRuntimeInput, "invalid-value")
                 .with("document_pointer", ""),
         )),
@@ -2625,11 +2626,18 @@ fn admit_invocation_documents(
         document::References::over(views, types, &pre_snapshot.populations);
     let mut result_references =
         document::References::over(views, types, &post_snapshot.populations);
+    document::check_untyped_parameters(
+        views,
+        context_name,
+        operation.name(),
+        &invocation.call.parameters,
+    )?;
     let parameters = document::admit_parameters(
         &mut parameter_references,
         &operation,
         &invocation.call.parameters,
     )?;
+    document::check_untyped_result(views, context_name, operation.name(), &invocation.result)?;
     let result = document::admit_result(&mut result_references, &operation, &invocation.result)?;
     check_argument_bounds(
         views,
@@ -2963,6 +2971,12 @@ fn admit_pre_call(
     } else {
         let mut references =
             document::References::over(context.views, context.types, &snapshot.populations);
+        document::check_untyped_parameters(
+            context.views,
+            context.context_name,
+            operation.name(),
+            input.parameters,
+        )?;
         document::admit_parameters(&mut references, &operation, input.parameters)?
     };
 

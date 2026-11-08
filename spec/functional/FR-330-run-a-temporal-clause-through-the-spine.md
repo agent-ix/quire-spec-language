@@ -218,6 +218,11 @@ position (FR-327); `decisive.position` may be later or earlier than it.
   result decided by a window aggregate, the report SHALL include FR-330's
   `decisive` record naming that aggregate atom's occurrence and sample
   position. These outcomes SHALL be reachable from source by this route.
+- The trace-subject evaluation SHALL also be reachable from a
+  `CheckedPackage` without compiling the unit again, with a caller-supplied
+  `max_window_values` and the unit's sources: FR-283's `monitor` runs a
+  `Samples` trace through it, with the same outcomes, refusals and
+  `decisive` as this route.
 
 ### The decisive atom
 

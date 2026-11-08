@@ -70,13 +70,14 @@ fn broken() -> String {
     broken
 }
 
-/// The unit with a timed temporal interval. S2 reads it, but S3 currently
-/// refuses the interval as not yet implemented.
+/// The unit with a timed-profile clause on a `model-steps` clock. S2 reads
+/// it, but S3 refuses any clock role but `model-time` as not yet implemented
+/// (FR-234).
 fn unsupported() -> String {
     unit().replace(
         "profile v = \"quire.model.complete/v1\";\n",
         "profile v = \"quire.model.complete/v1\";\n\
-             profile t = \"quire.temporal.infinite-trace/v1\";\n",
+             profile t = \"quire.temporal.timed/v1\";\n",
     ) + "temporal Unemitted using t over (c: Config::ConfigVersion) \
            clock \"model-steps\" on origin { eventually[0 ms, 3 ms] \
            holds(c.versionNumber <= 1000) }\n"

@@ -245,6 +245,27 @@ impl RetainedInstance {
 ///     ResultEntry { lineage: 7, ..entry }.lineage()
 /// }
 /// ```
+///
+/// ```compile_fail,E0451
+/// use qsl_eval::temporal::evidence::{ResultEntry, ResultIdentity};
+/// fn forge(entry: ResultEntry, identity: ResultIdentity) -> ResultEntry {
+///     ResultEntry { result_identity: identity, ..entry }
+/// }
+/// ```
+///
+/// ```compile_fail,E0451
+/// use qsl_eval::temporal::evidence::{InputIdentity, ResultEntry};
+/// fn forge(entry: ResultEntry, identity: InputIdentity) -> ResultEntry {
+///     ResultEntry { input_identity: identity, ..entry }
+/// }
+/// ```
+///
+/// ```compile_fail,E0451
+/// use qsl_eval::temporal::evidence::ResultEntry;
+/// fn forge(entry: ResultEntry) -> ResultEntry {
+///     ResultEntry { correspondence: Box::new([]), ..entry }
+/// }
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResultEntry {
     result_identity: ResultIdentity,

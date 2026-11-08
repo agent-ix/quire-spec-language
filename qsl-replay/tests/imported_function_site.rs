@@ -197,8 +197,11 @@ fn library_replay(
     let source = ("a".to_owned(), "units".to_owned());
     let wire = ReplayRequestWire {
         profile_selections: vec![],
-        package_name: site.library.as_str().to_owned(),
-        sources: vec![source.clone()],
+        package: qsl_replay::ReplayPackage::read(
+            &site.package,
+            ReplayLimits::default().input_bytes,
+        )
+        .unwrap(),
         dependencies: Vec::new(),
         replay_target: RequestTargetWire::function(
             function(name),

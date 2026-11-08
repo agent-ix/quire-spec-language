@@ -9,7 +9,7 @@ use qsl_package::{BarePackage, BareSupply, ProtocolSlotDescriptor};
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
 use quire_spec_language::checked_handoff::Corpus;
 
-use super::checked_handoff::{admitted, integer_request, request, tree};
+use super::checked_handoff::{admitted, request, tree};
 use quire_spec_language::checked_handoff::{evidence, write};
 
 const UNLIMITED: quire_exact::ScalarLimits = quire_exact::ScalarLimits {
@@ -51,7 +51,7 @@ fn recipe_with(condition: Option<&str>) -> Recipe {
 
 fn recipe_with_declarations(condition: Option<&str>, declarations: &str) -> Recipe {
     let holder = tempfile::tempdir().expect("directory");
-    let mut request = integer_request(holder.path());
+    let mut request = request("event_position", Corpus::None);
     if condition.is_some() || !declarations.is_empty() {
         let text = std::fs::read_to_string(&request.emit.source).expect("R's unit");
         assert!(
@@ -111,7 +111,7 @@ impl Recipe {
     }
 
     fn compensation(&self, name: &str) -> NodeKey {
-        let nodes = &self.package.graph().nodes;
+        let nodes = &self.package.resolved_graph().nodes;
         let node = nodes
             .iter()
             .find(|node| {
@@ -125,6 +125,40 @@ impl Recipe {
             .expect("wire ids")
             .key(&node.node_id)
             .expect("key")
+    }
+
+    /// `value` of the quantity type `of`: R's amounts are `Money` in `U`.
+    fn quantity(of: &ValueType, value: i64) -> Value {
+        let ValueType::Quantity(unit) = of else {
+            panic!("R's amounts are quantities, not {of:?}");
+        };
+        Value::Quantity(quire_exact::Quantity::new(
+            quire_exact::Rational::from_integer(value.into()),
+            unit.clone(),
+        ))
+    }
+
+    /// The `Total` quantity of `value` units of `U`.
+    fn amount(&self, bare: &BarePackage<'_>, value: i64) -> Value {
+        let world = bare.world().expect("world");
+        let declaration = world
+            .types()
+            .composites()
+            .find(|record| record.name().ends_with("Recovery"))
+            .expect("Recovery is declared");
+        let quire_semantic_value::declaration::CompositeShape::Record(fields) = declaration.shape()
+        else {
+            panic!("Recovery is a record");
+        };
+        let ValueType::Collection(collection) = fields
+            .iter()
+            .find(|field| field.name() == "receipts")
+            .expect("receipts")
+            .value_type()
+        else {
+            panic!("receipts is a collection");
+        };
+        Self::quantity(collection.element(), value)
     }
 
     /// `Recovery` carrying `receipts`, built from the package's own declaration.
@@ -147,7 +181,11 @@ impl Recipe {
         else {
             panic!("receipts is a collection");
         };
-        let elements = receipts.iter().copied().map(int).collect();
+        let elements = receipts
+            .iter()
+            .copied()
+            .map(|receipt| Self::quantity(collection.element(), receipt))
+            .collect();
         types
             .record(
                 declaration.key(),
@@ -186,7 +224,7 @@ impl Recipe {
             .map_err(|failure| format!("{failure:?}"))?;
         let values = [
             (format!("recovered{name}"), self.recovery(&bare, receipts)),
-            (format!("target{name}"), int(target)),
+            (format!("target{name}"), self.amount(&bare, target)),
             (format!("activated{name}"), Value::Boolean(activated)),
         ];
         let given = ProtocolSupply {
@@ -285,7 +323,7 @@ fn a_malformed_recovery_supply_is_refused() {
                     recipe.recovery(&bare, &[2, 3])
                 },
             ),
-            ("targetFull", int(5)),
+            ("targetFull", recipe.amount(&bare, 5)),
             ("activatedFull", Value::Boolean(false)),
         ];
         ProtocolSupply {
@@ -369,7 +407,7 @@ fn a_let_binder_is_no_source_and_the_predicate_evaluates() {
 #[test]
 fn nested_query_binders_are_no_sources_and_the_predicate_evaluates() {
     let recipe = recipe_with(Some(
-        "count<M::Total>(a in recoveredFull.receipts: sum<M::Total>(b in recoveredFull.receipts: b) > a) = targetFull\n            and not activatedFull",
+        "sum<M::Total>(c in filter(a in recoveredFull.receipts: sum<M::Total>(b in recoveredFull.receipts: b) > a): 1 U) = targetFull\n            and not activatedFull",
     ));
     assert_eq!(source_names(&recipe), FULL_SOURCES);
     // Each of the two receipts is below their sum 5, so the count is 2.
@@ -377,48 +415,6 @@ fn nested_query_binders_are_no_sources_and_the_predicate_evaluates() {
     assert!(!holds(recipe.recover("Full", &[2, 3], 3, false)));
     // A receipt equal to the sum is not below it.
     assert!(holds(recipe.recover("Full", &[5], 0, false)));
-}
-
-/// FR-533 "Types the bytes cannot project": over R with the unit `U` on
-/// `Amount` and `Total` (FR-517-AC-13), Contract IR cannot project the
-/// `Recovery` record, because its `receipts` member names the source-owned
-/// unit. The bare world therefore holds no `Recovery`, and the slot that reads
-/// it refuses `MissingTypeRepresentation` rather than substituting a record of
-/// another shape; the other tests of this file read the unit-free variant.
-#[trace("FR-533-AC-19", "TC-1333")]
-#[test]
-fn recovery_over_the_unit_u_is_a_missing_type_representation() {
-    let holder = tempfile::tempdir().expect("directory");
-    let recipe = read_recipe(holder, &request("event_position", Corpus::None));
-    let bare = recipe.bare();
-    let world = bare.world().expect("world");
-    let records: Vec<String> = world
-        .types()
-        .composites()
-        .map(|record| record.name().to_owned())
-        .collect();
-    assert!(
-        records.iter().all(|name| !name.ends_with("Recovery")),
-        "{records:?}"
-    );
-    let refused = bare
-        .select_protocol_slot(&ProtocolSlotDescriptor::new(
-            recipe.compensation("Full"),
-            "recovery.predicate",
-            None,
-        ))
-        .map(|selected| {
-            selected
-                .sources()
-                .iter()
-                .map(|source| format!("{} {:?}", source.name(), source.value_type()))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_err();
-    assert!(
-        format!("{refused:?}").contains("MissingTypeRepresentation"),
-        "the Recovery binder is not typed as a quantity: {refused:?}"
-    );
 }
 
 /// A binder that has the name of a binder already readable is refused when the
@@ -468,7 +464,7 @@ fn a_supply_for_an_introduced_binder_is_refused_as_unknown() {
             None,
         ))
         .expect("selects");
-    let nodes = &recipe.package.graph().nodes;
+    let nodes = &recipe.package.resolved_graph().nodes;
     let graph =
         qsl_semantics::check::wire_id::WireGraph::new(nodes.iter().map(|node| &node.node_id))
             .expect("wire ids");
@@ -487,7 +483,7 @@ fn a_supply_for_an_introduced_binder_is_refused_as_unknown() {
         .map(|source| {
             let value = match source.name() {
                 "recoveredFull" => recipe.recovery(&bare, &[2, 3]),
-                "targetFull" => int(5),
+                "targetFull" => recipe.amount(&bare, 5),
                 _ => Value::Boolean(false),
             };
             (source.binder().clone(), SuppliedValue::Value(value).into())
@@ -573,7 +569,7 @@ fn exists_binder_is_no_source() {
 #[test]
 fn filter_binder_is_no_source() {
     assert_form(
-        "count<M::Total>(y in filter(x in recoveredFull.receipts: x > 2): true) = targetFull and not activatedFull",
+        "sum<M::Total>(y in filter(x in recoveredFull.receipts: x > 2 U): 1 U) = targetFull and not activatedFull",
         &[
             (&[2, 3, 4], 2, false, true),
             (&[2, 3, 4], 1, false, false),
@@ -669,7 +665,7 @@ fn assert_case_arm_union(
     use qsl_replay::spine::{self, DependencyInput, ParseRequest, SpineLimits, SuppliedLibrary};
 
     let holder = tempfile::tempdir().expect("directory");
-    let mut request = integer_request(holder.path());
+    let mut request = request("event_position", Corpus::None);
     let text = std::fs::read_to_string(&request.emit.source).expect("R's unit");
     let unit = holder.path().join("unit.native");
     let condition = "let total = (case Shape::Circle(sum<M::Total>(receipt in recoveredFull.receipts: receipt)) { Empty: targetFull; Circle(r): r; }) in total <= targetFull and total >= targetFull and not activatedFull";
@@ -852,7 +848,7 @@ fn assert_case_arm_union(
     ] {
         let values = [
             ("recoveredFull", recipe.recovery(&bare, receipts)),
-            ("targetFull", int(target)),
+            ("targetFull", recipe.amount(&bare, target)),
             ("activatedFull", Value::Boolean(activated)),
         ];
         let supply = ProtocolSupply {
@@ -940,11 +936,11 @@ fn assert_case_arm_union(
 #[test]
 fn a_binder_the_body_never_reads_is_no_source() {
     assert_form(
-        "count<M::Total>(unused in recoveredFull.receipts: true) = targetFull and not activatedFull",
+        "sum<M::Total>(unused in recoveredFull.receipts: 1 U) = targetFull and not activatedFull",
         &[(&[2, 3], 2, false, true), (&[2, 3], 3, false, false)],
     );
     assert_form(
-        "count<M::Total>(a in recoveredFull.receipts: count<M::Total>(unused in recoveredFull.receipts: true) = 2 and a > 0) = targetFull and not activatedFull",
+        "sum<M::Total>(c in filter(a in recoveredFull.receipts: size(map(unused in recoveredFull.receipts: true)) = 2 and a > 0 U): 1 U) = targetFull and not activatedFull",
         &[(&[2, 3], 2, false, true), (&[2, 3], 3, false, false)],
     );
 }
@@ -956,4 +952,321 @@ fn completed_boolean(outcome: &quire_eval::FamilyOutcome<Value>) -> Option<bool>
         ))) => Some(*value),
         _ => None,
     }
+}
+
+/// The queries of FR-046-AC-3 over the three items `2, 2, 3` read from
+/// `items`, with `unit` the suffix of a literal (` U` or empty), each with the
+/// result its text states: (label, expression, expected). The last two are
+/// controls that a deduplicating query would satisfy, so they are false.
+pub(super) fn duplicate_query_cases(
+    items: &str,
+    unit: &str,
+    count_type: &str,
+) -> Vec<(&'static str, String, bool)> {
+    let twos = format!("filter(x in {items}: x = 2{unit})");
+    let flags = format!("map(x in {items}: x = 2{unit})");
+    vec![
+        ("filter keeps both 2s", format!("size({twos}) = 2"), true),
+        (
+            "filter keeps the 2s in order",
+            format!("sum<M::Total>(y in {twos}: y) = 4{unit}"),
+            true,
+        ),
+        (
+            "map keeps one result per item",
+            format!("size({flags}) = 3"),
+            true,
+        ),
+        (
+            "map keeps both true results",
+            format!("count<{count_type}>(b in {flags}: b) = 2"),
+            true,
+        ),
+        ("size", format!("size({items}) = 3"), true),
+        (
+            "count of 2",
+            format!("count<{count_type}>(x in {items}: x = 2{unit}) = 2"),
+            true,
+        ),
+        (
+            "sum",
+            format!("sum<M::Total>(x in {items}: x) = 7{unit}"),
+            true,
+        ),
+        (
+            "a deduplicated filter would not hold",
+            format!("size({twos}) = 1"),
+            false,
+        ),
+        (
+            "a deduplicated sum would not hold",
+            format!("sum<M::Total>(x in {items}: x) = 5{unit}"),
+            false,
+        ),
+    ]
+}
+
+/// The handoff of the FR-046-AC-3 fixture
+/// `unit-duplicate-queries.native`, whose `Full` and `Partial` `recover`
+/// slots host the duplicate-preserving queries over `Recovery.receipts`.
+fn duplicate_queries_recipe() -> Recipe {
+    let holder = tempfile::tempdir().expect("directory");
+    let mut request = request("event_position", Corpus::None);
+    request.emit.source =
+        std::path::PathBuf::from("examples/checked-handoff/unit-duplicate-queries.native");
+    read_recipe(holder, &request)
+}
+
+impl Recipe {
+    /// The `recovery.predicate` of `name` with `recovered{name}` carrying
+    /// `receipts`, the one binder the fixture's slots read, as its Boolean.
+    fn recover_receipts(&self, name: &str, receipts: &[i64]) -> bool {
+        let bare = self.bare();
+        let node = self.compensation(name);
+        let selected = bare
+            .select_protocol_slot(&ProtocolSlotDescriptor::new(
+                node.clone(),
+                "recovery.predicate",
+                None,
+            ))
+            .unwrap_or_else(|failure| panic!("{name}: the slot is selected: {failure:?}"));
+        let binder = format!("recovered{name}");
+        let [source] = selected.sources() else {
+            panic!("{name}: the slot reads only {binder}");
+        };
+        assert_eq!(source.name(), binder);
+        let given = ProtocolSupply {
+            binders: vec![(
+                source.binder().clone(),
+                SuppliedValue::Value(self.recovery(&bare, receipts)).into(),
+            )],
+            observation: None,
+        };
+        let slot = ProtocolSlot {
+            node,
+            member: "recovery.predicate".to_owned(),
+            index: None,
+        };
+        let mut meter = Meter::new(UNLIMITED);
+        match bare.evaluate_protocol_slot(&slot, &given, &mut meter) {
+            Ok(qsl_eval::value::ProtocolSlotEvaluation::Evaluated(evaluation, _)) => {
+                match evaluation.outcome {
+                    quire_eval::FamilyOutcome::Evaluated(quire_exact::Outcome::Completed(
+                        Value::Boolean(held),
+                    )) => held,
+                    other => panic!("{name}: a completed Boolean, not {other:?}"),
+                }
+            }
+            other => panic!("{name}: an evaluation, not {other:?}"),
+        }
+    }
+}
+
+/// FR-046-AC-3 (TC-127 "Admitted-artifact host"), the admitted-artifact leg: the
+/// receipts `2, 2, 3` of `Recovery`, evaluated from the handoff files alone
+/// in the `recover` slots of `unit-duplicate-queries.native`. `Full` holds:
+/// filter keeps both 2s, map keeps one result per receipt and both true
+/// results, size is 3, the count of 2 in `Count` 0..5 is 2 and the sum is 7.
+/// `Partial`, the values a deduplicating query would give, does not. Over the
+/// deduplicated receipts `2, 3` the two invert. The fixture is read over R with
+/// the unit `U`, projected through the equality file's source-owned unit rows.
+#[trace("FR-046-AC-3", "TC-127")]
+#[test]
+fn duplicate_queries_over_the_receipts_evaluate_from_the_handoff_files() {
+    let recipe = duplicate_queries_recipe();
+    assert!(recipe.recover_receipts("Full", &[2, 2, 3]));
+    assert!(!recipe.recover_receipts("Partial", &[2, 2, 3]));
+    assert!(!recipe.recover_receipts("Full", &[2, 3]));
+    assert!(recipe.recover_receipts("Partial", &[2, 3]));
+}
+
+impl Recipe {
+    /// This recipe's equality rows with `source_units` in place of the
+    /// equality file's own source-unit rows.
+    fn equality_with(
+        &self,
+        source_units: Vec<quire_contract_model::SelectedSourceUnitRow>,
+    ) -> qsl_package::ReadEqualityRows {
+        qsl_package::ReadEqualityRows::of_rows(
+            &self.package,
+            self.equality.applications().to_vec(),
+            self.equality.facts().to_vec(),
+            source_units,
+        )
+    }
+
+    /// The bare package over this recipe's identity rows and `equality`.
+    fn bare_over<'a>(
+        &'a self,
+        equality: &'a qsl_package::ReadEqualityRows,
+    ) -> Result<BarePackage<'a>, qsl_package::NativeJoinFailure> {
+        BarePackage::new(&self.package).with_supply(
+            BareSupply {
+                identities: &self.identities,
+                equality: Some(equality),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+    }
+}
+
+/// FR-533 "Types the bytes cannot project": the unit `U` is typed only from
+/// the equality file's source-unit rows. A supply whose rows select no source
+/// unit holds no `Recovery` and the slot that reads it is refused rather than
+/// evaluated over a record of another shape or a unit it cannot resolve.
+#[trace("TC-1333", "FR-533-AC-19")]
+#[test]
+fn a_supply_without_the_source_unit_rows_leaves_recovery_unrepresented() {
+    let recipe = recipe();
+    let equality = recipe.equality_with(Vec::new());
+    let bare = recipe.bare_over(&equality).expect("the supply is admitted");
+    let world = bare.world().expect("world");
+    assert!(world
+        .types()
+        .composites()
+        .all(|record| !record.name().ends_with("Recovery")));
+    let refused = bare
+        .select_protocol_slot(&ProtocolSlotDescriptor::new(
+            recipe.compensation("Full"),
+            "recovery.predicate",
+            None,
+        ))
+        .map(|selected| selected.sources().len())
+        .unwrap_err();
+    assert!(
+        format!("{refused:?}").contains("Equality(Unknown)"),
+        "{refused:?}"
+    );
+}
+
+impl Recipe {
+    /// The refusal the bare route gives `rows` as the source-unit rows of its
+    /// equality file: the supply's, the world's, or `None` when the world holds.
+    fn refusal_over(
+        &self,
+        rows: Vec<quire_contract_model::SelectedSourceUnitRow>,
+    ) -> Option<String> {
+        let equality = self.equality_with(rows);
+        match self.bare_over(&equality) {
+            Err(refusal) => Some(format!("{refusal:?}")),
+            Ok(bare) => bare.world().err().map(|refusal| format!("{refusal:?}")),
+        }
+    }
+
+    /// R's one source-unit row.
+    fn unit_row(&self) -> quire_contract_model::SelectedSourceUnitRow {
+        let [row] = self.equality.source_units() else {
+            panic!("R declares one source unit");
+        };
+        row.clone()
+    }
+}
+
+/// FR-533 "Types the bytes cannot project": a source-unit row that names a
+/// unit identity the package's unit node does not carry (here the identity of
+/// a protocol node) gives no unit table. The identity witness is unknown, so
+/// the bare route never evaluates a quantity of a unit it cannot resolve.
+#[trace("TC-1333", "FR-533-AC-19")]
+#[test]
+fn a_source_unit_row_naming_no_defined_unit_refuses_the_bare_route() {
+    let recipe = recipe();
+    let row = recipe.unit_row();
+    let foreign = quire_contract_model::SelectedSourceUnitRow::new(
+        row.structural_node.clone(),
+        row.source_authority.clone(),
+        row.source_identity.clone(),
+        row.qualified_declaration.clone(),
+        quire_exact::UnitId::Declared(recipe.compensation("Full")),
+    );
+    let refused = recipe.refusal_over(vec![foreign]).expect("a refusal");
+    assert!(refused.contains("Identity(Unknown)"), "{refused}");
+}
+
+/// FR-533 "Types the bytes cannot project": a source-unit row whose node is no
+/// unit of the package (a protocol node) is not joined by Contract IR, so no
+/// unit table is built from it.
+#[trace("TC-1333", "FR-533-AC-19")]
+#[test]
+fn a_source_unit_row_naming_no_unit_node_refuses_the_bare_route() {
+    let recipe = recipe();
+    let row = recipe.unit_row();
+    let protocol = recipe
+        .package
+        .resolved_graph()
+        .nodes
+        .iter()
+        .find(|node| &*node.semantic_form == "compensation")
+        .expect("a compensation node")
+        .node_id
+        .clone();
+    let wrong = quire_contract_model::SelectedSourceUnitRow::new(
+        protocol,
+        row.source_authority.clone(),
+        row.source_identity.clone(),
+        row.qualified_declaration.clone(),
+        row.unit_id.clone(),
+    );
+    let refused = recipe.refusal_over(vec![wrong]).expect("a refusal");
+    assert!(refused.contains("Identity(Unknown)"), "{refused}");
+}
+
+/// FR-533 "Types the bytes cannot project": a source-unit row selected twice
+/// is a competing witness Contract IR refuses.
+#[trace("TC-1333", "FR-533-AC-19")]
+#[test]
+fn a_repeated_source_unit_row_refuses_the_bare_route() {
+    let recipe = recipe();
+    let row = recipe.unit_row();
+    let refused = recipe
+        .refusal_over(vec![row.clone(), row])
+        .expect("a refusal");
+    assert!(refused.contains("Identity(Unknown)"), "{refused}");
+}
+
+/// FR-533 / FR-358: the unit definition read is charged to the caller's one
+/// native allowance. A work allowance that pays the identity join but not the
+/// unit read is a `UnitDefinitions` denial carrying the stage diagnostic and
+/// the `i2.work_units` setting, never an unknown witness.
+#[trace("TC-1333", "FR-533-AC-19")]
+#[test]
+fn the_unit_definition_read_is_charged_to_the_native_budget() {
+    let recipe = recipe();
+    let attempt = |work: u64| {
+        let mut budget = qsl_package::NativeJoinLimits::new(work, u64::MAX).budget();
+        BarePackage::new(&recipe.package)
+            .with_supply(
+                BareSupply {
+                    identities: &recipe.identities,
+                    equality: Some(&recipe.equality),
+                },
+                &mut budget,
+            )
+            .map(|_| ())
+    };
+    // The least allowance the whole supply needs.
+    let (mut low, mut high) = (0_u64, u64::MAX / 2);
+    while low < high {
+        let middle = low + (high - low) / 2;
+        if attempt(middle).is_ok() {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    let denial = (0..low)
+        .rev()
+        .find_map(|work| match attempt(work) {
+            Err(failure)
+                if matches!(
+                    failure.native(),
+                    qsl_package::NativeJoinFailure::UnitDefinitions { .. }
+                ) =>
+            {
+                Some(failure)
+            }
+            _ => None,
+        })
+        .expect("an allowance pays the join but not the unit read");
+    assert_eq!(denial.setting(), Some(qsl_foundation::Setting::I2WorkUnits));
+    assert!(denial.limit().is_some(), "{denial:?}");
 }

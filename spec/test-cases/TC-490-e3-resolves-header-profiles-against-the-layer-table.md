@@ -14,7 +14,7 @@ Verify that spine `compile` admits a header profile only when its identity
 is a header-selectable layer's, refuses every other header profile
 with its catalogued code and cause, and restricts each declaration to its
 selected layer's forms. Scope: FR-110-AC-1 to FR-110-AC-3 and FR-110-AC-5
-to FR-110-AC-13.
+to FR-110-AC-15.
 
 This catches a resolver that accepts any catalog row as a profile, a parser
 that still accepts a header `version` or `digest`, and a resolver that stops
@@ -69,7 +69,18 @@ table, never from a literal.
     whose declarations hold one equality of each FR-110-AC-10 operand
     family (FR-110-AC-13).
 
-Tag the test `#[trace("FR-110-AC-1", …, "FR-110-AC-13", "TC-490")]` over the
+13. Build a `DefinitionCatalog` holding `agent-ix`/`ext.retention` as a
+    `DefinitionRole::Extension` definition with TC-882's grammar and
+    typed-node schemas. Compile, with a `ProfileCatalogInput` over that
+    catalog, the unit with profiles `v` (`R`'s identity) and `r` naming
+    `ext.retention`; then the
+    same unit over a catalog that does not hold `ext.retention`, and over
+    one that holds it under `DefinitionRole::Source` (FR-110-AC-14).
+14. Read step 13's first emitted lock. Then compile, over a catalog holding
+    both, a unit with profile `v` (`R`'s identity) and profiles selecting
+    `agent-ix`/`ext.b` and then `agent-ix`/`ext.a`, and read its lock (FR-110-AC-15).
+
+Tag the test `#[trace("FR-110-AC-1", …, "FR-110-AC-15", "TC-490")]` over the
 criteria each step backs.
 
 ## Expected Results
@@ -95,3 +106,12 @@ criteria each step backs.
 - Step 10: the no-profile unit compiles; each nested-reference equality refuses `unsupported_construct`/`expression-form` naming `quire.state.graph/v1` under value.complete and `quire.value.complete/v1` under state.graph, and compiles under model.complete (FR-110-AC-11).
 - Step 11: `contains` is true for each layer identity and false for `test:unknown-profile` and every qualification definition identity; each layer unit carries no `unknown_profile` diagnostic; the `test:unknown-profile` unit and the `ieee_profile` unit each carry `unknown_profile`/`unsupported-selection` at the identity literal's span (FR-110-AC-12).
 - Step 12: the unit compiles; every equality compiles (FR-110-AC-13).
+- Step 13: the first compile resolves `r` to the extension selection
+  `{agent-ix, ext.retention}` with no `unknown_profile` refusal; the other
+  two each refuse `unknown_profile`/`unsupported-selection` at the identity
+  literal's span (FR-110-AC-14).
+- Step 14: the last `definition_selections` row is
+  `{agent-ix, ext.retention}`, after every closed row and law row; the
+  two-extension lock ends `ext.a` then `ext.b`; neither lock holds an
+  extension identity in `required_features` or `profile_selections`
+  (FR-110-AC-15).

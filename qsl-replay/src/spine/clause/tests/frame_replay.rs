@@ -106,8 +106,10 @@ fn identities(unit: &Unit) -> (NodeKey, NodeKey, OccurrenceKey) {
 /// The wire node id of the one emitted node whose `semantic_form` is
 /// `form`: the emitted package, not the checked graph the replay reads.
 fn emitted_node(unit: &Unit, form: &str) -> quire_exact::NodeKey {
-    let package: serde_json::Value =
+    let mut package: serde_json::Value =
         serde_json::from_slice(unit.compiled.emitted.bytes()).expect("the emitted package is JSON");
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut package)
+        .expect("every operand slot names a row entry");
     let nodes: Vec<&serde_json::Value> = package["semantic_graph"]["nodes"]
         .as_array()
         .expect("the package lists its nodes")
@@ -236,6 +238,36 @@ pub(super) fn request(
     documents: &[(DocumentRef, Vec<u8>)],
     target: ReplayTarget,
 ) -> ReplayRequestWire {
+    let package = crate::compile_package(
+        crate::CompileUnit {
+            source: qsl_foundation::SourceIdentity::new(AUTHORITY, IDENTITY),
+            package_name: "fixture".to_owned(),
+            path: IDENTITY,
+            bytes: source_bytes,
+        },
+        [domain_document],
+        &crate::DependencyInput::default(),
+        crate::StageLimits::default(),
+        crate::ReplayLimits::default(),
+    )
+    .expect("actual frame source package");
+    request_from_package(
+        package.bytes(),
+        source_bytes,
+        domain_document,
+        documents,
+        target,
+    )
+}
+
+/// A request retaining the genuine package emitted by a caller's explicit compile.
+pub(super) fn request_from_package(
+    package_bytes: &[u8],
+    source_bytes: &[u8],
+    domain_document: &[u8],
+    documents: &[(DocumentRef, Vec<u8>)],
+    target: ReplayTarget,
+) -> ReplayRequestWire {
     let byte_provision = vec![(
         AUTHORITY.to_owned(),
         IDENTITY.to_owned(),
@@ -246,9 +278,12 @@ pub(super) fn request(
         provided.push(bytes.clone());
     }
     ReplayRequestWire {
-        package_name: "fixture".to_owned(),
+        package: crate::ReplayPackage::read(
+            package_bytes,
+            crate::ReplayLimits::default().input_bytes,
+        )
+        .unwrap(),
         profile_selections: Vec::new(),
-        sources: vec![(AUTHORITY.to_owned(), IDENTITY.to_owned())],
         dependencies: Vec::new(),
         replay_target: target.into(),
         source: witness_source(),
@@ -664,12 +699,13 @@ fn uncompilable_request() -> (Unit, ReplayRequestWire, FrameCounterexample) {
         change: child_change("parent"),
     };
     let broken = b"this is not a QSL unit\n".to_vec();
-    let wire = request(
-        &broken,
+    let mut wire = request(
+        &unit.bytes,
         &unit.domain_document,
         &input.documents,
         frame_target(),
     );
+    wire.byte_provision[0].2 = broken;
     (unit, wire, payload)
 }
 
@@ -953,10 +989,7 @@ fn a_frame_replay_refuses_other_targets_before_the_recompile() {
             Source::EntryRemoved,
         ] {
             let unit = config_version_unit();
-            let domain_document = unit.domain_document.clone();
             let input = forbidden_parent_change();
-            let documents = input.documents.clone();
-            let target = request_target.clone();
             let mut case = case_in(
                 unit,
                 input,
@@ -966,12 +999,7 @@ fn a_frame_replay_refuses_other_targets_before_the_recompile() {
                 |wire, _| match source {
                     Source::Compiles => {}
                     Source::DoesNotCompile => {
-                        *wire = request(
-                            b"this is not a QSL unit\n",
-                            &domain_document,
-                            &documents,
-                            target,
-                        );
+                        wire.byte_provision[0].2 = b"this is not a QSL unit\n".to_vec();
                     }
                     Source::EntryRemoved => wire.byte_provision.clear(),
                 },

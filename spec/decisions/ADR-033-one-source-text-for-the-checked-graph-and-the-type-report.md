@@ -138,8 +138,9 @@ Measured on main when this was written.
   PR deletes that family's composed linker, checker and emission. The last
   family's PR deletes the remainder, including `parse_native`,
   `parse_native_source`, `src/parser/composed*` and `src/syntax/composed*`.
-  The historical `0-draft` parser in `src/parser.rs` (`parse`, `parse_source`)
-  is not touched: ADR-011 keeps it with native `compile` until M-6c.
+  The historical `0-draft` parser in `src/parser.rs` (`parse`, `parse_source`),
+  its `src/syntax.rs`, `src/linking*` and `src/checking*` were deleted in
+  QSL-1810 with the last consumer of native `compile` (ADR-011 M-6c; FR-499).
 - *Files, over the whole sequence:* `src/linking/composed/**` and
   `src/checking/composed/**` (about 13,000 lines in total, deleted per family);
   `src/syntax/composed*`; the composed arms of `src/parser.rs` and
@@ -246,19 +247,12 @@ text. These points follow from it and are decided.
 - **Refusal and exhaustion.** A unit the S3 type phase refuses is an error
   outcome of `check` and yields no partial inventory rows. The exhaustion stop
   `TypeWorkExhausted`, which the spine produces as a stage limit outcome, is a
-  different case (the spine never produces `TypeAdmissionUnfinished`, FR-514; the composed-lane
-  inventory does until QSL-830 deletes it): it
+  different case (the spine never produces `TypeAdmissionUnfinished`, FR-514): it
   stays `Incomplete` with the retained partial rows and the typed cause
   (IR FR-052-AC-10). The inventory's identity binds the whole `RawSourceRef`;
   the row identity encoding belongs to the owning FR.
 - **One checked unit.** `spine::CheckedUnit` is extended; the inventory's own
   `CheckedUnit` is deleted.
-- **Composed requirements.** FR-035, FR-036, FR-040 and FR-049 stay normative
-  for the families that have not moved. The PR that moves a family retires or
-  amends the parts of those requirements, and of their test cases, that name
-  that family; retiring the rest of the composed lane is open work tracked as
-  QSL-868. This record
-  amends none of them.
 
 The implementing slice is sequenced after the supplied-budget and union slices.
 
@@ -266,17 +260,10 @@ The implementing slice is sequenced after the supplied-budget and union slices.
 
 - One `Source` reference is carried by the checked unit; graph and type-report
   association follows from their creation in its one parse.
-- The composed profile spelling and the composed parser disappear family by
-  family; the remaining retirement is open work tracked as QSL-868.
+- The composed profile spelling and the composed parser are gone.
 - The interim label match has no successor and no flag.
 - The owner-issued source inventory reads only the producer-created checked
   unit, so callers cannot combine a graph and type report from separate parses.
-- FR-035, FR-036, FR-040 and FR-049 keep describing the composed lane until
-  each family's PR retires its part, so the two bodies of text apply to
-  disjoint families at every point.
-  The composed lane (`src/linking/composed`, `src/checking/composed`,
-  `src/parser/composed*`, `src/syntax/composed*`) is still present; its
-  retirement is open work tracked as QSL-868.
 
 ## Alternatives Considered
 

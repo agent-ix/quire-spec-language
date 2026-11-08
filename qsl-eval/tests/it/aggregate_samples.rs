@@ -499,3 +499,168 @@ fn a_finite_window_run_never_reads_an_aggregate_atom_as_a_valuation() {
         "{refused:?}"
     );
 }
+
+/// The checked clause of an event-position unit that `prelude` declares, over
+/// `over`, with `body` as its formula, through the whole package check; the
+/// clause is handed to `inspect`. `models` are the unit's selected models.
+fn event_clause<R>(
+    models: qsl_semantics::model::intake::SelectedModels,
+    prelude: &str,
+    over: &str,
+    body: &str,
+    inspect: impl FnOnce(&qsl_semantics::check::CheckedTemporalClause) -> R,
+) -> R {
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
+         profile t0 = \"{EVENT}\";\n{prelude}\
+         temporal C using t0 over ({over}) clock \"model-steps\" on origin {{ {body} }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let graph = qsl_semantics::check::PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "fixture".to_owned(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("the unit assembles")
+    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"));
+    let [node] = graph.temporal_clauses() else {
+        panic!("one clause");
+    };
+    inspect(node.clause())
+}
+
+/// The reading at `position` of the one aggregate atom of `clause`, compared
+/// with `threshold`, over `samples`.
+fn read_clause(
+    clause: &qsl_semantics::check::CheckedTemporalClause,
+    threshold: Rational,
+    samples: &[AggregateSample],
+    position: u64,
+) -> AtomReading {
+    let (_, checked) = clause
+        .aggregates()
+        .iter()
+        .next()
+        .expect("the clause has one aggregate atom");
+    let atom = AggregateAtom::of_checked(checked, threshold).expect("a well-formed term");
+    atom.evaluate(
+        &WindowTrace::positions(u64::try_from(samples.len()).expect("small")),
+        &mut SampledWindow::new(samples, atom.kind()),
+        DEFAULT_MAX_WINDOW_VALUES,
+        TemporalPosition::new(position),
+        &mut Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED),
+    )
+    .expect("the window reads")
+}
+
+/// FR-194-AC-11 (TC-629), the evaluation half: over `latency` values `5, 1, 4`
+/// of a package unit `M::pms`, the `sum`, `min`, `max` and `quantile 0.5`
+/// terms at position 2 are `10`, `1`, `5` and `4`; the threshold `1 M::ps`
+/// converts exactly to `1000 M::pms`, which the sum `10` is below.
+#[trace("TC-629", "FR-194-AC-11")]
+#[test]
+fn a_package_unit_aggregate_reads_its_values_and_converted_threshold() {
+    use qsl_semantics::model::domain_package::{
+        DomainPackage, DomainPackageRef, PackageDimensionRecord, PackageUnitRecord,
+    };
+    let time = quire_checked::key::DeclarationKey::fixture("dimension/PTime");
+    let (ps, pms) = (
+        quire_checked::key::DeclarationKey::fixture("unit/ps"),
+        quire_checked::key::DeclarationKey::fixture("unit/pms"),
+    );
+    let mut model = DomainPackage::new(DomainPackageRef::fixture("rpc"), vec![]);
+    model.dimensions.push(PackageDimensionRecord {
+        key: time.clone(),
+        name: "PTime".to_owned(),
+        base: true,
+        terms: vec![],
+    });
+    for (key, name, target, scale) in [
+        (ps.clone(), "ps", None, "1"),
+        (pms, "pms", Some(ps), "1/1000"),
+    ] {
+        model.units.push(PackageUnitRecord {
+            key,
+            name: name.to_owned(),
+            dimension: time.clone(),
+            target,
+            scale: scale.to_owned(),
+            offset: "0".to_owned(),
+        });
+    }
+    let models = || {
+        qsl_semantics::model::intake::SelectedModels::fixture(
+            "M",
+            qsl_foundation::Span { start: 0, end: 1 },
+            model.clone(),
+            qsl_semantics::model::accounting::ModelNormalizationLimits::UNLIMITED,
+        )
+        .expect("the package model admits")
+    };
+    let prelude = "model M = \"test/orders\";\n\
+                   dimension Time;\nunit s : Time = rational(1, 1);\n\
+                   unit ms : Time = rational(1, 1000) * s;\n\
+                   record E { latency: Quantity<M::pms>; }\n";
+    let samples = values(&[5, 1, 4]);
+    for (term, threshold, expected) in [
+        ("sum of e.latency over past[0,2] = 10 M::pms", 10, true),
+        ("min of e.latency over past[0,2] = 1 M::pms", 1, true),
+        ("max of e.latency over past[0,2] = 5 M::pms", 5, true),
+        (
+            "quantile 0.5 of e.latency over past[0,2] = 4 M::pms",
+            4,
+            true,
+        ),
+        ("sum of e.latency over past[0,2] = 11 M::pms", 11, false),
+        ("sum of e.latency over past[0,2] <= 1 M::ps", 1000, true),
+    ] {
+        event_clause(models(), prelude, "e: E", term, |clause| {
+            assert_eq!(
+                truth(&read_clause(clause, ratio(threshold, 1), &samples, 2)),
+                expected,
+                "{term}"
+            );
+        });
+    }
+}
+
+/// FR-194-AC-12 (TC-629), the evaluation half: over `d` values `2`, `-1` and
+/// `3` of `m`, the converted-back `sum of convert<Quantity<m>>(convert<Lc>(d))`
+/// at position 2 is `4 m`, so `<= 5 m` holds and `= 5 m` does not.
+#[trace("TC-629", "FR-194-AC-12")]
+#[test]
+fn a_converted_back_carried_aggregate_sums_exactly() {
+    let prelude = "dimension Length;\nunit m : Length = rational(1, 1);\n\
+                   type Lc = Quantity<m, Int[-5, 5]>;\n";
+    let samples = values(&[2, -1, 3]);
+    for (comparison, threshold, expected) in [("<=", 5, true), ("=", 4, true), ("=", 5, false)] {
+        let term = format!(
+            "sum of convert<Quantity<m>>(convert<Lc>(d)) over past[0,2] {comparison} {threshold} m"
+        );
+        event_clause(
+            qsl_semantics::model::intake::SelectedModels::default(),
+            prelude,
+            "d: Quantity<m>",
+            &term,
+            |clause| {
+                assert_eq!(
+                    truth(&read_clause(clause, ratio(threshold, 1), &samples, 2)),
+                    expected,
+                    "{term}"
+                );
+            },
+        );
+    }
+}

@@ -157,6 +157,40 @@ impl ModelSpellings {
         self.package(unit, alias)?.units.get(member).cloned()
     }
 
+    /// The ids of every unit the selected packages declare.
+    pub(crate) fn package_unit_ids(&self) -> Vec<quire_exact::UnitId> {
+        self.packages
+            .iter()
+            .flat_map(|package| package.units.values().cloned())
+            .collect()
+    }
+
+    /// The identities of every package `unit` (the primary unit when `None`)
+    /// selects that declares a unit of the bare name `name`, in the order the
+    /// unit's `model` declarations select them. It only names packages in the
+    /// unresolved-unit-name diagnostic: a bare name never resolves to one
+    /// (FR-505-AC-12).
+    #[ix_trace_rs::string_edge]
+    pub(crate) fn declaring_packages(
+        &self,
+        unit: Option<&RawSourceRef>,
+        name: &str,
+    ) -> Vec<String> {
+        let Some(aliases) = unit
+            .or(self.primary.as_ref())
+            .and_then(|unit| self.units.get(unit))
+        else {
+            return Vec::new();
+        };
+        let indices: BTreeSet<usize> = aliases.values().copied().collect();
+        indices
+            .into_iter()
+            .filter_map(|index| self.packages.get(index))
+            .filter(|package| package.units.contains_key(name))
+            .map(|package| package.selection.identity.clone())
+            .collect()
+    }
+
     /// The package `unit` (the primary unit when `None`) binds its model
     /// alias `alias` to; `None` when the unit binds no admitted model alias
     /// `alias`.

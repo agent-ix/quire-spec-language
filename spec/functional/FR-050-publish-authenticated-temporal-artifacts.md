@@ -73,33 +73,17 @@ admitted view while retaining the same constructor-private native authority as
 FR-042's producer. Its enclosing `Report<AdmissionV2>` SHALL expose effective
 limits and usage exactly once, following the existing FR-042 report pattern.
 
-The public L5 entry points SHALL be
-`temporal::evaluate_v2(&protocol_artifact::v2::AdmittedPackage, declaration, trace, limits)`,
-`temporal::evaluate_with_progress_v2(..., ledger)` and
-`temporal::mapping_support_v2(&protocol_artifact::v2::AdmittedPackage, declaration, closure)`,
-with the same result types as their existing strict `/1` counterparts.
-
-The checked-route successors SHALL be
-`temporal::evaluate_checked_v2(&qsl_package::CheckedPackage, &protocol_artifact::v2::AdmittedPackage, checked_declaration, trace, limits)`,
-`temporal::evaluate_checked_with_progress_v2(..., ledger)` and
-`temporal::mapping_support_checked_v2(&qsl_package::CheckedPackage, &protocol_artifact::v2::AdmittedPackage, checked_declaration, closure)`.
-They SHALL derive the clause, formula, profile and activation from S3 checked
-nodes and SHALL accept the artifact only when exactly one admitted temporal
-declaration has the same checked source authority and identity, declaration
-name and source byte span. The checked profile and clock name SHALL agree with
-that admitted declaration's definition and typed clock binding. A missing,
-ambiguous or changed source-locus selection SHALL be a typed reference
-refusal; a profile or clock mismatch SHALL be a typed binding refusal.
-Evaluation SHALL authenticate the trace's profile, clock name and complete
-parameter map before visiting positions and SHALL retain the exact selected
-definition identity/revision and typed clock configuration in its report.
-The checked mapping entry point SHALL retain that same declaration and
-definition/clock selection but SHALL NOT claim to authenticate trace parameters
-because it takes no trace.
-
-The existing `temporal::evaluate`, `evaluate_with_progress` and
-`mapping_support` entry points SHALL retain their `/1` signatures and
-unauthenticated-premise behavior for compatibility.
+The strict `/2` and checked evaluation entry points
+(`temporal::evaluate_artifact_v2`, `evaluate_with_progress_v2`,
+`evaluate_checked_v2`, `evaluate_checked_with_progress_v2`,
+`mapping_support_checked_v2`), the `/1` entry points (`temporal::evaluate`,
+`evaluate_with_progress`, `mapping_support`) and `mapping_support_v2` are retired
+(QSL-858 PR 1 and PR 2). Their successors authenticate the profile, clock name
+and complete parameter map before any position is visited and retain the exact
+selected definition identity and typed clock configuration in the report
+(FR-522), retain progress under the clause and binding identity (FR-502), and
+classify mapping support from the checked clause (FR-527), which takes no trace
+and so claims no parameter-map authentication.
 
 The strict reader's `v2::Expected` SHALL contain the complete inherited
 FR-042 `Expected` selections plus an independently supplied complete table of
@@ -196,15 +180,10 @@ The checked S3 formula remains the only evaluation source; the admitted `/2`
 view supplies authenticated definition and clock evidence, never a reconstructed
 formula or caller-authored truth.
 
-`mapping_support_v2` takes no runtime trace. It SHALL require the declaration's
-admitted binding to select the same definition/profile before classifying the
-requested surrounding-execution closure; it SHALL NOT claim to authenticate a
-parameter map that is not an input to mapping classification.
-
-The progress ledger identity used by `evaluate_with_progress_v2` SHALL include
-the declaration, definition identity/revision and exact clock configuration.
-Progress recorded for `/1`, a different definition, or a different
-authenticated clock configuration SHALL NOT settle this evaluation.
+The progress ledger identity SHALL include the declaration, definition
+identity/revision and exact clock configuration (FR-502, FR-522). Progress
+recorded for a different definition or a different authenticated clock
+configuration SHALL NOT settle an evaluation.
 
 Changing a selected definition artifact, sequence authority, epoch, period,
 unit or timestamp unit SHALL change canonical `/2` bytes without changing the
@@ -280,7 +259,7 @@ selection (FR-383) until a decision names it.
 | FR-050-AC-1 | A package with one declaration under each registered profile and an independently selected complete temporal table emits exactly three canonical declaration-indexed bindings containing the exact definition identity and the matching event-position, fixed-sample or timestamped configuration. On the checked-package route the definition identity is the clause's `temporal_profile` law joined to the lock's `profile_selections` row (FR-513-AC-9), selected by `TemporalClockSelection::definition`; the row carries no revision or artifact reference (QSpec FR-322 "Temporal clock bindings"). | Test (TC-138, TC-150) |
 | FR-050-AC-2 | Missing, surplus, duplicate, reordered, foreign-owner and out-of-range bindings refuse independently; a definition/profile mismatch and every wrong clock alternative refuse without defaulting or shape-based selection. | Test (TC-138, TC-150) |
 | FR-050-AC-3 | Empty/oversized names, zero/negative/unreduced/overflowing periods, substituted epoch/unit/authority, and a substituted definition identity produce their exact typed causes without a partial package; the definition revision and artifact reference of the retired `/2` carrier have no checked-package successor (FR-513-AC-9). | Test (TC-138, TC-150) |
-| FR-050-AC-4 | `/1` bytes are readable only by the strict `/1` reader; `/1` rejects `/2`, `/2` rejects `/1`, and neither reader upgrades, strips or invents a temporal selection. | Test (TC-138, TC-150) |
+| FR-050-AC-4 | **RETIRED in QSL-1808; historical only.** `/1` bytes are readable only by the strict `/1` reader; `/1` rejects `/2`, `/2` rejects `/1`, and neither reader upgrades, strips or invents a temporal selection. Disposition (ADR-011, ADR-033, FR-499): the criterion describes the deleted `/1` and `/2` readers' own format. Version separation is owned by the checked-package v2 reader, which refuses a contract version other than `quire.checked-package/v2` as `unknown_wire`/`unsupported-wire` at `/contract_version` (FR-096-AC-9, FR-054-AC-3). | Test (TC-138, TC-150) |
 | FR-050-AC-5 | Exact and one-short FR-042 limits cover added binding entries, strings, numbers and canonical bytes with the existing accounting identity; a sufficient retry starts fresh and reproduces the same bytes. | Test (TC-138, TC-150) |
 | FR-050-AC-6 | The v2-specific L5 evaluation entry points compare all authenticated clock fields before positions and retain them in results; checked `/2` counterparts additionally join the exact S3 source locus, declaration, profile and clock before evaluation and retain the same admitted definition/clock evidence. The existing `/1` entry points keep their signatures and historical unauthenticated scope and cannot establish native-to-temporal correspondence. | Test (TC-138, TC-150) |
 | FR-050-AC-7 | **RETIRED in QSL-840; historical only.** The three member filenames and the mutation format constant, joined to a directory written by `write_v2`, resolve that handoff's offer, selection and mutation manifest, and the decoded manifest repeats the same base-member and format identities, without an environment variable or consumer-owned duplicate vocabulary. | Test (TC-138, TC-150), retired |

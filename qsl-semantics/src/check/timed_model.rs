@@ -43,6 +43,7 @@ use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 
 pub use self::collection_write::{CollectionWrite, Written};
 use super::assemble::TimedDeclaration;
+use super::check::NamedScope;
 use super::ir::{CheckedBody, CheckedNode};
 use super::lowering::{strictly_below, AdmittedModel, CollectionShape, PlaceStep};
 use super::refusal::TimedConstruct;
@@ -51,8 +52,8 @@ use super::refusal::{
     UnwrittenTimedMember,
 };
 use super::state_clause::{
-    check_clause, population_of, ClauseDeclarations, ClauseOperation, ClauseView, PopulationDomain,
-    StateClauseDeclaration,
+    check_clause, check_clause_named, population_of, ClauseDeclarations, ClauseOperation,
+    ClauseView, PopulationDomain, StateClauseDeclaration,
 };
 use super::state_graph_claim::StatePredicate;
 use super::temporal_clause::{ModelTimeSource, TimeSourceKind};
@@ -332,6 +333,13 @@ impl CheckedTimedPredicate {
     /// Each slot's binder name.
     pub(crate) fn slot_names(&self) -> &[String] {
         &self.slot_names
+    }
+
+    /// Whether the predicate reads `self`, its first slot. One that does not
+    /// is evaluated once at a state and not once for each object (FR-230
+    /// "Time invariants and urgency").
+    pub fn reads_self(&self) -> bool {
+        self.body.reads_local(0)
     }
 
     /// The slots the body is checked over, in order: `self`, then the
@@ -4575,29 +4583,46 @@ fn typed(
     checking: &Checking<'_, '_>,
     cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
 ) -> Result<(CheckedTimedPredicate, u64), CheckRefusal> {
-    typed_in(view, form, checking.declarations, cx)
+    typed_in(view, form, checking.declarations, cx, None)
 }
 
-/// [`typed`] against `declarations`.
+/// [`typed`] against `declarations`; a population position (FR-391) when
+/// `named` is given, which then scopes the populations the predicate names.
 fn typed_in(
     view: &ClauseView<'_>,
     form: &ExpressionForm,
     declarations: &ClauseDeclarations<'_>,
     cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
+    named: Option<NamedScope>,
 ) -> Result<(CheckedTimedPredicate, u64), CheckRefusal> {
-    let typed = check_clause(view, declarations, &mut cx.reborrow(declarations.scope)).map_err(
-        |refused| {
-            let span = form
-                .spans
-                .at(&refused.location.path())
-                .or_else(|| form.spans.span(form.spans.root()))
-                .unwrap_or(Span { start: 0, end: 0 });
-            refusal(timed(TemporalCause::TimedPredicate {
-                cause: Box::new(refused.cause),
-                span,
-            }))
-        },
-    )?;
+    let reborrowed = &mut cx.reborrow(declarations.scope);
+    let typed = match named {
+        Some(named) => check_clause_named(view, declarations, reborrowed, named),
+        None => check_clause(view, declarations, reborrowed),
+    }
+    .map_err(|refused| {
+        let located = form
+            .spans
+            .at(&refused.location.path())
+            .or_else(|| form.spans.span(form.spans.root()))
+            .unwrap_or(Span { start: 0, end: 0 });
+        // A population name that names nothing is located at its second
+        // segment (FR-391 "Resolution").
+        let span = match &refused.cause {
+            CheckCause::MissingSegment { offset, span, .. } => {
+                let name = span.unwrap_or(located);
+                Span {
+                    start: name.start.saturating_add(*offset).min(name.end),
+                    end: name.end,
+                }
+            }
+            _ => located,
+        };
+        refusal(timed(TemporalCause::TimedPredicate {
+            cause: Box::new(refused.cause),
+            span,
+        }))
+    })?;
     Ok((
         CheckedTimedPredicate {
             parameters: typed.parameters,
@@ -4614,6 +4639,7 @@ fn typed_alternative(
     alternative: AlternativeDraft,
     source_owner: Option<&RawSourceRef>,
     checking: &Checking<'_, '_>,
+    named: &NamedScope,
     cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
     nodes_used: &mut u64,
 ) -> Result<StateAlternative, CheckRefusal> {
@@ -4622,6 +4648,7 @@ fn typed_alternative(
         source_owner,
         checking,
         checking.declarations,
+        named,
         cx,
         nodes_used,
     )
@@ -4634,17 +4661,10 @@ fn typed_alternative_in(
     source_owner: Option<&RawSourceRef>,
     checking: &Checking<'_, '_>,
     declarations: &ClauseDeclarations<'_>,
+    named: &NamedScope,
     cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
     nodes_used: &mut u64,
 ) -> Result<StateAlternative, CheckRefusal> {
-    if let Some(span) = named_population_read(&alternative.predicate.predicate, declarations) {
-        return Err(refusal(timed(TemporalCause::TimedPredicate {
-            cause: Box::new(CheckCause::PopulationFormNotChecked {
-                what: "timed predicate population scope",
-            }),
-            span,
-        })));
-    }
     let (predicate, used) = typed_in(
         &state_view(
             &alternative.predicate,
@@ -4655,58 +4675,13 @@ fn typed_alternative_in(
         &alternative.predicate.predicate,
         declarations,
         cx,
+        Some(named.clone()),
     )?;
     *nodes_used = (*nodes_used).max(used);
     Ok(StateAlternative {
         presences: alternative.presences,
         predicate,
     })
-}
-
-/// The first declared population read, in source order, in an S3
-/// timed-model predicate, which has no ambient population scope (FR-230,
-/// FR-391). The returned span is the population reference, so the
-/// unsupported result points at the construct that needs that scope.
-fn named_population_read(
-    form: &ExpressionForm,
-    declarations: &ClauseDeclarations<'_>,
-) -> Option<Span> {
-    let known = &declarations.scope.known_populations;
-    let root = form.expression.get(form.expression.root_id())?;
-    let mut pending = vec![root];
-    while let Some(expression) = pending.pop() {
-        let population_operand = match expression.node() {
-            ExprNode::AllInstances { population, .. } | ExprNode::Lookup { population, .. } => {
-                Some(*population)
-            }
-            ExprNode::Query { source, .. }
-            | ExprNode::Count { source, .. }
-            | ExprNode::Sum { source, .. }
-            | ExprNode::Accumulate { source, .. } => Some(*source),
-            ExprNode::Population {
-                population,
-                population_span,
-                ..
-            } if known.iter().any(|name| name == population) => return Some(*population_span),
-            // No other form names a population operand. `ExprNode` is not
-            // matched exhaustively outside `qsl-forms` (the seam probe), so a
-            // future population-reading form missed here still refuses in
-            // typing, which grants a timed predicate no population scope.
-            _ => None,
-        };
-        if let Some(operand) = population_operand {
-            let operand = expression.at(operand);
-            if let ExprNode::Name(name) = operand.node() {
-                if known.iter().any(|population| population == &name.name) {
-                    return Some(name.span);
-                }
-            }
-        }
-        // Reversed, so the stack pops children in source order and the
-        // first population reference is the one reported.
-        pending.extend(expression.children().into_iter().rev());
-    }
-    None
 }
 
 fn state_view<'v>(
@@ -4782,7 +4757,7 @@ fn check_part(
                 presence_places: checking.presence_places,
                 body: &form.expression,
             };
-            let (predicate, used) = typed_in(&view, form, declarations, cx)?;
+            let (predicate, used) = typed_in(&view, form, declarations, cx, None)?;
             *nodes_used = (*nodes_used).max(used);
             Some(predicate)
         }
@@ -4836,6 +4811,10 @@ pub(crate) fn check(
             presence_places: &places,
             ..*checking
         };
+        // FR-230-AC-58: a time invariant or `urgent when` predicate names
+        // the populations of its own timed model's alias.
+        let named = NamedScope::of(checking.declarations.models, checking.declarations.scope)
+            .of_alias(&draft.model);
         let mut sites = Vec::new();
         let mut guards = Vec::with_capacity(draft.guards.len());
         for (index, parts) in draft.guards {
@@ -4896,6 +4875,7 @@ pub(crate) fn check(
                             alternative,
                             invariant.source_owner.as_ref(),
                             checking,
+                            &named,
                             cx,
                             &mut nodes_used,
                         )
@@ -4916,6 +4896,7 @@ pub(crate) fn check(
                         invariant.source_owner.as_ref(),
                         checking,
                         &declarations,
+                        &named,
                         cx,
                         &mut nodes_used,
                     )?);
@@ -4969,6 +4950,7 @@ pub(crate) fn check(
                             source_owner.as_ref(),
                             checking,
                             &declarations,
+                            &named,
                             cx,
                             &mut nodes_used,
                         )?);

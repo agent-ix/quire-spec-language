@@ -7,7 +7,9 @@ use qsl_forms::Accumulation;
 
 use super::*;
 use crate::check::check::EnumBinding;
+use crate::check::Obligation;
 use crate::value::definition::{admit_ieee_profile, DefinitionRole};
+use quire_exact::IllTypedCause;
 
 /// QSL's text-profile definition, the law a text operation names.
 fn text_definition() -> DefinitionReference {
@@ -880,6 +882,205 @@ fn rational_literals_are_one_literal_node_through_check() {
         keys.push(literals[0].clone());
     }
     assert_eq!(keys[0], keys[1], "an equal rational is one node");
+}
+
+/// The result of checking `rational(n, d)` where a `Rational[-1, 1; 1, 2]`
+/// is expected: the one literal node's body, or the causes it refused with.
+fn rational_literal_outcome(numerator: i64, denominator: i64) -> Result<Json, Vec<CheckCause>> {
+    let literal = function(
+        "lit",
+        &[],
+        rational_form(["-1", "1", "1", "2"]),
+        None,
+        Expression::rational(Integer::from(numerator), Integer::from(denominator)),
+    );
+    match check(vec![literal]) {
+        Ok(checked) => {
+            let literals: Vec<Json> = checked
+                .semantic_graph()
+                .nodes()
+                .filter(|node| node.semantic_form() == "literal")
+                .map(preimage)
+                .collect();
+            assert_eq!(literals.len(), 1, "{numerator}/{denominator}");
+            Ok(literals[0]["body"].clone())
+        }
+        Err(refusals) => Err(refusals.into_iter().map(|refusal| refusal.cause).collect()),
+    }
+}
+
+/// QSpec FR-039-AC-1 and AC-3: a rational literal normalizes by the gcd with
+/// the sign moved to the numerator and a zero numerator as `0/1`, before the
+/// authored bounds are checked, so `2/4`, `-2/-4` and `0/-7` all check and
+/// equal values are one node; every inclusive boundary of the numerator range
+/// [-1, 1] and denominator range [1, 2] admits.
+#[trace("QSpec-FR-039-AC-1", "QSpec-FR-039-AC-3", "QSpec-TC-039")]
+#[test]
+fn rational_literals_normalize_before_the_bounds_and_the_boundaries_admit() {
+    let spelled = |numerator, denominator| {
+        rational_literal_outcome(numerator, denominator)
+            .unwrap_or_else(|causes| panic!("{numerator}/{denominator}: {causes:?}"))
+    };
+    for (numerator, denominator, normalized) in [
+        (2, 4, (1, 2)),
+        (-2, -4, (1, 2)),
+        (0, -7, (0, 1)),
+        (-1, 1, (-1, 1)),
+        (1, 1, (1, 1)),
+        (-1, 2, (-1, 2)),
+        (1, 2, (1, 2)),
+        (0, 1, (0, 1)),
+        (4, 4, (1, 1)),
+    ] {
+        assert_eq!(
+            spelled(numerator, denominator),
+            spelled(normalized.0, normalized.1),
+            "{numerator}/{denominator} is {}/{}",
+            normalized.0,
+            normalized.1
+        );
+    }
+    assert_ne!(spelled(1, 2), spelled(1, 1), "distinct values differ");
+}
+
+/// QSpec FR-039-AC-2 and AC-3: `rational(1,0)` and `rational(0,0)` refuse
+/// as an unproved nonzero denominator, and `rational(2,1)`, `rational(1,3)`,
+/// `rational(-3,2)` and `rational(-2,-1)` outside the authored ranges refuse
+/// as an unproved rational range, never as a value.
+#[trace("QSpec-FR-039-AC-2", "QSpec-FR-039-AC-3", "QSpec-TC-039")]
+#[test]
+fn zero_denominators_and_out_of_range_literals_refuse_with_distinct_causes() {
+    for (numerator, denominator, obligation) in [
+        (1, 0, Obligation::Nonzero),
+        (0, 0, Obligation::Nonzero),
+        (2, 1, Obligation::RationalRange),
+        (1, 3, Obligation::RationalRange),
+        (-3, 2, Obligation::RationalRange),
+        (-2, -1, Obligation::RationalRange),
+    ] {
+        assert_eq!(
+            rational_literal_outcome(numerator, denominator),
+            Err(vec![CheckCause::Unproved(obligation)]),
+            "rational({numerator},{denominator})"
+        );
+    }
+}
+
+/// `s3.rational_bits` by the larger written bit length. With the limit at 64
+/// bits, a 65-bit numerator alone (`2^64/1`), a 65-bit denominator alone and
+/// both refuse as a `RationalBits` stage limit (resource incompleteness),
+/// never a value, widening or Boolean; the 64-bit literals just inside admit.
+/// A zero denominator still refuses as `Nonzero` first, whatever the
+/// numerator's size (FR-039: zero is rejected before normalization).
+#[trace("QSpec-FR-039-AC-5", "QSpec-TC-039")]
+#[test]
+fn rational_literal_normalization_exhausting_the_bits_limit_is_a_stage_limit() {
+    let power = |bits: u64| Integer::from(2_i64).pow(&Integer::from(bits));
+    let outcome = |numerator: Integer, denominator: Integer| {
+        let literal = function(
+            "lit",
+            &[],
+            rational_form(["-9", "9", "1", "9"]),
+            None,
+            Expression::rational(numerator, denominator),
+        );
+        PackageDeclarations {
+            functions: vec![literal],
+            ..PackageDeclarations::new(
+                fixture_source(),
+                "fixture",
+                qsl_foundation::IdentityLimits::default(),
+            )
+        }
+        .check(CheckingLimits::default().with_rational_bits(64))
+    };
+    let exhausted = |actual: u128| {
+        CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+            stage: CheckingStage::Typing,
+            kind: CheckingLimitKind::RationalBits,
+            limit: 64,
+            actual,
+            region: None,
+        }))
+    };
+    let causes = |numerator, denominator| {
+        outcome(numerator, denominator)
+            .expect_err("the normalization exceeds the limit")
+            .into_iter()
+            .map(|refusal| refusal.cause)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        causes(power(64), power(64)),
+        [exhausted(65)],
+        "a 65-bit numerator and denominator"
+    );
+    assert_eq!(causes(Integer::from(1_i64), power(64)), [exhausted(65)]);
+    assert_eq!(
+        causes(power(64), Integer::from(1_i64)),
+        [exhausted(65)],
+        "a 65-bit numerator alone"
+    );
+    // A zero denominator is refused before the limit is consulted (AC-2).
+    assert_eq!(
+        causes(power(64), Integer::from(0_i64)),
+        [CheckCause::Unproved(Obligation::Nonzero)],
+        "zero denominator before the limit"
+    );
+    // Just inside: 2^63 / 2^63 has 64-bit parts and normalizes to 1/1.
+    outcome(power(63), power(63)).expect("64-bit parts admit");
+}
+
+/// QSpec FR-039-AC-4: a literal with no expected rational type, literals
+/// that leave the expected domain ambiguous, or one
+/// compared with an integer, refuses rather than choosing a domain.
+#[trace("QSpec-FR-039-AC-4", "QSpec-TC-039")]
+#[test]
+fn a_rational_literal_never_picks_its_own_domain() {
+    let half = || Expression::rational(Integer::from(1_i64), Integer::from(2_i64));
+    let refused = |parameters: &[(&str, TypeForm)], body: Expression| {
+        let checked = check(vec![function("lit", parameters, boolean(), None, body)]);
+        checked
+            .expect_err("the literal picks no domain")
+            .into_iter()
+            .map(|refusal| refusal.cause)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        refused(&[], binary(BinaryOperator::Equal, half(), half())),
+        [CheckCause::IllTyped(IllTypedCause::AmbiguousLiteral)]
+    );
+    // Ambiguous expected types: two literals, however combined, name no one
+    // rational domain between them, so none is chosen for either.
+    let third = || Expression::rational(Integer::from(1_i64), Integer::from(3_i64));
+    for body in [
+        binary(BinaryOperator::Less, half(), third()),
+        binary(
+            BinaryOperator::Equal,
+            binary(BinaryOperator::Add, half(), third()),
+            half(),
+        ),
+    ] {
+        assert_eq!(
+            refused(&[], body),
+            [CheckCause::IllTyped(IllTypedCause::AmbiguousLiteral)]
+        );
+    }
+    let fraction = rational_form(["-9", "9", "1", "9"]);
+    assert_eq!(
+        refused(
+            &[("p", fraction)],
+            binary(BinaryOperator::Equal, name_expr("p"), integer_expr(1))
+        ),
+        [CheckCause::IllTyped(IllTypedCause::TypeMismatch)]
+    );
+    assert_eq!(
+        refused(
+            &[("i", int_form(-9, 9))],
+            binary(BinaryOperator::Equal, name_expr("i"), half())
+        ),
+        [CheckCause::IllTyped(IllTypedCause::TypeMismatch)]
+    );
 }
 
 /// TC-1232 step 3 (QSpec FR-322 decimal literal spelling): a `decimal(c, s)`

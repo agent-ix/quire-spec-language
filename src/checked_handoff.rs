@@ -142,6 +142,9 @@ pub enum Error {
     /// Contract IR's reader reached a limit before a conclusion.
     #[error("the reader reached a limit: {0}")]
     ReaderIncomplete(String),
+    /// Contract IR's reader had no operation catalog to read the package against.
+    #[error("the reader had no operation catalog: {0}")]
+    ReaderCatalogUnavailable(String),
     /// The admitted package differs from the in-process checked unit.
     #[error("the admitted package differs from the checked unit: {detail}")]
     ReadBackDiffers {
@@ -203,7 +206,9 @@ impl Error {
         match self {
             Self::Exists { .. } => ErrorCode::Exists,
             Self::Compile(_) => ErrorCode::Compile,
-            Self::ReaderRefused(_) | Self::ReaderIncomplete(_) => ErrorCode::Reader,
+            Self::ReaderRefused(_)
+            | Self::ReaderIncomplete(_)
+            | Self::ReaderCatalogUnavailable(_) => ErrorCode::Reader,
             Self::ReadBackDiffers { .. } => ErrorCode::ReadBackDiffers,
             Self::CaseMismatch { .. } => ErrorCode::CaseMismatch,
             Self::Dependency { .. } => ErrorCode::Dependency,
@@ -300,6 +305,9 @@ pub fn write_with(
         CheckedPackageDispatchResult::Incomplete(incomplete) => {
             return Err(Error::ReaderIncomplete(format!("{incomplete:?}")))
         }
+        CheckedPackageDispatchResult::CatalogUnavailable(unavailable) => {
+            return Err(Error::ReaderCatalogUnavailable(format!("{unavailable:?}")))
+        }
     };
     let selection = Selection::derive(&compiled, &request.emit, &bytes)?;
     environment
@@ -319,7 +327,13 @@ pub fn write_with(
     )?;
     files.insert(
         "equality.json",
-        equality_file(&compiled, request, &package)?,
+        equality_file(
+            &compiled,
+            request,
+            &package,
+            &mut budget,
+            request.native_join,
+        )?,
     )?;
     if request.corpus == Corpus::Standard {
         let cases = corpus::build(&bytes, &selection, &evidence, environment)?;
@@ -357,6 +371,10 @@ fn identity_file(
         .emission()
         .identity_rows(package, budget)
         .map_err(|refused| match refused {
+            qsl_package::IdentityFileRefusal::Rows(rows) => match limits.refusal(rows, budget) {
+                Some(denial) => Error::NativeJoinExhausted(Box::new(denial)),
+                None => unnameable("adapter budget denial has no unpaid charge".to_owned()),
+            },
             qsl_package::IdentityFileRefusal::Native(native)
                 if qsl_semantics::model::intake::is_native_budget_denial(&native) =>
             {
@@ -378,6 +396,8 @@ fn equality_file(
     compiled: &Compiled,
     request: &CheckedHandoffRequest,
     package: &quire_contract_model::CheckedPackageV2,
+    budget: &mut quire_contract_model::NativeJoinBudget,
+    limits: qsl_package::NativeJoinLimits,
 ) -> Result<Vec<u8>, Error> {
     let unnameable = |what: String| Error::Unnameable { what };
     let selections =
@@ -388,7 +408,11 @@ fn equality_file(
         compiled.emit,
     )
     .map_err(|refusal| unnameable(format!("equality witness: {refusal}")))?
-    .equality_witness(package)
+    .equality_witness(package, budget)
+    .map_err(|error| match limits.refusal(error, budget) {
+        Some(denial) => Error::NativeJoinExhausted(Box::new(denial)),
+        None => unnameable("equality adapter refused without a resource denial".to_owned()),
+    })?
     .to_bytes(package)
     .map_err(|refused| unnameable(format!("equality file: {refused}")))
 }

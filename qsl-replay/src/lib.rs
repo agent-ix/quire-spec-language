@@ -90,12 +90,12 @@ pub use admitted::{
     AdmittedUnionMember, AdmittedUnit,
 };
 pub use application::{
-    acquire_checked_closure, ApplicationBeginRefusal, ApplicationEnvironment, ApplicationRegistry,
-    CallableLookupRefusal, CallableSelection, CheckedApplicationProgress,
-    CheckedApplicationSession, CheckedClosureCompilation, CheckedClosureHandle,
-    ClosureOwnerRefusal, NestedCallOccurrence, NestedCallSite, NestedCallSiteRefusal,
-    NominalDeclaration, NominalDeclarationForm, NominalDeclarationMember,
-    NominalDeclarationRefusal, SelectionRefusal,
+    acquire_checked_closure, acquire_checked_closure_with_integer_division,
+    ApplicationBeginRefusal, ApplicationEnvironment, ApplicationRegistry, CallableLookupRefusal,
+    CallableSelection, CheckedApplicationProgress, CheckedApplicationSession,
+    CheckedClosureCompilation, CheckedClosureHandle, ClosureOwnerRefusal, NestedCallOccurrence,
+    NestedCallSite, NestedCallSiteRefusal, NominalDeclaration, NominalDeclarationForm,
+    NominalDeclarationMember, NominalDeclarationRefusal, SelectionRefusal,
 };
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
 pub use call_replay_context::{run_with_replay_context, CallReplayContext, RunWithReplayContext};
@@ -151,8 +151,13 @@ pub use clause_evaluation::{
     evaluate_clause, ClauseEvaluation, ClauseEvaluationRequest, ClauseIncomplete,
     ClauseObservation, ClauseRefusal,
 };
+/// The semantic owner's division-definition admission and closed definition references.
+pub use qsl_semantics::value::{admit_integer_division, DefinitionReference, DefinitionRole};
+/// The checked owner's opaque admitted integer-division selection.
+pub use quire_checked::integer_division::AdmittedIntegerDivision;
+
 pub use compile::{
-    compile_package, compile_package_with_execution_points,
+    compile_package, compile_package_with_execution_points, compile_package_with_integer_division,
     compile_package_with_temporal_selections,
     compile_package_with_temporal_selections_and_execution_points, CompileUnit, CompiledPackage,
 };
@@ -383,6 +388,15 @@ pub use spine::{
     Call, CallArgument, CallIncomplete, CallLocus, CallOutcome, CallRefusal, CallValue,
     ClauseRunStage, CompileRefusal, RunRefusal, SpineLimits,
 };
+// FR-535: the bounded `native-run-result/2` consumer boundary, so CG reads and
+// writes the exact result bytes without naming `spine` (ADR-011 FB-05).
+pub use spine::{
+    read_native_run_result_bounded, write_clause_run_result, CallLocationRead, CallLocusRead,
+    CallOriginRead, ClauseDisposition, ClauseRunRecord, ClauseRunReport, ClauseRunUsage,
+    CommandErrorRecord, ConsequentSourceEvents, NativeRunLimits, NativeRunOutcome,
+    NativeRunReadError, NativeRunResult, NativeRunResultError, RefusalLocusRead, SourceRefRead,
+    SpanRead, TemporalRecord,
+};
 // The input refusal a `ReplayRefusal::Input` and a value-parity
 // `ValueParityResult::RefusedInput` carry.
 pub use quire_semantic_value::call::InputRefusal;
@@ -410,8 +424,9 @@ pub use qsl_semantics::model::accounting::ModelNormalizationLimits;
 pub use qsl_semantics::model::domain_package::DomainPackageRef;
 pub use quire_exact::{EmptyInterval, Incomplete, Integer, IntegerInterval};
 pub use request::{
-    ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest, ReplayRequestRefusal,
-    ReplayRequestWire, StageLimitNameRefusal, StageLimits, StateEnvironment,
+    ByteProvision, DependencyEntry, DependencyEntryWire, PackageMemberCause, ReplayPackage,
+    ReplayPackageAdmissionRefusal, ReplayRequest, ReplayRequestRefusal, ReplayRequestWire,
+    StageLimitNameRefusal, StageLimits, StateEnvironment,
 };
 pub use result::{
     read_bounded, CauseCodecError, DisagreementCause, EvaluatedValue, HybridTraceDisagreement,
@@ -545,8 +560,10 @@ mod redaction_tests {
         // It returns the full content through the typed accessor.
         let valid_wire = ReplayRequestWire {
             profile_selections: vec![],
-            package_name: "fixture".to_owned(),
-            sources: vec![("registry".to_owned(), "pkg-a".to_owned())],
+            package: crate::request::raw_package_descriptor(
+                "fixture",
+                &[("registry".to_owned(), "pkg-a".to_owned())],
+            ),
             dependencies: Vec::new(),
             replay_target: crate::RequestTargetWire::function(
                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),

@@ -248,7 +248,7 @@ static VARIANT_DOCUMENT: std::sync::LazyLock<Vec<u8>> = std::sync::LazyLock::new
             "inputIdentities": [start],
         }},
     }]);
-    serde_json::to_vec(&document).expect("the fixture serializes")
+    crate::emit::tests::wire_bytes(&document).expect("the fixture serializes")
 });
 
 /// The domain package declaring the systems interface `Sensor`.
@@ -553,7 +553,7 @@ fn with_state_machine(base: &[u8], from: &str, package: &str) -> Vec<u8> {
                 "origin": origin(&transition_identity)
             }]
         }));
-    serde_json::to_vec(&document).expect("the state-machine model serializes")
+    crate::emit::tests::wire_bytes(&document).expect("the state-machine model serializes")
 }
 
 /// `unit` assembled against `document`, with `functions` added, checked
@@ -759,6 +759,14 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Relation(RelationForm::Population), NO_RECORD_FORM),
         (K::Relation(RelationForm::Membership), NO_RECORD_FORM),
         (K::Relation(RelationForm::CausalRelation), NO_RECORD_FORM),
+        (
+            K::Correspondence(CorrespondenceForm::ImplementationGuarantee),
+            "lowering builds no implementation-guarantee node",
+        ),
+        (
+            K::Correspondence(CorrespondenceForm::ComponentComposition),
+            "lowering builds no component-composition node",
+        ),
         (K::State(StateForm::Transition), NO_TAG),
         (K::State(StateForm::Snapshot), NO_TAG),
         (K::Temporal(TemporalForm::Clock), NO_TAG),
@@ -876,7 +884,7 @@ fn check_row(row: &Row, outcomes: &[Outcome], failures: &mut Vec<String>) {
     let admitted = outcomes.iter().any(|outcome| {
         outcome.read.as_ref().is_ok_and(|read| {
             read.admitted
-                .graph()
+                .resolved_graph()
                 .nodes
                 .iter()
                 .zip(read.admitted.node_kinds())
@@ -1261,7 +1269,11 @@ fn a_concrete_protocol_gives_a_model_refinement_its_class_catalog() {
     let (unit, documents) = catalog_refinement();
     let package = modelled_with_documents(&unit, &documents, Vec::new());
     let emission = emit_checked(&package).expect("the refinement with a catalog emits");
-    let node = refinement_node(&emission);
+    let wire = super::wire(&emission);
+    let node = nodes(&wire)
+        .iter()
+        .find(|node| node["node_tag"] == "relation" && node["semantic_form"] == "refinement")
+        .expect("one refinement relation node");
     let catalog = &node["body"]["class_catalog"];
     let spelled = |side: &str| -> Vec<&str> {
         catalog[side]
@@ -1282,7 +1294,6 @@ fn a_concrete_protocol_gives_a_model_refinement_its_class_catalog() {
     );
     assert_eq!(spelled("abstract"), ["Lifecycle::tick"]);
 
-    let wire = wire(&emission);
     let by_id = |id: &Value| {
         nodes(&wire)
             .iter()
@@ -1319,7 +1330,7 @@ fn a_concrete_protocol_gives_a_model_refinement_its_class_catalog() {
         by_id(&catalog["concrete"][2]["node"])["semantic_form"],
         "channel"
     );
-    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&wire)
+    let graph = qsl_semantics::check::wire_id::WireGraph::of_package_value(&super::wire(&emission))
         .expect("the emitted graph");
     let mut sorted = dependencies.clone();
     sorted.sort_by_key(|dependency| graph.key_of_value(dependency).expect("a node id"));
@@ -1540,7 +1551,7 @@ fn counter_model_document(package: &str, operations: &[&str]) -> Vec<u8> {
         "operations": ops
     });
     constructs.shrink_to_fit();
-    serde_json::to_vec(&json!({
+    crate::emit::tests::wire_bytes(&json!({
         "contractVersion": "2.0.0",
         "canonicalization": {"algorithm": "rfc8785-v1"},
         "source": {"identity": ident("spec"), "version": "1.0.0", "dialect": "spec-bundle"},
@@ -2675,7 +2686,7 @@ fn quantity_literal_nodes_are_referenced_by_their_operations() {
          function c using v(d: Quantity<ms>): Boolean pure {{ convert<Quantity<s>>(d) = 3 s }}\n"
     ));
     let emitted = Emitted::placed(package, Vec::new());
-    let written = wire(&emitted.emission);
+    let written = super::wire(&emitted.emission);
 
     let call = function_body(&written, "h");
     assert_eq!(
@@ -2803,7 +2814,7 @@ fn rows_refinement_with(
                 .collect();
         }
     }
-    let base = serde_json::to_vec(&document).expect("the model serializes");
+    let base = crate::emit::tests::wire_bytes(&document).expect("the model serializes");
     let abstract_document =
         with_state_machine(&base, "example/config-version", "example/rows-abstract");
     let concrete_document =
@@ -3084,8 +3095,11 @@ fn fairness_and_operation_rows_name_operation_anchors() {
         ),
         &["attemptUpdate"],
     );
-    let written = wire(&emitted.emission);
-    let node = refinement_node(&emitted.emission);
+    let written = super::wire(&emitted.emission);
+    let node = nodes(&written)
+        .iter()
+        .find(|node| node["node_tag"] == "relation" && node["semantic_form"] == "refinement")
+        .expect("one refinement relation node");
     let anchor = |key: &Value| {
         nodes(&written)
             .iter()
@@ -3412,7 +3426,12 @@ fn a_refinement_row_or_header_key_of_the_wrong_kind_or_absent_refuses_at_its_mem
     node["dependencies"]
         .as_array_mut()
         .expect("dependencies")
-        .sort_by_key(|dependency| graph.key_of_value(dependency).expect("a node id"));
+        .sort_by_key(|dependency| {
+            let id = serde_json::from_value(dependency.clone()).expect("a typed node id");
+            graph
+                .key_in_row(position, &id)
+                .expect("a node id in this row")
+        });
     let verdict = refinement_verdict(&emitted, &absent, position);
     assert!(
         verdict.starts_with("MissingDeclaration at ")

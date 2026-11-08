@@ -142,40 +142,6 @@ pub(super) fn integer_model() -> Value {
     model
 }
 
-/// [`request`] for the event-position unit over R without the unit `U`: the
-/// copy of R written into `dir` has `Amount` and `Total` as the bounded
-/// integer scalars they were before FR-517-AC-13, and its sources declare no
-/// unit and read no unit literal. Contract IR cannot yet project a record of
-/// the model that names a source-owned unit (`UnresolvedSelectedDeclaration`),
-/// so the bare route reads `Recovery` only over this variant.
-pub(super) fn integer_request(dir: &Path) -> CheckedHandoffRequest {
-    let model = integer_model();
-    let without_unit = |text: String| {
-        text.replace("dimension Money;\nunit U : Money = rational(1, 1);\n", "")
-            .replace(" U\n", "\n")
-            .replace(" U ", " ")
-    };
-    let model_path = dir.join("model.semantic-ir.json");
-    std::fs::write(&model_path, serde_json::to_vec_pretty(&model).unwrap()).unwrap();
-    let mut handoff = request("event_position", Corpus::None);
-    let library = dir.join("library.native");
-    std::fs::write(
-        &library,
-        without_unit(std::fs::read_to_string(format!("{DIR}/library.native")).unwrap()),
-    )
-    .unwrap();
-    let source = dir.join("unit.native");
-    std::fs::write(
-        &source,
-        without_unit(std::fs::read_to_string(&handoff.emit.source).unwrap()),
-    )
-    .unwrap();
-    handoff.emit.models = vec![model_path];
-    handoff.emit.libraries = vec![("agent-ix/checked-handoff-library".into(), library)];
-    handoff.emit.source = source;
-    handoff
-}
-
 pub(super) const KINDS: [&str; 3] = ["event_position", "fixed_sample", "timestamped_event"];
 
 /// Every regular file below `root`, keyed by its root-relative path.
@@ -320,7 +286,7 @@ fn the_directory_holds_the_outputs_table() {
 
 /// The wire node id strings of the package's nodes.
 fn package_node_ids(package: &[u8]) -> Vec<Value> {
-    let wire: Value = serde_json::from_slice(package).unwrap();
+    let wire = crate::support::resolved_package(package);
     wire["semantic_graph"]["nodes"]
         .as_array()
         .unwrap()
@@ -862,7 +828,7 @@ fn the_recipe_emits_the_protocol_the_compensations_and_the_three_clock_kinds() {
             let compensations: Vec<_> = package
                 .node_kinds()
                 .iter()
-                .zip(&package.graph().nodes)
+                .zip(&package.resolved_graph().nodes)
                 .filter(|(k, _)| **k == CheckedNodeKind::Protocol(ProtocolForm::Compensation))
                 .map(|(_, node)| node)
                 .collect();
@@ -886,7 +852,7 @@ fn the_recipe_emits_the_protocol_the_compensations_and_the_three_clock_kinds() {
                 shared
                     .iter()
                     .filter(|id| {
-                        package.graph().nodes.iter().any(|node| {
+                        package.resolved_graph().nodes.iter().any(|node| {
                             &node.node_id == **id && node.node_tag.as_ref() == "protocol"
                         })
                     })
@@ -928,7 +894,11 @@ fn the_recipe_compensations_read_attempts_maximum_three_through_the_view() {
     let held = evidence(&request("event_position", Corpus::None)).unwrap();
     let package = admitted(&files["checked-package.json"], &held);
     let mut read = Vec::new();
-    for (kind, node) in package.node_kinds().iter().zip(&package.graph().nodes) {
+    for (kind, node) in package
+        .node_kinds()
+        .iter()
+        .zip(&package.resolved_graph().nodes)
+    {
         if *kind == CheckedNodeKind::Protocol(ProtocolForm::Compensation) {
             let key = serde_json::to_string(&node.node_id).unwrap();
             let name = ["Full", "Partial"]
@@ -1042,7 +1012,7 @@ fn the_extreme_rationals_are_package_values() {
         let held = evidence(&request(kind, Corpus::None)).unwrap();
         let package = admitted(&files["checked-package.json"], &held);
         let mut rational_literals = BTreeMap::new();
-        for node in &package.graph().nodes {
+        for node in &package.resolved_graph().nodes {
             let Some(literal) = node.body.literal_read() else {
                 continue;
             };
@@ -1064,7 +1034,7 @@ fn the_extreme_rationals_are_package_values() {
                 ))
             );
             let domain = package
-                .graph()
+                .resolved_graph()
                 .nodes
                 .iter()
                 .find(|node| &node.node_id == literal.type_id)
@@ -1414,8 +1384,7 @@ fn a_changed_clock_value_is_admitted_by_the_reader_and_refused_by_the_sidecar() 
 #[test]
 fn the_legacy_writer_is_absent() {
     for path in [
-        "src/protocol_artifact/handoff.rs",
-        "src/protocol_artifact/handoff",
+        "src/protocol_artifact",
         "examples/native_protocol_handoff.rs",
         "examples/native_protocol_v2_handoff.rs",
         "examples/protocol-handoff",
@@ -1425,8 +1394,6 @@ fn the_legacy_writer_is_absent() {
     }
     let manifest = std::fs::read_to_string("Cargo.toml").unwrap();
     assert!(!manifest.contains("handoff-writer"));
-    let module = std::fs::read_to_string("src/protocol_artifact/mod.rs").unwrap();
-    assert!(!module.contains("mod handoff"));
 }
 
 /// One row of FR-518's table as amended by the writer self-check: identity,
@@ -2080,7 +2047,7 @@ fn each_sidecar_compensation_row_names_its_own_templates_node() {
     for row in rows {
         let name = row["name"].as_str().unwrap();
         let node = package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .find(|node| serde_json::to_value(&node.node_id).unwrap() == row["node"])
@@ -2236,7 +2203,7 @@ fn the_clause_name_has_no_package_side_value() {
     assert_eq!(axis_of(&sidecar, &package), None);
     assert!(
         package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .all(|node| node.declaration.is_none()
@@ -2765,7 +2732,7 @@ fn the_recover_conditions_compare_the_receipt_sum_with_the_target() {
     let files = tree(&out);
     let held = evidence(&request("event_position", Corpus::None)).unwrap();
     admitted(&files["checked-package.json"], &held);
-    let wire: Value = serde_json::from_slice(&files["checked-package.json"]).unwrap();
+    let wire = crate::support::resolved_package(&files["checked-package.json"]);
     let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
 
     // The expression `value` denotes, with each reference followed to its node.

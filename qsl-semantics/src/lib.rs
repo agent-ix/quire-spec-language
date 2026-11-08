@@ -26,6 +26,13 @@ pub mod library;
 pub mod model;
 pub mod value;
 
+// Private declared-type tests must reach Typer; the owner's allocator keeps
+// denial thread-local so other library tests continue using System normally.
+#[cfg(test)]
+#[global_allocator]
+static TEST_ALLOCATOR: qsv_failing_allocator::FailingAllocator =
+    qsv_failing_allocator::FailingAllocator;
+
 /// The longest each explicit heap stack grew in this thread, by name, so a
 /// test can show each stack grows by a constant per node already charged.
 #[cfg(test)]

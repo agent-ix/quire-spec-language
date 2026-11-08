@@ -353,6 +353,36 @@ fn ep_observation_state_through_view<'a>(
     relationship_target: Option<(&str, &str)>,
     extra_other_nodes: &[&str],
 ) -> ObservationAdmission<qsl_package::AdmittedProtocolObservation<'a>> {
+    let (packages, selected, snapshots) = ep_snapshot(
+        other_spare,
+        other_nodes_complete,
+        ghost_next,
+        relationship_target,
+        extra_other_nodes,
+    );
+    evaluation_view.admit_protocol_observation(
+        &package.graph().model_selections()[0],
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        &snapshots,
+        &selected,
+        ObservationLimits::default(),
+    )
+}
+
+/// The domain package input, selected document and snapshot of an E-P
+/// observation state (TC-1070 rows 34 to 46).
+fn ep_snapshot(
+    other_spare: Option<(bool, &[&str])>,
+    other_nodes_complete: bool,
+    ghost_next: Option<(&str, &str)>,
+    relationship_target: Option<(&str, &str)>,
+    extra_other_nodes: &[&str],
+) -> (
+    qsl_semantics::model::intake::PackageInput,
+    DocumentRef,
+    std::collections::BTreeMap<DocumentRef, Vec<u8>>,
+) {
     let domain = serde_json::to_vec(&document_ep()).unwrap();
     let packages = qsl_semantics::model::intake::package_input([domain.as_slice()]).unwrap();
     let selected = DocumentRef {
@@ -405,14 +435,7 @@ fn ep_observation_state_through_view<'a>(
     let snapshots = [(selected.clone(), serde_json::to_vec(&snapshot).unwrap())]
         .into_iter()
         .collect();
-    evaluation_view.admit_protocol_observation(
-        &package.graph().model_selections()[0],
-        &packages,
-        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
-        &snapshots,
-        &selected,
-        ObservationLimits::default(),
-    )
+    (packages, selected, snapshots)
 }
 
 #[test]
@@ -4741,7 +4764,11 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let bare = qsl_package::BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -4786,7 +4813,7 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
             wanted.node.clone()
         } else {
             let declared = v2
-                .graph()
+                .resolved_graph()
                 .nodes
                 .iter()
                 .find(|node| {
@@ -4797,7 +4824,7 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
                 })
                 .expect("the owner is declared");
             let ids = qsl_semantics::check::wire_id::WireGraph::new(
-                v2.graph().nodes.iter().map(|node| &node.node_id),
+                v2.resolved_graph().nodes.iter().map(|node| &node.node_id),
             )
             .expect("wire ids")
             .key(&declared.node_id)
@@ -4991,10 +5018,152 @@ fn the_bare_selection_refuses_as_the_source_selection_does() {
     ));
 }
 
+/// FR-533-AC-13, FR-390-AC-15, FR-383-AC-63: a fault inside an
+/// application-rooted `related` end is reported at the location of the end's
+/// own node, and that location is one value on the checked view and on the
+/// bytes route, under the position name.
+#[trace("FR-533-AC-13", "FR-390-AC-15", "FR-383-AC-63", "TC-1333")]
+#[test]
+fn a_related_call_is_located_alike_on_both_routes() {
+    let source = SOURCE
+        .replace("profile S = \"quire.state.graph/v1\";", "profile S = \"quire.state.graph/v1\";\nprofile v = \"quire.value.complete/v1\";")
+        .replace("model M = \"test/orders\";", "model M = \"test/orders\";\nfunction identityRef using v(x: M::Node): M::Node pure { x }")
+        .replace("related by Owns (view, view)", "related by Owns (identityRef(view), identityRef(view))");
+    assert_ne!(source, SOURCE);
+    let (package, _view) = fixture_from_source(&source);
+    let read = read_checked_package(&package);
+    let v2 = read.admitted();
+    let rows = bare_rows(&package, v2);
+    let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
+        .expect("emits")
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("budgeted equality witness");
+    let bare = qsl_package::BarePackage::new(v2)
+        .with_supply(
+            qsl_package::BareSupply {
+                identities: &rows,
+                equality: Some(&equality),
+            },
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("the fixture budget admits the supply");
+    let view = package.evaluation_view();
+    for (member, side) in [("related.from", "from"), ("related.to", "to")] {
+        let wanted = slot(&package, "Pipeline", "Got", member, Some(0));
+        let descriptor =
+            qsl_package::ProtocolSlotDescriptor::new(wanted.node, member, wanted.index);
+        let checked = view.select_protocol_slot(&descriptor).expect("selects");
+        let selected = bare.select_protocol_slot(&descriptor).expect("selects");
+        let projection = bare.project_protocol_slot(&selected).expect("projects");
+        let on_bare = projection
+            .location(projection.root())
+            .expect("the call is located");
+        assert_eq!(
+            checked.checked_body().root().location(),
+            on_bare,
+            "{member}: one location on both routes"
+        );
+        assert_eq!(
+            on_bare.origin,
+            quire_semantic_value::location::Origin::TypeDeclaration {
+                name: format!("protocol Pipeline run Main Got related 0 {side}"),
+            }
+        );
+    }
+}
+
+/// FR-533-AC-21, FR-383-AC-64: over the compiled two-record variant of fixture
+/// L, in each source order of its two clauses, the checked view and the bytes
+/// route locate `Got.related.from[i]` and the `to` end that is a call alike,
+/// under `related <i> from` and `related <k> to` (`k` the emitted position of
+/// the call's record, equal in both orders); the two `from` ends differ and
+/// no location is under a span-named `related` origin.
+#[trace("FR-533-AC-21", "FR-383-AC-64", "TC-1333", "TC-1063")]
+#[test]
+fn the_two_record_related_variant_is_located_alike_in_each_clause_order() {
+    let call_both = "related by Owns (identityRef(view), identityRef(view))";
+    let call_from = "related by Owns (identityRef(view), view)";
+    let mut call_to_positions = Vec::new();
+    for clauses in [
+        format!("{call_from} {call_both}"),
+        format!("{call_both} {call_from}"),
+    ] {
+        let source = SOURCE
+            .replace("profile S = \"quire.state.graph/v1\";", "profile S = \"quire.state.graph/v1\";\nprofile v = \"quire.value.complete/v1\";")
+            .replace("model M = \"test/orders\";", "model M = \"test/orders\";\nfunction identityRef using v(x: M::Node): M::Node pure { x }")
+            .replace("related by Owns (view, view)", &clauses);
+        assert_ne!(source, SOURCE);
+        let (package, _view) = fixture_from_source(&source);
+        let read = read_checked_package(&package);
+        let v2 = read.admitted();
+        let rows = bare_rows(&package, v2);
+        let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
+            .expect("emits")
+            .equality_witness(
+                v2,
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+            )
+            .expect("budgeted equality witness");
+        let bare = qsl_package::BarePackage::new(v2)
+            .with_supply(
+                qsl_package::BareSupply {
+                    identities: &rows,
+                    equality: Some(&equality),
+                },
+                &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+            )
+            .expect("the fixture budget admits the supply");
+        let view = package.evaluation_view();
+        let located = |member: &str, index: usize| {
+            let wanted = slot(&package, "Pipeline", "Got", member, Some(index));
+            let descriptor =
+                qsl_package::ProtocolSlotDescriptor::new(wanted.node, member, wanted.index);
+            let checked = view.select_protocol_slot(&descriptor).expect("selects");
+            let selected = bare.select_protocol_slot(&descriptor).expect("selects");
+            let on_bare = selected.origin().map(|_| {
+                let projection = bare.project_protocol_slot(&selected).expect("projects");
+                projection
+                    .location(projection.root())
+                    .expect("the call is located")
+                    .clone()
+            });
+            (checked.checked_body().root().location().clone(), on_bare)
+        };
+        let name =
+            |position: usize, side: &str| quire_semantic_value::location::Origin::TypeDeclaration {
+                name: format!("protocol Pipeline run Main Got related {position} {side}"),
+            };
+        let mut from = Vec::new();
+        for index in 0..2 {
+            let (checked, bare) = located("related.from", index);
+            assert_eq!(Some(&checked), bare.as_ref(), "from[{index}]");
+            assert_eq!(checked.origin, name(index, "from"));
+            from.push(checked);
+        }
+        assert_ne!(from[0], from[1]);
+        let mut calls = Vec::new();
+        for index in 0..2 {
+            let (checked, bare) = located("related.to", index);
+            if let Some(bare) = bare {
+                assert_eq!(checked, bare, "to[{index}]");
+                assert_eq!(checked.origin, name(index, "to"));
+                calls.push(index);
+            }
+        }
+        assert_eq!(calls.len(), 1, "one `to` end is a call: {calls:?}");
+        call_to_positions.push(calls[0]);
+    }
+    assert_eq!(call_to_positions.len(), 2);
+}
+
 /// FR-533-AC-11: over TC-1070 fixture L the bare route selects the visible
 /// entry and both case guards of `Decide` by (control node, member, index)
 /// alone, each with the one origin the table of "Slot naming on the bytes
-/// route" gives, and the `related` ends of `Got` (leaf references) have none.
+/// route" gives (the case guards named by label), and the `related` ends of
+/// `Got` (leaf references) have none.
 #[trace("FR-533-AC-11", "FR-533-AC-12", "TC-1333")]
 #[test]
 fn the_bare_route_names_fixture_l_decision_slots_by_node_member_and_index() {
@@ -5004,7 +5173,11 @@ fn the_bare_route_names_fixture_l_decision_slots_by_node_member_and_index() {
     let rows = bare_rows(&package, v2);
     let equality = qsl_package::emit_checked(&package, EmitLimits::fixture())
         .expect("emits")
-        .equality_witness(v2);
+        .equality_witness(
+            v2,
+            &mut qsl_package::V2ReadLimits::fixture().native_join_budget(),
+        )
+        .expect("fixture allowance materializes equality witness");
     let bare = qsl_package::BarePackage::new(v2)
         .with_supply(
             qsl_package::BareSupply {
@@ -5025,10 +5198,19 @@ fn the_bare_route_names_fixture_l_decision_slots_by_node_member_and_index() {
         .origin()
         .map(str::to_owned)
     };
-    let name = |span: &str| format!("protocol Pipeline run Main Decide decision {span}");
-    assert_eq!(origin("Decide", "visible", 0), Some(name("2641..2650")));
-    assert_eq!(origin("Decide", "cases.guard", 0), Some(name("2735..2748")));
-    assert_eq!(origin("Decide", "cases.guard", 1), Some(name("2676..2685")));
+    let name = |tail: &str| format!("protocol Pipeline run Main Decide {tail}");
+    assert_eq!(
+        origin("Decide", "visible", 0),
+        Some(name("decision 2641..2650"))
+    );
+    assert_eq!(
+        origin("Decide", "cases.guard", 0),
+        Some(name("case no guard"))
+    );
+    assert_eq!(
+        origin("Decide", "cases.guard", 1),
+        Some(name("case yes guard"))
+    );
     assert_eq!(origin("Got", "related.from", 0), None);
     assert_eq!(origin("Got", "related.to", 0), None);
 }

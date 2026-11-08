@@ -86,6 +86,7 @@ pub use abstraction::{
 };
 pub use abstraction::{AbstractionNodeRefusal, AbstractionNodes};
 pub use dispatch_link::PendingLinks;
+pub use extension::{ExtensionCause, NamedDeclaration};
 mod facts;
 mod family;
 // The scalar limits of a caller that bounds nothing itself, for the model
@@ -114,11 +115,13 @@ pub mod imports;
 pub(crate) mod imports;
 mod ir;
 mod key_order;
+pub use key_order::node_keys_within;
 mod layer;
 mod lowering;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
-pub use lowering::{protocol_site, ProtocolSite};
+pub use lowering::{protocol_site, ProtocolSite, RelatedSide};
+mod extension;
 mod hybrid;
 mod hyper_clause;
 mod node_key;
@@ -231,7 +234,9 @@ pub use lowering::{
     model_root_key, AdmittedModel, ForeignView, ModelClause, SemanticGraph, SemanticNode,
     SourceCollection, SourceEnumDeclaration, SourceEnumMember,
 };
-pub use node_key::{AbstractionTerm, FrameEntry, ObjectEntry, PopulationEntry};
+pub use node_key::{
+    AbstractionTerm, ExtensionClauseTerm, ExtensionTerm, FrameEntry, ObjectEntry, PopulationEntry,
+};
 pub use node_key::{
     AggregateTerm, ApplicationTerm, Binding, BindingValue, BodyTerm, FrameDeletesScoped,
     FrameField, FrameModifies, FrameScope, FrameTerm, GroupMember, GroupTerm, InvalidModelOwner,
@@ -830,6 +835,12 @@ pub struct CheckedGraph {
     /// FR-110: the header-selectable layers the unit's header profiles
     /// resolve to, ascending.
     header_layers: Vec<crate::value::layer::HeaderLayer>,
+    /// FR-110 "Extension selection": the extension definitions the unit
+    /// selects, ascending by `(authority, identity)`.
+    extension_selections: Vec<qsl_foundation::selection::DefinitionRef>,
+    /// The selected extensions' definitions as IR's reader holds them, in
+    /// the order of `extension_selections`.
+    extension_definitions: Vec<quire_contract_model::CheckedExtensionDefinition>,
     /// FR-230: checked time sources, in source declaration order.
     time_sources: Vec<ModelTimeSource>,
     /// FR-230/FR-251: exact checked time-unit scales used for timed clauses.
@@ -997,6 +1008,8 @@ impl DebugWith for CheckedGraph {
             protocol_population_types,
             model_roots,
             header_layers,
+            extension_selections,
+            extension_definitions,
             time_sources,
             time_units,
             state_clauses,
@@ -1105,6 +1118,8 @@ impl DebugWith for CheckedGraph {
             )
             .field("model_roots", &NodeList(model_roots.iter(), table))
             .field("header_layers", &header_layers)
+            .field("extension_selections", &extension_selections)
+            .field("extension_definitions", &extension_definitions)
             .field("time_sources", &Seq(time_sources, table))
             .field("time_units", &With(time_units, table))
             .field("state_clauses", &Seq(state_clauses, table))
@@ -2268,6 +2283,7 @@ impl PackageDeclarations {
         // Carry that selection into S3 so the inherited-edge rule is
         // confined to a package with an admitted model.
         let complete_model = !self.models.is_empty();
+        let package_unit_ids = self.model_spellings.package_unit_ids();
         let scope = Scope::new(
             self.types,
             self.operations,
@@ -2278,6 +2294,7 @@ impl PackageDeclarations {
             self.dispatch_operations,
         )
         .with_variant_types(self.variant_types)
+        .with_untyped_members(self.untyped_members)
         .with_model_spellings(self.model_spellings)
         .with_source_owners(self.source_owners.clone())
         .with_model_records(self.model_records)
@@ -2627,6 +2644,19 @@ impl PackageDeclarations {
             .collect();
         let protocol_profile = self.protocol_profile;
         let header_layers = self.header_layers;
+        let mut held_extensions: Vec<_> = self.held_extensions.iter().collect();
+        held_extensions.sort_by(|a, b| {
+            let (a, b) = (a.definition(), b.definition());
+            (a.authority(), a.identity()).cmp(&(b.authority(), b.identity()))
+        });
+        let extension_selections: Vec<_> = held_extensions
+            .iter()
+            .map(|held| held.definition().clone())
+            .collect();
+        let extension_definitions: Vec<_> = held_extensions
+            .iter()
+            .map(|held| held.checked_definition().clone())
+            .collect();
         let models = self.models;
         let operation_effects = checked_model_operation_effects(&models);
         let model_inputs = self.model_inputs;
@@ -4262,8 +4292,8 @@ impl PackageDeclarations {
                             nodes_used = used;
                             checked_temporal.push((index, checked, conditions));
                         }
-                        Err(refusal) => {
-                            refusals.push(refusal);
+                        Err(failed) => {
+                            refusals.extend(failed);
                             if cancel.tripped().is_some() {
                                 return Err(refusals);
                             }
@@ -4332,6 +4362,23 @@ impl PackageDeclarations {
         );
         refusals.extend(checked_probabilistic.refusals);
         let probabilistic_model = checked_probabilistic.model;
+        // FR-354: each declaration form of a selected extension, checked
+        // against the typed-node schema entry of its production.
+        let extension_input = extension::ExtensionInput {
+            scope: &scope,
+            signatures: &signatures,
+            held: &self.held_extensions,
+            limits,
+            cancel,
+        };
+        let checked_extensions = extension::check_forms(
+            &self.extension_forms,
+            &extension_input,
+            &mut probabilistic_cx,
+            &mut nodes_used,
+        );
+        refusals.extend(checked_extensions.refusals);
+        let checked_extension_forms = checked_extensions.forms;
         // QSL FR-249: the `release` declarations, resolved against the task
         // sets and the operations of the admitted models.
         if task_sets_admitted {
@@ -5693,10 +5740,35 @@ impl PackageDeclarations {
             if align.len() != clause.align_skip().len() {
                 continue;
             }
+            let mut subject_roots = Vec::with_capacity(clause.aliases().len());
+            for alias in clause.aliases() {
+                let root = scope
+                    .declared_model(&models, clause.name(), alias.as_str())
+                    .and_then(|model| model_root_key(model.selection()).ok());
+                match root {
+                    Some(root) => subject_roots.push(root),
+                    None => refusals.push(CheckRefusal {
+                        location: hyper_clause::lowering::hyper_location(
+                            index,
+                            hyper_clause::lowering::Site::Claim,
+                        ),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+                            quire_semantic_value::catalog::InternalFault::new(
+                                "S4",
+                                "hyper-subject-model-root-keyed",
+                            ),
+                        ))),
+                    }),
+                }
+            }
+            if subject_roots.len() != clause.aliases().len() {
+                continue;
+            }
             match lowering.hyper_clause(&lowering::HyperClauseInput {
                 index,
                 clause,
                 align_skip: align,
+                subject_roots: &subject_roots,
             }) {
                 Ok(lowered) => lowered_hyper.push(lowered),
                 Err(refusal) => refusals.push(refusal),
@@ -5752,6 +5824,40 @@ impl PackageDeclarations {
                     Ok(lowered) => lowered_hybrid_claims.push((index, lowered)),
                     Err(refusal) => refusals.push(refusal),
                 }
+            }
+        }
+        // FR-354, QSpec FR-469: each checked declaration form of a selected
+        // extension, after every function its clause values may call.
+        // A node-kind clause references its target form's node, so each
+        // form is lowered after the forms it names.
+        let mut lowered_extensions: Vec<Option<quire_exact::NodeKey>> =
+            vec![None; checked_extension_forms.len()];
+        let mut pending: Vec<usize> = (0..checked_extension_forms.len()).collect();
+        while !pending.is_empty() {
+            let before = pending.len();
+            pending.retain(|&index| {
+                let Some(form) = &checked_extension_forms[index] else {
+                    return false;
+                };
+                let ready = form.clauses.iter().all(|clause| match clause.value {
+                    extension::ClauseValue::Form(target) => lowered_extensions[target].is_some(),
+                    extension::ClauseValue::Checked(_) => true,
+                });
+                if !ready {
+                    return true;
+                }
+                match lowering.extension_form(&lowering::ExtensionFormInput {
+                    index,
+                    form,
+                    lowered: &lowered_extensions,
+                }) {
+                    Ok(key) => lowered_extensions[index] = Some(key),
+                    Err(refusal) => refusals.push(refusal),
+                }
+                false
+            });
+            if pending.len() == before {
+                break;
             }
         }
         // FR-411, QSpec FR-476: each checked `terminal` declaration, after
@@ -5855,7 +5961,8 @@ impl PackageDeclarations {
         }
         // FR-094: selected model type references root their named units even
         // when no expression reaches a unit-typed member.
-        if let Err(refusal) = lowering.model_type_unit_nodes(&check::declared_unit_ids(&self.units))
+        if let Err(refusal) = lowering
+            .model_type_unit_nodes(&check::declared_unit_ids(&self.units, &package_unit_ids))
         {
             refusals.push(refusal);
         }
@@ -5988,7 +6095,8 @@ impl PackageDeclarations {
             model_correspondence,
             identities,
             binders,
-            lowered_protocol_members,
+            mut lowered_protocol_members,
+            lowered_related_renames,
         ) = (
             lowered.graph,
             lowered.equality_producer_data,
@@ -5998,7 +6106,53 @@ impl PackageDeclarations {
             lowered.functions,
             lowered.binders,
             lowered.protocol_members,
+            lowered.related_renames,
         );
+        // QSpec FR-322-AC-388: a `related` end is named by its record's
+        // position in the emitted array, which lowering fixed by sorting and
+        // collapsing the records. Locate the end under that name now, in its
+        // checked body, its recorded occurrences and its expression
+        // bindings, so every route reads one `Location`.
+        let related_renames: BTreeMap<String, String> = lowered_related_renames
+            .into_iter()
+            .filter_map(|(location, name)| match location.origin {
+                Origin::TypeDeclaration { name: held } => Some((held, name)),
+                _ => None,
+            })
+            .collect();
+        if !related_renames.is_empty() {
+            let moved = |location: &Location| match &location.origin {
+                Origin::TypeDeclaration { name } => related_renames.get(name).map(|renamed| {
+                    Location::at(
+                        Origin::TypeDeclaration {
+                            name: renamed.clone(),
+                        },
+                        &location.path(),
+                    )
+                }),
+                _ => None,
+            };
+            occurrences.relocate(moved);
+            for checked in &mut checked_protocols {
+                for related in &mut checked.slots.related {
+                    for end in &mut related.ends {
+                        end.relocate(moved);
+                    }
+                }
+            }
+            for members in lowered_protocol_members.values_mut() {
+                for expression in &mut members.expressions {
+                    if let Some(location) = moved(&expression.location) {
+                        expression.location = location;
+                    }
+                }
+            }
+            for (held, renamed) in &related_renames {
+                if let Some(spans) = site_spans.remove(held) {
+                    site_spans.entry(renamed.clone()).or_insert(spans);
+                }
+            }
+        }
         // FR-218: bind each already-checked predicate join to its function
         // node key after the function declarations have been lowered.
         for checked_index in protocol_places.iter().flatten().copied() {
@@ -6222,6 +6376,14 @@ impl PackageDeclarations {
             }
             for skipped in 0..clause.align_skip().len() {
                 type_spans.insert(hyper_site(index, Site::AlignSkip(skipped)), clause.span());
+            }
+            for (quantifier, spans) in clause.fairness_spans().iter().enumerate() {
+                for (constraint, span) in spans.iter().enumerate() {
+                    type_spans.insert(
+                        hyper_site(index, Site::Fairness(quantifier, constraint)),
+                        *span,
+                    );
+                }
             }
             for (part, at) in clause.conjuncts() {
                 let (conjunct, make): (_, fn(usize, usize) -> Site) = match part {
@@ -7092,6 +7254,8 @@ impl PackageDeclarations {
             protocol_population_types,
             model_roots,
             header_layers,
+            extension_selections,
+            extension_definitions,
             time_sources: self.time_sources,
             time_units: time_units.clone(),
             state_clauses,
@@ -7951,6 +8115,19 @@ impl CheckedGraph {
         &self.header_layers
     }
 
+    /// FR-110 "Extension selection": the extension definitions the unit
+    /// selects, ascending by `(authority, identity)`. The lock's
+    /// `definition_selections` end with these rows.
+    pub fn extension_selections(&self) -> &[qsl_foundation::selection::DefinitionRef] {
+        &self.extension_selections
+    }
+
+    /// The selected extensions' definitions as IR's reader holds them, in
+    /// the order of [`Self::extension_selections`].
+    pub fn extension_definitions(&self) -> &[quire_contract_model::CheckedExtensionDefinition] {
+        &self.extension_definitions
+    }
+
     /// FR-001: the canonical first `RawSourceRef` of the checked package,
     /// retained for the single-source compatibility accessor. Multi-unit
     /// consumers should use [`Self::sources`] and owner-aware regions.
@@ -8325,14 +8502,19 @@ impl CheckedGraph {
     /// state clause here instead of failing, and the caller reports it as it
     /// reports a primary refusal (a call whose dispatch family did not link,
     /// FR-302).
+    ///
+    /// An empty `refusals` leaves the graph as it is: this method can report
+    /// a refusal again, never clear one.
     #[must_use]
     pub fn with_unit_refusals(
         mut self,
         refusals: Vec<CheckRefusal>,
         region: Option<SourceRegion>,
     ) -> Self {
-        self.unit_refusals = refusals;
-        self.unit_refusal_region = region;
+        if !refusals.is_empty() {
+            self.unit_refusals = refusals;
+            self.unit_refusal_region = region;
+        }
         self
     }
 
@@ -8962,11 +9144,7 @@ fn register_protocol_sites(
         .map(|choice| {
             (
                 choice.declaration,
-                choice
-                    .visible
-                    .iter()
-                    .chain(choice.cases.iter().map(|case| &case.guard))
-                    .collect::<Vec<_>>(),
+                choice.visible.iter().collect::<Vec<_>>(),
             )
         })
         .chain(protocol.repeats.iter().map(|repeat| {
@@ -8999,6 +9177,23 @@ fn register_protocol_sites(
                     entry.spans.clone(),
                 );
             }
+        }
+    }
+    for choice in &protocol.choices {
+        let Some(control) = checked
+            .controls
+            .control(protocol_clause::ProtocolNodeId(choice.declaration))
+        else {
+            continue;
+        };
+        for case in &choice.cases {
+            site_spans.insert(
+                protocol_site(
+                    name,
+                    ProtocolSite::CaseGuard(&control.path, &case.name.name),
+                ),
+                case.guard.spans.clone(),
+            );
         }
     }
     let Some((finish, finish_name)) = &checked.finish else {
@@ -9262,6 +9457,7 @@ mod tests {
     /// against (FR-088-AC-7 step 4) -- and whose `VariantId`s are minted
     /// from that same key, never a second, parallel one (FR-088-AC-10).
     #[trace("TC-259", "FR-088-AC-7")]
+    #[trace("TC-1339", "FR-534-AC-1")]
     #[test]
     fn enum_declaration_becomes_a_real_checked_type_node() {
         use crate::value::enumeration::{
@@ -9332,6 +9528,26 @@ mod tests {
         }
         .check(CheckingLimits::default())
         .expect("one enum declaration checks cleanly");
+
+        let mut checked_nodes = 0;
+        let typer = Typer::new(
+            &graph.scope,
+            &graph.functions.signatures,
+            CheckingLimits::default(),
+            &mut checked_nodes,
+            qsl_forms::ClauseKind::Body,
+        );
+        let declared = ValueType::Enum(graph.scope.enums()[0].shape());
+        assert_eq!(
+            typer.check_declared_type(
+                &declared,
+                &quire_semantic_value::location::Location::at(
+                    quire_semantic_value::location::Origin::Expression,
+                    &[1, 3]
+                )
+            ),
+            Ok(())
+        );
 
         let nodes: Vec<&CheckedTypeNode> = graph.checked_type_nodes().collect();
         assert_eq!(nodes.len(), 1, "exactly the one declared enum");

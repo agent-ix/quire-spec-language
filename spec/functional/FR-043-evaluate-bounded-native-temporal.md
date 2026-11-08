@@ -109,37 +109,28 @@ so a contradicting assertion is refused rather than absorbed. Evaluation without
 a ledger stands on the trace's own assertions alone and detects no contradiction
 across calls.
 
-On the checked-package native route, valuation evidence is admitted against the
-`CheckedPackageV2` declaration-to-arena relation and its occurrence keys from
-FR-515. The evaluator SHALL retain one valuation-evidence row for every admitted
-`holds`-valuation input, including repeated inputs, and SHALL NOT collapse
-valuation evidence into a map keyed only by leaf, declaration or position. Each
-row binds six facts: the *subject* (the checked declaration occurrence key of
-FR-515), the *position* (the admitted trace position it values, by the position's
-admitted ordinal, which is its index among the trace's admitted positions and not an order), the *anchor* (the activation anchor of the instance, FR-044),
-the *capture instance* (the identity of that instance's immutable capture
-environment, FR-044), the *revision* (the observation owner's opaque revision
-reference for the observation the row came from), and the checked `holds`
-operand it values, with the Boolean value. Two rows that agree on all six facts
-remain two rows, in admission order; two rows that differ in any one fact are
-distinct rows. A trace position's legacy `leaf handle to Boolean` map is
-therefore not the evidence of record on this route. The retained rows answer a lookup by subject, position and operand: the value the rows for that triple agree on, and missing-valuation incompleteness, never `false`, where no row values the triple or the rows for it disagree.
+On the checked-package route, valuation evidence is the evidence request of
+FR-516, evaluated by `evaluate_temporal_evidence` over the clause's
+`CheckedNodeId` and the selected occurrence (FR-515, FR-516). Each request
+position carries its `observation` reference and a `valuations` map from atom
+index (FR-532 "Atom index") to the atom's value at that position, and an
+instance-bound atom's value is keyed under the instance's trigger identity in
+`instance_valuations` (FR-524). A position therefore holds at most one value
+per atom and instance: a repeated or contradictory value of one atom at one
+position has no request form, and the trace's legacy `leaf handle to Boolean`
+map is not an input of this route. The result is read from the request's
+values alone; an atom the formula needs that the request does not value at a
+position is missing-valuation incompleteness, never `false` (FR-516-AC-43).
 
-QSL checks every row only against values QSL itself holds: the subject SHALL be
-a declared occurrence of the evaluated declaration, the operand SHALL be a
-`holds` operand of that declaration's checked formula, the position SHALL be an
-admitted position of the trace, the anchor and capture instance SHALL equal
-those of the activated instance the row is evaluated for, and the revision SHALL
-equal the one opaque revision reference the caller names for the evaluation.
-A row failing one check is refused with `Refusal::Valuation`, a variant this
-requirement adds to the closed `Refusal` set, whose cause is one of
-`OccurrenceNotDeclared`, `OperandNotInFormula`, `PositionNotAdmitted`,
-`AnchorMismatch`, `CaptureInstanceMismatch` and `RevisionMismatch`. A row whose
-anchor, capture instance or revision names a different instance, or a revision
-other than the evaluation's own, is thereby a foreign or replayed row and is
-refused. QSL does not authenticate observation evidence (FR-516): it does not
-verify that the observation owner issued a revision or capture instance, and it
-defines no shape for either; it compares them as opaque values for equality.
+QSL checks the request only against values QSL itself holds: the selected
+occurrence SHALL be an occurrence of the clause node (`occurrence-unknown`,
+FR-516), and every valuation key SHALL be an atom of the clause's formula
+(`valuation-atom-unknown`, FR-516). A failing request returns
+`Err(CallFailure::Admission)` with that cause, an empty charge log and no
+result. QSL does not authenticate observation evidence (FR-516): the
+`observation` references are opaque, compared with nothing and echoed byte
+for byte. The retired native route's per-row `Refusal::Valuation` and its
+causes are ruled under "Retired and moved criteria" below.
 
 Caller-configured limits arrive as explicit values under
 [NFR-008](../non-functional/NFR-008-bound-temporal-evaluation.md). The evaluator
@@ -179,17 +170,17 @@ so that a changed period, epoch, unit or sequence authority yields a distinct
 result identity and refuses reuse of an earlier result.
 
 A `quire.compiled-protocol/1` body carries a clock binding name and the selected
-definition entry's identity and revision, and no declared
-period, epoch, unit or sequence authority. Through the `/1` entry points
-(`temporal::evaluate`, `evaluate_with_progress`) the evaluator therefore retains
-those trace values as unauthenticated premises and does not compare them with
-the artifact.
+definition entry's identity and revision, and no declared period, epoch, unit or
+sequence authority. The `/1` entry points (`temporal::evaluate`,
+`evaluate_with_progress`) that retained those trace values as unauthenticated
+premises are retired (QSL-858 PR 1).
 
 A strict `quire.compiled-protocol/2` package (FR-050) carries each temporal
-declaration's binding: its definition identity and revision, and one typed clock configuration. Through the `/2`
-entry points (`temporal::evaluate_v2`, `evaluate_with_progress_v2`) the
-evaluator SHALL authenticate the trace against that binding before it visits any
-position:
+declaration's binding: its definition identity and revision, and one typed clock
+configuration. The evaluator SHALL authenticate the trace against that binding
+before it visits any position (the `/2` entry points `evaluate_artifact_v2` and
+`evaluate_with_progress_v2` are retired; the successor is the evidence call,
+FR-522):
 
 - a trace profile identity other than the binding's definition SHALL refuse
   `Refusal::Binding` with dimension `Profile`;
@@ -329,9 +320,57 @@ closure combination, and SHALL refuse any one-axis substitution.
 | FR-043-AC-11 | A fixed-sample or timestamped watermark reaching an inclusive deadline with complete valuations settles a silent obligation, an instant exactly at the deadline participates before settlement, an instant after it does not, and an event-position clock does not advance during silence. | Test (TC-122, TC-1277) |
 | FR-043-AC-12 | A regressing watermark or a conflicting completeness revision under one binding returns a typed contradiction refusal without rolling back progress, restamping closure or rewriting an earlier result; a foreign clock, subject or binding cannot settle the obligation. | Test (TC-122, TC-1277) |
 | FR-043-AC-13 | Repeated evaluation with identical inputs reproduces one result identity; a changed profile, clock binding, declared period, epoch, unit, sequence authority or ceiling yields a distinct result identity and the earlier result is neither reused nor rewritten. | Test (TC-122, TC-1277); Analysis |
-| FR-043-AC-14 | Through `temporal::evaluate_v2` over a strict `/2` package whose declarations bind a fixed-sample (`epoch` 0, `period` 1, `unit` `ms`), an event-position (`sequence_authority` `seq`) and a timestamped-event (`timestamp_unit` `ns`) configuration, a trace with the exact profile, clock name and parameters evaluates and its report retains the package identity and version, declaration, definition identity and revision, clock name and parameter map. Each single change refuses `Refusal::Binding` before any position is visited, with no truth and no authenticated binding: another profile (`Profile`), another clock name (`Clock`), a missing or extra parameter key (`ClockParameters`), `epoch` 1 (`Epoch`), `period` 2 (`SamplePeriod`), `unit` `s` (`ClockUnit`), `sequence_authority` `other` (`SequenceAuthority`) and `timestamp_unit` `us` (`TimestampUnit`). Through the temporal `/1` `evaluate`, the profile and clock-name mutations refuse `Refusal::Binding` (`Profile`, `Clock`) as they do under `/2`; the parameter mutations (the key set, `epoch`, `period`, `unit`, `sequence_authority` and `timestamp_unit`) are not refused, and every `/1` result retains no authenticated binding. | Test (TC-122, TC-1277) |
-| FR-043-AC-15 | Over two occurrences of one checked temporal declaration that share a checked node and formula, evaluation retains distinct rows under their respective occurrence keys. Over one occurrence, three rows for one `holds` operand at one position with identical anchor, capture instance and revision are retained as three rows in admission order, and two rows for that operand at two different positions are retained as two rows; the output multiset of rows equals the admitted input multiset in every one of the six facts, and a `BTreeMap` keyed by position and leaf is not the retained form. | Test |
-| FR-043-AC-16 | Each of these single mutations of an otherwise valid row refuses with `Refusal::Valuation` naming the cause and yields no truth or partial support: an occurrence key the declaration does not hold (`OccurrenceNotDeclared`), an operand outside the checked formula (`OperandNotInFormula`), a position not in the trace (`PositionNotAdmitted`), another instance's anchor (`AnchorMismatch`), another instance's capture instance (`CaptureInstanceMismatch`), and a revision unequal to the evaluation's revision reference, including a row replayed from an earlier revision (`RevisionMismatch`). Omitting a required row yields missing-valuation incompleteness, never false. | Test |
+| FR-043-AC-14 | Through the evidence call (FR-522) over a package whose declarations bind a fixed-sample (`epoch` 0, `period` 1, `unit` `ms`), an event-position (`sequence_authority` `seq`) and a timestamped-event (`timestamp_unit` `ns`) configuration, a trace with the exact profile, clock name and parameters evaluates and its report retains the package identity and version, declaration, definition identity and revision, clock name and parameter map. Each single change refuses `Refusal::Binding` before any position is visited, with no truth and no authenticated binding: another profile (`Profile`), another clock name (`Clock`), a missing or extra parameter key (`ClockParameters`), `epoch` 1 (`Epoch`), `period` 2 (`SamplePeriod`), `unit` `s` (`ClockUnit`), `sequence_authority` `other` (`SequenceAuthority`) and `timestamp_unit` `us` (`TimestampUnit`). | Test (TC-122, TC-1277) |
+| FR-043-AC-15 | Through `evaluate_temporal_evidence` over the twin package of FR-516-AC-32 (one clause node, occurrences 7 and 3, different clock rows), two requests with equal positions and valuations, each selecting one occurrence with that occurrence's `binding`, are each evaluated against their own occurrence's clock row, and the results' `subject`s differ only in `occurrence` (FR-526-AC-21); over one occurrence, a request valuing one atom at positions 0 and 1 reads each value at its own position, and withdrawing either value gives a missing valuation located at that position and atom. | Test (TC-1277) |
+| FR-043-AC-16 | Each of these single mutations of an otherwise valid evidence request returns `Err(CallFailure::Admission)` with the cause named, an empty charge log and no truth or support: an `occurrence` naming no occurrence of the clause node (`occurrence-unknown`, FR-516-AC-33), and a `valuations` or `instance_valuations` entry keyed by an atom the clause's formula does not have (`valuation-atom-unknown`, FR-526-AC-29). Omitting a valuation the formula needs yields missing-valuation incompleteness, never `false` (FR-516-AC-43). | Test (TC-1277) |
+| FR-043-AC-17 | Through `evaluate_temporal_evidence` over one occurrence of `on origin always[0,1] holds(p)` activated at position 0, with a `Complete { through: 1 }` scope of two positions and `p` valued true at position 1, the result is read from the request's valuations alone: `p` valued true at position 0 gives truth `True`, settlement `ClosedScope` and decision support at positions 0 and 1; no value for `p` at position 0 gives no truth and a missing valuation located at position 0 and `p`'s atom, with no instance, never `false`. | Test (TC-1277) |
+
+## Retired and moved criteria
+
+FR-043-AC-15, AC-16 and AC-17 stated the retired native report route
+(`temporal::evaluate_v2`, `ValuationEvidence` rows and `Refusal::Valuation`,
+deleted with `src/temporal`, QSL-858). They are rewritten above for the evidence
+request of FR-516, and each part of the old text is ruled here.
+
+- **AC-15, rows under occurrence keys:** ported. A request selects one
+  occurrence; twin occurrences of one node give results that differ only in
+  `occurrence` (AC-15, FR-526-AC-21).
+- **AC-15, the multiset of repeated rows:** retired. `valuations` is a map
+  keyed by atom index, so one position holds one value per atom and
+  instance and a repeated row has no request form (FR-526 states the same
+  for repeated support).
+- **AC-16 `OccurrenceNotDeclared`:** ported as `occurrence-unknown`
+  (FR-516-AC-33).
+- **AC-16 `OperandNotInFormula`:** ported as `valuation-atom-unknown`
+  (FR-516, FR-526-AC-29): a key the formula does not have is read by nothing
+  and would change `input_identity` without meaning anything, so it is
+  refused.
+- **AC-16 `PositionNotAdmitted`:** retired. A value is a member of the
+  request position it values, so no request form values a position the
+  request does not hold; a position the formula needs and the request lacks is
+  an absent value, the missing valuation of FR-516-AC-43.
+- **AC-16 `AnchorMismatch`:** retired. The request carries one `anchor` and no
+  value carries its own; an anchor naming no request position is the
+  `Missing` result of FR-516-AC-23, not a refusal.
+- **AC-16 `CaptureInstanceMismatch`:** retired. An instance-bound value is
+  keyed by its instance's trigger identity in `instance_valuations` and is
+  read only for that instance (FR-524), so no value can claim another
+  instance's capture environment; the capture environment is the delivery's
+  own `captures`, refused as FR-524's `surplus-capture` when it carries a fact
+  the clause does not capture.
+- **AC-16 `RevisionMismatch`:** retired. The request carries no per-value
+  revision: each position carries an opaque `observation` reference that QSL
+  echoes and does not authenticate (FR-516-AC-9). For a caller that carries
+  the evidence and progress ledgers, a replayed correction is refused by
+  FR-526's `unchanged-input` and predecessor rules and a regressing progress
+  assertion by FR-502's ledger; a call without a ledger detects nothing
+  across calls, as "Inputs" states.
+- **AC-16, an omitted row is missing, never false:** kept (AC-16, AC-17,
+  FR-516-AC-43).
+- **AC-17, two identical rows and a true row beside a false row:** retired;
+  neither has a request form (one value per atom and position).
+- **AC-17, the legacy leaf-handle map:** retired; the request has no such
+  map.
 
 ## Dependencies
 

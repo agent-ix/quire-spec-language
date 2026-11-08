@@ -507,8 +507,26 @@ fn sum_zero(value_type: &ValueType) -> Result<Value, Halt> {
             Rational::from_integer(Integer::zero()),
             unit.clone(),
         )),
+        // Zero is not a member of every carrier; the caller decides that.
+        ValueType::CarriedQuantity(carried) => Value::Quantity(quire_exact::Quantity::new(
+            Rational::from_integer(Integer::zero()),
+            carried.unit().clone(),
+        )),
         _ => return Err(invariant("sum-family-invalid")),
     })
+}
+
+/// Whether `value` is a member of the total type `N` of a `sum<N>`: a carried
+/// quantity is a quantity of its unit inside its carrier (FR-142 "Carried
+/// quantity sum"), which the kernel's `admits` does not decide.
+fn sum_admits(value_type: &ValueType, value: &Value) -> bool {
+    match (value_type, value) {
+        (ValueType::CarriedQuantity(carried), Value::Quantity(quantity)) => {
+            quantity.unit() == carried.unit()
+                && carried_sum::carrier_admits(carried, quantity.magnitude())
+        }
+        _ => value_type.admits(value),
+    }
 }
 
 /// A scalar retain: `collection.result-retain` with one result unit.
@@ -1644,7 +1662,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     ) -> Result<Value, Halt> {
         let value_type = node.value_type();
         let Some(total) = total else {
-            if !value_type.admits(&summand) {
+            if !sum_admits(value_type, &summand) {
                 return Err(Halt::Located(Box::new(LocatedStop {
                     stop: Stop::Undefined(Undefined::SumOutOfDomain),
                     location: body.location().cloned(),
@@ -1722,6 +1740,17 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                         .map_err(|_| invariant("quantity-operation-rejected"))?;
                 let quantity = outcome_into_stop(outcome)?;
                 self.units.form(unit);
+                Ok(Value::Quantity(quantity))
+            }
+            (
+                ValueType::CarriedQuantity(carried),
+                Value::Quantity(total),
+                Value::Quantity(summand),
+            ) => {
+                // FR-142: no unit edge, no rounding and no loss record; the
+                // bound is decided after every addition.
+                let quantity =
+                    carried_sum::add(carried, &total, &summand, self.meter).map_err(Halt::from)?;
                 Ok(Value::Quantity(quantity))
             }
             _ => Err(invariant("sum-accumulator-value-invalid")),
@@ -4831,7 +4860,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     let total = match iteration.accumulator {
                         None => {
                             let zero = sum_zero(node.value_type())?;
-                            if !node.value_type().admits(&zero) {
+                            if !sum_admits(node.value_type(), &zero) {
                                 return Err(Stop::Undefined(Undefined::SumOutOfDomain).into());
                             }
                             zero
@@ -4870,6 +4899,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
     }
 }
 
+mod carried_sum;
 #[cfg(test)]
 mod invariants;
 
@@ -6080,5 +6110,76 @@ mod tests {
         };
         assert_eq!(decision(ConnectiveOrigin::Authored), Some(true));
         assert_eq!(decision(ConnectiveOrigin::Synthesized), None);
+    }
+
+    /// FR-047-AC-6: an absent optional edge slot and an empty edge sequence
+    /// have no outgoing edge, a sequence edge gives one edge per element in
+    /// order, and no other edge shape or an absent required edge is admitted.
+    #[trace("TC-130", "FR-047-AC-6")]
+    #[test]
+    fn absent_optional_and_empty_sequence_edges_have_no_outgoing_edge() {
+        use crate::test_ids::{effective_id, universe_id};
+        use quire_exact::{
+            from_admitted, CollectionKind, CollectionType, FieldValue, ObjectId, Presence,
+        };
+
+        let target = effective_id("Node");
+        let reference = |object: &str| {
+            ObjectReference::new(
+                universe_id("graph"),
+                target.clone(),
+                ObjectId::new(object).unwrap(),
+            )
+        };
+        let edge_type = ValueType::Reference(target.clone());
+        let sequence = |elements: &[&str]| {
+            FieldValue::Present(from_admitted(
+                CollectionType::new(CollectionKind::Sequence, edge_type.clone(), None),
+                elements
+                    .iter()
+                    .map(|object| Value::Reference(reference(object)))
+                    .collect(),
+            ))
+        };
+        let targets = |field: &FieldDeclaration, slot: &FieldValue| {
+            CheckedMachine::slot_edge_targets(field, slot).ok()
+        };
+
+        let optional = FieldDeclaration::new("next", edge_type.clone(), Presence::Optional);
+        assert_eq!(targets(&optional, &FieldValue::Absent), Some(Vec::new()));
+        assert_eq!(targets(&optional, &FieldValue::Null), Some(Vec::new()));
+        assert_eq!(
+            targets(
+                &optional,
+                &FieldValue::Present(Value::Reference(reference("b")))
+            ),
+            Some(vec![reference("b")])
+        );
+
+        let required = FieldDeclaration::new("parent", edge_type.clone(), Presence::Required);
+        assert_eq!(targets(&required, &FieldValue::Absent), None);
+
+        let kids = FieldDeclaration::new(
+            "kids",
+            ValueType::Collection(
+                CollectionType::new(CollectionKind::Sequence, edge_type.clone(), None).into(),
+            ),
+            Presence::Required,
+        );
+        assert_eq!(targets(&kids, &sequence(&[])), Some(Vec::new()));
+        assert_eq!(
+            targets(&kids, &sequence(&["b", "a"])),
+            Some(vec![reference("b"), reference("a")]),
+            "one edge per element, in order"
+        );
+
+        let set = FieldDeclaration::new(
+            "tags",
+            ValueType::Collection(
+                CollectionType::new(CollectionKind::Set, edge_type.clone(), None).into(),
+            ),
+            Presence::Required,
+        );
+        assert_eq!(targets(&set, &sequence(&["a"])), None);
     }
 }
