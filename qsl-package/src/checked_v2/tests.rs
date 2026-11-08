@@ -3653,7 +3653,10 @@ fn conformance_node_index_vectors_refuse_malformed_wire() {
             other => panic!("{id}: unknown schema outcome {other}"),
         }
     }
-    println!("conformance: {} node-index vector outcomes matched", cases.len());
+    println!(
+        "conformance: {} node-index vector outcomes matched",
+        cases.len()
+    );
 }
 
 /// A `model`/`object_type` node (FR-340's `creates`/`deletes`-eligible, and

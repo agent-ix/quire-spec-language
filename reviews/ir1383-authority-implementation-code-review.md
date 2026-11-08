@@ -464,3 +464,176 @@ FND-003
 ## Reviewer runtime confirmation
 
 At the frozen candidate, five individual exact tests passed (one test executed each): actual source supplier compact-denial allocation observation; two genuine hybrid clauses with equal raw IDs and distinct document-held claims; genuine typed Tier complete native closure plus direct Exact enum projection; complete dense and tick three-resource measured handoffs; and the existing exact canonical bounds success/one-short owner-refusal oracle. Logs: supplier.log, hybrid.log, enum.log, dense-tick.log, legacy-canonical.log in this disposition directory. Each Cargo invocation used the prescribed flock/scheduling/environment and this existing target. The legacy helper explicitly configures finite read storage and its original full value/borrow/typed refusal assertions pass under the adopted owner reader. No aggregate gate was run.
+
+## New findings (disposition pass 4)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | The gate exposed stale slot-holder harness assumptions: twelve tests compared raw node-local slot IDs/whole nodes against document-resolved admitted nodes, authored valid-base mutations without fresh operand rows, omitted the published second-frame row, or compared hybrid vector references without their holders. They failed before exercising the intended retained-node, native-refusal, binder or typed round-trip oracles. | qsl-package/src/checked_v2/tests.rs:1626-1657,1807-1932,2614-2634,3501-3508 |
+| FND-005 | medium | The node-index harness assumed every published case was malformed_wire. Published NI22 and NI24 are partial-stage operand/identity property controls, while NI23 expects invalid_semantic_graph at a duplicate node identity; the blanket assertion prevented their intended oracles from executing. | qsl-package/src/checked_v2/tests.rs:3576-3639 |
+| FND-006 | low | The final description/output-only commit leaves a println call unformatted, so the required rustfmt check fails on the frozen candidate. The supplied gatefix-fmt-check.log contains this exact diff rather than a passing format result. Run the formatter and retain its successful check before clearing this repair. | qsl-package/src/checked_v2/tests.rs:3656 |
+
+## Dispositions — gate repair round 4
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-004 | fixed | Valid bases are resolved explicitly for inspection or intentional mutation authoring, then existing jcs writes fresh rows; raw malformed vector entry points remain unchanged. Frame append includes its published row. CL57/59 binder patch references use the actual holder. Protocol and hybrid controls retain complete like-form structural/node equality and typed positive assertions. All thirteen formerly failed exact tests passed in inspected receipts. |
+| FND-005 | fixed | Published NI22/23/24 outcomes and patches were independently read. NI22 asserts equal complete node bytes, different holder-derived keys and uniqueness; NI23 checks the actual duplicate key and published full-reader refusal/locus; NI24 compares every original complete node and structural key after insertion and the extra node count. Original malformed vectors remain raw with their cause/locus assertions. Reviewer exact rerun passes all 22 published cases. |
+| FND-006 | still-open | Reviewer non-mutating rustfmt --edition 2021 --check qsl-package/src/checked_v2/tests.rs exits 1 at the final candidate, requesting a multiline println. Functional assertions pass; source remains frozen and was not edited. |
+
+## Gate repair verdict and exact scope
+
+CONDITIONAL / HOLD: the gate-detected harness defects FND004/005 are fixed without weakening the examined published oracles. New FND006 is still-open: final frozen formatting fails. The original four findings remain fixed from round 3. Candidate 64e7df50910be74c6713dbb39f8a6e0282fbbe95 differs from custody head14752796e in four test files only; production/spec/dependency/SR tree is unchanged.
+
+Examined all four diffs: checked_v2/tests.rs, checked_v2/tests/protocol_corpus.rs, checked_v2/tests/protocol_mutation_manifest.rs, emit/tests/hybrid.rs. Independently inspected published node-index NI22/23/24, timed mutation schema rows, frame second_frame_operand_row and complete protocol/hybrid comparisons. No original raw malformed vectors were automatically repaired; valid-base inspection/authoring normalization is explicit. No ignored test or production workaround was added.
+
+The initial aggregate package unit run remains FAILED: 805 passed, 13 failed, 2 existing ignored; completed deep tests are not rerun. All13 repair receipts execute exactly one test and pass; this is not a whole package-unit rerun PASS. Reviewer additionally ran exactly the node-index filter, which passed one test and all22 published vector outcomes. Reviewer rustfmt check exits1, retained in disposition-4/fmt-check.log; the supplied fmt-check log also contains the failing diff. Earlier gate stages and unrun integration/replay/root/docs stages remain distinguished; lead owns continuation after repair clearance. No aggregate/broad/deep/workspace build, source edit, push, peer chase or merge occurred.
+
+```yaml
+scope:
+- id: checked_v2::tests::a_no_clock_dense_timed_model_needs_no_integer_literal_type
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn a_no_clock_dense_timed_model_needs_no_integer_literal_type() {\n  \
+    \  let (directory, _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR must name\
+    \ a quire-specification checkout\");\n    let mut envelope = resolved_fixture(&read_fixture(\n\
+    \        &directory.join(\"positive-timed-model-nodes.json\"),\n    ));\n    let\
+    \ graph_before = WireGraph::of_package_value(&envelope).expect(\"the fixture graph\"\
+    );\n    let nodes = envelope[\"semantic_graph\"][\"nodes\"].as_array_mut().unwrap();\n\
+    \    let mut timed_indices = Vec::new();\n    let mut source_index = None;\n \
+    \   let mut root_index = None;\n    for (index, node) in"
+- id: checked_v2::tests::changed_timed_inputs_rekey_and_read_back_the_mutated_model
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn changed_timed_inputs_rekey_and_read_back_the_mutated_model() {\n  \
+    \  let (directory, _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR must name\
+    \ a quire-specification checkout\");\n    let mut base_wire = resolved_fixture(&read_fixture(\n\
+    \        &directory.join(\"positive-timed-model-nodes.json\"),\n    ));\n\n  \
+    \  // Add a second unit with the same time dimension so the unit mutation is\n\
+    \    // a valid selected-time-unit change, not a deliberately ill-typed edge.\n\
+    \    let alternate_unit = {\n        let nodes = base_wire[\"semantic_graph\"\
+    ][\"nodes\"].as_array_mut().unwrap();\n        let unit_index = nodes"
+- id: checked_v2::tests::conformance_fr340_frame_mutations_match_qspec_vectors
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn conformance_fr340_frame_mutations_match_qspec_vectors() {\n    let\
+    \ (directory, _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR must name a\
+    \ quire-specification checkout\");\n    let vectors = read_fixture(&directory.join(\"\
+    ../node-identity-vectors.json\"));\n    let mutations = vectors[\"frame_mutations\"\
+    ]\n        .as_array()\n        .expect(\"frame_mutations\");\n    assert!(\n\
+    \        !mutations.is_empty(),\n        \"node-identity-vectors.json holds no\
+    \ frame_mutations vector\"\n    );\n    let base = read_fixture(&directory.join(\"\
+    positive-all-families.json\"));\n    let index = frame_node_index(&base);\n\n "
+- id: checked_v2::tests::conformance_hybrid_and_timed_positive_references_close_and_units_match_dimensions
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn conformance_hybrid_and_timed_positive_references_close_and_units_match_dimensions()\
+    \ {\n    let (directory, _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR\
+    \ must name a quire-specification checkout\");\n    for name in [\n        \"\
+    positive-all-families.json\",\n        \"positive-timed-model-nodes.json\",\n\
+    \    ] {\n        let envelope = read_fixture(&directory.join(name));\n      \
+    \  let nodes = envelope[\"semantic_graph\"][\"nodes\"].as_array().unwrap();\n\
+    \        let graph = WireGraph::of_package_value(&envelope).expect(\"fixture node\
+    \ ids\");\n        let ids = graph\n            .keys()\n            .iter()\n\
+    \ "
+- id: checked_v2::tests::conformance_i2_read_over_qspec_checked_package_v2_fixtures
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {\n  \
+    \  let (directory, paths) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR must\
+    \ name a quire-specification checkout\");\n    let mut unsorted = 0_usize;\n \
+    \   for path in &paths {\n        let envelope = read_fixture(path);\n       \
+    \ let keys: Vec<NodeKey> = WireGraph::of_package_value(&envelope)\n          \
+    \  .expect(\"fixture node identities\")\n            .keys()\n            .to_vec();\n\
+    \        if !keys.is_sorted() {\n            unsorted += 1;\n        }\n     \
+    \   match read_fixture_wire(&published_fixture(path), &envelope) {\n         \
+    \   (n"
+- id: checked_v2::tests::conformance_node_index_vectors_refuse_malformed_wire
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn conformance_node_index_vectors_refuse_malformed_wire() {\n    let (directory,\
+    \ _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR must name a quire-specification\
+    \ checkout\");\n    let proposals = directory.parent().expect(\"the proposal directory\"\
+    );\n    let vectors = read_fixture(&proposals.join(\"node-index-vectors.json\"\
+    ));\n    let fixture = vectors[\"base\"].as_str().expect(\"a base fixture\");\n\
+    \    let base = read_fixture(&proposals.join(fixture));\n    let cases = vectors[\"\
+    cases\"].as_array().expect(\"NI cases\");\n    assert!(!cases.is_empty(), \"node-index-vectors.json\
+    \ holds no case\");\n    for case in"
+- id: checked_v2::tests::conformance_tick_timed_model_has_operation_anchor_and_no_clock_places
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn conformance_tick_timed_model_has_operation_anchor_and_no_clock_places()\
+    \ {\n    let (directory, _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR\
+    \ must name a quire-specification checkout\");\n    let envelope = read_fixture(&directory.join(\"\
+    positive-tick-timed-model-nodes.json\"));\n    let (name, outcome) = read_fixture_wire(TICK_TIMED_MODEL_NODES,\
+    \ &envelope);\n    let Read::Verified {\n        admitted,\n        timed_models,\n\
+    \        ..\n    } = outcome\n    else {\n        panic!(\"tick timed fixture\
+    \ must pass the real IR reader: {outcome:?}\");\n    };\n    assert_eq!(admitted.name(),\
+    \ name);\n    let ["
+- id: checked_v2::tests::conformance_timed_clause_vectors_keep_their_published_outcomes
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn conformance_timed_clause_vectors_keep_their_published_outcomes() {\n\
+    \    let (directory, _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR must\
+    \ name a quire-specification checkout\");\n    let proposals = directory.parent().expect(\"\
+    the proposal directory\");\n    let vectors = read_fixture(&proposals.join(\"\
+    timed-clause-node-vectors.json\"));\n    let mut replayed = 0_usize;\n    for\
+    \ case in vectors[\"cases\"].as_array().expect(\"CL cases\") {\n        let id\
+    \ = &case[\"id\"];\n        let fixture = case[\"fixture\"]\n            .as_str()\n\
+    \            .unwrap_or(\"fixtures/positive-timed-clause-nodes.json\");\n   "
+- id: checked_v2::tests::conformance_timed_model_nodes_are_retained_by_i2
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn conformance_timed_model_nodes_are_retained_by_i2() {\n    let (directory,\
+    \ _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR must name a quire-specification\
+    \ checkout\");\n    let envelope = read_fixture(&directory.join(\"positive-timed-model-nodes.json\"\
+    ));\n    let (name, outcome) = read_fixture_wire(TIMED_MODEL_NODES, &envelope);\n\
+    \    let Read::Verified {\n        admitted,\n        timed_models,\n        ..\n\
+    \    } = outcome\n    else {\n        panic!(\"timed fixture must pass the real\
+    \ IR reader: {outcome:?}\");\n    };\n    assert_eq!(admitted.name(), name);\n\
+    \n    let inspection = resolved_fixture(&envel"
+- id: checked_v2::tests::conformance_timed_model_vectors_keep_their_published_refusal_loci
+  path: qsl-package/src/checked_v2/tests.rs
+  role: examined
+  excerpt: "fn conformance_timed_model_vectors_keep_their_published_refusal_loci()\
+    \ {\n    let (directory, _) =\n        qspec_v2_fixtures().expect(\"QSPEC_DIR\
+    \ must name a quire-specification checkout\");\n    let base = resolved_fixture(&read_fixture(\n\
+    \        &directory.join(\"positive-timed-model-nodes.json\"),\n    ));\n    let\
+    \ tick_base = resolved_fixture(&read_fixture(\n        &directory.join(\"positive-tick-timed-model-nodes.json\"\
+    ),\n    ));\n    let vectors = read_fixture(&directory.join(\"../timed-model-node-vectors.json\"\
+    ));\n    let indexes = &vectors[\"node_indexes\"];\n    for row in vectors[\"\
+    schema_refusals\"].a"
+- id: checked_v2::tests::protocol_corpus::conformance_protocol_vector_positive_packages_are_admitted
+  path: qsl-package/src/checked_v2/tests/protocol_corpus.rs
+  role: examined
+  excerpt: "fn conformance_protocol_vector_positive_packages_are_admitted() {\n  \
+    \  let directory = qspec_directory().expect(\"QSPEC_DIR must name a quire-specification\
+    \ checkout\");\n    let fixtures = directory.join(\"proposals/checked-package-v2/fixtures\"\
+    );\n    let vectors = read_fixture(&fixtures.join(\"protocol-node-vectors.json\"\
+    ));\n    let positives = vectors[\"positive\"]\n        .as_array()\n        .expect(\"\
+    positive protocol vectors\");\n    assert!(\n        !positives.is_empty(),\n\
+    \        \"protocol corpus contains positive packages\"\n    );\n    let mut failures\
+    \ = Vec::new();\n    for row in positives {\n        "
+- id: checked_v2::tests::protocol_mutation_manifest::conformance_protocol_mutation_manifest_replays_through_i2
+  path: qsl-package/src/checked_v2/tests/protocol_mutation_manifest.rs
+  role: examined
+  excerpt: "fn conformance_protocol_mutation_manifest_replays_through_i2() {\n   \
+    \ let directory = fixtures_directory();\n    let manifest = read_fixture(&directory.join(\"\
+    protocol-node-mutation-manifest.json\"));\n    let layout = read_fixture(&directory.join(\"\
+    protocol-node-layout-rows.json\"));\n    assert_eq!(\n        manifest[\"version\"\
+    ],\n        \"quire.protocol-node-mutation-manifest/v1\"\n    );\n    let base\
+    \ = read_fixture(&directory.join(manifest[\"base\"][\"fixture\"].as_str().expect(\"\
+    a base\")));\n    let manifest_rows = manifest[\"rows\"].as_array().expect(\"\
+    manifest rows\");\n    let layout_rows = layout[\"rows\"].as_"
+- id: emit::tests::hybrid::braking2_restored_nodes_match_qspec_vectors
+  path: qsl-package/src/emit/tests/hybrid.rs
+  role: examined
+  excerpt: "fn braking2_restored_nodes_match_qspec_vectors() {\n    let qspec =\n\
+    \        std::env::var_os(\"QSPEC_DIR\").expect(\"QSPEC_DIR must name a quire-specification\
+    \ checkout\");\n    let qspec = std::path::PathBuf::from(qspec);\n    let path\
+    \ = qspec.join(\"proposals/checked-package-v2/hybrid-node-vectors.json\");\n \
+    \   let fixture: Value = serde_json::from_slice(&std::fs::read(path).expect(\"\
+    QSpec vectors\"))\n        .expect(\"QSpec vector JSON\");\n    let expected =\
+    \ fixture[\"restored_nodes\"]\n        .as_array()\n        .expect(\"QSpec restored\
+    \ nodes\");\n    let (emission, wire) = compile(BRAKING2);\n    admitted(&em"
+```
