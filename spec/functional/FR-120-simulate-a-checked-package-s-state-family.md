@@ -501,8 +501,11 @@ FR-120-AC-22 to FR-120-AC-26 specify them.
   clock.
 - A `Map<K, V>` with a declared maximum `N` SHALL be a finite value domain when
   `K` and `V` are each a finite value domain by these rules and neither is, or
-  has a component that is, a clock place (FR-230 refuses a clock-bearing key;
-  a clock-bearing value is unbounded here). Let `a` be the size of `K`'s domain
+  has a component that is, a clock place. `K` is a scalar data type: FR-230
+  refuses every other key type, a clock-bearing key included, at check, so no
+  such `Map` reaches `domains()`. A clock-bearing value is unbounded here: FR-230
+  selects a map's clock places by key, and the slot matching above matches by
+  position or by equal non-clock components, never by key. Let `a` be the size of `K`'s domain
   and `b` the size of `V`'s. The size SHALL be the sum over entry counts `k`
   from 0 to `N` of C(`a`, `k`) * `b`^`k`: the `k`-element key subsets, each key
   holding any value of `V`. Terms with `k` greater than `a` are 0, so the sum
@@ -522,7 +525,7 @@ FR-120-AC-22 to FR-120-AC-26 specify them.
   Terms with `k` greater than `p` are 0. The values SHALL be ordered by length
   first and, within a length, lexicographically over the element order with the
   first element most significant, each element in `E`'s domain order.
-  Clock slots are matched and created as for a `Set<E>` below: an element is
+  Clock slots are matched and created as for a `Set<E>` above: an element is
   matched to a pre-state element with equal non-clock components.
 - A `Map`'s or `OrderedSet`'s size is computed without enumerating its values,
   and the sizes of the `Map` and `OrderedSet` rules are held in checked
@@ -552,9 +555,12 @@ from this section. `Reference<Clock>` is data and not a clock place, so it stays
 unbounded. A map's entries are a set of distinct keys each with a value, which
 gives C(`a`, `k`) * `b`^`k`; an ordered set is a sequence of distinct elements,
 which gives P(`p`, `k`), so it differs from a `Set` by the order of the same
-elements. A clock place inside a map or ordered set stays
-unbounded because the slot matching above is defined for sequences, sets,
-bags and ordered sets only.
+elements. A clock place inside a map stays unbounded because FR-230 selects
+it by key, while the slot matching above matches by position (a sequence) or
+by equal non-clock components (a set, bag or ordered set). An unbounded map is
+refused only where a frame grants it. A map that no frame grants keeps its
+snapshot entries, and its key places keep their clocks under FR-230's resets
+by selection.
 
 ### Contract clauses
 
@@ -797,7 +803,7 @@ identity text of operation `op`.
 | FR-120-AC-25 | Over AC-22's model, `op: Open` (record `Open { n: Integer, b: Boolean }`), `tm: Tm` (record `Tm { x: Clock, k: Integer }`) and `wr: Wrap2` (record `Wrap2 { o: Open }`) added as fields, one at a time in a frame that grants it, are unbounded roots: `explore_model` and `sample_model` return `NotSimulated::RequiresBound` naming each field's node key, before any state is expanded. A field `choice: Choice`, where the admitted model variant type `Choice` has nullary case `Empty` and `Enabled` with payload type `Boolean`, is finite with three values in order: `Empty`, `Enabled(false)`, `Enabled(true)`; it adds no unbounded root. A variant case with payload type `Integer` is unbounded. A clock component does not make `tm` bounded, and `Wrap2` is unbounded by its nested component. | Test (TC-1270) |
 | FR-120-AC-26 | In a model with `time dense unit ms`, `Cfg` and `Open` as in AC-22 and AC-25 and `Tick { x: Clock }`, a frame that grants the field, `sc: Sequence<Cfg>[0, 2]` is a finite value domain of 1 + 6 + 36 = 43 values: the empty sequence, then the 6 one-element sequences in `Cfg` order, then the 36 two-element sequences with the first element most significant (`[c0, c0]`, `[c0, c1]`, ..., `[c5, c5]`). `st: Sequence<Tick>[0, 3]` and `sk: Sequence<Clock>[0, 3]` have 4 values each, one for each length, and so does `so: Sequence<Option<Clock>>[0, 3]`. With AC-24's `Timer { x: Clock, n: Int[0, 3] }` (`p` = 4), `sr21: Sequence<Timer>[0, 2]` has 1 + 4 + 16 = 21 values and `sr85: Sequence<Timer>[0, 3]` has 1 + 4 + 16 + 64 = 85, ordered length first and then by `n` with the first element most significant (`[]`, `[n0]`, ..., `[n3]`, `[n0, n0]`, `[n0, n1]`, ...); the `x` adds no factor. `Set<Cfg>[0, 1]` has 1 + 6 = 7 values and `Set<Cfg>[0, 2]` has 1 + 6 + 15 = 22, ordered by count and then by ascending `Cfg`; `Bag<Cfg>[0, 2]` has 1 + 6 + 21 = 28; with `Timer` as above `Set<Timer>[0, 2]` has 1 + 4 + C(4, 2) = 11 values and `Bag<Timer>[0, 2]` has 1 + 4 + C(5, 2) = 15, ordered by count and then by `n`; from a pre-state set `{ {x: 5 ms, n: 1} }`, the candidate `{n 1, n 2}` holds `x` 5 ms for `n` 1 (matched by equal `n`) and 0 ms for `n` 2, and the candidate `{n 2}` holds `x` 0 ms; `Set<Clock>[0, 2]` has 2, and so does `Set<Clock>` with no declared maximum (FR-230 caps it at one element). No candidate ranges over a clock slot's value. From a pre-state in which `sr21` is `[ {x: 5 ms, n: 1} ]`, the candidate of length 2 with `n` values 1, 2 holds the pre-state `x` 5 ms in slot 0 and a fresh `x` 0 ms in slot 1; the candidate of length 0 holds no slot; from a pre-state of length 0 every slot of a length-2 candidate is fresh at 0 ms. A `Reference<Clock>` field, `Sequence<Reference<Clock>>[0, 1]`, `Sequence<Open>[0, 1]`, `Sequence<Cfg>` and `Set<Cfg>` with no declared maximum, and a `Map<Boolean, Boolean>` and an `OrderedSet<Boolean>` with no declared maximum are unbounded: `explore_model` and `sample_model` return `NotSimulated::RequiresBound` naming the field's node key, before any state is expanded. | Test (TC-1270) |
 | FR-120-AC-27 | Over a model whose `Counter` has the relationship `link` (both ends `0..2`, neither `unique`), operations `remove` (frame `deletes Counter`) and `spawn` (frame `creates Counter`) and universe `{c1, c2}`: from `s0` holding `c1`, `c2` and the listed pair (`c1`, `c2`), `remove c1` then `spawn` yields a state with `s0`'s objects and no pair, and its key differs from `s0`'s. A snapshot listing the pair once and one listing it twice are both admitted, have different keys, and exploration from the two counts 2 states. (For context, a state that lists no extents keeps FR-120-AC-4's key, with no `relationships` entry.) | Test (TC-471) |
-| FR-120-AC-28 | In a model whose fields are granted by a frame, `Map<Boolean, Boolean>[0, 1]` has 1 + 2 * 2 = 5 values and `Map<Boolean, Boolean>[0, 2]` has 1 + 2 * 2 + 1 * 4 = 9 (the term for `k` above the key count adds nothing). `Map<Boolean, Int[0, 2]>[0, 2]` has 1 + 2 * 3 + 1 * 9 = 16 values, ordered by entry count, then by keys (`false` before `true`), then by values: the empty map, `{false: 0}`, `{false: 1}`, `{false: 2}`, `{true: 0}`, `{true: 1}`, `{true: 2}`, then `{false: 0, true: 0}`, `{false: 0, true: 1}`, ..., `{false: 2, true: 2}`. `OrderedSet<Boolean>[0, 2]` has 1 + 2 + 2 = 5 values: `[]`, `[false]`, `[true]`, `[false, true]`, `[true, false]`. `OrderedSet<Int[0, 2]>[0, 3]` has 1 + 3 + 6 + 6 = 16 and `OrderedSet<Int[0, 2]>[0, 5]` also has 16. `OrderedSet<Clock>[0, 2]` and `OrderedSet<Clock>` with no declared maximum have 2 values, as `Set<Clock>` does. A `Map<Boolean, Clock>[0, 1]` is unbounded and returns `NotSimulated::RequiresBound` naming the field's node key, before any state is expanded. | Test (TC-1270) |
+| FR-120-AC-28 | In a model whose fields are granted by a frame, `Map<Boolean, Boolean>[0, 1]` has 1 + 2 * 2 = 5 values and `Map<Boolean, Boolean>[0, 2]` has 1 + 2 * 2 + 1 * 4 = 9 (the term for `k` above the key count adds nothing). `Map<Boolean, Int[0, 2]>[0, 2]` has 1 + 2 * 3 + 1 * 9 = 16 values, ordered by entry count, then by keys (`false` before `true`), then by values: the empty map, `{false: 0}`, `{false: 1}`, `{false: 2}`, `{true: 0}`, `{true: 1}`, `{true: 2}`, then `{false: 0, true: 0}`, `{false: 0, true: 1}`, ..., `{false: 2, true: 2}`. `OrderedSet<Boolean>[0, 2]` has 1 + 2 + 2 = 5 values: `[]`, `[false]`, `[true]`, `[false, true]`, `[true, false]`. `OrderedSet<Int[0, 2]>[0, 3]` has 1 + 3 + 6 + 6 = 16 and `OrderedSet<Int[0, 2]>[0, 5]` also has 16. `OrderedSet<Clock>[0, 2]` and `OrderedSet<Clock>` with no declared maximum have 2 values, as `Set<Clock>` does. A `Map<Boolean, Clock>[0, 1]` and a `Map<Boolean, Stopwatch>[0, 1]` (`Stopwatch { x: Clock }`, a clock-bearing record value) are each unbounded and return `NotSimulated::RequiresBound` naming the field's node key, before any state is expanded. | Test (TC-1270) |
 ## Dependencies
 
 - [FR-215](FR-215-implement-protocolsystem-as-a-transitionsystem.md): the
