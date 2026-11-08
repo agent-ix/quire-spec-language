@@ -1239,8 +1239,11 @@ fn a_map_type_lowers_to_a_key_then_value_composite_node() {
     let node = graph.node(keys[0].clone()).expect("the map node");
     let operands = node.map_operand_nodes().expect("a key then a value");
     let text = preimage(graph.node(operands[0].clone()).expect("the key node"));
-    assert_eq!(text["semantic_form"], "string");
-    assert_eq!(operands[0], keys[4], "the key operand is the String node");
+    assert_eq!(
+        text["semantic_form"], "text",
+        "a String key is the bare Text scalar node"
+    );
+    assert_ne!(operands[0], keys[4], "not the native String node");
     assert_eq!(
         operands[1], keys[5],
         "the value operand is the Boolean node"
