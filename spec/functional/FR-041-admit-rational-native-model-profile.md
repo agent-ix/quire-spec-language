@@ -96,7 +96,7 @@ retagged afterward. Otherwise identical `/1` and `/2` models have distinct
 native bytes even when no rational is used. Raw native artifact integrity
 remains distinct from IR canonical identity and original model source integrity.
 
-When composed model binding selects an admitted native-state-model/2 artifact, the composed binder SHALL retain its actual profile, exact import bytes, model ownership and existing permitted-export checks.
+Historical (the composed binder is deleted, #2518): composed model binding of an admitted native-state-model/2 artifact retained its actual profile, exact import bytes, model ownership and permitted-export checks.
 
 Adding an unused `/2` input does not grant historical semantics; the selected
 import is the boundary requiring refusal. Composed model binding grants no
@@ -124,7 +124,7 @@ canonicalization or output-content checks.
 | FR-041-AC-2 | **RETIRED in QSL-499; historical only.** A rational scalar with identical IR numerator/denominator bounds at all scalar sites admits under `/2`; missing/duplicate/empty site mappings, kind mismatch or a change to any one site's minimum, maximum or denominator refuses without a model. | Test |
 | FR-041-AC-3 | **RETIRED in M-6d.** The former closed rational JSON decoding boundary is not a separately maintained native acceptance obligation; IR constructors remain authoritative for rational declarations. | Test |
 | FR-041-AC-4 | **RETIRED in M-6d.** The former native source-derived rational value/site mapping is not a separately maintained acceptance obligation. | Test |
-| FR-041-AC-5 | Composed `bind_models` accepts actual admitted `/2` exports and refuses stale models, foreign ownership or wrong exports through its existing typed boundary. The historical `link_native` refusal clause is retired in M-6d. | Test |
+| FR-041-AC-5 | **RETIRED in #2518 (the composed lane and `bind_models` are deleted); historical only. Spine model selection refusals are FR-036-AC-9.** Composed `bind_models` accepts actual admitted `/2` exports and refuses stale models, foreign ownership or wrong exports through its existing typed boundary. The historical `link_native` refusal clause is retired in M-6d. | Test |
 | FR-041-AC-6 | **RETIRED in QSL-499; historical only.** `/1` and `/2` over otherwise identical source/declarations/roles yield different profile-bearing native artifacts. Rational bounds, unit and source mutations alter the selected artifact; and set-like inventory reorderings remain deterministic. | Test |
 | FR-041-AC-7 | **RETIRED in QSL-499; historical only.** Controlled rational/wrapped inputs obey existing source-entry, role/site/node and artifact/canonicalization limits at zero, exact and one-step-insufficient capacities, and an input above a default is admitted once that limit is raised to fit it. Exhaustion yields typed resource incompleteness without partial model or historical fallback. | Test |
 

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Complete-V1 exact scalar semantics (QSL #118, AD-005).
 //!
-//! This typed layer is separate from the legacy compatibility scalar types in
-//! `native_model`, `checking` and `runtime::evaluation`, which it neither
-//! widens nor reuses. Layers:
+//! This typed layer neither widens nor reuses the root crate's historical
+//! `checking::NativeType`. Layers:
 //!
 //! 1. typed values: `quire_exact::Integer`,
 //!    `quire_exact::IntegerInterval`/`quire_exact::BoundedInteger`,

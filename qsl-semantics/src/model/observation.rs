@@ -1601,7 +1601,8 @@ fn read_error_refusal(
         }
         // Any other refusal of the shared reader settles at the document
         // root before any member is read (FR-106 check 1.3, FR-106-AC-3, AC-32, AC-38).
-        quire_canonical::ReadError::Malformed { .. } => Some(refuse(
+        quire_canonical::ReadError::Malformed { .. }
+        | quire_canonical::ReadError::DuplicateName { .. } => Some(refuse(
             admission_record(Code::InvalidRuntimeInput, "invalid-value")
                 .with("document_pointer", ""),
         )),

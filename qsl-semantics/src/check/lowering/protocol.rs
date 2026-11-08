@@ -1271,7 +1271,9 @@ impl Lowering<'_> {
     /// in source order. A role on a model type refers to that type's model
     /// node. A static role's `replication` Group is empty; a replicated role's
     /// holds its population, `max`, binder, lifetime and, for `until`, the
-    /// term. A whole-model role uses its selected package identity as text.
+    /// term. A whole-model role uses its selected package identity as text. A
+    /// role on a Port adds the `model_member` Group of the Port's `package`
+    /// and `node` texts.
     fn role_nodes(
         &mut self,
         protocol: &ProtocolInput<'_>,
@@ -1303,11 +1305,25 @@ impl Lowering<'_> {
             } else {
                 empty_group()
             };
+            let selected_port = match &role.model_member {
+                Some(port) => Some(BindingValue::Group(GroupTerm::new(vec![
+                    member("package", self.text_literal(&port.package, &location)?),
+                    member("node", self.text_literal(&port.node, &location)?),
+                ]))),
+                None => None,
+            };
             let declaration = vec![
                 identifier(name, &location)?,
                 identifier("role", &location)?,
                 identifier(&role.name, &location)?,
             ];
+            let mut bindings = vec![
+                MemberTerm::bound("model", model),
+                MemberTerm::binding("replication", replication),
+            ];
+            if let Some(port) = selected_port {
+                bindings.push(MemberTerm::binding("model_member", port));
+            }
             let key = self.protocol_member(
                 &location,
                 "role",
@@ -1318,10 +1334,7 @@ impl Lowering<'_> {
                     Operator::ProtocolControl,
                     operation.clone(),
                     boolean.clone(),
-                    vec![
-                        MemberTerm::bound("model", model),
-                        MemberTerm::binding("replication", replication),
-                    ],
+                    bindings,
                 ),
             )?;
             roles.push((role.name.clone(), key));

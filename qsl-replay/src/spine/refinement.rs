@@ -230,6 +230,7 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::IdentityLimit(limit)
         | AssemblyCause::DecimalScaleLimit(limit) => Some(ReachedLimit::of(limit)),
         AssemblyCause::UnresolvedTypeName { .. }
+        | AssemblyCause::UnresolvedUnitName { .. }
         | AssemblyCause::ImportedTypeName { .. }
         | AssemblyCause::AmbiguousTypeName { .. }
         | AssemblyCause::IllFormedBounds(_)
@@ -334,6 +335,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::MissingName(_)
         | CheckCause::ExecutionPointBinding(_)
         | CheckCause::MissingQualifiedName(_)
+        | CheckCause::UnresolvedUnitName { .. }
         | CheckCause::MissingSegment { .. }
         | CheckCause::MissingSelf
         | CheckCause::ClockReadingCall(_)

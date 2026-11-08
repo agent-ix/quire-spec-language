@@ -138,8 +138,9 @@ Measured on main when this was written.
   PR deletes that family's composed linker, checker and emission. The last
   family's PR deletes the remainder, including `parse_native`,
   `parse_native_source`, `src/parser/composed*` and `src/syntax/composed*`.
-  The historical `0-draft` parser in `src/parser.rs` (`parse`, `parse_source`)
-  is not touched: ADR-011 keeps it with native `compile` until M-6c.
+  The historical `0-draft` parser in `src/parser.rs` (`parse`, `parse_source`),
+  its `src/syntax.rs`, `src/linking*` and `src/checking*` were deleted in
+  QSL-1810 with the last consumer of native `compile` (ADR-011 M-6c; FR-499).
 - *Files, over the whole sequence:* `src/linking/composed/**` and
   `src/checking/composed/**` (about 13,000 lines in total, deleted per family);
   `src/syntax/composed*`; the composed arms of `src/parser.rs` and

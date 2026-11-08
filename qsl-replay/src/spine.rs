@@ -198,7 +198,7 @@ pub use clause::{
     run_package_trace_subject, run_trace_subject_clause, temporal_batch_exit_code,
     temporal_batch_outcome, AuthenticatedTemporalSelection, AuthenticationFailure, ClauseArgument,
     ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal, ClauseRunReport, ClauseRunRequest,
-    ClauseRunSelection, ClauseRunSource, ClauseRunStage, ConsequentEventRefusal,
+    ClauseRunSelection, ClauseRunSource, ClauseRunStage, ClauseRunUsage, ConsequentEventRefusal,
     ConsequentSourceEvent, ConsequentSourceEvents, ConsequentState, ContradictedDimension,
     FiniteWindowAssessment, FiniteWindowPremises, FiniteWindowReport, FiniteWindowSupport,
     LedgerBinding, ObservedPosition, OperationName, OverObject, PackageAuthentication,
@@ -219,12 +219,13 @@ mod native_result;
 mod protocol_proof;
 pub(crate) use native_result::{item_record, ReasonWire};
 pub use native_result::{
-    read_native_run_result, write_clause_run_result, CallLocationRead, CallLocusRead,
-    CallOriginRead, ClauseRunRecord, ClosureRead, CommandErrorRecord, CounterexampleRead,
-    DimensionRead, EffectiveIdRead, FairnessGranularityRead, FairnessKindRead,
-    FairnessOperationRead, FairnessRead, GuardRead, IndeterminateReasonRead, NativeRunOutcome,
-    NativeRunReadError, NativeRunResult, NativeRunResultError, PositionRead, ProgressValueRead,
-    RefusalLocusRead, SourceRefRead, SpanRead, TemporalRecord, UndefinedLocusRead,
+    read_native_run_result, read_native_run_result_bounded, write_clause_run_result,
+    CallLocationRead, CallLocusRead, CallOriginRead, ClauseRunRecord, ClosureRead,
+    CommandErrorRecord, CounterexampleRead, DimensionRead, EffectiveIdRead,
+    FairnessGranularityRead, FairnessKindRead, FairnessOperationRead, FairnessRead, GuardRead,
+    IndeterminateReasonRead, NativeRunLimits, NativeRunOutcome, NativeRunReadError,
+    NativeRunResult, NativeRunResultError, PositionRead, ProgressValueRead, RefusalLocusRead,
+    SourceRefRead, SpanRead, TemporalRecord, UndefinedLocusRead,
 };
 pub use protocol_proof::{
     ProtocolProofCause, ProtocolProofCorrespondence, ProtocolProofDisposition,
@@ -826,6 +827,20 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
     let message = match &first.cause {
         AssemblyCause::EmptyUnitList => "the package has no source units".to_owned(),
         AssemblyCause::UnresolvedTypeName { name } => format!("no declaration is named `{name}`"),
+        AssemblyCause::UnresolvedUnitName { name, packages } => {
+            if packages.is_empty() {
+                format!("no unit is named `{name}`")
+            } else {
+                let spellings = packages
+                    .iter()
+                    .map(|package| format!("`{package}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "no unit of this unit is named `{name}`; the selected packages {spellings} each declare one, reached as `Alias::{name}`"
+                )
+            }
+        }
         AssemblyCause::ImportedTypeName { name } => {
             format!("`{name}` names an imported declaration, which stands only as a callee")
         }

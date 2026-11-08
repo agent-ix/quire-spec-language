@@ -561,12 +561,18 @@ pub(super) fn assemble(
             match scope.unit(at, &term.unit.name) {
                 Some(unit) => units.push(unit),
                 None => {
-                    errors.push(error(
-                        AssemblyCause::UnresolvedQuantityName {
-                            name: term.unit.name.clone(),
-                        },
-                        term.unit.span,
-                    ));
+                    let name = term.unit.name.clone();
+                    let cause = if term.unit.is_qualified() {
+                        AssemblyCause::UnresolvedQuantityName { name }
+                    } else {
+                        AssemblyCause::UnresolvedUnitName {
+                            packages: scope
+                                .spellings
+                                .declaring_packages(scope.units.get(&source_owner_key(at)), &name),
+                            name,
+                        }
+                    };
+                    errors.push(error(cause, term.unit.span));
                     continue 'forms;
                 }
             }

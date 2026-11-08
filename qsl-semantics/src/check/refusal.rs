@@ -953,7 +953,7 @@ impl ProtocolReferenceCause {
 pub(super) fn type_fault_class(fault: &super::type_form::TypeFormFault) -> (Code, &'static str) {
     use super::type_form::TypeFormFault as F;
     match fault {
-        F::MissingName(_) | F::MissingQualifiedName(_) => {
+        F::MissingName(_) | F::MissingQualifiedName(_) | F::UnresolvedUnitName { .. } => {
             (Code::MissingDeclaration, "missing-name")
         }
         F::AmbiguousName(_) => (Code::AmbiguousDeclaration, "ambiguous-name"),
@@ -2719,6 +2719,15 @@ pub enum CheckCause {
     ClockReadingCall(String),
     /// `missing_declaration` / `missing-name` for a qualified source name.
     MissingQualifiedName(qsl_forms::NameForm),
+    /// `missing_declaration` / `missing-name` for a bare unit name the
+    /// compiling unit does not declare (FR-505-AC-12), with the identities of
+    /// the selected packages that declare a unit of that name.
+    UnresolvedUnitName {
+        /// The name as written.
+        name: String,
+        /// The declaring packages, in selection order.
+        packages: Vec<String>,
+    },
     /// `missing_declaration` / `missing-name` for the population segment of
     /// a two-segment `M::P` name (FR-391 "Resolution"), located at that
     /// segment: it starts `offset` bytes into the written name.
@@ -3391,6 +3400,7 @@ impl CheckCause {
             Self::WrongSnapshot(_) | Self::UnanchoredResult { .. } => Code::WrongSnapshot,
             Self::MissingName(_)
             | Self::MissingQualifiedName(_)
+            | Self::UnresolvedUnitName { .. }
             | Self::MissingSegment { .. }
             | Self::MissingSelf => Code::MissingDeclaration,
             Self::ExecutionPointBinding(_) => Code::InvalidModelBinding,
@@ -3473,6 +3483,7 @@ impl CheckCause {
             Self::UnanchoredResult { .. } => Some("wrong-anchor"),
             Self::MissingName(_)
             | Self::MissingQualifiedName(_)
+            | Self::UnresolvedUnitName { .. }
             | Self::MissingSegment { .. }
             | Self::MissingSelf => Some("missing-name"),
             Self::ExecutionPointBinding(_) => Some("malformed-declaration"),

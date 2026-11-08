@@ -1068,6 +1068,12 @@ impl<'a> SourceScope<'a> {
         self.scope.unit_named(self.source, name)
     }
 
+    /// The packages declaring the bare unit `name`; see
+    /// [`Scope::unit_packages`].
+    pub(crate) fn unit_packages(&self, name: &str) -> Vec<String> {
+        self.scope.unit_packages(self.source, name)
+    }
+
     /// The object type `name` names in this unit; see
     /// [`Scope::object_type_named`].
     pub(crate) fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
@@ -1189,7 +1195,7 @@ impl FormedUnits {
 /// The units `graph` declares by their declared name, read from `declared`,
 /// the table built over the same graph, leaving out the units of a selected
 /// package (`packages`), which a bare name reaches only when exactly one
-/// package declares it ([`ModelSpellings::declared_unit`]).
+/// package declares it ([`ModelSpellings::declaring_packages`]).
 fn unit_ids_by_name(
     graph: &quire_semantic_value::unit::UnitGraph,
     declared: &quire_semantic_value::quantity::UnitTable,
@@ -1652,13 +1658,14 @@ impl Scope {
     ) -> Option<quire_exact::UnitId> {
         match self.model_spellings.spelled(source, name) {
             Spelled::Model(_) => self.model_spellings.unit(source, name),
-            Spelled::Other => self
-                .index
-                .units
-                .get(name)
-                .cloned()
-                .or_else(|| self.model_spellings.declared_unit(source, name)),
+            Spelled::Other => self.index.units.get(name).cloned(),
         }
+    }
+
+    /// The selected packages that declare a unit of the bare name `name`,
+    /// for the unresolved-unit-name diagnostic.
+    pub(crate) fn unit_packages(&self, source: Option<&RawSourceRef>, name: &str) -> Vec<String> {
+        self.model_spellings.declaring_packages(source, name)
     }
 
     /// This scope with the unit's protocol declarations named `names`, in

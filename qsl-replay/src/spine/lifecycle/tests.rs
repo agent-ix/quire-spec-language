@@ -1213,7 +1213,7 @@ fn profile_aware_spine_check_refuses_an_omitted_protocol_definition() {
 
 /// FR-040-AC-11 / TC-119 row 11: a typed protocol check value is discharged
 /// only through exact QSL source/clause and formal Handler correspondence.
-#[trace("FR-040-AC-11", "TC-119")]
+#[trace("FR-040-AC-8", "FR-040-AC-11", "TC-119")]
 #[test]
 fn protocol_check_proof_retains_goals_and_refuses_adverse_correspondence() {
     use quire_contract_model as ir;
@@ -3761,7 +3761,7 @@ fn assert_budget_field(
 }
 
 /// FR-277-AC-1 (TC-758 step 1) for `parse`: each field of the source limits.
-#[trace("TC-758", "FR-277-AC-1")]
+#[trace("TC-758", "FR-001-AC-4", "FR-002-AC-4", "FR-277-AC-1")]
 #[test]
 fn parse_names_the_source_limit_field_it_reached() {
     let bytes = FIXTURE.as_bytes();
