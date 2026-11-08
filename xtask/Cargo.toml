@@ -34,6 +34,7 @@ jsonschema = { version = "0.17.1", default-features = false, features = ["draft2
 serde_json_canonicalizer = "0.3.2"
 
 [dev-dependencies]
+qsl-replay = { path = "../qsl-replay", features = ["test-support"] }
 tempfile = "3.27.0"
 
 [lints.rust]

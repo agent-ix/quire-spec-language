@@ -702,7 +702,9 @@ impl ReplayRefusal {
     #[ix_trace_rs::string_edge]
     pub fn pointer(&self) -> Option<Cow<'static, str>> {
         match self {
-            Self::Request(refusal) => refusal.pointer().map(Cow::Borrowed),
+            Self::Request(refusal) => refusal
+                .pointer()
+                .map(|pointer| Cow::Owned(pointer.to_owned())),
             Self::WrongReplayTarget { target, .. } => {
                 Some(Cow::Borrowed(target.member().pointer()))
             }

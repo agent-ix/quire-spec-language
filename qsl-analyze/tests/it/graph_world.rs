@@ -399,10 +399,12 @@ impl World {
             },
         );
         let wire = ReplayRequestWire {
-            package_name: "package".to_owned(),
+            package: qsl_replay::ReplayPackage::descriptor_only(
+                &"package".to_owned(),
+                &vec![source_wire],
+                None,
+            ),
             profile_selections: Vec::new(),
-            sources: vec![source_wire],
-            refinement_internals: None,
             dependencies: Vec::new(),
             replay_target: RequestTargetWire::default(),
             source: ReplaySource::ModelGraph(Box::new(envelope)),

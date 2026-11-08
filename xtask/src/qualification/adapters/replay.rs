@@ -359,7 +359,12 @@ fn decode(value: &Value, inputs: &Inputs<'_>, root: &Path) -> Result<ReplayReque
         })
         .collect::<Result<_, Failure>>()?;
     Ok(ReplayRequestWire {
-        package_name: text(&package["name"], "/package/name")?.to_owned(),
+        package: qsl_replay::ReplayPackage::read(
+            &serde_json::to_vec(package)
+                .map_err(|error| Failure::decode("/package", error.to_string()))?,
+            u64::MAX,
+        )
+        .map_err(|error| Failure::decode("/package", format!("{error:?}")))?,
         profile_selections: array(&value["profile_selections"], "/profile_selections")?
             .iter()
             .map(|selection| {
@@ -369,8 +374,6 @@ fn decode(value: &Value, inputs: &Inputs<'_>, root: &Path) -> Result<ReplayReque
                 ))
             })
             .collect::<Result<_, Failure>>()?,
-        sources: sources(&package["lock"]["sources"], "/package/lock/sources")?,
-        refinement_internals: package["lock"].get("refinement_internals").cloned(),
         dependencies,
         replay_target: std::mem::take(&mut target_wire),
         source: replay_source,

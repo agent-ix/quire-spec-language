@@ -29,6 +29,9 @@ use qsl_foundation::{AccountingSetting, Setting, SettingName};
 use qsl_semantics::library::LibraryName;
 use quire_semantic_value::supplied_stop::SuppliedLimits;
 
+mod package;
+pub use package::ReplayPackage;
+
 /// The `quire.value.accounting/v1` scalar environment a replay starts from
 /// (FR-071's "state environment"). Opaque to #231: only the executor (#243)
 /// interprets individual entries; this type only stores and round-trips
@@ -264,6 +267,7 @@ pub struct DependencyEntryWire {
 /// recompilation input is reachable only through [`ByteProvision::get`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplayRequest {
+    package: ReplayPackage,
     package_name: String,
     sources: Vec<DefinitionSourceRef>,
     refinement_internals: Option<serde_json::Value>,
@@ -284,6 +288,11 @@ pub struct ReplayRequest {
 }
 
 impl ReplayRequest {
+    /// The proved checked-package document this request carries (QSpec
+    /// FR-336 `package`), as read.
+    pub fn package(&self) -> &ReplayPackage {
+        &self.package
+    }
     /// The package manifest's top-level name this request replays.
     pub fn package_name(&self) -> &str {
         &self.package_name
@@ -399,20 +408,15 @@ impl ReplayRequestWire {
 
 /// The in-process shape [`ReplayRequest::decode`] reads: the FR-323
 /// members (`package`, `selection`, `state_environment`, `limits`,
-/// `replay`) plus the QC-1 byte provision. It is never read from bytes, so
-/// it carries no contract version or vocabulary member: the version check
-/// belongs to a byte reader, and none exists yet.
+/// `replay`) plus the QC-1 byte provision. It is never read from bytes. The
+/// package's name, sources and `refinement_internals` are read from its
+/// `package` document, as QSpec FR-336 maps them.
 #[derive(Clone)]
 pub struct ReplayRequestWire {
-    /// The package manifest's top-level name.
-    pub package_name: String,
+    /// The proved checked-package document (QSpec FR-336 `package`).
+    pub package: ReplayPackage,
     /// The semantic profile selections; each must name a known profile.
     pub profile_selections: Vec<ProfileSelection>,
-    /// `(authority, identity)` per declared source reference.
-    pub sources: Vec<SourceRefWire>,
-    /// The proved package's lock `refinement_internals` value; absent means
-    /// the empty list. Kept unchecked: the recompile reports a defect.
-    pub refinement_internals: Option<serde_json::Value>,
     /// The package reference's `dependencies`, one per entry of the proved
     /// package's `dependency_selections`.
     pub dependencies: Vec<DependencyEntryWire>,
@@ -463,6 +467,16 @@ const SEMANTIC_PROFILE_ROLE: &str = "replay.semantic_profile_selections";
 /// [`ReplayRequest::decode`]'s structured refusal.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ReplayRequestRefusal {
+    /// The request's `package` document lacks a member the decoder reads
+    /// (`name`, `lock`, `lock.sources` and their entries) or holds it with
+    /// the wrong JSON kind: catalog `invalid_package`.
+    #[error("invalid_package/{cause} at {pointer}: the replay package lacks a readable member")]
+    PackageMember {
+        /// Request-relative RFC 6901 pointer of the member.
+        pointer: String,
+        /// The structural condition.
+        cause: PackageMemberCause,
+    },
     /// A profile selection names a semantic profile outside the closed
     /// known set: catalog `unknown_profile`/`unsupported-selection`. It
     /// retains the supplied selection and the role it was supplied for, as
@@ -562,6 +576,32 @@ pub enum ReplayRequestRefusal {
     BoundExceeded(#[from] BoundExceeded),
 }
 
+/// A structural condition in the request's `package` document.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PackageMemberCause {
+    /// The member is absent.
+    Missing,
+    /// The member has the wrong JSON kind.
+    WrongKind,
+}
+
+impl PackageMemberCause {
+    /// The catalog cause spelling.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Missing => "missing-member",
+            Self::WrongKind => "wrong-value-kind",
+        }
+    }
+}
+
+impl std::fmt::Display for PackageMemberCause {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 fn join_members(members: &[TargetMember]) -> String {
     members
         .iter()
@@ -618,6 +658,7 @@ impl ReplayRequestRefusal {
     /// The catalog code of this refusal.
     pub fn code(&self) -> Code {
         match self {
+            Self::PackageMember { .. } => Code::InvalidPackage,
             Self::UnknownSemanticProfile { .. } => Code::UnknownProfile,
             Self::IncompleteByteProvision { .. } => Code::MissingImport,
             Self::EmptyDependencySelection { .. } | Self::EmptyBackendIdentity => {
@@ -640,6 +681,7 @@ impl ReplayRequestRefusal {
     /// rule 1); `None` for every other refusal, whose text names its own.
     pub fn cause(&self) -> Option<&'static str> {
         match self {
+            Self::PackageMember { cause, .. } => Some(cause.as_str()),
             Self::MissingReplayTarget | Self::MissingOccurrenceKey => Some("missing-member"),
             Self::ConflictingReplayTarget { .. } => Some("invalid-value"),
             Self::UnexpectedArguments { .. }
@@ -653,8 +695,9 @@ impl ReplayRequestRefusal {
 
     /// The RFC 6901 pointer of a replay-target refusal; `None` for every
     /// other refusal.
-    pub fn pointer(&self) -> Option<&'static str> {
+    pub fn pointer(&self) -> Option<&str> {
         match self {
+            Self::PackageMember { pointer, .. } => Some(pointer),
             Self::MissingReplayTarget => Some("/replay"),
             Self::MissingOccurrenceKey => Some("/replay/occurrence_key"),
             Self::ConflictingReplayTarget { members } => {
@@ -687,11 +730,7 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
             .keys()
             .map(|name| name.len() + std::mem::size_of::<u64>())
             .sum::<usize>()
-        + wire
-            .sources
-            .iter()
-            .map(DefinitionSourceRef::wire_len)
-            .sum::<usize>()
+        + wire.package.bytes().len()
         + wire
             .dependencies
             .iter()
@@ -793,8 +832,12 @@ impl ReplayRequest {
 
         // Only past this point does decoding touch the package reference or
         // the byte provision.
-        let sources = wire
-            .sources
+        let package::Descriptor {
+            name: package_name,
+            sources,
+            refinement_internals,
+        } = wire.package.descriptor()?;
+        let sources = sources
             .into_iter()
             .map(DefinitionSourceRef::from_wire)
             .collect::<Vec<_>>();
@@ -852,9 +895,10 @@ impl ReplayRequest {
         }
 
         Ok(Self {
-            package_name: wire.package_name,
+            package: wire.package,
+            package_name,
             sources,
-            refinement_internals: wire.refinement_internals,
+            refinement_internals,
             dependencies,
             replay_target,
             over,
@@ -882,14 +926,8 @@ impl ReplayRequest {
             .map_or_else(RequestTargetWire::default, Into::into);
         replay_target.over = self.over.clone();
         ReplayRequestWire {
-            package_name: self.package_name.clone(),
+            package: self.package.clone(),
             profile_selections: self.profile_selections.clone(),
-            sources: self
-                .sources
-                .iter()
-                .map(DefinitionSourceRef::to_wire)
-                .collect(),
-            refinement_internals: self.refinement_internals.clone(),
             dependencies: self
                 .dependencies
                 .iter()
@@ -965,13 +1003,15 @@ mod tests {
     fn wire(stage_seed: u64) -> ReplayRequestWire {
         let source_bytes = source_bytes(0xAB, 64);
         ReplayRequestWire {
-            package_name: "fixture".to_owned(),
+            package: crate::ReplayPackage::descriptor_only(
+                &"fixture".to_owned(),
+                &vec![("registry".to_owned(), "pkg-a".to_owned())],
+                None,
+            ),
             profile_selections: vec![ProfileSelection::new(
                 "quire.profile.v1".to_owned(),
                 "finite-state".to_owned(),
             )],
-            sources: vec![("registry".to_owned(), "pkg-a".to_owned())],
-            refinement_internals: None,
             dependencies: Vec::new(),
             replay_target: RequestTargetWire::function(
                 QualifiedName::new(vec![
@@ -1092,12 +1132,21 @@ mod tests {
         let (mut entry, bytes) = dependency("test/a", 0x0A);
         entry.refinement_internals = Some(own.clone());
         let mut wire = with_dependencies(vec![(entry, bytes)]);
-        wire.refinement_internals = Some(package.clone());
+        wire.package = wire
+            .package
+            .edited(|value| value["lock"]["refinement_internals"] = package.clone());
         let request = ReplayRequest::decode(wire, crate::ReplayLimits::default()).unwrap();
         assert_eq!(request.refinement_internals(), Some(&package));
         assert_eq!(request.dependencies()[0].refinement_internals(), Some(&own));
         let wire = request.to_wire();
-        assert_eq!(wire.refinement_internals, Some(package));
+        assert_eq!(
+            wire.package.edited(|_| ()),
+            ReplayPackage::descriptor_only(
+                "fixture",
+                &[("registry".to_owned(), "pkg-a".to_owned())],
+                Some(package)
+            )
+        );
         assert_eq!(wire.dependencies[0].refinement_internals, Some(own));
 
         let absent = ReplayRequest::decode(

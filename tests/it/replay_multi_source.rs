@@ -82,10 +82,12 @@ fn request(source_order: Vec<&str>, documents: Vec<Vec<u8>>) -> ReplayRequestWir
     let site = selection.site;
     let target = RequestTargetWire::function(selected(), site.declaration.clone());
     ReplayRequestWire {
-        package_name: "fixture".to_owned(),
+        package: qsl_replay::ReplayPackage::descriptor_only(
+            &"fixture".to_owned(),
+            &source_order.into_iter().map(reference).collect::<Vec<_>>(),
+            None,
+        ),
         profile_selections: Vec::new(),
-        sources: source_order.into_iter().map(reference).collect(),
-        refinement_internals: None,
         dependencies: Vec::new(),
         replay_target: target,
         source: ReplaySource::Input(Vec::new()),
@@ -362,10 +364,12 @@ fn d10_replay(reverse: bool) -> (qsl_replay::StateClauseReplayResult, Vec<u8>) {
         snapshot.clone(),
     ));
     let wire = ReplayRequestWire {
-        package_name: "d10-package".to_owned(),
+        package: qsl_replay::ReplayPackage::descriptor_only(
+            &"d10-package".to_owned(),
+            &references,
+            None,
+        ),
         profile_selections: Vec::new(),
-        sources: references,
-        refinement_internals: None,
         dependencies: Vec::new(),
         replay_target: RequestTargetWire::state_clause(target),
         source: ReplaySource::Input(Vec::new()),
@@ -449,10 +453,12 @@ fn multi_source_dependency_request(
         byte_provision.push(source);
     }
     let wire = ReplayRequestWire {
-        package_name: "fixture".to_owned(),
+        package: qsl_replay::ReplayPackage::descriptor_only(
+            &"fixture".to_owned(),
+            &vec![reference(FIRST_ID)],
+            None,
+        ),
         profile_selections: Vec::new(),
-        sources: vec![reference(FIRST_ID)],
-        refinement_internals: None,
         dependencies: vec![dependency],
         replay_target: target,
         source: ReplaySource::Input(Vec::new()),

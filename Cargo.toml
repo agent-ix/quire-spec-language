@@ -96,6 +96,8 @@ unicode-normalization = "0.1.25"
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 
 [dev-dependencies]
+# The decoder-only package descriptor tests build (`ReplayPackage::descriptor_only`).
+qsl-replay = { path = "qsl-replay", features = ["test-support"] }
 # The integration tests drive the checked-package temporal evidence call. No
 # shipped module of this crate uses it.
 qsl-eval = { path = "qsl-eval" }

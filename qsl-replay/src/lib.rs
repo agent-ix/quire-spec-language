@@ -424,8 +424,9 @@ pub use qsl_semantics::model::accounting::ModelNormalizationLimits;
 pub use qsl_semantics::model::domain_package::DomainPackageRef;
 pub use quire_exact::{EmptyInterval, Incomplete, Integer, IntegerInterval};
 pub use request::{
-    ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest, ReplayRequestRefusal,
-    ReplayRequestWire, StageLimitNameRefusal, StageLimits, StateEnvironment,
+    ByteProvision, DependencyEntry, DependencyEntryWire, PackageMemberCause, ReplayPackage,
+    ReplayRequest, ReplayRequestRefusal, ReplayRequestWire, StageLimitNameRefusal, StageLimits,
+    StateEnvironment,
 };
 pub use result::{
     read_bounded, CauseCodecError, DisagreementCause, EvaluatedValue, HybridTraceDisagreement,
@@ -559,9 +560,11 @@ mod redaction_tests {
         // It returns the full content through the typed accessor.
         let valid_wire = ReplayRequestWire {
             profile_selections: vec![],
-            package_name: "fixture".to_owned(),
-            sources: vec![("registry".to_owned(), "pkg-a".to_owned())],
-            refinement_internals: None,
+            package: crate::ReplayPackage::descriptor_only(
+                &"fixture".to_owned(),
+                &vec![("registry".to_owned(), "pkg-a".to_owned())],
+                None,
+            ),
             dependencies: Vec::new(),
             replay_target: crate::RequestTargetWire::function(
                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),

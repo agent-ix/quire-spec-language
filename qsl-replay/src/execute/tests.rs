@@ -166,9 +166,11 @@ fn request(
 ) -> ReplayRequestWire {
     ReplayRequestWire {
         profile_selections: vec![],
-        package_name: "fixture".to_owned(),
-        sources: vec![(AUTHORITY.to_owned(), IDENTITY.to_owned())],
-        refinement_internals: None,
+        package: crate::ReplayPackage::descriptor_only(
+            &"fixture".to_owned(),
+            &vec![(AUTHORITY.to_owned(), IDENTITY.to_owned())],
+            None,
+        ),
         dependencies: Vec::new(),
         replay_target: crate::RequestTargetWire::function(
             function.clone(),
@@ -967,7 +969,9 @@ fn tc_444_stage_limits_bound_the_recompile() {
 #[test]
 fn tc_444_a_blank_label_refuses_at_the_source_stage() {
     let mut blank = small(7);
-    blank.sources[0].0 = "   ".to_owned();
+    blank.package = blank
+        .package
+        .edited(|value| value["lock"]["sources"][0]["authority"] = "   ".into());
     blank.byte_provision[0].0 = "   ".to_owned();
     let refused = replay(blank, ReplayLimits::default()).unwrap_err();
     let ReplayRefusal::Recompile(refusal) = &refused else {
@@ -999,8 +1003,12 @@ fn tc_444_the_package_reference_replays_multiple_sources() {
     );
     let other = other.into_bytes();
     let mut two = small(7);
-    two.sources
-        .push((AUTHORITY.to_owned(), "test:other".to_owned()));
+    two.package = two.package.edited(|value| {
+        value["lock"]["sources"]
+            .as_array_mut()
+            .expect("the descriptor lists its sources")
+            .push(serde_json::json!({"authority": AUTHORITY, "identity": "test:other"}));
+    });
     two.byte_provision
         .push((AUTHORITY.to_owned(), "test:other".to_owned(), other));
     replay(two, ReplayLimits::default()).expect("both referenced sources recompile together");
@@ -1625,7 +1633,9 @@ fn refinement_internals_reach_the_recompile_with_schema_loci() {
     let defective = serde_json::json!([{"refinement": "NoSuchRefinement", "internal": []}]);
 
     let mut wire = importing.request(vec![importing.units_entry()], &[units_bytes]);
-    wire.refinement_internals = Some(defective.clone());
+    wire.package = wire
+        .package
+        .edited(|value| value["lock"]["refinement_internals"] = defective.clone());
     let refused =
         replay(wire, ReplayLimits::default()).expect_err("the package value is defective");
     assert_eq!(refused.code(), Code::MissingDeclaration);
@@ -1652,7 +1662,9 @@ fn refinement_internals_reach_the_recompile_with_schema_loci() {
     let mut dependency = importing.units_entry();
     dependency.refinement_internals = Some(serde_json::json!([]));
     let mut wire = importing.request(vec![dependency], &[units_bytes]);
-    wire.refinement_internals = Some(serde_json::json!([]));
+    wire.package = wire
+        .package
+        .edited(|value| value["lock"]["refinement_internals"] = serde_json::json!([]));
     let ReplayResult::Input(result) =
         replay(wire, ReplayLimits::default()).expect("empty lists replay")
     else {
@@ -2596,7 +2608,7 @@ fn tc_904_a_value_report_carries_the_sent_claim_on_every_outcome() {
         ..UNLIMITED
     };
     let mut stale = parity("inc", 3);
-    stale.package_name = String::new();
+    stale.package = stale.package.edited(|value| value["name"] = "".into());
     let mut undecodable = parity("inc", 3);
     undecodable.backend = String::new();
     let cases = [
@@ -3245,7 +3257,7 @@ mod operator_arm {
         let mut missing_node = claim(add(2, 1), completed(3));
         missing_node.node = crate::fixture_node(1);
         let mut stale = parity("inc", 3);
-        stale.package_name = String::new();
+        stale.package = stale.package.edited(|value| value["name"] = "".into());
         let mut undecodable = parity("inc", 3);
         undecodable.backend = String::new();
         let cases = [

@@ -1041,10 +1041,12 @@ mod tests {
         assignments: Vec<CanonicalAssignment>,
     ) -> ReplayRequestWire {
         ReplayRequestWire {
-            package_name: "fixture".to_owned(),
+            package: crate::ReplayPackage::descriptor_only(
+                &"fixture".to_owned(),
+                &vec![("a".to_owned(), "u".to_owned())],
+                None,
+            ),
             profile_selections: vec![],
-            sources: vec![("a".to_owned(), "u".to_owned())],
-            refinement_internals: None,
             dependencies: Vec::new(),
             replay_target: crate::RequestTargetWire::function(function, declaration),
             source: ReplaySource::Input(assignments),

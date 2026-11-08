@@ -52,7 +52,7 @@ fn retained_request(source: &str, function: &str, value: i64) -> ReplayRequestWi
         name(&[function]),
         input(located.site.parameters[0].1.clone(), value),
     );
-    assert_eq!(wire.package_name, "fixture");
+    assert_eq!(wire.package.name(), Some("fixture"));
     wire.replay_target =
         crate::RequestTargetWire::function(name(&[function]), located.site.declaration.clone());
     if let Some(parity) = &located.site.value_parity {
@@ -129,7 +129,7 @@ fn tc_1252_a_request_from_the_retained_inputs_replays_and_carries_them() {
         );
         assert_eq!(held.occurrence_key, Some(located.declaration.clone()));
         assert_eq!(held.function, Some(name(&["inc"])));
-        assert_eq!(held.package_name, wire.package_name);
+        assert_eq!(held.package, wire.package);
         assert_eq!(held.source, wire.source);
         assert_eq!(held.limits, wire.accounting_limits);
         assert_eq!(held.supplied, SuppliedLimits::default());
@@ -427,7 +427,10 @@ fn tc_1252_the_supplied_ceilings_bind_into_the_claim() {
 /// its byte provision consistent so the request still decodes.
 fn make_unrecompilable(wire: &mut ReplayRequestWire) {
     let bytes = b"this is not a unit";
-    let (authority, identity) = (wire.sources[0].0.clone(), wire.sources[0].1.clone());
+    let (authority, identity) = (
+        wire.byte_provision[0].0.clone(),
+        wire.byte_provision[0].1.clone(),
+    );
     wire.byte_provision = vec![(authority, identity, bytes.to_vec())];
 }
 
@@ -459,7 +462,11 @@ fn tc_1252_a_profile_selection_refuses_before_the_recompile() {
                 crate::ObligationIdentity::new(crate::fixture_node(0), None, 0);
         }
         if stale {
-            wire.package_name = "other".to_owned();
+            let unit = (
+                wire.byte_provision[0].0.clone(),
+                wire.byte_provision[0].1.clone(),
+            );
+            wire.package = crate::ReplayPackage::descriptor_only("other", &[unit], None);
         }
         // A recompile would refuse this source: the refusal comes before it.
         make_unrecompilable(&mut wire);

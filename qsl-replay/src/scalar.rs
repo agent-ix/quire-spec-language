@@ -366,8 +366,8 @@ pub struct ValueClaim {
 pub struct ValueIdentity {
     /// The obligation the claim replays, as the request carried it.
     pub obligation: ObligationIdentity,
-    /// The request's package name as supplied.
-    pub package_name: String,
+    /// The request's `package` document as supplied.
+    pub package: crate::ReplayPackage,
     /// The `function` replay target as the request sent it; `None` when the
     /// request carried another target (such a claim refuses before any
     /// evaluation).
@@ -390,7 +390,7 @@ pub struct ValueIdentity {
 impl ValueIdentity {
     /// Bytes this identity adds to an encoded record beyond its fixed size.
     fn measured_bytes(&self) -> usize {
-        32 + self.package_name.len()
+        32 + self.package.bytes().len()
             + self
                 .function
                 .iter()
@@ -411,7 +411,7 @@ impl ValueIdentity {
     pub fn sent(wire: &ReplayRequestWire, claim: &ValueClaim) -> Self {
         Self {
             obligation: wire.obligation_identity.clone(),
-            package_name: wire.package_name.clone(),
+            package: wire.package.clone(),
             function: wire.replay_target.members.function.clone(),
             occurrence_key: wire.replay_target.occurrence_key.clone(),
             source: wire.source.clone(),

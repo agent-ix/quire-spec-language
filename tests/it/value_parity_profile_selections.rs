@@ -119,9 +119,11 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
 
     let wire = ReplayRequestWire {
         profile_selections: envelope.profile_selections().to_vec(),
-        package_name: "fixture".to_owned(),
-        sources: vec![source_wire],
-        refinement_internals: None,
+        package: qsl_replay::ReplayPackage::descriptor_only(
+            &"fixture".to_owned(),
+            &vec![source_wire],
+            None,
+        ),
         dependencies: Vec::new(),
         replay_target: RequestTargetWire::function(inc(), envelope.occurrence_key().clone()),
         source: envelope.source().clone().into(),
@@ -157,6 +159,6 @@ fn a_unit_whose_lock_selects_profiles_replays_with_an_empty_selection_list() {
             | (ValueParityResult::Diverged { .. }, false) => {}
             (other, _) => panic!("generated {generated}: {other:?}"),
         }
-        assert_eq!(report.claim().package_name, wire.package_name);
+        assert_eq!(report.claim().package, wire.package);
     }
 }

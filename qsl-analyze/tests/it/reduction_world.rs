@@ -504,10 +504,12 @@ pub(crate) fn replay_unit_result(
         documents.push(bytes.clone());
     }
     let wire = ReplayRequestWire {
-        package_name: PACKAGE_NAME.to_owned(),
+        package: qsl_replay::ReplayPackage::descriptor_only(
+            &PACKAGE_NAME.to_owned(),
+            &vec![source_wire(unit.identity)],
+            None,
+        ),
         profile_selections: Vec::new(),
-        sources: vec![source_wire(unit.identity)],
-        refinement_internals: None,
         dependencies: Vec::new(),
         replay_target: qsl_replay::RequestTargetWire::function(
             selected(),

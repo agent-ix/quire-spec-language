@@ -1536,6 +1536,7 @@ dependencies = [
  "qsl-forms",
  "qsl-foundation",
  "qsl-package",
+ "qsl-replay",
  "qsl-semantics",
  "qsl-source",
  "quire-canonical",

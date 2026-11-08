@@ -159,9 +159,11 @@ fn request(
     }));
     ReplayRequestWire {
         profile_selections: vec![],
-        package_name: "fixture".to_owned(),
-        sources: vec![("a".to_owned(), "u".to_owned())],
-        refinement_internals: None,
+        package: qsl_replay::ReplayPackage::descriptor_only(
+            &"fixture".to_owned(),
+            &vec![("a".to_owned(), "u".to_owned())],
+            None,
+        ),
         dependencies,
         replay_target: target,
         source: ReplaySource::Input(located.assign(values)),

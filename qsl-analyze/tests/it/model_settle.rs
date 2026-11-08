@@ -188,10 +188,12 @@ pub(crate) fn request_named<'a>(
         documents.push(bytes.clone());
     }
     ReplayRequestWire {
-        package_name: package_name.to_owned(),
+        package: qsl_replay::ReplayPackage::descriptor_only(
+            &package_name.to_owned(),
+            &vec![source_wire()],
+            None,
+        ),
         profile_selections: Vec::new(),
-        sources: vec![source_wire()],
-        refinement_internals: None,
         dependencies: Vec::new(),
         replay_target: qsl_replay::RequestTargetWire::function(
             selected(),

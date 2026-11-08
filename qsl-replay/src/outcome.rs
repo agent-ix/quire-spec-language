@@ -2809,7 +2809,7 @@ mod tests {
                                 None,
                                 0,
                             ),
-                            package_name: "fixture".to_owned(),
+                            package: crate::ReplayPackage::descriptor_only("fixture", &[], None),
                             function: Some(
                                 QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
                             ),

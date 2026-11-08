@@ -246,10 +246,12 @@ pub(super) fn request(
         provided.push(bytes.clone());
     }
     ReplayRequestWire {
-        package_name: "fixture".to_owned(),
+        package: crate::ReplayPackage::descriptor_only(
+            &"fixture".to_owned(),
+            &vec![(AUTHORITY.to_owned(), IDENTITY.to_owned())],
+            None,
+        ),
         profile_selections: Vec::new(),
-        sources: vec![(AUTHORITY.to_owned(), IDENTITY.to_owned())],
-        refinement_internals: None,
         dependencies: Vec::new(),
         replay_target: target.into(),
         source: witness_source(),
