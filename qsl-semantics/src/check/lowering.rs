@@ -2699,9 +2699,11 @@ impl<'a> Lowering<'a> {
                 return Ok(TypeStep::Descend(collection.element()));
             }
             ValueType::Map(map) => {
-                // QSpec FR-322 "Derived type forms": `Map<Text, V>`'s key is
-                // the bare Text scalar node, built before the value type.
-                let key = NodeRef::from(self.scalar("text", location)?);
+                // QSpec FR-322 "Derived type forms": the `key` binding is
+                // the node of the map's declared key type (FR-386), built
+                // before the value type. A key nests no type, so this
+                // builds one node and recurses no deeper.
+                let key = self.build_type_node(map.key(), location)?;
                 frames.push(TypeFrame::Map(map, key));
                 return Ok(TypeStep::Descend(map.values()));
             }

@@ -402,6 +402,9 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
             }
             ValueType::Map(map_type) => {
                 out.write_str("map");
+                // The key nests no type (quire-exact FR-386), so this
+                // recursion is one level deep.
+                encode_value_type(out, map_type.key());
                 bounds.push(map_type.bound());
                 current = map_type.values();
                 continue;
@@ -4462,21 +4465,31 @@ mod locus_tests {
         assert_eq!(min_bytes, open_bytes - (8 + 9) + (8 + 7) + (8 + magnitude));
     }
 
-    /// A map is encoded as `"map"`, its value type, then its bound, and
-    /// bound presence changes the figure (quire-exact FR-386).
+    /// A map is encoded as `"map"`, its key type, its value type, then its
+    /// bound; bound presence and the key type change the figure (quire-exact
+    /// FR-386).
     #[test]
     fn a_map_is_encoded_with_its_tag_values_and_bound() {
-        let map = |bound| {
+        let keyed = |key, bound| {
             ValueType::Map(std::sync::Arc::new(
-                quire_exact::MapType::new(ValueType::Boolean, ValueType::Boolean, bound)
-                    .expect("a leaf key"),
+                quire_exact::MapType::new(key, ValueType::Boolean, bound).expect("a leaf key"),
             ))
         };
-        // "map" (3), "boolean" (7), "unbounded" (9), each behind a length.
-        assert_eq!(measured(&map(None)), (3, 3 * 8 + 3 + 7 + 9));
+        let map = |bound| keyed(ValueType::Boolean, bound);
+        // "map" (3), the key "boolean" (7), the value "boolean" (7) and
+        // "unbounded" (9), each behind a length.
+        assert_eq!(measured(&map(None)), (4, 4 * 8 + 3 + 7 + 7 + 9));
         // "bounded" (7) and two `u64` bounds replace "unbounded".
         let bound = quire_exact::CardinalityBound::new(1, 4).expect("a bound");
-        assert_eq!(measured(&map(Some(bound))), (5, 3 * 8 + 3 + 7 + 7 + 2 * 8));
+        assert_eq!(
+            measured(&map(Some(bound))),
+            (6, 4 * 8 + 3 + 7 + 7 + 7 + 2 * 8)
+        );
+        // Two maps differing only by key type measure differently.
+        assert_ne!(
+            measured(&keyed(ValueType::Boolean, None)),
+            measured(&keyed(ValueType::String, None))
+        );
         let sequence = ValueType::collection(quire_exact::CollectionType::new(
             quire_exact::CollectionKind::Sequence,
             ValueType::Boolean,
