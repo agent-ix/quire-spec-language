@@ -759,10 +759,7 @@ fn two_aliases_list_their_subjects_parameters_and_slots() {
         .map(|m| m["name"].as_str().unwrap())
         .collect();
     assert_eq!(names, ["S", "N"]);
-    assert_ne!(
-        target(&subjects[0]["value"]),
-        target(&subjects[1]["value"])
-    );
+    assert_ne!(target(&subjects[0]["value"]), target(&subjects[1]["value"]));
     for subject in subjects {
         let root = node_via(&built.wire, hyper_node(&built.wire), &subject["value"]);
         assert_eq!(root["semantic_form"], "model_root");
