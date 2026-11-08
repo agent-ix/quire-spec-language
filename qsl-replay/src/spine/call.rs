@@ -620,8 +620,8 @@ pub(crate) fn run_reading<T>(
             selection: ExecuteSelection::Function {
                 name: selected.name.clone(),
                 arguments,
+                environment: objects.clone(),
             },
-            environment: objects.clone(),
             backend: call.backend,
         },
         backends,

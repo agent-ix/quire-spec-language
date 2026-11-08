@@ -55,9 +55,46 @@
 //! }
 //! ```
 //!
-//! This module covers function entries. The clause half of the seam
-//! (`EntrySelection::Clause`, `ExecuteSelection::Clause`) is not built; it
-//! waits on the spec defining the clause input.
+//! A clause entry takes the clause's name and the `AdmittedObservations`
+//! FR-106 admitted for it, the inputs of S6a's `evaluate_clause`. `execute`
+//! does not compile, select or admit; `qsl_replay::spine::run_clause` is the
+//! reference pipeline that does and calls `evaluate_clause` itself, so clause
+//! execution has one evaluator and two callers.
+//!
+//! `ExecuteLimits` has no `Default`, because `ScalarLimits` has none: the
+//! caller states `accounting` (FR-277 Inputs).
+//!
+//! ```compile_fail,E0063
+//! use qsl_eval::execution::ExecuteLimits;
+//! fn limits() -> ExecuteLimits {
+//!     ExecuteLimits {
+//!         supplied: Default::default(),
+//!         prepare: Default::default(),
+//!     }
+//! }
+//! ```
+//!
+//! ```compile_fail,E0277
+//! use qsl_eval::execution::ExecuteLimits;
+//! fn limits() -> ExecuteLimits {
+//!     ExecuteLimits { ..Default::default() }
+//! }
+//! ```
+//!
+//! The control states `accounting` explicitly:
+//!
+//! ```
+//! use qsl_eval::execution::{ExecuteLimits, PrepareLimits};
+//! use quire_exact::ScalarLimits;
+//! use quire_semantic_value::supplied_stop::SuppliedLimits;
+//! fn limits(accounting: ScalarLimits) -> ExecuteLimits {
+//!     ExecuteLimits {
+//!         accounting,
+//!         supplied: SuppliedLimits::default(),
+//!         prepare: PrepareLimits::default(),
+//!     }
+//! }
+//! ```
 //!
 //! `ExecutionBackend::Prepared` is a generic associated type because a
 //! prepared value borrows the package it was prepared from; the interpreter
@@ -67,6 +104,7 @@ use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::{Setting, SettingLimits};
 use qsl_package::CheckedPackage;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::model::observation::AdmittedObservations;
 use quire_eval::{
     CallFailure, Evaluation, ExecutionBackendChoice, PrepareLimitReached, PrepareSetting,
     UnsupportedCause, UnsupportedEntry,
@@ -121,12 +159,24 @@ impl SettingLimits for PrepareLimits {
     }
 }
 
-/// One entry to prepare. Only functions are selectable until the clause half
-/// of the seam is specified.
+/// One entry to prepare: a checked function or a checked state clause, by
+/// name.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EntrySelection {
     /// A checked function, by name.
     Function(QualifiedName),
+    /// A checked state clause, by name.
+    Clause(QualifiedName),
+}
+
+impl EntrySelection {
+    /// The selected entry's name.
+    #[must_use]
+    pub const fn name(&self) -> &QualifiedName {
+        match self {
+            Self::Function(name) | Self::Clause(name) => name,
+        }
+    }
 }
 
 /// Why `prepare` stopped. It fails the whole `prepare`; there is no
@@ -156,15 +206,31 @@ pub trait PreparedEntries {
     /// each with its cause.
     fn unsupported(&self) -> &[(EntrySelection, UnsupportedEntry)];
 
-    /// Call `entry` with the contract of [`CheckedPackageEvaluation::call`].
-    /// An entry listed by [`Self::unsupported`] returns
+    /// Call the function `entry` with the contract of
+    /// [`CheckedPackageEvaluation::call_supplied`] under a supplied-value run
+    /// built from `limits.supplied` and `cancel`, metered by
+    /// `limits.accounting`. An entry listed by [`Self::unsupported`] returns
     /// [`CallFailure::Unsupported`] with its [`UnsupportedEntry`].
     fn call(
         &self,
-        entry: &EntrySelection,
+        entry: &QualifiedName,
         arguments: &[Value],
         environment: &ObjectEnvironment,
         limits: &CallLimits,
+        cancel: &Cancel,
+    ) -> Result<Evaluation, CallFailure>;
+
+    /// Evaluate the state clause `clause` over `input` with the contract of
+    /// [`CheckedPackageEvaluation::evaluate_clause`], metered by
+    /// `accounting`, and return that evaluation's `evaluation` member. The
+    /// input is already admitted, so no supplied-value phase applies. A
+    /// clause listed by [`Self::unsupported`] returns
+    /// [`CallFailure::Unsupported`] with its [`UnsupportedEntry`].
+    fn evaluate(
+        &self,
+        clause: &QualifiedName,
+        input: &AdmittedObservations,
+        accounting: &ScalarLimits,
         cancel: &Cancel,
     ) -> Result<Evaluation, CallFailure>;
 }
@@ -354,13 +420,12 @@ impl PreparedEntries for InterpreterPrepared<'_> {
 
     fn call(
         &self,
-        entry: &EntrySelection,
+        function: &QualifiedName,
         arguments: &[Value],
         environment: &ObjectEnvironment,
         limits: &CallLimits,
         cancel: &Cancel,
     ) -> Result<Evaluation, CallFailure> {
-        let EntrySelection::Function(function) = entry;
         if let Some(cause) = cancel.cause() {
             return Err(CallFailure::Cancelled(cause));
         }
@@ -381,50 +446,84 @@ impl PreparedEntries for InterpreterPrepared<'_> {
         }
         evaluation
     }
+
+    fn evaluate(
+        &self,
+        clause: &QualifiedName,
+        input: &AdmittedObservations,
+        accounting: &ScalarLimits,
+        cancel: &Cancel,
+    ) -> Result<Evaluation, CallFailure> {
+        if let Some(cause) = cancel.cause() {
+            return Err(CallFailure::Cancelled(cause));
+        }
+        let mut meter = quire_exact::Meter::new(*accounting).with_cancel(cancel.clone());
+        let evaluated = self.package.evaluate_clause(clause, input, &mut meter);
+        if let Some(cause) = cancel.tripped() {
+            return Err(CallFailure::Cancelled(cause));
+        }
+        evaluated.map(|clause| clause.evaluation)
+    }
 }
 
 /// What `execute` calls.
 #[derive(Clone, Debug)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "FR-279 states the clause input by value"
+)]
 pub enum ExecuteSelection {
-    /// A function and its argument values, in parameter order.
+    /// A function, its argument values in parameter order and the objects it
+    /// reads.
     Function {
         /// The function.
         name: QualifiedName,
         /// Its arguments.
         arguments: Vec<Value>,
+        /// The object environment the call reads objects from.
+        environment: ObjectEnvironment,
+    },
+    /// A state clause and the observations FR-106 admitted for it, which
+    /// supply every object and value it reads.
+    Clause {
+        /// The clause.
+        clause: QualifiedName,
+        /// The admitted observations.
+        input: AdmittedObservations,
     },
 }
 
 /// FR-279: the `execute` request.
 #[derive(Clone, Debug)]
 pub struct ExecuteRequest {
-    /// The entry to call.
+    /// The entry to run.
     pub selection: ExecuteSelection,
-    /// The object environment.
-    pub environment: ObjectEnvironment,
     /// The backend that runs it (FR-296); `Interpreter` by default.
     pub backend: ExecutionBackendChoice,
 }
 
-/// FR-279: the limits `execute` runs under.
+/// FR-279: the limits `execute` runs under. It has no `Default`, because
+/// `ScalarLimits` has none: the caller states `accounting`.
 #[derive(Clone, Copy, Debug)]
 pub struct ExecuteLimits {
-    /// The accounting limits the call charges under.
+    /// The accounting limits the run charges under.
     pub accounting: ScalarLimits,
-    /// FR-277: the supplied-value helper ceilings.
+    /// FR-277: the supplied-value helper ceilings; read for a function's
+    /// arguments only.
     pub supplied: SuppliedLimits,
     /// The one `PrepareLimits` that applies to whichever backend is chosen.
     pub prepare: PrepareLimits,
 }
 
-/// FR-279: call a checked function through the chosen backend: prepare
-/// exactly the selected entry under `limits.prepare`, then call it.
+/// FR-279: run a checked function or clause through the chosen backend:
+/// prepare exactly the selected entry under `limits.prepare`, then call or
+/// evaluate it.
 ///
 /// # Errors
 /// [`CallFailure::Unsupported`] when the chosen backend is not supplied or
 /// listed the entry unsupported; [`CallFailure::Limit`] when `prepare`
 /// reached a prepare limit; [`CallFailure::Cancelled`] or
-/// [`CallFailure::Fault`] from `prepare` or the call; otherwise the call's.
+/// [`CallFailure::Fault`] from `prepare` or the run; otherwise the run's.
 pub fn execute(
     package: &CheckedPackage,
     request: &ExecuteRequest,
@@ -432,8 +531,10 @@ pub fn execute(
     limits: &ExecuteLimits,
     cancel: &Cancel,
 ) -> Result<Evaluation, CallFailure> {
-    let ExecuteSelection::Function { name, arguments } = &request.selection;
-    let entry = EntrySelection::Function(name.clone());
+    let entry = match &request.selection {
+        ExecuteSelection::Function { name, .. } => EntrySelection::Function(name.clone()),
+        ExecuteSelection::Clause { clause, .. } => EntrySelection::Clause(clause.clone()),
+    };
     let interpreter = Interpreter;
     let chosen: &dyn SuppliedBackend = backends
         .member(request.backend)
@@ -454,16 +555,25 @@ pub fn execute(
     {
         return Err(CallFailure::Unsupported(unsupported.clone()));
     }
-    prepared.call(
-        &entry,
-        arguments,
-        &request.environment,
-        &CallLimits {
-            accounting: limits.accounting,
-            supplied: limits.supplied,
-        },
-        cancel,
-    )
+    match &request.selection {
+        ExecuteSelection::Function {
+            name,
+            arguments,
+            environment,
+        } => prepared.call(
+            name,
+            arguments,
+            environment,
+            &CallLimits {
+                accounting: limits.accounting,
+                supplied: limits.supplied,
+            },
+            cancel,
+        ),
+        ExecuteSelection::Clause { clause, input } => {
+            prepared.evaluate(clause, input, &limits.accounting, cancel)
+        }
+    }
 }
 
 /// FR-279: a `prepare` failure as the call failure `execute` returns. A

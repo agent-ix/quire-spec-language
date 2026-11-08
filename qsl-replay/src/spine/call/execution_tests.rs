@@ -12,11 +12,12 @@ use qsl_eval::execution::{
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_foundation::diagnostic::LimitExceeded;
 use qsl_foundation::{Setting, SourceIdentity};
+use qsl_semantics::model::observation::AdmittedObservations;
 use quire_eval::{
     CallFailure, Evaluation, ExecutionBackendChoice, PrepareLimitReached, PrepareSetting,
     UnsupportedCause, UnsupportedEntry, UntranslatableConstruct,
 };
-use quire_exact::{Cancel, CancelCause, Integer, Meter, Value};
+use quire_exact::{Cancel, CancelCause, Integer, Meter, ScalarLimits, Value};
 use quire_semantic_value::catalog::{Category, InternalFault};
 use quire_semantic_value::location::{ExpressionLocation, ExpressionOwner};
 use std::cell::Cell;
@@ -77,8 +78,8 @@ fn request(
         selection: ExecuteSelection::Function {
             name: name(function),
             arguments,
+            environment: ObjectEnvironment::default(),
         },
-        environment: ObjectEnvironment::default(),
         backend,
     }
 }
@@ -157,7 +158,7 @@ impl ExecutionBackend for Stub {
         let unsupported = entries
             .iter()
             .filter_map(|entry| {
-                let EntrySelection::Function(function) = entry;
+                let function = entry.name();
                 self.unsupported
                     .iter()
                     .find(|(listed, _)| listed == function)
@@ -187,19 +188,40 @@ impl PreparedEntries for StubPrepared<'_> {
 
     fn call(
         &self,
-        entry: &EntrySelection,
+        entry: &QualifiedName,
         arguments: &[Value],
         environment: &ObjectEnvironment,
         limits: &CallLimits,
         cancel: &Cancel,
     ) -> Result<Evaluation, CallFailure> {
-        if let Some((_, unsupported)) = self.unsupported.iter().find(|(listed, _)| listed == entry)
+        if let Some((_, unsupported)) = self
+            .unsupported
+            .iter()
+            .find(|(listed, _)| listed.name() == entry)
         {
             return Err(CallFailure::Unsupported(unsupported.clone()));
         }
         self.interpreted.set(self.interpreted.get() + 1);
         self.inner
             .call(entry, arguments, environment, limits, cancel)
+    }
+
+    fn evaluate(
+        &self,
+        clause: &QualifiedName,
+        input: &AdmittedObservations,
+        accounting: &ScalarLimits,
+        cancel: &Cancel,
+    ) -> Result<Evaluation, CallFailure> {
+        if let Some((_, unsupported)) = self
+            .unsupported
+            .iter()
+            .find(|(listed, _)| listed.name() == clause)
+        {
+            return Err(CallFailure::Unsupported(unsupported.clone()));
+        }
+        self.interpreted.set(self.interpreted.get() + 1);
+        self.inner.evaluate(clause, input, accounting, cancel)
     }
 }
 
@@ -474,6 +496,57 @@ fn a_limit_that_is_not_a_prepare_limit_is_a_fault() {
     }
 }
 
+/// FR-279-AC-5: over FR-100-AC-4's unit, `execute` with the interpreter for
+/// `id(4)` under `supplied.admission_work_units` 0 returns the same
+/// `CallFailure::Supplied` that `call_supplied` returns under a supplied-value
+/// run with those limits, while `SuppliedLimits::default()` returns the
+/// `Evaluation` of FR-279-AC-1. (The `compile_fail` doctest for
+/// `ExecuteLimits` without `accounting` is in `qsl_eval::execution`.)
+#[trace("TC-760", "FR-279-AC-5")]
+#[test]
+fn supplied_limits_reach_the_function_call() {
+    use quire_semantic_value::supplied_stop::{SuppliedLimits, SuppliedRun};
+    let unit = checked();
+    let tight = SuppliedLimits::default().with_admission_work_units(0);
+    let mut execute_limits = limits();
+    execute_limits.supplied = tight;
+    let through = qsl_eval::execution::execute(
+        unit.package(),
+        &request("id", vec![integer(4)], ExecutionBackendChoice::Interpreter),
+        &SuppliedBackends::default(),
+        &execute_limits,
+        &Cancel::new(),
+    );
+    let mut meter = Meter::new(default_accounting(DEFAULT_WORK_UNITS));
+    let expected = match SuppliedRun::new(tight, Cancel::new()) {
+        Err(stop) => Err(CallFailure::Supplied(stop)),
+        Ok(mut run) => unit.package().call_supplied(
+            &name("id"),
+            vec![integer(4)],
+            &ObjectEnvironment::default(),
+            &mut meter,
+            &mut run,
+        ),
+    };
+    assert!(
+        matches!(through, Err(CallFailure::Supplied(_))),
+        "{through:?}"
+    );
+    assert_eq!(format!("{through:?}"), format!("{expected:?}"));
+
+    let default = qsl_eval::execution::execute(
+        unit.package(),
+        &request("id", vec![integer(4)], ExecutionBackendChoice::Interpreter),
+        &SuppliedBackends::default(),
+        &limits(),
+        &Cancel::new(),
+    );
+    assert_eq!(
+        format!("{default:?}"),
+        format!("{:?}", direct(&unit, "id", vec![integer(4)]))
+    );
+}
+
 fn selected(functions: &[&str]) -> Vec<EntrySelection> {
     functions
         .iter()
@@ -513,7 +586,7 @@ fn an_untranslatable_entry_is_listed_and_the_others_run() {
     );
     let call = |entry: &EntrySelection, arguments: &[Value]| {
         prepared.call(
-            entry,
+            entry.name(),
             arguments,
             &ObjectEnvironment::default(),
             &CallLimits {
@@ -563,7 +636,7 @@ fn a_cancelled_handle_stops_prepare_and_call() {
         )
         .expect("prepares");
     let called = prepared.call(
-        &entries[0],
+        entries[0].name(),
         &[],
         &ObjectEnvironment::default(),
         &CallLimits {
@@ -744,7 +817,7 @@ impl ExecutionBackend for Translator {
         let mut meter = PrepareMeter::new(limits, cancel);
         let mut unsupported = Vec::new();
         for entry in entries {
-            let EntrySelection::Function(function) = entry;
+            let function = entry.name();
             let fault =
                 |invariant| PrepareFailure::Fault(InternalFault::new("translator", invariant));
             let identity = graph

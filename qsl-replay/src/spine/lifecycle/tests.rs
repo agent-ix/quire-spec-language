@@ -2621,8 +2621,8 @@ fn interpret(
             selection: qsl_eval::execution::ExecuteSelection::Function {
                 name: function,
                 arguments: Vec::new(),
+                environment: ObjectEnvironment::default(),
             },
-            environment: ObjectEnvironment::default(),
             backend: quire_eval::ExecutionBackendChoice::Interpreter,
         },
         &qsl_eval::execution::SuppliedBackends::default(),

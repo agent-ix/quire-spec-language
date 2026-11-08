@@ -4900,6 +4900,7 @@ mod call_site_owners;
 mod clause_paths;
 mod clause_set;
 mod consequent_events;
+mod execute_clause;
 mod frame;
 mod frame_occurrence_region;
 mod frame_replay;
