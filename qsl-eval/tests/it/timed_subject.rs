@@ -3650,8 +3650,10 @@ fn a_granted_ordered_set_is_a_finite_domain_of_arrangements() {
 /// 0 and a fresh 0 ms in slot 1; a granted `Set<Timer>[0, 2]` from `{ n 1 }`
 /// at 5 ms gives the candidate `{n 1, n 2}` `x` 5 ms for `n 1` (matched by
 /// equal `n`) and 0 ms for `n 2`, and `{n 2}` 0 ms, and `{n 0, n 1}` 0 ms
-/// for `n 0` and 5 ms for `n 1`, carried from slot 0 to slot 1.
-#[trace("TC-1270")]
+/// for `n 0` and 5 ms for `n 1`, carried from slot 0 to slot 1; a granted
+/// `OrderedSet<Timer>[0, 2]` matches the same way (FR-120-AC-28), and
+/// `carries_clocks` holds for the set and ordered set, not the sequence.
+#[trace("TC-1270", "FR-120-AC-28")]
 #[test]
 fn a_candidate_slot_keeps_its_matched_clock_or_is_fresh() {
     let timer =
@@ -3660,16 +3662,13 @@ fn a_candidate_slot_keeps_its_matched_clock_or_is_fresh() {
         |value: i64| Rational::new(Integer::from(value), Integer::from(1_i64)).expect("a rational");
     // Each `work` successor from `g` holding `Timer { n: 1 }` with `x` at 5
     // ms: the element `n` and the `x` of each slot of `g`, in slot order.
-    let successors = |ordered: bool| {
-        let held = if ordered {
-            json!({"sequence": [timer("1")]})
-        } else {
-            json!({"set": [timer("1")]})
-        };
+    let successors = |kind: &str| {
+        let (ordered, unique) = (kind != "set", kind != "sequence");
+        let held = json!({ kind: [timer("1")] });
         let world = world_holding(
             cells_document(
                 vec![],
-                vec![("g", ident("Timer"), Some(shape(Some(2), ordered, !ordered)))],
+                vec![("g", ident("Timer"), Some(shape(Some(2), ordered, unique)))],
                 &["g"],
                 &[],
             ),
@@ -3679,6 +3678,9 @@ fn a_candidate_slot_keeps_its_matched_clock_or_is_fresh() {
         );
         let held = system(&world);
         let timed = TimedSystem::new(&held, "M").expect("a timed subject");
+        // Elements matched by data wherever they land carry clocks between
+        // slots; a sequence matches by position.
+        assert_eq!(timed.carries_clocks(), unique, "{kind}");
         let [initial] = &timed.initial()[..] else {
             panic!("one initial state");
         };
@@ -3737,7 +3739,7 @@ fn a_candidate_slot_keeps_its_matched_clock_or_is_fresh() {
         found
     };
     let pair = |n: &str, x: i64| (n.to_owned(), rational(x));
-    let sequences = successors(true);
+    let sequences = successors("sequence");
     assert!(
         sequences.contains(&vec![pair("1", 5), pair("2", 0)]),
         "{sequences:?}"
@@ -3747,11 +3749,36 @@ fn a_candidate_slot_keeps_its_matched_clock_or_is_fresh() {
         "{sequences:?}"
     );
     assert!(sequences.contains(&vec![]), "{sequences:?}");
-    let sets = successors(false);
+    let sets = successors("set");
     assert!(sets.contains(&vec![pair("1", 5), pair("2", 0)]), "{sets:?}");
     assert!(sets.contains(&vec![pair("2", 0)]), "{sets:?}");
     assert!(sets.contains(&vec![pair("0", 0), pair("1", 5)]), "{sets:?}");
     assert!(sets.contains(&vec![pair("1", 5)]), "{sets:?}");
+    // An ordered set matches one to one by equal `n` like a set, wherever
+    // the element lands: the reordered `[n 2, n 1]` keeps `x` 5 ms with `n
+    // 1` in slot 1 and is fresh for `n 2`; the partly matched `[n 0, n 1]`
+    // carries slot 0's clock to slot 1.
+    let ordered_sets = successors("ordered-set");
+    assert!(
+        ordered_sets.contains(&vec![pair("2", 0), pair("1", 5)]),
+        "{ordered_sets:?}"
+    );
+    assert!(
+        ordered_sets.contains(&vec![pair("0", 0), pair("1", 5)]),
+        "{ordered_sets:?}"
+    );
+    assert!(
+        ordered_sets.contains(&vec![pair("1", 5), pair("2", 0)]),
+        "{ordered_sets:?}"
+    );
+    assert!(
+        ordered_sets.contains(&vec![pair("2", 0)]),
+        "{ordered_sets:?}"
+    );
+    assert!(
+        !ordered_sets.contains(&vec![pair("2", 5), pair("1", 0)]),
+        "{ordered_sets:?}"
+    );
 }
 
 /// FR-120-AC-26 (TC-1270) end to end through EN-1: a model whose `work`

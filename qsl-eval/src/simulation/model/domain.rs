@@ -1211,4 +1211,31 @@ mod tests {
             ]
         );
     }
+
+    /// FR-120-AC-28: an `OrderedSet` whose size does not fit in 128 bits
+    /// saturates at `u128::MAX`, which exceeds every limit, rather than
+    /// wrapping to a small size.
+    #[trace("TC-1270", "FR-120-AC-28")]
+    #[test]
+    fn an_overflowing_ordered_set_size_saturates() {
+        let huge = Integer::from(u64::MAX).add(&Integer::from(u64::MAX));
+        let element =
+            ValueType::Int(IntegerInterval::new(Integer::from(0_i64), huge).expect("nonempty"));
+        let ordered = ValueType::collection(CollectionType::new(
+            CollectionKind::OrderedSet,
+            element,
+            Some(CardinalityBound::new(0, 4).expect("bound")),
+        ));
+        let domain =
+            Domain::of(&ordered, &[], &types(), &RecordOrders::new()).expect("a finite domain");
+        assert_eq!(domain.len(), u128::MAX);
+        // Within 128 bits the sum is exact: 1 + 3 + 3 * 2 + 3 * 2 * 1.
+        let small = ValueType::collection(CollectionType::new(
+            CollectionKind::OrderedSet,
+            int(0, 2),
+            Some(CardinalityBound::new(0, 4).expect("bound")),
+        ));
+        let exact = Domain::of(&small, &[], &types(), &RecordOrders::new()).expect("finite");
+        assert_eq!(exact.len(), 16);
+    }
 }
