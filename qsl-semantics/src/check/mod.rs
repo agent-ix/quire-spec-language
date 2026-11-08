@@ -5696,10 +5696,35 @@ impl PackageDeclarations {
             if align.len() != clause.align_skip().len() {
                 continue;
             }
+            let mut subject_roots = Vec::with_capacity(clause.aliases().len());
+            for alias in clause.aliases() {
+                let root = scope
+                    .declared_model(&models, clause.name(), alias.as_str())
+                    .and_then(|model| model_root_key(model.selection()).ok());
+                match root {
+                    Some(root) => subject_roots.push(root),
+                    None => refusals.push(CheckRefusal {
+                        location: hyper_clause::lowering::hyper_location(
+                            index,
+                            hyper_clause::lowering::Site::Claim,
+                        ),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+                            quire_semantic_value::catalog::InternalFault::new(
+                                "S4",
+                                "hyper-subject-model-root-keyed",
+                            ),
+                        ))),
+                    }),
+                }
+            }
+            if subject_roots.len() != clause.aliases().len() {
+                continue;
+            }
             match lowering.hyper_clause(&lowering::HyperClauseInput {
                 index,
                 clause,
                 align_skip: align,
+                subject_roots: &subject_roots,
             }) {
                 Ok(lowered) => lowered_hyper.push(lowered),
                 Err(refusal) => refusals.push(refusal),
@@ -6273,6 +6298,14 @@ impl PackageDeclarations {
             }
             for skipped in 0..clause.align_skip().len() {
                 type_spans.insert(hyper_site(index, Site::AlignSkip(skipped)), clause.span());
+            }
+            for (quantifier, spans) in clause.fairness_spans().iter().enumerate() {
+                for (constraint, span) in spans.iter().enumerate() {
+                    type_spans.insert(
+                        hyper_site(index, Site::Fairness(quantifier, constraint)),
+                        *span,
+                    );
+                }
             }
             for (part, at) in clause.conjuncts() {
                 let (conjunct, make): (_, fn(usize, usize) -> Site) = match part {
