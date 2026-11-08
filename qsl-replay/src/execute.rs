@@ -899,6 +899,7 @@ pub enum DependencySelectionsCause {
 /// #       "a".to_owned(),
 /// #       "u".to_owned(),
 /// #   )],
+/// #   refinement_internals: None,
 /// #   dependencies: Vec::new(),
 /// #   source: ReplaySource::Input(vec![CanonicalAssignment {
 /// #       parameter: site.site.parameters[0].1.clone(),

@@ -1632,7 +1632,7 @@ source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#f9b3a
 [[package]]
 name = "quire-canonical"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/quire-canonical?branch=main#13d0fe0cfff4cc1592e8d78a4ee3f45cfdbbc91e"
+source = "git+https://github.com/agent-ix/quire-canonical?branch=main#288c94c01fa65dcab47aa3b9ad0e37ea44fed90a"
 dependencies = [
  "quire-canonical-derive",
  "ryu-js",
@@ -1645,7 +1645,7 @@ dependencies = [
 [[package]]
 name = "quire-canonical-derive"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/quire-canonical?branch=main#13d0fe0cfff4cc1592e8d78a4ee3f45cfdbbc91e"
+source = "git+https://github.com/agent-ix/quire-canonical?branch=main#288c94c01fa65dcab47aa3b9ad0e37ea44fed90a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1668,7 +1668,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#2312df5d3a52d4dc4fe72b0d1753f25f83f73192"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#998d2c7bd3a69154591ae3e25a061bc8ad75ea99"
 dependencies = [
  "ix-trace-rs",
  "jsonschema 0.17.1",
@@ -1704,7 +1704,7 @@ dependencies = [
 [[package]]
 name = "quire-exact"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-exact?branch=main#a08e1b2ffcc45b2133415809fc4ccaa39841354e"
+source = "git+https://github.com/agent-ix/quire-exact?branch=main#3aa2db57f79af92fb206dde6dc46e081d70d5812"
 dependencies = [
  "allocator-api2",
  "arrayvec",
@@ -1802,7 +1802,7 @@ dependencies = [
 [[package]]
 name = "quire-walk"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-walk?branch=main#b38a3c9b4341ece401ad1b1e2ae109f4c82bd80e"
+source = "git+https://github.com/agent-ix/quire-walk?branch=main#b439a72321609d218974ca80db73735899962099"
 
 [[package]]
 name = "quote"

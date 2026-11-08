@@ -6111,4 +6111,75 @@ mod tests {
         assert_eq!(decision(ConnectiveOrigin::Authored), Some(true));
         assert_eq!(decision(ConnectiveOrigin::Synthesized), None);
     }
+
+    /// FR-047-AC-6: an absent optional edge slot and an empty edge sequence
+    /// have no outgoing edge, a sequence edge gives one edge per element in
+    /// order, and no other edge shape or an absent required edge is admitted.
+    #[trace("TC-130", "FR-047-AC-6")]
+    #[test]
+    fn absent_optional_and_empty_sequence_edges_have_no_outgoing_edge() {
+        use crate::test_ids::{effective_id, universe_id};
+        use quire_exact::{
+            from_admitted, CollectionKind, CollectionType, FieldValue, ObjectId, Presence,
+        };
+
+        let target = effective_id("Node");
+        let reference = |object: &str| {
+            ObjectReference::new(
+                universe_id("graph"),
+                target.clone(),
+                ObjectId::new(object).unwrap(),
+            )
+        };
+        let edge_type = ValueType::Reference(target.clone());
+        let sequence = |elements: &[&str]| {
+            FieldValue::Present(from_admitted(
+                CollectionType::new(CollectionKind::Sequence, edge_type.clone(), None),
+                elements
+                    .iter()
+                    .map(|object| Value::Reference(reference(object)))
+                    .collect(),
+            ))
+        };
+        let targets = |field: &FieldDeclaration, slot: &FieldValue| {
+            CheckedMachine::slot_edge_targets(field, slot).ok()
+        };
+
+        let optional = FieldDeclaration::new("next", edge_type.clone(), Presence::Optional);
+        assert_eq!(targets(&optional, &FieldValue::Absent), Some(Vec::new()));
+        assert_eq!(targets(&optional, &FieldValue::Null), Some(Vec::new()));
+        assert_eq!(
+            targets(
+                &optional,
+                &FieldValue::Present(Value::Reference(reference("b")))
+            ),
+            Some(vec![reference("b")])
+        );
+
+        let required = FieldDeclaration::new("parent", edge_type.clone(), Presence::Required);
+        assert_eq!(targets(&required, &FieldValue::Absent), None);
+
+        let kids = FieldDeclaration::new(
+            "kids",
+            ValueType::Collection(
+                CollectionType::new(CollectionKind::Sequence, edge_type.clone(), None).into(),
+            ),
+            Presence::Required,
+        );
+        assert_eq!(targets(&kids, &sequence(&[])), Some(Vec::new()));
+        assert_eq!(
+            targets(&kids, &sequence(&["b", "a"])),
+            Some(vec![reference("b"), reference("a")]),
+            "one edge per element, in order"
+        );
+
+        let set = FieldDeclaration::new(
+            "tags",
+            ValueType::Collection(
+                CollectionType::new(CollectionKind::Set, edge_type.clone(), None).into(),
+            ),
+            Presence::Required,
+        );
+        assert_eq!(targets(&set, &sequence(&["a"])), None);
+    }
 }

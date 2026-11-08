@@ -9,6 +9,7 @@ mod complete_grammar;
 mod cst_identity;
 mod decimal_constructor;
 mod deep_sources;
+mod expression_syntax;
 mod hyper_clause;
 mod limits;
 mod model_source;

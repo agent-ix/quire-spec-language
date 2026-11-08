@@ -1438,7 +1438,7 @@ mod tests {
         }
     }
 
-    #[trace("TC-1302", "FR-507-AC-1")]
+    #[trace("TC-1302", "FR-507-AC-1", "FR-057-AC-11")]
     #[test]
     fn every_capability_family_pair_is_admitted_or_refused_before_engine_work() {
         let families = [
@@ -1681,7 +1681,7 @@ mod tests {
         }
     }
 
-    #[trace("TC-1302", "FR-507-AC-4")]
+    #[trace("TC-1302", "TC-115", "FR-507-AC-4", "FR-057-AC-11")]
     #[test]
     fn probabilistic_and_schedulability_kinds_apply_only_to_their_claim_families() {
         let cases = [

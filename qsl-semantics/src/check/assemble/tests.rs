@@ -3406,7 +3406,7 @@ fn a_quantity_type_form_resolves_to_its_unit_and_refuses_a_non_unit_name() {
             panic!("{name}: one error, not {found:?}")
         };
         assert!(
-            matches!(&error.cause, AssemblyCause::UnresolvedTypeName { name: found } if found == name),
+            matches!(&error.cause, AssemblyCause::UnresolvedUnitName { name: found, packages } if found == name && packages.is_empty()),
             "{name}: {error:?}"
         );
         assert_eq!(
@@ -3709,7 +3709,7 @@ fn quantity_literal_refusals_name_the_name_and_the_limit() {
             CheckingLimits::default(),
         );
         assert!(
-            matches!(&cause, CheckCause::MissingName(found) if found == name),
+            matches!(&cause, CheckCause::UnresolvedUnitName { name: found, packages } if found == name && packages.is_empty()),
             "{name}: {cause:?}"
         );
     }
@@ -5478,7 +5478,7 @@ fn compound_quantity_type_unknown_units_refuse_at_the_factor_even_at_zero_power(
             "Mass"
         };
         assert!(
-            matches!(&error.cause, AssemblyCause::UnresolvedTypeName { name } if name == factor)
+            matches!(&error.cause, AssemblyCause::UnresolvedUnitName { name, packages } if name == factor && packages.is_empty())
         );
         assert_eq!(
             error.cause.catalog_code().to_string(),

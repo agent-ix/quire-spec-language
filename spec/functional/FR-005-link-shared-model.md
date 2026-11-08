@@ -43,15 +43,17 @@ reference/population semantics are specified and qualified. This local semantic
 gap does not gate unrelated supported clauses. No second Contract IR binder or
 general Filament model authority is introduced.
 
+**QSL-1810 disposition:** the `0-draft` linker carrier of the criteria retired below (`link`, `LinkedPackage`, `LinkLimits` and `src/linking*`) is deleted under ADR-011 M-6c, ADR-033 and FR-499. Each retired criterion is retained as migration history and is not an active acceptance obligation; import resolution on the spine is owned by FR-099 and FR-111.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-005-AC-1 | An exact qualified import resolves to the selected formal environment's exported type identifier. | Test (TC-020) |
-| FR-005-AC-2 | A missing import receives missing_import. | Test (TC-021) |
-| FR-005-AC-3 | Ambiguous exports receive ambiguous_declaration. | Test (TC-022) |
+| FR-005-AC-1 | **RETIRED in QSL-1810; historical only.** An exact qualified import resolves to the selected formal environment's exported type identifier. Ruling: the `link` stage, `LinkedPackage` and `LinkLimits` were the `0-draft` front end deleted in QSL-1810 (ADR-011 M-6c, ADR-033, FR-499); the spine resolves imports against supplied libraries and definition bundles under FR-099 and FR-111, which own no formal-environment linkage, so there is nothing left to assert. | Test (TC-020) |
+| FR-005-AC-2 | **RETIRED in QSL-1810; historical only.** A missing import receives missing_import. Ruling: the `link` stage, `LinkedPackage` and `LinkLimits` were the `0-draft` front end deleted in QSL-1810 (ADR-011 M-6c, ADR-033, FR-499); the spine resolves imports against supplied libraries and definition bundles under FR-099 and FR-111, which own no formal-environment linkage, so there is nothing left to assert. | Test (TC-021) |
+| FR-005-AC-3 | **RETIRED in QSL-1810; historical only.** Ambiguous exports receive ambiguous_declaration. Ruling: the `link` stage, `LinkedPackage` and `LinkLimits` were the `0-draft` front end deleted in QSL-1810 (ADR-011 M-6c, ADR-033, FR-499); the spine resolves imports against supplied libraries and definition bundles under FR-099 and FR-111, which own no formal-environment linkage, so there is nothing left to assert. | Test (TC-022) |
 | FR-005-AC-4 | **RETIRED (staleness check withdrawn).** The criterion asserted that a package closure whose recomputed package identity differs from the link request's identity refuses `stale_dependency`/`content-mismatch`; no replacement. | Test (TC-023), retired |
-| FR-005-AC-5 | A failed link yields no LinkedPackage. | Test (TC-024) |
+| FR-005-AC-5 | **RETIRED in QSL-1810; historical only.** A failed link yields no LinkedPackage. Ruling: the `link` stage, `LinkedPackage` and `LinkLimits` were the `0-draft` front end deleted in QSL-1810 (ADR-011 M-6c, ADR-033, FR-499); the spine resolves imports against supplied libraries and definition bundles under FR-099 and FR-111, which own no formal-environment linkage, so there is nothing left to assert. | Test (TC-024) |
 
 ## Dependencies
 

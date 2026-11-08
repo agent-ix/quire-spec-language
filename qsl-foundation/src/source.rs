@@ -616,7 +616,7 @@ mod tests {
     /// the longest valid prefix, NUL at its one-byte region, and a BOM at
     /// its three bytes; each region is under the `RawSourceRef` of the
     /// offered bytes.
-    #[trace("TC-424", "FR-001-AC-8")]
+    #[trace("TC-424", "FR-001-AC-3", "FR-001-AC-8")]
     #[test]
     fn content_refusals_are_located_under_the_offered_bytes() {
         let named = || labels("a", "u");

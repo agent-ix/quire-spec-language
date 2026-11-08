@@ -199,7 +199,8 @@ impl NativeJoinLimits {
             crate::NativeJoinFailure::Projection(error) => error.configured_bound.unwrap_or(bound),
             crate::NativeJoinFailure::Equality(_)
             | crate::NativeJoinFailure::Limit(_)
-            | crate::NativeJoinFailure::UnitDefinitions { .. } => bound,
+            | crate::NativeJoinFailure::UnitDefinitions { .. }
+            | crate::NativeJoinFailure::PopulationCatalog { .. } => bound,
         };
         let actual = u128::from(consumed).saturating_add(unpaid.amount);
         Some(crate::NativeJoinLimitError {
@@ -1025,7 +1026,120 @@ pub fn read_evaluation_package<'package>(
         package: identity.clone(),
         refusal: Some(refusal),
     })?;
-    read_evaluation_emission(package, &emission, identity, domain_packages, limits, emit)
+    read_evaluation_emission(
+        package,
+        &emission,
+        identity,
+        domain_packages,
+        limits,
+        emit,
+        SourceWitnessSupplier::new(&emission),
+    )
+}
+
+/// The native identity witness a reader-backed evaluation view projects over
+/// (FR-390 "Evaluation witness supply"). `None` is a missing witness; the
+/// reader validates a supplied one against the admitted package, so the
+/// supplier asserts nothing about its own rows.
+#[derive(Debug)]
+pub struct EvaluationWitnesses {
+    /// The complete selected identities, or `None` when the supplier has none.
+    pub identities: Option<quire_contract_model::SelectedExactIdentities>,
+}
+
+/// Why a supplier could not produce its witness.
+#[derive(Debug)]
+pub enum WitnessSupplyFailure {
+    /// The caller's native work or storage allowance was consumed.
+    Exhausted(Box<quire_contract_model::ExactTypeProjectionError>),
+    /// The supplier's own rows do not join the package it was built with.
+    Fault,
+}
+
+/// Where a reader-backed evaluation view gets its identity witness (FR-390).
+pub trait EvaluationWitnessSupplier {
+    /// The witnesses for `admitted`, charged to `budget`. Runs after the I2
+    /// read admitted the package.
+    ///
+    /// # Errors
+    ///
+    /// [`WitnessSupplyFailure`] when the supplier cannot produce its witness.
+    fn supply(
+        &self,
+        admitted: &CheckedPackageV2,
+        budget: &mut quire_contract_model::NativeJoinBudget,
+    ) -> Result<EvaluationWitnesses, WitnessSupplyFailure>;
+}
+
+/// The supplier of the source route: the identity rows `emission` carries.
+#[derive(Debug)]
+pub struct SourceWitnessSupplier {
+    emission: Emission,
+}
+
+impl SourceWitnessSupplier {
+    /// The supplier over the rows `emission` carries.
+    pub fn new(emission: &Emission) -> Self {
+        Self {
+            emission: emission.clone(),
+        }
+    }
+}
+
+impl EvaluationWitnessSupplier for SourceWitnessSupplier {
+    fn supply(
+        &self,
+        admitted: &CheckedPackageV2,
+        budget: &mut quire_contract_model::NativeJoinBudget,
+    ) -> Result<EvaluationWitnesses, WitnessSupplyFailure> {
+        let exhausted = |error: quire_contract_model::ExactTypeProjectionError| {
+            if qsl_semantics::model::intake::is_native_budget_denial(&error) {
+                WitnessSupplyFailure::Exhausted(Box::new(error))
+            } else {
+                WitnessSupplyFailure::Fault
+            }
+        };
+        let rows =
+            self.emission
+                .identity_rows(admitted, budget)
+                .map_err(|refusal| match refusal {
+                    crate::IdentityFileRefusal::Native(native) => exhausted(*native),
+                    _ => WitnessSupplyFailure::Fault,
+                })?;
+        let identities = rows
+            .selected(admitted, budget)
+            .map_err(|refusal| match refusal {
+                crate::IdentityJoinFailure::Exhausted(denial) => exhausted(*denial),
+                crate::IdentityJoinFailure::Witness(_) => WitnessSupplyFailure::Fault,
+            })?;
+        // The complete selection: the model tuples and source units, then the
+        // source tuples and enums the emission carries.
+        let identities = identities
+            .with_admitted_type_rows(
+                admitted,
+                self.emission.selected_tuple_declaration_rows(),
+                self.emission.selected_source_unit_rows(),
+                budget,
+            )
+            .and_then(|joined| {
+                joined.with_source_tuple_rows(
+                    admitted,
+                    self.emission.selected_source_tuple_rows().iter().cloned(),
+                    budget,
+                )
+            })
+            .and_then(|joined| {
+                joined.with_source_enum_rows(
+                    admitted,
+                    self.emission.selected_source_enum_rows(),
+                    budget,
+                )
+            })
+            .map_err(exhausted)?;
+        Ok(EvaluationWitnesses {
+            identities: Some(identities),
+        })
+    }
 }
 
 /// Admit `emission`, the bytes `package` was emitted to (with the clock
@@ -1040,6 +1154,7 @@ pub fn read_evaluation_emission<'package>(
     domain_packages: &qsl_semantics::model::intake::PackageInput,
     limits: V2ReadLimits,
     emit: EmitLimits,
+    witnesses: impl EvaluationWitnessSupplier + 'package,
 ) -> Result<AdmittedPackageRead<'package>, ImportViewRefusal> {
     let mut held = BTreeMap::new();
     hold_closure(package, &mut held);
@@ -1063,6 +1178,7 @@ pub fn read_evaluation_emission<'package>(
     Ok(AdmittedPackageRead {
         source: package,
         emission: emission.clone(),
+        witnesses: Box::new(witnesses),
         read,
         dependencies: AdmittedPackages(closure),
         reader_nodes,
@@ -1076,6 +1192,9 @@ pub fn read_evaluation_emission<'package>(
 pub struct AdmittedPackageRead<'package> {
     source: &'package CheckedPackage,
     emission: Emission,
+    /// The supplier view creation asks for the identity witness, on the
+    /// same native budget as the validation and projection that follow.
+    witnesses: Box<dyn EvaluationWitnessSupplier + 'package>,
     read: V2Read,
     dependencies: AdmittedPackages,
     reader_nodes: BTreeSet<NodeKey>,
@@ -1125,14 +1244,14 @@ impl AdmittedPackageRead<'_> {
     > {
         use crate::evaluation_view::ViewFailure;
         use crate::reader_protocol_projection::{project_package, PackageRefusal};
-        let source_nodes: BTreeSet<_> = self
+        let source_nodes: Vec<_> = self
             .source
             .graph()
             .semantic_graph()
             .nodes()
             .map(|node| node.key())
             .collect();
-        if !source_nodes.is_subset(&self.reader_nodes) {
+        if !qsl_semantics::check::node_keys_within(&source_nodes, &self.reader_nodes) {
             return Err(ViewFailure::ReaderSourceMismatch(InternalFault::new(
                 "FR-390",
                 "reader-evaluation-view-retains-source-nodes",
@@ -1146,30 +1265,51 @@ impl AdmittedPackageRead<'_> {
                 "reader-selected-identities-are-admitted",
             ))
         };
-        let rows = self
-            .emission
-            .identity_rows(&self.read.admitted, &mut budget)
-            .map_err(|refusal| match refusal {
-                crate::IdentityFileRefusal::Native(native)
-                    if qsl_semantics::model::intake::is_native_budget_denial(&native) =>
-                {
-                    match limits.native_join_limits().refusal(native, &budget) {
-                        Some(denial) => ViewFailure::Exhausted(Box::new(denial)),
-                        None => fault(),
+        let exhausted = |native, budget: &quire_contract_model::NativeJoinBudget| match limits
+            .native_join_limits()
+            .refusal(native, budget)
+        {
+            Some(denial) => ViewFailure::Exhausted(Box::new(denial)),
+            None => fault(),
+        };
+        let witness = |refusal: crate::bare::IdentityWitnessRefusal| {
+            ViewFailure::Unsupported(Box::new(
+                crate::reader_protocol_projection::UnsupportedView::witness(
+                    self.emission.package.name(),
+                    refusal.into(),
+                ),
+            ))
+        };
+        let supplied = match self.witnesses.supply(&self.read.admitted, &mut budget) {
+            Ok(supplied) => supplied,
+            Err(WitnessSupplyFailure::Exhausted(native)) => {
+                return Err(exhausted(*native, &budget))
+            }
+            Err(WitnessSupplyFailure::Fault) => return Err(fault()),
+        };
+        let Some(supplied) = &supplied.identities else {
+            return Err(witness(crate::bare::IdentityWitnessRefusal::Missing));
+        };
+        let identities = supplied
+            .validate_and_rebind(&self.read.admitted, &mut budget)
+            .map_err(|refusal| {
+                use quire_contract_model::ExactTypeProjectionErrorCode as Code;
+                match refusal.code {
+                    Code::ExhaustedWork | Code::ExhaustedStorage => exhausted(refusal, &budget),
+                    Code::ForeignNode
+                    | Code::MismatchedIdentityWitness
+                    | Code::ConflictingIdentityWitness => {
+                        witness(crate::bare::IdentityWitnessRefusal::Foreign)
                     }
-                }
-                _ => fault(),
-            })?;
-        let identities = rows
-            .selected(&self.read.admitted, &mut budget)
-            .map_err(|refusal| match refusal {
-                crate::IdentityJoinFailure::Exhausted(denial) => {
-                    match limits.native_join_limits().refusal(denial, &budget) {
-                        Some(denial) => ViewFailure::Exhausted(Box::new(denial)),
-                        None => fault(),
+                    Code::UnknownNode
+                    | Code::UnavailableIdentityWitness
+                    | Code::IncompleteIdentityWitness
+                    | Code::UnresolvedSelectedDeclaration => {
+                        witness(crate::bare::IdentityWitnessRefusal::Unknown)
                     }
+                    // A code the whole-witness validation does not produce.
+                    Code::UnsupportedExactType => fault(),
                 }
-                crate::IdentityJoinFailure::Witness(_) => fault(),
             })?;
         let slots = project_package(
             &self.read.admitted,
