@@ -13,8 +13,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use ix_trace_rs::string_edge;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::Code;
+use quire_contract_model::CheckedExtensionDefinition;
 use serde_json::Value;
 
 use super::bundle::{Definition, DefinitionCatalog};
@@ -41,6 +43,18 @@ impl CoreVocabulary {
             keywords: keywords.into_iter().map(Into::into).collect(),
             node_kinds: node_kinds.into_iter().map(Into::into).collect(),
         }
+    }
+}
+
+impl CoreVocabulary {
+    /// Whether `word` is a core keyword.
+    pub fn contains_keyword(&self, word: &str) -> bool {
+        self.keywords.contains(word)
+    }
+
+    /// Whether `kind` is a core node kind.
+    pub fn contains_node_kind(&self, kind: &str) -> bool {
+        self.node_kinds.contains(kind)
     }
 }
 
@@ -74,9 +88,17 @@ pub struct HeldExtension {
     /// The `keyword` of each node entry in `typed_node_schema` order; rule 1
     /// guarantees every entry has one.
     entry_keywords: Vec<String>,
+    /// The two FR-467 members, read strictly from the definition's bytes: the
+    /// evidence IR's reader joins an `extension` node against.
+    checked: CheckedExtensionDefinition,
 }
 
 impl HeldExtension {
+    /// The definition as IR's reader holds it.
+    pub fn checked_definition(&self) -> &CheckedExtensionDefinition {
+        &self.checked
+    }
+
     /// The definition's authority and identity.
     pub fn definition(&self) -> &DefinitionRef {
         &self.definition
@@ -95,6 +117,18 @@ pub struct HeldExtensions {
 }
 
 impl HeldExtensions {
+    /// The extensions held by any of `sets`, one entry per definition.
+    pub fn union<'a>(sets: impl IntoIterator<Item = &'a HeldExtensions>) -> Self {
+        let mut held = BTreeMap::new();
+        for set in sets {
+            for (definition, extension) in &set.held {
+                held.entry(definition.clone())
+                    .or_insert_with(|| extension.clone());
+            }
+        }
+        Self { held }
+    }
+
     /// The held extension `definition` names, if it was selected and passed
     /// validation.
     pub fn get(&self, definition: &DefinitionRef) -> Option<&HeldExtension> {
@@ -187,6 +221,9 @@ pub enum MissingMember {
         /// The entry's keyword.
         keyword: String,
     },
+    /// A schema member that is not exactly the FR-467 shape: a member the
+    /// shape lacks.
+    SchemaShape(String),
 }
 
 /// What a FR-467 rule 2 collision is over.
@@ -223,6 +260,8 @@ pub enum ConflictWith {
 pub enum ExtensionCause {
     /// `invalid_package`: FR-467 rule 1.
     MissingMember,
+    /// `invalid_package`: a member FR-467 does not name.
+    UnknownMember,
     /// `invalid_package`: FR-467 rule 2.
     ConflictingDefinition,
     /// `invalid_package`: FR-467 rule 3.
@@ -242,6 +281,7 @@ impl ExtensionCause {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::MissingMember => "missing-member",
+            Self::UnknownMember => "unknown-member",
             Self::ConflictingDefinition => "conflicting-definition",
             Self::DefinitionCycle => "definition-cycle",
             Self::UnsupportedSelection => "unsupported-selection",
@@ -253,9 +293,10 @@ impl ExtensionCause {
     /// The code the cause is catalogued under.
     pub fn code(self) -> Code {
         match self {
-            Self::MissingMember | Self::ConflictingDefinition | Self::DefinitionCycle => {
-                Code::InvalidPackage
-            }
+            Self::MissingMember
+            | Self::UnknownMember
+            | Self::ConflictingDefinition
+            | Self::DefinitionCycle => Code::InvalidPackage,
             Self::UnsupportedSelection => Code::UnknownProfile,
             Self::MissingSelection => Code::MissingImport,
             Self::ConflictingAuthority => Code::AmbiguousDeclaration,
@@ -294,6 +335,14 @@ pub enum ExtensionRefusal {
         /// What is missing.
         member: MissingMember,
     },
+    /// A schema member FR-467 does not name.
+    #[error("extension {definition:?} has an unknown member: {detail}")]
+    UnknownMember {
+        /// The definition.
+        definition: DefinitionRef,
+        /// The reader's description of the member.
+        detail: String,
+    },
     /// Rule 2: a leading keyword or node kind collides.
     #[error("extension {definition:?} {kind:?} `{name}` collides with {with:?}")]
     ConflictingDefinition {
@@ -319,6 +368,7 @@ impl ExtensionRefusal {
             Self::MissingDependency { .. } => ExtensionCause::MissingSelection,
             Self::ConflictingAuthority { .. } => ExtensionCause::ConflictingAuthority,
             Self::MissingMember { .. } => ExtensionCause::MissingMember,
+            Self::UnknownMember { .. } => ExtensionCause::UnknownMember,
             Self::ConflictingDefinition { .. } => ExtensionCause::ConflictingDefinition,
             Self::DefinitionCycle(_) => ExtensionCause::DefinitionCycle,
         }
@@ -337,6 +387,7 @@ impl DefinitionCatalog {
     /// Reports the first violated rule over all selected definitions and no
     /// later one: a missing member (rule 1), then a keyword or node-kind
     /// collision (rule 2), then a dependency cycle (rule 3).
+    #[string_edge]
     pub fn hold_extensions(
         &self,
         selected: &[DefinitionRef],
@@ -350,10 +401,27 @@ impl DefinitionCatalog {
                     definition: definition.exact().clone(),
                     member,
                 })?;
+            let checked = strict_definition(definition).map_err(|error| {
+                let message = error.to_string();
+                // `deny_unknown_fields` is the one failure that is not a
+                // lacking member.
+                if message.starts_with("unknown field") {
+                    ExtensionRefusal::UnknownMember {
+                        definition: definition.exact().clone(),
+                        detail: message,
+                    }
+                } else {
+                    ExtensionRefusal::MissingMember {
+                        definition: definition.exact().clone(),
+                        member: MissingMember::SchemaShape(message),
+                    }
+                }
+            })?;
             held.push(HeldExtension {
                 definition: definition.exact().clone(),
                 productions,
                 entry_keywords,
+                checked,
             });
         }
         check_collisions(&held, core)?;
@@ -557,6 +625,19 @@ fn check_collisions(held: &[HeldExtension], core: &CoreVocabulary) -> Result<(),
         }
     }
     Ok(())
+}
+
+/// The two exact FR-467 members of `definition`'s bytes, deserialized with
+/// unknown members refused.
+fn strict_definition(
+    definition: &Definition,
+) -> Result<CheckedExtensionDefinition, serde_json::Error> {
+    let root = root(definition).unwrap_or(Value::Null);
+    let members = serde_json::json!({
+        "grammar_schema": root.get("grammar_schema"),
+        "typed_node_schema": root.get("typed_node_schema"),
+    });
+    serde_json::from_value(members)
 }
 
 fn root(definition: &Definition) -> Option<Value> {

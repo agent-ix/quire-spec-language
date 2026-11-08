@@ -74,6 +74,10 @@ pub enum DefinitionRole {
     Backend,
     /// Supplies tooling, mapping and evidence contracts.
     ToolingEvidence,
+    /// An extension definition (QSpec FR-467), selected by a unit's header
+    /// profile and held by FR-354's definition validation. It supplies no
+    /// facet of the complete profile.
+    Extension,
 }
 
 impl DefinitionRole {
@@ -88,6 +92,7 @@ impl DefinitionRole {
             Self::MethodPlan => Some(Facet::MethodPlan),
             Self::Backend => Some(Facet::Backend),
             Self::ToolingEvidence => Some(Facet::ToolingEvidence),
+            Self::Extension => None,
         }
     }
 }
@@ -285,6 +290,12 @@ impl Definition {
     /// The typed semantic role this exact definition supplies.
     pub fn role(&self) -> DefinitionRole {
         self.role
+    }
+
+    /// Whether this is an extension definition: exactly when its role is
+    /// [`DefinitionRole::Extension`], never read from its identity or members.
+    pub fn is_extension(&self) -> bool {
+        self.role == DefinitionRole::Extension
     }
 
     /// Exact dependency edges declared by this definition.

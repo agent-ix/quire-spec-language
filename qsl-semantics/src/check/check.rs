@@ -589,6 +589,12 @@ pub struct PackageDeclarations {
     /// FR-447: the unit's `hybrid` declarations in declaration order, each
     /// with its `using` alias resolved by the FR-091 assembler.
     pub hybrids: Vec<super::HybridDeclaration>,
+    /// FR-354: the unit's declaration forms of selected extensions in source
+    /// order, each as S2 built it.
+    pub extension_forms: Vec<qsl_forms::ExtensionForm>,
+    /// FR-354: the extension definitions the unit selects, held after the
+    /// catalog validated them. S3 reads held definitions only.
+    pub held_extensions: crate::library::extension::HeldExtensions,
     /// FR-447: the unit's hybrid claims in declaration order, the `temporal`
     /// clauses whose `over` type names one of [`Self::hybrids`], each with its
     /// `using` alias resolved by the FR-091 assembler.
@@ -664,6 +670,14 @@ impl PackageDeclarations {
     #[must_use]
     pub fn with_refinement_internals(mut self, value: serde_json::Value) -> Self {
         self.refinement_internals = Some(value);
+        self
+    }
+
+    /// These declarations with the extension definitions the unit selects,
+    /// held after validation (FR-354 "Definition validation").
+    #[must_use]
+    pub fn with_extensions(mut self, held: crate::library::extension::HeldExtensions) -> Self {
+        self.held_extensions = held;
         self
     }
 
@@ -786,6 +800,8 @@ impl PackageDeclarations {
             emit_unwritten_timed_members: false,
             refinements: Vec::new(),
             hybrids: Vec::new(),
+            extension_forms: Vec::new(),
+            held_extensions: crate::library::extension::HeldExtensions::default(),
             hybrid_claims: Vec::new(),
             refinement_internals: None,
             clock_units: Vec::new(),
