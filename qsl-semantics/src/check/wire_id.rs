@@ -820,7 +820,12 @@ impl WireGraph {
         let mut pending = vec![(&mut value, holder)];
         while let Some((current, mut holder)) = pending.pop() {
             if current.as_object().is_some_and(|object| {
-                object.len() == 2 && object.contains_key("package") && object.contains_key("node")
+                (object.len() == 2
+                    || (object.len() == 3
+                        && object.get("term").and_then(serde_json::Value::as_str)
+                            == Some("dependency_reference")))
+                    && object.contains_key("package")
+                    && object.contains_key("node")
             }) {
                 continue;
             }

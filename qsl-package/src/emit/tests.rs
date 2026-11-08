@@ -347,6 +347,29 @@ fn operand_slot_numbering_visits_only_identity_paths_in_canonical_order() {
     });
     let bytes = quire_canonical::to_vec(&value, ceiling().canonical()).unwrap();
     assert_eq!(operand_indices(&bytes, ceiling()).unwrap(), [7, 2, 7]);
+    let (_, emission) = emit_from_text("function f using v(): Integer pure { 1 }\n");
+    let graph = WireGraph::of_package_bytes(emission.package.bytes()).unwrap();
+    let mut nodes = emission.wire_nodes;
+    let foreign = CheckedTerm::DependencyReference {
+        package: "dependency".into(),
+        node: serde_json::from_value(value["e_external"]["node"].clone()).unwrap(),
+    };
+    nodes[0].body = foreign.clone();
+    let foreign_value = serde_json::to_value(&foreign).unwrap();
+    assert_eq!(
+        graph.document_value_in_row(0, &foreign_value).unwrap(),
+        foreign_value
+    );
+    let rows = write_operand_slots(&mut nodes, ceiling()).unwrap();
+    assert_eq!(nodes[0].body, foreign);
+    assert!(!rows[0].contains(&99));
+    let restored = document_nodes(CheckedSemanticGraphV2 {
+        graph_version: GRAPH_V2.into(),
+        nodes,
+        operand_rows: rows,
+    })
+    .unwrap();
+    assert_eq!(restored[0].body, foreign);
 }
 
 #[trace("TC-416", "FR-093-AC-3", "FR-093-AC-13")]

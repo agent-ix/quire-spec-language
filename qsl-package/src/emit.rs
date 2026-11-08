@@ -7494,11 +7494,12 @@ fn temporal_binding_rows(
 /// The ids `node` holds that this emitter can reach through IR's public
 /// types: its own id, `semantic_type`, `owner_model`, `dependencies`, and
 /// every id of a body term with public members (reference targets, literal
-/// and result types, frame nodes, dependency nodes, and the terms of
+/// and result types, frame nodes, and the terms of
 /// aggregates, bindings, extension clauses and operation anchors). A member
 /// declaration or population an operation record names is a dependency
 /// (FR-093 rule 2). An id held anywhere else stays structural, and IR's
 /// encoder then refuses the package, so a gap fails loudly, never silently.
+/// Foreign dependency references retain their dependency graph's IDs.
 fn reachable_ids(node: &mut CheckedSemanticNodeV2) -> Vec<&mut CheckedNodeId> {
     let CheckedSemanticNodeV2 {
         node_id,
@@ -7526,7 +7527,6 @@ fn reachable_ids(node: &mut CheckedSemanticNodeV2) -> Vec<&mut CheckedNodeId> {
             }
             CheckedTerm::Aggregate { members } => pending.extend(members.iter_mut()),
             CheckedTerm::Binding { value, .. } => pending.push(value),
-            CheckedTerm::DependencyReference { node, .. } => ids.push(node),
             CheckedTerm::Frame {
                 creates, deletes, ..
             } => ids.extend(creates.iter_mut().chain(deletes.iter_mut())),
@@ -7598,7 +7598,11 @@ fn operand_indices(bytes: &[u8], limits: EmitLimits) -> Result<Vec<u64>, EmitRef
             Pending::Value(value) => match value.node() {
                 Node::Object(members) => {
                     let member_count = members.clone().count();
-                    if member_count == 2
+                    if (member_count == 2
+                        || (member_count == 3
+                            && value.get("term").is_some_and(|term| {
+                                matches!(term.node(), Node::String("dependency_reference"))
+                            })))
                         && value.get("package").is_some()
                         && value.get("node").is_some()
                     {
