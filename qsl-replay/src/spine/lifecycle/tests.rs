@@ -485,6 +485,7 @@ fn forms_refusal_is_attributed_to_its_declaration_and_source() {
             source,
             "unit.native",
             bytes.as_bytes(),
+            &super::HeldExtensions::default(),
             SourceLimits::default(),
             &cancel,
         )
@@ -2322,6 +2323,7 @@ fn check_units_continues_past_a_protocol_refusal_only_when_asked() {
                 temporal_selections: &[],
                 continue_protocol_refusals,
                 refinement_internals: None,
+                extension_catalog: None,
             },
             SpineLimits::default(),
             &cancel,

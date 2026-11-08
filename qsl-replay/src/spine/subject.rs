@@ -439,7 +439,8 @@ fn declaration_profile(form: &DeclarationForm) -> Option<&str> {
         F::Probabilistic(form) => Some(&form.profile.alias),
         F::StateGraphClaim(form) => Some(&form.profile.alias),
         F::Hybrid(form) => Some(&form.profile.alias),
-        F::Union(_)
+        F::Extension(_)
+        | F::Union(_)
         | F::Alias(_)
         | F::Record(_)
         | F::Tuple(_)

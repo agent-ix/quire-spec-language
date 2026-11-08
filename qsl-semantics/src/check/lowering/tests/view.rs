@@ -99,6 +99,7 @@ fn body_json(body: &BodyTerm) -> Json {
             "deletes": frame.deletes.iter().map(node_ref).collect::<Vec<_>>(),
         }),
         BodyTerm::Abstraction(_) => json!({"term": "abstraction_relation"}),
+        BodyTerm::Extension(_) => json!({"term": "extension_form"}),
     }
 }
 

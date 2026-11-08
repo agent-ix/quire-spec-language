@@ -699,7 +699,7 @@ fn a_profile_outside_the_admitted_identities_is_refused_at_check() {
         )
         .expect("S1 admits the unit");
         let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-        let refused = resolve_profiles(&built.selections().profiles)
+        let refused = resolve_profiles(&built.selections().profiles, &|_| None)
             .expect_err("the profile is refused at check");
         let causes: Vec<_> = refused.iter().map(|refusal| refusal.cause).collect();
         assert_eq!(causes, [ProfileCause::UnsupportedSelection], "{identity}");
@@ -721,8 +721,8 @@ fn a_profile_outside_the_admitted_identities_is_refused_at_check() {
         .expect("S1 admits the unit");
         let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
         assert_eq!(
-            resolve_profiles(&built.selections().profiles),
-            Ok(()),
+            resolve_profiles(&built.selections().profiles, &|_| None),
+            Ok(Vec::new()),
             "{identity}"
         );
     }

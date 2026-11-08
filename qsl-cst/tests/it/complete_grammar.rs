@@ -907,3 +907,56 @@ fn the_reader_reports_blank_label_before_empty_path() {
         assert_eq!(refused.region, None);
     }
 }
+
+/// QSpec FR-039-AC-4 and AC-1: `rational(n, d)` takes two signed integer
+/// constants, so a runtime-expression argument is `invalid_syntax`/
+/// `unexpected-token` rather than a literal of some chosen domain, while
+/// signed constants parse and keep their written spelling.
+#[trace("QSpec-FR-039-AC-1", "QSpec-FR-039-AC-4", "QSpec-TC-039")]
+#[test]
+fn a_rational_literal_takes_signed_constants_and_never_a_runtime_expression() {
+    for (id, argument, admitted) in [
+        ("constants", "rational(2, 4)", true),
+        ("negatives", "rational(-2, -4)", true),
+        ("zero", "rational(0, -7)", true),
+        ("name", "rational(n, 4)", false),
+        ("sum", "rational(1 + 1, 4)", false),
+        ("denominator-name", "rational(2, d)", false),
+    ] {
+        let text = source(&format!(
+            "function f using Complete (n: Integer, d: Integer): Boolean pure {{ {argument} = {argument} }}"
+        ));
+        if admitted {
+            let parsed = parse(id, &text);
+            assert!(parsed.is_admissible(), "{argument}");
+            // The retained spelling is read off the parsed tokens: from the
+            // first `rational` token to the first `)` after it, compared with
+            // the literal as the test wrote it.
+            let tokens = parsed.cst().tokens();
+            let open = tokens
+                .iter()
+                .position(|token| token.spelling() == b"rational")
+                .expect("the parsed tokens hold the rational literal");
+            let close = open
+                + tokens[open..]
+                    .iter()
+                    .position(|token| token.spelling() == b")")
+                    .expect("the literal closes");
+            let span = Span {
+                start: tokens[open].span().start,
+                end: tokens[close].span().end,
+            };
+            assert_eq!(
+                parsed.source().slice(span),
+                Some(argument),
+                "{argument} keeps its source spelling"
+            );
+        } else {
+            assert_eq!(
+                first_diagnostic(id, text.as_bytes()),
+                (CompleteCode::InvalidSyntax, CompleteCause::UnexpectedToken),
+                "{argument}"
+            );
+        }
+    }
+}
