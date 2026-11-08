@@ -31,15 +31,17 @@ whose descriptor has origin `Process` (FR-288). This requirement extends
 FR-289 to that case over the FR-565 matrix.
 
 The test plugin manifest is a QSpec FR-331 manifest for the `BackendId`
-`qsl.test-plugin` that advertises every (kind, mode) pair the FR-565 cases'
-items do not use, and nothing else. Its descriptor is built with
-`descriptor_from_manifest` and origin `Process`, as the driver builds one
-from a plugin's `hello` frame.
+`qsl.test-plugin` that advertises (`value-validity`, `unbounded`) and nothing
+else; no FR-565 case's item has that capability. Its descriptor is built
+with `descriptor_from_manifest` and origin `Process`, as the driver builds
+one from a plugin's `hello` frame. The test plugin provider is an in-process
+stand-in that answers as FR-281-AC-14's provider does, added to `Engines`
+under that descriptor through the value-validity arm (FR-281-AC-17).
 
 For every `Case` of FR-565, QSL's outcome SHALL be byte-equal across three
 configurations:
 
-1. no provider descriptor registered and no provider added to `Engines`;
+1. an empty registry and `Engines::qsl()`;
 2. the linked descriptors the first slice registers (ADR-029 SL-1: the Kani
    backend) and `Engines::qsl()`;
 3. configuration 2 with the test plugin's `Process` descriptor registered and
@@ -73,7 +75,7 @@ FR-286 documents and items; candidate sets (FR-075).
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-566-AC-1 | For every `Case` of `lifecycle_matrix()`, `run_case_with` over configurations 1, 2 and 3 returns byte-equal document or item bytes and equal exit codes; FR-275-AC-1's `package` bytes are byte-equal in the three. | Test (TC-1395) |
+| FR-566-AC-1 | For every `Case` of `lifecycle_matrix()`, `run_case_with` over configurations 1, 2 and 3 returns byte-equal document or item bytes and equal exit codes; FR-275-AC-1's `package` bytes are byte-equal in the three. As a control that configuration 3 is live, FR-281-AC-14's item settled `Supported(qsl.test-plugin)` runs on the test plugin provider in configuration 3 and its record names `qsl.test-plugin` with certification `trusted`. | Test (TC-1395) |
 | FR-566-AC-2 | For FR-281-AC-1's item, the candidate set in configuration 3 equals configuration 2's; for an item of a kind the test plugin advertises, configuration 3's candidate set is configuration 2's plus `qsl.test-plugin`, and registering the plugin's descriptor before or after the linked ones gives equal candidate sets. | Test (TC-1395) |
 
 ## Dependencies

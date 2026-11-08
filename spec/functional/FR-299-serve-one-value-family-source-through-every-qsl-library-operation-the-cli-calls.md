@@ -97,7 +97,7 @@ their FR-285 exit codes.
 - [FR-287](FR-287-reach-qsl-through-the-driver-cli.md): the CLI that calls these operations.
 - [FR-289](FR-289-keep-results-unchanged-by-provider-installation.md): the provider part QSL supplies.
 - [FR-099](FR-099-compile-against-supplied-libraries.md): supplied libraries.
-- [FR-564](FR-564-produce-each-outcome-kind-of-the-lifecycle-conformance-matrix-through-the-library.md): the conformance matrix that extends this source to every outcome kind of each verb.
+- [FR-564](FR-564-produce-each-outcome-kind-of-the-lifecycle-conformance-matrix-through-the-library.md): the conformance matrix that carries this requirement's operations to eight outcome kinds per verb, over its own fixtures.
 - QSpec FR-300, FR-301: the lifecycle API and CLI.
 
 ## Overlap

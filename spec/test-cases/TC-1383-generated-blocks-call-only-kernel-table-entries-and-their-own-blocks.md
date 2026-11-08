@@ -19,15 +19,18 @@ Scope: FR-561-AC-3.
 
 1. Prepare the JIT over each of the 10,000 FR-295 generated units at the
    default seed. For each generated block, read its relocation records and
-   classify each call target.
-2. Prepare one unit with a test code generator that emits one call to an
-   address outside the kernel table and the prepared blocks, and run the same
-   check.
+   classify each direct call target; classify the source of each indirect
+   call's target. Count the blocks that call a `KernelTable` entry.
+2. Prepare one unit with a test code generator that emits one direct call to
+   an address outside the kernel table and the prepared blocks, and one with
+   a generator that emits an indirect call through a register not loaded from
+   a table slot; run the same check on each.
 
 Tag the tests `#[trace("TC-1383", "FR-561-AC-3")]`.
 
 ## Expected Results
 
-- Step 1: every call target is a `KernelTable` entry or a block of the same
-  prepared value.
-- Step 2: the check fails, naming the block and the stray target.
+- Step 1: every direct target is a `KernelTable` entry or a block of the same
+  prepared value, every indirect target comes from a table slot, and at least
+  one block calls a table entry.
+- Step 2: each check fails, naming the block and the stray target.

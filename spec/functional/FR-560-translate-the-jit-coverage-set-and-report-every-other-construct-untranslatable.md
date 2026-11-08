@@ -23,12 +23,14 @@ relationships:
 ## Description
 
 The JIT backend (`qsl-jit`, ADR-029 EB-1) SHALL publish the constructs it
-translates as one typed value, `qsl_jit::coverage() -> &'static JitCoverage`,
+translates as one typed value, `qsl_jit::coverage() -> &'static BackendCoverage`,
 translate every selected entry whose constructs all lie in that coverage, and
 list every other selected entry as unsupported with FR-294's
 `Untranslatable` cause.
 
-`JitCoverage` holds three sets: the expression forms, by their ADR-012 form
+`BackendCoverage` is a seam type in `qsl-eval`'s `execution` module, beside
+FR-294's types, so the parity runner (FR-563) reads a coverage without
+depending on `qsl-jit`. It holds three sets: the expression forms, by their ADR-012 form
 names; the value types; and the operations, each a Value-family operator over
 named operand types. A construct "lies in the coverage" when its form, the
 value type of every operand and result it has, and its operation are each
@@ -75,7 +77,7 @@ A checked package and the selected entries (FR-294).
 
 ## Outputs
 
-`JitCoverage`; the prepared entries and `PreparedEntries::unsupported`.
+`BackendCoverage`; the prepared entries and `PreparedEntries::unsupported`.
 
 ## Behavior
 

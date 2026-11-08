@@ -22,7 +22,7 @@ ADR-029 EB-4 rule 2 lets generated code use a machine-width fast path only
 where a checked bound shows the exact result fits. This requirement states
 that rule so it can be checked.
 
-A JIT or AOT backend SHALL compute, at `prepare`, an interval for each
+The JIT backend (`qsl-jit`) SHALL compute, at `prepare`, an interval for each
 `Integer` operand from its checked type: `[lo, hi]` for an operand of type
 `Int[lo, hi]`, and for an operand that is itself a fast-path result, the
 interval the rule below gave that result. An operand of unbounded `Integer`
@@ -36,7 +36,7 @@ machine integers, only when every operand has an interval inside
 | --- | --- |
 | `+`, binary `-`, `*` | interval arithmetic over the operand intervals gives a result interval inside `[-2^63, 2^63 - 1]` |
 | unary `-` | the negated interval lies inside `[-2^63, 2^63 - 1]` |
-| `div`, `mod`, `rem` | the divisor's interval excludes 0, and the result interval lies inside `[-2^63, 2^63 - 1]` |
+| `div`, `mod`, `rem` | the divisor's interval excludes 0, and the result interval lies inside `[-2^63, 2^63 - 1]`; the result interval is the smallest interval holding `quire-exact`'s quotient (or remainder) at every pair of operand interval ends, which bounds it because the divisor's interval excludes 0 |
 | `=`, `!=`, `<`, `<=`, `>`, `>=` | none beyond the operand condition; the result is `Boolean` |
 
 The result interval of a fast-path operation is the interval the condition
@@ -68,12 +68,12 @@ the run's outcome, equal to the interpreter's (FR-295).
 ## Behavior
 
 - When every operand of an `Integer` operation has an interval inside the
-  signed 64-bit range and the operation's condition holds, the backend's
+  signed 64-bit range and the operation's condition holds, the JIT's
   `prepare` shall generate the machine-width operation for it.
 - When an operation's condition does not hold, or an operand is
-  `Rational`, `Decimal`, `Text` or unbounded `Integer`, the backend's
+  `Rational`, `Decimal`, `Text` or unbounded `Integer`, the JIT's
   `prepare` shall generate a `KernelTable` call for it.
-- The backend shall decide each fast path from checked types at `prepare`
+- The JIT shall decide each fast path from checked types at `prepare`
   only.
 - A fast-path operation shall charge the meter with the kind, amount and
   charge point of the kernel call it replaces.
@@ -89,7 +89,7 @@ the run's outcome, equal to the interpreter's (FR-295).
 | FR-562-AC-3 | `d(a: Int[0, 9], b: Int[1, 9]): Integer { a div b }` records no kernel call; `d0(a: Int[0, 9], b: Int[0, 9]): Integer { a div b }` records one kernel `div` call, and with `b` = 0 returns the interpreter's `Undefined`, cause `division-by-zero`, at the `div`'s `Location`. | Test (TC-1384) |
 | FR-562-AC-4 | For each function of AC-1 to AC-3, the recorded meter charge sequence (kind, amount and charge point) of each call equals the interpreter's for the same arguments; with `work_units` one below the interpreter's measured spend, each returns `Incomplete` naming the same limit at the same charge point as the interpreter. | Test (TC-1385) |
 | FR-562-AC-5 | `r(a: Rational, b: Rational): Rational { a + b }` called with 1 and 2, `t(a: Text, b: Text): Boolean { a = b }`, and `u(a: Integer, b: Integer): Integer { a + b }` called with 1 and 2 each record one kernel call, although each value fits a machine word. | Test (TC-1384) |
-| FR-562-AC-6 | `s(a: Int[0, 9], b: Int[0, 9]): Int[0, 9] { a + b }` records no kernel call for the addition, and called with 5 and 5 returns the interpreter's outcome, cause and `Location` for the result bound. | Test (TC-1384) |
+| FR-562-AC-6 | `s(a: Int[0, 9], b: Int[0, 9]): Int[0, 9] { a + b }`, checked under `CheckMode::Kernel` (FR-495) so that the result bound is a run-time obligation, records no kernel call for the addition, and called with 5 and 5 returns the interpreter's outcome, cause and `Location` for the result bound. | Test (TC-1384) |
 
 ## Dependencies
 
@@ -98,6 +98,12 @@ the run's outcome, equal to the interpreter's (FR-295).
 - [FR-561](FR-561-call-the-exact-kernel-from-generated-code-through-one-table.md): the kernel table every other operation calls.
 - QSpec FR-306: a machine-width fast path only where a checked bound shows
   the exact result fits.
+
+## Overlap
+
+The driver's `quire-aot` follows the same rule in the code it generates,
+under its own record; FR-295's parity gate holds it to the interpreter
+either way.
 
 ## References
 

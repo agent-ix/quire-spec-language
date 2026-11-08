@@ -18,9 +18,9 @@ Scope: FR-564-AC-4.
 
 Run `analyze` over each applicable cell's input: FR-281-AC-1's item;
 FR-281-AC-2's item; FR-281-AC-9's request with the undeclared population;
-FR-281-AC-3's unsupported item alone; FR-281-AC-1's item with a finite
-`deadline_ms` that expires before it settles; the same with caller
-cancellation first; FR-281-AC-6's state budget 1.
+FR-281-AC-3's unsupported item alone; FR-281-AC-1's request with
+`deadline_ms` 0; FR-281-AC-1's request with a handle cancelled `Requested`
+before the call; FR-281-AC-6's state budget 1.
 
 Tag the tests `#[trace("TC-1391", "FR-564-AC-4")]`.
 

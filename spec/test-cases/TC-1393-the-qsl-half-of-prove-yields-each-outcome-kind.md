@@ -18,11 +18,11 @@ Scope: FR-564-AC-6.
 ## Test Procedure
 
 1. Through `qsl_analyze::provider::run`, run FR-281-AC-1's item,
-   FR-281-AC-2's item, FR-281-AC-11's `Admission` refusal, FR-281-AC-3's
-   unsupported item and FR-281-AC-6's budgeted item; build one FR-286 item
-   from each record.
-2. Build the FR-291 terminal records for an FR-462 `incomplete` `timed-out`,
-   an `incomplete` cancelled and a `failed` `tool-failure{crash}` settlement;
+   FR-281-AC-2's item, FR-280-AC-6's request with the undeclared-population
+   binding, FR-281-AC-11's EN-1 `RequiresBound` item and FR-281-AC-6's
+   budgeted item; build one FR-286 item from each record or refusal.
+2. Build FR-291-AC-2's `incomplete` `TimedOut` and `incomplete` cancelled
+   records and FR-291-AC-1's `failed` record with `ToolFailure::Crash`;
    build one FR-286 item from each.
 3. Map each item's category through FR-285's function.
 
@@ -30,7 +30,7 @@ Tag the tests `#[trace("TC-1393", "FR-564-AC-6")]`.
 
 ## Expected Results
 
-`proved` exit 0; `refuted` exit 10; `declined` with `invalid-input` exit 20;
-`unsupported` exit 21; `incomplete` `timed-out` and `incomplete` cancelled,
+`proved` exit 0; `refuted` exit 10; the binding refusal exit 20;
+`unsupported` with `unsupported_projection`/`unbounded-extent` exit 21; `incomplete` `timed-out` and `incomplete` cancelled,
 exit 22; `incomplete` with the state-budget cause, exit 22; `failed` with
 `tool-failure{crash}`, exit 30.

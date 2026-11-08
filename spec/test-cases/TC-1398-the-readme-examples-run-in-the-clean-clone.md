@@ -16,21 +16,18 @@ Scope: NFR-017-AC-2.
 
 ## Test Procedure
 
-In the clone of a passing `make clean-clone-check` run at `main`:
-
-1. List the directories `config_version_fixtures` wrote under
-   `<tmp>/config-version`.
-2. List the files `requests.sh` wrote in `healthy-parent`.
-3. Read `<tmp>/package.json`, which `emit_checked_v2` wrote, with QSL's I2
-   reader and the switch model as evidence.
-4. Read the result of the walkthrough test and its per-case exit codes.
+Run `make clean-clone-check` at the head of `main` and read step 5 of its
+report: the case directories `config_version_fixtures` wrote, the files
+`requests.sh` wrote in `healthy-parent`, the exit of `emit_checked_v2` and
+the I2 read-back of its output, and the walkthrough test's result and
+per-case exit codes.
 
 Tag the tests `#[trace("TC-1398", "NFR-017-AC-2")]`.
 
 ## Expected Results
 
-- Step 1: `healthy-parent`, `violating-parent`, `dangling-parent`,
-  `incomplete-population` and `cycle`.
-- Step 2: `run.json` and `compile.json`.
-- Step 3: `emit_checked_v2` exited 0 and the reader reads the package back.
-- Step 4: the test passes with exit codes 0, 10, 20, 22 and 10.
+- The directories are `healthy-parent`, `violating-parent`,
+  `dangling-parent`, `incomplete-population` and `cycle`.
+- `healthy-parent` holds `run.json` and `compile.json`.
+- `emit_checked_v2` exited 0 and the reader reads the package back.
+- The walkthrough test passes with exit codes 0, 10, 20, 22 and 10.

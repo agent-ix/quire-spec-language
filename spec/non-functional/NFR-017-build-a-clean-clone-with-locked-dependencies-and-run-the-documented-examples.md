@@ -29,26 +29,37 @@ that promise at every commit it runs on.
 
 ### The gate
 
-`make clean-clone-check` (default `REV=HEAD`):
+`make clean-clone-check` takes `REPO` (default: this repository's own
+directory) and `REV` (default `HEAD`). It makes every temporary directory
+under one new directory it creates in `TMPDIR`, and:
 
-1. clones the repository with `git clone --no-local` into a new temporary
-   directory and checks out `REV`;
-2. sets `CARGO_HOME` and `CARGO_TARGET_DIR` to new, empty temporary
-   directories, so no registry cache, git checkout or build artifact of the
-   host is reused (NFR-013);
+1. clones `REPO` with `git clone --no-local` into a new directory and checks
+   out `REV`; it refuses, before building, when the clone directory or any
+   of its ancestors holds a `.cargo/config.toml` or `.cargo/config`, because
+   Cargo would read it;
+2. sets `CARGO_HOME` and `CARGO_TARGET_DIR` to new, empty directories, so no
+   registry cache, git checkout or build artifact of the host is reused
+   (NFR-013);
 3. runs `cargo build --locked --workspace` in the clone;
-4. runs the README's example commands in the clone:
-   `cargo run --locked --example config_version_fixtures -- <tmp>/config-version`;
-   `examples/config-version/requests.sh <tmp>/config-version/healthy-parent ParentOrder`;
-   `cargo run --locked --example emit_checked_v2 -- --package-name switch --model examples/switch-transition/switch.semantic-ir.json examples/switch-transition/switch.native`,
-   writing the package to `<tmp>/package.json`;
-   and `cargo test --locked --test it walkthrough_requests_reproduce_the_documented_exit_codes`;
-5. removes every temporary directory it made, whether it passes or fails.
-
-The dependency graph `cargo metadata --locked` reports in the clone may name
-only packages in the clone, crates.io, and git repositories under
-`https://github.com/agent-ix/` that `git ls-remote` reads with no
-credentials.
+4. checks the sources: every package `cargo metadata --locked` reports is in
+   the clone, from crates.io, or from a git repository under
+   `https://github.com/agent-ix/` that `git ls-remote` reads with
+   `GIT_TERMINAL_PROMPT=0` and no credential helper; a path dependency or
+   `[patch]` entry outside the clone fails this step, naming it;
+5. runs the README's example commands in the clone and checks their outputs:
+   `cargo run --locked --example config_version_fixtures -- <tmp>/config-version`
+   writes the case directories `healthy-parent`, `violating-parent`,
+   `dangling-parent`, `incomplete-population` and `cycle`;
+   `examples/config-version/requests.sh <tmp>/config-version/healthy-parent ParentOrder`
+   writes `run.json` and `compile.json` there;
+   `cargo run --locked --example emit_checked_v2 -- --package-name switch --model examples/switch-transition/switch.semantic-ir.json examples/switch-transition/switch.native`
+   exits 0 and its stdout, saved to `<tmp>/package.json`, reads back through
+   QSL's I2 reader with the switch model; and
+   `cargo test --locked --test it walkthrough_requests_reproduce_the_documented_exit_codes`
+   passes;
+6. writes a report naming each step and its result, and the first failing
+   step with its cause, to stdout;
+7. removes the directory it created in `TMPDIR`, whether it passes or fails.
 
 ### Out of scope
 
@@ -67,15 +78,15 @@ QSpec checkout, are maintainer gates, not part of an outside user's build.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| NFR-017-AC-1 | `make clean-clone-check` passes at the head of `main`: the locked build exits 0, and every package source `cargo metadata --locked` reports is the clone, crates.io, or an `https://github.com/agent-ix/` git repository that `git ls-remote` reads with `GIT_TERMINAL_PROMPT=0` and no credential helper. | Test (TC-1397) |
-| NFR-017-AC-2 | In the gate's clone, `config_version_fixtures` writes the case directories `healthy-parent`, `violating-parent`, `dangling-parent`, `incomplete-population` and `cycle`; `requests.sh` writes `run.json` and `compile.json` in `healthy-parent`; `emit_checked_v2` exits 0 and writes package bytes that QSL's I2 reader reads back with the switch model; and the walkthrough test passes with the README's exit codes 0, 10, 20, 22 and 10. | Test (TC-1398) |
-| NFR-017-AC-3 | The gate run on a scratch commit whose `Cargo.lock` lacks a dependency `Cargo.toml` declares fails at the build step with Cargo's `--locked` refusal; on a scratch commit whose `Cargo.lock` names a `path` source outside the repository, it fails naming that source; on a scratch commit that removes `examples/config-version/requests.sh`, it fails at step 4. | Test (TC-1397) |
-| NFR-017-AC-4 | After a passing run and after each AC-3 failing run, none of the gate's temporary directories remains. | Test (TC-1397) |
+| NFR-017-AC-1 | `make clean-clone-check` passes at the head of `main`, and its report shows steps 1 to 5 passed: the locked build exits 0, and every package source is the clone, crates.io, or an anonymously readable `https://github.com/agent-ix/` git repository. | Test (TC-1397) |
+| NFR-017-AC-2 | In the gate's step 5, `config_version_fixtures` writes the case directories `healthy-parent`, `violating-parent`, `dangling-parent`, `incomplete-population` and `cycle`; `requests.sh` writes `run.json` and `compile.json` in `healthy-parent`; `emit_checked_v2` exits 0 and writes package bytes that QSL's I2 reader reads back with the switch model; and the walkthrough test passes with the README's exit codes 0, 10, 20, 22 and 10. | Test (TC-1398) |
+| NFR-017-AC-3 | With `REPO` a scratch repository: a commit whose `Cargo.lock` lacks a dependency `Cargo.toml` declares fails at step 3 with Cargo's `--locked` refusal; a commit whose `Cargo.toml` adds a path dependency outside the repository fails, naming it; a commit that removes `examples/config-version/requests.sh` fails at step 5; and a run whose `TMPDIR` has a `.cargo/config.toml` in an ancestor of the clone refuses at step 1. Each report names the failing step. | Test (TC-1397) |
+| NFR-017-AC-4 | Run with `TMPDIR` set to a new empty directory, after a passing run and after each AC-3 failing run that directory is empty again. | Test (TC-1397) |
 
 ## Verification
 
 TC-1397 runs the gate and its failure cases; TC-1398 checks the examples'
-outputs in the gate's clone. Rust tests carry `#[trace("TC-...",
+outputs from the gate's report. Rust tests carry `#[trace("TC-...",
 "NFR-017-AC-...")]` attributes (NFR-005).
 
 ## Dependencies

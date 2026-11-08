@@ -19,11 +19,12 @@ Scope: FR-567-AC-1 to FR-567-AC-4.
 
 1. Run `qualify` over FR-353-AC-1's passing fixture corpus with the matrix
    cases and a linked test backend that delegates to the interpreter.
-2. Repeat with the matrix case set replaced by one whose `check`/`refusal`
+2. Through `xtask::qualify::run` under `test-support`, repeat with the matrix case set replaced by one whose `check`/`refusal`
    case expects exit 21.
-3. Repeat step 1 with FR-295-AC-1's rounding backend linked instead.
-4. Repeat step 1 with no non-interpreter backend linked, and with a parity
-   reference that returns `Fault`.
+3. The same way, repeat step 1 with FR-295-AC-1's rounding backend supplied
+   instead.
+4. Repeat step 1 with no non-interpreter backend, and with a substituted
+   parity reference that returns `Fault`.
 
 Tag the tests `#[trace("TC-1396", "<AC id>")]`.
 
@@ -34,4 +35,5 @@ Tag the tests `#[trace("TC-1396", "<AC id>")]`.
   with the `corpus` part passed.
 - Step 3: `not-qualified` naming `parity/jit` and its finding, exit 1.
 - Step 4: parity `no-backend` and `complete-v1: qualified`, exit 0; then
-  `reference-fault`, no verdict, exit 2.
+  `not-qualified` naming `parity/jit` with a `reference-fault` finding,
+  exit 1.

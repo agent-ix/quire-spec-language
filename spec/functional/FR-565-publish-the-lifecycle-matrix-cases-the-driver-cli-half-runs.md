@@ -54,10 +54,10 @@ takes neither ignores them.
 - A `MatrixCase` holds its verb and kind, every input byte the case needs
   with the identity it is read under (sources, domain packages, libraries,
   traces, snapshots), the operation's request parameters and limits, the
-  cancellation plan (none, cancelled before the call with `Requested` or
-  `Deadline`, or cancelled after a stated number of meter charges), and the
-  expected category and exit code. Its bytes are the crate's own data; a
-  case reads no path outside the crate.
+  cancellation plan (none, or cancelled before the call with `Requested` or
+  `Deadline`), and the expected category and exit code. Its bytes are the
+  crate's own data: a `MatrixCase` has no member that names a file path, and
+  `run_case` takes none.
 - `run_case` runs the case through QSL's library operation and returns the
   outcome, its FR-286 document bytes and its FR-285 exit code. For a `prove`
   (QSL half) case it returns the FR-286 item and its exit code instead of a
@@ -90,7 +90,7 @@ bytes and exit code.
 | --- | --- | --- |
 | FR-565-AC-1 | `lifecycle_matrix()` returns 48 cells in FR-564's verb and kind order, one per (verb, kind) pair: 40 `Case` cells exactly at FR-564's applicable cells and 8 `NotApplicable` cells at its n/a cells, each with its FR-564 reason. | Test (TC-1394) |
 | FR-565-AC-2 | For every `Case`, `run_case` returns a document (or, for `prove`, an item) whose category and exit code equal the case's expected category and exit code, and two `run_case` calls give equal bytes. | Test (TC-1394) |
-| FR-565-AC-3 | Run with the process's working directory set to an empty temporary directory and with no QSL checkout on disk except the built crate, every `Case` gives the same bytes as AC-2; no case opens a file. | Test (TC-1394) |
+| FR-565-AC-3 | A test that destructures `MatrixCase` and each of its member types exhaustively finds no member of type `Path`, `PathBuf`, `OsString` or a string documented as a path, and `run_case` and `run_case_with` take no path argument; run with the process's working directory set to an empty temporary directory, every `Case` gives the same bytes as AC-2. | Test (TC-1394) |
 
 ## Dependencies
 
@@ -107,7 +107,8 @@ the `check`, `package`, `execute`, `analyze` and `monitor` rows, runs the
 `quire` verb with the case's inputs and asserts that the `--format json`
 document it writes is byte-equal to `run_case`'s and that it exits with the
 same code. It owns how its CLI produces the timeout and cancellation cells
-(its deadline option and its interrupt handling). For the `prove` row it runs
+(its deadline option and its interrupt handling), and produces each before
+the first stage runs, as the case does, so the documents stay byte-equal. For the `prove` row it runs
 `quire prove` with the Kani provider and a process plugin and asserts each
 item equals the case's item. The driver half carries no copy of a case.
 

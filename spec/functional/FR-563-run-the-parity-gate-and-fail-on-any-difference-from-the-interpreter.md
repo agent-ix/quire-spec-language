@@ -36,7 +36,7 @@ the qualified core (ADR-029 CB-3 item 3, as amended):
 
 ```rust
 pub fn run_parity(
-    backends: &[(ExecutionBackendChoice, &dyn SuppliedBackend, Option<&JitCoverage>)],
+    backends: &[(ExecutionBackendChoice, &dyn SuppliedBackend, Option<&BackendCoverage>)],
     inputs: &ParityInputs,
     limits: &ParityLimits,
     cancel: &Cancel,
@@ -45,10 +45,15 @@ pub fn run_parity(
 
 `ParityInputs` names the conformance corpus location (read in place, as
 FR-350 reads it), the generator seed (default FR-295's
-`0x51534C2D4A495431`) and count (default 10,000), and the reference backend,
-which is the interpreter unless a test supplies another. The driver runs the
-same operation over `quire-aot` (Overlap). `make parity` runs it over every
-non-interpreter backend the QSL workspace links, with the defaults.
+`0x51534C2D4A495431`) and count (default 10,000). The reference is always
+the interpreter: a test may substitute a reference only through
+`run_parity_with_reference`, which exists only under `qsl-conformance`'s
+`test-support` feature, and `make parity` never enables it. `BackendCoverage`
+is the seam type FR-560 defines in `qsl-eval`, and `qsl-conformance` does not
+depend on `qsl-jit`. The driver runs the same operation over `quire-aot`
+(Overlap). `make parity` runs `cargo xtask parity`, which links every
+non-interpreter backend the QSL workspace has and calls `run_parity` with the
+defaults.
 
 For each backend and each corpus or generated unit, the runner prepares the
 unit's entries on the backend and on the reference, then calls each entry
@@ -65,6 +70,7 @@ Each of these is a finding in the report, and any finding fails the gate:
 | `coverage-gap` | The backend supplied a coverage (FR-560) and listed unsupported an entry whose constructs all lie in it. |
 | `prepare-failed` | The backend's `prepare` returned a `PrepareFailure` for a unit the reference prepared. |
 | `empty-comparison` | No entry was compared for a backend: every entry was unsupported. |
+| `reference-fault` | The interpreter returned `Fault` for an entry: the oracle itself has a defect. The entry is not compared on any backend. |
 
 An entry the backend lists unsupported outside its coverage is reported with
 its `UnsupportedEntry` and not compared (FR-295). Every finding carries the
@@ -78,10 +84,10 @@ unit's source bytes, the entry, the arguments and both results.
   excuses a finding.
 - The runner runs every unit after a finding. The report holds every finding
   up to `ParityLimits.max_reported` (default 100) and the total count.
-- `ParityRefusal` stops the run with no verdict: `empty-scope` when no
-  non-interpreter backend is supplied; `reference-fault` when the reference
-  returns `Fault`, because the oracle itself failed; an unreadable corpus; an
-  unknown option of `make parity`; cancellation.
+- `ParityRefusal` stops the run before any unit runs, with no verdict:
+  `empty-scope` when no non-interpreter backend is supplied; an unreadable
+  corpus; an unknown option of `cargo xtask parity`. Cancellation stops the
+  run with no verdict.
 - `make parity` exits 0 when the report has no finding, 1 when it has any,
   and 2 on a `ParityRefusal`, the exit convention of FR-353.
 - `make ci` lists `parity` as a prerequisite in the change that adds
@@ -112,8 +118,8 @@ the findings; or `ParityRefusal`.
   runner shall record `prepare-failed`.
 - If a backend compares no entry, then the runner shall record
   `empty-comparison`.
-- If the reference returns `Fault`, then the runner shall refuse with
-  `reference-fault` and give no verdict.
+- If the interpreter returns `Fault` for an entry, then the runner shall
+  record `reference-fault` for that entry.
 - If no non-interpreter backend is supplied, then the runner shall refuse
   with `empty-scope` before running any unit.
 - The runner shall offer no setting that allows, skips, retries or tolerates
@@ -130,9 +136,9 @@ the findings; or `ParityRefusal`.
 | FR-563-AC-3 | A test backend whose result alternates between two values on repeated calls fails with `nondeterministic` naming the entry and arguments. | Test (TC-1386) |
 | FR-563-AC-4 | A test backend whose coverage lists `let` but which lists every entry using `let` unsupported fails with one `coverage-gap` per such entry; the same backend with `let` absent from its coverage passes, listing those entries with their `UnsupportedEntry`. | Test (TC-1387) |
 | FR-563-AC-5 | A test backend whose `prepare` returns `PrepareFailure::Limit` for one generated unit fails with `prepare-failed` naming that unit; a backend that lists every entry unsupported and supplies no coverage fails with `empty-comparison`. | Test (TC-1387) |
-| FR-563-AC-6 | A reference that returns `Fault` for one entry makes the runner refuse with `reference-fault`, no verdict, exit 2; a run with no non-interpreter backend refuses `empty-scope` before any unit runs, exit 2; a corpus location that does not exist refuses, exit 2. | Test (TC-1387) |
+| FR-563-AC-6 | Under `test-support`, a reference that returns `Fault` for one entry gives one `reference-fault` finding naming the entry, exit 1; a run with no non-interpreter backend refuses `empty-scope` before any unit runs, exit 2; a corpus location that does not exist refuses, exit 2. | Test (TC-1387) |
 | FR-563-AC-7 | A backend with 150 `difference` findings yields a report holding 100 findings and the total 150 at the default `max_reported`, and the run reaches every unit. | Test (TC-1386) |
-| FR-563-AC-8 | `run_parity`'s inputs and `make parity`'s options hold no member that allows, skips, retries or tolerates a finding, and `make parity` with an unknown option refuses, exit 2. | Test (TC-1387) and Inspection |
+| FR-563-AC-8 | `run_parity`'s inputs and `cargo xtask parity`'s options hold no member that allows, skips, retries or tolerates a finding, and none selects a reference; `run_parity_with_reference` does not exist without the `test-support` feature (a `compile_fail` doctest with a compiling control under the feature); `cargo xtask parity --no-such-option` refuses, exit 2, naming the option. | Test (TC-1387) and Inspection |
 
 ## Dependencies
 

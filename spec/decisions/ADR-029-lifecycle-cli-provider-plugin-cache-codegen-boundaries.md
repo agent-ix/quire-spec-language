@@ -232,9 +232,10 @@ their dependency closure:
      renderers (§9). It depends on layers 6, 5, 4, 3, F, SV and K.
    - QSL layer X, crate `qsl-jit`: the JIT execution backend (§7). It
      depends on layers 5, 4, 3, F, SV, K and the chosen code generator.
-   - QSL crate `qsl-conformance`, above layers A, P and X: the lifecycle
+   - QSL crate `qsl-conformance`, above layers A and P: the lifecycle
      conformance matrix cases (FR-564, FR-565) and the parity runner with
-     its program generator (FR-295, FR-563). The driver depends on it for
+     its program generator (FR-295, FR-563). It does not depend on
+     `qsl-jit`; `cargo xtask parity` links both. The driver depends on it for
      the CLI half of the matrix and for `quire-aot`'s parity
      (amendment 2026-11-08).
    - Driver repository: `quire-plugin-host` (§5),

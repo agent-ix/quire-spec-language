@@ -11,6 +11,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-353
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-352
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-563
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-565
@@ -39,10 +41,21 @@ calls: the gate (FR-353) runs three parts in every run and reports
 
 When the workspace links no non-interpreter backend, the `parity` part is
 reported `no-backend` and passes: the final path is then the interpreter
-alone, which the other two parts cover. A `ParityRefusal` other than
-`empty-scope` is a preflight refusal of `qualify` (exit 2, no verdict).
+alone, which the other two parts cover. Every parity finding, a
+`reference-fault` included, fails the part. A `ParityRefusal` other than
+`empty-scope` (an unreadable corpus) is a preflight refusal of `qualify`
+(exit 2, before any vector executes), as FR-353 already refuses an
+unreadable corpus.
 
-The FR-352 report names each part and its result. The exit contract stays
+The FR-352 report gains one `parts` member naming each part and its result;
+its capability coverage is unchanged.
+
+The gate's library entry is `xtask::qualify::run(inputs: &QualifyInputs)`,
+which `cargo run --package xtask -- qualify` calls with the defaults:
+FR-565's `lifecycle_matrix()` and the non-interpreter backends the workspace
+links. Under xtask's `test-support` feature, `QualifyInputs` also accepts a
+replacement matrix cell set and replacement backends, so a test can make
+each part fail; the command line offers neither. The exit contract stays
 FR-353's: 0 when `qualified`, 1 when any part fails, 2 on a refusal before a
 verdict. The `complete-v1: qualified` label keeps FR-353's meaning and also
 requires the `lifecycle-matrix` and `parity` parts to pass.
@@ -79,13 +92,13 @@ The FR-352 report with the three parts and the verdict; the exit code.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-567-AC-1 | Over FR-353-AC-1's passing fixture corpus, with every matrix case passing and a linked test backend that delegates to the interpreter, `qualify` reports `complete-v1: qualified`, names the three parts as passed, and exits 0. | Test (TC-1396) |
-| FR-567-AC-2 | The AC-1 run with the matrix case set replaced by one whose `check`/`refusal` case expects exit 21 reports `not-qualified`, naming `lifecycle-matrix/check/refusal`, and exits 1, although the `corpus` part passes. | Test (TC-1396) |
-| FR-567-AC-3 | The AC-1 run with FR-295-AC-1's rounding backend linked in place of the delegating one reports `not-qualified`, naming `parity/jit` and the finding, and exits 1. | Test (TC-1396) |
-| FR-567-AC-4 | The AC-1 run with no non-interpreter backend linked reports the `parity` part `no-backend` and `complete-v1: qualified`, exit 0; the AC-1 run whose parity reference returns `Fault` refuses with `reference-fault`, no verdict, exit 2. | Test (TC-1396) |
+| FR-567-AC-2 | Through `xtask::qualify::run` under `test-support`, the AC-1 run with the matrix case set replaced by one whose `check`/`refusal` case expects exit 21 reports `not-qualified`, naming `lifecycle-matrix/check/refusal`, and exits 1, although the `corpus` part passes. | Test (TC-1396) |
+| FR-567-AC-3 | Through `xtask::qualify::run` under `test-support`, the AC-1 run with FR-295-AC-1's rounding backend supplied in place of the delegating one reports `not-qualified`, naming `parity/jit` and the finding, and exits 1. | Test (TC-1396) |
+| FR-567-AC-4 | The AC-1 run with no non-interpreter backend linked reports the `parity` part `no-backend` and `complete-v1: qualified`, exit 0; the AC-1 run whose parity reference (substituted under `test-support`) returns `Fault` reports `not-qualified`, naming `parity/jit` with a `reference-fault` finding, exit 1. | Test (TC-1396) |
 
 ## Dependencies
 
-- [FR-350](FR-350-run-the-conformance-corpus-against-qsl.md), [FR-353](FR-353-settle-the-complete-v1-qualification-verdict.md): the corpus run and the verdict.
+- [FR-350](FR-350-run-the-conformance-corpus-against-qsl.md), [FR-352](FR-352-report-capability-coverage.md), [FR-353](FR-353-settle-the-complete-v1-qualification-verdict.md): the corpus run, the report and the verdict, whose "if and only if" names the two parts this requirement adds.
 - [FR-563](FR-563-run-the-parity-gate-and-fail-on-any-difference-from-the-interpreter.md): the parity runner.
 - [FR-565](FR-565-publish-the-lifecycle-matrix-cases-the-driver-cli-half-runs.md): the matrix cases.
 - [FR-287](FR-287-reach-qsl-through-the-driver-cli.md): the driver CLI that calls these operations.

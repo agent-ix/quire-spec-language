@@ -18,9 +18,9 @@ Scope: FR-564-AC-3.
 
 Run `execute` over each applicable cell's input: `seven` on the interpreter;
 `id(12)`; `seven` choosing `jit` with `SuppliedBackends::default()`;
-FR-276-AC-3's long function cancelled from a second thread with `Deadline`,
-then with `Requested`; `seven` with `work_units` 0; and an entry on a
-supplied test backend made to return `Fault`.
+`seven` with a handle cancelled `Deadline`, then `Requested`, before the
+call; `seven` with `work_units` 0; and `seven` on `qsl-conformance`'s
+fault-injecting test backend.
 
 Tag the tests `#[trace("TC-1390", "FR-564-AC-3")]`.
 

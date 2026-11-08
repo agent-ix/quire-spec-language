@@ -1,12 +1,12 @@
 ---
 id: TC-1387
-title: "The parity runner fails coverage gaps and empty comparisons, refuses without an oracle, and excuses nothing"
+title: "The parity runner fails coverage gaps, empty comparisons and reference faults, refuses an empty scope, and excuses nothing"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-563
     type: verifies
 ---
-# TC-1387: The parity runner fails coverage gaps and empty comparisons, refuses without an oracle, and excuses nothing
+# TC-1387: The parity runner fails coverage gaps, empty comparisons and reference faults, refuses an empty scope, and excuses nothing
 
 ## Description
 
@@ -24,11 +24,14 @@ Scope: FR-563-AC-4, FR-563-AC-5, FR-563-AC-6 and FR-563-AC-8.
 2. Run it with a backend whose `prepare` returns `PrepareFailure::Limit` for
    one generated unit, and with a backend that lists every entry unsupported
    and supplies no coverage.
-3. Run it with a reference that returns `Fault` for one entry; with no
-   non-interpreter backend; with a corpus location that does not exist.
-4. Inspect `ParityInputs`, `ParityLimits` and `make parity`'s options for a
-   member that allows, skips, retries or tolerates a finding; run
-   `make parity` with an unknown option.
+3. Under `test-support`, run `run_parity_with_reference` with a reference
+   that returns `Fault` for one entry; run `run_parity` with no
+   non-interpreter backend, and with a corpus location that does not exist.
+4. Inspect `ParityInputs`, `ParityLimits` and `cargo xtask parity`'s options
+   for a member that allows, skips, retries or tolerates a finding or selects
+   a reference; build the `compile_fail` doctest naming
+   `run_parity_with_reference` without the feature and its control with it;
+   run `cargo xtask parity --no-such-option`.
 
 Tag the tests `#[trace("TC-1387", "<AC id>")]`.
 
@@ -37,6 +40,9 @@ Tag the tests `#[trace("TC-1387", "<AC id>")]`.
 - Step 1: one `coverage-gap` per `let` entry; then a pass, with those entries
   listed by their `UnsupportedEntry`.
 - Step 2: `prepare-failed` naming the unit; `empty-comparison`.
-- Step 3: `reference-fault`, `empty-scope` before any unit, and the corpus
-  refusal, each with no verdict and exit 2.
-- Step 4: no such member exists; the unknown option refuses, exit 2.
+- Step 3: one `reference-fault` finding naming the entry, exit 1; then
+  `empty-scope` before any unit and the corpus refusal, each with no verdict
+  and exit 2.
+- Step 4: no such member exists; the doctest fails to compile without the
+  feature and the control compiles with it; the unknown option refuses,
+  exit 2, naming it.

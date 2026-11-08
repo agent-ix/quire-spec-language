@@ -26,8 +26,10 @@ Scope: FR-565-AC-1 to FR-565-AC-3 and FR-564-AC-7.
    document's `operation`, `category` and exit code, or the item's category
    and exit code for a `prove` case; check that the exit code is the one
    FR-285's function returns for the category.
-3. Repeat step 2 in a process whose working directory is an empty temporary
-   directory, with file opens observed.
+3. Destructure `MatrixCase` and its member types exhaustively and list any
+   path-typed member; check the signatures of `run_case` and `run_case_with`;
+   repeat step 2 in a process whose working directory is an empty temporary
+   directory.
 
 Tag the tests `#[trace("TC-1394", "<AC id>")]`.
 
@@ -37,4 +39,4 @@ Tag the tests `#[trace("TC-1394", "<AC id>")]`.
   each n/a with its reason.
 - Step 2: equal bytes; each category and exit code equal the case's expected
   ones and FR-285's mapping.
-- Step 3: the same bytes, and no case opens a file.
+- Step 3: no path-typed member and no path argument; the same bytes as step 2.

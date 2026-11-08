@@ -14,10 +14,11 @@ relationships:
 
 ## Statement
 
-When a release tag `vX.Y.Z` is created or checked, the `make release-check
-TAG=vX.Y.Z` gate shall run NFR-017's clean-clone gate at the tag's commit,
-and the repository shall create a release tag only at a commit where that
-gate passed.
+When a release tag `vX.Y.Z` is checked, the `make release-check
+TAG=vX.Y.Z` gate shall build a clean clone of the tag's commit with locked
+dependencies; and when a release tag is created, the `make tag-release
+TAG=vX.Y.Z` target shall create it only after NFR-017's full clean-clone gate
+passes at that commit.
 
 ## Scope
 
@@ -28,24 +29,30 @@ in their repositories. A history rewrite in a dependency repository can make
 an old tag unbuildable without any change in QSL. The gate finds that.
 
 - `make release-check TAG=<tag>` resolves the tag to its commit and runs
-  `make clean-clone-check REV=<commit>`. A tag that does not exist refuses,
-  exit 2, before cloning.
-- The release procedure runs `make clean-clone-check` at the commit to be
-  tagged, creates the tag only when it passes, and then publishes the tag
-  with its GitHub Release.
+  NFR-017's clean-clone gate there with steps 1 to 4 and 7: the clone, the
+  empty Cargo home, the locked build, the source check and the cleanup. It
+  does not run step 5, because the examples a tag's README documents change
+  between releases. A tag that does not exist refuses, exit 2, before
+  cloning.
+- `make tag-release TAG=<tag>` runs `make clean-clone-check` at `HEAD`,
+  creates the annotated tag at `HEAD` only when it passes, and otherwise
+  exits non-zero and creates no tag. Publishing the tag and its GitHub
+  Release follows.
 
 ## Measurement and Evaluation
 
 | Metric | Target | Threshold | Method |
 | --- | --- | --- | --- |
 | Failed steps of `make release-check` at the newest release tag | 0 | 0 | Test |
+| Tags `make tag-release` creates at a commit whose clean-clone gate fails | 0 | 0 | Test |
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| NFR-018-AC-1 | `make release-check` at the repository's newest `v*` tag passes: the clean clone at the tag's commit builds with `--locked` and runs the README examples as NFR-017-AC-2 states for that commit's README. | Test (TC-1399) |
+| NFR-018-AC-1 | `make release-check` at the repository's newest `v*` tag passes: the clean clone at the tag's commit builds with `--locked` and every package source passes NFR-017's source check. | Test (TC-1399) |
 | NFR-018-AC-2 | `make release-check` at a scratch tag on a commit whose `Cargo.lock` records a git revision absent from that dependency's repository fails, naming the dependency and the revision; at a tag name that does not exist it refuses, exit 2, and clones nothing. | Test (TC-1399) |
+| NFR-018-AC-3 | In a scratch repository, `make tag-release TAG=v9.9.9` at a commit whose `Cargo.lock` lacks a declared dependency exits non-zero and `git tag -l v9.9.9` is empty; at a commit where the gate passes it creates the annotated tag `v9.9.9` at `HEAD`. | Test (TC-1399) |
 
 ## Verification
 

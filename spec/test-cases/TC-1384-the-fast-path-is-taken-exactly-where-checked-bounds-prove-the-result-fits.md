@@ -25,7 +25,7 @@ at each parameter's range ends where it has a bounded type:
 2. `m`, the same function with bounds 3037000500, and `n` (AC-2).
 3. `d`, and `d0` including `b` = 0 (AC-3).
 4. `r` with 1 and 2, `t`, and `u` with 1 and 2 (AC-5).
-5. `s` with 5 and 5 (AC-6).
+5. `s` with 5 and 5, checked under `CheckMode::Kernel` (AC-6).
 
 Run the interpreter over every call. Tag the tests
 `#[trace("TC-1384", "<AC id>")]`.
