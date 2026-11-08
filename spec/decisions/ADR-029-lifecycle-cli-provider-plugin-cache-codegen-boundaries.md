@@ -318,7 +318,7 @@ below takes its request, its limits and `&Cancel`.
 | `check` | Check and link | QSL S3, S4 | `ParsedSource`, `AdmittedModels`, the dependency input (ADR-015 D-1) | `Staged<CheckedPackage>` |
 | `check_fences` | Check every `quire` fence of a spec artifact inventory as a state invariant of the object its artifact declares (FR-355) | QSL I1 `model::intake`, S1 to S3 | the artifact inventory, the module manifests that type it | `Staged<FenceReport>` |
 | `package` | Emit the checked package | QSL S4 `package` (E4) | `&CheckedPackage` | `Staged<EmittedPackage>` with its source provision |
-| `execute` | Call a checked function or evaluate a checked clause | QSL layer 5, through §7's seam | `&CheckedPackage`, a `QualifiedName` or clause selection, arguments, `ObjectEnvironment`, accounting limits, the chosen execution backend | `Result<Evaluation<Value>, CallFailure>` |
+| `execute` | Call a checked function or evaluate a checked clause | QSL layer 5, through §7's seam | `&CheckedPackage`; a function's `QualifiedName`, argument values and `ObjectEnvironment`, or a state clause's `QualifiedName` and FR-106 `AdmittedObservations`; accounting, supplied-value and prepare limits; the chosen execution backend | `Result<Evaluation<Value>, CallFailure>` |
 | `monitor` | Check a supplied trace offline | QSL layer A | `&CheckedPackage`, clause selections, a trace (§3 OP-3) | `Staged<MonitorOutcome>` |
 | `analyze` | Decide claims over every behaviour with an in-process engine | QSL layer A | `&CheckedPackage`, claim items, subject binding, engine limits | `Staged<AnalyzeOutcome>` |
 | `lower` | Read the emitted package into target-neutral IR | Driver, with the IR reader (E5) | `EmittedPackage` | IR nodes, or IR's typed refusal |
@@ -743,21 +743,22 @@ pub trait ExecutionBackend {
 pub trait PreparedEntries {
     /// The selected entries this backend did not prepare, with their causes.
     fn unsupported(&self) -> &[(EntrySelection, UnsupportedEntry)];
-    /// The same contract as `CheckedPackageEvaluation::call`; an entry
-    /// listed by `unsupported` returns `CallFailure::Unsupported`.
+    /// The same contract as `CheckedPackageEvaluation::call_supplied`; an
+    /// entry listed by `unsupported` returns `CallFailure::Unsupported`.
     fn call(
         &self,
         entry: &QualifiedName,
-        arguments: &Arguments,
+        arguments: &[Value],
         environment: &ObjectEnvironment,
-        accounting: &ScalarLimits,
+        limits: &CallLimits,
         cancel: &Cancel,
     ) -> Result<Evaluation<Value>, CallFailure>;
-    /// The same contract as `CheckedPackageEvaluation::evaluate`.
+    /// The same contract as `CheckedPackageEvaluation::evaluate_clause`,
+    /// returning its `evaluation` member.
     fn evaluate(
         &self,
-        clause: &ClauseSelection,
-        input: &ClauseInput,
+        clause: &QualifiedName,
+        input: &AdmittedObservations,
         accounting: &ScalarLimits,
         cancel: &Cancel,
     ) -> Result<Evaluation<Value>, CallFailure>;
@@ -765,12 +766,13 @@ pub trait PreparedEntries {
 ```
 
 `PrepareFailure` is `Limit`, `Cancelled` or `Fault`, with no per-entry arm;
-FR-294 defines `EntrySelection`, `PrepareLimits`, `PrepareFailure` and
-`UnsupportedEntry`. Three backends implement the seam:
+FR-294 defines `EntrySelection`, `CallLimits`, `PrepareLimits`,
+`PrepareFailure` and `UnsupportedEntry`, and FR-279 how a clause run relates
+to FR-109's `run_clause`. Three backends implement the seam:
 
 | Backend | Crate | `prepare` | `call` and `evaluate` |
 |---|---|---|---|
-| Interpreter | `qsl-eval` | Accepts every entry S6a accepts | S6a, `CheckedPackage::call` and `evaluate` |
+| Interpreter | `qsl-eval` | Accepts every entry S6a accepts | S6a, `CheckedPackageEvaluation::call_supplied` and `evaluate_clause` |
 | AOT | `quire-aot` (driver repository) | `lower`, then `generate` with the AOT target, then a build with the toolchain the caller names | Runs the built executable as a child process over PL-3 framing |
 | JIT | `qsl-jit` (QSL layer X) | Translates the checked entries to machine code in memory | Calls the generated code |
 
