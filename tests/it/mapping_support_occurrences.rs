@@ -3,7 +3,9 @@
 
 use ix_trace_rs::trace;
 use qsl_package::checked_views::{mapping_support, temporal_subject, Closure, Support, Unmatched};
-use quire_contract_model::{CheckedNodeKind, ClockConfiguration, TemporalForm};
+use quire_contract_model::{
+    CheckedNodeKind, CheckedOccurrenceRole, ClockConfiguration, TemporalForm,
+};
 use quire_spec_language::emit_checked_v2::{emit, ClockSelection, Request};
 
 #[trace("TC-1322", "FR-527-AC-28")]
@@ -22,13 +24,13 @@ fn shared_classification_preserves_occurrence_keys_and_detects_changed_public_fa
         r#"language "ix:native" edition "1-draft";
 profile v = "quire.model.complete/v1";
 profile t = "quire.temporal.event-position.false-extension/v1";
-model Zeta = "example/config-version";
-model Alpha = "example/auxiliary";
-invariant Auxiliary using v on Alpha::ConfigVersion at current { self.versionNumber >= 0 }
-temporal First using t over (c: Zeta::ConfigVersion) clock "events" on origin {
+model Alpha = "example/config-version";
+model Zeta = "example/auxiliary";
+invariant Auxiliary using v on Zeta::ConfigVersion at current { self.versionNumber >= 0 }
+temporal First using t over (c: Alpha::ConfigVersion) clock "events" on origin {
     eventually[0,2] holds(c.versionNumber = 2)
 }
-temporal Second using t over (c: Zeta::ConfigVersion) clock "events" on origin {
+temporal Second using t over (c: Alpha::ConfigVersion) clock "events" on origin {
     eventually[0,2] holds(c.versionNumber = 2)
 }
 "#,
@@ -82,6 +84,7 @@ temporal Second using t over (c: Zeta::ConfigVersion) clock "events" on origin {
             .find(|occurrence| view.name_of(occurrence) == Some(name))
             .expect("the selected original occurrence has its own name");
         assert_eq!(&occurrence.node, *declaration);
+        assert_eq!(occurrence.role, CheckedOccurrenceRole::Claim);
         let clock = view.clock_of(occurrence).expect("the occurrence clock");
         assert_eq!(&clock.declaration, *declaration);
         assert_eq!(clock.occurrence, occurrence.ordinal);
@@ -90,6 +93,14 @@ temporal Second using t over (c: Zeta::ConfigVersion) clock "events" on origin {
         absent.ordinal = u64::MAX;
         assert_eq!(view.name_of(&absent), None);
         assert_eq!(view.clock_of(&absent), None);
+        let mut wrong_role = occurrence.clone();
+        wrong_role.role = CheckedOccurrenceRole::Generated;
+        assert_eq!(view.name_of(&wrong_role), None);
+        assert_eq!(view.clock_of(&wrong_role), None);
+        let mut wrong_declaration = occurrence.clone();
+        wrong_declaration.node.ordinal = u64::MAX;
+        assert_eq!(view.name_of(&wrong_declaration), None);
+        assert_eq!(view.clock_of(&wrong_declaration), None);
     }
     assert_eq!(
         package.selected_model_packages().collect::<Vec<_>>(),
