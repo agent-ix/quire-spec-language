@@ -1253,6 +1253,95 @@ fn a_package_sequence_type_is_an_unbounded_clock_collection() {
     );
 }
 
+/// FR-230-AC-23, the QSL-side shape: `Call.q` typed `ix://quire/native/Clock`
+/// with multiplicity `{0, 3, true, false}` is a clock collection `q.[slot]`
+/// of at most three slots, `Call.r` typed `Timer` with `{0, 2, true, false}`
+/// holds `r.[slot].x`, a `Clock` sequence type `Ticks` types `Call.ks`, and
+/// an operation parameter `p: Timer` and result `Timer`, each of multiplicity
+/// `{0, 2, true, false}`, check. The static dimension of one `Call` counts `q`'s three slots and
+/// `r`'s two beside the record clocks, and a collection maximum of `4`
+/// instead of `3` changes the place bound and dimension. Not covered: the
+/// map half (IR-1046).
+#[trace("FR-230-AC-23")]
+#[test]
+fn a_clock_collection_field_parameter_and_result_check_with_their_bounds() {
+    let document = |maximum: u64| {
+        timer_document(move |document: &mut Value| {
+            let sequence = {
+                let mut node = wire_type(
+                    &package("Ticks"),
+                    "unused",
+                    json!({"items": "ix://quire/native/Clock"}),
+                );
+                node["kind"] = json!("sequence");
+                node
+            };
+            let types = document["types"].as_array_mut().expect("types");
+            types.push(sequence);
+            let mut q = field("q", "ix://quire/native/Clock");
+            q["multiplicity"] =
+                json!({"lower": 0, "upper": maximum, "ordered": true, "unique": false});
+            let mut r = field("r", &package("Timer"));
+            r["multiplicity"] = json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+            let fields = types[1]["fields"].as_array_mut().expect("Call fields");
+            fields.push(q);
+            fields.push(r);
+            fields.push(field("ks", &package("Ticks")));
+            for operation in types[1]["operations"].as_array_mut().expect("operations") {
+                if operation["name"] == "bump" {
+                    let mut parameter = wire_field(
+                        &format!("{}/p", call("bump")),
+                        "p",
+                        &package("Timer"),
+                        "required",
+                        1,
+                    );
+                    parameter["multiplicity"] =
+                        json!({"lower": 0, "upper": 2, "ordered": true, "unique": false});
+                    operation["params"] = json!([parameter]);
+                    operation["returns"] = json!({
+                        "typeRef": package("Timer"),
+                        "multiplicity": {"lower": 0, "upper": 2, "ordered": true, "unique": false},
+                        "nullable": false,
+                    });
+                }
+            }
+        })
+    };
+    let dimension_of = |maximum: u64| {
+        let graph = check(&document(maximum), &format!("{UNITS}{DENSE}"))
+            .unwrap_or_else(|refusals| panic!("the collection shape checks: {refusals:?}"));
+        let model = timed(&graph);
+        let place = |name: &str| {
+            model
+                .clocks()
+                .iter()
+                .find(|clock| clock.name() == name)
+                .unwrap_or_else(|| panic!("{name}: {:?}", model.clocks()))
+        };
+        let q = place("q.[slot]");
+        assert_eq!(
+            q.path(),
+            [
+                PlaceStep::Field("q".to_owned()),
+                PlaceStep::Slot(CollectionShape {
+                    ordered: true,
+                    unique: false,
+                    min: 0,
+                    max: Some(maximum),
+                }),
+            ]
+        );
+        assert_eq!(q.bound(), Some(maximum));
+        assert_eq!(place("r.[slot].x").bound(), Some(2));
+        assert_eq!(place("ks.[slot]").bound(), None);
+        model.dimension(&q.owner())
+    };
+    // `x`, `t.x`, `u.x`, then `q`'s three slots and `r`'s two.
+    assert_eq!(dimension_of(3), Some(3 + 3 + 2));
+    assert_eq!(dimension_of(4), Some(3 + 4 + 2));
+}
+
 /// Part of FR-230-AC-16 and FR-230-AC-17 (TC-685), the alias halves: an
 /// alias `Stopwatch` of `ix://quire/native/Clock` types `Call.s` as the
 /// clock `s`; an alias `D` of the unit `ix://quire/unit/ms` types `Call.d`
