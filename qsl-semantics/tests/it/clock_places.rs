@@ -1260,8 +1260,13 @@ fn a_package_sequence_type_is_an_unbounded_clock_collection() {
 /// an operation parameter `p: Timer` and result `Timer`, each of multiplicity
 /// `{0, 2, true, false}`, check. The static dimension of one `Call` counts `q`'s three slots and
 /// `r`'s two beside the record clocks, and a collection maximum of `4`
-/// instead of `3` changes the place bound and dimension. Not covered: the
-/// map half (IR-1046).
+/// instead of `3` changes the place bound and dimension. The parameter and
+/// result have the type of `Call.r` (a `Sequence` of `Timer`). Not covered:
+/// the map half (IR-1046); package identity changing with the collection
+/// maximum, which the checked graph does not expose here (QSL-1030 follow-up
+/// for the spec lane/IR owner of identity projection); a `Clock`-typed
+/// collection parameter or result, which `model_operation` in
+/// `check/assemble.rs` refuses as `UnsupportedModelMember`.
 #[trace("FR-230-AC-23")]
 #[test]
 fn a_clock_collection_field_parameter_and_result_check_with_their_bounds() {
@@ -1335,7 +1340,29 @@ fn a_clock_collection_field_parameter_and_result_check_with_their_bounds() {
         assert_eq!(q.bound(), Some(maximum));
         assert_eq!(place("r.[slot].x").bound(), Some(2));
         assert_eq!(place("ks.[slot]").bound(), None);
-        model.dimension(&q.owner())
+        let owner = q.owner();
+        let r = graph
+            .scope()
+            .types()
+            .attribute(owner.clone(), "r")
+            .expect("Call.r")
+            .field()
+            .value_type()
+            .clone();
+        let quire_exact::ValueType::Collection(shape) = &r else {
+            panic!("r is a collection: {r:?}");
+        };
+        assert_eq!(shape.kind(), quire_exact::CollectionKind::Sequence);
+        let bump = graph
+            .scope()
+            .operations()
+            .declared_by(owner.clone())
+            .iter()
+            .find(|operation| operation.name() == "bump")
+            .expect("bump");
+        assert_eq!(bump.parameters(), &[("p".to_owned(), r.clone())]);
+        assert_eq!(bump.result(), Some(&r));
+        model.dimension(&owner)
     };
     // `x`, `t.x`, `u.x`, then `q`'s three slots and `r`'s two.
     assert_eq!(dimension_of(3), Some(3 + 3 + 2));
