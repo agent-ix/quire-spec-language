@@ -65,7 +65,7 @@ fn plus_chain(terms: usize) -> String {
 /// A caller-raised `source_bytes` admits a source past the 1 MiB default,
 /// with no hidden foundation-layer ceiling underneath, and the parse records
 /// the raised limit.
-#[trace("TC-012", "NFR-001-M-2")]
+#[trace("TC-012", "FR-001-AC-4", "NFR-001-M-2")]
 #[test]
 fn a_caller_raised_source_byte_ceiling_admits_past_the_default() {
     let mut text = comment_padded(0);
@@ -157,7 +157,7 @@ fn a_caller_raised_token_ceiling_admits_past_the_default_and_refuses_one_less() 
 /// [`qsl_cst::parse_source`], a unit with more syntax nodes than the 50,000
 /// default while tokens stay within their default, and one node fewer
 /// refuses.
-#[trace("TC-012", "NFR-001-M-2")]
+#[trace("TC-012", "FR-002-AC-4", "NFR-001-M-2")]
 #[test]
 fn a_caller_raised_node_ceiling_admits_past_the_default_and_refuses_one_less() {
     // Each `+x` operand adds five syntax nodes and two leaves.

@@ -91,7 +91,7 @@ fn assert_refusal(
     assert_eq!(result.as_ref().unwrap_err().diagnostic(), &before);
 }
 
-#[trace("FR-003-AC-1", "FR-003-AC-2", "FR-003-AC-3", "FR-286-AC-3")]
+#[trace("FR-003-AC-1", "FR-003-AC-2", "FR-003-AC-3", "FR-003-AC-7", "FR-286-AC-3")]
 #[test]
 fn a_driver_serializes_format_success_at_s2_without_text_payload() {
     let text = format!("{FIXTURE}\n// café λ\n");

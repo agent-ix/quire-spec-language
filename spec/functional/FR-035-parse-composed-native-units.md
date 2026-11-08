@@ -47,8 +47,6 @@ If a selected edition is unavailable, then the parser SHALL return the typed unk
 
 If a syntax budget is exhausted, then the parser SHALL return `stage_limit_exceeded` with the budget's `<kind>-exceeded` cause (`quire.native.diagnostics/v1`; the token budget is `token-count-exceeded`) without an admitted unit.
 
-The compiler SHALL preserve the historical `0-draft` grammar and profile behavior for historical selections.
-
 Qualified model/member positions accept edition-reserved ASCII words under the
 shared grammar; native binder positions do not. The parser does not scan a second
 expression string inside `holds`, guards, captures, queries or choreography

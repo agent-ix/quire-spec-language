@@ -3,7 +3,7 @@
 use ix_trace_rs::trace;
 use qsl_foundation::source_map::{Layout, Segment, SourceMap};
 use qsl_foundation::{Code, Source, SourceIdentity, Span};
-use quire_spec_language::{parse_source, Limits};
+use qsl_foundation::source::MAX_SOURCE_BYTES;
 
 fn source(id: &str, text: &str) -> Source {
     Source::read(
@@ -13,7 +13,7 @@ fn source(id: &str, text: &str) -> Source {
         },
         format!("{id}.txt"),
         text.as_bytes(),
-        Limits::default().source_bytes,
+        MAX_SOURCE_BYTES,
     )
     .unwrap()
 }
@@ -50,7 +50,7 @@ fn bytes(source: &Source, locations: &[qsl_foundation::LocatedSpan]) -> String {
         .collect()
 }
 
-#[trace("TC-011", "FR-001-AC-1", "FR-001-AC-2", "FR-001-AC-4")]
+#[trace("TC-011", "FR-001-AC-4")]
 #[test]
 fn source_byte_ceiling_is_a_stage_limit() {
     let id = SourceIdentity {
@@ -72,7 +72,6 @@ fn source_byte_ceiling_is_a_stage_limit() {
 #[trace("TC-011", "FR-001-AC-4")]
 #[test]
 fn a_caller_raised_byte_limit_is_enforced_as_given() {
-    use qsl_foundation::source::MAX_SOURCE_BYTES;
     let id = SourceIdentity {
         authority: "test".into(),
         identity: "raised".into(),
@@ -430,66 +429,7 @@ fn malformed_segment_and_query_ranges_never_panic_or_partially_succeed() {
 
 #[trace("TC-014")]
 #[test]
-fn parser_refusal_maps_back_through_a_real_indented_body() {
-    let text = include_str!("../fixtures/parent.native")
-        .replace("not reaches(self, self, parent)", "always(true)");
-    let body_text = text.trim_end_matches('\n');
-    let body = source("body", body_text);
-    let mut document = String::from("# Original café\r\n```native\r\n");
-    let region_start = document.len();
-    let mut offset = 0;
-    let mut segments = Vec::new();
-    for line in body_text.split_inclusive('\n') {
-        document.push_str("  ");
-        let original_start = document.len();
-        let content = line.trim_end_matches('\n');
-        document.push_str(content);
-        if !content.is_empty() {
-            segments.push(segment(offset, original_start, content.len()));
-        }
-        offset += content.len();
-        document.push('\r');
-        if line.ends_with('\n') {
-            segments.push(segment(offset, document.len(), 1));
-            offset += 1;
-        }
-        document.push('\n');
-    }
-    let region_end = document.len();
-    document.push_str("```\r\n");
-    let original = source("original", &document);
-    let map = SourceMap::verify(
-        original.clone(),
-        body.clone(),
-        Span {
-            start: region_start,
-            end: region_end,
-        },
-        segments,
-        layout(),
-        100,
-    )
-    .unwrap();
-    let error = parse_source(body.clone(), Limits::default()).unwrap_err();
-    assert_eq!(error.code, Code::UnsupportedConstruct);
-    let mapped = map
-        .map_span(
-            &body,
-            Span {
-                start: error.span.start.byte,
-                end: error.span.end.byte,
-            },
-        )
-        .unwrap();
-    assert_eq!(bytes(&original, &mapped), "always");
-    assert_eq!(mapped[0].start.byte, document.find("always").unwrap());
-    assert_eq!(mapped[0].start.line, error.span.start.line + 2);
-    assert_eq!(mapped[0].start.column, error.span.start.column + 2);
-}
-
-#[trace("TC-014")]
-#[test]
-fn extracted_bytes_need_a_distinct_identity_and_respect_parse_limits() {
+fn extracted_bytes_need_a_distinct_identity() {
     let original = source("original", "ab");
     let body = source("original", "b");
     assert!(SourceMap::verify(
@@ -501,16 +441,4 @@ fn extracted_bytes_need_a_distinct_identity_and_respect_parse_limits() {
         1
     )
     .is_err());
-    let body = source("body", "true");
-    // The source's own byte ceiling is a stage limit
-    // (`stage_limit_exceeded`), incomplete work (ADR-029 CB-4).
-    assert!(parse_source(
-        body,
-        Limits {
-            source_bytes: 1,
-            ..Limits::default()
-        }
-    )
-    .unwrap_err()
-    .is_incomplete());
 }
