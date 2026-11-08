@@ -743,21 +743,22 @@ pub trait ExecutionBackend {
 pub trait PreparedEntries {
     /// The selected entries this backend did not prepare, with their causes.
     fn unsupported(&self) -> &[(EntrySelection, UnsupportedEntry)];
-    /// The same contract as `CheckedPackageEvaluation::call`; an entry
-    /// listed by `unsupported` returns `CallFailure::Unsupported`.
+    /// The same contract as `CheckedPackageEvaluation::call_supplied`; an
+    /// entry listed by `unsupported` returns `CallFailure::Unsupported`.
     fn call(
         &self,
         entry: &QualifiedName,
-        arguments: &Arguments,
+        arguments: &[Value],
         environment: &ObjectEnvironment,
-        accounting: &ScalarLimits,
+        limits: &CallLimits,
         cancel: &Cancel,
     ) -> Result<Evaluation<Value>, CallFailure>;
-    /// The same contract as `CheckedPackageEvaluation::evaluate`.
+    /// The same contract as `CheckedPackageEvaluation::evaluate_clause`,
+    /// returning its `evaluation` member.
     fn evaluate(
         &self,
-        clause: &ClauseSelection,
-        input: &ClauseInput,
+        clause: &QualifiedName,
+        input: &AdmittedObservations,
         accounting: &ScalarLimits,
         cancel: &Cancel,
     ) -> Result<Evaluation<Value>, CallFailure>;
@@ -765,12 +766,13 @@ pub trait PreparedEntries {
 ```
 
 `PrepareFailure` is `Limit`, `Cancelled` or `Fault`, with no per-entry arm;
-FR-294 defines `EntrySelection`, `PrepareLimits`, `PrepareFailure` and
-`UnsupportedEntry`. Three backends implement the seam:
+FR-294 defines `EntrySelection`, `CallLimits`, `PrepareLimits`,
+`PrepareFailure` and `UnsupportedEntry`, and FR-279 how a clause run relates
+to FR-109's `run_clause`. Three backends implement the seam:
 
 | Backend | Crate | `prepare` | `call` and `evaluate` |
 |---|---|---|---|
-| Interpreter | `qsl-eval` | Accepts every entry S6a accepts | S6a, `CheckedPackage::call` and `evaluate` |
+| Interpreter | `qsl-eval` | Accepts every entry S6a accepts | S6a, `CheckedPackageEvaluation::call_supplied` and `evaluate_clause` |
 | AOT | `quire-aot` (driver repository) | `lower`, then `generate` with the AOT target, then a build with the toolchain the caller names | Runs the built executable as a child process over PL-3 framing |
 | JIT | `qsl-jit` (QSL layer X) | Translates the checked entries to machine code in memory | Calls the generated code |
 

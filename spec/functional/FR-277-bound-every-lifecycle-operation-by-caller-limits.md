@@ -47,7 +47,12 @@ their limits from the caller.
 ## Inputs
 
 The operation's limits value. Each field has a published default, available
-as the limits type's `Default` value.
+as the limits type's `Default` value, except a field whose type has no
+`Default`: `quire_exact::ScalarLimits` (every member required) and the
+storage and output-byte fields FR-255 makes required. A limits type holding
+such a field has no `Default`, and the caller supplies that field explicitly,
+for example from FR-255's published defaults; its other fields keep their
+`Default`.
 
 ## Outputs
 
