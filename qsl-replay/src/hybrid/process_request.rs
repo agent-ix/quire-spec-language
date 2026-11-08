@@ -318,7 +318,10 @@ impl HybridProcessRequest {
                 &item.claim["node"],
                 claim_occurrence,
             )?;
-            let claim_node = package.resolved_graph().nodes.get(package_position)
+            let claim_node = package
+                .resolved_graph()
+                .nodes
+                .get(package_position)
                 .and_then(|node| graph.key(&node.node_id).ok())
                 .ok_or(HybridProcessRequestRefusal::MalformedRequest)?;
             let claim = hybrids
@@ -466,14 +469,25 @@ fn claim_position(
 ) -> Result<usize, HybridProcessRequestRefusal> {
     let id: quire_contract_model::CheckedNodeId = serde_json::from_str(&claim_node.to_string())
         .map_err(|_| HybridProcessRequestRefusal::MalformedRequest)?;
-    let key = graph.key(&id).map_err(|_| HybridProcessRequestRefusal::ClaimMismatch)?;
-    let position = graph.index_of(&key).and_then(|index| usize::try_from(index).ok())
+    let key = graph
+        .key(&id)
+        .map_err(|_| HybridProcessRequestRefusal::ClaimMismatch)?;
+    let position = graph
+        .index_of(&key)
+        .and_then(|index| usize::try_from(index).ok())
         .ok_or(HybridProcessRequestRefusal::ClaimMismatch)?;
-    let node = nodes.as_array().and_then(|nodes| nodes.get(position))
+    let node = nodes
+        .as_array()
+        .and_then(|nodes| nodes.get(position))
         .ok_or(HybridProcessRequestRefusal::ClaimMismatch)?;
     if node["semantic_form"] != "temporal_clause"
-        || graph.wire_value(&key).map_err(|_| HybridProcessRequestRefusal::MalformedRequest)? != *claim_node
-        || !node["occurrences"].as_array().is_some_and(|rows| rows.contains(claim_occurrence))
+        || graph
+            .wire_value(&key)
+            .map_err(|_| HybridProcessRequestRefusal::MalformedRequest)?
+            != *claim_node
+        || !node["occurrences"]
+            .as_array()
+            .is_some_and(|rows| rows.contains(claim_occurrence))
     {
         return Err(HybridProcessRequestRefusal::ClaimMismatch);
     }
@@ -511,7 +525,8 @@ mod claim_position_tests {
             {"node_id": {"package": "p", "path": ["b"], "ordinal": 0}}]);
         let graph = WireGraph::of_package_value(&json!({"semantic_graph": {
             "nodes": nodes, "operand_rows": [[2], [3], [], []]
-        }})).unwrap();
+        }}))
+        .unwrap();
         (nodes, graph)
     }
 
@@ -519,11 +534,19 @@ mod claim_position_tests {
     fn an_unknown_claim_is_a_mismatch_and_an_unparseable_claim_is_malformed() {
         let (nodes, graph) = fixture();
         let occurrence = json!({"role": "claim", "ordinal": 0});
-        assert_eq!(claim_position(&graph, &nodes,
-            &json!({"package": "p", "path": ["missing"], "ordinal": 0}), &occurrence),
-            Err(HybridProcessRequestRefusal::ClaimMismatch));
-        assert_eq!(claim_position(&graph, &nodes, &json!("not-an-id"), &occurrence),
-            Err(HybridProcessRequestRefusal::MalformedRequest));
+        assert_eq!(
+            claim_position(
+                &graph,
+                &nodes,
+                &json!({"package": "p", "path": ["missing"], "ordinal": 0}),
+                &occurrence
+            ),
+            Err(HybridProcessRequestRefusal::ClaimMismatch)
+        );
+        assert_eq!(
+            claim_position(&graph, &nodes, &json!("not-an-id"), &occurrence),
+            Err(HybridProcessRequestRefusal::MalformedRequest)
+        );
     }
 
     #[test]
@@ -531,15 +554,22 @@ mod claim_position_tests {
         let (nodes, graph) = fixture();
         let occurrence = json!({"role": "claim", "ordinal": 0});
         assert_eq!(nodes[0]["node_id"], nodes[1]["node_id"]);
-        assert_eq!(claim_position(&graph, &nodes, &nodes[0]["node_id"], &occurrence),
-            Err(HybridProcessRequestRefusal::ClaimMismatch));
+        assert_eq!(
+            claim_position(&graph, &nodes, &nodes[0]["node_id"], &occurrence),
+            Err(HybridProcessRequestRefusal::ClaimMismatch)
+        );
         for position in 0..2 {
             let id = graph.wire_value(&graph.keys()[position]).unwrap();
-            assert_eq!(claim_position(&graph, &nodes, &id, &occurrence), Ok(position));
+            assert_eq!(
+                claim_position(&graph, &nodes, &id, &occurrence),
+                Ok(position)
+            );
             let mut wrong_role = nodes.clone();
             wrong_role[position]["occurrences"][0]["role"] = json!("anchor");
-            assert_eq!(claim_position(&graph, &wrong_role, &id, &occurrence),
-                Err(HybridProcessRequestRefusal::ClaimMismatch));
+            assert_eq!(
+                claim_position(&graph, &wrong_role, &id, &occurrence),
+                Err(HybridProcessRequestRefusal::ClaimMismatch)
+            );
         }
     }
 }

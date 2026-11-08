@@ -2057,7 +2057,6 @@ fn run_spine_units(
                 .transpose()?
                 .as_ref(),
             extension_catalog: None,
-
         },
         limits,
         &cancel,

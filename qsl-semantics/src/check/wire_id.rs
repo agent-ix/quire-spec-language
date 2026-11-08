@@ -562,50 +562,49 @@ pub fn canonical_operand_indices(bytes: &[u8], byte_limit: u64) -> Result<Vec<u6
     let mut indices = Vec::new();
     while let Some(next) = pending.pop() {
         match next {
-            Pending::Value(value) => match value.node() {
-                Node::Object(members) => {
-                    let member_count = members.clone().count();
-                    if (member_count == 2
-                        || (member_count == 3
-                            && value.get("term").is_some_and(|term| {
-                                matches!(term.node(), Node::String("dependency_reference"))
-                            })))
-                        && value.get("package").is_some()
-                        && value.get("node").is_some()
-                    {
-                        continue;
-                    }
-                    let is_id = member_count == 3
-                        && value.get("package").is_some()
-                        && value.get("ordinal").is_some()
-                        && value.get("path").is_some();
-                    if is_id {
-                        let Some(path) = value.get("path") else {
+            Pending::Value(value) => {
+                match value.node() {
+                    Node::Object(members) => {
+                        let member_count = members.clone().count();
+                        if (member_count == 2
+                            || (member_count == 3
+                                && value.get("term").is_some_and(|term| {
+                                    matches!(term.node(), Node::String("dependency_reference"))
+                                })))
+                            && value.get("package").is_some()
+                            && value.get("node").is_some()
+                        {
                             continue;
-                        };
-                        let Node::Array(segments) = path.node() else {
-                            continue;
-                        };
-                        for segment in segments {
-                            if let Some(index) = segment.get("node") {
-                                let Node::Number(number) = index.node() else {
-                                    return Err("invalid canonical operand index".to_owned());
-                                };
-                                indices.push(
-                                    number
-                                        .text()
-                                        .parse()
-                                        .map_err(|_| "invalid canonical operand index".to_owned())?,
-                                );
-                            }
                         }
-                    } else {
-                        pending.push(Pending::Members(members));
+                        let is_id = member_count == 3
+                            && value.get("package").is_some()
+                            && value.get("ordinal").is_some()
+                            && value.get("path").is_some();
+                        if is_id {
+                            let Some(path) = value.get("path") else {
+                                continue;
+                            };
+                            let Node::Array(segments) = path.node() else {
+                                continue;
+                            };
+                            for segment in segments {
+                                if let Some(index) = segment.get("node") {
+                                    let Node::Number(number) = index.node() else {
+                                        return Err("invalid canonical operand index".to_owned());
+                                    };
+                                    indices.push(number.text().parse().map_err(|_| {
+                                        "invalid canonical operand index".to_owned()
+                                    })?);
+                                }
+                            }
+                        } else {
+                            pending.push(Pending::Members(members));
+                        }
                     }
+                    Node::Array(items) => pending.push(Pending::Items(items)),
+                    Node::Null | Node::Bool(_) | Node::Number(_) | Node::String(_) => {}
                 }
-                Node::Array(items) => pending.push(Pending::Items(items)),
-                Node::Null | Node::Bool(_) | Node::Number(_) | Node::String(_) => {}
-            },
+            }
             Pending::Members(mut members) => {
                 if let Some((_, value)) = members.next() {
                     pending.push(Pending::Members(members));
@@ -657,7 +656,8 @@ pub fn number_index_segments(node: &mut serde_json::Value) -> Vec<u64> {
                 if is_id {
                     if let Some(Value::Array(path)) = object.get_mut("path") {
                         for segment in path.iter_mut() {
-                            let index = segment.as_object()
+                            let index = segment
+                                .as_object()
                                 .filter(|member| member.len() == 1)
                                 .and_then(|member| member.get("node"))
                                 .and_then(Value::as_u64);
