@@ -347,7 +347,7 @@ and incomplete runs. `run` can also evaluate one pure function;
 | `qsl-replay/quire-extraction` | Enables QSL's replay library to read rules from Quire Markdown spec artifacts, with locations mapped to the document. |
 | `population-fixtures` | Writes the population fixtures used by the admission tests. |
 
-QSL builds no command line of its own. `quire` from quire-driver (private)
+QSL builds no command line of its own. `quire` from [quire-driver](https://github.com/agent-ix/quire-driver)
 serves parse, format, run and compile, running QSL, Contract IR and the
 backends as one tool.
 
@@ -365,7 +365,7 @@ analyzers. The driver runs the chain. All of them use a set of shared `no_std` l
 
 | Repository | Role | Relation to QSL |
 | --- | --- | --- |
-| quire-specification (private) | The language standard: rule semantics, profiles, interchange formats and the conformance tests. | QSL implements it; `make ci` checks QSL against its test vectors. |
+| [quire-specification](https://github.com/agent-ix/quire-specification) | The language standard: rule semantics, profiles, interchange formats and the conformance tests. | QSL implements it; `make ci` checks QSL against its test vectors. |
 | [quire-exact](https://github.com/agent-ix/quire-exact) | Exact numbers and closed outcomes; `no_std`. | QSL depends on it. |
 | [quire-semantic-value](https://github.com/agent-ix/quire-semantic-value) | Semantic values with their origin, built on quire-exact; `no_std`. | QSL depends on it. |
 | [quire-walk](https://github.com/agent-ix/quire-walk) | Walks deep trees on a heap stack; `no_std`. | QSL depends on it. |
@@ -377,10 +377,10 @@ analyzers. The driver runs the chain. All of them use a set of shared `no_std` l
 | [quire-verification-contracts](https://github.com/agent-ix/quire-verification-contracts) | The verification record types the tools exchange. | Used by IR, codegen and the standard. |
 | [quire-observation](https://github.com/agent-ix/quire-observation) | Turns raw signals into qualified observations for rule evaluation. | Supplies data for temporal checks. |
 | [quire-mltl](https://github.com/agent-ix/quire-mltl) | Connects the MLTL temporal-logic engine to quire-observation. | No direct dependency. |
-| quire-protocol (private) | Checks running systems against compiled protocols, including compensation. | Consumes QSL's compiled protocols. |
-| quire-verification (private) | Selects verification techniques and plans for each requirement. | No direct dependency. |
-| quire-driver (private) | The `quire` command line that runs the whole chain. | Depends on QSL. |
-| quire-integration (private) | Fixes a working set of versions and tests the chain together. | Depends on QSL. |
+| [quire-protocol](https://github.com/agent-ix/quire-protocol) | Checks running systems against compiled protocols, including compensation. | Consumes QSL's compiled protocols. |
+| [quire-verification](https://github.com/agent-ix/quire-verification) | Selects verification techniques and plans for each requirement. | No direct dependency. |
+| [quire-driver](https://github.com/agent-ix/quire-driver) | The `quire` command line that runs the whole chain. | Depends on QSL. |
+| [quire-integration](https://github.com/agent-ix/quire-integration) | Fixes a working set of versions and tests the chain together. | Depends on QSL. |
 
 ## Crates
 
