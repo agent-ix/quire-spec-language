@@ -692,8 +692,9 @@ what each such position means.
   "Cardinality bound" (QSpec FR-415-AC-13); it does not return
   `NotSimulated::RequiresBound`, which FR-120 applies only to `domains()` of an
   unbounded frame-granted value. A `Map` is not a pure-clock collection: its
-  keys are data the snapshot carries, so its entries come from the snapshot
-  (the Map ruling stays with QSL-1169).
+  keys are data the snapshot carries, so its entries come from the snapshot.
+  A `Map` with a declared maximum and finite non-clock key and value is a
+  finite value domain (FR-120); a clock-bearing value stays unbounded there.
 - **Element identity.** A `Set`, `Bag` or `OrderedSet` of a clock-bearing element type SHALL
   decide uniqueness and multiplicity by equality of the data parts (QSpec FR-144), so the
   checker SHALL record `Set<Clock>` as holding at most one element, and SHALL refuse `=` and
@@ -781,7 +782,9 @@ what each such position means.
   path and is the same for every instance; `<slots>` is the concrete position of
   the instance at each `Slot` step and is never part of any node. A place under a `Map` value (`self.m[k].x`) is selected by key, which
   a decimal index cannot name, so it has no place id and `ref` of one is
-  refused `ill_typed`/`type-mismatch` until QSL-1169 rules the Map encoding.
+  refused `ill_typed`/`type-mismatch`: a `Map` with a clock-bearing value is an
+  unbounded domain in FR-120, which gives no encoding for the place, so the
+  refusal stands.
   The same value is carried in a field, a parameter, a result, a record
   component and a collection element, and `Option<Reference<Clock>>` is absent
   or one place id. The domain-package target form of a `reference` whose
