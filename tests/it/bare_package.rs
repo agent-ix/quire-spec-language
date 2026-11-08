@@ -1688,51 +1688,25 @@ fn the_view_the_constructors_and_the_writer_refuse_a_budget_one_short() {
     use quire_contract_model::{ExactTypeProjectionErrorCode as Code, NativeJoinBudget};
     let built = record_capture();
     let ample = built.read(&built.emission);
-    // The source view and supplied bare entry both join the final rows and
-    // retain their native Exact projections. Measure those real entry calls
-    // on one ledger, including the emission's preceding row-production join.
+    // View creation runs one native pass: the source supplier's identities
+    // (the emission's row production and joins), the reader's validation of
+    // them, then the retained Exact projection of every node. Measure those
+    // steps on one ledger.
+    use qsl_package::EvaluationWitnessSupplier;
     let mut view_measure = NativeJoinBudget::new(1 << 30, 1 << 30);
-    let rows = built
-        .emission
-        .identity_rows(ample.admitted(), &mut view_measure)
-        .expect("the emission's rows join");
-    BarePackage::new(ample.admitted())
-        .with_supply(
-            qsl_package::BareSupply {
-                identities: &rows,
-                equality: None,
-            },
-            &mut view_measure,
-        )
-        .expect("the witness and its native Exact projections are admitted");
-    // View creation does not project the selected objects, which
-    // `with_supply` ends with.
-    let declarations = {
-        let bare = BarePackage::new(ample.admitted())
-            .with_supply(
-                qsl_package::BareSupply {
-                    identities: &rows,
-                    equality: None,
-                },
-                &mut NativeJoinBudget::new(1 << 30, 1 << 30),
-            )
-            .expect("an ample budget admits");
-        let mut budget = NativeJoinBudget::new(1 << 30, 1 << 30);
-        ample
+    let rebound = qsl_package::SourceWitnessSupplier::new(&built.emission)
+        .supply(ample.admitted(), &mut view_measure)
+        .expect("the supplier joins its rows")
+        .identities
+        .expect("the source supplier holds identities")
+        .validate_and_rebind(ample.admitted(), &mut view_measure)
+        .expect("the reader validates the supplied identities");
+    for node in &ample.admitted().graph().nodes {
+        let _ = ample
             .admitted()
-            .project_selected_type_declarations(
-                bare.identities().expect("joined identities"),
-                &[],
-                &[],
-                &mut budget,
-            )
-            .expect("the declarations project");
-        budget.consumed()
-    };
-    let view_need = quire_contract_model::NativeJoinCharge {
-        work: view_measure.consumed().work - declarations.work,
-        storage: view_measure.consumed().storage - declarations.storage,
-    };
+            .project_exact_type(&node.node_id, &rebound, &mut view_measure);
+    }
+    let view_need = view_measure.consumed();
     assert!(view_need.storage > 1);
     let limits = |work: u64, storage: u64| {
         qsl_package::V2ReadLimits::fixture()

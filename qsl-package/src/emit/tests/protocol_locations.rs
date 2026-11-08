@@ -632,6 +632,7 @@ fn reader_view_over(
         &packages,
         V2ReadLimits::fixture(),
         crate::EmitLimits::fixture(),
+        crate::SourceWitnessSupplier::new(&emission),
     )
     .expect("the I2 reader admits the edited package");
     match read.evaluation_view() {
@@ -1055,6 +1056,7 @@ fn deep_projection(
                 &packages,
                 limits,
                 crate::EmitLimits::fixture(),
+                crate::SourceWitnessSupplier::new(&emission),
             )
             .expect("the I2 reader admits the deep package");
             let view = read.evaluation_view().expect("the deep view is created");
@@ -1206,4 +1208,123 @@ fn nested_lets_2000_deep_project_on_the_next_frame_slots_on_a_small_stack() {
         })
         .expect("the worker thread starts");
     worker.join().expect("the projection does not overflow");
+}
+
+/// A supplier whose witnesses are chosen by the test, so the reader's own
+/// validation, not a supplier flag, decides the refusal.
+struct ChosenIdentities<F>(F);
+
+impl<F> crate::EvaluationWitnessSupplier for ChosenIdentities<F>
+where
+    F: Fn(
+        &quire_contract_model::CheckedPackageV2,
+        &mut quire_contract_model::NativeJoinBudget,
+    ) -> Option<quire_contract_model::SelectedExactIdentities>,
+{
+    fn supply(
+        &self,
+        admitted: &quire_contract_model::CheckedPackageV2,
+        budget: &mut quire_contract_model::NativeJoinBudget,
+    ) -> Result<crate::EvaluationWitnesses, crate::WitnessSupplyFailure> {
+        Ok(crate::EvaluationWitnesses {
+            identities: (self.0)(admitted, budget),
+        })
+    }
+}
+
+/// FR-390-AC-69: the reader validates the supplied identities against the
+/// admitted package; none is missing, another package's are foreign, and the
+/// package's own with a field row removed are unknown, each at the `Package`
+/// locus.
+#[trace("TC-1070", "FR-390-AC-69", "FR-390-AC-66")]
+#[test]
+fn supplied_identities_are_validated_against_the_admitted_package() {
+    use crate::reader_protocol_projection::{UnsupportedReason, ViewLocus};
+    use quire_contract_model::SelectedExactIdentities;
+    let (package, _) = checked_and_emitted(tc1070::SOURCE);
+    let emission = emit_checked(&package).expect("fixture emits");
+    let document = domain();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let second = crate::read_evaluation_emission(
+        &package,
+        &emission,
+        LibraryName::new(emission.package.name()).unwrap(),
+        &packages,
+        V2ReadLimits::fixture(),
+        crate::EmitLimits::fixture(),
+        crate::SourceWitnessSupplier::new(&emission),
+    )
+    .expect("a second independent read admits");
+    let other = second.admitted();
+    let reason = |witnesses: &dyn Fn(
+        &quire_contract_model::CheckedPackageV2,
+        &mut quire_contract_model::NativeJoinBudget,
+    ) -> Option<SelectedExactIdentities>| {
+        let read = crate::read_evaluation_emission(
+            &package,
+            &emission,
+            LibraryName::new(emission.package.name()).unwrap(),
+            &packages,
+            V2ReadLimits::fixture(),
+            crate::EmitLimits::fixture(),
+            ChosenIdentities(witnesses),
+        )
+        .expect("the I2 reader admits the package");
+        let Err(ViewFailure::Unsupported(view)) = read.evaluation_view() else {
+            panic!("view creation refuses an invalid witness")
+        };
+        assert_eq!(view.locus(), &ViewLocus::Package);
+        view.reason().clone()
+    };
+    assert_eq!(
+        reason(&|_, _| None),
+        UnsupportedReason::MissingIdentityWitness
+    );
+    assert_eq!(
+        reason(&|_, budget| {
+            let rows = emission.identity_rows(other, budget).expect("other rows");
+            Some(rows.selected(other, budget).expect("other identities"))
+        }),
+        UnsupportedReason::ForeignIdentityWitness
+    );
+    // A genuinely different package: its own emission, admitted on its own.
+    let different = super::converted_equality::emitted(
+        "function same using v(a: Text[0, 8; nfc], b: Text[0, 8; nfc]): Boolean pure { a = b }",
+    );
+    let Read::Verified {
+        admitted: different_admitted,
+        ..
+    } = read_back(&different)
+    else {
+        panic!("the different package admits")
+    };
+    assert_eq!(
+        reason(&|_, budget| {
+            let rows = different
+                .identity_rows(&different_admitted, budget)
+                .expect("different rows");
+            Some(
+                rows.selected(&different_admitted, budget)
+                    .expect("different identities"),
+            )
+        }),
+        UnsupportedReason::ForeignIdentityWitness
+    );
+    assert_eq!(
+        reason(&|admitted, budget| {
+            let rows = emission.identity_rows(admitted, budget).expect("own rows");
+            let mut fields = rows.fields().to_vec();
+            fields.pop().expect("fixture E selects a record field");
+            Some(
+                SelectedExactIdentities::from_stage_rows(
+                    admitted,
+                    rows.declarations().iter().cloned(),
+                    fields,
+                    budget,
+                )
+                .expect("a field-less stage still joins"),
+            )
+        }),
+        UnsupportedReason::UnknownIdentityWitness
+    );
 }
