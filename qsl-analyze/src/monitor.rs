@@ -259,6 +259,24 @@ pub fn monitor(
     limits: &MonitorLimits,
     cancel: &Cancel,
 ) -> Result<Staged<MonitorOutcome>, Failure> {
+    monitor_with_evaluator(run_package_temporal, package, request, limits, cancel)
+}
+
+/// The trace evaluator [`monitor`] runs each selected clause through over a
+/// `Document` or `Typed` trace.
+pub type TraceEvaluator = for<'r> fn(&PackageTemporalRequest<'r>) -> ClauseRunReport;
+
+/// [`monitor`] with the trace evaluator of the `Document` and `Typed`
+/// routes supplied by the caller; [`monitor`] passes `run_package_temporal`.
+/// FR-283-AC-13 names a test trace evaluator that returns
+/// `TemporalRefusal::Fault`.
+pub fn monitor_with_evaluator(
+    evaluator: TraceEvaluator,
+    package: &CheckedPackage,
+    request: &MonitorRequest<'_>,
+    limits: &MonitorLimits,
+    cancel: &Cancel,
+) -> Result<Staged<MonitorOutcome>, Failure> {
     let document;
     let input = match &request.trace {
         MonitorTrace::Document(bytes) => {
@@ -275,6 +293,7 @@ pub fn monitor(
         MonitorTrace::Samples { .. } => None,
     };
     let runs = Runs {
+        evaluator,
         package,
         request,
         limits,
@@ -302,6 +321,7 @@ pub fn monitor(
 
 /// One request's inputs, shared by the stages of [`monitor`].
 struct Runs<'a> {
+    evaluator: TraceEvaluator,
     package: &'a CheckedPackage,
     request: &'a MonitorRequest<'a>,
     limits: &'a MonitorLimits,
@@ -503,7 +523,7 @@ impl Runs<'_> {
                 "model-subject-clause-has-an-over",
             )));
         };
-        let report = run_package_temporal(&PackageTemporalRequest {
+        let report = (self.evaluator)(&PackageTemporalRequest {
             package: self.package,
             packages: self.request.packages,
             model_limits: self.limits.normalization,
@@ -956,7 +976,6 @@ fn read_ref(item: NodeRef<'_>, pointer: &str) -> Result<DocumentRef, Defect> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ix_trace_rs::trace;
 
     fn fault() -> InternalFault {
         InternalFault::new("test", "a-broken-invariant")
@@ -971,9 +990,9 @@ mod tests {
         }))
     }
 
-    /// FR-283-AC-13, Outputs: a `TemporalRefusal::Fault` fails the whole
-    /// request with `StageFailure::Fault`, never a record.
-    #[trace("TC-766", "FR-283-AC-13")]
+    /// FR-283 Outputs: a `TemporalRefusal::Fault` disposition maps to
+    /// `StageFailure::Fault`, never a record. The full-request case is
+    /// `tests/it/monitor.rs`.
     #[test]
     fn a_trace_evaluator_fault_fails_the_request() {
         let disposition = ClauseDisposition::TemporalRefusal(TemporalTraceRefusal::Fault(fault()));
