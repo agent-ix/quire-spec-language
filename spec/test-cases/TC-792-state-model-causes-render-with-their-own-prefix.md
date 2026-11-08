@@ -127,7 +127,9 @@ For FR-286-AC-7, serialize the present run through the existing
 that returns its second admitted Reference argument while receiving a
 distinct first argument. Both references come from the real admitted
 world. Compare the typed result and function outcome document to the
-actual second reference, not the first. This general returned-value control
+actual second reference, not the first. Assert each execute document's
+`operation` is `execute`, its category success and its `artifacts` exactly
+`[]`. This general returned-value control
 does not replace either original procedure or the exact lookup body.
 
 ## Expected Results
