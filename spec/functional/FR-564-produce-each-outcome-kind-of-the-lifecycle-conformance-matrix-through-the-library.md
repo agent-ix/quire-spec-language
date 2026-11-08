@@ -71,7 +71,7 @@ reachable through that operation, for the stated reason.
 | `check` | FR-275-AC-1's source | n/a (1) | FR-100-AC-5's `inv` (`ill_typed`) | FR-218-AC-5's `repeat` whose body is only a `check` (`unsupported_construct`/`declaration-form`) | FR-275-AC-1's source, handle cancelled `Deadline` before the call | the same, cancelled `Requested` | FR-277-AC-2, `s3.nodes` one below | n/a (2) |
 | `package` | FR-275-AC-1's package | n/a (1) | n/a (3) | FR-185-AC-7's `Service` | FR-275-AC-1's package, handle cancelled `Deadline` before the call | the same, cancelled `Requested` | FR-277-AC-1, a `package` limit one below | n/a (2) |
 | `execute` | FR-100-AC-1's `seven` | n/a (4) | FR-279-AC-1's `id(12)` | FR-296-AC-2 (`jit` not supplied) | `seven`, handle cancelled `Deadline` before the call | the same, cancelled `Requested` | FR-100-AC-6 (`work_units` 0) | `seven` on `qsl-conformance`'s fault-injecting test backend |
-| `analyze` | FR-281-AC-1 | FR-281-AC-2 | FR-281-AC-9's binding refusal | FR-281-AC-3's unsupported item alone | FR-281-AC-1's request with `deadline_ms` 0 (FR-281-AC-12) | FR-281-AC-1's request, handle cancelled `Requested` before the call | FR-281-AC-6 (state budget 1) | n/a (2) |
+| `analyze` | FR-281-AC-1 | FR-281-AC-2 | FR-281-AC-9's binding refusal | FR-281-AC-3's unsupported item alone | FR-281-AC-1's request, `deadline` `Milliseconds(1)`, handle cancelled `Deadline` before the call (FR-281-AC-12) | FR-281-AC-1's request, handle cancelled `Requested` before the call | FR-281-AC-6 (state budget 1) | n/a (2) |
 | `monitor` | FR-283-AC-2's lasso, `tested` | FR-283-AC-1 | FR-283-AC-3's admission failure | FR-283-AC-6 (fairness premise) | FR-283-AC-1's request, handle cancelled `Deadline` before the call | the same, cancelled `Requested` | FR-283-AC-12 (`work_units` 0) | n/a (2) |
 | `prove` (QSL half) | FR-281-AC-1 through `qsl_analyze::provider::run` | FR-281-AC-2 through `provider::run` | FR-280-AC-6's undeclared-population binding through `provider::run` | FR-281-AC-11's `RequiresBound` refusal (EN-1, `unbounded-extent`) through `provider::run` | FR-291-AC-2's `incomplete` `TimedOut` record | FR-291-AC-2's `incomplete` cancelled record | FR-281-AC-6 through `provider::run` | FR-291-AC-1's `failed` `tool-failure{crash}` record |
 
@@ -94,9 +94,10 @@ providers through `qsl_analyze::provider::run` (FR-280, FR-281), and the
 terminal records FR-291 builds from a plugin run's settlement. Each becomes
 one FR-286 item.
 
-Every timeout and cancellation cell cancels before the call (or, for
-`analyze`, sets `deadline_ms` to 0), so its outcome does not depend on
-timing. The `execute` tool-failure cell uses a test backend that
+Every timeout and cancellation cell cancels before the call, so its outcome
+does not depend on timing; no QSL operation reads a clock (FR-276), and a
+timeout reaches QSL only as a `Cancel` handle cancelled with
+`CancelCause::Deadline` by the frontend that owns the timer. The `execute` tool-failure cell uses a test backend that
 `qsl-conformance` ships, whose `prepare` succeeds and whose `call` returns
 `CallFailure::Fault`. The `prove` timeout, cancellation and tool-failure
 cells are records QSL builds from a plugin run's settlement (FR-291); the

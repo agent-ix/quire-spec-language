@@ -29,6 +29,8 @@ relationships:
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-566
     type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-568
+    type: exercises
 ---
 # US-030: Add providers, plugins and faster execution backends without changing results
 

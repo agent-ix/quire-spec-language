@@ -49,7 +49,8 @@ their limits from the caller.
 The operation's limits value. Each field has a published default, available
 as the limits type's `Default` value, except a field whose type has no
 `Default`: `quire_exact::ScalarLimits` (every member required),
-`V2ReadLimits.storage` and `EmitLimits.output_bytes` (FR-255). A limits type holding
+`V2ReadLimits.storage`, `EmitLimits.output_bytes` (FR-255) and
+`AnalyzeLimits.deadline` (FR-281's `DeadlineSupply`). A limits type holding
 such a field has no `Default`, and the caller supplies that field explicitly,
 for example from FR-255's published defaults; its other fields keep their
 `Default`.

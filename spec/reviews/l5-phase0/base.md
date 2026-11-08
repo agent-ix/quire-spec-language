@@ -95,3 +95,22 @@ path, found three issues, all fixed in the same commit:
 The ADR-035 decision and FR-255's path (`qsl_replay::RenderLimits`,
 re-exported at the `qsl-replay` crate root) are otherwise consistent with
 FR-294, FR-295, FR-560 to FR-563 and the code. CG-4 stays an open ruling.
+
+## Follow-up review (planner rulings)
+
+A short base review of the rulings diff found these issues, all fixed in the
+same commit. The diff covers: CG-4 ruled (FR-568, TC-1400); FR-281's deadline
+made a caller-supplied input with no clock read; the FR-564 analyze timeout
+cell; and NFR-018's current release tag.
+
+- FR-277's list of fields with no `Default` did not name
+  `AnalyzeLimits.deadline`. Added.
+- FR-281 did not say what `analyze` does with a deadline it never measures.
+  It now says the deadline is carried in the request, passed to no engine,
+  and used by the frontend to arm the one timer.
+- FR-568 first required `unsafe_code = "forbid"` in each manifest, but
+  several packages forbid it with `#![forbid(unsafe_code)]` at the crate
+  root. Both forms are now accepted, with a fixture for each.
+- NFR-018's "current release tag" had no meaning before the first
+  `make tag-release`. It is now defined, the retired `v0.1.0` and `v0.2.0`
+  are excluded, and AC-3's scratch tag stands in until a real one exists.

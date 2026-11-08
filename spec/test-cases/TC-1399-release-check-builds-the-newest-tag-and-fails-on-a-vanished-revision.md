@@ -1,23 +1,23 @@
 ---
 id: TC-1399
-title: "release-check builds the newest tag and fails on a vanished locked revision"
+title: "release-check builds the current release tag and fails on a vanished locked revision"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/NFR-018
     type: verifies
 ---
-# TC-1399: release-check builds the newest tag and fails on a vanished locked revision
+# TC-1399: release-check builds the current release tag and fails on a vanished locked revision
 
 ## Description
 
-Run `make release-check` at the newest release tag and at scratch tags that
+Run `make release-check` at the current release tag and at scratch tags that
 cannot build.
 
 Scope: NFR-018-AC-1 to NFR-018-AC-3.
 
 ## Test Procedure
 
-1. Run `make release-check TAG=<newest v* tag>`.
+1. Run `make release-check TAG=<the current release tag>`.
 2. In a scratch repository, tag a commit whose `Cargo.lock` records a git
    revision that its dependency repository does not contain, and run the
    gate at that tag.

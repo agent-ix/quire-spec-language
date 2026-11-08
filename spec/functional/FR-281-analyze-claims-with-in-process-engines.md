@@ -218,7 +218,12 @@ pub struct AnalyzeLimits {
     pub accounting: ScalarLimits,
     pub observation: ObservationLimits,
     pub normalization: ModelNormalizationLimits,
-    pub deadline_ms: Option<u64>,
+    pub deadline: DeadlineSupply,
+}
+
+pub enum DeadlineSupply {
+    Unbounded,
+    Milliseconds(u64),
 }
 ```
 
@@ -244,9 +249,18 @@ pub struct AnalyzeLimits {
   disposition (QSpec FR-331), present exactly for those two.
 - `Engines`: the engines "Negotiated items" describes.
 - `AnalyzeLimits`: the accounting limits, the observation and
-  model-normalization limits the binding is admitted under, and the
-  wall-clock deadline `deadline_ms` (QSpec FR-331), each with its published
-  default (FR-277).
+  model-normalization limits the binding is admitted under, each with its
+  published default (FR-277), and the request's deadline `deadline`.
+  `DeadlineSupply` has no `Default`, so `AnalyzeLimits` has none and the
+  caller supplies `deadline` explicitly, as FR-277 has callers supply
+  `ScalarLimits` and `supplied`: `Unbounded`, or `Milliseconds(n)`, the
+  QSpec FR-331 `deadline_ms` of the request. `analyze` reads no clock and
+  never measures the deadline (FR-276). The frontend that owns the timer
+  arms it from `deadline` at the call and, when it expires, cancels the
+  request's `Cancel` handle with `CancelCause::Deadline`; `analyze` sees the
+  expiry only through that handle. `analyze` passes `deadline` to no engine:
+  it is part of the request so that the request states its deadline and the
+  timer is armed from that one value.
 - `&Cancel`.
 
 ## Outputs
@@ -336,14 +350,14 @@ holding the `AdmissionFailure`, and no record.
 - When an engine budget or an accounting limit is reached, or the `Cancel`
   handle is cancelled, `analyze` shall settle each open item `incomplete`
   with the limit or cancellation cause kept.
-- When `AnalyzeLimits.deadline_ms` is finite, the `analyze` operation shall
-  use it as a request-wide wall-clock cancellation deadline measured from
-  operation entry. When that deadline expires, `analyze` shall settle each
-  open item `incomplete` with cause `cancelled{source: deadline}` and shall
-  preserve records already settled. If caller cancellation ends the run
-  first, each open item shall carry `cancelled{source: requested}`; if an
-  engine or accounting limit stops an item first, `analyze` shall keep that
-  item's typed limit result. A binding admission failure shall still return
+- The `analyze` operation shall read no clock.
+- When the `Cancel` handle is cancelled with `CancelCause::Deadline`, the
+  `analyze` operation shall settle each open item `incomplete` with cause
+  `cancelled{source: deadline}` and shall preserve records already settled.
+  When it is cancelled with `CancelCause::Requested`, each open item shall
+  carry `cancelled{source: requested}`; if an engine or accounting limit
+  stops an item first, `analyze` shall keep that item's typed limit
+  result. A binding admission failure shall still return
   `StageFailure::Refused(AnalyzeRefusal::Binding)` before any item runs.
 
 ## Acceptance Criteria
@@ -361,7 +375,7 @@ holding the `AdmissionFailure`, and no record.
 | FR-281-AC-9 | AC-3's request returns its three records in `request_index` order 0, 1, 2. The same request whose binding's `universes` name a population the package does not declare returns `StageFailure::Refused(AnalyzeRefusal::Binding)` holding FR-120's `invalid_runtime_input`/`wrong-role-mapping`, no record, and no engine runs. | Test (TC-762) |
 | FR-281-AC-10 | `Engines::with` holding `qsl.test-a`, given a second engine whose manifest's `BackendId` is `qsl.test-a`, returns `invalid_capability`/`duplicate-backend` naming `qsl.test-a`, and the set still runs the first engine for an item settled `Supported(qsl.test-a)`. With `qsl.test-a` advertising only (`value-validity`, `bounded`), a `temporal-satisfaction` item settled `Supported(qsl.test-a)` settles `invalid-request` with `invalid_capability`/`inconsistent-candidates` naming `qsl.test-a` and the item's kind and mode, and `qsl.test-a` does not run. AC-3's unsupported record carries the diagnostic naming the claim kind and no `cause` member. | Test (TC-762) |
 | FR-281-AC-11 | With test engines that each refuse a `Supported` item, `analyze` settles: an `Admission` refusal `declined` with cause `invalid-input` and its diagnostic, and an incomplete admission `declined` with `incomplete-input`; a `RequiresBound` refusal `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names the item's kind, the engine's `BackendId` and the modes its manifest advertises for that kind; a `Symmetry` refusal `declined`, `invalid-input`, `invalid_runtime_input`/`invalid-value`; a `NotStatistical` refusal `invalid-request` with `invalid_capability`/`not-statistical` and no result; a refusal carrying `unsupported_construct`/`not-yet-implemented` `unsupported` with that diagnostic; and a refusal carrying `invalid_runtime_input`/`wrong-value-kind` `failed` with that diagnostic. Each record names its engine. One request holding the refused-admission case and the five cases after it returns those six records in `request_index` order; the incomplete admission is a seventh case, run as a request of its own because a test engine reports one admission outcome per run, and returns one `declined`, `incomplete-input` record. Over a model one of whose operations `modifies` a field of type `Integer` (an unbounded FR-120 root), an EN-1 item over `Engines::qsl()` settled `Supported` on EN-1 settles `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names `temporal-satisfaction`, EN-1's `BackendId` and `bounded`, EN-1's one advertised mode. | Test (TC-763) |
-| FR-281-AC-12 | The `analyze` operation measures a finite `AnalyzeLimits.deadline_ms` from entry and applies it to the whole request; when it expires, `analyze` settles each open item `incomplete` with cause `cancelled{source: deadline}` and preserves records already settled. If caller cancellation ends the run first, open items carry `cancelled{source: requested}`; if an engine or accounting limit stops an item first, `analyze` keeps that item's typed limit result. A binding admission failure still returns `StageFailure::Refused(AnalyzeRefusal::Binding)` before any item runs. | Test (TC-763) |
+| FR-281-AC-12 | A `compile_fail` doctest that builds `AnalyzeLimits` with `..Default::default()` and no `deadline` fails to compile, with a compiling control that states `deadline`. A three-item request with `deadline` `Milliseconds(1)` and an uncancelled handle runs every item to its own settlement, whatever the elapsed time: `analyze` never measures the deadline. The same request with the handle cancelled `CancelCause::Deadline` from a second thread after the first item settles settles the two open items `incomplete` with cause `cancelled{source: deadline}` and keeps the first record unchanged; cancelled `Requested` first, open items carry `cancelled{source: requested}`; if an engine or accounting limit stops an item first, `analyze` keeps that item's typed limit result. A binding admission failure still returns `StageFailure::Refused(AnalyzeRefusal::Binding)` before any item runs. | Test (TC-763) |
 | FR-281-AC-13 | With `engines` holding `qsl.test-a` advertising only (`value-validity`, `bounded`), a `finite-replay` item on a state clause's claim settles `invalid-request` with `invalid_capability`/`inapplicable-kind`, payload `family` `state-model`, and no engine runs, in each case: handed `Supported(qsl.test-c)`, which `engines` does not hold (not `unknown-backend`); handed `Supported(qsl.test-a)`, which does not advertise its (kind, mode) (not `inconsistent-candidates`); and handed `InvalidRequest` with `invalid_capability`/`ambiguous-backend` (not that disposition). A `temporal-satisfaction` item on a temporal clause's claim, whose kind applies, handed the same three settles `unknown-backend` naming `qsl.test-c`, `inconsistent-candidates` naming `qsl.test-a`, and `ambiguous-backend` respectively. | Test (TC-762, TC-1302) |
 | FR-281-AC-14 | With a test provider registered under `qsl.test-smt` advertising (`value-validity`, `unbounded`) beside the value-validity arm, the item `function q using v(a: Integer, b: Integer): Integer pure { a div b }` settled `Supported(qsl.test-smt)` whose provider reports `refuted` with the counterexample `a` = 2^100, `b` = 0 settles `refuted`, category violation, naming `qsl.test-smt`, and the record carries that counterexample at those integers; the replay of the counterexample reproduces the `division-by-zero` violation at the `div`. The item `if b != 0 then a div b else 0` over the same parameters, whose provider reports `proved`, settles `proved` with basis `inductive` at depth 0, certification `uncertified`, naming `qsl.test-smt`. | Test (TC-1337) |
 | FR-281-AC-15 | With the AC-14 provider reporting `refuted` with `a` = 7, `b` = 2 (an assignment at which the claim holds), with `b` = 0 and a missing second operand, or with a Boolean in place of an `Integer`, the item settles `inconclusive` with cause `replay_parity` and no counterexample, never `refuted`. With the provider reporting `unknown` the item settles `inconclusive` with cause `solver-inconclusive`. | Test (TC-1337) |
