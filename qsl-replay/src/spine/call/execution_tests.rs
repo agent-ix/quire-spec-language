@@ -407,6 +407,7 @@ fn the_run_outcome_is_the_rendering_of_executes_result() {
 /// FR-279-AC-4: a supplied `aot` stand-in whose `prepare` reaches
 /// `prepare.code_bytes` yields `CallFailure::Limit` with the leaf's record,
 /// category incomplete (exit 22); a `Fault` keeps its `InternalFault`.
+#[trace("TC-769", "FR-285-AC-6")]
 #[trace("TC-760", "FR-279-AC-4")]
 #[test]
 fn a_prepare_limit_and_a_prepare_fault_reach_the_call_failure() {
@@ -1283,6 +1284,7 @@ fn the_interpreter_runs_seven_by_default() {
 /// FR-296-AC-2: choosing `jit` with `SuppliedBackends::default()` returns
 /// `Unsupported` `NotSupplied`, category unsupported (exit 21); the spine
 /// refuses before any stage with `unimplemented_capability`.
+#[trace("TC-769", "FR-285-AC-6")]
 #[trace("TC-781", "FR-296-AC-2")]
 #[test]
 fn an_unsupplied_backend_refuses_as_unsupported() {
@@ -1339,6 +1341,7 @@ fn an_unsupplied_backend_refuses_as_unsupported() {
 /// FR-296-AC-3: a `jit` stand-in that lists one entry unsupported makes
 /// `execute` return that `UnsupportedEntry`, exit 21, with the interpreter
 /// never called.
+#[trace("TC-769", "FR-285-AC-6")]
 #[trace("TC-781", "FR-296-AC-3")]
 #[test]
 fn an_entry_the_chosen_backend_lists_unsupported_is_returned() {
