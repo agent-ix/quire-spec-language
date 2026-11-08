@@ -153,12 +153,14 @@ fn a_form_that_misses_its_production_refuses_at_s1_naming_the_expected_clause() 
         "clause `subject`",
     );
     // Trailing separator: the `}` after the last `,`.
-    invalid_syntax(
-        "retention Audit { subject: \"audit\", }",
-        "retention",
-        "}",
-        "clause `days`",
-    );
+    for expected in ["clause-name", "clause `days`"] {
+        invalid_syntax(
+            "retention Audit { subject: \"audit\", }",
+            "retention",
+            "}",
+            expected,
+        );
+    }
     // An unknown clause name and a repeated clause.
     invalid_syntax(
         "retention Audit { subject: \"a\", period: 3 }",

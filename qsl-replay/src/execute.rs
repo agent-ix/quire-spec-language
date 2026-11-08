@@ -2056,6 +2056,8 @@ fn run_spine_units(
                 .map(internals_value)
                 .transpose()?
                 .as_ref(),
+            extension_catalog: None,
+
         },
         limits,
         &cancel,

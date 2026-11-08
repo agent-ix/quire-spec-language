@@ -665,6 +665,7 @@ impl From<CompileRefusal> for CallSiteRefusal {
             | CompileRefusal::OperationClause { .. }
             | CompileRefusal::TypeInvariant { .. }
             | CompileRefusal::Profile { .. }
+            | CompileRefusal::Extension(_)
             | CompileRefusal::Assembly { .. }
             | CompileRefusal::Check { .. }
             | CompileRefusal::Link(_)

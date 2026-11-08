@@ -4846,10 +4846,42 @@ pub struct TransitionForm {
     pub span: Span,
 }
 
+/// One clause of a selected extension's declaration form: `name: expr`
+/// (QSpec FR-467 "Production").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExtensionClauseForm {
+    /// The clause name as written, a name of the production's clauses.
+    pub name: DeclaredName,
+    /// The clause value as written; S3 checks it against the type or node
+    /// kind the typed-node schema names for the clause.
+    pub value: ExpressionForm,
+}
+
+/// A declaration form of a selected extension (FR-354; ADR-012 §5.1 row
+/// S2): `keyword Name { clause: expr, ... }`. S2 reads only the shape QSpec
+/// FR-467 fixes for every production; the leading keyword stays spelled and
+/// S3 reads its meaning from the extension's definition.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExtensionForm {
+    /// The leading keyword as written.
+    pub keyword: DeclaredName,
+    /// The declared name.
+    pub name: DeclaredName,
+    /// The clauses, in source order.
+    pub clauses: Vec<ExtensionClauseForm>,
+    /// The span of the whole form, from the leading keyword through the
+    /// closing brace.
+    pub span: Span,
+}
+
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form
 /// carries").
 #[derive(Clone, Debug)]
 pub enum DeclarationForm {
+    /// A declaration form of a selected extension (FR-354), boxed for the
+    /// same reason as [`Self::Function`]. Every selected extension's forms
+    /// are this one variant (ADR-012 §5.1 row S2).
+    Extension(Box<ExtensionForm>),
     /// A `union` declaration (FR-313).
     Union(UnionForm),
     /// An `abstraction` declaration (FR-304), boxed for the same reason as

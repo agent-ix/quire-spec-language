@@ -612,3 +612,12 @@ fn keyword_and_clause_name_members_and_unparseable_bytes_are_missing_members() {
         other => panic!("expected missing-member, got {other:?}"),
     }
 }
+
+#[test]
+fn an_unknown_member_is_not_reported_as_a_missing_one() {
+    let mut document = retention("retention", "retention");
+    document["typed_node_schema"]["nodes"][0]["surprise"] = json!(1);
+    let refusal = hold(vec![extension("ext.a", &[], &document)], &["ext.a"]).unwrap_err();
+    assert_eq!(refusal.cause(), ExtensionCause::UnknownMember);
+    assert_eq!(refusal.code(), Code::InvalidPackage);
+}
