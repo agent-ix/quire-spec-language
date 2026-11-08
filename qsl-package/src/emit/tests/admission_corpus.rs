@@ -759,14 +759,6 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Relation(RelationForm::Population), NO_RECORD_FORM),
         (K::Relation(RelationForm::Membership), NO_RECORD_FORM),
         (K::Relation(RelationForm::CausalRelation), NO_RECORD_FORM),
-        (
-            K::Correspondence(CorrespondenceForm::ImplementationGuarantee),
-            "lowering builds no implementation-guarantee node",
-        ),
-        (
-            K::Correspondence(CorrespondenceForm::ComponentComposition),
-            "lowering builds no component-composition node",
-        ),
         (K::State(StateForm::Transition), NO_TAG),
         (K::State(StateForm::Snapshot), NO_TAG),
         (K::Temporal(TemporalForm::Clock), NO_TAG),
