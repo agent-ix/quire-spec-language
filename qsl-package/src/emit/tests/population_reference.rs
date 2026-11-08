@@ -22,7 +22,7 @@ fn two_populations() -> Vec<u8> {
         .as_array_mut()
         .unwrap()
         .push(archive);
-    serde_json::to_vec(&document).unwrap()
+    crate::emit::tests::wire_bytes(&document).unwrap()
 }
 
 fn clause(name: &str, population: &str) -> String {

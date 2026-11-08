@@ -4809,7 +4809,7 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
             wanted.node.clone()
         } else {
             let declared = v2
-                .graph()
+                .resolved_graph()
                 .nodes
                 .iter()
                 .find(|node| {
@@ -4820,7 +4820,7 @@ fn the_bare_selection_equals_the_source_selection_for_every_tc1070_slot() {
                 })
                 .expect("the owner is declared");
             let ids = qsl_semantics::check::wire_id::WireGraph::new(
-                v2.graph().nodes.iter().map(|node| &node.node_id),
+                v2.resolved_graph().nodes.iter().map(|node| &node.node_id),
             )
             .expect("wire ids")
             .key(&declared.node_id)

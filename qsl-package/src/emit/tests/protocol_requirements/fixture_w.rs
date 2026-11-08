@@ -97,7 +97,7 @@ pub(in crate::emit::tests) fn document() -> Vec<u8> {
     }
     document["types"] = json!(types);
     document["populations"] = json!([]);
-    serde_json::to_vec(&document).unwrap()
+    crate::emit::tests::wire_bytes(&document).unwrap()
 }
 
 pub(in crate::emit::tests) const W: &str = r#"
@@ -584,7 +584,7 @@ fn tc134_attempt_bounds_and_provenance_mutations_are_checked() {
 }
 
 fn jcs(value: &Value) -> Vec<u8> {
-    serde_json::to_vec(value).expect("wire fixture serializes")
+    crate::emit::tests::wire_bytes(value).expect("wire fixture serializes")
 }
 
 fn library() -> qsl_semantics::library::LibraryName {
@@ -954,7 +954,7 @@ fn w_relationships_are_model_nodes_sorted_and_deduplicated() {
         .as_array_mut()
         .unwrap()
         .push(second);
-    let document = serde_json::to_vec(&domain).unwrap();
+    let document = crate::emit::tests::wire_bytes(&domain).unwrap();
     let declaration = "relationship ShipmentOwner = M::OrderShipment;";
     let first = lower_with(
         document.clone(),
@@ -1631,7 +1631,7 @@ fn tc134_v1_contract_version_is_refused_with_clock_selections_present() {
         .insert_domain_package_document(package_identity(&document()[..]), &document()[..])
         .expect("a fresh evidence key");
     let outcome = read_v2(
-        &serde_json::to_vec(&forged).unwrap(),
+        &crate::emit::tests::wire_bytes(&forged).unwrap(),
         library(),
         V2ReadLimits::fixture(),
         &evidence,
@@ -1680,7 +1680,8 @@ fn w_between_unrelated_protocols() -> Lowered {
 /// W's own: its occurrences list every construct that writes it.
 fn w_closure(
     wire: &Value,
-    view: impl Fn(&WireGraph, &Value) -> Value,
+    raw: &Value,
+    view: impl Fn(&WireGraph, &Value, &Value) -> Value,
 ) -> (BTreeSet<CheckedNodeId>, BTreeMap<CheckedNodeId, Value>) {
     let graph = WireGraph::of_package_value(wire).expect("the emitted graph");
     let clause = nodes(wire)
@@ -1700,7 +1701,11 @@ fn w_closure(
             continue;
         }
         if node["node_tag"] == "protocol" {
-            own.insert(id, view(&graph, node));
+            let at = graph.index_of(&key).expect("a graph node");
+            own.insert(
+                id,
+                view(&graph, node, &raw["semantic_graph"]["nodes"][at as usize]),
+            );
         }
         for dependency in node["dependencies"].as_array().expect("dependencies") {
             pending.push(node_by_id(wire, dependency));
@@ -1711,9 +1716,13 @@ fn w_closure(
 
 /// Assert that W's clause reaches the same nodes in `alone` and `around`,
 /// and that `view` renders each of W's protocol nodes the same in both.
-fn assert_same_w_nodes(alone: &Value, around: &Value, view: impl Fn(&WireGraph, &Value) -> Value) {
-    let (reached, expected) = w_closure(alone, &view);
-    let (reached_around, actual) = w_closure(around, &view);
+fn assert_same_w_nodes(
+    alone: &Lowered,
+    around: &Lowered,
+    view: impl Fn(&WireGraph, &Value, &Value) -> Value,
+) {
+    let (reached, expected) = w_closure(&alone.wire, &alone.raw, &view);
+    let (reached_around, actual) = w_closure(&around.wire, &around.raw, &view);
     assert_eq!(reached, reached_around, "W reaches the same nodes");
     assert!(
         expected.len() > 20,
@@ -1770,21 +1779,26 @@ fn w_nodes_do_not_follow_unrelated_protocols() {
     assert!(alone.verified, "{}", alone.text);
     let again = lower_with(document(), PROFILES_W, W);
     assert_eq!(alone.wire, again.wire, "W emitted twice");
-    assert_same_w_nodes(&alone.wire, &w_between_unrelated_protocols().wire, resolved);
+    assert_same_w_nodes(
+        &alone,
+        &w_between_unrelated_protocols(),
+        |graph: &WireGraph, node: &Value, _: &Value| resolved(graph, node),
+    );
 }
 
 /// FR-383-AC-15's byte clause: W between unrelated protocols writes the same
 /// wire bytes for each of its protocol nodes as W alone. QSpec FR-322
-/// writes each operand as its index in the whole document's graph, so nodes
-/// the unrelated protocols add ahead of W's operands shift those indices.
-#[ignore = "gated on STD-653 (tracker QSL-1695): FR-322 operand index segments are document graph positions"]
+/// writes each node-held operand as a slot of the node's own operand row, so
+/// the nodes the unrelated protocols add ahead of W's operands change only
+/// the rows, never a node's bytes.
+#[trace("FR-383-AC-15", "TC-1062")]
 #[test]
 fn w_wire_bytes_do_not_follow_unrelated_protocols() {
     let alone = lower_with(document(), PROFILES_W, W);
     assert!(alone.verified, "{}", alone.text);
     assert_same_w_nodes(
-        &alone.wire,
-        &w_between_unrelated_protocols().wire,
-        |_: &WireGraph, node: &Value| node.clone(),
+        &alone,
+        &w_between_unrelated_protocols(),
+        |_: &WireGraph, _: &Value, raw: &Value| raw.clone(),
     );
 }

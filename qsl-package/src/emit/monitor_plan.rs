@@ -1290,10 +1290,7 @@ fn finish(
     let mut rows = carry_rows(retained, changes);
     follow_final_bindings(&mut rows.selected_source_record_rows, &nodes)?;
     follow_final_positions(&mut rows.selected_source_tuple_rows, &nodes)?;
-    follow_final_collections(
-        &mut rows.selected_source_collection_rows,
-        &nodes,
-    )?;
+    follow_final_collections(&mut rows.selected_source_collection_rows, &nodes)?;
     Ok(Emission {
         package,
         omitted: rows.omitted,

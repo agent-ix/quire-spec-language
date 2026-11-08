@@ -17,7 +17,7 @@ pub(super) struct Graph<'p> {
 impl<'p> Graph<'p> {
     pub(super) fn new(package: &'p CheckedPackageV2) -> Self {
         let positions = package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .enumerate()
@@ -35,7 +35,7 @@ impl<'p> Graph<'p> {
     }
 
     pub(super) fn node(&self, at: usize) -> Option<&'p CheckedSemanticNodeV2> {
-        self.package.graph().nodes.get(at)
+        self.package.resolved_graph().nodes.get(at)
     }
 
     pub(super) fn kind(&self, at: usize) -> Option<CheckedNodeKind> {

@@ -264,7 +264,11 @@ fn small_admitted_root_family_completes_exact_handoff() {
     }) {
         let id = qsl_semantics::check::wire_id::structural_id(root.node());
         assert!(
-            admitted.graph().nodes.iter().any(|node| node.node_id == id),
+            admitted
+                .resolved_graph()
+                .nodes
+                .iter()
+                .any(|node| node.node_id == id),
             "the source function forces its real root node into the admitted bytes"
         );
     }

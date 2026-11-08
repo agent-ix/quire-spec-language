@@ -154,7 +154,7 @@ fn selected_object_closure_projects_standard_e_and_unused_ep_objects() {
         );
         let graph_node = extended
             .package
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .find(|node| node.node_id == rows[0].structural_node)

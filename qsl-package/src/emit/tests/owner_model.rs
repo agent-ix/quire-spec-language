@@ -141,7 +141,7 @@ fn a_clause_names_the_object_type_its_over_input_references() {
 
     let admitted = lowered.ir.unwrap();
     let typed = admitted
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .filter(|node| node.owner_model.is_some())
@@ -183,7 +183,7 @@ fn selected_model_identity_rows_back_reference_projection_and_missing_rows_refus
 
     let mut witnessed = false;
     let mut refused_without_rows = false;
-    for node in &admitted.graph().nodes {
+    for node in &admitted.resolved_graph().nodes {
         if let Ok(projected) = admitted.project_exact_type(
             &node.node_id,
             identities,

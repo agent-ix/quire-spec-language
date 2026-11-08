@@ -60,7 +60,8 @@ fn emitted_unit(
 }
 
 fn emitted_text(unit: &str) -> Result<(Emission, Value, Read), Vec<CheckRefusal>> {
-    let document = serde_json::to_vec(&fixture::document()).expect("fixture serializes");
+    let document =
+        crate::emit::tests::wire_bytes(&fixture::document()).expect("fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("unit assembles")
@@ -126,7 +127,7 @@ fn a_compensation_without_a_selected_temporal_profile_is_refused_by_i2() {
         .expect("lock selections")
         .retain(|selection| selection["role"] != "temporal_profile");
     let mut evidence = read_evidence(&emission);
-    let document = serde_json::to_vec(&fixture::document()).unwrap();
+    let document = crate::emit::tests::wire_bytes(&fixture::document()).unwrap();
     evidence
         .insert_domain_package_document(package_identity(&document), document.as_slice())
         .unwrap();

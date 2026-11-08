@@ -45,7 +45,7 @@ fn unit(clauses: &str) -> String {
 }
 
 fn compile(document: &Value, clauses: &str) -> (CheckedPackage, Vec<u8>) {
-    let bytes = serde_json::to_vec(document).expect("the fixture serializes");
+    let bytes = crate::emit::tests::wire_bytes(document).expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
     let graph = assemble_with_models(unit(clauses).as_bytes(), &packages)
         .expect("the unit assembles")
@@ -98,7 +98,7 @@ impl Emitted {
     fn declaration(&self, name: &str) -> CheckedNodeId {
         let found: Vec<_> = self
             .admitted
-            .graph()
+            .resolved_graph()
             .nodes
             .iter()
             .filter(|node| {
@@ -450,7 +450,7 @@ fn state_machines_processes_and_object_types_emit_rows_and_a_subtype_does_not() 
     let event = emitted.declaration("OrderPlaced");
     let event_node = emitted
         .admitted
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| node.node_id == event)
@@ -600,7 +600,7 @@ fn each_node_an_effect_names_omits_the_whole_member_when_the_package_lacks_it() 
         let mut document = guardless_k2();
         frame(&mut document, owner, operation, operation_frame);
         let clauses = format!("post Named using v on M::{owner}::{operation} {{ true }}\n");
-        let bytes = serde_json::to_vec(&document).expect("the fixture serializes");
+        let bytes = crate::emit::tests::wire_bytes(&document).expect("the fixture serializes");
         let (checked, _) = compile(&document, &clauses);
 
         let carried = emit_checked(&checked).expect("the package emits");

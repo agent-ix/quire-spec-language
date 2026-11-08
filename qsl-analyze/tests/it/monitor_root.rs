@@ -933,7 +933,7 @@ fn retained_source_tuple_rows_follow_the_plan_root_and_the_ir_join_accepts_them(
         .find(|row| row.element_node == color.declaration.structural_node)
         .expect("the Sequence<Color> row");
     let base = package
-        .graph()
+        .resolved_graph()
         .nodes
         .iter()
         .find(|node| node.node_id == collection.base_node)

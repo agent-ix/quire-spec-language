@@ -267,7 +267,11 @@ impl HybridProcessRequest {
         let hybrids = read_hybrids(&package, context.limits.nodes)
             .map_err(|_| HybridProcessRequestRefusal::PackageRefused)?;
         let graph = qsl_semantics::check::wire_id::WireGraph::new(
-            package.graph().nodes.iter().map(|node| &node.node_id),
+            package
+                .resolved_graph()
+                .nodes
+                .iter()
+                .map(|node| &node.node_id),
         )
         .map_err(|_| HybridProcessRequestRefusal::PackageRefused)?;
         let package_wire = DeepValue(
