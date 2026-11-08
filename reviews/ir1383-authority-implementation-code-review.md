@@ -688,3 +688,32 @@ Source inspected: complete named-emission byte equality; identity-specific work/
 ```
 
 Evidence: original final-main gate root result569 passed/1 failed/6 existing ignored with the exact budget panic retained at4502–4512 in /tmp/IR-1383-authority-combined-final-3a17b4875.log. Coder exact test /tmp/IR-1383-writer-budget-exact.log executes1 and passes with cargo_exit=0; /tmp/IR-1383-writer-budget-fmt-check.log records rustfmt_exit=0. Reviewer inspected these real receipts and the entire single-file diff; git diff --check passes. No tests/Cargo/broad/deep/matrix/aggregate or formatting command was rerun by reviewer, as explicitly directed. Existing root matrix PASS9 bindings and all other completed gate stages are retained; the targeted repair is not a whole root rerun PASS. Lead owns only the still-unrun docs/analyze continuation after latest custody. User authorizes root admin merge after required checks; this review performs no merge and grants no new authority. No production edit, push, review clone, peer write or head chase.
+
+## New findings (disposition pass 7)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | The progress-owner output-limit oracle measured document length under owner-max limits, then changed max_output_bytes and expected the newly derived document to have the old length. The owner serializes effective limits into the document and rederives under the supplied read limits, so changing the ceiling changes its encoded length. The tail gate failed the supposed exact-bound assertion with actual7739 versus expected7742. | qsl-analyze/tests/it/monitor_authority.rs:588-615 |
+
+## Dispositions — targeted owner-output oracle round 7
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-008 | fixed | The test now calibrates only through genuine admitted_with_progress_limits derivation and reading under the same supplied limits, original root and association row. Each actual successful output size becomes the next ceiling, with a16-read convergence guard. It requires a genuine fixed point and exact bytes==ceiling, then requires ResourceIncomplete at one byte less. No hardcoded size/JSON length math, copied charge, altered document read, production bypass or weakened final inequality is used. |
+
+## Current targeted disposition verdict — round 7
+
+PASS / no open findings. Candidate711ebeea329e9d5f81b08ff3a52a4f50b480823a differs frome61e4f474 only in the examined progress-owner budget test. Production and dependencies remain identical to3a17; previous bare-package repair and review custody remain retained. All older findings/outcomes remain unchanged and closed.
+
+The complete test diff, original failing tail and helper were examined. observation.rs177–178 passes the identical progress_limits to progress::derive and progress::read. Published owner014eb43 common.rs LimitsWire/Envelope retains effective limits in the canonical document; this accounts for the changed output size without guessed JSON arithmetic. The final exact equality, real one-byte-short owner call and original ResourceIncomplete assertion remain active. The bounded loop fails rather than silently accepting missing convergence.
+
+```rust
+    let exact = fixed_point.expect("owner output-ceiling calibration converges within 16 reads");
+    assert_eq!(exact.bytes().len(), limits.max_output_bytes);
+    limits.max_output_bytes -= 1;
+    let error =
+        observation::admitted_with_progress_limits(Some(vec![row(&root)]), limits).unwrap_err();
+    assert_eq!(error.code(), authority::ErrorCode::ResourceIncomplete);
+```
+
+Evidence: /tmp/IR-1383-authority-final-tail-e61e4f474.log retains13authority pass/1 fail; it is not relabeled a broad PASS. /tmp/IR-1383-progress-output-exact.log executes the one affected test and passes1 with cargo_exit=0; /tmp/IR-1383-progress-output-fmt-check.log records rustfmt_exit=0. Reviewer inspected the actual source/receipts and git diff --check exits0; no Cargo/test/matrix/broad/deep/aggregate or format command was rerun as explicitly directed. Earlier completed gate results remain retained; only the lead’s unrun analyze-doc stage and latest custody remain before its user-authorized admin merge. No source edit, push, review clone, peer write/head chase or merge performed by reviewer. No new methods or global matrix rerun.
