@@ -7,7 +7,7 @@ use qsl_semantics::check::{CheckCause, CheckRefusal};
 use qsl_semantics::model::refusal::{MemberPath, MemberRoot};
 use quire_semantic_value::call::WrongSnapshotCause;
 use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::location::{OperationClauseKind, ExpressionOwner as Origin};
+use quire_semantic_value::location::{ExpressionOwner as Origin, OperationClauseKind};
 use serde_json::json;
 
 use super::model_operations::{

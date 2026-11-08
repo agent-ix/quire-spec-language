@@ -300,7 +300,9 @@ fn spine_origin(origin: &quire_semantic_value::location::ExpressionOwner) -> typ
                 index: *index,
             }
         }
-        quire_semantic_value::location::ExpressionOwner::Expression => types::SpineOrigin::Expression,
+        quire_semantic_value::location::ExpressionOwner::Expression => {
+            types::SpineOrigin::Expression
+        }
         quire_semantic_value::location::ExpressionOwner::TypeDeclaration { name } => {
             types::SpineOrigin::TypeDeclaration { name: name.clone() }
         }
@@ -332,7 +334,9 @@ fn spine_origin(origin: &quire_semantic_value::location::ExpressionOwner) -> typ
 }
 
 /// FR-096/FR-100: `Evaluation.location`, rendered as `{origin, path}`.
-fn spine_location(location: &quire_semantic_value::location::ExpressionLocation) -> types::SpineLocation {
+fn spine_location(
+    location: &quire_semantic_value::location::ExpressionLocation,
+) -> types::SpineLocation {
     types::SpineLocation {
         origin: spine_origin(&location.origin),
         path: location.path(),
@@ -686,7 +690,9 @@ mod tests {
     #[trace("TC-452", "FR-100-AC-9")]
     fn location_origin_kinds_render_kebab_case() {
         use qsl_replay::spine::CallRefusal;
-        use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
+        use quire_semantic_value::location::{
+            ExpressionLocation as Location, ExpressionOwner as Origin,
+        };
         let cases = [
             (
                 Origin::Body {
@@ -741,7 +747,9 @@ mod tests {
     #[trace("TC-452", "FR-100-AC-9")]
     fn refused_locus_and_location_render() {
         use qsl_replay::spine::{CallLocus, CallRefusal};
-        use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
+        use quire_semantic_value::location::{
+            ExpressionLocation as Location, ExpressionOwner as Origin,
+        };
         let span = qsl_foundation::LocatedSpan {
             start: qsl_foundation::Position {
                 byte: 225,

@@ -1189,7 +1189,8 @@ fn metre() -> quire_exact::UnitId {
 }
 
 fn bounded_map_of(values: ValueType, minimum: u64, maximum: u64) -> ValueType {
-    ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
+    ValueType::Map(std::sync::Arc::new(
+        quire_exact::MapType::new(
             ValueType::String,
             values,
             Some(CardinalityBound::new(minimum, maximum).unwrap()),

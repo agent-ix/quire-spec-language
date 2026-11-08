@@ -2376,8 +2376,7 @@ fn argument_value_binds_native_uuid_and_timestamp_values() {
 #[test]
 fn argument_value_refuses_map_and_bounded_quantity_parameters() {
     let map = ValueType::Map(std::sync::Arc::new(
-        quire_exact::MapType::new(ValueType::String, ValueType::Boolean, None)
-            .expect("a leaf key"),
+        quire_exact::MapType::new(ValueType::String, ValueType::Boolean, None).expect("a leaf key"),
     ));
     let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
         quire_exact::BoundedQuantityType::new(

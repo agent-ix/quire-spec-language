@@ -640,7 +640,9 @@ mod tests {
     use super::super::{CheckCause, PackageDeclarations};
     use super::Arc;
     use quire_semantic_value::checking::CheckingLimits;
-    use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
+    use quire_semantic_value::location::{
+        ExpressionLocation as Location, ExpressionOwner as Origin,
+    };
 
     const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
         profile \"ix:value\" as v;\n\

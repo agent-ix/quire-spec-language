@@ -18,7 +18,9 @@
 
 use qsl_forms::StateClauseKind;
 use quire_exact::EffectiveId;
-use quire_semantic_value::location::{ExpressionLocation as Location, OperationClauseKind, ExpressionOwner as Origin};
+use quire_semantic_value::location::{
+    ExpressionLocation as Location, ExpressionOwner as Origin, OperationClauseKind,
+};
 
 use super::refusal::CheckRefusal;
 use super::state_clause::{ClauseOperation, ClauseView};

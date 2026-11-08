@@ -678,7 +678,9 @@ pub struct CallLocationRead {
 impl CallLocationRead {
     /// The typed location this record restores.
     fn typed(&self) -> quire_semantic_value::location::ExpressionLocation {
-        use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
+        use quire_semantic_value::location::{
+            ExpressionLocation as Location, ExpressionOwner as Origin,
+        };
         let origin = match &self.origin {
             CallOriginRead::Body { function, index } => Origin::Body {
                 function: function.clone(),
@@ -1944,7 +1946,7 @@ enum CallOriginWire {
 
 impl From<&quire_semantic_value::location::ExpressionLocation> for CallLocationWire {
     fn from(location: &quire_semantic_value::location::ExpressionLocation) -> Self {
-        use quire_semantic_value::location::{OperationClauseKind, ExpressionOwner as Origin};
+        use quire_semantic_value::location::{ExpressionOwner as Origin, OperationClauseKind};
         let origin = match &location.origin {
             Origin::Body { function, index } => CallOriginWire::Body {
                 function: function.clone(),

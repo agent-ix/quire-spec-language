@@ -3876,7 +3876,9 @@ pub(crate) mod checking_tests {
     #[trace("QSpec-TC-191", "QSpec-FR-146-AC-8")]
     #[test]
     fn duplicate_names_are_refused_with_every_locus_in_order() {
-        use quire_semantic_value::location::{ExpressionLocation as BodyLocation, ExpressionOwner as BodyOrigin};
+        use quire_semantic_value::location::{
+            ExpressionLocation as BodyLocation, ExpressionOwner as BodyOrigin,
+        };
         let names = ["a", "b", "a", "c", "b", "a"];
         let refusals = crate::check::PackageDeclarations {
             functions: names
@@ -4465,7 +4467,8 @@ mod locus_tests {
     #[test]
     fn a_map_is_encoded_with_its_tag_values_and_bound() {
         let map = |bound| {
-            ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(ValueType::Boolean, ValueType::Boolean, bound)
+            ValueType::Map(std::sync::Arc::new(
+                quire_exact::MapType::new(ValueType::Boolean, ValueType::Boolean, bound)
                     .expect("a leaf key"),
             ))
         };

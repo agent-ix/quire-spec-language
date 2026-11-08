@@ -357,12 +357,14 @@ fn widen_integer_ranges(value_type: &ValueType) -> ValueType {
                 collection.bound(),
             ))
         }
-        ValueType::Map(map) => ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-            map.key().clone(),
-            widen_integer_ranges(map.values()),
-            map.bound(),
-        )
-        .expect("a built map key is a leaf"))),
+        ValueType::Map(map) => ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(
+                map.key().clone(),
+                widen_integer_ranges(map.values()),
+                map.bound(),
+            )
+            .expect("a built map key is a leaf"),
+        )),
         other => other.clone(),
     }
 }

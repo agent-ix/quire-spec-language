@@ -442,7 +442,9 @@ fn state_fixture_identity(case: usize) {
 }
 
 fn subtype_fixture_diagnostics(graph: &qsl_semantics::check::CheckedGraph, source: &str) {
-    use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
+    use quire_semantic_value::location::{
+        ExpressionLocation as Location, ExpressionOwner as Origin,
+    };
 
     eprintln!("state fixture 13: original S3 succeeded; source={source:?}");
     for node in graph.semantic_graph().nodes() {

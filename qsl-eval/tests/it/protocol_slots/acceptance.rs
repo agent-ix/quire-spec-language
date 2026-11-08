@@ -5132,10 +5132,11 @@ fn the_two_record_related_variant_is_located_alike_in_each_clause_order() {
             });
             (checked.checked_body().root().location().clone(), on_bare)
         };
-        let name =
-            |position: usize, side: &str| quire_semantic_value::location::ExpressionOwner::TypeDeclaration {
+        let name = |position: usize, side: &str| {
+            quire_semantic_value::location::ExpressionOwner::TypeDeclaration {
                 name: format!("protocol Pipeline run Main Got related {position} {side}"),
-            };
+            }
+        };
         let mut from = Vec::new();
         for index in 0..2 {
             let (checked, bare) = located("related.from", index);

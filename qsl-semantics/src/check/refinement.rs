@@ -2241,12 +2241,10 @@ fn lift(lifting: &BTreeMap<EffectiveId, EffectiveId>, value_type: &ValueType) ->
                 collection.bound(),
             ))
         }
-        ValueType::Map(map) => ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-            map.key().clone(),
-            lift(lifting, map.values()),
-            map.bound(),
-        )
-        .expect("a built map key is a leaf"))),
+        ValueType::Map(map) => ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(map.key().clone(), lift(lifting, map.values()), map.bound())
+                .expect("a built map key is a leaf"),
+        )),
         other @ (ValueType::Boolean
         | ValueType::Integer
         | ValueType::Int(_)
@@ -4434,7 +4432,8 @@ mod tests {
     }
 
     fn map_of(values: ValueType, bound: Option<quire_exact::CardinalityBound>) -> ValueType {
-        ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(ValueType::String, values, bound).expect("a leaf key"),
+        ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(ValueType::String, values, bound).expect("a leaf key"),
         ))
     }
 

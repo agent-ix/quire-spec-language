@@ -2007,7 +2007,8 @@ fn option_type_projects_through_signature_alias_sequence_map_tuple_variant_unit_
     );
     assert_eq!(
         project(&ValueTypeRef::Package(map_key)).unwrap(),
-        ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
+        ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(
                 ValueType::String,
                 ValueType::option(ValueType::Integer),
                 None,

@@ -243,7 +243,9 @@ fn the_relation_is_written_as_one_node_holding_the_three_bindings() {
 #[trace("FR-306-AC-1")]
 #[test]
 fn a_relation_read_from_two_declarations_has_an_occurrence_for_each() {
-    use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
+    use quire_semantic_value::location::{
+        ExpressionLocation as Location, ExpressionOwner as Origin,
+    };
 
     let (_, mut package) = linked();
     let site = |name: &str| {

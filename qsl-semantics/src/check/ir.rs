@@ -405,7 +405,9 @@ impl CheckedBody {
             .map(|value_type| Node {
                 kind: NodeKind::Literal(CheckedLiteral(Value::Boolean(true))),
                 value_type,
-                location: Location::root(quire_semantic_value::location::ExpressionOwner::Expression),
+                location: Location::root(
+                    quire_semantic_value::location::ExpressionOwner::Expression,
+                ),
                 equality_producer: None,
                 ordering_part: false,
             })
@@ -446,7 +448,9 @@ impl CheckedBody {
                 .map(|(kind, value_type)| Node {
                     kind,
                     value_type,
-                    location: Location::root(quire_semantic_value::location::ExpressionOwner::Expression),
+                    location: Location::root(
+                        quire_semantic_value::location::ExpressionOwner::Expression,
+                    ),
                     equality_producer: None,
                     ordering_part: false,
                 })

@@ -587,7 +587,9 @@ fn native_result_two_command_details_keep_deep_wire_diagnostic() {
 fn native_result_two_retains_refused_outcome_members() {
     use crate::spine::{CallOutcome, CallRefusal};
     use quire_semantic_value::catalog::CatalogCode;
-    use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
+    use quire_semantic_value::location::{
+        ExpressionLocation as Location, ExpressionOwner as Origin,
+    };
 
     let mut report = run("AllBelow", Snapshot::Low, "child");
     report.disposition = ClauseDisposition::Evaluate(CallOutcome::Refused(CallRefusal::Record {

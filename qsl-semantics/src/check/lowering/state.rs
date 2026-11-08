@@ -35,7 +35,9 @@ use crate::model::operation::OperationDeclaration;
 use crate::value::member::{AcceptedPoint, Member};
 use qsl_forms::StateClauseKind;
 use quire_checked::key::DeclarationKey;
-use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as LocationOrigin};
+use quire_semantic_value::location::{
+    ExpressionLocation as Location, ExpressionOwner as LocationOrigin,
+};
 
 /// The operation a `pre` or `post` clause names, as lowering reads it.
 pub(crate) struct AnchorInput<'a> {

@@ -2604,7 +2604,8 @@ mod bounded_carries_tests {
     use super::*;
 
     fn map(bound: Option<(u64, u64)>) -> ValueType {
-        ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
+        ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(
                 ValueType::String,
                 ValueType::Boolean,
                 bound.map(|(lower, upper)| {

@@ -1033,7 +1033,10 @@ mod tests {
                     Some(callee) => Transition::Call(ChildRequest {
                         callee,
                         arguments,
-                        site: Location::at(quire_semantic_value::location::ExpressionOwner::Expression, &[]),
+                        site: Location::at(
+                            quire_semantic_value::location::ExpressionOwner::Expression,
+                            &[],
+                        ),
                     }),
                     None => Transition::Done(Evaluation {
                         outcome: FamilyOutcome::Evaluated(Outcome::Completed(int(7))),
@@ -2247,12 +2250,8 @@ mod tests {
             })
             .expect("the Pair composite declaration");
         let map = ValueType::Map(std::sync::Arc::new(
-            quire_exact::MapType::new(
-                ValueType::String,
-                ValueType::Composite(pair.clone()),
-                None,
-            )
-            .expect("a leaf key"),
+            quire_exact::MapType::new(ValueType::String, ValueType::Composite(pair.clone()), None)
+                .expect("a leaf key"),
         ));
         let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
             quire_exact::BoundedQuantityType::new(

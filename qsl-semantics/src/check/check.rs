@@ -5530,8 +5530,7 @@ mod holds_float_tests {
             quire_exact::IeeeWidth::Binary64,
             quire_exact::RoundingMode::Exact,
         ));
-        let map =
-            |values| {
+        let map = |values| {
             ValueType::Map(std::sync::Arc::new(
                 quire_exact::MapType::new(ValueType::String, values, None).expect("a leaf key"),
             ))
