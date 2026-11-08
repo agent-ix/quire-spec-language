@@ -218,7 +218,8 @@ fn issued_full_result_borrows_preserve_outputs_and_do_not_evaluate_again() {
     let read = built.read(&built.emission);
     let package = read_back(&read);
     let [clause] = clause_ids(&package).try_into().expect("one clause");
-    let asked = both_request(&package, &clause);
+    let mut asked = both_request(&package, &clause);
+    asked.decision_closure = Some(qsl_eval::temporal::ProgressClosure::Open);
     let mut meter = unlimited();
     let original = package
         .evaluate_temporal_evidence(&clause, &asked, &mut meter)
@@ -240,6 +241,7 @@ fn issued_full_result_borrows_preserve_outputs_and_do_not_evaluate_again() {
     assert!(std::ptr::eq(original.result(), original.result()));
 
     let mut correction = asked.clone();
+    correction.decision_closure = Some(qsl_eval::temporal::ProgressClosure::Closed);
     for position in &mut correction.positions {
         position
             .valuations
@@ -268,6 +270,8 @@ fn issued_full_result_borrows_preserve_outputs_and_do_not_evaluate_again() {
     snapshot.support.clear();
     snapshot.settlement = None;
     snapshot.ledger = corrected.result().ledger.clone();
+    assert_ne!(snapshot.truth, original.result().truth);
+    assert_ne!(snapshot.ledger, original.result().ledger);
     assert_eq!(original.result().truth, Some(Truth::True));
     assert_eq!(original.result().support.len(), 2);
     assert_eq!(
