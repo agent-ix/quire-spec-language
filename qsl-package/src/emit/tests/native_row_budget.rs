@@ -568,7 +568,49 @@ fn mixed_collection_package() -> CheckedPackage {
 #[trace("TC-1331", "FR-531-AC-33")]
 #[test]
 fn cold_integer_payloads_refuse_inside_the_real_equality_adapter_without_allocating() {
-    let emission = cold_integer_emission();
+    cold_integer_adapter_controls(cold_integer_emission());
+}
+
+#[trace("TC-1331", "FR-531-AC-33")]
+#[test]
+fn fresh_signed_boundary_payloads_remain_exact_through_the_observed_equality_adapter() {
+    for (lower, upper) in [
+        ("0", "170141183460469231731687303715884105728"),
+        ("-170141183460469231731687303715884105729", "0"),
+        (
+            "-1361129467683753853853498429727072845825",
+            "1361129467683753853853498429727072845825",
+        ),
+    ] {
+        let copied = cold_integer_adapter_controls(cold_integer_emission_with_bounds(lower, upper));
+        // These independent numeric oracles are constructed only after the
+        // observed call; no formatting or comparison warms its input payloads.
+        let expected = quire_exact::IntegerInterval::new(
+            lower.parse().expect("exact lower endpoint"),
+            upper.parse().expect("exact upper endpoint"),
+        )
+        .expect("ordered endpoints");
+        let types: Vec<_> = copied
+            .facts()
+            .iter()
+            .filter_map(|row| match &row.value_type {
+                Some(ValueType::Int(interval)) => Some(interval),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            !types.is_empty(),
+            "the actual adapter retained operand types"
+        );
+        for interval in types {
+            assert_eq!(interval, &expected);
+            assert_eq!(interval.lower(), expected.lower());
+            assert_eq!(interval.upper(), expected.upper());
+        }
+    }
+}
+
+fn cold_integer_adapter_controls(emission: Emission) -> crate::ReadEqualityRows {
     let package = native(&emission);
     let row_index = emission
         .equality_fact_witness_rows()
@@ -588,36 +630,87 @@ fn cold_integer_payloads_refuse_inside_the_real_equality_adapter_without_allocat
         .equality_witness(&package, &mut measure)
         .expect("independent complete materialization");
     let need = measure.consumed();
-    // Select the last denied charge in this actual operand row, so the
-    // observer reaches its numeric copy precharge rather than an earlier path
-    // string. Each probe uses a separate copy; none warms the final input.
-    let storage = (0..need.storage)
-        .rev()
-        .find(|storage| {
-            let candidate = emission.clone();
-            let mut budget = NativeJoinBudget::new(need.work, *storage);
-            candidate
-                .equality_witness(&package, &mut budget)
-                .expect_err("one resource remains short")
-                .locus()
-                == Some(locus)
-        })
-        .expect("an owned charge in the retained integer row");
-    let cold = emission.clone();
-    let mut budget = NativeJoinBudget::new(need.work, storage);
     let _ = allocation_counter::measure(|| {});
-    let mut result = None;
-    let allocations = allocation_counter::measure(|| {
-        result = Some(cold.equality_witness(&package, &mut budget));
-    });
-    let error = result
-        .expect("real adapter ran")
-        .expect_err("numeric materialization storage denied");
-    assert_eq!(allocations.count_total, 0);
-    assert_eq!(error.code(), NativeRowErrorCode::StorageLimit);
-    assert_eq!(error.locus(), Some(locus));
-    assert_eq!(error.configured_bound(), Some(storage));
-    assert_eq!(error.denied(), budget.first_unpaid());
+    for (work, storage, kind) in [
+        (0, need.storage, NativeJoinChargeKind::Work),
+        (need.work, 0, NativeJoinChargeKind::Storage),
+    ] {
+        // Exact's owned Integer clone creates a fresh empty lazy cache. The
+        // clone is prepared outside observation and is never inspected first.
+        let cold = emission.clone();
+        let mut budget = NativeJoinBudget::new(work, storage);
+        let mut outcome = None;
+        let observed = allocation_counter::measure(|| {
+            outcome = Some(cold.equality_witness(&package, &mut budget));
+        });
+        let error = outcome.expect("adapter ran").expect_err("zero allowance");
+        assert_eq!(observed.count_total, 0);
+        assert_eq!(observed.bytes_total, 0);
+        assert_eq!(error.denied(), budget.first_unpaid());
+        assert_eq!(error.denied().expect("original owner charge").kind, kind);
+        assert_eq!(error.locus(), budget.first_unpaid_locus());
+        assert_eq!(error.configured_bound(), Some(0));
+    }
+    for (kind, total, code) in [
+        (
+            NativeJoinChargeKind::Work,
+            need.work,
+            NativeRowErrorCode::WorkLimit,
+        ),
+        (
+            NativeJoinChargeKind::Storage,
+            need.storage,
+            NativeRowErrorCode::StorageLimit,
+        ),
+    ] {
+        // Reach the last charge in the actual numeric operand row. Probes use
+        // separate owned copies, leaving the observed input's lazy cache cold.
+        let limits = |bound| match kind {
+            NativeJoinChargeKind::Work => (bound, need.storage),
+            NativeJoinChargeKind::Storage => (need.work, bound),
+        };
+        let bound = (0..total)
+            .rev()
+            .find(|bound| {
+                let candidate = emission.clone();
+                let (work, storage) = limits(*bound);
+                let mut budget = NativeJoinBudget::new(work, storage);
+                candidate
+                    .equality_witness(&package, &mut budget)
+                    .expect_err("one resource remains short")
+                    .locus()
+                    == Some(locus)
+            })
+            .expect("a real charge in the retained integer row");
+        let cold = emission.clone();
+        let (work, storage) = limits(bound);
+        let mut budget = NativeJoinBudget::new(work, storage);
+        let mut result = None;
+        let allocations = allocation_counter::measure(|| {
+            result = Some(cold.equality_witness(&package, &mut budget));
+        });
+        let error = result
+            .expect("real adapter ran")
+            .expect_err("numeric row denied");
+        assert_eq!(allocations.count_total, 0);
+        assert_eq!(allocations.bytes_total, 0);
+        assert_eq!(error.code(), code);
+        assert_eq!(error.locus(), Some(locus));
+        assert_eq!(error.configured_bound(), Some(bound));
+        assert_eq!(error.denied(), budget.first_unpaid());
+        assert_eq!(error.denied().expect("first real unpaid charge").kind, kind);
+        let prefix = budget.consumed();
+        assert!(prefix.work > 0 && prefix.storage > 0);
+        let mut retried = None;
+        let repeated = allocation_counter::measure(|| {
+            retried = Some(cold.equality_witness(&package, &mut budget));
+        });
+        assert_eq!(retried.expect("adapter retried"), Err(error));
+        assert_eq!(repeated.count_total, 0);
+        assert_eq!(repeated.bytes_total, 0);
+        assert_eq!(budget.consumed(), prefix);
+        assert_eq!(budget.first_unpaid_locus(), Some(locus));
+    }
     let mut exact = NativeJoinBudget::new(need.work, need.storage);
     let fresh = emission.clone();
     let mut copied = None;
@@ -628,23 +721,27 @@ fn cold_integer_payloads_refuse_inside_the_real_equality_adapter_without_allocat
         admitted.count_total > 0,
         "successful owned adapter materialization is observed"
     );
-    assert_eq!(
-        copied
-            .expect("real adapter ran")
-            .expect("cold payloads copy at exact full allowance"),
-        expected
-    );
+    let copied = copied
+        .expect("real adapter ran")
+        .expect("cold payloads copy at exact full allowance");
+    assert_eq!(copied, expected);
+    assert_eq!(exact.consumed(), need);
+    copied
 }
 
 fn cold_integer_emission() -> Emission {
+    cold_integer_emission_with_bounds("0", "340282366920938463463374607431768211457")
+}
+
+fn cold_integer_emission_with_bounds(lower: &str, upper: &str) -> Emission {
     // The source syntax deliberately limits Int bounds to i128. The typed
     // composer accepts the Exact interval directly, through the same genuine
     // declaration/check/emission route as the source collection fixtures.
     let handle = NodeKey::new("pkg", vec![quire_exact::PathSegment::Text("R".into())], 0)
         .expect("record key");
     let interval = quire_exact::IntegerInterval::new(
-        quire_exact::Integer::zero(),
-        "340282366920938463463374607431768211457".parse().unwrap(),
+        lower.parse().expect("exact lower endpoint"),
+        upper.parse().expect("exact upper endpoint"),
     )
     .expect("exact interval");
     let record = CompositeDeclaration::new(
