@@ -1173,7 +1173,9 @@ fn with_lowering<T>(body: impl FnOnce(&mut Lowering<'_>) -> T) -> T {
 }
 
 fn map_of(values: ValueType) -> ValueType {
-    ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(values, None)))
+    ValueType::Map(std::sync::Arc::new(
+        quire_exact::MapType::new(ValueType::String, values, None).expect("a leaf key"),
+    ))
 }
 
 fn bounded_metre() -> ValueType {
@@ -1188,9 +1190,12 @@ fn metre() -> quire_exact::UnitId {
 
 fn bounded_map_of(values: ValueType, minimum: u64, maximum: u64) -> ValueType {
     ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-        values,
-        Some(CardinalityBound::new(minimum, maximum).unwrap()),
-    )))
+            ValueType::String,
+            values,
+            Some(CardinalityBound::new(minimum, maximum).unwrap()),
+        )
+        .expect("a leaf key"),
+    ))
 }
 
 /// FR-092-AC-28: `Map<Text, V>` lowers to a self-typed `composite_type`/`map`

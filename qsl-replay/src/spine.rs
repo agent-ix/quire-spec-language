@@ -2540,14 +2540,15 @@ fn value_type_source(value_type: &quire_exact::ValueType) -> String {
             format!("Quantity<{}, {carrier}>", unit_spelling(carried.unit()))
         }
         ValueType::Map(map) => {
+            let key = value_type_source(map.key());
             let values = value_type_source(map.values());
             match map.bound() {
                 Some(bound) => format!(
-                    "Map<Text, {values}>[{}, {}]",
+                    "Map<{key}, {values}>[{}, {}]",
                     bound.minimum(),
                     bound.maximum()
                 ),
-                None => format!("Map<Text, {values}>"),
+                None => format!("Map<{key}, {values}>"),
             }
         }
         ValueType::Text(text) => format!(
@@ -2805,16 +2806,15 @@ mod tests {
     #[test]
     fn map_bounded_and_carried_quantity_types_have_a_source_spelling() {
         let map = |bound| {
-            ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-                ValueType::Boolean,
-                bound,
-            )))
+            ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(ValueType::String, ValueType::Boolean, bound)
+                    .expect("a leaf key"),
+            ))
         };
-        assert_eq!(super::value_type_source(&map(None)), "Map<Text, Boolean>");
+        assert_eq!(super::value_type_source(&map(None)), "Map<String, Boolean>");
         let bound = quire_exact::CardinalityBound::new(1, 4).expect("a bound");
         assert_eq!(
             super::value_type_source(&map(Some(bound))),
-            "Map<Text, Boolean>[1, 4]"
+            "Map<String, Boolean>[1, 4]"
         );
         let unit = quire_exact::UnitId::declared(
             quire_exact::NodeKey::new(

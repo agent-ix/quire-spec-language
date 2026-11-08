@@ -522,10 +522,14 @@ fn mixed_collection_package() -> CheckedPackage {
         )]),
     );
     let map = |values, bound: Option<(u64, u64)>| {
-        ValueType::map(MapType::new(
-            values,
-            bound.map(|(lower, upper)| CardinalityBound::new(lower, upper).expect("a bound")),
-        ))
+        ValueType::map(
+            MapType::new(
+                ValueType::String,
+                values,
+                bound.map(|(lower, upper)| CardinalityBound::new(lower, upper).expect("a bound")),
+            )
+            .expect("a leaf key"),
+        )
     };
     let collection = ValueType::collection(CollectionType::new(
         CollectionKind::Sequence,

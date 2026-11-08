@@ -3160,7 +3160,9 @@ mod order_tests {
             quire_exact::OriginalDeclarationKey::new("model", "Node"),
         ));
         let nested = |value_type| {
-            ValueType::option(ValueType::map(quire_exact::MapType::new(value_type, None)))
+            ValueType::option(ValueType::map(
+                quire_exact::MapType::new(ValueType::String, value_type, None).expect("a leaf key"),
+            ))
         };
         let mut projection = ReaderProtocolProjection {
             nodes: vec![ReaderProjectedNode::leaf(

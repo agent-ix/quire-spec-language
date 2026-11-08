@@ -5531,7 +5531,11 @@ mod holds_float_tests {
             quire_exact::RoundingMode::Exact,
         ));
         let map =
-            |values| ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(values, None)));
+            |values| {
+            ValueType::Map(std::sync::Arc::new(
+                quire_exact::MapType::new(ValueType::String, values, None).expect("a leaf key"),
+            ))
+        };
         assert!(holds_float(&float));
         assert!(holds_float(&map(float.clone())));
         assert!(holds_float(&map(ValueType::option(map(float)))));

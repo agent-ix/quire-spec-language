@@ -2246,10 +2246,14 @@ mod tests {
                 _ => None,
             })
             .expect("the Pair composite declaration");
-        let map = ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-            ValueType::Composite(pair.clone()),
-            None,
-        )));
+        let map = ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(
+                ValueType::String,
+                ValueType::Composite(pair.clone()),
+                None,
+            )
+            .expect("a leaf key"),
+        ));
         let bounded = ValueType::BoundedQuantity(std::sync::Arc::new(
             quire_exact::BoundedQuantityType::new(
                 quire_exact::UnitId::compound(vec![(

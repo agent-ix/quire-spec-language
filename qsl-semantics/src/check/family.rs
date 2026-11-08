@@ -4465,10 +4465,9 @@ mod locus_tests {
     #[test]
     fn a_map_is_encoded_with_its_tag_values_and_bound() {
         let map = |bound| {
-            ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-                ValueType::Boolean,
-                bound,
-            )))
+            ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(ValueType::Boolean, ValueType::Boolean, bound)
+                    .expect("a leaf key"),
+            ))
         };
         // "map" (3), "boolean" (7), "unbounded" (9), each behind a length.
         assert_eq!(measured(&map(None)), (3, 3 * 8 + 3 + 7 + 9));

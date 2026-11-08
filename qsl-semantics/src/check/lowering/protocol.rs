@@ -2605,11 +2605,14 @@ mod bounded_carries_tests {
 
     fn map(bound: Option<(u64, u64)>) -> ValueType {
         ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-            ValueType::Boolean,
-            bound.map(|(lower, upper)| {
-                quire_exact::CardinalityBound::new(lower, upper).expect("a bound")
-            }),
-        )))
+                ValueType::String,
+                ValueType::Boolean,
+                bound.map(|(lower, upper)| {
+                    quire_exact::CardinalityBound::new(lower, upper).expect("a bound")
+                }),
+            )
+            .expect("a leaf key"),
+        ))
     }
 
     /// A bounded map lowers to a `bounded_domain` (FR-092-AC-28), which IR's

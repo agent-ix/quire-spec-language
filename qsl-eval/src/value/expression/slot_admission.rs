@@ -358,9 +358,11 @@ fn widen_integer_ranges(value_type: &ValueType) -> ValueType {
             ))
         }
         ValueType::Map(map) => ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
+            map.key().clone(),
             widen_integer_ranges(map.values()),
             map.bound(),
-        ))),
+        )
+        .expect("a built map key is a leaf"))),
         other => other.clone(),
     }
 }
@@ -444,10 +446,10 @@ mod tests {
     }
 
     fn map_type() -> ValueType {
-        ValueType::Map(std::sync::Arc::new(quire_exact::MapType::new(
-            ValueType::Integer,
-            None,
-        )))
+        ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(ValueType::String, ValueType::Integer, None)
+                .expect("a leaf key"),
+        ))
     }
 
     /// An environment built under `caller` whose `E.u` holds `M(P { b })`

@@ -422,9 +422,11 @@ text is UTF-8 as written.
   "element": <value type>, "bound": null | { "minimum", "maximum" } }`; `reference`
   `{ "effective": <effective id> }`; `population` `{ "maximum": null | <integer> }`; `carried_quantity` `{ "unit":
   <unit id>, "carrier": <carrier> }`; `bounded_quantity` `{ "unit": <unit id>, "min":
-  null | <quantity>, "max": null | <quantity> }`; `map` `{ "values": <value type>,
-  "bound": null | { "minimum", "maximum" } }` (a map's keys are Text, so the member
-  names no key type). A *quantity* is `{ "magnitude": <checked rational>, "unit":
+  null | <quantity>, "max": null | <quantity> }`; `map` `{ "key": <value type>,
+  "values": <value type>, "bound": null | { "minimum", "maximum" } }` (`key` is the
+  map's declared key type, a type that nests no other type: quire-exact FR-386, so
+  two maps differing only by key never encode alike, and a reader refuses a `key`
+  that is an `option`, `collection` or `map`). A *quantity* is `{ "magnitude": <checked rational>, "unit":
   <unit id> }`. A *carrier* is a tagged object `{ "kind": "decimal", "lower", "upper",
   "min_scale", "max_scale", "rounding" }`, `{ "kind": "integer", "lower", "upper",
   "rounding" }` or `{ "kind": "rational", "numerator": <interval>, "denominator":
@@ -432,7 +434,7 @@ text is UTF-8 as written.
   above. For example a `map` of `bounded_quantity` values over the unit node `["U"]` of package
   `p`, with `min` null, is, as a JSON value with members in the order shown (the
   bound members are JSON integers, the magnitude components canonical decimal
-  strings): `{ "kind": "map", "values": { "kind": "bounded_quantity", "unit": {
+  strings): `{ "kind": "map", "key": { "kind": "string" }, "values": { "kind": "bounded_quantity", "unit": {
   "kind": "declared", "node": { "package": "p", "path": ["U"], "ordinal": 0 } },
   "min": null, "max": { "magnitude": { "numerator": "5", "denominator": "1" },
   "unit": { "kind": "declared", "node": { "package": "p", "path": ["U"], "ordinal":
