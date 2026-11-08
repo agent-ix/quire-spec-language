@@ -6727,6 +6727,40 @@ mod tests {
         )
     }
 
+    /// FR-230-AC-23: a map type whose `values` is `ix://quire/native/Clock`
+    /// reads as a `MapTypeRecord` of clock values.
+    #[trace("FR-230-AC-23")]
+    #[test]
+    fn reads_a_map_type_over_clock_as_a_clock_valued_record() {
+        let mut document =
+            option_wire_document(Some(serde_json::json!("ix://quire/native/Integer")));
+        document["types"]
+            .as_array_mut()
+            .expect("types")
+            .push(wire_type(
+                "ix://acme/optionals/TickMap",
+                serde_json::json!("map"),
+                serde_json::json!({"values": "ix://quire/native/Clock"}),
+            ));
+        let records = read_records(
+            "acme/optionals",
+            &parse_document(document.to_string().as_bytes()),
+        )
+        .expect("a map over Clock reads");
+        let values: Vec<_> = records
+            .iter()
+            .filter_map(|record| match record {
+                DomainPackageRecord::MapType(map)
+                    if map.key.node == "ix://acme/optionals/TickMap" =>
+                {
+                    Some(&map.values)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(values, [&ValueTypeRef::Clock]);
+    }
+
     #[trace("QSpec-FR-154-AC-39", "QSpec-FR-322-AC-298")]
     #[test]
     fn reads_option_and_presence_spellings_through_read_records() {
