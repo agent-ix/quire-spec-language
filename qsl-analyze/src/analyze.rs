@@ -2014,4 +2014,86 @@ mod tests {
         assert_eq!(terminal.diagnostic(), Some(wrong));
         assert_eq!(terminal.backend(), Some(&BackendId::new("test-a")));
     }
+    /// FR-276-AC-4: a two-item request whose test engine settles the first
+    /// item and then blocks until the handle is cancelled (from a second
+    /// thread) returns the first item's record unchanged and settles the
+    /// second `incomplete` with the cancellation cause, running no work for
+    /// it.
+    #[trace("TC-757", "FR-276-AC-4")]
+    #[test]
+    fn a_cancel_after_the_first_item_keeps_it_and_settles_the_second_incomplete() {
+        let failed = || {
+            EngineReport::Refused(Refusal::Failed(CatalogCode::new(
+                "runtime_invariant",
+                "established-invariant-broken",
+            )))
+        };
+        let item = |index, work: Box<dyn FnOnce(&Cancel) -> EngineReport>| {
+            AnalyzeItem::new(
+                RequestIndex::new(index),
+                Capability::OperationContract,
+                Some(DeclarationFamily::StateModel),
+                Mode::Bounded,
+                "test-all",
+                work,
+            )
+        };
+        let mut engines = Engines::default();
+        engines.with(engine_all("test-all")).expect("one engine");
+        let uncancelled = analyze_items(
+            &engines,
+            vec![item(0, Box::new(move |_| failed()))],
+            &Cancel::new(),
+        );
+
+        let cancel = Cancel::new();
+        let (settled, wait_for_first) = std::sync::mpsc::channel();
+        let canceller = {
+            let cancel = cancel.clone();
+            std::thread::spawn(move || {
+                wait_for_first.recv().expect("the first item settled");
+                cancel.cancel(CancelCause::Requested);
+            })
+        };
+        let second_ran = std::cell::Cell::new(false);
+        let blocking = {
+            let second_ran = &second_ran;
+            vec![
+                item(
+                    0,
+                    Box::new(move |cancel| {
+                        let report = failed();
+                        settled.send(()).expect("the canceller waits");
+                        while cancel.cause().is_none() {
+                            std::thread::yield_now();
+                        }
+                        report
+                    }),
+                ),
+                AnalyzeItem::new(
+                    RequestIndex::new(1),
+                    Capability::OperationContract,
+                    Some(DeclarationFamily::StateModel),
+                    Mode::Bounded,
+                    "test-all",
+                    move |_| {
+                        second_ran.set(true);
+                        failed()
+                    },
+                ),
+            ]
+        };
+        let records = analyze_items(&engines, blocking, &cancel);
+        canceller.join().expect("the canceller finished");
+
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].terminal(), uncancelled[0].terminal());
+        assert_eq!(
+            records[1].terminal().map(TerminalRecord::value),
+            Some(&TerminalValue::Incomplete(IncompleteCause::Cancelled {
+                source: CancelCause::Requested
+            }))
+        );
+        assert!(!second_ran.get());
+    }
 }
