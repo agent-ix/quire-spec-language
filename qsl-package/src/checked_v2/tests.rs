@@ -3549,8 +3549,10 @@ fn conformance_fr340_frame_mutations_match_qspec_vectors() {
 }
 
 /// QSpec FR-322 "Operand index segments" (TC-233 NI-01..NI-12): each
-/// `node-index-vectors.json` case, its RFC 6902 patch applied to the base
-/// package, is refused `malformed_wire` by QSL's whole I2 read. A schema-invalid
+/// `node-index-vectors.json` case applies its RFC 6902 patch to the raw base.
+/// Malformed cases retain their whole-I2 refusal and locus; the published
+/// partial-stage controls also check holder-dependent keys, duplicate identity,
+/// and insertion preserving original bytes and keys. A schema-invalid
 /// operand (a nested `node_id` object, a negative, string or fractional
 /// index, an extra or missing member, an index segment in a
 /// `dependency_reference` node) is refused within the patched member; an
@@ -3651,7 +3653,7 @@ fn conformance_node_index_vectors_refuse_malformed_wire() {
             other => panic!("{id}: unknown schema outcome {other}"),
         }
     }
-    println!("conformance: {} node-index vectors refused", cases.len());
+    println!("conformance: {} node-index vector outcomes matched", cases.len());
 }
 
 /// A `model`/`object_type` node (FR-340's `creates`/`deletes`-eligible, and
