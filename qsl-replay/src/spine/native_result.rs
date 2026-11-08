@@ -2387,6 +2387,14 @@ impl Disposition {
                         if let Some(name) = payload.construct_name {
                             fields.insert("construct_name", name);
                         }
+                        if let Some(location) = payload.location {
+                            // The wire's own location form, as compact JSON.
+                            if let Ok(text) =
+                                serde_json::to_string(&CallLocationWire::from(location))
+                            {
+                                fields.insert("location", text);
+                            }
+                        }
                         record = record.fields(fields);
                     }
                     super::RunRefusal::PrepareLimit(limit) => {

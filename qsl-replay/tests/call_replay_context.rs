@@ -62,6 +62,7 @@ fn call(function: &str, x: Value, work_units: u64) -> Call {
         accounting: default_accounting(work_units),
         supplied: SuppliedLimits::default(),
         backend: quire_eval::ExecutionBackendChoice::Interpreter,
+        prepare: qsl_eval::execution::PrepareLimits::default(),
     }
 }
 

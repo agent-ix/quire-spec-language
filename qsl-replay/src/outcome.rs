@@ -2998,6 +2998,7 @@ mod tests {
                 accounting,
                 supplied: Default::default(),
                 backend: quire_eval::ExecutionBackendChoice::Interpreter,
+                prepare: qsl_eval::execution::PrepareLimits::default(),
             };
             let outcome = run(
                 SourceIdentity::new("agent-ix", "test:outcome"),
@@ -3038,6 +3039,7 @@ mod tests {
             accounting: default_accounting(1_000_000),
             supplied: Default::default(),
             backend: quire_eval::ExecutionBackendChoice::Interpreter,
+            prepare: qsl_eval::execution::PrepareLimits::default(),
         };
         let outcome = run(
             SourceIdentity::new("agent-ix", "test:outcome"),
@@ -3322,6 +3324,7 @@ mod tests {
                 accounting: default_accounting(1_000_000),
                 supplied: Default::default(),
                 backend: quire_eval::ExecutionBackendChoice::Interpreter,
+                prepare: qsl_eval::execution::PrepareLimits::default(),
             },
             &ObjectEnvironment::default(),
             cancel,

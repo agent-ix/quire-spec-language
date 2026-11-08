@@ -986,6 +986,7 @@ fn tc_786_run_exit_statuses_come_from_the_exit_function() {
                 accounting: default_accounting(work_units),
                 supplied: Default::default(),
                 backend: quire_eval::ExecutionBackendChoice::Interpreter,
+                prepare: qsl_eval::execution::PrepareLimits::default(),
             },
             &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
             &quire_exact::Cancel::new(),

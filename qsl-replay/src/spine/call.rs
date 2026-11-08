@@ -96,6 +96,9 @@ pub struct Call {
     /// default. A backend the caller did not supply refuses; no other
     /// backend runs in its place.
     pub backend: quire_eval::ExecutionBackendChoice,
+    /// FR-279, FR-294: the `prepare.compile_work_units` and
+    /// `prepare.code_bytes` bounds the chosen backend's `prepare` runs under.
+    pub prepare: PrepareLimits,
 }
 
 impl Call {
@@ -113,6 +116,7 @@ impl Call {
             accounting,
             supplied,
             backend: quire_eval::ExecutionBackendChoice::Interpreter,
+            prepare: PrepareLimits::DEFAULT,
         }
     }
 }
@@ -494,7 +498,7 @@ pub fn run(
     objects: &ObjectEnvironment,
     cancel: &Cancel,
 ) -> Result<CallOutcome, Box<RunRefusal>> {
-    run_reading(
+    run_with_backends(
         source,
         package_name,
         path,
@@ -506,9 +510,7 @@ pub fn run(
         objects,
         &SuppliedBackends::default(),
         cancel,
-        |_, _, _| Ok(()),
     )
-    .map(|(outcome, ())| outcome)
 }
 
 /// [`run`] with the execution backends the caller supplies (FR-296): the
@@ -626,7 +628,7 @@ pub(crate) fn run_reading<T>(
         &ExecuteLimits {
             accounting: call.accounting,
             supplied: call.supplied,
-            prepare: PrepareLimits::default(),
+            prepare: call.prepare,
         },
         cancel,
     )

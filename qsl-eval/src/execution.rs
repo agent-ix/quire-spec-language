@@ -22,6 +22,28 @@
 //! }
 //! ```
 //!
+//! A parsed source does not compile either:
+//!
+//! ```compile_fail,E0308
+//! use qsl_cst::ParsedSource;
+//! use qsl_eval::execution::{ExecutionBackend, Interpreter, PrepareLimits};
+//! use quire_exact::Cancel;
+//! fn parsed(backend: Interpreter, source: &ParsedSource, cancel: &Cancel) {
+//!     let _ = backend.prepare(source, &[], &PrepareLimits::default(), cancel);
+//! }
+//! ```
+//!
+//! Nor does an unchecked expression:
+//!
+//! ```compile_fail,E0308
+//! use qsl_eval::execution::{ExecutionBackend, Interpreter, PrepareLimits};
+//! use qsl_forms::syntax::Expression;
+//! use quire_exact::Cancel;
+//! fn unchecked(backend: Interpreter, expression: &Expression, cancel: &Cancel) {
+//!     let _ = backend.prepare(expression, &[], &PrepareLimits::default(), cancel);
+//! }
+//! ```
+//!
 //! The control passes a checked package and compiles:
 //!
 //! ```
@@ -67,12 +89,17 @@ pub struct PrepareLimits {
     pub code_bytes: u64,
 }
 
+impl PrepareLimits {
+    /// The published defaults (FR-294).
+    pub const DEFAULT: Self = Self {
+        compile_work_units: 16_777_216,
+        code_bytes: 67_108_864,
+    };
+}
+
 impl Default for PrepareLimits {
     fn default() -> Self {
-        Self {
-            compile_work_units: 16_777_216,
-            code_bytes: 67_108_864,
-        }
+        Self::DEFAULT
     }
 }
 
@@ -440,17 +467,34 @@ pub fn execute(
 }
 
 /// FR-279: a `prepare` failure as the call failure `execute` returns. A
-/// reached limit becomes the leaf's locus-free [`PrepareLimitReached`].
+/// reached limit becomes the leaf's locus-free [`PrepareLimitReached`]; a
+/// limit naming a setting that is not a prepare setting, or a counter beyond
+/// `u64`, is a backend invariant break.
 fn call_failure(failure: PrepareFailure) -> CallFailure {
     match failure {
-        PrepareFailure::Limit(limit) => CallFailure::Limit(PrepareLimitReached {
-            setting: match limit.setting() {
+        PrepareFailure::Limit(limit) => {
+            let setting = match limit.setting() {
+                Setting::PrepareCompileWorkUnits => PrepareSetting::CompileWorkUnits,
                 Setting::PrepareCodeBytes => PrepareSetting::CodeBytes,
-                _ => PrepareSetting::CompileWorkUnits,
-            },
-            bound: limit.configured_bound(),
-            actual: u64::try_from(limit.actual()).unwrap_or(u64::MAX),
-        }),
+                _ => {
+                    return CallFailure::Fault(InternalFault::new(
+                        "execution",
+                        "a-prepare-limit-names-a-prepare-setting",
+                    ))
+                }
+            };
+            match u64::try_from(limit.actual()) {
+                Ok(actual) => CallFailure::Limit(PrepareLimitReached {
+                    setting,
+                    bound: limit.configured_bound(),
+                    actual,
+                }),
+                Err(_) => CallFailure::Fault(InternalFault::new(
+                    "execution",
+                    "a-prepare-counter-fits-u64",
+                )),
+            }
+        }
         PrepareFailure::Cancelled(cause) => CallFailure::Cancelled(cause),
         PrepareFailure::Fault(fault) => CallFailure::Fault(fault),
     }

@@ -58,6 +58,7 @@ fn call(function: &str, arguments: Vec<CallArgument>, work_units: u64) -> Call {
         accounting: default_accounting(work_units),
         supplied: SuppliedLimits::default(),
         backend: quire_eval::ExecutionBackendChoice::Interpreter,
+        prepare: qsl_eval::execution::PrepareLimits::default(),
     }
 }
 

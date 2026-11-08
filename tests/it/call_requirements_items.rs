@@ -38,6 +38,7 @@ fn members(function: &str) -> Vec<(OccurrenceKey, usize)> {
         accounting: default_accounting(1_000_000),
         supplied: SuppliedLimits::default(),
         backend: quire_eval::ExecutionBackendChoice::Interpreter,
+        prepare: qsl_eval::execution::PrepareLimits::default(),
     };
     let result = run_with_requirements(
         SourceIdentity::new("a", "u"),
