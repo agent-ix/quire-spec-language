@@ -111,7 +111,14 @@ fn admit(unit: &Unit) -> Box<CheckedPackageV2> {
 
 /// `admitted`'s graph.
 fn wire_graph(admitted: &CheckedPackageV2) -> WireGraph {
-    WireGraph::new(admitted.resolved_graph().nodes.iter().map(|node| &node.node_id)).unwrap()
+    WireGraph::new(
+        admitted
+            .resolved_graph()
+            .nodes
+            .iter()
+            .map(|node| &node.node_id),
+    )
+    .unwrap()
 }
 
 /// The binder's package inputs over `admitted`.

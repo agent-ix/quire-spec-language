@@ -756,7 +756,10 @@ mod tests {
             ),
             (0, 2)
         );
-        assert_eq!(base.resolved_graph().nodes.len(), retargeted.resolved_graph().nodes.len());
+        assert_eq!(
+            base.resolved_graph().nodes.len(),
+            retargeted.resolved_graph().nodes.len()
+        );
     }
 
     #[trace("FR-093-AC-19", "TC-416")]

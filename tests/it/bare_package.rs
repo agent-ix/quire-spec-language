@@ -391,7 +391,11 @@ fn a_public_record_projection_requires_its_original_carried_native_witness() {
         .expect("the original Pair row");
     let equality = qsl_package::ReadEqualityRows::read(&files["equality.json"], &package).unwrap();
     let graph = qsl_semantics::check::wire_id::WireGraph::new(
-        package.resolved_graph().nodes.iter().map(|node| &node.node_id),
+        package
+            .resolved_graph()
+            .nodes
+            .iter()
+            .map(|node| &node.node_id),
     )
     .unwrap();
     let protocol = package

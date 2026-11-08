@@ -282,8 +282,14 @@ pub fn bind_scalar_operands(
     environment: &ObjectEnvironment,
     cancel: &Cancel,
 ) -> Result<BindOutcome, Box<RunRefusal>> {
-    let graph = WireGraph::new(admitted.resolved_graph().nodes.iter().map(|node| &node.node_id))
-        .map_err(|_| fault("admitted-node-ids-rebuild-structural-keys"))?;
+    let graph = WireGraph::new(
+        admitted
+            .resolved_graph()
+            .nodes
+            .iter()
+            .map(|node| &node.node_id),
+    )
+    .map_err(|_| fault("admitted-node-ids-rebuild-structural-keys"))?;
     let package = Package {
         admitted,
         graph: &graph,

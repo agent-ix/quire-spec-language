@@ -115,6 +115,8 @@ pub(super) struct Lowered {
     /// The compiled unit's source text.
     pub(super) text: String,
     pub(super) wire: Value,
+    /// The emitted package's own JSON: operand slots and rows as written.
+    pub(super) raw: Value,
     pub(super) verified: bool,
     /// IR's v2 reading of the package alone, when it admits it.
     pub(super) ir: Result<Box<quire_contract_model::CheckedPackageV2>, String>,
@@ -233,6 +235,7 @@ pub(super) fn lower_package(
     evidence
         .insert_domain_package_document(package_identity(&document[..]), &document[..])
         .expect("a fresh evidence key");
+    let raw = crate::emit::tests::raw_wire(&emission);
     let wire = wire(&emission);
     let ir = match quire_contract_model::read_checked_package(
         emission.package.bytes(),
@@ -254,6 +257,7 @@ pub(super) fn lower_package(
     Lowered {
         text: unit,
         wire,
+        raw,
         ir,
         activation_rows,
         occurrences,

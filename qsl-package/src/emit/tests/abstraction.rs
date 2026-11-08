@@ -90,7 +90,8 @@ fn three_bindings(version_field: &str) -> Vec<AuthoredBinding> {
 /// The fixture package: the document the unit is checked against
 /// and the linked package.
 fn linked() -> (Vec<u8>, CheckedPackage) {
-    let document = crate::emit::tests::wire_bytes(&fixture::document()).expect("the fixture serializes");
+    let document =
+        crate::emit::tests::wire_bytes(&fixture::document()).expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\

@@ -858,7 +858,12 @@ fn an_id_the_package_does_not_hold_or_that_is_no_clause_is_refused() {
     );
 
     let mut refused = 0;
-    for (node, kind) in package.resolved_graph().nodes.iter().zip(package.node_kinds()) {
+    for (node, kind) in package
+        .resolved_graph()
+        .nodes
+        .iter()
+        .zip(package.node_kinds())
+    {
         if *kind == CheckedNodeKind::Temporal(TemporalForm::TemporalClause) {
             continue;
         }

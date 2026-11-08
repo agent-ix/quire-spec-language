@@ -60,7 +60,8 @@ fn emitted_unit(
 }
 
 fn emitted_text(unit: &str) -> Result<(Emission, Value, Read), Vec<CheckRefusal>> {
-    let document = crate::emit::tests::wire_bytes(&fixture::document()).expect("fixture serializes");
+    let document =
+        crate::emit::tests::wire_bytes(&fixture::document()).expect("fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("unit assembles")

@@ -142,7 +142,12 @@ pub fn resolve_clause_root(
     let graph = super::wire_graph(package).map_err(|_| unresolved())?;
     let node = graph
         .index_of(triple.node())
-        .and_then(|at| package.resolved_graph().nodes.get(usize::try_from(at).ok()?))
+        .and_then(|at| {
+            package
+                .resolved_graph()
+                .nodes
+                .get(usize::try_from(at).ok()?)
+        })
         .filter(|node| is_clause(node))
         .ok_or_else(unresolved)?;
     if super::hyper_root::wrappers(package).contains(&node.node_id) {

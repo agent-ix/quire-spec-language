@@ -54,10 +54,11 @@ fn emit_unit(unit_body: &str) -> Emitted {
 /// The checked graph of `unit_body` over the `Tier` and `Odd` model enums,
 /// with the domain document it selects.
 fn checked_unit(unit_body: &str) -> (qsl_semantics::check::CheckedGraph, Vec<u8>) {
-    let document = crate::emit::tests::wire_bytes(&fixture::with_types(vec![fixture::variant_type(
-        "Odd", &ODD_CASES,
-    )]))
-    .expect("the fixture serializes");
+    let document =
+        crate::emit::tests::wire_bytes(&fixture::with_types(vec![fixture::variant_type(
+            "Odd", &ODD_CASES,
+        )]))
+        .expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\

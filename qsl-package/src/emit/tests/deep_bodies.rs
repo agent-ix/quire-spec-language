@@ -384,7 +384,11 @@ fn emitted_sum_node_ids(terms: usize) -> (usize, usize, usize) {
     let ids = written.iter().map(|node| &node["node_id"]);
     let bytes = ids
         .clone()
-        .map(|id| crate::emit::tests::wire_bytes(id).expect("a node id serializes").len())
+        .map(|id| {
+            crate::emit::tests::wire_bytes(id)
+                .expect("a node id serializes")
+                .len()
+        })
         .max()
         .expect("a node");
     let depth = ids.map(json_depth).max().expect("a node");

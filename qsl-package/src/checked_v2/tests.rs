@@ -1239,7 +1239,10 @@ pub(crate) fn read_fixture_graph(
     match read_fixture_wire(fixture, &envelope).1 {
         Read::Verified { .. } => {
             let package = admitted_fixture(fixture, &envelope);
-            Ok((package.resolved_graph().nodes.clone(), package.source_map().to_vec()))
+            Ok((
+                package.resolved_graph().nodes.clone(),
+                package.source_map().to_vec(),
+            ))
         }
         Read::Refused(V2ReadRefusal::Envelope { refusal, .. }) => {
             Err((refusal.code, locus_pointer(&refusal)))

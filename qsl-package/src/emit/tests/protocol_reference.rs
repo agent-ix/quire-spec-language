@@ -835,7 +835,8 @@ fn a_clause_key_is_distinct_per_protocol_and_independent_of_declaration_order() 
 #[test]
 fn protocol_nodes_are_stable_around_unrelated_declarations() {
     let emitted_nodes = |declarations: &str| {
-        let (_, wire, read) = emit_model_unit(&selecting(declarations), None);
+        let (emission, resolved_wire, read) = emit_model_unit(&selecting(declarations), None);
+        let wire = crate::emit::tests::raw_wire(&emission);
         assert!(matches!(read, Read::Verified { .. }), "{read:?}");
         let mut owned: Vec<Value> = nodes(&wire)
             .iter()
@@ -851,6 +852,37 @@ fn protocol_nodes_are_stable_around_unrelated_declarations() {
             })
             .expect("the Fill protocol clause")["node_id"]
             .clone();
+        let clause_wire = {
+            let at = nodes(&wire)
+                .iter()
+                .position(|node| node["node_id"] == clause)
+                .expect("the clause is a node");
+            nodes(&resolved_wire)[at]["node_id"].clone()
+        };
+        // The clause and every node it reaches through dependencies, each
+        // with every id it holds resolved to its structural key: node bytes
+        // alone name no node (FR-322).
+        let graph = WireGraph::of_package_value(&resolved_wire).unwrap();
+        let resolved_nodes = nodes(&resolved_wire);
+        let mut pending = vec![resolved_nodes
+            .iter()
+            .position(|node| node["node_id"] == clause_wire)
+            .expect("the clause is a node")];
+        let mut reached = std::collections::BTreeSet::new();
+        let mut closure = Vec::new();
+        while let Some(at) = pending.pop() {
+            if !reached.insert(at) {
+                continue;
+            }
+            let node = &resolved_nodes[at];
+            closure.push(graph.structural_value(node).unwrap().to_string());
+            for dependency in node["dependencies"].as_array().unwrap() {
+                let key = graph.key_of_value(dependency).unwrap();
+                pending.push(graph.index_of(&key).unwrap() as usize);
+            }
+        }
+        closure.sort();
+        let clause = closure;
         (owned, clause)
     };
 

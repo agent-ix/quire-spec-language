@@ -177,7 +177,9 @@ fn compile_with(clauses: &str, protocol: bool) -> Compiled {
     evidence
         .insert_domain_package_document(
             base::PACKAGE,
-            crate::emit::tests::wire_bytes(&document()).unwrap().as_slice(),
+            crate::emit::tests::wire_bytes(&document())
+                .unwrap()
+                .as_slice(),
         )
         .expect("a fresh evidence key");
     Compiled {

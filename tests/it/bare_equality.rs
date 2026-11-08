@@ -71,7 +71,11 @@ fn read(request: &CheckedHandoffRequest, bytes: &[u8]) -> Box<CheckedPackageV2> 
 /// The key of the protocol node `first ... last` declares.
 fn node_key(package: &CheckedPackageV2, first: &str, last: &str) -> NodeKey {
     let ids = qsl_semantics::check::wire_id::WireGraph::new(
-        package.resolved_graph().nodes.iter().map(|node| &node.node_id),
+        package
+            .resolved_graph()
+            .nodes
+            .iter()
+            .map(|node| &node.node_id),
     )
     .expect("wire ids");
     let node = package

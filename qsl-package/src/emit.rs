@@ -7727,19 +7727,20 @@ pub(crate) fn write_operand_slots(
                     if !seen.insert(text.clone()) {
                         continue;
                     }
-                    let old: CheckedNodeId = serde_json::from_str(&text)
-                        .map_err(|_| EmitRefusal::SourceMapInvariant)?;
+                    let old: CheckedNodeId =
+                        serde_json::from_str(&text).map_err(|_| EmitRefusal::SourceMapInvariant)?;
                     let path = old
                         .path
                         .iter()
                         .map(|segment| match segment {
                             Segment::Index(index) => {
-                                let slot = row.iter().position(|entry| entry == index).unwrap_or_else(
-                                    || {
+                                let slot = row
+                                    .iter()
+                                    .position(|entry| entry == index)
+                                    .unwrap_or_else(|| {
                                         row.push(*index);
                                         row.len() - 1
-                                    },
-                                );
+                                    });
                                 Segment::Operand(slot as u64)
                             }
                             other => other.clone(),

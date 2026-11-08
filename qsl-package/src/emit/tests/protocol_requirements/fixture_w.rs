@@ -1680,7 +1680,8 @@ fn w_between_unrelated_protocols() -> Lowered {
 /// W's own: its occurrences list every construct that writes it.
 fn w_closure(
     wire: &Value,
-    view: impl Fn(&WireGraph, &Value) -> Value,
+    raw: &Value,
+    view: impl Fn(&WireGraph, &Value, &Value) -> Value,
 ) -> (BTreeSet<CheckedNodeId>, BTreeMap<CheckedNodeId, Value>) {
     let graph = WireGraph::of_package_value(wire).expect("the emitted graph");
     let clause = nodes(wire)
@@ -1700,7 +1701,11 @@ fn w_closure(
             continue;
         }
         if node["node_tag"] == "protocol" {
-            own.insert(id, view(&graph, node));
+            let at = graph.index_of(&key).expect("a graph node");
+            own.insert(
+                id,
+                view(&graph, node, &raw["semantic_graph"]["nodes"][at as usize]),
+            );
         }
         for dependency in node["dependencies"].as_array().expect("dependencies") {
             pending.push(node_by_id(wire, dependency));
@@ -1711,9 +1716,13 @@ fn w_closure(
 
 /// Assert that W's clause reaches the same nodes in `alone` and `around`,
 /// and that `view` renders each of W's protocol nodes the same in both.
-fn assert_same_w_nodes(alone: &Value, around: &Value, view: impl Fn(&WireGraph, &Value) -> Value) {
-    let (reached, expected) = w_closure(alone, &view);
-    let (reached_around, actual) = w_closure(around, &view);
+fn assert_same_w_nodes(
+    alone: &Lowered,
+    around: &Lowered,
+    view: impl Fn(&WireGraph, &Value, &Value) -> Value,
+) {
+    let (reached, expected) = w_closure(&alone.wire, &alone.raw, &view);
+    let (reached_around, actual) = w_closure(&around.wire, &around.raw, &view);
     assert_eq!(reached, reached_around, "W reaches the same nodes");
     assert!(
         expected.len() > 20,
@@ -1770,7 +1779,11 @@ fn w_nodes_do_not_follow_unrelated_protocols() {
     assert!(alone.verified, "{}", alone.text);
     let again = lower_with(document(), PROFILES_W, W);
     assert_eq!(alone.wire, again.wire, "W emitted twice");
-    assert_same_w_nodes(&alone.wire, &w_between_unrelated_protocols().wire, resolved);
+    assert_same_w_nodes(
+        &alone,
+        &w_between_unrelated_protocols(),
+        |graph: &WireGraph, node: &Value, _: &Value| resolved(graph, node),
+    );
 }
 
 /// FR-383-AC-15's byte clause: W between unrelated protocols writes the same
@@ -1784,8 +1797,8 @@ fn w_wire_bytes_do_not_follow_unrelated_protocols() {
     let alone = lower_with(document(), PROFILES_W, W);
     assert!(alone.verified, "{}", alone.text);
     assert_same_w_nodes(
-        &alone.wire,
-        &w_between_unrelated_protocols().wire,
-        |_: &WireGraph, node: &Value| node.clone(),
+        &alone,
+        &w_between_unrelated_protocols(),
+        |_: &WireGraph, _: &Value, raw: &Value| raw.clone(),
     );
 }

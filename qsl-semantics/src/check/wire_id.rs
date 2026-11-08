@@ -415,7 +415,9 @@ pub fn resolve_operand_slots(wire: &mut serde_json::Value) -> Result<(), String>
                                     let entry = usize::try_from(slot)
                                         .ok()
                                         .and_then(|at| row.get(at))
-                                        .ok_or_else(|| format!("operand slot {slot} has no row entry"))?;
+                                        .ok_or_else(|| {
+                                            format!("operand slot {slot} has no row entry")
+                                        })?;
                                     *segment = serde_json::json!({ "node": entry });
                                 }
                             }

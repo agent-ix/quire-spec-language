@@ -894,7 +894,11 @@ fn the_recipe_compensations_read_attempts_maximum_three_through_the_view() {
     let held = evidence(&request("event_position", Corpus::None)).unwrap();
     let package = admitted(&files["checked-package.json"], &held);
     let mut read = Vec::new();
-    for (kind, node) in package.node_kinds().iter().zip(&package.resolved_graph().nodes) {
+    for (kind, node) in package
+        .node_kinds()
+        .iter()
+        .zip(&package.resolved_graph().nodes)
+    {
         if *kind == CheckedNodeKind::Protocol(ProtocolForm::Compensation) {
             let key = serde_json::to_string(&node.node_id).unwrap();
             let name = ["Full", "Partial"]
