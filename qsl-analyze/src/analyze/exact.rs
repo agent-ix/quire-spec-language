@@ -17,6 +17,8 @@
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::statistical::SubjectLimits;
+use qsl_replay::certificate::{CertificateLocus, CertificateRule};
+use qsl_replay::{InconclusiveCause, ProbabilityCertificateLocus, ProbabilityCertificateRule};
 use qsl_replay::{
     check_claim_exact_reachability, claim_binding, ExactBinding, ExactProbBuildIssue,
     ExactProbBuildRecord, ExactProbabilityCertificate, ExactProbabilityCertificateCheck,
@@ -50,6 +52,8 @@ pub struct ExactProbabilityEvidence {
 
 /// What EN-5 reports for one item.
 pub(crate) enum ExactReport {
+    /// The core rejected a probability value at a complete product state.
+    Rejected { rule: CertificateRule, at: ProbabilityProductKey },
     /// The checker accepted the solver's certificate.
     Proved {
         /// The checker's acceptance, the only evidence a `proved` record
@@ -74,6 +78,13 @@ impl ExactReport {
         backend: BackendId,
     ) -> (TerminalRecord, Option<Box<ExactProbabilityEvidence>>) {
         match self {
+            Self::Rejected { rule, at } => (
+                TerminalRecord::inconclusive(index, backend, InconclusiveCause::CertificateRejected {
+                    rule,
+                    at: CertificateLocus::ProbabilityProductState(at),
+                }),
+                None,
+            ),
             Self::Proved {
                 check,
                 extremum,
@@ -272,14 +283,21 @@ fn run(
                     evidence,
                 }))
             }
-            // DEVIATION: FR-203 and FR-281-AC-4 settle a rejected
-            // certificate `inconclusive` with `CertificateRejected{rule,
-            // at}` in QSpec FR-331's rule vocabulary. `CertificateRule` and
-            // `CertificateLocus` carry no probability rules or product-state
-            // locus and QSL does not own that wire vocabulary, so the
-            // rejection of the solver's own certificate settles `failed`
-            // (an engine fault). It never settles `proved`.
-            ExactProbabilityCertificateCheck::Rejected(_) => broken(),
+            ExactProbabilityCertificateCheck::Rejected(rejection) => {
+                let rule = match rejection.rule {
+                    ProbabilityCertificateRule::InequalityFails => CertificateRule::InequalityFails,
+                    ProbabilityCertificateRule::ThresholdMissed => CertificateRule::ThresholdMissed,
+                    // QSpec's probability rejection branch has no malformed
+                    // rule/member form; retain the fault until that is specified.
+                    ProbabilityCertificateRule::Malformed => return broken(),
+                };
+                match &rejection.at {
+                    ProbabilityCertificateLocus::ProductState(at) => EngineReport::Exact(Box::new(
+                        ExactReport::Rejected { rule, at: at.clone() },
+                    )),
+                    ProbabilityCertificateLocus::Member(_) => broken(),
+                }
+            }
         },
         Err(ExactProbabilityGraphError::Cancelled(cause)) => {
             settled(&ExactProbBuildIssue::Cancelled(cause), subject)
