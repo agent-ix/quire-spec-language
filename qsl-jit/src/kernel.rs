@@ -14,11 +14,12 @@ use qsl_semantics::check::Scope;
 use quire_checked::node::{Arithmetic, OrderedKind};
 use quire_eval::{FamilyResult, StateModelUndefined};
 use quire_exact::{
-    compare_text, evaluate_boolean, evaluate_decimal, evaluate_integer_arithmetic,
-    evaluate_rational_arithmetic, form, order_numbers, retain_boolean, retain_composite,
-    ArithmeticOperator, BooleanConnective, Charge, ChargePoint, CollectionValue,
+    charge_native_integer_schedule, compare_text, evaluate_boolean, evaluate_decimal,
+    evaluate_integer_arithmetic, evaluate_rational_arithmetic, form, order_numbers, retain_boolean,
+    retain_composite, ArithmeticOperator, BooleanConnective, Charge, ChargePoint, CollectionValue,
     ComparisonOperator, Decimal, DecimalOperation, Integer, IntegerArithmetic, Meter,
-    OrderedOperands, OrderingOperator, Rational, RationalArithmetic, Refusal, Undefined, Value,
+    NativeInteger, NativeIntegerOperands, NativeIntegerSchedule, OrderedOperands, OrderingOperator,
+    Rational, RationalArithmetic, Refusal, Undefined, Value,
 };
 use quire_semantic_value::declaration::operand_value as convert_operand;
 use quire_semantic_value::location::ExpressionLocation;
@@ -26,7 +27,7 @@ use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 use quire_semantic_value::quantity::UnitScope;
 use quire_semantic_value::stop::{outcome_into_stop, Stop};
 
-use crate::translate::{divide, integer_to_i64, Carried, Op, OpKind, Repr};
+use crate::translate::{divide, integer_to_i64, Carried, NativeCharge, Op, OpKind, Repr};
 
 /// Why a kernel operation did not return a value.
 pub(crate) enum Halt {
@@ -55,6 +56,63 @@ impl From<Stop> for Halt {
     }
 }
 
+/// One kernel value operation a recorded call made (FR-561): its name and the
+/// operand values it read.
+#[cfg(feature = "test-support")]
+#[derive(Clone, Debug)]
+pub struct KernelCall {
+    /// `add`, `sub`, `mul`, `neg`, `div`, `rem`, `mod`, `order` or `eq`.
+    pub operation: &'static str,
+    /// The operand values.
+    pub operands: Vec<Value>,
+}
+
+/// A recording kernel table (FR-561, a test hook): the kernel value
+/// operations a call makes, in order, and an operation to fail.
+#[cfg(feature = "test-support")]
+#[derive(Clone, Debug, Default)]
+pub struct KernelRecorder {
+    /// The calls made.
+    pub calls: Vec<KernelCall>,
+    /// The operation whose entry returns `Fault` instead of running.
+    pub fault_on: Option<&'static str>,
+}
+
+/// The name of the kernel value operation `kind` calls, or `None` for an
+/// operation that is not one: a charge-only entry beside a machine operation
+/// (FR-562), a Boolean operation, a range check, or the handling of values.
+#[cfg(feature = "test-support")]
+fn kernel_name(kind: &OpKind) -> Option<&'static str> {
+    use quire_checked::node::IntegerDivisionOperator as D;
+    Some(match kind {
+        OpKind::Arithmetic(operator) => match operator {
+            Arithmetic::Add => "add",
+            Arithmetic::Subtract => "sub",
+            Arithmetic::Multiply => "mul",
+        },
+        OpKind::Negate | OpKind::RationalNegate { .. } | OpKind::DecimalNegate { .. } => "neg",
+        OpKind::Divide { operator, .. } => match operator {
+            D::Div => "div",
+            D::Rem => "rem",
+            D::Mod => "mod",
+        },
+        OpKind::Order(_) => "order",
+        OpKind::Equality {
+            operands_boolean: false,
+            ..
+        } => "eq",
+        OpKind::RationalDivide { .. } => "div",
+        OpKind::Rational { operator, .. } | OpKind::Decimal { operator, .. } => match operator {
+            ArithmeticOperator::Add => "add",
+            ArithmeticOperator::Subtract => "sub",
+            ArithmeticOperator::Multiply => "mul",
+            ArithmeticOperator::Divide => "div",
+        },
+        OpKind::ConvertDecimal { .. } => "convert",
+        _ => return None,
+    })
+}
+
 /// A one-binder query or fold in progress: the shared iteration state, the
 /// arena length when it started and the element just produced. The innermost
 /// loop is the last frame; loops nest as the translated code does, so no
@@ -78,6 +136,9 @@ pub(crate) struct State {
     pub(crate) losses: Vec<LocatedLoss>,
     /// The most handles the arena held at once, for the tests' bound.
     pub(crate) peak: usize,
+    /// The recording table of the call, when a test asked for one.
+    #[cfg(feature = "test-support")]
+    pub(crate) recorder: Option<KernelRecorder>,
     /// The most handles the arena may hold (`None`: unbounded, as in a
     /// state built before `prepare` knows its bound).
     pub(crate) limit: Option<usize>,
@@ -313,6 +374,20 @@ pub(crate) fn run(
 ) -> Result<i64, Halt> {
     let [a, b] = raw;
     let [left_repr, right_repr] = op.operands;
+    #[cfg(feature = "test-support")]
+    if let (Some(name), Some(recorder)) = (kernel_name(&op.kind), state.recorder.as_mut()) {
+        let read = |raw: i64, repr: Repr| match repr {
+            Repr::Register => Ok(Value::Integer(Integer::from(raw))),
+            Repr::Handle => handle(raw, &state.arena).cloned(),
+        };
+        recorder.calls.push(KernelCall {
+            operation: name,
+            operands: vec![read(a, left_repr)?, read(b, right_repr)?],
+        });
+        if recorder.fault_on == Some(name) {
+            return Err(Halt::Fault("jit-kernel-entry-fault"));
+        }
+    }
     let State {
         arena,
         staged,
@@ -321,6 +396,39 @@ pub(crate) fn run(
         ..
     } = state;
     match &op.kind {
+        OpKind::ChargeNative(charge) => {
+            let (left, right) = (
+                NativeInteger::new(i128::from(a)),
+                NativeInteger::new(i128::from(b)),
+            );
+            let schedule = match charge {
+                NativeCharge::Arithmetic(plan, unary) => {
+                    // A unary operation reads its one operand from the left.
+                    let operands = if *unary {
+                        NativeIntegerOperands::Unary { operand: left }
+                    } else {
+                        NativeIntegerOperands::Binary { left, right }
+                    };
+                    let admitted = plan
+                        .admit(operands)
+                        .map_err(|_| Halt::Fault("jit-native-operand-outside-interval"))?;
+                    NativeIntegerSchedule::Arithmetic(admitted)
+                }
+                NativeCharge::Multiply => NativeIntegerSchedule::MultiplyI64 { left, right },
+                NativeCharge::Division => NativeIntegerSchedule::Division {
+                    dividend: left,
+                    divisor: right,
+                },
+                NativeCharge::Modulus => NativeIntegerSchedule::Modulus {
+                    dividend: left,
+                    divisor: right,
+                },
+                NativeCharge::Ordering => NativeIntegerSchedule::Ordering { left, right },
+                NativeCharge::Equality => NativeIntegerSchedule::Equality,
+            };
+            outcome_into_stop(charge_native_integer_schedule(schedule, meter))?;
+            Ok(0)
+        }
         OpKind::Arithmetic(operator) => {
             let (left, right) = (
                 integer(a, left_repr, arena)?,

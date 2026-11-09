@@ -25,7 +25,13 @@ use quire_semantic_value::supplied_stop::SuppliedRun;
 
 use crate::coverage::coverage;
 use crate::exec::{Entry, EntryFrame, EntryRefusal, Halt, Machine, Status};
+#[cfg(feature = "test-support")]
+use crate::kernel::KernelRecorder as KernelRecorderSlot;
 use crate::kernel::State;
+#[cfg(feature = "test-support")]
+pub use crate::kernel::{KernelCall, KernelRecorder};
+#[cfg(not(feature = "test-support"))]
+type KernelRecorderSlot = ();
 use crate::translate::{carried, integer_to_i64, Carried, Compiler, Failure, Op};
 use qsl_eval::execution::{first_outside, Outside};
 
@@ -395,6 +401,79 @@ impl<'p> PreparedJit<'p> {
         run: &mut SuppliedRun,
         cancel: &Cancel,
     ) -> Result<Evaluation, CallFailure> {
+        self.call_inner(function, arguments, environment, meter, run, cancel, None)
+            .0
+    }
+
+    /// [`Self::call_metered`] through a recording kernel table (FR-561, a test
+    /// hook): `recorder` collects the kernel value operations the call makes
+    /// and can fail one of them.
+    ///
+    /// # Errors
+    /// As [`PreparedEntries::call`].
+    #[cfg(feature = "test-support")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn call_recorded(
+        &self,
+        function: &QualifiedName,
+        arguments: &[Value],
+        environment: &ObjectEnvironment,
+        meter: &mut Meter,
+        run: &mut SuppliedRun,
+        cancel: &Cancel,
+        recorder: &mut KernelRecorder,
+    ) -> Result<Evaluation, CallFailure> {
+        let (result, recorded) = self.call_inner(
+            function,
+            arguments,
+            environment,
+            meter,
+            run,
+            cancel,
+            Some(std::mem::take(recorder)),
+        );
+        if let Some(recorded) = recorded {
+            *recorder = recorded;
+        }
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn call_inner(
+        &self,
+        function: &QualifiedName,
+        arguments: &[Value],
+        environment: &ObjectEnvironment,
+        meter: &mut Meter,
+        run: &mut SuppliedRun,
+        cancel: &Cancel,
+        recorder: Option<KernelRecorderSlot>,
+    ) -> (Result<Evaluation, CallFailure>, Option<KernelRecorderSlot>) {
+        let mut recorder = recorder;
+        let result = self.call_with(
+            function,
+            arguments,
+            environment,
+            meter,
+            run,
+            cancel,
+            &mut recorder,
+        );
+        (result, recorder)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[cfg_attr(not(feature = "test-support"), allow(unused_variables, unused_mut))]
+    fn call_with(
+        &self,
+        function: &QualifiedName,
+        arguments: &[Value],
+        environment: &ObjectEnvironment,
+        meter: &mut Meter,
+        run: &mut SuppliedRun,
+        cancel: &Cancel,
+        recorder: &mut Option<KernelRecorderSlot>,
+    ) -> Result<Evaluation, CallFailure> {
         if let Some((_, reason)) = self.unsupported.iter().find(|(selection, _)| {
             selection.kind == EntryKind::Function && selection.name == *function
         }) {
@@ -430,13 +509,20 @@ impl<'p> PreparedJit<'p> {
             });
         }
         let mut state = State::bounded(Vec::new(), self.ops.len().saturating_add(arguments.len()));
+        #[cfg(feature = "test-support")]
+        {
+            state.recorder = recorder.take();
+        }
         let registers = registers(compiled, arguments, &mut state.arena)?;
         let mut frame = EntryFrame::new(meter, &self.ops, graph.scope(), state);
         let status = compiled.entry.call(&mut frame, &registers);
         let value = frame.result();
-        let (halt, state) = frame.into_parts();
+        let (halt, mut state) = frame.into_parts();
         #[cfg(feature = "test-support")]
-        self.arena_peak.set(state.peak);
+        {
+            self.arena_peak.set(state.peak);
+            *recorder = state.recorder.take();
+        }
         let status = status.map_err(|refusal| {
             CallFailure::Fault(InternalFault::new(
                 "FR-568",
