@@ -52,7 +52,12 @@ the same document (QSpec FR-300-AC-3). The document's members are:
   items. Each item that has a terminal record, every proof result, carries its
   QSpec FR-331 terminal record with its label
   and cause in FR-331's wire spelling (its wire-spelling table): for example
-  `undefined-evaluation{where, cause}` and `replay-parity`. A `monitor` item
+  `undefined-evaluation{where, cause}` and `replay-parity`. A record settled by
+  an `unsupported` or `invalid-request` disposition (QSpec FR-331
+  `settled_by` `disposition`) carries its FR-272 diagnostic as the record's
+  `diagnostic` member, with code, cause and payload, and an `unsupported`
+  record carries exactly one of `cause` and `diagnostic`, so a disposition's
+  record carries the diagnostic and no `cause`. A `monitor` item
   built from a clause run that did not settle (pending or indeterminate)
   carries the clause-run record, with the `clause` member, and no FR-331
   terminal record (see "Monitor documents from clause runs"). The scalar-parity

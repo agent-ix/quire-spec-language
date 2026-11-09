@@ -36,8 +36,10 @@ contract. This requirement makes the ruling checkable.
 - The `extern "C"` trampolines and shims that generated code calls (the
   entries of FR-561's `KernelTable` and the helpers that adapt them) SHALL
   be defined inside `qsl_jit::exec`. The frame the generated code runs over
-  is a typed structure of `exec`, not an opaque handle passed across the
-  module boundary. No `unsafe` item, and no `extern "C"` function that
+  is `EntryFrame`, a typed structure defined in `exec` that holds the
+  argument handles, the `KernelTable`, the meter and `&Cancel`; the one
+  entry signature is `extern "C" fn(*const EntryFrame) -> u32`, and no
+  opaque handle crosses the boundary of `exec` in its place. No `unsafe` item, and no `extern "C"` function that
   generated code calls, exists outside `exec`.
 - `tools/arch-lint` SHALL provide the check `unsafe-confinement`, run as
   `make arch-lint-unsafe` and as part of `make arch-lint` and `make ci`. It
@@ -87,6 +89,7 @@ and item; `PreparedJit` and its calls.
 | FR-568-AC-2 | A `compile_fail` doctest that keeps a callable entry of a `PreparedJit` past the `PreparedJit`'s drop fails to compile, with a compiling control that calls within the borrow. | Test (TC-1400) |
 | FR-568-AC-3 | `PreparedJit` refuses, with `Fault` and without calling, an entry whose recorded signature is not the entry signature (a test hook records one wrongly); a test entry that returns a status outside the closed status type yields `Fault` and no value. | Test (TC-1400) |
 | FR-568-AC-4 | The FR-561-AC-3 call-target check and the FR-563 parity gate pass for the Cranelift JIT over the default generated units, with every call entering generated code through `qsl_jit::exec` and every `extern "C"` call target of the generated blocks defined in `qsl_jit::exec`. | Test (TC-1400) |
+| FR-568-AC-5 | A `compile_fail` doctest outside `qsl_jit::exec` that names `EntryFrame` or builds one fails to compile, and a doctest that calls through `PreparedJit` compiles; the entry signature every generated entry has is `extern "C" fn(*const EntryFrame) -> u32`, checked by a test that converts a recorded entry address only to that type. | Test (TC-1400) |
 
 ## Dependencies
 

@@ -67,7 +67,7 @@ Each of these is a finding in the report, and any finding fails the gate:
 | --- | --- |
 | `difference` | The backend's result differs from the reference's in any of: `Ok` against `Err`; the `Evaluation` outcome kind; the completed value; the typed cause; the `Location`; the loss records; an `Incomplete`'s limit or charge point; a `CallFailure`'s variant or payload. A backend `Fault` where the reference returned anything else is a `difference`. |
 | `nondeterministic` | The backend's two calls with the same inputs return different results. |
-| `coverage-gap` | The backend supplied a coverage (FR-560) and listed unsupported an entry whose constructs all lie in it. |
+| `coverage-gap` | The backend supplied a coverage (FR-560) and listed unsupported with an `Untranslatable` cause an entry whose constructs all lie in it. An entry listed with an `EnvironmentRefused` cause is reported with its `UnsupportedEntry` and not compared, and is no `coverage-gap`. |
 | `prepare-failed` | The backend's `prepare` returned a `PrepareFailure` for a unit the reference prepared. |
 | `empty-comparison` | No entry was compared for a backend: every entry was unsupported. |
 | `reference-fault` | The interpreter returned `Fault` for an entry: the oracle itself has a defect. The entry is not compared on any backend. |
@@ -112,8 +112,8 @@ the findings; or `ParityRefusal`.
   the runner shall record a `difference` naming the member.
 - When a backend's two calls with equal inputs return different results, the
   runner shall record `nondeterministic`.
-- If a backend lists unsupported an entry whose constructs all lie in the
-  coverage it supplied, then the runner shall record `coverage-gap`.
+- If a backend lists unsupported with an `Untranslatable` cause an entry
+  whose constructs all lie in the coverage it supplied, then the runner shall record `coverage-gap`.
 - If a backend's `prepare` fails for a unit the reference prepared, then the
   runner shall record `prepare-failed`.
 - If a backend compares no entry, then the runner shall record

@@ -132,9 +132,12 @@ As the trait signatures state.
   `CheckedPackageEvaluation::evaluate_clause` returns for the same clause and
   observations under a meter built from `accounting` holding `cancel`, or
   that call's `CallFailure`.
-- When a backend cannot run a selected entry, `prepare` shall return
-  `Ok` with that entry listed by `unsupported` with an `Untranslatable`
-  cause, and shall prepare the other selected entries.
+- When a backend cannot translate a construct of a selected entry,
+  `prepare` shall return `Ok` with that entry listed by `unsupported` with
+  an `Untranslatable` cause, and shall prepare the other selected entries.
+- When the host environment refuses a resource every entry of a backend
+  needs, `prepare` shall return `Ok` with every selected entry listed by
+  `unsupported` with an `EnvironmentRefused` cause naming the refusal.
 - When `call` or `evaluate` names an entry its `prepare` recorded
   unsupported, the prepared value shall return `CallFailure::Unsupported`
   with that entry's `UnsupportedEntry`.

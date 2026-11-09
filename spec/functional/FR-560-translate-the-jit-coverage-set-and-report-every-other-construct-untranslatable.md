@@ -66,27 +66,28 @@ and its source `Location`:
 | a listed form and types, but an operation the coverage does not list | `Operation(k)`, `k` the operation's node key |
 | a `call` to a function the JIT lists unsupported | `Operation(k)`, `k` the node key of the `call` |
 
-The first construct outside the coverage is `ExpressionForm(name)` for each
-of the following, which the v1 coverage does not list and which grow into the
-coverage by phase; the interpreter, the parity reference (FR-563), then runs
-such an entry, so the parity gate still holds:
+The v1 coverage lists no construct of the `StateModel` or `ProtocolClause`
+families and no `SumCase` construct. The first such construct of an entry is
+`ExpressionForm(name)`, `name` the construct's ADR-012 name, for each of:
 
-| Construct | `name` | Why the v1 JIT does not translate it |
+| Construct | `name` | Family (ADR-012) |
 | --- | --- | --- |
-| a universal quantifier | `forall` | no bounded-extent iteration over a population in the generated code |
-| an existential quantifier | `exists` | the same |
-| a dereference of a reference | `deref` | no reference store in the generated code's frame |
-| a presence test of an optional or reference | `present` | the same |
-| a field access on `self` | `self.field` | no `self` binding of a declaration in the generated code's frame |
-| a reachability test | `reaches` | no graph search in the generated code |
-| the FR-265 trail of a clause evaluation | `clause-trail` | the clause evaluation path records a trail the kernel table does not carry |
+| a dereference of a model element reference | `deref` | `StateModel` |
+| a field read on a model element | `field` | `StateModel` |
+| a reachability test over a state clause's population | `reaches` | `ProtocolClause` |
+| the `self` of a state clause | `self` | `ProtocolClause` |
+| a `case` over a union | `case` | `SumCase` |
+
+The quantifiers, the presence test and the other constructs that ADR-012
+names as no form fall under the rows of the table above by their owning form,
+value type or operation, and have no row of their own. The interpreter, which
+FR-563 holds as the parity reference, is the only evaluator of such an entry;
+the JIT never runs it and `execute` never falls back (FR-296).
 
 The scalar constructs the v1 coverage lists are arithmetic, ordering,
 equality, boolean connectives, `let`, `if` and application (`call`) over
 `Integer` and `Boolean`, with the other floor value types and operations
-above. A construct of the table above joins the coverage in the phase that
-translates it, and only with the parity gate (FR-563) holding it to the
-interpreter.
+above.
 
 An entry the JIT cannot prepare because the operating system refuses
 executable memory (a `PROT_EXEC` `mmap` or `mprotect` denied, as on a
@@ -122,10 +123,9 @@ A checked package and the selected entries (FR-294).
 - When a selected entry is listed unsupported, the JIT's `prepare` shall
   prepare the other selected entries.
 - When a selected entry's first construct outside the coverage is a
-  quantifier, a dereference, a presence test, a field access on `self`, a
-  reachability test or the clause evaluation's FR-265 trail, the JIT's
-  `prepare` shall list the entry unsupported with the `ExpressionForm` cause
-  the table above names.
+  dereference, a field read, a reachability test, the `self` of a state
+  clause or a `case`, the JIT's `prepare` shall list the entry unsupported
+  with the `ExpressionForm` cause the table above names.
 - When the operating system refuses the JIT executable memory, the JIT's
   `prepare` shall return `Ok` with every selected entry listed unsupported
   with `EnvironmentRefused(ExecutableMemoryRefused)`, and shall not return
@@ -142,7 +142,7 @@ A checked package and the selected entries (FR-294).
 | FR-560-AC-2 | The JIT prepared over each of the 10,000 units the FR-295 parity program generator yields at the default seed, every function selected, lists no entry unsupported; prepared over `add(a: Integer, b: Integer): Integer { a + b }`, `half(a: Rational): Rational { a / 2 }` and `name(t: Text): Text { t }`, it lists none of the three unsupported. | Test (TC-1380) |
 | FR-560-AC-3 | For a form and a value type that `coverage()` does not list (the test takes the `SumCase` form `case` and the type `Timestamp` when unlisted, and otherwise the first unlisted ADR-012 form and K2 value type), an entry whose first outside construct is that form is listed with `ExpressionForm(<its name>)`, one whose first outside construct is a parameter of that type with `ValueType(<that type>)`, each with that construct's `Location`; an entry that calls the first entry is listed with `Operation(k)`, `k` the node key of the `call`, while the first entry keeps its own cause; and the other selected entries are prepared. | Test (TC-1381) |
 | FR-560-AC-4 | Over a property-generated set of entries built from the listed forms and types, the JIT lists none unsupported, and over the same entries with one construct replaced by an unlisted form, each is listed with that form's `ExpressionForm` cause. | Test (TC-1381) |
-| FR-560-AC-5 | Over one entry each for `forall`, `exists`, `deref`, `present`, `self.field`, `reaches` and a clause entry whose evaluation records the FR-265 trail, the JIT lists each entry unsupported with `Untranslatable { construct: ExpressionForm(<its name from the table>), location }`, `location` that construct's; over the same seven entries the interpreter returns its outcome and the FR-563 parity runner reports no difference for them. | Test (TC-1381) |
+| FR-560-AC-5 | Over one entry each for `deref`, a field read, `reaches`, `self` and `case`, `prepare` lists each entry unsupported with `Untranslatable { construct: ExpressionForm(<its name from the table>), location }`, `location` that construct's, and `unsupported` holds no other entry; the FR-563 runner over the same entries reports each with its `UnsupportedEntry` and records no `coverage-gap`. | Test (TC-1381) |
 | FR-560-AC-6 | With a test executable-memory provider that denies every request (standing in for a `PROT_EXEC` refusal), `prepare` over three selected entries returns `Ok`, `unsupported` lists all three with `UnsupportedCause::EnvironmentRefused(ExecutableMemoryRefused)`, `PrepareFailure` is not returned, `call` on each returns `CallFailure::Unsupported` with that entry, and the exit code of the resulting outcome is 21; with the provider allowing the request, the same entries are translated. | Test (TC-1381) |
 
 ## Dependencies

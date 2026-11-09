@@ -37,8 +37,10 @@ blocks of the same prepared value.
 
 Each kernel-table entry:
 
-- takes its operands as handles to values the runtime owns, and the call's
-  meter and `&Cancel`;
+- takes its operands as typed handles to values the runtime owns (the
+  handle types of the semantic-value runtime, each a typed reference
+  into storage the `EntryFrame` (FR-568) lists), and the call's meter and
+  `&Cancel`;
 - runs the kernel operation the interpreter runs for the same checked
   operation, with the same charges at the same points (EB-4 rule 4), polling
   `&Cancel` at each charge (FR-276);
