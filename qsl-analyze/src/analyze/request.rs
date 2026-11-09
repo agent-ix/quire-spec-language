@@ -425,20 +425,8 @@ fn work<'a>(
                         Some(claim),
                         EvidenceKind::Statistical,
                         ProbabilisticLimits::Statistical(statistical),
-                    ) => match (
-                        form.method,
-                        form.seed,
-                        &form.sampler,
-                        form.max_witnesses,
-                        form.timed_sampling,
-                    ) {
-                        (
-                            Some(method),
-                            Some(seed),
-                            Some(sampler),
-                            Some(max_witnesses),
-                            Some(timed_sampling),
-                        ) => super::statistical_item(
+                    ) => match (form.method, form.seed, &form.sampler) {
+                        (Some(method), Some(seed), Some(sampler)) => super::statistical_item(
                             item.request_index,
                             crate::statistical::StatisticalRequest {
                                 subject: qsl_eval::model_subject::ModelSubject {
@@ -450,9 +438,11 @@ fn work<'a>(
                                 seed,
                                 sampler: sampler.clone(),
                                 limits: statistical,
-                                max_witnesses,
+                                max_witnesses: form
+                                    .max_witnesses
+                                    .unwrap_or(crate::statistical::DEFAULT_MAX_WITNESSES),
                                 symmetry: form.symmetry.clone(),
-                                timed_sampling,
+                                timed_sampling: form.timed_sampling.unwrap_or_default(),
                             },
                         ),
                         _ => absent(),

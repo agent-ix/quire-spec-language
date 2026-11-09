@@ -431,3 +431,46 @@ fn a_contract_claim_reaches_the_existing_contract_arm() {
         Some(qsl_analyze::contract_check::manifest::BACKEND_ID)
     );
 }
+
+/// Omitted optional sampling settings use the engine's published defaults,
+/// rather than turning a valid statistical item into an unsupported one.
+#[trace("TC-761", "FR-280-AC-5")]
+#[test]
+fn omitted_optional_statistical_settings_equal_the_explicit_defaults() {
+    let claim = "probabilistic Two using ev on M over (s: M::Server) under Steady on origin with alpha 0.01, beta 0.01, indifference 0.01 { quantile 0.95 of (accumulate duration from holds(s.phase = 1) until holds(s.phase = 2) within 10) <= 2 }";
+    let world = prob_world::World::new(&prob_world::service(claim));
+    let mut explicit = crate::analyze::routed_service_item(&world);
+    let Some(ItemForm::Probabilistic(form)) = &mut explicit.item.form else {
+        panic!("statistical form")
+    };
+    form.max_witnesses = Some(qsl_analyze::statistical::DEFAULT_MAX_WITNESSES);
+    form.timed_sampling = Some(qsl_replay::statistical::TimedSampling::default());
+    let mut omitted = explicit.clone();
+    let Some(ItemForm::Probabilistic(form)) = &mut omitted.item.form else {
+        panic!("statistical form")
+    };
+    form.max_witnesses = None;
+    form.timed_sampling = None;
+    let limits = AnalyzeLimits {
+        accounting: prob_world::UNLIMITED,
+        ..AnalyzeLimits::unbounded()
+    };
+    let engines = Engines::qsl().expect("the manifests register");
+    let serve = |item| {
+        provider::run(
+            &world.package,
+            &world.binding(),
+            &world.provision,
+            &[item],
+            &engines,
+            &limits,
+            &Cancel::new(),
+        )
+    };
+    let expected = serve(explicit);
+    assert!(matches!(
+        expected.records[0].value(),
+        TerminalValue::Measured(_)
+    ));
+    assert_eq!(serve(omitted).records, expected.records);
+}

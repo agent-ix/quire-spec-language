@@ -487,7 +487,7 @@ fn service_request<'w>(
     }
 }
 
-fn routed_service_item(world: &crate::prob_world::World) -> NegotiatedItem {
+pub(crate) fn routed_service_item(world: &crate::prob_world::World) -> NegotiatedItem {
     let request = service_request(world);
     let candidate = Candidate::new(BackendId::new("en-4"));
     NegotiatedItem {
