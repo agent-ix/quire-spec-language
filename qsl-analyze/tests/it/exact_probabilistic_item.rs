@@ -10,13 +10,17 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze_items, exact_probabilistic_item, DispositionKind, Engines, Settlement,
+    analyze_items, exact_probabilistic_item, exact_probabilistic_item_tampered, DispositionKind,
+    Engines, Settlement,
 };
+use qsl_eval::simulation::model::ModelSystem;
 use qsl_eval::simulation::Limits;
 use qsl_foundation::RequestIndex;
 use qsl_replay::{
-    Certification, ExactOrBounds, Extremum, IncompleteCause, ModelCheckLimit, ModelCheckLimits,
-    ProbabilityBoundSide, ProofBasis, TerminalValue,
+    claim_binding, Certification, ExactOrBounds, ExactProbabilityCertificateCheck,
+    ExactProbabilityGraphError, Extremum, IncompleteCause, ModelCheckLimit, ModelCheckLimits,
+    ProbabilityBoundSide, ProbabilityCertificateLocus, ProbabilityCertificateRejection,
+    ProbabilityCertificateRule, ProbabilityProductKey, ProofBasis, TerminalRecord, TerminalValue,
 };
 use quire_exact::{Cancel, Integer, Rational};
 
@@ -66,6 +70,9 @@ fn a_reachability_bound_that_holds_settles_proved_with_the_checked_certificate()
         panic!("one entry");
     };
     assert_eq!(entry.extremum, Some(Extremum::Min));
+    let binding = entry.binding.as_ref().expect("the claim's one instance");
+    assert_eq!(binding.key, "m");
+    assert!(binding.population.ends_with("/msgs"), "{binding:?}");
     assert!(
         matches!(&entry.value, ExactOrBounds::Exact { value } if value.value() == &ratio(24, 25))
     );
@@ -119,4 +126,71 @@ fn a_missed_bound_is_not_proved_and_not_yet_refuted() {
         panic!("expected a disposition, got {:?}", record.settlement);
     };
     assert_eq!(disposed.kind, DispositionKind::Unsupported);
+}
+
+/// A certificate the checker rejects never settles `proved`: the solver's
+/// certificate is altered at its initial value before the core checks it.
+#[trace("TC-762", "FR-281-AC-4")]
+#[test]
+fn a_rejected_certificate_never_settles_proved() {
+    let world = World::new(&prob_world::link(CLAIMS));
+    let engines = Engines::qsl().expect("the linked engines are admitted");
+    let item = exact_probabilistic_item_tampered(
+        RequestIndex::new(0),
+        world.request("Likely", ModelCheckLimits::default()),
+        |certificate| {
+            for entry in &mut certificate.values {
+                entry.value = ratio(1, 1);
+            }
+        },
+    );
+    let record = analyze_items(&engines, vec![item], &Cancel::new()).remove(0);
+    assert!(record.exact_probabilistic.is_none());
+    let terminal = record.terminal().expect("a terminal record");
+    // DEVIATION (see `exact.rs`): `failed`, not FR-203's `CertificateRejected`.
+    assert_eq!(terminal.value(), &TerminalValue::Failed);
+}
+
+#[test]
+fn the_bound_reference_is_part_of_the_product_key() {
+    let world = World::new(&prob_world::link(CLAIMS));
+    let system = ModelSystem::new(world.subject().simulation).expect("the model admits");
+    let binding = claim_binding(&system, world.claim("Likely"))
+        .expect("one instance")
+        .expect("the claim has an over");
+    let bound = ProbabilityProductKey::for_model_state(Some(&binding.reference), b"state")
+        .expect("encodes");
+    let unbound = ProbabilityProductKey::for_model_state(None, b"state").expect("encodes");
+    assert_ne!(bound, unbound);
+    let text = String::from_utf8(bound.as_bytes().to_vec()).expect("JSON text");
+    assert!(
+        text.contains("object_type") && text.contains("universe"),
+        "{text}"
+    );
+}
+
+#[test]
+fn several_instances_are_an_unsupported_binding() {
+    let world = World::with_objects(&prob_world::link(CLAIMS), &["m", "n"]);
+    let system = ModelSystem::new(world.subject().simulation).expect("the model admits");
+    assert!(matches!(
+        claim_binding(&system, world.claim("Likely")),
+        Err(ExactProbabilityGraphError::UnsupportedBinding)
+    ));
+}
+
+#[test]
+fn a_rejected_check_builds_no_proved_record() {
+    let rejected = ExactProbabilityCertificateCheck::Rejected(ProbabilityCertificateRejection {
+        rule: ProbabilityCertificateRule::InequalityFails,
+        at: ProbabilityCertificateLocus::Member("values"),
+    });
+    assert!(TerminalRecord::proved_by_exact_certificate(
+        RequestIndex::new(0),
+        qsl_foundation::BackendId::new("en-5"),
+        &rejected,
+        None,
+        None,
+    )
+    .is_none());
 }

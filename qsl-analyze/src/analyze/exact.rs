@@ -18,16 +18,16 @@ use qsl_eval::simulation::model::ModelSystem;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::statistical::SubjectLimits;
 use qsl_replay::{
-    check_claim_exact_reachability, ExactProbBuildIssue, ExactProbBuildRecord,
-    ExactProbabilityCertificate, ExactProbabilityCertificateCheck, ExactProbabilityGraphError,
-    ExactProbabilityValue, Extremum, ModelCheckLimit, ObligationIdentity, ProbabilityBoundSide,
-    ProbabilityProductKey, TerminalRecord,
+    check_claim_exact_reachability, claim_binding, ExactBinding, ExactProbBuildIssue,
+    ExactProbBuildRecord, ExactProbabilityCertificate, ExactProbabilityCertificateCheck,
+    ExactProbabilityGraphError, ExactProbabilityValue, Extremum, ModelCheckLimit,
+    ObligationIdentity, ProbabilityBoundSide, ProbabilityProductKey, TerminalRecord,
 };
 use qsl_route::Mode;
 use qsl_semantics::check::{
     Bound, Capability, DeclarationFamily, ProbForm, ProbScheduler, ReachTarget,
 };
-use quire_exact::{Cancel, Rational};
+use quire_exact::{Cancel, ObjectReference, Rational};
 
 use super::items::{admission, BROKEN, NOT_YET};
 use super::{AnalyzeItem, EngineReport, Refusal};
@@ -57,6 +57,8 @@ pub(crate) enum ExactReport {
         check: ExactProbabilityCertificateCheck,
         /// The scheduler extremum the value is, absent for a workload.
         extremum: Option<Extremum>,
+        /// The claim's one `over` instance, absent without `over`.
+        binding: Option<ExactBinding>,
         /// The certificate the record carries.
         evidence: Box<ExactProbabilityEvidence>,
     },
@@ -75,12 +77,14 @@ impl ExactReport {
             Self::Proved {
                 check,
                 extremum,
+                binding,
                 evidence,
             } => match TerminalRecord::proved_by_exact_certificate(
                 index,
                 backend.clone(),
                 &check,
                 extremum,
+                binding,
             ) {
                 Some(record) => (record, Some(evidence)),
                 None => (TerminalRecord::failed_with(index, backend, BROKEN), None),
@@ -103,7 +107,26 @@ pub fn exact_probabilistic_item<'a>(
         Some(DeclarationFamily::Probabilistic),
         Mode::Bounded,
         en5::BACKEND_ID,
-        move |cancel| run(request, cancel),
+        move |cancel| run(request, cancel, None),
+    )
+}
+
+/// [`exact_probabilistic_item`] whose certificate `tamper` alters after the
+/// solver built it and before the core's checker sees it: the way a test
+/// shows a rejected certificate never settles `proved`.
+#[cfg(feature = "test-support")]
+pub fn exact_probabilistic_item_tampered<'a>(
+    index: RequestIndex,
+    request: ProductRequest<'a>,
+    tamper: fn(&mut ExactProbabilityCertificate),
+) -> AnalyzeItem<'a> {
+    AnalyzeItem::new(
+        index,
+        Capability::ProbabilisticSatisfaction,
+        Some(DeclarationFamily::Probabilistic),
+        Mode::Bounded,
+        en5::BACKEND_ID,
+        move |cancel| run(request, cancel, Some(tamper)),
     )
 }
 
@@ -121,7 +144,11 @@ fn settled(issue: &ExactProbBuildIssue, subject: SubjectLimits<'_>) -> EngineRep
     )))
 }
 
-fn run(request: ProductRequest<'_>, cancel: &Cancel) -> EngineReport {
+fn run(
+    request: ProductRequest<'_>,
+    cancel: &Cancel,
+    tamper: Option<fn(&mut ExactProbabilityCertificate)>,
+) -> EngineReport {
     let claim = request.claim;
     let simulation = request.subject.simulation.clone();
     let package = simulation.package;
@@ -191,19 +218,31 @@ fn run(request: ProductRequest<'_>, cancel: &Cancel) -> EngineReport {
         Bound::AtMost(threshold) => value <= threshold,
     };
     if !holds {
-        // The bound is missed; `refuted` waits for FR-202's replay.
+        // The bound is missed. `refuted` waits for FR-202's replay of a
+        // counterexample (`replay_probabilistic_witness`), which is not
+        // implemented: no record is built by hand, so the item is
+        // `unsupported`, never `proved` and never `refuted`.
         return not_yet();
     }
 
-    let Ok(certificate) = certificate_of(&product, &solved.values) else {
-        return broken();
-    };
     let Some(node) = claim.occurrence().map(|key| key.node().clone()) else {
         return not_yet();
     };
     let Ok(system) = ModelSystem::new(simulation) else {
         return broken();
     };
+    let binding = match claim_binding(&system, claim) {
+        Ok(binding) => binding,
+        Err(ExactProbabilityGraphError::UnsupportedBinding) => return not_yet(),
+        Err(_) => return broken(),
+    };
+    let reference = binding.as_ref().map(|bound| &bound.reference);
+    let Ok(mut certificate) = certificate_of(&product, reference, &solved.values) else {
+        return broken();
+    };
+    if let Some(tamper) = tamper {
+        tamper(&mut certificate);
+    }
     let checked = check_claim_exact_reachability(
         &system,
         package.graph().probabilistic_model().claims(),
@@ -212,6 +251,7 @@ fn run(request: ProductRequest<'_>, cancel: &Cancel) -> EngineReport {
         limits.model.limits.max_states,
         limits.model.limits.max_transitions,
     );
+    let count = |limit: usize| u64::try_from(limit).unwrap_or(u64::MAX);
     match checked {
         Ok(check) => match &check {
             ExactProbabilityCertificateCheck::Accepted { value, side } => {
@@ -220,27 +260,59 @@ fn run(request: ProductRequest<'_>, cancel: &Cancel) -> EngineReport {
                     value: value.clone(),
                     side: *side,
                 });
+                let binding = binding.map(|bound| ExactBinding {
+                    population: bound.instance.population.node,
+                    key: bound.instance.key,
+                });
                 EngineReport::Exact(Box::new(ExactReport::Proved {
                     check,
                     extremum,
+                    binding,
                     evidence,
                 }))
             }
-            // The solver's own certificate was rejected: an engine fault.
-            // The published `CertificateRejected` cause carries QSpec
-            // FR-331's rule vocabulary, which QSL does not map yet.
+            // DEVIATION: FR-203 and FR-281-AC-4 settle a rejected
+            // certificate `inconclusive` with `CertificateRejected{rule,
+            // at}` in QSpec FR-331's rule vocabulary. `CertificateRule` and
+            // `CertificateLocus` carry no probability rules or product-state
+            // locus and QSL does not own that wire vocabulary, so the
+            // rejection of the solver's own certificate settles `failed`
+            // (an engine fault). It never settles `proved`.
             ExactProbabilityCertificateCheck::Rejected(_) => broken(),
         },
         Err(ExactProbabilityGraphError::LimitReached) => settled(
             &ExactProbBuildIssue::Limit {
                 limit: ModelCheckLimit::ExactProbMaxStates,
-                value: u64::try_from(limits.model.limits.max_states).unwrap_or(u64::MAX),
+                value: count(limits.model.limits.max_states),
             },
             subject,
         ),
-        // Cyclic graphs, draws with several post-states and the other
-        // shapes the checker core does not cover.
-        Err(_) => not_yet(),
+        Err(
+            ExactProbabilityGraphError::EdgeLimitReached | ExactProbabilityGraphError::TooManyEdges,
+        ) => settled(
+            &ExactProbBuildIssue::Limit {
+                limit: ModelCheckLimit::ExactProbMaxTransitions,
+                value: count(limits.model.limits.max_transitions),
+            },
+            subject,
+        ),
+        // Shapes the checker core does not cover yet.
+        Err(
+            ExactProbabilityGraphError::Cycle
+            | ExactProbabilityGraphError::UnsupportedDraw
+            | ExactProbabilityGraphError::UnsupportedInitial
+            | ExactProbabilityGraphError::UnsupportedBinding
+            | ExactProbabilityGraphError::UnsupportedClaimForm,
+        ) => not_yet(),
+        // The checker could not rebuild the graph the solver solved, or
+        // could not bind the claim the item itself carries: a fault, not a
+        // verdict.
+        Err(
+            ExactProbabilityGraphError::ExpansionRefused
+            | ExactProbabilityGraphError::MissingSuccessor
+            | ExactProbabilityGraphError::InvalidDigitalKey
+            | ExactProbabilityGraphError::ClaimNotBound,
+        ) => broken(),
     }
 }
 
@@ -260,6 +332,7 @@ fn build_refusal(refusal: ProductRefusal, subject: SubjectLimits<'_>) -> EngineR
 /// the key the checker gives the same model state.
 fn certificate_of(
     product: &ProbProduct,
+    binding: Option<&ObjectReference>,
     values: &[ExtRational],
 ) -> Result<ExactProbabilityCertificate, ExactProbabilityGraphError> {
     let mut entries = Vec::with_capacity(product.states.len());
@@ -268,7 +341,7 @@ fn certificate_of(
             return Err(ExactProbabilityGraphError::ExpansionRefused);
         };
         entries.push(ExactProbabilityValue {
-            state: ProbabilityProductKey::for_model_state(state.binding.as_ref(), &state.model)?,
+            state: ProbabilityProductKey::for_model_state(binding, &state.model)?,
             value: value.clone(),
         });
     }

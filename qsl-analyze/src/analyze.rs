@@ -59,6 +59,8 @@ use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 
 pub use crate::contract_check::contract_item;
 pub use crate::value_check::value_item;
+#[cfg(feature = "test-support")]
+pub use exact::exact_probabilistic_item_tampered;
 pub use exact::{exact_probabilistic_item, ExactProbabilityEvidence};
 pub use items::{
     derived_model_item, derived_protocol_item, derived_zone_item, hyper_form_item, model_item,

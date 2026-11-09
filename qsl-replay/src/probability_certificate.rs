@@ -36,7 +36,8 @@ impl ProbabilityProductKey {
 
     /// The key of an untimed model state whose claim control is absent: an
     /// unbounded reachability form, which has no monitor, accumulator or
-    /// pending draw (FR-196). `binding` is the claim's `over` instance and
+    /// pending draw (FR-196). `binding` is the claim's bound `over` reference,
+    /// encoded as FR-181's reference triple, and
     /// `model_bytes` the state's complete `quire.simulation.state-key/v1`
     /// encoding. This is the key the checker enumerates for the same state,
     /// so a certificate built with it names the checker's states.
@@ -46,7 +47,7 @@ impl ProbabilityProductKey {
     /// [`ExactProbabilityGraphError::ExpansionRefused`] if the key cannot be
     /// encoded.
     pub fn for_model_state(
-        binding: Option<&ModelInstance>,
+        binding: Option<&ObjectReference>,
         model_bytes: &[u8],
     ) -> Result<Self, ExactProbabilityGraphError> {
         product_key(binding, model_bytes)
@@ -307,8 +308,10 @@ pub enum ExactProbabilityGraphError {
     Cycle,
     /// The checker-side model expansion was undecided or refused.
     ExpansionRefused,
-    /// The checker-side graph exceeded its configured state or edge bound.
+    /// The checker-side graph exceeded its configured state bound.
     LimitReached,
+    /// The checker-side graph exceeded its configured edge bound.
+    EdgeLimitReached,
     /// The model API exposed a draw that was not a single-state probability.
     UnsupportedDraw,
     /// A digital key contains an invalid or inconsistent timed component.
@@ -336,7 +339,7 @@ pub enum ExactProbabilityGraphError {
 fn enumerate_model_graph<P: StatePredicate>(
     system: &ModelSystem<'_>,
     target: &P,
-    binding: Option<(&ModelInstance, &ObjectReference)>,
+    binding: Option<&ObjectReference>,
     max_states: usize,
     max_edges: usize,
 ) -> Result<CheckerGraph, ExactProbabilityGraphError> {
@@ -348,7 +351,7 @@ fn enumerate_model_graph<P: StatePredicate>(
         let (model_bytes, _) = system
             .state_key(state)
             .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-        product_key(binding.map(|(instance, _)| instance), &model_bytes)
+        product_key(binding, &model_bytes)
     };
     let first = initial
         .into_iter()
@@ -364,7 +367,7 @@ fn enumerate_model_graph<P: StatePredicate>(
             return Err(ExactProbabilityGraphError::LimitReached);
         }
         let reading = system
-            .state_predicates(&state, &[(target, binding.map(|(_, reference)| reference))])
+            .state_predicates(&state, &[(target, binding)])
             .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
             .into_iter()
             .next()
@@ -411,7 +414,7 @@ fn enumerate_model_graph<P: StatePredicate>(
                         .checked_add(1)
                         .ok_or(ExactProbabilityGraphError::TooManyEdges)?;
                     if edge_count > max_edges {
-                        return Err(ExactProbabilityGraphError::LimitReached);
+                        return Err(ExactProbabilityGraphError::EdgeLimitReached);
                     }
                     choice.push(ProbabilityEdge {
                         target: target_key.clone(),
@@ -434,18 +437,17 @@ fn enumerate_model_graph<P: StatePredicate>(
 }
 
 fn product_key(
-    binding: Option<&ModelInstance>,
+    binding: Option<&ObjectReference>,
     model_bytes: &[u8],
 ) -> Result<ProbabilityProductKey, ExactProbabilityGraphError> {
-    let binding = binding.map_or(Value::Null, |instance| {
-        json!({
-            "population": {
-                "node": instance.population.node,
-                "package": instance.population.package,
-            },
-            "key": instance.key,
-        })
-    });
+    let binding = match binding {
+        None => Value::Null,
+        Some(reference) => serde_json::from_str(
+            &qsl_eval::simulation::model::reference_canonical_text(reference)
+                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?,
+        )
+        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?,
+    };
     let encoded_model = base64::Engine::encode(
         &base64::engine::general_purpose::URL_SAFE_NO_PAD,
         model_bytes,
@@ -472,7 +474,7 @@ fn product_key(
 pub(crate) fn check_model_exact_reachability<P: StatePredicate>(
     system: &ModelSystem<'_>,
     target: &P,
-    binding: Option<(&ModelInstance, &ObjectReference)>,
+    binding: Option<&ObjectReference>,
     certificate: &ExactProbabilityCertificate,
     objective: ProbabilityObjective,
     bound: &Bound,
@@ -515,35 +517,59 @@ pub fn check_claim_exact_reachability(
         return Err(ExactProbabilityGraphError::UnsupportedClaimForm);
     };
     let objective = claim_objective(&claim.scheduler, bound);
-    let instance = match &claim.over {
-        None => None,
-        Some(over) => {
-            let quire_exact::ValueType::Reference(object) = &over.value_type else {
-                return Err(ExactProbabilityGraphError::UnsupportedBinding);
-            };
-            let mut instances = system
-                .instances(&over.value_type)
-                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-            let (Some(instance), None) = (instances.pop(), instances.pop()) else {
-                return Err(ExactProbabilityGraphError::UnsupportedBinding);
-            };
-            let reference = system
-                .bound_reference(object.clone(), &instance)
-                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-            Some((instance, reference))
-        }
-    };
+    let instance = claim_binding(system, claim)?;
     check_model_exact_reachability(
         system,
         predicate,
-        instance
-            .as_ref()
-            .map(|(instance, reference)| (instance, reference)),
+        instance.as_ref().map(|bound| &bound.reference),
         certificate,
         objective,
         bound,
         (max_states, max_edges),
     )
+}
+
+/// The one `over` instance of a claim and the reference its predicates read.
+#[derive(Clone, Debug)]
+pub struct ClaimBinding {
+    /// The instance in its population's universe.
+    pub instance: ModelInstance,
+    /// The object reference the instance binds the claim's parameter to.
+    pub reference: ObjectReference,
+}
+
+/// The binding of `claim`'s `over` parameter in `system`: `None` for a claim
+/// with no `over`, the one instance otherwise.
+///
+/// # Errors
+///
+/// [`ExactProbabilityGraphError::UnsupportedBinding`] when the parameter is
+/// not an object reference or has no instance or several (this slice checks
+/// one); [`ExactProbabilityGraphError::ExpansionRefused`] when the subject
+/// cannot enumerate or reference them.
+pub fn claim_binding(
+    system: &ModelSystem<'_>,
+    claim: &CheckedProbabilisticClaim,
+) -> Result<Option<ClaimBinding>, ExactProbabilityGraphError> {
+    let Some(over) = &claim.over else {
+        return Ok(None);
+    };
+    let quire_exact::ValueType::Reference(object) = &over.value_type else {
+        return Err(ExactProbabilityGraphError::UnsupportedBinding);
+    };
+    let mut instances = system
+        .instances(&over.value_type)
+        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+    let (Some(instance), None) = (instances.pop(), instances.pop()) else {
+        return Err(ExactProbabilityGraphError::UnsupportedBinding);
+    };
+    let reference = system
+        .bound_reference(object.clone(), &instance)
+        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+    Ok(Some(ClaimBinding {
+        instance,
+        reference,
+    }))
 }
 
 /// The scheduler objective the claim itself fixes (FR-198): a claim `under

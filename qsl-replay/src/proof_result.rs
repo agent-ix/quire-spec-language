@@ -1547,13 +1547,15 @@ impl TerminalRecord {
     /// FR-203: a `proved` record with basis `ExactValue` for an exact
     /// probability the EN-5 certificate checker accepted. The accepted check
     /// is the only evidence taken: its value is the record's value, and a
-    /// rejected check yields no record. `extremum` is the scheduler extremum
+    /// rejected check yields no record. `binding` is the claim's one `over`
+    /// instance, absent without `over`. `extremum` is the scheduler extremum
     /// of the entry, absent for a workload.
     pub fn proved_by_exact_certificate(
         request_index: RequestIndex,
         backend: BackendId,
         check: &crate::probability_certificate::ExactProbabilityCertificateCheck,
         extremum: Option<Extremum>,
+        binding: Option<ExactBinding>,
     ) -> Option<Self> {
         let crate::probability_certificate::ExactProbabilityCertificateCheck::Accepted {
             value,
@@ -1571,7 +1573,7 @@ impl TerminalRecord {
                     value: value.clone(),
                     entries: vec![ExactEntry {
                         initial: 0,
-                        binding: None,
+                        binding,
                         value: ExactOrBounds::Exact { value },
                         extremum,
                     }],

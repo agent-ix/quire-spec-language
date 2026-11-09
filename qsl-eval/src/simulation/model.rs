@@ -81,7 +81,7 @@ pub use contract::{
 pub(crate) use contracts::{verdict, Verdict};
 pub(crate) use domain::enumerable;
 use encode::declaration_text;
-pub use encode::ModelKey;
+pub use encode::{reference_canonical_text, ModelKey};
 pub use footprints::{FootprintError, FootprintViolation, WithinStop};
 pub use frames::judge::{
     operation_identity_text, AbstractApplication, Judged, Judgement, Rejection, ResolvedStep,
