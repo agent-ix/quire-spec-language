@@ -12,11 +12,6 @@ fn source(event: &str, scheduler: &str, operator: &str, threshold: &str) -> Stri
     let model = SOURCE
         .replace("true: 1, false: 9", "true: 3, false: 1")
         .replace("true: 1, false: 4", "true: 1, false: 3");
-    let threshold = match threshold {
-        "1" => "0.999",
-        "0" => "0.001",
-        other => other,
-    };
     format!("{model}probabilistic Likely using inf on M over (m: M::Msg) under {scheduler} on origin {{ probability {operator} {threshold} [ {event} ] }}\n")
 }
 
@@ -96,7 +91,7 @@ fn until_precedence_and_infinite_terminal_stutter_stop_at_real_boundaries() {
         (
             "holds(false) until holds(m.attempts = 0)",
             ">=",
-            "1",
+            "0.5",
             "1",
             1,
             0,
@@ -105,19 +100,19 @@ fn until_precedence_and_infinite_terminal_stutter_stop_at_real_boundaries() {
         (
             "holds(false) until holds(m.delivered)",
             "<=",
-            "0",
+            "0.5",
             "0",
             0,
             1,
             1,
         ),
-        ("holds(true) until holds(false)", "<=", "0", "0", 0, 0, 5),
-        ("always holds(true)", ">=", "1", "1", 3, 0, 5),
-        ("always holds(m.attempts > 0)", "<=", "0", "0", 0, 1, 1),
+        ("holds(true) until holds(false)", "<=", "0.5", "0", 0, 0, 5),
+        ("always holds(true)", ">=", "0.5", "1", 3, 0, 5),
+        ("always holds(m.attempts > 0)", "<=", "0.5", "0", 0, 1, 1),
         (
             "always holds(m.attempts = 0 or m.attempts = 2)",
             "<=",
-            "0",
+            "0.5",
             "0",
             0,
             2,
@@ -182,7 +177,9 @@ fn altered_objective_binding_keys_values_ranks_and_threshold_do_not_prove() {
             doc["objective"]["fairness"] = json!(["foreign"])
         }),
         mutate(&request, |doc| alter_keys(doc, |key| key[1] = Value::Null)),
-        mutate(&request, |doc| alter_keys(doc, |key| key[1]["identity"] = json!("foreign"))),
+        mutate(&request, |doc| {
+            alter_keys(doc, |key| key[1]["identity"] = json!("foreign"))
+        }),
         mutate(&request, |doc| {
             alter_keys(doc, |key| key[2] = json!(["foreign"]))
         }),
@@ -214,7 +211,7 @@ fn failed_state_predicate_bounds_have_no_old_eventual_refutation() {
         "always holds(m.attempts = 0 or m.delivered or m.attempts = 2)",
     ] {
         let (document, settlement) = request(
-            &source(event, "every scheduler", ">=", "1"),
+            &source(event, "every scheduler", ">=", "0.9"),
             SNAPSHOT,
             ExactProbLimits::default(),
         );
@@ -241,11 +238,7 @@ fn original_cycles_remain_unsupported_even_behind_initial_success_or_failure() {
             } else {
                 ">="
             },
-            if event.starts_with("always") {
-                "0"
-            } else {
-                "1"
-            },
+            "0.5",
         );
         let mut request = proof(&text, SNAPSHOT);
         let cyclic = text
@@ -273,7 +266,7 @@ fn caller_limits_and_cancellation_never_return_truth_or_evidence() {
             "holds(false) until holds(m.attempts = 0)",
             "every scheduler",
             ">=",
-            "1",
+            "0.5",
         ),
         SNAPSHOT,
     );
@@ -314,11 +307,11 @@ fn initial_terminal_predicates_use_infinite_stutter() {
     snapshot["populations"][0]["objects"][0]["fields"]["attempts"]["integer"] = json!("2");
     let snapshot = serde_json::to_vec(&snapshot).unwrap();
     for (event, operator, threshold, expected) in [
-        ("always holds(not m.delivered)", ">=", "1", "1"),
+        ("always holds(not m.delivered)", ">=", "0.5", "1"),
         (
             "holds(not m.delivered) until holds(m.delivered)",
             "<=",
-            "0",
+            "0.5",
             "0",
         ),
     ] {
@@ -339,34 +332,74 @@ fn initial_terminal_predicates_use_infinite_stutter() {
 #[trace("TC-636", "FR-201-AC-18", "FR-282-AC-15")]
 #[test]
 fn every_independent_checker_poll_preserves_cancellation_including_graph_expansion() {
-    use std::sync::{Arc, OnceLock};
-    use std::sync::atomic::{AtomicU32, Ordering};
-    use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest, ModelSystem, PopulationUniverse};
-    use qsl_replay::{check_probability_certificate_document, ProbabilityDocumentError, ProbabilityDocumentLimits};
+    use qsl_eval::simulation::model::{
+        ExpansionLimits, ModelSimulationRequest, ModelSystem, PopulationUniverse,
+    };
+    use qsl_replay::{
+        check_probability_certificate_document, ProbabilityDocumentError, ProbabilityDocumentLimits,
+    };
     use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
     use quire_checked::key::DeclarationKey;
     use quire_exact::{Cancel, CancelCause};
-    let text = source("holds(m.attempts = 0) until holds(m.delivered)", "every scheduler", ">=", "0.25");
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{Arc, OnceLock};
+    let text = source(
+        "holds(m.attempts = 0) until holds(m.delivered)",
+        "every scheduler",
+        ">=",
+        "0.25",
+    );
     let proof = proof(&text, SNAPSHOT);
     let bytes = proof["certificate"].as_str().unwrap().as_bytes();
     let (checked, packages) = super::bounded::compile_source(&text);
     let stages = qsl_replay::spine::SpineLimits::default();
-    let document = DocumentRef { authority: "test".to_owned(), identity: "s0".to_owned() };
-    let snapshots = [(document.clone(), SNAPSHOT.to_vec())].into_iter().collect();
+    let document = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "s0".to_owned(),
+    };
+    let snapshots = [(document.clone(), SNAPSHOT.to_vec())]
+        .into_iter()
+        .collect();
     let system = ModelSystem::new(ModelSimulationRequest {
-        package: checked.package(), packages: &packages, normalization: stages.model,
-        snapshots: &snapshots, initial: vec![document],
-        universes: vec![PopulationUniverse { population: DeclarationKey { package: "test/link".to_owned(), node: "ix://test/link/msgs".to_owned() }, keys: vec!["m".to_owned()] }],
-        observation: ObservationLimits::default(), expansion: ExpansionLimits { max_candidates: 100_000 },
-        meter: qsl_replay::AccountingLimits::default().0, emit: stages.package.emit(),
-    }).unwrap();
+        package: checked.package(),
+        packages: &packages,
+        normalization: stages.model,
+        snapshots: &snapshots,
+        initial: vec![document],
+        universes: vec![PopulationUniverse {
+            population: DeclarationKey {
+                package: "test/link".to_owned(),
+                node: "ix://test/link/msgs".to_owned(),
+            },
+            keys: vec!["m".to_owned()],
+        }],
+        observation: ObservationLimits::default(),
+        expansion: ExpansionLimits {
+            max_candidates: 100_000,
+        },
+        meter: qsl_replay::AccountingLimits::default().0,
+        emit: stages.package.emit(),
+    })
+    .unwrap();
     let claims = checked.package().graph().probabilistic_model().claims();
     let item = qsl_replay::probabilistic_claim_identity(&claims[0]).unwrap();
-    let limits = ProbabilityDocumentLimits { bytes: 1_000_000, storage_bytes: 8_000_000, states: 100, edges: 1000, scalar_bits: 128, accounting: qsl_replay::AccountingLimits::default().0 };
-    let run = |cancel: &Cancel| check_probability_certificate_document(&system, claims, &item, bytes, limits, cancel);
+    let limits = ProbabilityDocumentLimits {
+        bytes: 1_000_000,
+        storage_bytes: 8_000_000,
+        states: 100,
+        edges: 1000,
+        scalar_bits: 128,
+        accounting: qsl_replay::AccountingLimits::default().0,
+    };
+    let run = |cancel: &Cancel| {
+        check_probability_certificate_document(&system, claims, &item, bytes, limits, cancel)
+    };
     let live = Cancel::new();
     let _count = live.count_charges();
-    assert!(matches!(run(&live), Ok(qsl_replay::ExactProbabilityCertificateCheck::Accepted(_))));
+    assert!(matches!(
+        run(&live),
+        Ok(qsl_replay::ExactProbabilityCertificateCheck::Accepted(_))
+    ));
     let total = live.charges();
     assert!(total > 0);
     for cause in [CancelCause::Requested, CancelCause::Deadline] {
@@ -382,7 +415,10 @@ fn every_independent_checker_poll_preserves_cancellation_including_graph_expansi
             });
             slot.set(cancel.clone()).unwrap();
             let result = run(&cancel);
-            assert!(matches!(result, Err(ProbabilityDocumentError::Cancelled(actual)) if actual == cause), "poll {at}/{total}: {result:?}");
+            assert!(
+                matches!(result, Err(ProbabilityDocumentError::Cancelled(actual)) if actual == cause),
+                "poll {at}/{total}: {result:?}"
+            );
             assert_eq!(seen.load(Ordering::Relaxed), at);
         }
     }

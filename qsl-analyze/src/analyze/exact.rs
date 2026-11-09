@@ -459,10 +459,16 @@ fn run(
                 cancel,
             )
         }
-        (None, _) => {
-            certificate_of(&product, reference, &values,
-                qsl_replay::ProbabilityDocumentIoLimits { bytes: document_limits.bytes, storage_bytes: document_limits.storage_bytes }, cancel)
-        }
+        (None, _) => certificate_of(
+            &product,
+            reference,
+            &values,
+            qsl_replay::ProbabilityDocumentIoLimits {
+                bytes: document_limits.bytes,
+                storage_bytes: document_limits.storage_bytes,
+            },
+            cancel,
+        ),
         (Some(_), None) => return broken(),
     };
     let mut certificate = match certificate {
@@ -666,7 +672,12 @@ fn certificate_of(
             return Err(ExactProbabilityGraphError::ExpansionRefused.into());
         };
         entries.push(ExactProbabilityValue {
-            state: ProbabilityProductKey::for_model_state_with_limits(binding, &state.model, io, cancel)?,
+            state: ProbabilityProductKey::for_model_state_with_limits(
+                binding,
+                &state.model,
+                io,
+                cancel,
+            )?,
             value: value.clone(),
         });
     }
