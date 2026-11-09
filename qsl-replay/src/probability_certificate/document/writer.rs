@@ -67,11 +67,12 @@ impl Events<'_> {
         &self,
         writer: &Writer<'_, S>,
         len: usize,
+        separator: bool,
     ) -> Result<(), Error> {
         let required = writer
             .produced()
             .saturating_add(len as u64)
-            .saturating_add(2);
+            .saturating_add(2 + u64::from(separator));
         if required > self.limits.bytes {
             return Err(Error::Limit(quire_canonical::LimitExceeded {
                 kind: quire_canonical::LimitKind::CanonicalBytes,
@@ -86,12 +87,13 @@ impl Events<'_> {
         &self,
         key: &ProbabilityProductKey,
         writer: &mut Writer<'_, S>,
+        separator: bool,
     ) -> Result<(), Error> {
         self.poll()?;
         let len = base64::encoded_len(key.as_bytes().len(), false).ok_or(Error::Allocation {
             requested: usize::MAX,
         })?;
-        self.string_bytes(writer, len)?;
+        self.string_bytes(writer, len, separator)?;
         writer.reserve(len)?;
         self.text_reserved();
         let mut text = String::new();
@@ -125,18 +127,32 @@ impl Events<'_> {
                 requested: usize::MAX,
             })?;
         // Even zero has one digit, plus JSON quotes.
-        self.string_bytes(writer, 1 + usize::from(integer.is_negative()))?;
+        self.string_bytes(writer, 1 + usize::from(integer.is_negative()), false)?;
         writer.reserve(capacity)?;
-        let remaining = self.limits.bytes.saturating_sub(writer.produced()).saturating_sub(2);
-        let text = integer.try_to_decimal_string(usize::try_from(remaining).unwrap_or(usize::MAX))
+        let remaining = self
+            .limits
+            .bytes
+            .saturating_sub(writer.produced())
+            .saturating_sub(2);
+        let text = integer
+            .try_to_decimal_string(usize::try_from(remaining).unwrap_or(usize::MAX))
             .map_err(|error| match error {
-                quire_exact::IntegerDecimalError::ByteLimit { required, .. } => Error::Limit(quire_canonical::LimitExceeded {
-                    kind: quire_canonical::LimitKind::CanonicalBytes,
-                    bound: self.limits.bytes,
-                    required: writer.produced().saturating_add(required as u64).saturating_add(2),
-                }),
-                quire_exact::IntegerDecimalError::Allocation { requested } => Error::Allocation { requested },
-                quire_exact::IntegerDecimalError::OutputSizeOverflow => Error::Allocation { requested: usize::MAX },
+                quire_exact::IntegerDecimalError::ByteLimit { required, .. } => {
+                    Error::Limit(quire_canonical::LimitExceeded {
+                        kind: quire_canonical::LimitKind::CanonicalBytes,
+                        bound: self.limits.bytes,
+                        required: writer
+                            .produced()
+                            .saturating_add(required as u64)
+                            .saturating_add(2),
+                    })
+                }
+                quire_exact::IntegerDecimalError::Allocation { requested } => {
+                    Error::Allocation { requested }
+                }
+                quire_exact::IntegerDecimalError::OutputSizeOverflow => Error::Allocation {
+                    requested: usize::MAX,
+                },
             })?;
         self.text_reserved();
         writer.string(&text)
@@ -165,8 +181,8 @@ impl Encode for Events<'_> {
         writer.string(PROFILE)?;
         writer.name("targets")?;
         writer.begin_array()?;
-        for key in &self.document.targets {
-            self.key(key, writer)?;
+        for (index, key) in self.document.targets.iter().enumerate() {
+            self.key(key, writer, index != 0)?;
         }
         writer.end_array()?;
         writer.name("optimization")?;
@@ -187,7 +203,7 @@ impl Encode for Events<'_> {
             self.poll()?;
             writer.begin_object()?;
             writer.name("state")?;
-            self.key(&row.state, writer)?;
+            self.key(&row.state, writer, false)?;
             writer.name("value")?;
             writer.begin_object()?;
             writer.name("numerator")?;
@@ -204,7 +220,7 @@ impl Encode for Events<'_> {
             self.poll()?;
             writer.begin_object()?;
             writer.name("state")?;
-            self.key(key, writer)?;
+            self.key(key, writer, false)?;
             writer.name("rank")?;
             writer.integer(i128::from(*rank))?;
             writer.end_object()?;
@@ -330,21 +346,48 @@ mod tests {
         for (bytes, storage_bytes) in [(3, 1_000_000), (1_000_000, 0)] {
             let events = Events {
                 document: &document,
-                limits: ProbabilityDocumentLimits { bytes, storage_bytes, scalar_bits: 100_000, ..super::super::tests::limits() },
+                limits: ProbabilityDocumentLimits {
+                    bytes,
+                    storage_bytes,
+                    scalar_bits: 100_000,
+                    ..super::super::tests::limits()
+                },
                 cancel: &cancel,
                 stopped: RefCell::new(None),
                 texts: std::cell::Cell::new(0),
             };
-            let admission = RefCell::new(Admission { used: 0, bound: storage_bytes, cancel: &cancel, stopped: None });
+            let admission = RefCell::new(Admission {
+                used: 0,
+                bound: storage_bytes,
+                cancel: &cancel,
+                stopped: None,
+            });
             let mut output = Vec::new();
             let mut reservation = Reserve(&admission);
-            let mut writer = Writer::with_reservation(&mut output, quire_canonical::Limits::new(bytes), &mut reservation);
+            let mut writer = Writer::with_reservation(
+                &mut output,
+                quire_canonical::Limits::new(bytes),
+                &mut reservation,
+            );
             let error = events.integer(&integer, &mut writer).unwrap_err();
-            assert_eq!(events.texts.get(), 0, "oversized decimal transport was not retained");
+            assert_eq!(
+                events.texts.get(),
+                0,
+                "oversized decimal transport was not retained"
+            );
             if storage_bytes == 0 {
-                assert!(matches!(admission.borrow().stopped, Some(ProbabilityDocumentError::Limit { limit: ProbabilityDocumentLimit::StorageBytes, bound: 0, actual }) if actual > 0));
+                assert!(
+                    matches!(admission.borrow().stopped, Some(ProbabilityDocumentError::Limit { limit: ProbabilityDocumentLimit::StorageBytes, bound: 0, actual }) if actual > 0)
+                );
             } else {
-                assert!(matches!(error, Error::Limit(quire_canonical::LimitExceeded { bound: 3, required: 10_003, .. })));
+                assert!(matches!(
+                    error,
+                    Error::Limit(quire_canonical::LimitExceeded {
+                        bound: 3,
+                        required: 10_003,
+                        ..
+                    })
+                ));
             }
         }
     }
@@ -360,6 +403,22 @@ mod tests {
         let cancel = Cancel::new();
         let generous = super::super::tests::limits();
         let encoded_key = base64::encoded_len(key.as_bytes().len(), false).unwrap() as u64;
+        // Refuse an array's second key before encoding it even when only its
+        // separator, rather than a character of its payload, exceeds the cap.
+        let cap = 1 + 2 * (encoded_key + 2);
+        let events = Events {
+            document: &document,
+            limits: ProbabilityDocumentLimits { bytes: cap, ..generous },
+            cancel: &cancel,
+            stopped: RefCell::new(None),
+            texts: std::cell::Cell::new(0),
+        };
+        let mut output = Vec::new();
+        let mut writer = Writer::new(&mut output, quire_canonical::Limits::new(cap));
+        writer.begin_array().unwrap();
+        events.key(&key, &mut writer, false).unwrap();
+        assert!(matches!(events.key(&key, &mut writer, true), Err(Error::Limit(quire_canonical::LimitExceeded { required, .. })) if required == cap + 1));
+        assert_eq!(events.texts.get(), 1, "the rejected second transport string was never encoded");
         for (bytes, storage_bytes, expected) in [
             (0, generous.storage_bytes, ProbabilityDocumentLimit::Bytes),
             (
