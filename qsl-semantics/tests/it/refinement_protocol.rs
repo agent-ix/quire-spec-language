@@ -21,6 +21,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value};
 
 use super::refinement_declarations::{assemble, counters, mutated, CAS, SPEC};
+use quire_semantic_value::checking::CheckMode;
 
 /// The protocol `Twice` over the abstract counter model `alias`: attempts
 /// `a1` and `a2` of `inc`, a `parallel` `par` of two empty branches, a
@@ -141,10 +142,7 @@ fn check_over(
         .with_unwritten_protocols();
     let regions = declarations.regions();
     declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .map_err(|refusals| {
             refusals
                 .into_iter()

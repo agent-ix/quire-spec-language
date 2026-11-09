@@ -28,9 +28,8 @@ use crate::exec::{Entry, EntryFrame, EntryRefusal, Halt, Machine, Status};
 use crate::kernel::State;
 #[cfg(feature = "test-support")]
 pub use crate::kernel::{KernelCall, KernelRecorder};
-use crate::relocations::BlockRelocations;
 #[cfg(feature = "test-support")]
-use crate::relocations::StrayCallKind;
+use crate::relocations::{BlockRelocations, StrayCallKind};
 use crate::translate::{carried, integer_to_i64, Carried, Compiler, Failure, Op};
 use qsl_eval::execution::{first_outside, Outside};
 
@@ -88,7 +87,7 @@ pub struct PreparedJit<'p> {
     ops: Vec<Op>,
     unsupported: Vec<(EntrySelection, UnsupportedEntry)>,
     /// The call targets of every generated block (FR-561-AC-3).
-    #[cfg_attr(not(feature = "test-support"), allow(dead_code))]
+    #[cfg(feature = "test-support")]
     call_targets: Vec<BlockRelocations>,
     /// The most handles the arena held during the last call.
     #[cfg(feature = "test-support")]
@@ -168,7 +167,9 @@ impl Jit {
         let mut unsupported = Vec::new();
         let mut translated = Vec::new();
         let graph = package.graph();
-        let blocks = {
+        #[cfg(feature = "test-support")]
+        let blocks;
+        {
             let compiler = Compiler::new(
                 machine.module(),
                 &shim,
@@ -211,13 +212,19 @@ impl Jit {
                     Err(Failure::Prepare(failure)) => return Err(failure),
                 }
             }
-            compiler.take_blocks()
+            #[cfg(feature = "test-support")]
+            {
+                blocks = compiler.take_blocks();
+            }
+        }
+        #[cfg(feature = "test-support")]
+        let call_targets: Vec<BlockRelocations> = {
+            let symbols: Vec<String> = blocks.iter().map(|block| block.name().to_owned()).collect();
+            blocks
+                .into_iter()
+                .map(|block| block.classify(&symbols))
+                .collect()
         };
-        let symbols: Vec<String> = blocks.iter().map(|block| block.name().to_owned()).collect();
-        let call_targets: Vec<BlockRelocations> = blocks
-            .into_iter()
-            .map(|block| block.classify(&symbols))
-            .collect();
         machine
             .finalize()
             .map_err(|_| fault("jit-finalize-definitions"))?;
@@ -248,6 +255,7 @@ impl Jit {
             compiled,
             ops,
             unsupported,
+            #[cfg(feature = "test-support")]
             call_targets,
             #[cfg(feature = "test-support")]
             arena_peak: std::cell::Cell::new(0),

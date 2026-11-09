@@ -19,6 +19,7 @@ use serde_json::json;
 
 use crate::temporal_activation::{id, origin, position, request, rows_for, unlimited, Env};
 use crate::temporal_trace::{fixture, EVENT};
+use quire_semantic_value::checking::CheckMode;
 
 struct EvidenceRoutes<'p> {
     from_emission: EvidencePackage<'p>,
@@ -54,10 +55,7 @@ fn with_routes<R>(
     )
     .expect("the unit assembles");
     let graph = declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("the aggregate clause checks");
     let selection = graph
         .temporal_clauses()

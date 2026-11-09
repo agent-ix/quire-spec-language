@@ -31,6 +31,7 @@ mod fixture {
 }
 use crate::model::intake::SelectedModel;
 use fixture::{obligation_model, obligation_model_with, HEADER};
+use quire_semantic_value::checking::CheckMode;
 
 /// Fixture R with the object type `Pool` and its operation `drain`, `Pool`
 /// a member type of the two populations `Pools` and `Reserves`, so a frame
@@ -131,10 +132,7 @@ fn assemble_with(
 /// checks.
 fn refusals(declarations: &str) -> (String, Vec<CheckRefusal>) {
     let (text, assembled) = assemble(declarations);
-    match assembled.check(
-        CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
-    ) {
+    match assembled.check(CheckingLimits::default(), CheckMode::Linked) {
         Err(refusals) => (text, refusals),
         Ok(_) => (text, Vec::new()),
     }
@@ -144,10 +142,7 @@ fn refusals(declarations: &str) -> (String, Vec<CheckRefusal>) {
 fn checked(declarations: &str) -> CheckedGraph {
     let (_, assembled) = assemble(declarations);
     assembled
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{declarations}: {refusals:?}"))
 }
 
@@ -1222,10 +1217,7 @@ fn a_compensation_with_each_guard_and_capture_checks_as_a_template() {
         false,
     );
     let graph = assembled
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("the compensation and its protocol check");
     let protocol = &graph.protocols()[0];
     assert_eq!(protocol.name, "Refunds");

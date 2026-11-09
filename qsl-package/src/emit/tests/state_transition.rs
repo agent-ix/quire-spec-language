@@ -10,6 +10,7 @@
 use qsl_semantics::model::intake::meaning;
 
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 #[path = "../../../../qsl-semantics/tests/support/tc235_k2.rs"]
 #[allow(dead_code, reason = "this fixture uses part of the shared K2 builder")]
@@ -141,10 +142,7 @@ fn check(
     let (unit, packages) = unit(clauses, protocol);
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}\n{unit}"));
     (CheckedPackage::link(graph), packages)
 }
@@ -867,10 +865,7 @@ fn an_execution_point_on_a_clause_of_the_operation_gives_no_transition() {
             },
         )
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{clause}: the package checks: {refusals:?}"));
         let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
         let rows = emission.selected_operation_member_rows();

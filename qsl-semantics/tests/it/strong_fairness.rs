@@ -21,6 +21,7 @@ use crate::model_operations::{
     wire_field, wire_type, PACKAGE_IDENTITY,
 };
 use qsl_semantics::model::intake::meaning;
+use quire_semantic_value::checking::CheckMode;
 
 const EVENT: &str = "quire.temporal.event-position.false-extension/v1";
 const INFINITE: &str = "quire.temporal.infinite-trace/v1";
@@ -198,10 +199,7 @@ fn node_identity(written: &str) -> quire_exact::NodeKey {
     )
     .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"));
     let graph = package
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{body}: the package checks: {refusals:?}"));
     let [clause] = graph.temporal_clauses() else {
         panic!("{body}: one emitted clause");

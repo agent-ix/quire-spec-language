@@ -30,6 +30,7 @@ use qsl_semantics::model::refusal::ModelRefusalCause;
 use qsl_semantics::model::state::StateObject;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{ObjectId, ObjectReference, ScalarLimits, Value};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::model_transition::ModelTransition;
 use serde_json::{json, Value as Json};
@@ -242,10 +243,7 @@ fn subject(document: Vec<u8>, clauses: &[&str]) -> Subject {
     )
     .expect("the unit assembles");
     let graph = declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     Subject {
         package: CheckedPackage::link(graph),

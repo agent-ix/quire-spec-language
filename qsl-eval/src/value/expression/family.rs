@@ -318,6 +318,7 @@ mod family_contract_tests {
     use qsl_semantics::model::object_environment::ObjectEnvironment;
     use quire_eval::EvalOutcome;
     use quire_exact::Meter;
+    use quire_semantic_value::checking::CheckMode;
     use quire_semantic_value::checking::CheckingLimits;
 
     /// `Value`'s function-declaration family is a real `FamilyContract`
@@ -366,10 +367,7 @@ mod family_contract_tests {
             declarations.functions = vec![form];
             declarations
         }
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("f checks")
         .function_identity("f")
         .expect("f is declared");
@@ -441,10 +439,7 @@ mod family_contract_tests {
             declarations.functions = vec![declaration("f", Expression::boolean(true))];
             declarations
         }
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("one boolean-literal function checks cleanly");
         let identity = graph
             .function_identity("f")
@@ -504,10 +499,7 @@ mod family_contract_tests {
             declarations.functions = vec![declaration("f", Expression::boolean(true))];
             declarations
         }
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("one boolean-literal function checks cleanly, never Incomplete");
         let identity = graph
             .function_identity("f")
@@ -590,10 +582,7 @@ mod family_contract_tests {
             ];
             declarations
         }
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("p / decimal(3, 0) checks cleanly");
         let rounding = graph
             .function_identity("rounding")
@@ -684,10 +673,7 @@ mod family_contract_tests {
             ];
             declarations
         }
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("callee and caller both check cleanly");
         let identity = graph
             .function_identity("caller")

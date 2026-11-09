@@ -7,6 +7,7 @@
 use ix_trace_rs::trace;
 use qsl_package::{emit_checked, CheckedPackage};
 use qsl_semantics::check::PackageDeclarations;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::Value as Json;
 
@@ -35,10 +36,7 @@ fn package(declarations: &str) -> CheckedPackage {
     .expect("the assembler admits the declarations");
     CheckedPackage::link(
         declarations
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}")),
     )
 }

@@ -26,6 +26,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value};
 
 use crate::planner_chain::{Chain, Failure, PACKAGE};
+use quire_semantic_value::checking::CheckMode;
 
 #[path = "../../qsl-semantics/tests/support/composition.rs"]
 #[allow(
@@ -96,10 +97,7 @@ fn dependency(identity: &str, clauses: &str) -> Dependency {
             .expect("the dependency assembles");
     let package = Arc::new(CheckedPackage::link(
         declarations
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the dependency checks"),
     ));
     let emission = emit_checked(&package, EmitLimits::fixture()).expect("the dependency emits");
@@ -167,10 +165,7 @@ fn compile(
         assembled = assembled.with_composition_lattice(profile);
     }
     let graph = assembled
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .map_err(|refusals: Vec<CheckRefusal>| Failure::Check(refusals))?;
     Ok(CheckedPackage::link_with(
         graph,

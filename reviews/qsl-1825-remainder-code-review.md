@@ -90,3 +90,21 @@ Clean, examined:
 - **FR-560-AC-1:** the seven floor forms, the floor types and an explicit
   operator table per coverage class are asserted, with the FR-560-AC-5
   exclusions listed as negatives.
+
+## Dispositions
+
+| ID | Disposition | Fix |
+| --- | --- | --- |
+| FND-001 | Fixed | The expression-level check now runs `Definedness` in the requested mode (`with_mode`), so both paths suppress only unproved obligations and still refuse the rest |
+| FND-002 | Fixed | The termination measure is checked in Linked mode in every mode; the `check` and `ValueDeclarations::mode` docs say so; test added |
+| FND-003 | Fixed | `kernel_mode.rs` covers decimal and rational nonzero, presence, rational range and non-empty reduction under package-level Kernel |
+| FND-004 | Fixed | The AC-2 fixture uses a Rational parameter and result; bare `Rational` and `Text` do not parse (the grammar requires `[..]`), noted in the test |
+| FND-005 | Fixed | No AC names tuple construction, so the tuple test carries no trace tag |
+| FND-006 | Fixed | The denied-charge loop runs to the measured `work_units` spend |
+| FND-007 | Fixed | The unreachable `TableSlot` classification is replaced by an indirect-call count; any indirect call is stray |
+| FND-008 | Fixed | `stray_call` returns the declare failure to the caller |
+| FND-009 | Fixed | Relocation recording, `call_targets` and the `relocations` module are built only with `test-support` |
+| FND-010 | Fixed | `RelocationKind` is removed; the test asserts target classes only |
+| FND-011 | Fixed | A malformed Rational operand shape refuses under Kernel |
+| FND-012 | Fixed | The Kernel test asserts the `[0, 9]` result bound and the body `Location` |
+| FND-013 | Fixed | `CheckMode` is imported once per file; no inline long path remains |

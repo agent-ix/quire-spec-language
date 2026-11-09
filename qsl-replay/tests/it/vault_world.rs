@@ -32,6 +32,7 @@ use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_checked::key::DeclarationKey;
 use quire_exact::ScalarLimits;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -454,10 +455,7 @@ impl World {
             .next()
             .map(|checked| checked.expect("the temporal clause checks"));
         let graph = assembled
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"));
         let package = CheckedPackage::link(graph);
         let unassembled = match check_hyper_clauses(&declarations(&documents, &text))

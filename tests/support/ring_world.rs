@@ -381,10 +381,7 @@ pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String>
     .expect("the unit assembles");
     declarations
         .with_unwritten_refinements()
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .map_err(|refusals| format!("{refusals:?}"))
 }
 
@@ -805,6 +802,7 @@ impl MapWorld {
     }
 }
 
+use quire_semantic_value::checking::CheckMode;
 /// The `items` row of ADR-020 §8, for a [`MapWorld`] that adds rows of its
 /// own.
 #[allow(

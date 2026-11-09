@@ -10,6 +10,7 @@ use qsl_forms::Accumulation;
 
 use super::*;
 use crate::check::Obligation;
+use quire_semantic_value::checking::CheckMode;
 
 fn integer() -> TypeForm {
     TypeForm::builtin(BuiltinType::Integer, SPAN)
@@ -139,10 +140,7 @@ fn check_body(result: TypeForm, body: Expression) -> Result<CheckedGraph, Vec<Ch
             qsl_foundation::IdentityLimits::default(),
         )
     }
-    .check(
-        CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
-    )
+    .check(CheckingLimits::default(), CheckMode::Linked)
 }
 
 /// A `let`, `count`, `sum`, query or `fold` binder read after the form's

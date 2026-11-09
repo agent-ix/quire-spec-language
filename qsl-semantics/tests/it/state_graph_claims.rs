@@ -22,6 +22,7 @@ use crate::model_operations::{
     admit_and_assemble_with_body, attempt_update_modifies_version_number, config_unit_with_body,
     config_version_document, tc464_integer_argument_source,
 };
+use quire_semantic_value::checking::CheckMode;
 
 /// A structural node key for a fixture, distinct per `tag`.
 fn fixture_key(tag: u8) -> quire_exact::NodeKey {
@@ -58,7 +59,7 @@ fn check_under(
         .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));
     let regions = declarations.regions();
     declarations
-        .check(limits, quire_semantic_value::checking::CheckMode::Linked)
+        .check(limits, CheckMode::Linked)
         .map_err(|refusals| {
             refusals
                 .into_iter()
@@ -508,10 +509,7 @@ fn an_operation_parameter_read_refuses_as_a_missing_name() {
     let declarations = admit_and_assemble_with_body(&document, body).expect("the unit assembles");
     let regions = declarations.regions();
     let refusals = declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("the parameter is not in scope");
     let [refusal] = refusals.as_slice() else {
         panic!("one refusal: {refusals:?}");

@@ -8,6 +8,7 @@ use super::*;
 use crate::checked_v2::{read_checked_package_v2, CheckedTimedModel};
 use crate::emit::timed_models_of;
 use quire_contract_model::CheckedPackageEvidence;
+use quire_semantic_value::checking::CheckMode;
 
 /// ConfigVersion with the clock `x: Clock` and the clock collection `s:
 /// Sequence<Clock>[0, 3]`.
@@ -113,10 +114,7 @@ fn a_clock_collection_emits_one_template_place() {
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let graph = assemble_with_models(clocked_unit("").as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("a model of clocks alone checks: {refusals:?}"));
     let integer = qsl_semantics::check::builtin_integer_type_key(graph.package_name())
         .expect("the built-in integer key");
@@ -251,10 +249,7 @@ fn read_back(document: &[u8]) -> Result<Vec<CheckedTimedModel>, String> {
     let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
     let graph = assemble_with_models(clocked_unit("").as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("a model of clocks alone checks: {refusals:?}"));
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     let wire = wire(&emission);
@@ -409,10 +404,7 @@ fn read_back_with(document: &[u8], body: &str) -> Result<Vec<CheckedTimedModel>,
     let packages = qsl_semantics::model::intake::package_input([document]).unwrap();
     let graph = assemble_with_models(clocked_unit(body).as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     let wire = wire(&emission);
@@ -485,10 +477,7 @@ fn an_urgency_predicate_is_a_located_expression_node() {
     let unit = clocked_unit(body);
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     let wire = wire(&emission);
@@ -581,10 +570,7 @@ fn emitted(document: &[u8], body: &str) -> (String, Value) {
     let unit = clocked_unit(body);
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     (unit, wire(&emission))
@@ -706,10 +692,7 @@ fn an_urgency_reading_element_presences_is_not_emitted() {
     let unit = clocked_unit("urgent All when { forall(e in self.q : present(e)) };\n");
     let refusals = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("an element presence urgency is not written yet");
     assert!(
         refusals.iter().any(|refusal| matches!(
@@ -794,10 +777,7 @@ fn two_units_timing_two_packages_under_one_alias_emit_their_own_clock_places() {
         &[first.as_slice(), second.as_bytes()],
     )
     .expect("the units assemble")
-    .check(
-        CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
-    )
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .unwrap_or_else(|refusals| panic!("each unit times its own package: {refusals:?}"));
     // Each source's timed models are its own package's: one model, with that
     // package's clock places only.
@@ -834,10 +814,7 @@ fn a_timed_predicate_population_is_the_one_shared_reference_node() {
                 forall(c in Config::config_history : true) }\n";
     let graph = assemble_with_models(clocked_unit(body).as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     let wire = wire(&emission);

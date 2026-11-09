@@ -4,6 +4,7 @@
 use super::*;
 use crate::checked_v2::V2ReadRefusal;
 use quire_contract_model::{CheckedPackageRefusalCause, CheckedPackageRefusalCode};
+use quire_semantic_value::checking::CheckMode;
 
 pub(in crate::emit::tests) const PROFILES_W: &str =
     "profile P = \"quire.protocol.finite-global/v1\";\n\
@@ -602,10 +603,7 @@ fn check_tc134(unit: &str) -> Result<(), Vec<qsl_semantics::check::CheckRefusal>
     );
     assemble_with_models(source.as_bytes(), &packages)
         .expect("unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .map(|_| ())
 }
 
@@ -1026,10 +1024,7 @@ fn w_missing_required_temporal_refuses_before_a_package_exists() {
     let text = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n{PROFILES_W}model M = \"acme/orders\";\n{}", W.replace("requires temporal OrderClosureBounded;", "requires temporal Missing;"));
     let refusals = assemble_with_models(text.as_bytes(), &packages)
         .expect("W assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("no package for a missing requirement");
     let [refusal] = refusals.as_slice() else {
         panic!("one missing temporal: {refusals:?}");
@@ -1069,10 +1064,7 @@ fn a_canonical_relationship_binds_through_real_model_intake() {
                 finish Closed as (closed: Boolean) {true};\n}\n";
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("source assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("a declared relationship resolves");
     let protocol = graph.protocol("OrderFlow").expect("checked OrderFlow");
     assert_eq!(protocol.relationships.len(), 1);
@@ -1113,10 +1105,7 @@ fn a_canonical_relationship_binds_through_real_model_intake() {
         let text = unit.replace("M::OrderShipment", &format!("M::{target}"));
         let refusals = assemble_with_models(text.as_bytes(), &packages)
             .expect("source assembles")
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect_err("invalid relationship target refuses");
         let [refusal] = refusals.as_slice() else {
             panic!("one relationship refusal: {refusals:?}");
@@ -1163,10 +1152,7 @@ fn tc134_timed_graph_with(
     );
     assemble_with_models(source.as_bytes(), &packages)
         .expect("unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("timed TC-134 checks: {refusals:?}"))
 }
 
@@ -1583,10 +1569,7 @@ fn tc134_compensation_rejects_a_protocol_profile_alias() {
     );
     let refusals = assemble_with_models(source.as_bytes(), &packages)
         .expect("unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("a protocol profile cannot select a compensation clock role");
     assert!(refusals.iter().any(|refusal| matches!(
         &refusal.cause,

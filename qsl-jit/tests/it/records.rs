@@ -151,8 +151,9 @@ const TUPLES: &str = "\
  function viacall using v(a: Integer, b: Int[0, 9]): Boolean pure { mk(a, b) = T(a, b) }\n";
 
 /// Tuple construction is prepared and returns the interpreter's value and
-/// charges, including a denied charge at each point of the spend.
-#[trace("TC-1385")]
+/// charges, including a denied charge under every `work_units` limit up to
+/// one below the measured spend and past it. No acceptance criterion names
+/// tuple construction, so the test carries no trace tag.
 #[test]
 fn tuple_construction_agrees_with_the_interpreter() {
     let package = package_of(TUPLES);
@@ -162,7 +163,10 @@ fn tuple_construction_agrees_with_the_interpreter() {
     for function in functions {
         for (a, b) in [(0, 0), (7, 3), (-4, 9)] {
             let arguments = [int(a), int(b)];
-            for below in 0..16_u64 {
+            let measured = interpreted(&package, function, &arguments, UNLIMITED);
+            let spend = measured.work_spent;
+            assert!(spend > 0, "{function} {a} {b} charges work");
+            for below in 0..=spend {
                 let mut limits = UNLIMITED;
                 limits.work_units = below;
                 let want = interpreted(&package, function, &arguments, limits);

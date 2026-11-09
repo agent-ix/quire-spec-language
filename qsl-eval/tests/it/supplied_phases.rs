@@ -25,6 +25,7 @@ use quire_exact::{
     form, Cancel, CancelCause, Decimal, Integer, Meter, Outcome, ScalarLimits, Value, ValueType,
 };
 use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::StorageRequest;
 use quire_semantic_value::supplied_membership::{InvalidMembershipCause, MembershipPart, PathStep};
@@ -80,10 +81,7 @@ fn package() -> CheckedPackage {
     .expect("the assembler builds the package declarations");
     CheckedPackage::link(
         declarations
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the package checks"),
     )
 }

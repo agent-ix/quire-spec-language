@@ -30,6 +30,7 @@ use crate::model_operations::{
     admit_and_assemble_with_body, config_version_document, config_version_identity, operation,
     supersedes_identity, supersedes_relationship, PACKAGE_IDENTITY,
 };
+use quire_semantic_value::checking::CheckMode;
 
 const POPULATION: &str = "ix://example/config-version/config_history";
 
@@ -81,10 +82,7 @@ fn fixture_with(relationships: serde_json::Value) -> Fixture {
     let graph =
         admit_and_assemble_with_body(&document, "function noop using v(): Boolean pure { true }")
             .expect("assemble model")
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("check model");
     let model = StateModel::new(
         graph.model_selections(),

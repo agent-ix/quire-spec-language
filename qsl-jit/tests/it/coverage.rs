@@ -7,7 +7,7 @@ use qsl_eval::execution::{CoverageOperation, CoverageType, PreparedEntries};
 use quire_eval::{CallFailure, ExecutionBackendChoice, UnsupportedCause, UntranslatableConstruct};
 use quire_exact::{Integer, IntegerInterval, ValueType};
 
-use crate::common::{int, jitted_call, package_of, prepare, unsupported_names};
+use crate::common::{int, jitted_call, package_kernel, package_of, prepare, unsupported_names};
 
 /// FR-560-AC-1: the seven floor forms, the floor value types and every
 /// `Value`-family operator over them, and none of the constructs the floor
@@ -103,14 +103,20 @@ const NUMERIC: [&str; 12] = [
 ];
 
 /// FR-560-AC-2: `add`, `half` and `name` are prepared, none listed
-/// unsupported.
+/// unsupported. The AC writes `half` over a bare `Rational` and `name` over a
+/// bare `Text`; the native grammar requires the `[..]` bounds of both types
+/// (a bare name is "expected `[`"), so `half` and `name` take the closest
+/// form, a bounded `Rational` and a bounded `Text`. `half` divides by
+/// `rational(2, 1)` because an integer is never implicitly a rational
+/// (FR-495-AC-6); the Linked check does not prove that rational divisor
+/// nonzero, so the unit is checked under `CheckMode::Kernel` (FR-495).
 #[trace("TC-1380", "FR-560-AC-2")]
 #[test]
 fn integer_rational_and_text_entries_of_the_floor_are_not_listed_unsupported() {
-    let package = package_of(
+    let package = package_kernel(
         "\
  function add using v(a: Integer, b: Integer): Integer pure { a + b }\n\
- function half using v(a: Int[0, 9]): Rational[0, 9; 1, 2] pure { a / 2 }\n\
+ function half using v(a: Rational[0, 9; 1, 2]): Rational[0, 9; 1, 2] pure { a / rational(2, 1) }\n\
  function name using v(t: Text[0, 16; nfd]): Text[0, 16; nfd] pure { t }\n",
     );
     let prepared = prepare(&package, &["add", "half", "name"]);

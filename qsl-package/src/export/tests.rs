@@ -19,6 +19,7 @@ use quire_semantic_value::checking::CheckingLimits;
 
 use super::{export_bindings, BoundItem, ExportRefusal};
 use crate::CheckedPackage;
+use quire_semantic_value::checking::CheckMode;
 
 #[path = "../../../qsl-semantics/tests/support/abstraction.rs"]
 mod fixture;
@@ -61,10 +62,7 @@ fn package(clauses: &str) -> CheckedPackage {
     .expect("the package admits");
     let graph = PackageDeclarations::assemble(raw, "pkg".to_owned(), built, models, Vec::new())
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }

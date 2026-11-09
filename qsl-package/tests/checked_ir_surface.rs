@@ -8,6 +8,7 @@ use qsl_package::{
     export_bindings, BoundItem, CheckedPackage, ExportRefusal, ResolvedDependency, UnboundElement,
 };
 use qsl_semantics::check::{CheckedGraph, PackageDeclarations};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 fn empty_graph() -> CheckedGraph {
@@ -21,10 +22,7 @@ fn empty_graph() -> CheckedGraph {
     .reference()
     .clone();
     PackageDeclarations::new(source, "pkg", qsl_foundation::IdentityLimits::default())
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("an empty package checks")
 }
 

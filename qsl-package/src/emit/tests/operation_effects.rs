@@ -17,6 +17,7 @@ use quire_contract_model::{
 use super::*;
 
 use super::receiver_frames::fixture::{self, base as k2};
+use quire_semantic_value::checking::CheckMode;
 
 type Row = (
     String,
@@ -49,10 +50,7 @@ fn compile(document: &Value, clauses: &str) -> (CheckedPackage, Vec<u8>) {
     let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()]).unwrap();
     let graph = assemble_with_models(unit(clauses).as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     (CheckedPackage::link(graph), bytes)
 }

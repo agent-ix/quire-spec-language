@@ -690,6 +690,7 @@ mod tests {
     use qsl_foundation::{RequestIndex, SourceIdentity};
     use qsl_semantics::check::{CheckedGraph, CheckedHybridClaim, PackageDeclarations};
     use quire_exact::{CancelCause, Integer};
+    use quire_semantic_value::checking::CheckMode;
     use quire_semantic_value::checking::CheckingLimits;
     use serde_json::json;
 
@@ -901,10 +902,7 @@ mod tests {
             Vec::new(),
         )
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
         let claim = match graph.hybrid_claims() {
             [claim] => claim.clone(),

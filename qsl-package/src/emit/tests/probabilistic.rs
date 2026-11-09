@@ -6,6 +6,7 @@
 
 use super::admission_corpus::config_version_unit;
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 /// The ConfigVersion unit with a workload and a reward on `attemptUpdate`.
 fn probabilistic_package() -> CheckedPackage {
@@ -18,10 +19,7 @@ fn probabilistic_package() -> CheckedPackage {
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     assert!(!graph.probabilistic_model().is_empty());
     CheckedPackage::link(graph)
@@ -62,10 +60,7 @@ fn claims_package(declarations: &[&str]) -> CheckedPackage {
     let unit = format!("{unit}{}\n", declarations.join("\n"));
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }

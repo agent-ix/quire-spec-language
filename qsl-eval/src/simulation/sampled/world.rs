@@ -24,6 +24,7 @@ use crate::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
 use crate::simulation::TransitionSystem;
+use quire_semantic_value::checking::CheckMode;
 
 /// The native Boolean type reference.
 pub(crate) const BOOLEAN: &str = "ix://quire/native/Boolean";
@@ -265,10 +266,7 @@ impl World {
             Vec::new(),
         )
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:#?}"));
 
         let header = json!({"identity": model.package});

@@ -15,6 +15,7 @@ use qsl_route::{
     SolverBounds,
 };
 use qsl_semantics::check::{Capability, CheckedGraph, PackageDeclarations};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 /// FR-447's `Braking` and `SlowEnough`, and `Reaches`, a temporal claim over
@@ -56,10 +57,7 @@ fn graph() -> CheckedGraph {
     .expect("the model is admitted");
     PackageDeclarations::assemble(raw, "fixture".to_string(), unit, models, Vec::new())
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("the unit checks")
 }
 

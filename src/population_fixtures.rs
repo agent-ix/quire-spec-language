@@ -38,6 +38,7 @@ use quire_contract_model::{
     CheckedPackageSourceCorrespondenceRef, CheckedPackageV2, CheckedPackageV2ReadResult,
     CheckedSemanticGraphV2, CheckedSemanticNodeV2, CheckedTerm,
 };
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 #[path = "../tests/support/spine_model.rs"]
@@ -226,10 +227,7 @@ fn with_population_package<T>(
     let mut declarations = assemble(&packages)?;
     declarations.functions.extend([pop]);
     let graph = declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .map_err(|refusal| Error::Check(format!("{refusal:?}")))?;
     with(&CheckedPackage::link(graph))
 }

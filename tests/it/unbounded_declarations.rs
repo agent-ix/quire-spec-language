@@ -22,6 +22,7 @@ use qsl_semantics::family::{ClaimExtent, Requirements};
 use quire_exact::{NodeKey, PathSegment};
 
 use super::request_builder::{check, package, registry, HEADER};
+use quire_semantic_value::checking::CheckMode;
 
 /// `declarations` through S1, S2 and the assembler, whose refusal is returned.
 fn try_assemble(declarations: &str) -> Result<PackageDeclarations, AssemblyRefusal> {
@@ -140,7 +141,7 @@ fn config_graph(declaration: &str) -> CheckedGraph {
         .expect("the model type unit assembles")
         .check(
             quire_semantic_value::checking::CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .unwrap_or_else(|refusals| panic!("{declaration}: {refusals:?}"))
 }

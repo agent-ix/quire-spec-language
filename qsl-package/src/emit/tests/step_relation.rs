@@ -4,6 +4,7 @@
 
 use super::admission_corpus::config_version_unit;
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 pub(super) fn document() -> &'static [u8] {
     config_version_unit::DOMAIN_PACKAGE.as_bytes()
@@ -22,10 +23,7 @@ pub(super) fn checked_graph() -> qsl_semantics::check::CheckedGraph {
     let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     assemble_with_models(relation_unit().as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"))
 }
 
@@ -41,10 +39,7 @@ fn checked_bound_graph() -> qsl_semantics::check::CheckedGraph {
     );
     assemble_with_models(unit.as_bytes(), &packages)
         .expect("the bound unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the bound unit checks: {refusals:?}"))
 }
 

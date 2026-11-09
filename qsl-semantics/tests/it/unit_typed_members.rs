@@ -19,6 +19,7 @@ use crate::model_operations::{
     config_version_document_with_operations, empty_frame, operation, operation_parameter,
     parse_and_build,
 };
+use quire_semantic_value::checking::CheckMode;
 
 /// A structural node key for a fixture, distinct per `tag`.
 fn fixture_key(tag: u8) -> quire_exact::NodeKey {
@@ -133,7 +134,7 @@ fn quantity_types_check_in_every_position_over_the_one_unit_node() {
         .expect("every position assembles")
         .check(
             quire_semantic_value::checking::CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .expect("every position checks");
     let semantic = graph.semantic_graph();
@@ -232,7 +233,7 @@ fn quantity_types_check_in_every_position_over_the_one_unit_node() {
     let refusals = declarations
         .check(
             quire_semantic_value::checking::CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .expect_err("3 s is not a Quantity<ms>");
     let [refusal] = refusals.as_slice() else {
@@ -347,7 +348,7 @@ fn source_model_alias_names_preserve_nominal_units_and_member_bounds() {
     .expect("the admitted model alias resolves in both type positions")
     .check(
         quire_semantic_value::checking::CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
+        CheckMode::Linked,
     )
     .expect("the function checks with the alias's admitted target");
     let semantic = graph.semantic_graph();
@@ -444,7 +445,7 @@ fn unit_bounds_bound_the_members_of_their_unit_or_alias() {
         .expect("assembles")
         .check(
             quire_semantic_value::checking::CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .expect("checks");
     let model = StateModel::new(
@@ -646,7 +647,7 @@ fn unit_bounds_reach_records_aliases_of_aliases_and_every_node() {
             .expect("assembles")
             .check(
                 quire_semantic_value::checking::CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
+                CheckMode::Linked,
             )
             .expect("checks");
         let model = StateModel::new(

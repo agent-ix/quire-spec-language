@@ -15,6 +15,7 @@ use crate::check::{
     CaptureOwner, CaptureStage, CheckCause, CheckedActivation, CheckedCommit, CheckedGraph,
     ObligationCause, ProtocolAnchorCause,
 };
+use quire_semantic_value::checking::CheckMode;
 
 /// The protocol profile FR-381-AC-11's refusal names.
 const PROTOCOL_PROFILE: &str = "quire.protocol.finite-global/v1";
@@ -581,7 +582,7 @@ fn a_template_over_two_populations_refuses_its_operation() {
     let found = assembled
         .check(
             quire_semantic_value::checking::CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .expect_err("an operation over two populations refuses");
     let causes = obligation_causes(&found);

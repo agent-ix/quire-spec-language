@@ -10,6 +10,7 @@ use qsl_forms::build_unit;
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::intake::SelectedModels;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 const SPELLINGS: [&str; 4] = ["helper", "rec", "cast", "Tuple"];
@@ -35,10 +36,7 @@ fn checks(profile: &str, body: &str) {
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("{text}: assembly: {refusal:?}"))
-    .check(
-        CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
-    )
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"));
 }
 

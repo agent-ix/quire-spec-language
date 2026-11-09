@@ -20,6 +20,7 @@ use qsl_semantics::check::{CheckRefusal, CheckedGraph, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use quire_checked::key::DeclarationKey;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value};
 
@@ -425,10 +426,7 @@ pub fn check_over(queue: &[u8], body: &str) -> Result<Checked, Vec<Refused>> {
     .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"))
     .with_unwritten_refinements();
     let regions = declarations.regions();
-    match declarations.check(
-        CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
-    ) {
+    match declarations.check(CheckingLimits::default(), CheckMode::Linked) {
         Ok(graph) => Ok(Checked { graph, packages }),
         Err(refusals) => Err(refusals
             .into_iter()

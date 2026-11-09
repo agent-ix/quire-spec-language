@@ -37,6 +37,7 @@ use qsl_route::Mode;
 use qsl_semantics::check::{Capability, NodeTag, PackageDeclarations};
 use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_exact::{Cancel, Integer, IntegerInterval, Origin, Role, Value};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::{
     ExpressionLocation as Location, ExpressionOwner as LocationOrigin,
@@ -398,10 +399,7 @@ pub(crate) fn package_with_source(declarations: &str) -> (CheckedPackage, Vec<u8
     );
     let package = CheckedPackage::link(
         declarations
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .unwrap_or_else(|e| panic!("the package checks: {e:?}\n{text}")),
     );
     (package, text.into_bytes())

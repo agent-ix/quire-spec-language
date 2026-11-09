@@ -26,6 +26,7 @@ use crate::model_operations::{
     admit_and_assemble_with_profiles, attempt_update_modifies_version_number,
     config_unit_with_profiles, config_version_document, PACKAGE_IDENTITY,
 };
+use quire_semantic_value::checking::CheckMode;
 
 /// A structural node key for a fixture, distinct per `tag`.
 fn fixture_key(tag: u8) -> quire_exact::NodeKey {
@@ -499,7 +500,7 @@ fn a_checked_timed_clause_reaches_package_check() {
     package
         .check(
             quire_semantic_value::checking::CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .expect("FR-370 carries the checked timed interval through S4");
 }

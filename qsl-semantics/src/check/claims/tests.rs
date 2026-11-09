@@ -13,6 +13,7 @@ use super::*;
 use crate::check::ir::{BodyBuilder, Node};
 use crate::check::node_key::NodeTag;
 use crate::check::{CheckedGraph, PackageDeclarations};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -43,10 +44,7 @@ fn check(declarations: &str) -> Checked {
         Vec::new(),
     )
     .expect("the unit assembles")
-    .check(
-        CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
-    )
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .unwrap_or_else(|refusals| panic!("{declarations}: {refusals:?}"));
     Checked { text, graph }
 }

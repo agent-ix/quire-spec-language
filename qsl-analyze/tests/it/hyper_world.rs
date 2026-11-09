@@ -53,6 +53,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
 use crate::counter::UNLIMITED;
+use quire_semantic_value::checking::CheckMode;
 
 const PACKAGE: &str = "test/vault";
 /// The package of the second model of a two-alias world, under alias
@@ -597,10 +598,7 @@ impl World {
             };
         let base = unit_text(other, vault, reset, &ieee_package_clause);
         let graph = declarations(&documents, &base)
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .unwrap_or_else(|refusals| panic!("{base}: the unit checks: {refusals:?}"));
         let package = CheckedPackage::link(graph);
         let text = unit_text(other, vault, reset, &format!("{declaration}\n"));

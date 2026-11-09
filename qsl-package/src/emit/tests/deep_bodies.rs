@@ -9,6 +9,7 @@
 
 use super::*;
 use qsl_semantics::check::CheckedBody;
+use quire_semantic_value::checking::CheckMode;
 use std::fmt::{self, Write};
 
 /// Counts complete debug output without retaining its bytes.
@@ -129,7 +130,7 @@ fn a_100000_deep_body_checks_lowers_and_emits_on_a_small_stack() {
                         CheckingLimits::new(u64::MAX)
                             .with_input_bytes(u64::MAX)
                             .with_work_budget(u64::MAX),
-                        quire_semantic_value::checking::CheckMode::Linked,
+                        CheckMode::Linked,
                     )
                     .unwrap_or_else(|refusals| panic!("{label}: checks: {refusals:?}"));
                 let package = CheckedPackage::link(graph);
@@ -192,7 +193,7 @@ fn a_100000_term_sum_reads_back_verifies_clones_compares_and_drops_on_a_small_st
                     CheckingLimits::new(u64::MAX)
                         .with_input_bytes(u64::MAX)
                         .with_work_budget(u64::MAX),
-                    quire_semantic_value::checking::CheckMode::Linked,
+                    CheckMode::Linked,
                 )
                 .unwrap_or_else(|refusals| panic!("checks: {refusals:?}"));
             let package = CheckedPackage::link(graph);
@@ -243,10 +244,8 @@ fn every_nested_form_emits_in_the_stratified_grammar_at_2_and_1000_levels() {
             std::thread::Builder::new()
                 .stack_size(STACK)
                 .spawn(move || {
-                    let checked = declarations(form, levels).check(
-                        CheckingLimits::default(),
-                        quire_semantic_value::checking::CheckMode::Linked,
-                    );
+                    let checked = declarations(form, levels)
+                        .check(CheckingLimits::default(), CheckMode::Linked);
                     if matches!(form, Form::Field) {
                         assert!(checked.is_err(), "an unguarded `value` is unproved");
                         return;
@@ -330,10 +329,7 @@ fn the_longest_and_chain_s1_admits_checks_and_emits_at_the_defaults() {
             }
             let unit = and_chain(admitted).expect("the longest admitted chain assembles");
             let graph = unit
-                .check(
-                    CheckingLimits::default(),
-                    quire_semantic_value::checking::CheckMode::Linked,
-                )
+                .check(CheckingLimits::default(), CheckMode::Linked)
                 .unwrap_or_else(|refusals| panic!("{admitted} levels check: {refusals:?}"));
             let package = CheckedPackage::link(graph);
             let emission = emit_checked(&package)
@@ -382,7 +378,7 @@ fn emitted_sum_node_ids(terms: usize) -> (usize, usize, usize) {
             CheckingLimits::new(u64::MAX)
                 .with_input_bytes(u64::MAX)
                 .with_work_budget(u64::MAX),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .unwrap_or_else(|refusals| panic!("{terms}: checks: {refusals:?}"));
     let emission = emit_checked(&CheckedPackage::link(graph))

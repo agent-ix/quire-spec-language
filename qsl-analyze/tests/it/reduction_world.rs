@@ -41,6 +41,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
 use crate::counter::UNLIMITED;
+use quire_semantic_value::checking::CheckMode;
 
 const PACKAGE: &str = "test/sym";
 /// The infinite-trace profile alias every unit declares.
@@ -274,10 +275,7 @@ impl World {
             Vec::new(),
         )
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"));
         let checked: Vec<CheckedTemporalClause> = graph
             .temporal_clauses()
