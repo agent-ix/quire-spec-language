@@ -6,7 +6,7 @@ use super::{ExactProbabilityCertificateCheck, ObligationIdentity};
 use crate::spine::{self, DependencyInput, FrontEndFailure, ParseRequest, SourceComponent, SpineLimits};
 use crate::{ByteProvision, DefinitionSourceRef};
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest, ModelSystem, PopulationUniverse};
-use qsl_foundation::source::{Source, SourceReadRefusal};
+use qsl_foundation::source::{Source, SourceReadCause, SourceReadError};
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::observation::{AdmissionFailure, DocumentRef, ObservationLimits};
@@ -55,8 +55,13 @@ pub enum ProbabilitySourceError {
     #[error("conflicting_identity: probability certificate source")]
     SourceMismatch,
     /// Source bytes failed the shared source admission rules.
-    #[error("probability certificate source refused: {0:?}")]
-    Source(Box<SourceReadRefusal>),
+    #[error("probability certificate source refused: {cause:?}")]
+    Source {
+        /// Shared source admission condition.
+        cause: SourceReadCause,
+        /// Exact source provenance and diagnostic.
+        error: Box<SourceReadError>,
+    },
     /// A compiler stage refused, stopped or was cancelled.
     #[error("probability certificate compilation stopped: {0:?}")]
     Compile(FrontEndFailure),
@@ -85,7 +90,7 @@ pub fn check_probability_certificate_source(
     let bytes = request.provision.get(request.source).ok_or(ProbabilitySourceError::SourceMismatch)?;
     let identity = SourceIdentity::new(request.source.authority(), request.source.identity());
     let source = Source::read_typed(identity.clone(), request.source.identity(), bytes, limits.spine.source.source_bytes)
-        .map_err(ProbabilitySourceError::Source)?;
+        .map_err(|refusal| ProbabilitySourceError::Source { cause: refusal.cause, error: Box::new(refusal.error) })?;
     let actual = SourceComponent { authority: identity.authority.clone(), identity: identity.identity.clone(), content: source.text().to_owned() };
     if actual != *request.expected_source { return Err(ProbabilitySourceError::SourceMismatch); }
     let packages = package_input(request.provision.package_documents()).map_err(|_| ProbabilitySourceError::Packages)?;
