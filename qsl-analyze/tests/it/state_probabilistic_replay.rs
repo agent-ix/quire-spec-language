@@ -22,7 +22,9 @@ fn model(event: &str, scheduler: &str, operator: &str, threshold: &str) -> prob_
         .body
         .replace("true: 1, false: 9", "true: 3, false: 1")
         .replace("true: 1, false: 4", "true: 1, false: 3")
-        .replace("self.attempts < 2", "self.attempts = 0");
+        .replace("self.attempts < 2", "self.attempts = 0")
+        .replace("reward cost on Msg::send_a = 1;", "")
+        .replace("reward cost on Msg::send_b = 1;", "");
     model.operations.push(Operation {
         name: "recover",
         parameters: vec![],
@@ -406,7 +408,15 @@ fn choices_at_one_complete_key_and_workload_policies_must_be_consistent() {
 fn adapter_budget_exhaustion_keeps_incomplete_without_evidence() {
     for event in [UNTIL, ALWAYS] {
         let world = world(event, "every scheduler", ">=", "0.5");
-        for budget in ["paths", "states", "transitions", "work", "storage", "expansion", "scalar"] {
+        for budget in [
+            "paths",
+            "states",
+            "transitions",
+            "work",
+            "storage",
+            "expansion",
+            "scalar",
+        ] {
             let mut request = world.request("Claim", ModelCheckLimits::default());
             match budget {
                 "paths" => request.limits.max_witness_paths = 0,
@@ -418,8 +428,20 @@ fn adapter_budget_exhaustion_keeps_incomplete_without_evidence() {
                 "scalar" => request.limits.max_rational_bits = 1,
                 _ => unreachable!(),
             }
-            let record = analyze_items(&Engines::qsl().unwrap(), vec![exact_probabilistic_item(RequestIndex::new(0), request)], &Cancel::new()).remove(0);
-            assert!(matches!(record.terminal().unwrap().value(), TerminalValue::Incomplete(qsl_replay::IncompleteCause::LimitReached { .. })), "{budget}: {:?}", record.terminal().unwrap().value());
+            let record = analyze_items(
+                &Engines::qsl().unwrap(),
+                vec![exact_probabilistic_item(RequestIndex::new(0), request)],
+                &Cancel::new(),
+            )
+            .remove(0);
+            assert!(
+                matches!(
+                    record.terminal().unwrap().value(),
+                    TerminalValue::Incomplete(qsl_replay::IncompleteCause::LimitReached { .. })
+                ),
+                "{budget}: {:?}",
+                record.terminal().unwrap().value()
+            );
             assert!(record.probabilistic_counterexample.is_none(), "{budget}");
             assert!(record.exact_probabilistic.is_none(), "{budget}");
         }

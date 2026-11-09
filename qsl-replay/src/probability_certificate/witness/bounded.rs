@@ -358,6 +358,21 @@ pub(super) fn retain(
     }
     Ok(())
 }
+pub(super) fn visit(
+    meter: &mut quire_exact::Meter,
+    cancel: &Cancel,
+) -> Result<(), ProbabilityWitnessError> {
+    poll_cancel(cancel)?;
+    meter
+        .charge(quire_exact::Charge::new(
+            quire_exact::ChargePoint::CollectionMemberTest,
+        ))
+        .map_err(|incomplete| {
+            ProbabilityWitnessError::Build(Box::new(crate::ExactProbBuildIssue::Predicate(
+                qsl_eval::simulation::model::ClauseOutcome::Incomplete(incomplete),
+            )))
+        })
+}
 pub(super) fn arithmetic(
     operation: quire_exact::RationalArithmetic<'_>,
     meter: &mut quire_exact::Meter,

@@ -116,7 +116,8 @@ impl From<ExactProbabilityGraphError> for ProbabilityWitnessError {
 /// Replay a typed path set against the exact package and admitted system.
 /// The claim, binding, predicates, probabilities and terminal leaves are all
 /// independently derived. This entry accepts no analyzer graph or wire data.
-/// It admits acyclic unbounded reachability and origin event-position
+/// It admits acyclic unbounded reachability, direct infinite-trace `until`
+/// and `always` state events, and origin event-position
 /// `eventually[0,h] holds(P)`. The latter uses qualified monitor keys and
 /// terminal false extension and permits raw model cycles within its horizon.
 #[allow(clippy::too_many_arguments)]
@@ -189,6 +190,10 @@ pub fn replay_probabilistic_witness(
             })
         },
         &mut |key, state| {
+            bounded::visit(&mut meter, cancel).map_err(|error| {
+                *key_error.borrow_mut() = Some(error);
+                ExactProbabilityGraphError::ExpansionRefused
+            })?;
             bounded::retain(key.as_bytes().len().saturating_mul(2), &mut storage, limits).map_err(
                 |error| {
                     *key_error.borrow_mut() = Some(error);
@@ -262,6 +267,12 @@ pub fn replay_probabilistic_witness(
         if !enabled.iter().any(|enabled| &enabled.identity == action) {
             return Err(ProbabilityWitnessError::Refused);
         }
+        let action_bytes = system.scheduled_identity_key(action).map_err(expansion)?;
+        bounded::retain(
+            key.as_bytes().len().saturating_add(action_bytes.len()),
+            &mut storage,
+            limits,
+        )?;
         scheduler.insert(key, action);
     }
     let mut transitions = 0usize;
@@ -281,7 +292,12 @@ pub fn replay_probabilistic_witness(
                 return Err(ExactProbabilityGraphError::EdgeLimitReached.into());
             }
             let key = key_of(system, reference, &state, limits, cancel)?;
-            let terminal = graph.states.get(&key).ok_or(ProbabilityWitnessError::Refused)?.choices.is_empty();
+            let terminal = graph
+                .states
+                .get(&key)
+                .ok_or(ProbabilityWitnessError::Refused)?
+                .choices
+                .is_empty();
             if outcome(system, target, reference, &state, terminal)?.is_some() {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
@@ -358,7 +374,12 @@ pub fn replay_probabilistic_witness(
             state = post;
         }
         let key = key_of(system, reference, &state, limits, cancel)?;
-        let terminal = graph.states.get(&key).ok_or(ProbabilityWitnessError::Refused)?.choices.is_empty();
+        let terminal = graph
+            .states
+            .get(&key)
+            .ok_or(ProbabilityWitnessError::Refused)?
+            .choices
+            .is_empty();
         let accepting = match (bound, outcome(system, target, reference, &state, terminal)?) {
             (Bound::AtMost(_), Some(true)) | (Bound::AtLeast(_), Some(false)) => true,
             _ => false,
@@ -368,12 +389,19 @@ pub fn replay_probabilistic_witness(
         }
         for previous in &replayed {
             poll_cancel(cancel)?;
-            if previous.steps.iter().zip(&path.steps).all(|(a, b)| {
-                a.action == b.action
-                    && a.transition == b.transition
-                    && a.post_key == b.post_key
-                    && same_values(&a.draw, &b.draw)
-            }) {
+            let mut prefix = true;
+            for (a, b) in previous.steps.iter().zip(&path.steps) {
+                bounded::visit(&mut meter, cancel)?;
+                if a.action != b.action
+                    || a.transition != b.transition
+                    || a.post_key != b.post_key
+                    || !same_values(&a.draw, &b.draw)
+                {
+                    prefix = false;
+                    break;
+                }
+            }
+            if prefix {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
         }
