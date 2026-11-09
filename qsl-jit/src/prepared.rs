@@ -457,6 +457,11 @@ impl<'p> PreparedJit<'p> {
         cancel: &Cancel,
         #[cfg(feature = "test-support")] recorder: &mut Option<KernelRecorder>,
     ) -> Result<Evaluation, CallFailure> {
+        if let Some((_, reason)) = self.unsupported.iter().find(|(selection, _)| {
+            selection.kind == EntryKind::Function && selection.name == *function
+        }) {
+            return Err(CallFailure::Unsupported(reason.clone()));
+        }
         let graph = self.package.graph();
         let callable = graph
             .callable(&function.to_string())
