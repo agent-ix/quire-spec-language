@@ -368,8 +368,9 @@ fn a_formula_product_embeds_the_real_complete_monitor_without_inner_transport() 
         .key(translation.start(false))
         .expect("actual FR338 key");
     let model = bounded.state_key(0);
+    let binding = reference(&bounded.fixture.package, &bounded.fixture.documents, "c");
     let key = ProbabilityProductKey::for_formula_state(
-        None,
+        Some(&binding),
         model.as_bytes(),
         &monitor,
         ProbabilityDocumentIoLimits::default(),

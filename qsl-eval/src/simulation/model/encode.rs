@@ -1623,18 +1623,32 @@ mod tests {
     #[test]
     fn borrowed_reference_encoding_preserves_the_owner_schema() {
         let reference = ObjectReference::new(
-            crate::test_ids::universe_id([1]), owned_chain(2),
+            crate::test_ids::universe_id([1]),
+            owned_chain(2),
             quire_exact::ObjectId::new("object").unwrap(),
         );
         struct Borrowed<'a>(&'a ObjectReference);
         impl Encode for Borrowed<'_> {
-            fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
+            fn encode_into<S: Sink + ?Sized>(
+                &self,
+                writer: &mut Writer<'_, S>,
+            ) -> Result<(), Error> {
                 encode_reference(self.0, writer)
             }
         }
         let expected = reference_canonical_text(&reference).unwrap();
-        assert_eq!(quire_canonical::to_vec(&Borrowed(&reference), Limits::new(expected.len() as u64)).unwrap(), expected.as_bytes());
-        assert!(matches!(quire_canonical::to_vec(&Borrowed(&reference), Limits::new(expected.len() as u64 - 1)), Err(Error::Limit(_))));
+        assert_eq!(
+            quire_canonical::to_vec(&Borrowed(&reference), Limits::new(expected.len() as u64))
+                .unwrap(),
+            expected.as_bytes()
+        );
+        assert!(matches!(
+            quire_canonical::to_vec(
+                &Borrowed(&reference),
+                Limits::new(expected.len() as u64 - 1)
+            ),
+            Err(Error::Limit(_))
+        ));
     }
 
     /// FR-201: a reference text whose effective identity is malformed has no
