@@ -216,3 +216,66 @@ NOT MERGEABLE: FND-001 remains fixed by disposition round 1, while new FND-002 i
   "bindings": []
 }
 ```
+
+## Dispositions (round 2)
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | fixed | Round 2: CheckedGraph owns the completed immutable key map; CheckedBody holds only an immutable Arc<()> ownership token. OnceLock and writes through borrowed body inputs are removed, not renamed or moved. The FR-062 census and specification are unchanged and pass. Real graph/clone/foreign-body controls and all 79 lowering tests plus fmt/test-inclusive Clippy pass. FND-001 remains fixed by the pending-only delta. |
+
+## Current API and ownership assessment
+
+The public accessor is now CheckedGraph::node_key(CheckedNode), returning a borrowed key owned by that graph. CheckedNode::node_key and the shared OnceLock destination are removed. Lowering retains exact producer NodeRefs, resolves only pending entries, constructs immutable per-body vectors and moves the finished map through Lowered into CheckedGraph. Querying takes &self and reads the map without mutating graph or body. This is the checked-unit accessor required by FR-093; no unused quire-checked leaf wrapper is introduced.
+
+Each CheckedBody owns an immutable Arc<()> token shared by exact body clones. The graph map retains a live strong token, and queries also verify pointer identity. Allocation addresses are only process-local lookup keys; they neither generate nor encode structural identities, and cannot be recycled while the corresponding map entry remains live. Independently checked structurally equal foreign bodies return None. A cloned body can be lowered into a different graph context without mutating the first graph or producing a first-writer conflict; each context owns its own actual keys. PartialEq and Debug continue to ignore ownership metadata, and flat node storage/clone/drop remain unchanged. No interior-mutable alias, moved-type bypass, filename exception, scanner relaxation or acceptance amendment is used.
+
+All changed source and new graph-aware oracle assertions were inspected. The source AC-62 oracle still compares multiplication/addition keys against real SemanticGraph body and application references, with distinct source locations and the different multiplication control. Recursive settlement, inline/local absence, relocated clones and foreign-body rejection are preserved. The second-context control establishes a different graph-assigned key and confirms its separately owned map while retaining the original graph result. Pending-reference traversal remains a drained delta; no all-body rescan has returned.
+
+## Disposition round 2 verdict
+
+PASS for the corrected PR delta at 8dd17f3f210de89d6d79bf6668441f13d8d27864. FND-001 and FND-002 are both fixed by their latest outcomes; no new or still-open finding. Historical initial review, round 1 and gate-finding text remain preserved above. Mergeable after latest artifact custody and the lead-owned final gate. Whole-repository computed-audit limitations remain NOT COMPLETED as disclosed in the gap-analysis artifact.
+
+Read evidence: /tmp/l5-nodekey-fix2-{fmt,lint,census,tests}.log and /tmp/l5-nodekey-fix2.time show fmt/test-inclusive Clippy passing, the unchanged census 1/1 and lowering tests 79/79. No Cargo, test rerun, matrix/coverage probe, aggregate gate, source edit or push was performed by this disposition pass.
+
+## Disposition Round 2 Data
+
+```json
+{
+  "scope": [
+    {
+      "id": "FR-093-AC-62",
+      "path": "spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md",
+      "role": "examined",
+      "excerpt": "For `function w using v(a: Integer, b: Integer): Integer pure { (a + b) * (a + b) }`, the checked unit's accessor returns for the multiplication the `NodeKey` of its `expression` node in the checked graph, and for both `a + b` operations the one `NodeKey` of their shared `expression` node, with two different `Location`s; a function whose body holds `a * b` returns a key different from all three."
+    },
+    {
+      "id": "NFR-011",
+      "path": "spec/non-functional/NFR-011-bound-value-checking-work.md",
+      "role": "examined",
+      "excerpt": "If the next checking charge would exceed a selected checking ceiling, then the\nchecker shall stop with a stage limit, reported as `stage_limit_exceeded`\nwith the ceiling's kind and its selected bound, without performing that\ncharge. The ceilings are stage limits, not a caller work budget\n(`quire.native.diagnostics/v1` `stage_limit_exceeded` row; [FR-096](../functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md))."
+    },
+    {
+      "id": "FR-258",
+      "path": "spec/functional/FR-258-check-and-lower-expressions-at-any-depth.md",
+      "role": "context_only",
+      "excerpt": "The S3 checker SHALL type, check obligations for, lower and key expressions\nand types of any depth, bounded only by the checking node limit, the\nper-declaration preimage byte limit and the checking work budget (ADR-030\nD-4.3, NFR-011). QSpec FR-146 defines no expression depth or nesting limit\nfor checking; this requirement carries that rule through QSL's checker."
+    },
+    {
+      "id": "FR-062-AC-3",
+      "path": "spec/functional/FR-062-implement-checked-family-contract.md",
+      "role": "examined",
+      "excerpt": "This is a design rule: the held counter is no `static`, starts at zero in each scope and is copied by a clone. The scan enforces only that the scanned source has no `static mut`, `thread_local!` or `lazy_static!` item and names none of the std interior-mutable, lazy and atomic types."
+    }
+  ],
+  "dispositions": [
+    {
+      "fnd": "FND-002",
+      "outcome": "fixed",
+      "path": "qsl-semantics/src/check/mod.rs",
+      "after_excerpt": "    pub fn node_key(&self, node: CheckedNode<'_>) -> Option<&quire_exact::NodeKey> {\n        let identity = node.body().identity();\n        let owner = std::sync::Arc::as_ptr(identity) as usize;\n        let retained = self.checked_node_keys.get(&owner)?;\n        if !std::sync::Arc::ptr_eq(identity, &retained.owner) {\n            return None;\n        }\n        retained.keys.get(node.id().index())?.as_ref()\n    }",
+      "evidence": "Round 2: CheckedGraph owns the completed immutable key map; CheckedBody holds only an immutable Arc<()> ownership token. OnceLock and writes through borrowed body inputs are removed, not renamed or moved. The FR-062 census and specification are unchanged and pass. Real graph/clone/foreign-body controls and all 79 lowering tests plus fmt/test-inclusive Clippy pass. FND-001 remains fixed by the pending-only delta."
+    }
+  ],
+  "new_findings": []
+}
+```

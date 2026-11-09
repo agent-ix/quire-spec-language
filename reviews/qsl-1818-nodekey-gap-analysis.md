@@ -102,3 +102,11 @@ The whole repository contains substantially more requirements and source than th
   }
 }
 ```
+
+## Disposition round 2 scope update
+
+Current source review now includes check/mod.rs as well as the previously listed files. The implementation exposes CheckedGraph::node_key(CheckedNode): an immutable graph-owned map retains lowering-produced structural keys; bodies supply immutable ownership tokens. The prior body-owned OnceLock and CheckedNode accessor are no longer present. This is still FR-093-AC-62/FR-093 producer-owned behavior, with FR-062-AC-3 preserving unchanged read-only/state-census obligations. The process-local token address is an ownership lookup only, never a structural identity.
+
+Six tagged tests now cover the original source/graph oracle, recursive settlement, inline/local absence, relocated and context-specific cloned bodies with foreign-body rejection, and two pending-delta traversal controls. Actual graph references remain the oracle; no new wire identity, field-path vocabulary, copied owner type or test-only leaf API is introduced. The unchanged state census and all 79 lowering tests pass according to the confined fix logs. This adds no clock-feature or diagnostic-catalog qualification claim.
+
+The original computed-audit limitations remain exactly applicable: matrix and reverse-coverage computations were NOT COMPLETED, with no whole-repository count, baseline equivalence or assurance PASS asserted. No probes were rerun for this update. Plan completion: not assessed.
