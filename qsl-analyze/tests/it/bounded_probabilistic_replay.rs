@@ -12,13 +12,13 @@ use qsl_replay::{
 use quire_exact::{Cancel, Integer, Rational, Value};
 
 const CLAIMS: &str = "
-probabilistic Min using inf on M over (m: M::Msg) under every scheduler on origin
+probabilistic Min using ev on M over (m: M::Msg) under every scheduler on origin
 { probability >= 0.8 [ eventually[0,2] holds(m.delivered) ] }
-probabilistic Max using inf on M over (m: M::Msg) under every scheduler on origin
+probabilistic Max using ev on M over (m: M::Msg) under every scheduler on origin
 { probability <= 0.9 [ eventually[0,2] holds(m.delivered) ] }
-probabilistic WorkMin using inf on M over (m: M::Msg) under workload Even on origin
+probabilistic WorkMin using ev on M over (m: M::Msg) under Even on origin
 { probability >= 0.875 [ eventually[0,2] holds(m.delivered) ] }
-probabilistic WorkMax using inf on M over (m: M::Msg) under workload Even on origin
+probabilistic WorkMax using ev on M over (m: M::Msg) under Even on origin
 { probability <= 0.8 [ eventually[0,2] holds(m.delivered) ] }
 ";
 fn model(claims: &str) -> Model {
@@ -169,8 +169,8 @@ fn full_key_source_and_semantic_cylinder_mutations_never_reproduce() {
 #[trace("TC-637", "FR-202-AC-14")]
 #[test]
 fn zero_horizon_and_terminal_false_extension_need_no_model_steps() {
-    for (initial, comparison, threshold) in [(true, "<=", "0"), (false, ">=", "1")] {
-        let claim = format!("probabilistic Zero using inf on M over (m: M::Msg) under every scheduler on origin {{ probability {comparison} {threshold} [ eventually[0,0] holds(m.delivered) ] }}");
+    for (initial, comparison, threshold) in [(true, "<=", "0.5"), (false, ">=", "0.5")] {
+        let claim = format!("probabilistic Zero using ev on M over (m: M::Msg) under every scheduler on origin {{ probability {comparison} {threshold} [ eventually[0,0] holds(m.delivered) ] }}");
         let mut fixture = model(&claim);
         fixture.initial["delivered"] = serde_json::json!({"boolean":initial});
         let world = World::new(&fixture);
@@ -180,7 +180,7 @@ fn zero_horizon_and_terminal_false_extension_need_no_model_steps() {
         assert!(witness.scheduler.is_empty());
         assert_eq!(mass(&world, &witness), ratio(1, 1));
     }
-    let mut fixture = model("probabilistic Leaf using inf on M over (m: M::Msg) under every scheduler on origin { probability >= 0.5 [ eventually[0,2] holds(m.delivered) ] }");
+    let mut fixture = model("probabilistic Leaf using ev on M over (m: M::Msg) under every scheduler on origin { probability >= 0.5 [ eventually[0,2] holds(m.delivered) ] }");
     fixture
         .body
         .push_str("terminal Stop using v on M when { true };\n");
@@ -500,7 +500,7 @@ fn adapter_exhaustion_preserves_incomplete_without_accepted_evidence() {
 fn a_decided_initial_path_cannot_continue_and_policy_keys_keep_horizons_distinct() {
     let world = World::new(&model(CLAIMS));
     let failure = evidence(&world, "Min");
-    let zero_source = "probabilistic Zero using inf on M over (m: M::Msg) under every scheduler on origin { probability <= 0 [ eventually[0,0] holds(m.delivered) ] }";
+    let zero_source = "probabilistic Zero using ev on M over (m: M::Msg) under every scheduler on origin { probability <= 0.5 [ eventually[0,0] holds(m.delivered) ] }";
     let mut fixture = model(zero_source);
     fixture.initial["delivered"] = serde_json::json!({"boolean":true});
     let zero = World::new(&fixture);
