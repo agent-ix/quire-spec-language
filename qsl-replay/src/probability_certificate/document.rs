@@ -1084,10 +1084,20 @@ mod tests {
                 decimal_digits: 100_001
             })
         );
-        let admission = ProbabilityDocumentLimits { storage_bytes: 2_000_000, ..limits() };
+        let mut admission = ProbabilityDocumentLimits { storage_bytes: 0, ..limits() };
         let large_key = ProbabilityProductKey::for_model_state(None, &vec![0; 375_000]).unwrap();
         let valid = mutate(|value| { value["values"][0]["state"] = json!(URL_SAFE_NO_PAD.encode(large_key.as_bytes())); });
-        assert!(read_probability_certificate(&valid, admission, &Cancel::new()).is_ok(), "a similarly sized flat key fits the caller's storage ceiling");
+        loop {
+            match read_probability_certificate(&valid, admission, &Cancel::new()) {
+                Ok(_) => break,
+                Err(ProbabilityDocumentError::Limit { limit: ProbabilityDocumentLimit::StorageBytes, bound, actual }) => {
+                    assert_eq!(bound, admission.storage_bytes);
+                    assert!(actual > bound && actual <= limits().storage_bytes, "actual reservation must advance within this fixture's finite ceiling");
+                    admission.storage_bytes = actual;
+                },
+                Err(error) => panic!("the valid flat-key control must admit: {error:?}"),
+            }
+        }
         let inner = serde_json::to_vec(&vec![Value::Null; 100_000]).unwrap();
         let offered = mutate(|value| { value["values"][0]["state"] = json!(URL_SAFE_NO_PAD.encode(inner)); });
         assert!(matches!(read_probability_certificate(&offered, admission, &Cancel::new()), Err(ProbabilityDocumentError::Limit { limit: ProbabilityDocumentLimit::StorageBytes, .. })), "decoded key JSON must pass the same bounded admission before its tree is retained");
