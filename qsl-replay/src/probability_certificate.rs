@@ -483,6 +483,40 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
     ) -> Result<(), ExactProbabilityGraphError>,
     failure: &mut impl FnMut(crate::ExactProbBuildIssue),
 ) -> Result<CheckerGraph, ExactProbabilityGraphError> {
+    enumerate_model_graph_with_keys_and_reservation(
+        system,
+        target,
+        binding,
+        workload,
+        max_states,
+        max_edges,
+        cancel,
+        stop_at_target,
+        key_of,
+        &mut |_| Ok(()),
+        visit,
+        failure,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn enumerate_model_graph_with_keys_and_reservation<P: StatePredicate>(
+    system: &ModelSystem<'_>,
+    target: Option<&P>,
+    binding: Option<&ObjectReference>,
+    workload: Option<&Workload>,
+    max_states: usize,
+    max_edges: usize,
+    cancel: &Cancel,
+    stop_at_target: bool,
+    key_of: &impl Fn(&ModelSimState) -> Result<ProbabilityProductKey, ExactProbabilityGraphError>,
+    reserve: &mut impl FnMut(usize) -> Result<(), ExactProbabilityGraphError>,
+    visit: &mut impl FnMut(
+        &ProbabilityProductKey,
+        &ModelSimState,
+    ) -> Result<(), ExactProbabilityGraphError>,
+    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
+) -> Result<CheckerGraph, ExactProbabilityGraphError> {
     poll_cancel(cancel)?;
     let initial = system.initial();
     if initial.len() != 1 {
@@ -496,6 +530,16 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
         .next()
         .ok_or(ExactProbabilityGraphError::UnsupportedInitial)?;
     let root = key_of(&first)?;
+    let bytes = root
+        .as_bytes()
+        .len()
+        .checked_mul(2)
+        .and_then(|bytes| {
+            bytes.checked_add(std::mem::size_of::<(ProbabilityProductKey, ModelSimState)>())
+        })
+        .and_then(|bytes| bytes.checked_add(std::mem::size_of::<ProbabilityProductKey>()))
+        .ok_or(ExactProbabilityGraphError::TooManyEdges)?;
+    reserve(bytes)?;
     let mut pending = VecDeque::from([(root.clone(), first)]);
     let mut states = BTreeMap::new();
     let mut seen = BTreeSet::from([root.clone()]);
@@ -530,6 +574,7 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
         } else {
             let distributions = model_distributions(system, &state, workload, cancel, failure)?;
             if distributions.is_empty() {
+                reserve(std::mem::size_of::<(ProbabilityProductKey, CheckerState)>())?;
                 states.insert(
                     key,
                     CheckerState {
@@ -539,6 +584,12 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
                 );
                 continue;
             }
+            reserve(
+                distributions
+                    .len()
+                    .checked_mul(std::mem::size_of::<Vec<ProbabilityEdge>>())
+                    .ok_or(ExactProbabilityGraphError::TooManyEdges)?,
+            )?;
             let mut choices = Vec::with_capacity(distributions.len());
             for distribution in distributions {
                 poll_cancel(cancel)?;
@@ -555,6 +606,13 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
                     if edge_count > max_edges {
                         return Err(ExactProbabilityGraphError::EdgeLimitReached);
                     }
+                    reserve(
+                        target_key
+                            .as_bytes()
+                            .len()
+                            .checked_add(std::mem::size_of::<ProbabilityEdge>())
+                            .ok_or(ExactProbabilityGraphError::TooManyEdges)?,
+                    )?;
                     choice.push(ProbabilityEdge {
                         target: target_key.clone(),
                         probability,
@@ -563,6 +621,19 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
                         if seen.len() >= max_states {
                             return Err(ExactProbabilityGraphError::LimitReached);
                         }
+                        reserve(
+                            target_key
+                                .as_bytes()
+                                .len()
+                                .checked_add(std::mem::size_of::<ProbabilityProductKey>())
+                                .and_then(|bytes| {
+                                    bytes.checked_add(std::mem::size_of::<(
+                                        ProbabilityProductKey,
+                                        ModelSimState,
+                                    )>())
+                                })
+                                .ok_or(ExactProbabilityGraphError::TooManyEdges)?,
+                        )?;
                         seen.insert(target_key.clone());
                         pending.push_back((target_key, successor));
                     }
@@ -571,6 +642,7 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
             }
             choices
         };
+        reserve(std::mem::size_of::<(ProbabilityProductKey, CheckerState)>())?;
         states.insert(key, CheckerState { terminal, choices });
     }
     Ok(CheckerGraph {
