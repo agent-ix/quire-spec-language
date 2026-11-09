@@ -42,7 +42,9 @@ same prepared value. A register-indirect call is allowed only when its
 register is loaded by an absolute relocation that names a `KernelTable` shim
 symbol, as non-PIC Cranelift code calls an imported symbol; a call through a
 pointer read from writable memory (the frame, a heap table or a GOT-style
-slot) is not allowed.
+slot) is not allowed. The translator declares the prepared value's own functions with final
+(colocated) linkage, so a call between its own blocks is a direct PC-relative
+call and never a register-indirect one.
 
 Each kernel-table entry:
 
@@ -103,7 +105,7 @@ The `Evaluation<Value>` or `CallFailure` of FR-294's `call` and `evaluate`.
 - ADR-029 EB-4 rules 2, 4 and 7.
 - [FR-294](FR-294-run-every-execution-backend-behind-one-seam.md): `call`, `evaluate` and their results.
 - [FR-295](FR-295-return-interpreter-outcomes-from-jit-and-aot.md): the outcomes and the generator.
-- [FR-276](FR-276-cancel-a-lifecycle-operation.md), [FR-277](FR-277-bound-every-lifecycle-operation-by-caller-limits.md): cancellation and limits; the meter that holds the `&Cancel`.
+- [FR-276](FR-276-cancel-a-lifecycle-operation.md), [FR-277](FR-277-bound-every-lifecycle-operation-by-caller-limits.md): cancellation and limits; the meter that holds the cancellation handle.
 - [FR-562](FR-562-take-a-machine-width-fast-path-only-where-checked-bounds-prove-the-result-fits.md): the operations that skip the table.
 - QSpec FR-306: generated code calls only the kernel and the semantic-value
   runtime.

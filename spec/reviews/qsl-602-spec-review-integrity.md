@@ -60,3 +60,20 @@ Not mergeable until the high finding and the medium findings are fixed; the low 
 - TC-1383 (examined)
 - TC-1384 (examined)
 - TC-1386 (examined)
+
+## Dispositions
+
+Round 1 verified against eadabac24. The FR-561-AC-3 fix can be satisfied by Cranelift output and can still fail: non-PIC Cranelift calls an imported shim with an Abs8 relocation naming the shim, then a register call, which the rule allows. A call through a pointer loaded from the frame (the negative generator) has no such relocation and fails. So would a PLT/GOT call or a libcall that is not a shim. Constraint for the coder: the rule allows a register call only for a shim, so the translator must declare the prepared value's own functions with final linkage (colocated), so that calls between blocks are direct PC-relative calls. quire validate on all changed files exits 0. The committed spec/reviews/ copies at eadabac24 match the review-pass files and do not yet carry this section; the lead or coder copies these files over.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |
+| FND-008 | still-open | Fixed in FR-561 statement, Inputs and Behavior, FR-568 and ADR-035 (now 'cancellation handle'), but FR-561 Dependencies line 106 still reads 'the meter that holds the `&Cancel`'. One-line fix: 'the meter that holds the cancellation handle'. |
+| FND-009 | fixed | - |
+| FND-010 | fixed | - |
