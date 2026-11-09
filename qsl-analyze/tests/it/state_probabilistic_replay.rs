@@ -162,7 +162,7 @@ fn altered_semantics_prefixes_policy_and_duplicate_cylinders_have_no_token() {
         let mut changed = witness.clone();
         changed.paths[0]
             .steps
-            .push(changed.paths[0].steps[0].clone());
+            .push(witness.paths[0].steps[0].clone());
         no_token(&world, &changed);
         let mut changed = witness.clone();
         changed.scheduler.clear();
@@ -315,5 +315,113 @@ fn cancellation_at_the_final_acceptance_poll_cannot_release_a_token() {
             ))
         ));
         assert_eq!(count.load(Ordering::Relaxed), final_poll);
+    }
+}
+
+#[trace("TC-637", "FR-202-AC-20", "FR-202-AC-21")]
+#[test]
+fn disjoint_actual_draws_to_one_post_state_count_once_each() {
+    for event in [UNTIL, ALWAYS] {
+        let mut model = model(event, "every scheduler", "<=", "0.5");
+        model.body = model
+            .body
+            .replace("self.delivered = (not lost)", "self.delivered");
+        let world = World::new(&model);
+        let witness = evidence(&world);
+        assert_eq!(
+            witness.paths.len(),
+            2,
+            "merged producer edge expands to actual draw cylinders"
+        );
+        assert_eq!(
+            witness.paths[0].steps[0].post_key,
+            witness.paths[1].steps[0].post_key
+        );
+        assert!(!qsl_eval::simulation::model::same_values(
+            &witness.paths[0].steps[0].draw,
+            &witness.paths[1].steps[0].draw
+        ));
+        assert_eq!(mass(&world, &witness), ratio(1, 1));
+        let mut repeated = witness.clone();
+        repeated.paths.push(repeated.paths[0].clone());
+        no_token(&world, &repeated);
+        let mut changed = witness.clone();
+        let key: serde_json::Value =
+            serde_json::from_slice(witness.initial_key.as_bytes()).unwrap();
+        assert!(!key[1].is_null());
+        assert!(key[3].is_null() && key[4].is_null() && key[5].is_null());
+        let mut missing_binding = key.clone();
+        missing_binding[1] = serde_json::Value::Null;
+        changed.initial_key = qsl_replay::ProbabilityProductKey::from_canonical_bytes(
+            serde_json::to_vec(&missing_binding).unwrap(),
+        );
+        no_token(&world, &changed);
+        let mut fake_monitor = key;
+        fake_monitor[3] = serde_json::json!(["formula", 0]);
+        changed.initial_key = qsl_replay::ProbabilityProductKey::from_canonical_bytes(
+            serde_json::to_vec(&fake_monitor).unwrap(),
+        );
+        no_token(&world, &changed);
+    }
+}
+
+#[trace("TC-637", "FR-202-AC-21")]
+#[test]
+fn choices_at_one_complete_key_and_workload_policies_must_be_consistent() {
+    for event in [UNTIL, ALWAYS] {
+        let world = world(event, "every scheduler", ">=", "0.5");
+        let mut witness = evidence(&world);
+        let system = ModelSystem::new(world.subject().simulation).unwrap();
+        let step = &witness.paths[0].steps[0];
+        let other = system
+            .actions(&witness.initial)
+            .unwrap()
+            .unwrap()
+            .into_iter()
+            .find(|action| action.identity != step.action)
+            .unwrap();
+        let draw = other
+            .draws
+            .into_iter()
+            .find(|draw| qsl_eval::simulation::model::same_values(&draw.random, &step.draw))
+            .unwrap();
+        let (transition, post) = draw.successors.into_iter().next().unwrap();
+        let mut alternative = step.clone();
+        alternative.action = other.identity;
+        alternative.transition = transition;
+        alternative.post = post;
+        witness.paths.push(ProbabilityWitnessPath {
+            steps: vec![alternative],
+        });
+        no_token(&world, &witness);
+        let resolved = self::world(event, "Even", ">=", "0.6");
+        let mut workload = evidence(&resolved);
+        workload.scheduler = witness.scheduler;
+        no_token(&resolved, &workload);
+    }
+}
+
+#[trace("TC-637", "FR-202-AC-22")]
+#[test]
+fn adapter_budget_exhaustion_keeps_incomplete_without_evidence() {
+    for event in [UNTIL, ALWAYS] {
+        let world = world(event, "every scheduler", ">=", "0.5");
+        for budget in ["paths", "states", "transitions", "work", "storage", "expansion", "scalar"] {
+            let mut request = world.request("Claim", ModelCheckLimits::default());
+            match budget {
+                "paths" => request.limits.max_witness_paths = 0,
+                "states" => request.limits.model.limits.max_states = 0,
+                "transitions" => request.limits.model.limits.max_transitions = 0,
+                "work" => request.subject.simulation.meter.work_units = 0,
+                "storage" => request.limits.document.storage_bytes = 0,
+                "expansion" => request.subject.simulation.expansion.max_candidates = 0,
+                "scalar" => request.limits.max_rational_bits = 1,
+                _ => unreachable!(),
+            }
+            let record = analyze_items(&Engines::qsl().unwrap(), vec![exact_probabilistic_item(RequestIndex::new(0), request)], &Cancel::new()).remove(0);
+            assert!(matches!(record.terminal().unwrap().value(), TerminalValue::Incomplete(qsl_replay::IncompleteCause::LimitReached { .. })), "{budget}: {:?}", record.terminal().unwrap().value());
+            assert!(record.probabilistic_counterexample.is_none(), "{budget}");
+            assert!(record.exact_probabilistic.is_none(), "{budget}");
+        }
     }
 }

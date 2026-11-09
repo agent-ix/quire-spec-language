@@ -280,10 +280,11 @@ pub fn replay_probabilistic_witness(
             if transitions > limits.model.limits.max_transitions {
                 return Err(ExactProbabilityGraphError::EdgeLimitReached.into());
             }
-            if outcome(system, target, reference, &state)?.is_some() {
+            let key = key_of(system, reference, &state, limits, cancel)?;
+            let terminal = graph.states.get(&key).ok_or(ProbabilityWitnessError::Refused)?.choices.is_empty();
+            if outcome(system, target, reference, &state, terminal)?.is_some() {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
-            let key = key_of(system, reference, &state, limits, cancel)?;
             if step.elapsed != rational(0)
                 || workload.is_none() && scheduler.get(&key).copied() != Some(&step.action)
             {
@@ -356,7 +357,9 @@ pub fn replay_probabilistic_witness(
 
             state = post;
         }
-        let accepting = match (bound, outcome(system, target, reference, &state)?) {
+        let key = key_of(system, reference, &state, limits, cancel)?;
+        let terminal = graph.states.get(&key).ok_or(ProbabilityWitnessError::Refused)?.choices.is_empty();
+        let accepting = match (bound, outcome(system, target, reference, &state, terminal)?) {
             (Bound::AtMost(_), Some(true)) | (Bound::AtLeast(_), Some(false)) => true,
             _ => false,
         };
@@ -417,30 +420,21 @@ fn outcome(
     target: &ReachTarget,
     binding: Option<&ObjectReference>,
     state: &ModelSimState,
+    terminal: bool,
 ) -> Result<Option<bool>, ProbabilityWitnessError> {
-    match target {
-        ReachTarget::Eventually(predicate) if observes(system, predicate, binding, state)? => {
-            return Ok(Some(true))
+    if let ReachTarget::Eventually(predicate) = target {
+        if observes(system, predicate, binding, state)? {
+            return Ok(Some(true));
         }
-        ReachTarget::Until(from, predicate) => {
-            if observes(system, predicate, binding, state)? {
-                return Ok(Some(true));
-            }
-            if !observes(system, from, binding, state)? {
-                return Ok(Some(false));
-            }
-        }
-        ReachTarget::Always(predicate) if !observes(system, predicate, binding, state)? => {
-            return Ok(Some(false))
-        }
-        ReachTarget::Eventually(_) | ReachTarget::Always(_) => {}
     }
-    let terminal = system
-        .actions(state)
-        .map_err(expansion)?
-        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
-        .is_empty();
-    Ok(terminal.then_some(matches!(target, ReachTarget::Always(_))))
+    match target {
+        ReachTarget::Eventually(_) => Ok(terminal.then_some(false)),
+        ReachTarget::Until(..) | ReachTarget::Always(_) => {
+            state_predicate::outcome(system, target, binding, state, terminal)
+                .map(|(verdict, _)| verdict)
+                .map_err(bounded::document_error)
+        }
+    }
 }
 
 fn key_of(
