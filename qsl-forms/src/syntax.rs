@@ -815,6 +815,17 @@ pub enum ExprNode {
         /// The searched value.
         item: ExprId,
     },
+    /// `p[s]` (FR-230 "Selection"): the selector `s` of a clock place
+    /// expression, an index `i` of a `Sequence` or `OrderedSet` or a key `k`
+    /// of a `Map`. S2 builds it only when it directly follows a field access
+    /// or another selector (`r.f[s]`); the checker decides whether the whole
+    /// is a clock place expression.
+    Select {
+        /// The collection place operand `p`.
+        place: ExprId,
+        /// The selector operand.
+        selector: ExprId,
+    },
     /// `allInstances<T>(p)` (FR-153): every current member of `p` whose
     /// most-specific type conforms to `T`.
     AllInstances {
@@ -996,6 +1007,7 @@ impl ExprNode {
             Self::Contains { collection, item } | Self::RemoveOne { collection, item } => {
                 vec![*collection, *item]
             }
+            Self::Select { place, selector } => vec![*place, *selector],
             Self::AllInstances { population, .. } => vec![*population],
             Self::Lookup {
                 population,
@@ -1070,6 +1082,7 @@ impl ExprNode {
             | Self::Record { .. }
             | Self::Collection { .. }
             | Self::Contains { .. }
+            | Self::Select { .. }
             | Self::RemoveOne { .. }
             | Self::AllInstances { .. }
             | Self::Lookup { .. }
@@ -1149,6 +1162,7 @@ impl ExprNode {
             | Self::Record { .. }
             | Self::Collection { .. }
             | Self::Contains { .. }
+            | Self::Select { .. }
             | Self::RemoveOne { .. }
             | Self::AllInstances { .. }
             | Self::Lookup { .. }
@@ -1233,6 +1247,10 @@ impl ExprNode {
                 source: first,
                 summand: second,
                 ..
+            }
+            | Self::Select {
+                place: first,
+                selector: second,
             }
             | Self::Contains {
                 collection: first,
@@ -1756,6 +1774,14 @@ impl Expression {
     pub fn contains(collection: Self, item: Self) -> Self {
         Self::compose([collection, item], |[collection, item]| {
             ExprNode::Contains { collection, item }
+        })
+    }
+
+    /// `place[selector]`.
+    pub fn select(place: Self, selector: Self) -> Self {
+        Self::compose([place, selector], |[place, selector]| ExprNode::Select {
+            place,
+            selector,
         })
     }
 

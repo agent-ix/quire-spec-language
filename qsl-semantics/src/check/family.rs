@@ -577,6 +577,11 @@ fn encode_expression(
                 out.write_str("deref");
                 pending.push(expr.at(*operand));
             }
+            ExprNode::Select { place, selector } => {
+                out.write_str("select");
+                pending.push(expr.at(*selector));
+                pending.push(expr.at(*place));
+            }
             ExprNode::Ref(operand) => {
                 out.write_str("ref");
                 pending.push(expr.at(*operand));
@@ -2774,10 +2779,7 @@ pub(crate) mod checking_tests {
         );
         let checked = check_application(&mut typer, callee, arguments, &root_location())
             .expect("the call is admitted");
-        let super::NodeKind::Call {
-            arguments: ids, ..
-        } = checked.root().kind()
-        else {
+        let super::NodeKind::Call { arguments: ids, .. } = checked.root().kind() else {
             panic!("a call node");
         };
         let argument = checked.root().at(ids[0]);
@@ -2808,7 +2810,10 @@ pub(crate) mod checking_tests {
         let (converts, coerces, _) = argument_of("same", std::slice::from_ref(&source));
         assert!(!converts && !coerces, "an identical type takes no node");
         let (converts, coerces, _) = argument_of("narrow", std::slice::from_ref(&source));
-        assert!(!converts && coerces, "a narrowing is a Coerce, not a conversion");
+        assert!(
+            !converts && coerces,
+            "a narrowing is a Coerce, not a conversion"
+        );
     }
 
     /// TC-376/FR-065-AC-9: a literal argument is typed from its parameter, so
