@@ -19,7 +19,6 @@ use qsl_replay::{
     CounterexampleKind, IncompleteCause, ModelCheckLimit, ModelTraceSettlement, ModelTraceValue,
     TerminalValue,
 };
-use qsl_semantics::check::PackageDeclarations;
 use quire_exact::{Cancel, Origin, Role};
 use quire_semantic_value::catalog::Category;
 use serde_json::json;
@@ -158,56 +157,63 @@ fn a_key_with_another_claim_occurrence_is_an_unknown_clause() {
 /// from two source units; no single-unit restriction discards the extra unit.
 #[test]
 fn a_package_of_two_source_units_replays_from_its_complete_provision() {
-    use qsl_semantics::check::AssemblyLimits;
+    use qsl_replay::spine::{
+        admit_parsed_unit_list, check_units, parse, select_units, DependencyInput, ParseRequest,
+        SpineLimits,
+    };
     use qsl_semantics::model::accounting::ModelNormalizationLimits;
-    use qsl_semantics::model::intake::{admit_units_with_cancel, package_input};
-    use quire_semantic_value::checking::CheckingLimits;
+    use qsl_semantics::model::intake::package_input;
 
     let world = world();
     let text = String::from_utf8(world.unit.clone()).expect("a text unit");
-    let extra = "language \"ix:native\" edition \"1-draft\";\n\
-                 profile w = \"quire.value.complete/v1\";\n\
-                 function Extra using w(): Boolean pure { true }\n";
-    let units: Vec<_> = [("safety", text.as_str()), ("extra", extra)]
+    let extra = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+                 profile v = \"quire.value.complete/v1\";\n\
+                 profile t = \"{INFINITE}\";\n\
+                 function Extra using v(): Boolean pure {{ true }}\n"
+    );
+    let units: Vec<_> = [("safety", text.as_str()), ("extra", extra.as_str())]
         .into_iter()
         .map(|(identity, source)| {
-            let parsed = qsl_cst::parse(
-                qsl_foundation::SourceIdentity::new("agent-ix", identity),
-                "unit.native",
-                source.as_bytes(),
+            let identity = qsl_foundation::SourceIdentity::new("agent-ix", identity);
+            parse(
+                &ParseRequest {
+                    source: &identity,
+                    path: "unit.native",
+                    bytes: source.as_bytes(),
+                },
                 qsl_cst::Limits::default(),
+                &Cancel::new(),
             )
-            .expect("S1 parses the unit");
-            assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-            let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-            (parsed.source().reference().clone(), unit)
+            .expect("S1 and S2 parse the unit")
+            .into_value()
         })
         .collect();
+    let dependencies = DependencyInput::default();
+    let units =
+        admit_parsed_unit_list(units, &dependencies).expect("both headers and source labels admit");
     let packages = package_input([world.domain.document.as_slice()]).expect("admits");
-    let selections: Vec<_> = units
-        .iter()
-        .map(|(_, unit)| unit.selections().models.as_slice())
-        .collect();
-    let selected = admit_units_with_cancel(
-        &selections,
+    let selected = select_units(
+        &units,
         &packages,
         ModelNormalizationLimits::default(),
+        qsl_cst::Limits::default(),
         &Cancel::new(),
     )
-    .expect("the model selection admits");
-    let graph = PackageDeclarations::assemble_units(
+    .expect("the model selection admits")
+    .into_value();
+    let checked = check_units(
+        &units,
         "package".to_owned(),
-        units,
-        selected,
-        Vec::new(),
-        AssemblyLimits::default(),
+        &selected,
+        &dependencies,
+        SpineLimits::default(),
         &Cancel::new(),
     )
-    .expect("the units assemble")
-    .check(CheckingLimits::default())
-    .unwrap_or_else(|refusals| panic!("the units check: {refusals:?}"));
-    assert_eq!(graph.sources().len(), 2);
-    let package = qsl_package::CheckedPackage::link(graph);
+    .expect("the qualified frontend checks both source units")
+    .into_value();
+    let package = checked.first().expect("the checked aggregate").package();
+    assert_eq!(package.graph().sources().len(), 2);
     let node = &package.graph().temporal_clauses()[0];
     let key = OccurrenceKey::new(node.identity(), node.claim().clone());
     let mut provision = SourceProvision::default();
@@ -222,7 +228,7 @@ fn a_package_of_two_source_units_replays_from_its_complete_provision() {
         );
     }
     let subject = ClauseSubject::new(
-        &package,
+        package,
         world.binding(&["c"]),
         AnalyzeLimits::unbounded(),
         &provision,
@@ -230,6 +236,34 @@ fn a_package_of_two_source_units_replays_from_its_complete_provision() {
         ClauseLimits::default(),
     )
     .expect("the complete multi-unit subject is accepted");
+    let mut raw_subject = world.subject(&["c"], crate::counter::UNLIMITED);
+    raw_subject.simulation.package = package;
+    let system = qsl_eval::simulation::model::ModelSystem::new(raw_subject.simulation.clone())
+        .expect("the multi-unit system admits");
+    let letters = system
+        .clause_letters(node)
+        .expect("the multi-unit clause letters");
+    let raw = qsl_analyze::model_check::check_model(
+        qsl_analyze::model_check::ModelCheckRequest {
+            subject: raw_subject,
+            temporal_clock_selections: &[],
+            item: qsl_replay::ModelCheckItem::Clause {
+                clause: node.clause(),
+                letters: &letters,
+            },
+            max_depth: None,
+            limits: qsl_replay::ModelCheckLimits::default(),
+            reductions: Default::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("the model checker produces a real candidate");
+    let qsl_replay::ModelCheckOutcome::Violated { counterexample, .. } = raw else {
+        panic!("the same counterexample exists")
+    };
+    subject
+        .replay_counterexample(&counterexample)
+        .expect("the operation-built multi-unit request replays the native candidate");
     let records = analyze_items(
         &Engines::qsl().expect("the engines register"),
         vec![subject.item(RequestIndex::new(0))],
