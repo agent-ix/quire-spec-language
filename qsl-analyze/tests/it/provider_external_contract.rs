@@ -339,8 +339,8 @@ fn a_nonviolating_external_assignment_is_never_promoted_to_refuted() {
     let (engines, calls) = engines(
         ProviderVerdict::Refuted {
             counterexample: vec![
-                Value::Integer(Integer::from(7)),
-                Value::Integer(Integer::from(2)),
+                Value::Integer(Integer::from(7_i64)),
+                Value::Integer(Integer::from(2_i64)),
             ],
         },
         false,
