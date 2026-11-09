@@ -170,11 +170,11 @@ pub fn replay_probabilistic_witness(
         return Err(ProbabilityWitnessError::Refused);
     }
     let mut model_states = BTreeMap::new();
-    let mut storage = 0;
+    let graph_storage = std::cell::RefCell::new(0u64);
     let mut meter = quire_exact::Meter::new(system.meter_limits()).with_cancel(cancel.clone());
     let key_error = std::cell::RefCell::new(None);
     let mut issue = None;
-    let graph = enumerate_model_graph_with_keys(
+    let graph = enumerate_model_graph_with_keys_and_reservation(
         system,
         None::<&qsl_semantics::check::CheckedPredicate>,
         reference,
@@ -189,17 +189,26 @@ pub fn replay_probabilistic_witness(
                 ExactProbabilityGraphError::ExpansionRefused
             })
         },
+        &mut |bytes| {
+            bounded::retain(bytes, &mut graph_storage.borrow_mut(), limits).map_err(|error| {
+                *key_error.borrow_mut() = Some(error);
+                ExactProbabilityGraphError::ExpansionRefused
+            })
+        },
         &mut |key, state| {
             bounded::visit(&mut meter, cancel).map_err(|error| {
                 *key_error.borrow_mut() = Some(error);
                 ExactProbabilityGraphError::ExpansionRefused
             })?;
-            bounded::retain(key.as_bytes().len().saturating_mul(2), &mut storage, limits).map_err(
-                |error| {
-                    *key_error.borrow_mut() = Some(error);
-                    ExactProbabilityGraphError::ExpansionRefused
-                },
-            )?;
+            bounded::retain(
+                key.as_bytes().len().saturating_mul(2),
+                &mut graph_storage.borrow_mut(),
+                limits,
+            )
+            .map_err(|error| {
+                *key_error.borrow_mut() = Some(error);
+                ExactProbabilityGraphError::ExpansionRefused
+            })?;
             model_states.insert(key.clone(), state.clone());
             Ok(())
         },
@@ -215,6 +224,19 @@ pub fn replay_probabilistic_witness(
             ProbabilityWitnessError::Build(Box::new(issue))
         })
     })?;
+    let mut storage = graph_storage.into_inner();
+    // Kahn's checker retains an indegree map, ready set, and output keys.
+    for key in graph.states.keys() {
+        poll_cancel(cancel)?;
+        bounded::retain(
+            key.as_bytes()
+                .len()
+                .saturating_mul(3)
+                .saturating_add(std::mem::size_of::<ProbabilityProductKey>().saturating_mul(3)),
+            &mut storage,
+            limits,
+        )?;
+    }
     topological_order(&graph, cancel)?;
     let initials = system.initial();
     let [initial] = initials.as_slice() else {

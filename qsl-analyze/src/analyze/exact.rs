@@ -697,21 +697,21 @@ fn witness_charge(
     storage: &mut u64,
     bytes: usize,
     limits: &crate::exact_probabilistic::ExactProbLimits,
-) -> Result<(), ExactProbBuildIssue> {
+) -> Result<(), Box<ExactProbBuildIssue>> {
     *storage = storage.saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
     if *storage > limits.document.storage_bytes {
-        return Err(ExactProbBuildIssue::Limit {
+        return Err(Box::new(ExactProbBuildIssue::Limit {
             limit: ModelCheckLimit::CertificateMaxWorkingBytes,
             value: limits.document.storage_bytes,
-        });
+        }));
     }
     meter
         .charge(quire_exact::Charge::new(
             quire_exact::ChargePoint::CollectionVisit,
         ))
         .map_err(|incomplete| {
-            ExactProbBuildIssue::Predicate(qsl_eval::simulation::model::ClauseOutcome::Incomplete(
-                incomplete,
+            Box::new(ExactProbBuildIssue::Predicate(
+                qsl_eval::simulation::model::ClauseOutcome::Incomplete(incomplete),
             ))
         })
 }
