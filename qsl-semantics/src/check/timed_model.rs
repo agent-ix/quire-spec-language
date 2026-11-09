@@ -2081,7 +2081,7 @@ impl Clocks<'_> {
 }
 
 /// The clock fields of `model`'s clock places.
-fn clock_fields(model: &AdmittedModel) -> Vec<ClockField> {
+pub(crate) fn clock_fields(model: &AdmittedModel) -> Vec<ClockField> {
     AdmittedModel::clock_places(model)
         .iter()
         .map(|place| ClockField {
@@ -2223,6 +2223,7 @@ const OPEN_SLOT: CollectionShape = CollectionShape {
     unique: false,
     min: 0,
     max: None,
+    map: false,
 };
 
 /// Whether two place paths name one place: equal steps, any slot matching
