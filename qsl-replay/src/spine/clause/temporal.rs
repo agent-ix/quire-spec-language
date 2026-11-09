@@ -1390,6 +1390,7 @@ fn with_decisive(
 }
 
 /// The decisive record of `atom`, read over the observation at its position.
+#[deny(clippy::wildcard_enum_match_arm)]
 fn decisive_record(
     source: &DecisiveRun<'_>,
     atom: DecisiveAtom,
@@ -1767,7 +1768,7 @@ pub(super) fn atom_name(
 ///
 /// # Errors
 ///
-/// [`RunRefusal::SourceNotSupplied`] as [`atom_name`] refuses, and a
+/// [`RunRefusal::SourceNotSupplied`] as `atom_name` refuses, and a
 /// [`RunRefusal::Fault`] for a clause or atom `package` does not hold.
 pub fn name_clause_atom(
     package: &qsl_package::CheckedPackage,

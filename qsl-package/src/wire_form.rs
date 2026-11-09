@@ -11,6 +11,7 @@
 use quire_contract_model::CheckedSemanticNodeV2;
 
 /// A checked node's `node_tag`, for the kinds the package readers select by.
+#[cfg(feature = "std")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum WireTag {
     ScalarType,
@@ -22,6 +23,7 @@ pub(crate) enum WireTag {
     Protocol,
 }
 
+#[cfg(feature = "std")]
 impl WireTag {
     /// The tag a wire word names, `None` for a kind no reader selects by.
     #[ix_trace_rs::string_edge]
@@ -113,6 +115,7 @@ pub(crate) fn has_form(node: &CheckedSemanticNodeV2, tag: WireTag, form: WireFor
     has_tag(node, tag) && WireForm::from_wire(&node.semantic_form) == Some(form)
 }
 
+#[cfg(feature = "std")]
 /// The tag and form a `tag/form` wire word (a checked-error `form`) names.
 #[ix_trace_rs::string_edge]
 pub(crate) fn split_tag_form(word: &str) -> Option<(WireTag, WireForm)> {
@@ -127,6 +130,7 @@ pub(crate) fn is_expression_role(role: &str) -> bool {
 }
 
 /// The suffix of an operation identity a reader selects by.
+#[cfg(feature = "std")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum OperationSuffix {
     /// `.eq`.
@@ -137,6 +141,7 @@ pub(crate) enum OperationSuffix {
     Convert,
 }
 
+#[cfg(feature = "std")]
 impl OperationSuffix {
     /// The suffix an operation identity ends with, `None` for any other.
     #[ix_trace_rs::string_edge]
@@ -153,7 +158,7 @@ impl OperationSuffix {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

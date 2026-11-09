@@ -253,7 +253,7 @@ pub trait MemoryModel {
     ///
     /// `None` when `component` has no encoding or exceeds `limits`; the
     /// state key's own encoding then decides the refusal. Only this crate
-    /// can name [`Canonicalizer`], so only its memory models override this.
+    /// can name `Canonicalizer`, so only its memory models override this.
     fn key_bytes(
         &self,
         component: &Self::Component,
