@@ -37,7 +37,8 @@ fn evidence(world: &World, claim: &str) -> ProbabilisticCounterexample {
     record
         .probabilistic_counterexample
         .expect("reproduced evidence accompanies refuted")
-        .evidence().clone()
+        .evidence()
+        .clone()
 }
 fn replay(
     world: &World,
@@ -106,10 +107,18 @@ fn semantic_mutations_cannot_obtain_a_reproduced_token() {
         Err(ProbabilityWitnessError::Refused)
     ));
     let mut changed = witness.clone();
-    changed.paths[0].steps[0].transition = quire_semantic_value::model_transition::ModelTransition::new(
-        "\"disabled\"".to_owned(),None,vec![],quire_canonical::Limits::new(1024)
-    ).expect("canonical syntax with a disabled semantic identity");
-    assert!(matches!(replay(&world,&changed,&limits,&Cancel::new()),Err(ProbabilityWitnessError::Refused)));
+    changed.paths[0].steps[0].transition =
+        quire_semantic_value::model_transition::ModelTransition::new(
+            "\"disabled\"".to_owned(),
+            None,
+            vec![],
+            quire_canonical::Limits::new(1024),
+        )
+        .expect("canonical syntax with a disabled semantic identity");
+    assert!(matches!(
+        replay(&world, &changed, &limits, &Cancel::new()),
+        Err(ProbabilityWitnessError::Refused)
+    ));
     let mut changed = witness.clone();
     changed.paths[0].steps[0].post = witness.initial.clone();
     assert!(matches!(
@@ -135,8 +144,21 @@ fn duplicate_paths_live_prefixes_and_threshold_equality_have_no_token() {
     let world = World::new(&prob_world::link(CLAIMS));
     let witness = evidence(&world, "TooMuch");
     let mut changed = witness.clone();
-    changed.paths[0].steps.push(witness.paths[0].steps[0].clone());
-    assert!(matches!(replay(&world,&changed,&ExactProbLimits::default(),&Cancel::new()),Ok(ProbabilityWitnessReplay::Parity)),"a step after the first target cannot extend an accepted path");
+    changed.paths[0]
+        .steps
+        .push(witness.paths[0].steps[0].clone());
+    assert!(
+        matches!(
+            replay(
+                &world,
+                &changed,
+                &ExactProbLimits::default(),
+                &Cancel::new()
+            ),
+            Ok(ProbabilityWitnessReplay::Parity)
+        ),
+        "a step after the first target cannot extend an accepted path"
+    );
     let mut changed = witness.clone();
     changed.paths.push(changed.paths[0].clone());
     assert!(matches!(
@@ -247,7 +269,9 @@ fn witness_limits_and_final_acceptance_cancellation_never_yield_tokens() {
 #[test]
 fn workload_replay_preserves_weight_shares_and_emits_no_scheduler() {
     let world = World::new(&prob_world::link(
-        &CLAIMS.replace("under every scheduler", "under Even").replace(">= 0.97", ">= 0.99"),
+        &CLAIMS
+            .replace("under every scheduler", "under Even")
+            .replace(">= 0.97", ">= 0.99"),
     ));
     use qsl_analyze::exact_probabilistic::{
         build_product, decide_reachability, produce_witness, ProbBuild, UnboundedObjective,
@@ -261,7 +285,10 @@ fn workload_replay_preserves_weight_shares_and_emits_no_scheduler() {
     let target = product.labels.iter().map(|row| row[0]).collect::<Vec<_>>();
     let solved = decide_reachability(&product, &target, UnboundedObjective::Min, &limits)
         .expect("workload solver");
-    assert_eq!(solved.values[product.initial[0].2.index()], qsl_analyze::exact_probabilistic::ExtRational::Finite(ratio(391,400)));
+    assert_eq!(
+        solved.values[product.initial[0].2.index()],
+        qsl_analyze::exact_probabilistic::ExtRational::Finite(ratio(391, 400))
+    );
     assert!(produce_witness(
         &product,
         &solved.policy,
@@ -284,9 +311,17 @@ fn workload_replay_preserves_weight_shares_and_emits_no_scheduler() {
         )),
         ratio(17, 20)
     );
-    let nonreach = evidence(&world,"TooLittle");
+    let nonreach = evidence(&world, "TooLittle");
     assert!(nonreach.scheduler.is_empty());
-    assert_eq!(mass(replay(&world,&nonreach,&ExactProbLimits::default(),&Cancel::new())),ratio(3,200));
+    assert_eq!(
+        mass(replay(
+            &world,
+            &nonreach,
+            &ExactProbLimits::default(),
+            &Cancel::new()
+        )),
+        ratio(3, 200)
+    );
 }
 
 #[trace("TC-637", "FR-202-AC-10")]
@@ -467,6 +502,11 @@ fn graph_arithmetic_limits_and_cyclic_models_cannot_reproduce() {
             ExactProbabilityGraphError::Cycle
         ))
     ));
+    model.initial["delivered"] = serde_json::json!({"boolean": true});
+    model.body = model.body.replace("not self.delivered and ", "").replace("self.delivered or ", "");
+    let target_cycle = World::new(&model);
+    changed.item = qsl_replay::ObligationIdentity::new(target_cycle.claim("TooMuch").occurrence().unwrap().node().clone(), None, 0);
+    assert!(matches!(replay(&target_cycle,&changed,&ExactProbLimits::default(),&Cancel::new()),Err(ProbabilityWitnessError::Graph(ExactProbabilityGraphError::Cycle))),"an initial target cannot conceal its reachable continuation cycle");
 }
 
 #[trace("TC-637", "FR-202-AC-11")]

@@ -4,7 +4,8 @@
 use super::*;
 use crate::{ExactProbLimits, ModelCheckLimit};
 use qsl_eval::simulation::model::{
-    same_values, PredicateReading, ScheduledIdentity, TimedSubjectRefusal, TimedSystem, TransitionId,
+    same_values, PredicateReading, ScheduledIdentity, TimedSubjectRefusal, TimedSystem,
+    TransitionId,
 };
 use qsl_package::CheckedPackage;
 use quire_exact::Value as SemanticValue;
@@ -139,6 +140,7 @@ pub fn replay_probabilistic_witness(
     else {
         return Err(ExactProbabilityGraphError::UnsupportedClaimForm.into());
     };
+    match bound { Bound::AtLeast(threshold) | Bound::AtMost(threshold) => check_bits(threshold,limits.max_rational_bits)?, }
     if !claim.fairness.is_empty()
         || !matches!(
             TimedSystem::new(system, &claim.subject.alias),

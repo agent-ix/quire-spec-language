@@ -495,8 +495,11 @@ fn replay_refutation(
         ProbScheduler::Every => WitnessScope::EveryScheduler,
         ProbScheduler::Workload(_) => WitnessScope::Workload,
     };
-    let produced = match produce_witness(product, policy, scope, initial, &accepting, &past, limits)
-    {
+    let produced = produce_witness(product, policy, scope, initial, &accepting, &past, limits);
+    if cancel.poll() {
+        if let Some(cause) = cancel.tripped() { return settled(&ExactProbBuildIssue::Cancelled(cause),subject); }
+    }
+    let produced = match produced {
         Ok(Some(witness)) => witness,
         Ok(None) => return not_yet(),
         Err(_) => return broken(),
