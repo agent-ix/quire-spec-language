@@ -142,14 +142,28 @@ fn request(source: &str, snapshot: &[u8], exact: ExactProbLimits) -> (Option<Val
         return (None, record.settlement);
     };
     if terminal.value() == &qsl_replay::TerminalValue::Refuted {
-        let token = record.probabilistic_counterexample.as_ref()
+        let token = record
+            .probabilistic_counterexample
+            .as_ref()
             .expect("a native bounded refutation retains its reproduced path evidence");
         let evidence = token.evidence();
-        assert_eq!(evidence.item, qsl_replay::probabilistic_claim_identity(claim).unwrap());
+        assert_eq!(
+            evidence.item,
+            qsl_replay::probabilistic_claim_identity(claim).unwrap()
+        );
         let qsl_replay::ProbabilityWitnessReplay::Reproduced(replayed) =
-            qsl_replay::replay_probabilistic_witness(package, &system, &evidence.item, evidence, &exact, &cancel)
-                .expect("the retained native evidence independently replays")
-        else { panic!("native refutation evidence must reproduce"); };
+            qsl_replay::replay_probabilistic_witness(
+                package,
+                &system,
+                &evidence.item,
+                evidence,
+                &exact,
+                &cancel,
+            )
+            .expect("the retained native evidence independently replays")
+        else {
+            panic!("native refutation evidence must reproduce");
+        };
         assert_eq!(replayed.mass(), token.mass());
     }
     let Some(bytes) = terminal.exact_certificate_document() else {
