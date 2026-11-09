@@ -271,7 +271,7 @@ fn a_rejected_certificate_never_settles_proved() {
     assert_eq!(
         outcome["cause"],
         serde_json::json!({
-            "type": "certificate-rejected", "rule": "inequality-fails", "at": wire
+            "kind": "certificate-rejected", "rule": "inequality-fails", "at": wire
         })
     );
     assert!(String::from_utf8(expected.as_bytes().to_vec())
