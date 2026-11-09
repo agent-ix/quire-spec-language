@@ -316,9 +316,12 @@ pub struct ExactProbabilityAcceptance {
     value: Rational,
     side: ProbabilityBoundSide,
     certificate: ExactProbabilityCertificate,
+    document: Option<Box<[u8]>>,
 }
 
 impl ExactProbabilityAcceptance {
+    /// Canonical document bytes when this token was produced by the document checker.
+    pub fn document(&self) -> Option<&[u8]> { self.document.as_deref() }
     /// The exact certificate this checker accepted, retained with its token.
     pub fn certificate(&self) -> &ExactProbabilityCertificate {
         &self.certificate
@@ -918,6 +921,7 @@ fn check_exact_reachability(
     poll_cancel(cancel)?;
     Ok(ExactProbabilityCertificateCheck::Accepted(
         ExactProbabilityAcceptance {
+            document: None,
             value: initial.clone(),
             certificate: certificate.clone(),
             side: match bound {
@@ -1190,6 +1194,7 @@ mod tests {
         assert_eq!(
             result,
             ExactProbabilityCertificateCheck::Accepted(ExactProbabilityAcceptance {
+                document: None,
                 value: Rational::new(Integer::from(4_i64), Integer::from(5_i64)).unwrap(),
                 side: ProbabilityBoundSide::AtLeast,
                 certificate: certificate(

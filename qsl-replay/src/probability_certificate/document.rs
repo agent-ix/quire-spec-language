@@ -815,9 +815,14 @@ pub fn check_probability_certificate_document(
             ));
         }
     }
-    check_document_equalities(
+    let mut check = check_document_equalities(
         &graph, &values, objective, &bound, limits, cancel, &mut meter,
-    )
+    )?;
+    if let ExactProbabilityCertificateCheck::Accepted(accepted) = &mut check {
+        accepted.document = Some(bytes.into());
+    }
+    poll(cancel)?;
+    Ok(check)
 }
 
 fn malformed_ranking() -> ExactProbabilityCertificateCheck {
@@ -954,6 +959,8 @@ fn check_document_equalities(
     poll(cancel)?;
     Ok(ExactProbabilityCertificateCheck::Accepted(
         ExactProbabilityAcceptance {
+            certificate: ExactProbabilityCertificate { values: values.iter().map(|(state, value)| ExactProbabilityValue { state: state.clone(), value: value.clone() }).collect() },
+            document: None,
             value: initial.clone(),
             side: match bound {
                 Bound::AtLeast(_) => ProbabilityBoundSide::AtLeast,

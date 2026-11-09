@@ -180,11 +180,12 @@ fn proof_source_request(
     )
     .unwrap();
     let written = write_probability_certificate(&document, document_limits, &cancel).unwrap();
+    let retained = record.terminal().unwrap().exact_certificate_document().expect("the public terminal record retains the checker-owned document");
     assert_eq!(
-        written, evidence.document,
+        written, retained,
         "analyze emits the production writer's exact bytes"
     );
-    let certificate = evidence.document.clone();
+    let certificate = retained.to_vec();
     inspect(
         &system,
         package.graph().probabilistic_model().claims(),

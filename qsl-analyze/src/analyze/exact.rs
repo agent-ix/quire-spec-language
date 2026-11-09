@@ -49,8 +49,6 @@ use crate::exact_probabilistic::{
 /// `proved` item (FR-281-AC-1: the record carries the certificate).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExactProbabilityEvidence {
-    /// Canonical document bytes written and read by the core before certification.
-    pub document: Vec<u8>,
     /// One exact value for every state of the checker's graph.
     pub certificate: ExactProbabilityCertificate,
     /// The checked value at the initial state.
@@ -351,13 +349,12 @@ fn run(
             document_limits,
             cancel,
         )?;
-        Ok::<_, ProbabilityDocumentError>((check, bytes))
+        Ok::<_, ProbabilityDocumentError>(check)
     })();
     match checked {
-        Ok((check, document)) => match &check {
+        Ok(check) => match &check {
             ExactProbabilityCertificateCheck::Accepted(accepted) => {
                 let evidence = Box::new(ExactProbabilityEvidence {
-                    document,
                     certificate,
                     value: accepted.value().clone(),
                     side: accepted.side(),

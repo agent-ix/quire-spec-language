@@ -239,6 +239,14 @@ fn the_unbounded_exact_member_retains_the_checker_owned_certificate() {
         .exact_certificate()
         .expect("the accepted certificate is carried");
     assert!(!certificate.values.is_empty());
+    let bytes = outcome.records[0].exact_certificate_document().expect("the public result carries the accepted canonical document");
+    assert_eq!(served.records[0].exact_certificate_document(), Some(bytes));
+    let document = qsl_replay::read_probability_certificate(bytes, qsl_replay::ProbabilityDocumentLimits {
+        bytes: 1_000_000, storage_bytes: 8_000_000, states: 100, edges: 1000, scalar_bits: 128,
+        accounting: qsl_replay::AccountingLimits::default().0,
+    }, &Cancel::new()).expect("the retained bytes admit through the qualified reader");
+    assert_eq!(document.values, certificate.values);
+    assert_eq!(document.ranking.len(), certificate.values.len());
     assert!(outcome.counterexamples.is_empty());
     assert_eq!(
         outcome.records[0].backend().map(BackendId::as_str),
