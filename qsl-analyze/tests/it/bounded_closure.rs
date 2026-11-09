@@ -24,7 +24,7 @@ use qsl_replay::{
 };
 use quire_exact::Cancel;
 
-use crate::counter::{subject, value, Letters, UNLIMITED};
+use crate::counter::{reference, subject, value, Letters, UNLIMITED};
 use crate::lasso_replay::bounded_fixture;
 use crate::liveness::Fixture;
 

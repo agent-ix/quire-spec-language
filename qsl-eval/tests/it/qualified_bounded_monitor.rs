@@ -22,7 +22,7 @@ fn context(clause: &qsl_semantics::check::CheckedTemporalClause, ordinal: u64) -
     )
 }
 
-#[trace("TC-636", "FR-201-AC-13", "FR-338-AC-6")]
+#[trace("TC-636", "FR-201-AC-13", "FR-338-AC-4")]
 #[test]
 fn qualified_bounded_monitor_keys_follow_real_debt_and_ignore_allocation_order() {
     let fixture = fixture(
@@ -108,7 +108,7 @@ fn qualified_bounded_monitor_terminal_false_extension_and_zero_horizon() {
     }
 }
 
-#[trace("TC-636", "FR-201-AC-14", "FR-338-AC-6")]
+#[trace("TC-636", "FR-201-AC-14", "FR-338-AC-5")]
 #[test]
 fn qualified_bounded_monitor_preserves_context_and_refuses_other_forms() {
     let fixture = fixture(
@@ -221,7 +221,7 @@ fn qualified_bounded_monitor_closes_a_full_u64_horizon_without_stutter_states() 
     );
 }
 
-#[trace("TC-525", "FR-338-AC-6", "FR-201-AC-14")]
+#[trace("TC-525", "FR-338-AC-4", "FR-201-AC-14")]
 #[test]
 fn over_instance_keys_and_ordinary_reference_arguments_have_distinct_context_forms() {
     use crate::support::ids::{effective_id, node_key, universe_id};

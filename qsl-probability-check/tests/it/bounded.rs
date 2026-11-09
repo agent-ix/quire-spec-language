@@ -193,7 +193,7 @@ fn key(text: &Value) -> Value {
     serde_json::from_slice(&URL_SAFE_NO_PAD.decode(text.as_str().unwrap()).unwrap()).unwrap()
 }
 
-#[trace("TC-636", "FR-196-AC-1", "FR-201-AC-14")]
+#[trace("TC-636", "FR-201-AC-14")]
 #[test]
 fn bounded_claim_over_is_a_real_s3_parameter_with_its_actual_model_type() {
     use qsl_semantics::check::{BodyTerm, LeafTerm, MemberTerm, NodeTag, Owner};
