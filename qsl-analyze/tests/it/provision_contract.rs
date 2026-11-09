@@ -626,7 +626,11 @@ fn exact_refutation_retains_the_reproduced_path_set_through_both_entries() {
         };
         assert_eq!(token.mass(), &expected_mass);
         let evidence = token.evidence();
-        assert_eq!(&evidence.item, world.claim("Likely"));
+        assert_eq!(
+            evidence.item,
+            qsl_replay::probabilistic_claim_identity(world.claim("Likely"))
+                .expect("the producer-owned claim has its checked identity")
+        );
         let replay = qsl_replay::replay_probabilistic_witness(
             &world.package,
             &system,
