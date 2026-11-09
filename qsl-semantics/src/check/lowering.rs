@@ -2262,9 +2262,10 @@ impl<'a> Lowering<'a> {
                 let key = reference
                     .as_ref()
                     .map(|reference| {
-                        reference.admitted().cloned().ok_or_else(|| {
-                            fault(&body.location, KeyFault::UnresolvedDraft)
-                        })
+                        reference
+                            .admitted()
+                            .cloned()
+                            .ok_or_else(|| fault(&body.location, KeyFault::UnresolvedDraft))
                     })
                     .transpose()?;
                 if seen[id.index()] && keys[id.index()] != key {

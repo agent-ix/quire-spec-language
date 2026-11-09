@@ -398,7 +398,10 @@ pub struct CheckedBody {
 
 impl fmt::Debug for CheckedBody {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("CheckedBody").field("nodes", &self.nodes).finish()
+        formatter
+            .debug_struct("CheckedBody")
+            .field("nodes", &self.nodes)
+            .finish()
     }
 }
 
@@ -436,7 +439,10 @@ impl CheckedBody {
             equality_producer: None,
             ordering_part: false,
         });
-        Self { nodes, node_keys: Arc::default() }
+        Self {
+            nodes,
+            node_keys: Arc::default(),
+        }
     }
 
     /// Link the relationship-end reachability `id` to the authored bound of
@@ -586,7 +592,10 @@ impl BodyBuilder {
     /// The body whose root is `root`, stored after every pushed node.
     pub(in crate::check) fn finish(mut self, root: Node) -> CheckedBody {
         self.nodes.push(root);
-        CheckedBody { nodes: self.nodes, node_keys: Arc::default() }
+        CheckedBody {
+            nodes: self.nodes,
+            node_keys: Arc::default(),
+        }
     }
 }
 
