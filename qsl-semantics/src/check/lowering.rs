@@ -952,6 +952,9 @@ pub(crate) struct Lowered {
         BTreeMap<(NodeKey, Location), super::ir::EqualityProducerIdentity>,
     /// Linked dispatch decisions paired with exact lowered call occurrences.
     pub(crate) dispatch_producer_decisions: BTreeMap<(NodeKey, Location), DispatchProducerDecision>,
+    /// The structural id of the application node each checked operation
+    /// lowered to, by the operation's own location (FR-093).
+    pub(crate) operation_keys: BTreeMap<Location, NodeKey>,
 }
 
 /// Builds and keys the nodes of one package.
@@ -1079,6 +1082,11 @@ pub(crate) struct Lowering<'a> {
         BTreeMap<(NodeKey, Location), super::ir::EqualityProducerIdentity>,
     /// Linked producer decisions retained by exact call occurrence.
     dispatch_producer_decisions: BTreeMap<(NodeKey, Location), DispatchProducerDecision>,
+    /// The key of each checked operation's application node (FR-093), by the
+    /// operation's location.
+    operation_keys: BTreeMap<Location, NodeKey>,
+    /// Operations whose application node is a draft, keyed once it is.
+    draft_operation_keys: Vec<(Location, NodeRef)>,
     dispatch_tables: &'a [DispatchTable],
     /// Attempts and compensation nodes retained for clauses delayed until
     /// their required temporal clause keys are available.
@@ -2103,6 +2111,8 @@ impl<'a> Lowering<'a> {
             equality_producer_data: BTreeMap::new(),
             equality_producer_identities: BTreeMap::new(),
             dispatch_producer_decisions: BTreeMap::new(),
+            operation_keys: BTreeMap::new(),
+            draft_operation_keys: Vec::new(),
             protocol_attempts: Vec::new(),
             protocol_compensations: Vec::new(),
             temporal_keys: BTreeMap::new(),
@@ -2218,6 +2228,7 @@ impl<'a> Lowering<'a> {
             equality_producer_data: self.equality_producer_data,
             equality_producer_identities: self.equality_producer_identities,
             dispatch_producer_decisions: self.dispatch_producer_decisions,
+            operation_keys: self.operation_keys,
         })
     }
 
@@ -3643,6 +3654,7 @@ impl<'a> Lowering<'a> {
         self.draft_index.clear();
         let occurrences = std::mem::take(&mut self.draft_occurrences);
         let draft_binders = std::mem::take(&mut self.draft_binders);
+        let draft_operation_keys = std::mem::take(&mut self.draft_operation_keys);
         let unsettled_functions = std::mem::take(&mut self.unsettled_functions);
         let unsettled_protocols = std::mem::take(&mut self.unsettled_protocols);
         let unsettled_composites = std::mem::take(&mut self.unsettled_composites);
@@ -3846,6 +3858,10 @@ impl<'a> Lowering<'a> {
         for (site, node) in draft_binders {
             let node = resolve(&node).map_err(|()| unresolved(&site.binder))?;
             self.record_binder(site, node);
+        }
+        for (location, node) in draft_operation_keys {
+            let node = resolve(&node).map_err(|()| unresolved(&location))?;
+            self.record_operation_key(location, node);
         }
         Ok(())
     }
@@ -4150,7 +4166,23 @@ impl<'a> Lowering<'a> {
         arguments: Vec<MemberTerm>,
     ) -> Result<LeafTerm, CheckRefusal> {
         let result_type = self.type_ref(node.value_type(), node.location())?;
-        self.typed_application(node.location(), result_type, operator, operation, arguments)
+        let term =
+            self.typed_application(node.location(), result_type, operator, operation, arguments)?;
+        if let LeafTerm::Reference { target } = &term {
+            self.record_operation_key(node.location().clone(), target.clone());
+        }
+        Ok(term)
+    }
+
+    /// Record the key of the application node checked operation `location`
+    /// lowered to (FR-093); a draft's waits until it is keyed.
+    fn record_operation_key(&mut self, location: Location, key: NodeRef) {
+        match key {
+            NodeRef::Admitted(key) => {
+                self.operation_keys.insert(location, key);
+            }
+            pending @ NodeRef::Pending(_) => self.draft_operation_keys.push((location, pending)),
+        }
     }
 
     /// Key an application node typed at `result_type`, denoted by the

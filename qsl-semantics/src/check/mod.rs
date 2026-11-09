@@ -815,6 +815,10 @@ pub struct CheckedGraph {
         ),
         ir::DispatchProducerDecision,
     >,
+    /// FR-093: the structural id of the application node each checked
+    /// operation lowered to, by the operation's location.
+    operation_keys:
+        BTreeMap<quire_semantic_value::location::ExpressionLocation, quire_exact::NodeKey>,
     /// NFR-011: the ceilings this package was checked under.
     effective_limits: CheckingLimits,
     /// FR-096: each function's form spans, by declaration index, so a
@@ -1040,6 +1044,7 @@ impl DebugWith for CheckedGraph {
             equality_producer_data,
             equality_producer_identities,
             dispatch_producer_decisions,
+            operation_keys,
             effective_limits,
             form_spans,
             type_spans,
@@ -1148,6 +1153,7 @@ impl DebugWith for CheckedGraph {
             )
             .field("equality_producer_identities", equality_producer_identities)
             .field("dispatch_producer_decisions", dispatch_producer_decisions)
+            .field("operation_keys", operation_keys)
             .field("effective_limits", &effective_limits)
             .field("form_spans", &form_spans)
             .field("type_spans", &type_spans)
@@ -6191,6 +6197,7 @@ impl PackageDeclarations {
             equality_producer_data,
             equality_producer_identities,
             dispatch_producer_decisions,
+            operation_keys,
             model_correspondence,
             identities,
             binders,
@@ -6201,6 +6208,7 @@ impl PackageDeclarations {
             lowered.equality_producer_data,
             lowered.equality_producer_identities,
             lowered.dispatch_producer_decisions,
+            lowered.operation_keys,
             lowered.correspondence,
             lowered.functions,
             lowered.binders,
@@ -7340,6 +7348,7 @@ impl PackageDeclarations {
             equality_producer_data,
             equality_producer_identities,
             dispatch_producer_decisions,
+            operation_keys,
             effective_limits: limits,
             form_spans,
             type_spans,
@@ -8127,6 +8136,21 @@ impl CheckedGraph {
         ir::DispatchProducerDecision,
     > {
         &self.dispatch_producer_decisions
+    }
+
+    /// FR-093: the `NodeKey`, the structural id of the FR-322 node, that
+    /// `check` lowered the checked operation at `location` to, or `None`
+    /// where `location` is no operation (a literal operand of an integer
+    /// operator, a local read and a `Coerce` that builds no narrow lower to
+    /// no node of their own). The key beside the [`Location`] of the
+    /// operation a backend names when it does not translate it (FR-560
+    /// `Operation(k)`); only `check` constructs it. Two structurally equal
+    /// operations share one key, and their locations tell their sites apart.
+    pub fn operation_key(
+        &self,
+        location: &quire_semantic_value::location::ExpressionLocation,
+    ) -> Option<&quire_exact::NodeKey> {
+        self.operation_keys.get(location)
     }
 
     /// Checked time sources of this package, in declaration order.

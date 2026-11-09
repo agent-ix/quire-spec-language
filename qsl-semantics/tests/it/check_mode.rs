@@ -6,7 +6,7 @@
 use qsl_forms::build_unit;
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{
-    CheckCause, CheckRefusal, CheckedGraph, Obligation, PackageDeclarations,
+    BodyTerm, CheckCause, CheckRefusal, CheckedGraph, CheckedNode, Obligation, PackageDeclarations,
 };
 use qsl_semantics::model::intake::SelectedModels;
 use qsl_semantics::value::{admit_integer_division, DefinitionRole};
@@ -73,4 +73,48 @@ fn kernel_mode_still_refuses_a_nonterminating_recursion() {
     let source = "function f using v(x: Int[0, 9]): Int[0, 9] pure { f(x) }";
     assert!(check(source, CheckMode::Linked).is_err());
     assert!(check(source, CheckMode::Kernel).is_err());
+}
+
+/// FR-093: a checked operation exposes the `NodeKey` of the FR-322 node it
+/// lowered to, by its location; structurally equal operations share one key
+/// and their locations tell the sites apart; a local read is no node.
+#[test]
+fn a_checked_operation_exposes_its_node_key() {
+    let graph = check(
+        "function f using v(a: Int[0, 9], b: Int[0, 9]): Boolean pure { a + b = a + b }",
+        CheckMode::Linked,
+    )
+    .expect("the function checks");
+    let root = graph.function_state(0).expect("f is declared").body;
+    let application = |node: CheckedNode<'_>| {
+        let key = graph
+            .operation_key(node.location())
+            .unwrap_or_else(|| panic!("{:?} lowers to a node", node.kind()));
+        match graph
+            .semantic_graph()
+            .node(key.clone())
+            .expect("keyed")
+            .body()
+        {
+            BodyTerm::Application(term) => term.operation.identity().to_owned(),
+            other => panic!("not an application: {other:?}"),
+        }
+    };
+    let [left, right] = root.children()[..] else {
+        panic!("an equality has two operands");
+    };
+    assert_ne!(left.location(), right.location());
+    assert_eq!(
+        graph.operation_key(left.location()),
+        graph.operation_key(right.location())
+    );
+    assert_ne!(
+        graph.operation_key(left.location()),
+        graph.operation_key(root.location())
+    );
+    assert_eq!(application(left), "quire.op.integer.add");
+    assert_eq!(application(root), "quire.op.integer.eq");
+    for read in left.children() {
+        assert_eq!(graph.operation_key(read.location()), None);
+    }
 }
