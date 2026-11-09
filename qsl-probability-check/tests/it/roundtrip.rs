@@ -34,7 +34,12 @@ fn proof_request(claim: &str) -> Value {
     proof_request_with(claim, |_, _, _, _, _| {})
 }
 
-fn compile_source(source: &str) -> (spine::CheckedUnit, qsl_semantics::model::intake::PackageInput) {
+fn compile_source(
+    source: &str,
+) -> (
+    spine::CheckedUnit,
+    qsl_semantics::model::intake::PackageInput,
+) {
     let identity = SourceIdentity::new("test", "certificate-source");
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
@@ -66,7 +71,16 @@ fn compile_source(source: &str) -> (spine::CheckedUnit, qsl_semantics::model::in
     (checked, packages)
 }
 
-fn proof_request_with(claim: &str, inspect: impl FnOnce(&ModelSystem<'_>, &[qsl_semantics::check::CheckedProbabilisticClaim], &ObligationIdentity, &[u8], ProbabilityDocumentLimits)) -> Value {
+fn proof_request_with(
+    claim: &str,
+    inspect: impl FnOnce(
+        &ModelSystem<'_>,
+        &[qsl_semantics::check::CheckedProbabilisticClaim],
+        &ObligationIdentity,
+        &[u8],
+        ProbabilityDocumentLimits,
+    ),
+) -> Value {
     let source = format!("{SOURCE}{claim}");
     let identity = SourceIdentity::new("test", "certificate-source");
     let limits = SpineLimits::default();
@@ -153,7 +167,13 @@ fn proof_request_with(claim: &str, inspect: impl FnOnce(&ModelSystem<'_>, &[qsl_
     )
     .unwrap();
     let certificate = write_probability_certificate(&document, document_limits, &cancel).unwrap();
-    inspect(&system, package.graph().probabilistic_model().claims(), &item, &certificate, document_limits);
+    inspect(
+        &system,
+        package.graph().probabilistic_model().claims(),
+        &item,
+        &certificate,
+        document_limits,
+    );
     json!({
         "source": {"authority": identity.authority, "identity": identity.identity, "content": source},
         "package_name": "certificate-fixture",
@@ -170,16 +190,24 @@ fn proof_request_with(claim: &str, inspect: impl FnOnce(&ModelSystem<'_>, &[qsl_
 #[trace("TC-764", "FR-282-AC-12", "FR-201-AC-11")]
 #[test]
 fn cancelling_at_every_observed_document_graph_and_arithmetic_poll_returns_no_acceptance() {
+    use qsl_replay::{
+        check_probability_certificate_document, ExactProbabilityCertificateCheck,
+        ProbabilityDocumentError,
+    };
+    use quire_exact::CancelCause;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::{Arc, OnceLock};
-    use qsl_replay::{check_probability_certificate_document, ExactProbabilityCertificateCheck, ProbabilityDocumentError};
-    use quire_exact::CancelCause;
 
     proof_request_with(CLAIM, |system, claims, item, bytes, limits| {
-        let check = |cancel: &Cancel| check_probability_certificate_document(system, claims, item, bytes, limits, cancel);
+        let check = |cancel: &Cancel| {
+            check_probability_certificate_document(system, claims, item, bytes, limits, cancel)
+        };
         let live = Cancel::new();
         let _counting = live.count_charges();
-        assert!(matches!(check(&live).unwrap(), ExactProbabilityCertificateCheck::Accepted(_)));
+        assert!(matches!(
+            check(&live).unwrap(),
+            ExactProbabilityCertificateCheck::Accepted(_)
+        ));
         let total = live.charges();
         assert!(total > 0);
         for cause in [CancelCause::Requested, CancelCause::Deadline] {
@@ -194,7 +222,11 @@ fn cancelling_at_every_observed_document_graph_and_arithmetic_poll_returns_no_ac
                     }
                 });
                 slot.set(cancel.clone()).unwrap();
-                assert_eq!(check(&cancel), Err(ProbabilityDocumentError::Cancelled(cause)), "poll {at}/{total}");
+                assert_eq!(
+                    check(&cancel),
+                    Err(ProbabilityDocumentError::Cancelled(cause)),
+                    "poll {at}/{total}"
+                );
                 assert_eq!(seen.load(Ordering::Relaxed), at);
             }
         }
@@ -253,24 +285,41 @@ fn alter_keys(document: &mut Value, change: impl Fn(&mut Value)) {
 
 fn replace_checked_source(request: &mut Value, source: &str) {
     let (checked, _) = compile_source(source);
-    let claim = checked.package().graph().probabilistic_model().claim("Likely").unwrap();
-    let node = qsl_foundation::node_wire::node_key_to_json(claim.occurrence().unwrap().node()).unwrap();
+    let claim = checked
+        .package()
+        .graph()
+        .probabilistic_model()
+        .claim("Likely")
+        .unwrap();
+    let node =
+        qsl_foundation::node_wire::node_key_to_json(claim.occurrence().unwrap().node()).unwrap();
     request["source"]["content"] = json!(source);
     request["byte_provision"][0][2] = json!(source.as_bytes());
     request["item"]["node_id"] = node.clone();
-    change_certificate(request, |document| { document["identity"]["node_id"] = node; });
+    change_certificate(request, |document| {
+        document["identity"]["node_id"] = node;
+    });
 }
 
 #[trace("TC-764", "FR-201-AC-11", "FR-282-AC-11")]
 #[test]
 fn attained_minimum_and_maximum_thresholds_pass_and_stronger_bounds_fail() {
-    for (operator, attained, beyond, numerator, denominator) in [(">=", "0.96", "0.97", "24", "25"), ("<=", "0.99", "0.98", "99", "100")] {
+    for (operator, attained, beyond, numerator, denominator) in [
+        (">=", "0.96", "0.97", "24", "25"),
+        ("<=", "0.99", "0.98", "99", "100"),
+    ] {
         let claim = format!("probabilistic Likely using inf on M over (m: M::Msg) under every scheduler on origin {{ probability {operator} {attained} [ eventually holds(m.delivered) ] }}\n");
         let mut request = proof_request(&claim);
         let (code, result) = run(&request, &[]);
         assert_eq!(code, 0, "{operator} {attained}: {result}");
-        assert_eq!(result["value"], json!({"numerator":numerator, "denominator":denominator}));
-        let source = request["source"]["content"].as_str().unwrap().replace(attained, beyond);
+        assert_eq!(
+            result["value"],
+            json!({"numerator":numerator, "denominator":denominator})
+        );
+        let source = request["source"]["content"]
+            .as_str()
+            .unwrap()
+            .replace(attained, beyond);
         replace_checked_source(&mut request, &source);
         let (code, result) = run(&request, &[]);
         assert_eq!(code, 1, "{operator} {beyond}: {result}");
@@ -283,9 +332,15 @@ fn attained_minimum_and_maximum_thresholds_pass_and_stronger_bounds_fail() {
 #[test]
 fn unsupported_claim_shapes_and_document_profiles_never_produce_acceptance() {
     let original = proof_request(CLAIM);
-    for body in ["always holds(m.delivered)", "eventually[0,2] holds(m.delivered)"] {
+    for body in [
+        "always holds(m.delivered)",
+        "eventually[0,2] holds(m.delivered)",
+    ] {
         let mut request = original.clone();
-        let mut source = request["source"]["content"].as_str().unwrap().replace("eventually holds(m.delivered)", body);
+        let mut source = request["source"]["content"]
+            .as_str()
+            .unwrap()
+            .replace("eventually holds(m.delivered)", body);
         if body.starts_with("eventually[") {
             source = source.replace("profile inf =", "profile ev = \"quire.temporal.event-position.false-extension/v1\";\nprofile inf =").replace("Likely using inf", "Likely using ev");
         }
@@ -294,10 +349,17 @@ fn unsupported_claim_shapes_and_document_profiles_never_produce_acceptance() {
         assert_eq!(code, 2, "{body}: {result}");
         assert_eq!(result["status"], "unsupported", "{body}: {result}");
     }
-    for (member, value) in [("kind", "lower"), ("profile", "quire.probability-objective/reachability/v2")] {
+    for (member, value) in [
+        ("kind", "lower"),
+        ("profile", "quire.probability-objective/reachability/v2"),
+    ] {
         let mut request = original.clone();
         change_certificate(&mut request, |document| {
-            if member == "kind" { document[member] = json!(value); } else { document["objective"][member] = json!(value); }
+            if member == "kind" {
+                document[member] = json!(value);
+            } else {
+                document["objective"][member] = json!(value);
+            }
         });
         let (code, result) = run(&request, &[]);
         assert_eq!(code, 2, "{result}");
@@ -351,11 +413,15 @@ fn a_fresh_checker_refuses_altered_values_objectives_identities_ranks_and_provis
     cases.push(changed);
     let mut changed = original.clone();
     changed["item"]["ordinal"] = json!(1);
-    change_certificate(&mut changed, |document| { document["identity"]["ordinal"] = json!(1); });
+    change_certificate(&mut changed, |document| {
+        document["identity"]["ordinal"] = json!(1);
+    });
     cases.push(changed);
     let mut changed = original.clone();
     changed["item"]["model"] = json!("foreign-model");
-    change_certificate(&mut changed, |document| { document["identity"]["model"] = json!("foreign-model"); });
+    change_certificate(&mut changed, |document| {
+        document["identity"]["model"] = json!("foreign-model");
+    });
     cases.push(changed);
     let mut changed = original.clone();
     change_certificate(&mut changed, |document| {
@@ -457,13 +523,19 @@ fn exact_byte_ceilings_retain_the_actual_offered_lengths() {
     request["limits"]["bytes"] = json!(certificate_bytes - 1);
     let (code, result) = run(&request, &[]);
     assert_eq!(code, 2);
-    assert_eq!(result["limit"], json!({"setting":"certificate.bytes", "bound":certificate_bytes - 1, "actual":certificate_bytes}));
+    assert_eq!(
+        result["limit"],
+        json!({"setting":"certificate.bytes", "bound":certificate_bytes - 1, "actual":certificate_bytes})
+    );
     let mut request = original.clone();
     let source_bytes = request["source"]["content"].as_str().unwrap().len();
     request["limits"]["stages"]["s1.input_bytes"] = json!(source_bytes - 1);
     let (code, result) = run(&request, &[]);
     assert_eq!(code, 2);
-    assert_eq!(result["limit"], json!({"setting":"s1.input_bytes", "bound":source_bytes - 1, "actual":source_bytes}));
+    assert_eq!(
+        result["limit"],
+        json!({"setting":"s1.input_bytes", "bound":source_bytes - 1, "actual":source_bytes})
+    );
     let mut request = original;
     request["limits"]["storage_bytes"] = json!(0);
     let (code, result) = run(&request, &[]);

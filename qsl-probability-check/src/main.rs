@@ -216,9 +216,22 @@ fn source_failure(error: ProbabilitySourceError) -> Value {
         | ProbabilitySourceError::Subject(_) => "stopped",
     };
     let limit = match &error {
-        ProbabilitySourceError::Document(Document::Limit { setting, bound, actual })
-        | ProbabilitySourceError::ProvisionLimit { setting, bound, actual } => Some(json!({"setting":setting, "bound":bound, "actual":actual})),
-        ProbabilitySourceError::Source { cause: qsl_foundation::source::SourceReadCause::ByteBudget, byte_bound, byte_length, .. } => Some(json!({"setting":"s1.input_bytes", "bound":byte_bound, "actual":byte_length})),
+        ProbabilitySourceError::Document(Document::Limit {
+            setting,
+            bound,
+            actual,
+        })
+        | ProbabilitySourceError::ProvisionLimit {
+            setting,
+            bound,
+            actual,
+        } => Some(json!({"setting":setting, "bound":bound, "actual":actual})),
+        ProbabilitySourceError::Source {
+            cause: qsl_foundation::source::SourceReadCause::ByteBudget,
+            byte_bound,
+            byte_length,
+            ..
+        } => Some(json!({"setting":"s1.input_bytes", "bound":byte_bound, "actual":byte_length})),
         ProbabilitySourceError::Document(Document::Accounting(incomplete)) => Some(json!({
             "setting":qsl_replay::AccountingLimits::setting_of(incomplete.limit_kind).name(),
             "bound":incomplete.limit, "consumed":incomplete.consumed, "next_charge":incomplete.next_charge.to_string(),
