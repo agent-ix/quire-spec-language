@@ -1455,6 +1455,7 @@ pub struct TerminalRecord {
     /// stop's own cause).
     diagnostic: Option<CatalogCode>,
     exact_certificate: Option<Box<crate::ExactProbabilityCertificate>>,
+    exact_certificate_document: Option<Box<[u8]>>,
 }
 
 impl TerminalRecord {
@@ -1530,6 +1531,7 @@ impl TerminalRecord {
             replay: Some(replay.clone()),
             diagnostic: None,
             exact_certificate: None,
+            exact_certificate_document: None,
         })
     }
 
@@ -1583,6 +1585,7 @@ impl TerminalRecord {
             },
         );
         record.exact_certificate = Some(Box::new(accepted.certificate().clone()));
+        record.exact_certificate_document = accepted.document().map(Into::into);
         Some(record)
     }
 
@@ -1698,6 +1701,7 @@ impl TerminalRecord {
             replay: None,
             diagnostic: Some(diagnostic),
             exact_certificate: None,
+            exact_certificate_document: None,
         }
     }
 
@@ -1724,6 +1728,7 @@ impl TerminalRecord {
             replay: None,
             diagnostic: Some(diagnostic),
             exact_certificate: None,
+            exact_certificate_document: None,
         }
     }
 
@@ -1737,6 +1742,7 @@ impl TerminalRecord {
             replay: None,
             diagnostic: Some(diagnostic),
             exact_certificate: None,
+            exact_certificate_document: None,
         }
     }
 
@@ -1817,6 +1823,7 @@ impl TerminalRecord {
             replay: None,
             diagnostic: None,
             exact_certificate: None,
+            exact_certificate_document: None,
         }
     }
 
@@ -1835,6 +1842,7 @@ impl TerminalRecord {
             replay: None,
             diagnostic: None,
             exact_certificate: None,
+            exact_certificate_document: None,
         }
     }
 
@@ -1846,6 +1854,12 @@ impl TerminalRecord {
     /// The certificate accepted for this exact probabilistic proof, if any.
     pub fn exact_certificate(&self) -> Option<&crate::ExactProbabilityCertificate> {
         self.exact_certificate.as_deref()
+    }
+
+    /// Canonical probability certificate bytes accepted by the core and
+    /// retained unchanged through analyze/provider record projection.
+    pub fn exact_certificate_document(&self) -> Option<&[u8]> {
+        self.exact_certificate_document.as_deref()
     }
 
     /// The FR-331 result value this record carries.

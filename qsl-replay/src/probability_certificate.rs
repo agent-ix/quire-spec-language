@@ -12,13 +12,17 @@ use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_semantics::check::{
-    CheckedProbabilisticClaim, ProbForm, ProbScheduler, ReachTarget, StatePredicate,
+    CheckedProbabilisticClaim, ProbForm, ProbScheduler, ReachTarget, StatePredicate, Workload,
 };
 use quire_exact::ObjectReference;
 use serde_json::{json, Value};
 
 use crate::identity::ObligationIdentity;
 
+mod document;
+mod source;
+pub use document::*;
+pub use source::*;
 mod witness;
 pub use witness::*;
 
@@ -41,8 +45,11 @@ impl ProbabilityProductKey {
     /// unbounded reachability form, which has no monitor, accumulator or
     /// pending draw (FR-196). `binding` is the claim's bound `over` reference,
     /// encoded as FR-181's reference triple, and
-    /// `model_bytes` the state's complete `quire.simulation.state-key/v1`
-    /// encoding. This is the key the checker enumerates for the same state,
+    /// `model_bytes` the bare canonical FR-181 form returned by
+    /// `ModelSystem::state_key`. The parsed form is wrapped once with the
+    /// `quire.simulation.state-key/v1` domain. Construction uses finite
+    /// 1 GiB input/output and cumulative working-storage defaults. This is
+    /// the key the checker enumerates for the same state,
     /// so a certificate built with it names the checker's states.
     ///
     /// # Errors
@@ -54,6 +61,39 @@ impl ProbabilityProductKey {
         model_bytes: &[u8],
     ) -> Result<Self, ExactProbabilityGraphError> {
         product_key(binding, model_bytes)
+    }
+
+    /// Construct the unbounded FR-196 key with caller byte/storage admission.
+    /// The input is the bare canonical form returned by `ModelSystem::state_key`.
+    ///
+    /// # Errors
+    ///
+    /// Malformed/noncanonical input, the actual exhausted certificate ceiling,
+    /// or the supplied cancellation cause; no partial key is returned.
+    pub fn for_model_state_with_limits(
+        binding: Option<&ObjectReference>,
+        model_bytes: &[u8],
+        limits: ProbabilityDocumentIoLimits,
+        cancel: &Cancel,
+    ) -> Result<Self, ProbabilityDocumentError> {
+        document::model_product_key(binding, model_bytes, None, limits, cancel)
+    }
+
+    /// Construct a formula product using the parsed complete FR-338 key.
+    /// Formula context and state membership still require independent checking.
+    ///
+    /// # Errors
+    ///
+    /// The same admission/cancellation refusals as `for_model_state_with_limits`,
+    /// or a malformed automaton envelope.
+    pub fn for_formula_state(
+        binding: Option<&ObjectReference>,
+        model_bytes: &[u8],
+        monitor: &qsl_eval::automaton::AutomatonStateKey,
+        limits: ProbabilityDocumentIoLimits,
+        cancel: &Cancel,
+    ) -> Result<Self, ProbabilityDocumentError> {
+        document::model_product_key(binding, model_bytes, Some(monitor), limits, cancel)
     }
 }
 
@@ -273,6 +313,10 @@ pub enum ProbabilityCertificateRule {
     ThresholdMissed,
     /// A certificate omits, duplicates, or adds a state value.
     Malformed,
+    /// A positive non-target state has no required progress rank.
+    RankMissing,
+    /// A positive non-target state has no positive lower-rank successor.
+    RankBroken,
 }
 
 /// The locus of an exact-certificate rejection.
@@ -308,9 +352,14 @@ pub struct ExactProbabilityAcceptance {
     value: Rational,
     side: ProbabilityBoundSide,
     certificate: ExactProbabilityCertificate,
+    document: Option<Box<[u8]>>,
 }
 
 impl ExactProbabilityAcceptance {
+    /// Canonical document bytes when this token was produced by the document checker.
+    pub fn document(&self) -> Option<&[u8]> {
+        self.document.as_deref()
+    }
     /// The exact certificate this checker accepted, retained with its token.
     pub fn certificate(&self) -> &ExactProbabilityCertificate {
         &self.certificate
@@ -382,6 +431,7 @@ fn enumerate_model_graph<P: StatePredicate>(
     system: &ModelSystem<'_>,
     target: &P,
     binding: Option<&ObjectReference>,
+    workload: Option<&Workload>,
     max_states: usize,
     max_edges: usize,
     cancel: &Cancel,
@@ -436,17 +486,8 @@ fn enumerate_model_graph<P: StatePredicate>(
         let choices = if terminal.is_some() && stop_at_target {
             Vec::new()
         } else {
-            let actions = system
-                .actions(&state)
-                .map_err(|stop| {
-                    failure(crate::ExactProbBuildIssue::Expansion(stop));
-                    ExactProbabilityGraphError::ExpansionRefused
-                })?
-                .map_err(|_| {
-                    failure(crate::ExactProbBuildIssue::UndecidedSuccessor);
-                    ExactProbabilityGraphError::ExpansionRefused
-                })?;
-            if actions.is_empty() {
+            let distributions = model_distributions(system, &state, workload, cancel, failure)?;
+            if distributions.is_empty() {
                 states.insert(
                     key,
                     CheckerState {
@@ -456,23 +497,15 @@ fn enumerate_model_graph<P: StatePredicate>(
                 );
                 continue;
             }
-            let mut choices = Vec::with_capacity(actions.len());
-            for action in actions {
+            let mut choices = Vec::with_capacity(distributions.len());
+            for distribution in distributions {
                 poll_cancel(cancel)?;
                 let mut choice = Vec::new();
-                for draw in action.draws {
+                for (probability, successor) in distribution {
                     poll_cancel(cancel)?;
-                    if draw.probability == rational(0) {
+                    if probability == rational(0) {
                         continue;
                     }
-                    if draw.successors.len() != 1 {
-                        return Err(ExactProbabilityGraphError::UnsupportedDraw);
-                    }
-                    let (_, successor) = draw
-                        .successors
-                        .into_iter()
-                        .next()
-                        .ok_or(ExactProbabilityGraphError::UnsupportedDraw)?;
                     let target_key = key_of(&successor)?;
                     edge_count = edge_count
                         .checked_add(1)
@@ -482,7 +515,7 @@ fn enumerate_model_graph<P: StatePredicate>(
                     }
                     choice.push(ProbabilityEdge {
                         target: target_key.clone(),
-                        probability: draw.probability,
+                        probability,
                     });
                     if !seen.contains(&target_key) {
                         if seen.len() >= max_states {
@@ -508,28 +541,104 @@ fn product_key(
     binding: Option<&ObjectReference>,
     model_bytes: &[u8],
 ) -> Result<ProbabilityProductKey, ExactProbabilityGraphError> {
-    let binding = match binding {
-        None => Value::Null,
-        Some(reference) => serde_json::from_str(
-            &qsl_eval::simulation::model::reference_canonical_text(reference)
-                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?,
-        )
-        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?,
-    };
-    let encoded_model = base64::Engine::encode(
-        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
-        model_bytes,
-    );
-    let bytes = serde_json::to_vec(&serde_json::json!([
-        "quire.probability-product-key/v1",
+    ProbabilityProductKey::for_model_state_with_limits(
         binding,
-        encoded_model,
-        null,
-        null,
-        null
-    ]))
-    .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-    Ok(ProbabilityProductKey(bytes))
+        model_bytes,
+        ProbabilityDocumentIoLimits::default(),
+        &Cancel::new(),
+    )
+    .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)
+}
+
+fn model_distributions(
+    system: &ModelSystem<'_>,
+    state: &ModelSimState,
+    workload: Option<&Workload>,
+    cancel: &Cancel,
+    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
+) -> Result<Vec<Vec<(Rational, ModelSimState)>>, ExactProbabilityGraphError> {
+    let mut expansion = |stop| {
+        failure(crate::ExactProbBuildIssue::Expansion(stop));
+        ExactProbabilityGraphError::ExpansionRefused
+    };
+    if let Some(workload) = workload {
+        let steps = system
+            .weighted_steps(state, workload)
+            .map_err(&mut expansion)?
+            .map_err(|stop| {
+                failure(match stop {
+                    qsl_eval::simulation::model::Unsteppable::NotMarkov(_) => {
+                        crate::ExactProbBuildIssue::NotMarkov
+                    }
+                    qsl_eval::simulation::model::Unsteppable::UndecidedSuccessor(_) => {
+                        crate::ExactProbBuildIssue::UndecidedSuccessor
+                    }
+                });
+                ExactProbabilityGraphError::ExpansionRefused
+            })?;
+        if steps.iter().any(|step| {
+            matches!(
+                step.transition,
+                qsl_eval::simulation::model::TransitionId::Stutter
+            )
+        }) {
+            return if steps.len() == 1 {
+                Ok(Vec::new())
+            } else {
+                Err(ExactProbabilityGraphError::UnsupportedDraw)
+            };
+        }
+        return Ok(vec![steps
+            .into_iter()
+            .map(|step| (step.probability, step.post))
+            .collect()]);
+    }
+    let actions = system
+        .actions(state)
+        .map_err(&mut expansion)?
+        .map_err(|_| {
+            failure(crate::ExactProbBuildIssue::UndecidedSuccessor);
+            ExactProbabilityGraphError::ExpansionRefused
+        })?;
+    let mut distributions = Vec::with_capacity(actions.len());
+    for action in actions {
+        poll_cancel(cancel)?;
+        let mut distribution = Vec::with_capacity(action.draws.len());
+        for draw in action.draws {
+            poll_cancel(cancel)?;
+            if draw.probability == rational(0) {
+                continue;
+            }
+            if draw.successors.len() != 1 {
+                return Err(ExactProbabilityGraphError::UnsupportedDraw);
+            }
+            let (_, successor) = draw
+                .successors
+                .into_iter()
+                .next()
+                .ok_or(ExactProbabilityGraphError::UnsupportedDraw)?;
+            distribution.push((draw.probability, successor));
+        }
+        distributions.push(distribution);
+    }
+    Ok(distributions)
+}
+
+fn claim_workload<'a>(
+    system: &ModelSystem<'a>,
+    claim: &CheckedProbabilisticClaim,
+) -> Result<Option<&'a Workload>, ExactProbabilityGraphError> {
+    match &claim.scheduler {
+        ProbScheduler::Every => Ok(None),
+        ProbScheduler::Workload(name) => system
+            .package()
+            .graph()
+            .probabilistic_model()
+            .workload(name)
+            .filter(|workload| workload.model() == claim.subject.alias)
+            .map(Some)
+            .ok_or(ExactProbabilityGraphError::UnsupportedClaimForm),
+    }
 }
 
 /// Independently enumerate and check a bounded unbound exact reachability
@@ -544,6 +653,7 @@ pub(crate) fn check_model_exact_reachability<P: StatePredicate>(
     system: &ModelSystem<'_>,
     target: &P,
     binding: Option<&ObjectReference>,
+    workload: Option<&Workload>,
     certificate: &ExactProbabilityCertificate,
     objective: ProbabilityObjective,
     bound: &Bound,
@@ -554,6 +664,7 @@ pub(crate) fn check_model_exact_reachability<P: StatePredicate>(
         system,
         target,
         binding,
+        workload,
         max_states,
         max_edges,
         cancel,
@@ -595,6 +706,7 @@ pub fn check_claim_exact_reachability(
         system,
         predicate,
         instance.as_ref().map(|bound| &bound.reference),
+        claim_workload(system, claim)?,
         certificate,
         objective,
         bound,
@@ -832,6 +944,7 @@ fn check_exact_reachability(
     poll_cancel(cancel)?;
     Ok(ExactProbabilityCertificateCheck::Accepted(
         ExactProbabilityAcceptance {
+            document: None,
             value: initial.clone(),
             certificate: certificate.clone(),
             side: match bound {
@@ -1073,7 +1186,9 @@ mod tests {
     #[trace("TC-636")]
     #[test]
     fn bounded_model_product_key_uses_the_complete_fr196_v1_tuple() {
-        let key = product_key(None, b"model-state-key").expect("the fixed key encodes");
+        let model =
+            include_bytes!("../../qsl-probability-check/tests/fixtures/link.model-key-0.json");
+        let key = product_key(None, model).expect("the production model key encodes");
         let actual: serde_json::Value =
             serde_json::from_slice(key.as_bytes()).expect("the key is JSON");
         assert_eq!(
@@ -1081,7 +1196,10 @@ mod tests {
             serde_json::json!([
                 "quire.probability-product-key/v1",
                 null,
-                "bW9kZWwtc3RhdGUta2V5",
+                [
+                    "quire.simulation.state-key/v1",
+                    serde_json::from_slice::<Value>(model).unwrap()
+                ],
                 null,
                 null,
                 null
@@ -1104,6 +1222,7 @@ mod tests {
         assert_eq!(
             result,
             ExactProbabilityCertificateCheck::Accepted(ExactProbabilityAcceptance {
+                document: None,
                 value: Rational::new(Integer::from(4_i64), Integer::from(5_i64)).unwrap(),
                 side: ProbabilityBoundSide::AtLeast,
                 certificate: certificate(

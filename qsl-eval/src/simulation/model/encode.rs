@@ -562,6 +562,28 @@ pub fn reference_canonical_text(reference: &ObjectReference) -> Result<String, E
     reference_enc(reference).canonical_text(Limits::new(u64::MAX))
 }
 
+/// Emit the same FR-181 reference triple from borrowed identities.
+/// All traversal and canonical storage is admitted by the supplied writer.
+///
+/// # Errors
+///
+/// The writer's byte, storage, allocation or encoding refusal.
+pub fn encode_reference<S: Sink + ?Sized>(
+    reference: &ObjectReference,
+    writer: &mut Writer<'_, S>,
+) -> Result<(), Error> {
+    writer.begin_object()?;
+    writer.name("type")?;
+    writer.string("reference")?;
+    writer.name("universe")?;
+    qsl_foundation::node_wire::encode_node_key(reference.universe().root_type(), writer)?;
+    writer.name("object_type")?;
+    write_effective(writer, reference.object_type())?;
+    writer.name("identity")?;
+    writer.string(reference.object().as_str())?;
+    writer.end_object()
+}
+
 /// The UnitId text: the RFC 8785 text of its structural identity record.
 fn unit_enc(unit: &quire_exact::UnitId) -> Enc {
     identity_text(unit_identity_enc(unit), "a unit identity")
@@ -1596,6 +1618,38 @@ mod tests {
             .canonical_text(Limits::new(u64::MAX))
             .expect("the reference encodes");
         assert_eq!(parse_reference(&text), Some(reference));
+    }
+
+    #[trace("FR-196-AC-6")]
+    #[test]
+    fn borrowed_reference_encoding_preserves_the_owner_schema() {
+        let reference = ObjectReference::new(
+            crate::test_ids::universe_id([1]),
+            owned_chain(2),
+            quire_exact::ObjectId::new("object").unwrap(),
+        );
+        struct Borrowed<'a>(&'a ObjectReference);
+        impl Encode for Borrowed<'_> {
+            fn encode_into<S: Sink + ?Sized>(
+                &self,
+                writer: &mut Writer<'_, S>,
+            ) -> Result<(), Error> {
+                encode_reference(self.0, writer)
+            }
+        }
+        let expected = reference_canonical_text(&reference).unwrap();
+        assert_eq!(
+            quire_canonical::to_vec(&Borrowed(&reference), Limits::new(expected.len() as u64))
+                .unwrap(),
+            expected.as_bytes()
+        );
+        assert!(matches!(
+            quire_canonical::to_vec(
+                &Borrowed(&reference),
+                Limits::new(expected.len() as u64 - 1)
+            ),
+            Err(Error::Limit(_))
+        ));
     }
 
     /// FR-201: a reference text whose effective identity is malformed has no

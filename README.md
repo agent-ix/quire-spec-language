@@ -219,7 +219,10 @@ cd quire-spec-language
 cargo build --locked --workspace
 ```
 
-QSL builds no executable. The `quire` command line is in
+The main QSL interface is a library. The separate
+[`qsl-probability-check`](qsl-probability-check/README.md) executable checks
+exact reachability certificate documents against supplied source and data.
+The `quire` command line is in
 [quire-driver](https://github.com/agent-ix/quire-driver), whose verbs call the
 library API described here.
 

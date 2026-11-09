@@ -9,7 +9,7 @@ use qsl_analyze::analyze::{
     analyze_items, exact_probabilistic_item, exact_probabilistic_item_tampered, Engines,
 };
 use qsl_eval::simulation::model::ModelSystem;
-use qsl_eval::simulation::Limits;
+use qsl_eval::simulation::{Limits, TransitionSystem};
 use qsl_foundation::RequestIndex;
 use qsl_replay::InconclusiveCause;
 use qsl_replay::{
@@ -234,12 +234,14 @@ fn a_rejected_certificate_never_settles_proved() {
         .unwrap();
     let accepted = settle(&world, "Likely", ModelCheckLimits::default());
     let certificate = &accepted.exact_probabilistic.as_ref().unwrap().certificate;
-    // The altered terminal non-target state has true delivery value zero.
+    // The altered terminal row and its one-attempt predecessor both fail
+    // their one-step equations; the contract reports the first canonical key.
     let expected = certificate
         .values
         .iter()
-        .find(|entry| entry.value == ratio(0, 1))
-        .expect("the two-loss state")
+        .filter(|entry| entry.value == ratio(0, 1) || entry.value == ratio(4, 5))
+        .min_by(|left, right| left.state.cmp(&right.state))
+        .expect("the first failing one-step equation")
         .state
         .clone();
     assert_eq!(
@@ -272,7 +274,7 @@ fn a_rejected_certificate_never_settles_proved() {
 
 #[trace("TC-763", "FR-281-AC-4")]
 #[test]
-fn a_malformed_probability_certificate_retains_the_existing_failure() {
+fn a_malformed_probability_certificate_settles_a_typed_rejection() {
     let world = World::new(&prob_world::link(CLAIMS));
     let engines = Engines::qsl().expect("the linked engines are admitted");
     let item = exact_probabilistic_item_tampered(
@@ -281,11 +283,68 @@ fn a_malformed_probability_certificate_retains_the_existing_failure() {
         |certificate| certificate.values.clear(),
     );
     let record = analyze_items(&engines, vec![item], &Cancel::new()).remove(0);
-    assert_eq!(
+    assert!(matches!(
         record.terminal().expect("a terminal record").value(),
-        &TerminalValue::Failed
-    );
+        TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+            rule: CertificateRule::Malformed,
+            ..
+        })
+    ));
     assert!(record.exact_probabilistic.is_none());
+}
+
+#[trace("TC-764", "FR-201-AC-11", "FR-282-AC-12")]
+#[test]
+fn analyzer_document_budgets_stop_after_solving_without_certification() {
+    use std::sync::atomic::AtomicBool;
+    let world = World::new(&prob_world::link(CLAIMS));
+    let engines = Engines::qsl().unwrap();
+    let baseline = settle(&world, "Likely", ModelCheckLimits::default());
+    assert!(!baseline
+        .terminal()
+        .unwrap()
+        .exact_certificate_document()
+        .unwrap()
+        .is_empty());
+    for storage in [false, true] {
+        let mut request = world.request("Likely", ModelCheckLimits::default());
+        if storage {
+            request.limits.document.storage_bytes = 0;
+        } else {
+            request.limits.document.bytes = 0;
+        }
+        let reached_emission = Arc::new(AtomicBool::new(false));
+        let observed = Arc::clone(&reached_emission);
+        let item = exact_probabilistic_item_tampered(RequestIndex::new(0), request, move |_| {
+            observed.store(true, Ordering::Relaxed);
+        });
+        let record = analyze_items(&engines, vec![item], &Cancel::new()).remove(0);
+        assert!(
+            reached_emission.load(Ordering::Relaxed),
+            "graph enumeration and solve must have succeeded"
+        );
+        let expected = if storage {
+            ModelCheckLimit::CertificateMaxWorkingBytes
+        } else {
+            ModelCheckLimit::CertificateMaxBytes
+        };
+        assert_eq!(
+            record.terminal().unwrap().value(),
+            &TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                limit: expected,
+                value: 0
+            })
+        );
+        assert_eq!(
+            expected.setting(),
+            if storage {
+                "certificate_check.max_working_bytes"
+            } else {
+                "certificate_check.max_certificate_bytes"
+            }
+        );
+        assert!(record.exact_probabilistic.is_none());
+    }
 }
 
 #[test]
@@ -295,9 +354,13 @@ fn the_bound_reference_is_part_of_the_product_key() {
     let binding = claim_binding(&system, world.claim("Likely"))
         .expect("one instance")
         .expect("the claim has an over");
-    let bound = ProbabilityProductKey::for_model_state(Some(&binding.reference), b"state")
-        .expect("encodes");
-    let unbound = ProbabilityProductKey::for_model_state(None, b"state").expect("encodes");
+    let model = system
+        .state_key(&system.initial()[0])
+        .expect("the owner encodes its initial state")
+        .0;
+    let bound =
+        ProbabilityProductKey::for_model_state(Some(&binding.reference), &model).expect("encodes");
+    let unbound = ProbabilityProductKey::for_model_state(None, &model).expect("encodes");
     assert_ne!(bound, unbound);
     let text = String::from_utf8(bound.as_bytes().to_vec()).expect("JSON text");
     assert!(

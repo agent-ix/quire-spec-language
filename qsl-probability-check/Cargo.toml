@@ -1,0 +1,33 @@
+[package]
+name = "qsl-probability-check"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "Source-backed exact probability certificate checker executable"
+
+[dependencies]
+qsl-replay = { path = "../qsl-replay" }
+qsl-foundation = { path = "../qsl-foundation" }
+qsl-semantics = { path = "../qsl-semantics" }
+qsl-eval = { path = "../qsl-eval" }
+quire-checked = { workspace = true }
+quire-exact = { workspace = true }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.151", features = ["raw_value"] }
+
+[dev-dependencies]
+base64 = "0.22"
+qsl-analyze = { path = "../qsl-analyze" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"

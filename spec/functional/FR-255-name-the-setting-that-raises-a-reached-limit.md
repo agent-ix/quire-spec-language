@@ -275,7 +275,9 @@ its row (FR-315 "Size limits").
 | `zone_check.max_automaton_states` | `max_automaton_states` | EN-6 zone search | `ZoneCheckLimits` max_automaton_states | 1048576 states | FR-239 |
 | `zone_check.max_zone_bytes` | `max_zone_bytes` | EN-6 zone search | `ZoneCheckLimits` max_zone_bytes | 1073741824 bytes | FR-239 |
 | `certificate_check.max_certificate_edges` | `max_certificate_edges` | certificate checkers | `CertificateCheckLimits` max_certificate_edges | 16777216 edges | FR-245 |
-| `certificate_check.max_certificate_bytes` | `max_certificate_bytes` | certificate checkers | `CertificateCheckLimits` max_certificate_bytes | 1073741824 bytes | FR-245 |
+| `certificate_check.max_certificate_bytes` | `max_certificate_bytes` | certificate checkers | `CertificateCheckLimits` max_certificate_bytes; EN-5 `ExactProbLimits.document.bytes` | 1073741824 bytes | FR-245, FR-201 |
+| `certificate_check.max_working_bytes` | `max_working_bytes` | probability document writer/reader | `ExactProbLimits.document.storage_bytes`; source checker document storage ceiling | 1073741824 working bytes | FR-201, FR-282 |
+| `certificate_check.max_rank` | `max_rank` | exact reachability document writer | closed-profile Count representability ceiling; a stop requires a different supported representation, not a larger Count | 9007199254740991 rank units | FR-201 |
 | `schedule.max_demand_points` | `max_demand_points` | schedulability analysis | `ScheduleLimits` max_demand_points | 1048576 points | FR-247 |
 | `monitor.max_window_values` | `max_window_values` | window aggregates | the monitor run's max_window_values | 1048576 values | FR-194 |
 | `inspect.max_view_entries` | `max_view_entries` | typed view construction | `qsl_inspect::InspectLimits` max_view_entries | 10000000 entries | FR-297 |

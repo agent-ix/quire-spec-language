@@ -192,6 +192,29 @@ impl std::fmt::Debug for ByteProvision {
 }
 
 impl ByteProvision {
+    /// Construct a source-keyed provision and require every named source.
+    /// Names retain the caller's contextual location in a missing-input refusal.
+    pub fn admit<'a>(
+        entries: Vec<(String, String, Vec<u8>)>,
+        documents: Vec<Vec<u8>>,
+        named: impl IntoIterator<Item = (String, &'a DefinitionSourceRef)>,
+    ) -> Result<Self, ReplayRequestRefusal> {
+        let mut bytes = BTreeMap::new();
+        for (authority, identity, content) in entries {
+            bytes.insert((authority, identity), content);
+        }
+        let provision = Self { bytes, documents };
+        for (named_by, source) in named {
+            if provision.get(source).is_none() {
+                return Err(ReplayRequestRefusal::IncompleteByteProvision {
+                    requested: format!("{} {}", source.authority(), source.identity()),
+                    named_by,
+                });
+            }
+        }
+        Ok(provision)
+    }
+
     /// Look up an entry by the source it is provided for. The only public
     /// accessor this type has; there is no path- or location-typed
     /// alternative.
@@ -874,15 +897,6 @@ impl ReplayRequest {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut provision = BTreeMap::new();
-        for (authority, identity, bytes) in wire.byte_provision {
-            provision.insert((authority, identity), bytes);
-        }
-        let byte_provision = ByteProvision {
-            bytes: provision,
-            documents: wire.documents,
-        };
-
         // Completeness: every named source, the proved package's and each
         // dependency's, must have a matching entry (FR-071-AC-5, AC-9).
         let named = sources
@@ -897,14 +911,7 @@ impl ReplayRequest {
                     )
                 })
             }));
-        for (named_by, source) in named {
-            if byte_provision.get(source).is_none() {
-                return Err(ReplayRequestRefusal::IncompleteByteProvision {
-                    requested: format!("{} {}", source.authority(), source.identity()),
-                    named_by,
-                });
-            }
-        }
+        let byte_provision = ByteProvision::admit(wire.byte_provision, wire.documents, named)?;
 
         Ok(Self {
             package: wire.package,
