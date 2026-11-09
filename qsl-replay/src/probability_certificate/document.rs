@@ -1010,8 +1010,10 @@ fn arithmetic(
     match quire_exact::evaluate_rational_arithmetic(operation, None, meter) {
         quire_exact::Outcome::Completed(value) => Ok(value),
         quire_exact::Outcome::Incomplete(incomplete) => {
-            poll(cancel)?;
-            Err(ProbabilityDocumentError::Accounting(Box::new(incomplete)))
+            match cancel.tripped() {
+                Some(cause) => Err(ProbabilityDocumentError::Cancelled(cause)),
+                None => Err(ProbabilityDocumentError::Accounting(Box::new(incomplete))),
+            }
         }
         quire_exact::Outcome::Undefined(_) | quire_exact::Outcome::Refused(_) => {
             Err(ProbabilityDocumentError::Malformed)
