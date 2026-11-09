@@ -63,7 +63,7 @@ fn qualified_bounded_monitor_keys_follow_real_debt_and_ignore_allocation_order()
         owner.key(BoundedState::Open { remaining: 2 }).unwrap()
     );
     assert_eq!(
-        owner.admit(first.key(loss).unwrap().as_bytes()).unwrap(),
+        owner.admit(first.key(loss).unwrap().as_bytes()).unwrap().1,
         BoundedState::Open { remaining: 1 }
     );
 }
