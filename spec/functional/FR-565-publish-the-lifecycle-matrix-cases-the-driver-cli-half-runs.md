@@ -11,6 +11,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-286
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-294
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-296
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-287
     type: depends_on
   - target: "ix://agent-ix/quire-specification/FR-300"
@@ -35,11 +39,21 @@ pub fn lifecycle_matrix() -> &'static [MatrixCell];
 pub enum MatrixCell {
     Case(MatrixCase),
     NotApplicable { verb: Verb, kind: OutcomeKind, reason: &'static str },
+    PendingEngine { verb: Verb, kind: OutcomeKind, reason: &'static str },
 }
 
-pub fn run_case(case: &MatrixCase) -> CaseOutcome;
+pub fn run_case(case: &MatrixCase) -> Result<CaseOutcome, CaseError>;
 
-pub fn run_case_with(case: &MatrixCase, registry: &Registry, engines: &Engines) -> CaseOutcome;
+pub fn run_case_with(
+    case: &MatrixCase,
+    registry: &Registry,
+    engines: &Engines,
+) -> Result<CaseOutcome, CaseError>;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CaseStage { Read, Check, Package, Execute, Analyze, Monitor, Prove, Document }
+
+pub struct CaseError { pub stage: CaseStage, /* detail */ }
 ```
 
 `run_case` is `run_case_with` over an empty registry and `Engines::qsl()`.
@@ -48,9 +62,16 @@ manifest: the driver, which links the Kani backend through CG, passes its own
 registry through `run_case_with`. A case whose operation takes neither
 argument ignores them.
 
+`CaseError` is the failure of running a case as such, not an outcome of the
+case's operation: its `stage` is a `Copy` enum, `CaseStage`, naming the stage
+that failed (reading the case's inputs, the operation's own stage, or building
+the document), so the caller matches on it without parsing text. A case whose
+operation settles refusal, unsupported, incomplete or any other FR-564 kind
+returns `Ok`.
+
 `CaseOutcome` holds the typed library outcome, its typed FR-286
 `OutcomeDocument` (or, for a `prove` (QSL half) case, the typed FR-286
-item), and its FR-285 exit code. The comparison surface between the library
+item), and its FR-285 exit code. It holds no encoded bytes. The comparison surface between the library
 and the CLI is the typed document, not its bytes: the driver encodes the
 `OutcomeDocument` `run_case` returns and the document its CLI wrote with the
 same canonical JSON encoder, `ix_cli_kit`'s, each followed by one newline,
@@ -61,7 +82,11 @@ and compares those encodings. QSL's own `OutcomeDocument::to_bytes`
   and `OutcomeKind` is one of FR-564's eight kinds.
 - `lifecycle_matrix()` holds exactly one cell per (verb, kind) pair, 48 in
   all, in verb then kind order as FR-564's table lists them: a `Case` for each
-  applicable cell and a `NotApplicable`, carrying a reason, for each other.
+  applicable cell, a `NotApplicable`, carrying a reason, for each n/a cell,
+  and a `PendingEngine`, carrying a reason like a `NotApplicable`, for each
+  "n/a until engine" cell. A `PendingEngine`
+  cell carries no case: no document is produced for it and `run_case` cannot
+  be called on it.
 - A `MatrixCase` holds its verb and kind, every input byte the case needs
   with the identity it is read under (sources, domain packages, libraries,
   traces, snapshots), the operation's request parameters and limits, the
@@ -77,8 +102,9 @@ and compares those encodings. QSL's own `OutcomeDocument::to_bytes`
   argument spelled as its file name. `run_case` reads each source under
   `SourceIdentity::new("quire", <file name>)`, so the identities in the two
   documents agree.
-- `run_case` runs the case through QSL's library operation and returns its
-  `CaseOutcome`.
+- `run_case` runs the case through QSL's library operation and returns
+  `Ok(CaseOutcome)`, or `Err(CaseError)` naming the failed stage when the
+  case itself could not be run.
 
 ## Inputs
 
@@ -86,18 +112,22 @@ None for `lifecycle_matrix`; a `MatrixCase` for `run_case`.
 
 ## Outputs
 
-The matrix cells; for each case, a `CaseOutcome`: the library outcome, the
-typed document or item, and the exit code.
+The matrix cells; for each case, `Ok(CaseOutcome)`: the library outcome, the
+typed document or item, and the exit code, or `Err(CaseError)` with its stage.
 
 ## Behavior
 
 - `lifecycle_matrix()` shall return one cell per (verb, kind) pair of FR-564,
-  a `Case` for each applicable cell and a `NotApplicable` with its reason for
-  each other.
+  a `Case` for each applicable cell, a `NotApplicable` with its reason for
+  each n/a cell and a `PendingEngine` with its reason for each "n/a until
+  engine" cell.
 - Each `MatrixCase` shall hold every input byte it needs.
 - The `run_case` operation shall read no file.
-- When `run_case` runs a case, it shall return the outcome of the case's
-  operation, its typed FR-286 document or item, and its FR-285 exit code.
+- When `run_case` runs a case, it shall return `Ok` with the outcome of the
+  case's operation, its typed FR-286 document or item, and its FR-285 exit
+  code.
+- When a case cannot be run, `run_case` shall return `Err(CaseError)` whose
+  `stage` names the failed stage.
 - Each `MatrixCase` shall state the file name of each input and the working
   directory the driver runs `quire` in.
 - The `run_case` operation shall read each source under
@@ -109,14 +139,15 @@ typed document or item, and the exit code.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-565-AC-1 | `lifecycle_matrix()` returns 48 cells in FR-564's verb and kind order, one per (verb, kind) pair: 40 `Case` cells exactly at FR-564's applicable cells and 8 `NotApplicable` cells at its n/a cells. | Test (TC-1394) |
-| FR-565-AC-2 | For every `Case`, `run_case` returns a typed document (or, for `prove`, an item) whose category and exit code equal the case's expected category and exit code, two `run_case` calls give equal `OutcomeDocument` values, and every source identity in the document is `SourceIdentity::new("quire", <the case's file name>)`. | Test (TC-1394) |
+| FR-565-AC-1 | `lifecycle_matrix()` returns 48 cells in FR-564's verb and kind order, one per (verb, kind) pair: `Case` cells exactly at FR-564's applicable cells, `NotApplicable` cells exactly at its n/a cells, and `PendingEngine` cells exactly at its "n/a until engine" cells, each with a non-empty reason. | Test (TC-1394) |
+| FR-565-AC-2 | For every `Case`, `run_case` returns `Ok` with a typed document (or, for `prove`, an item) whose category and exit code equal the case's expected category and exit code, two `run_case` calls give equal `OutcomeDocument` values, and every source identity in the document is `SourceIdentity::new("quire", <the case's file name>)`. A case with an input the test removes returns `Err(CaseError)` whose `stage` is `CaseStage::Read`, the `Copy` stage value, and no `CaseOutcome`. | Test (TC-1394) |
 | FR-565-AC-3 | Run with the process's working directory set to an empty temporary directory, every `Case` gives the same `OutcomeDocument` as AC-2. | Test (TC-1394) |
 
 ## Dependencies
 
 - ADR-029 CB-1, CB-4: the driver CLI and the library-CLI document identity.
 - [FR-564](FR-564-produce-each-outcome-kind-of-the-lifecycle-conformance-matrix-through-the-library.md): the matrix.
+- [FR-294](FR-294-run-every-execution-backend-behind-one-seam.md), [FR-296](FR-296-select-the-execution-backend-in-the-request.md): the backend seam and choice the `execute` cases use.
 - [FR-286](FR-286-serialize-every-outcome-as-one-json-outcome-document.md): the document.
 - [FR-287](FR-287-reach-qsl-through-the-driver-cli.md): the driver CLI.
 - QSpec FR-300-AC-3, FR-301-AC-1: the library and the CLI agree.

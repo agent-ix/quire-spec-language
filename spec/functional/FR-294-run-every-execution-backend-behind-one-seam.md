@@ -65,7 +65,7 @@ The seam's types:
 | `PrepareLimits` | `compile_work_units: u64` and `code_bytes: u64`: the translation work and the generated code size one `prepare` may use. Published defaults 16777216 units and 67108864 bytes; setting names `prepare.compile_work_units` and `prepare.code_bytes` (FR-277). The interpreter translates nothing and charges neither. The counters and charge points are in "Prepare charges" below. |
 | `PrepareFailure` | `Limit(LimitExceeded)`, naming the `PrepareLimits` field, its configured value and the counter reached; `Cancelled(CancelCause)`; `Fault(InternalFault)`. It fails the whole `prepare` and has no per-entry variant. |
 | `UnsupportedEntry` | `backend: ExecutionBackendChoice` (FR-296), the backend that did not run the entry, and `cause: UnsupportedCause`. |
-| `UnsupportedCause` | `NotSupplied`: the caller supplied no such backend (FR-296); or `Untranslatable { construct: UntranslatableConstruct, location: Location }`: the first construct of the entry, in clause-node order, that the backend cannot translate, and its source location. |
+| `UnsupportedCause` | `NotSupplied`: the caller supplied no such backend (FR-296); `Untranslatable { construct: UntranslatableConstruct, location: Location }`: the first construct of the entry, in clause-node order, that the backend cannot translate, and its source location; or `EnvironmentRefused(EnvironmentRefusal)`: the host environment refused a resource every entry of that backend needs, so no entry is prepared (the JIT's only member is `ExecutableMemoryRefused`: the operating system denied executable memory, as a hardened Linux does for a `PROT_EXEC` `mmap` or `mprotect`, FR-560). |
 | `UntranslatableConstruct` | `ExpressionForm(name)`: a checked expression form the backend does not translate, by its ADR-012 form name (`literal`, `operator`, `let`, `if`, `call`, `record`, `collection`, or the owning family's form name); `ValueType(ValueType)`: a checked value type the backend has no representation for; or `Operation(NodeKey)`: the node key of a checked operation the backend does not implement. |
 
 Beside its admission, fault and cancellation arms, `CallFailure` has
@@ -132,9 +132,12 @@ As the trait signatures state.
   `CheckedPackageEvaluation::evaluate_clause` returns for the same clause and
   observations under a meter built from `accounting` holding `cancel`, or
   that call's `CallFailure`.
-- When a backend cannot run a selected entry, `prepare` shall return
-  `Ok` with that entry listed by `unsupported` with an `Untranslatable`
-  cause, and shall prepare the other selected entries.
+- When a backend cannot translate a construct of a selected entry,
+  `prepare` shall return `Ok` with that entry listed by `unsupported` with
+  an `Untranslatable` cause, and shall prepare the other selected entries.
+- When the host environment refuses a resource every entry of a backend
+  needs, `prepare` shall return `Ok` with every selected entry listed by
+  `unsupported` with an `EnvironmentRefused` cause naming the refusal.
 - When `call` or `evaluate` names an entry its `prepare` recorded
   unsupported, the prepared value shall return `CallFailure::Unsupported`
   with that entry's `UnsupportedEntry`.

@@ -39,6 +39,11 @@ calls: the gate (FR-353) runs three parts in every run and reports
 | `lifecycle-matrix` | every `Case` of FR-565's `lifecycle_matrix()` gives a document or item whose category and exit code equal the case's expected ones | `lifecycle-matrix/<verb>/<kind>` for each failing case |
 | `parity` | FR-563's runner over every non-interpreter backend the QSL workspace links reports no finding | `parity/<backend>` with the backend's findings |
 
+A `PendingEngine` cell of the matrix is reported in the `lifecycle-matrix`
+part as pending with its reason, never as passed or waived, and does not fail
+the part: the part passes when every `Case` passes, and its result names the
+pending cells.
+
 When the workspace links no non-interpreter backend, the `parity` part is
 reported `no-backend` and passes: the final path is then the interpreter
 alone, which the other two parts cover. Every parity finding, a
@@ -81,6 +86,8 @@ The FR-352 report with the three parts and the verdict; the exit code.
 - The `qualify` gate shall run the `corpus`, `lifecycle-matrix` and `parity`
   parts in every run.
 - When all three parts pass, the gate shall report `qualified` and exit 0.
+- The `qualify` gate shall list each `PendingEngine` cell with its reason in
+  the `lifecycle-matrix` part, and shall not count it as passed or waived.
 - If a `lifecycle-matrix` case's category or exit code differs from the
   case's expected one, then the gate shall report `not-qualified`, naming
   `lifecycle-matrix/<verb>/<kind>`, and exit 1.
@@ -101,7 +108,8 @@ The FR-352 report with the three parts and the verdict; the exit code.
 | FR-567-AC-2 | Through `xtask::qualify::run` under `test-support`, the AC-1 run with the matrix case set replaced by one whose `check`/`refusal` case expects exit 21 reports `not-qualified`, naming `lifecycle-matrix/check/refusal`, and exits 1, although the `corpus` part passes. | Test (TC-1396) |
 | FR-567-AC-3 | Through `xtask::qualify::run` under `test-support`, the AC-1 run with FR-295-AC-1's rounding backend supplied in place of the delegating one reports `not-qualified`, naming `parity/jit` and the finding, and exits 1. | Test (TC-1396) |
 | FR-567-AC-4 | The AC-1 run with no non-interpreter backend linked reports the `parity` part `no-backend` and `complete-v1: qualified`, exit 0; the AC-1 run whose parity reference (substituted under `test-support`) returns `Fault` reports `not-qualified`, naming `parity/jit` with a `reference-fault` finding, exit 1. | Test (TC-1396) |
-| FR-567-AC-5 | The AC-1 report's QSL version equals `env!("CARGO_PKG_VERSION")` evaluated in the `quire-spec-language` crate of the same build; built from a scratch copy whose `quire-spec-language` package version is changed to `9.9.9`, the report names `9.9.9`. | Test (TC-1396) |
+| FR-567-AC-5 | The AC-1 report's QSL version is the quire-spec-language crate version (the root package's version, not the `xtask` crate's) and equals `env!("CARGO_PKG_VERSION")` evaluated in the `quire-spec-language` crate of the same build; built from a scratch copy whose `quire-spec-language` package version is changed to `9.9.9`, the report names `9.9.9`. | Test (TC-1396) |
+| FR-567-AC-6 | The AC-1 run lists the `lifecycle-matrix` part's `PendingEngine` cells, each with its reason and as pending; a run whose replacement cell set (under `test-support`) adds one more `PendingEngine` cell lists it too and still reports `qualified`; the same replacement set with one `Case` failing reports `not-qualified`, naming `lifecycle-matrix/<verb>/<kind>` of that case and no pending cell. | Test (TC-1396) |
 
 ## Dependencies
 

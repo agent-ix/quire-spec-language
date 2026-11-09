@@ -47,7 +47,9 @@ the same package, entry, arguments, environment and accounting limits
    never a verdict. An entry the backend cannot translate settles
    unsupported for that entry, listed by `unsupported` with FR-294's
    `UnsupportedEntry` and cause `Untranslatable { construct, location }`
-   naming the first construct it cannot translate.
+   naming the first construct it cannot translate. A host refusal of a
+   resource every entry needs lists every selected entry with FR-294's
+   `EnvironmentRefused` cause.
 7. **No effects.** Generated code performs no I/O and calls only the kernel
    and the semantic-value runtime.
 

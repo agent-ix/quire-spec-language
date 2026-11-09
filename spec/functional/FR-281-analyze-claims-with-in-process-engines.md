@@ -72,11 +72,13 @@ candidate.
   `invalid_capability`/`ambiguous-backend`, and an item no engine advertises
   settled `unsupported` with `unsupported_projection`/
   `unsupported-requested-capability` naming its kind, exactly as through
-  `prove`. That record carries the diagnostic and no `cause`: QSpec FR-331's
-  closed `unsupported` causes hold no claim-kind cause, so there is no
-  `unsupported-claim-kind` cause, and the claim kind travels in the
-  diagnostic's FR-272 payload (the item's FR-290 kind, and its
-  `requirements` when it carries them).
+  `prove`. That record carries the diagnostic as its
+  `diagnostic` member (FR-286 items, QSpec FR-331) and no `cause`: QSpec
+  FR-331 gives an `unsupported` record exactly one of `cause` and
+  `diagnostic`, and its closed `unsupported` causes hold no claim-kind
+  cause, so there is no `unsupported-claim-kind` cause and no `backend-absent`
+  cause. The claim kind travels in the diagnostic's FR-272 payload (the
+  item's FR-290 kind, and its `requirements` when it carries them).
 - `analyze` reads no manifest to route an item: it computes no candidate set,
   and the only dispositions it settles are FR-507's `inapplicable-kind` and
   the `unknown-backend` and `inconsistent-candidates` checks below. An
@@ -366,7 +368,7 @@ holding the `AdmissionFailure`, and no record.
 | --- | --- | --- |
 | FR-281-AC-1 | Over a finite probabilistic model, an EN-5 item claiming a reachability probability bound that holds settles `proved` with category success after the EN-5 certificate checker accepts its certificate, and the record carries the certificate. | Test (TC-762) |
 | FR-281-AC-2 | Over a finite model whose invariant one transition breaks, an EN-1 item claiming that invariant settles `refuted`, the record carries the counterexample, and replaying that counterexample through `replay` reproduces it. | Test (TC-762) |
-| FR-281-AC-3 | A request of three items over `Engines::qsl()`, one whose claim kind no layer-A engine advertises, settled `Unsupported` with the diagnostic `unsupported_projection`/`unsupported-requested-capability` naming that kind (the settlement `negotiate_*` gives its empty candidate set), one an engine proves and one an engine refutes, each settled `Supported` on its engine, returns exactly three records, the first settled by its `unsupported` disposition with that diagnostic naming the claim kind. | Test (TC-762) |
+| FR-281-AC-3 | A request of three items over `Engines::qsl()`, one whose claim kind no layer-A engine advertises, settled `Unsupported` with the diagnostic `unsupported_projection`/`unsupported-requested-capability` naming that kind (the settlement `negotiate_*` gives its empty candidate set), one an engine proves and one an engine refutes, each settled `Supported` on its engine, returns exactly three records, the first settled by its `unsupported` disposition, its record carrying the `unsupported_projection`/`unsupported-requested-capability` diagnostic naming the claim kind as its `diagnostic` member and no `cause`, and the FR-286 item serialized from it holding that diagnostic. | Test (TC-762) |
 | FR-281-AC-4 | With the test engine's certificate altered in one member before checking, the item settles `inconclusive` with cause `CertificateRejected`; with an engine that reports a proof no core certificate checker covers (EN-1 under partial-order reduction, ADR-021 RV-1), the item settles `proved`, category success, with the certification `uncertified` naming that engine, and the same item unreduced settles `certified`. This clause is observed at `analyze` over an engine set holding EN-1: the reduced item is an EN-1 item whose request selects partial-order reduction (FR-159), so EN-1 reports `HoldsReduced` and no engine or checker-less seam is added to `analyze`. The step engine's absent-certificate mapping (`BackendCertificate::Absent` to `uncertified`, FR-146) is a separate rule and does not satisfy this clause. | Test (TC-763) |
 | FR-281-AC-5 | With a test engine that reports a counterexample replay does not reproduce, the item settles `inconclusive` with cause `replay_parity`; with one whose counterexample names a parameter the function lacks, `inconclusive` with cause `replay_refused`. | Test (TC-763) |
 | FR-281-AC-6 | The AC-1 item with its engine's state budget set to 1 settles `incomplete` with the state-budget cause. | Test (TC-763) |

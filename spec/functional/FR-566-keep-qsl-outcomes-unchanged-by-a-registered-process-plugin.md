@@ -78,7 +78,7 @@ FR-286 documents and items; candidate sets (FR-075).
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-566-AC-1 | For every `Case` of `lifecycle_matrix()`, `run_case_with` over configurations 1, 2 and 3 returns equal `OutcomeDocument` (or item) values and equal exit codes; FR-275-AC-1's `package` bytes are byte-equal in the three. As a control that configuration 3 is live, FR-281-AC-14's item settled `Supported(qsl.test-plugin)` runs on the test plugin provider in configuration 3 and its record names `qsl.test-plugin` with certification `trusted`. | Test (TC-1395) |
+| FR-566-AC-1 | For every `Case` of `lifecycle_matrix()`, `run_case_with` over configurations 1, 2 and 3 returns `Ok` with equal `OutcomeDocument` (or item) values and equal exit codes; FR-275-AC-1's `package` bytes are byte-equal in the three. As a control that configuration 3 is live, FR-281-AC-14's item settled `Supported(qsl.test-plugin)` runs on the test plugin provider in configuration 3 and its record names `qsl.test-plugin` with certification `trusted`. | Test (TC-1395) |
 | FR-566-AC-2 | For FR-281-AC-1's item, the candidate set in configuration 3 equals configuration 2's; for an item of a kind the test plugin advertises, configuration 3's candidate set is configuration 2's plus `qsl.test-plugin`, and registering the plugin's descriptor before or after the linked ones gives equal candidate sets. | Test (TC-1395) |
 
 ## Dependencies
