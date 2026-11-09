@@ -698,10 +698,21 @@ second semantic expression language. The discriminator versions this closed
 member contract without adding a top-level certificate field. FR-196's
 complete binding-bearing key basis remains authoritative despite QSpec's
 older five-component illustration. Required exact ranks and Bellman
-equalities both remain CE-3 obligations. This first codec slice is untimed,
-acyclic, unbounded eventual reachability with one initial state and at most
-one binding; unsupported forms retain all broader CE obligations and are
-not coerced into this profile. FR-282 defines the independent checked-source
+equalities both remain CE-3 obligations. The codec admits untimed acyclic
+unbounded eventual reachability and origin-activated event-position
+`eventually[0,h] holds(P)`, each with one initial state and at most one
+binding. Bounded checking extends the same reachability/v1 capability:
+the closed member contract and extensional objective meaning are unchanged,
+and existing unbounded documents retain their meaning. FR-196 already owns
+the complete formula-monitor identity; FR-197 already owns bounded induction.
+The qualified checker independently builds the bounded monitor product using
+qsl-eval-owned canonical key and terminal false-extension operations, with
+ranks matching real monitor horizon/debts rather than unbounded model height.
+A cyclic model is admitted when its bounded undecided product terminates.
+Dyadic lower/upper codec support and bounded FR-202 refutation replay remain
+outstanding; no interval becomes an exact document. Unsupported forms retain
+all broader CE obligations and are not coerced into this profile.
+FR-282 defines the independent checked-source
 S1 to S3 facade so S4's emission refusal cannot prevent fresh checking.
 
 - Claims over every scheduler, rare-event bounds, thresholds close to the

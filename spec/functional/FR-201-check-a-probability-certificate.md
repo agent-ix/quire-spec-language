@@ -93,7 +93,7 @@ product state form `{product_key}` and the second as `{member}`.
 
 ### Closed reachability document profile
 
-For the untimed, acyclic, unbounded `eventually` reachability slice, the
+For untimed unbounded `eventually` reachability and the bounded subset below, the
 document codec SHALL implement the following QSL-owned profile of QSpec
 FR-412's open, nonempty `objective` object. This profile does not narrow the
 other objective obligations above and below; unsupported forms SHALL remain
@@ -111,9 +111,15 @@ explicitly unsupported rather than be encoded as this profile.
   compare the exact set before acceptance. It SHALL rederive optimization
   from the checked claim, not from certificate values.
 - Admission SHALL require one subject initial state, at most one admitted
-  claim binding, no clocks, reward, authored fairness, horizon or other
-  temporal form, and an acyclic continuation graph apart from implicit
-  terminal stutter. Workload admission SHALL require a single resolved
+  claim binding, no clocks, reward or authored fairness. The unbounded
+  subset SHALL retain its acyclic continuation graph restriction apart
+  from implicit terminal stutter. The bounded subset SHALL admit only
+  origin-activated event-position `eventually[0,h] holds(P)` with a finite
+  nonnegative position horizon and a checked state predicate P; its
+  undecided monitor product SHALL terminate, even when the underlying model
+  graph is cyclic. Other temporal forms remain unsupported by this profile.
+  Both subsets retain FR-196's Markov successor restrictions.
+  Workload admission SHALL require a single resolved
   distribution at each live state. Unsupported shape, profile version,
   optimization or certificate kind SHALL give an explicit unsupported
   result with no accepted certificate.
@@ -139,7 +145,9 @@ explicitly unsupported rather than be encoded as this profile.
   probabilities SHALL lie in [0,1].
 - Keys SHALL use FR-196's authoritative complete six-component basis,
   including the actual `binding`, through the shared
-  `ProbabilityProductKey::for_model_state` helper for this slice. The stale
+  `ProbabilityProductKey::for_model_state` helper for the unbounded subset.
+  The bounded subset SHALL use the existing complete formula-monitor
+  representation, with null accumulator and pending components. The stale
   five-component illustrative tuple in QSpec FR-412/schema documentation
   SHALL NOT cause binding to be dropped. Actual absent monitor,
   accumulator and pending components remain null. The reader SHALL admit
@@ -148,7 +156,7 @@ explicitly unsupported rather than be encoded as this profile.
 - The checker SHALL check Bellman equality for the independently selected
   operator at every live state, target value 1 and non-target terminal
   value 0, and CE-3's positive-value rank progress as well as threshold
-  satisfaction. It MAY emit checker-verified acyclic height ranks, with
+  satisfaction. For the unbounded subset it MAY emit checker-verified acyclic height ranks, with
   terminal height 0 and live height one plus the maximum successor height;
   target ranks can be 0. Rank overflow SHALL stop under a named limit.
   Equality alone SHALL NOT discharge the required ranking condition.
@@ -162,6 +170,51 @@ explicitly unsupported rather than be encoded as this profile.
   target or optimization SHALL never establish this claim. Graph,
   arithmetic, parsing and source admission SHALL obey caller limits and
   `&Cancel`, preserving stopped/cancelled outcomes without truth values.
+
+#### Bounded event-position checking
+
+The bounded subset is a capability extension of the same
+`quire.probability-objective/reachability/v1` document contract: its members,
+extensional target meaning, optimization, fairness and complete-key transport
+do not change. Existing unbounded documents retain their meaning and admission.
+No second formula AST, opaque monitor id or public horizon field is introduced.
+
+- The checker SHALL independently construct the model/monitor product using
+  `qsl-eval`'s qualified property-automaton translation, initialization and
+  transition semantics. It SHALL read position 0 during initialization and
+  one subsequent position per observation step, including the inclusive
+  position h. At a terminal model state it SHALL apply the existing FR-126
+  profile false-extension closure, rather than invent model progress or
+  infer acceptance from current predicate truth.
+- `qsl-eval` SHALL own a canonical monitor-state key operation alongside its
+  existing automaton key ownership and a terminal false-extension operation
+  usable by the qualified checker. Those operations SHALL preserve FR-196's
+  checked formula/profile/origin/binding context and complete parsed FR-338
+  automaton key, including real remaining horizon/debts for running states
+  and counter-free absorbing decided verdicts. Analyzer-local `StateId`
+  values SHALL NOT become certificate identity; the checker SHALL NOT copy
+  analyzer monitor semantics or trust its enumerated product.
+- Targets SHALL be exactly the independently rederived accepting decided
+  product states. Accepting states have value 1; rejecting decided states
+  have value 0; neither is expanded. Bellman equality applies at every
+  undecided state over actual model/monitor successors.
+- Bounded ranks SHALL agree with the independently rederived remaining
+  event-position horizon/debts under QSpec FR-412's finite-horizon rule:
+  each undecided state's rank is its actual remaining future positions,
+  and each decided state's rank is 0. Every undecided observation successor
+  that remains undecided consumes one position. The checker SHALL reject
+  a substituted acyclic-model height or altered remaining-horizon rank
+  even if Bellman equalities and general positive-value progress hold.
+  A wrong bounded rank is `RankBroken` at the first differing full product
+  key in canonical order; missing rank coverage remains malformed coverage.
+- Only FR-197 `Exact` results can emit this profile's exact document.
+  `Bounds` and `PrecisionBudget` SHALL preserve their explicit outcomes;
+  dyadic lower/upper documents remain unsupported by this closed profile
+  until their own certificate profile is defined. An interval SHALL NOT be
+  serialized as an exact rational certificate. This admission does not
+  establish bounded refutation/witness replay through FR-202's unbounded
+  typed route; that work remains outstanding, as do broader certificate
+  forms required by this requirement.
 
 ### General checking conditions
 
@@ -275,7 +328,10 @@ explicitly unsupported rather than be encoded as this profile.
 | FR-201-AC-8 | Over each of those ACs' own model, the checked-subject form gives the verdict, rule and locus that AC states: AC-1's certificate over §15.4's `Link`, including the `4/5` replaced by `9/10` rejection; AC-2's `LongRun` certificate over §15.3's model and its dyadic `Lower` certificate over §15.1's; AC-3's `FairTerminates` certificates over §15.6's `Coin` model, the fairness-removed one rejected; and AC-5's tight-action cases over its `Opt` model. | Test (TC-636) |
 | FR-201-AC-9 | For an admitted acyclic eventual claim, writing and reading the closed profile preserves identity, exact rational values, complete keys, targets and required ranks byte for byte. Duplicate/out-of-order rows, unreduced 2/4, denominator 0, missing ranking, extra fields, padded base64url and a model-only key are rejected. | Test |
 | FR-201-AC-10 | A valid document offered for another identity refuses before enumeration; replacing its targets or optimization while retaining valid Bellman rows refuses objective mismatch. A same-model key with a different binding is rejected rather than merged. Altering a value fails equality; removing or breaking positive-value rank progress fails ranking even when equalities hold. | Test |
-| FR-201-AC-11 | Minimum AtLeast, maximum AtMost and resolved-workload exact proofs pass the profile checker at an attained threshold; a threshold strictly beyond the certified initial value fails. Cyclic, timed, bounded, reward, fair, multi-initial and multi-binding cases and non-exact kinds return explicit unsupported with no accepted certificate. Pre-cancelled input and exhausted byte/state/edge/arithmetic budgets stop without a truth value. | Test |
+| FR-201-AC-11 | Minimum AtLeast, maximum AtMost and resolved-workload exact proofs pass the profile checker at an attained threshold; a threshold strictly beyond the certified initial value fails. Unbounded cyclic, timed, reward, fair, multi-initial and multi-binding cases, bounded forms outside the admitted subset and non-exact kinds return explicit unsupported with no accepted certificate. Pre-cancelled input and exhausted byte/state/edge/arithmetic budgets stop without a truth value. | Test |
+| FR-201-AC-12 | ADR-028 §15.4's bounded Deliver at horizon 2 gives accepted exact minimum AtLeast at 24/25, maximum AtMost at 99/100 and Even workload at 391/400; after one loss the minimum is 4/5 and workload 17/20. Each threshold beyond the certified side fails. Existing unbounded profile documents retain their verdict and canonical bytes. | Test |
+| FR-201-AC-13 | A model that stays undelivered with probability 1/2 and delivers with probability 1/2 per step has bounded horizon-2 probability 3/4 despite its raw self-cycle. The initial and one-loss visits share the model key but have distinct full formula-bearing keys and ranks 2 and 1. Horizon 0 accepts iff P holds at position 0. A terminal undelivered state closes to rejection by false extension without enumerating stutter positions. | Test |
+| FR-201-AC-14 | For AC-13's valid certificate, replacing a running monitor with a local StateId, null, another remaining horizon, or another binding cannot certify the claim. Changing rank 2 to 3 while retaining valid values fails RankBroken at that full key. An exact document fabricated from a dyadic interval is never emitted; unsupported lower/upper documents and precision stops produce no accepted exact certificate. | Test |
 
 ## Dependencies
 
