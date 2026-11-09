@@ -180,17 +180,32 @@ fn an_unbounded_extent_clause_settles_unsupported_through_the_provider_entry() {
     }
 }
 
-/// A clause negotiated to a backend other than EN-1 is not run: it settles
-/// `unsupported`, and a clause the package does not hold settles
+/// A clause negotiated to EN-4 is not run: EN-4 does not advertise its
+/// temporal kind/mode, so the ordered consistency check refuses it before
+/// engine work. A clause the package does not hold settles
 /// `invalid-request` without an engine run.
 #[test]
 fn a_clause_routed_off_en1_or_absent_from_the_package_is_not_run() {
     let world = world(model_world::counter());
     let off = through_analyze(&world, work(&world, "en-4", ClauseLimits::default()));
     assert!(
-        matches!(off.value(), TerminalValue::Unsupported(_)),
+        matches!(
+            off.value(),
+            TerminalValue::Declined {
+                cause: ProofRefusalCause::InvalidInput,
+                code: DeclineCode::Qsl(Code::InvalidRequest)
+            }
+        ),
         "{off:?}"
     );
+    assert_eq!(
+        off.diagnostic(),
+        Some(CatalogCode::new(
+            "invalid_capability",
+            "inconsistent-candidates"
+        ))
+    );
+    assert!(off.backend().is_none());
 
     let mut absent = work(&world, "en-1", ClauseLimits::default());
     absent.item.claim = OccurrenceKey::new(
