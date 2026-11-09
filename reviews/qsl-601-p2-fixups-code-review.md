@@ -1,5 +1,5 @@
 ---
-id: SR-20261109202150
+id: SR-(commit)
 title: "Code review — l5/p2-render follow-up: doctest lane declarations and checked_handoff fixtures"
 type: SpecReview
 analysis: code-review
@@ -63,13 +63,13 @@ healthy change: adding a doctest to a crate.
 | FND-002 | fixed | `workspace_empty!` is removed; `WORKSPACE_EMPTY` is a plain const slice. |
 | FND-003 | fixed | The doc comment now reads "The suites that pass no test in the `make ci` workspace lanes; one list serves both ..."; the provenance prose is gone. |
 | FND-004 | fixed | FND-007 (accepted-no-change) and FND-008 (fixed) have disposition rows; SHAs are removed from both records' scope (garbled sentence filed as FND-006). |
+| FND-001 | rejected | NFR-014-AC-5 and NFR-014-AC-7 mandate that a declared-empty suite gaining any test refuses as drift, so the rule is a spec requirement, not ceremony. The finding was wrong against the spec. The guard is restored and both workspace lanes share `WORKSPACE_EMPTY`, with the default lane adding `ROOT_DOCTESTS_EMPTY` through `Lane::extra`. |
+| FND-005 | fixed | `evaluate_declared` again flags `suite.running != 0 \|\| suite.counts.filtered != 0`. `a_declared_suite_that_gains_a_passing_test_fails` and the `wrongly_declared` doc-workspace fixture again assert NFR-014-AC-5/AC-7. |
+| FND-006 | fixed | reviews/qsl-601-code-review.md reads "Compared with the stale-branch implementation, dropping `package_id` ...". |
+| FND-007 | fixed | The `evaluate` doc comment reads "A declared-empty suite must register nothing: no test run, ignored or measured, and none filtered out", which matches the restored code. |
 
-## New dispositions (round 2)
+## New findings (disposition pass 2)
 
-| FND | outcome | reason |
-| --- | --- | --- |
-| FND-001 | fixed | Option (b): the guard rule is restored exactly as on integration, so NFR-014-AC-5/AC-7 and TC-950 hold. A declared-empty suite that gains any test fails. The tests that assert it are restored. |
-| FND-005 | fixed | The `evaluate` change and the renamed test and `over_declared` fixture are reverted; the guard again requires a declared-empty suite to register nothing. |
-| FND-006 | fixed | The garbled sentence in reviews/qsl-601-code-review.md now reads "Compared with the stale-branch implementation, dropping ...". |
-| FND-007 | fixed | The `evaluate` doc comment is back to the integration text, which matches the restored code. |
-
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | Regression of FND-003. Reverting the guard also restored `WORKSPACE_EMPTY`'s old doc comment. It again says the default-feature and all-feature runs "listed the same suites", which is false: the default lane adds `ROOT_DOCTESTS_EMPTY`. It again carries the "retained `make ci` log of the QSL#670 gate ... older head" provenance prose. | xtask/src/test_suites.rs:191-194 |

@@ -188,10 +188,9 @@ fn feature_argument(argument: &str) -> FeatureArgument {
 
 const NO_DOC_EXAMPLE: &str = "no executable doc example in the library";
 
-/// The zero-pass suites of the retained `make ci` log of the QSL#670 gate
-/// (its default-feature and all-feature workspace runs listed the same
-/// suites). That log is from an older head; the guard's own first run at a
-/// new head is what checks this list against the tree.
+/// The zero-pass suites every lane's workspace run shares. The default-feature
+/// lane adds [`ROOT_DOCTESTS_EMPTY`] through its `extra` slice; the guard's own
+/// run at a head is what checks this list against the tree.
 const WORKSPACE_EMPTY: &[EmptySuite] = &[
     EmptySuite {
         source: "qsl-bench/src/bin/qsl-bench-probe.rs",
