@@ -26,6 +26,11 @@ use crate::automaton::translate::PropertyAutomaton;
 /// An automaton a [`Monitor`] reads: its initial state, the transitions out
 /// of a state, and how many acceptance sets it carries.
 pub trait SafetyAutomaton {
+    /// A viability result established by the translation itself, when it
+    /// has one. `None` asks the generic cycle search to decide it.
+    fn known_viability(&self, _state: StateId) -> Result<Option<bool>, AutomatonError> {
+        Ok(None)
+    }
     /// The number of acceptance sets; a safety automaton carries none.
     fn acceptance_sets(&self) -> usize;
 
@@ -95,6 +100,9 @@ impl SafetyAutomaton for Gba {
 }
 
 impl SafetyAutomaton for PropertyAutomaton {
+    fn known_viability(&self, state: StateId) -> Result<Option<bool>, AutomatonError> {
+        self.bounded_eventually_viability(state)
+    }
     fn acceptance_sets(&self) -> usize {
         self.acceptance_set_count()
     }
@@ -117,6 +125,9 @@ impl SafetyAutomaton for PropertyAutomaton {
 }
 
 impl<A: SafetyAutomaton + ?Sized> SafetyAutomaton for Box<A> {
+    fn known_viability(&self, state: StateId) -> Result<Option<bool>, AutomatonError> {
+        (**self).known_viability(state)
+    }
     fn acceptance_sets(&self) -> usize {
         (**self).acceptance_sets()
     }
@@ -359,6 +370,10 @@ impl<A: SafetyAutomaton> Monitor<A> {
     /// the path viable, and marks a state dead once every target is dead.
     fn viable(&mut self, state: StateId) -> Result<bool, AutomatonError> {
         if let Some(known) = self.known_viable(state) {
+            return Ok(known);
+        }
+        if let Some(known) = self.automaton.known_viability(state)? {
+            self.slot(state).viable = Some(known);
             return Ok(known);
         }
         let mut path: Vec<(StateId, usize)> = vec![(state, 0)];
