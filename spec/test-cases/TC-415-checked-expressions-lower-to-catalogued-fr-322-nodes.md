@@ -26,7 +26,7 @@ optional field's leaf path without `inner`.
 
 Scope: FR-093-AC-1 to FR-093-AC-6, FR-093-AC-8,
 FR-093-AC-11, FR-093-AC-14, FR-093-AC-15, FR-093-AC-30, FR-093-AC-31,
-FR-093-AC-32, FR-093-AC-51, FR-093-CON-1.
+FR-093-AC-32, FR-093-AC-51, FR-093-AC-62, FR-093-CON-1.
 
 ## Test Procedure
 
@@ -113,6 +113,8 @@ cause's code is always `stage_limit_exceeded` and its cause the limit kind's
 (`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
 The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
 `stage_limit_exceeded`/`node-count-exceeded` directly.
+15. Check `w` of FR-093-AC-62 and `a * b`, and read the accessor's key and
+    `Location` for each operation.
 
 ## Expected Results
 
@@ -162,3 +164,6 @@ The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
   mode `rounding` `nearest-even` and the three arguments in call order; the
   wrong-arity and wrong-width calls refuse `ill_typed`/`type-mismatch` and
   emit no node.
+- Step 15: the multiplication's key equals its graph node's id, the two
+  `a + b` operations share one key with two `Location`s, and `a * b`'s key
+  differs from the others.

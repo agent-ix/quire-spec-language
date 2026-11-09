@@ -35,10 +35,12 @@ contract. This requirement makes the ruling checkable.
   safe wrapper `PreparedJit` SHALL uphold the contract's invariants.
 - The `extern "C"` trampolines and shims that generated code calls (the
   entries of FR-561's `KernelTable` and the helpers that adapt them) SHALL
-  be defined inside `qsl_jit::exec`. The frame the generated code runs over
-  is `EntryFrame`, a typed structure defined in `exec` that holds the
-  argument handles, the `KernelTable`, the meter and `&Cancel`; the one
-  entry signature is `extern "C" fn(*const EntryFrame) -> u32`, and no
+  be defined inside `qsl_jit::exec`, each a module symbol fixed at link time:
+  no function pointer to a shim is held in writable frame memory. The frame
+  the generated code runs over is `EntryFrame`, a typed structure defined in
+  `exec` that holds the argument handles and the meter, and holds neither a
+  `KernelTable` nor a `&Cancel`; cancellation is polled through the meter
+  (FR-277). The one entry signature is `extern "C" fn(*const EntryFrame) -> u32`, and no
   opaque handle crosses the boundary of `exec` in its place. No `unsafe` item, and no `extern "C"` function that
   generated code calls, exists outside `exec`.
 - `tools/arch-lint` SHALL provide the check `unsafe-confinement`, run as
@@ -78,6 +80,8 @@ and item; `PreparedJit` and its calls.
   the files of `qsl_jit::exec`.
 - `PreparedJit` shall convert to the entry signature only addresses it
   recorded at generation for that signature.
+- The `EntryFrame` shall hold no function pointer, no `KernelTable` and no
+  `&Cancel`.
 - When an entry returns a status outside the closed status type, the
   `PreparedJit` wrapper shall return `Fault`.
 
@@ -89,7 +93,7 @@ and item; `PreparedJit` and its calls.
 | FR-568-AC-2 | A `compile_fail` doctest that keeps a callable entry of a `PreparedJit` past the `PreparedJit`'s drop fails to compile, with a compiling control that calls within the borrow. | Test (TC-1400) |
 | FR-568-AC-3 | `PreparedJit` refuses, with `Fault` and without calling, an entry whose recorded signature is not the entry signature (a test hook records one wrongly); a test entry that returns a status outside the closed status type yields `Fault` and no value. | Test (TC-1400) |
 | FR-568-AC-4 | The FR-561-AC-3 call-target check and the FR-563 parity gate pass for the Cranelift JIT over the default generated units, with every call entering generated code through `qsl_jit::exec` and every `extern "C"` call target of the generated blocks defined in `qsl_jit::exec`. | Test (TC-1400) |
-| FR-568-AC-5 | A `compile_fail` doctest outside `qsl_jit::exec` that names `EntryFrame` or builds one fails to compile, and a doctest that calls through `PreparedJit` compiles; for every entry of the default generated units the Cranelift signature `PreparedJit` recorded at generation is one pointer parameter and a `u32` result, the signature of `extern "C" fn(*const EntryFrame) -> u32`, and a test hook that records a two-parameter signature makes `PreparedJit` refuse with `Fault` as in AC-3. | Test (TC-1400) |
+| FR-568-AC-5 | A `compile_fail` doctest outside `qsl_jit::exec` that names `EntryFrame` or builds one fails to compile, and a doctest that calls through `PreparedJit` compiles; for every entry of the default generated units the Cranelift signature `PreparedJit` recorded at generation is one pointer parameter and a `u32` result, the signature of `extern "C" fn(*const EntryFrame) -> u32`, and a test hook that records a two-parameter signature makes `PreparedJit` refuse with `Fault` as in AC-3. `EntryFrame`'s fields are the argument handles and the meter alone: a test inside `exec` over its field types finds no function-pointer, `KernelTable` or `Cancel` type (FR-561-AC-4). | Test (TC-1400) |
 
 ## Dependencies
 
