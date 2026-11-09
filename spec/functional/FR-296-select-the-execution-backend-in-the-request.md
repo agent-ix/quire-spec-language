@@ -90,7 +90,7 @@ before any stage.
 | FR-296-AC-1 | An `execute` request that names no backend runs `seven` on the interpreter and completes with 7. | Test (TC-781) |
 | FR-296-AC-2 | An `execute` request choosing `jit` with `SuppliedBackends::default()` returns `CallFailure::Unsupported(UnsupportedEntry { backend: Jit, cause: NotSupplied })`, category unsupported (exit 21), and no stage runs. | Test (TC-781) |
 | FR-296-AC-3 | With a test JIT that lists one entry `unsupported` with cause `Untranslatable`, and with a test JIT that lists the entry with cause `EnvironmentRefused(ExecutableMemoryRefused)`, `execute` of that entry returns `CallFailure::Unsupported` with that `UnsupportedEntry`, category unsupported (exit 21), and the interpreter is never called. | Test (TC-781) |
-| FR-296-AC-4 | `ExecutionBackendChoice::default()` is `Interpreter`; a test JIT passed as `SuppliedBackends { aot: None, jit: Some(&jit) }` through the blanket `SuppliedBackend` implementation runs `seven` when `jit` is chosen and is the only backend whose `prepare` is called, and the call completes with 7. | Test (TC-781) |
+| FR-296-AC-4 | `ExecutionBackendChoice::default()` is `Interpreter`; a test JIT passed as `SuppliedBackends { aot: None, jit: Some(&jit) }` through the blanket `SuppliedBackend` implementation runs `seven` when `jit` is chosen and is the only backend whose `prepare` is called, and the call completes with 7; the same holds when the call runs through `qsl_replay::backends::run_with_backends`. | Test (TC-781) |
 
 ## Dependencies
 

@@ -70,9 +70,7 @@ Measured on QSL `main` and quire-driver `main` on 2026-10-01.
   and literal codes in `main.rs` (`20`, `21`, `30`), so no single function
   owns it.
 - The stage entries live in `qsl_replay::spine` (`compile`, `run`,
-  `run_clause`), `qsl_replay::backends` (`run_with_backends`, the `run`
-  entry that takes the caller's backends and `PrepareLimits`) and
-  `qsl_replay::replay`. Each takes explicit limits. None
+  `run_clause`) and `qsl_replay::replay`. Each takes explicit limits. None
   takes a cancellation input.
 - The registry is QSL layer R, `qsl_route::Registry` (FR-075, FR-076,
   FR-080). The driver builds it from compiled-in descriptors and passes it
