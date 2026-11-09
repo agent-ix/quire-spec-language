@@ -8,6 +8,7 @@ use quire_exact::{Integer, Value};
 use crate::common::{
     int, interpreted, jitted, package_with_division, prepare, unsupported_names, UNLIMITED,
 };
+use ix_trace_rs::trace;
 
 const SOURCE: &str = "\
  function mulwide using v(a: Int[0, 4000000000000000000], b: Int[0, 4000000000000000000]): Integer pure { a * b }\n\
@@ -113,6 +114,7 @@ fn arguments_of(function: &str) -> Vec<Vec<Value>> {
 /// The JIT prepares every function, and each call returns the interpreter's
 /// outcome with the interpreter's charges, over operands on both sides of the
 /// machine word (a zero divisor, `Undefined`, is among them).
+#[trace("TC-1385")]
 #[test]
 fn every_function_agrees_with_the_interpreter_on_value_and_charges() {
     let package = package_with_division(SOURCE);
@@ -136,6 +138,7 @@ fn every_function_agrees_with_the_interpreter_on_value_and_charges() {
 
 /// With `work_units` at each value below the interpreter's spend, the JIT
 /// stops at the same charge point with the same `Incomplete`.
+#[trace("TC-1385")]
 #[test]
 fn a_denied_charge_stops_the_jit_where_it_stops_the_interpreter() {
     let package = package_with_division(SOURCE);
@@ -155,6 +158,7 @@ fn a_denied_charge_stops_the_jit_where_it_stops_the_interpreter() {
 
 /// The integer-bit limit is the kernel's: a product wider than the limit
 /// refuses on the handle path as it does in the interpreter.
+#[trace("TC-1385")]
 #[test]
 fn a_result_wider_than_the_integer_bit_limit_is_the_kernels_refusal() {
     let package = package_with_division(SOURCE);

@@ -18,9 +18,8 @@ use quire_checked::node::Visit;
 use quire_exact::{
     compare_keys, evaluate_decimal, evaluate_integer_arithmetic, evaluate_rational_arithmetic,
     form, form_grouped, member_equal, Charge, ChargePoint, CollectionKind, CollectionType,
-    CollectionValue, Decimal, DecimalOperation, DecimalType, Integer, IntegerArithmetic,
-    IntegerInterval, LimitKind, Meter, Rational, RationalArithmetic, Refusal, Undefined, Value,
-    ValueType,
+    CollectionValue, Decimal, DecimalOperation, Integer, IntegerArithmetic, IntegerInterval,
+    LimitKind, Meter, Rational, RationalArithmetic, Refusal, Undefined, Value, ValueType,
 };
 use quire_semantic_value::stop::{outcome_into_stop, Stop};
 
@@ -325,19 +324,19 @@ impl<'t> Spec<'t> {
 #[derive(Debug)]
 pub struct Iteration {
     /// The collection iterated.
-    pub source: Arc<CollectionValue>,
+    pub(crate) source: Arc<CollectionValue>,
     /// The position of the next element.
-    pub next: usize,
+    pub(crate) next: usize,
     /// Whether an element's body result is awaited.
-    pub awaiting: bool,
+    pub(crate) awaiting: bool,
     /// The kept results (`map`, `filter`, `only`).
-    pub results: Vec<Value>,
+    pub(crate) results: Vec<Value>,
     /// For a `map` or `filter`, the source position of each of `results`.
-    pub sources: Vec<usize>,
+    pub(crate) sources: Vec<usize>,
     /// The running total or accumulator.
-    pub accumulator: Option<Value>,
+    pub(crate) accumulator: Option<Value>,
     /// The count of admitted occurrences.
-    pub count: Integer,
+    pub(crate) count: Integer,
 }
 
 /// What an absorbed body result leaves to do.
@@ -345,13 +344,6 @@ pub struct Iteration {
 pub enum Absorbed {
     /// Go on to the next element, having absorbed the result.
     Continue,
-    /// A `sum` summand awaits the host's addition: it passes the running total
-    /// and the summand to its own sum, stores the new total in
-    /// [`Iteration::accumulator`], and goes on.
-    ///
-    /// The payload is the running total (absent before the first summand) and
-    /// the body's result; it is boxed to keep the common variants small.
-    Summand(Box<(Option<Value>, Value)>),
     /// A `forall` or `exists` is decided: it stops with `found`.
     Exit {
         /// The decided value.
@@ -384,6 +376,12 @@ pub struct Finished {
 }
 
 impl Iteration {
+    /// The running total or accumulator.
+    #[must_use]
+    pub fn accumulator(&self) -> Option<&Value> {
+        self.accumulator.as_ref()
+    }
+
     /// Start `spec` over `source`: an `only` checks its population holds one
     /// object, and a reduce takes the first element as its accumulator,
     /// charging its visit.
@@ -434,7 +432,12 @@ impl Iteration {
     ///
     /// # Errors
     /// A fault for a result of the wrong kind.
-    pub fn absorb(&mut self, spec: &Spec<'_>, result: Value) -> Result<Absorbed, Halt> {
+    pub fn absorb<E: From<Halt>>(
+        &mut self,
+        spec: &Spec<'_>,
+        result: Value,
+        add: impl FnOnce(Option<Value>, Value) -> Result<Value, E>,
+    ) -> Result<Absorbed, E> {
         self.awaiting = false;
         let element = self
             .next
@@ -466,10 +469,13 @@ impl Iteration {
                 } else {
                     Absorbed::Continue
                 }),
-                (Visit::Sum, summand) => Ok(Absorbed::Summand(Box::new((
-                    self.accumulator.take(),
-                    summand,
-                )))),
+                (Visit::Sum, summand) => {
+                    // The host adds (its family may not be an exact one); the
+                    // new total is stored here, so it cannot be forgotten.
+                    let total = add(self.accumulator.take(), summand)?;
+                    self.accumulator = Some(total);
+                    Ok(Absorbed::Continue)
+                }
                 (Visit::Count, Value::Boolean(holds)) => {
                     if holds {
                         self.count = self.count.add(&Integer::one());
@@ -480,7 +486,7 @@ impl Iteration {
                     self.results.push(value);
                     Ok(Absorbed::Continue)
                 }
-                _ => Err(Halt::Fault("query-body-value-invalid")),
+                _ => Err(Halt::Fault("query-body-value-invalid").into()),
             },
             Shape::Fold => {
                 self.accumulator = Some(result);
@@ -640,14 +646,5 @@ impl Sequence {
             return Err(Halt::Fault("seq-collection-result-expected"));
         };
         Ok(outcome_into_stop(form(result_type, self.results, meter))?)
-    }
-}
-
-/// The decimal type of a `sum`, for the hosts' loss record.
-#[must_use]
-pub fn sum_target(value_type: &ValueType) -> Option<&DecimalType> {
-    match value_type {
-        ValueType::Decimal(target) => Some(target),
-        _ => None,
     }
 }

@@ -55,8 +55,9 @@ const TEXT_OPERATORS: [&str; 6] = ["<", "<=", ">", ">=", "=", "!="];
 /// with `call` to a translated function. The `collection` form is the
 /// collection literal, `size`, `contains`, `flatten`, kind conversion,
 /// `drop_first`, `remove_one`, the `map`, `filter`, `count`, `sum` and `only`
-/// queries, `fold`, `reduce` and `seq`; the binder queries `forall` and
-/// `exists` are named by the floor as outside it.
+/// queries, `fold` and `reduce`. The binder queries `forall` and `exists` are
+/// named by the floor as outside it, and `seq` (admitted by the checker only
+/// in a refinement row) is its own form, not listed.
 #[must_use]
 pub fn coverage() -> &'static BackendCoverage {
     static COVERAGE: OnceLock<BackendCoverage> = OnceLock::new();

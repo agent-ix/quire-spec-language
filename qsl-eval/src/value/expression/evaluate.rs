@@ -171,6 +171,12 @@ use crate::value::composite::{self, construct_record, construct_tuple, present_s
 /// A shared collection operation's halt as the evaluator's. The cases the
 /// evaluator handles where they arise (a `sum` seed, an `only` population)
 /// are invariant breaks if they reach here.
+impl From<collections::Halt> for Halt {
+    fn from(halt: collections::Halt) -> Self {
+        lift(halt)
+    }
+}
+
 fn lift(halt: collections::Halt) -> Halt {
     match halt {
         collections::Halt::Stop(stop) => Halt::from(stop),
@@ -4092,16 +4098,16 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         self.absorb_owner(iteration.owner);
         if iteration.state.awaiting {
             let result = self.pop()?;
-            match iteration.state.absorb(&spec, result).map_err(lift)? {
+            // Only a `sum` locates a stop at the body.
+            let body = match node.kind() {
+                NodeKind::Query { body, .. } => node.at(*body),
+                _ => node,
+            };
+            let absorbed = iteration.state.absorb(&spec, result, |total, summand| {
+                self.sum_step(node, body, total, summand)
+            })?;
+            match absorbed {
                 Absorbed::Continue => {}
-                Absorbed::Summand(parts) => {
-                    let (total, summand) = *parts;
-                    let NodeKind::Query { body, .. } = node.kind() else {
-                        return Err(invariant("iteration-node-invalid"));
-                    };
-                    iteration.state.accumulator =
-                        Some(self.sum_step(node, node.at(*body), total, summand)?);
-                }
                 Absorbed::Exit { found } => {
                     self.iterations = self.iterations.saturating_sub(1);
                     self.note_stop(&iteration)?;

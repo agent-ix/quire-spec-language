@@ -785,3 +785,51 @@ pub fn generate(seed: u64, count: u64) -> (Vec<(GeneratedUnit, CheckedPackage)>,
     }
     (admitted, discarded)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every collection template checks on its own, and every parameter kind
+    /// draws a value, so a template the checker refuses (which would discard
+    /// whole units) or a pool that cannot draw (which would drop its tuples)
+    /// cannot remove collection coverage unnoticed.
+    #[test]
+    fn every_collection_template_checks_and_draws_arguments() {
+        let mut rng = Rng(7);
+        for (declaration, pools) in COLLECTION_FUNCTIONS {
+            let source = format!("{COLLECTION_TYPES}function c0 using v{declaration}\n");
+            assert!(compile(&source).is_some(), "{declaration}");
+            for pool in pools {
+                assert!(pool_value(&mut rng, *pool).is_some(), "{declaration}");
+            }
+        }
+    }
+
+    /// Over the default seed, collection functions are drawn with argument
+    /// tuples in every template, so the parity run compares them.
+    #[test]
+    fn the_default_seed_draws_every_collection_template_with_tuples() {
+        let (units, _) = generate(DEFAULT_SEED, 600);
+        let mut drawn = std::collections::BTreeSet::new();
+        for (unit, _) in &units {
+            for line in unit.source.lines().filter(|l| l.starts_with("function c")) {
+                let (name, _) = line[9..].split_once(' ').expect("a name");
+                let tuples = unit
+                    .functions
+                    .iter()
+                    .find(|(function, _)| function == name)
+                    .map(|(_, tuples)| tuples.len())
+                    .unwrap_or(0);
+                assert!(tuples > 0, "{line}");
+                drawn.insert(
+                    line.split_once(" using v")
+                        .expect("a declaration")
+                        .1
+                        .to_owned(),
+                );
+            }
+        }
+        assert_eq!(drawn.len(), COLLECTION_FUNCTIONS.len(), "{drawn:#?}");
+    }
+}
