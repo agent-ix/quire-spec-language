@@ -7,6 +7,7 @@ use qsl_jit::{Jit, PreparedJit};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_eval::{CallFailure, Evaluation};
 use quire_exact::{AdmittedCharge, Cancel, Integer, Meter, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
@@ -27,6 +28,16 @@ pub const UNLIMITED: ScalarLimits = ScalarLimits {
 
 /// `declarations` compiled as one complete-V1 unit into a checked package.
 pub fn package_of(declarations: &str) -> CheckedPackage {
+    package_with(declarations, false)
+}
+
+/// [`package_of`] with the floor integer-division law admitted, so `div` and
+/// `rem` check.
+pub fn package_with_division(declarations: &str) -> CheckedPackage {
+    package_with(declarations, true)
+}
+
+fn package_with(declarations: &str, division: bool) -> CheckedPackage {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n{declarations}"
@@ -44,7 +55,7 @@ pub fn package_of(declarations: &str) -> CheckedPackage {
     .expect("S1 reads the unit");
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
-    let declarations = PackageDeclarations::assemble(
+    let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         "fixture".to_owned(),
         unit,
@@ -52,6 +63,12 @@ pub fn package_of(declarations: &str) -> CheckedPackage {
         Vec::new(),
     )
     .expect("the unit assembles");
+    if division {
+        declarations.integer_division = Some(
+            admit_integer_division(&[DefinitionRole::IntegerDivisionFloor.reference()], None)
+                .expect("the floor law is admitted"),
+        );
+    }
     CheckedPackage::link(
         declarations
             .check(

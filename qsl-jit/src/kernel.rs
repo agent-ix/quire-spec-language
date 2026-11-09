@@ -15,7 +15,7 @@ use quire_semantic_value::declaration::{operand_value, TypeEnvironment};
 use quire_semantic_value::quantity::UnitScope;
 use quire_semantic_value::stop::{outcome_into_stop, Stop};
 
-use crate::translate::{divide, integer_to_i64, Op, OpKind};
+use crate::translate::{divide, integer_to_i64, Op, OpKind, Repr};
 use quire_checked::node::Arithmetic;
 
 /// Why a kernel operation did not return a value.
@@ -37,16 +37,69 @@ fn narrow(value: &Integer) -> Result<i64, Halt> {
     integer_to_i64(value).ok_or(Halt::Fault("jit-fast-path-result-exceeds-64-bits"))
 }
 
-/// Run `op` on the operands `a` and `b` under `meter`.
+/// The `Integer` an operand names: the register itself, or the arena value
+/// its handle indexes.
+fn integer(raw: i64, repr: Repr, arena: &[Value]) -> Result<Integer, Halt> {
+    match repr {
+        Repr::Register => Ok(Integer::from(raw)),
+        Repr::Handle => match usize::try_from(raw).ok().and_then(|index| arena.get(index)) {
+            Some(Value::Integer(value)) => Ok(value.clone()),
+            _ => Err(Halt::Fault("jit-handle-not-an-integer")),
+        },
+    }
+}
+
+/// The register or handle that carries `value`: a register must hold it
+/// (the translator proved so from the checked types), a handle is a new arena
+/// entry.
+fn carry(value: Integer, repr: Repr, arena: &mut Vec<Value>) -> Result<i64, Halt> {
+    match repr {
+        Repr::Register => narrow(&value),
+        Repr::Handle => {
+            let handle = i64::try_from(arena.len()).map_err(|_| Halt::Fault("jit-arena-index"))?;
+            arena.push(Value::Integer(value));
+            Ok(handle)
+        }
+    }
+}
+
+/// Run `op` on the operands `raw` under `meter`, reading and writing handles
+/// in `arena`.
 pub(crate) fn run(
     op: &Op,
-    a: i64,
-    b: i64,
+    raw: [i64; 2],
     meter: &mut Meter,
     types: &TypeEnvironment,
+    arena: &mut Vec<Value>,
 ) -> Result<i64, Halt> {
-    let (left, right) = (Integer::from(a), Integer::from(b));
+    let [a, b] = raw;
+    let [left_repr, right_repr] = op.operands;
     match &op.kind {
+        OpKind::Literal(value) => return carry(value.clone(), op.result, arena),
+        OpKind::Box | OpKind::Unbox => {
+            return carry(integer(a, left_repr, arena)?, op.result, arena)
+        }
+        _ => {}
+    }
+    let (left, right) = match &op.kind {
+        OpKind::Not | OpKind::Retain | OpKind::ChargeCall => {
+            (Integer::from(0_i64), Integer::from(0_i64))
+        }
+        OpKind::Equality {
+            operands_boolean: true,
+            ..
+        } => (Integer::from(a), Integer::from(b)),
+        _ => (
+            integer(a, left_repr, arena)?,
+            if matches!(op.kind, OpKind::Negate | OpKind::Coerce(_)) {
+                Integer::from(0_i64)
+            } else {
+                integer(b, right_repr, arena)?
+            },
+        ),
+    };
+    match &op.kind {
+        OpKind::Literal(_) | OpKind::Box | OpKind::Unbox => Err(Halt::Fault("jit-unreachable")),
         OpKind::Arithmetic(operator) => {
             let operation = match operator {
                 Arithmetic::Add => IntegerArithmetic::Add(&left, &right),
@@ -54,7 +107,7 @@ pub(crate) fn run(
                 Arithmetic::Multiply => IntegerArithmetic::Multiply(&left, &right),
             };
             let result = outcome_into_stop(evaluate_integer_arithmetic(operation, None, meter))?;
-            narrow(&result)
+            carry(result, op.result, arena)
         }
         OpKind::Negate => {
             let result = outcome_into_stop(evaluate_integer_arithmetic(
@@ -62,7 +115,7 @@ pub(crate) fn run(
                 None,
                 meter,
             ))?;
-            narrow(&result)
+            carry(result, op.result, arena)
         }
         OpKind::Divide {
             operator,
@@ -70,7 +123,7 @@ pub(crate) fn run(
         } => {
             let outcome = divide(*operator, selection.as_ref(), &left, &right, meter)
                 .ok_or(Halt::Fault("jit-division-selection-missing"))?;
-            narrow(&outcome_into_stop(outcome)?)
+            carry(outcome_into_stop(outcome)?, op.result, arena)
         }
         OpKind::Order(operator) => {
             let holds = outcome_into_stop(order_numbers(
@@ -125,7 +178,7 @@ pub(crate) fn run(
         }
         OpKind::Coerce(target) => {
             if target.contains(&left) {
-                Ok(a)
+                carry(left, op.result, arena)
             } else {
                 Err(Halt::Stop(Stop::Refused(Refusal::IntegerOutOfDomain {
                     target: Box::new(target.clone()),

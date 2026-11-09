@@ -17,10 +17,12 @@ const BOOLEAN_OPERATORS: [&str; 6] = ["and", "or", "implies", "not", "=", "!="];
 /// The constructs this backend translates (FR-560).
 ///
 /// This is the implemented subset of the FR-560 coverage floor: the scalar
-/// `Boolean` and `Integer` constructs with `call` to a translated function.
-/// The floor's `record` and `collection` forms, its `Rational`, `Decimal`, `Text`, record and
-/// collection types, and equality over those types are not yet translated, so they are not listed and an entry holding one is
-/// listed unsupported.
+/// `Boolean` and `Integer` constructs, bounded and unbounded (the latter
+/// through the arena handles of QSL-1825), with `call` to a translated
+/// function. The floor's `record` and `collection` forms, its `Rational`,
+/// `Decimal`, `Text`, record and collection types, and the operations over
+/// those types are not yet translated, so they are not listed and an entry
+/// holding one is listed unsupported.
 #[must_use]
 pub fn coverage() -> &'static BackendCoverage {
     static COVERAGE: OnceLock<BackendCoverage> = OnceLock::new();
