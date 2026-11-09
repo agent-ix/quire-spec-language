@@ -326,11 +326,16 @@ impl Default for AnalyzeLimits {
 /// An admitted-for-execution request: one subject binding and its negotiated
 /// items. Each item is already typed by its layer-A adapter and carries the
 /// disposition established by the caller's negotiation.
-pub struct AnalyzeRequest<'a> {
+///
+/// `W` is the item type: [`crate::provider::RoutedItem`] (EN-4) or [`crate::provider::RoutedWork`],
+/// which also carries EN-1 authored-clause items. The default type parameter
+/// is `RoutedItem`, so a caller that builds a request of EN-4 items is
+/// unchanged.
+pub struct AnalyzeRequest<'a, W = crate::provider::RoutedItem<'a>> {
     /// The shared subject binding.
     pub binding: SubjectBinding<'a>,
     /// The negotiated items, in request order.
-    pub items: Vec<crate::provider::RoutedItem<'a>>,
+    pub items: Vec<W>,
 }
 
 /// The outcome of analyzing a request, preserving the typed result for each
@@ -955,13 +960,16 @@ pub fn aggregate(
 
 /// Analyze the negotiated items over one admitted checked-package subject
 /// (FR-281). The binding is admitted before any engine item runs.
-pub fn analyze(
+pub fn analyze<'r, W>(
     package: &CheckedPackage,
-    request: AnalyzeRequest<'_>,
+    request: AnalyzeRequest<'r, W>,
     engines: &Engines,
     limits: &AnalyzeLimits,
     cancel: &Cancel,
-) -> Result<Staged<AnalyzeOutcome>, StageFailure<AnalyzeRefusal>> {
+) -> Result<Staged<AnalyzeOutcome>, StageFailure<AnalyzeRefusal>>
+where
+    W: Into<crate::provider::RoutedWork<'r>>,
+{
     let _deadline = DeadlineGuard::start(cancel, limits.deadline_ms).map_err(|_| {
         StageFailure::Fault(InternalFault::new("analyze", "deadline-timer-unavailable"))
     })?;
@@ -985,16 +993,63 @@ pub fn analyze(
     ModelSystem::new(simulation)
         .map_err(|failure| StageFailure::Refused(AnalyzeRefusal::Binding(failure)))?;
 
-    let items: Vec<_> = request
-        .items
+    let work: Vec<crate::provider::RoutedWork<'_>> =
+        request.items.into_iter().map(Into::into).collect();
+    let items: Vec<_> = work
         .iter()
-        .map(|routed| statistical_work(package, &request.binding, routed, limits))
+        .map(|routed| match routed {
+            crate::provider::RoutedWork::Claim(routed) => {
+                statistical_work(package, &request.binding, routed, limits)
+            }
+            crate::provider::RoutedWork::Clause(routed) => {
+                clause_work(package, &request.binding, routed, limits)
+            }
+        })
         .collect();
     let requirements: Vec<_> = items.iter().map(AnalyzeItem::requirement).collect();
     let settled = analyze_items(engines, items, cancel);
     let aggregate = aggregate(&requirements, &settled);
     let records = terminal_records(settled);
     Ok(Staged::new(AnalyzeOutcome { records, aggregate }))
+}
+
+/// The EN-1 item of a routed authored clause, over the request's own package,
+/// binding and limits. A clause the package does not hold, or one no replay
+/// can name, is no claim of a family temporal-satisfaction applies to, so the
+/// item settles `invalid-request` (`inapplicable-kind`) without an engine
+/// run; a backend other than EN-1 settles it `unsupported`.
+fn clause_work<'a>(
+    package: &'a CheckedPackage,
+    binding: &SubjectBinding<'a>,
+    routed: &crate::provider::RoutedClause<'a>,
+    limits: &AnalyzeLimits,
+) -> AnalyzeItem<'a> {
+    let item = &routed.item;
+    // Intentional fold: every `ClauseItemRefusal` (unknown clause, multi-unit
+    // package, unnamed clause) means the request names no clause this
+    // package can run, which FR-281 settles `invalid-request` with
+    // `inapplicable-kind`. FR-272's vocabulary has no cause per refusal, and
+    // adding one is a catalog change outside this item.
+    let Ok(subject) = ClauseSubject::new(
+        package,
+        binding.clone(),
+        *limits,
+        item.unit,
+        &item.clause,
+        item.run,
+    ) else {
+        return AnalyzeItem::unadapted(item.request_index, Capability::TemporalSatisfaction, None)
+            .required(item.required);
+    };
+    let built = subject.item(item.request_index).required(item.required);
+    if routed.backend.as_str() == model_check::manifest::BACKEND_ID {
+        built
+    } else {
+        built.disposed(
+            Disposition::Unsupported,
+            Some(unsupported_kind(Capability::TemporalSatisfaction)),
+        )
+    }
 }
 
 fn statistical_work<'a>(

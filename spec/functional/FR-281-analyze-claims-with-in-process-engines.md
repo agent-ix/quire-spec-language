@@ -64,6 +64,14 @@ candidate.
 
 - An item settled `Supported(candidate)` runs on the engine in `engines`
   whose `BackendId` is that candidate, and on no other engine.
+- An authored temporal clause is a request member of its own: it carries the
+  clause's occurrence key, the bytes of the source unit the package was
+  checked from, and the run's budgets, and `analyze` builds its EN-1 item over
+  the request's own package and binding. EN-1 is the only backend that runs
+  it; an authored clause settled `Supported` on any other backend settles
+  `unsupported` with `unsupported_projection`/
+  `unsupported-requested-capability`, and a clause the package does not hold
+  settles `invalid-request` with `invalid_capability`/`inapplicable-kind`.
 - An item settled `requires-bound`, `unsupported` or `invalid-request` runs
   on no engine. Its terminal record is settled by that disposition (QSpec
   FR-331 `settled_by` `disposition`) and keeps the disposition's FR-272
