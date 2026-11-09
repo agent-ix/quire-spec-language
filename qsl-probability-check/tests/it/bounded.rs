@@ -35,7 +35,7 @@ fn claim(scheduler: &str, operator: &str, threshold: &str, horizon: u64) -> Stri
     format!("probabilistic Likely using inf on M over (m: M::Msg) under {scheduler} on origin {{ probability {operator} {threshold} [ eventually[0,{horizon}] holds(m.delivered) ] }}\n")
 }
 
-fn compile_source(
+pub(super) fn compile_source(
     source: &str,
 ) -> (
     spine::CheckedUnit,

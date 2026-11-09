@@ -2641,7 +2641,7 @@ fn an_mdp_undefined_path_names_the_post_state_taken_at_each_draw() {
     assert_eq!(step.target, *resolved);
 }
 
-#[trace("TC-633", "FR-198-AC-3", "FR-201-AC-15")]
+#[trace("TC-633", "FR-201-AC-15")]
 #[test]
 fn until_minimum_retains_absorbing_failure_in_qualitative_analysis() {
     use qsl_analyze::exact_probabilistic::{decide_until, ExtRational};
@@ -2684,10 +2684,10 @@ fn until_minimum_retains_absorbing_failure_in_qualitative_analysis() {
     }
 }
 
-#[trace("TC-633", "FR-198-AC-3")]
+#[trace("TC-633", "FR-201-AC-15")]
 #[test]
-fn reachability_avoidance_cannot_cross_an_already_reached_target() {
-    use qsl_analyze::exact_probabilistic::{decide_reachability, ExtRational};
+fn until_avoidance_cannot_cross_an_already_reached_target() {
+    use qsl_analyze::exact_probabilistic::{decide_until, ExtRational};
     let world = World::new(&prob_world::link(
         "probabilistic ForGraph using inf on M over (m: M::Msg) under every scheduler on origin \
          { probability >= 0.5 [ eventually holds(m.delivered) ] }",
@@ -2714,8 +2714,9 @@ fn reachability_avoidance_cannot_cross_an_already_reached_target() {
         fairness_operations: Vec::new(),
         fairness: Vec::new(),
     };
-    let result = decide_reachability(
+    let result = decide_until(
         &product,
+        &[true, true, true],
         &[false, true, false],
         UnboundedObjective::Min,
         &ExactProbLimits::default(),

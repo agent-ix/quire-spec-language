@@ -460,7 +460,8 @@ fn run(
             )
         }
         (None, _) => {
-            certificate_of(&product, reference, &values).map_err(ProbabilityDocumentError::from)
+            certificate_of(&product, reference, &values,
+                qsl_replay::ProbabilityDocumentIoLimits { bytes: document_limits.bytes, storage_bytes: document_limits.storage_bytes }, cancel)
         }
         (Some(_), None) => return broken(),
     };
@@ -656,14 +657,16 @@ fn certificate_of(
     product: &ProbProduct,
     binding: Option<&ObjectReference>,
     values: &[ExtRational],
-) -> Result<ExactProbabilityCertificate, ExactProbabilityGraphError> {
+    io: qsl_replay::ProbabilityDocumentIoLimits,
+    cancel: &Cancel,
+) -> Result<ExactProbabilityCertificate, ProbabilityDocumentError> {
     let mut entries = Vec::with_capacity(product.states.len());
     for (state, value) in product.states.iter().zip(values) {
         let ExtRational::Finite(value) = value else {
-            return Err(ExactProbabilityGraphError::ExpansionRefused);
+            return Err(ExactProbabilityGraphError::ExpansionRefused.into());
         };
         entries.push(ExactProbabilityValue {
-            state: ProbabilityProductKey::for_model_state(binding, &state.model)?,
+            state: ProbabilityProductKey::for_model_state_with_limits(binding, &state.model, io, cancel)?,
             value: value.clone(),
         });
     }
@@ -672,7 +675,7 @@ fn certificate_of(
         .windows(2)
         .any(|pair| pair[0].state == pair[1].state)
     {
-        return Err(ExactProbabilityGraphError::ExpansionRefused);
+        return Err(ExactProbabilityGraphError::ExpansionRefused.into());
     }
     Ok(ExactProbabilityCertificate { values: entries })
 }

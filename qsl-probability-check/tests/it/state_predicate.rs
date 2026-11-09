@@ -182,6 +182,7 @@ fn altered_objective_binding_keys_values_ranks_and_threshold_do_not_prove() {
             doc["objective"]["fairness"] = json!(["foreign"])
         }),
         mutate(&request, |doc| alter_keys(doc, |key| key[1] = Value::Null)),
+        mutate(&request, |doc| alter_keys(doc, |key| key[1]["identity"] = json!("foreign"))),
         mutate(&request, |doc| {
             alter_keys(doc, |key| key[2] = json!(["foreign"]))
         }),
@@ -332,5 +333,57 @@ fn initial_terminal_predicates_use_infinite_stutter() {
             json!({"numerator":expected,"denominator":"1"})
         );
         assert_eq!(document(&request)["values"].as_array().unwrap().len(), 1);
+    }
+}
+
+#[trace("TC-636", "FR-201-AC-18", "FR-282-AC-15")]
+#[test]
+fn every_independent_checker_poll_preserves_cancellation_including_graph_expansion() {
+    use std::sync::{Arc, OnceLock};
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest, ModelSystem, PopulationUniverse};
+    use qsl_replay::{check_probability_certificate_document, ProbabilityDocumentError, ProbabilityDocumentLimits};
+    use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
+    use quire_checked::key::DeclarationKey;
+    use quire_exact::{Cancel, CancelCause};
+    let text = source("holds(m.attempts = 0) until holds(m.delivered)", "every scheduler", ">=", "0.25");
+    let proof = proof(&text, SNAPSHOT);
+    let bytes = proof["certificate"].as_str().unwrap().as_bytes();
+    let (checked, packages) = super::bounded::compile_source(&text);
+    let stages = qsl_replay::spine::SpineLimits::default();
+    let document = DocumentRef { authority: "test".to_owned(), identity: "s0".to_owned() };
+    let snapshots = [(document.clone(), SNAPSHOT.to_vec())].into_iter().collect();
+    let system = ModelSystem::new(ModelSimulationRequest {
+        package: checked.package(), packages: &packages, normalization: stages.model,
+        snapshots: &snapshots, initial: vec![document],
+        universes: vec![PopulationUniverse { population: DeclarationKey { package: "test/link".to_owned(), node: "ix://test/link/msgs".to_owned() }, keys: vec!["m".to_owned()] }],
+        observation: ObservationLimits::default(), expansion: ExpansionLimits { max_candidates: 100_000 },
+        meter: qsl_replay::AccountingLimits::default().0, emit: stages.package.emit(),
+    }).unwrap();
+    let claims = checked.package().graph().probabilistic_model().claims();
+    let item = qsl_replay::probabilistic_claim_identity(&claims[0]).unwrap();
+    let limits = ProbabilityDocumentLimits { bytes: 1_000_000, storage_bytes: 8_000_000, states: 100, edges: 1000, scalar_bits: 128, accounting: qsl_replay::AccountingLimits::default().0 };
+    let run = |cancel: &Cancel| check_probability_certificate_document(&system, claims, &item, bytes, limits, cancel);
+    let live = Cancel::new();
+    let _count = live.count_charges();
+    assert!(matches!(run(&live), Ok(qsl_replay::ExactProbabilityCertificateCheck::Accepted(_))));
+    let total = live.charges();
+    assert!(total > 0);
+    for cause in [CancelCause::Requested, CancelCause::Deadline] {
+        for at in 1..=total {
+            let slot = Arc::new(OnceLock::<Cancel>::new());
+            let weak = Arc::downgrade(&slot);
+            let seen = Arc::new(AtomicU32::new(0));
+            let count = Arc::clone(&seen);
+            let cancel = Cancel::observing(move || {
+                if count.fetch_add(1, Ordering::Relaxed) + 1 == at {
+                    weak.upgrade().unwrap().get().unwrap().cancel(cause);
+                }
+            });
+            slot.set(cancel.clone()).unwrap();
+            let result = run(&cancel);
+            assert!(matches!(result, Err(ProbabilityDocumentError::Cancelled(actual)) if actual == cause), "poll {at}/{total}: {result:?}");
+            assert_eq!(seen.load(Ordering::Relaxed), at);
+        }
     }
 }
