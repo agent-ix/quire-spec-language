@@ -1773,6 +1773,7 @@ dependencies = [
  "qsl-eval",
  "qsl-forms",
  "qsl-foundation",
+ "qsl-jit",
  "qsl-package",
  "qsl-semantics",
  "quire-checked",

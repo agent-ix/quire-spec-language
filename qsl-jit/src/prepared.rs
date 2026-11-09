@@ -16,9 +16,7 @@ use quire_eval::{
     CallFailure, Evaluation, ExecutionBackendChoice, FamilyOutcome, UnsupportedCause,
     UnsupportedEntry,
 };
-use quire_exact::{
-    Cancel, Charge, ChargePoint, Meter, Outcome, Refusal, ScalarLimits, Value, ValueType,
-};
+use quire_exact::{Cancel, Charge, ChargePoint, Meter, Outcome, Refusal, ScalarLimits, Value};
 use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::location::ExpressionLocation;
@@ -26,8 +24,8 @@ use quire_semantic_value::stop::{outcome_from_stop, Stop};
 use quire_semantic_value::supplied_stop::SuppliedRun;
 
 use crate::coverage::coverage;
-use crate::exec::{Entry, EntryFrame, EntryRefusal, Halt, Machine, Signature, Status};
-use crate::translate::{integer_to_i64, Compiler, Failure, Op};
+use crate::exec::{Entry, EntryFrame, EntryRefusal, Halt, Machine, Status};
+use crate::translate::{integer_to_i64, register_kind, Compiler, Failure, Op};
 use qsl_eval::execution::{first_outside, Outside};
 
 /// The just-in-time backend (ADR-029 EB-1): it translates the entries inside
@@ -176,7 +174,7 @@ impl ExecutionBackend for Jit {
                 let Some(index) = compiler.index_of(&callable.identity) else {
                     return Err(fault("jit-callable-without-index"));
                 };
-                match compiler.entry(index, &name.replace("::", "_")) {
+                match compiler.entry(index) {
                     Ok(entry) => translated.push((selection.name.clone(), index, entry)),
                     Err(Failure::Unsupported(outside)) => {
                         unsupported.push((selection.clone(), untranslatable(outside)));
@@ -199,15 +197,11 @@ impl ExecutionBackend for Jit {
             compiled.insert(
                 name,
                 Compiled {
-                    entry: machine.entry(entry.id, callable.parameters.len()),
+                    entry: machine.entry(entry.id, callable.parameters.len(), entry.signature),
                     parameters: callable
                         .parameters
                         .iter()
-                        .map(|(_, ty)| match ty {
-                            ValueType::Boolean => Some(true),
-                            ValueType::Int(_) => Some(false),
-                            _ => None,
-                        })
+                        .map(|(_, ty)| register_kind(ty))
                         .collect(),
                     result_is_boolean: entry.result_is_boolean,
                     site: function.body.location().clone(),
@@ -339,7 +333,7 @@ impl<'p> PreparedJit<'p> {
     /// Record `parameters` and `returns_u32` as the signature of the entry
     /// `name` in place of the real one (a test hook for FR-568-AC-3): a call
     /// on it then returns `Fault` without entering the code.
-    #[doc(hidden)]
+    #[cfg(feature = "test-support")]
     pub fn record_signature_for_test(
         &mut self,
         name: &QualifiedName,
@@ -349,17 +343,27 @@ impl<'p> PreparedJit<'p> {
         if let Some(compiled) = self.compiled.get_mut(name) {
             compiled.entry = compiled
                 .entry
-                .with_recorded_signature(Signature::new(parameters, returns_u32));
+                .with_recorded_signature(crate::exec::Signature::for_test(parameters, returns_u32));
         }
     }
 
     /// Replace the entry `name` with one returning a status outside the
     /// closed status type (a test hook for FR-568-AC-3).
-    #[doc(hidden)]
+    #[cfg(feature = "test-support")]
     pub fn return_out_of_range_status_for_test(&mut self, name: &QualifiedName) {
         if let Some(compiled) = self.compiled.get_mut(name) {
             compiled.entry = compiled.entry.returning_out_of_range_status();
         }
+    }
+
+    /// The signature recorded at generation for the entry `name`, as its
+    /// parameter count and whether it returns a `u32`.
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn recorded_signature_for_test(&self, name: &QualifiedName) -> Option<(u8, bool)> {
+        self.compiled
+            .get(name)
+            .map(|compiled| compiled.entry.recorded().shape())
     }
 
     /// [`PreparedEntries::call`] under a caller-owned `meter` and supplied-value
@@ -387,11 +391,12 @@ impl<'p> PreparedJit<'p> {
         let callable = graph
             .callable(&function.to_string())
             .ok_or_else(|| InputRefusal::UnknownFunction(function.to_string()))?;
+        // A function the caller did not select at `prepare` has no generated
+        // code, and this backend never runs what it did not translate
+        // (FR-296): it is a caller condition, refused as an unknown entry of
+        // this prepared value, not a backend fault.
         let Some(compiled) = self.compiled.get(function) else {
-            return Err(CallFailure::Fault(InternalFault::new(
-                "FR-294",
-                "jit-entry-not-prepared",
-            )));
+            return Err(InputRefusal::UnknownFunction(function.to_string()).into());
         };
         admit_arguments(
             callable.parameters,

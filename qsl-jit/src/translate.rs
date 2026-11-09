@@ -28,7 +28,7 @@ use quire_exact::{
 use quire_semantic_value::declaration::CheckedEquality;
 use quire_semantic_value::location::ExpressionLocation;
 
-use crate::exec::Shim;
+use crate::exec::{Shim, Signature, ARGUMENTS_OFFSET, FAILED_OFFSET, RESULT_OFFSET};
 use qsl_eval::execution::{untranslated, Outside};
 
 /// Deepest expression this backend translates. Translation recurses on the
@@ -78,6 +78,8 @@ pub(crate) struct Translated {
     /// The `extern "C" fn(*const EntryFrame) -> u32` trampoline of the entry.
     pub(crate) id: FuncId,
     pub(crate) result_is_boolean: bool,
+    /// The signature the translator declared for the trampoline.
+    pub(crate) signature: Signature,
 }
 
 /// Why a function was not translated.
@@ -114,6 +116,13 @@ fn type_of(value_type: &ValueType) -> Option<Ty> {
         }
         _ => None,
     }
+}
+
+/// Whether a parameter of `value_type` is carried in a register, and as a
+/// Boolean (`Some(true)`) or an Integer (`Some(false)`); `None` for a type
+/// this backend does not carry (an unread parameter of one is not an error).
+pub(crate) fn register_kind(value_type: &ValueType) -> Option<bool> {
+    type_of(value_type).map(|ty| ty == Ty::Boolean)
 }
 
 /// `value` as a signed 64-bit integer, when it fits.
@@ -159,6 +168,8 @@ struct Emitter<'a, 'b, 'm> {
     state: &'a HashMap<usize, State>,
     slots: HashMap<usize, (Clif, Ty)>,
     meter: &'a mut PrepareMeter<'m>,
+    /// A backend invariant a code-generation step could not uphold.
+    refused: Option<&'static str>,
 }
 
 impl<'a, 'm> Compiler<'a, 'm> {
@@ -190,7 +201,7 @@ impl<'a, 'm> Compiler<'a, 'm> {
 
     /// Translate the function at `index` and its callees, then the entry
     /// trampoline that adapts it to the one entry signature (FR-568).
-    pub(crate) fn entry(&mut self, index: usize, name: &str) -> Result<Translated, Failure> {
+    pub(crate) fn entry(&mut self, index: usize) -> Result<Translated, Failure> {
         let (block, ty) = self.function(index, 0)?;
         let pointer = self.module.target_config().pointer_type();
         let mut signature = self.module.make_signature();
@@ -199,13 +210,14 @@ impl<'a, 'm> Compiler<'a, 'm> {
         let id = self
             .module
             .declare_function(
-                &format!("qsl_entry_{name}"),
+                &format!("qsl_entry_{index}"),
                 cranelift_module::Linkage::Export,
                 &signature,
             )
             .map_err(|_| fault("jit-declare-entry"))?;
         let frontend = self.module.target_config();
         let mut context = self.module.make_context();
+        let recorded = Signature::of(&signature, pointer);
         context.func.signature = signature;
         let mut builder_context = FunctionBuilderContext::new();
         {
@@ -215,12 +227,12 @@ impl<'a, 'm> Compiler<'a, 'm> {
             builder.switch_to_block(body);
             let frame = builder.block_params(body)[0];
             let flags = MemFlagsData::trusted();
-            let arguments = builder.ins().load(pointer, flags, frame, 8);
+            let arguments = builder.ins().load(pointer, flags, frame, ARGUMENTS_OFFSET);
             let callee = self.module.declare_func_in_func(block, builder.func);
             let call = builder.ins().call(callee, &[frame, arguments]);
             let result = builder.inst_results(call)[0];
-            builder.ins().store(flags, result, frame, 16);
-            let failed = builder.ins().load(types::I64, flags, frame, 0);
+            builder.ins().store(flags, result, frame, RESULT_OFFSET);
+            let failed = builder.ins().load(types::I64, flags, frame, FAILED_OFFSET);
             let status = builder.ins().ireduce(types::I32, failed);
             builder.ins().return_(&[status]);
             builder.seal_all_blocks();
@@ -233,6 +245,7 @@ impl<'a, 'm> Compiler<'a, 'm> {
         Ok(Translated {
             id,
             result_is_boolean: ty == Ty::Boolean,
+            signature: recorded,
         })
     }
 
@@ -352,6 +365,7 @@ impl<'a, 'm> Compiler<'a, 'm> {
                 state: &self.state,
                 slots: HashMap::new(),
                 meter: &mut *self.meter,
+                refused: None,
             };
             for (position, ty) in parameters.iter().enumerate() {
                 if let Some(ty) = ty {
@@ -367,6 +381,9 @@ impl<'a, 'm> Compiler<'a, 'm> {
                 }
             }
             let (result, ty) = emitter.emit(body, 0)?;
+            if let Some(invariant) = emitter.refused {
+                return Err(fault(invariant));
+            }
             emitter.builder.ins().return_(&[result]);
             emitter.builder.switch_to_block(exit);
             let zero = emitter.builder.ins().iconst(types::I64, 0);
@@ -378,9 +395,12 @@ impl<'a, 'm> Compiler<'a, 'm> {
         module
             .define_function(id, &mut context)
             .map_err(|_| fault("jit-define-function"))?;
-        let code_bytes = context.compiled_code().map_or(0, |code| {
-            u64::try_from(code.code_buffer().len()).unwrap_or(u64::MAX)
-        });
+        let code_bytes = match context.compiled_code() {
+            Some(code) => {
+                u64::try_from(code.code_buffer().len()).map_err(|_| fault("jit-code-size"))?
+            }
+            None => return Err(fault("jit-code-missing")),
+        };
         module.clear_context(&mut context);
         self.meter.charge_block(code_bytes)?;
         Ok((id, ty))
@@ -565,14 +585,18 @@ impl Emitter<'_, '_, '_> {
                 let zero = self.builder.ins().iconst(types::I64, 0);
                 let charged = self.shim_call(node, OpKind::ChargeCall, zero, zero);
                 let _ = charged;
-                let size = u32::try_from(values.len().max(1) * 8).unwrap_or(8);
+                let Ok(size) = u32::try_from(values.len().max(1) * 8) else {
+                    return Err(self.unsupported(node));
+                };
                 let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                     StackSlotKind::ExplicitSlot,
                     size,
                     3,
                 ));
                 for (position, value) in values.iter().enumerate() {
-                    let offset = i32::try_from(position * 8).unwrap_or(0);
+                    let Ok(offset) = i32::try_from(position * 8) else {
+                        return Err(self.unsupported(node));
+                    };
                     self.builder
                         .ins()
                         .stack_store(types::I64, *value, slot, offset);
@@ -686,7 +710,10 @@ impl Emitter<'_, '_, '_> {
     /// when the shim recorded a stop (FR-561: the status is passed up
     /// unchanged).
     fn shim_call(&mut self, node: CheckedNode<'_>, kind: OpKind, a: Clif, b: Clif) -> Clif {
-        let index = i64::try_from(self.ops.len()).unwrap_or(i64::MAX);
+        let Ok(index) = i64::try_from(self.ops.len()) else {
+            self.refused = Some("jit-operation-index");
+            return a;
+        };
         self.ops.push(Op {
             kind,
             location: node.location().clone(),
@@ -706,10 +733,12 @@ impl Emitter<'_, '_, '_> {
 
     /// Return from the function when the call just made recorded a stop.
     fn leave_on_failure(&mut self) {
-        let failed = self
-            .builder
-            .ins()
-            .load(types::I64, MemFlagsData::trusted(), self.context, 0);
+        let failed = self.builder.ins().load(
+            types::I64,
+            MemFlagsData::trusted(),
+            self.context,
+            FAILED_OFFSET,
+        );
         let next = self.builder.create_block();
         self.builder.ins().brif(failed, self.exit, &[], next, &[]);
         self.builder.switch_to_block(next);
@@ -728,15 +757,30 @@ fn clamp(bound: &Integer, low: i128, high: i128) -> i128 {
     wide.clamp(low, high)
 }
 
-/// The smallest interval holding the kernel's `div`, `rem` or `mod` at every
-/// pair of operand interval ends (FR-562), computed by running the kernel on
-/// each pair with an unlimited meter.
+/// A sound interval for the kernel's `div`, `rem` or `mod` of operands in
+/// the given intervals, whose divisor interval excludes 0.
+///
+/// The quotient is monotone in each operand while the divisor keeps one
+/// sign, so its extremes are at the operand interval ends and are found by
+/// running the kernel there with an unlimited meter. The remainder is not
+/// monotone (`a mod 5` over `a` in `[0, 10]` takes 0 at both ends and 4 in
+/// between), so `rem` and `mod` take the interval every admitted law keeps
+/// them in: strictly smaller than the divisor in magnitude. FR-562's table
+/// text, which takes the extremes at the ends for all three, is unsound for
+/// the remainders; this follows the soundness the rule exists for.
 fn division_interval(
     operator: IntegerDivisionOperator,
     selection: Option<AdmittedIntegerDivision>,
     (al, ah): (i128, i128),
     (bl, bh): (i128, i128),
 ) -> Option<(i128, i128)> {
+    if matches!(
+        operator,
+        IntegerDivisionOperator::Rem | IntegerDivisionOperator::Mod
+    ) {
+        let bound = bl.abs().max(bh.abs()) - 1;
+        return Some((-bound, bound));
+    }
     let mut meter = Meter::new(ScalarLimits {
         integer_bits: u64::MAX,
         decimal_digits: u64::MAX,

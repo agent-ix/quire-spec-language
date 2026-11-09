@@ -25,7 +25,12 @@ cranelift-jit = "0.137.1"
 cranelift-module = "0.137.1"
 cranelift-native = "0.137.1"
 
+[features]
+# The FR-568 test hooks of `PreparedJit`; no shipped build has them.
+test-support = []
+
 [dev-dependencies]
+qsl-jit = { path = ".", features = ["test-support"] }
 qsl-conformance = { path = "../qsl-conformance" }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 qsl-cst = { path = "../qsl-cst" }

@@ -10,8 +10,9 @@
 //! 3. releasing the executable memory of a module on drop.
 //!
 //! The translator ([`crate::translate`]) and every kernel operation
-//! ([`crate::kernel`]) are safe code. Generated code reads `Ctx::failed`, the
-//! first field, and leaves the function when a shim set it.
+//! ([`crate::kernel`]) are safe code. Generated code reads
+//! `EntryFrame::failed` and leaves the function when a shim set it; the
+//! offsets it uses are the `offset_of!` constants below.
 
 use std::ffi::c_void;
 
@@ -40,30 +41,39 @@ pub(crate) enum Halt {
 /// operation table by index.
 #[derive(Clone, Copy)]
 pub(crate) struct KernelTable {
-    shim: extern "C" fn(*mut c_void, i64, i64, i64) -> i64,
+    shim: unsafe extern "C" fn(*mut c_void, i64, i64, i64) -> i64,
 }
 
 impl KernelTable {
     /// The shim this table lists.
-    pub(crate) fn shim(self) -> extern "C" fn(*mut c_void, i64, i64, i64) -> i64 {
+    pub(crate) fn shim(self) -> unsafe extern "C" fn(*mut c_void, i64, i64, i64) -> i64 {
         self.shim
     }
 }
 
 /// FR-568: the frame generated code runs over. Generated code reads
-/// `failed`, `arguments` and `result` at their `repr(C)` offsets (0, 8, 16);
-/// every other field is read only by `exec`.
+/// `failed`, `arguments` and `result` at the offsets [`FAILED_OFFSET`],
+/// [`ARGUMENTS_OFFSET`] and [`RESULT_OFFSET`]; every other field is read only
+/// by `exec`. The kernel table is the module's imported shim symbol
+/// (registered in [`Machine::new`]), so the frame does not carry it.
 #[repr(C)]
 pub(crate) struct EntryFrame<'a> {
     failed: u64,
     arguments: *const i64,
     result: i64,
-    kernel: KernelTable,
     meter: &'a mut Meter,
     ops: &'a [Op],
     types: &'a TypeEnvironment,
     halt: Option<Halt>,
 }
+
+/// The `repr(C)` offset of `EntryFrame::failed`.
+pub(crate) const FAILED_OFFSET: i32 = std::mem::offset_of!(EntryFrame<'static>, failed) as i32;
+/// The `repr(C)` offset of `EntryFrame::arguments`.
+pub(crate) const ARGUMENTS_OFFSET: i32 =
+    std::mem::offset_of!(EntryFrame<'static>, arguments) as i32;
+/// The `repr(C)` offset of `EntryFrame::result`.
+pub(crate) const RESULT_OFFSET: i32 = std::mem::offset_of!(EntryFrame<'static>, result) as i32;
 
 impl<'a> EntryFrame<'a> {
     /// A frame with nothing failed, metering into `meter`.
@@ -72,7 +82,6 @@ impl<'a> EntryFrame<'a> {
             failed: 0,
             arguments: std::ptr::null(),
             result: 0,
-            kernel: KernelTable { shim },
             meter,
             ops,
             types,
@@ -95,7 +104,12 @@ impl<'a> EntryFrame<'a> {
 /// left, right) -> value`. On a stop it records the stop and the node's
 /// location in the frame, sets `failed`, and returns 0; the generated code
 /// then returns without another call.
-extern "C" fn shim(frame: *mut c_void, node: i64, a: i64, b: i64) -> i64 {
+///
+/// # Safety
+/// `frame` is the `*mut EntryFrame` that [`Entry::call`] passed to the
+/// generated function: valid, exclusively borrowed for the call, and not
+/// aliased while the generated function runs.
+unsafe extern "C" fn shim(frame: *mut c_void, node: i64, a: i64, b: i64) -> i64 {
     // SAFETY: `frame` is the `&mut EntryFrame` that `Entry::call` passed to
     // the generated function, which passes it back unchanged to every shim
     // call; the frame outlives the call and nothing else aliases it while the
@@ -188,12 +202,12 @@ impl Machine {
 
     /// The callable entry of the finalized function `id`, taking `arity`
     /// arguments of 64 bits, with the signature the translator recorded for it.
-    pub(crate) fn entry(&mut self, id: FuncId, arity: usize) -> Entry {
+    pub(crate) fn entry(&mut self, id: FuncId, arity: usize, signature: Signature) -> Entry {
         let address = self.module().get_finalized_function(id);
         Entry {
             address,
             arity,
-            signature: ENTRY_SIGNATURE,
+            signature,
         }
     }
 }
@@ -209,27 +223,50 @@ impl Drop for Machine {
     }
 }
 
-/// The signature of an entry as recorded at generation: parameter count and
-/// whether the result is a `u32`.
+/// The signature of an entry as recorded at generation, read from the
+/// Cranelift signature the translator declared: the parameter count, whether
+/// the first parameter is a pointer, and whether the result is a `u32`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Signature {
     parameters: u8,
+    first_is_pointer: bool,
     returns_u32: bool,
 }
 
 /// The one entry signature, `extern "C" fn(*const EntryFrame) -> u32`.
 pub(crate) const ENTRY_SIGNATURE: Signature = Signature {
     parameters: 1,
+    first_is_pointer: true,
     returns_u32: true,
 };
 
 impl Signature {
+    /// What `signature` declares, `pointer` being the host pointer type.
+    pub(crate) fn of(signature: &cranelift_codegen::ir::Signature, pointer: types::Type) -> Self {
+        Self {
+            parameters: u8::try_from(signature.params.len()).unwrap_or(u8::MAX),
+            first_is_pointer: signature
+                .params
+                .first()
+                .is_some_and(|parameter| parameter.value_type == pointer),
+            returns_u32: matches!(signature.returns.as_slice(), [r] if r.value_type == types::I32),
+        }
+    }
+
     /// A signature with `parameters` parameters returning a `u32` or not.
-    pub(crate) const fn new(parameters: u8, returns_u32: bool) -> Self {
+    #[cfg(feature = "test-support")]
+    pub(crate) const fn for_test(parameters: u8, returns_u32: bool) -> Self {
         Self {
             parameters,
+            first_is_pointer: true,
             returns_u32,
         }
+    }
+
+    /// The pair a test reads: parameter count and `u32` result.
+    #[cfg(feature = "test-support")]
+    pub(crate) const fn shape(self) -> (u8, bool) {
+        (self.parameters, self.returns_u32)
     }
 }
 
@@ -261,6 +298,7 @@ pub(crate) struct Entry {
     signature: Signature,
 }
 
+#[cfg(feature = "test-support")]
 extern "C" fn out_of_range_status(_frame: *const c_void) -> u32 {
     u32::MAX
 }
@@ -268,17 +306,25 @@ extern "C" fn out_of_range_status(_frame: *const c_void) -> u32 {
 impl Entry {
     /// The same entry with `signature` recorded in place of the real one
     /// (a test hook for FR-568-AC-3).
+    #[cfg(feature = "test-support")]
     pub(crate) fn with_recorded_signature(self, signature: Signature) -> Self {
         Self { signature, ..self }
     }
 
     /// An entry that returns a status outside the closed status type
     /// (a test hook for FR-568-AC-3).
+    #[cfg(feature = "test-support")]
     pub(crate) fn returning_out_of_range_status(self) -> Self {
         Self {
             address: out_of_range_status as *const u8,
             ..self
         }
+    }
+
+    /// The signature recorded at generation.
+    #[cfg(feature = "test-support")]
+    pub(crate) const fn recorded(self) -> Signature {
+        self.signature
     }
 
     /// Call the function over `frame` with `arguments`, one 64-bit slot per
