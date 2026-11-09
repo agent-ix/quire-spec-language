@@ -17,6 +17,7 @@ mod digital_clocks;
 mod exact_probabilistic;
 mod exact_probabilistic_item;
 mod exact_probabilistic_zero_binding;
+mod exact_route;
 mod example_units;
 mod fill;
 mod fixture_ids;

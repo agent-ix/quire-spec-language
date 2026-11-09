@@ -79,7 +79,32 @@ pub struct RoutedClause<'a> {
     pub backend: BackendId,
 }
 
-/// A request item of either kind `analyze` runs. `RoutedItem` (EN-4) converts
+/// An EN-5 exact probabilistic claim and its budgets, without a separately
+/// supplied model subject. The operation builds that subject from its own
+/// checked package and admitted binding.
+#[derive(Clone)]
+pub struct ExactClaimItem<'a> {
+    /// The item's request index.
+    pub request_index: RequestIndex,
+    /// The checked probabilistic claim.
+    pub claim: &'a CheckedProbabilisticClaim,
+    /// The product, solver and certificate budgets.
+    pub limits: crate::exact_probabilistic::ExactProbLimits,
+    /// Whether this item is required for complete aggregate success.
+    pub required: bool,
+}
+
+/// One exact probabilistic item routed by the caller. Only EN-5 runs this
+/// member; any other backend settles it `unsupported` without sampling.
+#[derive(Clone)]
+pub struct RoutedExact<'a> {
+    /// The exact claim and its budgets.
+    pub item: ExactClaimItem<'a>,
+    /// The backend selected by the caller's negotiation.
+    pub backend: BackendId,
+}
+
+/// A request item of any kind `analyze` runs. `RoutedItem` (EN-4) converts
 /// into it, so a request of EN-4 items is built exactly as before.
 #[derive(Clone)]
 pub enum RoutedWork<'a> {
@@ -87,6 +112,8 @@ pub enum RoutedWork<'a> {
     Claim(RoutedItem<'a>),
     /// An EN-1 authored clause.
     Clause(RoutedClause<'a>),
+    /// An EN-5 exact probabilistic claim.
+    Exact(RoutedExact<'a>),
 }
 
 impl<'a> From<RoutedItem<'a>> for RoutedWork<'a> {
@@ -101,11 +128,18 @@ impl<'a> From<RoutedClause<'a>> for RoutedWork<'a> {
     }
 }
 
+impl<'a> From<RoutedExact<'a>> for RoutedWork<'a> {
+    fn from(item: RoutedExact<'a>) -> Self {
+        Self::Exact(item)
+    }
+}
+
 impl RoutedWork<'_> {
     fn request_index(&self) -> RequestIndex {
         match self {
             Self::Claim(routed) => routed.item.request_index,
             Self::Clause(routed) => routed.item.request_index,
+            Self::Exact(routed) => routed.item.request_index,
         }
     }
 
@@ -113,12 +147,13 @@ impl RoutedWork<'_> {
         match self {
             Self::Claim(routed) => &routed.backend,
             Self::Clause(routed) => &routed.backend,
+            Self::Exact(routed) => &routed.backend,
         }
     }
 }
 
 /// Run routed items (EN-4 [`RoutedItem`]s, or [`RoutedWork`] with EN-1
-/// authored clauses) over the checked package and subject binding, using
+/// authored clauses and EN-5 exact claims) over the checked package and subject binding, using
 /// the same analyze operation that serves direct in-process requests.
 ///
 /// The returned records follow the input order and preserve each item's
