@@ -19,6 +19,9 @@ use serde_json::{json, Value};
 
 use crate::identity::ObligationIdentity;
 
+mod witness;
+pub use witness::*;
+
 /// A complete canonical product-state key, encoded by the checker.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ProbabilityProductKey(Vec<u8>);
@@ -355,8 +358,7 @@ pub enum ExactProbabilityGraphError {
     /// The claim's `over` parameter has not exactly one instance in the
     /// subject; this slice checks one binding.
     UnsupportedBinding,
-    /// No checked claim has the requested obligation's node as its checked
-    /// package identity, or more than one does.
+    /// No unique checked claim has the requested complete obligation identity.
     ClaimNotBound,
     /// The bound claim is not an unbounded `eventually` reachability claim,
     /// the only form this bounded slice checks.
@@ -370,6 +372,7 @@ pub enum ExactProbabilityGraphError {
 /// This adapter intentionally refuses draws with multiple post-states and
 /// stops at explicit limits. It is a bounded exact-check foundation, not a
 /// complete probabilistic product implementation.
+#[allow(clippy::too_many_arguments)]
 fn enumerate_model_graph<P: StatePredicate>(
     system: &ModelSystem<'_>,
     target: &P,
@@ -377,11 +380,17 @@ fn enumerate_model_graph<P: StatePredicate>(
     max_states: usize,
     max_edges: usize,
     cancel: &Cancel,
+    stop_at_target: bool,
+    visit: &mut impl FnMut(&ProbabilityProductKey, &ModelSimState),
+    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
 ) -> Result<CheckerGraph, ExactProbabilityGraphError> {
     poll_cancel(cancel)?;
     let initial = system.initial();
     if initial.len() != 1 {
         return Err(ExactProbabilityGraphError::UnsupportedInitial);
+    }
+    if max_states == 0 {
+        return Err(ExactProbabilityGraphError::LimitReached);
     }
     let key_of = |state: &ModelSimState| {
         let (model_bytes, _) = system
@@ -400,32 +409,43 @@ fn enumerate_model_graph<P: StatePredicate>(
     let mut edge_count = 0usize;
     while let Some((key, state)) = pending.pop_front() {
         poll_cancel(cancel)?;
-        if states.len() == max_states {
-            return Err(ExactProbabilityGraphError::LimitReached);
-        }
+        visit(&key, &state);
         let reading = system
             .state_predicates(&state, &[(target, binding)])
-            .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
+            .map_err(|stop| {
+                failure(crate::ExactProbBuildIssue::Expansion(stop));
+                ExactProbabilityGraphError::ExpansionRefused
+            })?
             .into_iter()
             .next()
             .ok_or(ExactProbabilityGraphError::ExpansionRefused)?;
         let terminal = match reading {
             qsl_eval::simulation::model::PredicateReading::True => Some(true),
             qsl_eval::simulation::model::PredicateReading::False => None,
+            qsl_eval::simulation::model::PredicateReading::Refused(outcome) => {
+                failure(crate::ExactProbBuildIssue::Predicate(outcome));
+                return Err(ExactProbabilityGraphError::ExpansionRefused);
+            }
             _ => return Err(ExactProbabilityGraphError::ExpansionRefused),
         };
-        let choices = if terminal.is_some() {
+        let choices = if terminal.is_some() && stop_at_target {
             Vec::new()
         } else {
             let actions = system
                 .actions(&state)
-                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
-                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+                .map_err(|stop| {
+                    failure(crate::ExactProbBuildIssue::Expansion(stop));
+                    ExactProbabilityGraphError::ExpansionRefused
+                })?
+                .map_err(|_| {
+                    failure(crate::ExactProbBuildIssue::UndecidedSuccessor);
+                    ExactProbabilityGraphError::ExpansionRefused
+                })?;
             if actions.is_empty() {
                 states.insert(
                     key,
                     CheckerState {
-                        terminal: Some(false),
+                        terminal: terminal.or(Some(false)),
                         choices: Vec::new(),
                     },
                 );
@@ -459,7 +479,11 @@ fn enumerate_model_graph<P: StatePredicate>(
                         target: target_key.clone(),
                         probability: draw.probability,
                     });
-                    if seen.insert(target_key.clone()) {
+                    if !seen.contains(&target_key) {
+                        if seen.len() >= max_states {
+                            return Err(ExactProbabilityGraphError::LimitReached);
+                        }
+                        seen.insert(target_key.clone());
                         pending.push_back((target_key, successor));
                     }
                 }
@@ -521,11 +545,21 @@ pub(crate) fn check_model_exact_reachability<P: StatePredicate>(
     (max_states, max_edges): (usize, usize),
     cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificateCheck, ExactProbabilityGraphError> {
-    let graph = enumerate_model_graph(system, target, binding, max_states, max_edges, cancel)?;
+    let graph = enumerate_model_graph(
+        system,
+        target,
+        binding,
+        max_states,
+        max_edges,
+        cancel,
+        true,
+        &mut |_, _| {},
+        &mut |_| {},
+    )?;
     check_exact_reachability(&graph, certificate, objective, bound, cancel)
 }
 
-/// Bind `item` to its checked claim by checked node identity, then check the
+/// Bind `item` to its checked claim by complete obligation identity, then check the
 /// certificate over that claim's target predicate and bound (FR-498).
 ///
 /// The claim is the one whose `occurrence().node()` equals the obligation's
@@ -542,19 +576,7 @@ pub fn check_claim_exact_reachability(
     max_edges: usize,
     cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificateCheck, ExactProbabilityGraphError> {
-    poll_cancel(cancel)?;
-    let mut bound_claim = None;
-    for claim in claims {
-        poll_cancel(cancel)?;
-        if claim
-            .occurrence()
-            .is_some_and(|key| key.node() == item.node())
-            && bound_claim.replace(claim).is_some()
-        {
-            return Err(ExactProbabilityGraphError::ClaimNotBound);
-        }
-    }
-    let claim = bound_claim.ok_or(ExactProbabilityGraphError::ClaimNotBound)?;
+    let claim = bind_claim(claims, item, cancel)?;
     let ProbForm::Reach {
         bound,
         target: ReachTarget::Eventually(predicate),
@@ -574,6 +596,46 @@ pub fn check_claim_exact_reachability(
         (max_states, max_edges),
         cancel,
     )
+}
+
+/// Derive the complete request-item identity from the checked claim's own
+/// occurrence using the qualified planner's claim identity contract. The
+/// subject carries the owning model; the actual occurrence ordinal is retained.
+///
+/// # Errors
+///
+/// Returns `ClaimNotBound` for an unassembled claim or an unrepresentable ordinal.
+pub fn probabilistic_claim_identity(
+    claim: &CheckedProbabilisticClaim,
+) -> Result<ObligationIdentity, ExactProbabilityGraphError> {
+    let occurrence = claim
+        .occurrence()
+        .ok_or(ExactProbabilityGraphError::ClaimNotBound)?;
+    if u32::try_from(occurrence.origin().ordinal()).is_err() {
+        return Err(ExactProbabilityGraphError::ClaimNotBound);
+    }
+    Ok(ObligationIdentity::from_claim_occurrence(occurrence))
+}
+
+fn bind_claim<'a>(
+    claims: &'a [CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    cancel: &Cancel,
+) -> Result<&'a CheckedProbabilisticClaim, ExactProbabilityGraphError> {
+    poll_cancel(cancel)?;
+    let mut bound_claim = None;
+    for claim in claims {
+        poll_cancel(cancel)?;
+        if claim
+            .occurrence()
+            .is_some_and(|key| key.node() == item.node())
+            && (&probabilistic_claim_identity(claim)? != item
+                || bound_claim.replace(claim).is_some())
+        {
+            return Err(ExactProbabilityGraphError::ClaimNotBound);
+        }
+    }
+    bound_claim.ok_or(ExactProbabilityGraphError::ClaimNotBound)
 }
 
 /// The one `over` instance of a claim and the reference its predicates read.

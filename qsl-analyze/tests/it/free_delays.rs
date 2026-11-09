@@ -881,9 +881,10 @@ fn detour_maximum_witness_is_a_two_path_set_of_merged_steps() {
                 ..ExactProbLimits::default()
             },
         )
-        .expect("the policy induces a chain")
     };
-    let witness = produce(2).expect("two paths pass the bound");
+    let witness = produce(2)
+        .expect("the policy induces a chain")
+        .expect("two paths pass the bound");
     let expected = [row(&[("A", 1)], &[("B", 2)]), row(&[("A", 3)], &[("B", 1)])];
     // FR-204 "Evidence": the race state's entry, and the entry of the
     // continuation state the chain also reaches (a unit delay no emitted path
@@ -934,7 +935,16 @@ fn detour_maximum_witness_is_a_two_path_set_of_merged_steps() {
     assert_eq!(row_mass(&built, &rows[0], b_wins.to), ratio(0, 1));
     assert_eq!(row_mass(&built, &rows[1], b_wins.to), ratio(1, 2));
 
-    assert!(produce(1).is_none(), "`1/2` alone does not pass `7/10`");
+    assert!(
+        matches!(
+            produce(1),
+            Err(qsl_analyze::exact_probabilistic::WitnessError::Limit {
+                limit: qsl_replay::ModelCheckLimit::ExactProbMaxWitnessPaths,
+                value: 1
+            })
+        ),
+        "`1/2` alone does not pass `7/10` before the path budget stops production"
+    );
 
     // A path probability wider than `max_rational_bits` is unproducible.
     let narrow = ExactProbLimits {
@@ -951,15 +961,32 @@ fn detour_maximum_witness_is_a_two_path_set_of_merged_steps() {
             &ratio(7, 10),
             limits,
         )
-        .expect("the policy induces a chain")
     };
-    assert!(produce_with(&narrow).is_none(), "`1/2` needs two bits");
+    assert!(
+        matches!(
+            produce_with(&narrow),
+            Err(qsl_analyze::exact_probabilistic::WitnessError::Limit {
+                limit: qsl_replay::ModelCheckLimit::ExactProbMaxRationalBits,
+                value: 1
+            })
+        ),
+        "`1/2` needs two bits"
+    );
     // Frontier pushes count against `max_transitions`: the two expansions
     // fit in 2, the four pushes do not.
     let mut few = ExactProbLimits::default();
     few.model.limits.max_transitions = 2;
-    assert!(produce_with(&few).is_none());
-    assert!(produce_with(&ExactProbLimits::default()).is_some());
+    assert!(matches!(
+        produce_with(&few),
+        Err(qsl_analyze::exact_probabilistic::WitnessError::Limit {
+            limit: qsl_replay::ModelCheckLimit::ExactProbMaxTransitions,
+            value: 2
+        })
+    ));
+    assert!(matches!(
+        produce_with(&ExactProbLimits::default()),
+        Ok(Some(_))
+    ));
 }
 
 /// TC-637: the `Detour` witness action's canonical body admits

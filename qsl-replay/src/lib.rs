@@ -329,12 +329,14 @@ pub use planner::{
     PlannerResult, PremiseItem, PremiseResult, ResultEntry, SettlementRequest,
 };
 pub use probability_certificate::{
-    check_claim_exact_reachability, claim_binding, digital_probability_product_key, ClaimBinding,
-    DigitalClockKey, DigitalDeadlineKey, DigitalProductKeyInput, DigitalTail,
-    ExactProbabilityAcceptance, ExactProbabilityCertificate, ExactProbabilityCertificateCheck,
-    ExactProbabilityGraphError, ExactProbabilityValue, ProbabilityBoundSide,
+    check_claim_exact_reachability, claim_binding, digital_probability_product_key,
+    probabilistic_claim_identity, replay_probabilistic_witness, ClaimBinding, DigitalClockKey,
+    DigitalDeadlineKey, DigitalProductKeyInput, DigitalTail, ExactProbabilityAcceptance,
+    ExactProbabilityCertificate, ExactProbabilityCertificateCheck, ExactProbabilityGraphError,
+    ExactProbabilityValue, ProbabilisticCounterexample, ProbabilityBoundSide,
     ProbabilityCertificateLocus, ProbabilityCertificateRejection, ProbabilityCertificateRule,
-    ProbabilityObjective, ProbabilityProductKey,
+    ProbabilityObjective, ProbabilityProductKey, ProbabilityWitnessError, ProbabilityWitnessPath,
+    ProbabilityWitnessReplay, ProbabilityWitnessStep, ReproducedProbabilityWitness,
 };
 pub use product_action::{
     FreeDelayActionRow, FreeDelayRow, FreeDelaysRace, FreeRacer, GivenRacer, NotMixedRace,
