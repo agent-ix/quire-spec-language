@@ -41,6 +41,12 @@ pub(crate) enum Halt {
     Fault(&'static str),
 }
 
+impl From<collections::Halt> for Halt {
+    fn from(halt: collections::Halt) -> Self {
+        lift(halt, None)
+    }
+}
+
 impl From<Stop> for Halt {
     fn from(stop: Stop) -> Self {
         Self::Stop(stop)
@@ -622,8 +628,8 @@ pub(crate) fn run(
         OpKind::IterAccumulator => {
             let accumulator = innermost(frames)?
                 .iteration
-                .accumulator
-                .clone()
+                .accumulator()
+                .cloned()
                 .ok_or(Halt::Fault("fold-accumulator-missing"))?;
             deliver(accumulator, op.result, arena)
         }
@@ -634,26 +640,20 @@ pub(crate) fn run(
         } => {
             let result = operand_value(a, left_repr, *result_boolean, arena)?;
             let iteration = &mut innermost(frames)?.iteration;
-            match iteration
-                .absorb(&spec.of(), result)
-                .map_err(|h| lift(h, Some(body)))?
-            {
-                Absorbed::Continue => Ok(0),
-                Absorbed::Summand(parts) => {
-                    let (total, summand) = *parts;
-                    let (sum, loss) =
-                        collections::sum_exact(&spec.value_type, total, summand, meter)
-                            .ok_or(Halt::Fault("sum-family-invalid"))?
-                            .map_err(|h| lift(h, Some(body)))?;
-                    if let Some(loss) = loss {
-                        losses.push(LocatedLoss {
-                            location: op.location.clone(),
-                            loss: ValueLoss::Decimal(loss),
-                        });
-                    }
-                    iteration.accumulator = Some(sum);
-                    Ok(0)
+            let absorbed = iteration.absorb(&spec.of(), result, |total, summand| {
+                let (sum, loss) = collections::sum_exact(&spec.value_type, total, summand, meter)
+                    .ok_or(Halt::Fault("sum-family-invalid"))?
+                    .map_err(|h| lift(h, Some(body)))?;
+                if let Some(loss) = loss {
+                    losses.push(LocatedLoss {
+                        location: op.location.clone(),
+                        loss: ValueLoss::Decimal(loss),
+                    });
                 }
+                Ok::<Value, Halt>(sum)
+            })?;
+            match absorbed {
+                Absorbed::Continue => Ok(0),
                 // `forall` and `exists` are outside the coverage.
                 Absorbed::Exit { .. } => Err(Halt::Fault("jit-iteration-exit-untranslated")),
             }
@@ -702,6 +702,7 @@ pub(crate) fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ix_trace_rs::trace;
 
     /// An arena over its bound is a backend fault, not unbounded growth.
     #[test]
@@ -750,6 +751,7 @@ mod tests {
     /// is the population's family result, located at the operation's node
     /// (FR-139); over one object it starts, and a source that names no
     /// population is a backend fault, as in the interpreter.
+    #[trace("TC-1385")]
     #[test]
     fn an_only_over_other_than_one_object_is_the_populations_family_result() {
         use crate::translate::IterSpec;

@@ -5,6 +5,7 @@
 //! the size of the program, not by the number of calls it makes.
 
 use crate::common::{interpreted, jitted, package_of, prepare, UNLIMITED};
+use ix_trace_rs::trace;
 
 /// `l11` makes 2^11 calls of `l0`, each building two `Integer` values wider
 /// than a machine word, from a program of twelve small functions.
@@ -23,6 +24,7 @@ const SOURCE: &str = "\
   function l11 using v(): Integer pure { l10() + l10() }\n\
 ";
 
+#[trace("TC-1385")]
 #[test]
 fn the_arena_stays_bounded_by_the_program_not_by_the_number_of_calls() {
     let package = package_of(SOURCE);
@@ -65,6 +67,7 @@ fn integers(count: usize) -> quire_exact::Value {
 /// A loop runs its body once per element, but cuts the arena back to its
 /// start before each visit, so the peak does not grow with the element
 /// count.
+#[trace("TC-1385")]
 #[test]
 fn a_loop_keeps_the_arena_bounded_whatever_the_element_count() {
     let package = package_of(LOOPS);

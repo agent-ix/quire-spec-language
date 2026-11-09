@@ -13,6 +13,7 @@ use quire_semantic_value::supplied_stop::{SuppliedLimits, SuppliedRun};
 use crate::common::{
     int, interpreted, jitted, name, package_of, prepare, unsupported_names, UNLIMITED,
 };
+use ix_trace_rs::trace;
 
 const SOURCE: &str = "\
  type Total = Integer;\n\
@@ -224,6 +225,7 @@ fn value_of_rec(package: &CheckedPackage) -> Value {
 /// Every function is prepared, and each call returns the interpreter's
 /// outcome and charges, over the construction, query, fold, sequence and
 /// conversion forms and the element types they carry.
+#[trace("TC-1385")]
 #[test]
 fn every_function_agrees_with_the_interpreter_on_value_and_charges() {
     let package = package_of(SOURCE);
@@ -247,6 +249,7 @@ fn every_function_agrees_with_the_interpreter_on_value_and_charges() {
 
 /// With `work_units` at each value below the interpreter's spend, the JIT
 /// stops at the same charge point and reports the same stop.
+#[trace("TC-1385")]
 #[test]
 fn a_denied_charge_stops_the_jit_where_it_stops_the_interpreter() {
     let package = package_of(SOURCE);
