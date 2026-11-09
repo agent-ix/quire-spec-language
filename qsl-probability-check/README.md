@@ -10,6 +10,20 @@ For accepted EN-5 proofs, `TerminalRecord::exact_certificate_document()` exposes
 the canonical bytes retained by the qualified checker's opaque acceptance token.
 Both direct analysis and provider results carry that same checked document.
 
+Inside each decoded six-component key, `model` is the parsed
+`["quire.simulation.state-key/v1", model_form]` array, with `model_form` exactly
+the bare form returned by `ModelSystem::state_key`. There is no inner base64
+layer. A formula monitor is `["formula", parsed_complete_FR338_key]`; contextual
+monitor/state membership remains the graph checker's responsibility.
+`ProbabilityProductKey::for_model_state` uses finite 1 GiB byte and cumulative
+working-storage defaults. `for_model_state_with_limits` and `for_formula_state`
+take explicit `ProbabilityDocumentIoLimits` and cancellation; model/monitor
+parsing, canonical validation and output share the working-storage reservation.
+Exhaustion names `certificate_check.max_certificate_bytes` or
+`certificate_check.max_working_bytes` with its configured bound and refused
+required amount. The two `link.model-key-*.json` vectors were captured directly
+from the production Link model's `ModelSystem::state_key` output.
+
 The request contains `source` (`authority`, `identity`, exact UTF-8 `content`),
 `package_name`, structural `item` (`node_id`, `model`, `ordinal`), source-keyed
 `byte_provision` triples (`authority`, `identity`, byte array), domain/snapshot

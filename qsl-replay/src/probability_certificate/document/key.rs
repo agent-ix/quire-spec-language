@@ -16,19 +16,16 @@ pub(crate) fn model_product_key(
     let admission = RefCell::new(writer::Admission::new(limits.storage_bytes, cancel));
     let model = read(model_bytes, limits.bytes, &admission)?;
     if !model_form(model.root()) { return Err(ProbabilityDocumentError::Malformed); }
-    let binding_text = binding.map(qsl_eval::simulation::model::reference_canonical_text)
-        .transpose().map_err(|_| ProbabilityDocumentError::Malformed)?;
-    let binding = binding_text.as_ref().map(|text| read(text.as_bytes(), limits.bytes, &admission)).transpose()?;
     let monitor = monitor.map(|key| read(key.as_bytes(), limits.bytes, &admission)).transpose()?;
     if monitor.as_ref().is_some_and(|key| !automaton_key(key.root())) {
         return Err(ProbabilityDocumentError::Malformed);
     }
-    struct Product<'a> { binding: Option<NodeRef<'a>>, model: NodeRef<'a>, monitor: Option<NodeRef<'a>> }
+    struct Product<'a> { binding: Option<&'a ObjectReference>, model: NodeRef<'a>, monitor: Option<NodeRef<'a>> }
     impl Encode for Product<'_> {
         fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), quire_canonical::Error> {
             writer.begin_array()?;
             writer.string("quire.probability-product-key/v1")?;
-            match self.binding { Some(binding) => binding.encode_into(writer)?, None => writer.null()? }
+            match self.binding { Some(binding) => qsl_eval::simulation::model::encode_reference(binding, writer)?, None => writer.null()? }
             writer.begin_array()?;
             writer.string("quire.simulation.state-key/v1")?;
             self.model.encode_into(writer)?;
@@ -42,7 +39,7 @@ pub(crate) fn model_product_key(
             writer.end_array()
         }
     }
-    let product = Product { binding: binding.as_ref().map(|key| key.root()), model: model.root(), monitor: monitor.as_ref().map(|key| key.root()) };
+    let product = Product { binding, model: model.root(), monitor: monitor.as_ref().map(|key| key.root()) };
     let bytes = writer::encode_reserved(&product, limits.bytes, &admission)?;
     poll(cancel)?;
     Ok(ProbabilityProductKey::from_canonical_bytes(bytes))

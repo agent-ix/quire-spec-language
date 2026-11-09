@@ -562,6 +562,28 @@ pub fn reference_canonical_text(reference: &ObjectReference) -> Result<String, E
     reference_enc(reference).canonical_text(Limits::new(u64::MAX))
 }
 
+/// Emit the same FR-181 reference triple from borrowed identities.
+/// All traversal and canonical storage is admitted by the supplied writer.
+///
+/// # Errors
+///
+/// The writer's byte, storage, allocation or encoding refusal.
+pub fn encode_reference<S: Sink + ?Sized>(
+    reference: &ObjectReference,
+    writer: &mut Writer<'_, S>,
+) -> Result<(), Error> {
+    writer.begin_object()?;
+    writer.name("type")?;
+    writer.string("reference")?;
+    writer.name("universe")?;
+    qsl_foundation::node_wire::encode_node_key(reference.universe().root_type(), writer)?;
+    writer.name("object_type")?;
+    write_effective(writer, reference.object_type())?;
+    writer.name("identity")?;
+    writer.string(reference.object().as_str())?;
+    writer.end_object()
+}
+
 /// The UnitId text: the RFC 8785 text of its structural identity record.
 fn unit_enc(unit: &quire_exact::UnitId) -> Enc {
     identity_text(unit_identity_enc(unit), "a unit identity")
