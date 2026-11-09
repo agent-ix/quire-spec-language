@@ -361,7 +361,7 @@ fn plain(claim: OccurrenceKey, kind: Capability, backend: &str) -> NegotiatedIte
 #[trace("TC-761", "FR-280-AC-2")]
 #[test]
 fn a_value_claim_returns_its_native_replayed_assignment() {
-    let declaration = "function Goal using v(): Boolean pure { false }";
+    let declaration = "function Goal using v(x: Int[0,3]): Boolean pure { x < 3 }";
     let (package, source) = crate::value_validity::package_with_source(declaration);
     let packages = qsl_semantics::model::intake::package_input(std::iter::empty::<&[u8]>())
         .expect("empty package input");
@@ -464,8 +464,13 @@ fn a_value_claim_returns_its_native_replayed_assignment() {
     let Counterexample::Assignments(assignment) = &result.counterexamples[0].counterexample else {
         panic!("native value assignment")
     };
-    assert!(assignment.parameters.is_empty());
-    assert!(assignment.reproduced.assignment().is_empty());
+    assert_eq!(assignment.parameters.len(), 1);
+    assert_eq!(
+        assignment.reproduced.assignment(),
+        &[quire_exact::Value::Integer(quire_exact::Integer::from(
+            3_i64
+        ))]
+    );
 }
 
 #[trace("TC-761", "FR-280-AC-2")]
