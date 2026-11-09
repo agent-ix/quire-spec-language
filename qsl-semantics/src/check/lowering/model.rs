@@ -2642,6 +2642,7 @@ impl<'a> Lowering<'a> {
                         None
                     }
                     DomainPackageRecord::MapType(map) => {
+                        references.push(&map.keys);
                         references.push(&map.values);
                         None
                     }

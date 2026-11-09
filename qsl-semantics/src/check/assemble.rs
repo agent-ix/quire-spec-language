@@ -1639,6 +1639,7 @@ fn model_object_types(
             | DomainPackageRecord::MapType(MapTypeRecord {
                 key,
                 values: ValueTypeRef::Unit(name),
+                ..
             })
             | DomainPackageRecord::AliasType(AliasTypeRecord {
                 key,
@@ -2371,28 +2372,34 @@ fn model_value_type(
                 )?)
             }
             Some(DomainPackageRecord::MapType(map)) => {
-                // A package map type declares its values alone; its keys are
-                // the package's native `string` (QSpec FR-154).
-                ValueType::Map(std::sync::Arc::new(
-                    quire_exact::MapType::new(
-                        ValueType::String,
-                        model_value_type(
-                            &map.values,
-                            Multiplicity {
-                                lower: 1,
-                                upper: Some(1),
-                                ordered: false,
-                                unique: true,
-                            },
-                            records,
-                            identities,
-                            meaning_handles,
-                            variant_shapes,
-                            units,
-                        )?,
-                        None,
+                // A package map type declares its key type, value type and
+                // entry-count bound (QSpec FR-154 "Map types").
+                let element = |value_type: &ValueTypeRef| {
+                    model_value_type(
+                        value_type,
+                        Multiplicity {
+                            lower: 1,
+                            upper: Some(1),
+                            ordered: false,
+                            unique: true,
+                        },
+                        records,
+                        identities,
+                        meaning_handles,
+                        variant_shapes,
+                        units,
                     )
-                    .expect("a leaf key"),
+                };
+                let bound = match map.upper {
+                    Some(upper) => Some(
+                        quire_exact::CardinalityBound::new(map.lower, upper)
+                            .map_err(|_| Unmapped::Broken)?,
+                    ),
+                    None => None,
+                };
+                ValueType::Map(std::sync::Arc::new(
+                    quire_exact::MapType::new(element(&map.keys)?, element(&map.values)?, bound)
+                        .map_err(|_| Unmapped::Unsupported)?,
                 ))
             }
             // FR-360 item 3: a payload-free variant type is its enum type,

@@ -1894,7 +1894,10 @@ fn option_type_projects_through_signature_alias_sequence_map_tuple_variant_unit_
         }),
         DomainPackageRecord::MapType(MapTypeRecord {
             key: map_key.clone(),
+            keys: ValueTypeRef::Native(NativeValueType::String),
             values: ValueTypeRef::Package(option_key.clone()),
+            lower: 0,
+            upper: None,
         }),
         DomainPackageRecord::TupleValueType(TupleValueTypeRecord {
             key: tuple_key.clone(),

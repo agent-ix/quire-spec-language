@@ -811,6 +811,21 @@ pub enum ModelRefusalCause {
         /// name it (`TypeDefinition.occurrenceField`).
         member: MemberPath,
     },
+    /// A read node is well formed but declares a meaning the model cannot
+    /// preserve (`invalid_model_binding`/`unpreserved-model-meaning`): a map
+    /// type's `bound` whose `lower` exceeds its `upper`, or exceeds `0` with
+    /// no `upper` (QSpec FR-154 "Map types"). It carries what
+    /// [`Self::IntakeMalformedDeclaration`] does.
+    UnpreservedModelMeaning {
+        /// The node's own identity string, as the wire supplied it.
+        node: String,
+        /// The node's source artifact, when its origin is a source.
+        artifact: Option<String>,
+        /// The node's source position, when its origin is a source.
+        span: Option<LocatedSpan>,
+        /// The member the meaning is unpreserved at.
+        member: MemberPath,
+    },
     /// An original model reference names no declaration in the selected
     /// package. The path and FCD origin belong to the referring node.
     IntakeMissingDeclaration {
@@ -1268,6 +1283,7 @@ impl ModelRefusalCause {
             | Self::MisWiredLink { .. }
             | Self::MalformedDeclaration { .. }
             | Self::IntakeMalformedDeclaration { .. }
+            | Self::UnpreservedModelMeaning { .. }
             | Self::IntakeMissingDeclaration { .. }
             | Self::UnsupportedDeclarationForm { .. }
             | Self::FrameEntryMissing { .. }
@@ -1336,6 +1352,7 @@ impl ModelRefusalCause {
             Self::ForeignUniverse { .. } => "foreign-universe",
             Self::AbsentKey { .. } => "absent-key",
             Self::WrongExport => "wrong-export",
+            Self::UnpreservedModelMeaning { .. } => "unpreserved-model-meaning",
             Self::UnresolvedName { .. } => "missing-name",
             Self::ForeignAlias { .. } => "foreign-model-selection",
             Self::ConflictingBinding { .. } => "conflicting-binding",
@@ -1422,6 +1439,7 @@ impl ModelRefusalCause {
             | Self::PortDirection { .. }
             | Self::MalformedDeclaration
             | Self::IntakeMalformedDeclaration { .. }
+            | Self::UnpreservedModelMeaning { .. }
             | Self::FrameEntryMalformed { .. }
             | Self::ReservedPackageIdentity { .. }
             | Self::WrongModelSelection { .. } => "invalid_model_binding",
@@ -1677,6 +1695,12 @@ pub mod fixtures {
             key: Vec::new()
         },
         WrongExport => ModelRefusalCause::WrongExport,
+        UnpreservedModelMeaning => ModelRefusalCause::UnpreservedModelMeaning {
+            node: String::new(),
+            artifact: None,
+            span: None,
+            member: MemberPath::new(MemberRoot::Package),
+        },
         UnresolvedName => ModelRefusalCause::UnresolvedName {
             name: String::new(),
             segment: 0,
@@ -1963,6 +1987,7 @@ pub(crate) mod tests {
             ModelRefusalCause::ForeignUniverse { .. } => "foreign-universe",
             ModelRefusalCause::AbsentKey { .. } => "absent-key",
             ModelRefusalCause::WrongExport => "wrong-export",
+            ModelRefusalCause::UnpreservedModelMeaning { .. } => "unpreserved-model-meaning",
             ModelRefusalCause::UnresolvedName { .. } => "missing-name",
             ModelRefusalCause::ForeignAlias { .. } => "foreign-model-selection",
             ModelRefusalCause::ConflictingBinding { .. } => "conflicting-binding",
@@ -2048,6 +2073,7 @@ pub(crate) mod tests {
             ModelRefusalCause::UnsuppliedProducerRecord => "invalid_model_binding",
             ModelRefusalCause::RedefinitionTarget { .. } => "invalid_model_binding",
             ModelRefusalCause::WrongExport => "invalid_model_binding",
+            ModelRefusalCause::UnpreservedModelMeaning { .. } => "invalid_model_binding",
             ModelRefusalCause::ConflictingBinding { .. } => "invalid_model_binding",
             ModelRefusalCause::PortDirection { .. } => "invalid_model_binding",
             ModelRefusalCause::MalformedDeclaration => "invalid_model_binding",

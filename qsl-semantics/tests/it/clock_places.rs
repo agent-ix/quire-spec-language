@@ -1288,7 +1288,7 @@ fn a_clock_collection_field_parameter_and_result_check_with_their_bounds() {
             let mut map = wire_type(
                 &package("TickMap"),
                 "unused",
-                json!({"values": "ix://quire/native/Clock"}),
+                json!({"keys": "ix://quire/native/Text", "values": "ix://quire/native/Clock", "bound": {"lower": 0}}),
             );
             map["kind"] = json!("map");
             types.push(map);
