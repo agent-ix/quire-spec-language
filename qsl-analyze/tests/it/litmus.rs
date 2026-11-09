@@ -32,6 +32,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
 use crate::counter::UNLIMITED;
+use quire_semantic_value::checking::CheckMode;
 
 pub(crate) const PACKAGE: &str = "test/litmus";
 
@@ -380,10 +381,7 @@ pub(crate) fn package_without_protocol_profile_selection(body: &str) -> CheckedP
     declarations.protocol_profile = None;
     let graph = declarations
         .with_unwritten_refinements()
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }
@@ -471,10 +469,7 @@ fn package_with_provisions(
         None => declarations.with_unwritten_refinements(),
     };
     let graph = declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }

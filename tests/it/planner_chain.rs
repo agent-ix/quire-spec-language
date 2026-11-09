@@ -20,6 +20,7 @@ use qsl_route::declaration::{DeclaredItem, ItemPremise};
 use qsl_route::request::RequestItem;
 use qsl_semantics::check::{ComponentGuaranteeKey, PackageDeclarations, SlotKey};
 use quire_exact::NodeKey;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::fairness::FairnessConstraint;
 use serde_json::{json, Value};
@@ -69,10 +70,7 @@ pub(crate) fn compile_with(unit: &str, documents: &[Value]) -> Result<CheckedPac
         PackageDeclarations::assemble(raw, PACKAGE.to_owned(), built, models, Vec::new())
             .map_err(Failure::Assembly)?;
     assembled
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .map(CheckedPackage::link)
         .map_err(Failure::Check)
 }

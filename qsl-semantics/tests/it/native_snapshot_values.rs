@@ -32,6 +32,7 @@ use serde_json::{json, Value};
 mod fixture;
 
 use fixture::id;
+use quire_semantic_value::checking::CheckMode;
 
 /// A structural node key for a fixture, distinct per `tag`.
 fn fixture_key(tag: u8) -> quire_exact::NodeKey {
@@ -178,10 +179,7 @@ fn replay_with(document: Value, base: Vec<(String, Value)>, declarations: &str) 
     };
     let declarations = assemble();
     let graph = assemble()
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     let model = json!({
         "identity": fixture::PACKAGE, "version": "1",

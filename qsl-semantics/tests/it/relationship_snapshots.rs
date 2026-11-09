@@ -26,6 +26,7 @@ use qsl_semantics::model::observation::{
 use qsl_semantics::model::operation::OperationDeclaration;
 use quire_checked::key::DeclarationKey;
 use quire_exact::ObjectReference;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::relationship_extent::Resolution;
 use serde_json::{json, Value};
@@ -450,10 +451,7 @@ fn checked(variant: &Variant) -> Admission {
         Vec::new(),
     )
     .expect("the model assembles")
-    .check(
-        CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
-    )
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .expect("the unit checks");
     Admission { graph, packages }
 }

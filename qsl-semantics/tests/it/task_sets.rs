@@ -19,6 +19,7 @@ use crate::model_operations::{
     admit_and_assemble_with_body, admit_and_assemble_with_profiles,
     attempt_update_modifies_version_number, config_unit_with_profiles, config_version_document,
 };
+use quire_semantic_value::checking::CheckMode;
 
 const PROFILES: &str = "profile t = \"quire.temporal.complete/v1\";\n";
 
@@ -57,10 +58,7 @@ fn unit_text(declarations: &str) -> String {
 fn check(declarations: &str) -> Result<CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>> {
     admit_and_assemble_with_profiles(&document(), PROFILES, &unit_text(declarations))
         .expect("S2 keeps the task-set forms")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
 }
 
 fn checked(declarations: &str) -> CheckedGraph {
@@ -462,10 +460,7 @@ fn each_task_set_declaration_needs_the_temporal_complete_layer() {
     ] {
         let refusals = admit_and_assemble_with_body(&document(), &unit_text(body))
             .expect("S2 retains the declaration")
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect_err("S3 requires the temporal facet");
         let [error] = refusals.as_slice() else {
             panic!("{body}: one error expected: {refusals:?}");

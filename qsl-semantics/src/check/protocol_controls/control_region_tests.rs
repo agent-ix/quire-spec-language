@@ -23,6 +23,7 @@ mod fixture {
     include!("../../../tests/fixtures/protocol_obligations.rs");
 }
 use fixture::{obligation_model, HEADER};
+use quire_semantic_value::checking::CheckMode;
 
 /// A unit cannot be empty, so every package opens with the protocol `Base`
 /// of no checks; then one protocol per `(name, check count)`, each running
@@ -60,7 +61,7 @@ fn check(text: &str, limits: CheckingLimits) -> Result<CheckedGraph, Vec<CheckRe
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("{text}: the assembler refuses: {refusal:?}"))
-    .check(limits, quire_semantic_value::checking::CheckMode::Linked)
+    .check(limits, CheckMode::Linked)
 }
 
 /// Builds the limits that cap one dimension at a value.

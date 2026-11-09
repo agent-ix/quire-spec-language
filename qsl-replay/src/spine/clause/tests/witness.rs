@@ -26,6 +26,7 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{ApplicationTerm, BodyTerm, Operator};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use quire_semantic_value::catalog::Category;
+use quire_semantic_value::checking::CheckMode;
 
 /// The `witness` unit's invariants, on `Config::ConfigVersion` at
 /// `current`. `L` is `ints(sequence[0, self.versionNumber, self.versionNumber])`:
@@ -2285,7 +2286,7 @@ fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
     let graph = declarations
         .check(
             quire_semantic_value::checking::CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .expect("the unit table checks");
     (

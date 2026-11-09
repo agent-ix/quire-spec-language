@@ -9,6 +9,7 @@
 
 use super::owners::node_where;
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 #[path = "../../../../qsl-semantics/tests/support/variant_fields.rs"]
 pub(super) mod fixture;
@@ -81,10 +82,7 @@ fn checked_unit_with_profile(
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     (graph, document)
 }

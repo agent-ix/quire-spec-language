@@ -18,6 +18,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use super::refinement_declarations::{
     assemble, check_with, counter_spec, diamond_counter, sub_counter, DIAMOND, SPEC, SUB,
 };
+use quire_semantic_value::checking::CheckMode;
 
 const PROFILES: &str = "profile p = \"quire.protocol.finite-global/v1\";\n";
 
@@ -275,10 +276,7 @@ fn a_clause_class_with_no_node_leaves_the_catalog_unlowered() {
         .expect("the unit assembles")
         .with_unwritten_refinements()
         .with_unwritten_protocols()
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{refusals:?}"));
     let refinement = the_refinement(&graph);
     let catalog = refinement.class_catalog().expect("a checked catalog");
@@ -314,10 +312,7 @@ fn a_clause_holding_a_choice_and_a_repeat_keys_its_catalog() {
     let graph = declarations
         .expect("the unit assembles")
         .with_unwritten_refinements()
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{refusals:?}"));
     let refinement = the_refinement(&graph);
     let catalog = refinement.class_catalog().expect("a checked catalog");

@@ -31,6 +31,7 @@ use quire_checked::key::DeclarationKey;
 use quire_exact::{
     EffectiveId, FieldValue, Integer, Meter, ObjectId, ObjectReference, Presence, Value,
 };
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::object_closure::ObjectClosure;
 use quire_semantic_value::relationship_extent::{
@@ -131,10 +132,7 @@ fn orders_package() -> CheckedPackage {
     .expect("the model assembles");
     CheckedPackage::link(
         declarations
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the orders model checks"),
     )
 }

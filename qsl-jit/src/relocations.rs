@@ -3,30 +3,19 @@
 //! generator's relocation records.
 //!
 //! A block reaches the kernel only through the module's imported kernel
-//! shim, which Cranelift names with an absolute relocation, and reaches its
-//! own blocks with relative call relocations. [`BlockRelocations`] holds those
-//! records for one block and [`check_call_targets`] fails on any target that
-//! is neither.
+//! shim and reaches its own blocks by direct calls, and the translator emits
+//! no indirect call. [`BlockRelocations`] holds the direct targets and the
+//! count of indirect calls of one block, and [`check_call_targets`] fails on
+//! any target that is neither the shim nor a block, and on any indirect call.
+//!
+//! The records are read only by the `test-support` check, so the whole
+//! module is built only with that feature.
 
-use cranelift_codegen::binemit::Reloc;
-use cranelift_codegen::ir::{
-    self, ExternalName, Function, InstructionData, Opcode, UserExternalName, ValueDef,
-};
+use cranelift_codegen::ir::{ExternalName, Function, InstructionData, UserExternalName};
 use cranelift_codegen::CompiledCode;
 use cranelift_module::{FuncId, Module};
 
-/// The symbol of the module's one kernel table entry (FR-561).
-pub(crate) const KERNEL_SHIM_SYMBOL: &str = "qsl_jit_shim";
-
-/// How a relocation names its target.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RelocationKind {
-    /// The target's absolute address, as a call through an imported symbol
-    /// loads it.
-    Absolute,
-    /// A pc-relative call to a function placed in the same module.
-    Relative,
-}
+use crate::exec::KERNEL_SHIM_SYMBOL;
 
 /// What a block's direct call target is.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -39,38 +28,19 @@ pub enum CallTarget {
     Outside(String),
 }
 
-/// Where an indirect call's target register was loaded from.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum IndirectSource {
-    /// A `KernelTable` slot of the same prepared value.
-    TableSlot,
-    /// Any other register.
-    Register,
-}
-
-/// One relocation of a block that names a call target.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Relocation {
-    /// How the record names its target.
-    pub kind: RelocationKind,
-    /// The target.
-    pub target: CallTarget,
-}
-
 /// The call-target facts of one generated block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BlockRelocations {
     /// The block's symbol.
     pub block: String,
     /// Its direct call targets, from its relocation records.
-    pub direct: Vec<Relocation>,
-    /// The source of each of its indirect calls' targets.
-    pub indirect: Vec<IndirectSource>,
+    pub direct: Vec<CallTarget>,
+    /// How many indirect calls it makes. The translator emits none.
+    pub indirect_calls: usize,
 }
 
-#[cfg(feature = "test-support")]
 /// A call target that is neither a `KernelTable` entry nor a block of the
-/// prepared value, or an indirect call target not loaded from a table slot.
+/// prepared value, or an indirect call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StrayCall {
     /// The block that makes the call.
@@ -80,13 +50,12 @@ pub struct StrayCall {
 }
 
 /// What a test code generator emits besides the translation (FR-561-AC-3).
-#[cfg(feature = "test-support")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StrayCallKind {
     /// One direct call to an address outside the kernel table and the
     /// prepared blocks.
     Direct,
-    /// One indirect call through a register not loaded from a table slot.
+    /// One indirect call through a register.
     Indirect,
 }
 
@@ -94,8 +63,8 @@ pub enum StrayCallKind {
 /// against the set of blocks the prepared value holds.
 pub(crate) struct RawBlock {
     block: String,
-    direct: Vec<(RelocationKind, String)>,
-    indirect: Vec<IndirectSource>,
+    direct: Vec<String>,
+    indirect_calls: usize,
 }
 
 impl RawBlock {
@@ -126,17 +95,9 @@ impl RawBlock {
             .buffer
             .relocs()
             .iter()
-            .filter_map(|record| {
-                let kind = match record.kind {
-                    Reloc::Abs4 | Reloc::Abs8 => RelocationKind::Absolute,
-                    _ => RelocationKind::Relative,
-                };
-                match &record.target {
-                    cranelift_codegen::RelocTarget::ExternalName(name) => {
-                        Some((kind, name_of(name)))
-                    }
-                    cranelift_codegen::RelocTarget::Label(_) => None,
-                }
+            .filter_map(|record| match &record.target {
+                cranelift_codegen::RelocTarget::ExternalName(name) => Some(name_of(name)),
+                cranelift_codegen::RelocTarget::Label(_) => None,
             })
             .collect();
         Self {
@@ -147,7 +108,7 @@ impl RawBlock {
                 .clone()
                 .unwrap_or_default(),
             direct,
-            indirect: indirect_sources(function),
+            indirect_calls: indirect_calls(function),
         }
     }
 
@@ -159,18 +120,17 @@ impl RawBlock {
             direct: self
                 .direct
                 .into_iter()
-                .map(|(kind, name)| Relocation {
-                    kind,
-                    target: if name == KERNEL_SHIM_SYMBOL {
+                .map(|name| {
+                    if name == KERNEL_SHIM_SYMBOL {
                         CallTarget::KernelTable(name)
                     } else if blocks.contains(&name) {
                         CallTarget::Block(name)
                     } else {
                         CallTarget::Outside(name)
-                    },
+                    }
                 })
                 .collect(),
-            indirect: self.indirect,
+            indirect_calls: self.indirect_calls,
         }
     }
 
@@ -180,58 +140,26 @@ impl RawBlock {
     }
 }
 
-/// The source of each indirect call target of `function`: a load through a
-/// symbol value is a table slot, anything else is a register.
-fn indirect_sources(function: &Function) -> Vec<IndirectSource> {
+/// How many indirect calls `function` makes.
+fn indirect_calls(function: &Function) -> usize {
     let dfg = &function.dfg;
     function
         .layout
         .blocks()
         .flat_map(|block| function.layout.block_insts(block))
-        .filter_map(|inst| match &dfg.insts[inst] {
-            InstructionData::CallIndirect { args, .. } => {
-                let target = args.as_slice(&dfg.value_lists).first().copied()?;
-                Some(match dfg.value_def(target) {
-                    ValueDef::Result(loaded, _) if is_table_slot_load(function, loaded) => {
-                        IndirectSource::TableSlot
-                    }
-                    _ => IndirectSource::Register,
-                })
-            }
-            _ => None,
-        })
-        .collect()
+        .filter(|inst| matches!(dfg.insts[*inst], InstructionData::CallIndirect { .. }))
+        .count()
 }
 
-/// Whether `inst` loads from the address of a symbol (a table slot).
-fn is_table_slot_load(function: &Function, inst: ir::Inst) -> bool {
-    let dfg = &function.dfg;
-    let InstructionData::Load {
-        opcode: Opcode::Load,
-        arg,
-        ..
-    } = &dfg.insts[inst]
-    else {
-        return false;
-    };
-    matches!(
-        dfg.value_def(*arg),
-        ValueDef::Result(base, _)
-            if matches!(dfg.insts[base], InstructionData::UnaryGlobalValue { .. })
-    )
-}
-
-#[cfg(feature = "test-support")]
 /// Check that every direct target of `blocks` is a `KernelTable` entry or a
-/// block of the same prepared value and every indirect target is loaded from
-/// a table slot, and count the blocks that call a `KernelTable` entry.
+/// block of the same prepared value and no block calls indirectly, and count the blocks that call a `KernelTable` entry.
 ///
 /// # Errors
 /// The first stray call, naming its block and target.
 pub fn check_call_targets(blocks: &[BlockRelocations]) -> Result<usize, StrayCall> {
     let mut calling_the_table = 0;
     for block in blocks {
-        if let Some(stray) = block.direct.iter().find_map(|record| match &record.target {
+        if let Some(stray) = block.direct.iter().find_map(|target| match target {
             CallTarget::Outside(target) => Some(target.clone()),
             CallTarget::KernelTable(_) | CallTarget::Block(_) => None,
         }) {
@@ -240,16 +168,16 @@ pub fn check_call_targets(blocks: &[BlockRelocations]) -> Result<usize, StrayCal
                 target: stray,
             });
         }
-        if block.indirect.contains(&IndirectSource::Register) {
+        if block.indirect_calls > 0 {
             return Err(StrayCall {
                 block: block.block.clone(),
-                target: "indirect call through a register not loaded from a table slot".to_owned(),
+                target: "indirect call: the translator emits none".to_owned(),
             });
         }
         if block
             .direct
             .iter()
-            .any(|record| matches!(record.target, CallTarget::KernelTable(_)))
+            .any(|target| matches!(target, CallTarget::KernelTable(_)))
         {
             calling_the_table += 1;
         }

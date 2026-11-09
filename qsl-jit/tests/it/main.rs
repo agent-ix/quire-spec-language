@@ -10,6 +10,7 @@ mod common;
 mod coverage;
 mod differential;
 mod handle;
+mod kernel_mode;
 mod lifecycle;
 mod native;
 mod parity;

@@ -155,10 +155,7 @@ pub(crate) fn checked(domain: &Domain, text: &str) -> (CheckedPackage, Vec<Check
     )
     .expect("the unit assembles");
     let graph = declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"));
     let clauses = graph
         .temporal_clauses()
@@ -339,6 +336,7 @@ macro_rules! unguarded {
         }
     };
 }
+use quire_semantic_value::checking::CheckMode;
 pub(crate) use unguarded;
 
 impl ModelLetters for Atoms<'_> {

@@ -20,6 +20,7 @@ use qsl_semantics::model::intake::SelectedModels;
 use quire_checked::key::DeclarationKey;
 use quire_eval::{UnsupportedCause, UntranslatableConstruct};
 use quire_exact::{Cancel, Presence};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 fn key(node: &str) -> DeclarationKey {
@@ -115,10 +116,7 @@ fn orders_package() -> CheckedPackage {
     .expect("the model assembles");
     CheckedPackage::link(
         declarations
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the orders model checks"),
     )
 }

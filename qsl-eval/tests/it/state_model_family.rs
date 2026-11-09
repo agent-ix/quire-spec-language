@@ -31,6 +31,7 @@ use quire_exact::{
     Outcome, Value, ValueType,
 };
 use quire_semantic_value::catalog::Category;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::FieldRef;
 use quire_semantic_value::object_closure::ObjectClosure;
@@ -261,10 +262,7 @@ pub(crate) fn simulation_package_over(
 ) {
     let (declarations, _, _) = declarations_over(body, guard, wobble);
     let graph = declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("S3 checks source");
     let document = model_document_over(wobble);
     (
@@ -277,10 +275,7 @@ fn graph(body: &str, guard: bool) -> (CheckedGraph, EffectiveView) {
     let (declarations, view, _) = declarations(body, guard);
     (
         declarations
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("S3 checks source"),
         view,
     )
@@ -374,7 +369,7 @@ fn five_negative_source_units_refuse_at_s3_with_owned_raw_catalog_pairs_and_loci
     ] {
         let (declarations, _, source) = declarations(body, true);
         let regions = declarations.regions();
-        let refusals = declarations.check(CheckingLimits::default(), quire_semantic_value::checking::CheckMode::Linked).expect_err("S3 must refuse, after successful assembly");
+        let refusals = declarations.check(CheckingLimits::default(), CheckMode::Linked).expect_err("S3 must refuse, after successful assembly");
         let [refusal] = refusals.as_slice() else { panic!("one refusal: {refusals:?}"); };
         let CheckCause::StateModel(cause) = &refusal.cause else { panic!("StateModel ownership: {refusal:?}"); };
         assert_eq!(cause.family(), FamilyKind::StateModel);
@@ -402,10 +397,7 @@ fn record_field_stays_a_value_and_standalone_deref_is_not_a_value() {
     let (declarations, _, _) =
         declarations("function F using v(r: M::A): M::A pure { deref(r) }", true);
     let refusals = declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("deref needs a member read");
     assert!(!matches!(refusals[0].cause, CheckCause::StateModel(_)));
 }
@@ -486,7 +478,7 @@ fn available_source_attribute_and_reaches_negatives_have_owned_raw_pairs_and_loc
         let (declarations, _, source) = declarations(body, true);
         let regions = declarations.regions();
         let refusals = declarations
-            .check(CheckingLimits::default(), quire_semantic_value::checking::CheckMode::Linked)
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect_err("S3 refusal");
         let [refusal] = refusals.as_slice() else {
             panic!("one refusal: {refusals:?}");
@@ -786,10 +778,7 @@ fn source_reaches_context_refuses_before_operand_name_resolution() {
         true,
     );
     let refusals = declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("S3 refuses context");
     let [refusal] = refusals.as_slice() else {
         panic!("one refusal: {refusals:?}");
@@ -901,10 +890,7 @@ fn a_population_binding_over_a_non_object_target_refuses_type_mismatch() {
     );
     let declarations = assembled.expect("a record target assembles; S3 decides the binding");
     let refusals = declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("S3 must refuse a population over a non-object target");
     let [refusal] = refusals.as_slice() else {
         panic!("one refusal: {refusals:?}");

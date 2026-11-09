@@ -18,6 +18,7 @@ use crate::protocol_view::{
     relation_over, selection, source, temporal_binding, ControlOperation, Delivery, QueueCapacity,
     Scheduling, ViewRefusal,
 };
+use quire_semantic_value::checking::CheckMode;
 
 /// The TC-134 workflow plus an `await` anchored at an event, so every edge
 /// rule of QSpec FR-464 has an edge.
@@ -58,10 +59,7 @@ fn fixture_over(text: &str) -> Fixture {
     );
     let graph = assemble_with_models(source.as_bytes(), &packages)
         .expect("unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the workflow checks: {refusals:?}"));
     let selections = tc134_selections(&graph);
     let [protocol] = graph.protocols() else {

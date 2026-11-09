@@ -37,6 +37,7 @@ mod fixture {
     include!("../../../../tests/fixtures/protocol_obligations.rs");
 }
 use fixture::{obligation_model_with, HEADER};
+use quire_semantic_value::checking::CheckMode;
 
 /// Fixture R with the population `nodes` of its `Node`s.
 fn concrete_model() -> SelectedModel {
@@ -221,10 +222,7 @@ fn check_with_internals(
     }
     let regions = assembled.regions();
     assembled
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .map_err(|refusals| {
             refusals
                 .into_iter()
@@ -2104,10 +2102,7 @@ fn check_written(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     )
     .unwrap_or_else(|refusal| panic!("{text}: the assembler refuses: {refusal:?}"))
     .with_unwritten_refinements()
-    .check(
-        CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
-    )
+    .check(CheckingLimits::default(), CheckMode::Linked)
 }
 
 /// A refinement whose rows select a protocol with an `attempt` adds no

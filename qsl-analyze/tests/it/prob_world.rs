@@ -21,6 +21,7 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_exact::ScalarLimits;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -369,10 +370,7 @@ impl World {
             Vec::new(),
         )
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )?;
+        .check(CheckingLimits::default(), CheckMode::Linked)?;
 
         let header = json!({"identity": model.package});
         let mut snapshots = BTreeMap::new();

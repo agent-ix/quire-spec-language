@@ -17,6 +17,7 @@ use qsl_semantics::check::Capability;
 use serde_json::Value;
 
 use crate::support::front_end::emitted;
+use quire_semantic_value::checking::CheckMode;
 
 const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
@@ -125,7 +126,7 @@ fn a_claim_inside_a_case_arm_is_requested_as_a_value_validity_item() {
     .expect("the unit assembles")
     .check(
         quire_semantic_value::checking::CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
+        CheckMode::Linked,
     )
     .expect("the unit checks");
     let items = items_from_requirements(graph.requirements(), &registry, None);

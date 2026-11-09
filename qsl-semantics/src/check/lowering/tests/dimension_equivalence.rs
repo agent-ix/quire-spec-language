@@ -11,6 +11,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use crate::check::node_key::{BodyTerm, LeafTerm, MemberTerm, NodeTag, Owner};
 use crate::check::{CheckedGraph, PackageDeclarations};
 use crate::value::nominal_payload::NominalPayload;
+use quire_semantic_value::checking::CheckMode;
 
 /// Two base dimensions with a root unit each, then `rest`.
 fn source(rest: &str) -> String {
@@ -41,10 +42,7 @@ fn check(text: &str) -> CheckedGraph {
         Vec::new(),
     )
     .expect("the unit assembles")
-    .check(
-        CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
-    )
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .expect("the unit checks")
 }
 

@@ -29,6 +29,7 @@ use crate::check::{
     QualifiedCandidate,
 };
 use crate::value::enumeration::{mint_union_variant_id, mint_variant_id};
+use quire_semantic_value::checking::CheckMode;
 
 const SHAPE: &str = "union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n\
                      union Other { X }\n\
@@ -427,7 +428,7 @@ fn nesting_is_bounded_only_by_the_node_ceiling() {
         .package
         .check(
             CheckingLimits::default().with_nodes(needed - 1),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .expect_err("one node short");
     let [refusal] = refusals.as_slice() else {

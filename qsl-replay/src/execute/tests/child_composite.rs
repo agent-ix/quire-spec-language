@@ -18,6 +18,7 @@ use quire_semantic_value::declaration::{
 use super::{default_run, refused_parameter, WitnessValue, UNLIMITED};
 use crate::execute::argument::convert_arguments;
 use crate::witness::{WitnessField, WitnessSlot};
+use quire_semantic_value::checking::CheckMode;
 
 fn key(label: &str) -> NodeKey {
     NodeKey::new(
@@ -66,10 +67,7 @@ fn package() -> CheckedPackage {
     declarations.types = types;
     CheckedPackage::link(
         declarations
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the package checks"),
     )
 }

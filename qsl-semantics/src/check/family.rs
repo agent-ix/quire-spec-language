@@ -1589,7 +1589,8 @@ pub(crate) fn check_declaration_body(
     )
     .with_mode(input.mode);
     definedness.check(body.root())?;
-    // The measure's own definedness is checked, but (unchanged from the
+    // The measure's own definedness is checked in `Linked` mode in every
+    // mode (termination is not a run-time obligation), but (unchanged from the
     // pre-migration behavior) its calls are not folded into `calls` below:
     // termination's call graph is built from each function's *body*, not
     // its measure.
@@ -1599,7 +1600,6 @@ pub(crate) fn check_declaration_body(
             input.dispatch_tables,
             &input.scope.dispatch_operations,
         )
-        .with_mode(input.mode)
         .check(measure.root())?;
     }
     Ok(CheckedDeclarationBody {
@@ -2003,9 +2003,9 @@ pub struct ValueDeclarations<'a> {
     pub(crate) own_signature: &'a Signature,
     pub(crate) dispatch_tables: &'a [DispatchTable],
     pub(crate) checking_limits: CheckingLimits,
-    /// The check mode (FR-495): under `CheckMode::Kernel` a result bound or
-    /// other unproved definedness obligation is left to the kernel
-    /// evaluation.
+    /// The check mode (FR-495): under `CheckMode::Kernel` an unproved
+    /// definedness obligation of the function body is left to the kernel
+    /// evaluation; the termination measure is always checked as in Linked.
     pub(crate) mode: CheckMode,
     pub(crate) complete_value: bool,
     /// The derived StateModel body family and its population-name scope.
@@ -3781,10 +3781,7 @@ pub(crate) mod checking_tests {
                     qsl_foundation::IdentityLimits::default(),
                 )
             }
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the fixture checks")
             .function_identity(name)
             .expect("the fixture declares its function")
@@ -3904,10 +3901,7 @@ pub(crate) mod checking_tests {
                 qsl_foundation::IdentityLimits::default(),
             )
         }
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("repeated names are refused");
         let at = |index: usize| {
             BodyLocation::root(BodyOrigin::Body {
@@ -4134,10 +4128,7 @@ mod locus_tests {
         assert_eq!(&text[start..end], "1", "the node whose entry failed");
         let (unit, _) = sum_unit();
         assert!(unit
-            .check(
-                CheckingLimits::new(5_000),
-                quire_semantic_value::checking::CheckMode::Linked
-            )
+            .check(CheckingLimits::new(5_000), CheckMode::Linked)
             .is_ok());
     }
 
@@ -4263,7 +4254,7 @@ mod locus_tests {
     ) -> (StageLimitCause, Option<SourceRegion>) {
         let regions = unit.regions();
         let refusals = unit
-            .check(limits, quire_semantic_value::checking::CheckMode::Linked)
+            .check(limits, CheckMode::Linked)
             .expect_err("the limit stops package checking");
         let [refusal] = refusals.as_slice() else {
             panic!("one refusal, got {refusals:?}");

@@ -25,6 +25,7 @@ use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Integer, Rational, ScalarLimits};
 use quire_semantic_value::catalog::CatalogCode;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::model_transition::ModelTransition;
 use serde_json::{json, Value as Json};
@@ -282,10 +283,7 @@ fn try_world_of(
     )
     .expect("the unit assembles")
     .with_unwritten_timed_members()
-    .check(
-        CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
-    )?;
+    .check(CheckingLimits::default(), CheckMode::Linked)?;
     let header = json!({"identity": PACKAGE});
     let document = json!({
         "format": "quire.state.snapshot/v1",

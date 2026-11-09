@@ -59,6 +59,7 @@ use qsl_semantics::model::systems::{
     ConnectionOutcome,
 };
 use quire_checked::key::DeclarationKey;
+use quire_semantic_value::checking::CheckMode;
 use serde_json::Value;
 
 /// Parses test document bytes through intake's one parse.
@@ -2557,7 +2558,7 @@ fn a_port_role_on_a_shared_alias_is_its_own_units_packages_port() {
         .with_unwritten_protocols()
         .check(
             quire_semantic_value::checking::CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .unwrap_or_else(|refusals| panic!("both protocols check: {refusals:?}"));
     for (protocol, package) in [("Pa", A), ("Pb", B)] {

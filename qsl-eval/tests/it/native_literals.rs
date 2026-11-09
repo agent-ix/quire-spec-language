@@ -12,6 +12,7 @@ use quire_eval::FamilyOutcome;
 use quire_exact::{
     FieldValue, Meter, Outcome, ScalarLimits, TextProvenance, Timestamp, Uuid, Value, ValueType,
 };
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::TypeEnvironment;
 
@@ -86,10 +87,7 @@ fn fixture_of(functions: &str) -> Fixture {
     let types = declarations.types.clone();
     let package = CheckedPackage::link(
         declarations
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the unit checks"),
     );
     Fixture { package, types }

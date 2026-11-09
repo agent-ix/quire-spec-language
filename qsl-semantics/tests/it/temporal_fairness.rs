@@ -25,6 +25,7 @@ use crate::model_operations::{
     admit_and_assemble_with_profiles, ambiguous_operation_document,
     attempt_update_modifies_version_number, config_unit_with_profiles, config_version_document,
 };
+use quire_semantic_value::checking::CheckMode;
 
 /// A structural node key for a fixture, distinct per `tag`.
 fn fixture_key(tag: u8) -> quire_exact::NodeKey {
@@ -91,7 +92,7 @@ fn node_identity(body: &str) -> quire_exact::NodeKey {
     let graph = package
         .check(
             quire_semantic_value::checking::CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .unwrap_or_else(|refusals| panic!("{body}: the package checks: {refusals:?}"));
     let [clause] = graph.temporal_clauses() else {

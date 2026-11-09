@@ -24,6 +24,7 @@ mod state_compensation;
 
 #[path = "../../../../qsl-semantics/tests/support/tc1070.rs"]
 mod tc1070;
+use quire_semantic_value::checking::CheckMode;
 use tc1070::{document, document_ep, model, SOURCE};
 
 #[test]
@@ -99,10 +100,7 @@ fn fixture_named(
                 Vec::new(),
             )
             .unwrap()
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("TC-1070's legitimate protocol package checks"),
         ),
         view,

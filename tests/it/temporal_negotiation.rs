@@ -16,6 +16,7 @@ use qsl_route::request::{
 use qsl_route::{BackendDescriptor, Candidate, CandidateOutcome, Mode, ProviderOrigin, Registry};
 use qsl_semantics::check::{Capability, CheckedGraph, PackageDeclarations};
 use quire_semantic_value::catalog::{CatalogCoded, Category};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 /// ADR-018 §6's `Reaches`: `eventually holds(c.versionNumber = 2)` under the
@@ -49,10 +50,7 @@ fn reaches() -> CheckedGraph {
     .expect("the model is admitted");
     PackageDeclarations::assemble(raw, "fixture".to_string(), unit, models, Vec::new())
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("the unit checks")
 }
 

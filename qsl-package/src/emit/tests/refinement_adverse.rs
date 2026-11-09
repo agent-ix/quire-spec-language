@@ -15,6 +15,7 @@ use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionO
 use super::admission_corpus::{protocol_rows_running, rows_refinement, MAPS, PROTOCOL_ROWS};
 use super::protocol_reference::not_emitted;
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 /// The refusals of `unit` over `documents`, which must not check.
 fn refusals(unit: &str, documents: &[Vec<u8>]) -> Vec<CheckRefusal> {
@@ -22,10 +23,7 @@ fn refusals(unit: &str, documents: &[Vec<u8>]) -> Vec<CheckRefusal> {
         qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
     assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .map(|_| ())
         .expect_err("the unit refuses")
 }

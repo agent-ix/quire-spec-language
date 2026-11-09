@@ -17,6 +17,7 @@ use crate::model_operations::{
     attempt_update_modifies_version_number, config_unit_with_profiles,
     config_version_document_with_operations, empty_frame, operation,
 };
+use quire_semantic_value::checking::CheckMode;
 
 const PROFILES: &str = "profile t = \"quire.temporal.complete/v1\";\n";
 
@@ -42,10 +43,7 @@ fn unit_text(declarations: &str) -> String {
 fn check(declarations: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     admit_and_assemble_with_profiles(&document(), PROFILES, &unit_text(declarations))
         .expect("S2 keeps the release declarations")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
 }
 
 fn checked(declarations: &str) -> CheckedGraph {
@@ -198,10 +196,7 @@ fn a_release_is_refused_unless_the_timed_facet_is_selected() {
         &text,
     )
     .expect("S2 keeps the forms")
-    .check(
-        CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
-    )
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .expect_err("the facet gate refuses");
     let found = refusals.iter().any(|refusal| {
         matches!(
@@ -236,10 +231,7 @@ fn an_operation_inherited_from_two_unrelated_types_is_ambiguous() {
     let refusals =
         admit_and_assemble_with_profiles(&ambiguous_operation_document(), PROFILES, &text)
             .expect("S2 keeps the release")
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect_err("the operation is ambiguous");
     let [refusal] = &refusals[..] else {
         panic!("one refusal: {refusals:?}");

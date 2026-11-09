@@ -5,6 +5,7 @@
 //! under `make conformance`. Nothing of QSpec is copied into this repository.
 
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 /// The application nodes of the fixture at `path`.
 fn fixture_applications(path: &std::path::Path) -> Vec<Value> {
@@ -156,10 +157,7 @@ fn linked(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> Checke
     declarations.ieee_profile = Some(ieee_profile());
     CheckedPackage::link(
         declarations
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the fixture functions check"),
     )
 }
@@ -231,10 +229,7 @@ fn decimal_sum() -> CheckedPackage {
     )];
     CheckedPackage::link(
         declarations
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the fixture functions check"),
     )
 }
@@ -508,10 +503,7 @@ fn float_sum() -> Result<CheckedPackage, Vec<CheckRefusal>> {
         ),
     )];
     declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .map(CheckedPackage::link)
 }
 

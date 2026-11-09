@@ -40,6 +40,9 @@ pub(crate) enum Halt {
     Fault(&'static str),
 }
 
+/// The symbol of the module's one kernel table entry (FR-561).
+pub(crate) const KERNEL_SHIM_SYMBOL: &str = "qsl_jit_shim";
+
 /// The symbol of the test code generator's stray call target (FR-561-AC-3).
 #[cfg(feature = "test-support")]
 pub(crate) const STRAY_SYMBOL: &str = "qsl_jit_stray";
@@ -206,10 +209,7 @@ impl Machine {
             .finish(settings::Flags::new(flags))
             .map_err(|_| Refused)?;
         let mut builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
-        builder.symbol(
-            crate::relocations::KERNEL_SHIM_SYMBOL,
-            KernelTable { shim }.shim() as *const u8,
-        );
+        builder.symbol(KERNEL_SHIM_SYMBOL, KernelTable { shim }.shim() as *const u8);
         #[cfg(feature = "test-support")]
         builder.symbol(STRAY_SYMBOL, stray as *const u8);
         let mut module = JITModule::new(builder);
@@ -220,11 +220,7 @@ impl Machine {
         }
         signature.returns.push(AbiParam::new(types::I64));
         let id = module
-            .declare_function(
-                crate::relocations::KERNEL_SHIM_SYMBOL,
-                Linkage::Import,
-                &signature,
-            )
+            .declare_function(KERNEL_SHIM_SYMBOL, Linkage::Import, &signature)
             .map_err(|_| Refused)?;
         Ok((
             Self {

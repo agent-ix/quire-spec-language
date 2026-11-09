@@ -549,6 +549,19 @@ fn a_result_bound_checked_under_kernel_mode_is_the_interpreters_outcome() {
     }
     let over = run(&prepared, "s", &[int(5), int(5)]);
     assert!(matches!(over.outcome, Ok(None)), "{}", over.result);
+    // The cause is the result bound `[0, 9]`, located at the function body
+    // (the `Coerce` the bound adds to it).
+    for expected in [
+        "IntegerOutOfDomain",
+        "lower: Integer(0), upper: Integer(9)",
+        "origin: Body { function: \"s\", index: 0 }, depth: 0",
+    ] {
+        assert!(
+            over.result.contains(expected),
+            "{expected}: {}",
+            over.result
+        );
+    }
     let within = run(&prepared, "s", &[int(4), int(5)]);
     assert!(matches!(
         within.outcome,

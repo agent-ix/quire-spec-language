@@ -634,6 +634,7 @@ mod tests {
     use qsl_foundation::source::provenance::SourceRegion;
     use qsl_foundation::source_map::{Layout, Segment, SourceMap};
     use qsl_foundation::{Source, SourceIdentity, Span};
+    use quire_semantic_value::checking::CheckMode;
 
     use super::super::family::fixtures::{admitted_source, empty_scope, measure_resolved};
     use super::super::refusal::CheckingLimitKind;
@@ -816,10 +817,7 @@ mod tests {
         assert!(text(&declaration).ends_with("c + d }"));
 
         let checked = declarations
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the unit checks");
         for (location, expected) in &cases {
             let region = checked
@@ -871,10 +869,7 @@ mod tests {
         assert_eq!(declarations.declaration_region(1), None);
 
         let checked = declarations
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the unit checks");
         for location in &unresolved {
             assert_eq!(checked.region(location), None, "{location:?}");
@@ -950,10 +945,7 @@ mod tests {
         let standalone = unit();
         let regions = declarations.regions();
         let checked = for_check
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the unit checks");
         let cases = [
             (body(&[]), "if a then b else c + d"),
@@ -1197,7 +1189,7 @@ mod tests {
             let unit = unit();
             let regions = unit.regions();
             let refusals = unit
-                .check(limits, quire_semantic_value::checking::CheckMode::Linked)
+                .check(limits, CheckMode::Linked)
                 .expect_err("the limit stops checking");
             let [refusal] = refusals.as_slice() else {
                 panic!("one refusal, got {refusals:?}");
@@ -1230,7 +1222,7 @@ mod tests {
             let regions = unit.regions();
             let Err(refusals) = unit.check(
                 CheckingLimits::default().with_work_budget(budget),
-                quire_semantic_value::checking::CheckMode::Linked,
+                CheckMode::Linked,
             ) else {
                 continue;
             };
@@ -1266,7 +1258,7 @@ mod tests {
             let refusals = unit
                 .check(
                     CheckingLimits::default().with_work_budget(budget),
-                    quire_semantic_value::checking::CheckMode::Linked,
+                    CheckMode::Linked,
                 )
                 .expect_err("lowering spends past the budget");
             let [refusal] = refusals.as_slice() else {
@@ -1356,10 +1348,7 @@ mod tests {
         // isolation too, but Typer's package-wide counter, seeded at g1's
         // final 3, crosses 4 on g2's second node.
         let refusals = declarations
-            .check(
-                CheckingLimits::new(g1_count + 1),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::new(g1_count + 1), CheckMode::Linked)
             .expect_err("g2's Typer walk crosses the package-wide node bound");
         let [refusal] = refusals.as_slice() else {
             panic!("one refusal, got {refusals:?}");

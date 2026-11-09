@@ -18,6 +18,7 @@ use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Integer, Meter, Rational};
 
 use crate::temporal_trace::{fixture, EVENT};
+use quire_semantic_value::checking::CheckMode;
 
 fn ratio(numerator: i64, denominator: i64) -> Rational {
     Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("a nonzero divisor")
@@ -93,7 +94,7 @@ fn timestamped<R>(
     .expect("the unit assembles")
     .check(
         quire_semantic_value::checking::CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
+        CheckMode::Linked,
     )
     .unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"));
     let [node] = graph.temporal_clauses() else {
@@ -538,7 +539,7 @@ fn event_clause<R>(
     .expect("the unit assembles")
     .check(
         quire_semantic_value::checking::CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
+        CheckMode::Linked,
     )
     .unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"));
     let [node] = graph.temporal_clauses() else {

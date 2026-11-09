@@ -20,6 +20,7 @@ use crate::model_operations::{
     admit_and_assemble_with_profiles, config_unit_with_profiles, operation,
     version_number_value_type, wire_construct, wire_envelope, wire_field, wire_type,
 };
+use quire_semantic_value::checking::CheckMode;
 
 pub(super) const PACKAGE: &str = "example/config-version";
 pub(super) const TEMPORAL: &str = "profile t = \"quire.temporal.complete/v1\";\n";
@@ -164,7 +165,7 @@ pub(super) fn check(document: &[u8], body: &str) -> Result<CheckedGraph, Vec<Che
         .with_unwritten_timed_members()
         .check(
             quire_semantic_value::checking::CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
 }
 
@@ -365,7 +366,7 @@ fn check_with_other(body: &str) -> (String, Result<CheckedGraph, Vec<CheckRefusa
     .with_unwritten_timed_members()
     .check(
         quire_semantic_value::checking::CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
+        CheckMode::Linked,
     );
     (unit, checked)
 }
@@ -1224,7 +1225,7 @@ fn a_clock_reading_call_elsewhere_reads_a_clock_outside_a_constraint() {
             .with_unwritten_timed_members()
             .check(
                 quire_semantic_value::checking::CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
+                CheckMode::Linked,
             )
             .expect_err("the call is refused");
         let [refusal] = refusals.as_slice() else {
@@ -1287,7 +1288,7 @@ fn a_place_selected_by_a_clock_or_a_recursive_expansion_refuses() {
     let refusals = declarations
         .check(
             quire_semantic_value::checking::CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .expect_err("a recursive declaration needs a measure");
     let [refusal] = refusals.as_slice() else {
@@ -1393,7 +1394,7 @@ fn a_later_units_timed_predicate_names_types_through_its_own_alias() {
     .with_unwritten_timed_members()
     .check(
         quire_semantic_value::checking::CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
+        CheckMode::Linked,
     )
     .unwrap_or_else(|refusals| panic!("b's Config::Call resolves through b: {refusals:?}"));
     let model = timed(&graph);
@@ -1480,7 +1481,7 @@ fn a_clock_reading_parameter_names_its_own_units_package() {
     .with_unwritten_timed_members()
     .check(
         quire_semantic_value::checking::CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
+        CheckMode::Linked,
     )
     .unwrap_or_else(|refusals| panic!("b's o.x is a clock of b's package: {refusals:?}"));
     // QSL-1650: b's `time Config` times b's package, whose `x` is a clock,
@@ -1515,7 +1516,7 @@ fn check_units(
         .with_unwritten_timed_members()
         .check(
             quire_semantic_value::checking::CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
 }
 

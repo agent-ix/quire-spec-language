@@ -29,6 +29,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value};
 
 use crate::model_operations::{parse_and_build, wire_envelope, wire_field, PACKAGE_IDENTITY};
+use quire_semantic_value::checking::CheckMode;
 
 const P: &str = PACKAGE_IDENTITY;
 
@@ -324,19 +325,13 @@ fn assemble_over(document: &[u8], body: &str) -> PackageDeclarations {
 
 fn checked(body: &str) -> CheckedGraph {
     assemble(body)
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"))
 }
 
 fn refusals_of(body: &str) -> Vec<CheckRefusal> {
     assemble(body)
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("the unit refuses")
 }
 
@@ -346,10 +341,7 @@ fn located(body: &str) -> Vec<(Code, Option<&'static str>, String)> {
     let regions = declarations.regions();
     let (text, _) = service_unit(body);
     declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("the unit refuses")
         .iter()
         .map(|refusal| {
@@ -604,10 +596,7 @@ fn a_precondition_that_reads_a_random_parameter_refuses_at_the_read() {
     // position.
     let document = service_document_with(&["self.phase = Service::Phase::Busy and d < 5"]);
     let refusals = assemble_over(&document, &service(None, ""))
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("the requires reads d");
     let [refusal] = &refusals[..] else {
         panic!("one refusal: {refusals:?}");
@@ -641,10 +630,7 @@ fn a_reference_valued_random_parameter_refuses_value_outside_type() {
     let body = |random: &str| format!("{D}\n{OUTCOME}\n{DURATION}\n{steady}\n{random}\n");
     let refused = body("random Server::assign(target) ~ { 3: 1 };");
     let refusals = assemble_over(&document, &refused)
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("a reference-typed support is refused");
     let [refusal] = &refusals[..] else {
         panic!("one refusal: {refusals:?}");
@@ -657,10 +643,7 @@ fn a_reference_valued_random_parameter_refuses_value_outside_type() {
 
     // The `Int[1, 12]` parameter with the integer value `3` checks.
     assemble_over(&document, &body(""))
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("the integer-typed parameter checks");
 }
 
@@ -737,14 +720,14 @@ fn a_configured_rational_bits_ceiling_is_named_by_the_refusal() {
     assemble(&within)
         .check(
             CheckingLimits::default().with_rational_bits(8),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .expect("255 is eight bits");
     let past = service(Some((STEADY, &steady_with_request("256"))), "");
     let refusals = assemble(&past)
         .check(
             CheckingLimits::default().with_rational_bits(8),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .expect_err("256 is nine bits");
     let CheckCause::ResourceExhausted(limit) = &refusals[0].cause else {
@@ -998,10 +981,7 @@ fn a_quantity_random_parameter_checks_its_unit_and_precondition() {
     let random = "random Server::attempt(d) ~ { 1 ms: 90, 3 ms: 7, 12 ms: 3 };";
     let body = service(Some((D, random)), "");
     let graph = assemble_over(&document, &body)
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("same-unit quantities are a valid support");
     let model = graph.probabilistic_model();
     let [duration, outcome] = model.random_parameters() else {
@@ -1038,10 +1018,7 @@ fn a_quantity_random_parameter_checks_its_unit_and_precondition() {
         let invalid = format!("random Server::attempt(d) ~ {{ {value}: 1 }};");
         let body = service(Some((D, &invalid)), "");
         let refusals = assemble_over(&document, &body)
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect_err("wrong-unit and wrong-type supports are refused");
         assert_eq!(refusals.len(), 1, "one refusal for {value}: {refusals:?}");
         let refusal = &refusals[0];
@@ -1056,10 +1033,7 @@ fn a_quantity_random_parameter_checks_its_unit_and_precondition() {
                { self.phase = Service::Phase::Busy and d < 5 ms }";
     let body = service(Some((D, random)), pre);
     let refusals = assemble_over(&document, &body)
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("a precondition cannot read a random parameter");
     assert_eq!(refusals.len(), 1, "one refusal: {refusals:?}");
     let [refusal] = &refusals[..] else {
@@ -1078,10 +1052,7 @@ fn a_quantity_random_parameter_checks_its_unit_and_precondition() {
 #[test]
 fn quantity_literals_type_against_the_declared_units() {
     assemble("function lag using v(): Boolean pure { 5 ms <= 3 ms }")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("a quantity literal in a function body checks");
     let refusals = refusals_of("function lag using v(): Boolean pure { 5 parsec <= 3 ms }");
     assert_eq!(
@@ -1102,10 +1073,10 @@ fn quantity_literals_type_against_the_declared_units() {
 fn a_quantity_literal_is_bounded_by_the_configured_rational_bits() {
     let limits = CheckingLimits::default().with_rational_bits(8);
     assemble("function lag using v(): Boolean pure { 255 ms <= 3 ms }")
-        .check(limits, quire_semantic_value::checking::CheckMode::Linked)
+        .check(limits, CheckMode::Linked)
         .expect("eight bits is within the ceiling");
     let past = assemble("function lag using v(): Boolean pure { 256 ms <= 3 ms }")
-        .check(limits, quire_semantic_value::checking::CheckMode::Linked)
+        .check(limits, CheckMode::Linked)
         .expect_err("256 is nine bits");
     let CheckCause::ResourceExhausted(limit) = &past[0].cause else {
         panic!("a limit refusal: {:?}", past[0].cause);
@@ -1126,7 +1097,7 @@ fn a_distribution_total_is_bounded_by_the_configured_rational_bits() {
     let body = service(Some((D, random)), "");
     let limits = CheckingLimits::default().with_rational_bits(3);
     let refusals = assemble(&body)
-        .check(limits, quire_semantic_value::checking::CheckMode::Linked)
+        .check(limits, CheckMode::Linked)
         .expect_err("the sum is four bits");
     let CheckCause::ResourceExhausted(limit) = &refusals[0].cause else {
         panic!("a limit refusal: {:?}", refusals[0].cause);
@@ -1138,7 +1109,7 @@ fn a_distribution_total_is_bounded_by_the_configured_rational_bits() {
     assemble(&body)
         .check(
             CheckingLimits::default().with_rational_bits(7),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .expect("the sum is within seven bits (the other declarations' 98)");
 }
@@ -3072,10 +3043,7 @@ fn a_workload_name_is_package_wide() {
         let regions = declarations.regions();
         let (text, _) = service_unit(&body);
         let refusals = declarations
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect_err("the unit refuses");
         let [refusal] = &refusals[..] else {
             panic!("{second}: one refusal: {refusals:?}");
@@ -3171,11 +3139,7 @@ fn a_cancelled_check_ends_cancelled() {
     assert!(handle.set(tripping.clone()).is_ok());
     for (when, cancel) in [("before", before), ("at the first charge", tripping)] {
         let refusals = assemble(&refused)
-            .check_with_cancel(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-                &cancel,
-            )
+            .check_with_cancel(CheckingLimits::default(), CheckMode::Linked, &cancel)
             .expect_err("a cancelled check refuses");
         assert_eq!(
             cancel.tripped(),
@@ -3241,10 +3205,7 @@ fn service_document_with_flow() -> Vec<u8> {
 #[test]
 fn a_process_in_the_package_does_not_make_a_workload_incomplete() {
     assemble_over(&service_document_with_flow(), &service(None, ""))
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
 }
 
@@ -3275,10 +3236,7 @@ fn a_claims_subject_is_its_own_units_package() {
         &[("a", &a), ("b", b)],
         &[service.as_slice(), other.as_slice()],
     )
-    .check(
-        CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
-    )
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .unwrap_or_else(|refusals| panic!("b's claim checks: {refusals:?}"));
     let [claim] = graph.probabilistic_model().claims() else {
         panic!("one claim: {:?}", graph.probabilistic_model().claims());

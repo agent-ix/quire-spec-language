@@ -630,10 +630,7 @@ mod checked {
 
     fn package(declarations: PackageDeclarations) -> CheckedPackage {
         let graph = declarations
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .unwrap();
         // ADR-013 T-1 (FR-087): the S4 link step, over an
         // empty dependency closure -- this fixture declares no import.

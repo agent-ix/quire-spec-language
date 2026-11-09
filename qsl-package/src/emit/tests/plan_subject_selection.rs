@@ -8,6 +8,7 @@ use quire_contract_model::{CheckedNodeId, ClockConfiguration, TemporalBinding};
 use super::*;
 use crate::emit::monitor_plan::carry_rows;
 use crate::emit::{emit_monitor_plan_over, MonitorPlanWire, TemporalBindingRows};
+use quire_semantic_value::checking::CheckMode;
 
 /// The id the writer renames `id` to in these tests: a different package.
 fn renamed(id: &CheckedNodeId) -> CheckedNodeId {
@@ -50,10 +51,7 @@ fn rooted(selected: usize) -> Rooted {
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     let package = CheckedPackage::link(graph);
     let base = emit_checked(&package).expect("the package emits");

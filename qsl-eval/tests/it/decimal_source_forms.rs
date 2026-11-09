@@ -21,6 +21,7 @@ use qsl_semantics::check::{
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::FamilyOutcome;
 use quire_exact::{ChargePoint, Integer, LimitKind, Meter, Outcome, Rational, ScalarLimits, Value};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::loss::ValueLoss;
 
@@ -83,10 +84,7 @@ fn compile_limited(
     .expect("the unit assembles");
     declarations.decimal_literal_limits = limits;
     declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .map(CheckedPackage::link)
 }
 
@@ -1031,10 +1029,7 @@ fn a_float_converts_to_no_decimal() {
         )
         .expect("the pinned IEEE profile admits"),
     );
-    let Err(refusals) = declarations.check(
-        CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
-    ) else {
+    let Err(refusals) = declarations.check(CheckingLimits::default(), CheckMode::Linked) else {
         panic!("a float to decimal conversion is refused");
     };
     let [refusal] = refusals.as_slice() else {

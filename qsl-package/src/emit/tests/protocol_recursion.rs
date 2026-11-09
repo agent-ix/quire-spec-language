@@ -5,6 +5,7 @@
 use super::admission_corpus::config_version_unit;
 use super::*;
 use qsl_semantics::check::{CheckCause, CheckingLimitKind};
+use quire_semantic_value::checking::CheckMode;
 
 const PROTOCOL_PROFILE: &str = "quire.protocol.finite-global/v1";
 
@@ -83,7 +84,7 @@ fn check_result(
     let identity = package_identity(SPINE_MODEL_DOCUMENT);
     let declarations = assemble_with_models(text.as_bytes(), &packages).expect("unit assembles");
     declarations
-        .check(limits, quire_semantic_value::checking::CheckMode::Linked)
+        .check(limits, CheckMode::Linked)
         .map(|graph| (graph, identity))
 }
 
@@ -264,10 +265,7 @@ fn an_attempt_bearing_protocol_in_a_predicate_cycle_is_grouped_and_reads_back() 
     let (graph, model_digest) = {
         let graph = assemble_with_models(text.as_bytes(), &packages)
             .expect("the unit assembles")
-            .check(
-                CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
-            )
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .unwrap_or_else(|refusals| panic!("unit checks: {refusals:?}"));
         (graph, package_identity(document))
     };
@@ -356,7 +354,7 @@ fn checked_large_text(
     .expect("the spine model admits");
     let graph = PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, models, Vec::new())
         .expect("the unit assembles")
-        .check(limits, quire_semantic_value::checking::CheckMode::Linked)
+        .check(limits, CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("unit checks: {refusals:?}"));
     (graph, identity)
 }

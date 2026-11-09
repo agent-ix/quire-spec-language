@@ -14,6 +14,7 @@ use super::model_operations::{
     admit_and_assemble_with_body, config_version_document_with_operations, empty_frame, operation,
     PACKAGE_IDENTITY,
 };
+use quire_semantic_value::checking::CheckMode;
 
 /// The one function the unit declares: a unit needs a declaration, and no
 /// unit state clause names the operation.
@@ -44,10 +45,7 @@ fn check(
     let document = config_version_document_with_operations(vec![bump]);
     admit_and_assemble_with_body(&document, UNIT_BODY)
         .expect("the package assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
 }
 
 fn bump_node() -> String {

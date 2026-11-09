@@ -13,6 +13,7 @@ use crate::checked_v2::{
     clause_roots, resolve_clause_root, resolve_state_graph_root, state_graph_roots,
     ClauseRootUnresolved, StateGraphKind, StateGraphRoot, V2ReadRefusal,
 };
+use quire_semantic_value::checking::CheckMode;
 
 pub(super) fn document() -> &'static [u8] {
     config_version_unit::DOMAIN_PACKAGE.as_bytes()
@@ -56,10 +57,7 @@ pub(super) fn compile(unit: &str) -> Compiled {
     let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);

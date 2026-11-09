@@ -107,6 +107,7 @@ use qsl_semantics::model::intake::{
 use qsl_semantics::value::identity_limit;
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::InternalFault;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::semantic_node::IdentityRefusal;
 
 use super::subject::StaticSubjectInput;
@@ -3689,15 +3690,11 @@ impl<'a> Resolution<'a> {
             if frame.raw == self.continuation_source {
                 declarations.check_with_protocol_continuation_and_cancel(
                     limits.checking,
-                    quire_semantic_value::checking::CheckMode::Linked,
+                    CheckMode::Linked,
                     cancel,
                 )
             } else {
-                declarations.check_with_cancel(
-                    limits.checking,
-                    quire_semantic_value::checking::CheckMode::Linked,
-                    cancel,
-                )
+                declarations.check_with_cancel(limits.checking, CheckMode::Linked, cancel)
             }
         })
         .map_err(|refusals| {

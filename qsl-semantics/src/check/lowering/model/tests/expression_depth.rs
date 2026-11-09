@@ -9,6 +9,7 @@
 use quire_semantic_value::absence::AbsenceMode;
 
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 const STACK: usize = 512 * 1024;
 
@@ -102,7 +103,7 @@ impl ModelForm {
             .stack_size(STACK)
             .spawn(move || {
                 self.declarations(levels)
-                    .check(limits, quire_semantic_value::checking::CheckMode::Linked)
+                    .check(limits, CheckMode::Linked)
                     .map(drop)
             })
             .expect("the check thread spawns")

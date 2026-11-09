@@ -11,6 +11,7 @@ use quire_semantic_value::location::ExpressionOwner as Origin;
 #[path = "../../../../../tests/support/admitted_charge.rs"]
 mod admitted_charge;
 use admitted_charge::admitted_charge_points;
+use quire_semantic_value::checking::CheckMode;
 
 macro_rules! probe {
     ($identifier:expr, $machine:ident, $charges:expr, $action:block) => {{
@@ -296,7 +297,7 @@ fn checked_dispatch_package() -> qsl_package::CheckedPackage {
         declarations
             .check(
                 quire_semantic_value::checking::CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
+                CheckMode::Linked,
             )
             .unwrap(),
     )
@@ -616,7 +617,7 @@ fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
         declarations
             .check(
                 quire_semantic_value::checking::CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
+                CheckMode::Linked,
             )
             .unwrap(),
     );
@@ -650,7 +651,7 @@ fn imported_callable_consumer_uses_a_real_emitted_and_admitted_library() {
         declarations
             .check(
                 quire_semantic_value::checking::CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
+                CheckMode::Linked,
             )
             .unwrap(),
     );
@@ -830,7 +831,7 @@ fn query_stop_provenance_rejects_a_missing_selected_position_at_the_real_quantif
         declarations
             .check(
                 quire_semantic_value::checking::CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
+                CheckMode::Linked,
             )
             .unwrap(),
     );
@@ -1080,7 +1081,7 @@ fn both_ieee_profile_checks_and_conversion_operand_check_are_real_producers() {
     }
     .check(
         quire_semantic_value::checking::CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
+        CheckMode::Linked,
     )
     .unwrap();
     let package = qsl_package::CheckedPackage::link(graph);
@@ -1145,7 +1146,7 @@ fn field_slot_and_record_constructor_fail_at_the_actual_application_sites() {
     }
     .check(
         quire_semantic_value::checking::CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
+        CheckMode::Linked,
     )
     .unwrap();
     let package = qsl_package::CheckedPackage::link(graph);
@@ -1182,7 +1183,7 @@ fn object_package(
     }
     .check(
         quire_semantic_value::checking::CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
+        CheckMode::Linked,
     )
     .unwrap();
     qsl_package::CheckedPackage::link(graph)
@@ -1545,7 +1546,7 @@ fn an_out_of_type_stored_value_is_refused_at_the_public_call_and_evaluate_entrie
         declarations
             .check(
                 quire_semantic_value::checking::CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
+                CheckMode::Linked,
             )
             .unwrap(),
     );
@@ -1558,7 +1559,7 @@ fn an_out_of_type_stored_value_is_refused_at_the_public_call_and_evaluate_entrie
             )],
             &expression,
             None,
-            quire_semantic_value::checking::CheckMode::Kernel,
+            CheckMode::Kernel,
             quire_semantic_value::checking::CheckingLimits::default(),
         )
         .unwrap();
@@ -1956,7 +1957,7 @@ fn admitted_stack_values_bound_locals_and_branch_keep_the_uncharged_valid_prefix
             vec![],
             &branch_expression,
             None,
-            quire_semantic_value::checking::CheckMode::Kernel,
+            CheckMode::Kernel,
             quire_semantic_value::checking::CheckingLimits::default(),
         )
         .unwrap_or_else(|_| panic!("typed branch fixture"));

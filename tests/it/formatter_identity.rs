@@ -9,6 +9,7 @@ use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::DependencyInput;
 
 use crate::support::front_end::emitted;
+use quire_semantic_value::checking::CheckMode;
 
 #[trace("TC-931", "FR-003-AC-3", "FR-003-AC-9")]
 #[test]
@@ -91,7 +92,7 @@ fn private_state_source_identity(document: Vec<u8>, body: &str) {
     let graph = declarations
         .check(
             quire_semantic_value::checking::CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .unwrap_or_else(|refusals| panic!("original private TC465 S3: {refusals:?}"));
     let original = qsl_package::emit_checked(
@@ -197,7 +198,7 @@ fn protocol_attempt_identity(declarations: &str) {
         let graph = declarations
             .check(
                 quire_semantic_value::checking::CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
+                CheckMode::Linked,
             )
             .unwrap_or_else(|refusals| panic!("{revision}: protocol S3 refuses: {refusals:?}"));
         let emission = qsl_package::emit_checked(
@@ -423,7 +424,7 @@ fn state_fixture_identity(case: usize) {
         .expect("the owning original state fixture assembles")
         .check(
             quire_semantic_value::checking::CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .unwrap_or_else(|refusals| panic!("state fixture {case}: original S3: {refusals:?}"));
     if case == 13 {
@@ -639,7 +640,7 @@ fn state_generated_occurrences_have_authored_regions() {
         .unwrap()
         .check(
             quire_semantic_value::checking::CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
+            CheckMode::Linked,
         )
         .expect("the original three clauses check before emission");
     let authored_names = ["ParentOrder", "NoCycle", "VersionUnchanged"];
@@ -899,7 +900,7 @@ fn ieee_fixture_identity(text: &str) {
         let graph = declarations
             .check(
                 quire_semantic_value::checking::CheckingLimits::default(),
-                quire_semantic_value::checking::CheckMode::Linked,
+                CheckMode::Linked,
             )
             .expect("the owning IEEE profile admits the fixture");
         let emission = qsl_package::emit_checked(

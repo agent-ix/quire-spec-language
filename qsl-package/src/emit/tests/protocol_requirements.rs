@@ -10,6 +10,7 @@ use super::protocol_graph::{flow_over, model};
 use super::protocol_reference::{clause_argument, node_by_id, node_of};
 use super::reachability::{lower_with, Lowered};
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 pub(super) mod fixture_w;
 
@@ -878,10 +879,8 @@ fn refusals_of(profiles: &str, clauses: &str) -> Vec<qsl_semantics::check::Check
     );
     match assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        ) {
+        .check(CheckingLimits::default(), CheckMode::Linked)
+    {
         Ok(_) => Vec::new(),
         Err(refusals) => refusals,
     }

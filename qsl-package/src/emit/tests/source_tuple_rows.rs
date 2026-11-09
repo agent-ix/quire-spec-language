@@ -12,6 +12,7 @@ use quire_contract_model::{
 use super::source_enum_rows::node_with_id;
 use super::source_union_rows::admit_bytes;
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 const TUPLES: &str = "tuple Pair(Integer, Boolean);\n\
     tuple Triple(Pair, Option<Integer>, Boolean);\n\
@@ -796,10 +797,7 @@ pub(super) fn map_record_package() -> CheckedPackage {
     declarations.package_name = "pkg".to_owned();
     declarations.types = TypeEnvironment::new([record], []).expect("R is admitted");
     let graph = declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }

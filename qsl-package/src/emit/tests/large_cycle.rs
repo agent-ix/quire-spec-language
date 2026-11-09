@@ -3,6 +3,7 @@
 //! complete I2 read without a native-stack or group-size ceiling.
 
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 #[trace("FR-383-AC-25")]
 #[test]
@@ -37,7 +38,7 @@ fn a_100000_node_cycle_emits_and_reads_back_under_supplied_limits() {
         PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default());
     declarations.types = types;
     let checked = declarations
-        .check(limits, quire_semantic_value::checking::CheckMode::Linked)
+        .check(limits, CheckMode::Linked)
         .unwrap_or_else(|refusals| {
             panic!(
                 "caller budget admits the cycle; checker returned {} refusals",

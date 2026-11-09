@@ -12,6 +12,7 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_eval::FamilyOutcome;
 use quire_exact::{ChargePoint, Integer, Meter, Outcome, ScalarLimits, Value};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -77,10 +78,7 @@ fn compile_with(
     body: &str,
 ) -> Result<CheckedPackage, Vec<CheckRefusal>> {
     assemble(&source(extra, parameters, body))
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .map(CheckedPackage::link)
 }
 
@@ -134,10 +132,7 @@ fn refusal_with(extra: &str, parameters: &str, body: &str) -> (String, Option<St
 /// The source byte range the one refusal of `body` is located at.
 fn refused_at(parameters: &str, body: &str) -> (usize, usize) {
     let text = source("", parameters, body);
-    let Err(refusals) = assemble(&text).check(
-        CheckingLimits::default(),
-        quire_semantic_value::checking::CheckMode::Linked,
-    ) else {
+    let Err(refusals) = assemble(&text).check(CheckingLimits::default(), CheckMode::Linked) else {
         panic!("{body} is refused");
     };
     let [refusal] = refusals.as_slice() else {

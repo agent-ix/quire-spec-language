@@ -1973,10 +1973,7 @@ fn tc_786_sum_over_pos_is_sum_out_of_domain_exit_10_or_completes_exit_0() {
     );
     declarations.aliases = vec![("Pos".to_owned(), pos.clone())];
     let graph = declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap();
     let package = CheckedPackage::link(graph);
 

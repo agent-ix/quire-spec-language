@@ -4,6 +4,7 @@
 //! and read back through QSL's whole I2 read.
 
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 const SHAPE: &str = "union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n";
 
@@ -347,10 +348,7 @@ fn a_function_naming_an_omitted_node_is_omitted_and_the_other_is_written() {
     declarations.enums = vec![foreign];
     declarations.functions = vec![area, keep];
     let graph = declarations
-        .check(
-            CheckingLimits::default(),
-            quire_semantic_value::checking::CheckMode::Linked,
-        )
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("the two functions check");
     let package = CheckedPackage::link(graph);
     let emission = emit_checked(&package)
