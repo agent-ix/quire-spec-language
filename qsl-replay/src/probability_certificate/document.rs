@@ -722,6 +722,24 @@ fn check_document_equalities(
     ))
 }
 
+fn arithmetic(
+    operation: quire_exact::RationalArithmetic<'_>,
+    meter: &mut quire_exact::Meter,
+    cancel: &Cancel,
+) -> Result<Rational, ProbabilityDocumentError> {
+    poll(cancel)?;
+    match quire_exact::evaluate_rational_arithmetic(operation, None, meter) {
+        quire_exact::Outcome::Completed(value) => Ok(value),
+        quire_exact::Outcome::Incomplete(incomplete) => match cancel.tripped() {
+            Some(cause) => Err(ProbabilityDocumentError::Cancelled(cause)),
+            None => Err(ProbabilityDocumentError::Accounting(Box::new(incomplete))),
+        },
+        quire_exact::Outcome::Undefined(_) | quire_exact::Outcome::Refused(_) => {
+            Err(ProbabilityDocumentError::Malformed)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1001,22 +1019,3 @@ mod tests {
     }
 }
 
-fn arithmetic(
-    operation: quire_exact::RationalArithmetic<'_>,
-    meter: &mut quire_exact::Meter,
-    cancel: &Cancel,
-) -> Result<Rational, ProbabilityDocumentError> {
-    poll(cancel)?;
-    match quire_exact::evaluate_rational_arithmetic(operation, None, meter) {
-        quire_exact::Outcome::Completed(value) => Ok(value),
-        quire_exact::Outcome::Incomplete(incomplete) => {
-            match cancel.tripped() {
-                Some(cause) => Err(ProbabilityDocumentError::Cancelled(cause)),
-                None => Err(ProbabilityDocumentError::Accounting(Box::new(incomplete))),
-            }
-        }
-        quire_exact::Outcome::Undefined(_) | quire_exact::Outcome::Refused(_) => {
-            Err(ProbabilityDocumentError::Malformed)
-        }
-    }
-}
