@@ -13,8 +13,10 @@ use qsl_replay::{
     ProbabilityProductKey,
 };
 use qsl_semantics::check::{Bound, CheckedProbabilisticClaim, ProbForm, ReachTarget};
-use quire_exact::{Integer, NodeKey, Rational};
+use quire_exact::{Cancel, CancelCause, Integer, NodeKey, Rational};
 use serde_json::json;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use crate::vault_world::{with_body, Build, World, SECURE};
 
@@ -138,6 +140,7 @@ fn check(
         certificate,
         128,
         1024,
+        &Cancel::new(),
     )
 }
 
@@ -183,13 +186,13 @@ fn claim_binding_uses_the_checked_node_not_name_or_source_order() {
         let (system, root) = system_and_root(world);
         let certificate = rooted(&root, one());
 
-        assert_eq!(
-            check(&system, claims(world), &likely, &certificate),
-            Ok(ExactProbabilityCertificateCheck::Accepted {
-                value: one(),
-                side: ProbabilityBoundSide::AtLeast,
-            })
-        );
+        let Ok(ExactProbabilityCertificateCheck::Accepted(accepted)) =
+            check(&system, claims(world), &likely, &certificate)
+        else {
+            panic!("the genuine checker must accept the matching certificate");
+        };
+        assert_eq!(accepted.value(), &one());
+        assert_eq!(accepted.side(), ProbabilityBoundSide::AtLeast);
         // The other claim's target is never reached, so the same certificate
         // is rejected for it: its graph has states the certificate omits.
         let rejection = rejected(check(&system, claims(world), &unlikely, &certificate));
@@ -217,18 +220,16 @@ fn claim_fixes_the_objective_and_a_false_claim_is_rejected() {
         rejection.at,
         ProbabilityCertificateLocus::ProductState(root)
     );
-    assert_eq!(
-        check(
-            &system,
-            claims(&world),
-            &node_of(threshold(&world, at_least, 1, 2)),
-            &certificate
-        ),
-        Ok(ExactProbabilityCertificateCheck::Accepted {
-            value: one(),
-            side: ProbabilityBoundSide::AtLeast,
-        })
-    );
+    let Ok(ExactProbabilityCertificateCheck::Accepted(accepted)) = check(
+        &system,
+        claims(&world),
+        &node_of(threshold(&world, at_least, 1, 2)),
+        &certificate,
+    ) else {
+        panic!("the genuine checker must accept the holding bound");
+    };
+    assert_eq!(accepted.value(), &one());
+    assert_eq!(accepted.side(), ProbabilityBoundSide::AtLeast);
 }
 
 #[trace("TC-636")]
@@ -261,4 +262,67 @@ fn binder_refuses_unbound_nodes_and_unsupported_forms() {
         check(&system, claims(&world), &always, &certificate),
         Err(ExactProbabilityGraphError::UnsupportedClaimForm)
     );
+}
+
+#[trace("TC-636", "FR-201", "FR-282")]
+#[test]
+fn cancelled_checker_preserves_cause_before_and_during_graph_reconstruction() {
+    let world = world_with(UNLIKELY);
+    let (system, _) = system_and_root(&world);
+    let certificate = ExactProbabilityCertificate { values: Vec::new() };
+    let item = ObligationIdentity::new(node_of(threshold(&world, at_least, 1, 4)), None, 0);
+    let run = |cancel: &Cancel| {
+        check_claim_exact_reachability(
+            &system,
+            claims(&world),
+            &item,
+            &certificate,
+            128,
+            1024,
+            cancel,
+        )
+    };
+    let live = Cancel::new();
+    let _counting = live.count_charges();
+    assert!(
+        matches!(
+            run(&live),
+            Ok(ExactProbabilityCertificateCheck::Rejected(_))
+        ),
+        "the live checker must finish graph reconstruction before rejecting the empty certificate"
+    );
+    let total = live.charges();
+    assert!(total > 0, "graph reconstruction must poll cancellation");
+
+    for cause in [CancelCause::Requested, CancelCause::Deadline] {
+        let cancelled = Cancel::new();
+        cancelled.cancel(cause);
+        assert_eq!(
+            run(&cancelled),
+            Err(ExactProbabilityGraphError::Cancelled(cause))
+        );
+        for at in 1..=total {
+            let slot = Arc::new(OnceLock::<Cancel>::new());
+            let weak = Arc::downgrade(&slot);
+            let seen = Arc::new(AtomicU32::new(0));
+            let count = Arc::clone(&seen);
+            let cancel = Cancel::observing(move || {
+                if count.fetch_add(1, Ordering::Relaxed) + 1 == at {
+                    weak.upgrade()
+                        .expect("the run owns the handle slot")
+                        .get()
+                        .expect("the slot is initialized")
+                        .cancel(cause);
+                }
+            });
+            slot.set(cancel.clone())
+                .expect("the slot is initialized once");
+            assert_eq!(
+                run(&cancel),
+                Err(ExactProbabilityGraphError::Cancelled(cause)),
+                "cancellation at observed checker poll {at}/{total} must stop checking"
+            );
+            assert_eq!(seen.load(Ordering::Relaxed), at);
+        }
+    }
 }

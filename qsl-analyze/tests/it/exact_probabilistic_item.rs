@@ -22,7 +22,9 @@ use qsl_replay::{
     ProbabilityBoundSide, ProbabilityCertificateLocus, ProbabilityCertificateRejection,
     ProbabilityCertificateRule, ProbabilityProductKey, ProofBasis, TerminalRecord, TerminalValue,
 };
-use quire_exact::{Cancel, Integer, Rational};
+use quire_exact::{Cancel, CancelCause, Integer, Rational};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use crate::prob_world::{self, World};
 
@@ -112,6 +114,90 @@ fn a_state_budget_of_one_settles_incomplete() {
         })
     );
     assert!(record.exact_probabilistic.is_none());
+}
+
+#[trace("TC-763", "FR-201", "FR-203", "FR-282")]
+#[test]
+fn cancellation_at_the_checker_acceptance_boundary_settles_incomplete_without_evidence() {
+    let world = World::new(&prob_world::link(CLAIMS));
+    let engines = Engines::qsl().expect("the linked engines are admitted");
+    let run = |cancel: &Cancel| {
+        let item = exact_probabilistic_item(
+            RequestIndex::new(0),
+            world.request("Likely", ModelCheckLimits::default()),
+        );
+        analyze_items(&engines, vec![item], cancel).remove(0)
+    };
+    let live = Cancel::new();
+    let _counting = live.count_charges();
+    let completed = run(&live);
+    assert!(
+        completed.exact_probabilistic.is_some(),
+        "the positive control must prove the claim"
+    );
+    let final_poll = live.charges();
+    assert!(final_poll > 0);
+    for cause in [CancelCause::Requested, CancelCause::Deadline] {
+        let slot = Arc::new(OnceLock::<Cancel>::new());
+        let weak = Arc::downgrade(&slot);
+        let polls = Arc::new(AtomicU32::new(0));
+        let seen = Arc::clone(&polls);
+        let cancel = Cancel::observing(move || {
+            if seen.fetch_add(1, Ordering::Relaxed) + 1 == final_poll {
+                weak.upgrade()
+                    .expect("the run owns the slot")
+                    .get()
+                    .expect("the slot is initialized")
+                    .cancel(cause);
+            }
+        });
+        slot.set(cancel.clone())
+            .expect("the slot is initialized once");
+        let record = run(&cancel);
+        assert_eq!(polls.load(Ordering::Relaxed), final_poll);
+        assert_eq!(
+            record.terminal().expect("a terminal record").value(),
+            &TerminalValue::Incomplete(IncompleteCause::Cancelled { source: cause })
+        );
+        assert!(
+            record.exact_probabilistic.is_none(),
+            "a cancelled checker cannot provide proof evidence"
+        );
+    }
+}
+
+#[trace("TC-763", "FR-201", "FR-203", "FR-282")]
+#[test]
+fn cancelling_after_the_solver_finishes_is_observed_by_the_independent_checker() {
+    use std::cell::Cell;
+
+    let world = World::new(&prob_world::link(CLAIMS));
+    let engines = Engines::qsl().expect("the linked engines are admitted");
+    for source in [CancelCause::Requested, CancelCause::Deadline] {
+        let cancel = Cancel::new();
+        let reached_checker = Cell::new(false);
+        let item = exact_probabilistic_item_tampered(
+            RequestIndex::new(0),
+            world.request("Likely", ModelCheckLimits::default()),
+            |_| {
+                reached_checker.set(true);
+                cancel.cancel(source);
+            },
+        );
+        let record = analyze_items(&engines, vec![item], &cancel).remove(0);
+        assert!(
+            reached_checker.get(),
+            "the solver must finish before cancellation"
+        );
+        assert_eq!(
+            record.terminal().expect("a terminal record").value(),
+            &TerminalValue::Incomplete(IncompleteCause::Cancelled { source })
+        );
+        assert!(
+            record.exact_probabilistic.is_none(),
+            "checker cancellation cannot certify the solver output"
+        );
+    }
 }
 
 /// The exact value 24/25 misses `>= 0.97`. `refuted` needs FR-202's replay,

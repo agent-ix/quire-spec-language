@@ -331,10 +331,10 @@ pub use planner::{
 pub use probability_certificate::{
     check_claim_exact_reachability, claim_binding, digital_probability_product_key, ClaimBinding,
     DigitalClockKey, DigitalDeadlineKey, DigitalProductKeyInput, DigitalTail,
-    ExactProbabilityCertificate, ExactProbabilityCertificateCheck, ExactProbabilityGraphError,
-    ExactProbabilityValue, ProbabilityBoundSide, ProbabilityCertificateLocus,
-    ProbabilityCertificateRejection, ProbabilityCertificateRule, ProbabilityObjective,
-    ProbabilityProductKey,
+    ExactProbabilityAcceptance, ExactProbabilityCertificate, ExactProbabilityCertificateCheck,
+    ExactProbabilityGraphError, ExactProbabilityValue, ProbabilityBoundSide,
+    ProbabilityCertificateLocus, ProbabilityCertificateRejection, ProbabilityCertificateRule,
+    ProbabilityObjective, ProbabilityProductKey,
 };
 pub use product_action::{
     FreeDelayActionRow, FreeDelayRow, FreeDelaysRace, FreeRacer, GivenRacer, NotMixedRace,

@@ -1557,14 +1557,12 @@ impl TerminalRecord {
         extremum: Option<Extremum>,
         binding: Option<ExactBinding>,
     ) -> Option<Self> {
-        let crate::probability_certificate::ExactProbabilityCertificateCheck::Accepted {
-            value,
-            ..
-        } = check
+        let crate::probability_certificate::ExactProbabilityCertificateCheck::Accepted(accepted) =
+            check
         else {
             return None;
         };
-        let value = ExactRational::new(value.clone());
+        let value = ExactRational::new(accepted.value().clone());
         Some(Self::with_backend(
             request_index,
             backend,
