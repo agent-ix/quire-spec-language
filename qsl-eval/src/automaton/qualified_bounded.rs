@@ -170,6 +170,13 @@ impl QualifiedBoundedMonitor {
     /// Close a terminal model position by the profile's false extension,
     /// without enumerating artificial stutter positions.
     pub fn terminal(&self, state: StateId) -> Result<BoundedState, QualifiedBoundedError> {
-        Ok(self.translation.terminal(self.state(state)?))
+        self.monitor
+            .bounded_eventually_terminal(state)?
+            .ok_or_else(|| {
+                AutomatonError::Invariant {
+                    invariant: "qualified-eventually-terminal-shape",
+                }
+                .into()
+            })
     }
 }

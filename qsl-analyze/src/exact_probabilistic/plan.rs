@@ -413,12 +413,22 @@ impl<'c> Plan<'c> {
     }
 
     /// The verdict of a bounded event at a terminal model state, under the
-    /// profile's false extension (FR-126's closure): the monitor reads the
-    /// all-false letter until it rejects or repeats.
+    /// profile's false extension (FR-126's closure). The owner closes a
+    /// single bounded eventuality directly; other forms read the all-false
+    /// letter until rejection or repetition.
     pub(super) fn close(&mut self, running: StateId) -> Result<MonitorVerdict, PlanFault> {
         let Self::Formula(monitor) = self else {
             return Err(PlanFault::Broken("only-an-event-closes"));
         };
+        if let Some(closed) = monitor.bounded_eventually_terminal(running)? {
+            return Ok(match closed {
+                qsl_eval::automaton::BoundedState::Accept => MonitorVerdict::Accept,
+                qsl_eval::automaton::BoundedState::Reject => MonitorVerdict::Reject,
+                qsl_eval::automaton::BoundedState::Open { .. } => {
+                    return Err(PlanFault::Broken("terminal-has-no-open-debt"))
+                }
+            });
+        }
         Ok(if false_extension_rejects(monitor, running)? {
             MonitorVerdict::Reject
         } else {

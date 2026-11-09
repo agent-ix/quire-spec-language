@@ -22,9 +22,9 @@ use qsl_replay::{
     ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ProductStateRef, ResultLabel,
     TemporalCertificateCheck,
 };
-use quire_exact::{Cancel, Value};
+use quire_exact::Cancel;
 
-use crate::counter::{reference, subject, value, Letters, UNLIMITED};
+use crate::counter::{subject, value, Letters, UNLIMITED};
 use crate::lasso_replay::bounded_fixture;
 use crate::liveness::Fixture;
 
@@ -88,10 +88,10 @@ impl Bounded {
             qsl_package::EmitLimits::fixture(),
         )
         .expect("the package declares the clause");
-        let binding = vec![qsl_eval::automaton::ContextBinding {
-            parameter: identity.over().expect("an over node"),
-            value: Value::Reference(reference(&fixture.package, &fixture.documents, "c")),
-        }];
+        let binding = vec![qsl_eval::automaton::ContextBinding::instance(
+            identity.over().expect("an over node"),
+            "c",
+        )];
         let context =
             StateContext::clause(&fixture.clauses[0], identity.occurrence().clone(), binding);
         BoundedTranslation::clause(&fixture.clauses[0], &context).expect("translates")

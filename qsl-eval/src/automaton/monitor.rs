@@ -160,6 +160,30 @@ pub struct Monitor<A> {
     subsets: Numbering<BTreeSet<StateId>>,
 }
 
+impl Monitor<PropertyAutomaton> {
+    /// Close a single origin-activated bounded eventuality under false
+    /// extension directly from its real state. Other translations return
+    /// `None`; this operation creates no artificial stutter states.
+    pub fn bounded_eventually_terminal(
+        &self,
+        state: StateId,
+    ) -> Result<Option<super::BoundedState>, AutomatonError> {
+        if !self.automaton.is_origin_bounded_eventually()? {
+            return Ok(None);
+        }
+        let members = self
+            .members(state)
+            .ok_or(AutomatonError::UnknownState { state })?;
+        for member in members {
+            if self.automaton.is_settled(*member)? {
+                return Ok(Some(super::BoundedState::Accept));
+            }
+            self.automaton.bounded_deadline(*member)?;
+        }
+        Ok(Some(super::BoundedState::Reject))
+    }
+}
+
 impl<A: SafetyAutomaton> Monitor<A> {
     /// Whether the all-false extension of `from` rejects. Reading stops at
     /// rejection or a repeated monitor state; no model transitions are

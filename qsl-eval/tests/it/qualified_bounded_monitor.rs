@@ -131,10 +131,10 @@ fn qualified_bounded_monitor_preserves_context_and_refuses_other_forms() {
         Err(qsl_eval::automaton::KeyRefusal::ForeignContext)
     );
     let mut bound = own.clone();
-    bound.binding.push(ContextBinding {
-        parameter: crate::support::ids::node_key([0xcd]),
-        value: Value::Boolean(true),
-    });
+    bound.binding.push(ContextBinding::value(
+        crate::support::ids::node_key([0xcd]),
+        Value::Boolean(true),
+    ));
     let mut bound_monitor =
         QualifiedBoundedMonitor::new(fixture.clause.formula(), &bound, 100).unwrap();
     let bound_state = bound_monitor.start(false).unwrap();
@@ -193,4 +193,30 @@ fn qualified_bounded_monitor_retains_the_producers_reached_handles() {
         100,
     )
     .is_err());
+}
+
+#[trace("TC-636", "FR-201-AC-13")]
+#[test]
+fn qualified_bounded_monitor_closes_a_full_u64_horizon_without_stutter_states() {
+    let fixture = fixture(
+        EVENT,
+        "c: Counter",
+        "on origin",
+        &format!("eventually[0,{}] holds(true)", u64::MAX),
+    );
+    let automaton =
+        translate_body(fixture.clause.formula(), fixture.clause.profile(), 100).unwrap();
+    let mut monitor = Monitor::bad_prefix(automaton, 100).unwrap();
+    let initial = monitor.initial().unwrap();
+    let origin = monitor.step(initial, Letter::default()).unwrap();
+    let count = monitor.state_count();
+    assert_eq!(
+        monitor.bounded_eventually_terminal(origin).unwrap(),
+        Some(BoundedState::Reject)
+    );
+    assert_eq!(
+        monitor.state_count(),
+        count,
+        "terminal closure creates no stutter states"
+    );
 }

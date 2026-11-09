@@ -6602,7 +6602,7 @@ impl PackageDeclarations {
         // FR-498 "Outputs": each probabilistic claim carries its node's one
         // `claim` occurrence.
         let mut probabilistic_model = probabilistic_model;
-        for (claim, key) in probabilistic_model
+        for (claim, (key, over_node)) in probabilistic_model
             .claims_mut()
             .iter_mut()
             .zip(lowered_probabilistic)
@@ -6617,6 +6617,9 @@ impl PackageDeclarations {
                     }]
                 })?;
             claim.occurrence = Some(OccurrenceKey::new(claims::wire(key), origin));
+            if let Some(over) = &mut claim.over {
+                over.node = over_node;
+            }
         }
         let named_scope = NamedScope::of(&models, &scope);
         let lowered_temporal = lowered_temporal

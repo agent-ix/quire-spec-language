@@ -118,6 +118,33 @@ pub struct AtomSymmetry<'a> {
 }
 
 impl PropertyAutomaton {
+    /// Whether the actual lowered root is an origin-activated, step-counted
+    /// bounded eventuality over one letter atom.
+    pub(super) fn is_origin_bounded_eventually(&self) -> Result<bool, AutomatonError> {
+        if self.kind != AutomatonKind::Bounded
+            || self.when.is_some()
+            || self.live.is_some()
+            || self.uncounted.is_some()
+            || self.initial.must.len() != 1
+        {
+            return Ok(false);
+        }
+        let Some(root) = self.initial.must.first() else {
+            return Ok(false);
+        };
+        Ok(match self.translator.ir.node(*root)? {
+            Node::Future {
+                kind: FutureKind::Eventually,
+                window: Window::Closed { lower: 0, .. },
+                left: None,
+                right,
+            } => {
+                matches!(self.translator.ir.node(right)?, Node::Atom(_))
+            }
+            _ => false,
+        })
+    }
+
     /// The actual pending deadline of a single-interval eventuality after
     /// reading a position. Only the qualified monitor's checked constructor
     /// calls this projection.

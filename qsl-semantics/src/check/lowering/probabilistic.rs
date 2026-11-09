@@ -33,7 +33,7 @@ impl Lowering<'_> {
     pub(crate) fn probabilistic_claims(
         &mut self,
         claims: &[CheckedProbabilisticClaim],
-    ) -> Result<Vec<NodeKey>, CheckRefusal> {
+    ) -> Result<Vec<(NodeKey, Option<NodeKey>)>, CheckRefusal> {
         let mut ranked: Vec<(usize, &CheckedProbabilisticClaim)> =
             claims.iter().enumerate().collect();
         // Within one name, by content; equal content is equal claims, whose
@@ -64,7 +64,7 @@ impl Lowering<'_> {
         &mut self,
         claim: &CheckedProbabilisticClaim,
         ordinal: u64,
-    ) -> Result<NodeKey, CheckRefusal> {
+    ) -> Result<(NodeKey, Option<NodeKey>), CheckRefusal> {
         let at = claim.declaration_location();
         self.charge(1, &at)?;
         let key = super::super::derived_node_key(
@@ -97,6 +97,17 @@ impl Lowering<'_> {
             }
         }
         self.record(key.clone(), OccurrenceRole::Claim, at);
-        Ok(key)
+        let over = claim
+            .over
+            .as_ref()
+            .map(|over| {
+                let at = claim.over_location();
+                let semantic_type = self.binder_type(&over.value_type, None, &at)?;
+                let parameter = self.parameter(&over.name, 0, semantic_type.clone(), &at)?;
+                self.record(semantic_type, OccurrenceRole::Type, at);
+                Ok::<_, CheckRefusal>(parameter)
+            })
+            .transpose()?;
+        Ok((key, over))
     }
 }

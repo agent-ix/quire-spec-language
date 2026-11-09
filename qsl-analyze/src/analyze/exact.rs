@@ -34,15 +34,16 @@ use qsl_replay::{CertificateLocus, CertificateRule};
 use qsl_replay::{InconclusiveCause, ProbabilityCertificateLocus, ProbabilityCertificateRule};
 use qsl_route::Mode;
 use qsl_semantics::check::{
-    Bound, Capability, DeclarationFamily, ProbForm, ProbScheduler, ReachTarget,
+    Bound, Capability, DeclarationFamily, Event, ProbForm, ProbScheduler, ReachTarget,
 };
 use quire_exact::{Cancel, ObjectReference, Rational};
 
 use super::items::{admission, BROKEN, NOT_YET};
 use super::{AnalyzeItem, EngineReport, Refusal};
 use crate::exact_probabilistic::{
-    build_product, decide_reachability, manifest as en5, settle_product_refusal, ExtRational,
-    ProbBuild, ProbProduct, ProductRefusal, ProductRequest, UnboundedError, UnboundedObjective,
+    build_retaining_monitor, decide_bounded_event, decide_reachability, manifest as en5,
+    settle_product_refusal, ExtRational, FhResult, ProbBuild, ProbProduct, ProductRefusal,
+    ProductRequest, UnboundedError, UnboundedObjective,
 };
 
 /// The certificate EN-5 produced and the core's checker accepted for a
@@ -230,12 +231,21 @@ fn run(
         expansion: simulation.expansion,
         meter: &meter,
     };
-    let ProbForm::Reach {
-        bound,
-        target: ReachTarget::Eventually(_),
-    } = &claim.form
-    else {
-        return not_yet();
+    let (bound, bounded_formula) = match &claim.form {
+        ProbForm::Reach {
+            bound,
+            target: ReachTarget::Eventually(_),
+        } => (bound, None),
+        ProbForm::Probability {
+            bound,
+            event:
+                Event::Formula {
+                    formula,
+                    timed_horizon: None,
+                    ..
+                },
+        } => (bound, Some(formula)),
+        _ => return not_yet(),
     };
     if !claim.fairness.is_empty() {
         return not_yet();
@@ -246,10 +256,10 @@ fn run(
         (ProbScheduler::Workload(_), _) => (UnboundedObjective::Min, None),
     };
 
-    let product = match build_product(request, cancel) {
-        Ok(ProbBuild::Built(product)) => product,
+    let (product, monitor) = match build_retaining_monitor(request, cancel) {
+        Ok((ProbBuild::Built(product), monitor)) => (product, monitor),
         // An undefined state refutes only after FR-202's replay.
-        Ok(ProbBuild::Undefined(_)) => return not_yet(),
+        Ok((ProbBuild::Undefined(_), _)) => return not_yet(),
         Err(refusal) => return build_refusal(refusal, subject),
     };
     let [(_, _, start)] = product.initial.as_slice() else {
@@ -260,29 +270,50 @@ fn run(
         .iter()
         .map(|labels| labels.first().copied().unwrap_or(false))
         .collect();
-    let solved = match decide_reachability(&product, &target, objective, &limits) {
-        Ok(solved) => solved,
-        Err(UnboundedError::MaxPolicyIterations) => {
-            return settled(
-                &ExactProbBuildIssue::Limit {
-                    limit: ModelCheckLimit::ExactProbMaxPolicyIterations,
-                    value: limits.max_policy_iterations,
-                },
-                subject,
-            )
+    let (values, policy) = if bounded_formula.is_some() {
+        match decide_bounded_event(&product, bound, &limits) {
+            Ok(FhResult::Exact { values, policy }) => (
+                values.into_iter().map(ExtRational::Finite).collect(),
+                policy,
+            ),
+            Ok(FhResult::Bounds { .. }) => return not_yet(),
+            Ok(FhResult::PrecisionBudget { lower, upper, .. }) => {
+                return settled(
+                    &ExactProbBuildIssue::PrecisionBudget {
+                        lower: lower.rational(),
+                        upper: upper.rational(),
+                    },
+                    subject,
+                )
+            }
+            Err(_) => return broken(),
         }
-        Err(UnboundedError::MaxRationalBits) => {
-            return settled(
-                &ExactProbBuildIssue::Limit {
-                    limit: ModelCheckLimit::ExactProbMaxRationalBits,
-                    value: limits.max_rational_bits,
-                },
-                subject,
-            )
-        }
-        Err(_) => return broken(),
+    } else {
+        let solved = match decide_reachability(&product, &target, objective, &limits) {
+            Ok(solved) => solved,
+            Err(UnboundedError::MaxPolicyIterations) => {
+                return settled(
+                    &ExactProbBuildIssue::Limit {
+                        limit: ModelCheckLimit::ExactProbMaxPolicyIterations,
+                        value: limits.max_policy_iterations,
+                    },
+                    subject,
+                )
+            }
+            Err(UnboundedError::MaxRationalBits) => {
+                return settled(
+                    &ExactProbBuildIssue::Limit {
+                        limit: ModelCheckLimit::ExactProbMaxRationalBits,
+                        value: limits.max_rational_bits,
+                    },
+                    subject,
+                )
+            }
+            Err(_) => return broken(),
+        };
+        (solved.values, solved.policy)
     };
-    let Some(ExtRational::Finite(value)) = solved.values.get(start.index()) else {
+    let Some(ExtRational::Finite(value)) = values.get(start.index()) else {
         return broken();
     };
     let holds = match bound {
@@ -302,11 +333,14 @@ fn run(
     };
     let reference = binding.as_ref().map(|bound| &bound.reference);
     if !holds {
+        if bounded_formula.is_some() {
+            return not_yet();
+        }
         return replay_refutation(
             &system,
             claim,
             &product,
-            &solved.policy,
+            &policy,
             *start,
             &target,
             reference,
@@ -316,7 +350,31 @@ fn run(
             tamper_witness,
         );
     }
-    let Ok(mut certificate) = certificate_of(&product, reference, &solved.values) else {
+    let certificate = match (bounded_formula, monitor) {
+        (Some(formula), Some(monitor)) => {
+            let context = match qsl_replay::probabilistic_formula_monitor_context(claim, reference)
+            {
+                Ok(context) => context,
+                Err(_) => return not_yet(),
+            };
+            let monitor = match qsl_eval::automaton::QualifiedBoundedMonitor::from_monitor(
+                formula.formula(),
+                &context,
+                monitor,
+                limits.model.max_automaton_states,
+            ) {
+                Ok(monitor) => monitor,
+                Err(qsl_eval::automaton::QualifiedBoundedError::Translation(_)) => {
+                    return not_yet()
+                }
+                Err(_) => return broken(),
+            };
+            bounded_certificate_of(&product, reference, &values, &monitor)
+        }
+        (None, _) => certificate_of(&product, reference, &values),
+        (Some(_), None) => return broken(),
+    };
+    let Ok(mut certificate) = certificate else {
         return broken();
     };
     if let Some(tamper) = tamper {
@@ -437,6 +495,47 @@ fn run(
             | ProbabilityDocumentError::Graph(_),
         ) => broken(),
     }
+}
+
+fn bounded_certificate_of(
+    product: &ProbProduct,
+    binding: Option<&ObjectReference>,
+    values: &[ExtRational],
+    monitor: &qsl_eval::automaton::QualifiedBoundedMonitor,
+) -> Result<ExactProbabilityCertificate, ExactProbabilityGraphError> {
+    use crate::exact_probabilistic::{FormulaState, MonitorState, MonitorVerdict};
+    if values.len() != product.states.len() {
+        return Err(ExactProbabilityGraphError::MissingSuccessor);
+    }
+    let mut entries = Vec::with_capacity(product.states.len());
+    for (state, value) in product.states.iter().zip(values) {
+        if state.accumulator.is_some() || state.pending.is_some() {
+            return Err(ExactProbabilityGraphError::UnsupportedDraw);
+        }
+        let ExtRational::Finite(value) = value else {
+            return Err(ExactProbabilityGraphError::ExpansionRefused);
+        };
+        let key = match state.monitor {
+            Some(MonitorState::Formula(FormulaState::Running(state))) => monitor.key(state),
+            Some(MonitorState::Formula(FormulaState::Decided(verdict))) => {
+                monitor.decision_key(verdict == MonitorVerdict::Accept)
+            }
+            _ => return Err(ExactProbabilityGraphError::UnsupportedClaimForm),
+        }
+        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+        entries.push(ExactProbabilityValue {
+            state: qsl_replay::bounded_probability_product_key(binding, &state.model, &key)?,
+            value: value.clone(),
+        });
+    }
+    entries.sort_by(|left, right| left.state.cmp(&right.state));
+    if entries
+        .windows(2)
+        .any(|pair| pair[0].state == pair[1].state)
+    {
+        return Err(ExactProbabilityGraphError::ExpansionRefused);
+    }
+    Ok(ExactProbabilityCertificate { values: entries })
 }
 
 fn build_refusal(refusal: ProductRefusal, subject: SubjectLimits<'_>) -> EngineReport {

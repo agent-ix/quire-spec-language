@@ -456,6 +456,8 @@ pub(crate) fn precondition_reads(
 /// index among the unit's probabilistic declarations.
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Site {
+    /// A probabilistic claim's authored `over` parameter.
+    Over,
     /// The whole declaration.
     Declaration,
     /// The `value` of a random parameter's distribution pair.
@@ -480,6 +482,7 @@ pub(super) enum Site {
 /// `declaration`. Spaced, so it names no declared type.
 fn site_name(declaration: usize, site: Site) -> String {
     match site {
+        Site::Over => format!("probabilistic {declaration} over"),
         Site::Declaration => format!("probabilistic {declaration}"),
         Site::Value(pair) => format!("probabilistic {declaration} value {pair}"),
         Site::Weight(pair) => format!("probabilistic {declaration} weight {pair}"),
@@ -536,6 +539,9 @@ pub(crate) fn site_spans(
                 }
                 ProbabilisticDeclaration::Claim(form) => {
                     sites.push((Site::Declaration, spanned(form.span)));
+                    if let Some(over) = &form.over {
+                        sites.push((Site::Over, spanned(over.name.span)));
+                    }
                     for (position, expression) in super::claim::claim_expressions(form)
                         .into_iter()
                         .enumerate()

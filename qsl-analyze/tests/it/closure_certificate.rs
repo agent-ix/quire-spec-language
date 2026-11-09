@@ -33,7 +33,7 @@ use qsl_replay::{
 };
 use qsl_semantics::check::CheckedTemporalClause;
 use qsl_semantics::model::observation::DocumentRef;
-use quire_exact::{Cancel, CancelCause, ObjectReference, ScalarLimits, Value};
+use quire_exact::{Cancel, CancelCause, ObjectReference, ScalarLimits};
 
 use crate::counter::{
     document, package, package_with_clauses, reference, subject, value, Documents, Letters,
@@ -269,10 +269,10 @@ impl Invariant {
 
     /// The translation of the instance bound to `object`.
     fn translation(&self, object: &ObjectReference) -> SafetyTranslation {
-        let binding = vec![qsl_eval::automaton::ContextBinding {
-            parameter: self.identity.over().expect("an over node"),
-            value: Value::Reference(object.clone()),
-        }];
+        let binding = vec![qsl_eval::automaton::ContextBinding::instance(
+            self.identity.over().expect("an over node"),
+            object.object().as_str(),
+        )];
         let context =
             StateContext::clause(&self.clause, self.identity.occurrence().clone(), binding);
         SafetyTranslation::reachable_invariant(&self.clause, &context).expect("translates")

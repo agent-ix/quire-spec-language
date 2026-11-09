@@ -70,9 +70,9 @@ pub use counters::{
 pub use error::AutomatonError;
 pub use gba::{Gba, GbaBuilder, Transition};
 pub use key::{
-    invariant_atom, AutomatonStateKey, ContextActivation, ContextBinding, ContextRoot, KeyRefusal,
-    NotTranslated, SafetyItem, SafetyState, SafetyStates, SafetyTranslation, StateContext,
-    SubjectKind, TranslationRefusal, AUTOMATON_STATE_KEY_V1,
+    invariant_atom, AutomatonStateKey, ContextActivation, ContextBinding, ContextBindingValue,
+    ContextRoot, KeyRefusal, NotTranslated, SafetyItem, SafetyState, SafetyStates,
+    SafetyTranslation, StateContext, SubjectKind, TranslationRefusal, AUTOMATON_STATE_KEY_V1,
 };
 pub use key_buchi::{BuchiPhase, BuchiState, BuchiStates};
 pub use key_state::{

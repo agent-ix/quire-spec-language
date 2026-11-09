@@ -24,7 +24,7 @@ use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_eval::simulation::NotSimulated;
 use qsl_semantics::check::CheckedTemporalClause;
-use quire_exact::{Cancel, Value, ValueType};
+use quire_exact::{Cancel, ValueType};
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::fairness::PropertyForm;
 
@@ -237,14 +237,8 @@ impl ModelCheckItem<'_> {
                     .into_iter()
                     .map(|instance| {
                         let binding = match (identity.over(), over) {
-                            (Some(parameter), ValueType::Reference(object_type)) => {
-                                let reference = system
-                                    .bound_reference(object_type.clone(), &instance)
-                                    .map_err(ItemRefusal::Fault)?;
-                                vec![ContextBinding {
-                                    parameter,
-                                    value: Value::Reference(reference),
-                                }]
+                            (Some(parameter), ValueType::Reference(_)) => {
+                                vec![ContextBinding::instance(parameter, instance.key.clone())]
                             }
                             _ => Vec::new(),
                         };

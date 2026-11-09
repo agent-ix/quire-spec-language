@@ -794,10 +794,10 @@ mod tp4 {
             StateContext::clause(
                 self.clause(),
                 identity.occurrence().clone(),
-                vec![ContextBinding {
-                    parameter: identity.over().expect("the clause has an over node"),
-                    value: Value::Reference(reference),
-                }],
+                vec![ContextBinding::instance(
+                    identity.over().expect("the clause has an over node"),
+                    reference.object().as_str(),
+                )],
             )
         }
 
