@@ -387,7 +387,11 @@ fn bounded_zero_horizon_reads_position_zero_and_terminal_closes_by_false_extensi
         let mut snapshot: Value = serde_json::from_slice(SNAPSHOT).unwrap();
         snapshot["populations"][0]["objects"][0]["fields"]["delivered"]["boolean"] =
             json!(delivered);
-        let source = cyclic_source(0, if delivered { "1" } else { "0" });
+        let source = if delivered {
+            cyclic_source(0, "0.5")
+        } else {
+            cyclic_source(0, "0.5").replace("probability >= 0.5", "probability <= 0.5")
+        };
         let mut request = proof(&source, &serde_json::to_vec(&snapshot).unwrap());
         request["limits"]["states"] = json!(1);
         let (code, result) = run(&request);
@@ -397,8 +401,23 @@ fn bounded_zero_horizon_reads_position_zero_and_terminal_closes_by_false_extensi
             json!({"numerator":if delivered {"1"} else {"0"},"denominator":"1"})
         );
     }
-    let source = cyclic_source(2, "0").replace("when { self.delivered }", "when { true }");
+    let source = cyclic_source(2, "0.5")
+        .replace("when { self.delivered }", "when { true }")
+        .replace("probability >= 0.5", "probability <= 0.5");
     let request = proof(&source, SNAPSHOT);
+    let doc = document(&request);
+    let mut ranks: Vec<_> = doc["ranking"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["rank"].as_u64().unwrap())
+        .collect();
+    ranks.sort();
+    assert_eq!(
+        ranks,
+        vec![0, 2],
+        "terminal closure keeps real debt rather than graph height"
+    );
     let (code, result) = run(&request);
     assert_eq!(code, 0, "{result}");
     assert_eq!(result["value"], json!({"numerator":"0","denominator":"1"}));
@@ -491,7 +510,11 @@ fn bounded_altered_horizon_binding_and_rank_never_certify_the_original_claim() {
 #[trace("TC-636", "FR-201-AC-14", "FR-282-AC-13")]
 #[test]
 fn bounded_wrong_source_and_nonexact_rows_never_produce_an_accepted_document() {
-    let (evidence, missed) = request(&cyclic_source(2, "1"), SNAPSHOT, ExactProbLimits::default());
+    let (evidence, missed) = request(
+        &cyclic_source(2, "0.9"),
+        SNAPSHOT,
+        ExactProbLimits::default(),
+    );
     assert!(
         evidence.is_none(),
         "bounded misses have no unbounded witness-replay certificate"
