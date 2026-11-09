@@ -1174,31 +1174,25 @@ fn excluded(document: &[u8], body: &str) -> (qsl_semantics::check::ExcludedClaus
 }
 
 /// QSpec FR-322-AC-267 `CW-06`: an indexed element write `self.ts[0] =
-/// Config::Timer { x: 0 ms, n: 1 }` has no package form. S2 represents no
-/// indexed element read, so the unit is refused `unsupported_construct` at
-/// `self.ts[0]` before S3, and no package is emitted.
+/// Config::Timer { x: 0 ms, n: 1 }` has no package form. S2 builds `self.ts[0]`
+/// as a selection (FR-230 "Selection"), and the checker refuses the write
+/// `unsupported_construct`, so no package is emitted.
 #[trace("TC-685", "QSpec-FR-322-AC-267")]
 #[test]
 fn an_indexed_element_write_is_refused() {
-    let unit = clocked_unit(
+    let (_, checked) = checked(
+        &dropping_document(),
         "post P using v on Config::ConfigVersion::attemptUpdate { \
          self.ts[0] = Config::Timer { x: 0 ms, n: 1 } }\n",
     );
-    let parsed = qsl_cst::parse(
-        qsl_foundation::SourceIdentity::new("agent-ix", "test:spine-model"),
-        "program.native",
-        unit.as_bytes(),
-        qsl_cst::Limits::default(),
-    )
-    .expect("S1 admits the unit");
-    let refusal = qsl_forms::build_unit(&parsed).expect_err("S2 has no indexed element read");
-    assert_eq!(
-        refusal.catalog_code(),
-        Code::UnsupportedConstruct,
-        "{refusal:?}"
+    let refusals = checked.expect_err("the write has no package form");
+    assert!(
+        refusals.iter().any(|refusal| refusal
+            .cause
+            .catalog_code()
+            .is_some_and(|code| code.to_string().starts_with("unsupported_construct/"))),
+        "{refusals:?}"
     );
-    let span = refusal.span.expect("a span");
-    assert_eq!(&unit[span.start..span.end], "self.ts[0]");
 }
 
 /// [`dropping_document`] with `q: Sequence<Option<Clock>>[0, 2]`, which
