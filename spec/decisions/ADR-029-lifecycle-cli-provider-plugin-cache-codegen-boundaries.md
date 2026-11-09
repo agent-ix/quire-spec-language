@@ -386,9 +386,9 @@ SMT engines are IR's backend and run through the driver's `prove` (RU-3).
   record, which retains the probabilistic evidence. Limits and cancellation
   cannot yield that token. The existing wire obligation and broader replay
   scope remain; this amendment adds no wire keys or codec. The certificate
-  route alone did not specify this witness entry or token contract. Adoption
-  of this amendment requires owner approval; its draft does not authorize
-  implementation.
+  route alone did not specify this witness entry or token contract. This
+  amendment makes that internal replay interface explicit within OP-2's
+  existing independent-replay requirement.
 - **One certification per proof.** Every `proved` carries exactly one
   certification (ADR-018 PC-1). A native-engine proof is `certified` once
   its core checker accepts, or `uncertified` when no core checker exists
