@@ -5588,3 +5588,93 @@ fn a_bare_native_text_rational_or_decimal_maps_to_no_checked_type() {
         );
     }
 }
+
+/// QSpec FR-154 "Map types" (FR-154-AC-48): a package map type assembles
+/// with its declared key type and bound. A native `Text` key, bare or through
+/// an alias, is keyed as a `String` is; a `Float32` or `Float64` key draws the
+/// floating-type refusal a floating member does; a map with a bound carries it.
+#[trace("QSpec-FR-154-AC-48", "FR-230-AC-19")]
+#[test]
+fn a_package_map_type_assembles_with_its_declared_key_and_bound() {
+    let map = |name: &str, keys: ValueTypeRef, upper: Option<u64>| {
+        DomainPackageRecord::MapType(MapTypeRecord {
+            key: DeclarationKey::fixture(name),
+            keys,
+            values: ValueTypeRef::Native(NativeValueType::Integer),
+            lower: 0,
+            upper,
+        })
+    };
+    let text_alias = DeclarationKey::fixture("model.Name");
+    let records = [
+        map(
+            "model.ByText",
+            ValueTypeRef::Native(NativeValueType::Text),
+            Some(2),
+        ),
+        map(
+            "model.ByAlias",
+            ValueTypeRef::Package(text_alias.clone()),
+            None,
+        ),
+        DomainPackageRecord::AliasType(AliasTypeRecord {
+            key: text_alias,
+            target: ValueTypeRef::Native(NativeValueType::Text),
+        }),
+        map(
+            "model.ByInt",
+            ValueTypeRef::Native(NativeValueType::Integer),
+            None,
+        ),
+        map(
+            "model.ByFloat",
+            ValueTypeRef::Native(NativeValueType::Float32),
+            None,
+        ),
+    ];
+    let by_key: BTreeMap<_, _> = records
+        .iter()
+        .map(|record| (record.key(), record))
+        .collect();
+    let (identities, handles, variants, units) = (
+        BTreeMap::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+    );
+    let project = |name: &str| {
+        model_value_type(
+            &ValueTypeRef::Package(DeclarationKey::fixture(name)),
+            mult(1, Some(1), false, true),
+            &by_key,
+            &identities,
+            &handles,
+            &variants,
+            &units,
+        )
+    };
+    let expected = |keys: ValueType, bound: Option<quire_exact::CardinalityBound>| {
+        ValueType::Map(std::sync::Arc::new(
+            quire_exact::MapType::new(keys, ValueType::Integer, bound).expect("a leaf key"),
+        ))
+    };
+    assert_eq!(
+        project("model.ByText").expect("a Text key assembles"),
+        expected(
+            ValueType::String,
+            Some(quire_exact::CardinalityBound::new(0, 2).expect("ordered"))
+        )
+    );
+    assert_eq!(
+        project("model.ByAlias").expect("an alias of Text assembles"),
+        expected(ValueType::String, None)
+    );
+    assert_eq!(
+        project("model.ByInt").expect("an Integer key assembles"),
+        expected(ValueType::Integer, None)
+    );
+    assert!(matches!(
+        project("model.ByFloat"),
+        Err(Unmapped::Float(IeeeWidth::Binary32))
+    ));
+}

@@ -2390,6 +2390,27 @@ fn model_value_type(
                         units,
                     )
                 };
+                // A native `Text` key (no bounds, no profile) is keyed by its
+                // exact Unicode scalar sequence as a `String` key is (QSpec
+                // FR-154 "Map types", FR-144): it is the key type only, a
+                // member typed bare `Text` still has no type. A `Float32` or
+                // `Float64` key draws the typed refusal a floating member
+                // does.
+                let mut named = &map.keys;
+                for _ in 0..=records.len() {
+                    match named {
+                        ValueTypeRef::Package(alias) => match records.get(alias) {
+                            Some(DomainPackageRecord::AliasType(alias)) => named = &alias.target,
+                            _ => break,
+                        },
+                        _ => break,
+                    }
+                }
+                let key_type = if matches!(named, ValueTypeRef::Native(NativeValueType::Text)) {
+                    ValueType::String
+                } else {
+                    element(&map.keys)?
+                };
                 let bound = match map.upper {
                     Some(upper) => Some(
                         quire_exact::CardinalityBound::new(map.lower, upper)
@@ -2398,7 +2419,7 @@ fn model_value_type(
                     None => None,
                 };
                 ValueType::Map(std::sync::Arc::new(
-                    quire_exact::MapType::new(element(&map.keys)?, element(&map.values)?, bound)
+                    quire_exact::MapType::new(key_type, element(&map.values)?, bound)
                         .map_err(|_| Unmapped::Unsupported)?,
                 ))
             }

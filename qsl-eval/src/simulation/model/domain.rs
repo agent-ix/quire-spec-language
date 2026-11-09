@@ -702,13 +702,39 @@ impl Domain {
 
 /// The number of maps of `min` to `max` entries over `keys` possible keys and
 /// `values` possible values: the sum over entry counts `k` of
-/// C(`keys`, `k`) * `values`^`k`, saturating at `u128::MAX`.
+/// C(`keys`, `k`) * `values`^`k`, saturating at `u128::MAX`. A map holds at
+/// most one entry for each key, so the terms above `keys` are 0 and the sum
+/// stops there; each term follows from the one before, so a declared bound
+/// as wide as `u64::MAX` costs no more than the keys do. A term that no
+/// longer fits saturates the whole sum, since every later binomial that
+/// matters is larger still.
 fn entries_size(keys: u128, values: u128, min: u64, max: u64) -> u128 {
-    (min..=max).fold(0u128, |total, count| {
-        total.saturating_add(
-            combinations(keys, u128::from(count), false).saturating_mul(power(values, count)),
-        )
-    })
+    if values == 0 {
+        // Only the empty map exists.
+        return u128::from(min == 0);
+    }
+    let top = max.min(u64::try_from(keys).unwrap_or(u64::MAX));
+    let mut total = 0u128;
+    let (mut choose, mut power) = (1u128, 1u128);
+    for count in 0..=top {
+        if count >= min {
+            total = total.saturating_add(choose.saturating_mul(power));
+            if total == u128::MAX {
+                return total;
+            }
+        }
+        if count == top {
+            break;
+        }
+        // C(keys, count + 1) = C(keys, count) * (keys - count) / (count + 1),
+        // exact at every step.
+        choose = match choose.checked_mul(keys - u128::from(count)) {
+            Some(product) => product / (u128::from(count) + 1),
+            None => return u128::MAX,
+        };
+        power = power.saturating_mul(values);
+    }
+    total
 }
 
 /// The number of `length`-element sequences of distinct values drawn from
@@ -1310,5 +1336,23 @@ mod tests {
             IntegerInterval::new(Integer::from(0_i64), Integer::from(u64::MAX)).expect("nonempty"),
         );
         assert_eq!(size(&map(wide.clone(), wide, 0, 40)), Some(u128::MAX));
+        // A declared bound far above the key count costs no more than the keys:
+        // 1 + 2*2 + 1*4 = 9 for two Boolean keys and two values.
+        let started = std::time::Instant::now();
+        for upper in [10_000_000, u64::MAX] {
+            assert_eq!(
+                size(&map(ValueType::Boolean, ValueType::Boolean, 0, upper)),
+                Some(9)
+            );
+        }
+        let wide_keys = ValueType::Int(
+            IntegerInterval::new(Integer::from(0_i64), Integer::from(9_999_999_i64))
+                .expect("nonempty"),
+        );
+        assert_eq!(
+            size(&map(wide_keys, ValueType::Boolean, 0, u64::MAX)),
+            Some(u128::MAX)
+        );
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
     }
 }

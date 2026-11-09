@@ -112,9 +112,6 @@ pub(crate) struct PackagePlace {
     /// the member identity of a field step (QSpec FR-322 "Timed-model
     /// nodes", `resolved_path`).
     pub(crate) members: Vec<(String, Option<String>)>,
-    /// For each map slot step on the path, by its index in `path`, the
-    /// builtin scalar form of the map's key type, when it has one.
-    pub(crate) map_keys: BTreeMap<usize, Option<&'static str>>,
 }
 
 /// One row of a clock place's `resolved_path` (QSpec FR-322 "Timed-model
@@ -138,10 +135,6 @@ pub struct PlaceRow {
     /// The collection's maximum (`unbounded` with none) when a slot step
     /// follows, else empty.
     pub maximum: String,
-    /// The builtin scalar form (`text`, `integer`, ...) of the key type of the
-    /// map this step selects an entry of, when this step is a map slot whose
-    /// key type has one; `None` otherwise.
-    pub key_form: Option<&'static str>,
 }
 
 /// The wire name of a collection of `shape` (QSpec FR-322 `slot` step).
@@ -239,7 +232,6 @@ impl PackagePlace {
                 collection_kind,
                 minimum,
                 maximum,
-                key_form: self.map_keys.get(&index).copied().flatten(),
             });
         }
         rows
@@ -1440,7 +1432,6 @@ impl AdmittedModel {
                 aliases: Vec::new(),
                 declaring: field.owner.node.clone(),
                 members: Vec::new(),
-                map_keys: BTreeMap::new(),
             };
             self.places_of(field, root, &mut Vec::new(), &mut places);
         }
@@ -1653,7 +1644,6 @@ impl AdmittedModel {
             // no place id.
             Some(DomainPackageRecord::MapType(map)) if !visiting.contains(&key) => {
                 visiting.push(key);
-                at.map_keys.insert(at.path.len(), self.key_form(&map.keys));
                 at.path.push(PlaceStep::Slot(CollectionShape {
                     ordered: false,
                     unique: true,
@@ -1668,48 +1658,6 @@ impl AdmittedModel {
             }
             _ => {}
         }
-    }
-
-    /// The builtin scalar form a map's key type `keys` is selected by (an
-    /// alias or a package scalar type resolves to the native it holds), or
-    /// `None` for a key type with no builtin scalar node: a unit or an
-    /// enumeration.
-    fn key_form(&self, keys: &crate::model::domain_package::ValueTypeRef) -> Option<&'static str> {
-        use crate::model::domain_package::{NativeValueType, ScalarValueDomain, ValueTypeRef};
-        let mut named = keys;
-        for _ in 0..=self.records.len() {
-            let ValueTypeRef::Package(key) = named else {
-                return match named {
-                    ValueTypeRef::Native(native) => Some(match native {
-                        NativeValueType::Uuid => "uuid",
-                        NativeValueType::Boolean => "boolean",
-                        NativeValueType::Integer => "integer",
-                        NativeValueType::Rational => "rational",
-                        NativeValueType::Decimal => "decimal",
-                        NativeValueType::Text => "text",
-                        NativeValueType::String => "string",
-                        NativeValueType::Timestamp => "timestamp",
-                        NativeValueType::Float32 | NativeValueType::Float64 => return None,
-                    }),
-                    _ => None,
-                };
-            };
-            match self.records.get(key)? {
-                DomainPackageRecord::AliasType(alias) => named = &alias.target,
-                DomainPackageRecord::ScalarType(scalar) => {
-                    return match &scalar.domain {
-                        ScalarValueDomain::Integer { .. } => Some("integer"),
-                        ScalarValueDomain::Text(_) => Some("text"),
-                        ScalarValueDomain::Rational { .. } => Some("rational"),
-                        ScalarValueDomain::Native(native) => {
-                            self.key_form(&ValueTypeRef::Native(*native))
-                        }
-                    };
-                }
-                _ => return None,
-            }
-        }
-        None
     }
 
     /// Whether an object of type `object` has the fields of `owner`: the

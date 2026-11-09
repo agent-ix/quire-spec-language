@@ -5339,9 +5339,6 @@ fn read_type_node(
         let Some(keys) = type_value.get("keys").and_then(Value::as_str) else {
             return Err(ctx.malformed_in("keys", "missing or not a string").into());
         };
-        let Some(values) = type_value.get("values").and_then(Value::as_str) else {
-            return Err(ctx.malformed_in("values", "missing or not a string").into());
-        };
         let keys = read_value_type_ref(package, &ctx, keys, true).map_err(|mut refusal| {
             if let ModelRefusalCause::IntakeMalformedDeclaration { member, .. } = &mut refusal.cause
             {
@@ -5349,6 +5346,14 @@ fn read_type_node(
             }
             refusal
         })?;
+        // FR-154 "Map types" reports a map's failures in the order extra
+        // members, `keys` presence, form, resolution and eligibility, then
+        // `values`, then `bound`. Eligibility needs the package's records and
+        // is judged once every node is read ([`check_map_types`],
+        // [`prefer_key_refusals`]).
+        let Some(values) = type_value.get("values").and_then(Value::as_str) else {
+            return Err(ctx.malformed_in("values", "missing or not a string").into());
+        };
         let values = read_value_type_ref(package, &ctx, values, true)?;
         let (lower, upper) = read_map_bound(&ctx, type_value)?;
         return Ok(vec![DomainPackageRecord::MapType(MapTypeRecord {
@@ -6486,6 +6491,7 @@ fn read_nodes_partial(
     }
     inherit_process_identity_fields(&mut records);
     check_rational_member_constraints(types, &rational_types, document, &mut refusals);
+    prefer_key_refusals(package_identity, types, &records, &mut refusals);
     if refusals.is_empty() {
         check_alias_chains(types, &mut records, &mut refusals);
         check_map_types(types, &records, &mut refusals);
@@ -6538,10 +6544,16 @@ fn key_eligibility(records: &[DomainPackageRecord], keys: &ValueTypeRef) -> Opti
         match records.iter().find(|record| record.key() == key)? {
             DomainPackageRecord::AliasType(alias) => keys = alias.target.clone(),
             DomainPackageRecord::ScalarType(scalar) => {
+                // QSpec FR-154 "Map types": a bounded `Rational[n1, n2; d1,
+                // d2]` is a scalar key type; an unbounded Rational (no
+                // domain), the native `Rational` and a `Decimal` are not (a
+                // value type no FR-322 row binds).
                 return Some(
                     if matches!(
                         scalar.domain,
-                        ScalarValueDomain::Native(NativeValueType::Decimal)
+                        ScalarValueDomain::Native(
+                            NativeValueType::Decimal | NativeValueType::Rational
+                        ) | ScalarValueDomain::Rational { domain: None, .. }
                     ) {
                         KeyEligibility::Ineligible
                     } else {
@@ -6572,6 +6584,33 @@ fn key_eligibility(records: &[DomainPackageRecord], keys: &ValueTypeRef) -> Opti
     None
 }
 
+/// The refusal the key type `keys` of the map `map` (node `node`, at
+/// `position` of `types`) draws, if any: `ill_typed`/`operator-ineligible`
+/// for a key that is no scalar key type, `malformed-declaration` for one that
+/// names a node that is no type.
+fn map_key_refusal(
+    records: &[DomainPackageRecord],
+    node: &Value,
+    position: usize,
+    keys: &ValueTypeRef,
+) -> Option<ModelRefusal> {
+    let ctx = NodeCtx::new(node, format!("$.types[{position}]"));
+    match key_eligibility(records, keys)? {
+        KeyEligibility::Scalar => None,
+        KeyEligibility::NotAType => {
+            Some(ctx.malformed_in("keys", format!("{keys} names a node that is no type")))
+        }
+        KeyEligibility::Ineligible => {
+            let identity = node.get("identity").and_then(Value::as_str).unwrap_or("");
+            Some(ModelRefusal {
+                code: Code::IllTyped,
+                cause: ModelRefusalCause::OperatorIneligible,
+                detail: format!("TypeDefinition.keys on {identity}: {keys} is no scalar key type"),
+            })
+        }
+    }
+}
+
 /// The key type of every package map, once every node is read (QSpec FR-154
 /// "Map types"): a key that is no scalar key type refuses
 /// `ill_typed`/`operator-ineligible` at `TypeDefinition.keys`, and a key that
@@ -6590,22 +6629,47 @@ fn check_map_types(
         }) else {
             continue;
         };
-        let ctx = NodeCtx::new(node, format!("$.types[{position}]"));
-        match key_eligibility(records, &map.keys) {
-            None | Some(KeyEligibility::Scalar) => {}
-            Some(KeyEligibility::NotAType) => refusals.push(
-                ctx.malformed_in("keys", format!("{} names a node that is no type", map.keys)),
-            ),
-            Some(KeyEligibility::Ineligible) => {
-                refusals.push(ModelRefusal {
-                    code: Code::IllTyped,
-                    cause: ModelRefusalCause::OperatorIneligible,
-                    detail: format!(
-                        "TypeDefinition.keys on {}: {} is no scalar key type",
-                        map.key.node, map.keys
-                    ),
-                });
-            }
+        refusals.extend(map_key_refusal(records, node, position, &map.keys));
+    }
+}
+
+/// A map refused for its `values` or its `bound` whose key is also no scalar
+/// key type reports the key (FR-154 "Map types": `keys` eligibility is judged
+/// before `values` and `bound`). Replaces that refusal with the key's.
+fn prefer_key_refusals(
+    package: &str,
+    types: &[Value],
+    records: &[DomainPackageRecord],
+    refusals: &mut [ModelRefusal],
+) {
+    for refusal in refusals.iter_mut() {
+        let (ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. }
+        | ModelRefusalCause::UnpreservedModelMeaning { node, member, .. }) = &refusal.cause
+        else {
+            continue;
+        };
+        if *member != MemberPath::type_definition().name("values")
+            && *member != MemberPath::type_definition().name("bound")
+        {
+            continue;
+        }
+        let Some((position, declared)) = types.iter().enumerate().find(|(_, value)| {
+            value.get("identity").and_then(Value::as_str) == Some(node.as_str())
+        }) else {
+            continue;
+        };
+        if declared.get("kind").and_then(Value::as_str) != Some("map") {
+            continue;
+        }
+        let Some(keys) = declared.get("keys").and_then(Value::as_str) else {
+            continue;
+        };
+        let ctx = NodeCtx::new(declared, format!("$.types[{position}]"));
+        let Ok(keys) = read_value_type_ref(package, &ctx, keys, true) else {
+            continue;
+        };
+        if let Some(key_refusal) = map_key_refusal(records, declared, position, &keys) {
+            *refusal = key_refusal;
         }
     }
 }
@@ -12180,6 +12244,55 @@ mod tests {
         }
     }
 
+    /// FR-154 "Map types" orders a map's failures `keys` eligibility, `values`,
+    /// then `bound`: a map with two defects reports the earlier one.
+    #[trace("QSpec-FR-154-AC-49")]
+    #[test]
+    fn a_map_with_two_defects_reports_the_earlier_in_fr_154_order() {
+        let texts = || {
+            wire_type(
+                "ix://acme/maps/Texts",
+                serde_json::json!("sequence"),
+                serde_json::json!({"items": "ix://quire/native/Text"}),
+            )
+        };
+        let read = |edit: fn(&mut Value)| {
+            let mut map = base_map();
+            map["keys"] = serde_json::json!("ix://acme/maps/Texts");
+            edit(&mut map);
+            let package = parse_document(map_document(map, vec![texts()]).to_string().as_bytes());
+            read_unvalidated(MAPS, &package).expect_err("the map is refused")
+        };
+        // An ineligible key and a bound that cannot be preserved: the key.
+        let refusals = read(|m| m["bound"] = serde_json::json!({"lower": 3, "upper": 2}));
+        assert_eq!(refusals.len(), 1, "{refusals:?}");
+        assert_eq!(refusals[0].cause, ModelRefusalCause::OperatorIneligible);
+        // An ineligible key and a malformed bound: the key.
+        let refusals = read(|m| m["bound"] = serde_json::json!("[0, 2]"));
+        assert_eq!(refusals[0].cause, ModelRefusalCause::OperatorIneligible);
+        // An ineligible key and absent values: the key.
+        let refusals = read(|m| drop(m.as_object_mut().unwrap().remove("values")));
+        assert_eq!(refusals[0].cause, ModelRefusalCause::OperatorIneligible);
+        // Absent values and a malformed bound: the values (the earlier member).
+        let mut map = base_map();
+        map.as_object_mut().unwrap().remove("values");
+        map["bound"] = serde_json::json!("[0, 2]");
+        let refusals = read_map(map).expect_err("the map is refused");
+        assert!(
+            matches!(&refusals[0].cause, ModelRefusalCause::IntakeMalformedDeclaration { member, .. }
+            if *member == MemberPath::type_definition().name("values"))
+        );
+        // An absent keys and an ineligible-looking values: keys presence first.
+        let mut map = base_map();
+        map.as_object_mut().unwrap().remove("keys");
+        map.as_object_mut().unwrap().remove("values");
+        let refusals = read_map(map).expect_err("the map is refused");
+        assert!(
+            matches!(&refusals[0].cause, ModelRefusalCause::IntakeMalformedDeclaration { member, .. }
+            if *member == MemberPath::type_definition().name("keys"))
+        );
+    }
+
     fn map_over(keys: ValueTypeRef) -> DomainPackageRecord {
         DomainPackageRecord::MapType(MapTypeRecord {
             key: declaration_key(MAPS, "ix://acme/maps/M"),
@@ -12225,6 +12338,25 @@ mod tests {
         let mut package = vec![
             scalar("Small", ScalarValueDomain::Integer { lower: 0, upper: 9 }),
             scalar("Price", ScalarValueDomain::Native(NativeValueType::Decimal)),
+            scalar(
+                "NativeRatio",
+                ScalarValueDomain::Native(NativeValueType::Rational),
+            ),
+            scalar(
+                "Bounded",
+                ScalarValueDomain::Rational {
+                    domain: Some(
+                        RationalDomain::new(
+                            IntegerInterval::new(Integer::from(0_i64), Integer::from(9_i64))
+                                .unwrap(),
+                            IntegerInterval::new(Integer::from(1_i64), Integer::from(4_i64))
+                                .unwrap(),
+                        )
+                        .unwrap(),
+                    ),
+                    unit: None,
+                },
+            ),
             scalar(
                 "Ratio",
                 ScalarValueDomain::Rational {
@@ -12298,8 +12430,12 @@ mod tests {
         ] {
             assert_eq!(check(keys), Vec::new(), "{id}");
         }
-        // A named Rational scalar type is admitted, as contract-ir admits it.
-        assert_eq!(check(package_key("Ratio")), Vec::new(), "named Rational");
+        // A bounded Rational scalar type is admitted (FR-154 "Map types").
+        assert_eq!(
+            check(package_key("Bounded")),
+            Vec::new(),
+            "bounded Rational"
+        );
         // PM-20 (a `keys` naming no node) is the semantic-IR validator's, which
         // does not yet admit `keys`; no reader-level test can reach it.
         // Refused ill_typed/operator-ineligible at TypeDefinition.keys: PM-08
@@ -12317,6 +12453,8 @@ mod tests {
             ("PM-16", package_key("Shape")),
             ("PM-32", package_key("Price")),
             ("PM-33", ValueTypeRef::Native(NativeValueType::Rational)),
+            ("PM-33", package_key("NativeRatio")),
+            ("PM-33", package_key("Ratio")),
         ] {
             let refusals = check(keys);
             assert_eq!(refusals.len(), 1, "{id}: {refusals:?}");
