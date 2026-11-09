@@ -111,7 +111,14 @@ fn form_name(node: CheckedNode<'_>) -> Option<String> {
         | NodeKind::Not(_) => "operator",
         NodeKind::Call { .. } | NodeKind::ImportedCall { .. } | NodeKind::Dispatch { .. } => "call",
         NodeKind::Record { .. } | NodeKind::Tuple { .. } => "record",
-        NodeKind::Collection { .. } => "collection",
+        NodeKind::Collection { .. }
+        | NodeKind::Size(_)
+        | NodeKind::Contains(..)
+        | NodeKind::Flatten(_)
+        | NodeKind::ConvertCollection { .. }
+        | NodeKind::DropFirst(_)
+        | NodeKind::RemoveOne(..)
+        | NodeKind::Fold { .. } => "collection",
         NodeKind::Query { visit, .. } => match visit {
             Visit::Forall => "forall",
             Visit::Exists => "exists",
@@ -194,6 +201,12 @@ fn operation_of(node: CheckedNode<'_>, children: &[CheckedNode<'_>]) -> Option<C
             Connective::Implies => "implies",
         },
         NodeKind::Not(_) => "not",
+        NodeKind::Size(_) => "size",
+        NodeKind::Contains(..) => "contains",
+        NodeKind::Flatten(_) => "flatten",
+        NodeKind::ConvertCollection { .. } => "convert",
+        NodeKind::DropFirst(_) => "drop-first",
+        NodeKind::RemoveOne(..) => "remove-one",
         _ => return None,
     };
     let operand = children

@@ -414,6 +414,14 @@ fn population_of<'a, N: NodeSource<'a>>(source: N) -> Result<String, Halt> {
     }
 }
 
+/// The declaration identity of the population an `only` over `source` ranges
+/// over, for a checked tree; `None` when the source is no population. The
+/// JIT reports the same family result the interpreter does.
+#[must_use]
+pub fn only_population(source: qsl_semantics::check::CheckedNode<'_>) -> Option<String> {
+    population_of(source).ok()
+}
+
 /// Whether `node` is a named population operand (FR-391).
 fn is_named<'a, N: NodeSource<'a>>(node: N) -> bool {
     matches!(node.kind(), NodeKind::NamedPopulation { .. })
@@ -4014,18 +4022,12 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
             NodeKind::Fold { .. } => Shape::Fold,
             _ => return Err(invariant("iteration-node-invalid")),
         };
-        // An `only` over a `where` filter already visited the one object that
-        // passed it (FR-139).
-        let only_over_filter = matches!(
+        let source_is_filter = matches!(
             node.kind(),
-            NodeKind::Query { visit: Visit::Only, source, .. }
+            NodeKind::Query { source, .. }
                 if matches!(node.at(*source).kind(), NodeKind::Query { visit: Visit::Filter, .. })
         );
-        Ok(Spec {
-            shape,
-            value_type: node.value_type(),
-            only_over_filter,
-        })
+        Ok(Spec::new(shape, node.value_type(), source_is_filter))
     }
 
     fn start_iteration(&mut self, node: N) -> Result<(), Halt> {

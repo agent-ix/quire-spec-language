@@ -51,7 +51,7 @@ use s6a::{ReferenceEvaluation, S6aFamilyKind};
 
 pub use clause_set::{ClauseSetEntry, ClauseSetEvaluation, ClauseSetOutcome};
 pub use closure::{PackageClosure, PackageTask};
-pub use evaluate::refusal_record;
+pub use evaluate::{only_population, refusal_record};
 pub use family::{InvalidQualifiedName, QualifiedName};
 pub use protocol_slot::{
     BinderCharges, ChargeAmounts, ProtocolReferenceOccurrence, ProtocolSlot,

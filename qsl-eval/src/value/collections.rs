@@ -306,6 +306,21 @@ pub struct Spec<'t> {
     pub only_over_filter: bool,
 }
 
+impl<'t> Spec<'t> {
+    /// The spec of an iteration of `shape` whose node has `value_type`.
+    /// `source_is_filter` says the source operand is a `where` filter: an
+    /// `only` over it already visited the one object that passed the filter
+    /// (FR-139), so it charges no visit of its own.
+    #[must_use]
+    pub fn new(shape: Shape, value_type: &'t ValueType, source_is_filter: bool) -> Self {
+        Self {
+            shape,
+            value_type,
+            only_over_filter: shape == Shape::Query(Visit::Only) && source_is_filter,
+        }
+    }
+}
+
 /// The state of a one-binder iteration in progress.
 #[derive(Debug)]
 pub struct Iteration {
