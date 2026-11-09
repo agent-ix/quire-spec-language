@@ -17,7 +17,7 @@ const MAX_COUNT: u64 = 9_007_199_254_740_991;
 pub struct ProbabilityDocumentIoLimits {
     /// Maximum canonical certificate document bytes.
     pub bytes: u64,
-    /// Maximum working bytes reserved by the canonical JSON reader.
+    /// Maximum working bytes admitted by the canonical writer or reader.
     pub storage_bytes: u64,
 }
 
@@ -36,7 +36,7 @@ impl Default for ProbabilityDocumentIoLimits {
 pub enum ProbabilityDocumentLimit {
     /// Canonical input/output bytes.
     Bytes,
-    /// JSON reader working-storage bytes.
+    /// Canonical writer or reader working-storage bytes.
     StorageBytes,
     /// Reachable product states or supplied state rows.
     States,
@@ -87,7 +87,7 @@ pub struct ProbabilityCertificateDocument {
 pub struct ProbabilityDocumentLimits {
     /// Maximum document bytes, for both reading and writing.
     pub bytes: u64,
-    /// Canonical JSON reader working-storage ceiling in bytes.
+    /// Canonical JSON writer or reader working-storage ceiling in bytes.
     pub storage_bytes: u64,
     /// Maximum checker graph states and certificate rows.
     pub states: usize,
@@ -951,7 +951,7 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
 
-    fn limits() -> ProbabilityDocumentLimits {
+    pub(super) fn limits() -> ProbabilityDocumentLimits {
         ProbabilityDocumentLimits {
             bytes: 1_000_000,
             storage_bytes: 8_000_000,
@@ -961,7 +961,7 @@ mod tests {
             accounting: crate::AccountingLimits::default().0,
         }
     }
-    fn document() -> ProbabilityCertificateDocument {
+    pub(super) fn document() -> ProbabilityCertificateDocument {
         let key = ProbabilityProductKey::for_model_state(None, b"model").unwrap();
         ProbabilityCertificateDocument {
             identity: ObligationIdentity::new(crate::fixture_node(1), None, 0),

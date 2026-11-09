@@ -1485,6 +1485,7 @@ version = "0.1.0"
 dependencies = [
  "hashbrown 0.17.1",
  "ix-trace-rs",
+ "quire-canonical",
  "quire-exact",
  "quire-semantic-value",
  "serde",

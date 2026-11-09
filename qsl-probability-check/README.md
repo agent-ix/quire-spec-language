@@ -37,7 +37,13 @@ Unsupported configurations produce no acceptance token.
 The analyzer's additive `ExactProbLimits.document` API carries independent
 `bytes` and `storage_bytes` ceilings, each defaulting to 1073741824 bytes.
 The former stops as `certificate_check.max_certificate_bytes`; canonical-reader
-working storage stops as `certificate_check.max_working_bytes`. Source callers
+writer/reader working storage stops as `certificate_check.max_working_bytes`. The
+writer uses the qualified canonical event encoder without wire row vectors or a
+JSON tree. It charges cumulative requested capacity before canonical buffers,
+identity traversal, transport strings and the output destination grow. Base64
+lengths are checked against the byte budget before encoding; decimal formatting
+reserves a digit bound derived from the existing integer's bit count first.
+Source callers
 configure the corresponding `ProbabilityDocumentLimits` fields directly.
 Graph/rational limits and the subject's scalar accounting also apply. Decimal
 text is checked before large integer construction, and normalization and
