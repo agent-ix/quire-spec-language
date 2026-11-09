@@ -21,8 +21,8 @@ use crate::identity::ObligationIdentity;
 
 mod document;
 mod source;
-pub use source::*;
 pub use document::*;
+pub use source::*;
 mod witness;
 pub use witness::*;
 

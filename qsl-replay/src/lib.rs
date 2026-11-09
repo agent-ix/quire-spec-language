@@ -329,18 +329,17 @@ pub use planner::{
     PlannerResult, PremiseItem, PremiseResult, ResultEntry, SettlementRequest,
 };
 pub use probability_certificate::{
-    check_probability_certificate_source, ProbabilitySourceError, ProbabilitySourceLimits,
-    ProbabilitySourceRequest,
-    check_probability_certificate_document, probability_certificate_document,
-    read_probability_certificate, write_probability_certificate, ProbabilityCertificateDocument,
-    ProbabilityDocumentError, ProbabilityDocumentLimits,
-    check_claim_exact_reachability, claim_binding, digital_probability_product_key,
-    probabilistic_claim_identity, replay_probabilistic_witness, ClaimBinding, DigitalClockKey,
-    DigitalDeadlineKey, DigitalProductKeyInput, DigitalTail, ExactProbabilityAcceptance,
-    ExactProbabilityCertificate, ExactProbabilityCertificateCheck, ExactProbabilityGraphError,
-    ExactProbabilityValue, ProbabilisticCounterexample, ProbabilityBoundSide,
+    check_claim_exact_reachability, check_probability_certificate_document,
+    check_probability_certificate_source, claim_binding, digital_probability_product_key,
+    probability_certificate_document, probabilistic_claim_identity, read_probability_certificate, replay_probabilistic_witness,
+    write_probability_certificate, ClaimBinding, DigitalClockKey, DigitalDeadlineKey,
+    DigitalProductKeyInput, DigitalTail, ExactProbabilityAcceptance, ExactProbabilityCertificate,
+    ExactProbabilityCertificateCheck, ExactProbabilityGraphError, ExactProbabilityValue,
+    ProbabilisticCounterexample, ProbabilityBoundSide, ProbabilityCertificateDocument,
     ProbabilityCertificateLocus, ProbabilityCertificateRejection, ProbabilityCertificateRule,
-    ProbabilityObjective, ProbabilityProductKey, ProbabilityWitnessError, ProbabilityWitnessPath,
+    ProbabilityDocumentError, ProbabilityDocumentLimits, ProbabilityObjective,
+    ProbabilityProductKey, ProbabilitySourceError, ProbabilitySourceLimits,
+    ProbabilitySourceRequest, ProbabilityWitnessError, ProbabilityWitnessPath,
     ProbabilityWitnessReplay, ProbabilityWitnessStep, ReproducedProbabilityWitness,
 };
 pub use product_action::{

@@ -75,33 +75,91 @@ struct Request {
 }
 
 fn check(request: Request, cancel: &Cancel) -> Result<Value, String> {
-    let source = DefinitionSourceRef::from_wire((request.source.authority.clone(), request.source.identity.clone()));
-    let provision = ByteProvision::admit(request.byte_provision, request.documents, [("source".to_owned(), &source)])
+    let source = DefinitionSourceRef::from_wire((
+        request.source.authority.clone(),
+        request.source.identity.clone(),
+    ));
+    let provision = ByteProvision::admit(
+        request.byte_provision,
+        request.documents,
+        [("source".to_owned(), &source)],
+    )
+    .map_err(|error| error.to_string())?;
+    let node = qsl_foundation::node_wire::node_key_from_json(&request.item.node_id)
         .map_err(|error| error.to_string())?;
-    let node = qsl_foundation::node_wire::node_key_from_json(&request.item.node_id).map_err(|error| error.to_string())?;
-    let item = ObligationIdentity::new(node, request.item.model.map(qsl_replay::ModelIdentity::new), request.item.ordinal);
-    let operands = request.limits.stages.iter().map(|(name, bound)| format!("{name}={bound}")).collect::<Vec<_>>();
-    let caller = qsl_replay::CallerLimits::from_operands(operands.iter().map(String::as_str)).map_err(|error| error.to_string())?;
-    let expected = SourceComponent { authority: request.source.authority, identity: request.source.identity, content: request.source.content };
-    let result = check_probability_certificate_source(ProbabilitySourceRequest {
-        source: &source, expected_source: &expected, package_name: &request.package_name,
-        provision: &provision, item: &item,
-        initial: request.initial.into_iter().map(|document| DocumentRef { authority: document.authority, identity: document.identity }).collect(),
-        universes: request.universes.into_iter().map(|universe| PopulationUniverse {
-            population: DeclarationKey { package: universe.population.package, node: universe.population.node }, keys: universe.keys,
-        }).collect(),
-        certificate: request.certificate.as_bytes(),
-    }, ProbabilitySourceLimits {
-        spine: caller.spine, observation: caller.observation, expansion: ExpansionLimits { max_candidates: request.limits.expansion },
-        scalar: caller.accounting.0, document: ProbabilityDocumentLimits {
-            bytes: request.limits.bytes, states: request.limits.states, edges: request.limits.edges, scalar_bits: request.limits.scalar_bits, accounting: caller.accounting.0,
+    let item = ObligationIdentity::new(
+        node,
+        request.item.model.map(qsl_replay::ModelIdentity::new),
+        request.item.ordinal,
+    );
+    let operands = request
+        .limits
+        .stages
+        .iter()
+        .map(|(name, bound)| format!("{name}={bound}"))
+        .collect::<Vec<_>>();
+    let caller = qsl_replay::CallerLimits::from_operands(operands.iter().map(String::as_str))
+        .map_err(|error| error.to_string())?;
+    let expected = SourceComponent {
+        authority: request.source.authority,
+        identity: request.source.identity,
+        content: request.source.content,
+    };
+    let result = check_probability_certificate_source(
+        ProbabilitySourceRequest {
+            source: &source,
+            expected_source: &expected,
+            package_name: &request.package_name,
+            provision: &provision,
+            item: &item,
+            initial: request
+                .initial
+                .into_iter()
+                .map(|document| DocumentRef {
+                    authority: document.authority,
+                    identity: document.identity,
+                })
+                .collect(),
+            universes: request
+                .universes
+                .into_iter()
+                .map(|universe| PopulationUniverse {
+                    population: DeclarationKey {
+                        package: universe.population.package,
+                        node: universe.population.node,
+                    },
+                    keys: universe.keys,
+                })
+                .collect(),
+            certificate: request.certificate.as_bytes(),
         },
-    }, cancel).map_err(|error| error.to_string())?;
+        ProbabilitySourceLimits {
+            spine: caller.spine,
+            observation: caller.observation,
+            expansion: ExpansionLimits {
+                max_candidates: request.limits.expansion,
+            },
+            scalar: caller.accounting.0,
+            document: ProbabilityDocumentLimits {
+                bytes: request.limits.bytes,
+                states: request.limits.states,
+                edges: request.limits.edges,
+                scalar_bits: request.limits.scalar_bits,
+                accounting: caller.accounting.0,
+            },
+        },
+        cancel,
+    )
+    .map_err(|error| error.to_string())?;
     Ok(match result {
-        ExactProbabilityCertificateCheck::Accepted(accepted) => json!({"status":"accepted", "value": {
-            "numerator": accepted.value().numerator().to_string(), "denominator": accepted.value().denominator().to_string(),
-        }}),
-        ExactProbabilityCertificateCheck::Rejected(rejection) => json!({"status":"rejected", "rule":format!("{:?}", rejection.rule)}),
+        ExactProbabilityCertificateCheck::Accepted(accepted) => {
+            json!({"status":"accepted", "value": {
+                "numerator": accepted.value().numerator().to_string(), "denominator": accepted.value().denominator().to_string(),
+            }})
+        }
+        ExactProbabilityCertificateCheck::Rejected(rejection) => {
+            json!({"status":"rejected", "rule":format!("{:?}", rejection.rule)})
+        }
     })
 }
 
@@ -112,9 +170,15 @@ fn run() -> Result<Value, String> {
     let mut arguments = std::env::args().skip(1);
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
-            "--max-input-bytes" => bound = arguments.next().ok_or("missing input byte ceiling")?.parse().map_err(|_| "invalid input byte ceiling")?,
+            "--max-input-bytes" => {
+                bound = arguments
+                    .next()
+                    .ok_or("missing input byte ceiling")?
+                    .parse()
+                    .map_err(|_| "invalid input byte ceiling")?
+            }
             "--cancel" => cancel.cancel(CancelCause::Requested),
-            "-" => {},
+            "-" => {}
             _ if !argument.starts_with('-') && input.is_none() => input = Some(argument),
             _ => return Err(format!("unsupported argument: {argument}")),
         }
@@ -124,18 +188,32 @@ fn run() -> Result<Value, String> {
         None => Box::new(std::io::stdin()),
     };
     let mut bytes = Vec::new();
-    reader.take(bound.checked_add(1).ok_or("input byte ceiling overflow")?).read_to_end(&mut bytes).map_err(|error| error.to_string())?;
-    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > bound { return Err("checker input byte limit reached".to_owned()); }
+    reader
+        .take(bound.checked_add(1).ok_or("input byte ceiling overflow")?)
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > bound {
+        return Err("checker input byte limit reached".to_owned());
+    }
     let request = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
     check(request, &cancel)
 }
 
 fn main() {
     let (value, code) = match run() {
-        Ok(value) => { let code = if value.get("status").and_then(Value::as_str) == Some("accepted") { 0 } else { 1 }; (value, code) },
+        Ok(value) => {
+            let code = if value.get("status").and_then(Value::as_str) == Some("accepted") {
+                0
+            } else {
+                1
+            };
+            (value, code)
+        }
         Err(error) => (json!({"status":"stopped", "reason":error}), 2),
     };
     let mut output = std::io::stdout().lock();
-    if serde_json::to_writer(&mut output, &value).is_err() || output.write_all(b"\n").is_err() { std::process::exit(3); }
+    if serde_json::to_writer(&mut output, &value).is_err() || output.write_all(b"\n").is_err() {
+        std::process::exit(3);
+    }
     std::process::exit(code);
 }
