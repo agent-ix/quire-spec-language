@@ -148,7 +148,7 @@ fn proof_request_with(
         .exact_probabilistic
         .as_ref()
         .expect("a real EN-5 proof carries its checked certificate");
-    let item = ObligationIdentity::new(claim.occurrence().unwrap().node().clone(), None, 0);
+    let item = qsl_replay::probabilistic_claim_identity(claim).unwrap();
     let document_limits = ProbabilityDocumentLimits {
         bytes: 1_000_000,
         storage_bytes: 8_000_000,
@@ -166,7 +166,9 @@ fn proof_request_with(
         &cancel,
     )
     .unwrap();
-    let certificate = write_probability_certificate(&document, document_limits, &cancel).unwrap();
+    let written = write_probability_certificate(&document, document_limits, &cancel).unwrap();
+    assert_eq!(written, evidence.document, "analyze emits the production writer's exact bytes");
+    let certificate = evidence.document.clone();
     inspect(
         &system,
         package.graph().probabilistic_model().claims(),
@@ -177,7 +179,7 @@ fn proof_request_with(
     json!({
         "source": {"authority": identity.authority, "identity": identity.identity, "content": source},
         "package_name": "certificate-fixture",
-        "item": {"node_id": qsl_foundation::node_wire::node_key_to_json(item.node()).unwrap(), "model": null, "ordinal": 0},
+        "item": {"node_id": qsl_foundation::node_wire::node_key_to_json(item.node()).unwrap(), "model": item.model().map(|model| model.as_str()), "ordinal": item.ordinal()},
         "byte_provision": [["test", "certificate-source", source.as_bytes()]],
         "documents": [DOMAIN, SNAPSHOT],
         "initial": [{"authority":"test", "identity":"s0"}],
@@ -291,13 +293,13 @@ fn replace_checked_source(request: &mut Value, source: &str) {
         .probabilistic_model()
         .claim("Likely")
         .unwrap();
-    let node =
-        qsl_foundation::node_wire::node_key_to_json(claim.occurrence().unwrap().node()).unwrap();
+    let item = qsl_replay::probabilistic_claim_identity(claim).unwrap();
+    let identity = json!({"node_id":qsl_foundation::node_wire::node_key_to_json(item.node()).unwrap(), "model":item.model().map(|model| model.as_str()), "ordinal":item.ordinal()});
     request["source"]["content"] = json!(source);
     request["byte_provision"][0][2] = json!(source.as_bytes());
-    request["item"]["node_id"] = node.clone();
+    request["item"] = identity.clone();
     change_certificate(request, |document| {
-        document["identity"]["node_id"] = node;
+        document["identity"] = identity;
     });
 }
 
@@ -525,7 +527,7 @@ fn exact_byte_ceilings_retain_the_actual_offered_lengths() {
     assert_eq!(code, 2);
     assert_eq!(
         result["limit"],
-        json!({"setting":"certificate.bytes", "bound":certificate_bytes - 1, "actual":certificate_bytes})
+        json!({"setting":"certificate_check.max_certificate_bytes", "bound":certificate_bytes - 1, "actual":certificate_bytes})
     );
     let mut request = original.clone();
     let source_bytes = request["source"]["content"].as_str().unwrap().len();
@@ -540,7 +542,7 @@ fn exact_byte_ceilings_retain_the_actual_offered_lengths() {
     request["limits"]["storage_bytes"] = json!(0);
     let (code, result) = run(&request, &[]);
     assert_eq!(code, 2);
-    assert_eq!(result["limit"]["setting"], "certificate.storage_bytes");
+    assert_eq!(result["limit"]["setting"], "certificate_check.max_working_bytes");
     assert_eq!(result["limit"]["bound"], 0);
     assert!(result["limit"]["actual"].as_u64().unwrap() > 0);
 }

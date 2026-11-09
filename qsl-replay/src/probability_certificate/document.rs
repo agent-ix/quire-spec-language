@@ -10,6 +10,56 @@ use super::*;
 const PROFILE: &str = "quire.probability-objective/reachability/v1";
 const MAX_COUNT: u64 = 9_007_199_254_740_991;
 
+/// Caller-owned byte and working-storage ceilings for certificate transport.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProbabilityDocumentIoLimits {
+    /// Maximum canonical certificate document bytes.
+    pub bytes: u64,
+    /// Maximum working bytes reserved by the canonical JSON reader.
+    pub storage_bytes: u64,
+}
+
+impl Default for ProbabilityDocumentIoLimits {
+    fn default() -> Self {
+        let bytes = crate::CertificateCheckLimits::default().max_certificate_bytes;
+        Self { bytes, storage_bytes: bytes }
+    }
+}
+
+/// A distinct exhausted ceiling in the closed certificate profile.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProbabilityDocumentLimit {
+    /// Canonical input/output bytes.
+    Bytes,
+    /// JSON reader working-storage bytes.
+    StorageBytes,
+    /// Reachable product states or supplied state rows.
+    States,
+    /// Positive-probability product edges.
+    Edges,
+    /// Exact rational numerator or denominator bits.
+    RationalBits,
+    /// The profile's maximum representable progress rank.
+    Rank,
+}
+
+impl ProbabilityDocumentLimit {
+    /// Shared incomplete-result vocabulary for this actual exhausted ceiling.
+    pub fn model_limit(self) -> crate::ModelCheckLimit {
+        match self {
+            Self::Bytes => crate::ModelCheckLimit::CertificateMaxBytes,
+            Self::StorageBytes => crate::ModelCheckLimit::CertificateMaxWorkingBytes,
+            Self::States => crate::ModelCheckLimit::ExactProbMaxStates,
+            Self::Edges => crate::ModelCheckLimit::ExactProbMaxTransitions,
+            Self::RationalBits => crate::ModelCheckLimit::ExactProbMaxRationalBits,
+            Self::Rank => crate::ModelCheckLimit::CertificateMaxRank,
+        }
+    }
+
+    /// The configured setting named by a stopped check.
+    pub fn setting(self) -> &'static str { self.model_limit().setting() }
+}
+
 /// Exact reachability evidence, before independent semantic checking.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProbabilityCertificateDocument {
@@ -64,10 +114,10 @@ pub enum ProbabilityDocumentError {
     #[error("invalid_runtime_input: probability certificate objective mismatch")]
     ObjectiveMismatch,
     /// A caller byte, row or arithmetic ceiling was reached.
-    #[error("probability certificate limit reached: {setting} ({actual} > {bound})")]
+    #[error("probability certificate limit reached: {} ({actual} > {bound})", limit.setting())]
     Limit {
         /// Exhausted setting.
-        setting: &'static str,
+        limit: ProbabilityDocumentLimit,
         /// Caller ceiling.
         bound: u64,
         /// Actual required amount, including the refused growth.
@@ -150,22 +200,49 @@ fn poll(cancel: &Cancel) -> Result<(), ProbabilityDocumentError> {
 }
 
 fn canonical<T: Serialize>(value: &T, bytes: u64) -> Result<Vec<u8>, ProbabilityDocumentError> {
+    let mut counter = EncodedSize { used: 0, bound: bytes, required: None };
+    if serde_json::to_writer(&mut counter, value).is_err() {
+        return Err(match counter.required {
+            Some(actual) => exceeded(ProbabilityDocumentLimit::Bytes, bytes, actual),
+            None => ProbabilityDocumentError::Malformed,
+        });
+    }
     let encoded = serde_json::to_vec(value).map_err(|_| ProbabilityDocumentError::Malformed)?;
     let parsed = quire_canonical::read(&encoded, u64::MAX)
         .map_err(|_| ProbabilityDocumentError::Malformed)?;
     quire_canonical::to_vec(&parsed, quire_canonical::Limits::new(bytes)).map_err(|error| {
         match error {
             quire_canonical::Error::Limit(limit) => {
-                exceeded("certificate.bytes", limit.bound, limit.required)
+                exceeded(ProbabilityDocumentLimit::Bytes, limit.bound, limit.required)
             }
             _ => ProbabilityDocumentError::Malformed,
         }
     })
 }
 
-fn exceeded(setting: &'static str, bound: u64, actual: u64) -> ProbabilityDocumentError {
+struct EncodedSize {
+    used: u64,
+    bound: u64,
+    required: Option<u64>,
+}
+
+impl std::io::Write for EncodedSize {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let required = self.used.saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+        if required > self.bound {
+            self.required = Some(required);
+            return Err(std::io::Error::other("certificate byte ceiling"));
+        }
+        self.used = required;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+}
+
+fn exceeded(limit: ProbabilityDocumentLimit, bound: u64, actual: u64) -> ProbabilityDocumentError {
     ProbabilityDocumentError::Limit {
-        setting,
+        limit,
         bound,
         actual,
     }
@@ -246,7 +323,7 @@ fn ratio(wire: WireRational, bits: u64) -> Result<Rational, ProbabilityDocumentE
     }
     if numerator.as_big().bits() > bits || denominator.as_big().bits() > bits {
         return Err(exceeded(
-            "exact_prob.max_rational_bits",
+            ProbabilityDocumentLimit::RationalBits,
             bits,
             numerator.as_big().bits().max(denominator.as_big().bits()),
         ));
@@ -273,7 +350,7 @@ pub fn read_probability_certificate(
     poll(cancel)?;
     if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limits.bytes {
         return Err(exceeded(
-            "certificate.bytes",
+            ProbabilityDocumentLimit::Bytes,
             limits.bytes,
             u64::try_from(bytes.len()).unwrap_or(u64::MAX),
         ));
@@ -281,7 +358,7 @@ pub fn read_probability_certificate(
     let parsed = quire_canonical::read_bounded(bytes, limits.bytes, limits.storage_bytes).map_err(
         |error| match error {
             quire_canonical::ReadError::Limit(limit) => {
-                exceeded("certificate.storage_bytes", limit.bound, limit.required)
+                exceeded(ProbabilityDocumentLimit::StorageBytes, limit.bound, limit.required)
             }
             _ => ProbabilityDocumentError::Malformed,
         },
@@ -289,6 +366,7 @@ pub fn read_probability_certificate(
     if parsed.root().get("ranking").is_none() {
         return Err(ProbabilityDocumentError::MissingMember("ranking"));
     }
+    drop(parsed);
     let wire: WireDocument =
         serde_json::from_slice(bytes).map_err(|_| ProbabilityDocumentError::Malformed)?;
     if canonical(&wire, limits.bytes)? != bytes {
@@ -311,7 +389,7 @@ pub fn read_probability_certificate(
         || wire.objective.targets.len() > limits.states
     {
         return Err(exceeded(
-            "exact_prob.max_states",
+            ProbabilityDocumentLimit::States,
             u64::try_from(limits.states).unwrap_or(u64::MAX),
             u64::try_from(
                 wire.values
@@ -476,11 +554,11 @@ fn subject_graph(
         None => match error {
             ExactProbabilityGraphError::LimitReached => {
                 let bound = u64::try_from(limits.states).unwrap_or(u64::MAX);
-                exceeded("exact_prob.max_states", bound, bound.saturating_add(1))
+                exceeded(ProbabilityDocumentLimit::States, bound, bound.saturating_add(1))
             }
             ExactProbabilityGraphError::EdgeLimitReached => {
                 let bound = u64::try_from(limits.edges).unwrap_or(u64::MAX);
-                exceeded("exact_prob.max_transitions", bound, bound.saturating_add(1))
+                exceeded(ProbabilityDocumentLimit::Edges, bound, bound.saturating_add(1))
             }
             other => other.into(),
         },
@@ -535,7 +613,7 @@ pub fn probability_certificate_document(
                     successor
                         .checked_add(1)
                         .filter(|rank| *rank <= MAX_COUNT)
-                        .ok_or(exceeded("certificate.rank", MAX_COUNT, MAX_COUNT + 1))?,
+                        .ok_or(exceeded(ProbabilityDocumentLimit::Rank, MAX_COUNT, MAX_COUNT + 1))?,
                 );
             }
         }
@@ -635,7 +713,7 @@ fn check_scalar(
         || value.denominator().as_big().bits() > limits.scalar_bits
     {
         Err(exceeded(
-            "exact_prob.max_rational_bits",
+            ProbabilityDocumentLimit::RationalBits,
             limits.scalar_bits,
             value
                 .numerator()
@@ -1034,7 +1112,7 @@ mod tests {
                 &Cancel::new()
             ),
             Err(exceeded(
-                "certificate.bytes",
+                ProbabilityDocumentLimit::Bytes,
                 u64::try_from(bytes.len()).unwrap() - 1,
                 u64::try_from(bytes.len()).unwrap()
             ))
@@ -1048,7 +1126,7 @@ mod tests {
                 },
                 &Cancel::new()
             ),
-            Err(exceeded("exact_prob.max_states", 0, 1))
+            Err(exceeded(ProbabilityDocumentLimit::States, 0, 1))
         );
         assert_eq!(
             read_probability_certificate(
@@ -1059,7 +1137,7 @@ mod tests {
                 },
                 &Cancel::new()
             ),
-            Err(exceeded("exact_prob.max_rational_bits", 0, 1))
+            Err(exceeded(ProbabilityDocumentLimit::RationalBits, 0, 1))
         );
         for cause in [CancelCause::Requested, CancelCause::Deadline] {
             let cancel = Cancel::new();

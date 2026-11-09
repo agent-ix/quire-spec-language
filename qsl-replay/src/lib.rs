@@ -337,7 +337,7 @@ pub use probability_certificate::{
     ExactProbabilityCertificateCheck, ExactProbabilityGraphError, ExactProbabilityValue,
     ProbabilisticCounterexample, ProbabilityBoundSide, ProbabilityCertificateDocument,
     ProbabilityCertificateLocus, ProbabilityCertificateRejection, ProbabilityCertificateRule,
-    ProbabilityDocumentError, ProbabilityDocumentLimits, ProbabilityObjective,
+    ProbabilityDocumentError, ProbabilityDocumentIoLimits, ProbabilityDocumentLimit, ProbabilityDocumentLimits, ProbabilityObjective,
     ProbabilityProductKey, ProbabilitySourceError, ProbabilitySourceLimits,
     ProbabilitySourceRequest, ProbabilityWitnessError, ProbabilityWitnessPath,
     ProbabilityWitnessReplay, ProbabilityWitnessStep, ReproducedProbabilityWitness,

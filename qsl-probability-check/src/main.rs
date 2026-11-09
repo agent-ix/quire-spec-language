@@ -216,11 +216,11 @@ fn source_failure(error: ProbabilitySourceError) -> Value {
     };
     let limit = match &error {
         ProbabilitySourceError::Document(Document::Limit {
-            setting,
+            limit,
             bound,
             actual,
-        })
-        | ProbabilitySourceError::ProvisionLimit {
+        }) => Some(json!({"setting":limit.setting(), "bound":bound, "actual":actual})),
+        ProbabilitySourceError::ProvisionLimit {
             setting,
             bound,
             actual,

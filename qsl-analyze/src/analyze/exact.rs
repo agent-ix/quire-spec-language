@@ -19,10 +19,12 @@ use qsl_eval::simulation::TransitionSystem;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::statistical::SubjectLimits;
 use qsl_replay::{
-    check_claim_exact_reachability, claim_binding, ExactBinding, ExactProbBuildIssue,
+    check_probability_certificate_document, probability_certificate_document,
+    write_probability_certificate, claim_binding, ExactBinding, ExactProbBuildIssue,
     ExactProbBuildRecord, ExactProbabilityCertificate, ExactProbabilityCertificateCheck,
     ExactProbabilityGraphError, ExactProbabilityValue, Extremum, ModelCheckLimit,
     ProbabilityBoundSide, ProbabilityProductKey, TerminalRecord,
+    ProbabilityDocumentError, ProbabilityDocumentLimits,
 };
 use qsl_replay::{
     replay_probabilistic_witness, ProbabilisticCounterexample, ProbabilityWitnessError,
@@ -48,6 +50,8 @@ use crate::exact_probabilistic::{
 /// `proved` item (FR-281-AC-1: the record carries the certificate).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExactProbabilityEvidence {
+    /// Canonical document bytes written and read by the core before certification.
+    pub document: Vec<u8>,
     /// One exact value for every state of the checker's graph.
     pub certificate: ExactProbabilityCertificate,
     /// The checked value at the initial state.
@@ -67,7 +71,7 @@ pub(crate) enum ExactReport {
     /// The core rejected a probability value at a complete product state.
     Rejected {
         rule: CertificateRule,
-        at: ProbabilityProductKey,
+        at: CertificateLocus,
     },
     /// The checker accepted the solver's certificate.
     Proved {
@@ -141,7 +145,7 @@ impl ExactReport {
                     backend,
                     InconclusiveCause::CertificateRejected {
                         rule,
-                        at: CertificateLocus::ProbabilityProductState(at),
+                        at,
                     },
                 ),
                 None,
@@ -324,20 +328,23 @@ fn run(
     if let Some(tamper) = tamper {
         tamper(&mut certificate);
     }
-    let checked = check_claim_exact_reachability(
-        &system,
-        package.graph().probabilistic_model().claims(),
-        &item,
-        &certificate,
-        limits.model.limits.max_states,
-        limits.model.limits.max_transitions,
-        cancel,
-    );
-    let count = |limit: usize| u64::try_from(limit).unwrap_or(u64::MAX);
+    let document_limits = ProbabilityDocumentLimits {
+        bytes: limits.document.bytes, storage_bytes: limits.document.storage_bytes,
+        states: limits.model.limits.max_states, edges: limits.model.limits.max_transitions,
+        scalar_bits: limits.max_rational_bits, accounting: meter,
+    };
+    let checked = (|| {
+        let claims = package.graph().probabilistic_model().claims();
+        let document = probability_certificate_document(&system, claims, &item, &certificate, document_limits, cancel)?;
+        let bytes = write_probability_certificate(&document, document_limits, cancel)?;
+        let check = check_probability_certificate_document(&system, claims, &item, &bytes, document_limits, cancel)?;
+        Ok::<_, ProbabilityDocumentError>((check, bytes))
+    })();
     match checked {
-        Ok(check) => match &check {
+        Ok((check, document)) => match &check {
             ExactProbabilityCertificateCheck::Accepted(accepted) => {
                 let evidence = Box::new(ExactProbabilityEvidence {
+                    document,
                     certificate,
                     value: accepted.value().clone(),
                     side: accepted.side(),
@@ -357,56 +364,47 @@ fn run(
                 let rule = match rejection.rule {
                     ProbabilityCertificateRule::InequalityFails => CertificateRule::InequalityFails,
                     ProbabilityCertificateRule::ThresholdMissed => CertificateRule::ThresholdMissed,
-                    // QSpec's probability rejection branch has no malformed
-                    // rule/member form; retain the fault until that is specified.
-                    ProbabilityCertificateRule::Malformed => return broken(),
+                    ProbabilityCertificateRule::Malformed => CertificateRule::Malformed,
+                    ProbabilityCertificateRule::RankMissing => CertificateRule::RankMissing,
+                    ProbabilityCertificateRule::RankBroken => CertificateRule::RankBroken,
                 };
                 match &rejection.at {
                     ProbabilityCertificateLocus::ProductState(at) => {
                         EngineReport::Exact(Box::new(ExactReport::Rejected {
                             rule,
-                            at: at.clone(),
+                            at: CertificateLocus::ProbabilityProductState(at.clone()),
                         }))
                     }
-                    ProbabilityCertificateLocus::Member(_) => broken(),
+                    ProbabilityCertificateLocus::Member(name) => {
+                        let Some(member) = qsl_replay::CertificateMember::ALL.iter().find(|member| member.as_str() == *name) else { return broken(); };
+                        EngineReport::Exact(Box::new(ExactReport::Rejected { rule, at: CertificateLocus::CertificateMember(*member) }))
+                    },
                 }
             }
         },
-        Err(ExactProbabilityGraphError::Cancelled(cause)) => {
+        Err(ProbabilityDocumentError::Cancelled(cause)) => {
             settled(&ExactProbBuildIssue::Cancelled(cause), subject)
         }
-        Err(ExactProbabilityGraphError::LimitReached) => settled(
+        Err(ProbabilityDocumentError::Limit { limit, bound, .. }) => settled(
             &ExactProbBuildIssue::Limit {
-                limit: ModelCheckLimit::ExactProbMaxStates,
-                value: count(limits.model.limits.max_states),
+                limit: limit.model_limit(),
+                value: bound,
             },
             subject,
         ),
-        Err(
-            ExactProbabilityGraphError::EdgeLimitReached | ExactProbabilityGraphError::TooManyEdges,
-        ) => settled(
+        Err(ProbabilityDocumentError::Accounting(incomplete)) => settled(
             &ExactProbBuildIssue::Limit {
-                limit: ModelCheckLimit::ExactProbMaxTransitions,
-                value: count(limits.model.limits.max_transitions),
+                limit: ModelCheckLimit::EvaluationMeter { counter: incomplete.limit_kind },
+                value: incomplete.limit,
             },
             subject,
         ),
-        // Shapes the checker core does not cover yet.
+        Err(ProbabilityDocumentError::Build(issue)) => settled(&issue, subject),
+        Err(ProbabilityDocumentError::Unsupported) => not_yet(),
         Err(
-            ExactProbabilityGraphError::Cycle
-            | ExactProbabilityGraphError::UnsupportedDraw
-            | ExactProbabilityGraphError::UnsupportedInitial
-            | ExactProbabilityGraphError::UnsupportedBinding
-            | ExactProbabilityGraphError::UnsupportedClaimForm,
-        ) => not_yet(),
-        // The checker could not rebuild the graph the solver solved, or
-        // could not bind the claim the item itself carries: a fault, not a
-        // verdict.
-        Err(
-            ExactProbabilityGraphError::ExpansionRefused
-            | ExactProbabilityGraphError::MissingSuccessor
-            | ExactProbabilityGraphError::InvalidDigitalKey
-            | ExactProbabilityGraphError::ClaimNotBound,
+            ProbabilityDocumentError::Malformed | ProbabilityDocumentError::MissingMember(_)
+            | ProbabilityDocumentError::Noncanonical | ProbabilityDocumentError::IdentityMismatch
+            | ProbabilityDocumentError::ObjectiveMismatch | ProbabilityDocumentError::Graph(_),
         ) => broken(),
     }
 }
@@ -709,7 +707,7 @@ mod tests {
             .expect("the key encodes");
         let (terminal, evidence, counterexample) = ExactReport::Rejected {
             rule: CertificateRule::ThresholdMissed,
-            at: key.clone(),
+            at: CertificateLocus::ProbabilityProductState(key.clone()),
         }
         .settle(RequestIndex::new(0), BackendId::new("en-5"));
         assert_eq!(
