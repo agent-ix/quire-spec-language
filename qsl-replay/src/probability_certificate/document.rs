@@ -12,6 +12,7 @@ mod writer;
 pub(super) use key::model_product_key;
 
 const PROFILE: &str = "quire.probability-objective/reachability/v1";
+const STATE_PROFILE: &str = "quire.probability-objective/state-predicate/v1";
 const MAX_COUNT: u64 = 9_007_199_254_740_991;
 
 /// Caller-owned byte and working-storage ceilings for certificate transport.
@@ -69,13 +70,27 @@ impl ProbabilityDocumentLimit {
     }
 }
 
-/// Exact reachability evidence, before independent semantic checking.
+/// Direct infinite-trace event represented by state-predicate evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProbabilityStateEvent {
+    /// A holds until B, with B taking precedence.
+    Until,
+    /// P holds forever, including terminal stutter.
+    Always,
+}
+
+/// Exact probability evidence, before independent semantic checking.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProbabilityCertificateDocument {
     /// Structural claim identity.
     pub identity: ObligationIdentity,
     /// Complete, strictly ordered reachable target keys.
     pub targets: Vec<ProbabilityProductKey>,
+    /// Direct state-predicate event; absent for reachability/v1.
+    pub event: Option<ProbabilityStateEvent>,
+    /// Absorbing failures for a direct state-predicate event.
+    pub failures: Vec<ProbabilityProductKey>,
     /// Operator selected by the checked claim.
     pub optimization: ProbabilityObjective,
     /// Exact values, covering every reachable product state.
@@ -181,6 +196,10 @@ struct WireIdentity {
 struct WireObjective {
     profile: String,
     targets: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    event: Option<ProbabilityStateEvent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    failures: Option<Vec<String>>,
     optimization: String,
     fairness: Vec<Value>,
 }
@@ -434,7 +453,7 @@ fn read_document(
     let root = parsed.root();
     let objective = root.get("objective");
     let outside_profile = matches!(root.get("kind").map(|node| node.node()), Some(quire_canonical::Node::String(kind)) if kind != "exact")
-        || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if profile != PROFILE)
+        || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if profile != PROFILE && profile != STATE_PROFILE)
         || matches!(objective.and_then(|node| node.get("optimization")).map(|node| node.node()), Some(quire_canonical::Node::String(operator)) if !matches!(operator, "minimum" | "maximum" | "workload"))
         || match objective
             .and_then(|node| node.get("fairness"))
@@ -461,6 +480,8 @@ fn read_document(
         root.get("values"),
         root.get("ranking"),
         root.get("objective")
+            .and_then(|objective| objective.get("failures")),
+        root.get("objective")
             .and_then(|objective| objective.get("targets")),
     ]
     .into_iter()
@@ -484,11 +505,26 @@ fn read_document(
         return Err(ProbabilityDocumentError::Noncanonical);
     }
     if wire.kind != "exact"
-        || wire.objective.profile != PROFILE
+        || !matches!(wire.objective.profile.as_str(), PROFILE | STATE_PROFILE)
         || !wire.objective.fairness.is_empty()
     {
         return Err(ProbabilityDocumentError::Unsupported);
     }
+    let state_profile = wire.objective.profile == STATE_PROFILE;
+    if state_profile != wire.objective.event.is_some()
+        || state_profile != wire.objective.failures.is_some()
+    {
+        return Err(ProbabilityDocumentError::Malformed);
+    }
+    let failures = ordered(
+        wire.objective
+            .failures
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|key| decode_key(key, limits))
+            .collect::<Result<Vec<_>, _>>()?,
+    )?;
     let optimization = match wire.objective.optimization.as_str() {
         "minimum" => ProbabilityObjective::Minimum,
         "maximum" => ProbabilityObjective::Maximum,
@@ -509,6 +545,12 @@ fn read_document(
             .map(|key| decode_key(key, limits))
             .collect::<Result<Vec<_>, _>>()?,
     )?;
+    if failures
+        .iter()
+        .any(|key| targets.binary_search(key).is_ok())
+    {
+        return Err(ProbabilityDocumentError::Malformed);
+    }
     let mut values = Vec::new();
     for row in wire.values {
         poll(cancel)?;
@@ -531,6 +573,8 @@ fn read_document(
     Ok(ProbabilityCertificateDocument {
         identity,
         targets,
+        event: wire.objective.event,
+        failures,
         optimization,
         values,
         ranking,
@@ -551,6 +595,8 @@ type SubjectGraph = (
     ProbabilityObjective,
     Bound,
     Option<BTreeMap<ProbabilityProductKey, u64>>,
+    Option<ProbabilityStateEvent>,
+    Vec<ProbabilityProductKey>,
 );
 
 fn subject_graph(
@@ -580,7 +626,33 @@ fn subject_graph(
     let mut issue = None;
     let reference = binding.as_ref().map(|bound| &bound.reference);
     let workload = claim_workload(system, claim)?;
+    let mut state_event = None;
+    let mut failures = Vec::new();
     let (bound, enumerated) = match &claim.form {
+        ProbForm::Reach {
+            bound,
+            target: target @ (ReachTarget::Until(..) | ReachTarget::Always(_)),
+        } => {
+            if qsl_semantics::check::TemporalProfile::from_identity(claim.profile.identity())
+                != Some(qsl_semantics::check::TemporalProfile::InfiniteTrace)
+            {
+                return Err(ProbabilityDocumentError::Unsupported);
+            }
+            let (event, graph, derived_failures) = super::state_predicate::enumerate(
+                system,
+                target,
+                reference,
+                workload,
+                limits,
+                cancel,
+                &mut |failure| {
+                    issue = Some(failure);
+                },
+            )?;
+            state_event = Some(event);
+            failures = derived_failures;
+            (bound, Ok((graph, None)))
+        }
         ProbForm::Reach {
             bound,
             target: ReachTarget::Eventually(predicate),
@@ -660,6 +732,8 @@ fn subject_graph(
         claim_objective(&claim.scheduler, bound),
         bound.clone(),
         bounded_ranks,
+        state_event,
+        failures,
     ))
 }
 
@@ -682,7 +756,7 @@ pub fn probability_certificate_document(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
-    let (graph, optimization, _, bounded_ranks) =
+    let (graph, optimization, _, bounded_ranks, event, failures) =
         subject_graph(system, claims, item, limits, cancel)?;
     let bounded = bounded_ranks.is_some();
     let mut ranks = bounded_ranks.unwrap_or_default();
@@ -730,8 +804,15 @@ pub fn probability_certificate_document(
     Ok(ProbabilityCertificateDocument {
         identity: item.clone(),
         targets: target_keys(&graph),
+        event,
+        failures,
         optimization,
-        values: certificate.values.clone(),
+        values: certificate
+            .values
+            .iter()
+            .filter(|row| graph.states.contains_key(&row.state))
+            .cloned()
+            .collect(),
         ranking: ranks.into_iter().collect(),
     })
 }
@@ -756,9 +837,13 @@ pub fn check_probability_certificate_document(
     if &document.identity != item {
         return Err(ProbabilityDocumentError::IdentityMismatch);
     }
-    let (graph, objective, bound, bounded_ranks) =
+    let (graph, objective, bound, bounded_ranks, event, failures) =
         subject_graph(system, claims, item, limits, cancel)?;
-    if objective != document.optimization || target_keys(&graph) != document.targets {
+    if objective != document.optimization
+        || target_keys(&graph) != document.targets
+        || event != document.event
+        || failures != document.failures
+    {
         return Err(ProbabilityDocumentError::ObjectiveMismatch);
     }
     let ranks: BTreeMap<_, _> = document.ranking.into_iter().collect();
@@ -1021,6 +1106,8 @@ mod tests {
         ProbabilityCertificateDocument {
             identity: ObligationIdentity::new(crate::fixture_node(1), None, 0),
             targets: vec![key.clone()],
+            event: None,
+            failures: Vec::new(),
             optimization: ProbabilityObjective::Minimum,
             values: vec![ExactProbabilityValue {
                 state: key.clone(),

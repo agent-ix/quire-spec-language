@@ -21,6 +21,7 @@ use crate::identity::ObligationIdentity;
 
 mod bounded;
 mod document;
+mod state_predicate;
 pub use bounded::probabilistic_formula_monitor_context;
 mod source;
 pub use document::*;

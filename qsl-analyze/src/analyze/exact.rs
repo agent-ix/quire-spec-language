@@ -41,9 +41,9 @@ use quire_exact::{Cancel, ObjectReference, Rational};
 use super::items::{admission, BROKEN, NOT_YET};
 use super::{AnalyzeItem, EngineReport, Refusal};
 use crate::exact_probabilistic::{
-    build_retaining_monitor, decide_bounded_event, decide_reachability, manifest as en5,
-    settle_product_refusal, ExtRational, FhResult, ProbBuild, ProbProduct, ProductRefusal,
-    ProductRequest, UnboundedError, UnboundedObjective,
+    build_retaining_monitor, decide_always, decide_bounded_event, decide_reachability,
+    decide_until, manifest as en5, settle_product_refusal, ExtRational, FhResult, ProbBuild,
+    ProbProduct, ProductRefusal, ProductRequest, UnboundedError, UnboundedObjective,
 };
 
 /// The certificate EN-5 produced and the core's checker accepted for a
@@ -234,7 +234,7 @@ fn run(
     let (bound, bounded_formula) = match &claim.form {
         ProbForm::Reach {
             bound,
-            target: ReachTarget::Eventually(_),
+            target: ReachTarget::Eventually(_) | ReachTarget::Until(..) | ReachTarget::Always(_),
         } => (bound, None),
         ProbForm::Probability {
             bound,
@@ -247,6 +247,19 @@ fn run(
         } => (bound, Some(formula)),
         _ => return not_yet(),
     };
+    let state_predicate = matches!(
+        &claim.form,
+        ProbForm::Reach {
+            target: ReachTarget::Until(..) | ReachTarget::Always(_),
+            ..
+        }
+    );
+    if state_predicate
+        && qsl_semantics::check::TemporalProfile::from_identity(claim.profile.identity())
+            != Some(qsl_semantics::check::TemporalProfile::InfiniteTrace)
+    {
+        return not_yet();
+    }
     if !claim.fairness.is_empty() {
         return not_yet();
     }
@@ -307,7 +320,25 @@ fn run(
             Err(_) => return broken(),
         }
     } else {
-        let solved = match decide_reachability(&product, &target, objective, &limits) {
+        let result = match &claim.form {
+            ProbForm::Reach {
+                target: ReachTarget::Until(..),
+                ..
+            } => {
+                let until = product
+                    .labels
+                    .iter()
+                    .map(|labels| labels.get(1).copied().unwrap_or(false))
+                    .collect::<Vec<_>>();
+                decide_until(&product, &target, &until, objective, &limits)
+            }
+            ProbForm::Reach {
+                target: ReachTarget::Always(_),
+                ..
+            } => decide_always(&product, &target, objective, &limits),
+            _ => decide_reachability(&product, &target, objective, &limits),
+        };
+        let solved = match result {
             Ok(solved) => solved,
             Err(UnboundedError::MaxPolicyIterations) => {
                 return settled(
@@ -351,6 +382,9 @@ fn run(
     };
     let reference = binding.as_ref().map(|bound| &bound.reference);
     if !holds {
+        if state_predicate {
+            return not_yet();
+        }
         let bounded_monitor = match (bounded_formula, monitor) {
             (Some(formula), Some(monitor)) => {
                 let context =
@@ -447,6 +481,7 @@ fn run(
             document_limits,
             cancel,
         )?;
+        certificate.values = document.values.clone();
         let bytes = write_probability_certificate(&document, document_limits, cancel)?;
         let check = check_probability_certificate_document(
             &system,
