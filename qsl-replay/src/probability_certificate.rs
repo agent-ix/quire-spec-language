@@ -284,7 +284,7 @@ pub enum ProbabilityCertificateLocus {
 /// Evidence produced only by the independent exact certificate checker.
 /// Its checked value cannot be constructed or changed by downstream callers.
 ///
-/// ```compile_fail
+/// ```compile_fail,E0451
 /// use qsl_replay::{ExactProbabilityAcceptance, ProbabilityBoundSide};
 /// use quire_exact::{Integer, Rational};
 /// let forged = ExactProbabilityAcceptance {
@@ -293,7 +293,7 @@ pub enum ProbabilityCertificateLocus {
 /// };
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0594
 /// use qsl_replay::ExactProbabilityAcceptance;
 /// use quire_exact::{Integer, Rational};
 /// fn alter(accepted: &mut ExactProbabilityAcceptance) {
