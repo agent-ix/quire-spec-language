@@ -3243,9 +3243,6 @@ fn read_map_bound(
     let Some(object) = bound.as_object() else {
         return Err(ctx.malformed_in("bound", "not an object"));
     };
-    if object.keys().any(|name| name != "lower" && name != "upper") {
-        return Err(ctx.malformed_in("bound", "declares a member other than lower and upper"));
-    }
     let Some(lower) = object.get("lower").and_then(Value::as_u64) else {
         return Err(ctx.malformed_in("bound", "lower is missing or not a non-negative integer"));
     };
@@ -3258,6 +3255,11 @@ fn read_map_bound(
             }
         },
     };
+    // `lower` and, when present, `upper` are read above: any further member
+    // makes the object larger than those.
+    if object.len() != 1 + usize::from(upper.is_some()) {
+        return Err(ctx.malformed_in("bound", "declares a member other than lower and upper"));
+    }
     if upper.is_none_or(|upper| lower > upper) && (lower > 0 || upper.is_some()) {
         let mut refusal = ctx.malformed_in(
             "bound",
