@@ -1437,3 +1437,46 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
     assert!(budget.consumed().work > prefix.work);
     assert!(budget.consumed().storage > prefix.storage);
 }
+
+/// FR-251 "Plan root" / QSL-1822: an atom that calls a helper with a bounded
+/// model field where the helper's parameter is the unbounded `Integer` writes
+/// no plan root, and the refusal is the strict reader's own typed refusal of
+/// the base package (Contract IR FR-347 "Function-call arguments": the
+/// argument's type node must be the parameter's), never the
+/// `MonitorPlanInvariant` of a broken producer. A helper whose parameter is
+/// the field's own type still writes a plan root the reader admits.
+#[trace("TC-1081", "FR-251-AC-51")]
+#[test]
+fn an_atom_calling_a_helper_with_a_wider_parameter_is_refused_typed_not_as_an_invariant() {
+    let narrow = unit_source(
+        "always holds(f(c.versionNumber))",
+        "function f using v(x: Int[0, 1000]): Boolean pure { x >= 0 }",
+        true,
+        "on origin",
+    );
+    let root = root_of(&narrow, "C", &target()).expect("the field's own type is admitted");
+    assert_eq!(admitted(&root).monitor_plans().len(), 1);
+
+    let wide = unit_source(
+        "always holds(g(c.versionNumber))",
+        "function g using v(a: Integer): Boolean pure { a >= 0 }",
+        true,
+        "on origin",
+    );
+    let refusal = root_of(&wide, "C", &target()).unwrap_err();
+    let PlanRootRefusal::Write(write) = refusal else {
+        panic!("a write refusal: {refusal:?}");
+    };
+    let qsl_package::EmitRefusal::MonitorBaseRefused(read) = &write else {
+        panic!("a typed base-package refusal, not an invariant: {write:?}");
+    };
+    assert!(
+        matches!(
+            **read,
+            qsl_package::V2ReadRefusal::Envelope { ref refusal, .. }
+                if refusal.code == quire_contract_model::CheckedPackageRefusalCode::IllTyped
+        ),
+        "{read:?}"
+    );
+    assert_eq!(write.code(), qsl_foundation::Code::IllTyped);
+}
