@@ -136,22 +136,27 @@ where
     W: Clone + Into<RoutedWork<'a>>,
 {
     let items: Vec<RoutedWork<'a>> = items.iter().cloned().map(Into::into).collect();
+    // The request consumes the items; the fallbacks need only these.
+    let routes: Vec<(RequestIndex, BackendId)> = items
+        .iter()
+        .map(|item| (item.request_index(), item.backend().clone()))
+        .collect();
     let request = AnalyzeRequest {
         binding: binding.clone(),
-        items: items.clone(),
+        items,
     };
 
     match analyze(package, request, engines, limits, cancel) {
         Ok(staged) => staged.into_value().records,
         Err(qsl_foundation::diagnostic::StageFailure::Refused(AnalyzeRefusal::Binding(
             failure,
-        ))) => admission_records(&items, failure),
-        Err(_) => items
-            .iter()
-            .map(|item| {
+        ))) => admission_records(&routes, failure),
+        Err(_) => routes
+            .into_iter()
+            .map(|(index, backend)| {
                 TerminalRecord::failed_with(
-                    item.request_index(),
-                    item.backend().clone(),
+                    index,
+                    backend,
                     CatalogCode::new("runtime_invariant", "established-invariant-broken"),
                 )
             })
@@ -160,16 +165,16 @@ where
 }
 
 fn admission_records(
-    items: &[RoutedWork<'_>],
+    routes: &[(RequestIndex, BackendId)],
     failure: qsl_semantics::model::observation::AdmissionFailure,
 ) -> Vec<TerminalRecord> {
     use qsl_semantics::model::observation::AdmissionFailure;
 
-    items
+    routes
         .iter()
-        .map(|item| match &failure {
+        .map(|(index, _)| match &failure {
             AdmissionFailure::Refused(record) => TerminalRecord::disposition_declined(
-                item.request_index(),
+                *index,
                 qsl_replay::ProofRefusalCause::InvalidInput,
                 qsl_replay::DeclineCode::Qsl(
                     qsl_foundation::diagnostic::Code::from_code(record.catalog.code())
@@ -178,7 +183,7 @@ fn admission_records(
                 record.catalog,
             ),
             AdmissionFailure::Incomplete(record) => TerminalRecord::disposition_declined(
-                item.request_index(),
+                *index,
                 qsl_replay::ProofRefusalCause::IncompleteInput,
                 qsl_replay::DeclineCode::Qsl(
                     qsl_foundation::diagnostic::Code::from_code(record.catalog.code())
@@ -187,7 +192,7 @@ fn admission_records(
                 record.catalog,
             ),
             AdmissionFailure::Fault(fault) => {
-                TerminalRecord::disposition_failed(item.request_index(), fault.catalog_code())
+                TerminalRecord::disposition_failed(*index, fault.catalog_code())
             }
         })
         .collect()

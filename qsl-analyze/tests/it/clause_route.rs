@@ -85,10 +85,11 @@ fn through_run(world: &World, item: RoutedWork<'_>) -> TerminalRecord {
 }
 
 /// FR-281-AC-2 through `analyze` and `provider::run`: the invariant a
-/// transition breaks settles `refuted` on EN-1. The item settles `refuted`
-/// only after the production `replay_model_trace` reproduced the
-/// counterexample (`clause_item.rs` drives that replay on the record's
-/// counterexample); a terminal record keeps no counterexample.
+/// transition breaks settles `refuted` on EN-1. FR-281-AC-2 is split: the
+/// record settles `Refuted` here, through the real entries, while the
+/// assertion that replaying the counterexample reproduces it lives in
+/// `clause_item.rs` (a terminal record keeps no counterexample; the item
+/// settles `refuted` only after the production replay reproduced it).
 #[trace("TC-762", "FR-281-AC-2")]
 #[test]
 fn analyze_routes_an_authored_clause_to_en1_and_settles_refuted_with_replay() {
@@ -125,10 +126,14 @@ fn analyze_settles_an_authored_clause_under_one_state_incomplete() {
     );
 }
 
-/// FR-281-AC-11 / TC-1393: over a model whose operation modifies an
-/// unbounded `Integer`, the EN-1 clause item on `Engines::qsl()` settles
-/// `unsupported` with `unsupported_projection`/`unbounded-extent`.
-#[trace("TC-1393", "FR-564-AC-6")]
+/// FR-281-AC-11 / TC-1393 step 1 (the EN-1 `RequiresBound` item): over a
+/// model whose operation modifies an unbounded `Integer`, the EN-1 clause
+/// item on `Engines::qsl()` settles `unsupported` with
+/// `unsupported_projection`/`unbounded-extent`. The record-level payload
+/// (`temporal-satisfaction`, EN-1's `BackendId`, `bounded`) is covered by the
+/// unit test `engine_refusals_settle_by_the_refusal_table` in
+/// `src/analyze.rs`, because `terminal_records` drops it.
+#[trace("TC-1393", "FR-281-AC-11")]
 #[test]
 fn an_unbounded_extent_clause_settles_unsupported_through_the_provider_entry() {
     let world = world(Domain {
@@ -179,5 +184,9 @@ fn a_clause_routed_off_en1_or_absent_from_the_package_is_not_run() {
             cause: ProofRefusalCause::InvalidInput,
             code: DeclineCode::Qsl(Code::InvalidRequest),
         }
+    );
+    assert_eq!(
+        record.diagnostic(),
+        Some(CatalogCode::new("invalid_capability", "inapplicable-kind"))
     );
 }

@@ -327,9 +327,10 @@ impl Default for AnalyzeLimits {
 /// items. Each item is already typed by its layer-A adapter and carries the
 /// disposition established by the caller's negotiation.
 ///
-/// `W` is the item type: [`crate::provider::RoutedItem`] (EN-4, the default,
-/// so existing requests are unchanged) or [`crate::provider::RoutedWork`],
-/// which also carries EN-1 authored-clause items.
+/// `W` is the item type: [`crate::provider::RoutedItem`] (EN-4) or [`crate::provider::RoutedWork`],
+/// which also carries EN-1 authored-clause items. The default type parameter
+/// is `RoutedItem`, so a caller that builds a request of EN-4 items is
+/// unchanged.
 pub struct AnalyzeRequest<'a, W = crate::provider::RoutedItem<'a>> {
     /// The shared subject binding.
     pub binding: SubjectBinding<'a>,
@@ -1024,6 +1025,11 @@ fn clause_work<'a>(
     limits: &AnalyzeLimits,
 ) -> AnalyzeItem<'a> {
     let item = &routed.item;
+    // Intentional fold: every `ClauseItemRefusal` (unknown clause, multi-unit
+    // package, unnamed clause) means the request names no clause this
+    // package can run, which FR-281 settles `invalid-request` with
+    // `inapplicable-kind`. FR-272's vocabulary has no cause per refusal, and
+    // adding one is a catalog change outside this item.
     let Ok(subject) = ClauseSubject::new(
         package,
         binding.clone(),
