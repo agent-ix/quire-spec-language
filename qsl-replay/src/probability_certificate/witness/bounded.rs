@@ -192,7 +192,7 @@ fn arithmetic(operation: quire_exact::RationalArithmetic<'_>, meter: &mut quire_
         quire_exact::Outcome::Completed(value) => Ok(value),
         quire_exact::Outcome::Incomplete(incomplete) => {
             poll_cancel(cancel)?;
-            Err(ProbabilityWitnessError::Build(Box::new(crate::ExactProbBuildIssue::Predicate(qsl_eval::ClauseOutcome::Incomplete(incomplete)))))
+            Err(ProbabilityWitnessError::Build(Box::new(crate::ExactProbBuildIssue::Predicate(qsl_eval::simulation::model::ClauseOutcome::Incomplete(incomplete)))))
         }
         _ => Err(ProbabilityWitnessError::Refused),
     }

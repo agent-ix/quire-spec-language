@@ -56,6 +56,7 @@ mod partial_order;
 mod por_world;
 mod prob_world;
 mod probabilistic_replay;
+mod bounded_probabilistic_replay;
 mod probabilistic_request_items;
 mod protocol_bounded_lasso;
 mod protocol_compensation;
