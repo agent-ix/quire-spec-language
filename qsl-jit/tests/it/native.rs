@@ -17,7 +17,7 @@ const SOURCE: &str = "\
  type QS = Rational[-1000, 1000; 1, 100];\n\
  function add using v(a: Integer, b: Integer): Integer pure { a + b }\n\
  function q using v(a: Integer, b: Integer): Integer pure { a div b }\n\
- function f using v(a: Int[0, 4611686018427387903], b: Int[0, 4611686018427387903]): Integer pure { a + b }\n\
+ function f using v(a: Int[0, 4611686018427387903], b: Int[0, 4611686018427387904]): Integer pure { a + b }\n\
  function g using v(a: Int[0, 4611686018427387904], b: Int[0, 4611686018427387904]): Integer pure { a + b }\n\
  function m using v(a: Int[-3037000499, 3037000499], b: Int[-3037000499, 3037000499]): Integer pure { a * b }\n\
  function m2 using v(a: Int[-3037000500, 3037000500], b: Int[-3037000500, 3037000500]): Integer pure { a * b }\n\
@@ -28,6 +28,8 @@ const SOURCE: &str = "\
  function dm using v(a: Int[-9, 9], b: Int[-9, -1]): Integer pure { a mod b }\n\
  function neg using v(a: Int[-9, 9]): Integer pure { -a }\n\
  function sub using v(a: Int[-9, 9], b: Int[-9, 9]): Integer pure { a - b }\n\
+ function le using v(a: Int[-9, 9], b: Int[-9, 9]): Boolean pure { a <= b }\n\
+ function gt using v(a: Int[-9, 9], b: Int[-9, 9]): Boolean pure { a > b }\n\
  function lt using v(a: Int[-9, 9], b: Int[-9, 9]): Boolean pure { a < b }\n\
  function ge using v(a: Int[-9, 9], b: Int[-9, 9]): Boolean pure { a >= b }\n\
  function same using v(a: Int[-9, 9], b: Int[-9, 9]): Boolean pure { a = b }\n\
@@ -320,7 +322,10 @@ fn a_multiply_and_a_division_take_the_fast_path_where_the_bounds_prove_it() {
 #[test]
 fn a_negation_a_subtraction_and_the_comparisons_take_the_fast_path() {
     let package = package_with_division(SOURCE);
-    let prepared = prepare(&package, &["neg", "sub", "lt", "ge", "same", "differ"]);
+    let prepared = prepare(
+        &package,
+        &["neg", "sub", "lt", "le", "gt", "ge", "same", "differ"],
+    );
     let ones: Vec<Vec<Value>> = (-9..10).map(|a| vec![int(a)]).collect();
     let twos: Vec<Vec<Value>> = (-9..10)
         .flat_map(|a| (-9..10).map(move |b| vec![int(a), int(b)]))
@@ -329,6 +334,8 @@ fn a_negation_a_subtraction_and_the_comparisons_take_the_fast_path() {
         ("neg", &ones),
         ("sub", &twos),
         ("lt", &twos),
+        ("le", &twos),
+        ("gt", &twos),
         ("ge", &twos),
         ("same", &twos),
         ("differ", &twos),
@@ -383,7 +390,25 @@ fn tuples_of(function: &str) -> Vec<Vec<Value>> {
             .collect()
     };
     match function {
-        "f" => pairs(0, 4_611_686_018_427_387_903),
+        "f" => ends(0, 4_611_686_018_427_387_903)
+            .into_iter()
+            .flat_map(|a| {
+                ends(0, 4_611_686_018_427_387_904)
+                    .into_iter()
+                    .map(move |b| vec![a.clone(), b])
+            })
+            .collect(),
+        "neg" => (-9..=9).map(|a| vec![int(a)]).collect(),
+        "d" => (0..=9)
+            .flat_map(|a| (1..=9).map(move |b| vec![int(a), int(b)]))
+            .collect(),
+        "dr" => (-9..=9)
+            .flat_map(|a| (1..=9).map(move |b| vec![int(a), int(b)]))
+            .collect(),
+        "dm" => (-9..=9)
+            .flat_map(|a| (-9..=-1).map(move |b| vec![int(a), int(b)]))
+            .collect(),
+        "sub" | "lt" | "le" | "gt" | "ge" | "same" | "differ" => digits(-9, 9),
         "g" => pairs(0, 4_611_686_018_427_387_904),
         "m" => pairs(-3_037_000_499, 3_037_000_499),
         "m2" => pairs(-3_037_000_500, 3_037_000_500),
@@ -395,16 +420,110 @@ fn tuples_of(function: &str) -> Vec<Vec<Value>> {
     }
 }
 
-/// For each function of FR-562 AC-1 to AC-3, the charge sequence of every
+/// For each function of FR-562 AC-1 to AC-3, and for the other fast-path
+/// operations, the charge sequence of every
 /// call equals the interpreter's, and one work unit below it the stop is the
 /// interpreter's, at the same charge point.
 #[trace("TC-1385", "FR-562-AC-4")]
 #[test]
 fn every_fast_path_function_charges_as_the_kernel_call_it_replaces() {
     let package = package_with_division(SOURCE);
-    let functions = ["f", "g", "m", "m2", "n", "d", "d0"];
+    let functions = [
+        "f", "g", "m", "m2", "n", "d", "d0", "dr", "dm", "neg", "sub", "lt", "le", "gt", "ge",
+        "same", "differ",
+    ];
     let prepared = prepare(&package, &functions);
     for function in functions {
         agrees(&package, &prepared, function, &tuples_of(function));
+    }
+}
+
+/// Division under each admitted law: every sign combination of the ends,
+/// zero where admitted, `MIN`, `MAX` and `-1`, through functions the bounds
+/// put on the machine path and functions that reach the kernel, return the
+/// interpreter's value and charges. `a rem -1` and `a mod -1` over `MIN` are
+/// on the machine path and must not trap.
+#[trace("TC-1385")]
+#[test]
+fn division_under_every_law_agrees_with_the_interpreter() {
+    use qsl_semantics::value::DefinitionRole;
+    const MIN: i64 = i64::MIN;
+    const MAX: i64 = i64::MAX;
+    let source = format!(
+        "\
+ function dq using v(a: Int[-9, 9], b: Int[-9, -1]): Integer pure {{ a div b }}\n\
+ function dp using v(a: Int[-9, 9], b: Int[1, 9]): Integer pure {{ a div b }}\n\
+ function rq using v(a: Int[-9, 9], b: Int[-9, -1]): Integer pure {{ a rem b }}\n\
+ function rp using v(a: Int[-9, 9], b: Int[1, 9]): Integer pure {{ a rem b }}\n\
+ function mq using v(a: Int[-9, 9], b: Int[-9, -1]): Integer pure {{ a mod b }}\n\
+ function mp using v(a: Int[-9, 9], b: Int[1, 9]): Integer pure {{ a mod b }}\n\
+ function dwide using v(a: Int[{MIN}, {MAX}], b: Int[2, {MAX}]): Integer pure {{ a div b }}\n\
+ function dwiden using v(a: Int[{MIN}, {MAX}], b: Int[{MIN}, -2]): Integer pure {{ a div b }}\n\
+ function rwide using v(a: Int[{MIN}, {MAX}], b: Int[{MIN}, -1]): Integer pure {{ a rem b }}\n\
+ function mwide using v(a: Int[{MIN}, {MAX}], b: Int[{MIN}, -1]): Integer pure {{ a mod b }}\n\
+ function rwidep using v(a: Int[{MIN}, {MAX}], b: Int[1, {MAX}]): Integer pure {{ a rem b }}\n\
+ function mwidep using v(a: Int[{MIN}, {MAX}], b: Int[1, {MAX}]): Integer pure {{ a mod b }}\n\
+ function rone using v(a: Int[{MIN}, 0], b: Int[-1, -1]): Integer pure {{ a rem b }}\n\
+ function mone using v(a: Int[{MIN}, 0], b: Int[-1, -1]): Integer pure {{ a mod b }}\n\
+ function done using v(a: Int[{MIN}, 0], b: Int[-1, -1]): Integer pure {{ a div b }}\n\
+ function dzero using v(a: Int[-9, 9], b: Int[-9, 9]): Integer pure {{ a div b }}\n"
+    );
+    let small = |low: i64, high: i64| -> Vec<Vec<Value>> {
+        (-9..=9)
+            .flat_map(|a| (low..=high).map(move |b| vec![int(a), int(b)]))
+            .collect()
+    };
+    let edges = |a: &[i64], b: &[i64]| -> Vec<Vec<Value>> {
+        a.iter()
+            .flat_map(|a| b.iter().map(move |b| vec![int(*a), int(*b)]))
+            .collect()
+    };
+    let cases: Vec<(&str, Vec<Vec<Value>>)> = vec![
+        ("dq", small(-9, -1)),
+        ("dp", small(1, 9)),
+        ("rq", small(-9, -1)),
+        ("rp", small(1, 9)),
+        ("mq", small(-9, -1)),
+        ("mp", small(1, 9)),
+        ("dwide", edges(&[MIN, -1, 0, 1, MAX], &[2, 3, MAX])),
+        ("dwiden", edges(&[MIN, -1, 0, 1, MAX], &[MIN, -3, -2])),
+        ("rwide", edges(&[MIN, -1, 0, 1, MAX], &[MIN, -3, -1])),
+        ("mwide", edges(&[MIN, -1, 0, 1, MAX], &[MIN, -3, -1])),
+        ("rwidep", edges(&[MIN, -1, 0, 1, MAX], &[1, 3, MAX])),
+        ("mwidep", edges(&[MIN, -1, 0, 1, MAX], &[1, 3, MAX])),
+        ("rone", edges(&[MIN, MIN + 1, -7, 0], &[-1])),
+        ("mone", edges(&[MIN, MIN + 1, -7, 0], &[-1])),
+        ("done", edges(&[MIN, MIN + 1, -7, 0], &[-1])),
+        ("dzero", small(-9, 9)),
+    ];
+    let functions: Vec<&str> = cases.iter().map(|(function, _)| *function).collect();
+    for law in [
+        DefinitionRole::IntegerDivisionFloor,
+        DefinitionRole::IntegerDivisionTruncating,
+        DefinitionRole::IntegerDivisionEuclidean,
+    ] {
+        let package = crate::common::package_with_law(&source, law);
+        let prepared = prepare(&package, &functions);
+        for (function, tuples) in &cases {
+            for arguments in tuples {
+                let want = interpreted(&package, function, arguments, UNLIMITED);
+                let got = run(&prepared, function, arguments);
+                assert_eq!(got.result, want.result, "{law:?} {function} {arguments:?}");
+                assert_eq!(
+                    got.charges, want.charges,
+                    "{law:?} {function} {arguments:?}"
+                );
+            }
+            // The operations the bounds put on the machine path record no
+            // kernel call; the others (a possible zero divisor, `MIN / -1`)
+            // record one.
+            let kernel = matches!(*function, "done" | "dzero");
+            let first = &tuples[0];
+            assert_eq!(
+                run(&prepared, function, first).calls.is_empty(),
+                !kernel,
+                "{law:?} {function}"
+            );
+        }
     }
 }

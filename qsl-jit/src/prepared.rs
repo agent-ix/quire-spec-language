@@ -25,13 +25,9 @@ use quire_semantic_value::supplied_stop::SuppliedRun;
 
 use crate::coverage::coverage;
 use crate::exec::{Entry, EntryFrame, EntryRefusal, Halt, Machine, Status};
-#[cfg(feature = "test-support")]
-use crate::kernel::KernelRecorder as KernelRecorderSlot;
 use crate::kernel::State;
 #[cfg(feature = "test-support")]
 pub use crate::kernel::{KernelCall, KernelRecorder};
-#[cfg(not(feature = "test-support"))]
-type KernelRecorderSlot = ();
 use crate::translate::{carried, integer_to_i64, Carried, Compiler, Failure, Op};
 use qsl_eval::execution::{first_outside, Outside};
 
@@ -401,8 +397,19 @@ impl<'p> PreparedJit<'p> {
         run: &mut SuppliedRun,
         cancel: &Cancel,
     ) -> Result<Evaluation, CallFailure> {
-        self.call_inner(function, arguments, environment, meter, run, cancel, None)
-            .0
+        #[cfg(feature = "test-support")]
+        let result = self.call_with(
+            function,
+            arguments,
+            environment,
+            meter,
+            run,
+            cancel,
+            &mut None,
+        );
+        #[cfg(not(feature = "test-support"))]
+        let result = self.call_with(function, arguments, environment, meter, run, cancel);
+        result
     }
 
     /// [`Self::call_metered`] through a recording kernel table (FR-561, a test
@@ -423,33 +430,7 @@ impl<'p> PreparedJit<'p> {
         cancel: &Cancel,
         recorder: &mut KernelRecorder,
     ) -> Result<Evaluation, CallFailure> {
-        let (result, recorded) = self.call_inner(
-            function,
-            arguments,
-            environment,
-            meter,
-            run,
-            cancel,
-            Some(std::mem::take(recorder)),
-        );
-        if let Some(recorded) = recorded {
-            *recorder = recorded;
-        }
-        result
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn call_inner(
-        &self,
-        function: &QualifiedName,
-        arguments: &[Value],
-        environment: &ObjectEnvironment,
-        meter: &mut Meter,
-        run: &mut SuppliedRun,
-        cancel: &Cancel,
-        recorder: Option<KernelRecorderSlot>,
-    ) -> (Result<Evaluation, CallFailure>, Option<KernelRecorderSlot>) {
-        let mut recorder = recorder;
+        let mut slot = Some(std::mem::take(recorder));
         let result = self.call_with(
             function,
             arguments,
@@ -457,13 +438,15 @@ impl<'p> PreparedJit<'p> {
             meter,
             run,
             cancel,
-            &mut recorder,
+            &mut slot,
         );
-        (result, recorder)
+        if let Some(recorded) = slot {
+            *recorder = recorded;
+        }
+        result
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[cfg_attr(not(feature = "test-support"), allow(unused_variables, unused_mut))]
     fn call_with(
         &self,
         function: &QualifiedName,
@@ -472,13 +455,8 @@ impl<'p> PreparedJit<'p> {
         meter: &mut Meter,
         run: &mut SuppliedRun,
         cancel: &Cancel,
-        recorder: &mut Option<KernelRecorderSlot>,
+        #[cfg(feature = "test-support")] recorder: &mut Option<KernelRecorder>,
     ) -> Result<Evaluation, CallFailure> {
-        if let Some((_, reason)) = self.unsupported.iter().find(|(selection, _)| {
-            selection.kind == EntryKind::Function && selection.name == *function
-        }) {
-            return Err(CallFailure::Unsupported(reason.clone()));
-        }
         let graph = self.package.graph();
         let callable = graph
             .callable(&function.to_string())
@@ -517,6 +495,7 @@ impl<'p> PreparedJit<'p> {
         let mut frame = EntryFrame::new(meter, &self.ops, graph.scope(), state);
         let status = compiled.entry.call(&mut frame, &registers);
         let value = frame.result();
+        #[cfg_attr(not(feature = "test-support"), allow(unused_mut))]
         let (halt, mut state) = frame.into_parts();
         #[cfg(feature = "test-support")]
         {

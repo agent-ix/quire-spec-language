@@ -744,14 +744,16 @@ impl Emitter<'_, '_, '_> {
                 if let (Ty::Int(..), (Ty::Int(al, ah), Ty::Int(bl, bh))) = (ty, (left_ty, right_ty))
                 {
                     let (left, right) = (native_interval(al, ah)?, native_interval(bl, bh)?);
-                    let operation = match operator {
-                        Arithmetic::Add => NativeIntegerOperation::Add { left, right },
-                        Arithmetic::Subtract => NativeIntegerOperation::Subtract { left, right },
-                        Arithmetic::Multiply => NativeIntegerOperation::Multiply { left, right },
-                    };
                     let charge = match operator {
                         Arithmetic::Multiply => NativeCharge::Multiply,
-                        _ => NativeCharge::Arithmetic(native_plan(operation)?, false),
+                        Arithmetic::Add => NativeCharge::Arithmetic(
+                            native_plan(NativeIntegerOperation::Add { left, right })?,
+                            false,
+                        ),
+                        Arithmetic::Subtract => NativeCharge::Arithmetic(
+                            native_plan(NativeIntegerOperation::Subtract { left, right })?,
+                            false,
+                        ),
                     };
                     self.shim_call(node, OpKind::ChargeNative(charge), operands, Repr::Register);
                     let ins = self.builder.ins();
@@ -1632,8 +1634,16 @@ impl Emitter<'_, '_, '_> {
         a: Clif,
         b: Clif,
     ) -> Clif {
-        let quotient = self.builder.ins().sdiv(a, b);
+        // `sdiv` traps on a zero divisor and on `i64::MIN / -1`, and the
+        // generated code has no trap handler. Both are excluded for a
+        // quotient by the interval proof: the divisor's interval excludes 0,
+        // and an interval that excludes 0 and holds -1 has -1 as an end, so
+        // the pair of ends the result interval was computed from includes
+        // `MIN / -1` whenever `a` can be `MIN`, and that result (2^63) does
+        // not fit, so the operation is not translated. A remainder needs no
+        // quotient, so it emits no `sdiv`; `srem` returns 0 for `MIN % -1`.
         let remainder = self.builder.ins().srem(a, b);
+        let quotient = (member == DivisionMember::Quotient).then(|| self.builder.ins().sdiv(a, b));
         let zero = self.builder.ins().iconst(types::I64, 0);
         let one = self.builder.ins().iconst(types::I64, 1);
         let negative_remainder = self
@@ -1652,35 +1662,38 @@ impl Emitter<'_, '_, '_> {
                     .bxor(negative_remainder, negative_divisor);
                 let nonzero = self.builder.ins().icmp(IntCC::NotEqual, remainder, zero);
                 let step = self.builder.ins().band(opposite, nonzero);
-                let lowered = self.builder.ins().isub(quotient, one);
                 let shifted = self.builder.ins().iadd(remainder, b);
-                (
-                    self.builder.ins().select(step, lowered, quotient),
-                    self.builder.ins().select(step, shifted, remainder),
-                )
+                let q = quotient.map(|quotient| {
+                    let lowered = self.builder.ins().isub(quotient, one);
+                    self.builder.ins().select(step, lowered, quotient)
+                });
+                (q, self.builder.ins().select(step, shifted, remainder))
             }
             DivisionProfile::Euclidean => {
                 // A negative remainder moves toward the divisor's sign.
                 let positive_divisor = self.builder.ins().icmp(IntCC::SignedGreaterThan, b, zero);
-                let down = self.builder.ins().isub(quotient, one);
-                let up = self.builder.ins().iadd(quotient, one);
                 let plus = self.builder.ins().iadd(remainder, b);
                 let minus = self.builder.ins().isub(remainder, b);
-                let moved_q = self.builder.ins().select(positive_divisor, down, up);
                 let moved_r = self.builder.ins().select(positive_divisor, plus, minus);
-                (
+                let q = quotient.map(|quotient| {
+                    let down = self.builder.ins().isub(quotient, one);
+                    let up = self.builder.ins().iadd(quotient, one);
+                    let moved_q = self.builder.ins().select(positive_divisor, down, up);
                     self.builder
                         .ins()
-                        .select(negative_remainder, moved_q, quotient),
+                        .select(negative_remainder, moved_q, quotient)
+                });
+                (
+                    q,
                     self.builder
                         .ins()
                         .select(negative_remainder, moved_r, remainder),
                 )
             }
         };
-        match member {
-            DivisionMember::Quotient => q,
-            DivisionMember::Remainder => r,
+        match (member, q) {
+            (DivisionMember::Quotient, Some(q)) => q,
+            _ => r,
         }
     }
 
