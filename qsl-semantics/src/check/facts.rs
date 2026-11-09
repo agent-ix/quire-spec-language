@@ -532,9 +532,10 @@ pub(crate) struct Definedness<'a> {
     /// body, so one table serves every path of the walk and no `let` copies
     /// the facts of the paths above it.
     aliases: BTreeMap<Slot, StablePath>,
-    /// Whether the check mode is `CheckMode::Kernel` (FR-495): the walk still
-    /// records every reachable call, but no obligation is refused.
-    kernel: bool,
+    /// The check mode (FR-495). Under `CheckMode::Kernel` the walk still
+    /// records every reachable call, but refuses no [`CheckCause::Unproved`]
+    /// obligation.
+    mode: quire_semantic_value::checking::CheckMode,
 }
 
 impl<'a> Definedness<'a> {
@@ -551,16 +552,18 @@ impl<'a> Definedness<'a> {
             observations: None,
             components: None,
             aliases: BTreeMap::new(),
-            kernel: false,
+            mode: quire_semantic_value::checking::CheckMode::Linked,
         }
     }
 
-    /// Check under `mode`: `CheckMode::Kernel` records no obligation.
+    /// Check under `mode`: `CheckMode::Kernel` records no obligation (typing
+    /// only), so none of the range, nonzero, presence, rational-range or
+    /// nonempty-reduction obligations is refused.
     pub(crate) fn with_check_mode(
         mut self,
         mode: quire_semantic_value::checking::CheckMode,
     ) -> Self {
-        self.kernel = mode == quire_semantic_value::checking::CheckMode::Kernel;
+        self.mode = mode;
         self
     }
 
@@ -1195,14 +1198,19 @@ impl<'a> Definedness<'a> {
     /// Discharge `node`'s own obligation, its operands walked under `facts`,
     /// and record the call sites it makes.
     fn discharge(&mut self, node: CheckedNode<'_>, facts: &Facts) -> Result<(), CheckRefusal> {
-        match self.discharge_node(node, facts) {
-            // FR-495: under `CheckMode::Kernel` no range, nonzero or
-            // presence obligation is recorded; the evaluator meets it.
+        let outcome = self.discharge_node(node, facts);
+        match &outcome {
+            // FR-495: under `CheckMode::Kernel` every `Unproved` obligation
+            // (range, nonzero, presence, rational range, nonempty reduction)
+            // is dropped; the evaluator meets each at run time.
             Err(CheckRefusal {
                 cause: CheckCause::Unproved(_),
                 ..
-            }) if self.kernel => Ok(()),
-            other => other,
+            }) => match self.mode {
+                quire_semantic_value::checking::CheckMode::Kernel => Ok(()),
+                quire_semantic_value::checking::CheckMode::Linked => outcome,
+            },
+            _ => outcome,
         }
     }
 

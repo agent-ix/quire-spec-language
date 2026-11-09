@@ -1784,9 +1784,9 @@ impl PackageDeclarations {
     /// and yields no admission verdict.
     ///
     /// `mode` is `CheckMode::Linked` (every definedness obligation proved at
-    /// check) or `CheckMode::Kernel` (FR-495: function bodies and measures
-    /// record no range, nonzero or presence obligation; the evaluator meets
-    /// it at run time).
+    /// check) or `CheckMode::Kernel` (FR-495: typing only, so a function
+    /// body or measure records no range, nonzero, presence, rational-range or
+    /// nonempty-reduction obligation; the evaluator meets each at run time).
     pub fn check(
         self,
         mode: CheckMode,
