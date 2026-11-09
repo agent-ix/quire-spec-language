@@ -768,6 +768,8 @@ pub struct AnalyzeRecord {
     /// The certificate EN-5's checker accepted, carried by a `proved` item
     /// (FR-281-AC-1).
     pub exact_probabilistic: Option<Box<ExactProbabilityEvidence>>,
+    /// The independently replayed EN-5 probabilistic counterexample.
+    pub probabilistic_counterexample: Option<Box<qsl_replay::ProbabilisticCounterexample>>,
 }
 
 /// How an item settled.
@@ -1201,6 +1203,7 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
         value_check: None,
         contract_check: None,
         exact_probabilistic: None,
+            probabilistic_counterexample: None,
     };
     let disposed = |kind, diagnostic| {
         record(Settlement::Disposed(Disposed {
@@ -1289,6 +1292,7 @@ fn settle(
         value_check: None,
         contract_check: None,
         exact_probabilistic: None,
+            probabilistic_counterexample: None,
     };
     let disposed = |kind, diagnostic: Diagnostic, backend| {
         record(
@@ -1345,14 +1349,16 @@ fn settle(
             value_check: None,
             contract_check: None,
             exact_probabilistic: None,
+            probabilistic_counterexample: None,
         },
         EngineReport::Statistical(statistical) => {
             record(terminal(statistical.into_terminal(index, backend)), None)
         }
         EngineReport::Exact(exact) => {
-            let (settled_record, evidence) = exact.settle(index, backend);
+            let (settled_record, evidence, counterexample) = exact.settle(index, backend);
             let mut settled = record(terminal(settled_record), None);
             settled.exact_probabilistic = evidence;
+            settled.probabilistic_counterexample = counterexample;
             settled
         }
         EngineReport::Zone(zone) => AnalyzeRecord {
@@ -1374,6 +1380,7 @@ fn settle(
             value_check: None,
             contract_check: None,
             exact_probabilistic: None,
+            probabilistic_counterexample: None,
         },
         EngineReport::Refused(Refusal::Declined(cause, code, diagnostic)) => record(
             terminal(TerminalRecord::declined_with(

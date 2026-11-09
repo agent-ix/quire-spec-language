@@ -19,6 +19,9 @@ use serde_json::{json, Value};
 
 use crate::identity::ObligationIdentity;
 
+mod witness;
+pub use witness::*;
+
 /// A complete canonical product-state key, encoded by the checker.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ProbabilityProductKey(Vec<u8>);
@@ -542,19 +545,7 @@ pub fn check_claim_exact_reachability(
     max_edges: usize,
     cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificateCheck, ExactProbabilityGraphError> {
-    poll_cancel(cancel)?;
-    let mut bound_claim = None;
-    for claim in claims {
-        poll_cancel(cancel)?;
-        if claim
-            .occurrence()
-            .is_some_and(|key| key.node() == item.node())
-            && bound_claim.replace(claim).is_some()
-        {
-            return Err(ExactProbabilityGraphError::ClaimNotBound);
-        }
-    }
-    let claim = bound_claim.ok_or(ExactProbabilityGraphError::ClaimNotBound)?;
+    let claim = bind_claim(claims, item, cancel)?;
     let ProbForm::Reach {
         bound,
         target: ReachTarget::Eventually(predicate),
@@ -574,6 +565,22 @@ pub fn check_claim_exact_reachability(
         (max_states, max_edges),
         cancel,
     )
+}
+
+fn bind_claim<'a>(claims: &'a [CheckedProbabilisticClaim], item: &ObligationIdentity, cancel: &Cancel) -> Result<&'a CheckedProbabilisticClaim, ExactProbabilityGraphError> {
+    poll_cancel(cancel)?;
+    let mut bound_claim = None;
+    for claim in claims {
+        poll_cancel(cancel)?;
+        if claim
+            .occurrence()
+            .is_some_and(|key| key.node() == item.node())
+            && bound_claim.replace(claim).is_some()
+        {
+            return Err(ExactProbabilityGraphError::ClaimNotBound);
+        }
+    }
+    bound_claim.ok_or(ExactProbabilityGraphError::ClaimNotBound)
 }
 
 /// The one `over` instance of a claim and the reference its predicates read.

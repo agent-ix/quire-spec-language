@@ -329,6 +329,8 @@ pub use planner::{
     PlannerResult, PremiseItem, PremiseResult, ResultEntry, SettlementRequest,
 };
 pub use probability_certificate::{
+    replay_probabilistic_witness, ProbabilisticCounterexample, ProbabilityWitnessStep,
+    ProbabilityWitnessPath, ProbabilityWitnessReplay, ProbabilityWitnessError, ReproducedProbabilityWitness,
     check_claim_exact_reachability, claim_binding, digital_probability_product_key, ClaimBinding,
     DigitalClockKey, DigitalDeadlineKey, DigitalProductKeyInput, DigitalTail,
     ExactProbabilityAcceptance, ExactProbabilityCertificate, ExactProbabilityCertificateCheck,

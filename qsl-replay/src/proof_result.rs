@@ -1627,6 +1627,16 @@ impl TerminalRecord {
         Self::with_backend(request_index, backend, TerminalValue::Refuted)
     }
 
+    /// FR-202: settle only a probabilistic refutation reproduced by the core.
+    /// The token owns its matching checked claim, binding and evidence.
+    pub fn refuted_by_probability_witness(
+        request_index: RequestIndex,
+        backend: BackendId,
+        _reproduced: &crate::ReproducedProbabilityWitness,
+    ) -> Self {
+        Self::with_backend(request_index, backend, TerminalValue::Refuted)
+    }
+
     /// QSpec FR-483: a `refuted` record whose `contract-counterexample` the
     /// native replay reproduced. The token is the only evidence accepted.
     pub fn refuted_by_contract(

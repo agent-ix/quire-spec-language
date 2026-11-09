@@ -17,6 +17,10 @@
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::statistical::SubjectLimits;
+use qsl_replay::{ProbabilisticCounterexample, ProbabilityWitnessPath, ProbabilityWitnessStep,
+    ProbabilityWitnessReplay, ProbabilityWitnessError, ReproducedProbabilityWitness,
+    replay_probabilistic_witness};
+use qsl_eval::simulation::TransitionSystem;
 use qsl_replay::{
     check_claim_exact_reachability, claim_binding, ExactBinding, ExactProbBuildIssue,
     ExactProbBuildRecord, ExactProbabilityCertificate, ExactProbabilityCertificateCheck,
@@ -52,6 +56,12 @@ pub struct ExactProbabilityEvidence {
 
 /// What EN-5 reports for one item.
 pub(crate) enum ExactReport {
+    /// Only independently reproduced path evidence can settle refuted.
+    Refuted(Box<ReproducedProbabilityWitness>),
+    /// A semantic replay disagreed with the produced path evidence.
+    ReplayParity,
+    /// Replay refused the witness's semantic content.
+    ReplayRefused,
     /// The core rejected a probability value at a complete product state.
     Rejected {
         rule: CertificateRule,
@@ -79,8 +89,20 @@ impl ExactReport {
         self,
         index: RequestIndex,
         backend: BackendId,
-    ) -> (TerminalRecord, Option<Box<ExactProbabilityEvidence>>) {
-        match self {
+    ) -> (TerminalRecord, Option<Box<ExactProbabilityEvidence>>, Option<Box<ProbabilisticCounterexample>>) {
+        let (record, evidence) = match self {
+            Self::Refuted(reproduced) => return (
+                TerminalRecord::refuted_by_probability_witness(index, backend, &reproduced),
+                None,
+                Some(Box::new(reproduced.evidence().clone())),
+            ),
+            Self::ReplayParity => (TerminalRecord::inconclusive(index, backend,
+                InconclusiveCause::ReplayParity(qsl_replay::DisagreementCause::Verdicts {
+                    proved: qsl_replay::Verdict::from_category(quire_semantic_value::catalog::Category::Violation),
+                    replayed: qsl_replay::Verdict::from_category(quire_semantic_value::catalog::Category::Success),
+                })), None),
+            Self::ReplayRefused => (TerminalRecord::inconclusive(index, backend,
+                InconclusiveCause::ReplayRefused(qsl_foundation::diagnostic::Code::InvalidRuntimeInput)), None),
             Self::Rejected { rule, at } => (
                 TerminalRecord::inconclusive(
                     index,
@@ -108,7 +130,8 @@ impl ExactReport {
                 None => (TerminalRecord::failed_with(index, backend, BROKEN), None),
             },
             Self::Settled(record) => (record.into_terminal(index, backend), None),
-        }
+        };
+        (record, evidence, None)
     }
 }
 
@@ -235,14 +258,6 @@ fn run(
         Bound::AtLeast(threshold) => value >= threshold,
         Bound::AtMost(threshold) => value <= threshold,
     };
-    if !holds {
-        // The bound is missed. `refuted` waits for FR-202's replay of a
-        // counterexample (`replay_probabilistic_witness`), which is not
-        // implemented: no record is built by hand, so the item is
-        // `unsupported`, never `proved` and never `refuted`.
-        return not_yet();
-    }
-
     let Some(node) = claim.occurrence().map(|key| key.node().clone()) else {
         return not_yet();
     };
@@ -255,6 +270,10 @@ fn run(
         Err(_) => return broken(),
     };
     let reference = binding.as_ref().map(|bound| &bound.reference);
+    if !holds {
+        return replay_refutation(&system, claim, &product, &solved.policy, *start,
+            &target, reference, &limits, cancel, subject);
+    }
     let Ok(mut certificate) = certificate_of(&product, reference, &solved.values) else {
         return broken();
     };
@@ -398,7 +417,7 @@ mod tests {
     fn threshold_rejection_retains_its_rule_and_complete_product_key() {
         let key = ProbabilityProductKey::for_model_state(None, b"complete-model-state")
             .expect("the key encodes");
-        let (terminal, evidence) = ExactReport::Rejected {
+        let (terminal, evidence, counterexample) = ExactReport::Rejected {
             rule: CertificateRule::ThresholdMissed,
             at: key.clone(),
         }
@@ -411,5 +430,103 @@ mod tests {
             })
         );
         assert!(evidence.is_none());
+        assert!(counterexample.is_none());
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn replay_refutation(
+    system: &ModelSystem<'_>,
+    claim: &qsl_semantics::check::CheckedProbabilisticClaim,
+    product: &ProbProduct,
+    policy: &[Option<usize>],
+    initial: crate::exact_probabilistic::ProbStateId,
+    target: &[bool],
+    binding: Option<&ObjectReference>,
+    limits: &crate::exact_probabilistic::ExactProbLimits,
+    cancel: &Cancel,
+    subject: SubjectLimits<'_>,
+) -> EngineReport {
+    use crate::exact_probabilistic::{produce_witness, ProductAction, WitnessScope};
+    let (accepting, past) = match &claim.form {
+        ProbForm::Reach { bound: Bound::AtMost(threshold), .. } => (target.to_vec(), threshold.clone()),
+        ProbForm::Reach { bound: Bound::AtLeast(threshold), .. } => (
+            product.states.iter().enumerate().map(|(index, _)| {
+                !target.get(index).copied().unwrap_or(false) && product.edges.iter()
+                    .filter(|edge| edge.from.index() == index)
+                    .all(|edge| matches!(edge.choice, ProductAction::TerminalStutter))
+            }).collect(),
+            Rational::from_integer(1_i64.into()).sub(threshold),
+        ),
+        _ => return not_yet(),
+    };
+    let scope = match claim.scheduler {
+        ProbScheduler::Every => WitnessScope::EveryScheduler,
+        ProbScheduler::Workload(_) => WitnessScope::Workload,
+    };
+    let produced = match produce_witness(product, policy, scope, initial, &accepting, &past, limits) {
+        Ok(Some(witness)) => witness,
+        Ok(None) => return not_yet(),
+        Err(_) => return broken(),
+    };
+    let Some(node) = claim.occurrence().map(|key| key.node().clone()) else { return not_yet(); };
+    let item = ObligationIdentity::new(node, None, 0);
+    let initials = system.initial();
+    let [first] = initials.as_slice() else { return not_yet(); };
+    let key_of = |state: &qsl_eval::simulation::model::ModelSimState| {
+        let (bytes, _) = system.state_key(state).map_err(|_| ())?;
+        ProbabilityProductKey::for_model_state(binding, &bytes).map_err(|_| ())
+    };
+    let Ok(initial_key) = key_of(first) else { return broken(); };
+    let mut scheduler = Vec::new();
+    for (state, action) in produced.entries {
+        let ProductAction::Identity(action) = action else { return not_yet(); };
+        let Some(state) = product.states.get(state.index()) else { return broken(); };
+        let Ok(key) = ProbabilityProductKey::for_model_state(binding, &state.model) else { return broken(); };
+        scheduler.push((key, action));
+    }
+    scheduler.sort_by(|a,b| a.0.cmp(&b.0));
+    let mut paths = Vec::new();
+    for path in produced.paths {
+        let mut state = first.clone();
+        let mut steps = Vec::new();
+        for step in path.steps {
+            if cancel.poll() { if let Some(cause) = cancel.tripped() { return settled(&ExactProbBuildIssue::Cancelled(cause), subject); } }
+            let ProductAction::Identity(identity) = step.action else { return not_yet(); };
+            let Some(to) = product.states.get(step.to.index()) else { return broken(); };
+            let Ok(post_key) = ProbabilityProductKey::for_model_state(binding, &to.model) else { return broken(); };
+            let Ok(Ok(actions)) = system.actions(&state) else { return broken(); };
+            let mut candidates = Vec::new();
+            for action in actions {
+                if action.identity != identity { continue; }
+                for draw in action.draws {
+                    if step.draw.as_ref().is_some_and(|expected| !qsl_eval::simulation::model::same_values(expected, &draw.random)) { continue; }
+                    for (transition, post) in draw.successors {
+                        if key_of(&post).ok().as_ref() == Some(&post_key) {
+                            candidates.push(ProbabilityWitnessStep {
+                                action: identity.clone(), transition, draw: draw.random.clone(), post,
+                                post_key: post_key.clone(), elapsed: Rational::from_integer(0_i64.into()),
+                            });
+                        }
+                    }
+                }
+            }
+            // Merged draws need a later path expansion before they can carry actual vectors.
+            let [candidate] = candidates.as_slice() else { return not_yet(); };
+            state = candidate.post.clone();
+            steps.push(candidate.clone());
+        }
+        paths.push(ProbabilityWitnessPath { steps });
+    }
+    let witness = ProbabilisticCounterexample { item: item.clone(), binding: binding.cloned(), initial: first.clone(), initial_key, scheduler, paths };
+    match replay_probabilistic_witness(system.package(), system, &item, &witness, limits, cancel) {
+        Ok(ProbabilityWitnessReplay::Reproduced(token)) => EngineReport::Exact(Box::new(ExactReport::Refuted(token))),
+        Ok(ProbabilityWitnessReplay::Parity) => EngineReport::Exact(Box::new(ExactReport::ReplayParity)),
+        Err(ProbabilityWitnessError::Refused) => EngineReport::Exact(Box::new(ExactReport::ReplayRefused)),
+        Err(ProbabilityWitnessError::Limit { limit, value }) => settled(&ExactProbBuildIssue::Limit { limit, value }, subject),
+        Err(ProbabilityWitnessError::Graph(ExactProbabilityGraphError::Cancelled(cause))) => settled(&ExactProbBuildIssue::Cancelled(cause), subject),
+        Err(ProbabilityWitnessError::Graph(ExactProbabilityGraphError::LimitReached)) => settled(&ExactProbBuildIssue::Limit { limit: ModelCheckLimit::ExactProbMaxStates, value: u64::try_from(limits.model.limits.max_states).unwrap_or(u64::MAX) }, subject),
+        Err(ProbabilityWitnessError::Graph(ExactProbabilityGraphError::EdgeLimitReached | ExactProbabilityGraphError::TooManyEdges)) => settled(&ExactProbBuildIssue::Limit { limit: ModelCheckLimit::ExactProbMaxTransitions, value: u64::try_from(limits.model.limits.max_transitions).unwrap_or(u64::MAX) }, subject),
+        Err(ProbabilityWitnessError::Graph(_)) => not_yet(),
     }
 }
