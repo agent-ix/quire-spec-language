@@ -16,7 +16,9 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-560
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-350
-    type: references
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-100
+    type: depends_on
   - target: "ix://agent-ix/quire-specification/FR-306"
     type: depends_on
 ---
@@ -116,7 +118,8 @@ count; `ParityLimits`; `&Cancel`.
 ## Outputs
 
 `ParityReport`: per backend, the compared count, the unsupported entries and
-the findings; or `ParityRefusal`.
+the findings, and the count of corpus vectors not selected as parity cases;
+or `ParityRefusal`.
 
 ## Behavior
 
@@ -163,6 +166,7 @@ the findings; or `ParityRefusal`.
 - [FR-295](FR-295-return-interpreter-outcomes-from-jit-and-aot.md): the compared members, the corpus and the generator.
 - [FR-560](FR-560-translate-the-jit-coverage-set-and-report-every-other-construct-untranslatable.md): the JIT coverage.
 - [FR-350](FR-350-run-the-conformance-corpus-against-qsl.md): reading the corpus in place.
+- [FR-100](FR-100-run-a-named-function-through-the-spine.md): the `run` operation whose vectors become parity cases.
 - QSpec FR-306-AC-1: parity over the conformance corpus and generated
   programs.
 

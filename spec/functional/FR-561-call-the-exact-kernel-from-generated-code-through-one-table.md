@@ -38,14 +38,18 @@ a shim sits in writable memory: not in the `EntryFrame` (FR-568), not in a
 heap table and not in a stack slot. A prepared value links only the shims its
 entries use. Generated code SHALL reach the kernel and the runtime only
 through those shims, and SHALL call no other address except the blocks of the
-same prepared value, each by a direct call.
+same prepared value. A register-indirect call is allowed only when its
+register is loaded by an absolute relocation that names a `KernelTable` shim
+symbol, as non-PIC Cranelift code calls an imported symbol; a call through a
+pointer read from writable memory (the frame, a heap table or a GOT-style
+slot) is not allowed.
 
 Each kernel-table entry:
 
 - takes its operands as typed handles to values the runtime owns (the
   handle types of the semantic-value runtime, each a typed reference
   into storage the `EntryFrame` (FR-568) lists), and the call's meter, which
-  holds the call's `&Cancel` (FR-277);
+  holds the call's cancellation handle (FR-277);
 - runs the kernel operation the interpreter runs for the same checked
   operation, with the same charges at the same points (EB-4 rule 4), polling
   cancellation through the meter at each charge (FR-276);
@@ -61,7 +65,7 @@ another status, and it never retries a call.
 ## Inputs
 
 The prepared entries, their arguments, environment or admitted observations,
-the call's limits and `&Cancel`, which the call's meter holds.
+the call's limits and `&Cancel`, whose handle the call's meter holds.
 
 ## Outputs
 
@@ -73,9 +77,11 @@ The `Evaluation<Value>` or `CallFailure` of FR-294's `call` and `evaluate`.
   one per kernel or runtime operation.
 - The JIT shall hold no function pointer to a shim in writable memory.
 - Generated code shall call only `KernelTable` entries and blocks of the same
-  prepared value, each by a direct call.
+  prepared value, a call being a direct call or a register-indirect call
+  loaded by an absolute relocation naming a `KernelTable` shim symbol, and
+  never a call through a pointer read from writable memory.
 - A `KernelTable` entry shall poll cancellation through the meter.
-- A `KernelTable` entry shall take no `&Cancel` of its own.
+- A `KernelTable` entry shall take no cancellation handle of its own.
 - Each kernel-table entry shall run the interpreter's kernel operation for
   the checked operation, with the interpreter's charges at the interpreter's
   charge points.
@@ -89,8 +95,8 @@ The `Evaluation<Value>` or `CallFailure` of FR-294's `call` and `evaluate`.
 | --- | --- | --- |
 | FR-561-AC-1 | With a recording `KernelTable` (the same shim symbols built with a test recording hook, never a table a frame supplies), `add(a: Integer, b: Integer): Integer { a + b }` called with `a` = 2^100 and `b` = 1 records exactly one kernel `add` call with those operands, returns 2^100 + 1, and its recorded charges equal the interpreter's charge sequence for the same call. | Test (TC-1382) |
 | FR-561-AC-2 | `q(a: Integer, b: Integer): Integer { a div b }` called with `b` = 0 returns `Undefined` with cause `division-by-zero` and the `Location` of the `div`, as the interpreter does; with `work_units` one below its measured spend it returns the interpreter's `Incomplete`; with a recording table that returns `Fault` from the `div` entry it returns `Fault` and no value; with `&Cancel` cancelled `Requested` before the call it returns `CallFailure::Cancelled(Requested)`. | Test (TC-1382) |
-| FR-561-AC-3 | For every block the JIT prepares over the 10,000 FR-295 generated units at the default seed, each call in the block's relocation records is a direct call whose target is a `KernelTable` shim symbol or a block of the same prepared value, and the block holds no indirect call; over the run at least one block calls a `KernelTable` shim. A test code generator that emits one direct call to an address outside both, and one that emits an indirect call through a register, each make the check fail, naming the block and the target. | Test (TC-1383) |
-| FR-561-AC-4 | `EntryFrame` has no field whose type is a function pointer, a `KernelTable` or a `Cancel` reference, checked by a test inside `qsl_jit::exec` over the structure's field types; with `&Cancel` cancelled `Requested` after the call has started and before its first charge, the call returns `CallFailure::Cancelled(Requested)` at that charge, polled through the meter. | Test (TC-1383) |
+| FR-561-AC-3 | For every block the JIT prepares over the 10,000 FR-295 generated units at the default seed, each call in the block's relocation records is a direct call whose target is a `KernelTable` shim symbol or a block of the same prepared value, or a register-indirect call whose register is loaded by an absolute relocation naming a `KernelTable` shim symbol, and the block holds no call through a pointer loaded from writable memory; over the run at least one block calls a `KernelTable` shim. A test code generator that emits one direct call to an address outside both, and one that emits an indirect call through a pointer loaded from the frame, each make the check fail, naming the block and the target. | Test (TC-1383) |
+| FR-561-AC-4 | `EntryFrame` has no field whose type is a function pointer or a `KernelTable`, checked by a test inside `qsl_jit::exec` over the structure's field types; with `&Cancel` cancelled `Requested` after the call has started and before its first charge, the call returns `CallFailure::Cancelled(Requested)` at that charge, polled through the meter. | Test (TC-1383) |
 
 ## Dependencies
 

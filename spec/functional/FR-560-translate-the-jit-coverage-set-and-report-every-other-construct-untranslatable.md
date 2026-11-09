@@ -127,9 +127,8 @@ hardened Linux) is listed unsupported with
 every selected entry, and `prepare` returns `Ok`. This cause belongs to QSL's
 seam type `UnsupportedCause`; it is not a result cause of QSpec's FR-331
 provider envelope, whose `unsupported` causes are a closed set that holds no
-executable-memory member. A report that serializes it for a FR-331 consumer
-carries no `cause` member for it: it carries the diagnostic of the exit-21
-unsupported category (FR-285) naming the backend `jit` and the refusal. The refusal is not a
+executable-memory member. QSL reports it only as an `UnsupportedEntry`
+(FR-294) and exit 21 (FR-285), and emits no FR-331 cause for it. The refusal is not a
 `PrepareFailure::Fault`, and a `call` on such an entry returns
 `CallFailure::Unsupported` with that entry (FR-294), which the driver
 reports as unsupported, exit 21 (FR-285).
@@ -175,13 +174,13 @@ A checked package and the selected entries (FR-294).
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-560-AC-1 | `qsl_jit::coverage()` lists the eight floor forms, the floor value types (`Boolean`, bounded and unbounded `Integer`, `Rational`, `Decimal`, `Text`, and records and collections of them) and every `Value`-family operator over them. | Test (TC-1380) |
+| FR-560-AC-1 | `qsl_jit::coverage()` lists the floor forms, the floor value types (`Boolean`, bounded and unbounded `Integer`, `Rational`, `Decimal`, `Text`, and records and collections of them) and every `Value`-family operator over them. | Test (TC-1380) |
 | FR-560-AC-2 | The JIT prepared over each of the 10,000 units the FR-295 parity program generator yields at the default seed, every function selected, lists unsupported only entries whose first outside construct is one the table names, and lists no entry whose constructs all lie in the coverage; prepared over `add(a: Integer, b: Integer): Integer { a + b }`, `half(a: Rational): Rational { a / 2 }` and `name(t: Text): Text { t }`, it lists none of the three unsupported. | Test (TC-1380) |
 | FR-560-AC-3 | For a form and a value type that `coverage()` does not list (the test takes the `SumCase` form `case` and the type `Timestamp` when unlisted, and otherwise the first unlisted ADR-012 form and K2 value type), an entry whose first outside construct is that form is listed with `ExpressionForm(<its name>)`, one whose first outside construct is a parameter of that type with `ValueType(<that type>)`, each with that construct's `Location`; an entry that calls the first entry is listed with `Operation(k)`, `k` the node key of the `call`, while the first entry keeps its own cause; and the other selected entries are prepared. | Test (TC-1381) |
 | FR-560-AC-4 | Over a property-generated set of entries built from the listed forms and types, the JIT lists none unsupported, and over the same entries with one construct replaced by an unlisted form, each is listed with that form's `ExpressionForm` cause. | Test (TC-1381) |
 | FR-560-AC-5 | Over one entry each for `forall`, `exists`, `present`, `deref`, a field read on an object value, `reaches`, `self` and `case`, `prepare` lists each entry unsupported with `Untranslatable { construct: ExpressionForm(<its name from the table>), location }`, `location` that construct's, and `unsupported` holds no other entry; the FR-563 runner over the same entries reports each with its `UnsupportedEntry` and records no `coverage-gap`. | Test (TC-1381) |
 | FR-560-AC-6 | With a test executable-memory provider that denies every request (standing in for a `PROT_EXEC` refusal), `prepare` over three selected entries returns `Ok`, `unsupported` lists all three with `UnsupportedCause::EnvironmentRefused(ExecutableMemoryRefused)`, `PrepareFailure` is not returned, `call` on each returns `CallFailure::Unsupported` with that entry, and the exit code of the resulting outcome is 21; with the provider allowing the request, the same entries are translated. | Test (TC-1381) |
-| FR-560-AC-7 | A selected state clause whose constructs all lie in the coverage (no `self`) is translated and not listed unsupported; its `evaluate` returns the interpreter's `Evaluation`, and no `unsupported` entry, `Location` or cause exists for a trail or receiver path. | Test (TC-1381) |
+| FR-560-AC-7 | A selected state clause whose constructs all lie in the coverage (no `self`) is translated and not listed unsupported, and its `evaluate` returns an `Evaluation` equal to the interpreter's, loss records included; the FR-563 runner over it reports no `difference` and no `coverage-gap`, although the interpreter's `ClauseEvaluation` also records a trail and receiver path the JIT does not. | Test (TC-1381) |
 | FR-560-AC-8 | An entry whose parameter is of a union type, with no `case` in it, is listed `Untranslatable { construct: ValueType(<the union type>), location }` with that parameter's `Location`, while `coverage()` lists no union type; `coverage()` lists the form `name`, and `add(a: Integer, b: Integer): Integer { a + b }` reads two names and is translated. | Test (TC-1381) |
 
 ## Dependencies

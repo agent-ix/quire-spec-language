@@ -377,11 +377,11 @@ measure:
 A construct that no family's variant represents refuses the whole unit with
 cause `UnrepresentedConstruct`, naming the construct's CST production and
 span. These constructs are `null` outside a record field value, `none`,
-`self`, `result`, indexing `e[i]` outside a clock place expression,
+`result`, indexing `e[i]` outside a clock place expression,
 `size<T>(e)` and `reaches(..)`. The selectors `p[i]` and `p[k]` of a clock
 place expression (FR-230 "Selection") are not unrepresented: S2 builds them
 as the place expressions FR-230 admits. S2 returns no form for any
-declaration of that unit that holds an unrepresented construct.
+declaration of that unit.
 `reaches(..)` is a `StateModel` construct (model-graph reachability), and
 its variant is `StateModel`'s to add (ADR-012 §4.3).
 
