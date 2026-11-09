@@ -1377,9 +1377,10 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
     let order = root
         .model_step_order(quire_canonical::Limits::new(1 << 20))
         .expect("QSL admits the model-step order");
-    let (progress, _subject) = crate::monitor_authority::observation::admitted(Some(vec![
-        crate::monitor_authority::row(&root),
-    ]));
+    let (progress, _subject) =
+        crate::monitor_authority::observation::admitted(Some(vec![crate::monitor_authority::row(
+            &root,
+        )]));
     let association = progress
         .association_canonical_bytes()
         .expect("the owner retained its association value");
