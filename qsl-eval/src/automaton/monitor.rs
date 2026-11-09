@@ -26,6 +26,11 @@ use crate::automaton::translate::PropertyAutomaton;
 /// An automaton a [`Monitor`] reads: its initial state, the transitions out
 /// of a state, and how many acceptance sets it carries.
 pub trait SafetyAutomaton {
+    /// A viability result established by the translation itself, when it
+    /// has one. `None` asks the generic cycle search to decide it.
+    fn known_viability(&self, _state: StateId) -> Result<Option<bool>, AutomatonError> {
+        Ok(None)
+    }
     /// The number of acceptance sets; a safety automaton carries none.
     fn acceptance_sets(&self) -> usize;
 
@@ -95,6 +100,9 @@ impl SafetyAutomaton for Gba {
 }
 
 impl SafetyAutomaton for PropertyAutomaton {
+    fn known_viability(&self, state: StateId) -> Result<Option<bool>, AutomatonError> {
+        self.bounded_eventually_viability(state)
+    }
     fn acceptance_sets(&self) -> usize {
         self.acceptance_set_count()
     }
@@ -117,6 +125,9 @@ impl SafetyAutomaton for PropertyAutomaton {
 }
 
 impl<A: SafetyAutomaton + ?Sized> SafetyAutomaton for Box<A> {
+    fn known_viability(&self, state: StateId) -> Result<Option<bool>, AutomatonError> {
+        (**self).known_viability(state)
+    }
     fn acceptance_sets(&self) -> usize {
         (**self).acceptance_sets()
     }
@@ -160,7 +171,55 @@ pub struct Monitor<A> {
     subsets: Numbering<BTreeSet<StateId>>,
 }
 
+impl Monitor<PropertyAutomaton> {
+    /// Close a single origin-activated bounded eventuality under false
+    /// extension directly from its real state. Other translations return
+    /// `None`; this operation creates no artificial stutter states.
+    pub fn bounded_eventually_terminal(
+        &self,
+        state: StateId,
+    ) -> Result<Option<super::BoundedState>, AutomatonError> {
+        if !self.automaton.is_origin_bounded_eventually()? {
+            return Ok(None);
+        }
+        let members = self
+            .members(state)
+            .ok_or(AutomatonError::UnknownState { state })?;
+        for member in members {
+            if self.automaton.is_settled(*member)? {
+                return Ok(Some(super::BoundedState::Accept));
+            }
+            self.automaton.bounded_deadline(*member)?;
+        }
+        Ok(Some(super::BoundedState::Reject))
+    }
+}
+
 impl<A: SafetyAutomaton> Monitor<A> {
+    /// Whether the all-false extension of `from` rejects. Reading stops at
+    /// rejection or a repeated monitor state; no model transitions are
+    /// enumerated. This is the bounded profile's terminal closure operation.
+    ///
+    /// # Errors
+    ///
+    /// A state lookup or resource limit failure from the real monitor.
+    pub fn false_extension_rejects(&mut self, from: StateId) -> Result<bool, AutomatonError> {
+        if self.is_rejecting(from)? {
+            return Ok(true);
+        }
+        let mut state = from;
+        let mut seen = BTreeSet::from([state]);
+        loop {
+            state = self.step(state, Letter::default())?;
+            if self.is_rejecting(state)? {
+                return Ok(true);
+            }
+            if !seen.insert(state) {
+                return Ok(false);
+            }
+        }
+    }
+
     /// The monitor of `automaton`, numbering at most `max_states` monitor
     /// states. Nothing of the automaton is read yet.
     ///
@@ -311,6 +370,10 @@ impl<A: SafetyAutomaton> Monitor<A> {
     /// the path viable, and marks a state dead once every target is dead.
     fn viable(&mut self, state: StateId) -> Result<bool, AutomatonError> {
         if let Some(known) = self.known_viable(state) {
+            return Ok(known);
+        }
+        if let Some(known) = self.automaton.known_viability(state)? {
+            self.slot(state).viable = Some(known);
             return Ok(known);
         }
         let mut path: Vec<(StateId, usize)> = vec![(state, 0)];

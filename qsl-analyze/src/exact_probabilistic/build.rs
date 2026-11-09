@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use qsl_eval::automaton::AutomatonError;
+use qsl_eval::automaton::{AutomatonError, Monitor, PropertyAutomaton};
 use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::{
     same_rewards, Action, ModelSimState, ModelSystem, NotMarkov, PredicateReading,
@@ -40,6 +40,15 @@ pub fn build_product(
     request: ProductRequest<'_>,
     cancel: &Cancel,
 ) -> Result<ProbBuild, ProductRefusal> {
+    build_retaining_monitor(request, cancel).map(|(build, _)| build)
+}
+
+/// Retain the reached semantic owner for certificate key projection. The
+/// monitor cache moves once after exploration, never once per product node.
+pub(crate) fn build_retaining_monitor(
+    request: ProductRequest<'_>,
+    cancel: &Cancel,
+) -> Result<(ProbBuild, Option<Monitor<PropertyAutomaton>>), ProductRefusal> {
     let ProductRequest {
         subject,
         claim,
@@ -50,7 +59,10 @@ pub fn build_product(
     let package = subject.simulation.package;
     let system = ModelSystem::new(subject.simulation).map_err(ProductRefusal::Admission)?;
     match TimedSystem::new(&system, &claim.subject.alias) {
-        Ok(timed) => return super::digital::build(&system, timed, claim, &limits_all, cancel),
+        Ok(timed) => {
+            return super::digital::build(&system, timed, claim, &limits_all, cancel)
+                .map(|build| (build, None))
+        }
         Err(TimedSubjectRefusal::NoTimedModel { .. }) => {}
         Err(TimedSubjectRefusal::NotSimulated(refusal)) => {
             return Err(ProductRefusal::NotSimulated(refusal));
@@ -292,11 +304,14 @@ struct Hit {
 }
 
 impl Builder<'_, '_> {
-    fn run(mut self) -> Result<ProbBuild, ProductRefusal> {
+    fn run(mut self) -> Result<(ProbBuild, Option<Monitor<PropertyAutomaton>>), ProductRefusal> {
         match self.explore() {
-            Ok(initial) => Ok(ProbBuild::Built(self.finish(initial))),
+            Ok(initial) => {
+                let (product, monitor) = self.finish(initial);
+                Ok((ProbBuild::Built(product), monitor))
+            }
             Err(Halt::Refusal(refusal)) => Err(refusal),
-            Err(Halt::Undefined(path)) => Ok(ProbBuild::Undefined(*path)),
+            Err(Halt::Undefined(path)) => Ok((ProbBuild::Undefined(*path), None)),
         }
     }
 
@@ -341,7 +356,10 @@ impl Builder<'_, '_> {
         Ok(starts)
     }
 
-    fn finish(self, initial: Vec<(u32, Option<ModelInstance>, ProbStateId)>) -> ProbProduct {
+    fn finish(
+        self,
+        initial: Vec<(u32, Option<ModelInstance>, ProbStateId)>,
+    ) -> (ProbProduct, Option<Monitor<PropertyAutomaton>>) {
         let decided = self
             .nodes
             .iter()
@@ -358,16 +376,23 @@ impl Builder<'_, '_> {
         } else {
             Vec::new()
         };
-        ProbProduct {
-            states: self.nodes.into_iter().map(|node| node.key).collect(),
-            kind: self.kind,
-            edges: self.edges,
-            initial,
-            decided,
-            labels,
-            fairness_operations: self.fairness_operations,
-            fairness: self.fairness,
-        }
+        let monitor = match self.plan {
+            Plan::Formula(monitor) => Some(*monitor),
+            _ => None,
+        };
+        (
+            ProbProduct {
+                states: self.nodes.into_iter().map(|node| node.key).collect(),
+                kind: self.kind,
+                edges: self.edges,
+                initial,
+                decided,
+                labels,
+                fairness_operations: self.fairness_operations,
+                fairness: self.fairness,
+            },
+            monitor,
+        )
     }
 
     fn poll(&self) -> Step<()> {

@@ -546,13 +546,20 @@ pub fn write_probability_certificate(
     writer::write(document, limits, cancel)
 }
 
+type SubjectGraph = (
+    CheckerGraph,
+    ProbabilityObjective,
+    Bound,
+    Option<BTreeMap<ProbabilityProductKey, u64>>,
+);
+
 fn subject_graph(
     system: &ModelSystem<'_>,
     claims: &[CheckedProbabilisticClaim],
     item: &ObligationIdentity,
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
-) -> Result<(CheckerGraph, ProbabilityObjective, Bound), ProbabilityDocumentError> {
+) -> Result<SubjectGraph, ProbabilityDocumentError> {
     use qsl_eval::simulation::model::{TimedSubjectRefusal, TimedSystem};
     if !std::ptr::eq(
         system.package().graph().probabilistic_model().claims(),
@@ -569,33 +576,66 @@ fn subject_graph(
     {
         return Err(ProbabilityDocumentError::Unsupported);
     }
-    let ProbForm::Reach {
-        bound,
-        target: ReachTarget::Eventually(predicate),
-    } = &claim.form
-    else {
-        return Err(ProbabilityDocumentError::Unsupported);
-    };
     let binding = claim_binding(system, claim)?;
     let mut issue = None;
-    let graph = enumerate_model_graph(
-        system,
-        predicate,
-        binding.as_ref().map(|bound| &bound.reference),
-        claim_workload(system, claim)?,
-        limits.states,
-        limits.edges,
-        cancel,
-        true,
-        &mut |_, _| {},
-        &mut |failure| {
-            issue = Some(failure);
-        },
-    )
-    .map_err(|error| match issue {
+    let reference = binding.as_ref().map(|bound| &bound.reference);
+    let workload = claim_workload(system, claim)?;
+    let (bound, enumerated) = match &claim.form {
+        ProbForm::Reach {
+            bound,
+            target: ReachTarget::Eventually(predicate),
+        } => (
+            bound,
+            enumerate_model_graph(
+                system,
+                predicate,
+                reference,
+                workload,
+                limits.states,
+                limits.edges,
+                cancel,
+                true,
+                &mut |_, _| {},
+                &mut |failure| {
+                    issue = Some(failure);
+                },
+            )
+            .map(|graph| (graph, None))
+            .map_err(ProbabilityDocumentError::from),
+        ),
+        ProbForm::Probability {
+            bound,
+            event:
+                qsl_semantics::check::Event::Formula {
+                    formula,
+                    timed_horizon: None,
+                    ..
+                },
+        } => {
+            let context = probabilistic_formula_monitor_context(claim, reference)?;
+            (
+                bound,
+                super::bounded::enumerate(
+                    system,
+                    formula,
+                    &context,
+                    reference,
+                    workload,
+                    limits,
+                    cancel,
+                    &mut |failure| {
+                        issue = Some(failure);
+                    },
+                )
+                .map(|(graph, ranks)| (graph, Some(ranks))),
+            )
+        }
+        _ => return Err(ProbabilityDocumentError::Unsupported),
+    };
+    let (graph, bounded_ranks) = enumerated.map_err(|error| match issue {
         Some(issue) => ProbabilityDocumentError::Build(Box::new(issue)),
         None => match error {
-            ExactProbabilityGraphError::LimitReached => {
+            ProbabilityDocumentError::Graph(ExactProbabilityGraphError::LimitReached) => {
                 let bound = u64::try_from(limits.states).unwrap_or(u64::MAX);
                 exceeded(
                     ProbabilityDocumentLimit::States,
@@ -603,7 +643,7 @@ fn subject_graph(
                     bound.saturating_add(1),
                 )
             }
-            ExactProbabilityGraphError::EdgeLimitReached => {
+            ProbabilityDocumentError::Graph(ExactProbabilityGraphError::EdgeLimitReached) => {
                 let bound = u64::try_from(limits.edges).unwrap_or(u64::MAX);
                 exceeded(
                     ProbabilityDocumentLimit::Edges,
@@ -611,7 +651,7 @@ fn subject_graph(
                     bound.saturating_add(1),
                 )
             }
-            other => other.into(),
+            other => other,
         },
     })?;
     topological_order(&graph, cancel)?;
@@ -619,6 +659,7 @@ fn subject_graph(
         graph,
         claim_objective(&claim.scheduler, bound),
         bound.clone(),
+        bounded_ranks,
     ))
 }
 
@@ -641,38 +682,50 @@ pub fn probability_certificate_document(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
-    let (graph, optimization, _) = subject_graph(system, claims, item, limits, cancel)?;
-    let mut ranks = BTreeMap::<ProbabilityProductKey, u64>::new();
-    for key in topological_order(&graph, cancel)?.into_iter().rev() {
-        poll(cancel)?;
-        let state = graph
-            .states
-            .get(&key)
-            .ok_or(ProbabilityDocumentError::Malformed)?;
-        let mut rank = 0;
-        if state.terminal.is_none() {
-            for edge in state
-                .choices
-                .iter()
-                .flatten()
-                .filter(|edge| edge.probability > rational(0))
-            {
-                let successor = ranks
-                    .get(&edge.target)
-                    .ok_or(ProbabilityDocumentError::Malformed)?;
-                rank = rank.max(
-                    successor
-                        .checked_add(1)
-                        .filter(|rank| *rank <= MAX_COUNT)
-                        .ok_or(exceeded(
-                            ProbabilityDocumentLimit::Rank,
-                            MAX_COUNT,
-                            MAX_COUNT + 1,
-                        ))?,
-                );
+    let (graph, optimization, _, bounded_ranks) =
+        subject_graph(system, claims, item, limits, cancel)?;
+    let bounded = bounded_ranks.is_some();
+    let mut ranks = bounded_ranks.unwrap_or_default();
+    if bounded {
+        for rank in ranks.values() {
+            poll(cancel)?;
+            if *rank > MAX_COUNT {
+                return Err(exceeded(ProbabilityDocumentLimit::Rank, MAX_COUNT, *rank));
             }
         }
-        ranks.insert(key, rank);
+    }
+    if !bounded {
+        for key in topological_order(&graph, cancel)?.into_iter().rev() {
+            poll(cancel)?;
+            let state = graph
+                .states
+                .get(&key)
+                .ok_or(ProbabilityDocumentError::Malformed)?;
+            let mut rank = 0;
+            if state.terminal.is_none() {
+                for edge in state
+                    .choices
+                    .iter()
+                    .flatten()
+                    .filter(|edge| edge.probability > rational(0))
+                {
+                    let successor = ranks
+                        .get(&edge.target)
+                        .ok_or(ProbabilityDocumentError::Malformed)?;
+                    rank = rank.max(
+                        successor
+                            .checked_add(1)
+                            .filter(|rank| *rank <= MAX_COUNT)
+                            .ok_or(exceeded(
+                                ProbabilityDocumentLimit::Rank,
+                                MAX_COUNT,
+                                MAX_COUNT + 1,
+                            ))?,
+                    );
+                }
+            }
+            ranks.insert(key, rank);
+        }
     }
     Ok(ProbabilityCertificateDocument {
         identity: item.clone(),
@@ -703,7 +756,8 @@ pub fn check_probability_certificate_document(
     if &document.identity != item {
         return Err(ProbabilityDocumentError::IdentityMismatch);
     }
-    let (graph, objective, bound) = subject_graph(system, claims, item, limits, cancel)?;
+    let (graph, objective, bound, bounded_ranks) =
+        subject_graph(system, claims, item, limits, cancel)?;
     if objective != document.optimization || target_keys(&graph) != document.targets {
         return Err(ProbabilityDocumentError::ObjectiveMismatch);
     }
@@ -732,6 +786,17 @@ pub fn check_probability_certificate_document(
     }
     if ranks.len() != graph.states.len() {
         return Ok(malformed_ranking());
+    }
+    if let Some(expected) = bounded_ranks {
+        for (key, actual) in &expected {
+            poll(cancel)?;
+            if ranks.get(key) != Some(actual) {
+                return Ok(rejected(
+                    ProbabilityCertificateRule::RankBroken,
+                    key.clone(),
+                ));
+            }
+        }
     }
     for (key, state) in &graph.states {
         poll(cancel)?;

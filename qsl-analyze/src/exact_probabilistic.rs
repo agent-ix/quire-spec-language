@@ -37,6 +37,7 @@ mod unbounded;
 mod witness;
 
 pub use build::build_product;
+pub(crate) use build::build_retaining_monitor;
 pub use fair::{
     decide_fair_bounded_event, decide_fair_expected_reward, decide_fair_long_run_mdp,
     decide_fair_reachability, maximal_fair_end_components, ActionChoice, FairBoundedResult,

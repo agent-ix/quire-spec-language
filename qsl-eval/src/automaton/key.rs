@@ -173,7 +173,34 @@ pub struct ContextBinding {
     pub parameter: NodeKey,
     /// The value it is bound to, written in QSpec FR-181's typed canonical
     /// form.
-    pub value: Value,
+    pub value: ContextBindingValue,
+}
+
+/// FR-338 distinguishes over-instance keys from ordinary typed arguments.
+#[derive(Clone, Debug)]
+pub enum ContextBindingValue {
+    /// A concrete over instance, identified by its actual authored key.
+    Instance(String),
+    /// An ordinary argument in the complete FR-181 typed canonical form.
+    Value(Value),
+}
+
+impl ContextBinding {
+    /// Bind an actual checked over parameter to its concrete instance key.
+    pub fn instance(parameter: NodeKey, key: impl Into<String>) -> Self {
+        Self {
+            parameter,
+            value: ContextBindingValue::Instance(key.into()),
+        }
+    }
+
+    /// Bind an ordinary argument, including an ordinary reference argument.
+    pub fn value(parameter: NodeKey, value: Value) -> Self {
+        Self {
+            parameter,
+            value: ContextBindingValue::Value(value),
+        }
+    }
 }
 
 /// FR-338's key context `[root, profile, activation, binding]`. It does not
@@ -267,7 +294,12 @@ impl StateContext {
             .map(|entry| {
                 Enc::Array(vec![
                     node_enc(&entry.parameter),
-                    untyped_value_enc(&entry.value),
+                    match &entry.value {
+                        ContextBindingValue::Instance(key) => {
+                            Enc::Array(vec![Enc::text("instance"), Enc::text(key)])
+                        }
+                        ContextBindingValue::Value(value) => untyped_value_enc(value),
+                    },
                 ])
             })
             .collect();
