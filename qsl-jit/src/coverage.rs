@@ -5,7 +5,7 @@ use qsl_eval::execution::{BackendCoverage, CoverageOperation, CoverageType};
 use std::sync::OnceLock;
 
 /// The ADR-012 `Value`-family forms this backend translates.
-pub(crate) const FORMS: [&str; 5] = ["literal", "operator", "let", "if", "call"];
+pub(crate) const FORMS: [&str; 6] = ["literal", "operator", "let", "if", "call", "record"];
 
 const INTEGER_OPERATORS: [&str; 16] = [
     "+", "-", "*", "negate", "div", "rem", "mod", "/", "<", "<=", ">", ">=", "coerce", "convert", "=",
@@ -20,6 +20,9 @@ const BOOLEAN_OPERATORS: [&str; 6] = ["and", "or", "implies", "not", "=", "!="];
 const NUMERIC_OPERATORS: [&str; 12] = [
     "+", "-", "*", "/", "negate", "<", "<=", ">", ">=", "=", "!=", "convert",
 ];
+
+/// A record: equality.
+const EQUALITY_OPERATORS: [&str; 2] = ["=", "!="];
 
 /// `Text`: ordering and equality.
 const TEXT_OPERATORS: [&str; 6] = ["<", "<=", ">", ">=", "=", "!="];
@@ -48,6 +51,7 @@ pub fn coverage() -> &'static BackendCoverage {
             over(CoverageType::Rational, &NUMERIC_OPERATORS),
             over(CoverageType::Decimal, &NUMERIC_OPERATORS),
             over(CoverageType::Text, &TEXT_OPERATORS),
+            over(CoverageType::Record, &EQUALITY_OPERATORS),
         ]
         .concat();
         BackendCoverage::new(
@@ -59,6 +63,7 @@ pub fn coverage() -> &'static BackendCoverage {
                 CoverageType::Rational,
                 CoverageType::Decimal,
                 CoverageType::Text,
+                CoverageType::Record,
             ],
             operations,
         )

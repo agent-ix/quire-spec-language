@@ -247,7 +247,8 @@ type GS = Rational[-10000000000000000000000000000000, 10000000000000000000000000
 type GM = Rational[-1000000000000000000000000000000000000000000000000000, 1000000000000000000000000000000000000000000000000000; 1, 10000000000];\n\
 type GD = Rational[-10000000000000000000000000000000, 10000000000000000000000000000000; 1, 10000000000000000000000000000000];\n\
 type GX = Decimal[0, 2000000; 0, 3; exact];\n\
-type GT = Text[0, 16; nfd];\n";
+type GT = Text[0, 16; nfd];\n\
+record GR { x: Int[0, 9]; y: Boolean; }\n";
 
 /// Which values a template's parameters take.
 #[derive(Clone, Copy)]
@@ -256,11 +257,14 @@ enum Sample {
     Positive,
     Decimal,
     Text,
+    Flag,
+    Digit,
+    Divisor,
 }
 
-/// Functions over `Rational`, `Decimal` and `Text`: the declaration and the
-/// kinds of its parameters.
-const EXTRA_FUNCTIONS: [(&str, &[Sample]); 14] = [
+/// Functions over `Rational`, `Decimal`, `Text` and a record: the
+/// declaration and the kinds of its parameters.
+const EXTRA_FUNCTIONS: [(&str, &[Sample]); 18] = [
     (
         "(p: GQ, q: GQ): GS pure { p + q }",
         &[Sample::Rational, Sample::Rational],
@@ -288,7 +292,7 @@ const EXTRA_FUNCTIONS: [(&str, &[Sample]); 14] = [
     ),
     (
         "(c: Boolean, p: GQ, q: GQ): GQ pure { if c then p else q }",
-        &[Sample::Rational, Sample::Rational],
+        &[Sample::Flag, Sample::Rational, Sample::Rational],
     ),
     (
         "(a: GX, b: GX): GX pure { a + b }",
@@ -308,11 +312,27 @@ const EXTRA_FUNCTIONS: [(&str, &[Sample]); 14] = [
     ),
     (
         "(c: Boolean, a: GT, b: GT): GT pure { if c then a else b }",
-        &[Sample::Text, Sample::Text],
+        &[Sample::Flag, Sample::Text, Sample::Text],
     ),
     (
         "(p: Int[0, 9], q: Int[1, 9]): Rational[0, 9; 1, 9] pure { p / q }",
-        &[],
+        &[Sample::Digit, Sample::Divisor],
+    ),
+    (
+        "(a: Int[0, 9], b: Boolean): GR pure { GR { x: a, y: b } }",
+        &[Sample::Digit, Sample::Flag],
+    ),
+    (
+        "(a: Int[0, 9], b: Boolean): Boolean pure { (GR { x: a, y: b }).y }",
+        &[Sample::Digit, Sample::Flag],
+    ),
+    (
+        "(a: Int[0, 9], b: Boolean): Boolean pure { GR { x: a, y: b } = GR { x: a, y: not b } }",
+        &[Sample::Digit, Sample::Flag],
+    ),
+    (
+        "(a: Int[0, 9], b: Boolean): Int[0, 9] pure { let r = GR { x: a, y: b } in if r.y then r.x else a }",
+        &[Sample::Digit, Sample::Flag],
     ),
 ];
 
@@ -324,8 +344,12 @@ fn rational_value(numerator: i64, denominator: i64) -> Value {
 }
 
 fn sample_value(rng: &mut Rng, sample: Sample) -> Option<Value> {
+    let digit = |rng: &mut Rng| Value::Integer(Integer::from(rng.below(10) as i64));
     let small = |rng: &mut Rng| rng.below(2001) as i64 - 1000;
     Some(match sample {
+        Sample::Flag => Value::Boolean(rng.below(2) == 0),
+        Sample::Digit => digit(rng),
+        Sample::Divisor => Value::Integer(Integer::from(1 + rng.below(9) as i64)),
         Sample::Rational => rational_value(small(rng), 1 + rng.below(9) as i64),
         Sample::Positive => rational_value(1 + rng.below(1000) as i64, 1 + rng.below(9) as i64),
         Sample::Decimal => {
@@ -380,17 +404,9 @@ fn extras(source: &str) -> (String, Vec<Functions>) {
             EXTRA_FUNCTIONS[rng.below(EXTRA_FUNCTIONS.len() as u64) as usize];
         let name = format!("g{index}");
         text.push_str(&format!("function {name} using v{declaration}\n"));
-        let flagged = declaration.starts_with("(c: Boolean");
         let tuples = (0..4)
             .filter_map(|_| {
                 let mut tuple = Vec::new();
-                if flagged {
-                    tuple.push(Value::Boolean(rng.below(2) == 0));
-                }
-                if samples.is_empty() {
-                    tuple.push(Value::Integer(Integer::from(rng.below(10) as i64)));
-                    tuple.push(Value::Integer(Integer::from(1 + rng.below(9) as i64)));
-                }
                 for sample in samples {
                     tuple.push(sample_value(&mut rng, *sample)?);
                 }

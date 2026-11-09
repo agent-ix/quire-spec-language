@@ -4,7 +4,7 @@
 use super::*;
 use ix_trace_rs::trace;
 use qsl_semantics::check::CheckedBody;
-use quire_checked::node::CheckedLiteral;
+use quire_checked::node::{CheckedLiteral, RecordSlot};
 use quire_semantic_value::location::ExpressionOwner as Origin;
 
 #[path = "../../../../../tests/support/admitted_charge.rs"]
@@ -2539,13 +2539,18 @@ fn record_present_value_branch_has_a_local_count_and_zip_proof() {
         .split("NodeKind::Collection{")
         .next()
         .unwrap();
-    assert!(record.contains(".filter(|slot|matches!(slot,RecordSlot::Present(_)))"));
-    assert!(record.contains(".count()"));
-    assert!(record.contains("self.pop_many(present)?.into_iter()"));
-    assert!(record.contains("slots.iter().zip(declared)"));
-    assert!(
-        record.contains("values.next().ok_or_else(||invariant(\"record-present-value-missing\"))")
-    );
+    // The evaluator pops exactly the present slots' values and hands them to
+    // the shared construction, whose count and zip carry the proof.
+    assert!(record.contains("self.pop_many(present_slots(slots))?"));
+    assert!(record.contains("construct_record(self.world.types(),declaration,slots,values)"));
+    let shared: String = include_str!("../../composite.rs")
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    assert!(shared.contains(".filter(|slot|matches!(slot,RecordSlot::Present(_)))"));
+    assert!(shared.contains(".count()"));
+    assert!(shared.contains("slots.iter().zip(declared)"));
+    assert!(shared.contains("values.next().ok_or(\"record-present-value-missing\")"));
     let pop_many = source
         .split("fnpop_many")
         .nth(1)

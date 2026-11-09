@@ -22,10 +22,11 @@ fn the_published_coverage_lists_the_implemented_scalar_subset() {
         CoverageType::Rational,
         CoverageType::Decimal,
         CoverageType::Text,
+        CoverageType::Record,
     ] {
         assert!(coverage.value_types().contains(&class), "{class:?}");
     }
-    assert!(!coverage.value_types().contains(&CoverageType::Record));
+    assert!(coverage.lists_form("record"));
     assert!(!coverage.value_types().contains(&CoverageType::Collection));
     assert!(!coverage.lists_type(&ValueType::Timestamp));
     assert!(!coverage.lists_form("case"));

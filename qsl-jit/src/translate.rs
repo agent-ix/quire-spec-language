@@ -27,9 +27,10 @@ use qsl_eval::execution::{PrepareFailure, PrepareMeter};
 use qsl_semantics::check::{CheckedGraph, CheckedNode};
 use quire_checked::integer_division::AdmittedIntegerDivision;
 use quire_checked::node::{Arithmetic, Connective, IntegerDivisionOperator, NodeKind, OrderedKind};
+use quire_checked::node::{RecordField, RecordSlot};
 use quire_exact::{
     ArithmeticOperator, DecimalType, DivisionMember, Integer, IntegerDomain, IntegerInterval,
-    Meter, OrderingOperator, Outcome, RationalDomain, ScalarLimits, Value, ValueType,
+    Meter, NodeKey, OrderingOperator, Outcome, RationalDomain, ScalarLimits, Value, ValueType,
 };
 use quire_semantic_value::declaration::{CheckedEquality, EqualityOperand};
 use quire_semantic_value::location::ExpressionLocation;
@@ -93,6 +94,28 @@ pub(crate) enum OpKind {
     ConvertDecimal {
         target: DecimalType,
     },
+    /// An operand value staged for the construction that follows (`true`: a
+    /// `Boolean` register). Charges nothing.
+    Stage {
+        boolean: bool,
+    },
+    /// A record over the staged values of its present slots.
+    Record {
+        declaration: NodeKey,
+        slots: Vec<RecordSlot<()>>,
+    },
+    /// A tuple over its `arity` staged values.
+    Tuple {
+        declaration: NodeKey,
+        arity: usize,
+    },
+    /// A record field read, carried as `into`.
+    Field {
+        field: RecordField,
+        optional: bool,
+        value_type: ValueType,
+        into: Carried,
+    },
     /// A register `Integer` moved to the arena, to meet a handle.
     Box,
     /// A handle whose value fits a register, moved back to one.
@@ -141,6 +164,8 @@ enum Ty {
     Rational,
     Decimal,
     Text,
+    /// A record or tuple behind a handle.
+    Record,
 }
 
 impl Ty {
@@ -148,7 +173,9 @@ impl Ty {
         match self {
             Self::Boolean => Carried::Boolean,
             Self::Int(..) => Carried::Register,
-            Self::Wide | Self::Rational | Self::Decimal | Self::Text => Carried::Handle,
+            Self::Wide | Self::Rational | Self::Decimal | Self::Text | Self::Record => {
+                Carried::Handle
+            }
         }
     }
 
@@ -211,6 +238,7 @@ fn type_of(value_type: &ValueType) -> Option<Ty> {
         ValueType::Rational(_) => Some(Ty::Rational),
         ValueType::Decimal(_) => Some(Ty::Decimal),
         ValueType::Text(_) => Some(Ty::Text),
+        ValueType::Composite(_) => Some(Ty::Record),
         _ => None,
     }
 }
@@ -536,10 +564,11 @@ impl Emitter<'_, '_, '_> {
                         Ok((result, Ty::Wide))
                     }
                 },
-                Value::Rational(_) | Value::Decimal(_) | Value::Text(_) => {
+                Value::Rational(_) | Value::Decimal(_) | Value::Text(_) | Value::Composite(_) => {
                     let ty = match &literal.0 {
                         Value::Rational(_) => Ty::Rational,
                         Value::Decimal(_) => Ty::Decimal,
+                        Value::Composite(_) => Ty::Record,
                         _ => Ty::Text,
                     };
                     let zero = self.builder.ins().iconst(types::I64, 0);
@@ -605,7 +634,7 @@ impl Emitter<'_, '_, '_> {
                 let ty = match operand_ty {
                     Ty::Int(low, high) if fits(-high, -low) => Ty::Int(-high, -low),
                     Ty::Int(..) | Ty::Wide => Ty::Wide,
-                    Ty::Boolean | Ty::Rational | Ty::Decimal | Ty::Text => {
+                    Ty::Boolean | Ty::Rational | Ty::Decimal | Ty::Text | Ty::Record => {
                         return Err(self.unsupported(node))
                     }
                 };
@@ -667,6 +696,82 @@ impl Emitter<'_, '_, '_> {
                 let order = OpKind::Order((*operator, *kind));
                 let result = self.shim_call(node, order, operands, Repr::Register);
                 Ok((result, Ty::Boolean))
+            }
+            NodeKind::Record { declaration, slots } => {
+                for slot in slots {
+                    if let RecordSlot::Present(child) = slot {
+                        let operand = self.emit(node.at(*child), depth + 1)?;
+                        self.stage(node, operand);
+                    }
+                }
+                let slots = slots
+                    .iter()
+                    .map(|slot| match slot {
+                        RecordSlot::Absent => RecordSlot::Absent,
+                        RecordSlot::Null => RecordSlot::Null,
+                        RecordSlot::Present(_) => RecordSlot::Present(()),
+                    })
+                    .collect();
+                let kind = OpKind::Record {
+                    declaration: declaration.clone(),
+                    slots,
+                };
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let result = self.shim_call(
+                    node,
+                    kind,
+                    [(zero, Ty::Boolean), (zero, Ty::Boolean)],
+                    Repr::Handle,
+                );
+                Ok((result, Ty::Record))
+            }
+            NodeKind::Tuple {
+                declaration,
+                arguments,
+            } => {
+                for argument in arguments {
+                    let operand = self.emit(node.at(*argument), depth + 1)?;
+                    self.stage(node, operand);
+                }
+                let kind = OpKind::Tuple {
+                    declaration: declaration.clone(),
+                    arity: arguments.len(),
+                };
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let result = self.shim_call(
+                    node,
+                    kind,
+                    [(zero, Ty::Boolean), (zero, Ty::Boolean)],
+                    Repr::Handle,
+                );
+                Ok((result, Ty::Record))
+            }
+            NodeKind::Field {
+                operand,
+                field,
+                optional,
+            } => {
+                let (a, operand_ty) = self.emit(node.at(*operand), depth + 1)?;
+                let Some(ty) = type_of(node.value_type()) else {
+                    return Err(self.unsupported(node));
+                };
+                if operand_ty != Ty::Record {
+                    return Err(self.unsupported(node));
+                }
+                let kind = OpKind::Field {
+                    field: field.clone(),
+                    optional: *optional,
+                    value_type: node.value_type().clone(),
+                    into: ty.carried(),
+                };
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let result = self.shim_call(
+                    node,
+                    kind,
+                    [(a, operand_ty), (zero, Ty::Boolean)],
+                    ty.repr(),
+                );
+                Ok((result, ty))
             }
             NodeKind::Divide {
                 left,
@@ -788,7 +893,7 @@ impl Emitter<'_, '_, '_> {
                         (Some(low), Some(high)) => Ty::Int(low.into(), high.into()),
                         _ => Ty::Wide,
                     },
-                    Ty::Boolean | Ty::Rational | Ty::Decimal | Ty::Text => {
+                    Ty::Boolean | Ty::Rational | Ty::Decimal | Ty::Text | Ty::Record => {
                         return Err(self.unsupported(node))
                     }
                 };
@@ -1032,6 +1137,21 @@ impl Emitter<'_, '_, '_> {
         self.builder.switch_to_block(merge);
         let joined = self.builder.block_params(merge)[0];
         Ok((joined, ty))
+    }
+
+    /// Stage an operand value for the record or tuple construction that
+    /// follows.
+    fn stage(&mut self, node: CheckedNode<'_>, (value, ty): (Clif, Ty)) {
+        let zero = self.builder.ins().iconst(types::I64, 0);
+        let kind = OpKind::Stage {
+            boolean: ty == Ty::Boolean,
+        };
+        self.shim_call(
+            node,
+            kind,
+            [(value, ty), (zero, Ty::Boolean)],
+            Repr::Register,
+        );
     }
 
     /// `value` of type `from` in the representation of `to`: a register
