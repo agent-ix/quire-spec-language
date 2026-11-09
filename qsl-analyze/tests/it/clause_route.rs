@@ -225,3 +225,33 @@ fn a_clause_routed_off_en1_or_absent_from_the_package_is_not_run() {
         Some(CatalogCode::new("invalid_capability", "inapplicable-kind"))
     );
 }
+
+/// EN-6 advertises bounded temporal satisfaction, so its supported route
+/// passes the manifest-pair check. It still cannot run the EN-1 authored
+/// clause adapter, and the item is settled unsupported without a producer.
+#[test]
+fn a_non_en1_backend_advertising_the_temporal_pair_never_runs_the_clause_adapter() {
+    let world = World::new(
+        model_world::counter(),
+        CONTRACT,
+        model_world::BOUNDED,
+        &[Clause {
+            activation: "on each (q: M::Counter)",
+            formula: "always[0,1] holds(c.value <= 1)",
+        }],
+        &[("c", json!({"value": {"integer": "0"}}))],
+    );
+    let record = through_analyze(&world, work(&world, "en-6", ClauseLimits::default()));
+    assert!(
+        matches!(record.value(), TerminalValue::Unsupported(_)),
+        "{record:?}"
+    );
+    assert_eq!(
+        record.diagnostic(),
+        Some(CatalogCode::new(
+            "unsupported_projection",
+            "unsupported-requested-capability"
+        ))
+    );
+    assert!(record.backend().is_none());
+}
