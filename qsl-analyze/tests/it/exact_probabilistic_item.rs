@@ -311,7 +311,7 @@ fn a_malformed_probability_certificate_settles_a_typed_rejection() {
     );
 }
 
-#[trace("TC-636", "FR-201-AC-6", "QSpec-FR-331-AC-25")]
+#[trace("TC-636", "QSpec-FR-331-AC-25")]
 #[test]
 fn unsorted_reachable_typed_values_reject_at_the_values_member() {
     let world = World::new(&prob_world::link(CLAIMS));
@@ -351,7 +351,7 @@ fn unsorted_reachable_typed_values_reject_at_the_values_member() {
     );
 }
 
-#[trace("TC-764", "FR-201-AC-10", "QSpec-FR-331-AC-25")]
+#[trace("TC-764", "FR-201-AC-9", "FR-201-AC-10", "QSpec-FR-331-AC-25")]
 #[test]
 fn missing_document_values_reject_but_identity_and_objective_mismatches_refuse() {
     let world = World::new(&prob_world::link(CLAIMS));
@@ -368,6 +368,18 @@ fn missing_document_values_reject_but_identity_and_objective_mismatches_refuse()
         }, &Cancel::new(),
     );
     assert!(matches!(check(bytes), Ok(ExactProbabilityCertificateCheck::Accepted(_))));
+    for duplicate in [false, true] {
+        let mut malformed = original.clone();
+        let rows = malformed["values"].as_array_mut().unwrap();
+        if duplicate {
+            rows.insert(1, rows[0].clone());
+        } else {
+            rows.reverse();
+        }
+        assert_eq!(check(&serde_json::to_vec(&malformed).unwrap()),
+            Err(qsl_replay::ProbabilityDocumentError::Malformed),
+            "duplicate/out-of-order byte rows remain document admission errors");
+    }
     let mut missing = original.clone();
     let rows = missing["values"].as_array_mut().unwrap();
     let omitted = rows.iter().position(|row| row["value"] == serde_json::json!({

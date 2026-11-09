@@ -144,7 +144,7 @@ fn rejected(
     }
 }
 
-#[trace("TC-636", "FR-201-AC-6", "QSpec-FR-331-AC-25")]
+#[trace("TC-636", "QSpec-FR-331-AC-25")]
 #[test]
 fn bound_claim_reconstructs_its_graph_and_reports_the_values_member() {
     let world = world_with(UNLIKELY);
@@ -189,7 +189,7 @@ fn claim_binding_uses_the_checked_node_not_name_or_source_order() {
     }
 }
 
-#[trace("TC-636", "FR-201-AC-6", "QSpec-FR-331-AC-25")]
+#[trace("TC-636", "QSpec-FR-331-AC-25")]
 #[test]
 fn typed_value_coverage_and_order_rejections_name_the_values_member() {
     let world = world_with(LIKELY);
