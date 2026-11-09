@@ -8,7 +8,7 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze, AnalyzeLimits, AnalyzeRefusal, AnalyzeRequest, ClaimItem, ClauseLimits,
+    analyze, AnalyzeLimits, AnalyzeRefusal, AnalyzeRequest, ClaimItem, ClaimRefusal, ClauseLimits,
     Counterexample, Engines, ItemForm, ItemOptions, NegotiatedItem, ProbabilisticItem,
     ProbabilisticLimits, SourceProvision, TemporalItem,
 };
@@ -358,7 +358,7 @@ fn plain(claim: OccurrenceKey, kind: Capability, backend: &str) -> NegotiatedIte
 
 /// Generalized items retain the existing value arm's native replay token;
 /// they do not reinterpret a value claim as a probabilistic request.
-#[trace("TC-761", "FR-280-AC-2")]
+#[trace("TC-761", "FR-280-AC-2", "TC-763", "FR-281-AC-12")]
 #[test]
 fn a_value_claim_returns_its_native_replayed_assignment() {
     let declaration = "function Goal using v(x: Int[0,3]): Boolean pure { x < 3 }";
@@ -437,6 +437,52 @@ fn a_value_claim_returns_its_native_replayed_assignment() {
         package.graph().semantic_graph().node(claim.node().clone())
     );
     let provision = SourceProvision::single(package.graph().source(), &source);
+    let request = AnalyzeRequest {
+        binding: binding.clone(),
+        provision: provision.clone(),
+        items: vec![plain(
+            claim.clone(),
+            Capability::ValueValidity,
+            qsl_analyze::value_check::manifest::BACKEND_ID,
+        )],
+    };
+    let engines = Engines::qsl().expect("the manifests register");
+    let mut limited = AnalyzeLimits::unbounded();
+    limited.accounting.work_units = 0;
+    let stopped = analyze(&package, &request, &engines, &limited, &Cancel::new())
+        .expect("the bounded value request admits")
+        .into_value();
+    let served = provider::run(
+        &package,
+        &binding,
+        &provision,
+        &request.items,
+        &engines,
+        &limited,
+        &Cancel::new(),
+    );
+    assert_eq!(stopped.records, served.records);
+    assert_eq!(
+        stopped.records[0].value(),
+        &TerminalValue::Incomplete(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::EvaluationMeter {
+                counter: quire_exact::LimitKind::WorkUnits
+            },
+            value: 0,
+        })
+    );
+    assert!(stopped.counterexamples.is_empty());
+    assert!(served.counterexamples.is_empty());
+    let funded = analyze(
+        &package,
+        &request,
+        &engines,
+        &AnalyzeLimits::unbounded(),
+        &Cancel::new(),
+    )
+    .expect("the adequately funded request admits")
+    .into_value();
+    assert_eq!(funded.records[0].value(), &TerminalValue::Refuted);
     let result = provider::run(
         &package,
         &binding,
@@ -576,14 +622,7 @@ fn registered_candidate(
     candidate.clone()
 }
 
-#[trace(
-    "TC-762",
-    "FR-281-AC-1",
-    "TC-761",
-    "FR-280-AC-8",
-    "TC-637",
-    "FR-202-AC-9"
-)]
+#[trace("TC-762", "TC-761", "FR-280-AC-8", "TC-637", "FR-202-AC-9")]
 #[test]
 fn exact_refutation_retains_the_reproduced_path_set_through_both_entries() {
     let source = LIKELY.replace("0.95", "0.97");
@@ -645,4 +684,49 @@ fn exact_refutation_retains_the_reproduced_path_set_through_both_entries() {
         };
         assert_eq!(replayed.mass(), token.mass());
     }
+}
+
+#[trace("TC-762", "FR-281-AC-21")]
+#[test]
+fn claim_construction_resolves_the_complete_checked_occurrence() {
+    let world = counter();
+    let clause = &world.package.graph().temporal_clauses()[0];
+    let claim = OccurrenceKey::new(clause.identity(), clause.claim().clone());
+    let build = |key| {
+        ClaimItem::new(
+            &world.package,
+            RequestIndex::new(0),
+            key,
+            Capability::TemporalSatisfaction,
+            ExtentClassification::Unbounded {
+                finite_bound_available: true,
+            },
+        )
+    };
+    assert_eq!(
+        build(claim.clone())
+            .expect("the checked clause resolves")
+            .claim,
+        claim
+    );
+    let wrong = OccurrenceKey::new(
+        clause.identity(),
+        quire_exact::Origin::new(quire_exact::Role::new("claim"), 99),
+    );
+    assert!(matches!(build(wrong), Err(ClaimRefusal::UnknownClaim)));
+    let (other, _) = crate::value_validity::package_with_source(
+        "function Other using v(x: Int[0,3]): Boolean pure { x < 2 }",
+    );
+    let (node, origin, _) = other
+        .graph()
+        .occurrences()
+        .next()
+        .expect("producer-owned occurrence");
+    let absent = OccurrenceKey::new(node, origin);
+    assert!(!world
+        .package
+        .graph()
+        .occurrences()
+        .any(|(node, _, _)| node == *absent.node()));
+    assert!(matches!(build(absent), Err(ClaimRefusal::UnknownClaim)));
 }

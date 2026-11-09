@@ -109,6 +109,63 @@ pub struct ClaimItem {
     pub form: Option<ItemForm>,
 }
 
+/// A requested key does not identify a checked claim of the requested kind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum ClaimRefusal {
+    /// No checked claim matches this complete occurrence key.
+    #[error("unknown checked claim")]
+    UnknownClaim,
+}
+
+impl ClaimItem {
+    /// Resolve a claim against its owning checked package before configuring it.
+    ///
+    /// # Errors
+    /// Returns [`ClaimRefusal::UnknownClaim`] for an absent node, a different
+    /// occurrence, or a claim to which `kind` does not apply.
+    pub fn new(
+        package: &qsl_package::CheckedPackage,
+        request_index: RequestIndex,
+        claim: OccurrenceKey,
+        kind: Capability,
+        extent: ExtentClassification,
+    ) -> Result<Self, ClaimRefusal> {
+        let graph = package.graph();
+        let family = crate::claim_family::claim_family(package, ItemKind::Formula, &claim);
+        let occurs = graph
+            .occurrences()
+            .any(|(node, origin, _)| node == *claim.node() && origin == *claim.origin());
+        let wrong_authored_occurrence = graph
+            .temporal_clauses()
+            .iter()
+            .find(|clause| clause.identity() == *claim.node())
+            .is_some_and(|clause| clause.claim() != claim.origin())
+            || graph
+                .probabilistic_model()
+                .claims()
+                .iter()
+                .filter_map(|checked| checked.occurrence())
+                .find(|checked| checked.node() == claim.node())
+                .is_some_and(|checked| checked != &claim);
+        if !occurs
+            || wrong_authored_occurrence
+            || family.is_none_or(|family| !kind.applies_to_declaration(family))
+        {
+            return Err(ClaimRefusal::UnknownClaim);
+        }
+        Ok(Self {
+            request_index,
+            claim,
+            kind,
+            extent,
+            backend: None,
+            candidates: Vec::new(),
+            options: ItemOptions::default(),
+            form: None,
+        })
+    }
+}
+
 /// The request form of a kind that has one.
 #[derive(Clone)]
 pub enum ItemForm {
@@ -255,7 +312,7 @@ pub(crate) fn analyze_bound(
         .map_err(|failure| StageFailure::Refused(super::AnalyzeRefusal::Provision(failure)))?;
     let items = requested
         .iter()
-        .map(|item| work(package, binding, provision, item, limits))
+        .map(|item| work(package, binding, provision, item, engines, limits))
         .collect::<Vec<_>>();
     let requirements = items
         .iter()
@@ -353,6 +410,7 @@ fn work<'a>(
     binding: &super::SubjectBinding<'a>,
     provision: &'a SourceProvision,
     negotiated: &'a NegotiatedItem,
+    engines: &super::Engines,
     limits: &super::AnalyzeLimits,
 ) -> super::AnalyzeItem<'a> {
     use super::AnalyzeItem;
@@ -466,12 +524,27 @@ fn work<'a>(
                         .ok()
                     })
                     .ok_or(qsl_replay::value_check::Selection::NoForm)
-                    .map(|target| crate::value_check::ValueRequest {
+                    .map(|target| target.with_limits(limits.accounting));
+                if let Some(backend) = negotiated.disposition.target().filter(|backend| {
+                    engines
+                        .get(backend)
+                        .is_some_and(|engine| engine.provider().is_some())
+                }) {
+                    crate::external_provider::provider_item(
+                        item.request_index,
+                        package,
+                        &item.claim,
+                        backend,
+                        selection,
+                    )
+                } else {
+                    let selection = selection.map(|target| crate::value_check::ValueRequest {
                         target,
                         max_cases: item.options.max_cases,
                         reported: None,
                     });
-                super::value_item(item.request_index, package, &item.claim, selection)
+                    super::value_item(item.request_index, package, &item.claim, selection)
+                }
             }
             None if item.kind == Capability::OperationContract => {
                 let selection = qsl_replay::contract_check::select_contract(package, &item.claim)

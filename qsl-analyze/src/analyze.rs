@@ -39,8 +39,8 @@ mod request;
 pub(crate) use request::analyze_bound;
 
 pub use request::{
-    analyze, ClaimItem, HybridItem, ItemForm, ItemOptions, NegotiatedItem, ProbabilisticItem,
-    ProbabilisticLimits, ProvisionRefusal, SourceProvision, TemporalItem,
+    analyze, ClaimItem, ClaimRefusal, HybridItem, ItemForm, ItemOptions, NegotiatedItem,
+    ProbabilisticItem, ProbabilisticLimits, ProvisionRefusal, SourceProvision, TemporalItem,
 };
 
 use qsl_eval::simulation::model::PopulationUniverse;
@@ -290,6 +290,21 @@ pub struct SubjectBinding<'a> {
 
 /// The caller's shared accounting, observation, normalization and deadline
 /// limits for one analyze request (FR-277, FR-281).
+///
+/// The deadline must be stated explicitly; there is no implicit default.
+/// ```compile_fail,E0277
+/// use qsl_analyze::analyze::AnalyzeLimits;
+/// let limits = AnalyzeLimits { ..Default::default() };
+/// ```
+///
+/// ```
+/// use qsl_analyze::analyze::{AnalyzeLimits, DeadlineSupply};
+/// let limits = AnalyzeLimits {
+///     deadline: DeadlineSupply::Unbounded,
+///     ..AnalyzeLimits::unbounded()
+/// };
+/// assert_eq!(limits.deadline, DeadlineSupply::Unbounded);
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AnalyzeLimits {
     /// The scalar evaluation budget.
