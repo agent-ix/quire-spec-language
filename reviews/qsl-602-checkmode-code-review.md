@@ -87,3 +87,17 @@ found, and no strings are matched.
 - FR-093-AC-62 (examined)
 - FR-104 (context_only): "Definedness facts" keeps state clauses Linked
 - Mechanical call-site rewrite across 228 files (examined, clean)
+
+## Dispositions
+
+Round 1 verified against 17561b288 (fix commit on 3c43483e2). `cargo test -p qsl-semantics --test it check_mode`: 7 passed; `cargo fmt -p qsl-semantics --check` is clean. FND-004 draft path: a recursive group gives each member a `Pending` placeholder (lowering.rs:3555-3570), and `insert_node` makes any node naming a pending ref a draft (lowering.rs:2414-2434). The `walk(n - 1)` call therefore lowers through `draft_operation_keys` by construction. If that branch dropped the key, the test's search loop would panic, so the test does exercise the path, even though it does not assert the path directly.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |
+| FND-007 | rejected | Not a defect. The repo gate runs `cargo fmt --all -- --check` (Makefile:42), and origin/main is not fmt-clean at these lines (rustfmt --check exits 1 on main's typing.rs), so the hunks are needed for a green gate. They are still on the branch, although the fix commit message says they were dropped. |
