@@ -285,7 +285,10 @@ fn unsupported_claim_shapes_and_document_profiles_never_produce_acceptance() {
     let original = proof_request(CLAIM);
     for body in ["always holds(m.delivered)", "eventually[0,2] holds(m.delivered)"] {
         let mut request = original.clone();
-        let source = request["source"]["content"].as_str().unwrap().replace("eventually holds(m.delivered)", body);
+        let mut source = request["source"]["content"].as_str().unwrap().replace("eventually holds(m.delivered)", body);
+        if body.starts_with("eventually[") {
+            source = source.replace("profile inf =", "profile ev = \"quire.temporal.event-position.false-extension/v1\";\nprofile inf =").replace("Likely using inf", "Likely using ev");
+        }
         replace_checked_source(&mut request, &source);
         let (code, result) = run(&request, &[]);
         assert_eq!(code, 2, "{body}: {result}");
@@ -345,6 +348,14 @@ fn a_fresh_checker_refuses_altered_values_objectives_identities_ranks_and_provis
     change_certificate(&mut changed, |document| {
         document["identity"]["ordinal"] = json!(1);
     });
+    cases.push(changed);
+    let mut changed = original.clone();
+    changed["item"]["ordinal"] = json!(1);
+    change_certificate(&mut changed, |document| { document["identity"]["ordinal"] = json!(1); });
+    cases.push(changed);
+    let mut changed = original.clone();
+    changed["item"]["model"] = json!("foreign-model");
+    change_certificate(&mut changed, |document| { document["identity"]["model"] = json!("foreign-model"); });
     cases.push(changed);
     let mut changed = original.clone();
     change_certificate(&mut changed, |document| {
