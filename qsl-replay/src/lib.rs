@@ -344,7 +344,7 @@ pub use probability_certificate::{
     ProbabilityCertificateRejection, ProbabilityCertificateRule, ProbabilityDocumentError,
     ProbabilityDocumentIoLimits, ProbabilityDocumentLimit, ProbabilityDocumentLimits,
     ProbabilityKeyAdmission, ProbabilityObjective, ProbabilityProductKey, ProbabilitySourceError,
-    ProbabilitySourceLimits, ProbabilitySourceRequest, ProbabilityStateEvent,
+    ProbabilitySourceLimits, ProbabilitySourceRequest, ProbabilityStateEvent, ProbabilityRewardObjective,
     ProbabilityWitnessError, ProbabilityWitnessPath, ProbabilityWitnessReplay,
     ProbabilityWitnessStep, ReproducedProbabilityWitness,
 };

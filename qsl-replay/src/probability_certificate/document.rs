@@ -24,6 +24,7 @@ pub(super) use key::{model_product_key, model_product_key_with_budget};
 
 const PROFILE: &str = "quire.probability-objective/reachability/v1";
 const STATE_PROFILE: &str = "quire.probability-objective/state-predicate/v1";
+const REWARD_PROFILE: &str = "quire.probability-objective/expected-reward/v1";
 const MAX_COUNT: u64 = 9_007_199_254_740_991;
 
 /// Caller-owned byte and working-storage ceilings for certificate transport.
@@ -102,12 +103,25 @@ pub struct ProbabilityCertificateDocument {
     pub event: Option<ProbabilityStateEvent>,
     /// Absorbing failures for a direct state-predicate event.
     pub failures: Vec<ProbabilityProductKey>,
+    /// Named reward and normalized comparison unit; absent for probabilities.
+    pub reward: Option<ProbabilityRewardObjective>,
     /// Operator selected by the checked claim.
     pub optimization: ProbabilityObjective,
     /// Exact values, covering every reachable product state.
     pub values: Vec<ExactProbabilityValue>,
     /// Required positive-value progress ranks, covering every reachable state.
     pub ranking: Vec<(ProbabilityProductKey, u64)>,
+}
+
+/// FR-196's actual model-scoped reward identity and checked comparison unit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProbabilityRewardObjective {
+    /// Declaring model's structural node key.
+    pub model: quire_exact::NodeKey,
+    /// Checked reward identifier.
+    pub name: quire_exact::Identifier,
+    /// None for integer rewards; the admitted UnitId for quantities.
+    pub unit: Option<quire_exact::UnitId>,
 }
 
 /// Caller ceilings for certificate admission and independent graph checking.
@@ -227,8 +241,16 @@ struct WireObjective {
     event: Option<ProbabilityStateEvent>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     failures: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reward: Option<(Box<serde_json::value::RawValue>, String)>,
+    #[serde(default, deserialize_with = "present_unit", skip_serializing_if = "Option::is_none")]
+    unit: Option<Value>,
     optimization: String,
     fairness: Vec<Value>,
+}
+
+fn present_unit<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Value>, D::Error> {
+    Value::deserialize(deserializer).map(Some)
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -382,10 +404,15 @@ fn ordered(
 fn ratio(
     wire: WireRational,
     bits: u64,
+    reward: bool,
     meter: &mut quire_exact::Meter,
     cancel: &Cancel,
 ) -> Result<Rational, ProbabilityDocumentError> {
-    ratio_checked(wire, bits, meter, cancel, true)
+    let value = ratio_checked(wire, bits, meter, cancel, !reward)?;
+    if value < rational(0) {
+        return Err(ProbabilityDocumentError::Malformed);
+    }
+    Ok(value)
 }
 
 fn ratio_checked(
@@ -494,7 +521,7 @@ fn read_document(
     let root = parsed.root();
     let objective = root.get("objective");
     let outside_profile = matches!(root.get("kind").map(|node| node.node()), Some(quire_canonical::Node::String(kind)) if kind != "exact")
-        || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if profile != PROFILE && profile != STATE_PROFILE)
+        || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if profile != PROFILE && profile != STATE_PROFILE && profile != REWARD_PROFILE)
         || matches!(objective.and_then(|node| node.get("event")).map(|node| node.node()), Some(quire_canonical::Node::String(event)) if !matches!(event, "until" | "always"))
         || matches!(objective.and_then(|node| node.get("optimization")).map(|node| node.node()), Some(quire_canonical::Node::String(operator)) if !matches!(operator, "minimum" | "maximum" | "workload"))
         || match objective
@@ -547,17 +574,31 @@ fn read_document(
         return Err(ProbabilityDocumentError::Noncanonical);
     }
     if wire.kind != "exact"
-        || !matches!(wire.objective.profile.as_str(), PROFILE | STATE_PROFILE)
+        || !matches!(wire.objective.profile.as_str(), PROFILE | STATE_PROFILE | REWARD_PROFILE)
         || !wire.objective.fairness.is_empty()
     {
         return Err(ProbabilityDocumentError::Unsupported);
     }
     let state_profile = wire.objective.profile == STATE_PROFILE;
+    let reward_profile = wire.objective.profile == REWARD_PROFILE;
     if state_profile != wire.objective.event.is_some()
         || state_profile != wire.objective.failures.is_some()
+        || reward_profile != wire.objective.reward.is_some()
+        || reward_profile != wire.objective.unit.is_some()
     {
         return Err(ProbabilityDocumentError::Malformed);
     }
+    let reward = match (wire.objective.reward, wire.objective.unit) {
+        (Some((model, name)), Some(unit)) => Some(ProbabilityRewardObjective {
+            model: qsl_foundation::node_wire::node_key_from_text(model.get())
+                .map_err(|_| ProbabilityDocumentError::Malformed)?,
+            name: quire_exact::Identifier::new(name)
+                .map_err(|_| ProbabilityDocumentError::Malformed)?,
+            unit: super::reward::read_unit(&unit, limits.scalar_bits, cancel)?,
+        }),
+        (None, None) => None,
+        _ => return Err(ProbabilityDocumentError::Malformed),
+    };
     let failures = ordered(
         wire.objective
             .failures
@@ -598,7 +639,7 @@ fn read_document(
         poll(cancel)?;
         values.push(ExactProbabilityValue {
             state: decode_key(&row.state, limits)?,
-            value: ratio(row.value, limits.scalar_bits, meter, cancel)?,
+            value: ratio(row.value, limits.scalar_bits, reward_profile, meter, cancel)?,
         });
     }
     ordered(values.iter().map(|row| row.state.clone()))?;
@@ -617,6 +658,7 @@ fn read_document(
         targets,
         event: wire.objective.event,
         failures,
+        reward,
         optimization,
         values,
         ranking,
@@ -639,6 +681,7 @@ type SubjectGraph = (
     Option<BTreeMap<ProbabilityProductKey, u64>>,
     Option<ProbabilityStateEvent>,
     Vec<ProbabilityProductKey>,
+    Option<super::reward::RewardGraph>,
 );
 
 fn subject_graph(
@@ -670,7 +713,21 @@ fn subject_graph(
     let workload = claim_workload(system, claim)?;
     let mut state_event = None;
     let mut failures = Vec::new();
+    let mut reward = None;
     let (bound, enumerated) = match &claim.form {
+        ProbForm::ExpectedReward { bound, reward: name, until } => {
+            if qsl_semantics::check::TemporalProfile::from_identity(claim.profile.identity())
+                != Some(qsl_semantics::check::TemporalProfile::InfiniteTrace)
+            {
+                return Err(ProbabilityDocumentError::Unsupported);
+            }
+            let result = super::reward::enumerate(system, claim, name, until, reference, workload, limits, cancel)
+                .map(|(graph, ranks, costs)| {
+                    reward = Some(costs);
+                    (graph, Some(ranks))
+                });
+            (bound, result)
+        }
         ProbForm::Reach {
             bound,
             target: target @ (ReachTarget::Until(..) | ReachTarget::Always(_)),
@@ -779,6 +836,7 @@ fn subject_graph(
         bounded_ranks,
         state_event,
         failures,
+        reward,
     ))
 }
 
@@ -801,8 +859,9 @@ pub fn probability_certificate_document(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
-    let (graph, optimization, _, bounded_ranks, event, failures) =
+    let (graph, optimization, _, bounded_ranks, event, failures, reward) =
         subject_graph(system, claims, item, limits, cancel)?;
+    let stopped = event.is_some() || reward.is_some();
     let bounded = bounded_ranks.is_some();
     let mut ranks = bounded_ranks.unwrap_or_default();
     if bounded {
@@ -851,11 +910,12 @@ pub fn probability_certificate_document(
         targets: target_keys(&graph),
         event,
         failures,
+        reward: reward.map(|reward| reward.objective),
         optimization,
         values: certificate
             .values
             .iter()
-            .filter(|row| event.is_none() || graph.states.contains_key(&row.state))
+            .filter(|row| !stopped || graph.states.contains_key(&row.state))
             .cloned()
             .collect(),
         ranking: ranks.into_iter().collect(),
@@ -885,12 +945,13 @@ pub fn check_probability_certificate_document(
     if &document.identity != item {
         return Err(ProbabilityDocumentError::IdentityMismatch);
     }
-    let (graph, objective, bound, bounded_ranks, event, failures) =
+    let (graph, objective, bound, bounded_ranks, event, failures, reward) =
         subject_graph(system, claims, item, limits, cancel)?;
     if objective != document.optimization
         || target_keys(&graph) != document.targets
         || event != document.event
         || failures != document.failures
+        || reward.as_ref().map(|reward| &reward.objective) != document.reward.as_ref()
     {
         return Err(ProbabilityDocumentError::ObjectiveMismatch);
     }
@@ -933,7 +994,7 @@ pub fn check_probability_certificate_document(
     }
     for (key, state) in &graph.states {
         poll(cancel)?;
-        if state.terminal.is_some() || values.get(key).is_some_and(|value| *value == rational(0)) {
+        if reward.is_some() || state.terminal.is_some() || values.get(key).is_some_and(|value| *value == rational(0)) {
             continue;
         }
         let rank = ranks.get(key).ok_or(ProbabilityDocumentError::Malformed)?;
@@ -954,7 +1015,7 @@ pub fn check_probability_certificate_document(
         }
     }
     let mut check = check_document_equalities(
-        &graph, &values, objective, &bound, limits, cancel, &mut meter,
+        &graph, &values, objective, &bound, reward.as_ref(), limits, cancel, &mut meter,
     )?;
     if let ExactProbabilityCertificateCheck::Accepted(accepted) = &mut check {
         accepted.document = Some(bytes.into());
@@ -991,7 +1052,7 @@ pub(super) fn document_admission_error(
     }
 }
 
-fn check_scalar(
+pub(super) fn check_scalar(
     value: &Rational,
     limits: ProbabilityDocumentLimits,
 ) -> Result<(), ProbabilityDocumentError> {
@@ -1012,11 +1073,13 @@ fn check_scalar(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn check_document_equalities(
     graph: &CheckerGraph,
     values: &BTreeMap<ProbabilityProductKey, Rational>,
     objective: ProbabilityObjective,
     bound: &Bound,
+    reward: Option<&super::reward::RewardGraph>,
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
     meter: &mut quire_exact::Meter,
@@ -1025,7 +1088,7 @@ fn check_document_equalities(
         poll(cancel)?;
         let value = values.get(key).ok_or(ProbabilityDocumentError::Malformed)?;
         let expected = match state.terminal {
-            Some(true) => rational(1),
+            Some(true) => rational(i64::from(reward.is_none())),
             Some(false) => rational(0),
             None => {
                 if state.choices.is_empty()
@@ -1034,10 +1097,10 @@ fn check_document_equalities(
                     return Err(ProbabilityDocumentError::Unsupported);
                 }
                 let mut expected: Option<Rational> = None;
-                for choice in &state.choices {
+                for (choice_index, choice) in state.choices.iter().enumerate() {
                     let mut sum = rational(0);
                     let mut mass = rational(0);
-                    for edge in choice {
+                    for (edge_index, edge) in choice.iter().enumerate() {
                         poll(cancel)?;
                         if edge.probability < rational(0) {
                             return Err(ProbabilityDocumentError::Malformed);
@@ -1046,8 +1109,19 @@ fn check_document_equalities(
                         let next = values
                             .get(&edge.target)
                             .ok_or(ProbabilityDocumentError::Malformed)?;
+                        let next = if let Some(reward) = reward {
+                            let cost = reward.costs.get(key)
+                                .and_then(|choices| choices.get(choice_index))
+                                .and_then(|costs| costs.get(edge_index))
+                                .ok_or(ProbabilityDocumentError::Malformed)?;
+                            check_scalar(cost, limits)?;
+                            arithmetic(quire_exact::RationalArithmetic::Add(cost, next), meter, cancel)?
+                        } else {
+                            next.clone()
+                        };
+                        check_scalar(&next, limits)?;
                         let product = arithmetic(
-                            quire_exact::RationalArithmetic::Multiply(&edge.probability, next),
+                            quire_exact::RationalArithmetic::Multiply(&edge.probability, &next),
                             meter,
                             cancel,
                         )?;
@@ -1176,6 +1250,7 @@ mod tests {
     pub(super) fn document() -> ProbabilityCertificateDocument {
         let key = fixture_key(0);
         ProbabilityCertificateDocument {
+            reward: None,
             identity: ObligationIdentity::new(crate::fixture_node(1), None, 0),
             targets: vec![key.clone()],
             event: None,
@@ -1417,6 +1492,7 @@ mod tests {
                 &values,
                 ProbabilityObjective::Minimum,
                 &Bound::AtLeast(rational(1)),
+                None,
                 limits,
                 &cancel,
                 &mut meter,

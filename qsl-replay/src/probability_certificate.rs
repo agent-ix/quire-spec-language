@@ -24,6 +24,7 @@ mod key_admission;
 pub use key_admission::ProbabilityKeyAdmission;
 mod document;
 mod state_predicate;
+mod reward;
 pub use bounded::probabilistic_formula_monitor_context;
 mod source;
 pub use document::*;
