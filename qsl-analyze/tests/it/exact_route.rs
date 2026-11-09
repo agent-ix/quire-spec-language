@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Byte-derived EN-5 claims through the public analyze and provider entries.
+//! Partial EN-5 routing evidence through the existing analyze/provider API.
 //! Certificate contents are tested by `exact_probabilistic_item`; these tests
 //! exercise request-owned subjects, routing and record parity.
-//! FR-280-AC-2 tags cover the EN-5 proof and budget-stop members here;
-//! other TC-762 engine members retain their own entry tests.
+//! FR-280-AC-2 and FR-281-AC-1 tags bind only the EN-5 proof and budget-stop
+//! assertions here. Current-contract `NegotiatedItem`/`SourceProvision`, the
+//! generalized request/result API, and public certificate/counterexample
+//! projection are not delivered by this slice. These obligations and other
+//! TC-762 engine members remain open; these tests do not complete the criteria.
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
@@ -76,6 +79,9 @@ fn one_state() -> ExactProbLimits {
     }
 }
 
+/// Partial AC evidence: an existing-API exact member returns equal certified
+/// records. This does not exercise current negotiation/provision or public
+/// certificate/counterexample projection.
 #[trace("TC-761", "TC-762", "FR-280-AC-2", "FR-281-AC-1")]
 #[test]
 fn exact_claim_is_certified_and_equal_through_analyze_and_provider() {
@@ -102,6 +108,8 @@ fn exact_claim_is_certified_and_equal_through_analyze_and_provider() {
     assert_eq!(analyzed.aggregate, Ok(Aggregate::Attainable));
 }
 
+/// Partial AC evidence: existing-API routing preserves EN-5's typed budget
+/// stop. Current negotiation/provision and generalized results remain open.
 #[trace("TC-761", "TC-763", "FR-280-AC-2", "FR-281-AC-6")]
 #[test]
 fn exact_state_budget_settles_incomplete_through_both_entries() {
