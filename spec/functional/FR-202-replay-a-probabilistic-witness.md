@@ -135,8 +135,9 @@ race gives that post-key and elapsed amount.
 #### Checked-subject path-set entry
 
 In addition to the wire facade below, layer 6 SHALL expose a checked-subject
-path-set replay entry for untimed acyclic unbounded reachability claims and the
-bounded event-position subset below, with no fairness,
+path-set replay entry for untimed acyclic unbounded reachability claims, the
+acyclic infinite-trace state-predicate subset and the bounded event-position
+subset below, with no fairness,
 one initial state, at most one bound instance, and a deterministic memoryless
 witness scheduler (or the bound workload). It SHALL take the `CheckedPackage`,
 its admitted `ModelSystem`, the claim occurrence and binding, typed path-set
@@ -180,6 +181,78 @@ randomized schedulers, fairness, multiple initial states/instances, timed or
 other claim forms outside this slice. It SHALL NOT project them onto this
 slice. This additional entry does not change the wire facade obligation, the
 broader replay rules, or any public JSON key or witness codec.
+
+#### Acyclic infinite-trace state-predicate path sets
+
+The checked-subject entry SHALL additionally admit `holds(A) until holds(B)`
+and `always holds(P)` under `INFINITE-TRACE`, using FR-201's acyclic
+state-predicate admission: one initial state, at most one actual S3 binding,
+empty fairness, untimed subjects, existing Markov successor restrictions,
+minimum `AtLeast`, maximum `AtMost`, or a single resolved workload distribution
+with either comparison. Source bounds SHALL retain `MinAtLeast`/`MaxAtMost`
+threshold admission in the open interval (0,1); event probabilities 0 and 1
+remain valid. Nested/bounded temporal forms, event predicates, rewards,
+unresolved workloads and residual post-draw choices outside that admission
+SHALL remain unsupported. No horizon or bounded false-extension rule applies.
+
+Before absorbing any outcome, the core SHALL independently enumerate the
+original reachable model graph and establish acyclicity apart from implicit
+terminal stutter. A cycle beyond an initial or intermediate decided outcome
+SHALL still refuse admission. An engine's stopped graph, supplied labels or
+terminal flags SHALL NOT establish admission or replay agreement.
+
+Replay SHALL bind the actual checked occurrence, formula, infinite-trace
+profile, threshold, scheduler/workload and S3 parameter node/selected instance
+from the package and admitted subject. Qualified state-predicate evaluation
+SHALL classify position 0 and each actual semantic successor independently.
+For until, B decides acceptance even when A is false; neither A nor B decides
+rejection; A and not B continues until a decision or a genuine model terminal,
+where it rejects because infinite stutter never reaches B. For always, not-P
+decides rejection immediately, including before a later P state; nonterminal P
+continues, and terminal P decides acceptance because P holds on its infinite
+stutter. A live P prefix SHALL NOT establish always. Paths SHALL stop at their
+first decision. Terminal closure contributes probability 1 and no fabricated
+transition, draw, elapsed time or synthetic state.
+
+Evidence SHALL use actual initial/post-state content, semantic scheduled
+identities, resolved model transitions and draws, and FR-196's complete
+binding-bearing model-state keys with absent monitor, accumulator and pending
+components null, as in FR-201's state-predicate profile. Formula-monitor keys,
+local state/action numbers, surrogate predicates, fabricated S3 nodes or
+synthetic terminal keys SHALL NOT substitute. This reuses the native evidence
+types and independent transition re-enumeration, not the reachability-only
+first-target/terminal-nonreach classifier or a trusted solver graph.
+
+Each path SHALL have positive recomputed exact mass. The core SHALL check
+pairwise prefix-free, disjoint execution/draw cylinders and deterministic
+memoryless scheduler consistency at every represented full choice key.
+Distinct supported draws reaching one state remain distinct cylinders;
+duplicates SHALL NOT multiply mass. Workload evidence SHALL contain no witness
+policy; replay SHALL rederive its exact action and draw weights. A witness
+policy need cover only represented choice states and requires no optimality
+assertion, because the admitted remaining choices can be extended consistently.
+
+Let R sum the submitted rejecting-path masses and A sum the accepting-path
+masses. For minimum `AtLeast theta` (or workload `AtLeast`), every submitted
+path SHALL reject and replay SHALL require `R > 1 - theta`; the event probability
+under that policy/workload is at most `1 - R < theta`. For maximum `AtMost theta`
+(or workload `AtMost`), every path SHALL accept and replay SHALL require
+`A > theta`; the event probability is at least A. These are sufficient bounds,
+not an exact whole-event value. Unrepresented mass SHALL remain unknown.
+Equality, insufficient mass, opposite-verdict paths, duplicate/overlapping
+cylinders or continuation past a decision SHALL yield replay parity without
+a reproduced token.
+
+EN-5 SHALL emit this subset's path evidence only from exact results. `Bounds`
+intervals and `PrecisionBudget` SHALL NOT be relabelled exact. The existing
+opaque matching-token and retained-evidence settlement contract applies;
+certificate acceptance, a bare engine verdict or a reachability witness alone
+SHALL NOT settle these events refuted. Refused predicates and unsupported
+inputs retain their typed outcomes. Expansion/work/storage/arithmetic exhaustion
+and cancellation, including original-graph admission and the final acceptance
+poll, SHALL yield no truth, reproduced token or accepted evidence in a refuted
+record. This entry adds no wire spelling or shared FR-413 codec; that facade
+remains blocked on the closed shared contract prerequisite.
 
 #### Bounded checked-subject path sets
 
@@ -337,6 +410,12 @@ JSON spelling, wire schema or transport capability.
 | FR-202-AC-14 | At horizon 0, initially true P gives an empty accepting path of mass 1 refuting AtMost 1/2, while initially false P gives an empty rejecting path refuting AtLeast 1/2; opposite-verdict empty paths yield parity. At horizon 2, a terminal initially false P closes by false extension with mass 1 and no fabricated stutter step, refuting AtLeast 1/2. A live undecided prefix after one failure does not refute; after two failures horizon rejection does, even though another model action is enabled. An initial true P path extended by an operation cannot reproduce. | Test |
 | FR-202-AC-15 | In AC-12 a missing represented path cannot be counted, equal-threshold represented mass yields parity, and a changed action/draw/post-state, duplicated draw-cylinder, overlapping path or inconsistent choice at one full key cannot produce a token. First-hit masses under slow are only 3/4 and cannot refute AtMost 4/5. A policy may choose different enabled actions at the same model content with different remaining horizons; this is a consistent full-product policy. | Test |
 | FR-202-AC-16 | AC-12 replay with pre-cancellation, cancellation at its final acceptance poll, or each configured expansion/work/storage/arithmetic budget exhausted returns its typed incomplete cause with no truth, token or accepted evidence in a refuted record. A refused predicate preserves its typed refusal; FR-197 Bounds and PrecisionBudget, unsupported bounded until/always/reward/timed/fair inputs, subsystem evidence and nonreplayed exact results produce no bounded reproduced token. The native entry needs neither S4 emission nor QSpec FR-413 document transport. | Test |
+| FR-202-AC-17 | Until fixture: initial A-and-not-B has actions a and b reaching B-and-not-A with probabilities 1/4 and 3/4, otherwise neither-A-nor-B followed by terminal B. At threshold 1/2, a's rejecting cylinder of mass 3/4 refutes minimum AtLeast, and b's accepting cylinder of mass 3/4 refutes maximum AtMost. Equal-weight resolved workload has accepting and rejecting mass 1/2 each: its rejecting cylinders refute AtLeast 3/5 and accepting cylinders refute AtMost 2/5. All four produce only their matching reproduced token and retain semantic evidence; repeat replay gives equal outcomes. The failure prefix stops before its later B; the B-and-not-A path accepts. | Test |
+| FR-202-AC-18 | Always fixture: initial nonterminal P has actions a and b reaching terminal P with probabilities 1/4 and 3/4, otherwise not-P followed by terminal P. At threshold 1/2, a's not-P cylinder of mass 3/4 refutes minimum AtLeast and b's terminal-P cylinder of mass 3/4 refutes maximum AtMost. Equal-weight resolved workload refutes AtLeast 3/5 with rejecting mass 1/2 and AtMost 2/5 with accepting mass 1/2. Later P cannot repair the not-P prefix; the initial live P alone cannot be accepted. | Test |
+| FR-202-AC-19 | With admitted threshold 1/2, empty paths of mass 1 refute AtMost for initial B-and-not-A until and initial terminal-P always; empty paths refute AtLeast for initial neither-A-nor-B until, terminal A-and-not-B until, and initial not-P always even with a later terminal P successor. Terminal A-and-not-B has until probability 0 and terminal P has always probability 1 without a fabricated stutter step. Source threshold endpoints remain refused; probabilities 0 and 1 are admitted. | Test |
+| FR-202-AC-20 | In AC-17/18, changed source/package, foreign claim occurrence or S3 binding refuses identity mismatch; a changed formula that changes the represented verdict, changed threshold to equality, changed actual action/draw/post-state/full key, fabricated binding node, missing binding component or a formula-monitor key prevents a token. Formula spelling alone need not fail if the actual bound claim has identical semantics and identity checks pass. A wrong-verdict path, live undecided prefix, path extended beyond first success/failure, duplicate cylinder or prefix overlap yields no reproduced token; insufficient/equal mass yields replay parity. | Test |
+| FR-202-AC-21 | AC-17/18 two evidence paths demanding different actions at one complete choice key fail policy consistency; a policy under a resolved workload fails replay. Distinct supported draws reaching the same post-state contribute their separate exact masses once, while repeating a draw cannot increase mass. A raw reachable cycle beyond initial B for until or initial not-P for always is unsupported despite immediate absorption; acyclic counterparts remain admitted. Fairness, timed/reward/nested/bounded forms, multiple initials/bindings, unresolved workload, subsystem and randomized-policy evidence remain unsupported in this subset. | Test |
+| FR-202-AC-22 | AC-17/18 pre-cancellation, cancellation at final acceptance, or exhaustion of each caller expansion/work/storage/arithmetic limit during original admission or replay preserves its typed incomplete outcome with no truth, token or accepted evidence in a refuted record. Refused predicates preserve refusal. Bounds, PrecisionBudget, certificate acceptance alone and unreplayed exact engine verdicts cannot settle refuted. Native replay needs no emitted package or witness wire codec and imports no analyzer graph types. | Test |
 
 ## Dependencies
 
