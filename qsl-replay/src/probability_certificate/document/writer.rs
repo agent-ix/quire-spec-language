@@ -189,7 +189,24 @@ impl Encode for Events<'_> {
         writer.name("objective")?;
         writer.begin_object()?;
         writer.name("profile")?;
-        writer.string(PROFILE)?;
+        writer.string(if self.document.event.is_some() {
+            STATE_PROFILE
+        } else {
+            PROFILE
+        })?;
+        if let Some(event) = self.document.event {
+            writer.name("event")?;
+            writer.string(match event {
+                ProbabilityStateEvent::Until => "until",
+                ProbabilityStateEvent::Always => "always",
+            })?;
+            writer.name("failures")?;
+            writer.begin_array()?;
+            for (index, key) in self.document.failures.iter().enumerate() {
+                self.key(key, writer, index != 0)?;
+            }
+            writer.end_array()?;
+        }
         writer.name("targets")?;
         writer.begin_array()?;
         for (index, key) in self.document.targets.iter().enumerate() {
@@ -247,9 +264,13 @@ fn encode(
     cancel: &Cancel,
 ) -> Result<Vec<u8>, ProbabilityDocumentError> {
     poll(cancel)?;
+    if document.event.is_none() && !document.failures.is_empty() {
+        return Err(ProbabilityDocumentError::Malformed);
+    }
     let rows = document
         .targets
         .len()
+        .max(document.failures.len())
         .max(document.values.len())
         .max(document.ranking.len());
     if rows > limits.states {

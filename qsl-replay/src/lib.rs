@@ -340,9 +340,9 @@ pub use probability_certificate::{
     ProbabilityCertificateLocus, ProbabilityCertificateRejection, ProbabilityCertificateRule,
     ProbabilityDocumentError, ProbabilityDocumentIoLimits, ProbabilityDocumentLimit,
     ProbabilityDocumentLimits, ProbabilityObjective, ProbabilityProductKey, ProbabilitySourceError,
-    ProbabilitySourceLimits, ProbabilitySourceRequest, ProbabilityWitnessError,
-    ProbabilityWitnessPath, ProbabilityWitnessReplay, ProbabilityWitnessStep,
-    ReproducedProbabilityWitness,
+    ProbabilitySourceLimits, ProbabilitySourceRequest, ProbabilityStateEvent,
+    ProbabilityWitnessError, ProbabilityWitnessPath, ProbabilityWitnessReplay,
+    ProbabilityWitnessStep, ReproducedProbabilityWitness,
 };
 pub use product_action::{
     FreeDelayActionRow, FreeDelayRow, FreeDelaysRace, FreeRacer, GivenRacer, NotMixedRace,

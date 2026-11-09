@@ -412,9 +412,9 @@ fn a_real_resolved_workload_uses_checked_weights_and_refuses_authored_zero_weigh
 #[test]
 fn unsupported_claim_shapes_and_document_profiles_never_produce_acceptance() {
     let original = proof_request(CLAIM);
-    for body in [
-        "always holds(m.delivered)",
-        "eventually[1,2] holds(m.delivered)",
+    for (body, status) in [
+        ("always holds(m.delivered)", "refused"),
+        ("eventually[1,2] holds(m.delivered)", "unsupported"),
     ] {
         let mut request = original.clone();
         let mut source = request["source"]["content"]
@@ -427,7 +427,7 @@ fn unsupported_claim_shapes_and_document_profiles_never_produce_acceptance() {
         replace_checked_source(&mut request, &source);
         let (code, result) = run(&request, &[]);
         assert_eq!(code, 2, "{body}: {result}");
-        assert_eq!(result["status"], "unsupported", "{body}: {result}");
+        assert_eq!(result["status"], status, "{body}: {result}");
     }
     for (member, value) in [
         ("kind", "lower"),

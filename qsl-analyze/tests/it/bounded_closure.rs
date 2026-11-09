@@ -393,6 +393,8 @@ fn a_formula_product_embeds_the_real_complete_monitor_without_inner_transport() 
         ])
     );
     let document = qsl_replay::ProbabilityCertificateDocument {
+        event: None,
+        failures: Vec::new(),
         identity: qsl_replay::ObligationIdentity::new(
             quire_exact::NodeKey::new(
                 "fixture",

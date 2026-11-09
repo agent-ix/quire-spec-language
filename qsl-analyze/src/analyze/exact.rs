@@ -41,9 +41,9 @@ use quire_exact::{Cancel, ObjectReference, Rational};
 use super::items::{admission, BROKEN, NOT_YET};
 use super::{AnalyzeItem, EngineReport, Refusal};
 use crate::exact_probabilistic::{
-    build_retaining_monitor, decide_bounded_event, decide_reachability, manifest as en5,
-    settle_product_refusal, ExtRational, FhResult, ProbBuild, ProbProduct, ProductRefusal,
-    ProductRequest, UnboundedError, UnboundedObjective,
+    build_retaining_monitor, decide_always, decide_bounded_event, decide_reachability,
+    decide_until, manifest as en5, settle_product_refusal, ExtRational, FhResult, ProbBuild,
+    ProbProduct, ProductRefusal, ProductRequest, UnboundedError, UnboundedObjective,
 };
 
 /// The certificate EN-5 produced and the core's checker accepted for a
@@ -234,7 +234,7 @@ fn run(
     let (bound, bounded_formula) = match &claim.form {
         ProbForm::Reach {
             bound,
-            target: ReachTarget::Eventually(_),
+            target: ReachTarget::Eventually(_) | ReachTarget::Until(..) | ReachTarget::Always(_),
         } => (bound, None),
         ProbForm::Probability {
             bound,
@@ -247,6 +247,19 @@ fn run(
         } => (bound, Some(formula)),
         _ => return not_yet(),
     };
+    let state_predicate = matches!(
+        &claim.form,
+        ProbForm::Reach {
+            target: ReachTarget::Until(..) | ReachTarget::Always(_),
+            ..
+        }
+    );
+    if state_predicate
+        && qsl_semantics::check::TemporalProfile::from_identity(claim.profile.identity())
+            != Some(qsl_semantics::check::TemporalProfile::InfiniteTrace)
+    {
+        return not_yet();
+    }
     if !claim.fairness.is_empty() {
         return not_yet();
     }
@@ -307,7 +320,25 @@ fn run(
             Err(_) => return broken(),
         }
     } else {
-        let solved = match decide_reachability(&product, &target, objective, &limits) {
+        let result = match &claim.form {
+            ProbForm::Reach {
+                target: ReachTarget::Until(..),
+                ..
+            } => {
+                let until = product
+                    .labels
+                    .iter()
+                    .map(|labels| labels.get(1).copied().unwrap_or(false))
+                    .collect::<Vec<_>>();
+                decide_until(&product, &target, &until, objective, &limits)
+            }
+            ProbForm::Reach {
+                target: ReachTarget::Always(_),
+                ..
+            } => decide_always(&product, &target, objective, &limits),
+            _ => decide_reachability(&product, &target, objective, &limits),
+        };
+        let solved = match result {
             Ok(solved) => solved,
             Err(UnboundedError::MaxPolicyIterations) => {
                 return settled(
@@ -351,6 +382,9 @@ fn run(
     };
     let reference = binding.as_ref().map(|bound| &bound.reference);
     if !holds {
+        if state_predicate {
+            return not_yet();
+        }
         let bounded_monitor = match (bounded_formula, monitor) {
             (Some(formula), Some(monitor)) => {
                 let context =
@@ -425,9 +459,20 @@ fn run(
                 cancel,
             )
         }
-        (None, _) => {
-            certificate_of(&product, reference, &values).map_err(ProbabilityDocumentError::from)
-        }
+        (None, _) => certificate_of(
+            &product,
+            reference,
+            &values,
+            if state_predicate {
+                qsl_replay::ProbabilityDocumentIoLimits {
+                    bytes: document_limits.bytes,
+                    storage_bytes: document_limits.storage_bytes,
+                }
+            } else {
+                qsl_replay::ProbabilityDocumentIoLimits::default()
+            },
+            cancel,
+        ),
         (Some(_), None) => return broken(),
     };
     let mut certificate = match certificate {
@@ -447,6 +492,7 @@ fn run(
             document_limits,
             cancel,
         )?;
+        certificate.values = document.values.clone();
         let bytes = write_probability_certificate(&document, document_limits, cancel)?;
         let check = check_probability_certificate_document(
             &system,
@@ -621,14 +667,21 @@ fn certificate_of(
     product: &ProbProduct,
     binding: Option<&ObjectReference>,
     values: &[ExtRational],
-) -> Result<ExactProbabilityCertificate, ExactProbabilityGraphError> {
+    io: qsl_replay::ProbabilityDocumentIoLimits,
+    cancel: &Cancel,
+) -> Result<ExactProbabilityCertificate, ProbabilityDocumentError> {
     let mut entries = Vec::with_capacity(product.states.len());
     for (state, value) in product.states.iter().zip(values) {
         let ExtRational::Finite(value) = value else {
-            return Err(ExactProbabilityGraphError::ExpansionRefused);
+            return Err(ExactProbabilityGraphError::ExpansionRefused.into());
         };
         entries.push(ExactProbabilityValue {
-            state: ProbabilityProductKey::for_model_state(binding, &state.model)?,
+            state: ProbabilityProductKey::for_model_state_with_limits(
+                binding,
+                &state.model,
+                io,
+                cancel,
+            )?,
             value: value.clone(),
         });
     }
@@ -637,7 +690,7 @@ fn certificate_of(
         .windows(2)
         .any(|pair| pair[0].state == pair[1].state)
     {
-        return Err(ExactProbabilityGraphError::ExpansionRefused);
+        return Err(ExactProbabilityGraphError::ExpansionRefused.into());
     }
     Ok(ExactProbabilityCertificate { values: entries })
 }

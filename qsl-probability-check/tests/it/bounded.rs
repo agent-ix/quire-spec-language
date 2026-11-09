@@ -35,7 +35,7 @@ fn claim(scheduler: &str, operator: &str, threshold: &str, horizon: u64) -> Stri
     format!("probabilistic Likely using inf on M over (m: M::Msg) under {scheduler} on origin {{ probability {operator} {threshold} [ eventually[0,{horizon}] holds(m.delivered) ] }}\n")
 }
 
-fn compile_source(
+pub(super) fn compile_source(
     source: &str,
 ) -> (
     spine::CheckedUnit,
@@ -72,7 +72,11 @@ fn compile_source(
     (checked, packages)
 }
 
-fn request(source: &str, snapshot: &[u8], exact: ExactProbLimits) -> (Option<Value>, Settlement) {
+pub(super) fn request(
+    source: &str,
+    snapshot: &[u8],
+    exact: ExactProbLimits,
+) -> (Option<Value>, Settlement) {
     let identity = SourceIdentity::new("test", "bounded-certificate-source");
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
@@ -112,15 +116,21 @@ fn request(source: &str, snapshot: &[u8], exact: ExactProbLimits) -> (Option<Val
     };
     let system = qsl_eval::simulation::model::ModelSystem::new(simulation.clone()).unwrap();
     let binding = qsl_replay::claim_binding(&system, claim).unwrap().unwrap();
-    let context =
-        qsl_replay::probabilistic_formula_monitor_context(claim, Some(&binding.reference)).unwrap();
-    assert_eq!(
-        context.binding[0].parameter,
-        *claim.over.as_ref().unwrap().node().unwrap()
-    );
-    assert!(
-        matches!(&context.binding[0].value, qsl_eval::automaton::ContextBindingValue::Instance(key) if key == &binding.instance.key)
-    );
+    if matches!(
+        claim.form,
+        qsl_semantics::check::ProbForm::Probability { .. }
+    ) {
+        let context =
+            qsl_replay::probabilistic_formula_monitor_context(claim, Some(&binding.reference))
+                .unwrap();
+        assert_eq!(
+            context.binding[0].parameter,
+            *claim.over.as_ref().unwrap().node().unwrap()
+        );
+        assert!(
+            matches!(&context.binding[0].value, qsl_eval::automaton::ContextBindingValue::Instance(key) if key == &binding.instance.key)
+        );
+    }
     let engines = Engines::qsl().unwrap();
     let mut records = analyze_items(
         &engines,
@@ -184,7 +194,7 @@ fn request(source: &str, snapshot: &[u8], exact: ExactProbLimits) -> (Option<Val
     (Some(request), record.settlement)
 }
 
-fn proof(source: &str, snapshot: &[u8]) -> Value {
+pub(super) fn proof(source: &str, snapshot: &[u8]) -> Value {
     let (request, value) = request(source, snapshot, ExactProbLimits::default());
     request.unwrap_or_else(|| {
         panic!(
@@ -194,11 +204,11 @@ fn proof(source: &str, snapshot: &[u8]) -> Value {
     })
 }
 
-fn run(request: &Value) -> (i32, Value) {
+pub(super) fn run(request: &Value) -> (i32, Value) {
     run_with(request, &[])
 }
 
-fn run_with(request: &Value, arguments: &[&str]) -> (i32, Value) {
+pub(super) fn run_with(request: &Value, arguments: &[&str]) -> (i32, Value) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_qsl-probability-check"))
         .args(arguments)
         .stdin(Stdio::piped())
@@ -220,11 +230,11 @@ fn run_with(request: &Value, arguments: &[&str]) -> (i32, Value) {
     (output.status.code().unwrap(), value)
 }
 
-fn document(request: &Value) -> Value {
+pub(super) fn document(request: &Value) -> Value {
     serde_json::from_str(request["certificate"].as_str().unwrap()).unwrap()
 }
 
-fn key(text: &Value) -> Value {
+pub(super) fn key(text: &Value) -> Value {
     serde_json::from_slice(&URL_SAFE_NO_PAD.decode(text.as_str().unwrap()).unwrap()).unwrap()
 }
 
@@ -267,7 +277,7 @@ fn bounded_claim_over_is_a_real_s3_parameter_with_its_actual_model_type() {
     assert!(matches!(root.body(), BodyTerm::Aggregate(body) if body.members.is_empty()));
 }
 
-fn mutate(request: &Value, change: impl FnOnce(&mut Value)) -> Value {
+pub(super) fn mutate(request: &Value, change: impl FnOnce(&mut Value)) -> Value {
     let mut changed = request.clone();
     let mut doc = document(request);
     change(&mut doc);
@@ -275,7 +285,7 @@ fn mutate(request: &Value, change: impl FnOnce(&mut Value)) -> Value {
     changed
 }
 
-fn alter_keys(document: &mut Value, change: impl Fn(&mut Value)) {
+pub(super) fn alter_keys(document: &mut Value, change: impl Fn(&mut Value)) {
     let alter = |text: &mut Value| {
         let mut state = key(text);
         change(&mut state);
@@ -292,11 +302,14 @@ fn alter_keys(document: &mut Value, change: impl Fn(&mut Value)) {
                 .unwrap()
         });
     }
-    let targets = document["objective"]["targets"].as_array_mut().unwrap();
-    for target in targets.iter_mut() {
-        alter(target);
+    for member in ["targets", "failures"] {
+        if let Some(targets) = document["objective"][member].as_array_mut() {
+            for target in targets.iter_mut() {
+                alter(target);
+            }
+            targets.sort_by_key(|target| URL_SAFE_NO_PAD.decode(target.as_str().unwrap()).unwrap());
+        }
     }
-    targets.sort_by_key(|target| URL_SAFE_NO_PAD.decode(target.as_str().unwrap()).unwrap());
 }
 
 #[trace("TC-636", "FR-201-AC-12", "FR-282-AC-13")]

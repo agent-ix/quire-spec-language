@@ -2640,3 +2640,94 @@ fn an_mdp_undefined_path_names_the_post_state_taken_at_each_draw() {
     assert!(plain.states.iter().any(|key| key.model == resolved.model));
     assert_eq!(step.target, *resolved);
 }
+
+#[trace("TC-633", "FR-201-AC-15")]
+#[test]
+fn until_minimum_retains_absorbing_failure_in_qualitative_analysis() {
+    use qsl_analyze::exact_probabilistic::{decide_until, ExtRational};
+    let world = World::new(&prob_world::link(
+        "probabilistic FirstSend using inf on M over (m: M::Msg) under every scheduler on origin \
+         { probability >= 0.5 [ holds(m.attempts = 0) until holds(m.delivered) ] }",
+    ));
+    let product = built(&world, "FirstSend");
+    let from = product
+        .labels
+        .iter()
+        .map(|labels| labels[0])
+        .collect::<Vec<_>>();
+    let target = product
+        .labels
+        .iter()
+        .map(|labels| labels[1])
+        .collect::<Vec<_>>();
+    for (objective, numerator, denominator) in [
+        (UnboundedObjective::Min, 4, 5),
+        (UnboundedObjective::Max, 9, 10),
+    ] {
+        let result = decide_until(
+            &product,
+            &from,
+            &target,
+            objective,
+            &ExactProbLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            result.values[start(&product).index()],
+            ExtRational::Finite(ratio(numerator, denominator))
+        );
+        for (index, labels) in product.labels.iter().enumerate() {
+            if !labels[0] && !labels[1] {
+                assert_eq!(result.values[index], ExtRational::Finite(ratio(0, 1)));
+            }
+        }
+    }
+}
+
+#[trace("TC-633", "FR-201-AC-15")]
+#[test]
+fn until_avoidance_cannot_cross_an_already_reached_target() {
+    use qsl_analyze::exact_probabilistic::{decide_until, ExtRational};
+    let world = World::new(&prob_world::link(
+        "probabilistic ForGraph using inf on M over (m: M::Msg) under every scheduler on origin \
+         { probability >= 0.5 [ eventually holds(m.delivered) ] }",
+    ));
+    let seed = built(&world, "ForGraph");
+    let ids = seed.ids().take(3).collect::<Vec<_>>();
+    let states = seed.states.into_iter().take(3).collect();
+    let edge = |from: usize, to: usize| ProbEdge {
+        from: ids[from],
+        to: ids[to],
+        choice: ProductAction::TerminalStutter,
+        action: None,
+        draw: None,
+        probability: ratio(1, 1),
+        rewards: Vec::new(),
+    };
+    let product = ProbProduct {
+        states,
+        kind: ProductKind::Mdp,
+        edges: vec![edge(0, 1), edge(1, 2), edge(2, 2)],
+        initial: Vec::new(),
+        decided: Vec::new(),
+        labels: Vec::new(),
+        fairness_operations: Vec::new(),
+        fairness: Vec::new(),
+    };
+    let result = decide_until(
+        &product,
+        &[true, true, true],
+        &[false, true, false],
+        UnboundedObjective::Min,
+        &ExactProbLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        result.values,
+        vec![
+            ExtRational::Finite(ratio(1, 1)),
+            ExtRational::Finite(ratio(1, 1)),
+            ExtRational::Finite(ratio(0, 1))
+        ]
+    );
+}
