@@ -20,9 +20,15 @@ mod coverage;
 mod exec;
 mod kernel;
 mod prepared;
+mod relocations;
 mod translate;
 
 pub use coverage::coverage;
 pub use prepared::{CallableEntry, Jit, PreparedJit};
 #[cfg(feature = "test-support")]
 pub use prepared::{KernelCall, KernelRecorder};
+#[cfg(feature = "test-support")]
+pub use relocations::{
+    check_call_targets, BlockRelocations, CallTarget, IndirectSource, Relocation, RelocationKind,
+    StrayCall, StrayCallKind,
+};

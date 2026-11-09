@@ -40,6 +40,21 @@ pub(crate) enum Halt {
     Fault(&'static str),
 }
 
+/// The symbol of the test code generator's stray call target (FR-561-AC-3).
+#[cfg(feature = "test-support")]
+pub(crate) const STRAY_SYMBOL: &str = "qsl_jit_stray";
+
+/// A call target outside the kernel table and the prepared blocks, which only
+/// the FR-561-AC-3 test code generator emits calls to; it does nothing.
+#[cfg(feature = "test-support")]
+extern "C" fn stray(_frame: *mut c_void) {}
+
+/// The address of [`stray`].
+#[cfg(feature = "test-support")]
+pub(crate) fn stray_address() -> i64 {
+    (stray as *const ()) as usize as i64
+}
+
 /// FR-561: the fixed set of kernel entry points generated code may call.
 /// This backend's table has one entry, the shim, which dispatches on the
 /// operation table by index.
@@ -191,7 +206,12 @@ impl Machine {
             .finish(settings::Flags::new(flags))
             .map_err(|_| Refused)?;
         let mut builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
-        builder.symbol("qsl_jit_shim", KernelTable { shim }.shim() as *const u8);
+        builder.symbol(
+            crate::relocations::KERNEL_SHIM_SYMBOL,
+            KernelTable { shim }.shim() as *const u8,
+        );
+        #[cfg(feature = "test-support")]
+        builder.symbol(STRAY_SYMBOL, stray as *const u8);
         let mut module = JITModule::new(builder);
         let pointer = module.target_config().pointer_type();
         let mut signature = module.make_signature();
@@ -200,7 +220,11 @@ impl Machine {
         }
         signature.returns.push(AbiParam::new(types::I64));
         let id = module
-            .declare_function("qsl_jit_shim", Linkage::Import, &signature)
+            .declare_function(
+                crate::relocations::KERNEL_SHIM_SYMBOL,
+                Linkage::Import,
+                &signature,
+            )
             .map_err(|_| Refused)?;
         Ok((
             Self {
