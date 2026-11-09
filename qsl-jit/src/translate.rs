@@ -28,8 +28,8 @@ use quire_exact::{
 use quire_semantic_value::declaration::CheckedEquality;
 use quire_semantic_value::location::ExpressionLocation;
 
-use crate::classify::{untranslated, Outside};
 use crate::exec::Shim;
+use qsl_eval::execution::{untranslated, Outside};
 
 /// Deepest expression this backend translates. Translation recurses on the
 /// host stack; a deeper tree is listed unsupported and the interpreter, which
@@ -261,7 +261,7 @@ impl<'a, 'm> Compiler<'a, 'm> {
             return Err(Failure::Unsupported(untranslated(function.body)));
         }
         if let Some(outside) =
-            crate::classify::first_outside(callable.parameters, function.body, self.coverage)
+            qsl_eval::execution::first_outside(callable.parameters, function.body, self.coverage)
         {
             self.state.insert(index, State::Unsupported);
             return Err(Failure::Unsupported(outside));

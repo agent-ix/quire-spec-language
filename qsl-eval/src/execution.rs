@@ -404,6 +404,9 @@ impl<'a> PrepareMeter<'a> {
     }
 }
 
+mod scan;
+pub use scan::{first_outside, untranslated, Outside};
+
 /// FR-560: a value type class a backend's coverage lists. A class, not a
 /// checked type: `Int[0, 9]` and `Int[0, 99]` are both [`Self::BoundedInteger`].
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

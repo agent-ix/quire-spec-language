@@ -2,7 +2,7 @@
 //! FR-560: the first construct of an entry, in clause-node order, that lies
 //! outside the backend's coverage, and the cause the spec gives it.
 
-use qsl_eval::execution::{BackendCoverage, CoverageOperation, CoverageType};
+use super::{BackendCoverage, CoverageOperation, CoverageType};
 use qsl_semantics::check::CheckedNode;
 use quire_checked::node::{
     Arithmetic, Connective, IntegerDivisionOperator, NodeKind, OrderedKind, Visit,
@@ -12,10 +12,13 @@ use quire_exact::{OrderingOperator, ValueType};
 use quire_semantic_value::declaration::EqualityOperator;
 use quire_semantic_value::location::ExpressionLocation;
 
-/// A construct outside the coverage and where it is.
-pub(crate) struct Outside {
-    pub(crate) construct: UntranslatableConstruct,
-    pub(crate) location: ExpressionLocation,
+/// A construct outside a coverage and where it is.
+#[derive(Clone, Debug)]
+pub struct Outside {
+    /// The construct, as FR-294's `Untranslatable` cause names it.
+    pub construct: UntranslatableConstruct,
+    /// Where it is.
+    pub location: ExpressionLocation,
 }
 
 /// The first construct of the function `parameters`/`body` outside
@@ -25,7 +28,8 @@ pub(crate) struct Outside {
 /// declared parameters first. Per construct the rows of FR-560's table apply
 /// in the order the spec fixes: an unlisted form wins over an unlisted value
 /// type, which wins over an unlisted operation.
-pub(crate) fn first_outside(
+#[must_use]
+pub fn first_outside(
     parameters: &[(String, ValueType)],
     body: CheckedNode<'_>,
     coverage: &BackendCoverage,
@@ -200,7 +204,8 @@ fn operation_of(node: CheckedNode<'_>, children: &[CheckedNode<'_>]) -> Option<C
 /// yet have). FR-560 gives such a construct `Operation(k)` with `k` its node
 /// key, which the checked representation does not expose (see
 /// [`outside_construct`]), so the cause is the construct's form.
-pub(crate) fn untranslated(node: CheckedNode<'_>) -> Outside {
+#[must_use]
+pub fn untranslated(node: CheckedNode<'_>) -> Outside {
     Outside {
         construct: UntranslatableConstruct::ExpressionForm(
             form_name(node).unwrap_or_else(|| "operator".to_owned()),

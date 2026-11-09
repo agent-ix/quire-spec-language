@@ -1,0 +1,41 @@
+[package]
+name = "qsl-conformance"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "FR-563: the engine parity runner and the seeded parity program generator (ADR-029 EB-5)."
+
+# Outside the qualified core (ADR-029 CB-3 item 3): it depends on the seam
+# types in `qsl-eval` and on no backend crate.
+[dependencies]
+qsl-cst = { path = "../qsl-cst" }
+qsl-eval = { path = "../qsl-eval" }
+qsl-forms = { path = "../qsl-forms" }
+qsl-foundation = { path = "../qsl-foundation" }
+qsl-package = { path = "../qsl-package" }
+qsl-semantics = { path = "../qsl-semantics" }
+quire-eval = { workspace = true }
+quire-exact = { workspace = true }
+quire-semantic-value = { workspace = true }
+
+[features]
+# `run_parity_with_reference`, with which a test substitutes the reference.
+# `make parity` never enables it (FR-563-AC-8).
+test-support = []
+
+[dev-dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"
+
+[[test]]
+name = "it"
+path = "tests/it.rs"
+required-features = ["test-support"]

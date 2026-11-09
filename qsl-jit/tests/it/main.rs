@@ -7,3 +7,4 @@ mod common;
 mod coverage;
 mod differential;
 mod lifecycle;
+mod parity;

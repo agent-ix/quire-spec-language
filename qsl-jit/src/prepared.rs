@@ -25,10 +25,10 @@ use quire_semantic_value::location::ExpressionLocation;
 use quire_semantic_value::stop::{outcome_from_stop, Stop};
 use quire_semantic_value::supplied_stop::SuppliedRun;
 
-use crate::classify::{first_outside, Outside};
 use crate::coverage::coverage;
 use crate::exec::{Entry, EntryFrame, EntryRefusal, Halt, Machine, Signature, Status};
 use crate::translate::{integer_to_i64, Compiler, Failure, Op};
+use qsl_eval::execution::{first_outside, Outside};
 
 /// The just-in-time backend (ADR-029 EB-1): it translates the entries inside
 /// [`coverage`] and lists every other selected entry unsupported.

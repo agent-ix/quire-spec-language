@@ -15,7 +15,6 @@
 //! `unsafe` code is confined to the [`exec`] module (FR-568): the crate
 //! denies it everywhere else.
 
-mod classify;
 mod coverage;
 #[allow(unsafe_code)]
 mod exec;
