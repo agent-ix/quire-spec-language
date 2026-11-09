@@ -175,7 +175,8 @@ fn run_with(request: &Value, arguments: &[&str]) -> (i32, Value) {
         .stdin
         .take()
         .unwrap()
-        .write_all(&serde_json::to_vec(request).unwrap()) {
+        .write_all(&serde_json::to_vec(request).unwrap())
+    {
         assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
     }
     let output = child.wait_with_output().unwrap();
@@ -394,11 +395,24 @@ fn bounded_zero_horizon_reads_position_zero_and_terminal_closes_by_false_extensi
     assert_eq!(result["value"], json!({"numerator":"0","denominator":"1"}));
 }
 
-#[trace("TC-636", "FR-201-AC-13", "FR-201-AC-14", "FR-282-AC-12", "FR-282-AC-13")]
+#[trace(
+    "TC-636",
+    "FR-201-AC-13",
+    "FR-201-AC-14",
+    "FR-282-AC-12",
+    "FR-282-AC-13"
+)]
 #[test]
 fn bounded_graph_and_document_budget_stops_retain_limits_without_truth_or_evidence() {
     let original = proof(&cyclic_source(2, "0.75"), SNAPSHOT);
-    for name in ["bytes", "storage_bytes", "states", "edges", "scalar_bits", "expansion"] {
+    for name in [
+        "bytes",
+        "storage_bytes",
+        "states",
+        "edges",
+        "scalar_bits",
+        "expansion",
+    ] {
         let mut request = original.clone();
         request["limits"][name] = json!(0);
         let (code, result) = run(&request);
@@ -409,7 +423,10 @@ fn bounded_graph_and_document_budget_stops_retain_limits_without_truth_or_eviden
     let mut exact = original.clone();
     exact["limits"]["states"] = json!(count);
     let (code, result) = run(&exact);
-    assert_eq!(code, 0, "the exact product state ceiling suffices: {result}");
+    assert_eq!(
+        code, 0,
+        "the exact product state ceiling suffices: {result}"
+    );
     let mut limited = mutate(&original, |document| {
         document["values"].as_array_mut().unwrap().pop();
         document["ranking"].as_array_mut().unwrap().pop();
@@ -466,8 +483,14 @@ fn bounded_altered_horizon_binding_and_rank_never_certify_the_original_claim() {
 #[test]
 fn bounded_wrong_source_and_nonexact_rows_never_produce_an_accepted_document() {
     let (evidence, missed) = request(&cyclic_source(2, "1"), SNAPSHOT, ExactProbLimits::default());
-    assert!(evidence.is_none(), "bounded misses have no unbounded witness-replay certificate");
-    assert!(matches!(missed, qsl_replay::TerminalValue::Unsupported(_)), "{missed:?}");
+    assert!(
+        evidence.is_none(),
+        "bounded misses have no unbounded witness-replay certificate"
+    );
+    assert!(
+        matches!(missed, qsl_replay::TerminalValue::Unsupported(_)),
+        "{missed:?}"
+    );
     let mut original = proof(&cyclic_source(2, "0.75"), SNAPSHOT);
     original["package_name"] = json!("another-source-package");
     let (code, result) = run(&original);

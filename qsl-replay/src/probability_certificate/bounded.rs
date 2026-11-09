@@ -140,9 +140,16 @@ pub(super) fn enumerate(
         let (bytes, _) = system
             .state_key(model)
             .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-        ProbabilityProductKey::for_formula_state(binding, &bytes, &control.key(monitor)?, ProbabilityDocumentIoLimits {
-            bytes: limits.bytes, storage_bytes: limits.storage_bytes,
-        }, cancel)
+        ProbabilityProductKey::for_formula_state(
+            binding,
+            &bytes,
+            &control.key(monitor)?,
+            ProbabilityDocumentIoLimits {
+                bytes: limits.bytes,
+                storage_bytes: limits.storage_bytes,
+            },
+            cancel,
+        )
     };
     let root = key_of(first, first_control, &monitor)?;
     let mut queue = VecDeque::from([(root.clone(), first.clone(), first_control)]);

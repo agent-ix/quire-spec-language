@@ -395,11 +395,21 @@ fn run(
                 }
                 Err(_) => return broken(),
             };
-            bounded_certificate_of(&product, reference, &values, &monitor, qsl_replay::ProbabilityDocumentIoLimits {
-                bytes: document_limits.bytes, storage_bytes: document_limits.storage_bytes,
-            }, cancel)
+            bounded_certificate_of(
+                &product,
+                reference,
+                &values,
+                &monitor,
+                qsl_replay::ProbabilityDocumentIoLimits {
+                    bytes: document_limits.bytes,
+                    storage_bytes: document_limits.storage_bytes,
+                },
+                cancel,
+            )
         }
-        (None, _) => certificate_of(&product, reference, &values).map_err(ProbabilityDocumentError::from),
+        (None, _) => {
+            certificate_of(&product, reference, &values).map_err(ProbabilityDocumentError::from)
+        }
         (Some(_), None) => return broken(),
     };
     let mut certificate = match certificate {
@@ -514,11 +524,11 @@ fn document_failure(error: ProbabilityDocumentError, subject: SubjectLimits<'_>)
         ProbabilityDocumentError::Build(issue) => settled(&issue, subject),
         ProbabilityDocumentError::Unsupported => not_yet(),
         ProbabilityDocumentError::Malformed
-            | ProbabilityDocumentError::MissingMember(_)
-            | ProbabilityDocumentError::Noncanonical
-            | ProbabilityDocumentError::IdentityMismatch
-            | ProbabilityDocumentError::ObjectiveMismatch
-            | ProbabilityDocumentError::Graph(_) => broken(),
+        | ProbabilityDocumentError::MissingMember(_)
+        | ProbabilityDocumentError::Noncanonical
+        | ProbabilityDocumentError::IdentityMismatch
+        | ProbabilityDocumentError::ObjectiveMismatch
+        | ProbabilityDocumentError::Graph(_) => broken(),
     }
 }
 
@@ -551,7 +561,13 @@ fn bounded_certificate_of(
         }
         .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
         entries.push(ExactProbabilityValue {
-            state: ProbabilityProductKey::for_formula_state(binding, &state.model, &key, io, cancel)?,
+            state: ProbabilityProductKey::for_formula_state(
+                binding,
+                &state.model,
+                &key,
+                io,
+                cancel,
+            )?,
             value: value.clone(),
         });
     }
