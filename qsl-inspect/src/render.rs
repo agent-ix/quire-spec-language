@@ -22,6 +22,7 @@ use crate::{
 
 const VIEW_FORMAT: &str = "quire.inspect-view/v1";
 const LARGE_VALUE_BYTES: usize = 4096;
+const VALUE_TEXT_FAULT: &str = "a counterexample value has no value text";
 
 /// The requested output representation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -346,6 +347,12 @@ fn outcome_text(
     view: Option<&OutcomeView<'_>>,
     sources: &RenderSources,
 ) -> Step {
+    if let Some(view) = view {
+        // `inspect_outcome` yields one locus entry per diagnostic, in order.
+        if view.loci.len() != document.diagnostics().len() {
+            return Err(fault("outcome loci do not align with its diagnostics"));
+        }
+    }
     if document.diagnostics().is_empty() {
         writer.unit(|| format!("Outcome: {}\n", document.category().as_str()))?;
     }
@@ -394,7 +401,7 @@ fn outcome_text(
         writer.try_unit(|| {
             let mut line = format!(
                 "Item {}: {}",
-                item.request_index(),
+                item.request_index().get(),
                 wire_label(&item.result())?
             );
             if let Some(certification) = item.certification() {
@@ -683,7 +690,7 @@ where
                 .collect(),
         }),
         View::Counterexample(counterexample) => {
-            JsonViewBody::Counterexample(counterexample_json(counterexample))
+            JsonViewBody::Counterexample(counterexample_json(counterexample)?)
         }
         View::Trace(trace) => JsonViewBody::Trace(trace_json(trace)),
         View::StateGraph(graph) => {
@@ -753,24 +760,28 @@ fn region_json(region: &SourceRegion) -> RegionJson<'_> {
     }
 }
 
-fn counterexample_json<'a>(view: &'a CounterexampleView<'_>) -> CounterexampleJson<'a> {
-    CounterexampleJson {
+fn counterexample_json<'a>(
+    view: &'a CounterexampleView<'_>,
+) -> Result<CounterexampleJson<'a>, Failure> {
+    Ok(CounterexampleJson {
         function: view.function.to_string(),
         assignments: view
             .assignments
             .iter()
-            .map(|assignment| AssignmentJson {
-                parameter: assignment.parameter,
-                declaration_order: assignment.declaration_order,
-                identity: assignment.identity.to_string(),
-                value_text: assignment
-                    .value
-                    .to_value_text()
-                    .unwrap_or_else(|_| String::from("<unavailable>")),
+            .map(|assignment| {
+                Ok(AssignmentJson {
+                    parameter: assignment.parameter,
+                    declaration_order: assignment.declaration_order,
+                    identity: assignment.identity.to_string(),
+                    value_text: assignment
+                        .value
+                        .to_value_text()
+                        .map_err(|_| fault(VALUE_TEXT_FAULT))?,
+                })
             })
-            .collect(),
+            .collect::<Result<_, Failure>>()?,
         certification: view.certification.map(Certification::as_str),
-    }
+    })
 }
 
 fn trace_json<'a>(view: &'a TraceView<'_>) -> TraceJson<'a> {
@@ -1075,17 +1086,22 @@ fn counterexample_text(writer: &mut Writer<'_>, view: &CounterexampleView<'_>) -
     let mut assignments = view.assignments.iter().collect::<Vec<_>>();
     assignments.sort_by_key(|assignment| assignment.declaration_order);
     for assignment in assignments {
-        writer.unit(|| {
-            let value = assignment
-                .value
-                .to_value_text()
-                .unwrap_or_else(|_| String::from("<unavailable>"));
-            let value = if value.len() > LARGE_VALUE_BYTES {
-                format!("[value: {} bytes]", assignment.value.value_text_len())
+        writer.try_unit(|| {
+            // Decide the descriptor from the length first, so a large witness
+            // is never materialized. A value that does not encode counts as
+            // `usize::MAX`: it is a fault, never a plausible descriptor.
+            let length = assignment.value.value_text_len();
+            let value = if length == usize::MAX {
+                return Err(fault(VALUE_TEXT_FAULT));
+            } else if length > LARGE_VALUE_BYTES {
+                format!("[value: {length} bytes]")
             } else {
-                value
+                assignment
+                    .value
+                    .to_value_text()
+                    .map_err(|_| fault(VALUE_TEXT_FAULT))?
             };
-            format!("{} | {}\n", assignment.parameter, value)
+            Ok(format!("{} | {}\n", assignment.parameter, value))
         })?;
     }
     if let Some(certification) = view.certification {
@@ -1220,7 +1236,7 @@ mod tests {
     use quire_semantic_value::catalog::Category;
 
     const EXPECTED_JSON: &[&str] = &[
-        r#"refusal: {"format":"quire.inspect-view/v1","view":{"kind":"outcome","data":{"document":{"format":"quire-outcome/1","operation":"analyze","last_stage":null,"category":"refusal","items":[],"diagnostics":[{"cause":null,"code":"ill_typed","locus":{"kind":"region","source":{"authority":"tests","identity":"ref-inv"},"start":4,"end":5},"message":"bad value"}],"artifacts":[],"result":null},"loci":[]}}}"#,
+        r#"refusal: {"format":"quire.inspect-view/v1","view":{"kind":"outcome","data":{"document":{"format":"quire-outcome/1","operation":"analyze","last_stage":null,"category":"refusal","items":[],"diagnostics":[{"cause":null,"code":"ill_typed","locus":{"kind":"region","source":{"authority":"tests","identity":"ref-inv"},"start":4,"end":5},"message":"bad value"}],"artifacts":[],"result":null},"loci":[{"locus":{"kind":"region","source":{"authority":"tests","identity":"ref-inv"},"start":4,"end":5},"regions":[{"source_authority":"tests","source_identity":"ref-inv","start":4,"end":5}]}]}}}"#,
         r#"proved: {"format":"quire.inspect-view/v1","view":{"kind":"outcome","data":{"document":{"format":"quire-outcome/1","operation":"prove","last_stage":null,"category":"success","items":[{"request_index":0,"result":"proved","cause":null,"basis":{"type":"inductive","depth":0},"certification":"trusted","category":"success"},{"request_index":1,"result":"proved","cause":null,"basis":{"type":"bounded-proof","checks":1},"certification":"certified","category":"success"},{"request_index":2,"result":"proved","cause":null,"basis":{"type":"exhaustive"},"certification":"uncertified","category":"success"},{"request_index":3,"result":"failed","cause":null,"category":"internal-failure"}],"diagnostics":[],"artifacts":[],"result":null},"loci":[]}}}"#,
         r#"counterexample: {"format":"quire.inspect-view/v1","view":{"kind":"counterexample","data":{"function":"check","assignments":[{"parameter":"p","declaration_order":0,"identity":"fixture:[\"x\",]:0","value_text":"{\"type\":\"boolean\",\"value\":true}"}],"certification":"trusted"}}}"#,
         r#"lasso: {"format":"quire.inspect-view/v1","view":{"kind":"trace","data":{"shape":{"kind":"lasso","prefix":2,"loop_len":2},"positions":[{"position":0,"authority":"tests","identity":"s0"},{"position":1,"authority":"tests","identity":"s1"},{"position":2,"authority":"tests","identity":"s2"},{"position":3,"authority":"tests","identity":"s3"}],"loop_start":2,"deciding_position":1}}}"#,
@@ -1531,7 +1547,10 @@ mod tests {
                 "refusal",
                 View::Outcome(OutcomeView {
                     document: &refusal,
-                    loci: Vec::new(),
+                    loci: vec![(
+                        refusal.diagnostics()[0].locus().cloned(),
+                        vec![region.clone()],
+                    )],
                 }),
             ),
             (
@@ -1811,6 +1830,116 @@ mod tests {
         assert!(text.contains("Certification: trusted"));
         assert!(text.len() < 1_024);
         assert_eq!(rendered, render_default(&view, RenderForm::Text));
+    }
+
+    fn two_node_model_check_graph() -> (
+        Vec<qsl_analyze::model_check::GraphNode>,
+        std::collections::BTreeMap<qsl_analyze::model_check::NodeIndex, qsl_replay::OpenCause>,
+        qsl_replay::RunEnd,
+    ) {
+        let node = |key: &[u8], depth| qsl_analyze::model_check::GraphNode {
+            key: qsl_eval::simulation::StateKey::from_canonical_bytes(key.to_vec()),
+            depth,
+            labels: Vec::new(),
+        };
+        (
+            vec![node(b"{\"a\":1}", 0), node(b"{\"a\":2}", 1)],
+            std::collections::BTreeMap::new(),
+            qsl_replay::RunEnd::Stopped {
+                cause: qsl_replay::IncompleteCause::ResourceExhausted,
+                limit: Some(qsl_replay::ReachedLimit {
+                    limit: qsl_replay::ModelCheckLimit::MaxStates,
+                    value: 2,
+                }),
+            },
+        )
+    }
+
+    // A `NodeIndex` is only minted by the explorer, so these graphs carry
+    // nodes and a stopped end but no edges or open frontier.
+    #[trace("TC-783", "FR-298-AC-3", "FR-298-AC-10")]
+    #[test]
+    fn model_check_graph_json_and_dot_list_each_retained_node() {
+        let (nodes, open, end) = two_node_model_check_graph();
+        let view: V<'_> = View::ModelCheckStateGraph(ModelCheckStateGraphView {
+            states: nodes.iter().collect(),
+            transitions: Vec::new(),
+            open: &open,
+            end: &end,
+            partial: true,
+        });
+        let json = render_default(&view, RenderForm::Json);
+        let parsed: serde_json::Value = serde_json::from_str(json.as_str()).unwrap();
+        assert_eq!(parsed["view"]["kind"], "model_check_state_graph");
+        let data = &parsed["view"]["data"];
+        assert_eq!(data["nodes"].as_array().unwrap().len(), 2);
+        assert_eq!(data["nodes"][1]["index"], 1);
+        assert_eq!(data["nodes"][1]["depth"], 1);
+        assert_eq!(data["nodes"][0]["key_hex"], hex_bytes(b"{\"a\":1}"));
+        assert_eq!(data["edges"].as_array().unwrap().len(), 0);
+        assert_eq!(data["end"]["kind"], "stopped");
+        assert_eq!(data["end"]["limit"]["value"], 2);
+        assert_eq!(data["partial"], true);
+        assert_eq!(json, render_default(&view, RenderForm::Json));
+
+        let dot = render_default(&view, RenderForm::Dot);
+        let text = dot.as_str();
+        assert!(text.starts_with("digraph view {\n") && text.ends_with("}\n"));
+        assert_eq!(text.matches(" [label=").count(), 2);
+        assert!(text.contains("  n0 [label=") && text.contains("  n1 [label="));
+        assert!(!text.contains(" -> "));
+        assert_eq!(dot, render_default(&view, RenderForm::Dot));
+    }
+
+    #[trace("TC-783", "FR-298-AC-1", "FR-298-AC-6")]
+    #[test]
+    fn outcome_view_text_takes_its_region_from_the_aligned_locus_entry() {
+        let input = source_under("ref-inv", "src/inv.qsl", "ab\ncd\n");
+        let region = input.region(Span { start: 4, end: 5 }).unwrap();
+        // The diagnostic's own locus is an occurrence; only the locus entry
+        // carries the resolved region.
+        let locus = qsl_replay::OutcomeLocus::Occurrence {
+            occurrence: String::from("occ"),
+        };
+        let document =
+            OutcomeDocument::new(qsl_replay::Operation::Analyze, None, Category::Refusal)
+                .with_diagnostics(vec![qsl_replay::OutcomeDiagnostic::new(
+                    None,
+                    "ill_typed",
+                    Some(locus.clone()),
+                    "bad",
+                )]);
+        let sources = RenderSources::from_sources([input]);
+        let aligned: V<'_> = View::Outcome(OutcomeView {
+            document: &document,
+            loci: vec![(Some(locus.clone()), vec![region])],
+        });
+        let rendered = render_view(
+            &aligned,
+            RenderForm::Text,
+            &sources,
+            RenderLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("an aligned outcome view renders");
+        assert_eq!(
+            rendered.value().as_str(),
+            "src/inv.qsl:2:2: ill_typed: bad\n"
+        );
+
+        let misaligned: V<'_> = View::Outcome(OutcomeView {
+            document: &document,
+            loci: Vec::new(),
+        });
+        let failure = render_view(
+            &misaligned,
+            RenderForm::Text,
+            &sources,
+            RenderLimits::default(),
+            &Cancel::new(),
+        )
+        .expect_err("loci that do not align with the diagnostics are a fault");
+        assert!(matches!(failure, StageFailure::Fault(_)));
     }
 
     #[trace("TC-783", "FR-298-AC-2")]

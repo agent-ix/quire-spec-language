@@ -1170,8 +1170,8 @@ impl OutcomeItem {
     }
 
     /// The zero-based index of the request this item settles.
-    pub fn request_index(&self) -> usize {
-        self.request_index
+    pub fn request_index(&self) -> RequestIndex {
+        RequestIndex::new(self.request_index)
     }
 
     /// Who stands behind a `proved` result; `None` on every other label.

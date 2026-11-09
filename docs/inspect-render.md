@@ -33,3 +33,11 @@ A refused, limited or cancelled render returns no bytes. The output is held
 once, as a `String`, and `Rendered` wraps it, so there is no second copy and no
 UTF-8 re-check. `render.output_bytes` is separate from `inspect.max_view_entries`,
 which bounds how many entries a view holds.
+
+JSON is one unit (FR-298), so a view's JSON document, including a simulation
+graph's per-transition canonical encodings, is built in full before its single
+charge. `render.output_bytes` bounds the returned value, not the peak memory of
+building a JSON view; the transition encoder is bounded separately by the same
+byte limit per encoding. Text and DOT units are formatted and charged one at a
+time, and a counterexample value above 4096 bytes of value text is decided from
+its length and never materialized.
