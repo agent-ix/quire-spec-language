@@ -115,6 +115,17 @@ impl QualifiedBoundedMonitor {
         Ok(self.translation.key(self.state(state)?)?)
     }
 
+    /// The context-bearing key for a settled verdict. Product builders may
+    /// discard the local monitor handle after settlement; no remaining
+    /// horizon is introduced when encoding that verdict.
+    pub fn decision_key(&self, accepted: bool) -> Result<AutomatonStateKey, QualifiedBoundedError> {
+        Ok(self.translation.key(if accepted {
+            BoundedState::Accept
+        } else {
+            BoundedState::Reject
+        })?)
+    }
+
     /// The remaining event horizon for a running state, or zero once
     /// decided. It is independent of the raw model's graph height.
     pub fn rank(&self, state: StateId) -> Result<u64, QualifiedBoundedError> {

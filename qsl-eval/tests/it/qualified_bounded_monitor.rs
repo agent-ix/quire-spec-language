@@ -56,6 +56,10 @@ fn qualified_bounded_monitor_keys_follow_real_debt_and_ignore_allocation_order()
     let delivered = first.step(loss, true).unwrap();
     assert_eq!(first.state(delivered).unwrap(), BoundedState::Accept);
     assert_eq!(first.rank(delivered).unwrap(), 0);
+    assert_eq!(
+        first.key(delivered).unwrap(),
+        first.decision_key(true).unwrap()
+    );
     assert_eq!(first.key(delivered).unwrap(), second.key(accepted).unwrap());
     let owner = BoundedTranslation::clause(&fixture.clause, &context).unwrap();
     assert_eq!(
@@ -88,6 +92,10 @@ fn qualified_bounded_monitor_terminal_false_extension_and_zero_horizon() {
         if horizon == 0 {
             assert_eq!(qualified.state(pending).unwrap(), BoundedState::Reject);
             assert_eq!(qualified.state(satisfied).unwrap(), BoundedState::Accept);
+            assert_eq!(
+                qualified.key(pending).unwrap(),
+                qualified.decision_key(false).unwrap()
+            );
         }
         let automaton =
             translate_body(fixture.clause.formula(), fixture.clause.profile(), 100).unwrap();
