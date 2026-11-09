@@ -21,7 +21,7 @@ use quire_checked::node::{CheckedLiteral, NodeKind};
 use quire_exact::{EffectiveId, Identifier, NodeKey, Value, ValueType};
 use quire_semantic_value::location::ExpressionLocation as Location;
 
-use super::{refuse, Binder, Binders, Lowering, PlaceStep};
+use super::{refuse, require_admitted, Binder, Binders, Lowering, PlaceStep};
 use crate::check::family::OccurrenceRole;
 
 use crate::check::node_key::{
@@ -678,7 +678,8 @@ impl Lowering<'_> {
                             // collections", AC-62).
                             match (shape.map, keys.get(index).and_then(Option::as_ref)) {
                                 (true, Some(key)) => {
-                                    LeafTerm::reference(self.type_node(key, location)?)
+                                    let node = self.map_key_node(key, location)?;
+                                    LeafTerm::reference(require_admitted(node, location)?)
                                 }
                                 (true, None) => {
                                     return Err(refuse(

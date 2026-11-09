@@ -704,10 +704,11 @@ impl Domain {
 /// `values` possible values: the sum over entry counts `k` of
 /// C(`keys`, `k`) * `values`^`k`, saturating at `u128::MAX`. A map holds at
 /// most one entry for each key, so the terms above `keys` are 0 and the sum
-/// stops there; each term follows from the one before, so a declared bound
-/// as wide as `u64::MAX` costs no more than the keys do. A term that no
-/// longer fits saturates the whole sum, since every later binomial that
-/// matters is larger still.
+/// covers `min` to `min(max, keys)` only: a term outside the declared range
+/// is never computed, so a binomial that overflows below `min` does not
+/// saturate the sum. Each term is exact or saturates, and a saturated term
+/// saturates the sum, so a declared bound as wide as `u64::MAX` costs no
+/// more than the terms up to the first that no longer fits.
 fn entries_size(keys: u128, values: u128, min: u64, max: u64) -> u128 {
     if values == 0 {
         // Only the empty map exists.
@@ -715,24 +716,13 @@ fn entries_size(keys: u128, values: u128, min: u64, max: u64) -> u128 {
     }
     let top = max.min(u64::try_from(keys).unwrap_or(u64::MAX));
     let mut total = 0u128;
-    let (mut choose, mut power) = (1u128, 1u128);
-    for count in 0..=top {
-        if count >= min {
-            total = total.saturating_add(choose.saturating_mul(power));
-            if total == u128::MAX {
-                return total;
-            }
-        }
-        if count == top {
+    for count in min..=top {
+        let term = combinations(keys, u128::from(count), false)
+            .saturating_mul(values.saturating_pow(u32::try_from(count).unwrap_or(u32::MAX)));
+        total = total.saturating_add(term);
+        if total == u128::MAX {
             break;
         }
-        // C(keys, count + 1) = C(keys, count) * (keys - count) / (count + 1),
-        // exact at every step.
-        choose = match choose.checked_mul(keys - u128::from(count)) {
-            Some(product) => product / (u128::from(count) + 1),
-            None => return u128::MAX,
-        };
-        power = power.saturating_mul(values);
     }
     total
 }
@@ -1354,5 +1344,19 @@ mod tests {
             Some(u128::MAX)
         );
         assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        // A bound that excludes the large terms does not saturate: 200 keys
+        // and one value held to exactly 200 entries is one map, and a lower
+        // bound above the key count leaves none.
+        let keys200 = ValueType::Int(
+            IntegerInterval::new(Integer::from(0_i64), Integer::from(199_i64)).expect("nonempty"),
+        );
+        let one_value = ValueType::Int(
+            IntegerInterval::new(Integer::from(0_i64), Integer::from(0_i64)).expect("nonempty"),
+        );
+        assert_eq!(
+            size(&map(keys200.clone(), one_value.clone(), 200, 200)),
+            Some(1)
+        );
+        assert_eq!(size(&map(keys200, one_value, 201, 300)), Some(0));
     }
 }

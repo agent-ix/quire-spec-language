@@ -2081,7 +2081,7 @@ impl Clocks<'_> {
 }
 
 /// The clock fields of `model`'s clock places.
-fn clock_fields(model: &AdmittedModel) -> Vec<ClockField> {
+pub(crate) fn clock_fields(model: &AdmittedModel) -> Vec<ClockField> {
     AdmittedModel::clock_places(model)
         .iter()
         .map(|place| ClockField {
