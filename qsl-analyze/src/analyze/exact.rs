@@ -16,7 +16,6 @@
 
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_foundation::{BackendId, RequestIndex};
-use qsl_replay::certificate::{CertificateLocus, CertificateRule};
 use qsl_replay::statistical::SubjectLimits;
 use qsl_replay::{
     check_claim_exact_reachability, claim_binding, ExactBinding, ExactProbBuildIssue,
@@ -24,6 +23,7 @@ use qsl_replay::{
     ExactProbabilityGraphError, ExactProbabilityValue, Extremum, ModelCheckLimit,
     ObligationIdentity, ProbabilityBoundSide, ProbabilityProductKey, TerminalRecord,
 };
+use qsl_replay::{CertificateLocus, CertificateRule};
 use qsl_replay::{InconclusiveCause, ProbabilityCertificateLocus, ProbabilityCertificateRule};
 use qsl_route::Mode;
 use qsl_semantics::check::{

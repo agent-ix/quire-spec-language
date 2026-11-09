@@ -16,7 +16,6 @@ use qsl_analyze::analyze::{
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_eval::simulation::Limits;
 use qsl_foundation::RequestIndex;
-use qsl_replay::certificate::{CertificateLocus, CertificateRule};
 use qsl_replay::InconclusiveCause;
 use qsl_replay::{
     claim_binding, Certification, ExactOrBounds, ExactProbabilityCertificateCheck,
@@ -24,6 +23,7 @@ use qsl_replay::{
     ProbabilityBoundSide, ProbabilityCertificateLocus, ProbabilityCertificateRejection,
     ProbabilityCertificateRule, ProbabilityProductKey, ProofBasis, TerminalRecord, TerminalValue,
 };
+use qsl_replay::{CertificateLocus, CertificateRule};
 use quire_exact::{Cancel, CancelCause, Integer, Rational};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -261,13 +261,12 @@ fn a_rejected_certificate_never_settles_proved() {
     let locus = CertificateLocus::ProbabilityProductState(expected.clone());
     let wire = serde_json::to_value(&locus).unwrap();
     // Encode the complete canonical octets independently of the locus serializer.
-    let expected_wire = serde_json::to_value(qsl_replay::certificate::CertificateLocus::ModelKey(
+    let expected_wire = serde_json::to_value(qsl_replay::CertificateLocus::ModelKey(
         qsl_eval::simulation::StateKey::from_canonical_bytes(expected.as_bytes().to_vec()),
     ))
     .unwrap();
     assert_eq!(wire, serde_json::json!({"product_key": expected_wire}));
-    let outcome =
-        serde_json::to_value(qsl_replay::outcome::OutcomeItem::from_terminal(terminal)).unwrap();
+    let outcome = serde_json::to_value(qsl_replay::OutcomeItem::from_terminal(terminal)).unwrap();
     assert_eq!(outcome["result"], "inconclusive");
     assert_eq!(
         outcome["cause"],
