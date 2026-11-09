@@ -58,9 +58,13 @@ admission needs the document provisions, package input and observation
 limits, which belong to a request, not to a prepared backend; and
 `run_clause` is a replay path, and replay runs only through S6a (ADR-029
 EB-3), so `run_clause` takes no chosen backend. EB-3 restricts replay
-only: a function call through the spine's function entries
-(`qsl_replay::spine::run`, `run_with_backends`) is execution, not replay,
-and runs on the call's chosen backend as FR-296 states.
+only: a function call through the function run entries
+(`qsl_replay::spine::run`, and `qsl_replay::backends::run_with_backends`,
+which takes the caller's `SuppliedBackends` and the `PrepareLimits` as an
+explicit parameter) is execution, not replay, and runs on the call's chosen
+backend as FR-296 states. The public surface of `qsl_replay::spine` names no
+`qsl_eval` type (FR-100-AC-8); the backend-taking entry lives in
+`qsl_replay::backends`.
 
 ## Inputs
 
@@ -126,6 +130,9 @@ chosen backend is not supplied or did not prepare the entry.
 
 ## Behavior
 
+- The `qsl_replay::backends::run_with_backends` entry shall hand its explicit
+  `prepare: &PrepareLimits` parameter to the `prepare` of the call's chosen
+  supplied backend, and shall run that backend and no other.
 - The `execute` operation shall prepare exactly the selected entry with the
   chosen execution backend under `limits.prepare`, the one `PrepareLimits`
   that applies to whichever backend is chosen.
@@ -166,7 +173,7 @@ chosen backend is not supplied or did not prepare the entry.
 | FR-279-AC-1 | `execute` with the interpreter backend over FR-100-AC-4's unit returns, for `lt(5, 3)`, `flag(1)` and `id(4)`, the `Evaluation` `CheckedPackage::call` returns for the same arguments, and for `id(12)` the same `CallFailure::Input`. | Test (TC-760) |
 | FR-279-AC-2 | Over FR-109's ConfigVersion unit, for the FR-109-AC-1 healthy-parent and violating-parent requests, `execute` with the interpreter and a clause selection naming `ParentOrder`, with the `AdmittedObservations` FR-106 admits for it from the request's snapshot, returns `Ok` with the `evaluation` member of `CheckedPackageEvaluation::evaluate_clause` for the same clause, observations and accounting limits; FR-100's outcome mapping of that `Evaluation` is `Completed(Boolean(true))` and `Completed(Boolean(false))` respectively, equal to the `Evaluate` disposition `qsl_replay::spine::run_clause` reports for the same request. | Test (TC-760) |
 | FR-279-AC-3 | For each FR-100-AC-1, AC-4 and AC-6 request, the `outcome` member of FR-100's `spine-run-result/1` document equals the rendering of `execute`'s result for the same source, function, arguments and accounting limits. | Test (TC-760) |
-| FR-279-AC-4 | `execute` choosing a supplied test backend standing in for `aot` whose `prepare` returns `PrepareFailure::Limit` naming `prepare.code_bytes` with configured value 1 and counter 2 returns `CallFailure::Limit(PrepareLimitReached { setting: PrepareSetting::CodeBytes, bound: 1, actual: 2 })`, whose `setting.name()` is `prepare.code_bytes`, whose category is incomplete (exit 22) and which is built at the path `quire_eval::PrepareLimitReached`; with one whose `prepare` returns `PrepareFailure::Fault`, `CallFailure::Fault` with the same `InternalFault`. | Test (TC-760) |
+| FR-279-AC-4 | `execute` choosing a supplied test backend standing in for `aot` whose `prepare` returns `PrepareFailure::Limit` naming `prepare.code_bytes` with configured value 1 and counter 2 returns `CallFailure::Limit(PrepareLimitReached { setting: PrepareSetting::CodeBytes, bound: 1, actual: 2 })`, whose `setting.name()` is `prepare.code_bytes`, whose category is incomplete (exit 22) and which is built at the path `quire_eval::PrepareLimitReached`; with one whose `prepare` returns `PrepareFailure::Fault`, `CallFailure::Fault` with the same `InternalFault`. Through `qsl_replay::backends::run_with_backends` with a `Call` choosing `jit` and a supplied test `jit`, a `prepare` parameter whose `code_bytes` is below the entry's generated size returns the incomplete outcome naming `prepare.code_bytes`, and the same call with a `prepare` parameter above it completes, so the parameter reaches the supplied backend. | Test (TC-760) |
 | FR-279-AC-5 | A `compile_fail` doctest that builds `ExecuteLimits` with `..Default::default()` and no `accounting` fails to compile, and a control that states `accounting` explicitly with `SuppliedLimits::default()` and `PrepareLimits::default()` compiles. Over FR-100-AC-4's unit, `execute` with the interpreter for `id(4)` under `supplied.admission_work_units` 0 returns the same `CallFailure::Supplied` that `CheckedPackageEvaluation::call_supplied` returns under a supplied-value run with those `SuppliedLimits`, while the same request under `SuppliedLimits::default()` returns the `Evaluation` of AC-1. | Test (TC-760) |
 
 ## Dependencies

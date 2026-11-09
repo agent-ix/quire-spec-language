@@ -58,7 +58,7 @@ The seam's types:
 
 | Type | Definition |
 | --- | --- |
-| `EntrySelection` | `Function(QualifiedName)` or `Clause(QualifiedName)`, a checked function or a checked state clause by name: one entry to prepare. |
+| `EntrySelection` | A value holding an `EntryKind` (`Function` or `Clause`) and the entry's `QualifiedName`, built by the constructors `EntrySelection::function(name)` and `EntrySelection::clause(name)`: a checked function or a checked state clause by name, one entry to prepare. |
 | Function arguments | `&[Value]`: the argument values in parameter order, as `CheckedPackageEvaluation::call` takes them; admitted by the call, not by `prepare`. |
 | Clause input | `&AdmittedObservations`: the observations FR-106 admitted for the named clause (FR-109's `admit` stage), as `evaluate_clause` takes them. A clause reads its objects and values from them and takes no `ObjectEnvironment`. Observations admitted for another clause return the `CallFailure::Input(ObservationsMismatch)` `evaluate_clause` returns. |
 | `CallLimits` | `accounting: ScalarLimits` and `supplied: SuppliedLimits` (FR-277): the meter limits and the supplied-value helper ceilings one `call` runs under. It has no `Default`, because `ScalarLimits` has none (FR-277 Inputs). `evaluate` takes `ScalarLimits` alone: its input is already admitted, so no supplied-value phase applies. |
