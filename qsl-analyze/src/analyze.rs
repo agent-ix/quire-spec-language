@@ -293,7 +293,7 @@ pub struct SubjectBinding<'a> {
 ///
 /// The deadline must be stated explicitly; there is no implicit default.
 /// ```compile_fail,E0277
-/// use qsl_analyze::analyze::AnalyzeLimits;
+/// use qsl_analyze::analyze::{AnalyzeLimits, DeadlineSupply};
 /// let limits = AnalyzeLimits { ..Default::default() };
 /// ```
 ///
