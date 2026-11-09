@@ -364,7 +364,7 @@ mod tests {
 
     /// A package holding one node, `scalar_type/integer`.
     const PACKAGE: &str = r#"{"semantic_graph":{"nodes":[
-        {"node_id":{"package":"p","path":["scalar_type","integer"],"ordinal":0}}]}}"#;
+        {"node_id":{"package":"p","path":["scalar_type","integer"],"ordinal":0}}],"operand_rows":[[]]}}"#;
 
     struct Rows {
         identity: SourceIdentity,
