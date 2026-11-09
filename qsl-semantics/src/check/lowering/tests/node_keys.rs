@@ -164,7 +164,11 @@ fn inline_literals_have_no_expression_key_and_locals_name_their_parameter() {
 fn a_cloned_body_cannot_silently_reuse_keys_from_another_lowering_owner() {
     let graph = source("function f using v(): Boolean pure { true and false }");
     let body = graph.function_state(0).expect("f").body.body().clone();
-    let original = body.root().node_key().expect("the admitted body has a key").clone();
+    let original = body
+        .root()
+        .node_key()
+        .expect("the admitted body has a key")
+        .clone();
     let scope = empty_scope();
     let owner = SourceOwner::new("different", "owner").expect("valid source owner");
     let mut occurrences = OccurrenceMap::default();
@@ -185,7 +189,16 @@ fn a_cloned_body_cannot_silently_reuse_keys_from_another_lowering_owner() {
     lowering
         .expression(body.root(), &mut Binders::new(&[], &[]))
         .expect("the closed Boolean expression lowers under the other owner");
-    let refusal = lowering.finish(body.root().location()).expect_err("the body already belongs to its original graph");
-    assert!(matches!(refusal.cause, CheckCause::InternalFault(ref cause) if matches!(**cause, KeyFault::ExpressionIdentityConflict)), "{refusal:?}");
-    assert_eq!(body.root().node_key(), Some(&original), "refusal cannot overwrite the admitted identity");
+    let Err(refusal) = lowering.finish(body.root().location()) else {
+        panic!("the body already belongs to its original graph")
+    };
+    assert!(
+        matches!(refusal.cause, CheckCause::InternalFault(ref cause) if matches!(**cause, KeyFault::ExpressionIdentityConflict)),
+        "{refusal:?}"
+    );
+    assert_eq!(
+        body.root().node_key(),
+        Some(&original),
+        "refusal cannot overwrite the admitted identity"
+    );
 }
