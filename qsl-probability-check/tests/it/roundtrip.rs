@@ -87,7 +87,13 @@ fn proof_request_with(
 
 fn proof_source_request(
     source: &str,
-    inspect: impl FnOnce(&ModelSystem<'_>, &[qsl_semantics::check::CheckedProbabilisticClaim], &ObligationIdentity, &[u8], ProbabilityDocumentLimits),
+    inspect: impl FnOnce(
+        &ModelSystem<'_>,
+        &[qsl_semantics::check::CheckedProbabilisticClaim],
+        &ObligationIdentity,
+        &[u8],
+        ProbabilityDocumentLimits,
+    ),
 ) -> Value {
     let identity = SourceIdentity::new("test", "certificate-source");
     let limits = SpineLimits::default();
@@ -174,7 +180,10 @@ fn proof_source_request(
     )
     .unwrap();
     let written = write_probability_certificate(&document, document_limits, &cancel).unwrap();
-    assert_eq!(written, evidence.document, "analyze emits the production writer's exact bytes");
+    assert_eq!(
+        written, evidence.document,
+        "analyze emits the production writer's exact bytes"
+    );
     let certificate = evidence.document.clone();
     inspect(
         &system,
@@ -344,25 +353,39 @@ fn a_real_resolved_workload_uses_checked_weights_and_refuses_authored_zero_weigh
     let original = proof_request(claim);
     let (code, result) = run(&original, &[]);
     assert_eq!(code, 0, "{result}");
-    assert_eq!(result["value"], json!({"numerator":"391", "denominator":"400"}));
+    assert_eq!(
+        result["value"],
+        json!({"numerator":"391", "denominator":"400"})
+    );
     let mut forged = original.clone();
-    change_certificate(&mut forged, |document| { document["objective"]["optimization"] = json!("minimum"); });
+    change_certificate(&mut forged, |document| {
+        document["objective"]["optimization"] = json!("minimum");
+    });
     let (code, result) = run(&forged, &[]);
     assert_eq!(code, 2, "{result}");
     assert_eq!(result["status"], "refused");
     let mut changed_weights = original.clone();
-    let source = changed_weights["source"]["content"].as_str().unwrap().replace("weight Msg::send_a = 1", "weight Msg::send_a = 9");
+    let source = changed_weights["source"]["content"]
+        .as_str()
+        .unwrap()
+        .replace("weight Msg::send_a = 1", "weight Msg::send_a = 9");
     replace_checked_source(&mut changed_weights, &source);
     let (code, result) = run(&changed_weights, &[]);
     assert_eq!(code, 1, "{result}");
     assert_eq!(result["rule"], "inequality-fails");
 
     let mut zero = original;
-    let source = zero["source"]["content"].as_str().unwrap().replace("weight Msg::send_a = 1", "weight Msg::send_a = 0");
+    let source = zero["source"]["content"]
+        .as_str()
+        .unwrap()
+        .replace("weight Msg::send_a = 1", "weight Msg::send_a = 0");
     zero["source"]["content"] = json!(source);
     zero["byte_provision"][0][2] = json!(source.as_bytes());
     let (code, result) = run(&zero, &[]);
-    assert_eq!(code, 2, "S3 requires strictly positive authored weights: {result}");
+    assert_eq!(
+        code, 2,
+        "S3 requires strictly positive authored weights: {result}"
+    );
     assert_eq!(result["status"], "refused");
     assert!(result.get("value").is_none());
 }
@@ -519,8 +542,20 @@ fn rank_rejections_use_the_shared_rule_and_state_or_member_locus() {
     let mut missing = original.clone();
     let mut removed = None;
     change_certificate(&mut missing, |document| {
-        let state = document["values"].as_array().unwrap().iter().find(|row| row["value"]["numerator"] != json!("0") && row["value"]["numerator"] != row["value"]["denominator"]).unwrap()["state"].clone();
-        document["ranking"].as_array_mut().unwrap().retain(|row| row["state"] != state);
+        let state = document["values"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| {
+                row["value"]["numerator"] != json!("0")
+                    && row["value"]["numerator"] != row["value"]["denominator"]
+            })
+            .unwrap()["state"]
+            .clone();
+        document["ranking"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|row| row["state"] != state);
         removed = Some(state);
     });
     let (code, result) = run(&missing, &[]);
@@ -528,13 +563,19 @@ fn rank_rejections_use_the_shared_rule_and_state_or_member_locus() {
     assert_eq!(result["rule"], "rank-missing");
     assert_eq!(result["at"]["product_key"], removed.unwrap());
     let mut broken = original.clone();
-    change_certificate(&mut broken, |document| { for row in document["ranking"].as_array_mut().unwrap() { row["rank"] = json!(0); } });
+    change_certificate(&mut broken, |document| {
+        for row in document["ranking"].as_array_mut().unwrap() {
+            row["rank"] = json!(0);
+        }
+    });
     let (code, result) = run(&broken, &[]);
     assert_eq!(code, 1, "{result}");
     assert_eq!(result["rule"], "rank-broken");
     assert!(result["at"].get("product_key").is_some());
     let mut absent = original;
-    change_certificate(&mut absent, |document| { document.as_object_mut().unwrap().remove("ranking"); });
+    change_certificate(&mut absent, |document| {
+        document.as_object_mut().unwrap().remove("ranking");
+    });
     let (code, result) = run(&absent, &[]);
     assert_eq!(code, 1, "{result}");
     assert_eq!(result["rule"], "malformed");
@@ -608,7 +649,10 @@ fn exact_byte_ceilings_retain_the_actual_offered_lengths() {
     request["limits"]["storage_bytes"] = json!(0);
     let (code, result) = run(&request, &[]);
     assert_eq!(code, 2);
-    assert_eq!(result["limit"]["setting"], "certificate_check.max_working_bytes");
+    assert_eq!(
+        result["limit"]["setting"],
+        "certificate_check.max_working_bytes"
+    );
     assert_eq!(result["limit"]["bound"], 0);
     assert!(result["limit"]["actual"].as_u64().unwrap() > 0);
 }

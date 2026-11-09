@@ -525,7 +525,10 @@ fn product_key(
 }
 
 fn model_distributions(
-    system: &ModelSystem<'_>, state: &ModelSimState, workload: Option<&Workload>, cancel: &Cancel,
+    system: &ModelSystem<'_>,
+    state: &ModelSimState,
+    workload: Option<&Workload>,
+    cancel: &Cancel,
     failure: &mut impl FnMut(crate::ExactProbBuildIssue),
 ) -> Result<Vec<Vec<(Rational, ModelSimState)>>, ExactProbabilityGraphError> {
     let mut expansion = |stop| {
@@ -533,32 +536,61 @@ fn model_distributions(
         ExactProbabilityGraphError::ExpansionRefused
     };
     if let Some(workload) = workload {
-        let steps = system.weighted_steps(state, workload).map_err(&mut expansion)?
+        let steps = system
+            .weighted_steps(state, workload)
+            .map_err(&mut expansion)?
             .map_err(|stop| {
                 failure(match stop {
-                    qsl_eval::simulation::model::Unsteppable::NotMarkov(_) => crate::ExactProbBuildIssue::NotMarkov,
-                    qsl_eval::simulation::model::Unsteppable::UndecidedSuccessor(_) => crate::ExactProbBuildIssue::UndecidedSuccessor,
+                    qsl_eval::simulation::model::Unsteppable::NotMarkov(_) => {
+                        crate::ExactProbBuildIssue::NotMarkov
+                    }
+                    qsl_eval::simulation::model::Unsteppable::UndecidedSuccessor(_) => {
+                        crate::ExactProbBuildIssue::UndecidedSuccessor
+                    }
                 });
                 ExactProbabilityGraphError::ExpansionRefused
             })?;
-        if steps.iter().any(|step| matches!(step.transition, qsl_eval::simulation::model::TransitionId::Stutter)) {
-            return if steps.len() == 1 { Ok(Vec::new()) } else { Err(ExactProbabilityGraphError::UnsupportedDraw) };
+        if steps.iter().any(|step| {
+            matches!(
+                step.transition,
+                qsl_eval::simulation::model::TransitionId::Stutter
+            )
+        }) {
+            return if steps.len() == 1 {
+                Ok(Vec::new())
+            } else {
+                Err(ExactProbabilityGraphError::UnsupportedDraw)
+            };
         }
-        return Ok(vec![steps.into_iter().map(|step| (step.probability, step.post)).collect()]);
+        return Ok(vec![steps
+            .into_iter()
+            .map(|step| (step.probability, step.post))
+            .collect()]);
     }
-    let actions = system.actions(state).map_err(&mut expansion)?.map_err(|_| {
-        failure(crate::ExactProbBuildIssue::UndecidedSuccessor);
-        ExactProbabilityGraphError::ExpansionRefused
-    })?;
+    let actions = system
+        .actions(state)
+        .map_err(&mut expansion)?
+        .map_err(|_| {
+            failure(crate::ExactProbBuildIssue::UndecidedSuccessor);
+            ExactProbabilityGraphError::ExpansionRefused
+        })?;
     let mut distributions = Vec::with_capacity(actions.len());
     for action in actions {
         poll_cancel(cancel)?;
         let mut distribution = Vec::with_capacity(action.draws.len());
         for draw in action.draws {
             poll_cancel(cancel)?;
-            if draw.probability == rational(0) { continue; }
-            if draw.successors.len() != 1 { return Err(ExactProbabilityGraphError::UnsupportedDraw); }
-            let (_, successor) = draw.successors.into_iter().next().ok_or(ExactProbabilityGraphError::UnsupportedDraw)?;
+            if draw.probability == rational(0) {
+                continue;
+            }
+            if draw.successors.len() != 1 {
+                return Err(ExactProbabilityGraphError::UnsupportedDraw);
+            }
+            let (_, successor) = draw
+                .successors
+                .into_iter()
+                .next()
+                .ok_or(ExactProbabilityGraphError::UnsupportedDraw)?;
             distribution.push((draw.probability, successor));
         }
         distributions.push(distribution);
@@ -566,12 +598,20 @@ fn model_distributions(
     Ok(distributions)
 }
 
-fn claim_workload<'a>(system: &ModelSystem<'a>, claim: &CheckedProbabilisticClaim) -> Result<Option<&'a Workload>, ExactProbabilityGraphError> {
+fn claim_workload<'a>(
+    system: &ModelSystem<'a>,
+    claim: &CheckedProbabilisticClaim,
+) -> Result<Option<&'a Workload>, ExactProbabilityGraphError> {
     match &claim.scheduler {
         ProbScheduler::Every => Ok(None),
-        ProbScheduler::Workload(name) => system.package().graph().probabilistic_model().workload(name)
+        ProbScheduler::Workload(name) => system
+            .package()
+            .graph()
+            .probabilistic_model()
+            .workload(name)
             .filter(|workload| workload.model() == claim.subject.alias)
-            .map(Some).ok_or(ExactProbabilityGraphError::UnsupportedClaimForm),
+            .map(Some)
+            .ok_or(ExactProbabilityGraphError::UnsupportedClaimForm),
     }
 }
 

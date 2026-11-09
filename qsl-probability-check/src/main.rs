@@ -174,8 +174,12 @@ fn check(request: Request, cancel: &Cancel) -> Result<Value, String> {
                 qsl_replay::ProbabilityCertificateRule::Malformed => {
                     qsl_replay::CertificateRule::Malformed
                 }
-                qsl_replay::ProbabilityCertificateRule::RankMissing => qsl_replay::CertificateRule::RankMissing,
-                qsl_replay::ProbabilityCertificateRule::RankBroken => qsl_replay::CertificateRule::RankBroken,
+                qsl_replay::ProbabilityCertificateRule::RankMissing => {
+                    qsl_replay::CertificateRule::RankMissing
+                }
+                qsl_replay::ProbabilityCertificateRule::RankBroken => {
+                    qsl_replay::CertificateRule::RankBroken
+                }
             };
             let at = match rejection.at {
                 qsl_replay::ProbabilityCertificateLocus::ProductState(key) => {
@@ -192,7 +196,10 @@ fn check(request: Request, cancel: &Cancel) -> Result<Value, String> {
 fn source_failure(error: ProbabilitySourceError) -> Value {
     use ProbabilityDocumentError as Document;
     let status = match &error {
-        ProbabilitySourceError::Compile(qsl_foundation::diagnostic::StageFailure::Refused(_) | qsl_foundation::diagnostic::StageFailure::RefusedWithPayload(_, _)) => "refused",
+        ProbabilitySourceError::Compile(
+            qsl_foundation::diagnostic::StageFailure::Refused(_)
+            | qsl_foundation::diagnostic::StageFailure::RefusedWithPayload(_, _),
+        ) => "refused",
         ProbabilitySourceError::Document(Document::Unsupported) => "unsupported",
         ProbabilitySourceError::Document(
             Document::Malformed
@@ -237,7 +244,12 @@ fn source_failure(error: ProbabilitySourceError) -> Value {
             "setting":qsl_replay::AccountingLimits::setting_of(incomplete.limit_kind).name(),
             "bound":incomplete.limit, "consumed":incomplete.consumed, "next_charge":incomplete.next_charge.to_string(),
         })),
-        ProbabilitySourceError::Document(Document::IntegerText { bit_bound, decimal_digits }) => Some(json!({"setting":"exact_prob.max_rational_bits", "bound":bit_bound, "decimal_digits":decimal_digits})),
+        ProbabilitySourceError::Document(Document::IntegerText {
+            bit_bound,
+            decimal_digits,
+        }) => Some(
+            json!({"setting":"exact_prob.max_rational_bits", "bound":bit_bound, "decimal_digits":decimal_digits}),
+        ),
         _ => None,
     };
     json!({"status": status, "reason": error.to_string(), "limit":limit})

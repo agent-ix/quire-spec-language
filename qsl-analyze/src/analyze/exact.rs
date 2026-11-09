@@ -19,12 +19,11 @@ use qsl_eval::simulation::TransitionSystem;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::statistical::SubjectLimits;
 use qsl_replay::{
-    check_probability_certificate_document, probability_certificate_document,
-    write_probability_certificate, claim_binding, ExactBinding, ExactProbBuildIssue,
-    ExactProbBuildRecord, ExactProbabilityCertificate, ExactProbabilityCertificateCheck,
-    ExactProbabilityGraphError, ExactProbabilityValue, Extremum, ModelCheckLimit,
-    ProbabilityBoundSide, ProbabilityProductKey, TerminalRecord,
-    ProbabilityDocumentError, ProbabilityDocumentLimits,
+    check_probability_certificate_document, claim_binding, probability_certificate_document,
+    write_probability_certificate, ExactBinding, ExactProbBuildIssue, ExactProbBuildRecord,
+    ExactProbabilityCertificate, ExactProbabilityCertificateCheck, ExactProbabilityGraphError,
+    ExactProbabilityValue, Extremum, ModelCheckLimit, ProbabilityBoundSide,
+    ProbabilityDocumentError, ProbabilityDocumentLimits, ProbabilityProductKey, TerminalRecord,
 };
 use qsl_replay::{
     replay_probabilistic_witness, ProbabilisticCounterexample, ProbabilityWitnessError,
@@ -143,10 +142,7 @@ impl ExactReport {
                 TerminalRecord::inconclusive(
                     index,
                     backend,
-                    InconclusiveCause::CertificateRejected {
-                        rule,
-                        at,
-                    },
+                    InconclusiveCause::CertificateRejected { rule, at },
                 ),
                 None,
             ),
@@ -329,15 +325,32 @@ fn run(
         tamper(&mut certificate);
     }
     let document_limits = ProbabilityDocumentLimits {
-        bytes: limits.document.bytes, storage_bytes: limits.document.storage_bytes,
-        states: limits.model.limits.max_states, edges: limits.model.limits.max_transitions,
-        scalar_bits: limits.max_rational_bits, accounting: meter,
+        bytes: limits.document.bytes,
+        storage_bytes: limits.document.storage_bytes,
+        states: limits.model.limits.max_states,
+        edges: limits.model.limits.max_transitions,
+        scalar_bits: limits.max_rational_bits,
+        accounting: meter,
     };
     let checked = (|| {
         let claims = package.graph().probabilistic_model().claims();
-        let document = probability_certificate_document(&system, claims, &item, &certificate, document_limits, cancel)?;
+        let document = probability_certificate_document(
+            &system,
+            claims,
+            &item,
+            &certificate,
+            document_limits,
+            cancel,
+        )?;
         let bytes = write_probability_certificate(&document, document_limits, cancel)?;
-        let check = check_probability_certificate_document(&system, claims, &item, &bytes, document_limits, cancel)?;
+        let check = check_probability_certificate_document(
+            &system,
+            claims,
+            &item,
+            &bytes,
+            document_limits,
+            cancel,
+        )?;
         Ok::<_, ProbabilityDocumentError>((check, bytes))
     })();
     match checked {
@@ -376,9 +389,17 @@ fn run(
                         }))
                     }
                     ProbabilityCertificateLocus::Member(name) => {
-                        let Some(member) = qsl_replay::CertificateMember::ALL.iter().find(|member| member.as_str() == *name) else { return broken(); };
-                        EngineReport::Exact(Box::new(ExactReport::Rejected { rule, at: CertificateLocus::CertificateMember(*member) }))
-                    },
+                        let Some(member) = qsl_replay::CertificateMember::ALL
+                            .iter()
+                            .find(|member| member.as_str() == *name)
+                        else {
+                            return broken();
+                        };
+                        EngineReport::Exact(Box::new(ExactReport::Rejected {
+                            rule,
+                            at: CertificateLocus::CertificateMember(*member),
+                        }))
+                    }
                 }
             }
         },
@@ -394,18 +415,29 @@ fn run(
         ),
         Err(ProbabilityDocumentError::Accounting(incomplete)) => settled(
             &ExactProbBuildIssue::Limit {
-                limit: ModelCheckLimit::EvaluationMeter { counter: incomplete.limit_kind },
+                limit: ModelCheckLimit::EvaluationMeter {
+                    counter: incomplete.limit_kind,
+                },
                 value: incomplete.limit,
             },
             subject,
         ),
-        Err(ProbabilityDocumentError::IntegerText { bit_bound, .. }) => settled(&ExactProbBuildIssue::Limit { limit: ModelCheckLimit::ExactProbMaxRationalBits, value: bit_bound }, subject),
+        Err(ProbabilityDocumentError::IntegerText { bit_bound, .. }) => settled(
+            &ExactProbBuildIssue::Limit {
+                limit: ModelCheckLimit::ExactProbMaxRationalBits,
+                value: bit_bound,
+            },
+            subject,
+        ),
         Err(ProbabilityDocumentError::Build(issue)) => settled(&issue, subject),
         Err(ProbabilityDocumentError::Unsupported) => not_yet(),
         Err(
-            ProbabilityDocumentError::Malformed | ProbabilityDocumentError::MissingMember(_)
-            | ProbabilityDocumentError::Noncanonical | ProbabilityDocumentError::IdentityMismatch
-            | ProbabilityDocumentError::ObjectiveMismatch | ProbabilityDocumentError::Graph(_),
+            ProbabilityDocumentError::Malformed
+            | ProbabilityDocumentError::MissingMember(_)
+            | ProbabilityDocumentError::Noncanonical
+            | ProbabilityDocumentError::IdentityMismatch
+            | ProbabilityDocumentError::ObjectiveMismatch
+            | ProbabilityDocumentError::Graph(_),
         ) => broken(),
     }
 }

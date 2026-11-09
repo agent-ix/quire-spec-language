@@ -105,10 +105,13 @@ pub fn check_probability_certificate_source(
     cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilitySourceError> {
     // Refuse a foreign claim before compiler/model work as well as enumeration.
-    let document = match super::read_probability_certificate(request.certificate, limits.document, cancel) {
-        Ok(document) => document,
-        Err(error) => return super::document::document_admission_error(error).map_err(Into::into),
-    };
+    let document =
+        match super::read_probability_certificate(request.certificate, limits.document, cancel) {
+            Ok(document) => document,
+            Err(error) => {
+                return super::document::document_admission_error(error).map_err(Into::into)
+            }
+        };
     if &document.identity != request.item {
         return Err(ProbabilityDocumentError::IdentityMismatch.into());
     }
@@ -210,8 +213,7 @@ pub fn check_probability_certificate_source(
         meter: limits.scalar,
         emit: limits.spine.package.emit(),
     };
-    let system = ModelSystem::new(simulation)
-        .map_err(ProbabilitySourceError::Subject)?;
+    let system = ModelSystem::new(simulation).map_err(ProbabilitySourceError::Subject)?;
     check_probability_certificate_document(
         &system,
         claims,

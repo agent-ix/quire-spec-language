@@ -22,7 +22,10 @@ pub struct ProbabilityDocumentIoLimits {
 impl Default for ProbabilityDocumentIoLimits {
     fn default() -> Self {
         let bytes = crate::CertificateCheckLimits::default().max_certificate_bytes;
-        Self { bytes, storage_bytes: bytes }
+        Self {
+            bytes,
+            storage_bytes: bytes,
+        }
     }
 }
 
@@ -57,7 +60,9 @@ impl ProbabilityDocumentLimit {
     }
 
     /// The configured setting named by a stopped check.
-    pub fn setting(self) -> &'static str { self.model_limit().setting() }
+    pub fn setting(self) -> &'static str {
+        self.model_limit().setting()
+    }
 }
 
 /// Exact reachability evidence, before independent semantic checking.
@@ -208,7 +213,11 @@ fn poll(cancel: &Cancel) -> Result<(), ProbabilityDocumentError> {
 }
 
 fn canonical<T: Serialize>(value: &T, bytes: u64) -> Result<Vec<u8>, ProbabilityDocumentError> {
-    let mut counter = EncodedSize { used: 0, bound: bytes, required: None };
+    let mut counter = EncodedSize {
+        used: 0,
+        bound: bytes,
+        required: None,
+    };
     if serde_json::to_writer(&mut counter, value).is_err() {
         return Err(match counter.required {
             Some(actual) => exceeded(ProbabilityDocumentLimit::Bytes, bytes, actual),
@@ -236,7 +245,9 @@ struct EncodedSize {
 
 impl std::io::Write for EncodedSize {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        let required = self.used.saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+        let required = self
+            .used
+            .saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
         if required > self.bound {
             self.required = Some(required);
             return Err(std::io::Error::other("certificate byte ceiling"));
@@ -245,7 +256,9 @@ impl std::io::Write for EncodedSize {
         Ok(bytes.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 fn exceeded(limit: ProbabilityDocumentLimit, bound: u64, actual: u64) -> ProbabilityDocumentError {
@@ -314,10 +327,17 @@ fn ordered(
     Ok(result)
 }
 
-fn ratio(wire: WireRational, bits: u64, meter: &mut quire_exact::Meter, cancel: &Cancel) -> Result<Rational, ProbabilityDocumentError> {
+fn ratio(
+    wire: WireRational,
+    bits: u64,
+    meter: &mut quire_exact::Meter,
+    cancel: &Cancel,
+) -> Result<Rational, ProbabilityDocumentError> {
     for text in [&wire.numerator, &wire.denominator] {
-        if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit())
-            || text.len() > 1 && text.starts_with('0') {
+        if text.is_empty()
+            || !text.bytes().all(|byte| byte.is_ascii_digit())
+            || text.len() > 1 && text.starts_with('0')
+        {
             return Err(ProbabilityDocumentError::Malformed);
         }
         let digits = u64::try_from(text.len()).unwrap_or(u64::MAX);
@@ -325,7 +345,10 @@ fn ratio(wire: WireRational, bits: u64, meter: &mut quire_exact::Meter, cancel: 
         // Single digits use the kernel's inline parser without large storage.
         let minimum_bits = digits.saturating_sub(1).saturating_mul(3).saturating_add(1);
         if minimum_bits > bits && digits > 1 {
-            return Err(ProbabilityDocumentError::IntegerText { bit_bound: bits, decimal_digits: digits });
+            return Err(ProbabilityDocumentError::IntegerText {
+                bit_bound: bits,
+                decimal_digits: digits,
+            });
         }
     }
     let numerator: Integer = wire
@@ -349,8 +372,14 @@ fn ratio(wire: WireRational, bits: u64, meter: &mut quire_exact::Meter, cancel: 
             numerator.magnitude_bits().max(denominator.magnitude_bits()),
         ));
     }
-    let value = arithmetic(quire_exact::RationalArithmetic::Divide(
-        &Rational::from_integer(numerator), &Rational::from_integer(denominator)), meter, cancel)?;
+    let value = arithmetic(
+        quire_exact::RationalArithmetic::Divide(
+            &Rational::from_integer(numerator),
+            &Rational::from_integer(denominator),
+        ),
+        meter,
+        cancel,
+    )?;
     if value.numerator().to_string() != wire.numerator
         || value.denominator().to_string() != wire.denominator
         || value < rational(0)
@@ -373,7 +402,10 @@ pub fn read_probability_certificate(
 }
 
 fn read_document(
-    bytes: &[u8], limits: ProbabilityDocumentLimits, cancel: &Cancel, meter: &mut quire_exact::Meter,
+    bytes: &[u8],
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    meter: &mut quire_exact::Meter,
 ) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
     poll(cancel)?;
     if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limits.bytes {
@@ -385,23 +417,50 @@ fn read_document(
     }
     let parsed = quire_canonical::read_bounded(bytes, limits.bytes, limits.storage_bytes).map_err(
         |error| match error {
-            quire_canonical::ReadError::Limit(limit) => {
-                exceeded(ProbabilityDocumentLimit::StorageBytes, limit.bound, limit.required)
-            }
+            quire_canonical::ReadError::Limit(limit) => exceeded(
+                ProbabilityDocumentLimit::StorageBytes,
+                limit.bound,
+                limit.required,
+            ),
             _ => ProbabilityDocumentError::Malformed,
         },
     )?;
+    let root = parsed.root();
+    let objective = root.get("objective");
+    let outside_profile = matches!(root.get("kind").map(|node| node.node()), Some(quire_canonical::Node::String(kind)) if kind != "exact")
+        || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if profile != PROFILE)
+        || matches!(objective.and_then(|node| node.get("optimization")).map(|node| node.node()), Some(quire_canonical::Node::String(operator)) if !matches!(operator, "minimum" | "maximum" | "workload"))
+        || match objective.and_then(|node| node.get("fairness")).map(|node| node.node()) {
+            Some(quire_canonical::Node::Array(mut items)) => items.next().is_some(),
+            _ => false,
+        };
+    if outside_profile {
+        let canonical = quire_canonical::to_vec(&parsed, quire_canonical::Limits::new(limits.bytes)).map_err(|_| ProbabilityDocumentError::Malformed)?;
+        return Err(if canonical == bytes { ProbabilityDocumentError::Unsupported } else { ProbabilityDocumentError::Noncanonical });
+    }
     if parsed.root().get("ranking").is_none() {
         return Err(ProbabilityDocumentError::MissingMember("ranking"));
     }
     let root = parsed.root();
-    let rows = [root.get("values"), root.get("ranking"), root.get("objective").and_then(|objective| objective.get("targets"))]
-        .into_iter().filter_map(|node| match node?.node() {
-            quire_canonical::Node::Array(items) => Some(items.count()),
-            _ => None,
-        }).max().unwrap_or(0);
+    let rows = [
+        root.get("values"),
+        root.get("ranking"),
+        root.get("objective")
+            .and_then(|objective| objective.get("targets")),
+    ]
+    .into_iter()
+    .filter_map(|node| match node?.node() {
+        quire_canonical::Node::Array(items) => Some(items.count()),
+        _ => None,
+    })
+    .max()
+    .unwrap_or(0);
     if rows > limits.states {
-        return Err(exceeded(ProbabilityDocumentLimit::States, u64::try_from(limits.states).unwrap_or(u64::MAX), u64::try_from(rows).unwrap_or(u64::MAX)));
+        return Err(exceeded(
+            ProbabilityDocumentLimit::States,
+            u64::try_from(limits.states).unwrap_or(u64::MAX),
+            u64::try_from(rows).unwrap_or(u64::MAX),
+        ));
     }
     drop(parsed);
     let wire: WireDocument =
@@ -575,11 +634,19 @@ fn subject_graph(
         None => match error {
             ExactProbabilityGraphError::LimitReached => {
                 let bound = u64::try_from(limits.states).unwrap_or(u64::MAX);
-                exceeded(ProbabilityDocumentLimit::States, bound, bound.saturating_add(1))
+                exceeded(
+                    ProbabilityDocumentLimit::States,
+                    bound,
+                    bound.saturating_add(1),
+                )
             }
             ExactProbabilityGraphError::EdgeLimitReached => {
                 let bound = u64::try_from(limits.edges).unwrap_or(u64::MAX);
-                exceeded(ProbabilityDocumentLimit::Edges, bound, bound.saturating_add(1))
+                exceeded(
+                    ProbabilityDocumentLimit::Edges,
+                    bound,
+                    bound.saturating_add(1),
+                )
             }
             other => other.into(),
         },
@@ -634,7 +701,11 @@ pub fn probability_certificate_document(
                     successor
                         .checked_add(1)
                         .filter(|rank| *rank <= MAX_COUNT)
-                        .ok_or(exceeded(ProbabilityDocumentLimit::Rank, MAX_COUNT, MAX_COUNT + 1))?,
+                        .ok_or(exceeded(
+                            ProbabilityDocumentLimit::Rank,
+                            MAX_COUNT,
+                            MAX_COUNT + 1,
+                        ))?,
                 );
             }
         }
@@ -685,12 +756,20 @@ pub fn check_probability_certificate_document(
     };
     for (key, state) in &graph.states {
         if !ranks.contains_key(key) {
-            return Ok(if state.terminal.is_none() && values.get(key).is_some_and(|value| *value > rational(0)) {
-                rejected(ProbabilityCertificateRule::RankMissing, key.clone())
-            } else { malformed_ranking() });
+            return Ok(
+                if state.terminal.is_none()
+                    && values.get(key).is_some_and(|value| *value > rational(0))
+                {
+                    rejected(ProbabilityCertificateRule::RankMissing, key.clone())
+                } else {
+                    malformed_ranking()
+                },
+            );
         }
     }
-    if ranks.len() != graph.states.len() { return Ok(malformed_ranking()); }
+    if ranks.len() != graph.states.len() {
+        return Ok(malformed_ranking());
+    }
     for (key, state) in &graph.states {
         poll(cancel)?;
         if state.terminal.is_some() || values.get(key).is_some_and(|value| *value == rational(0)) {
@@ -707,10 +786,15 @@ pub fn check_probability_certificate_document(
                     .is_some_and(|successor| successor < rank)
         });
         if !progress {
-            return Ok(rejected(ProbabilityCertificateRule::RankBroken, key.clone()));
+            return Ok(rejected(
+                ProbabilityCertificateRule::RankBroken,
+                key.clone(),
+            ));
         }
     }
-    check_document_equalities(&graph, &values, objective, &bound, limits, cancel, &mut meter)
+    check_document_equalities(
+        &graph, &values, objective, &bound, limits, cancel, &mut meter,
+    )
 }
 
 fn malformed_ranking() -> ExactProbabilityCertificateCheck {
@@ -720,7 +804,9 @@ fn malformed_ranking() -> ExactProbabilityCertificateCheck {
     })
 }
 
-pub(super) fn document_admission_error(error: ProbabilityDocumentError) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
+pub(super) fn document_admission_error(
+    error: ProbabilityDocumentError,
+) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     match error {
         ProbabilityDocumentError::MissingMember("ranking") => Ok(malformed_ranking()),
         other => Err(other),
@@ -948,14 +1034,44 @@ mod tests {
     fn storage_and_rational_text_are_admitted_before_rows_or_large_integers() {
         let bytes = bytes();
         let bound = u64::try_from(bytes.len()).unwrap();
-        let error = read_probability_certificate(&bytes, ProbabilityDocumentLimits { storage_bytes: bound, ..limits() }, &Cancel::new()).unwrap_err();
-        let ProbabilityDocumentError::Limit { limit, bound: actual_bound, actual } = error else { panic!("the bounded canonical reader must refuse its working allocation"); };
+        let error = read_probability_certificate(
+            &bytes,
+            ProbabilityDocumentLimits {
+                storage_bytes: bound,
+                ..limits()
+            },
+            &Cancel::new(),
+        )
+        .unwrap_err();
+        let ProbabilityDocumentError::Limit {
+            limit,
+            bound: actual_bound,
+            actual,
+        } = error
+        else {
+            panic!("the bounded canonical reader must refuse its working allocation");
+        };
         assert_eq!(limit, ProbabilityDocumentLimit::StorageBytes);
         assert_eq!(actual_bound, bound);
         assert!(actual > bound);
         let text = format!("1{}", "0".repeat(100_000));
-        let offered = mutate(|value| { value["values"][0]["value"]["numerator"] = json!(text); });
-        assert_eq!(read_probability_certificate(&offered, ProbabilityDocumentLimits { scalar_bits: 16, ..limits() }, &Cancel::new()), Err(ProbabilityDocumentError::IntegerText { bit_bound: 16, decimal_digits: 100_001 }));
+        let offered = mutate(|value| {
+            value["values"][0]["value"]["numerator"] = json!(text);
+        });
+        assert_eq!(
+            read_probability_certificate(
+                &offered,
+                ProbabilityDocumentLimits {
+                    scalar_bits: 16,
+                    ..limits()
+                },
+                &Cancel::new()
+            ),
+            Err(ProbabilityDocumentError::IntegerText {
+                bit_bound: 16,
+                decimal_digits: 100_001
+            })
+        );
     }
 
     #[trace("FR-201-AC-9")]

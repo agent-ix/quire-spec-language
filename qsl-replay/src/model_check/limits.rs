@@ -630,7 +630,9 @@ mod tests {
                 "max_certificate_bytes",
                 "certificate_check.max_certificate_bytes",
             ),
-            ModelCheckLimit::CertificateMaxWorkingBytes => ("max_working_bytes", "certificate_check.max_working_bytes"),
+            ModelCheckLimit::CertificateMaxWorkingBytes => {
+                ("max_working_bytes", "certificate_check.max_working_bytes")
+            }
             ModelCheckLimit::CertificateMaxRank => ("max_rank", "certificate_check.max_rank"),
         }
     }
