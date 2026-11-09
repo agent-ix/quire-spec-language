@@ -9,8 +9,6 @@
 //! `unsupported` (see the last test) and no test constructs a refutation.
 
 use ix_trace_rs::trace;
-use qsl_replay::certificate::{CertificateLocus, CertificateRule};
-use qsl_replay::InconclusiveCause;
 use qsl_analyze::analyze::{
     analyze_items, exact_probabilistic_item, exact_probabilistic_item_tampered, DispositionKind,
     Engines, Settlement,
@@ -18,6 +16,8 @@ use qsl_analyze::analyze::{
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_eval::simulation::Limits;
 use qsl_foundation::RequestIndex;
+use qsl_replay::certificate::{CertificateLocus, CertificateRule};
+use qsl_replay::InconclusiveCause;
 use qsl_replay::{
     claim_binding, Certification, ExactOrBounds, ExactProbabilityCertificateCheck,
     ExactProbabilityGraphError, Extremum, IncompleteCause, ModelCheckLimit, ModelCheckLimits,
@@ -238,26 +238,46 @@ fn a_rejected_certificate_never_settles_proved() {
     assert!(record.exact_probabilistic.is_none());
     let terminal = record.terminal().expect("a terminal record");
     let system = ModelSystem::new(world.subject().simulation).expect("the model admits");
-    let binding = claim_binding(&system, world.claim("Likely")).unwrap().unwrap();
+    let binding = claim_binding(&system, world.claim("Likely"))
+        .unwrap()
+        .unwrap();
     let accepted = settle(&world, "Likely", ModelCheckLimits::default());
     let certificate = &accepted.exact_probabilistic.as_ref().unwrap().certificate;
     // The altered terminal non-target state has true delivery value zero.
-    let expected = certificate.values.iter().find(|entry| entry.value == ratio(0, 1))
-        .expect("the two-loss state").state.clone();
-    assert_eq!(terminal.value(), &TerminalValue::Inconclusive(
-        InconclusiveCause::CertificateRejected {
+    let expected = certificate
+        .values
+        .iter()
+        .find(|entry| entry.value == ratio(0, 1))
+        .expect("the two-loss state")
+        .state
+        .clone();
+    assert_eq!(
+        terminal.value(),
+        &TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
             rule: CertificateRule::InequalityFails,
             at: CertificateLocus::ProbabilityProductState(expected.clone()),
-        }
-    ));
+        })
+    );
     let locus = CertificateLocus::ProbabilityProductState(expected.clone());
     let wire = serde_json::to_value(&locus).unwrap();
     // Encode the complete canonical octets independently of the locus serializer.
     let expected_wire = serde_json::to_value(qsl_replay::certificate::CertificateLocus::ModelKey(
-        qsl_eval::simulation::StateKey::from_canonical_bytes(expected.as_bytes().to_vec())
-    )).unwrap();
+        qsl_eval::simulation::StateKey::from_canonical_bytes(expected.as_bytes().to_vec()),
+    ))
+    .unwrap();
     assert_eq!(wire, serde_json::json!({"product_key": expected_wire}));
-    assert!(String::from_utf8(expected.as_bytes().to_vec()).unwrap().contains(&binding.reference.key));
+    let outcome =
+        serde_json::to_value(qsl_replay::outcome::OutcomeItem::from_terminal(terminal)).unwrap();
+    assert_eq!(outcome["result"], "inconclusive");
+    assert_eq!(
+        outcome["cause"],
+        serde_json::json!({
+            "type": "certificate-rejected", "rule": "inequality-fails", "at": wire
+        })
+    );
+    assert!(String::from_utf8(expected.as_bytes().to_vec())
+        .unwrap()
+        .contains(&binding.instance.key));
 }
 
 #[test]

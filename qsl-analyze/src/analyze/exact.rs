@@ -16,15 +16,15 @@
 
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_foundation::{BackendId, RequestIndex};
-use qsl_replay::statistical::SubjectLimits;
 use qsl_replay::certificate::{CertificateLocus, CertificateRule};
-use qsl_replay::{InconclusiveCause, ProbabilityCertificateLocus, ProbabilityCertificateRule};
+use qsl_replay::statistical::SubjectLimits;
 use qsl_replay::{
     check_claim_exact_reachability, claim_binding, ExactBinding, ExactProbBuildIssue,
     ExactProbBuildRecord, ExactProbabilityCertificate, ExactProbabilityCertificateCheck,
     ExactProbabilityGraphError, ExactProbabilityValue, Extremum, ModelCheckLimit,
     ObligationIdentity, ProbabilityBoundSide, ProbabilityProductKey, TerminalRecord,
 };
+use qsl_replay::{InconclusiveCause, ProbabilityCertificateLocus, ProbabilityCertificateRule};
 use qsl_route::Mode;
 use qsl_semantics::check::{
     Bound, Capability, DeclarationFamily, ProbForm, ProbScheduler, ReachTarget,
@@ -53,7 +53,10 @@ pub struct ExactProbabilityEvidence {
 /// What EN-5 reports for one item.
 pub(crate) enum ExactReport {
     /// The core rejected a probability value at a complete product state.
-    Rejected { rule: CertificateRule, at: ProbabilityProductKey },
+    Rejected {
+        rule: CertificateRule,
+        at: ProbabilityProductKey,
+    },
     /// The checker accepted the solver's certificate.
     Proved {
         /// The checker's acceptance, the only evidence a `proved` record
@@ -79,10 +82,14 @@ impl ExactReport {
     ) -> (TerminalRecord, Option<Box<ExactProbabilityEvidence>>) {
         match self {
             Self::Rejected { rule, at } => (
-                TerminalRecord::inconclusive(index, backend, InconclusiveCause::CertificateRejected {
-                    rule,
-                    at: CertificateLocus::ProbabilityProductState(at),
-                }),
+                TerminalRecord::inconclusive(
+                    index,
+                    backend,
+                    InconclusiveCause::CertificateRejected {
+                        rule,
+                        at: CertificateLocus::ProbabilityProductState(at),
+                    },
+                ),
                 None,
             ),
             Self::Proved {
@@ -292,9 +299,12 @@ fn run(
                     ProbabilityCertificateRule::Malformed => return broken(),
                 };
                 match &rejection.at {
-                    ProbabilityCertificateLocus::ProductState(at) => EngineReport::Exact(Box::new(
-                        ExactReport::Rejected { rule, at: at.clone() },
-                    )),
+                    ProbabilityCertificateLocus::ProductState(at) => {
+                        EngineReport::Exact(Box::new(ExactReport::Rejected {
+                            rule,
+                            at: at.clone(),
+                        }))
+                    }
                     ProbabilityCertificateLocus::Member(_) => broken(),
                 }
             }
@@ -375,4 +385,31 @@ fn certificate_of(
         return Err(ExactProbabilityGraphError::ExpansionRefused);
     }
     Ok(ExactProbabilityCertificate { values: entries })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+    use qsl_replay::TerminalValue;
+
+    #[trace("TC-1197", "FR-201-AC-6", "FR-203-AC-3")]
+    #[test]
+    fn threshold_rejection_retains_its_rule_and_complete_product_key() {
+        let key = ProbabilityProductKey::for_model_state(None, b"complete-model-state")
+            .expect("the key encodes");
+        let (terminal, evidence) = ExactReport::Rejected {
+            rule: CertificateRule::ThresholdMissed,
+            at: key.clone(),
+        }
+        .settle(RequestIndex::new(0), BackendId::new("en-5"));
+        assert_eq!(
+            terminal.value(),
+            &TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+                rule: CertificateRule::ThresholdMissed,
+                at: CertificateLocus::ProbabilityProductState(key),
+            })
+        );
+        assert!(evidence.is_none());
+    }
 }

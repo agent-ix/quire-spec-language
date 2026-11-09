@@ -179,8 +179,7 @@ impl Serialize for CertificateLocus {
             Self::ProbabilityProductState(state) => {
                 use base64::Engine as _;
                 let mut object = serializer.serialize_struct("CertificateLocus", 1)?;
-                let key = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                    .encode(state.as_bytes());
+                let key = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(state.as_bytes());
                 object.serialize_field("product_key", &key)?;
                 object.end()
             }
