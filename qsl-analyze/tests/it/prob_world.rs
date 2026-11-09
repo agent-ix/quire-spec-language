@@ -214,6 +214,8 @@ impl Model {
 /// A checked fixture model with its initial snapshot.
 pub(crate) struct World {
     pub(crate) package: CheckedPackage,
+    pub(crate) unit: Vec<u8>,
+    pub(crate) provision: qsl_analyze::analyze::SourceProvision,
     packages: qsl_semantics::model::intake::PackageInput,
     snapshots: qsl_semantics::model::observation::DocumentProvision,
     initial: Vec<DocumentRef>,
@@ -405,6 +407,11 @@ impl World {
             node: model.ident(model.population),
         };
         Ok(Self {
+            provision: qsl_analyze::analyze::SourceProvision::single(
+                graph.source(),
+                unit.as_bytes(),
+            ),
+            unit: unit.into_bytes(),
             package: CheckedPackage::link(graph),
             packages,
             snapshots,

@@ -23,7 +23,7 @@ pub const BACKEND_ID: &str = "en-5";
 /// The (kind, mode) pairs EN-5 advertises: exactly one.
 pub const ADVERTISED: [(Option<&str>, Option<&str>); 1] = [(
     Some(Capability::ProbabilisticSatisfaction.to_wire()),
-    Some(Mode::Bounded.to_wire()),
+    Some(Mode::Unbounded.to_wire()),
 )];
 
 /// The boundable domain kinds EN-5's product explores.

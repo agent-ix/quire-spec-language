@@ -307,9 +307,14 @@ pub enum ProbabilityCertificateLocus {
 pub struct ExactProbabilityAcceptance {
     value: Rational,
     side: ProbabilityBoundSide,
+    certificate: ExactProbabilityCertificate,
 }
 
 impl ExactProbabilityAcceptance {
+    /// The exact certificate this checker accepted, retained with its token.
+    pub fn certificate(&self) -> &ExactProbabilityCertificate {
+        &self.certificate
+    }
     /// The independently checked initial value.
     pub fn value(&self) -> &Rational {
         &self.value
@@ -828,6 +833,7 @@ fn check_exact_reachability(
     Ok(ExactProbabilityCertificateCheck::Accepted(
         ExactProbabilityAcceptance {
             value: initial.clone(),
+            certificate: certificate.clone(),
             side: match bound {
                 Bound::AtLeast(_) => ProbabilityBoundSide::AtLeast,
                 Bound::AtMost(_) => ProbabilityBoundSide::AtMost,
@@ -1100,6 +1106,9 @@ mod tests {
             ExactProbabilityCertificateCheck::Accepted(ExactProbabilityAcceptance {
                 value: Rational::new(Integer::from(4_i64), Integer::from(5_i64)).unwrap(),
                 side: ProbabilityBoundSide::AtLeast,
+                certificate: certificate(
+                    Rational::new(Integer::from(4_i64), Integer::from(5_i64)).unwrap()
+                ),
             })
         );
 

@@ -1,27 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Partial EN-5 routing evidence through the existing analyze/provider API.
-//! Certificate contents are tested by `exact_probabilistic_item`; these tests
-//! exercise request-owned subjects, routing and record parity.
-//! FR-280-AC-2 and FR-281-AC-1 tags bind only the EN-5 proof and budget-stop
-//! assertions here. Current-contract `NegotiatedItem`/`SourceProvision`, the
-//! generalized request/result API, and public certificate/counterexample
-//! projection are not delivered by this slice. These obligations and other
-//! TC-762 engine members remain open; these tests do not complete the criteria.
+//! EN-5 routing over operation-owned subjects and source provisions.
+//! Caller-supplied dispositions exercise the QSL provider boundary; actual
+//! codegen negotiation belongs to its external integration tests. Other
+//! TC-762 engine members remain separately covered.
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze, Aggregate, AnalyzeLimits, AnalyzeOutcome, AnalyzeRequest, ClauseLimits, Engines,
+    analyze, Aggregate, AnalyzeLimits, AnalyzeOutcome, AnalyzeRequest, ClaimItem, Engines,
+    ItemForm, ItemOptions, NegotiatedItem, ProbabilisticItem, ProbabilisticLimits, TemporalItem,
 };
 use qsl_analyze::exact_probabilistic::ExactProbLimits;
-use qsl_analyze::provider::{
-    self, ClauseClaimItem, ExactClaimItem, RoutedClause, RoutedExact, RoutedWork,
-};
+use qsl_analyze::provider;
 use qsl_eval::simulation::Limits;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::{
     Certification, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ProofBasis,
     ProofRefusalCause, TerminalRecord, TerminalValue,
 };
+use qsl_route::{request::ExtentClassification, routing::Disposition, Candidate, EvidenceKind};
+use qsl_semantics::check::Capability;
 use quire_exact::{Cancel, CancelCause, Integer, Rational};
 use quire_semantic_value::catalog::CatalogCode;
 
@@ -31,42 +28,69 @@ const CLAIMS: &str =
     "probabilistic Likely using inf on M over (m: M::Msg) under every scheduler on origin \
      { probability >= 0.95 [ eventually holds(m.delivered) ] }\n";
 
-fn item(world: &World, index: usize, limits: ExactProbLimits) -> RoutedExact<'_> {
-    RoutedExact {
-        item: ExactClaimItem {
+fn item(world: &World, index: usize, limits: ExactProbLimits) -> NegotiatedItem {
+    let candidate = Candidate::new(BackendId::new("en-5"));
+    NegotiatedItem {
+        item: ClaimItem {
             request_index: RequestIndex::new(index),
-            claim: world.claim("Likely"),
-            limits,
-            required: true,
+            claim: world
+                .claim("Likely")
+                .occurrence()
+                .expect("authored claim")
+                .clone(),
+            kind: Capability::ProbabilisticSatisfaction,
+            extent: ExtentClassification::Unbounded {
+                finite_bound_available: true,
+            },
+            backend: Some(BackendId::new("en-5")),
+            candidates: vec![candidate.clone()],
+            options: ItemOptions {
+                required: true,
+                ..ItemOptions::default()
+            },
+            form: Some(ItemForm::Probabilistic(ProbabilisticItem {
+                evidence: EvidenceKind::Exact,
+                limits: ProbabilisticLimits::Exact(limits),
+                method: None,
+                seed: None,
+                sampler: None,
+                max_witnesses: None,
+                symmetry: Vec::new(),
+                timed_sampling: None,
+            })),
         },
-        backend: BackendId::new("en-5"),
+        disposition: Disposition::Supported(candidate),
+        diagnostic: None,
     }
 }
 
-fn direct(world: &World, items: Vec<RoutedWork<'_>>, cancel: &Cancel) -> AnalyzeOutcome {
+fn direct(world: &World, items: Vec<NegotiatedItem>, cancel: &Cancel) -> AnalyzeOutcome {
     analyze(
         &world.package,
-        AnalyzeRequest {
+        &AnalyzeRequest {
             binding: world.binding(),
+            provision: world.provision.clone(),
             items,
         },
         &Engines::qsl().expect("the engines register"),
-        &AnalyzeLimits::default(),
+        &AnalyzeLimits::unbounded(),
         cancel,
     )
     .expect("the binding admits")
     .into_value()
 }
 
-fn served(world: &World, items: &[RoutedExact<'_>], cancel: &Cancel) -> Vec<TerminalRecord> {
+fn served(world: &World, items: &[NegotiatedItem], cancel: &Cancel) -> Vec<TerminalRecord> {
     provider::run(
         &world.package,
         &world.binding(),
+        &world.provision,
         items,
         &Engines::qsl().expect("the engines register"),
-        &AnalyzeLimits::default(),
+        &AnalyzeLimits::unbounded(),
         cancel,
     )
+    .records
 }
 
 fn one_state() -> ExactProbLimits {
@@ -79,15 +103,15 @@ fn one_state() -> ExactProbLimits {
     }
 }
 
-/// Partial AC evidence: an existing-API exact member returns equal certified
-/// records. This does not exercise current negotiation/provision or public
-/// certificate/counterexample projection.
+/// The canonical exact member and source provision return equal certified
+/// records. The caller supplies the negotiation disposition; real codegen
+/// negotiation remains external integration evidence.
 #[trace("TC-761", "TC-762", "FR-280-AC-2", "FR-281-AC-1")]
 #[test]
 fn exact_claim_is_certified_and_equal_through_analyze_and_provider() {
     let world = World::new(&prob_world::link(CLAIMS));
     let routed = item(&world, 7, ExactProbLimits::default());
-    let analyzed = direct(&world, vec![routed.clone().into()], &Cancel::new());
+    let analyzed = direct(&world, vec![routed.clone()], &Cancel::new());
     let records = served(&world, &[routed], &Cancel::new());
     assert_eq!(analyzed.records, records);
     assert_eq!(records.len(), 1);
@@ -108,14 +132,14 @@ fn exact_claim_is_certified_and_equal_through_analyze_and_provider() {
     assert_eq!(analyzed.aggregate, Ok(Aggregate::Attainable));
 }
 
-/// Partial AC evidence: existing-API routing preserves EN-5's typed budget
-/// stop. Current negotiation/provision and generalized results remain open.
+/// The canonical provider and analyze entries preserve EN-5's typed budget
+/// stop over the same source provision and caller disposition.
 #[trace("TC-761", "TC-763", "FR-280-AC-2", "FR-281-AC-6")]
 #[test]
 fn exact_state_budget_settles_incomplete_through_both_entries() {
     let world = World::new(&prob_world::link(CLAIMS));
     let routed = item(&world, 3, one_state());
-    let analyzed = direct(&world, vec![routed.clone().into()], &Cancel::new());
+    let analyzed = direct(&world, vec![routed.clone()], &Cancel::new());
     let records = served(&world, &[routed], &Cancel::new());
     assert_eq!(analyzed.records, records);
     assert_eq!(records.len(), 1);
@@ -149,8 +173,10 @@ fn reversed_exact_items_keep_their_records_and_indices() {
 fn exact_member_on_a_sampling_backend_is_unsupported_and_affects_required_aggregation() {
     let world = World::new(&prob_world::link(CLAIMS));
     let mut wrong = item(&world, 4, ExactProbLimits::default());
-    wrong.backend = BackendId::new("en-4");
-    let required = direct(&world, vec![wrong.clone().into()], &Cancel::new());
+    wrong.item.backend = Some(BackendId::new("en-4"));
+    wrong.item.candidates = vec![Candidate::new(BackendId::new("en-4"))];
+    wrong.disposition = Disposition::Supported(Candidate::new(BackendId::new("en-4")));
+    let required = direct(&world, vec![wrong.clone()], &Cancel::new());
     assert_eq!(required.records.len(), 1);
     assert!(matches!(
         required.records[0].value(),
@@ -170,8 +196,8 @@ fn exact_member_on_a_sampling_backend_is_unsupported_and_affects_required_aggreg
             request_index: RequestIndex::new(4)
         })
     );
-    wrong.item.required = false;
-    let optional = direct(&world, vec![wrong.clone().into()], &Cancel::new());
+    wrong.item.options.required = false;
+    let optional = direct(&world, vec![wrong.clone()], &Cancel::new());
     assert_eq!(optional.aggregate, Ok(Aggregate::Attainable));
     assert_eq!(optional.records, served(&world, &[wrong], &Cancel::new()));
 }
@@ -180,34 +206,44 @@ fn exact_member_on_a_sampling_backend_is_unsupported_and_affects_required_aggreg
 #[test]
 fn mixed_clause_and_exact_members_keep_input_order() {
     let world = World::new(&prob_world::link(CLAIMS));
-    let absent_clause = RoutedClause {
-        item: ClauseClaimItem {
+    let candidate = Candidate::new(BackendId::new("en-1"));
+    let absent_clause = NegotiatedItem {
+        item: ClaimItem {
             request_index: RequestIndex::new(8),
-            clause: world
+            claim: world
                 .claim("Likely")
                 .occurrence()
                 .expect("authored claim")
                 .clone(),
-            unit: b"",
-            run: ClauseLimits::default(),
-            required: false,
+            kind: Capability::TemporalSatisfaction,
+            extent: ExtentClassification::Bounded,
+            backend: Some(BackendId::new("en-1")),
+            candidates: vec![candidate.clone()],
+            options: ItemOptions {
+                required: false,
+                ..ItemOptions::default()
+            },
+            form: Some(ItemForm::Temporal(TemporalItem::default())),
         },
-        backend: BackendId::new("en-1"),
+        disposition: Disposition::Supported(candidate),
+        diagnostic: None,
     };
     let items = vec![
-        RoutedWork::from(item(&world, 5, ExactProbLimits::default())),
-        RoutedWork::from(absent_clause),
-        RoutedWork::from(item(&world, 1, one_state())),
+        item(&world, 5, ExactProbLimits::default()),
+        absent_clause,
+        item(&world, 1, one_state()),
     ];
     let analyzed = direct(&world, items.clone(), &Cancel::new());
     let records = provider::run(
         &world.package,
         &world.binding(),
+        &world.provision,
         &items,
         &Engines::qsl().expect("the engines register"),
-        &AnalyzeLimits::default(),
+        &AnalyzeLimits::unbounded(),
         &Cancel::new(),
-    );
+    )
+    .records;
     assert_eq!(records, analyzed.records);
     assert_eq!(
         records
@@ -235,14 +271,16 @@ fn missing_snapshot_declines_each_exact_item_without_a_backend() {
     let records = provider::run(
         &world.package,
         &binding,
+        &world.provision,
         &[
             item(&world, 6, ExactProbLimits::default()),
             item(&world, 0, one_state()),
         ],
         &Engines::qsl().expect("the engines register"),
-        &AnalyzeLimits::default(),
+        &AnalyzeLimits::unbounded(),
         &Cancel::new(),
-    );
+    )
+    .records;
     assert_eq!(records.len(), 2);
     for (record, index) in records.iter().zip([6, 0]) {
         assert_eq!(record.request_index(), RequestIndex::new(index));

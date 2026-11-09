@@ -1454,6 +1454,7 @@ pub struct TerminalRecord {
     /// `runtime_invariant`/`established-invariant-broken`, or an expansion
     /// stop's own cause).
     diagnostic: Option<CatalogCode>,
+    exact_certificate: Option<Box<crate::ExactProbabilityCertificate>>,
 }
 
 impl TerminalRecord {
@@ -1528,6 +1529,7 @@ impl TerminalRecord {
             value: TerminalValue::Refuted,
             replay: Some(replay.clone()),
             diagnostic: None,
+            exact_certificate: None,
         })
     }
 
@@ -1563,7 +1565,7 @@ impl TerminalRecord {
             return None;
         };
         let value = ExactRational::new(accepted.value().clone());
-        Some(Self::with_backend(
+        let mut record = Self::with_backend(
             request_index,
             backend,
             TerminalValue::Proved {
@@ -1579,7 +1581,9 @@ impl TerminalRecord {
                 },
                 certification: Certification::Certified,
             },
-        ))
+        );
+        record.exact_certificate = Some(Box::new(accepted.certificate().clone()));
+        Some(record)
     }
 
     /// QSpec FR-483: a `proved` record for a finite domain every assignment
@@ -1693,6 +1697,7 @@ impl TerminalRecord {
             value: TerminalValue::Declined { cause, code },
             replay: None,
             diagnostic: Some(diagnostic),
+            exact_certificate: None,
         }
     }
 
@@ -1718,6 +1723,7 @@ impl TerminalRecord {
             value: TerminalValue::Unsupported(cause),
             replay: None,
             diagnostic: Some(diagnostic),
+            exact_certificate: None,
         }
     }
 
@@ -1730,6 +1736,7 @@ impl TerminalRecord {
             value: TerminalValue::Failed,
             replay: None,
             diagnostic: Some(diagnostic),
+            exact_certificate: None,
         }
     }
 
@@ -1809,6 +1816,7 @@ impl TerminalRecord {
             value,
             replay: None,
             diagnostic: None,
+            exact_certificate: None,
         }
     }
 
@@ -1826,12 +1834,18 @@ impl TerminalRecord {
             value,
             replay: None,
             diagnostic: None,
+            exact_certificate: None,
         }
     }
 
     /// The `request_index` of the item this record was read for.
     pub fn request_index(&self) -> RequestIndex {
         self.request_index
+    }
+
+    /// The certificate accepted for this exact probabilistic proof, if any.
+    pub fn exact_certificate(&self) -> Option<&crate::ExactProbabilityCertificate> {
+        self.exact_certificate.as_deref()
     }
 
     /// The FR-331 result value this record carries.

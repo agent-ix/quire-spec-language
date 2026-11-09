@@ -10,6 +10,7 @@
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
     analyze_items, AnalyzeLimits, ClauseItemRefusal, ClauseLimits, ClauseSubject, Engine, Engines,
+    SourceProvision,
 };
 use qsl_eval::simulation::Limits;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -47,8 +48,8 @@ pub(crate) fn subject(world: &World, limits: ClauseLimits) -> ClauseSubject<'_> 
     ClauseSubject::new(
         &world.package,
         world.binding(&["c"]),
-        AnalyzeLimits::default(),
-        &world.unit,
+        AnalyzeLimits::unbounded(),
+        &world.provision,
         &key,
         limits,
     )
@@ -134,8 +135,8 @@ fn refused(world: &World, key: &OccurrenceKey) -> ClauseItemRefusal {
     ClauseSubject::new(
         &world.package,
         world.binding(&["c"]),
-        AnalyzeLimits::default(),
-        &world.unit,
+        AnalyzeLimits::unbounded(),
+        &world.provision,
         key,
         ClauseLimits::default(),
     )
@@ -153,10 +154,10 @@ fn a_key_with_another_claim_occurrence_is_an_unknown_clause() {
     assert_eq!(refused(&world, &key), ClauseItemRefusal::UnknownClause);
 }
 
-/// A package assembled from two source units has no one `unit` byte string
-/// to replay: construction refuses typed.
+/// A complete source provision preserves real replay for a package assembled
+/// from two source units; no single-unit restriction discards the extra unit.
 #[test]
-fn a_package_of_two_source_units_is_refused() {
+fn a_package_of_two_source_units_replays_from_its_complete_provision() {
     use qsl_semantics::check::AssemblyLimits;
     use qsl_semantics::model::accounting::ModelNormalizationLimits;
     use qsl_semantics::model::intake::{admit_units_with_cancel, package_input};
@@ -209,17 +210,51 @@ fn a_package_of_two_source_units_is_refused() {
     let package = qsl_package::CheckedPackage::link(graph);
     let node = &package.graph().temporal_clauses()[0];
     let key = OccurrenceKey::new(node.identity(), node.claim().clone());
-    let refusal = ClauseSubject::new(
+    let mut provision = SourceProvision::default();
+    for source in package.graph().sources() {
+        provision.insert(
+            source,
+            match source.identity() {
+                "safety" => text.as_bytes().to_vec(),
+                "extra" => extra.as_bytes().to_vec(),
+                other => panic!("unexpected source {other}"),
+            },
+        );
+    }
+    let subject = ClauseSubject::new(
         &package,
         world.binding(&["c"]),
-        AnalyzeLimits::default(),
-        &world.unit,
+        AnalyzeLimits::unbounded(),
+        &provision,
         &key,
         ClauseLimits::default(),
     )
-    .err()
-    .expect("refused");
-    assert_eq!(refusal, ClauseItemRefusal::MultiUnit);
+    .expect("the complete multi-unit subject is accepted");
+    let records = analyze_items(
+        &Engines::qsl().expect("the engines register"),
+        vec![subject.item(RequestIndex::new(0))],
+        &Cancel::new(),
+    );
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].terminal().expect("terminal record").value(),
+        &TerminalValue::Refuted
+    );
+    let counterexample = records[0]
+        .model_check
+        .as_ref()
+        .and_then(|model| model.counterexample.as_ref())
+        .expect("a real counterexample");
+    let replayed = subject
+        .replay_counterexample(counterexample)
+        .expect("the supplied sources replay");
+    assert!(matches!(
+        replayed.settlement,
+        ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Truth(false),
+            ..
+        }
+    ));
 }
 
 /// A counterexample outside the subject, or replayed over other source bytes
@@ -248,11 +283,12 @@ fn a_tampered_counterexample_or_another_unit_is_refused_by_the_replay() {
     let node = &world.package.graph().temporal_clauses()[0];
     let key = OccurrenceKey::new(node.identity(), node.claim().clone());
     let other_unit = b"language \"ix:native\" edition \"1-draft\";\n";
+    let other_provision = SourceProvision::single(world.package.graph().source(), other_unit);
     let wrong = ClauseSubject::new(
         &world.package,
         world.binding(&["c"]),
-        AnalyzeLimits::default(),
-        other_unit,
+        AnalyzeLimits::unbounded(),
+        &other_provision,
         &key,
         ClauseLimits::default(),
     )

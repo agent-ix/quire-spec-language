@@ -178,7 +178,7 @@ pub fn exact_probabilistic_item<'a>(
         index,
         Capability::ProbabilisticSatisfaction,
         Some(DeclarationFamily::Probabilistic),
-        Mode::Bounded,
+        Mode::Unbounded,
         en5::BACKEND_ID,
         move |cancel| run(request, cancel, None, None),
     )
@@ -197,7 +197,7 @@ pub fn exact_probabilistic_item_tampered<'a>(
         index,
         Capability::ProbabilisticSatisfaction,
         Some(DeclarationFamily::Probabilistic),
-        Mode::Bounded,
+        Mode::Unbounded,
         en5::BACKEND_ID,
         move |cancel| run(request, cancel, Some(&tamper), None),
     )

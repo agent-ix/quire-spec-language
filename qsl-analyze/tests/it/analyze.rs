@@ -17,7 +17,9 @@
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
     analyze as analyze_request, analyze_items, model_item, Aggregate, AggregateGap, AnalyzeItem,
-    AnalyzeLimits, AnalyzeRequest, DispositionKind, Engine, Engines, Payload, Settlement,
+    AnalyzeLimits, AnalyzeRequest, ClaimItem, DeadlineSupply, DispositionKind, Engine, Engines,
+    ItemForm, ItemOptions, NegotiatedItem, Payload, ProbabilisticItem, ProbabilisticLimits,
+    Settlement,
 };
 use qsl_eval::simulation::Limits;
 use qsl_eval::temporal::UndefinedCause;
@@ -28,7 +30,8 @@ use qsl_replay::{
     ModelTraceSettlement, ModelTraceValue, ProofBasis, RunStats, TemporalCounterexample,
     TerminalValue, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
-use qsl_route::{Mode, ProviderOrigin};
+use qsl_route::{request::ExtentClassification, routing::Disposition};
+use qsl_route::{Candidate, EvidenceKind, Mode, ProviderOrigin};
 use qsl_semantics::check::{Capability, DeclarationFamily};
 use quire_exact::{Cancel, CancelCause, Undefined};
 use quire_semantic_value::catalog::Category;
@@ -442,7 +445,10 @@ fn en1_advertises_exactly_the_temporal_satisfaction_pair() {
     assert_eq!(descriptor.id().as_str(), manifest::BACKEND_ID);
     assert_eq!(
         descriptor.advertises().collect::<Vec<_>>(),
-        [(Capability::TemporalSatisfaction, Mode::Bounded)]
+        [
+            (Capability::TemporalSatisfaction, Mode::Bounded),
+            (Capability::TemporalSatisfaction, Mode::Unbounded),
+        ]
     );
 }
 
@@ -481,29 +487,40 @@ fn service_request<'w>(
     }
 }
 
-fn routed_service_item(world: &crate::prob_world::World) -> qsl_analyze::provider::RoutedItem<'_> {
+fn routed_service_item(world: &crate::prob_world::World) -> NegotiatedItem {
     let request = service_request(world);
-    qsl_analyze::provider::RoutedItem {
-        item: qsl_analyze::provider::ClaimItem {
+    let candidate = Candidate::new(BackendId::new("en-4"));
+    NegotiatedItem {
+        item: ClaimItem {
             request_index: index(0),
-            claim: request.claim,
-            method: request.method,
-            seed: request.seed,
-            sampler: request.sampler,
-            limits: request.limits,
-            max_witnesses: request.max_witnesses,
-            symmetry: request.symmetry,
-            timed_sampling: request.timed_sampling,
-            required: false,
+            claim: request.claim.occurrence().expect("authored claim").clone(),
+            kind: Capability::ProbabilisticSatisfaction,
+            extent: ExtentClassification::Unbounded {
+                finite_bound_available: true,
+            },
+            backend: Some(BackendId::new("en-4")),
+            candidates: vec![candidate.clone()],
+            options: ItemOptions {
+                required: false,
+                ..ItemOptions::default()
+            },
+            form: Some(ItemForm::Probabilistic(ProbabilisticItem {
+                evidence: EvidenceKind::Statistical,
+                method: Some(request.method),
+                seed: Some(request.seed),
+                sampler: Some(request.sampler),
+                limits: ProbabilisticLimits::Statistical(request.limits),
+                max_witnesses: Some(request.max_witnesses),
+                symmetry: request.symmetry,
+                timed_sampling: Some(request.timed_sampling),
+            })),
         },
-        backend: BackendId::new("en-4"),
+        disposition: Disposition::Supported(candidate),
+        diagnostic: None,
     }
 }
 
-fn routed_service_items(
-    world: &crate::prob_world::World,
-    count: usize,
-) -> Vec<qsl_analyze::provider::RoutedItem<'_>> {
+fn routed_service_items(world: &crate::prob_world::World, count: usize) -> Vec<NegotiatedItem> {
     (0..count)
         .map(|request_index| {
             let mut item = routed_service_item(world);
@@ -515,23 +532,25 @@ fn routed_service_items(
 
 fn run_provider(
     world: &crate::prob_world::World,
-    items: &[qsl_analyze::provider::RoutedItem<'_>],
+    items: &[NegotiatedItem],
     limits: &AnalyzeLimits,
     cancel: &Cancel,
 ) -> Vec<qsl_replay::TerminalRecord> {
     qsl_analyze::provider::run(
         &world.package,
         &world.binding(),
+        &world.provision,
         items,
         &Engines::qsl().expect("they register"),
         limits,
         cancel,
     )
+    .records
 }
 
 fn run_one_observed_service_item(
     world: &crate::prob_world::World,
-    item: &qsl_analyze::provider::RoutedItem<'_>,
+    item: &NegotiatedItem,
     limits: &AnalyzeLimits,
 ) -> (Vec<qsl_replay::TerminalRecord>, usize) {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -595,12 +614,13 @@ fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
     let engines = Engines::qsl().expect("they register");
     let limits = AnalyzeLimits {
         accounting: prob_world::UNLIMITED,
-        ..AnalyzeLimits::default()
+        ..AnalyzeLimits::unbounded()
     };
     let analyzed = analyze_request(
         &world.package,
-        AnalyzeRequest {
+        &AnalyzeRequest {
             binding: world.binding(),
+            provision: world.provision.clone(),
             items: vec![routed_service_item(&world)],
         },
         &engines,
@@ -614,11 +634,13 @@ fn analyze_and_the_provider_entry_settle_one_record_for_one_en4_item() {
     let served = qsl_analyze::provider::run(
         &world.package,
         &world.binding(),
+        &world.provision,
         &[routed_service_item(&world)],
         &engines,
         &limits,
         &Cancel::new(),
     )
+    .records
     .remove(0);
 
     assert_eq!(analyzed, served);
@@ -656,16 +678,18 @@ fn provider_entry_settles_an_incomplete_binding_per_item() {
     binding.initial[0].identity.push_str("-missing");
     let limits = AnalyzeLimits {
         accounting: prob_world::UNLIMITED,
-        ..AnalyzeLimits::default()
+        ..AnalyzeLimits::unbounded()
     };
     let records = qsl_analyze::provider::run(
         &world.package,
         &binding,
+        &world.provision,
         &[routed_service_item(&world)],
         &Engines::qsl().expect("they register"),
         &limits,
         &Cancel::new(),
-    );
+    )
+    .records;
 
     assert_eq!(records.len(), 1);
     assert!(matches!(
@@ -706,12 +730,12 @@ fn provider_entry_refuses_undeclared_population_before_running_items_in_input_or
     let first = routed_service_item(&world);
     let mut second = first.clone();
     second.item.request_index = index(1);
-    let first = qsl_analyze::provider::RoutedItem {
-        item: qsl_analyze::provider::ClaimItem {
+    let first = NegotiatedItem {
+        item: ClaimItem {
             request_index: index(0),
             ..first.item
         },
-        backend: first.backend,
+        ..first
     };
     let engine_charges = Arc::new(AtomicUsize::new(0));
     let observed_charges = Arc::clone(&engine_charges);
@@ -721,14 +745,16 @@ fn provider_entry_refuses_undeclared_population_before_running_items_in_input_or
     let records = qsl_analyze::provider::run(
         &world.package,
         &binding,
+        &world.provision,
         &[second, first],
         &Engines::qsl().expect("they register"),
         &AnalyzeLimits {
             accounting: prob_world::UNLIMITED,
-            ..AnalyzeLimits::default()
+            ..AnalyzeLimits::unbounded()
         },
         &cancel,
-    );
+    )
+    .records;
 
     assert_eq!(
         records
@@ -754,8 +780,8 @@ fn provider_entry_refuses_undeclared_population_before_running_items_in_input_or
     assert_eq!(engine_charges.load(Ordering::Relaxed), 0);
 }
 
-/// A zero-millisecond wall-clock deadline cancels the request before its
-/// engine runs, producing the typed incomplete deadline outcome.
+/// A zero-millisecond deadline is enforced by the frontend before entry.
+/// The provider observes that shared cancellation and retains its cause.
 #[trace("TC-763", "FR-281-AC-12")]
 #[test]
 fn provider_entry_settles_a_zero_millisecond_deadline_as_incomplete() {
@@ -768,18 +794,21 @@ fn provider_entry_settles_a_zero_millisecond_deadline_as_incomplete() {
          until holds(s.phase = 2) within 10) <= 2 }\n";
     let world = World::new(&prob_world::service(claim));
     let cancel = Cancel::new();
+    cancel.cancel(CancelCause::Deadline);
     let records = qsl_analyze::provider::run(
         &world.package,
         &world.binding(),
+        &world.provision,
         &[routed_service_item(&world)],
         &Engines::qsl().expect("they register"),
         &AnalyzeLimits {
             accounting: prob_world::UNLIMITED,
-            deadline_ms: Some(0),
-            ..AnalyzeLimits::default()
+            deadline: DeadlineSupply::Milliseconds(0),
+            ..AnalyzeLimits::unbounded()
         },
         &cancel,
-    );
+    )
+    .records;
 
     assert_eq!(records.len(), 1);
     assert_eq!(cancel.cause(), Some(CancelCause::Deadline));
@@ -807,14 +836,14 @@ fn finite_deadline_preserves_settled_records_and_cancels_each_open_item() {
     let items = routed_service_items(&world, 3);
     let limits = AnalyzeLimits {
         accounting: prob_world::UNLIMITED,
-        deadline_ms: Some(60_000),
-        ..AnalyzeLimits::default()
+        deadline: DeadlineSupply::Milliseconds(60_000),
+        ..AnalyzeLimits::unbounded()
     };
     let (completed, charges_before_next_item) = run_one_observed_service_item(
         &world,
         &items[0],
         &AnalyzeLimits {
-            deadline_ms: None,
+            deadline: DeadlineSupply::Unbounded,
             ..limits
         },
     );
@@ -852,14 +881,14 @@ fn caller_cancellation_preserves_settled_records_and_cause_for_open_items() {
     let items = routed_service_items(&world, 3);
     let limits = AnalyzeLimits {
         accounting: prob_world::UNLIMITED,
-        deadline_ms: Some(60_000),
-        ..AnalyzeLimits::default()
+        deadline: DeadlineSupply::Milliseconds(60_000),
+        ..AnalyzeLimits::unbounded()
     };
     let (completed, charges_before_next_item) = run_one_observed_service_item(
         &world,
         &items[0],
         &AnalyzeLimits {
-            deadline_ms: None,
+            deadline: DeadlineSupply::Unbounded,
             ..limits
         },
     );
@@ -893,17 +922,23 @@ fn engine_limit_before_deadline_keeps_its_typed_result() {
          until holds(s.phase = 2) within 10) <= 2 }\n";
     let world = World::new(&prob_world::service(claim));
     let mut items = routed_service_items(&world, 3);
-    items[0].item.limits.max_draws = 0;
+    let Some(ItemForm::Probabilistic(form)) = &mut items[0].item.form else {
+        panic!("a statistical item");
+    };
+    let ProbabilisticLimits::Statistical(limits) = &mut form.limits else {
+        panic!("statistical budgets");
+    };
+    limits.max_draws = 0;
     let limits = AnalyzeLimits {
         accounting: prob_world::UNLIMITED,
-        deadline_ms: Some(60_000),
-        ..AnalyzeLimits::default()
+        deadline: DeadlineSupply::Milliseconds(60_000),
+        ..AnalyzeLimits::unbounded()
     };
     let (limited, charges_before_next_item) = run_one_observed_service_item(
         &world,
         &items[0],
         &AnalyzeLimits {
-            deadline_ms: None,
+            deadline: DeadlineSupply::Unbounded,
             ..limits
         },
     );
@@ -951,8 +986,8 @@ fn accounting_limit_before_deadline_keeps_its_typed_result() {
             work_units: 1,
             ..prob_world::UNLIMITED
         },
-        deadline_ms: Some(60_000),
-        ..AnalyzeLimits::default()
+        deadline: DeadlineSupply::Milliseconds(60_000),
+        ..AnalyzeLimits::unbounded()
     };
 
     let records = run_provider(&world, &items, &limits, &cancel);
@@ -987,7 +1022,7 @@ fn analyze_joins_required_items_to_the_aggregate() {
     let world = World::new(&prob_world::service(claim));
     let limits = AnalyzeLimits {
         accounting: prob_world::UNLIMITED,
-        ..AnalyzeLimits::default()
+        ..AnalyzeLimits::unbounded()
     };
     let run = |engines: &Engines, required: &[bool], indices: &[usize]| {
         let items = indices
@@ -996,14 +1031,15 @@ fn analyze_joins_required_items_to_the_aggregate() {
             .map(|(at, required)| {
                 let mut item = routed_service_item(&world);
                 item.item.request_index = index(*at);
-                item.item.required = *required;
+                item.item.options.required = *required;
                 item
             })
             .collect();
         analyze_request(
             &world.package,
-            AnalyzeRequest {
+            &AnalyzeRequest {
                 binding: world.binding(),
+                provision: world.provision.clone(),
                 items,
             },
             engines,

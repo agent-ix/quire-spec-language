@@ -25,10 +25,16 @@ use qsl_semantics::check::Capability;
 pub const BACKEND_ID: &str = "en-1";
 
 /// The (kind, mode) pairs EN-1 advertises: exactly one.
-pub const ADVERTISED: [(Option<&str>, Option<&str>); 1] = [(
-    Some(Capability::TemporalSatisfaction.to_wire()),
-    Some(Mode::Bounded.to_wire()),
-)];
+pub const ADVERTISED: [(Option<&str>, Option<&str>); 2] = [
+    (
+        Some(Capability::TemporalSatisfaction.to_wire()),
+        Some(Mode::Bounded.to_wire()),
+    ),
+    (
+        Some(Capability::TemporalSatisfaction.to_wire()),
+        Some(Mode::Unbounded.to_wire()),
+    ),
+];
 
 /// The boundable domain kinds EN-1's subject universes bound.
 pub const DOMAINS: [&str; 2] = [

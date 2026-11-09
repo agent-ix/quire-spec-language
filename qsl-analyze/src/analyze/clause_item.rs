@@ -76,10 +76,6 @@ pub enum ClauseItemRefusal {
     /// occurrence).
     #[error("the package holds no temporal clause at the given occurrence")]
     UnknownClause,
-    /// The package is assembled from other than one source unit, so one
-    /// `unit` byte string cannot be the source its replay recompiles.
-    #[error("the package is not assembled from exactly one source unit")]
-    MultiUnit,
     /// The clause's declared name is no identifier, so no `state_clause`
     /// target can name it.
     #[error("the clause's declared name is not an identifier")]
@@ -92,34 +88,46 @@ pub struct ClauseSubject<'a> {
     package: &'a CheckedPackage,
     binding: SubjectBinding<'a>,
     limits: AnalyzeLimits,
-    unit: &'a [u8],
+    provision: &'a super::SourceProvision,
     node: &'a TemporalClauseNode,
     run: ClauseLimits,
+    proof_bounds: Vec<qsl_foundation::bound::ProofBound>,
+    temporal: Option<super::TemporalItem>,
 }
 
 impl<'a> ClauseSubject<'a> {
     /// The subject of the clause at `key` (its node and `claim` occurrence)
-    /// of `package`. `unit` is the source bytes `package` was checked from,
-    /// which the replay recompiles. A source reference carries no digest, so
-    /// `unit` is not compared with the package here: bytes of another unit
+    /// of `package`. `provision` is the source bytes `package` was checked from,
+    /// which replay recompiles. A source reference carries no digest, so
+    /// its bytes are not compared with the package here: bytes of another unit
     /// make the replay of a counterexample refuse (never settle `refuted`),
     /// not the construction.
     ///
     /// # Errors
     ///
-    /// [`ClauseItemRefusal`] when the package is not assembled from exactly
-    /// one source unit or holds no such clause.
+    /// [`ClauseItemRefusal`] when the package holds no such named clause.
     pub fn new(
         package: &'a CheckedPackage,
         binding: SubjectBinding<'a>,
         limits: AnalyzeLimits,
-        unit: &'a [u8],
+        provision: &'a super::SourceProvision,
         key: &OccurrenceKey,
         run: ClauseLimits,
     ) -> Result<Self, ClauseItemRefusal> {
-        if package.graph().sources().len() != 1 {
-            return Err(ClauseItemRefusal::MultiUnit);
-        }
+        Self::from_provision(package, binding, limits, provision, key, run, Vec::new())
+    }
+
+    /// Build a clause subject over the operation's complete source provision
+    /// and the item's explicit proof-bound substitution.
+    pub fn from_provision(
+        package: &'a CheckedPackage,
+        binding: SubjectBinding<'a>,
+        limits: AnalyzeLimits,
+        provision: &'a super::SourceProvision,
+        key: &OccurrenceKey,
+        run: ClauseLimits,
+        proof_bounds: Vec<qsl_foundation::bound::ProofBound>,
+    ) -> Result<Self, ClauseItemRefusal> {
         let node = package
             .graph()
             .temporal_clauses()
@@ -131,10 +139,17 @@ impl<'a> ClauseSubject<'a> {
             package,
             binding,
             limits,
-            unit,
+            provision,
             node,
             run,
+            proof_bounds,
+            temporal: None,
         })
+    }
+
+    pub(super) fn configured(mut self, temporal: super::TemporalItem) -> Self {
+        self.temporal = Some(temporal);
+        self
     }
 
     /// The `temporal-satisfaction` item that runs the clause on EN-1 and
@@ -149,6 +164,15 @@ impl<'a> ClauseSubject<'a> {
             Mode::Bounded,
             en1::BACKEND_ID,
             move |cancel| {
+                if let Some(temporal) = &subject.temporal {
+                    if temporal.item_kind != qsl_route::request::ItemKind::Formula
+                        || temporal.abstract_subject.is_some()
+                        || temporal.stutter_closure.is_some()
+                        || temporal.fairness != subject.node.clause().fairness()
+                    {
+                        return EngineReport::Refused(Refusal::Unsupported(super::items::NOT_YET));
+                    }
+                }
                 let system = match ModelSystem::new(subject.simulation()) {
                     Ok(system) => system,
                     Err(failure) => return EngineReport::Refused(admission(&failure)),
@@ -167,17 +191,29 @@ impl<'a> ClauseSubject<'a> {
                             subject: subject.model_subject(),
                             item: item(),
                             max_depth: subject.run.max_depth,
-                            limits: ModelCheckLimits {
-                                limits: subject.run.limits,
-                                ..ModelCheckLimits::default()
-                            },
-                            reductions: Default::default(),
+                            limits: subject
+                                .temporal
+                                .as_ref()
+                                .map(|temporal| temporal.limits)
+                                .unwrap_or(ModelCheckLimits {
+                                    limits: subject.run.limits,
+                                    ..ModelCheckLimits::default()
+                                }),
+                            reductions: subject
+                                .temporal
+                                .as_ref()
+                                .map(|temporal| temporal.reductions.clone())
+                                .unwrap_or_default(),
                         },
                         certificate: CertificateRequest {
                             temporal_clock_selections: &[],
                             subject: subject.model_subject(),
                             item: item(),
-                            smt_encoding: qsl_replay::SmtEncodingLimits::default(),
+                            smt_encoding: subject
+                                .temporal
+                                .as_ref()
+                                .and_then(|temporal| temporal.smt_encoding)
+                                .unwrap_or_default(),
                         },
                         replay: Box::new(|payload| subject.replay(payload, &letters)),
                     },
@@ -225,7 +261,7 @@ impl<'a> ClauseSubject<'a> {
     fn model_subject(&self) -> qsl_eval::model_subject::ModelSubject<'a> {
         qsl_eval::model_subject::ModelSubject {
             simulation: self.simulation(),
-            proof_bounds: Vec::new(),
+            proof_bounds: self.proof_bounds.clone(),
         }
     }
 
@@ -239,7 +275,6 @@ impl<'a> ClauseSubject<'a> {
             |cause: &'static str| ReplayRefusal::Fault(InternalFault::new("analyze", cause));
         let name = clause_name(self.node).map_err(|_| fault("clause-name"))?;
         let identity = self.node.identity();
-        let source = self.package.graph().source();
         let emission =
             qsl_package::emit_checked_with_temporal_selections(self.package, &[], self.limits.emit)
                 .map_err(|_| fault("package-emission"))?;
@@ -263,11 +298,7 @@ impl<'a> ClauseSubject<'a> {
             supplied_limits: None,
             object_environment: None,
             declared_domains: Vec::new(),
-            byte_provision: vec![(
-                source.authority().to_owned(),
-                source.identity().to_owned(),
-                self.unit.to_vec(),
-            )],
+            byte_provision: self.provision.wire_entries(),
             documents: self
                 .binding
                 .packages
