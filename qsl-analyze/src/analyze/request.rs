@@ -436,129 +436,130 @@ fn work<'a>(
             .is_some_and(|claim| claim != &item.claim);
     let family = if wrong_occurrence { None } else { family };
     let absent = || AnalyzeItem::unadapted(item.request_index, item.kind, family);
-    let mut built =
-        match &item.form {
-            Some(ItemForm::Temporal(form)) if item.kind == Capability::TemporalSatisfaction => {
-                match super::ClauseSubject::from_provision(
-                    package,
-                    binding.clone(),
-                    *limits,
-                    provision,
-                    &item.claim,
-                    super::ClauseLimits {
-                        limits: form.limits.limits,
-                        max_depth: form.max_depth,
-                        max_candidates: form.max_candidates,
-                    },
-                    form.proof_bounds.clone(),
-                ) {
-                    Ok(subject) => subject.configured(form.clone()).item(item.request_index),
-                    Err(_) => absent(),
-                }
+    let mut built = match &item.form {
+        Some(ItemForm::Temporal(form)) if item.kind == Capability::TemporalSatisfaction => {
+            match super::ClauseSubject::from_provision(
+                package,
+                binding.clone(),
+                *limits,
+                provision,
+                &item.claim,
+                super::ClauseLimits {
+                    limits: form.limits.limits,
+                    max_depth: form.max_depth,
+                    max_candidates: form.max_candidates,
+                },
+                form.proof_bounds.clone(),
+            ) {
+                Ok(subject) => subject.configured(form.clone()).item(item.request_index),
+                Err(_) => absent(),
             }
-            Some(ItemForm::Probabilistic(form))
-                if item.kind == Capability::ProbabilisticSatisfaction =>
-            {
-                let claim = package
-                    .graph()
-                    .probabilistic_model()
-                    .claims()
-                    .iter()
-                    .find(|claim| claim.occurrence() == Some(&item.claim));
-                match (claim, form.evidence, form.limits) {
-                    (Some(claim), EvidenceKind::Exact, ProbabilisticLimits::Exact(exact)) => {
-                        super::exact_probabilistic_item(
-                            item.request_index,
-                            crate::exact_probabilistic::ProductRequest {
-                                subject: qsl_eval::model_subject::ModelSubject {
-                                    simulation: simulation(package, binding, limits),
-                                    proof_bounds: Vec::new(),
-                                },
-                                claim,
-                                limits: exact,
-                            },
-                        )
-                    }
-                    (
-                        Some(claim),
-                        EvidenceKind::Statistical,
-                        ProbabilisticLimits::Statistical(statistical),
-                    ) => match (form.method, form.seed, &form.sampler) {
-                        (Some(method), Some(seed), Some(sampler)) => super::statistical_item(
-                            item.request_index,
-                            crate::statistical::StatisticalRequest {
-                                subject: qsl_eval::model_subject::ModelSubject {
-                                    simulation: simulation(package, binding, limits),
-                                    proof_bounds: Vec::new(),
-                                },
-                                claim,
-                                method,
-                                seed,
-                                sampler: sampler.clone(),
-                                limits: statistical,
-                                max_witnesses: form
-                                    .max_witnesses
-                                    .unwrap_or(crate::statistical::DEFAULT_MAX_WITNESSES),
-                                symmetry: form.symmetry.clone(),
-                                timed_sampling: form.timed_sampling.unwrap_or_default(),
-                            },
-                        ),
-                        _ => absent(),
-                    },
-                    _ => absent(),
-                }
-            }
-            None if item.kind == Capability::ValueValidity => {
-                let selection = package
-                    .graph()
-                    .semantic_graph()
-                    .nodes()
-                    .filter_map(|node| node.declaration())
-                    .filter_map(|name| name.last())
-                    .find_map(|name| {
-                        qsl_replay::value_check::ValueTarget::select(
-                            package,
-                            name.as_str(),
-                            &item.claim,
-                        )
-                        .ok()
-                    })
-                    .ok_or(qsl_replay::value_check::Selection::NoForm)
-                    .map(|target| target.with_limits(limits.accounting));
-                if let Some(backend) = negotiated.disposition.target().filter(|backend| {
-                    engines
-                        .get(backend)
-                        .is_some_and(|engine| engine.provider().is_some())
-                }) {
-                    crate::external_provider::provider_item(
+        }
+        Some(ItemForm::Probabilistic(form))
+            if item.kind == Capability::ProbabilisticSatisfaction =>
+        {
+            let claim = package
+                .graph()
+                .probabilistic_model()
+                .claims()
+                .iter()
+                .find(|claim| claim.occurrence() == Some(&item.claim));
+            match (claim, form.evidence, form.limits) {
+                (Some(claim), EvidenceKind::Exact, ProbabilisticLimits::Exact(exact)) => {
+                    super::exact_probabilistic_item(
                         item.request_index,
-                        package,
-                        &item.claim,
-                        backend,
-                        selection,
+                        crate::exact_probabilistic::ProductRequest {
+                            subject: qsl_eval::model_subject::ModelSubject {
+                                simulation: simulation(package, binding, limits),
+                                proof_bounds: Vec::new(),
+                            },
+                            claim,
+                            limits: exact,
+                        },
                     )
-                } else {
-                    let selection = selection.map(|target| crate::value_check::ValueRequest {
-                        target,
-                        max_cases: item.options.max_cases,
-                        reported: None,
-                    });
-                    super::value_item(item.request_index, package, &item.claim, selection)
                 }
+                (
+                    Some(claim),
+                    EvidenceKind::Statistical,
+                    ProbabilisticLimits::Statistical(statistical),
+                ) => match (form.method, form.seed, &form.sampler) {
+                    (Some(method), Some(seed), Some(sampler)) => super::statistical_item(
+                        item.request_index,
+                        crate::statistical::StatisticalRequest {
+                            subject: qsl_eval::model_subject::ModelSubject {
+                                simulation: simulation(package, binding, limits),
+                                proof_bounds: Vec::new(),
+                            },
+                            claim,
+                            method,
+                            seed,
+                            sampler: sampler.clone(),
+                            limits: statistical,
+                            max_witnesses: form
+                                .max_witnesses
+                                .unwrap_or(crate::statistical::DEFAULT_MAX_WITNESSES),
+                            symmetry: form.symmetry.clone(),
+                            timed_sampling: form.timed_sampling.unwrap_or_default(),
+                        },
+                    ),
+                    _ => absent(),
+                },
+                _ => absent(),
             }
-            None if item.kind == Capability::OperationContract => {
-                let selection = qsl_replay::contract_check::select_contract(package, &item.claim)
-                    .map(|claim| crate::contract_check::ContractRequest {
+        }
+        None if item.kind == Capability::ValueValidity => {
+            let selection = package
+                .graph()
+                .semantic_graph()
+                .nodes()
+                .filter_map(|node| node.declaration())
+                .filter_map(|name| name.last())
+                .find_map(|name| {
+                    qsl_replay::value_check::ValueTarget::select(
+                        package,
+                        name.as_str(),
+                        &item.claim,
+                    )
+                    .ok()
+                })
+                .ok_or(qsl_replay::value_check::Selection::NoForm)
+                .map(|target| target.with_limits(qsl_replay::AccountingLimits(limits.accounting)));
+            if let Some(backend) = negotiated.disposition.target().filter(|backend| {
+                engines
+                    .get(backend.id())
+                    .is_some_and(|engine| engine.provider().is_some())
+            }) {
+                crate::external_provider::provider_item(
+                    item.request_index,
+                    package,
+                    &item.claim,
+                    backend.id(),
+                    selection,
+                )
+            } else {
+                let selection = selection.map(|target| crate::value_check::ValueRequest {
+                    target,
+                    max_cases: item.options.max_cases,
+                    reported: None,
+                });
+                super::value_item(item.request_index, package, &item.claim, selection)
+            }
+        }
+        None if item.kind == Capability::OperationContract => {
+            let selection =
+                qsl_replay::contract_check::select_contract(package, &item.claim).map(|claim| {
+                    crate::contract_check::ContractRequest {
                         package,
                         claim,
                         subject: simulation(package, binding, limits),
                         abstract_subject: None,
                         max_cases: item.options.max_cases,
-                    });
-                super::contract_item(item.request_index, package, &item.claim, selection)
-            }
-            _ => absent(),
-        };
+                    }
+                });
+            super::contract_item(item.request_index, package, &item.claim, selection)
+        }
+        _ => absent(),
+    };
     let expected = match &item.form {
         Some(ItemForm::Temporal(_)) => Some(crate::model_check::manifest::BACKEND_ID),
         Some(ItemForm::Probabilistic(form)) => match form.evidence {

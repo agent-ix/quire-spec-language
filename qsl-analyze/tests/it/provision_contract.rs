@@ -622,7 +622,7 @@ fn registered_candidate(
     candidate.clone()
 }
 
-#[trace("TC-762", "TC-761", "FR-280-AC-8", "TC-637", "FR-202-AC-9")]
+#[trace("TC-761", "FR-280-AC-2", "TC-637", "FR-202-AC-9")]
 #[test]
 fn exact_refutation_retains_the_reproduced_path_set_through_both_entries() {
     let source = LIKELY.replace("0.95", "0.97");
