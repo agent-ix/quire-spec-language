@@ -169,6 +169,15 @@ fn independent_draw_costs_accept_value_preserving_swap_and_reject_changed_equati
         "m.attempts >= 1",
     ));
     accepted(&stopped, "1", "1");
+    let missing = two_step().replace("reward cost on Msg::send_c = 2;", "");
+    let missing_reward = proof(&claim(
+        &missing,
+        "every scheduler",
+        ">=",
+        "1",
+        "m.delivered",
+    ));
+    accepted(&missing_reward, "1", "1");
 }
 
 #[trace("TC-636", "FR-201-AC-21", "FR-282-AC-16")]
@@ -282,16 +291,36 @@ fn reward_objective_keys_coverage_heights_and_caller_stops_are_checked() {
     let (code, output) = run(&wrong_zero_height);
     assert_eq!(code, 1, "{output}");
     assert_eq!(output["rule"], "rank-broken");
-    for setting in ["bytes", "storage_bytes", "states", "edges", "scalar_bits"] {
+    for (setting, named_limit) in [
+        ("bytes", "certificate_check.max_certificate_bytes"),
+        ("storage_bytes", "certificate_check.max_working_bytes"),
+        ("states", "exact_prob.max_states"),
+        ("edges", "exact_prob.max_transitions"),
+        ("scalar_bits", "exact_prob.max_rational_bits"),
+    ] {
         let mut limited = request.clone();
         limited["limits"][setting] = json!(0);
         let (code, output) = run(&limited);
         assert_eq!(code, 2, "{setting}: {output}");
         assert_eq!(output["status"], "stopped");
+        assert_eq!(output["limit"]["setting"], named_limit, "{output}");
+        assert_eq!(output["limit"]["bound"], json!(0));
+        assert!(output.get("value").is_none());
     }
     let (code, output) = run_with(&request, &["--cancel"]);
     assert_eq!(code, 2, "{output}");
     assert_eq!(output["status"], "stopped");
+    assert!(
+        output["reason"].as_str().unwrap().contains("Requested"),
+        "{output}"
+    );
+    let mut arithmetic = request;
+    arithmetic["limits"]["stages"]["accounting.work_units"] = json!(0);
+    let (code, output) = run(&arithmetic);
+    assert_eq!(code, 2, "{output}");
+    assert_eq!(output["status"], "stopped");
+    assert_eq!(output["limit"]["setting"], "accounting.work_units");
+    assert!(output.get("value").is_none());
 }
 
 #[trace("TC-636", "FR-201-AC-20", "FR-201-AC-22", "FR-282-AC-17")]
@@ -399,7 +428,12 @@ fn cancellation_inside_qualified_reward_evaluation_stops_and_old_actions_still_w
     let ordinary = system.actions(&initial).unwrap().unwrap();
     assert_eq!(ordinary.len(), 1);
     assert_eq!(ordinary[0].draws.len(), 2);
-    for cause in [CancelCause::Requested, CancelCause::Deadline] {
+    for (cause, mode) in [
+        (CancelCause::Requested, "actions"),
+        (CancelCause::Deadline, "actions"),
+        (CancelCause::Requested, "workload"),
+        (CancelCause::Deadline, "admission"),
+    ] {
         let slot = Arc::new(OnceLock::<Cancel>::new());
         let weak = Arc::downgrade(&slot);
         let calls = Arc::new(AtomicU32::new(0));
@@ -410,7 +444,23 @@ fn cancellation_inside_qualified_reward_evaluation_stops_and_old_actions_still_w
             }
         });
         slot.set(cancel.clone()).unwrap();
-        assert!(system.actions_with_cancel(&initial, &cancel).is_err());
+        let stopped = match mode {
+            "actions" => system.actions_with_cancel(&initial, &cancel).is_err(),
+            "workload" => {
+                let workload = checked
+                    .package()
+                    .graph()
+                    .probabilistic_model()
+                    .workload("Even")
+                    .unwrap();
+                system
+                    .weighted_steps_with_cancel(&initial, workload, &cancel)
+                    .is_err()
+            }
+            "admission" => ModelSystem::new_with_cancel(simulation.clone(), &cancel).is_err(),
+            _ => unreachable!(),
+        };
+        assert!(stopped, "{mode}");
         assert_eq!(cancel.tripped(), Some(cause));
         assert_eq!(
             calls.load(Ordering::Relaxed),

@@ -70,8 +70,14 @@ pub(super) fn read_unit(
                 let exponent: Integer = text
                     .parse()
                     .map_err(|_| ProbabilityDocumentError::Malformed)?;
-                if exponent.magnitude_bits() > bits
-                    || exponent == Integer::from(0_i64)
+                if exponent.magnitude_bits() > bits {
+                    return Err(ProbabilityDocumentError::Limit {
+                        limit: ProbabilityDocumentLimit::RationalBits,
+                        bound: bits,
+                        actual: exponent.magnitude_bits(),
+                    });
+                }
+                if exponent == Integer::from(0_i64)
                     || terms.last().is_some_and(|(previous, _)| previous >= &unit)
                 {
                     return Err(ProbabilityDocumentError::Malformed);
