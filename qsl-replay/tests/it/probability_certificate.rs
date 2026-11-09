@@ -214,16 +214,15 @@ fn typed_value_coverage_and_order_rejections_name_the_values_member() {
         value: one(),
     });
     extra.values.sort_by(|a, b| a.state.cmp(&b.state));
-    for (name, certificate) in [("duplicate", duplicate), ("extra", extra)] {
-        assert_eq!(
-            rejected(check(&system, claims(&world), &node, &certificate)),
-            ProbabilityCertificateRejection {
-                rule: ProbabilityCertificateRule::Malformed,
-                at: ProbabilityCertificateLocus::Member("values"),
-            },
-            "{name} typed values must reject at the certificate member"
-        );
-    }
+    let rejections: Vec<_> = [("duplicate", duplicate), ("extra", extra)]
+        .into_iter()
+        .map(|(name, certificate)| (name, rejected(check(&system, claims(&world), &node, &certificate))))
+        .collect();
+    let expected = ProbabilityCertificateRejection {
+        rule: ProbabilityCertificateRule::Malformed,
+        at: ProbabilityCertificateLocus::Member("values"),
+    };
+    assert_eq!(rejections, vec![("duplicate", expected.clone()), ("extra", expected)]);
 }
 
 /// The claim fixes the scheduler objective: a false `under every scheduler`
