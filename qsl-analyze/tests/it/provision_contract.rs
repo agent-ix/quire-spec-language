@@ -385,6 +385,10 @@ fn a_value_claim_returns_its_native_replayed_assignment() {
         &Cancel::new(),
     );
     assert_eq!(result.records[0].value(), &TerminalValue::Refuted);
+    assert_eq!(
+        result.records[0].backend().map(BackendId::as_str),
+        Some(qsl_analyze::value_check::manifest::BACKEND_ID)
+    );
     assert_eq!(result.counterexamples.len(), 1);
     let Counterexample::Assignments(assignment) = &result.counterexamples[0].counterexample else {
         panic!("native value assignment")
@@ -422,4 +426,8 @@ fn a_contract_claim_reaches_the_existing_contract_arm() {
         result.records[0]
     );
     assert!(result.counterexamples.is_empty());
+    assert_eq!(
+        result.records[0].backend().map(BackendId::as_str),
+        Some(qsl_analyze::contract_check::manifest::BACKEND_ID)
+    );
 }
