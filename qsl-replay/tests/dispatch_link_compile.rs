@@ -1469,6 +1469,7 @@ fn a_clause_function_is_a_known_owner_and_no_fault() {
         }],
         accounting: spine::default_accounting(1_000_000),
         supplied: quire_semantic_value::supplied_stop::SuppliedLimits::default(),
+        backend: quire_eval::ExecutionBackendChoice::Interpreter,
     };
     let result = qsl_replay::run_with_requirements(
         SourceIdentity::new("a", "u"),

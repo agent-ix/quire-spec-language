@@ -84,7 +84,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use qsl_cst::Limits as SourceLimits;
-use qsl_eval::value::CheckedPackageEvaluation;
 use qsl_forms::{parse_clause_text, FormsRefusal, ParsedUnit};
 use qsl_foundation::diagnostic::{LimitExceeded, Locus, StageFailure, StageWork, Staged};
 use qsl_foundation::selection::ImportSelection;
@@ -105,10 +104,8 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{
     admit_unit_with_cancel, admit_units_with_cancel, SelectedModel, SelectedModels, UnitIntakeCause,
 };
-use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::identity_limit;
-use quire_eval::{CallFailure, Evaluation};
-use quire_exact::{Cancel, Meter, ScalarLimits, Value};
+use quire_exact::Cancel;
 use quire_semantic_value::catalog::InternalFault;
 use quire_semantic_value::semantic_node::IdentityRefusal;
 
@@ -2412,51 +2409,6 @@ fn lifecycle_emission_results(
             }
         })
         .collect()
-}
-
-/// The request [`execute`] takes: the function, its admitted argument
-/// values and the object environment it runs in.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct ExecuteRequest<'a> {
-    /// The function to call.
-    pub function: &'a qsl_eval::value::QualifiedName,
-    /// Its argument values, in parameter order.
-    pub arguments: &'a [Value],
-    /// The object environment.
-    pub objects: &'a ObjectEnvironment,
-    /// The caller's supplied-value helper ceilings (FR-277).
-    pub supplied: quire_semantic_value::supplied_stop::SuppliedLimits,
-}
-
-/// S6a: call a checked function under `accounting` (FR-275). It runs no
-/// stage up to S4. A cancelled handle returns
-/// [`CallFailure::Cancelled`] and no value.
-pub(crate) fn execute(
-    package: &CheckedUnit,
-    request: &ExecuteRequest<'_>,
-    accounting: ScalarLimits,
-    cancel: &Cancel,
-) -> Result<Evaluation, CallFailure> {
-    if let Some(cause) = cancel.cause() {
-        return Err(CallFailure::Cancelled(cause));
-    }
-    let mut meter = Meter::new(accounting).with_cancel(cancel.clone());
-    // One run for the whole invocation: both helper budgets and the
-    // caller's original handle, never a fresh one (FR-277).
-    let mut run =
-        quire_semantic_value::supplied_stop::SuppliedRun::new(request.supplied, cancel.clone())
-            .map_err(CallFailure::Supplied)?;
-    let evaluation = package.package.call_supplied(
-        request.function,
-        request.arguments.to_vec(),
-        request.objects,
-        &mut meter,
-        &mut run,
-    );
-    if let Some(cause) = cancel.tripped() {
-        return Err(CallFailure::Cancelled(cause));
-    }
-    evaluation
 }
 
 /// S1 then S2 over one unit's bytes: the part of every unit's compile that

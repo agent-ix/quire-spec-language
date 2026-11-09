@@ -674,12 +674,12 @@ fn run(
             }
         }
     }
-    let call = spine::Call {
-        function: function.to_owned(),
+    let call = spine::Call::new(
+        function.to_owned(),
         arguments,
-        accounting: accounting.0,
-        supplied: Default::default(),
-    };
+        accounting.0,
+        Default::default(),
+    );
     let result = spine::run(
         source_identity,
         "qualification".to_owned(),

@@ -2299,7 +2299,9 @@ impl Disposition {
                     | super::RunRefusal::Admission { .. }
                     | super::RunRefusal::DanglingReference { .. }
                     | super::RunRefusal::UnsupportedHelper(_)
+                    | super::RunRefusal::PrepareLimit(_)
                     | super::RunRefusal::Cancelled(_) => None,
+                    super::RunRefusal::Unsupported(entry) => Some(entry.catalog_code().cause()),
                     super::RunRefusal::Supplied(stop) => qsl_eval::value::supplied_stop_cause(stop),
                     super::RunRefusal::ObjectEnvironment(record) => Some(record.catalog.cause()),
                     super::RunRefusal::Storage { failure, .. } => membership_failure_cause(failure),
@@ -2375,6 +2377,32 @@ impl Disposition {
                     }
                     super::RunRefusal::SourceNotSupplied { .. } => {
                         record = record.fields(BTreeMap::from([("field", "sources".to_owned())]));
+                    }
+                    super::RunRefusal::Unsupported(entry) => {
+                        let payload = entry.payload();
+                        let mut fields = BTreeMap::from([("backend", payload.backend.to_owned())]);
+                        if let Some(construct) = payload.construct {
+                            fields.insert("construct", construct.to_owned());
+                        }
+                        if let Some(name) = payload.construct_name {
+                            fields.insert("construct_name", name);
+                        }
+                        if let Some(location) = payload.location {
+                            // The wire's own location form, as compact JSON.
+                            if let Ok(text) =
+                                serde_json::to_string(&CallLocationWire::from(location))
+                            {
+                                fields.insert("location", text);
+                            }
+                        }
+                        record = record.fields(fields);
+                    }
+                    super::RunRefusal::PrepareLimit(limit) => {
+                        record = record.fields(BTreeMap::from([
+                            ("setting", limit.setting.name().to_owned()),
+                            ("bound", limit.bound.to_string()),
+                            ("actual", limit.actual.to_string()),
+                        ]));
                     }
                     super::RunRefusal::Fault(_)
                     | super::RunRefusal::Cancelled(_)

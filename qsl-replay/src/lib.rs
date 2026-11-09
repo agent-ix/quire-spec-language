@@ -45,6 +45,7 @@
 
 mod admitted;
 mod application;
+pub mod backends;
 mod bounds;
 mod call_replay_context;
 mod call_requirements;
@@ -198,7 +199,7 @@ pub use identity::{
     DeclaredDomain, DefinitionSourceRef, EmptyQualifiedName, ModelIdentity, ObligationIdentity,
     ProfileSelection, QualifiedName, TracePosition,
 };
-pub use limits::{AccountingLimits, CallerLimits, EngineLimits, PrepareLimits, RenderLimits};
+pub use limits::{AccountingLimits, CallerLimits, EngineLimits, RenderLimits};
 pub use model_check::counterexample::{
     undefined_finding, ClaimPredicate, CounterexampleKind, Lasso, MappingSite, ModelStep,
     ObservedTemporalCounterexample, ObservedTemporalKind, ObservedTemporalStep, Race,
