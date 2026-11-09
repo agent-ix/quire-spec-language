@@ -2,4 +2,5 @@
 #![forbid(unsafe_code)]
 mod bounded;
 mod roundtrip;
+mod reward;
 mod state_predicate;

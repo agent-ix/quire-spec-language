@@ -18,36 +18,60 @@ pub(super) fn read_unit(
     if value.is_null() {
         return Ok(None);
     }
-    let parts = value.as_array().filter(|parts| parts.len() == 2)
+    let parts = value
+        .as_array()
+        .filter(|parts| parts.len() == 2)
         .ok_or(ProbabilityDocumentError::Malformed)?;
-    let node = |value: &Value| qsl_foundation::node_wire::node_key_from_json(value)
-        .map_err(|_| ProbabilityDocumentError::Malformed);
+    let node = |value: &Value| {
+        qsl_foundation::node_wire::node_key_from_json(value)
+            .map_err(|_| ProbabilityDocumentError::Malformed)
+    };
     match parts.first().and_then(Value::as_str) {
         Some("declared") => Ok(Some(UnitId::declared(node(&parts[1])?))),
         Some("compound") => {
             let mut terms = Vec::new();
-            for term in parts[1].as_array().ok_or(ProbabilityDocumentError::Malformed)? {
+            for term in parts[1]
+                .as_array()
+                .ok_or(ProbabilityDocumentError::Malformed)?
+            {
                 poll_cancel(cancel)?;
-                let members = term.as_object().filter(|members| members.len() == 2)
+                let members = term
+                    .as_object()
+                    .filter(|members| members.len() == 2)
                     .ok_or(ProbabilityDocumentError::Malformed)?;
-                let unit = node(members.get("unit").ok_or(ProbabilityDocumentError::Malformed)?)?;
-                let text = members.get("exponent").and_then(Value::as_str)
+                let unit = node(
+                    members
+                        .get("unit")
+                        .ok_or(ProbabilityDocumentError::Malformed)?,
+                )?;
+                let text = members
+                    .get("exponent")
+                    .and_then(Value::as_str)
                     .ok_or(ProbabilityDocumentError::Malformed)?;
                 let digits = text.strip_prefix('-').unwrap_or(text);
-                if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit())
-                    || digits.len() > 1 && digits.starts_with('0') || text == "-0"
+                if digits.is_empty()
+                    || !digits.bytes().all(|byte| byte.is_ascii_digit())
+                    || digits.len() > 1 && digits.starts_with('0')
+                    || text == "-0"
                 {
                     return Err(ProbabilityDocumentError::Malformed);
                 }
-                let minimum_bits = u64::try_from(digits.len()).unwrap_or(u64::MAX)
-                    .saturating_sub(1).saturating_mul(3).saturating_add(1);
+                let minimum_bits = u64::try_from(digits.len())
+                    .unwrap_or(u64::MAX)
+                    .saturating_sub(1)
+                    .saturating_mul(3)
+                    .saturating_add(1);
                 if minimum_bits > bits && digits.len() > 1 {
                     return Err(ProbabilityDocumentError::IntegerText {
-                        bit_bound: bits, decimal_digits: digits.len() as u64,
+                        bit_bound: bits,
+                        decimal_digits: digits.len() as u64,
                     });
                 }
-                let exponent: Integer = text.parse().map_err(|_| ProbabilityDocumentError::Malformed)?;
-                if exponent.magnitude_bits() > bits || exponent == Integer::from(0_i64)
+                let exponent: Integer = text
+                    .parse()
+                    .map_err(|_| ProbabilityDocumentError::Malformed)?;
+                if exponent.magnitude_bits() > bits
+                    || exponent == Integer::from(0_i64)
                     || terms.last().is_some_and(|(previous, _)| previous >= &unit)
                 {
                     return Err(ProbabilityDocumentError::Malformed);
@@ -70,37 +94,103 @@ pub(super) fn enumerate(
     workload: Option<&Workload>,
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
-) -> Result<(CheckerGraph, BTreeMap<ProbabilityProductKey, u64>, RewardGraph), ProbabilityDocumentError> {
+) -> Result<
+    (
+        CheckerGraph,
+        BTreeMap<ProbabilityProductKey, u64>,
+        RewardGraph,
+    ),
+    ProbabilityDocumentError,
+> {
     let declarations = system.package().graph().probabilistic_model();
-    let declared = declarations.rewards().iter().find(|reward|
-        reward.name() == name.as_str() && reward.operation().model() == claim.subject.alias
-    ).ok_or(ProbabilityDocumentError::Unsupported)?;
+    let declared = declarations
+        .rewards()
+        .iter()
+        .find(|reward| {
+            reward.name() == name.as_str() && reward.operation().model() == claim.subject.alias
+        })
+        .ok_or(ProbabilityDocumentError::Unsupported)?;
     let unit = match declared.value_type() {
-        ValueType::Integer => None,
+        ValueType::Integer | ValueType::Int(_) => None,
         ValueType::Quantity(unit) => Some(unit.clone()),
         _ => return Err(ProbabilityDocumentError::Unsupported),
     };
-    let model = system.package().graph().model_roots()
+    let model = system
+        .package()
+        .graph()
+        .model_roots()
         .find(|(selection, _)| **selection == claim.subject.package)
-        .map(|(_, node)| node).ok_or(ProbabilityDocumentError::Unsupported)?;
-    let objective = ProbabilityRewardObjective { model, name: name.clone(), unit };
+        .map(|(_, node)| node)
+        .ok_or(ProbabilityDocumentError::Unsupported)?;
+    let objective = ProbabilityRewardObjective {
+        model,
+        name: name.clone(),
+        unit,
+    };
     let mut costs = BTreeMap::new();
     let failure = std::cell::RefCell::new(None);
     let mut issue = None;
-    let mut storage = 0_u64;
+    let storage = std::cell::RefCell::new(0_u64);
+    let mut remaining_edges = limits.edges;
     let key_of = |state: &ModelSimState| {
-        let (bytes, _) = system.state_key(state)
+        let (bytes, _) = system
+            .state_key(state)
             .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-        ProbabilityProductKey::for_model_state_with_limits(binding, &bytes,
-            ProbabilityDocumentIoLimits { bytes: limits.bytes, storage_bytes: limits.storage_bytes }, cancel)
-            .map_err(|error| { *failure.borrow_mut() = Some(error); ExactProbabilityGraphError::ExpansionRefused })
+        ProbabilityProductKey::for_model_state_with_limits(
+            binding,
+            &bytes,
+            ProbabilityDocumentIoLimits {
+                bytes: limits.bytes,
+                storage_bytes: limits.storage_bytes,
+            },
+            cancel,
+        )
+        .map_err(|error| {
+            *failure.borrow_mut() = Some(error);
+            ExactProbabilityGraphError::ExpansionRefused
+        })
     };
-    let result = enumerate_model_graph_with_keys(
-        system, Some(until), binding, workload, limits.states, limits.edges, cancel, false, &key_of,
+    let result = enumerate_model_graph_with_keys_and_reservation(
+        system,
+        Some(until),
+        binding,
+        workload,
+        limits.states,
+        limits.edges,
+        cancel,
+        false,
+        &key_of,
+        &mut |bytes| {
+            charge(
+                &mut storage.borrow_mut(),
+                limits.storage_bytes,
+                bytes as u64,
+            )
+            .map_err(|error| {
+                *failure.borrow_mut() = Some(error);
+                ExactProbabilityGraphError::ExpansionRefused
+            })
+        },
         &mut |key, state| {
-            let result = charge(&mut storage, limits.storage_bytes,
-                (key.as_bytes().len() as u64).saturating_add(std::mem::size_of::<Vec<Vec<Rational>>>() as u64))
-                .and_then(|()| step_costs(system, state, &objective, workload, limits, cancel, &mut storage));
+            let mut storage = storage.borrow_mut();
+            let result = charge(
+                &mut storage,
+                limits.storage_bytes,
+                (key.as_bytes().len() as u64)
+                    .saturating_add(std::mem::size_of::<Vec<Vec<Rational>>>() as u64),
+            )
+            .and_then(|()| {
+                step_costs(
+                    system,
+                    state,
+                    &objective,
+                    workload,
+                    limits,
+                    cancel,
+                    &mut storage,
+                    &mut remaining_edges,
+                )
+            });
             match result {
                 Ok(rows) => {
                     costs.insert(key.clone(), rows);
@@ -114,54 +204,132 @@ pub(super) fn enumerate(
         },
         &mut |failure| issue = Some(failure),
     );
-    if let Some(error) = failure.into_inner() { return Err(error); }
-    if let Some(issue) = issue { return Err(ProbabilityDocumentError::Build(Box::new(issue))); }
+    if let Some(error) = failure.into_inner() {
+        return Err(error);
+    }
+    if let Some(issue) = issue {
+        return Err(ProbabilityDocumentError::Build(Box::new(issue)));
+    }
     let mut graph = result?;
     // The original graph must terminate even beyond an early target.
+    reserve_order(
+        &graph,
+        &mut storage.borrow_mut(),
+        limits.storage_bytes,
+        cancel,
+    )?;
     topological_order(&graph, cancel)?;
-    if graph.states.values().any(|state| state.choices.is_empty() && state.terminal != Some(true)) {
+    if graph
+        .states
+        .values()
+        .any(|state| state.choices.is_empty() && state.terminal != Some(true))
+    {
         return Err(ProbabilityDocumentError::Unsupported);
+    }
+    for key in graph.states.keys() {
+        poll_cancel(cancel)?;
+        let bytes = (key.as_bytes().len() as u64)
+            .saturating_mul(2)
+            .saturating_add(std::mem::size_of::<ProbabilityProductKey>() as u64)
+            .saturating_add(std::mem::size_of::<(ProbabilityProductKey, CheckerState)>() as u64);
+        charge(&mut storage.borrow_mut(), limits.storage_bytes, bytes)?;
     }
     let mut pending = VecDeque::from([graph.initial.clone()]);
     let mut queued = BTreeSet::from([graph.initial.clone()]);
     let mut stopped = BTreeMap::new();
     while let Some(key) = pending.pop_front() {
         poll_cancel(cancel)?;
-        if stopped.contains_key(&key) { continue; }
-        let mut state = graph.states.remove(&key).ok_or(ProbabilityDocumentError::Malformed)?;
+        if stopped.contains_key(&key) {
+            continue;
+        }
+        let mut state = graph
+            .states
+            .remove(&key)
+            .ok_or(ProbabilityDocumentError::Malformed)?;
         if state.terminal == Some(true) {
             state.choices.clear();
             costs.remove(&key);
         } else {
             for edge in state.choices.iter().flatten() {
-                if queued.insert(edge.target.clone()) { pending.push_back(edge.target.clone()); }
+                if queued.insert(edge.target.clone()) {
+                    pending.push_back(edge.target.clone());
+                }
             }
         }
         stopped.insert(key, state);
     }
     graph.states = stopped;
     costs.retain(|key, _| graph.states.contains_key(key));
+    reserve_order(
+        &graph,
+        &mut storage.borrow_mut(),
+        limits.storage_bytes,
+        cancel,
+    )?;
+    for key in graph.states.keys() {
+        poll_cancel(cancel)?;
+        charge(
+            &mut storage.borrow_mut(),
+            limits.storage_bytes,
+            (key.as_bytes().len() as u64)
+                .saturating_add(std::mem::size_of::<(ProbabilityProductKey, u64)>() as u64),
+        )?;
+    }
     let mut ranks = BTreeMap::new();
     for key in topological_order(&graph, cancel)?.into_iter().rev() {
         poll_cancel(cancel)?;
-        let state = graph.states.get(&key).ok_or(ProbabilityDocumentError::Malformed)?;
+        let state = graph
+            .states
+            .get(&key)
+            .ok_or(ProbabilityDocumentError::Malformed)?;
         let mut rank = 0_u64;
         for edge in state.choices.iter().flatten() {
-            let successor: &u64 = ranks.get(&edge.target).ok_or(ProbabilityDocumentError::Malformed)?;
-            rank = rank.max(successor.checked_add(1).filter(|rank| *rank <= 9_007_199_254_740_991)
-                .ok_or(ProbabilityDocumentError::Limit { limit: ProbabilityDocumentLimit::Rank,
-                    bound: 9_007_199_254_740_991, actual: u64::MAX })?);
+            let successor: &u64 = ranks
+                .get(&edge.target)
+                .ok_or(ProbabilityDocumentError::Malformed)?;
+            rank = rank.max(
+                successor
+                    .checked_add(1)
+                    .filter(|rank| *rank <= 9_007_199_254_740_991)
+                    .ok_or(ProbabilityDocumentError::Limit {
+                        limit: ProbabilityDocumentLimit::Rank,
+                        bound: 9_007_199_254_740_991,
+                        actual: u64::MAX,
+                    })?,
+            );
         }
         ranks.insert(key, rank);
     }
     Ok((graph, ranks, RewardGraph { objective, costs }))
 }
 
+fn reserve_order(
+    graph: &CheckerGraph,
+    storage: &mut u64,
+    bound: u64,
+    cancel: &Cancel,
+) -> Result<(), ProbabilityDocumentError> {
+    for key in graph.states.keys() {
+        poll_cancel(cancel)?;
+        // Topological traversal retains one indegree, ready-set and output key.
+        let bytes = (key.as_bytes().len() as u64)
+            .saturating_mul(3)
+            .saturating_add(std::mem::size_of::<(ProbabilityProductKey, usize)>() as u64)
+            .saturating_add(
+                (std::mem::size_of::<ProbabilityProductKey>() as u64).saturating_mul(2),
+            );
+        charge(storage, bound, bytes)?;
+    }
+    Ok(())
+}
+
 fn charge(storage: &mut u64, bound: u64, bytes: u64) -> Result<(), ProbabilityDocumentError> {
     let actual = storage.saturating_add(bytes);
     if actual > bound {
         return Err(ProbabilityDocumentError::Limit {
-            limit: ProbabilityDocumentLimit::StorageBytes, bound, actual,
+            limit: ProbabilityDocumentLimit::StorageBytes,
+            bound,
+            actual,
         });
     }
     *storage = actual;
@@ -170,65 +338,133 @@ fn charge(storage: &mut u64, bound: u64, bytes: u64) -> Result<(), ProbabilityDo
 
 #[allow(clippy::too_many_arguments)]
 fn step_costs(
-    system: &ModelSystem<'_>, state: &ModelSimState, objective: &ProbabilityRewardObjective,
-    workload: Option<&Workload>, limits: ProbabilityDocumentLimits, cancel: &Cancel, storage: &mut u64,
+    system: &ModelSystem<'_>,
+    state: &ModelSimState,
+    objective: &ProbabilityRewardObjective,
+    workload: Option<&Workload>,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    storage: &mut u64,
+    remaining_edges: &mut usize,
 ) -> Result<Vec<Vec<Rational>>, ProbabilityDocumentError> {
     use qsl_eval::simulation::model::{TransitionId, Unsteppable};
-    let expansion = |stop| ProbabilityDocumentError::Build(Box::new(crate::ExactProbBuildIssue::Expansion(stop)));
-    let unsteppable = |stop| ProbabilityDocumentError::Build(Box::new(match stop {
-        Unsteppable::NotMarkov(_) => crate::ExactProbBuildIssue::NotMarkov,
-        Unsteppable::UndecidedSuccessor(_) => crate::ExactProbBuildIssue::UndecidedSuccessor,
-    }));
-    let magnitude = |rewards: &[(Identifier, ExactValue)], storage: &mut u64| {
-        poll_cancel(cancel)?;
-        let Some((_, value)) = rewards.iter().find(|(name, _)| name == &objective.name) else {
-            return Ok(rational(0));
-        };
-        let (numerator, denominator) = match value {
-            ExactValue::Integer(integer) => (integer.magnitude_bits(), 1),
-            ExactValue::Quantity(quantity) => (quantity.magnitude().numerator().magnitude_bits(), quantity.magnitude().denominator().magnitude_bits()),
-            _ => return Err(ProbabilityDocumentError::Unsupported),
-        };
-        if numerator.max(denominator) > limits.scalar_bits {
-            return Err(ProbabilityDocumentError::Limit { limit: ProbabilityDocumentLimit::RationalBits,
-                bound: limits.scalar_bits, actual: numerator.max(denominator) });
-        }
-        charge(storage, limits.storage_bytes, (std::mem::size_of::<Rational>() as u64)
-            .saturating_add(numerator.div_ceil(8)).saturating_add(denominator.div_ceil(8)))?;
-        let value = match (value, &objective.unit) {
-            (ExactValue::Integer(integer), None) => Rational::from_integer(integer.clone()),
-            (ExactValue::Quantity(quantity), Some(unit)) if quantity.unit() == unit => quantity.magnitude().clone(),
-            _ => return Err(ProbabilityDocumentError::Unsupported),
-        };
-        if value < rational(0) { return Err(ProbabilityDocumentError::Unsupported); }
-        super::document::check_scalar(&value, limits)?;
-        Ok(value)
+    let expansion = |stop| {
+        ProbabilityDocumentError::Build(Box::new(crate::ExactProbBuildIssue::Expansion(stop)))
     };
+    let unsteppable = |stop| {
+        ProbabilityDocumentError::Build(Box::new(match stop {
+            Unsteppable::NotMarkov(_) => crate::ExactProbBuildIssue::NotMarkov,
+            Unsteppable::UndecidedSuccessor(_) => crate::ExactProbBuildIssue::UndecidedSuccessor,
+        }))
+    };
+    let magnitude =
+        |rewards: &[(Identifier, ExactValue)], storage: &mut u64, remaining: &mut usize| {
+            poll_cancel(cancel)?;
+            if *remaining == 0 {
+                return Err(ProbabilityDocumentError::Limit {
+                    limit: ProbabilityDocumentLimit::Edges,
+                    bound: limits.edges as u64,
+                    actual: (limits.edges as u64).saturating_add(1),
+                });
+            }
+            *remaining -= 1;
+            let Some((_, value)) = rewards.iter().find(|(name, _)| name == &objective.name) else {
+                return Ok(rational(0));
+            };
+            let (numerator, denominator) = match value {
+                ExactValue::Integer(integer) => (integer.magnitude_bits(), 1),
+                ExactValue::Quantity(quantity) => (
+                    quantity.magnitude().numerator().magnitude_bits(),
+                    quantity.magnitude().denominator().magnitude_bits(),
+                ),
+                _ => return Err(ProbabilityDocumentError::Unsupported),
+            };
+            if numerator.max(denominator) > limits.scalar_bits {
+                return Err(ProbabilityDocumentError::Limit {
+                    limit: ProbabilityDocumentLimit::RationalBits,
+                    bound: limits.scalar_bits,
+                    actual: numerator.max(denominator),
+                });
+            }
+            charge(
+                storage,
+                limits.storage_bytes,
+                (std::mem::size_of::<Rational>() as u64)
+                    .saturating_add(numerator.div_ceil(8))
+                    .saturating_add(denominator.div_ceil(8)),
+            )?;
+            let value = match (value, &objective.unit) {
+                (ExactValue::Integer(integer), None) => Rational::from_integer(integer.clone()),
+                (ExactValue::Quantity(quantity), Some(unit)) if quantity.unit() == unit => {
+                    quantity.magnitude().clone()
+                }
+                _ => return Err(ProbabilityDocumentError::Unsupported),
+            };
+            if value < rational(0) {
+                return Err(ProbabilityDocumentError::Unsupported);
+            }
+            super::document::check_scalar(&value, limits)?;
+            Ok(value)
+        };
     if let Some(workload) = workload {
-        let steps = system.weighted_steps(state, workload).map_err(expansion)?.map_err(unsteppable)?;
-        if steps.iter().any(|step| step.transition == TransitionId::Stutter) {
-            return if steps.len() == 1 { Ok(Vec::new()) } else { Err(ProbabilityDocumentError::Unsupported) };
+        let result = system.weighted_steps_with_cancel(state, workload, cancel);
+        poll_cancel(cancel)?;
+        let steps = result.map_err(expansion)?.map_err(unsteppable)?;
+        if steps
+            .iter()
+            .any(|step| step.transition == TransitionId::Stutter)
+        {
+            return if steps.len() == 1 {
+                Ok(Vec::new())
+            } else {
+                Err(ProbabilityDocumentError::Unsupported)
+            };
         }
         let mut costs = Vec::new();
-        charge(storage, limits.storage_bytes, std::mem::size_of::<Vec<Rational>>() as u64)?;
+        charge(
+            storage,
+            limits.storage_bytes,
+            std::mem::size_of::<Vec<Rational>>() as u64,
+        )?;
         for step in steps {
             poll_cancel(cancel)?;
-            if step.probability != rational(0) { costs.push(magnitude(&step.rewards, storage)?); }
+            if step.probability != rational(0) {
+                let value = magnitude(&step.rewards, storage, remaining_edges)?;
+                costs
+                    .try_reserve_exact(1)
+                    .map_err(|_| ProbabilityDocumentError::Malformed)?;
+                costs.push(value);
+            }
         }
         return Ok(vec![costs]);
     }
-    let actions = system.actions(state).map_err(expansion)?
-        .map_err(|_| ProbabilityDocumentError::Build(Box::new(crate::ExactProbBuildIssue::UndecidedSuccessor)))?;
+    let result = system.actions_with_cancel(state, cancel);
+    poll_cancel(cancel)?;
+    let actions = result.map_err(expansion)?.map_err(|_| {
+        ProbabilityDocumentError::Build(Box::new(crate::ExactProbBuildIssue::UndecidedSuccessor))
+    })?;
     let mut rows = Vec::new();
     for action in actions {
         poll_cancel(cancel)?;
         let mut costs = Vec::new();
-        charge(storage, limits.storage_bytes, std::mem::size_of::<Vec<Rational>>() as u64)?;
+        charge(
+            storage,
+            limits.storage_bytes,
+            std::mem::size_of::<Vec<Rational>>() as u64,
+        )?;
         for draw in action.draws {
             poll_cancel(cancel)?;
-            if draw.probability == rational(0) { continue; }
-            if draw.successors.len() != 1 { return Err(ProbabilityDocumentError::Unsupported); }
-            costs.push(magnitude(&draw.rewards, storage)?);
+            if draw.probability == rational(0) {
+                continue;
+            }
+            if draw.successors.len() != 1 {
+                return Err(ProbabilityDocumentError::Unsupported);
+            }
+            let value = magnitude(&draw.rewards, storage, remaining_edges)?;
+            costs
+                .try_reserve_exact(1)
+                .map_err(|_| ProbabilityDocumentError::Malformed)?;
+            costs.push(value);
         }
         rows.push(costs);
     }

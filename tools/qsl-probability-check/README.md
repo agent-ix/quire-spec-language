@@ -54,6 +54,16 @@ minimum, maximum or resolved-workload operator, verifies complete key/value/rank
 coverage, positive-value rank progress, Bellman equality and the threshold.
 Unsupported configurations produce no acceptance token.
 
+The separate expected-reward/v1 objective admits finite acyclic named integer
+or quantity rewards under the infinite-trace profile. Its reward identity is
+the checked model root and reward identifier; its unit is the checked
+comparison UnitId. The checker re-evaluates semantic draw costs and checks
+`V(s) = opt sum p * (cost + V(next))`, with zero at targets and exact stopped
+graph heights. Original reachable terminals must all satisfy the target, and
+original cycles remain unsupported even beyond a target. Exact values may
+exceed one. Checked quantity bounds use the existing exact conversion graph;
+no reward-cost table or action encoding is transported in the document.
+
 The analyzer's additive `ExactProbLimits.document` API carries independent
 `bytes` and `storage_bytes` ceilings, each defaulting to 1073741824 bytes.
 The former stops as `certificate_check.max_certificate_bytes`; canonical-reader
