@@ -8,13 +8,18 @@
 //! discarded.
 //!
 //! This generator draws the `Boolean` and bounded `Int` subset of FR-295's
-//! types and the `literal`, `operator`, `let`, `if` and `call` forms. The
-//! `Rational`, `Decimal`, `Text`, record and collection types and the
-//! `record` and `collection` forms are not drawn yet.
+//! types and the `literal`, `operator`, `let`, `if` and `call` forms. About
+//! half the units also carry a few functions over `Rational`, `Decimal`, `Text`
+//! and record values, drawn from a second generator seeded by the unit's own
+//! text, so adding them left the `Boolean` and `Int` units as they were. The
+//! collection types and the `collection` form are not drawn yet.
 
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
-use quire_exact::{Integer, Value};
+use quire_exact::{
+    admit_text, Decimal, Integer, Meter, Rational, ScalarLimits, TextPayload, TextProfile,
+    TextType, Value,
+};
 use quire_semantic_value::checking::CheckingLimits;
 
 /// The gate's default seed: the ASCII bytes `QSL-JIT1` read big-endian.
@@ -233,6 +238,185 @@ fn unit_source(rng: &mut Rng) -> (String, Vec<(String, Vec<Kind>)>) {
     (text, shapes)
 }
 
+/// The aliases the functions of [`extras`] use.
+const EXTRA_TYPES: &str = "\
+type GQ = Rational[-10000000000000000000000000, 10000000000000000000000000; 1, 100000];\n\
+type GP = Rational[1, 10000000000000000000000000; 1, 100000];\n\
+type GS = Rational[-10000000000000000000000000000000, 10000000000000000000000000000000; 1, 10000000000];\n\
+type GM = Rational[-1000000000000000000000000000000000000000000000000000, 1000000000000000000000000000000000000000000000000000; 1, 10000000000];\n\
+type GD = Rational[-10000000000000000000000000000000, 10000000000000000000000000000000; 1, 10000000000000000000000000000000];\n\
+type GX = Decimal[0, 2000000; 0, 3; exact];\n\
+type GT = Text[0, 16; nfd];\n\
+record GR { x: Int[0, 9]; y: Boolean; }\n";
+
+/// Which values a template's parameters take.
+#[derive(Clone, Copy)]
+enum Sample {
+    Rational,
+    Positive,
+    Decimal,
+    Text,
+    Flag,
+    Digit,
+    Divisor,
+}
+
+/// Functions over `Rational`, `Decimal`, `Text` and a record: the
+/// declaration and the kinds of its parameters.
+const EXTRA_FUNCTIONS: [(&str, &[Sample]); 18] = [
+    (
+        "(p: GQ, q: GQ): GS pure { p + q }",
+        &[Sample::Rational, Sample::Rational],
+    ),
+    (
+        "(p: GQ, q: GQ): GS pure { p - q }",
+        &[Sample::Rational, Sample::Rational],
+    ),
+    (
+        "(p: GQ, q: GQ): GM pure { p * q }",
+        &[Sample::Rational, Sample::Rational],
+    ),
+    (
+        "(p: GQ, q: GP): GD pure { p / q }",
+        &[Sample::Rational, Sample::Positive],
+    ),
+    ("(p: GQ): GQ pure { -p }", &[Sample::Rational]),
+    (
+        "(p: GQ, q: GQ): Boolean pure { p < q }",
+        &[Sample::Rational, Sample::Rational],
+    ),
+    (
+        "(p: GQ, q: GQ): Boolean pure { p = q }",
+        &[Sample::Rational, Sample::Rational],
+    ),
+    (
+        "(c: Boolean, p: GQ, q: GQ): GQ pure { if c then p else q }",
+        &[Sample::Flag, Sample::Rational, Sample::Rational],
+    ),
+    (
+        "(a: GX, b: GX): GX pure { a + b }",
+        &[Sample::Decimal, Sample::Decimal],
+    ),
+    (
+        "(a: GX, b: GX): Boolean pure { a <= b }",
+        &[Sample::Decimal, Sample::Decimal],
+    ),
+    (
+        "(a: GT, b: GT): Boolean pure { a < b }",
+        &[Sample::Text, Sample::Text],
+    ),
+    (
+        "(a: GT, b: GT): Boolean pure { a != b }",
+        &[Sample::Text, Sample::Text],
+    ),
+    (
+        "(c: Boolean, a: GT, b: GT): GT pure { if c then a else b }",
+        &[Sample::Flag, Sample::Text, Sample::Text],
+    ),
+    (
+        "(p: Int[0, 9], q: Int[1, 9]): Rational[0, 9; 1, 9] pure { p / q }",
+        &[Sample::Digit, Sample::Divisor],
+    ),
+    (
+        "(a: Int[0, 9], b: Boolean): GR pure { GR { x: a, y: b } }",
+        &[Sample::Digit, Sample::Flag],
+    ),
+    (
+        "(a: Int[0, 9], b: Boolean): Boolean pure { (GR { x: a, y: b }).y }",
+        &[Sample::Digit, Sample::Flag],
+    ),
+    (
+        "(a: Int[0, 9], b: Boolean): Boolean pure { GR { x: a, y: b } = GR { x: a, y: not b } }",
+        &[Sample::Digit, Sample::Flag],
+    ),
+    (
+        "(a: Int[0, 9], b: Boolean): Int[0, 9] pure { let r = GR { x: a, y: b } in if r.y then r.x else a }",
+        &[Sample::Digit, Sample::Flag],
+    ),
+];
+
+fn rational_value(numerator: i64, denominator: i64) -> Value {
+    match Rational::new(Integer::from(numerator), Integer::from(denominator)) {
+        Ok(value) => Value::Rational(value),
+        Err(_) => Value::Rational(Rational::from_integer(Integer::from(numerator))),
+    }
+}
+
+fn sample_value(rng: &mut Rng, sample: Sample) -> Option<Value> {
+    let digit = |rng: &mut Rng| Value::Integer(Integer::from(rng.below(10) as i64));
+    let small = |rng: &mut Rng| rng.below(2001) as i64 - 1000;
+    Some(match sample {
+        Sample::Flag => Value::Boolean(rng.below(2) == 0),
+        Sample::Digit => digit(rng),
+        Sample::Divisor => Value::Integer(Integer::from(1 + rng.below(9) as i64)),
+        Sample::Rational => rational_value(small(rng), 1 + rng.below(9) as i64),
+        Sample::Positive => rational_value(1 + rng.below(1000) as i64, 1 + rng.below(9) as i64),
+        Sample::Decimal => {
+            Value::Decimal(Decimal::new(Integer::from(rng.below(2_000_001) as i64), 3))
+        }
+        Sample::Text => {
+            let payload = ["", "a", "b", "ab", "\u{e9}", "e\u{301}"][rng.below(6) as usize];
+            let text = admit_text(
+                &TextPayload::from_utf8(payload.as_bytes()).ok()?,
+                &TextType::new(0, 16, TextProfile::Nfd).ok()?,
+                &mut Meter::new(ScalarLimits {
+                    integer_bits: u64::MAX,
+                    decimal_digits: u64::MAX,
+                    scale_expansion: u64::MAX,
+                    text_input_bytes: u64::MAX,
+                    text_scalars: u64::MAX,
+                    normalized_scalars: u64::MAX,
+                    unit_edges: u64::MAX,
+                    value_occurrences: u64::MAX,
+                    work_units: u64::MAX,
+                    result_units: u64::MAX,
+                }),
+            )
+            .completed()?;
+            Value::Text(text)
+        }
+    })
+}
+
+/// FNV-1a over `text`: the seed of a unit's second generator.
+fn text_seed(text: &str) -> u64 {
+    text.bytes().fold(0xCBF2_9CE4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01B3)
+    })
+}
+
+/// A function's name and its argument tuples.
+type Functions = (String, Vec<Vec<Value>>);
+
+/// The functions over `Rational`, `Decimal` and `Text` a unit with source
+/// `source` carries (none for about half the units), as source text and
+/// argument tuples. The draw reads only `source`, never the unit stream.
+fn extras(source: &str) -> (String, Vec<Functions>) {
+    let mut rng = Rng(text_seed(source));
+    if rng.below(2) == 0 {
+        return (String::new(), Vec::new());
+    }
+    let mut text = EXTRA_TYPES.to_owned();
+    let mut functions = Vec::new();
+    for index in 0..1 + rng.below(3) as usize {
+        let (declaration, samples) =
+            EXTRA_FUNCTIONS[rng.below(EXTRA_FUNCTIONS.len() as u64) as usize];
+        let name = format!("g{index}");
+        text.push_str(&format!("function {name} using v{declaration}\n"));
+        let tuples = (0..4)
+            .filter_map(|_| {
+                let mut tuple = Vec::new();
+                for sample in samples {
+                    tuple.push(sample_value(&mut rng, *sample)?);
+                }
+                Some(tuple)
+            })
+            .collect();
+        functions.push((name, tuples));
+    }
+    (text, functions)
+}
+
 fn tuples(rng: &mut Rng, parameters: &[Kind]) -> Vec<Vec<Value>> {
     let integer = |v: i64| Value::Integer(Integer::from(v));
     let pick = |rng: &mut Rng, k: Kind, mode: u8| match (k, mode) {
@@ -319,11 +503,14 @@ pub fn generate(seed: u64, count: u64) -> (Vec<(GeneratedUnit, CheckedPackage)>,
     let mut discarded = 0;
     let mut index = 0;
     while (admitted.len() as u64) < count {
-        let (source, shapes) = unit_source(&mut rng);
-        let functions = shapes
+        let (mut source, shapes) = unit_source(&mut rng);
+        let mut functions: Vec<Functions> = shapes
             .iter()
             .map(|(name, parameters)| (name.clone(), tuples(&mut rng, parameters)))
             .collect();
+        let (extra_source, extra_functions) = extras(&source);
+        source.push_str(&extra_source);
+        functions.extend(extra_functions);
         match compile(&source) {
             Some(package) => admitted.push((
                 GeneratedUnit {

@@ -9,7 +9,7 @@
 
 use quire_checked::node::{
     Arithmetic, AuthoredBound, Connective, ConnectiveOrigin, EndSide, IntegerDivisionOperator,
-    NodeKind, OrderedKind, RecordSlot, Visit,
+    NodeKind, OrderedKind, Visit,
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, VecDeque};
@@ -72,8 +72,7 @@ use quire_exact::{FloatType, Rational};
 use quire_exact::{Outcome, Refusal, Undefined};
 use quire_semantic_value::catalog::{render_identity, InternalFault};
 use quire_semantic_value::declaration::{
-    operand_value, CompositeShape, ConstructionCause, ConstructionRefusal, EnvironmentFailure,
-    EqualityOperator, FieldDeclaration, FieldRef, TypeEnvironment,
+    operand_value, CompositeShape, EqualityOperator, FieldDeclaration, FieldRef, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::location::ExpressionLocation as Location;
@@ -164,35 +163,7 @@ struct LocatedStop {
     location: Option<Location>,
 }
 
-/// Which composite constructor refused.
-#[derive(Clone, Copy)]
-enum ConstructionSite {
-    Tuple,
-    Record,
-}
-
-/// A refused tuple or record construction as the fault it is: a storage
-/// failure of the admission worklist has its own identifier and is never read
-/// as a rejected construction.
-fn construction_fault(site: ConstructionSite, refusal: &ConstructionRefusal) -> Halt {
-    use ConstructionCause::{StorageCapacity, StorageDenied};
-    invariant(match (site, &refusal.cause) {
-        (ConstructionSite::Tuple, StorageDenied(_)) => {
-            "tuple-construction-admission-allocation-denied"
-        }
-        (ConstructionSite::Tuple, StorageCapacity(_)) => {
-            "tuple-construction-admission-capacity-overflow"
-        }
-        (ConstructionSite::Record, StorageDenied(_)) => {
-            "record-construction-admission-allocation-denied"
-        }
-        (ConstructionSite::Record, StorageCapacity(_)) => {
-            "record-construction-admission-capacity-overflow"
-        }
-        (ConstructionSite::Tuple, _) => "tuple-construction-rejected",
-        (ConstructionSite::Record, _) => "record-construction-rejected",
-    })
-}
+use crate::value::composite::{self, construct_record, construct_tuple, present_slots, read_field};
 
 /// A quantity whose `UnitId` neither the package's unit table nor this
 /// evaluation's formed units resolve. Checking resolves every quantity type
@@ -2753,31 +2724,20 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 field,
                 optional,
             } => {
-                let Value::Composite(composite) = self.pop()? else {
-                    return Err(invariant("field-composite-value-expected"));
-                };
-                // FR-359 item 2: the slot is found in the value's own
-                // declaration by the field's identity. The value may be a
-                // child of the record the read is typed at, whose own fields
-                // are not a positional prefix of that record's.
-                let index = self
-                    .world
-                    .record_slot(composite.declaration().clone(), field)
-                    .ok_or_else(|| invariant("field-slot-unresolved"))?;
-                let slot = composite
-                    .slots()
-                    .get(index)
-                    .ok_or_else(|| invariant("field-slot-unresolved"))?;
-                let value = Self::project(
-                    self.world.types(),
-                    slot,
+                let record = self.pop()?;
+                let world = self.world;
+                let read = read_field(
+                    world.types(),
+                    record,
+                    field,
+                    |declaration, field| world.record_slot(declaration, field),
                     *optional,
                     node.value_type(),
-                    false,
-                )?;
-                self.note_field(&composite, index, &value);
+                )
+                .map_err(invariant)?;
+                self.note_field(&read.composite, read.index, &read.value);
                 self.note_read(node, *operand, ReadStep::Field(field.name()), None);
-                value
+                read.value
             }
             NodeKind::Attribute {
                 reference: operand,
@@ -3007,45 +2967,14 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 arguments,
             } => {
                 let arguments = self.pop_many(arguments.len())?;
-                let value = self
-                    .world
-                    .types()
-                    .tuple(declaration.clone(), arguments)
-                    .map_err(|refusal| construction_fault(ConstructionSite::Tuple, &refusal))?;
+                let value = construct_tuple(self.world.types(), declaration, arguments)
+                    .map_err(invariant)?;
                 outcome_into_stop(retain_composite(value, self.meter))?
             }
             NodeKind::Record { declaration, slots } => {
-                let present = slots
-                    .iter()
-                    .filter(|slot| matches!(slot, RecordSlot::Present(_)))
-                    .count();
-                let mut values = self.pop_many(present)?.into_iter();
-                let Some(CompositeShape::Record(declared)) = self
-                    .world
-                    .types()
-                    .composite(declaration.clone())
-                    .map(|declaration| declaration.shape())
-                else {
-                    return Err(invariant("record-declaration-unresolved"));
-                };
-                let mut fields = Vec::with_capacity(slots.len());
-                for (slot, field) in slots.iter().zip(declared) {
-                    let value = match slot {
-                        RecordSlot::Absent => FieldValue::Absent,
-                        RecordSlot::Null => FieldValue::Null,
-                        RecordSlot::Present(_) => FieldValue::Present(
-                            values
-                                .next()
-                                .ok_or_else(|| invariant("record-present-value-missing"))?,
-                        ),
-                    };
-                    fields.push((field.name(), value));
-                }
-                let value = self
-                    .world
-                    .types()
-                    .record(declaration.clone(), fields)
-                    .map_err(|refusal| construction_fault(ConstructionSite::Record, &refusal))?;
+                let values = self.pop_many(present_slots(slots))?;
+                let value = construct_record(self.world.types(), declaration, slots, values)
+                    .map_err(invariant)?;
                 outcome_into_stop(retain_composite(value, self.meter))?
             }
             NodeKind::Collection {
@@ -4116,9 +4045,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         }
     }
 
-    /// `witnessed`: the slot holds a value FR-106 check 6.5 admitted
-    /// outside its declared range, which an optional slot's checked
-    /// construction would refuse. Every other slot is checked as before.
+    /// [`composite::project`] as the evaluator's halt.
     fn project(
         types: &TypeEnvironment,
         slot: &FieldValue,
@@ -4126,40 +4053,7 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
         value_type: &ValueType,
         witnessed: bool,
     ) -> Result<Value, Halt> {
-        match (slot, optional, value_type) {
-            (FieldValue::Present(value), false, _) => Ok(value.clone()),
-            (FieldValue::Present(value), true, ValueType::Option(payload)) if witnessed => Ok(
-                OptionValue::from_admitted((**payload).clone(), Some(value.clone())),
-            ),
-            // FR-359 item 5: the payload is admitted by conformance under the
-            // type environment, so a child of the payload's record keeps its
-            // own identity in the `Option`. `OptionValue::present` is exact.
-            (FieldValue::Present(value), true, ValueType::Option(payload)) => {
-                // The evaluator's stop channel is the kernel `Stop`, which has no
-                // storage variant, so an undecided admission is its own fault
-                // identifier and is never read as "rejected".
-                match types.admits(payload, value) {
-                    Ok(true) => Ok(OptionValue::from_admitted(
-                        (**payload).clone(),
-                        Some(value.clone()),
-                    )),
-                    Ok(false) => Err(invariant("field-option-payload-rejected")),
-                    Err(EnvironmentFailure::Allocation(_)) => Err(invariant(
-                        "field-option-payload-admission-allocation-denied",
-                    )),
-                    Err(EnvironmentFailure::Capacity(_)) => Err(invariant(
-                        "field-option-payload-admission-capacity-overflow",
-                    )),
-                    Err(EnvironmentFailure::Limit(_) | EnvironmentFailure::Refused(_)) => {
-                        Err(invariant("field-option-payload-admission-contract-broken"))
-                    }
-                }
-            }
-            (FieldValue::Absent | FieldValue::Null, true, ValueType::Option(payload)) => {
-                Ok(OptionValue::none((**payload).clone()))
-            }
-            _ => Err(invariant("field-projection-shape-invalid")),
-        }
+        composite::project(types, slot, optional, value_type, witnessed).map_err(invariant)
     }
 
     /// Whether `operand` reads a slot FR-106 check 6.5 witnessed out of
@@ -4916,17 +4810,17 @@ mod union_case;
 
 #[cfg(test)]
 mod tests {
-    use quire_semantic_value::declaration::{Component, StorageRequest, StorageUnit};
+    use crate::value::composite::{construction_fault_identifier, ConstructionSite};
+    use quire_semantic_value::declaration::{
+        Component, ConstructionCause, ConstructionRefusal, StorageRequest, StorageUnit,
+    };
 
     fn fault_identifier(site: ConstructionSite, cause: ConstructionCause) -> &'static str {
         let refusal = ConstructionRefusal {
             component: Component::Value,
             cause,
         };
-        match construction_fault(site, &refusal) {
-            Halt::Fault(fault) => fault.invariant(),
-            _ => "not-a-fault",
-        }
+        construction_fault_identifier(site, &refusal)
     }
 
     /// A storage failure of tuple or record construction keeps its own fault

@@ -165,22 +165,24 @@ const EDGE_SOURCE: &str = "\
 
 /// The remainder is not monotone: `a mod 5` is 0 at both ends of `[0, 10]`
 /// and 4 between them, so a product with `b` must not be judged to fit 64
-/// bits from the ends. The entry is listed unsupported instead of faulting
-/// at run time where the interpreter completes.
+/// bits from the ends. It takes the handle path and returns the interpreter's
+/// value and charges where the product exceeds 64 bits and where it does not.
 #[trace("TC-1385")]
 #[test]
 fn a_remainder_times_a_large_operand_is_not_judged_to_fit_from_the_interval_ends() {
     let package = package_of(EDGE_SOURCE);
     let prepared = prepare(&package, &["narrow_mod", "fitting_mod"]);
-    assert_eq!(
-        crate::common::unsupported_names(&prepared),
-        vec!["narrow_mod".to_owned()]
-    );
-    let arguments = [int(9), int(1_000_000_000_000_000_000)];
-    let want = interpreted(&package, "fitting_mod", &arguments, UNLIMITED);
-    let got = jitted(&prepared, "fitting_mod", &arguments, UNLIMITED);
-    assert_eq!(got.result, want.result);
-    assert_eq!(got.charges, want.charges);
+    assert!(crate::common::unsupported_names(&prepared).is_empty());
+    for (function, b) in [
+        ("fitting_mod", 1_000_000_000_000_000_000),
+        ("narrow_mod", 4_000_000_000_000_000_000),
+    ] {
+        let arguments = [int(9), int(b)];
+        let want = interpreted(&package, function, &arguments, UNLIMITED);
+        let got = jitted(&prepared, function, &arguments, UNLIMITED);
+        assert_eq!(got.result, want.result);
+        assert_eq!(got.charges, want.charges);
+    }
 }
 
 /// A parameter the body does not read, of a type wider than 64 bits, is

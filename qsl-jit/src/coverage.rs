@@ -5,46 +5,66 @@ use qsl_eval::execution::{BackendCoverage, CoverageOperation, CoverageType};
 use std::sync::OnceLock;
 
 /// The ADR-012 `Value`-family forms this backend translates.
-pub(crate) const FORMS: [&str; 5] = ["literal", "operator", "let", "if", "call"];
+pub(crate) const FORMS: [&str; 6] = ["literal", "operator", "let", "if", "call", "record"];
 
-const INTEGER_OPERATORS: [&str; 14] = [
-    "+", "-", "*", "negate", "div", "rem", "mod", "<", "<=", ">", ">=", "coerce", "=", "!=",
+const INTEGER_OPERATORS: [&str; 15] = [
+    "+", "-", "*", "negate", "div", "rem", "mod", "/", "<", "<=", ">", ">=", "coerce", "=", "!=",
 ];
 
 const BOOLEAN_OPERATORS: [&str; 6] = ["and", "or", "implies", "not", "=", "!="];
 
+/// `Rational` and `Decimal`: the four arithmetic operators, negation,
+/// ordering and equality; a `Decimal` or `Rational` also converts to a
+/// `Decimal`.
+const NUMERIC_OPERATORS: [&str; 12] = [
+    "+", "-", "*", "/", "negate", "<", "<=", ">", ">=", "=", "!=", "convert",
+];
+
+/// A record: equality.
+const EQUALITY_OPERATORS: [&str; 2] = ["=", "!="];
+
+/// `Text`: ordering and equality.
+const TEXT_OPERATORS: [&str; 6] = ["<", "<=", ">", ">=", "=", "!="];
+
 /// The constructs this backend translates (FR-560).
 ///
-/// This is the implemented subset of the FR-560 coverage floor: the scalar
-/// `Boolean` and `Integer` constructs with `call` to a translated function.
-/// The floor's `record` and `collection` forms, its `Rational`, `Decimal`, `Text`, record and
-/// collection types, and equality over those types are not yet translated, so they are not listed and an entry holding one is
-/// listed unsupported.
+/// This is the implemented subset of the FR-560 coverage floor: `Boolean`,
+/// bounded and unbounded `Integer`, `Rational`, `Decimal`, `Text` and record
+/// constructs, with `call` to a translated function. The floor's `collection`
+/// form and types are not yet translated, so they are not listed and an entry
+/// holding one is listed unsupported.
 #[must_use]
 pub fn coverage() -> &'static BackendCoverage {
     static COVERAGE: OnceLock<BackendCoverage> = OnceLock::new();
     COVERAGE.get_or_init(|| {
-        let operations = [CoverageType::BoundedInteger, CoverageType::UnboundedInteger]
-            .into_iter()
-            .flat_map(|operand| {
-                INTEGER_OPERATORS
-                    .into_iter()
-                    .map(move |operator| CoverageOperation { operator, operand })
-            });
-        let booleans = BOOLEAN_OPERATORS
-            .into_iter()
-            .map(|operator| CoverageOperation {
-                operator,
-                operand: CoverageType::Boolean,
-            });
+        let over = |operand: CoverageType, operators: &'static [&'static str]| {
+            operators
+                .iter()
+                .map(move |operator| CoverageOperation { operator, operand })
+                .collect::<Vec<_>>()
+        };
+        let operations = [
+            over(CoverageType::BoundedInteger, &INTEGER_OPERATORS),
+            over(CoverageType::UnboundedInteger, &INTEGER_OPERATORS),
+            over(CoverageType::Boolean, &BOOLEAN_OPERATORS),
+            over(CoverageType::Rational, &NUMERIC_OPERATORS),
+            over(CoverageType::Decimal, &NUMERIC_OPERATORS),
+            over(CoverageType::Text, &TEXT_OPERATORS),
+            over(CoverageType::Record, &EQUALITY_OPERATORS),
+        ]
+        .concat();
         BackendCoverage::new(
             FORMS,
             [
                 CoverageType::Boolean,
                 CoverageType::BoundedInteger,
                 CoverageType::UnboundedInteger,
+                CoverageType::Rational,
+                CoverageType::Decimal,
+                CoverageType::Text,
+                CoverageType::Record,
             ],
-            operations.chain(booleans),
+            operations,
         )
     })
 }

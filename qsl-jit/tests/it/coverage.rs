@@ -3,7 +3,7 @@
 //! outside it.
 
 use ix_trace_rs::trace;
-use qsl_eval::execution::PreparedEntries;
+use qsl_eval::execution::{CoverageType, PreparedEntries};
 use quire_eval::{CallFailure, ExecutionBackendChoice, UnsupportedCause, UntranslatableConstruct};
 use quire_exact::ValueType;
 
@@ -18,6 +18,16 @@ fn the_published_coverage_lists_the_implemented_scalar_subset() {
     }
     assert!(coverage.lists_type(&ValueType::Boolean));
     assert!(coverage.lists_type(&ValueType::Integer));
+    for class in [
+        CoverageType::Rational,
+        CoverageType::Decimal,
+        CoverageType::Text,
+        CoverageType::Record,
+    ] {
+        assert!(coverage.value_types().contains(&class), "{class:?}");
+    }
+    assert!(coverage.lists_form("record"));
+    assert!(!coverage.value_types().contains(&CoverageType::Collection));
     assert!(!coverage.lists_type(&ValueType::Timestamp));
     assert!(!coverage.lists_form("case"));
 }
@@ -48,10 +58,11 @@ fn a_parameter_of_an_unlisted_type_is_listed_with_that_type_and_the_rest_are_pre
     assert!(jitted_call(&prepared, "ok", &[int(4)]).is_ok());
 }
 
-#[trace("TC-1381")]
+/// QSL-1825: a sum whose result needs more than 64 bits is no longer listed
+/// unsupported; the kernel computes it on a handle.
 #[test]
-fn an_operation_whose_result_does_not_fit_64_bits_is_listed_unsupported() {
+fn an_operation_whose_result_does_not_fit_64_bits_is_prepared_on_a_handle() {
     let package = package_of(SOURCE);
     let prepared = prepare(&package, &["wide"]);
-    assert_eq!(unsupported_names(&prepared), vec!["wide".to_owned()]);
+    assert_eq!(unsupported_names(&prepared), Vec::<String>::new());
 }

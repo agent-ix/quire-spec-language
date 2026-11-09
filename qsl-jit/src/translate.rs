@@ -5,9 +5,15 @@
 //! Every `Integer` operation is a call to the kernel shim of [`crate::exec`],
 //! which runs the operation the interpreter runs with the interpreter's
 //! charges; the translator only decides, from checked types at `prepare`
-//! (FR-562), that the result fits a signed 64-bit machine integer, so the
+//! (FR-562), whether the result fits a signed 64-bit machine integer, so the
 //! value can be carried in a register. The decision never depends on a
 //! run-time value.
+//!
+//! A value the checked bounds do not put in a register is carried as a handle
+//! (QSL-1825): an index into the arena the call owns, which holds the
+//! unbounded `Integer` the kernel returned. The shim reads its operands from
+//! the arena and runs the same kernel entry on them, so the handle path
+//! changes where a value lives and nothing the meter sees.
 
 use std::collections::HashMap;
 
@@ -21,9 +27,10 @@ use qsl_eval::execution::{PrepareFailure, PrepareMeter};
 use qsl_semantics::check::{CheckedGraph, CheckedNode};
 use quire_checked::integer_division::AdmittedIntegerDivision;
 use quire_checked::node::{Arithmetic, Connective, IntegerDivisionOperator, NodeKind, OrderedKind};
+use quire_checked::node::{RecordField, RecordSlot};
 use quire_exact::{
-    DivisionMember, Integer, IntegerDomain, IntegerInterval, Meter, OrderingOperator, Outcome,
-    ScalarLimits, Value, ValueType,
+    ArithmeticOperator, DecimalType, DivisionMember, Integer, IntegerDomain, IntegerInterval,
+    Meter, NodeKey, OrderingOperator, Outcome, RationalDomain, ScalarLimits, Value, ValueType,
 };
 use quire_semantic_value::declaration::CheckedEquality;
 use quire_semantic_value::location::ExpressionLocation;
@@ -44,7 +51,7 @@ pub(crate) enum OpKind {
         operator: IntegerDivisionOperator,
         selection: Option<AdmittedIntegerDivision>,
     },
-    Order(OrderingOperator),
+    Order((OrderingOperator, OrderedKind)),
     Coerce(IntegerInterval),
     /// `=` or `!=` (the checked equality), over operands carried as
     /// Booleans (`true`) or Integers (`false`).
@@ -57,27 +64,140 @@ pub(crate) enum OpKind {
     Retain,
     /// The `function.call` charge of a call.
     ChargeCall,
+    /// A literal that does not fit a register (an `Integer` wider than 64
+    /// bits, a `Rational`, `Decimal` or `Text`): the handle of a new arena
+    /// entry. Charges nothing, as the interpreter's literal does.
+    Literal(Value),
+    /// `Integer / Integer` into a `Rational`.
+    RationalDivide {
+        domain: RationalDomain,
+    },
+    /// `Rational` arithmetic.
+    Rational {
+        operator: ArithmeticOperator,
+        domain: RationalDomain,
+    },
+    RationalNegate {
+        domain: RationalDomain,
+    },
+    /// `Decimal` arithmetic into `target`, recording the operation's loss.
+    Decimal {
+        operator: ArithmeticOperator,
+        target: DecimalType,
+    },
+    DecimalNegate {
+        target: DecimalType,
+    },
+    /// A `Decimal` or `Rational` converted into `target`.
+    ConvertDecimal {
+        target: DecimalType,
+    },
+    /// An operand value staged for the construction that follows (`true`: a
+    /// `Boolean` register). Charges nothing.
+    Stage {
+        boolean: bool,
+    },
+    /// A record over the staged values of its present slots.
+    Record {
+        declaration: NodeKey,
+        slots: Vec<RecordSlot<()>>,
+    },
+    /// A tuple over its `arity` staged values.
+    Tuple {
+        declaration: NodeKey,
+        arity: usize,
+    },
+    /// A record field read, carried as `into`.
+    Field {
+        field: RecordField,
+        optional: bool,
+        value_type: ValueType,
+        into: Carried,
+    },
+    /// The arena's length, taken before a call whose callee adds handles.
+    Mark,
+    /// Cut the arena back to a mark, keeping the callee's result.
+    Reclaim,
+    /// A register `Integer` moved to the arena, to meet a handle.
+    Box,
+    /// A handle whose value fits a register, moved back to one.
+    Unbox,
+}
+
+/// Where a shim operand or result lives.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Repr {
+    /// The 64-bit register value itself.
+    Register,
+    /// An index into the call's arena.
+    Handle,
 }
 
 /// One kernel operation of a translated function and where it is.
 pub(crate) struct Op {
     pub(crate) kind: OpKind,
     pub(crate) location: ExpressionLocation,
+    /// Where the left and right operands live.
+    pub(crate) operands: [Repr; 2],
+    /// Where the result lives.
+    pub(crate) result: Repr,
 }
 
-/// The register representation of a checked value: a Boolean (`0` or `1`) or
-/// an `Integer` with the interval FR-562 derives for it.
+/// How a parameter or result is carried across the entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Carried {
+    /// A `Boolean` register (`0` or `1`).
+    Boolean,
+    /// An `Integer` in a register.
+    Register,
+    /// An `Integer` behind an arena handle.
+    Handle,
+}
+
+/// The representation of a checked value: a Boolean (`0` or `1`), an
+/// `Integer` in a register with the interval FR-562 derives for it, or an
+/// `Integer` behind a handle (`Wide`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Ty {
     Boolean,
     Int(i128, i128),
+    Wide,
+    /// A `Rational`, `Decimal` or `Text` behind a handle.
+    Rational,
+    Decimal,
+    Text,
+    /// A record or tuple behind a handle.
+    Record,
+}
+
+impl Ty {
+    fn carried(self) -> Carried {
+        match self {
+            Self::Boolean => Carried::Boolean,
+            Self::Int(..) => Carried::Register,
+            Self::Wide | Self::Rational | Self::Decimal | Self::Text | Self::Record => {
+                Carried::Handle
+            }
+        }
+    }
+
+    fn is_integer(self) -> bool {
+        matches!(self, Self::Int(..) | Self::Wide)
+    }
+
+    fn repr(self) -> Repr {
+        match self.carried() {
+            Carried::Handle => Repr::Handle,
+            Carried::Boolean | Carried::Register => Repr::Register,
+        }
+    }
 }
 
 /// What an entry was translated to.
 pub(crate) struct Translated {
     /// The `extern "C" fn(*const EntryFrame) -> u32` trampoline of the entry.
     pub(crate) id: FuncId,
-    pub(crate) result_is_boolean: bool,
+    pub(crate) result: Carried,
     /// The signature the translator declared for the trampoline.
     pub(crate) signature: Signature,
 }
@@ -108,21 +228,27 @@ fn type_of(value_type: &ValueType) -> Option<Ty> {
     match value_type {
         ValueType::Boolean => Some(Ty::Boolean),
         ValueType::Int(interval) => {
-            let (lo, hi) = (
-                integer_to_i64(interval.lower())?,
-                integer_to_i64(interval.upper())?,
-            );
-            Some(Ty::Int(lo.into(), hi.into()))
+            match (
+                integer_to_i64(interval.lower()),
+                integer_to_i64(interval.upper()),
+            ) {
+                (Some(lo), Some(hi)) => Some(Ty::Int(lo.into(), hi.into())),
+                _ => Some(Ty::Wide),
+            }
         }
+        ValueType::Integer => Some(Ty::Wide),
+        ValueType::Rational(_) => Some(Ty::Rational),
+        ValueType::Decimal(_) => Some(Ty::Decimal),
+        ValueType::Text(_) => Some(Ty::Text),
+        ValueType::Composite(_) => Some(Ty::Record),
         _ => None,
     }
 }
 
-/// Whether a parameter of `value_type` is carried in a register, and as a
-/// Boolean (`Some(true)`) or an Integer (`Some(false)`); `None` for a type
-/// this backend does not carry (an unread parameter of one is not an error).
-pub(crate) fn register_kind(value_type: &ValueType) -> Option<bool> {
-    type_of(value_type).map(|ty| ty == Ty::Boolean)
+/// How a parameter of `value_type` is carried; `None` for a type this backend
+/// does not carry (an unread parameter of one is not an error).
+pub(crate) fn carried(value_type: &ValueType) -> Option<Carried> {
+    type_of(value_type).map(Ty::carried)
 }
 
 /// `value` as a signed 64-bit integer, when it fits.
@@ -142,7 +268,9 @@ fn fits(low: i128, high: i128) -> bool {
 
 enum State {
     InProgress,
-    Done(FuncId, Ty),
+    /// The function, its result, its parameters and whether it (or a callee)
+    /// adds handles to the arena.
+    Done(FuncId, Ty, Vec<Option<Ty>>, bool),
     Unsupported,
 }
 
@@ -170,6 +298,9 @@ struct Emitter<'a, 'b, 'm> {
     meter: &'a mut PrepareMeter<'m>,
     /// A backend invariant a code-generation step could not uphold.
     refused: Option<&'static str>,
+    /// Whether this function adds handles to the call's arena (itself or
+    /// through a callee).
+    allocates: bool,
 }
 
 impl<'a, 'm> Compiler<'a, 'm> {
@@ -244,7 +375,7 @@ impl<'a, 'm> Compiler<'a, 'm> {
         self.module.clear_context(&mut context);
         Ok(Translated {
             id,
-            result_is_boolean: ty == Ty::Boolean,
+            result: ty.carried(),
             signature: recorded,
         })
     }
@@ -252,7 +383,7 @@ impl<'a, 'm> Compiler<'a, 'm> {
     /// Translate the function at `index` (once) after the functions it calls.
     fn function(&mut self, index: usize, depth: usize) -> Result<(FuncId, Ty), Failure> {
         match self.state.get(&index) {
-            Some(State::Done(id, ty)) => return Ok((*id, *ty)),
+            Some(State::Done(id, ty, ..)) => return Ok((*id, *ty)),
             Some(State::Unsupported) | Some(State::InProgress) => {
                 return Err(self.placeholder(index));
             }
@@ -304,8 +435,9 @@ impl<'a, 'm> Compiler<'a, 'm> {
             .map(|(_, t)| type_of(t))
             .collect();
         match self.build(index, &parameters, function.body) {
-            Ok((id, ty)) => {
-                self.state.insert(index, State::Done(id, ty));
+            Ok((id, ty, allocates)) => {
+                self.state
+                    .insert(index, State::Done(id, ty, parameters, allocates));
                 Ok((id, ty))
             }
             Err(failure) => {
@@ -327,7 +459,7 @@ impl<'a, 'm> Compiler<'a, 'm> {
         index: usize,
         parameters: &[Option<Ty>],
         body: CheckedNode<'_>,
-    ) -> Result<(FuncId, Ty), Failure> {
+    ) -> Result<(FuncId, Ty, bool), Failure> {
         let module = &mut *self.module;
         let pointer = module.target_config().pointer_type();
         let mut signature = module.make_signature();
@@ -345,7 +477,7 @@ impl<'a, 'm> Compiler<'a, 'm> {
         let mut context = module.make_context();
         context.func.signature = signature;
         let mut builder_context = FunctionBuilderContext::new();
-        let ty = {
+        let (ty, allocates) = {
             let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
             let entry = builder.create_block();
             builder.append_block_params_for_function_params(entry);
@@ -366,6 +498,7 @@ impl<'a, 'm> Compiler<'a, 'm> {
                 slots: HashMap::new(),
                 meter: &mut *self.meter,
                 refused: None,
+                allocates: false,
             };
             for (position, ty) in parameters.iter().enumerate() {
                 if let Some(ty) = ty {
@@ -389,8 +522,9 @@ impl<'a, 'm> Compiler<'a, 'm> {
             let zero = emitter.builder.ins().iconst(types::I64, 0);
             emitter.builder.ins().return_(&[zero]);
             emitter.builder.seal_all_blocks();
+            let allocates = emitter.allocates;
             emitter.builder.finalize(frontend);
-            ty
+            (ty, allocates)
         };
         module
             .define_function(id, &mut context)
@@ -403,7 +537,7 @@ impl<'a, 'm> Compiler<'a, 'm> {
         };
         module.clear_context(&mut context);
         self.meter.charge_block(code_bytes)?;
-        Ok((id, ty))
+        Ok((id, ty, allocates))
     }
 }
 
@@ -423,10 +557,34 @@ impl Emitter<'_, '_, '_> {
                     let v = self.builder.ins().iconst(types::I64, i64::from(*value));
                     Ok((v, Ty::Boolean))
                 }
-                Value::Integer(value) => {
-                    let value = integer_to_i64(value).ok_or_else(|| self.unsupported(node))?;
-                    let v = self.builder.ins().iconst(types::I64, value);
-                    Ok((v, Ty::Int(value.into(), value.into())))
+                Value::Integer(value) => match integer_to_i64(value) {
+                    Some(small) => {
+                        let v = self.builder.ins().iconst(types::I64, small);
+                        Ok((v, Ty::Int(small.into(), small.into())))
+                    }
+                    None => {
+                        let zero = self.builder.ins().iconst(types::I64, 0);
+                        let operands = [(zero, Ty::Boolean), (zero, Ty::Boolean)];
+                        let result = self.shim_call(
+                            node,
+                            OpKind::Literal(Value::Integer(value.clone())),
+                            operands,
+                            Repr::Handle,
+                        );
+                        Ok((result, Ty::Wide))
+                    }
+                },
+                Value::Rational(_) | Value::Decimal(_) | Value::Text(_) | Value::Composite(_) => {
+                    let ty = match &literal.0 {
+                        Value::Rational(_) => Ty::Rational,
+                        Value::Decimal(_) => Ty::Decimal,
+                        Value::Composite(_) => Ty::Record,
+                        _ => Ty::Text,
+                    };
+                    let zero = self.builder.ins().iconst(types::I64, 0);
+                    let operands = [(zero, Ty::Boolean), (zero, Ty::Boolean)];
+                    let kind = OpKind::Literal(literal.0.clone());
+                    Ok((self.shim_call(node, kind, operands, Repr::Handle), ty))
                 }
                 _ => Err(self.unsupported(node)),
             },
@@ -453,37 +611,47 @@ impl Emitter<'_, '_, '_> {
             NodeKind::Arithmetic(operator, left, right) => {
                 let (a, left_ty) = self.emit(node.at(*left), depth + 1)?;
                 let (b, right_ty) = self.emit(node.at(*right), depth + 1)?;
-                let (Ty::Int(al, ah), Ty::Int(bl, bh)) = (left_ty, right_ty) else {
-                    return Err(self.unsupported(node));
-                };
-                let (low, high) = match operator {
-                    Arithmetic::Add => (al + bl, ah + bh),
-                    Arithmetic::Subtract => (al - bh, ah - bl),
-                    Arithmetic::Multiply => {
-                        let products = [al * bl, al * bh, ah * bl, ah * bh];
-                        (
-                            products.into_iter().min().unwrap_or(0),
-                            products.into_iter().max().unwrap_or(0),
-                        )
-                    }
-                };
-                if !fits(low, high) {
+                if !(left_ty.is_integer() && right_ty.is_integer()) {
                     return Err(self.unsupported(node));
                 }
-                let result = self.shim_call(node, OpKind::Arithmetic(*operator), a, b);
-                Ok((result, Ty::Int(low, high)))
+                // FR-562: a result interval inside 64 bits is a register
+                // result; any other result is an arena handle.
+                let interval = match (left_ty, right_ty) {
+                    (Ty::Int(al, ah), Ty::Int(bl, bh)) => {
+                        let (low, high) = match operator {
+                            Arithmetic::Add => (al + bl, ah + bh),
+                            Arithmetic::Subtract => (al - bh, ah - bl),
+                            Arithmetic::Multiply => {
+                                let products = [al * bl, al * bh, ah * bl, ah * bh];
+                                (
+                                    products.into_iter().min().unwrap_or(0),
+                                    products.into_iter().max().unwrap_or(0),
+                                )
+                            }
+                        };
+                        fits(low, high).then_some((low, high))
+                    }
+                    _ => None,
+                };
+                let ty = interval.map_or(Ty::Wide, |(low, high)| Ty::Int(low, high));
+                let operands = [(a, left_ty), (b, right_ty)];
+                let result =
+                    self.shim_call(node, OpKind::Arithmetic(*operator), operands, ty.repr());
+                Ok((result, ty))
             }
             NodeKind::Negate(operand) => {
-                let (a, ty) = self.emit(node.at(*operand), depth + 1)?;
-                let Ty::Int(low, high) = ty else {
-                    return Err(self.unsupported(node));
+                let (a, operand_ty) = self.emit(node.at(*operand), depth + 1)?;
+                let ty = match operand_ty {
+                    Ty::Int(low, high) if fits(-high, -low) => Ty::Int(-high, -low),
+                    Ty::Int(..) | Ty::Wide => Ty::Wide,
+                    Ty::Boolean | Ty::Rational | Ty::Decimal | Ty::Text | Ty::Record => {
+                        return Err(self.unsupported(node))
+                    }
                 };
-                if !fits(-high, -low) {
-                    return Err(self.unsupported(node));
-                }
                 let zero = self.builder.ins().iconst(types::I64, 0);
-                let result = self.shim_call(node, OpKind::Negate, a, zero);
-                Ok((result, Ty::Int(-high, -low)))
+                let operands = [(a, operand_ty), (zero, Ty::Boolean)];
+                let result = self.shim_call(node, OpKind::Negate, operands, ty.repr());
+                Ok((result, ty))
             }
             NodeKind::IntegerDivision {
                 operator,
@@ -493,54 +661,261 @@ impl Emitter<'_, '_, '_> {
             } => {
                 let (a, left_ty) = self.emit(node.at(*left), depth + 1)?;
                 let (b, right_ty) = self.emit(node.at(*right), depth + 1)?;
-                let (Ty::Int(al, ah), Ty::Int(bl, bh)) = (left_ty, right_ty) else {
+                if !(left_ty.is_integer() && right_ty.is_integer()) {
                     return Err(self.unsupported(node));
+                }
+                // A `div` or `rem` with no admitted selection is the
+                // interpreter's invariant stop; it is listed unsupported, not
+                // translated.
+                if lacks_selection(*operator, selection.as_ref()) {
+                    return Err(self.unsupported(node));
+                }
+                // FR-562: a divisor interval that excludes 0 and a result
+                // interval inside 64 bits give a register result; any other
+                // division returns a handle (a zero divisor is the kernel's
+                // `Undefined`).
+                let interval = match (left_ty, right_ty) {
+                    (Ty::Int(al, ah), Ty::Int(bl, bh)) if !(bl <= 0 && 0 <= bh) => {
+                        division_interval(*operator, *selection, (al, ah), (bl, bh))
+                            .filter(|(low, high)| fits(*low, *high))
+                    }
+                    _ => None,
                 };
-                // FR-562: the divisor's interval must exclude 0, and the
-                // result interval is the smallest holding the kernel's result
-                // at every pair of operand interval ends.
-                if bl <= 0 && 0 <= bh {
-                    return Err(self.unsupported(node));
-                }
-                let (low, high) = division_interval(*operator, *selection, (al, ah), (bl, bh))
-                    .ok_or_else(|| self.unsupported(node))?;
-                if !fits(low, high) {
-                    return Err(self.unsupported(node));
-                }
+                let ty = interval.map_or(Ty::Wide, |(low, high)| Ty::Int(low, high));
                 let kind = OpKind::Divide {
                     operator: *operator,
                     selection: *selection,
                 };
-                let result = self.shim_call(node, kind, a, b);
-                Ok((result, Ty::Int(low, high)))
+                let operands = [(a, left_ty), (b, right_ty)];
+                let result = self.shim_call(node, kind, operands, ty.repr());
+                Ok((result, ty))
             }
-            NodeKind::Order(operator, OrderedKind::Integers, left, right) => {
+            NodeKind::Order(operator, kind, left, right) => {
                 let (a, left_ty) = self.emit(node.at(*left), depth + 1)?;
                 let (b, right_ty) = self.emit(node.at(*right), depth + 1)?;
-                if !matches!((left_ty, right_ty), (Ty::Int(..), Ty::Int(..))) {
+                let operands_fit = match kind {
+                    OrderedKind::Integers => left_ty.is_integer() && right_ty.is_integer(),
+                    OrderedKind::Rationals => (left_ty, right_ty) == (Ty::Rational, Ty::Rational),
+                    OrderedKind::Decimals => (left_ty, right_ty) == (Ty::Decimal, Ty::Decimal),
+                    OrderedKind::Texts => (left_ty, right_ty) == (Ty::Text, Ty::Text),
+                    OrderedKind::Float | OrderedKind::Enums | OrderedKind::Quantities => false,
+                };
+                if !operands_fit {
                     return Err(self.unsupported(node));
                 }
-                let result = self.shim_call(node, OpKind::Order(*operator), a, b);
+                let operands = [(a, left_ty), (b, right_ty)];
+                let order = OpKind::Order((*operator, *kind));
+                let result = self.shim_call(node, order, operands, Repr::Register);
                 Ok((result, Ty::Boolean))
+            }
+            NodeKind::Record { declaration, slots } => {
+                for slot in slots {
+                    if let RecordSlot::Present(child) = slot {
+                        let operand = self.emit(node.at(*child), depth + 1)?;
+                        self.stage(node, operand);
+                    }
+                }
+                let slots = slots
+                    .iter()
+                    .map(|slot| match slot {
+                        RecordSlot::Absent => RecordSlot::Absent,
+                        RecordSlot::Null => RecordSlot::Null,
+                        RecordSlot::Present(_) => RecordSlot::Present(()),
+                    })
+                    .collect();
+                let kind = OpKind::Record {
+                    declaration: declaration.clone(),
+                    slots,
+                };
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let result = self.shim_call(
+                    node,
+                    kind,
+                    [(zero, Ty::Boolean), (zero, Ty::Boolean)],
+                    Repr::Handle,
+                );
+                Ok((result, Ty::Record))
+            }
+            NodeKind::Tuple {
+                declaration,
+                arguments,
+            } => {
+                for argument in arguments {
+                    let operand = self.emit(node.at(*argument), depth + 1)?;
+                    self.stage(node, operand);
+                }
+                let kind = OpKind::Tuple {
+                    declaration: declaration.clone(),
+                    arity: arguments.len(),
+                };
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let result = self.shim_call(
+                    node,
+                    kind,
+                    [(zero, Ty::Boolean), (zero, Ty::Boolean)],
+                    Repr::Handle,
+                );
+                Ok((result, Ty::Record))
+            }
+            NodeKind::Field {
+                operand,
+                field,
+                optional,
+            } => {
+                let (a, operand_ty) = self.emit(node.at(*operand), depth + 1)?;
+                let Some(ty) = type_of(node.value_type()) else {
+                    return Err(self.unsupported(node));
+                };
+                if operand_ty != Ty::Record {
+                    return Err(self.unsupported(node));
+                }
+                let kind = OpKind::Field {
+                    field: field.clone(),
+                    optional: *optional,
+                    value_type: node.value_type().clone(),
+                    into: ty.carried(),
+                };
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let result = self.shim_call(
+                    node,
+                    kind,
+                    [(a, operand_ty), (zero, Ty::Boolean)],
+                    ty.repr(),
+                );
+                Ok((result, ty))
+            }
+            NodeKind::Divide {
+                left,
+                right,
+                domain,
+            } => {
+                let (a, left_ty) = self.emit(node.at(*left), depth + 1)?;
+                let (b, right_ty) = self.emit(node.at(*right), depth + 1)?;
+                if !(left_ty.is_integer() && right_ty.is_integer()) {
+                    return Err(self.unsupported(node));
+                }
+                let kind = OpKind::RationalDivide {
+                    domain: domain.clone(),
+                };
+                let result =
+                    self.shim_call(node, kind, [(a, left_ty), (b, right_ty)], Repr::Handle);
+                Ok((result, Ty::Rational))
+            }
+            NodeKind::Rational {
+                operator,
+                left,
+                right,
+                domain,
+            } => {
+                let (a, left_ty) = self.emit(node.at(*left), depth + 1)?;
+                let (b, right_ty) = self.emit(node.at(*right), depth + 1)?;
+                if (left_ty, right_ty) != (Ty::Rational, Ty::Rational) {
+                    return Err(self.unsupported(node));
+                }
+                let kind = OpKind::Rational {
+                    operator: *operator,
+                    domain: domain.clone(),
+                };
+                let result =
+                    self.shim_call(node, kind, [(a, left_ty), (b, right_ty)], Repr::Handle);
+                Ok((result, Ty::Rational))
+            }
+            NodeKind::RationalNegate(operand, domain) => {
+                let (a, ty) = self.emit(node.at(*operand), depth + 1)?;
+                if ty != Ty::Rational {
+                    return Err(self.unsupported(node));
+                }
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let kind = OpKind::RationalNegate {
+                    domain: domain.clone(),
+                };
+                let result =
+                    self.shim_call(node, kind, [(a, ty), (zero, Ty::Boolean)], Repr::Handle);
+                Ok((result, Ty::Rational))
+            }
+            NodeKind::Decimal {
+                operator,
+                left,
+                right,
+                target,
+            } => {
+                let (a, left_ty) = self.emit(node.at(*left), depth + 1)?;
+                let (b, right_ty) = self.emit(node.at(*right), depth + 1)?;
+                if (left_ty, right_ty) != (Ty::Decimal, Ty::Decimal) {
+                    return Err(self.unsupported(node));
+                }
+                let kind = OpKind::Decimal {
+                    operator: *operator,
+                    target: target.clone(),
+                };
+                let result =
+                    self.shim_call(node, kind, [(a, left_ty), (b, right_ty)], Repr::Handle);
+                Ok((result, Ty::Decimal))
+            }
+            NodeKind::DecimalNegate(operand, target) => {
+                let (a, ty) = self.emit(node.at(*operand), depth + 1)?;
+                if ty != Ty::Decimal {
+                    return Err(self.unsupported(node));
+                }
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let kind = OpKind::DecimalNegate {
+                    target: target.clone(),
+                };
+                let result =
+                    self.shim_call(node, kind, [(a, ty), (zero, Ty::Boolean)], Repr::Handle);
+                Ok((result, Ty::Decimal))
+            }
+            NodeKind::ConvertDecimal(operand, target) => {
+                let (a, ty) = self.emit(node.at(*operand), depth + 1)?;
+                if !matches!(ty, Ty::Decimal | Ty::Rational) {
+                    return Err(self.unsupported(node));
+                }
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let kind = OpKind::ConvertDecimal {
+                    target: target.clone(),
+                };
+                let result =
+                    self.shim_call(node, kind, [(a, ty), (zero, Ty::Boolean)], Repr::Handle);
+                Ok((result, Ty::Decimal))
             }
             NodeKind::Coerce(operand, target) => {
                 let (a, ty) = self.emit(node.at(*operand), depth + 1)?;
-                let Ty::Int(low, high) = ty else {
-                    return Err(self.unsupported(node));
+                let narrowed = match ty {
+                    Ty::Int(low, high) => {
+                        // The result lies in the operand's interval and the
+                        // target's; an empty intersection always refuses, so
+                        // keep the operand's.
+                        let (target_low, target_high) = (
+                            clamp(target.lower(), low, high),
+                            clamp(target.upper(), low, high),
+                        );
+                        if target_low <= target_high {
+                            Ty::Int(target_low, target_high)
+                        } else {
+                            ty
+                        }
+                    }
+                    // A handle narrowed to a target inside 64 bits is a
+                    // register; any other target keeps the handle.
+                    Ty::Wide => match (
+                        integer_to_i64(target.lower()),
+                        integer_to_i64(target.upper()),
+                    ) {
+                        (Some(low), Some(high)) => Ty::Int(low.into(), high.into()),
+                        _ => Ty::Wide,
+                    },
+                    Ty::Boolean | Ty::Rational | Ty::Decimal | Ty::Text | Ty::Record => {
+                        return Err(self.unsupported(node))
+                    }
                 };
-                // The result lies in the operand's interval and the target's;
-                // an empty intersection always refuses, so keep the operand's.
-                let (target_low, target_high) = (
-                    clamp(target.lower(), low, high),
-                    clamp(target.upper(), low, high),
-                );
                 let zero = self.builder.ins().iconst(types::I64, 0);
-                let result = self.shim_call(node, OpKind::Coerce(target.clone()), a, zero);
-                let narrowed = if target_low <= target_high {
-                    Ty::Int(target_low, target_high)
-                } else {
-                    ty
-                };
+                let operands = [(a, ty), (zero, Ty::Boolean)];
+                let result = self.shim_call(
+                    node,
+                    OpKind::Coerce(target.clone()),
+                    operands,
+                    narrowed.repr(),
+                );
                 Ok((result, narrowed))
             }
             NodeKind::Equality(_, checked, left, right) => {
@@ -548,14 +923,16 @@ impl Emitter<'_, '_, '_> {
                 let (b, right_ty) = self.emit(node.at(*right), depth + 1)?;
                 let operands_boolean = match (left_ty, right_ty) {
                     (Ty::Boolean, Ty::Boolean) => true,
-                    (Ty::Int(..), Ty::Int(..)) => false,
+                    (l, r) if l.is_integer() && r.is_integer() => false,
+                    (l, r) if l == r && l.repr() == Repr::Handle => false,
                     _ => return Err(self.unsupported(node)),
                 };
                 let kind = OpKind::Equality {
                     checked: checked.clone(),
                     operands_boolean,
                 };
-                let result = self.shim_call(node, kind, a, b);
+                let operands = [(a, left_ty), (b, right_ty)];
+                let result = self.shim_call(node, kind, operands, Repr::Register);
                 Ok((result, Ty::Boolean))
             }
             NodeKind::Not(operand) => {
@@ -564,7 +941,12 @@ impl Emitter<'_, '_, '_> {
                     return Err(self.unsupported(node));
                 }
                 let zero = self.builder.ins().iconst(types::I64, 0);
-                let result = self.shim_call(node, OpKind::Not, a, zero);
+                let result = self.shim_call(
+                    node,
+                    OpKind::Not,
+                    [(a, Ty::Boolean), (zero, Ty::Boolean)],
+                    Repr::Register,
+                );
                 Ok((result, Ty::Boolean))
             }
             NodeKind::Connective(connective, _, left, right) => {
@@ -574,16 +956,48 @@ impl Emitter<'_, '_, '_> {
                 function,
                 arguments,
             } => {
-                let Some(State::Done(callee, result_ty)) = self.state.get(function) else {
+                let Some(State::Done(callee, result_ty, parameters, callee_allocates)) =
+                    self.state.get(function)
+                else {
                     return Err(self.unsupported(node));
                 };
-                let (callee, result_ty) = (*callee, *result_ty);
+                let (callee, result_ty, parameters, callee_allocates) =
+                    (*callee, *result_ty, parameters.clone(), *callee_allocates);
+                // A callee that adds handles has them dropped when it returns
+                // (the interpreter drops its intermediates as it goes): the
+                // arena mark is taken before the arguments, and the arena is
+                // cut back to it keeping only the result.
+                let mark = if callee_allocates {
+                    self.allocates = true;
+                    let zero = self.builder.ins().iconst(types::I64, 0);
+                    Some(self.shim_call(
+                        node,
+                        OpKind::Mark,
+                        [(zero, Ty::Boolean), (zero, Ty::Boolean)],
+                        Repr::Register,
+                    ))
+                } else {
+                    None
+                };
                 let mut values = Vec::with_capacity(arguments.len());
-                for argument in arguments {
-                    values.push(self.emit(node.at(*argument), depth + 1)?.0);
+                for (position, argument) in arguments.iter().enumerate() {
+                    let emitted = self.emit(node.at(*argument), depth + 1)?;
+                    // The callee carries each parameter as its own type
+                    // says; an argument carried the other way is boxed or
+                    // unboxed here (`None`: the callee does not read it).
+                    let value = match parameters.get(position).copied().flatten() {
+                        Some(parameter) => self.convert(node, emitted, parameter)?,
+                        None => emitted.0,
+                    };
+                    values.push(value);
                 }
                 let zero = self.builder.ins().iconst(types::I64, 0);
-                let charged = self.shim_call(node, OpKind::ChargeCall, zero, zero);
+                let charged = self.shim_call(
+                    node,
+                    OpKind::ChargeCall,
+                    [(zero, Ty::Boolean), (zero, Ty::Boolean)],
+                    Repr::Register,
+                );
                 let _ = charged;
                 let Ok(size) = u32::try_from(values.len().max(1) * 8) else {
                     return Err(self.unsupported(node));
@@ -608,8 +1022,16 @@ impl Emitter<'_, '_, '_> {
                     .builder
                     .ins()
                     .call(function_ref, &[self.context, address]);
-                let result = self.builder.inst_results(call)[0];
+                let mut result = self.builder.inst_results(call)[0];
                 self.leave_on_failure();
+                if let Some(mark) = mark {
+                    result = self.shim_call(
+                        node,
+                        OpKind::Reclaim,
+                        [(result, result_ty), (mark, Ty::Boolean)],
+                        result_ty.repr(),
+                    );
+                }
                 Ok((result, result_ty))
             }
             _ => Err(self.unsupported(node)),
@@ -652,7 +1074,12 @@ impl Emitter<'_, '_, '_> {
         self.builder.switch_to_block(skip);
         let constant = self.builder.ins().iconst(types::I64, i64::from(decided));
         let zero = self.builder.ins().iconst(types::I64, 0);
-        let retained = self.shim_call(node, OpKind::Retain, constant, zero);
+        let retained = self.shim_call(
+            node,
+            OpKind::Retain,
+            [(constant, Ty::Boolean), (zero, Ty::Boolean)],
+            Repr::Register,
+        );
         self.builder.ins().jump(merge, &[retained.into()]);
         self.builder.switch_to_block(evaluate);
         let (value, right_ty) = self.emit(node.at(right), depth + 1)?;
@@ -660,7 +1087,12 @@ impl Emitter<'_, '_, '_> {
             return Err(self.unsupported(node));
         }
         let zero = self.builder.ins().iconst(types::I64, 0);
-        let retained = self.shim_call(node, OpKind::Retain, value, zero);
+        let retained = self.shim_call(
+            node,
+            OpKind::Retain,
+            [(value, Ty::Boolean), (zero, Ty::Boolean)],
+            Repr::Register,
+        );
         self.builder.ins().jump(merge, &[retained.into()]);
         self.builder.switch_to_block(merge);
         let joined = self.builder.block_params(merge)[0];
@@ -686,37 +1118,95 @@ impl Emitter<'_, '_, '_> {
             self.builder.create_block(),
             self.builder.create_block(),
         );
-        self.builder.append_block_param(merge, types::I64);
+        let (then_join, else_join) = (self.builder.create_block(), self.builder.create_block());
+        for block in [merge, then_join, else_join] {
+            self.builder.append_block_param(block, types::I64);
+        }
         self.builder
             .ins()
             .brif(selector, then_block, &[], else_block, &[]);
         self.builder.switch_to_block(then_block);
         let (taken, then_ty) = self.emit(node.at(then), depth + 1)?;
-        self.builder.ins().jump(merge, &[taken.into()]);
+        self.builder.ins().jump(then_join, &[taken.into()]);
         self.builder.switch_to_block(else_block);
         let (other, else_ty) = self.emit(node.at(otherwise), depth + 1)?;
-        self.builder.ins().jump(merge, &[other.into()]);
-        self.builder.switch_to_block(merge);
-        let joined = self.builder.block_params(merge)[0];
+        self.builder.ins().jump(else_join, &[other.into()]);
         let ty = match (then_ty, else_ty) {
             (Ty::Boolean, Ty::Boolean) => Ty::Boolean,
             (Ty::Int(a, b), Ty::Int(c, d)) => Ty::Int(a.min(c), b.max(d)),
+            (a, b) if a.is_integer() && b.is_integer() => Ty::Wide,
+            (a, b) if a == b => a,
             _ => return Err(self.unsupported(node)),
         };
+        // Each branch meets the join in the join's representation.
+        for (block, branch_ty) in [(then_join, then_ty), (else_join, else_ty)] {
+            self.builder.switch_to_block(block);
+            let value = self.builder.block_params(block)[0];
+            let converted = self.convert(node, (value, branch_ty), ty)?;
+            self.builder.ins().jump(merge, &[converted.into()]);
+        }
+        self.builder.switch_to_block(merge);
+        let joined = self.builder.block_params(merge)[0];
         Ok((joined, ty))
+    }
+
+    /// Stage an operand value for the record or tuple construction that
+    /// follows.
+    fn stage(&mut self, node: CheckedNode<'_>, (value, ty): (Clif, Ty)) {
+        let zero = self.builder.ins().iconst(types::I64, 0);
+        let kind = OpKind::Stage {
+            boolean: ty == Ty::Boolean,
+        };
+        self.shim_call(
+            node,
+            kind,
+            [(value, ty), (zero, Ty::Boolean)],
+            Repr::Register,
+        );
+    }
+
+    /// `value` of type `from` in the representation of `to`: a register
+    /// `Integer` is boxed into the arena, a handle is unboxed to a register
+    /// (a backend invariant stop when it does not fit, which the checked
+    /// types rule out), and the same representation is unchanged.
+    fn convert(
+        &mut self,
+        node: CheckedNode<'_>,
+        (value, from): (Clif, Ty),
+        to: Ty,
+    ) -> Result<Clif, Failure> {
+        if from.carried() == to.carried() {
+            return Ok(value);
+        }
+        let kind = match (from, to) {
+            (Ty::Int(..), Ty::Wide) => OpKind::Box,
+            (Ty::Wide, Ty::Int(..)) => OpKind::Unbox,
+            _ => return Err(self.unsupported(node)),
+        };
+        let zero = self.builder.ins().iconst(types::I64, 0);
+        Ok(self.shim_call(node, kind, [(value, from), (zero, Ty::Boolean)], to.repr()))
     }
 
     /// Call the kernel shim for `kind` at `node`, then leave through `exit`
     /// when the shim recorded a stop (FR-561: the status is passed up
     /// unchanged).
-    fn shim_call(&mut self, node: CheckedNode<'_>, kind: OpKind, a: Clif, b: Clif) -> Clif {
+    fn shim_call(
+        &mut self,
+        node: CheckedNode<'_>,
+        kind: OpKind,
+        [(a, left), (b, right)]: [(Clif, Ty); 2],
+        result: Repr,
+    ) -> Clif {
         let Ok(index) = i64::try_from(self.ops.len()) else {
             self.refused = Some("jit-operation-index");
             return a;
         };
+        self.allocates |= result == Repr::Handle;
         self.ops.push(Op {
             kind,
             location: node.location().clone(),
+            operands: [left.repr(), right.repr()],
+            result,
         });
         let function = self
             .module
@@ -757,6 +1247,17 @@ fn clamp(bound: &Integer, low: i128, high: i128) -> i128 {
     wide.clamp(low, high)
 }
 
+/// Whether `operator` needs an admitted division selection it lacks: `div`
+/// and `rem` run the selected law, and `mod` needs none. Such a node is the
+/// interpreter's invariant stop, so it is listed unsupported at prepare, not
+/// translated.
+fn lacks_selection(
+    operator: IntegerDivisionOperator,
+    selection: Option<&AdmittedIntegerDivision>,
+) -> bool {
+    operator != IntegerDivisionOperator::Mod && selection.is_none()
+}
+
 /// A sound interval for the kernel's `div`, `rem` or `mod` of operands in
 /// the given intervals, whose divisor interval excludes 0.
 ///
@@ -774,7 +1275,7 @@ fn division_interval(
     (al, ah): (i128, i128),
     (bl, bh): (i128, i128),
 ) -> Option<(i128, i128)> {
-    if operator == IntegerDivisionOperator::Rem && selection.is_none() {
+    if lacks_selection(operator, selection.as_ref()) {
         return None;
     }
     if matches!(
@@ -857,6 +1358,21 @@ mod tests {
     /// A remainder with no admitted division selection has no interval, so the
     /// entry is listed unsupported at prepare instead of faulting at run time
     /// (`jit-division-selection-missing`); `mod` needs none.
+    #[test]
+    fn a_division_or_remainder_without_a_selection_is_not_translated() {
+        for (operator, lacks) in [
+            (IntegerDivisionOperator::Div, true),
+            (IntegerDivisionOperator::Rem, true),
+            (IntegerDivisionOperator::Mod, false),
+        ] {
+            assert_eq!(lacks_selection(operator, None), lacks, "{operator:?}");
+        }
+        assert_eq!(
+            division_interval(IntegerDivisionOperator::Div, None, (0, 10), (1, 5)),
+            None
+        );
+    }
+
     #[test]
     fn a_remainder_without_a_selection_has_no_interval() {
         assert_eq!(

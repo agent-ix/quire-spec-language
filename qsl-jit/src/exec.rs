@@ -24,9 +24,9 @@ use quire_exact::Meter;
 use quire_semantic_value::location::ExpressionLocation;
 use quire_semantic_value::stop::Stop;
 
-use crate::kernel::{self, Halt as KernelHalt};
+use crate::kernel::{self, Halt as KernelHalt, State};
 use crate::translate::Op;
-use quire_semantic_value::declaration::TypeEnvironment;
+use qsl_semantics::check::Scope;
 
 /// Why the backend stopped a run.
 pub(crate) enum Halt {
@@ -63,7 +63,10 @@ pub(crate) struct EntryFrame<'a> {
     result: i64,
     meter: &'a mut Meter,
     ops: &'a [Op],
-    types: &'a TypeEnvironment,
+    scope: &'a Scope,
+    /// The values behind the handles generated code passes (QSL-1825): owned
+    /// by the call, so a handle is an index valid until the call returns.
+    state: State,
     halt: Option<Halt>,
 }
 
@@ -77,21 +80,23 @@ pub(crate) const RESULT_OFFSET: i32 = std::mem::offset_of!(EntryFrame<'static>, 
 
 impl<'a> EntryFrame<'a> {
     /// A frame with nothing failed, metering into `meter`.
-    pub(crate) fn new(meter: &'a mut Meter, ops: &'a [Op], types: &'a TypeEnvironment) -> Self {
+    pub(crate) fn new(meter: &'a mut Meter, ops: &'a [Op], scope: &'a Scope, state: State) -> Self {
         Self {
             failed: 0,
             arguments: std::ptr::null(),
             result: 0,
             meter,
             ops,
-            types,
+            scope,
+            state,
             halt: None,
         }
     }
 
-    /// Why the run stopped, if it did.
-    pub(crate) fn into_halt(self) -> Option<Halt> {
-        self.halt
+    /// Why the run stopped, if it did, and the values behind the handles and
+    /// the loss records the run produced.
+    pub(crate) fn into_parts(self) -> (Option<Halt>, State) {
+        (self.halt, self.state)
     }
 
     /// The value the entry returned.
@@ -123,7 +128,9 @@ unsafe extern "C" fn shim(frame: *mut c_void, node: i64, a: i64, b: i64) -> i64 
         frame.failed = 1;
         return 0;
     };
-    match kernel::run(op, a, b, frame.meter, frame.types) {
+    let ran = kernel::run(op, [a, b], frame.meter, frame.scope, &mut frame.state)
+        .and_then(|value| frame.state.settle().map(|()| value));
+    match ran {
         Ok(value) => value,
         Err(KernelHalt::Stop(stop)) => {
             frame.halt = Some(Halt::Stop(stop, op.location.clone()));
