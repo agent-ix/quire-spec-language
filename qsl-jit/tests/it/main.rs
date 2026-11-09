@@ -4,6 +4,7 @@
 
 mod arena;
 mod clause;
+mod collections;
 mod common;
 mod coverage;
 mod differential;

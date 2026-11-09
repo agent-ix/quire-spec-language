@@ -470,6 +470,11 @@ impl<'p> PreparedJit<'p> {
                 })
             }
             (Status::Stopped, Some(Halt::Stop(stop, location))) => stopped(stop, Some(location)),
+            (Status::Stopped, Some(Halt::Family(result, location))) => Ok(Evaluation {
+                outcome: FamilyOutcome::FamilyEvaluated(result),
+                location: Some(location),
+                losses: Vec::new(),
+            }),
             (_, Some(Halt::Fault(invariant))) => {
                 Err(CallFailure::Fault(InternalFault::new("FR-560", invariant)))
             }

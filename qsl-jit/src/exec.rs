@@ -20,6 +20,7 @@ use cranelift_codegen::ir::{types, AbiParam};
 use cranelift_codegen::settings::{self, Configurable};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
+use quire_eval::FamilyResult;
 use quire_exact::Meter;
 use quire_semantic_value::location::ExpressionLocation;
 use quire_semantic_value::stop::Stop;
@@ -30,8 +31,11 @@ use qsl_semantics::check::Scope;
 
 /// Why the backend stopped a run.
 pub(crate) enum Halt {
-    /// A kernel stop, at the node that made the call.
+    /// A kernel stop, at the node that made the call (or at the node the
+    /// kernel named).
     Stop(Stop, ExpressionLocation),
+    /// A family-owned result, at the node that made the call.
+    Family(FamilyResult, ExpressionLocation),
     /// A backend invariant broke.
     Fault(&'static str),
 }
@@ -134,6 +138,17 @@ unsafe extern "C" fn shim(frame: *mut c_void, node: i64, a: i64, b: i64) -> i64 
         Ok(value) => value,
         Err(KernelHalt::Stop(stop)) => {
             frame.halt = Some(Halt::Stop(stop, op.location.clone()));
+            frame.failed = 1;
+            0
+        }
+        Err(KernelHalt::StopAt(at)) => {
+            let (stop, location) = *at;
+            frame.halt = Some(Halt::Stop(stop, location));
+            frame.failed = 1;
+            0
+        }
+        Err(KernelHalt::Family(result)) => {
+            frame.halt = Some(Halt::Family(result, op.location.clone()));
             frame.failed = 1;
             0
         }
