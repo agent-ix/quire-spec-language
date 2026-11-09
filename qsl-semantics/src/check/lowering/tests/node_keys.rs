@@ -213,9 +213,7 @@ fn a_cloned_body_cannot_silently_reuse_keys_from_another_package() {
 /// control adds one producer-local placeholder per new body.
 fn resolution_visits(functions: usize, pending: bool) -> usize {
     let declarations = (0..functions)
-        .map(|index| {
-            format!("function f{index} using v(): Boolean pure {{ true and false }}")
-        })
+        .map(|index| format!("function f{index} using v(): Boolean pure {{ true and false }}"))
         .collect::<Vec<_>>()
         .join("\n");
     let graph = source(&declarations);
@@ -238,7 +236,10 @@ fn resolution_visits(functions: usize, pending: bool) -> usize {
     );
     let mut visits = 0;
     for index in 0..functions {
-        let root = graph.function_state(index).expect("the function exists").body;
+        let root = graph
+            .function_state(index)
+            .expect("the function exists")
+            .body;
         lowering
             .expression(root, &mut Binders::new(&[], &[]))
             .expect("the independent closed expression lowers");
@@ -251,7 +252,9 @@ fn resolution_visits(functions: usize, pending: bool) -> usize {
                 visits += 1;
                 Ok(match reference {
                     NodeRef::Pending(_) => NodeRef::Admitted(
-                        root.node_key().expect("the source supplied its real key").clone(),
+                        root.node_key()
+                            .expect("the source supplied its real key")
+                            .clone(),
                     ),
                     admitted @ NodeRef::Admitted(_) => admitted.clone(),
                 })
@@ -264,14 +267,23 @@ fn resolution_visits(functions: usize, pending: bool) -> usize {
                 Ok(reference.clone())
             })
             .expect("an empty delta resolves without work");
-        assert_eq!(visits, after_new, "a settlement never revisits its old delta");
+        assert_eq!(
+            visits, after_new,
+            "a settlement never revisits its old delta"
+        );
     }
     assert_eq!(
-        lowering.checked_body_keys.values().map(|body| body.nodes.len()).sum::<usize>(),
+        lowering
+            .checked_body_keys
+            .values()
+            .map(|body| body.nodes.len())
+            .sum::<usize>(),
         functions * if pending { 4 } else { 3 },
         "the control really retains each function's expression references"
     );
-    lowering.finish(&generated_location()).expect("resolved keys publish");
+    lowering
+        .finish(&generated_location())
+        .expect("resolved keys publish");
     visits
 }
 

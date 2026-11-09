@@ -2246,7 +2246,8 @@ impl<'a> Lowering<'a> {
     fn retain_checked_node(&mut self, node: CheckedNode<'_>, term: &LeafTerm) {
         let slots = node.body().node_key_slots();
         let owner = std::sync::Arc::as_ptr(slots) as usize;
-        let body = self.checked_body_keys
+        let body = self
+            .checked_body_keys
             .entry(owner)
             .or_insert_with(|| CheckedBodyKeys {
                 slots: std::sync::Arc::clone(slots),
@@ -2256,7 +2257,8 @@ impl<'a> Lowering<'a> {
             });
         let reference = term.reference_target().cloned();
         if reference.as_ref().is_some_and(Self::pending) {
-            self.pending_checked_node_keys.push((owner, body.nodes.len()));
+            self.pending_checked_node_keys
+                .push((owner, body.nodes.len()));
         }
         body.nodes.push((node.id(), reference));
     }
@@ -2274,8 +2276,7 @@ impl<'a> Lowering<'a> {
             let Some((_, Some(node))) = body.nodes.get_mut(index) else {
                 return Err(fault(&body.location, KeyFault::UnresolvedDraft));
             };
-            *node = resolve(node)
-                .map_err(|()| fault(&body.location, KeyFault::UnresolvedDraft))?;
+            *node = resolve(node).map_err(|()| fault(&body.location, KeyFault::UnresolvedDraft))?;
         }
         Ok(())
     }
