@@ -358,8 +358,7 @@ pub enum ExactProbabilityGraphError {
     /// The claim's `over` parameter has not exactly one instance in the
     /// subject; this slice checks one binding.
     UnsupportedBinding,
-    /// No checked claim has the requested obligation's node as its checked
-    /// package identity, or more than one does.
+    /// No unique checked claim has the requested complete obligation identity.
     ClaimNotBound,
     /// The bound claim is not an unbounded `eventually` reachability claim,
     /// the only form this bounded slice checks.
@@ -560,7 +559,7 @@ pub(crate) fn check_model_exact_reachability<P: StatePredicate>(
     check_exact_reachability(&graph, certificate, objective, bound, cancel)
 }
 
-/// Bind `item` to its checked claim by checked node identity, then check the
+/// Bind `item` to its checked claim by complete obligation identity, then check the
 /// certificate over that claim's target predicate and bound (FR-498).
 ///
 /// The claim is the one whose `occurrence().node()` equals the obligation's
@@ -609,7 +608,9 @@ pub fn check_claim_exact_reachability(
 pub fn probabilistic_claim_identity(
     claim: &CheckedProbabilisticClaim,
 ) -> Result<ObligationIdentity, ExactProbabilityGraphError> {
-    let occurrence = claim.occurrence().ok_or(ExactProbabilityGraphError::ClaimNotBound)?;
+    let occurrence = claim
+        .occurrence()
+        .ok_or(ExactProbabilityGraphError::ClaimNotBound)?;
     if u32::try_from(occurrence.origin().ordinal()).is_err() {
         return Err(ExactProbabilityGraphError::ClaimNotBound);
     }
@@ -628,10 +629,10 @@ fn bind_claim<'a>(
         if claim
             .occurrence()
             .is_some_and(|key| key.node() == item.node())
+            && (&probabilistic_claim_identity(claim)? != item
+                || bound_claim.replace(claim).is_some())
         {
-            if &probabilistic_claim_identity(claim)? != item || bound_claim.replace(claim).is_some() {
-                return Err(ExactProbabilityGraphError::ClaimNotBound);
-            }
+            return Err(ExactProbabilityGraphError::ClaimNotBound);
         }
     }
     bound_claim.ok_or(ExactProbabilityGraphError::ClaimNotBound)

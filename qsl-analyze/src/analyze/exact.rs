@@ -505,7 +505,7 @@ fn replay_refutation(
         Ok(Some(witness)) => witness,
         Ok(None) => return not_yet(),
         Err(crate::exact_probabilistic::WitnessError::Limit { limit, value }) => {
-            return settled(&ExactProbBuildIssue::Limit { limit, value },subject);
+            return settled(&ExactProbBuildIssue::Limit { limit, value }, subject);
         }
         Err(_) => return broken(),
     };

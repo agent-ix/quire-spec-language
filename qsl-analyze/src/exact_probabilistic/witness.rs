@@ -513,8 +513,12 @@ pub fn produce_witness(
         limit: qsl_replay::ModelCheckLimit::ExactProbMaxRationalBits,
         value: limits.max_rational_bits,
     };
-    if limits.model.limits.max_transitions == 0 { return Err(transition_limit()); }
-    if !rational_fits(&rational(1),limits.max_rational_bits) { return Err(rational_limit()); }
+    if limits.model.limits.max_transitions == 0 {
+        return Err(transition_limit());
+    }
+    if !rational_fits(&rational(1), limits.max_rational_bits) {
+        return Err(rational_limit());
+    }
     let mut frontier = BinaryHeap::from([Partial {
         probability: rational(1),
         sequence: 0,
@@ -535,7 +539,9 @@ pub fn produce_witness(
                 });
             }
             sum = sum.add(&partial.probability);
-            if !rational_fits(&sum, limits.max_rational_bits) { return Err(rational_limit()); }
+            if !rational_fits(&sum, limits.max_rational_bits) {
+                return Err(rational_limit());
+            }
             paths.push(ProducedPath {
                 steps: partial.steps(&induced),
                 probability: partial.probability,
@@ -614,4 +620,93 @@ fn resolves(scope: WitnessScope, action: &ProductAction) -> bool {
 
 fn rational(value: i64) -> Rational {
     Rational::from_integer(Integer::from(value))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{ProbEdge, ProbKey};
+    use super::*;
+    use ix_trace_rs::trace;
+    use qsl_replay::ModelCheckLimit;
+
+    fn terminal_product() -> ProbProduct {
+        let state = ProbStateId(0);
+        ProbProduct {
+            states: vec![ProbKey {
+                binding: None,
+                model: vec![0],
+                monitor: None,
+                accumulator: None,
+                pending: None,
+            }],
+            kind: ProductKind::Dtmc,
+            edges: vec![ProbEdge {
+                from: state,
+                choice: ProductAction::TerminalStutter,
+                action: None,
+                draw: None,
+                to: state,
+                probability: rational(1),
+                rewards: Vec::new(),
+            }],
+            initial: vec![(0, None, state)],
+            decided: Vec::new(),
+            labels: vec![vec![false]],
+            fairness_operations: Vec::new(),
+            fairness: Vec::new(),
+        }
+    }
+
+    #[trace("TC-637", "FR-202-AC-11")]
+    #[test]
+    fn zero_producer_budgets_return_the_actual_setting_before_evidence() {
+        let product = terminal_product();
+        let paths = ExactProbLimits {
+            max_witness_paths: 0,
+            ..ExactProbLimits::default()
+        };
+        let mut frontier = ExactProbLimits::default();
+        frontier.model.limits.max_transitions = 0;
+        let arithmetic = ExactProbLimits {
+            max_rational_bits: 0,
+            ..ExactProbLimits::default()
+        };
+        for (limits, expected) in [
+            (paths, ModelCheckLimit::ExactProbMaxWitnessPaths),
+            (frontier, ModelCheckLimit::ExactProbMaxTransitions),
+            (arithmetic, ModelCheckLimit::ExactProbMaxRationalBits),
+        ] {
+            assert!(
+                matches!(produce_witness(&product,&[Some(0)],WitnessScope::EveryScheduler,ProbStateId(0),&[true],&rational(0),&limits),Err(WitnessError::Limit { limit, value: 0 }) if limit == expected)
+            );
+        }
+    }
+
+    #[trace("TC-637", "FR-202-AC-11")]
+    #[test]
+    fn mathematical_insufficiency_is_distinct_from_a_producer_stop() {
+        let product = terminal_product();
+        assert!(produce_witness(
+            &product,
+            &[Some(0)],
+            WitnessScope::EveryScheduler,
+            ProbStateId(0),
+            &[false],
+            &rational(0),
+            &ExactProbLimits::default()
+        )
+        .expect("the chain is well formed and no budget is exhausted")
+        .is_none());
+        assert!(produce_witness(
+            &product,
+            &[Some(0)],
+            WitnessScope::EveryScheduler,
+            ProbStateId(0),
+            &[true],
+            &rational(0),
+            &ExactProbLimits::default()
+        )
+        .expect("the initial target has unit mass")
+        .is_some());
+    }
 }

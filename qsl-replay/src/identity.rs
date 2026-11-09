@@ -353,6 +353,9 @@ mod tests {
         use quire_exact::{Origin, Role};
         let node = crate::fixture_node(7);
         let occurrence = OccurrenceKey::new(node.clone(), Origin::new(Role::new("claim"), 17));
-        assert_eq!(ObligationIdentity::from_claim_occurrence(&occurrence), ObligationIdentity::new(node, None, 17));
+        assert_eq!(
+            ObligationIdentity::from_claim_occurrence(&occurrence),
+            ObligationIdentity::new(node, None, 17)
+        );
     }
 }
