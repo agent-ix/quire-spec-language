@@ -46,3 +46,20 @@ Examined: FR-281, FR-281-AC-3, FR-281-AC-10, FR-294, FR-560, FR-560-AC-5, FR-560
 ## Verdict
 
 Not mergeable until the high and medium findings are fixed.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | `field` is the S2 `Expression::Field` variant (qsl-forms/src/syntax.rs:663-668, `e.f`, operand "the record, or `deref(r)`"), the same form a Value-family record field read uses. ADR-012 has no form-name catalogue, so naming it after the S2 variant is as legitimate as `deref`/`self`, but `ExpressionForm("field")` cannot tell a model field read from a record field read, and the floor's form list (`literal` ... `collection`) does not say whether record field access lies in `record`. Either AC-5's field-read entry or AC-2's record units can be listed wrongly. State that a record field read lies in the `record` form and that only a field read whose operand is an object (model element) value is `ExpressionForm("field")`, or give that case `ValueType(<object type>)`. | spec/functional/FR-560-translate-the-jit-coverage-set-and-report-every-other-construct-untranslatable.md:69-78 |
+| FND-006 | low | The family column gives `reaches` as `ProtocolClause`; ADR-012 §15.2 assigns "Field reads, `deref`, `reaches` and object identity equality" to `StateModel` (the S2 variant lives in forms::protocol_clause per §15.3, which is where the confusion comes from). Use `StateModel`, or drop the informational column. | spec/functional/FR-560-translate-the-jit-coverage-set-and-report-every-other-construct-untranslatable.md:77 |
+| FND-007 | medium | The fix dropped `forall`, `exists` and `present` and says they "fall under the rows of the table above by their owning form" because ADR-012 "names [them] as no form". That is not so: ADR-012:478 names the `Present` arm and keeps it in `Value`, and S2 has `Expression::Present` and the binder-query form with `BinderQuery::Forall`/`Exists` (qsl-forms/src/syntax.rs:415-426, 671). None of them is in the floor's form list, so by the first row they are `ExpressionForm(<name>)`, but the spec no longer gives the name, and no AC covers them. Lead ruling (2) lists forall/exists/present as Untranslatable-with-named-cause in v1. Restore rows for them (for example `forall`, `exists` as the binder-query form's names, `present`) and their AC-5 entries. | spec/functional/FR-560-translate-the-jit-coverage-set-and-report-every-other-construct-untranslatable.md:81-85 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | verified at 0696c8c60 |
+| FND-002 | fixed | verified at 0696c8c60 |
+| FND-003 | fixed | verified at 0696c8c60 |
+| FND-004 | fixed | verified at 0696c8c60 |

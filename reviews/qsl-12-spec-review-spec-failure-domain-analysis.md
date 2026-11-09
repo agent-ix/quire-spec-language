@@ -47,3 +47,17 @@ Examined: FR-281, FR-281-AC-3, FR-281-AC-10, FR-294, FR-560, FR-560-AC-5, FR-560
 ## Verdict
 
 Not mergeable until the high and medium findings are fixed.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | "checked by a test that converts a recorded entry address only to that type" cannot fail: converting an address to `extern "C" fn(*const EntryFrame) -> u32` succeeds whatever the generated code's real signature is. The `compile_fail` half is a real check. Make the signature half observable (for example, the Cranelift signature the JIT records for each entry equals one pointer parameter and one `u32` return, compared against the recorded signature FR-568-AC-3 already uses), or drop it. | spec/functional/FR-568-confine-unsafe-code-in-qsl-jit-to-one-module.md:92 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | verified at 0696c8c60 |
+| FND-002 | fixed | verified at 0696c8c60 |
+| FND-003 | fixed | verified at 0696c8c60 |

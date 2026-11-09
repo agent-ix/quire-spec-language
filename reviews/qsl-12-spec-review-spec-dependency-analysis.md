@@ -45,3 +45,9 @@ Examined: FR-281, FR-281-AC-3, FR-281-AC-10, FR-294, FR-560, FR-560-AC-5, FR-560
 ## Verdict
 
 Not mergeable until the high and medium findings are fixed.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | verified at 0696c8c60 |

@@ -89,7 +89,7 @@ and item; `PreparedJit` and its calls.
 | FR-568-AC-2 | A `compile_fail` doctest that keeps a callable entry of a `PreparedJit` past the `PreparedJit`'s drop fails to compile, with a compiling control that calls within the borrow. | Test (TC-1400) |
 | FR-568-AC-3 | `PreparedJit` refuses, with `Fault` and without calling, an entry whose recorded signature is not the entry signature (a test hook records one wrongly); a test entry that returns a status outside the closed status type yields `Fault` and no value. | Test (TC-1400) |
 | FR-568-AC-4 | The FR-561-AC-3 call-target check and the FR-563 parity gate pass for the Cranelift JIT over the default generated units, with every call entering generated code through `qsl_jit::exec` and every `extern "C"` call target of the generated blocks defined in `qsl_jit::exec`. | Test (TC-1400) |
-| FR-568-AC-5 | A `compile_fail` doctest outside `qsl_jit::exec` that names `EntryFrame` or builds one fails to compile, and a doctest that calls through `PreparedJit` compiles; the entry signature every generated entry has is `extern "C" fn(*const EntryFrame) -> u32`, checked by a test that converts a recorded entry address only to that type. | Test (TC-1400) |
+| FR-568-AC-5 | A `compile_fail` doctest outside `qsl_jit::exec` that names `EntryFrame` or builds one fails to compile, and a doctest that calls through `PreparedJit` compiles; for every entry of the default generated units the Cranelift signature `PreparedJit` recorded at generation is one pointer parameter and a `u32` result, the signature of `extern "C" fn(*const EntryFrame) -> u32`, and a test hook that records a two-parameter signature makes `PreparedJit` refuse with `Fault` as in AC-3. | Test (TC-1400) |
 
 ## Dependencies
 
