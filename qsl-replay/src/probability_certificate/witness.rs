@@ -11,6 +11,8 @@ use qsl_package::CheckedPackage;
 use quire_exact::Value as SemanticValue;
 use quire_semantic_value::model_transition::ModelTransition;
 
+mod bounded;
+
 /// A semantic operation, draw and resulting state in a finite witness.
 #[derive(Clone, Debug)]
 pub struct ProbabilityWitnessStep {
@@ -133,6 +135,9 @@ pub fn replay_probabilistic_witness(
             _ => ProbabilityWitnessError::Graph(error),
         },
     )?;
+    if matches!(claim.form, ProbForm::Probability { .. }) {
+        return bounded::replay(system, claim, witness, limits, cancel);
+    }
     let ProbForm::Reach {
         bound,
         target: ReachTarget::Eventually(predicate),
