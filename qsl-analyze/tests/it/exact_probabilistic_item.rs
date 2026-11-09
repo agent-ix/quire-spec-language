@@ -272,7 +272,7 @@ fn a_rejected_certificate_never_settles_proved() {
 
 #[trace("TC-763", "FR-281-AC-4")]
 #[test]
-fn a_malformed_probability_certificate_retains_the_existing_failure() {
+fn a_malformed_probability_certificate_settles_a_typed_rejection() {
     let world = World::new(&prob_world::link(CLAIMS));
     let engines = Engines::qsl().expect("the linked engines are admitted");
     let item = exact_probabilistic_item_tampered(
@@ -281,11 +281,31 @@ fn a_malformed_probability_certificate_retains_the_existing_failure() {
         |certificate| certificate.values.clear(),
     );
     let record = analyze_items(&engines, vec![item], &Cancel::new()).remove(0);
-    assert_eq!(
-        record.terminal().expect("a terminal record").value(),
-        &TerminalValue::Failed
-    );
+    assert!(matches!(record.terminal().expect("a terminal record").value(), TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected { rule: CertificateRule::Malformed, .. })));
     assert!(record.exact_probabilistic.is_none());
+}
+
+#[trace("TC-764", "FR-201-AC-11", "FR-282-AC-12")]
+#[test]
+fn analyzer_document_budgets_stop_after_solving_without_certification() {
+    use std::sync::atomic::AtomicBool;
+    let world = World::new(&prob_world::link(CLAIMS));
+    let engines = Engines::qsl().unwrap();
+    let baseline = settle(&world, "Likely", ModelCheckLimits::default());
+    assert!(!baseline.exact_probabilistic.as_ref().unwrap().document.is_empty());
+    for storage in [false, true] {
+        let mut request = world.request("Likely", ModelCheckLimits::default());
+        if storage { request.limits.document.storage_bytes = 0; } else { request.limits.document.bytes = 0; }
+        let reached_emission = Arc::new(AtomicBool::new(false));
+        let observed = Arc::clone(&reached_emission);
+        let item = exact_probabilistic_item_tampered(RequestIndex::new(0), request, move |_| { observed.store(true, Ordering::Relaxed); });
+        let record = analyze_items(&engines, vec![item], &Cancel::new()).remove(0);
+        assert!(reached_emission.load(Ordering::Relaxed), "graph enumeration and solve must have succeeded");
+        let expected = if storage { ModelCheckLimit::CertificateMaxWorkingBytes } else { ModelCheckLimit::CertificateMaxBytes };
+        assert_eq!(record.terminal().unwrap().value(), &TerminalValue::Incomplete(IncompleteCause::LimitReached { limit: expected, value: 0 }));
+        assert_eq!(expected.setting(), if storage { "certificate_check.max_working_bytes" } else { "certificate_check.max_certificate_bytes" });
+        assert!(record.exact_probabilistic.is_none());
+    }
 }
 
 #[test]

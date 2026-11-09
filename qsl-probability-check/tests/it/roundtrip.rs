@@ -82,10 +82,17 @@ fn proof_request_with(
     ),
 ) -> Value {
     let source = format!("{SOURCE}{claim}");
+    proof_source_request(&source, inspect)
+}
+
+fn proof_source_request(
+    source: &str,
+    inspect: impl FnOnce(&ModelSystem<'_>, &[qsl_semantics::check::CheckedProbabilisticClaim], &ObligationIdentity, &[u8], ProbabilityDocumentLimits),
+) -> Value {
     let identity = SourceIdentity::new("test", "certificate-source");
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
-    let (checked, packages) = compile_source(&source);
+    let (checked, packages) = compile_source(source);
     let package = checked.package();
     let claim = package
         .graph()
@@ -330,6 +337,43 @@ fn attained_minimum_and_maximum_thresholds_pass_and_stronger_bounds_fail() {
     }
 }
 
+#[trace("TC-764", "FR-201-AC-10", "FR-201-AC-11", "FR-282-AC-11")]
+#[test]
+fn a_real_resolved_workload_uses_its_checked_weights_and_excludes_zero_mass_states() {
+    let claim = "probabilistic Likely using inf on M over (m: M::Msg) under Even on origin { probability >= 0.9775 [ eventually holds(m.delivered) ] }\n";
+    let original = proof_request(claim);
+    let (code, result) = run(&original, &[]);
+    assert_eq!(code, 0, "{result}");
+    assert_eq!(result["value"], json!({"numerator":"391", "denominator":"400"}));
+    let mut forged = original.clone();
+    change_certificate(&mut forged, |document| { document["objective"]["optimization"] = json!("minimum"); });
+    let (code, result) = run(&forged, &[]);
+    assert_eq!(code, 2, "{result}");
+    assert_eq!(result["status"], "refused");
+    let mut changed_weights = original;
+    let source = changed_weights["source"]["content"].as_str().unwrap().replace("weight Msg::send_a = 1", "weight Msg::send_a = 9");
+    replace_checked_source(&mut changed_weights, &source);
+    let (code, result) = run(&changed_weights, &[]);
+    assert_eq!(code, 1, "{result}");
+    assert_eq!(result["rule"], "inequality-fails");
+
+    let special_post = "post Sent_send_a using v on M::Msg::send_a { self.attempts = 0 and self.delivered }";
+    let ordinary_post = "post Sent_send_a using v on M::Msg::send_a { self.attempts - pre(self.attempts) = 1 and self.delivered = (not lost) }";
+    let source = format!("{SOURCE}{}", claim.replace("0.9775", "0.96"))
+        .replace(ordinary_post, special_post).replace("weight Msg::send_a = 1", "weight Msg::send_a = 0");
+    let zero = proof_source_request(&source, |_, _, _, _, _| {});
+    let (code, result) = run(&zero, &[]);
+    assert_eq!(code, 0, "{result}");
+    assert_eq!(result["value"], json!({"numerator":"24", "denominator":"25"}));
+    let document: Value = serde_json::from_str(zero["certificate"].as_str().unwrap()).unwrap();
+    let mut positive = zero.clone();
+    let source = source.replace("weight Msg::send_a = 0", "weight Msg::send_a = 1");
+    replace_checked_source(&mut positive, &source);
+    let (code, result) = run(&positive, &[]);
+    assert_ne!(code, 0, "the newly positive target was not present in {document}: {result}");
+    assert_eq!(result["status"], "refused");
+}
+
 #[trace("TC-764", "FR-201-AC-11", "FR-282-AC-11")]
 #[test]
 fn unsupported_claim_shapes_and_document_profiles_never_produce_acceptance() {
@@ -473,6 +517,35 @@ fn a_fresh_checker_refuses_altered_values_objectives_identities_ranks_and_provis
         assert_ne!(result["status"], "accepted");
         assert!(result.get("value").is_none());
     }
+}
+
+#[trace("TC-764", "FR-201-AC-10", "FR-282-AC-11")]
+#[test]
+fn rank_rejections_use_the_shared_rule_and_state_or_member_locus() {
+    let original = proof_request(CLAIM);
+    let mut missing = original.clone();
+    let mut removed = None;
+    change_certificate(&mut missing, |document| {
+        let state = document["values"].as_array().unwrap().iter().find(|row| row["value"]["numerator"] != json!("0") && row["value"]["numerator"] != row["value"]["denominator"]).unwrap()["state"].clone();
+        document["ranking"].as_array_mut().unwrap().retain(|row| row["state"] != state);
+        removed = Some(state);
+    });
+    let (code, result) = run(&missing, &[]);
+    assert_eq!(code, 1, "{result}");
+    assert_eq!(result["rule"], "rank-missing");
+    assert_eq!(result["at"]["product_key"], removed.unwrap());
+    let mut broken = original.clone();
+    change_certificate(&mut broken, |document| { for row in document["ranking"].as_array_mut().unwrap() { row["rank"] = json!(0); } });
+    let (code, result) = run(&broken, &[]);
+    assert_eq!(code, 1, "{result}");
+    assert_eq!(result["rule"], "rank-broken");
+    assert!(result["at"].get("product_key").is_some());
+    let mut absent = original;
+    change_certificate(&mut absent, |document| { document.as_object_mut().unwrap().remove("ranking"); });
+    let (code, result) = run(&absent, &[]);
+    assert_eq!(code, 1, "{result}");
+    assert_eq!(result["rule"], "malformed");
+    assert_eq!(result["at"], json!({"member":"ranking"}));
 }
 
 #[trace("TC-764", "FR-201-AC-11", "FR-282-AC-1", "FR-282-AC-12")]

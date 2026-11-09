@@ -207,6 +207,7 @@ fn source_failure(error: ProbabilitySourceError) -> Value {
             Document::Limit { .. }
             | Document::Cancelled(_)
             | Document::Accounting(_)
+            | Document::IntegerText { .. }
             | Document::Graph(_)
             | Document::Build(_),
         )
@@ -235,6 +236,7 @@ fn source_failure(error: ProbabilitySourceError) -> Value {
             "setting":qsl_replay::AccountingLimits::setting_of(incomplete.limit_kind).name(),
             "bound":incomplete.limit, "consumed":incomplete.consumed, "next_charge":incomplete.next_charge.to_string(),
         })),
+        ProbabilitySourceError::Document(Document::IntegerText { bit_bound, decimal_digits }) => Some(json!({"setting":"exact_prob.max_rational_bits", "bound":bit_bound, "decimal_digits":decimal_digits})),
         _ => None,
     };
     json!({"status": status, "reason": error.to_string(), "limit":limit})

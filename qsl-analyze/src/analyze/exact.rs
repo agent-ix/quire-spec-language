@@ -399,6 +399,7 @@ fn run(
             },
             subject,
         ),
+        Err(ProbabilityDocumentError::IntegerText { bit_bound, .. }) => settled(&ExactProbBuildIssue::Limit { limit: ModelCheckLimit::ExactProbMaxRationalBits, value: bit_bound }, subject),
         Err(ProbabilityDocumentError::Build(issue)) => settled(&issue, subject),
         Err(ProbabilityDocumentError::Unsupported) => not_yet(),
         Err(

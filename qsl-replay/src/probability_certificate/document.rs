@@ -129,6 +129,14 @@ pub enum ProbabilityDocumentError {
     /// Shared exact arithmetic exhausted a named accounting charge.
     #[error("probability certificate arithmetic stopped: {0:?}")]
     Accounting(Box<quire_exact::Incomplete>),
+    /// Decimal text proves that an integer exceeds the bit ceiling before parsing it.
+    #[error("exact_prob.max_rational_bits exhausted: {decimal_digits} decimal digits exceed the {bit_bound}-bit ceiling")]
+    IntegerText {
+        /// Configured numerator/denominator bit ceiling.
+        bit_bound: u64,
+        /// Offered canonical decimal digit count; no large integer was constructed.
+        decimal_digits: u64,
+    },
     /// Independent subject admission or graph traversal stopped.
     #[error("probability certificate graph stopped: {0:?}")]
     Graph(ExactProbabilityGraphError),
@@ -307,6 +315,18 @@ fn ordered(
 }
 
 fn ratio(wire: WireRational, bits: u64) -> Result<Rational, ProbabilityDocumentError> {
+    for text in [&wire.numerator, &wire.denominator] {
+        if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit())
+            || text.len() > 1 && text.starts_with('0') {
+            return Err(ProbabilityDocumentError::Malformed);
+        }
+        let digits = u64::try_from(text.len()).unwrap_or(u64::MAX);
+        // 10^(d-1) >= 2^(d-1), so d decimal digits require at least d bits.
+        // Single digits use the kernel's inline parser without large storage.
+        if digits > bits && digits > 1 {
+            return Err(ProbabilityDocumentError::IntegerText { bit_bound: bits, decimal_digits: digits });
+        }
+    }
     let numerator: Integer = wire
         .numerator
         .parse()
@@ -321,11 +341,11 @@ fn ratio(wire: WireRational, bits: u64) -> Result<Rational, ProbabilityDocumentE
     {
         return Err(ProbabilityDocumentError::Malformed);
     }
-    if numerator.as_big().bits() > bits || denominator.as_big().bits() > bits {
+    if numerator.magnitude_bits() > bits || denominator.magnitude_bits() > bits {
         return Err(exceeded(
             ProbabilityDocumentLimit::RationalBits,
             bits,
-            numerator.as_big().bits().max(denominator.as_big().bits()),
+            numerator.magnitude_bits().max(denominator.magnitude_bits()),
         ));
     }
     let value =
@@ -709,8 +729,8 @@ fn check_scalar(
     value: &Rational,
     limits: ProbabilityDocumentLimits,
 ) -> Result<(), ProbabilityDocumentError> {
-    if value.numerator().as_big().bits() > limits.scalar_bits
-        || value.denominator().as_big().bits() > limits.scalar_bits
+    if value.numerator().magnitude_bits() > limits.scalar_bits
+        || value.denominator().magnitude_bits() > limits.scalar_bits
     {
         Err(exceeded(
             ProbabilityDocumentLimit::RationalBits,
@@ -719,7 +739,7 @@ fn check_scalar(
                 .numerator()
                 .as_big()
                 .bits()
-                .max(value.denominator().as_big().bits()),
+                .max(value.denominator().magnitude_bits()),
         ))
     } else {
         Ok(())
