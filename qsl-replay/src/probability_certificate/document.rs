@@ -30,6 +30,8 @@ pub struct ProbabilityCertificateDocument {
 pub struct ProbabilityDocumentLimits {
     /// Maximum document bytes, for both reading and writing.
     pub bytes: u64,
+    /// Canonical JSON reader working-storage ceiling in bytes.
+    pub storage_bytes: u64,
     /// Maximum checker graph states and certificate rows.
     pub states: usize,
     /// Maximum checker graph edges.
@@ -62,8 +64,15 @@ pub enum ProbabilityDocumentError {
     #[error("invalid_runtime_input: probability certificate objective mismatch")]
     ObjectiveMismatch,
     /// A caller byte, row or arithmetic ceiling was reached.
-    #[error("probability certificate limit reached: {0}")]
-    Limit(&'static str),
+    #[error("probability certificate limit reached: {setting} ({actual} > {bound})")]
+    Limit {
+        /// Exhausted setting.
+        setting: &'static str,
+        /// Caller ceiling.
+        bound: u64,
+        /// Actual required amount, including the refused growth.
+        actual: u64,
+    },
     /// Cancellation retains the caller's cause.
     #[error("probability certificate cancelled: {0:?}")]
     Cancelled(CancelCause),
@@ -148,7 +157,14 @@ fn poll(cancel: &Cancel) -> Result<(), ProbabilityDocumentError> {
 fn canonical<T: Serialize>(value: &T, bytes: u64) -> Result<Vec<u8>, ProbabilityDocumentError> {
     let value = serde_json::to_value(value).map_err(|_| ProbabilityDocumentError::Malformed)?;
     quire_canonical::to_vec(&value, quire_canonical::Limits::new(bytes))
-        .map_err(|_| ProbabilityDocumentError::Limit("certificate.bytes"))
+        .map_err(|error| match error {
+            quire_canonical::Error::Limit(limit) => exceeded("certificate.bytes", limit.bound, limit.required),
+            _ => ProbabilityDocumentError::Malformed,
+        })
+}
+
+fn exceeded(setting: &'static str, bound: u64, actual: u64) -> ProbabilityDocumentError {
+    ProbabilityDocumentError::Limit { setting, bound, actual }
 }
 
 fn decode_key(text: &str) -> Result<ProbabilityProductKey, ProbabilityDocumentError> {
@@ -214,7 +230,7 @@ fn ratio(wire: WireRational, bits: u64) -> Result<Rational, ProbabilityDocumentE
         return Err(ProbabilityDocumentError::Malformed);
     }
     if numerator.as_big().bits() > bits || denominator.as_big().bits() > bits {
-        return Err(ProbabilityDocumentError::Limit("certificate.scalar_bits"));
+        return Err(exceeded("exact_prob.max_rational_bits", bits, numerator.as_big().bits().max(denominator.as_big().bits())));
     }
     let value =
         Rational::new(numerator, denominator).map_err(|_| ProbabilityDocumentError::Malformed)?;
@@ -237,9 +253,12 @@ pub fn read_probability_certificate(
 ) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
     poll(cancel)?;
     if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limits.bytes {
-        return Err(ProbabilityDocumentError::Limit("certificate.bytes"));
+        return Err(exceeded("certificate.bytes", limits.bytes, u64::try_from(bytes.len()).unwrap_or(u64::MAX)));
     }
-    let parsed = quire_canonical::read(bytes, limits.bytes).map_err(|_| ProbabilityDocumentError::Malformed)?;
+    let parsed = quire_canonical::read_bounded(bytes, limits.bytes, limits.storage_bytes).map_err(|error| match error {
+        quire_canonical::ReadError::Limit(limit) => exceeded("certificate.storage_bytes", limit.bound, limit.required),
+        _ => ProbabilityDocumentError::Malformed,
+    })?;
     if parsed.root().get("ranking").is_none() {
         return Err(ProbabilityDocumentError::MissingMember("ranking"));
     }
@@ -264,7 +283,7 @@ pub fn read_probability_certificate(
         || wire.ranking.len() > limits.states
         || wire.objective.targets.len() > limits.states
     {
-        return Err(ProbabilityDocumentError::Limit("certificate.states"));
+        return Err(exceeded("exact_prob.max_states", u64::try_from(limits.states).unwrap_or(u64::MAX), u64::try_from(wire.values.len().max(wire.ranking.len()).max(wire.objective.targets.len())).unwrap_or(u64::MAX)));
     }
     let node = qsl_foundation::node_wire::node_key_from_json(&wire.identity.node_id)
         .map_err(|_| ProbabilityDocumentError::Malformed)?;
@@ -404,7 +423,17 @@ fn subject_graph(
         &mut |failure| { issue = Some(failure); },
     ).map_err(|error| match issue {
         Some(issue) => ProbabilityDocumentError::Build(Box::new(issue)),
-        None => error.into(),
+        None => match error {
+            ExactProbabilityGraphError::LimitReached => {
+                let bound = u64::try_from(limits.states).unwrap_or(u64::MAX);
+                exceeded("exact_prob.max_states", bound, bound.saturating_add(1))
+            },
+            ExactProbabilityGraphError::EdgeLimitReached => {
+                let bound = u64::try_from(limits.edges).unwrap_or(u64::MAX);
+                exceeded("exact_prob.max_transitions", bound, bound.saturating_add(1))
+            },
+            other => other.into(),
+        },
     })?;
     topological_order(&graph, cancel)?;
     Ok((
@@ -456,7 +485,7 @@ pub fn probability_certificate_document(
                     successor
                         .checked_add(1)
                         .filter(|rank| *rank <= MAX_COUNT)
-                        .ok_or(ProbabilityDocumentError::Limit("certificate.rank"))?,
+                        .ok_or(exceeded("certificate.rank", MAX_COUNT, MAX_COUNT + 1))?,
                 );
             }
         }
@@ -536,7 +565,7 @@ fn check_scalar(
     if value.numerator().as_big().bits() > limits.scalar_bits
         || value.denominator().as_big().bits() > limits.scalar_bits
     {
-        Err(ProbabilityDocumentError::Limit("certificate.scalar_bits"))
+        Err(exceeded("exact_prob.max_rational_bits", limits.scalar_bits, value.numerator().as_big().bits().max(value.denominator().as_big().bits())))
     } else {
         Ok(())
     }
@@ -656,6 +685,7 @@ mod tests {
     fn limits() -> ProbabilityDocumentLimits {
         ProbabilityDocumentLimits {
             bytes: 1_000_000,
+            storage_bytes: 8_000_000,
             states: 100,
             edges: 100,
             scalar_bits: 128,
@@ -695,6 +725,51 @@ mod tests {
             write_probability_certificate(&read, limits(), &Cancel::new()).unwrap(),
             bytes
         );
+    }
+
+    #[trace("FR-201-AC-9")]
+    #[test]
+    fn every_row_collection_requires_strict_complete_key_order() {
+        let mut document = document();
+        let second = ProbabilityProductKey::for_model_state(None, b"other-model").unwrap();
+        document.targets.push(second.clone());
+        document.targets.sort();
+        document.values.push(ExactProbabilityValue { state: second.clone(), value: rational(0) });
+        document.values.sort_by(|left, right| left.state.cmp(&right.state));
+        document.ranking.push((second, 0));
+        document.ranking.sort();
+        let bytes = write_probability_certificate(&document, limits(), &Cancel::new()).unwrap();
+        for member in ["targets", "values", "ranking"] {
+            for duplicate in [false, true] {
+                let mut value: Value = serde_json::from_slice(&bytes).unwrap();
+                let rows = if member == "targets" { &mut value["objective"][member] } else { &mut value[member] };
+                let rows = rows.as_array_mut().unwrap();
+                if duplicate { let row = rows[0].clone(); rows.insert(0, row); } else { rows.reverse(); }
+                let changed = canonical(&value, limits().bytes).unwrap();
+                assert_eq!(read_probability_certificate(&changed, limits(), &Cancel::new()), Err(ProbabilityDocumentError::Malformed), "{member} duplicate={duplicate}");
+            }
+        }
+    }
+
+    #[trace("FR-201-AC-11")]
+    #[test]
+    fn bellman_arithmetic_charges_shared_work_and_result_storage() {
+        let root = ProbabilityProductKey::for_model_state(None, b"root").unwrap();
+        let target = ProbabilityProductKey::for_model_state(None, b"target").unwrap();
+        let graph = CheckerGraph { initial: root.clone(), states: BTreeMap::from([
+            (root.clone(), CheckerState { terminal: None, choices: vec![vec![ProbabilityEdge { target: target.clone(), probability: rational(1) }]] }),
+            (target.clone(), CheckerState { terminal: Some(true), choices: Vec::new() }),
+        ]) };
+        let values = BTreeMap::from([(root, rational(1)), (target, rational(1))]);
+        let check = |limits| check_document_equalities(&graph, &values, ProbabilityObjective::Minimum, &Bound::AtLeast(rational(1)), limits, &Cancel::new());
+        assert!(matches!(check(limits()).unwrap(), ExactProbabilityCertificateCheck::Accepted(_)));
+        let mut work = limits(); work.accounting.work_units = 0;
+        let mut storage = limits(); storage.accounting.result_units = 0;
+        for (limits, counter) in [(work, quire_exact::LimitKind::WorkUnits), (storage, quire_exact::LimitKind::ResultUnits)] {
+            let Err(ProbabilityDocumentError::Accounting(incomplete)) = check(limits) else { panic!("the actual shared arithmetic charge must stop"); };
+            assert_eq!(incomplete.limit_kind, counter);
+            assert_eq!(incomplete.limit, 0);
+        }
     }
 
     #[trace("FR-201-AC-9")]
@@ -787,7 +862,7 @@ mod tests {
                 },
                 &Cancel::new()
             ),
-            Err(ProbabilityDocumentError::Limit("certificate.bytes"))
+            Err(exceeded("certificate.bytes", u64::try_from(bytes.len()).unwrap() - 1, u64::try_from(bytes.len()).unwrap()))
         );
         assert_eq!(
             read_probability_certificate(
@@ -798,7 +873,7 @@ mod tests {
                 },
                 &Cancel::new()
             ),
-            Err(ProbabilityDocumentError::Limit("certificate.states"))
+            Err(exceeded("exact_prob.max_states", 0, 1))
         );
         assert_eq!(
             read_probability_certificate(
@@ -809,7 +884,7 @@ mod tests {
                 },
                 &Cancel::new()
             ),
-            Err(ProbabilityDocumentError::Limit("certificate.scalar_bits"))
+            Err(exceeded("exact_prob.max_rational_bits", 0, 1))
         );
         for cause in [CancelCause::Requested, CancelCause::Deadline] {
             let cancel = Cancel::new();

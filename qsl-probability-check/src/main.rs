@@ -9,8 +9,8 @@ use qsl_eval::simulation::model::{ExpansionLimits, PopulationUniverse};
 use qsl_replay::spine::SourceComponent;
 use qsl_replay::{
     check_probability_certificate_source, ByteProvision, DefinitionSourceRef,
-    ExactProbabilityCertificateCheck, ObligationIdentity, ProbabilityDocumentLimits,
-    ProbabilitySourceLimits, ProbabilitySourceRequest,
+    ExactProbabilityCertificateCheck, ObligationIdentity, ProbabilityDocumentError, ProbabilityDocumentLimits,
+    ProbabilitySourceError, ProbabilitySourceLimits, ProbabilitySourceRequest,
 };
 use qsl_semantics::model::observation::DocumentRef;
 use quire_checked::key::DeclarationKey;
@@ -54,6 +54,7 @@ struct Universe {
 #[serde(deny_unknown_fields)]
 struct Limits {
     bytes: u64,
+    storage_bytes: u64,
     states: usize,
     edges: usize,
     scalar_bits: u64,
@@ -142,6 +143,7 @@ fn check(request: Request, cancel: &Cancel) -> Result<Value, String> {
             scalar: caller.accounting.0,
             document: ProbabilityDocumentLimits {
                 bytes: request.limits.bytes,
+                storage_bytes: request.limits.storage_bytes,
                 states: request.limits.states,
                 edges: request.limits.edges,
                 scalar_bits: request.limits.scalar_bits,
@@ -149,8 +151,11 @@ fn check(request: Request, cancel: &Cancel) -> Result<Value, String> {
             },
         },
         cancel,
-    )
-    .map_err(|error| error.to_string())?;
+    );
+    let result = match result {
+        Ok(result) => result,
+        Err(error) => return Ok(source_failure(error)),
+    };
     Ok(match result {
         ExactProbabilityCertificateCheck::Accepted(accepted) => {
             json!({"status":"accepted", "value": {
@@ -158,9 +163,31 @@ fn check(request: Request, cancel: &Cancel) -> Result<Value, String> {
             }})
         }
         ExactProbabilityCertificateCheck::Rejected(rejection) => {
-            json!({"status":"rejected", "rule":format!("{:?}", rejection.rule)})
+            let rule = match rejection.rule {
+                qsl_replay::ProbabilityCertificateRule::InequalityFails => qsl_replay::CertificateRule::InequalityFails,
+                qsl_replay::ProbabilityCertificateRule::ThresholdMissed => qsl_replay::CertificateRule::ThresholdMissed,
+                qsl_replay::ProbabilityCertificateRule::Malformed => qsl_replay::CertificateRule::Malformed,
+            };
+            let at = match rejection.at {
+                qsl_replay::ProbabilityCertificateLocus::ProductState(key) => serde_json::to_value(qsl_replay::CertificateLocus::ProbabilityProductState(key)).map_err(|error| error.to_string())?,
+                qsl_replay::ProbabilityCertificateLocus::Member(member) => json!({"member":member}),
+            };
+            json!({"status":"rejected", "rule":rule, "at":at})
         }
     })
+}
+
+fn source_failure(error: ProbabilitySourceError) -> Value {
+    use ProbabilityDocumentError as Document;
+    let status = match &error {
+        ProbabilitySourceError::Document(Document::Unsupported) => "unsupported",
+        ProbabilitySourceError::Document(Document::RankBroken(_) | Document::RankMissing(_) | Document::MissingMember("ranking")) => "rejected",
+        ProbabilitySourceError::Document(Document::Malformed | Document::MissingMember(_) | Document::Noncanonical | Document::IdentityMismatch | Document::ObjectiveMismatch)
+        | ProbabilitySourceError::SourceMismatch | ProbabilitySourceError::Source { .. } | ProbabilitySourceError::Packages(_) => "refused",
+        ProbabilitySourceError::Document(Document::Limit { .. } | Document::Cancelled(_) | Document::Accounting(_) | Document::Graph(_) | Document::Build(_))
+        | ProbabilitySourceError::ProvisionLimit { .. } | ProbabilitySourceError::Compile(_) | ProbabilitySourceError::Subject(_) => "stopped",
+    };
+    json!({"status": status, "reason": error.to_string()})
 }
 
 fn run() -> Result<Value, String> {
@@ -202,10 +229,10 @@ fn run() -> Result<Value, String> {
 fn main() {
     let (value, code) = match run() {
         Ok(value) => {
-            let code = if value.get("status").and_then(Value::as_str) == Some("accepted") {
-                0
-            } else {
-                1
+            let code = match value.get("status").and_then(Value::as_str) {
+                Some("accepted") => 0,
+                Some("rejected") => 1,
+                _ => 2,
             };
             (value, code)
         }

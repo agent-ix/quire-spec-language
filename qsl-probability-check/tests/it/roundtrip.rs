@@ -125,6 +125,7 @@ fn proof_request(claim: &str) -> Value {
     let item = ObligationIdentity::new(claim.occurrence().unwrap().node().clone(), None, 0);
     let document_limits = ProbabilityDocumentLimits {
         bytes: 1_000_000,
+        storage_bytes: 8_000_000,
         states: 100,
         edges: 1000,
         scalar_bits: 128,
@@ -149,7 +150,7 @@ fn proof_request(claim: &str) -> Value {
         "initial": [{"authority":"test", "identity":"s0"}],
         "universes": [{"population":{"package":"test/link", "node":"ix://test/link/msgs"}, "keys":["m"]}],
         "certificate": String::from_utf8(certificate).unwrap(),
-        "limits": {"bytes":1_000_000, "states":100, "edges":1000, "scalar_bits":128, "expansion":100_000, "stages":{}},
+        "limits": {"bytes":1_000_000,"storage_bytes":8_000_000, "states":100, "edges":1000, "scalar_bits":128, "expansion":100_000, "stages":{}},
     })
 }
 
@@ -161,8 +162,10 @@ fn run(request: &Value, arguments: &[&str]) -> (i32, Value) {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    serde_json::to_writer(child.stdin.as_mut().unwrap(), request).unwrap();
-    child.stdin.take().unwrap().flush().unwrap();
+    let input = serde_json::to_vec(request).unwrap();
+    if let Err(error) = child.stdin.take().unwrap().write_all(&input) {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "the bounded child may close its input early");
+    }
     let output = child.wait_with_output().unwrap();
     let result = serde_json::from_slice(&output.stdout)
         .unwrap_or_else(|_| panic!("child output: {:?}", output));
@@ -247,7 +250,7 @@ fn a_fresh_checker_refuses_altered_values_objectives_identities_ranks_and_provis
     cases.push(changed);
     let mut changed = original.clone();
     change_certificate(&mut changed, |document| alter_keys(document, |key| {
-        *key[1].as_array_mut().unwrap().last_mut().unwrap() = json!("foreign-object");
+        key[1]["identity"] = json!("foreign-object");
     }));
     cases.push(changed);
     let mut changed = original.clone();
@@ -268,7 +271,7 @@ fn a_fresh_checker_refuses_altered_values_objectives_identities_ranks_and_provis
 #[test]
 fn child_limits_and_cancellation_produce_no_truth_value() {
     let original = proof_request(CLAIM);
-    for name in ["bytes", "states", "edges", "scalar_bits", "expansion"] {
+    for name in ["bytes", "storage_bytes", "states", "edges", "scalar_bits", "expansion"] {
         let mut request = original.clone();
         request["limits"][name] = json!(0);
         let (code, result) = run(&request, &[]);

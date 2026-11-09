@@ -14,7 +14,7 @@ original `{package,node}` population declarations, the exact `certificate`
 JSON text as a string, and `limits`. Certificate text is preserved exactly.
 Every request object rejects unknown members.
 
-`limits` requires `bytes`, `states`, `edges`, `scalar_bits`, `expansion`, and
+`limits` requires `bytes`, `storage_bytes`, `states`, `edges`, `scalar_bits`, `expansion`, and
 `stages` (a map of the existing FR-255 stage/accounting setting names to caller
 ceilings). Unspecified stage/accounting settings retain their published defaults.
 `--max-input-bytes N` bounds the whole request before JSON decoding (default
