@@ -30,7 +30,8 @@ The capability outcomes of FR-351 and the vector outcomes of FR-350.
 A report, written to standard output as JSON, or as text when the caller
 asks for text. It holds:
 
-- the QSL version that ran;
+- the QSL version that ran: the `quire-spec-language` package's
+  `CARGO_PKG_VERSION` from the build (FR-567);
 - the scope;
 - the count of capabilities with each outcome, and the coverage, which is
   the `passed` count divided by the in-scope count;

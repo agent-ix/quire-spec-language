@@ -48,7 +48,10 @@ alone, which the other two parts cover. Every parity finding, a
 unreadable corpus.
 
 The FR-352 report gains one `parts` member naming each part and its result;
-its capability coverage is unchanged.
+its capability coverage is unchanged. The QSL version the report names is the
+build's own: `env!("CARGO_PKG_VERSION")` of the `quire-spec-language`
+package the gate ran against, never a version written into the gate's
+source.
 
 The gate's library entry is `xtask::qualify::run(inputs: &QualifyInputs)`,
 which `cargo run --package xtask -- qualify` calls with the defaults:
@@ -86,6 +89,9 @@ The FR-352 report with the three parts and the verdict; the exit code.
 - When the workspace links no non-interpreter backend, the gate shall report
   the `parity` part `no-backend` and treat it as passed.
 - The FR-352 report shall name each part and its result.
+- The FR-352 report shall name as the QSL version the
+  `quire-spec-language` package's `CARGO_PKG_VERSION` from the build that
+  ran.
 
 ## Acceptance Criteria
 
@@ -95,6 +101,7 @@ The FR-352 report with the three parts and the verdict; the exit code.
 | FR-567-AC-2 | Through `xtask::qualify::run` under `test-support`, the AC-1 run with the matrix case set replaced by one whose `check`/`refusal` case expects exit 21 reports `not-qualified`, naming `lifecycle-matrix/check/refusal`, and exits 1, although the `corpus` part passes. | Test (TC-1396) |
 | FR-567-AC-3 | Through `xtask::qualify::run` under `test-support`, the AC-1 run with FR-295-AC-1's rounding backend supplied in place of the delegating one reports `not-qualified`, naming `parity/jit` and the finding, and exits 1. | Test (TC-1396) |
 | FR-567-AC-4 | The AC-1 run with no non-interpreter backend linked reports the `parity` part `no-backend` and `complete-v1: qualified`, exit 0; the AC-1 run whose parity reference (substituted under `test-support`) returns `Fault` reports `not-qualified`, naming `parity/jit` with a `reference-fault` finding, exit 1. | Test (TC-1396) |
+| FR-567-AC-5 | The AC-1 report's QSL version equals `env!("CARGO_PKG_VERSION")` evaluated in the `quire-spec-language` crate of the same build; built from a scratch copy whose `quire-spec-language` package version is changed to `9.9.9`, the report names `9.9.9`. | Test (TC-1396) |
 
 ## Dependencies
 

@@ -13,7 +13,7 @@ relationships:
 Verify that the `qualify` verdict requires all three parts of the final
 path.
 
-Scope: FR-567-AC-1 to FR-567-AC-4.
+Scope: FR-567-AC-1 to FR-567-AC-5.
 
 ## Test Procedure
 
@@ -26,6 +26,9 @@ Scope: FR-567-AC-1 to FR-567-AC-4.
 4. Repeat step 1 with no non-interpreter backend, and with a substituted
    parity reference that returns `Fault`.
 
+5. Read step 1's report's QSL version; build a scratch copy whose
+   `quire-spec-language` package version is `9.9.9` and run step 1 there.
+
 Tag the tests `#[trace("TC-1396", "<AC id>")]`.
 
 ## Expected Results
@@ -37,3 +40,5 @@ Tag the tests `#[trace("TC-1396", "<AC id>")]`.
 - Step 4: parity `no-backend` and `complete-v1: qualified`, exit 0; then
   `not-qualified` naming `parity/jit` with a `reference-fault` finding,
   exit 1.
+- Step 5: the version equals the crate's `CARGO_PKG_VERSION`, then
+  `9.9.9`.

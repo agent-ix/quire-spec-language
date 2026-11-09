@@ -114,3 +114,32 @@ cell; and NFR-018's current release tag.
 - NFR-018's "current release tag" had no meaning before the first
   `make tag-release`. It is now defined, the retired `v0.1.0` and `v0.2.0`
   are excluded, and AC-3's scratch tag stands in until a real one exists.
+
+## Follow-up review (Phase 3 matrix rulings)
+
+A short base review covered the diff that writes the Phase 3 rulings into
+FR-564 to FR-567 and TC-1388 to TC-1396:
+
+- `run_case` defaults to an empty registry, and the driver passes its Kani
+  registry.
+- The typed `OutcomeDocument` is the comparison surface, compared through
+  `ix_cli_kit` canonical JSON.
+- Each case states its file names and working directory, matching the CLI's
+  `SourceIdentity::new("quire", path)`.
+- A feature-gated driver test adapter produces the pre-cancel cells and the
+  `execute` fault cell.
+- Two inventory checks are removed: FR-565-AC-1's reason-string comparison
+  and FR-565-AC-3's exhaustive destructuring of `MatrixCase`.
+- The qualify report's QSL version is the build's `CARGO_PKG_VERSION`.
+
+It found two issues, both fixed in the same commit:
+
+- FR-565's Outputs still described document bytes. It now names
+  `CaseOutcome` and the typed document.
+- FR-566's configuration 2 still named the first slice's Kani descriptor,
+  which QSL cannot hold. It is now a `Linked` test descriptor, and the Kani
+  configuration moves to the driver's Overlap.
+
+`xtask/src/qualification.rs` still holds `QSL_VERSION = "0.2.0"`. FR-567-AC-5
+now requires the build's version, so the implementation must replace that
+literal.
