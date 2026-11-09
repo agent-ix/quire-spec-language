@@ -383,13 +383,18 @@ conformance: check-conformance-input
 # `arch-lint-api-surface-qsl` passes `--qsl-only`, which skips T12-A, so the
 # QSL-tree rules gate `ci:` without CG_CLONE.
 #
+# FR-563: the engine parity gate. Exit 0 with no finding, 1 with any
+# finding, 2 on a refusal.
+parity:
+	cargo run --locked -p xtask -- parity
+
 # `arch-lint` runs the checks that need only this repository:
 # api-surface-qsl and qualified-core.
 IR_CLONE ?=
 RT_CLONE ?=
 CG_CLONE ?=
 
-.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-api-surface-qsl arch-lint arch-lint-qualified-core arch-lint-unsafe
+.PHONY: parity arch-lint-direction arch-lint-api-surface arch-lint-api-surface-qsl arch-lint arch-lint-qualified-core arch-lint-unsafe
 
 arch-lint-direction:
 	cargo run --locked -p arch-lint -- direction \

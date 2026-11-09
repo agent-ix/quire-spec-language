@@ -26,6 +26,7 @@ cranelift-module = "0.137.1"
 cranelift-native = "0.137.1"
 
 [dev-dependencies]
+qsl-conformance = { path = "../qsl-conformance" }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 qsl-cst = { path = "../qsl-cst" }
 qsl-forms = { path = "../qsl-forms" }
