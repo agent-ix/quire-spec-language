@@ -41,6 +41,9 @@ use quire_semantic_value::declaration::{CheckedEquality, EqualityOperand};
 use quire_semantic_value::location::ExpressionLocation;
 
 use crate::exec::{Shim, Signature, ARGUMENTS_OFFSET, FAILED_OFFSET, RESULT_OFFSET};
+use crate::relocations::RawBlock;
+#[cfg(feature = "test-support")]
+use crate::relocations::StrayCallKind;
 use qsl_eval::execution::{untranslated, Outside};
 
 /// Deepest expression this backend translates. Translation recurses on the
@@ -390,6 +393,11 @@ pub(crate) struct Compiler<'a, 'm> {
     ops: &'a mut Vec<Op>,
     meter: &'a mut PrepareMeter<'m>,
     state: HashMap<usize, State>,
+    /// The call targets of every block defined so far (FR-561-AC-3).
+    blocks: Vec<RawBlock>,
+    /// A test code generator's extra call, emitted into every function.
+    #[cfg(feature = "test-support")]
+    stray: Option<StrayCallKind>,
 }
 
 struct Emitter<'a, 'b, 'm> {
@@ -426,7 +434,22 @@ impl<'a, 'm> Compiler<'a, 'm> {
             ops,
             meter,
             state: HashMap::new(),
+            blocks: Vec::new(),
+            #[cfg(feature = "test-support")]
+            stray: None,
         }
+    }
+
+    /// Emit `stray` into every function (a test code generator).
+    #[cfg(feature = "test-support")]
+    pub(crate) fn with_stray(mut self, stray: Option<StrayCallKind>) -> Self {
+        self.stray = stray;
+        self
+    }
+
+    /// The call targets of the blocks defined, taken from the translator.
+    pub(crate) fn take_blocks(&mut self) -> Vec<RawBlock> {
+        std::mem::take(&mut self.blocks)
     }
 
     /// The index of the function whose identity is `identity`.
@@ -478,6 +501,11 @@ impl<'a, 'm> Compiler<'a, 'm> {
         self.module
             .define_function(id, &mut context)
             .map_err(|_| fault("jit-define-entry"))?;
+        let code = context
+            .compiled_code()
+            .ok_or_else(|| fault("jit-code-missing"))?;
+        self.blocks
+            .push(RawBlock::of(&*self.module, id, &context.func, code));
         self.module.clear_context(&mut context);
         Ok(Translated {
             id,
@@ -623,6 +651,10 @@ impl<'a, 'm> Compiler<'a, 'm> {
             if let Some(invariant) = emitter.refused {
                 return Err(fault(invariant));
             }
+            #[cfg(feature = "test-support")]
+            if let Some(kind) = self.stray {
+                emitter.stray_call(kind);
+            }
             emitter.builder.ins().return_(&[result]);
             emitter.builder.switch_to_block(exit);
             let zero = emitter.builder.ins().iconst(types::I64, 0);
@@ -637,6 +669,8 @@ impl<'a, 'm> Compiler<'a, 'm> {
             .map_err(|_| fault("jit-define-function"))?;
         let code_bytes = match context.compiled_code() {
             Some(code) => {
+                self.blocks
+                    .push(RawBlock::of(&*module, id, &context.func, code));
                 u64::try_from(code.code_buffer().len()).map_err(|_| fault("jit-code-size"))?
             }
             None => return Err(fault("jit-code-missing")),
@@ -648,6 +682,38 @@ impl<'a, 'm> Compiler<'a, 'm> {
 }
 
 impl Emitter<'_, '_, '_> {
+    /// The extra call a test code generator emits (FR-561-AC-3).
+    #[cfg(feature = "test-support")]
+    fn stray_call(&mut self, kind: StrayCallKind) {
+        let pointer = self.module.target_config().pointer_type();
+        let mut signature = self.module.make_signature();
+        signature.params.push(AbiParam::new(pointer));
+        match kind {
+            StrayCallKind::Direct => {
+                let Ok(id) = self.module.declare_function(
+                    crate::exec::STRAY_SYMBOL,
+                    cranelift_module::Linkage::Import,
+                    &signature,
+                ) else {
+                    self.refused = Some("jit-declare-stray");
+                    return;
+                };
+                let stray = self.module.declare_func_in_func(id, self.builder.func);
+                self.builder.ins().call(stray, &[self.context]);
+            }
+            StrayCallKind::Indirect => {
+                let address = self
+                    .builder
+                    .ins()
+                    .iconst(pointer, crate::exec::stray_address());
+                let signature = self.builder.import_signature(signature);
+                self.builder
+                    .ins()
+                    .call_indirect(signature, address, &[self.context]);
+            }
+        }
+    }
+
     fn unsupported(&self, node: CheckedNode<'_>) -> Failure {
         Failure::Unsupported(untranslated(node))
     }

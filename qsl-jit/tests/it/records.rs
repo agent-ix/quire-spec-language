@@ -142,3 +142,37 @@ fn a_denied_charge_stops_the_jit_where_it_stops_the_interpreter() {
         }
     }
 }
+
+const TUPLES: &str = "\
+ tuple T(Integer, Int[0, 9]);\n\
+ function mk using v(a: Integer, b: Int[0, 9]): T pure { T(a, b) }\n\
+ function same using v(a: Integer, b: Int[0, 9]): Boolean pure { T(a, b) = T(a, b) }\n\
+ function differ using v(a: Integer, b: Int[0, 9]): Boolean pure { T(a, b) != T(a, 0) }\n\
+ function viacall using v(a: Integer, b: Int[0, 9]): Boolean pure { mk(a, b) = T(a, b) }\n";
+
+/// Tuple construction is prepared and returns the interpreter's value and
+/// charges, including a denied charge at each point of the spend.
+#[trace("TC-1385")]
+#[test]
+fn tuple_construction_agrees_with_the_interpreter() {
+    let package = package_of(TUPLES);
+    let functions = ["mk", "same", "differ", "viacall"];
+    let prepared = prepare(&package, &functions);
+    assert_eq!(unsupported_names(&prepared), Vec::<String>::new());
+    for function in functions {
+        for (a, b) in [(0, 0), (7, 3), (-4, 9)] {
+            let arguments = [int(a), int(b)];
+            for below in 0..16_u64 {
+                let mut limits = UNLIMITED;
+                limits.work_units = below;
+                let want = interpreted(&package, function, &arguments, limits);
+                let got = jitted(&prepared, function, &arguments, limits);
+                assert_eq!(got.result, want.result, "{function} {a} {b} {below}");
+                assert_eq!(got.charges, want.charges, "{function} {a} {b} {below}");
+            }
+            let want = interpreted(&package, function, &arguments, UNLIMITED);
+            let got = jitted(&prepared, function, &arguments, UNLIMITED);
+            assert_eq!(got.result, want.result, "{function} {a} {b}");
+        }
+    }
+}

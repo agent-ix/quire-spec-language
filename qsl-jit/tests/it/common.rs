@@ -208,3 +208,14 @@ pub fn jitted_call(
         &Cancel::new(),
     )
 }
+
+/// The 10,000 FR-295 generated units at the default seed, generated once for
+/// every test that reads them.
+pub fn generated_units() -> &'static [(qsl_conformance::generator::GeneratedUnit, CheckedPackage)] {
+    static UNITS: std::sync::OnceLock<
+        Vec<(qsl_conformance::generator::GeneratedUnit, CheckedPackage)>,
+    > = std::sync::OnceLock::new();
+    UNITS.get_or_init(|| {
+        qsl_conformance::generator::generate(qsl_conformance::generator::DEFAULT_SEED, 10_000).0
+    })
+}
