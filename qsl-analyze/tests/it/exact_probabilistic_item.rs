@@ -217,7 +217,7 @@ fn a_missed_bound_is_not_proved_and_not_yet_refuted() {
 }
 
 /// Altering one terminal value retains the checker's rejection and full locus.
-#[trace("TC-762", "FR-281-AC-4", "FR-203-AC-3", "FR-201-AC-6")]
+#[trace("TC-763", "FR-281-AC-4", "FR-203-AC-3", "FR-201-AC-6")]
 #[test]
 fn a_rejected_certificate_never_settles_proved() {
     let world = World::new(&prob_world::link(CLAIMS));
@@ -279,7 +279,7 @@ fn a_rejected_certificate_never_settles_proved() {
         .contains(&binding.instance.key));
 }
 
-#[trace("TC-762", "FR-281-AC-4")]
+#[trace("TC-763", "FR-281-AC-4")]
 #[test]
 fn a_malformed_probability_certificate_retains_the_existing_failure() {
     let world = World::new(&prob_world::link(CLAIMS));
