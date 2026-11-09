@@ -6,17 +6,22 @@
 //! charges at the same points. A fast-path operation replaces no arithmetic
 //! here: the kernel computes, and the register only carries the result.
 
+use std::sync::Arc;
+
+use qsl_eval::value::collections::{self, Absorbed, Flow, Iteration, Shape};
 use qsl_eval::value::composite::{construct_record, construct_tuple, present_slots, read_field};
 use qsl_semantics::check::Scope;
 use quire_checked::node::{Arithmetic, OrderedKind};
+use quire_eval::{FamilyResult, StateModelUndefined};
 use quire_exact::{
     compare_text, evaluate_boolean, evaluate_decimal, evaluate_integer_arithmetic,
-    evaluate_rational_arithmetic, order_numbers, retain_boolean, retain_composite,
-    ArithmeticOperator, BooleanConnective, Charge, ChargePoint, ComparisonOperator, Decimal,
-    DecimalOperation, Integer, IntegerArithmetic, Meter, OrderedOperands, OrderingOperator,
-    Rational, RationalArithmetic, Refusal, Value,
+    evaluate_rational_arithmetic, form, order_numbers, retain_boolean, retain_composite,
+    ArithmeticOperator, BooleanConnective, Charge, ChargePoint, CollectionValue,
+    ComparisonOperator, Decimal, DecimalOperation, Integer, IntegerArithmetic, Meter,
+    OrderedOperands, OrderingOperator, Rational, RationalArithmetic, Refusal, Undefined, Value,
 };
-use quire_semantic_value::declaration::operand_value;
+use quire_semantic_value::declaration::operand_value as convert_operand;
+use quire_semantic_value::location::ExpressionLocation;
 use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 use quire_semantic_value::quantity::UnitScope;
 use quire_semantic_value::stop::{outcome_into_stop, Stop};
@@ -28,6 +33,12 @@ pub(crate) enum Halt {
     /// The kernel's own stop (`Undefined`, `Refused` or `Incomplete`), passed
     /// up unchanged with the node's location.
     Stop(Stop),
+    /// A kernel stop at a node other than the operation's own (a `sum` seed
+    /// is located at its summand, not at the `sum`).
+    StopAt(Box<(Stop, ExpressionLocation)>),
+    /// A family-owned result (an `only` over a population that does not hold
+    /// exactly one object), located at the operation's node.
+    Family(FamilyResult),
     /// A backend invariant broke.
     Fault(&'static str),
 }
@@ -38,11 +49,23 @@ impl From<Stop> for Halt {
     }
 }
 
+/// A one-binder query or fold in progress: the shared iteration state, the
+/// arena length when it started and the element just produced. The innermost
+/// loop is the last frame; loops nest as the translated code does, so no
+/// operation names its frame.
+pub(crate) struct Frame {
+    iteration: Iteration,
+    mark: usize,
+    element: Option<Value>,
+}
+
 /// What a call keeps beside its registers: the values behind its handles
 /// and the loss records its operations produced, in evaluation order.
 #[derive(Default)]
 pub(crate) struct State {
     pub(crate) arena: Vec<Value>,
+    /// The loops in progress, innermost last.
+    pub(crate) frames: Vec<Frame>,
     /// Operand values staged for the record or tuple construction that
     /// consumes them, innermost last.
     pub(crate) staged: Vec<Value>,
@@ -68,10 +91,16 @@ impl State {
 
     /// Record the arena's size after an operation, and refuse a size over the
     /// bound. With the callee reclamation of [`OpKind::Reclaim`] every
-    /// operation of a frame adds at most one handle and runs at most once,
-    /// and no function is active twice (recursion is unsupported), so the
-    /// live handles never exceed the operation table plus the arguments;
-    /// reaching the bound is a broken backend invariant.
+    /// operation of a frame adds at most one handle, and no function is
+    /// active twice (recursion is unsupported). An operation in a loop body
+    /// runs once per element, but every loop cuts the arena back to the
+    /// length it had when the loop started before it visits the next element
+    /// ([`OpKind::IterNext`]) and when it finishes, and
+    /// the body result is copied out of the arena before that, so within one
+    /// visit each operation still holds at most one live handle. The live
+    /// handles therefore never exceed the operation table plus the
+    /// arguments, whatever the element count; reaching the bound is a broken
+    /// backend invariant.
     pub(crate) fn settle(&mut self) -> Result<(), Halt> {
         self.peak = self.peak.max(self.arena.len());
         match self.limit {
@@ -117,6 +146,58 @@ fn decimal(raw: i64, arena: &[Value]) -> Result<&Decimal, Halt> {
         Value::Decimal(value) => Ok(value),
         _ => Err(Halt::Fault("jit-handle-not-a-decimal")),
     }
+}
+
+/// The collection a handle names.
+fn collection(raw: i64, arena: &[Value]) -> Result<Arc<CollectionValue>, Halt> {
+    match handle(raw, arena)? {
+        Value::Collection(value) => Ok(Arc::clone(value)),
+        _ => Err(Halt::Fault("jit-handle-not-a-collection")),
+    }
+}
+
+/// The value an operand names: a `Boolean` register, an `Integer` register or
+/// the arena value of a handle.
+fn operand_value(raw: i64, repr: Repr, boolean: bool, arena: &[Value]) -> Result<Value, Halt> {
+    if repr == Repr::Handle {
+        handle(raw, arena).cloned()
+    } else if boolean {
+        Ok(Value::Boolean(raw != 0))
+    } else {
+        Ok(Value::Integer(Integer::from(raw)))
+    }
+}
+
+/// `value` as the register or handle a result of kind `repr` is carried in.
+fn deliver(value: Value, repr: Repr, arena: &mut Vec<Value>) -> Result<i64, Halt> {
+    match (repr, value) {
+        (Repr::Register, Value::Boolean(held)) => Ok(i64::from(held)),
+        (Repr::Register, Value::Integer(value)) => narrow(&value),
+        (Repr::Register, _) => Err(Halt::Fault("jit-register-kind")),
+        (Repr::Handle, value) => push(value, arena),
+    }
+}
+
+/// The halt a shared collection operation gives. A `sum` seed outside its
+/// domain is located at `body`.
+fn lift(halt: collections::Halt, body: Option<&ExpressionLocation>) -> Halt {
+    match halt {
+        collections::Halt::Stop(stop) => Halt::Stop(stop),
+        collections::Halt::SumSeedOutOfDomain => {
+            let stop = Stop::Undefined(Undefined::SumOutOfDomain);
+            match body {
+                Some(location) => Halt::StopAt(Box::new((stop, location.clone()))),
+                None => Halt::Stop(stop),
+            }
+        }
+        collections::Halt::OnlyNotOne { .. } => Halt::Fault("jit-only-not-one-unexpected"),
+        collections::Halt::Fault(fault) => Halt::Fault(fault),
+    }
+}
+
+/// The innermost loop.
+fn innermost(frames: &mut [Frame]) -> Result<&mut Frame, Halt> {
+    frames.last_mut().ok_or(Halt::Fault("jit-iteration-frame"))
 }
 
 /// The last `count` staged operand values, in order.
@@ -230,6 +311,7 @@ pub(crate) fn run(
         arena,
         staged,
         losses,
+        frames,
         ..
     } = state;
     match &op.kind {
@@ -272,7 +354,7 @@ pub(crate) fn run(
             let types = scope.types();
             let units = UnitScope::new(types.units());
             let source = Value::Integer(integer(a, left_repr, arena)?);
-            match operand_value(types, operand, &source, &units, meter)? {
+            match convert_operand(types, operand, &source, &units, meter)? {
                 Value::Integer(integer) => carry(integer, op.result, arena),
                 _ => Err(Halt::Fault("jit-convert-scalar-integer-expected")),
             }
@@ -441,6 +523,163 @@ pub(crate) fn run(
             };
             push(result, arena)
         }
+        OpKind::ChargeElement => {
+            collections::charge_element(meter)?;
+            Ok(0)
+        }
+        OpKind::Collection {
+            collection_type,
+            count,
+        } => {
+            let values = take_staged(staged, *count)?;
+            let value = outcome_into_stop(form(collection_type, values, meter))?;
+            push(value, arena)
+        }
+        OpKind::Size => {
+            let source = collection(a, arena)?;
+            deliver(collections::size(&source, meter)?, op.result, arena)
+        }
+        OpKind::Contains { item_boolean } => {
+            let source = collection(a, arena)?;
+            let item = operand_value(b, right_repr, *item_boolean, arena)?;
+            deliver(
+                collections::contains(&item, &source, meter)?,
+                op.result,
+                arena,
+            )
+        }
+        OpKind::Flatten { result_type } => {
+            let outer = collection(a, arena)?;
+            let value =
+                collections::flatten(result_type, &outer, meter).map_err(|h| lift(h, None))?;
+            push(value, arena)
+        }
+        OpKind::ConvertCollection { target } => {
+            let source = collection(a, arena)?;
+            let (value, _) = collections::convert(target, &source, false, meter)?;
+            push(value, arena)
+        }
+        OpKind::DropFirst => {
+            let source = collection(a, arena)?;
+            let outcome = quire_eval::collection::drop_first(&source, meter)
+                .map_err(|_| Halt::Fault("collection-removal-rejected"))?;
+            push(outcome_into_stop(outcome)?, arena)
+        }
+        OpKind::RemoveOne { item_boolean } => {
+            let source = collection(a, arena)?;
+            let probe = operand_value(b, right_repr, *item_boolean, arena)?;
+            let outcome = quire_eval::collection::remove_one(&source, &probe, scope.types(), meter)
+                .map_err(|_| Halt::Fault("collection-removal-rejected"))?;
+            push(outcome_into_stop(outcome)?, arena)
+        }
+        OpKind::IterStart {
+            spec,
+            population,
+            identity_boolean,
+        } => {
+            let source = collection(a, arena)?;
+            // The identity is the second operand; a fold without one is a
+            // reduce, a query has none.
+            let identity = match identity_boolean {
+                Some(boolean) => Some(operand_value(b, right_repr, *boolean, arena)?),
+                None => None,
+            };
+            let reduce = spec.shape == Shape::Fold && identity.is_none();
+            match Iteration::start(&spec.of(), source, identity, reduce, meter) {
+                Ok(iteration) => {
+                    frames.push(Frame {
+                        iteration,
+                        mark: arena.len(),
+                        element: None,
+                    });
+                    Ok(0)
+                }
+                Err(collections::Halt::OnlyNotOne { found }) => Err(match population {
+                    Some(population) => Halt::Family(FamilyResult::Undefined(Box::new(
+                        StateModelUndefined::OnlyNotOne {
+                            population: population.clone(),
+                            found,
+                        },
+                    ))),
+                    None => Halt::Fault("only-source-is-a-population"),
+                }),
+                Err(other) => Err(lift(other, None)),
+            }
+        }
+        OpKind::IterNext { spec } => {
+            let Frame {
+                iteration,
+                mark,
+                element,
+            } = innermost(frames)?;
+            arena.truncate(*mark);
+            match iteration
+                .next(&spec.of(), meter)
+                .map_err(|h| lift(h, None))?
+            {
+                Flow::Exhausted => Ok(0),
+                Flow::Visit { element: next, .. } => {
+                    *element = Some(next);
+                    Ok(1)
+                }
+            }
+        }
+        OpKind::IterElement => {
+            let element = innermost(frames)?
+                .element
+                .take()
+                .ok_or(Halt::Fault("jit-iteration-element-missing"))?;
+            deliver(element, op.result, arena)
+        }
+        OpKind::IterAccumulator => {
+            let accumulator = innermost(frames)?
+                .iteration
+                .accumulator
+                .clone()
+                .ok_or(Halt::Fault("fold-accumulator-missing"))?;
+            deliver(accumulator, op.result, arena)
+        }
+        OpKind::IterAbsorb {
+            spec,
+            body,
+            result_boolean,
+        } => {
+            let result = operand_value(a, left_repr, *result_boolean, arena)?;
+            let iteration = &mut innermost(frames)?.iteration;
+            match iteration
+                .absorb(&spec.of(), result)
+                .map_err(|h| lift(h, Some(body)))?
+            {
+                Absorbed::Continue => Ok(0),
+                Absorbed::Summand(parts) => {
+                    let (total, summand) = *parts;
+                    let (sum, loss) =
+                        collections::sum_exact(&spec.value_type, total, summand, meter)
+                            .ok_or(Halt::Fault("sum-family-invalid"))?
+                            .map_err(|h| lift(h, Some(body)))?;
+                    if let Some(loss) = loss {
+                        losses.push(LocatedLoss {
+                            location: op.location.clone(),
+                            loss: ValueLoss::Decimal(loss),
+                        });
+                    }
+                    iteration.accumulator = Some(sum);
+                    Ok(0)
+                }
+                // `forall` and `exists` are outside the coverage.
+                Absorbed::Exit { .. } => Err(Halt::Fault("jit-iteration-exit-untranslated")),
+            }
+        }
+        OpKind::IterFinish { spec } => {
+            let Frame {
+                iteration, mark, ..
+            } = frames.pop().ok_or(Halt::Fault("jit-iteration-frame"))?;
+            arena.truncate(mark);
+            let finished = iteration
+                .finish(&spec.of(), false, meter)
+                .map_err(|h| lift(h, None))?;
+            deliver(finished.value, op.result, arena)
+        }
         OpKind::Mark => i64::try_from(arena.len()).map_err(|_| Halt::Fault("jit-arena-index")),
         OpKind::Reclaim => {
             let mark = usize::try_from(b).map_err(|_| Halt::Fault("jit-arena-mark"))?;
@@ -488,5 +727,90 @@ mod tests {
             Err(Halt::Fault("jit-arena-bound"))
         ));
         assert_eq!(state.peak, 2);
+    }
+
+    fn booleans(count: usize) -> Value {
+        use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Outcome, ValueType};
+        let kind = CollectionType::new(
+            CollectionKind::Sequence,
+            ValueType::Boolean,
+            Some(CardinalityBound::at_most(4)),
+        );
+        let mut meter = Meter::new(unlimited());
+        match form(&kind, vec![Value::Boolean(true); count], &mut meter) {
+            Outcome::Completed(value) => value,
+            other => panic!("the sequence forms: {other:?}"),
+        }
+    }
+
+    fn unlimited() -> quire_exact::ScalarLimits {
+        quire_exact::ScalarLimits {
+            integer_bits: u64::MAX,
+            decimal_digits: u64::MAX,
+            scale_expansion: u64::MAX,
+            text_input_bytes: u64::MAX,
+            text_scalars: u64::MAX,
+            normalized_scalars: u64::MAX,
+            unit_edges: u64::MAX,
+            value_occurrences: u64::MAX,
+            work_units: u64::MAX,
+            result_units: u64::MAX,
+        }
+    }
+
+    /// The start of an `only` over a population holding other than one object
+    /// is the population's family result, located at the operation's node
+    /// (FR-139); over one object it starts, and a source that names no
+    /// population is a backend fault, as in the interpreter.
+    #[test]
+    fn an_only_over_other_than_one_object_is_the_populations_family_result() {
+        use crate::translate::IterSpec;
+        use quire_checked::node::Visit;
+        use quire_semantic_value::location::{ExpressionLocation, ExpressionOwner};
+
+        let scope = qsl_semantics::check::scope_with(Default::default(), Vec::new());
+        let start = |population: Option<&str>, count: usize| {
+            let op = Op {
+                kind: OpKind::IterStart {
+                    spec: IterSpec {
+                        shape: Shape::Query(Visit::Only),
+                        value_type: quire_exact::ValueType::Boolean,
+                        only_over_filter: false,
+                    },
+                    population: population.map(str::to_owned),
+                    identity_boolean: None,
+                },
+                location: ExpressionLocation::root(ExpressionOwner::Body {
+                    function: "f".to_owned(),
+                    index: 0,
+                }),
+                operands: [Repr::Handle, Repr::Register],
+                result: Repr::Register,
+            };
+            let mut state = State::bounded(vec![booleans(count)], 4);
+            let mut meter = Meter::new(unlimited());
+            let ran = run(&op, [0, 0], &mut meter, &scope, &mut state);
+            (ran, state.frames.len())
+        };
+        for count in [0, 2] {
+            let (ran, frames) = start(Some("Account"), count);
+            let Err(Halt::Family(result)) = ran else {
+                panic!("a family result for {count} objects");
+            };
+            let expected = FamilyResult::Undefined(Box::new(StateModelUndefined::OnlyNotOne {
+                population: "Account".to_owned(),
+                found: count as u64,
+            }));
+            assert_eq!(format!("{result:?}"), format!("{expected:?}"));
+            assert_eq!(frames, 0);
+        }
+        let (ran, frames) = start(Some("Account"), 1);
+        assert!(matches!(ran, Ok(0)));
+        assert_eq!(frames, 1);
+        let (ran, _) = start(None, 2);
+        assert!(matches!(
+            ran,
+            Err(Halt::Fault("only-source-is-a-population"))
+        ));
     }
 }

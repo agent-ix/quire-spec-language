@@ -24,13 +24,15 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::JITModule;
 use cranelift_module::{FuncId, Module};
 use qsl_eval::execution::{PrepareFailure, PrepareMeter};
+use qsl_eval::value::collections::{is_exact_sum, Shape, Spec};
 use qsl_semantics::check::{CheckedGraph, CheckedNode};
 use quire_checked::integer_division::AdmittedIntegerDivision;
 use quire_checked::node::{Arithmetic, Connective, IntegerDivisionOperator, NodeKind, OrderedKind};
-use quire_checked::node::{RecordField, RecordSlot};
+use quire_checked::node::{RecordField, RecordSlot, Visit};
 use quire_exact::{
-    ArithmeticOperator, DecimalType, DivisionMember, Integer, IntegerDomain, IntegerInterval,
-    Meter, NodeKey, OrderingOperator, Outcome, RationalDomain, ScalarLimits, Value, ValueType,
+    ArithmeticOperator, CollectionType, DecimalType, DivisionMember, Integer, IntegerDomain,
+    IntegerInterval, Meter, NodeKey, OrderingOperator, Outcome, RationalDomain, ScalarLimits,
+    Value, ValueType,
 };
 use quire_semantic_value::declaration::{CheckedEquality, EqualityOperand};
 use quire_semantic_value::location::ExpressionLocation;
@@ -42,6 +44,26 @@ use qsl_eval::execution::{untranslated, Outside};
 /// host stack; a deeper tree is listed unsupported and the interpreter, which
 /// evaluates without host recursion, runs it.
 const MAX_DEPTH: usize = 192;
+
+/// What a query or fold iterates, in the form the shared iteration reads
+/// ([`Spec`]), owned by the operation table.
+#[derive(Clone)]
+pub(crate) struct IterSpec {
+    pub(crate) shape: Shape,
+    pub(crate) value_type: ValueType,
+    pub(crate) only_over_filter: bool,
+}
+
+impl IterSpec {
+    /// The shared iteration's view of this spec.
+    pub(crate) fn of(&self) -> Spec<'_> {
+        Spec {
+            shape: self.shape,
+            value_type: &self.value_type,
+            only_over_filter: self.only_over_filter,
+        }
+    }
+}
 
 /// What one shim call computes.
 pub(crate) enum OpKind {
@@ -116,6 +138,57 @@ pub(crate) enum OpKind {
         value_type: ValueType,
         into: Carried,
     },
+    /// The `collection.element` charge before a literal element.
+    ChargeElement,
+    /// A collection over its `count` staged elements.
+    Collection {
+        collection_type: CollectionType,
+        count: usize,
+    },
+    Size,
+    /// `contains`: the collection is the left operand, the item the right
+    /// (`true`: a `Boolean` register).
+    Contains {
+        item_boolean: bool,
+    },
+    Flatten {
+        result_type: ValueType,
+    },
+    ConvertCollection {
+        target: CollectionType,
+    },
+    DropFirst,
+    RemoveOne {
+        item_boolean: bool,
+    },
+    /// Start a query or fold over the collection on the left; the right is its
+    /// identity (`Some`: a `Boolean` register when `true`).
+    IterStart {
+        spec: IterSpec,
+        /// The population an `only` ranges over, for its family result.
+        population: Option<String>,
+        identity_boolean: Option<bool>,
+    },
+    /// Cut the arena back to the loop's start and visit the next element:
+    /// `1` when there is one.
+    IterNext {
+        spec: IterSpec,
+    },
+    /// The element just visited.
+    IterElement,
+    /// A fold's accumulator, bound to its slot before the step.
+    IterAccumulator,
+    /// Absorb the body result on the left.
+    IterAbsorb {
+        spec: IterSpec,
+        /// Where a `sum` seed outside its domain is located.
+        body: ExpressionLocation,
+        result_boolean: bool,
+    },
+    /// Finish the query or fold: its result.
+    IterFinish {
+        spec: IterSpec,
+    },
     /// The arena's length, taken before a call whose callee adds handles.
     Mark,
     /// Cut the arena back to a mark, keeping the callee's result.
@@ -170,6 +243,8 @@ enum Ty {
     Text,
     /// A record or tuple behind a handle.
     Record,
+    /// A collection behind a handle.
+    Collection,
 }
 
 impl Ty {
@@ -177,9 +252,12 @@ impl Ty {
         match self {
             Self::Boolean => Carried::Boolean,
             Self::Int(..) => Carried::Register,
-            Self::Wide | Self::Rational | Self::Decimal | Self::Text | Self::Record => {
-                Carried::Handle
-            }
+            Self::Wide
+            | Self::Rational
+            | Self::Decimal
+            | Self::Text
+            | Self::Record
+            | Self::Collection => Carried::Handle,
         }
     }
 
@@ -243,6 +321,7 @@ fn type_of(value_type: &ValueType) -> Option<Ty> {
         ValueType::Decimal(_) => Some(Ty::Decimal),
         ValueType::Text(_) => Some(Ty::Text),
         ValueType::Composite(_) => Some(Ty::Record),
+        ValueType::Collection(_) => Some(Ty::Collection),
         _ => None,
     }
 }
@@ -646,9 +725,12 @@ impl Emitter<'_, '_, '_> {
                 let ty = match operand_ty {
                     Ty::Int(low, high) if fits(-high, -low) => Ty::Int(-high, -low),
                     Ty::Int(..) | Ty::Wide => Ty::Wide,
-                    Ty::Boolean | Ty::Rational | Ty::Decimal | Ty::Text | Ty::Record => {
-                        return Err(self.unsupported(node))
-                    }
+                    Ty::Boolean
+                    | Ty::Rational
+                    | Ty::Decimal
+                    | Ty::Text
+                    | Ty::Record
+                    | Ty::Collection => return Err(self.unsupported(node)),
                 };
                 let zero = self.builder.ins().iconst(types::I64, 0);
                 let operands = [(a, operand_ty), (zero, Ty::Boolean)];
@@ -786,6 +868,73 @@ impl Emitter<'_, '_, '_> {
                 );
                 Ok((result, ty))
             }
+            NodeKind::Collection {
+                collection_type,
+                elements,
+            } => {
+                for element in elements {
+                    self.nullary(node, OpKind::ChargeElement, Repr::Register);
+                    let operand = self.emit(node.at(*element), depth + 1)?;
+                    self.stage(node, operand);
+                }
+                let kind = OpKind::Collection {
+                    collection_type: collection_type.clone(),
+                    count: elements.len(),
+                };
+                let result = self.nullary(node, kind, Repr::Handle);
+                Ok((result, Ty::Collection))
+            }
+            NodeKind::Size(operand) => {
+                let source = self.emit_collection(node, *operand, depth)?;
+                let Some(ty) = type_of(node.value_type()).filter(|ty| ty.is_integer()) else {
+                    return Err(self.unsupported(node));
+                };
+                let result = self.unary(node, OpKind::Size, source, ty.repr());
+                Ok((result, ty))
+            }
+            NodeKind::Contains(collection, item) => {
+                let source = self.emit_collection(node, *collection, depth)?;
+                let (b, item_ty) = self.emit(node.at(*item), depth + 1)?;
+                let kind = OpKind::Contains {
+                    item_boolean: item_ty == Ty::Boolean,
+                };
+                let result = self.shim_call(node, kind, [source, (b, item_ty)], Repr::Register);
+                Ok((result, Ty::Boolean))
+            }
+            NodeKind::Flatten(operand) => {
+                let source = self.emit_collection(node, *operand, depth)?;
+                if !matches!(node.value_type(), ValueType::Collection(_)) {
+                    return Err(self.unsupported(node));
+                }
+                let kind = OpKind::Flatten {
+                    result_type: node.value_type().clone(),
+                };
+                let result = self.unary(node, kind, source, Repr::Handle);
+                Ok((result, Ty::Collection))
+            }
+            NodeKind::ConvertCollection { target, operand } => {
+                let source = self.emit_collection(node, *operand, depth)?;
+                let kind = OpKind::ConvertCollection {
+                    target: target.clone(),
+                };
+                let result = self.unary(node, kind, source, Repr::Handle);
+                Ok((result, Ty::Collection))
+            }
+            NodeKind::DropFirst(operand) => {
+                let source = self.emit_collection(node, *operand, depth)?;
+                let result = self.unary(node, OpKind::DropFirst, source, Repr::Handle);
+                Ok((result, Ty::Collection))
+            }
+            NodeKind::RemoveOne(collection, item) => {
+                let source = self.emit_collection(node, *collection, depth)?;
+                let (b, item_ty) = self.emit(node.at(*item), depth + 1)?;
+                let kind = OpKind::RemoveOne {
+                    item_boolean: item_ty == Ty::Boolean,
+                };
+                let result = self.shim_call(node, kind, [source, (b, item_ty)], Repr::Handle);
+                Ok((result, Ty::Collection))
+            }
+            NodeKind::Query { .. } | NodeKind::Fold { .. } => self.emit_iteration(node, depth),
             NodeKind::Divide {
                 left,
                 right,
@@ -906,9 +1055,12 @@ impl Emitter<'_, '_, '_> {
                         (Some(low), Some(high)) => Ty::Int(low.into(), high.into()),
                         _ => Ty::Wide,
                     },
-                    Ty::Boolean | Ty::Rational | Ty::Decimal | Ty::Text | Ty::Record => {
-                        return Err(self.unsupported(node))
-                    }
+                    Ty::Boolean
+                    | Ty::Rational
+                    | Ty::Decimal
+                    | Ty::Text
+                    | Ty::Record
+                    | Ty::Collection => return Err(self.unsupported(node)),
                 };
                 let zero = self.builder.ins().iconst(types::I64, 0);
                 let operands = [(a, ty), (zero, Ty::Boolean)];
@@ -1176,6 +1328,191 @@ impl Emitter<'_, '_, '_> {
         self.builder.switch_to_block(merge);
         let joined = self.builder.block_params(merge)[0];
         Ok((joined, ty))
+    }
+
+    /// The collection operand `operand` of `node`, evaluated.
+    fn emit_collection(
+        &mut self,
+        node: CheckedNode<'_>,
+        operand: qsl_semantics::check::NodeId,
+        depth: usize,
+    ) -> Result<(Clif, Ty), Failure> {
+        let emitted = self.emit(node.at(operand), depth + 1)?;
+        if emitted.1 != Ty::Collection {
+            return Err(self.unsupported(node));
+        }
+        Ok(emitted)
+    }
+
+    /// A shim call with no operands.
+    fn nullary(&mut self, node: CheckedNode<'_>, kind: OpKind, result: Repr) -> Clif {
+        let zero = self.builder.ins().iconst(types::I64, 0);
+        self.shim_call(
+            node,
+            kind,
+            [(zero, Ty::Boolean), (zero, Ty::Boolean)],
+            result,
+        )
+    }
+
+    /// A shim call over one operand.
+    fn unary(
+        &mut self,
+        node: CheckedNode<'_>,
+        kind: OpKind,
+        operand: (Clif, Ty),
+        result: Repr,
+    ) -> Clif {
+        let zero = self.builder.ins().iconst(types::I64, 0);
+        self.shim_call(node, kind, [operand, (zero, Ty::Boolean)], result)
+    }
+
+    /// Begin a loop: a header that asks `next` whether another element
+    /// follows, and the body block it enters. Returns the header and the
+    /// block after the loop.
+    fn open_loop(&mut self, node: CheckedNode<'_>, next: OpKind) -> (Block, Block) {
+        let (header, body, done) = (
+            self.builder.create_block(),
+            self.builder.create_block(),
+            self.builder.create_block(),
+        );
+        self.builder.ins().jump(header, &[]);
+        self.builder.switch_to_block(header);
+        let more = self.nullary(node, next, Repr::Register);
+        self.builder.ins().brif(more, body, &[], done, &[]);
+        self.builder.switch_to_block(body);
+        (header, done)
+    }
+
+    /// End a loop body: back to the header, then on from the block after.
+    fn close_loop(&mut self, (header, done): (Block, Block)) {
+        self.builder.ins().jump(header, &[]);
+        self.builder.switch_to_block(done);
+    }
+
+    /// Bind `slot` for a loop body, returning what it replaced.
+    fn bind(&mut self, slot: usize, bound: (Clif, Ty)) -> Option<(Clif, Ty)> {
+        self.slots.insert(slot, bound)
+    }
+
+    fn unbind(&mut self, slot: usize, previous: Option<(Clif, Ty)>) {
+        match previous {
+            Some(previous) => self.slots.insert(slot, previous),
+            None => self.slots.remove(&slot),
+        };
+    }
+
+    /// A one-binder query or a fold: the loop runs the shared iteration of
+    /// `qsl_eval::value::collections` through the shim, so the visits, the
+    /// retained results and the stops are the interpreter's. `forall` and
+    /// `exists` are outside the coverage (FR-560) and are not translated.
+    fn emit_iteration(
+        &mut self,
+        node: CheckedNode<'_>,
+        depth: usize,
+    ) -> Result<(Clif, Ty), Failure> {
+        let (shape, source, body, identity) = match node.kind() {
+            NodeKind::Query {
+                visit: Visit::Forall | Visit::Exists,
+                ..
+            } => return Err(self.unsupported(node)),
+            NodeKind::Query {
+                visit,
+                source,
+                body,
+                ..
+            } => (Shape::Query(*visit), *source, *body, None),
+            NodeKind::Fold {
+                source,
+                step,
+                identity,
+                ..
+            } => (Shape::Fold, *source, *step, *identity),
+            _ => return Err(self.unsupported(node)),
+        };
+        let Some(result_ty) = type_of(node.value_type()) else {
+            return Err(self.unsupported(node));
+        };
+        let family_ok = match shape {
+            Shape::Query(Visit::Map | Visit::Filter) => result_ty == Ty::Collection,
+            Shape::Query(Visit::Count) => result_ty.is_integer(),
+            // The empty and float sums are the interpreter's own: only the
+            // exact families run the shared step.
+            Shape::Query(Visit::Sum) => is_exact_sum(node.value_type()),
+            Shape::Query(Visit::Only) | Shape::Fold => true,
+            Shape::Query(Visit::Forall | Visit::Exists) => false,
+        };
+        if !family_ok {
+            return Err(self.unsupported(node));
+        }
+        let source_node = node.at(source);
+        let element_ty = match source_node.value_type() {
+            ValueType::Collection(collection) => type_of(collection.element()),
+            _ => None,
+        };
+        let Some(element_ty) = element_ty else {
+            return Err(self.unsupported(node));
+        };
+        let collection = self.emit_collection(node, source, depth)?;
+        let identity = match identity {
+            Some(identity) => Some(self.emit(node.at(identity), depth + 1)?),
+            None => None,
+        };
+        let source_is_filter = matches!(
+            source_node.kind(),
+            NodeKind::Query {
+                visit: Visit::Filter,
+                ..
+            }
+        );
+        let spec = IterSpec {
+            shape,
+            value_type: node.value_type().clone(),
+            only_over_filter: Spec::new(shape, node.value_type(), source_is_filter)
+                .only_over_filter,
+        };
+        let start = OpKind::IterStart {
+            spec: spec.clone(),
+            population: qsl_eval::value::only_population(source_node),
+            identity_boolean: identity.map(|(_, ty)| ty == Ty::Boolean),
+        };
+        let identity = identity.unwrap_or_else(|| {
+            let zero = self.builder.ins().iconst(types::I64, 0);
+            (zero, Ty::Boolean)
+        });
+        self.shim_call(node, start, [collection, identity], Repr::Register);
+        let looping = self.open_loop(node, OpKind::IterNext { spec: spec.clone() });
+        let element = self.nullary(node, OpKind::IterElement, element_ty.repr());
+        let bound = match node.kind() {
+            NodeKind::Query { slot, .. } => {
+                vec![(*slot, self.bind(*slot, (element, element_ty)))]
+            }
+            NodeKind::Fold {
+                accumulator,
+                binder,
+                ..
+            } => {
+                let current = self.nullary(node, OpKind::IterAccumulator, result_ty.repr());
+                vec![
+                    (*accumulator, self.bind(*accumulator, (current, result_ty))),
+                    (*binder, self.bind(*binder, (element, element_ty))),
+                ]
+            }
+            _ => return Err(self.unsupported(node)),
+        };
+        let (result, result_type) = self.emit(node.at(body), depth + 1)?;
+        let absorb = OpKind::IterAbsorb {
+            spec: spec.clone(),
+            body: node.at(body).location().clone(),
+            result_boolean: result_type == Ty::Boolean,
+        };
+        self.unary(node, absorb, (result, result_type), Repr::Register);
+        for (slot, previous) in bound.into_iter().rev() {
+            self.unbind(slot, previous);
+        }
+        self.close_loop(looping);
+        let finished = self.nullary(node, OpKind::IterFinish { spec }, result_ty.repr());
+        Ok((finished, result_ty))
     }
 
     /// Stage an operand value for the record or tuple construction that
