@@ -461,7 +461,6 @@ fn adapter_exhaustion_preserves_incomplete_without_accepted_evidence() {
         "paths",
         "states",
         "transitions",
-        "arithmetic",
         "work",
         "storage",
         "expansion",
@@ -471,7 +470,6 @@ fn adapter_exhaustion_preserves_incomplete_without_accepted_evidence() {
             "paths" => request.limits.max_witness_paths = 0,
             "states" => request.limits.model.limits.max_states = 0,
             "transitions" => request.limits.model.limits.max_transitions = 0,
-            "arithmetic" => request.limits.max_rational_bits = 1,
             "work" => request.subject.simulation.meter.work_units = 0,
             "storage" => request.limits.document.storage_bytes = 0,
             "expansion" => request.subject.simulation.expansion.max_candidates = 0,
@@ -546,4 +544,26 @@ fn a_decided_initial_path_cannot_continue_and_policy_keys_keep_horizons_distinct
     assert_eq!(witness.scheduler.len(), 2);
     assert_ne!(witness.scheduler[0].1, witness.scheduler[1].1);
     assert_eq!(mass(&varying, &witness), ratio(1, 8));
+}
+
+#[trace("TC-637", "FR-202-AC-16")]
+#[test]
+fn interval_bounds_and_precision_budget_cannot_be_cast_into_bounded_refutations() {
+    let world = World::new(&model(CLAIMS));
+    for precision_budget in [false,true] {
+        let mut request = world.request("Min",ModelCheckLimits::default());
+        request.limits.max_rational_bits = 1;
+        if precision_budget {
+            request.limits.precision_bits = 1;
+            request.limits.max_precision_bits = 1;
+        }
+        let record = analyze_items(&Engines::qsl().unwrap(),vec![exact_probabilistic_item(RequestIndex::new(0),request)],&Cancel::new()).remove(0);
+        if precision_budget {
+            assert!(matches!(record.terminal().unwrap().value(),TerminalValue::Incomplete(qsl_replay::IncompleteCause::PrecisionBudget {..})));
+        } else {
+            assert!(record.terminal().is_none(),"a mere Bounds result stays unsupported");
+        }
+        assert!(record.probabilistic_counterexample.is_none());
+        assert!(record.exact_probabilistic.is_none());
+    }
 }
