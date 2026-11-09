@@ -557,9 +557,7 @@ impl<'r> Callee<'r> {
 fn integer_widens(source: &ValueType, target: &ValueType) -> bool {
     match (source, target) {
         (ValueType::Integer | ValueType::Int(_), ValueType::Integer) => source != target,
-        (ValueType::Int(from), ValueType::Int(to)) => {
-            from != to && to.lower() <= from.lower() && from.upper() <= to.upper()
-        }
+        (ValueType::Int(from), ValueType::Int(to)) => from != to && to.lower() <= from.lower() && from.upper() <= to.upper(),
         _ => false,
     }
 }
@@ -1089,7 +1087,6 @@ impl<'a> Typer<'a> {
         Step::Descend(scrutinee)
     }
 
-    /// Start a form over one operand, `goal`.
     /// Type the next selector of a `ref`'s place, or the `ref` itself once
     /// every selector is typed.
     fn next_selector<'e, 'r>(
@@ -1127,6 +1124,7 @@ impl<'a> Typer<'a> {
             .map(Step::Typed)
     }
 
+    /// Start a form over one operand, `goal`.
     fn unary<'e, 'r>(
         form: Unary<'r>,
         goal: Goal<'e, 'r>,
@@ -1523,8 +1521,15 @@ impl<'a> Typer<'a> {
             }
             ExprNode::Select { .. } => {
                 // A selector is part of a clock place expression (FR-230
-                // "Selection"), which `ref` takes.
-                return Err(mismatch(&location));
+                // "Selection"); only `ref` checks one so far, and a place
+                // read or reset by selection is not checked yet.
+                let selector = location.child(1);
+                return Err(refuse(
+                    &selector,
+                    CheckCause::UnsupportedFeature {
+                        loci: vec![selector.clone()],
+                    },
+                ));
             }
             ExprNode::Pre(operand) => {
                 let operand = expression.at(*operand);

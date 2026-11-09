@@ -817,7 +817,9 @@ pub enum ExprNode {
     },
     /// `p[s]` (FR-230 "Selection"): the selector `s` of a clock place
     /// expression, an index `i` of a `Sequence` or `OrderedSet` or a key `k`
-    /// of a `Map`. S2 builds it only as part of a clock place expression.
+    /// of a `Map`. S2 builds it only when it directly follows a field access
+    /// or another selector (`r.f[s]`); the checker decides whether the whole
+    /// is a clock place expression.
     Select {
         /// The collection place operand `p`.
         place: ExprId,

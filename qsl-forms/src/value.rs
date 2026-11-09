@@ -1778,9 +1778,12 @@ impl<'c> Mapping<'c> {
                 }
                 Item::Token(token) if token.spelling() == b"[" => {
                     // FR-091 "Unrepresented constructs", FR-230 "Selection":
-                    // `r.f[s]` selects a place of a field, which a clock
-                    // place expression admits; a selector of anything else
-                    // (`xs[0]`) is unrepresented.
+                    // a selector directly after a field access or another
+                    // selector (`r.f[s]`) builds as a `Select`, and the
+                    // checker decides whether the whole is a clock place
+                    // expression; a selector after anything else (`xs[0]`,
+                    // `r.f()[s]`) is unrepresented.
+                    let ahead = rest.clone();
                     let selects_a_field =
                         matches!(suffixes.last(), Some((Shape::Field(_) | Shape::Select, ..)));
                     let selector = match (rest.next(), rest.next()) {
@@ -1794,8 +1797,8 @@ impl<'c> Mapping<'c> {
                         _ => None,
                     };
                     let Some((selector, end)) = selector else {
-                        let end = items
-                            .iter()
+                        let end = ahead
+                            .clone()
                             .find_map(|item| match item {
                                 Item::Token(close) if close.spelling() == b"]" => {
                                     Some(close.span().end)

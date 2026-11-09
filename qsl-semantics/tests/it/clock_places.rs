@@ -3004,9 +3004,65 @@ fn a_ref_selects_a_slot_by_index_and_no_map_place_has_an_id() {
         CheckCause::IllTyped(IllTypedCause::TypeMismatch)
     );
     assert_eq!(keyed.location.path(), vec![0]);
-    let whole = refusal("ref(self.ts[0])");
-    assert_eq!(
-        whole.cause,
-        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    // A longer path that names no place may pass through a reference field,
+    // with or without a selector: `ref(self.ts[0])` and `ref(self.r.ts[0].x)`.
+    for term in ["ref(self.ts[0])", "ref(self.r.ts[0].x)", "ref(self.r.x)"] {
+        let longer = refusal(term);
+        assert!(
+            matches!(&longer.cause, CheckCause::UnsupportedFeature { .. }),
+            "{term}: {longer:?}"
+        );
+        assert_eq!(longer.location.path(), vec![0], "{term}");
+    }
+}
+
+/// A selector outside a `ref` is part of a clock place expression that is not
+/// checked yet: in a clause of a timed model (a guard read, a reset by
+/// selection, a data read) it refuses `not-yet-implemented` at the selector,
+/// and in a function body `unsupported-feature` at the selector, never
+/// `type-mismatch` or a clock read outside a constraint.
+#[trace("TC-685")]
+#[test]
+fn a_selector_outside_a_ref_is_not_checked_yet() {
+    use qsl_semantics::check::{CheckCause, TemporalCause};
+    let document = timer_sequence_and_map();
+    for clause in [
+        "pre Read using v on Config::Call::reply { self.ts[0].x >= 1 ms }",
+        "post Reset using v on Config::Call::send { self.ts[1].x = 0 ms }",
+        "post Keyed using v on Config::Call::send { self.m[\"k\"].x = 0 ms }",
+        "pre Data using v on Config::Call::reply { self.ts[0].n = 1 }",
+    ] {
+        let body = format!("{UNITS}{DENSE}{clause}\n");
+        let refusals = check(&document, &body).expect_err("the selector is refused");
+        let [refusal] = refusals.as_slice() else {
+            panic!("{clause}: one refusal expected: {refusals:?}");
+        };
+        let CheckCause::Temporal(cause) = &refusal.cause else {
+            panic!("{clause}: {refusal:?}");
+        };
+        let TemporalCause::SelectionNotChecked { span } = **cause else {
+            panic!("{clause}: {cause:?}");
+        };
+        let (text, _) = crate::model_operations::config_unit_with_profiles(
+            &document,
+            crate::timed_model::TEMPORAL,
+            &body,
+        );
+        assert!(
+            text[span.start..span.end].contains('['),
+            "{clause}: {}",
+            &text[span.start..span.end]
+        );
+    }
+    // A function body is no timed clause: the typer refuses at the selector.
+    let body = format!(
+        "{UNITS}{DENSE}function f using v(o: Reference<Config::Call>): Boolean pure {{ o.ts[0].n = 1 }}\n"
+    );
+    let refusals = check(&document, &body).expect_err("the selector is refused");
+    assert!(
+        refusals
+            .iter()
+            .any(|refusal| matches!(refusal.cause, CheckCause::UnsupportedFeature { .. })),
+        "{refusals:?}"
     );
 }

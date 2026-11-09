@@ -1769,3 +1769,18 @@ fn a_selector_of_a_clock_place_expression_builds() {
     );
     assert_eq!(span, Some(span_of(&text, "xs[0]")));
 }
+
+/// A selector builds only directly after a field access or another selector:
+/// after a call it is unrepresented, at the span through that selector.
+#[trace("FR-091-AC-7")]
+#[test]
+fn a_selector_after_a_call_is_refused_at_its_own_span() {
+    let (text, cause, span) = refusal("function f using v(): Boolean pure { self.ts[0].n()[1] }");
+    assert_eq!(
+        cause,
+        FormsCause::UnrepresentedConstruct {
+            production: Production::Postfix
+        }
+    );
+    assert_eq!(span, Some(span_of(&text, "self.ts[0].n()[1]")));
+}

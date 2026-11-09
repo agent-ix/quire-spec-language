@@ -1490,6 +1490,14 @@ pub enum TemporalCause {
         /// The presence read's span.
         span: Span,
     },
+    /// FR-230 "Selection": a selector `p[s]` of a clock place expression in
+    /// a clause of a timed model, which only `ref` checks so far (guards,
+    /// resets and data reads by selection are FR-230-AC-21). Located at the
+    /// selector.
+    SelectionNotChecked {
+        /// The selector's span.
+        span: Span,
+    },
     /// FR-230: a time invariant bound's operand names no clock of the
     /// state object. Located at the operand.
     UnknownClock {
@@ -2048,6 +2056,7 @@ impl TemporalCause {
             | Self::ClockPresenceUnwritten { span }
             | Self::UnprovedPresence { span }
             | Self::PresenceNotChecked { span }
+            | Self::SelectionNotChecked { span }
             | Self::TimeInvariantShape { span }
             | Self::UnknownClock { span }
             | Self::UrgentOperation { span, .. }
@@ -2137,7 +2146,9 @@ impl TemporalCause {
             | Self::UrgentGuardReadsClock { .. } => Code::InvalidTimedModel,
             Self::TimedPredicate { cause, .. } => cause.code(),
             Self::UnprovedPresence { .. } => Code::UndefinedExpression,
-            Self::PresenceNotChecked { .. } => Code::UnsupportedConstruct,
+            Self::PresenceNotChecked { .. } | Self::SelectionNotChecked { .. } => {
+                Code::UnsupportedConstruct
+            }
             Self::TimedModelNotEmitted { .. } | Self::ExcludedClauseForm { .. } => {
                 Code::UnsupportedConstruct
             }
@@ -2212,7 +2223,9 @@ impl TemporalCause {
             Self::ConflictingClockWrite { .. } => "conflicting-clock-write",
             Self::ClockPresenceUnwritten { .. } => "clock-presence-unwritten",
             Self::UnprovedPresence { .. } => "unproved-presence",
-            Self::PresenceNotChecked { .. } => "not-yet-implemented",
+            Self::PresenceNotChecked { .. } | Self::SelectionNotChecked { .. } => {
+                "not-yet-implemented"
+            }
             Self::TimeInvariantShape { .. } => "time-invariant-shape",
             Self::UrgentGuardReadsClock { .. } => "urgent-guard-reads-clock",
             Self::TimedPredicate { cause, .. } => cause.cause().unwrap_or("invalid-value"),

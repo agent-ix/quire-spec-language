@@ -2505,7 +2505,12 @@ fn named_by(
         match (step, read) {
             (PlaceStep::Field(name) | PlaceStep::Union(name), (Some(read), _)) if name == read => {}
             (PlaceStep::Slot(_), (None, Some(_))) => slots.push(index),
-            _ => return None,
+            // A different field name, a field read where a slot is, a selector
+            // where a field is.
+            (PlaceStep::Field(_) | PlaceStep::Union(_), (Some(_), _))
+            | (PlaceStep::Field(_) | PlaceStep::Union(_), (None, _))
+            | (PlaceStep::Slot(_), (Some(_), _))
+            | (PlaceStep::Slot(_), (None, None)) => return None,
         }
     }
     Some(slots)
@@ -4401,9 +4406,10 @@ impl<'a> Typer<'a> {
     /// The checked node that carries a place id is not in `quire-checked`
     /// yet, so a `ref` of a place that has an id is refused
     /// `unknown_required_feature`/`unsupported-feature` at the `ref`. So is a
-    /// longer path of fields that names no place of the owner: an
-    /// intermediate field may be a reference to another object
-    /// (`ref(self.r.x)`), which needs the dereference semantics.
+    /// longer path, of fields or selectors, that names no place of the owner:
+    /// an intermediate field may be a reference to another object
+    /// (`ref(self.r.x)`, `ref(self.r.ts[0].x)`), which needs the dereference
+    /// semantics.
     pub(super) fn clock_ref(
         &mut self,
         owner: Node,
@@ -4434,7 +4440,7 @@ impl<'a> Typer<'a> {
                     .flatten()
             });
         let Some((steps, slots)) = place else {
-            return Err(if path.len() > 1 && selectors.is_empty() {
+            return Err(if path.len() > 1 {
                 unsupported()
             } else {
                 mismatch(location)

@@ -3780,6 +3780,29 @@ fn clock_parameters(
         .collect()
 }
 
+/// The span of the first selector `p[s]` in `form` that is no part of a
+/// `ref`'s place (FR-230 "Selection"): only `ref` checks a selector so far.
+fn unchecked_selector(form: &ExpressionForm) -> Option<Span> {
+    let mut under_ref = BTreeSet::new();
+    for node in form.expression.iter() {
+        if matches!(node.node(), ExprNode::Ref(_)) {
+            let mut pending = node.children();
+            while let Some(child) = pending.pop() {
+                if under_ref.insert(child.id()) {
+                    pending.extend(child.children());
+                }
+            }
+        }
+    }
+    let spans = form.spans.of_nodes(&form.expression)?;
+    form.expression
+        .iter()
+        .find(|node| {
+            matches!(node.node(), ExprNode::Select { .. }) && !under_ref.contains(&node.id())
+        })
+        .and_then(|node| spans.get(node.id().index()).copied())
+}
+
 /// One state clause, its clocks read out: a precondition's guard parts or a
 /// postcondition's resets, and the clause body with each clock constraint
 /// and reset replaced by the Boolean it contributes to the data reading.
@@ -3793,6 +3816,9 @@ fn read_clause(
         expression: clause.body.clone(),
         spans: clause.spans.body.clone(),
     };
+    if let Some(span) = unchecked_selector(&form) {
+        return Err(timed(TemporalCause::SelectionNotChecked { span }));
+    }
     let Some(located) = Located::with_parameters(&form, clocks, &clause.context, parameters) else {
         return Ok(ClauseClocks::None);
     };
