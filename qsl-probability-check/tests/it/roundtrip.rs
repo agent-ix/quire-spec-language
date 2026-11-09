@@ -31,6 +31,10 @@ const SOURCE: &str = include_str!("../fixtures/link.native");
 const CLAIM: &str = "\nprobabilistic Likely using inf on M over (m: M::Msg) under every scheduler on origin { probability >= 0.95 [ eventually holds(m.delivered) ] }\n";
 
 fn proof_request(claim: &str) -> Value {
+    proof_request_with(claim, |_, _, _, _, _| {})
+}
+
+fn proof_request_with(claim: &str, inspect: impl FnOnce(&ModelSystem<'_>, &[qsl_semantics::check::CheckedProbabilisticClaim], &ObligationIdentity, &[u8], ProbabilityDocumentLimits)) -> Value {
     let source = format!("{SOURCE}{claim}");
     let identity = SourceIdentity::new("test", "certificate-source");
     let limits = SpineLimits::default();
@@ -141,6 +145,7 @@ fn proof_request(claim: &str) -> Value {
     )
     .unwrap();
     let certificate = write_probability_certificate(&document, document_limits, &cancel).unwrap();
+    inspect(&system, package.graph().probabilistic_model().claims(), &item, &certificate, document_limits);
     json!({
         "source": {"authority": identity.authority, "identity": identity.identity, "content": source},
         "package_name": "certificate-fixture",
@@ -152,6 +157,40 @@ fn proof_request(claim: &str) -> Value {
         "certificate": String::from_utf8(certificate).unwrap(),
         "limits": {"bytes":1_000_000,"storage_bytes":8_000_000, "states":100, "edges":1000, "scalar_bits":128, "expansion":100_000, "stages":{}},
     })
+}
+
+#[trace("TC-764", "FR-282-AC-12", "FR-201-AC-11")]
+#[test]
+fn cancelling_at_every_observed_document_graph_and_arithmetic_poll_returns_no_acceptance() {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{Arc, OnceLock};
+    use qsl_replay::{check_probability_certificate_document, ExactProbabilityCertificateCheck, ProbabilityDocumentError};
+    use quire_exact::CancelCause;
+
+    proof_request_with(CLAIM, |system, claims, item, bytes, limits| {
+        let check = |cancel: &Cancel| check_probability_certificate_document(system, claims, item, bytes, limits, cancel);
+        let live = Cancel::new();
+        let _counting = live.count_charges();
+        assert!(matches!(check(&live).unwrap(), ExactProbabilityCertificateCheck::Accepted(_)));
+        let total = live.charges();
+        assert!(total > 0);
+        for cause in [CancelCause::Requested, CancelCause::Deadline] {
+            for at in 1..=total {
+                let slot = Arc::new(OnceLock::<Cancel>::new());
+                let weak = Arc::downgrade(&slot);
+                let seen = Arc::new(AtomicU32::new(0));
+                let observed = Arc::clone(&seen);
+                let cancel = Cancel::observing(move || {
+                    if observed.fetch_add(1, Ordering::Relaxed) + 1 == at {
+                        weak.upgrade().unwrap().get().unwrap().cancel(cause);
+                    }
+                });
+                slot.set(cancel.clone()).unwrap();
+                assert_eq!(check(&cancel), Err(ProbabilityDocumentError::Cancelled(cause)), "poll {at}/{total}");
+                assert_eq!(seen.load(Ordering::Relaxed), at);
+            }
+        }
+    });
 }
 
 fn run(request: &Value, arguments: &[&str]) -> (i32, Value) {
@@ -331,4 +370,29 @@ fn child_limits_and_cancellation_produce_no_truth_value() {
     let (code, result) = run(&original, &["--max-input-bytes", "1"]);
     assert_ne!(code, 0, "{result}");
     assert!(result.get("value").is_none());
+}
+
+#[trace("TC-764", "FR-282-AC-12")]
+#[test]
+fn exact_byte_ceilings_retain_the_actual_offered_lengths() {
+    let original = proof_request(CLAIM);
+    let mut request = original.clone();
+    let certificate_bytes = request["certificate"].as_str().unwrap().len();
+    request["limits"]["bytes"] = json!(certificate_bytes - 1);
+    let (code, result) = run(&request, &[]);
+    assert_eq!(code, 2);
+    assert_eq!(result["limit"], json!({"setting":"certificate.bytes", "bound":certificate_bytes - 1, "actual":certificate_bytes}));
+    let mut request = original.clone();
+    let source_bytes = request["source"]["content"].as_str().unwrap().len();
+    request["limits"]["stages"]["s1.input_bytes"] = json!(source_bytes - 1);
+    let (code, result) = run(&request, &[]);
+    assert_eq!(code, 2);
+    assert_eq!(result["limit"], json!({"setting":"s1.input_bytes", "bound":source_bytes - 1, "actual":source_bytes}));
+    let mut request = original;
+    request["limits"]["storage_bytes"] = json!(0);
+    let (code, result) = run(&request, &[]);
+    assert_eq!(code, 2);
+    assert_eq!(result["limit"]["setting"], "certificate.storage_bytes");
+    assert_eq!(result["limit"]["bound"], 0);
+    assert!(result["limit"]["actual"].as_u64().unwrap() > 0);
 }

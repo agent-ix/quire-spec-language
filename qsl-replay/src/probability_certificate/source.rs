@@ -77,6 +77,10 @@ pub enum ProbabilitySourceError {
         cause: SourceReadCause,
         /// Exact source provenance and diagnostic.
         error: Box<SourceReadError>,
+        /// Caller source byte ceiling.
+        byte_bound: usize,
+        /// Offered source byte length.
+        byte_length: usize,
     },
     /// A compiler stage refused, stopped or was cancelled.
     #[error("probability certificate compilation stopped: {0:?}")]
@@ -123,6 +127,8 @@ pub fn check_probability_certificate_source(
     .map_err(|refusal| ProbabilitySourceError::Source {
         cause: refusal.cause,
         error: Box::new(refusal.error),
+        byte_bound: limits.spine.source.source_bytes,
+        byte_length: bytes.len(),
     })?;
     let actual = SourceComponent {
         authority: identity.authority.clone(),

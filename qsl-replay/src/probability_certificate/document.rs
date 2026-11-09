@@ -422,6 +422,9 @@ fn subject_graph(
     cancel: &Cancel,
 ) -> Result<(CheckerGraph, ProbabilityObjective, Bound), ProbabilityDocumentError> {
     use qsl_eval::simulation::model::{TimedSubjectRefusal, TimedSystem};
+    if !std::ptr::eq(system.package().graph().probabilistic_model().claims(), claims) {
+        return Err(ProbabilityDocumentError::IdentityMismatch);
+    }
     let claim = bind_claim(claims, item, cancel)?;
     if !claim.fairness.is_empty()
         || !matches!(
