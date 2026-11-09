@@ -80,8 +80,10 @@ const CLAUSE_FAMILY: Option<DeclarationFamily> = Some(DeclarationFamily::Tempora
 
 /// `runtime_invariant`/`established-invariant-broken`: the diagnostic of a
 /// refusal whose own type names no code.
-const BROKEN: CatalogCode = CatalogCode::new("runtime_invariant", "established-invariant-broken");
-const NOT_YET: CatalogCode = CatalogCode::new("unsupported_construct", "not-yet-implemented");
+pub(super) const BROKEN: CatalogCode =
+    CatalogCode::new("runtime_invariant", "established-invariant-broken");
+pub(super) const NOT_YET: CatalogCode =
+    CatalogCode::new("unsupported_construct", "not-yet-implemented");
 const EXPRESSION_FORM: CatalogCode = CatalogCode::new("unsupported_construct", "expression-form");
 const INVALID_VALUE: CatalogCode = CatalogCode::new("invalid_runtime_input", "invalid-value");
 
@@ -822,7 +824,7 @@ fn timed_refinement_refusal(refusal: &TimedRefinementRefusal) -> Refusal {
     }
 }
 
-fn admission(failure: &AdmissionFailure) -> Refusal {
+pub(super) fn admission(failure: &AdmissionFailure) -> Refusal {
     let declined = |cause, record: &qsl_semantics::model::observation::AdmissionRecord| {
         Refusal::Declined(
             cause,

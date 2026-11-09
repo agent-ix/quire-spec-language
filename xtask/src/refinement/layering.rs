@@ -1214,7 +1214,7 @@ mod tests {
     }
 
     /// FR-489-AC-1/2/4/5: the production snapshot contains exactly the real
-    /// EN-1, EN-4 and EN-6 registrations and the two witness arms.
+    /// EN-1, EN-4, EN-5 and EN-6 registrations and the two witness arms.
     #[trace("TC-1272", "FR-489-AC-1", "FR-489-AC-2", "FR-489-AC-4", "FR-489-AC-5")]
     #[test]
     fn production_snapshot_contains_only_linked_engine_registrations() {
@@ -1257,6 +1257,20 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["en-4"]
         );
+        let CandidateOutcome::Candidates(exact) = first.candidates_for_evidence(
+            Capability::ProbabilisticSatisfaction,
+            &ItemEvidence::Kind(EvidenceKind::Exact),
+        ) else {
+            panic!("EN-5 gives an exact evidence-qualified candidate set");
+        };
+        assert_eq!(
+            exact
+                .candidates()
+                .iter()
+                .map(|candidate| candidate.id().as_str())
+                .collect::<Vec<_>>(),
+            ["en-5"]
+        );
         let CandidateOutcome::Candidates(value) = first.candidates(Capability::ValueValidity)
         else {
             panic!("the value-validity arm gives a candidate set");
@@ -1287,7 +1301,14 @@ mod tests {
                 .iter()
                 .map(|descriptor| descriptor.id().as_str())
                 .collect::<Vec<_>>(),
-            ["en-1", "en-4", "en-6", "value-checker", "contract-checker"]
+            [
+                "en-1",
+                "en-4",
+                "en-5",
+                "en-6",
+                "value-checker",
+                "contract-checker"
+            ]
         );
     }
 

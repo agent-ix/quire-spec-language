@@ -29,6 +29,7 @@ mod build;
 mod digital;
 mod fair;
 mod finite_horizon;
+pub mod manifest;
 pub(crate) mod plan;
 mod rows;
 mod settle;

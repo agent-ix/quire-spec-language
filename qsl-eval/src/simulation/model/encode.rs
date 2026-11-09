@@ -552,6 +552,16 @@ pub(crate) fn reference_enc(reference: &ObjectReference) -> Enc {
     )
 }
 
+/// FR-181's reference triple as RFC 8785 text: the encoding FR-196 names for
+/// the `binding` member of a probability product key.
+///
+/// # Errors
+///
+/// [`Error`] when the reference is unencodable.
+pub fn reference_canonical_text(reference: &ObjectReference) -> Result<String, Error> {
+    reference_enc(reference).canonical_text(Limits::new(u64::MAX))
+}
+
 /// The UnitId text: the RFC 8785 text of its structural identity record.
 fn unit_enc(unit: &quire_exact::UnitId) -> Enc {
     identity_text(unit_identity_enc(unit), "a unit identity")

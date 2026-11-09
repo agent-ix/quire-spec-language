@@ -13,6 +13,7 @@ mod dense_route;
 mod derived_request;
 mod digital_clocks;
 mod exact_probabilistic;
+mod exact_probabilistic_item;
 mod example_units;
 mod fill;
 mod fixture_ids;
