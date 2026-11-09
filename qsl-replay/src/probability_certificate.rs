@@ -534,7 +534,13 @@ fn model_distributions(
     };
     if let Some(workload) = workload {
         let steps = system.weighted_steps(state, workload).map_err(&mut expansion)?
-            .map_err(|_| ExactProbabilityGraphError::UnsupportedDraw)?;
+            .map_err(|stop| {
+                failure(match stop {
+                    qsl_eval::simulation::model::Unsteppable::NotMarkov(_) => crate::ExactProbBuildIssue::NotMarkov,
+                    qsl_eval::simulation::model::Unsteppable::UndecidedSuccessor(_) => crate::ExactProbBuildIssue::UndecidedSuccessor,
+                });
+                ExactProbabilityGraphError::ExpansionRefused
+            })?;
         if steps.iter().any(|step| matches!(step.transition, qsl_eval::simulation::model::TransitionId::Stutter)) {
             return if steps.len() == 1 { Ok(Vec::new()) } else { Err(ExactProbabilityGraphError::UnsupportedDraw) };
         }

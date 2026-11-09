@@ -368,6 +368,13 @@ pub fn read_probability_certificate(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
+    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
+    read_document(bytes, limits, cancel, &mut meter)
+}
+
+fn read_document(
+    bytes: &[u8], limits: ProbabilityDocumentLimits, cancel: &Cancel, meter: &mut quire_exact::Meter,
+) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
     poll(cancel)?;
     if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limits.bytes {
         return Err(exceeded(
@@ -429,12 +436,11 @@ pub fn read_probability_certificate(
             .collect::<Result<Vec<_>, _>>()?,
     )?;
     let mut values = Vec::new();
-    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
     for row in wire.values {
         poll(cancel)?;
         values.push(ExactProbabilityValue {
             state: decode_key(&row.state)?,
-            value: ratio(row.value, limits.scalar_bits, &mut meter, cancel)?,
+            value: ratio(row.value, limits.scalar_bits, meter, cancel)?,
         });
     }
     ordered(values.iter().map(|row| row.state.clone()))?;
@@ -655,7 +661,8 @@ pub fn check_probability_certificate_document(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
-    let document = match read_probability_certificate(bytes, limits, cancel) {
+    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
+    let document = match read_document(bytes, limits, cancel, &mut meter) {
         Ok(document) => document,
         Err(error) => return document_admission_error(error),
     };
@@ -703,7 +710,7 @@ pub fn check_probability_certificate_document(
             return Ok(rejected(ProbabilityCertificateRule::RankBroken, key.clone()));
         }
     }
-    check_document_equalities(&graph, &values, objective, &bound, limits, cancel)
+    check_document_equalities(&graph, &values, objective, &bound, limits, cancel, &mut meter)
 }
 
 fn malformed_ranking() -> ExactProbabilityCertificateCheck {
@@ -748,8 +755,8 @@ fn check_document_equalities(
     bound: &Bound,
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
+    meter: &mut quire_exact::Meter,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
-    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
     for (key, state) in &graph.states {
         poll(cancel)?;
         let value = values.get(key).ok_or(ProbabilityDocumentError::Malformed)?;
@@ -777,18 +784,18 @@ fn check_document_equalities(
                             .ok_or(ProbabilityDocumentError::Malformed)?;
                         let product = arithmetic(
                             quire_exact::RationalArithmetic::Multiply(&edge.probability, next),
-                            &mut meter,
+                            meter,
                             cancel,
                         )?;
                         check_scalar(&product, limits)?;
                         mass = arithmetic(
                             quire_exact::RationalArithmetic::Add(&mass, &edge.probability),
-                            &mut meter,
+                            meter,
                             cancel,
                         )?;
                         sum = arithmetic(
                             quire_exact::RationalArithmetic::Add(&sum, &product),
-                            &mut meter,
+                            meter,
                             cancel,
                         )?;
                         check_scalar(&mass, limits)?;
@@ -1022,13 +1029,16 @@ mod tests {
         };
         let values = BTreeMap::from([(root, rational(1)), (target, rational(1))]);
         let check = |limits| {
+            let cancel = Cancel::new();
+            let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
             check_document_equalities(
                 &graph,
                 &values,
                 ProbabilityObjective::Minimum,
                 &Bound::AtLeast(rational(1)),
                 limits,
-                &Cancel::new(),
+                &cancel,
+                &mut meter,
             )
         };
         assert!(matches!(
