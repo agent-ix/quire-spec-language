@@ -53,7 +53,7 @@ fn checked_operation_keys_are_the_graphs_shared_structural_identities() {
     let root = graph.function_state(0).expect("w").body;
     let [left, right] = children(root);
     let root_key = graph_body(&graph, "w");
-    assert_eq!(root.node_key(), Some(&root_key));
+    assert_eq!(graph.node_key(root), Some(&root_key));
     let application = graph
         .semantic_graph()
         .node(root_key.clone())
@@ -74,11 +74,11 @@ fn checked_operation_keys_are_the_graphs_shared_structural_identities() {
         })
         .collect();
     assert_eq!(targets.len(), 2);
-    assert_eq!(left.node_key(), Some(targets[0]));
-    assert_eq!(right.node_key(), Some(targets[1]));
+    assert_eq!(graph.node_key(left), Some(targets[0]));
+    assert_eq!(graph.node_key(right), Some(targets[1]));
     assert_eq!(
-        left.node_key(),
-        right.node_key(),
+        graph.node_key(left),
+        graph.node_key(right),
         "equal additions share a node"
     );
     assert_ne!(
@@ -86,14 +86,14 @@ fn checked_operation_keys_are_the_graphs_shared_structural_identities() {
         right.location(),
         "source sites stay distinct"
     );
-    assert_ne!(root.node_key(), left.node_key());
+    assert_ne!(graph.node_key(root), graph.node_key(left));
     let other = graph_body(&graph, "other");
     assert_eq!(
-        graph.function_state(1).expect("other").body.node_key(),
+        graph.node_key(graph.function_state(1).expect("other").body),
         Some(&other)
     );
     assert_ne!(other, root_key);
-    assert_ne!(Some(&other), left.node_key());
+    assert_ne!(Some(&other), graph.node_key(left));
 
     let mut relocated = root.body().clone();
     assert_eq!(
@@ -107,9 +107,9 @@ fn checked_operation_keys_are_the_graphs_shared_structural_identities() {
     let [moved_left, moved_right] = children(moved);
     assert_eq!(moved.location(), moved_left.location());
     assert_eq!(moved_left.location(), moved_right.location());
-    assert_eq!(moved.node_key(), root.node_key());
-    assert_eq!(moved_left.node_key(), left.node_key());
-    assert_eq!(moved_right.node_key(), right.node_key());
+    assert_eq!(graph.node_key(moved), graph.node_key(root));
+    assert_eq!(graph.node_key(moved_left), graph.node_key(left));
+    assert_eq!(graph.node_key(moved_right), graph.node_key(right));
 }
 
 #[trace("TC-415", "FR-093-AC-62")]
@@ -117,14 +117,14 @@ fn checked_operation_keys_are_the_graphs_shared_structural_identities() {
 fn checked_operation_keys_resolve_recursive_call_drafts() {
     let graph = check(vec![recursive("f", "f")]).expect("the recursive function checks");
     let root = graph.function_state(0).expect("f").body;
-    assert_eq!(root.node_key(), Some(&graph_body(&graph, "f")));
+    assert_eq!(graph.node_key(root), Some(&graph_body(&graph, "f")));
     let call = root
         .descendants()
         .into_iter()
         .find(|node| matches!(node.kind(), NodeKind::Call { .. }))
         .expect("the recursive branch calls f");
-    let call_key = call
-        .node_key()
+    let call_key = graph
+        .node_key(call)
         .expect("settle retains the recursive call key");
     let application = graph
         .semantic_graph()
@@ -147,7 +147,7 @@ fn inline_literals_have_no_expression_key_and_locals_name_their_parameter() {
     let root = graph.function_state(0).expect("f").body;
     let [local, literal] = children(root);
     assert!(
-        literal.node_key().is_none(),
+        graph.node_key(literal).is_none(),
         "an inline literal is not its type node"
     );
     let parameter = graph
@@ -156,17 +156,16 @@ fn inline_literals_have_no_expression_key_and_locals_name_their_parameter() {
         .expect("f node")
         .function_parameters()
         .expect("f parameters");
-    assert_eq!(local.node_key(), Some(&parameter[0]));
+    assert_eq!(graph.node_key(local), Some(&parameter[0]));
 }
 
 #[trace("TC-415", "FR-093-AC-62")]
 #[test]
-fn a_cloned_body_cannot_silently_reuse_keys_from_another_package() {
+fn a_cloned_body_keeps_its_owning_graph_context_without_shared_mutation() {
     let graph = source("function f using v(): Boolean pure { true and false }");
     let body = graph.function_state(0).expect("f").body.body().clone();
-    let original = body
-        .root()
-        .node_key()
+    let original = graph
+        .node_key(body.root())
         .expect("the admitted body has a key")
         .clone();
     let scope = empty_scope();
@@ -194,18 +193,21 @@ fn a_cloned_body_cannot_silently_reuse_keys_from_another_package() {
         Some(&original),
         "the second package really assigns a different authoritative key"
     );
-    let Err(refusal) = lowering.finish(body.root().location()) else {
-        panic!("the body already belongs to its original graph")
-    };
-    assert!(
-        matches!(refusal.cause, CheckCause::InternalFault(ref cause) if matches!(**cause, KeyFault::ExpressionIdentityConflict)),
-        "{refusal:?}"
-    );
+    let lowered = lowering.finish(body.root().location()).expect("the second context owns its keys");
+    let identity = std::sync::Arc::as_ptr(body.identity()) as usize;
+    let retained = lowered.checked_node_keys.get(&identity).expect("the body is retained");
+    assert!(std::sync::Arc::ptr_eq(body.identity(), &retained.owner));
+    assert_eq!(retained.keys[body.root().id().index()].as_ref(), changed.key().as_ref());
     assert_eq!(
-        body.root().node_key(),
+        graph.node_key(body.root()),
         Some(&original),
-        "refusal cannot overwrite the admitted identity"
+        "building another context never mutates the original graph or body"
     );
+    let foreign = source("function f using v(): Boolean pure { true and false }");
+    let foreign_node = foreign.function_state(0).expect("foreign f").body;
+    assert!(graph.node_key(foreign_node).is_none(), "structural equality grants no body ownership");
+    assert!(foreign.node_key(body.root()).is_none());
+    assert_eq!(foreign.node_key(foreign_node), Some(&graph_body(&foreign, "f")));
 }
 
 /// Count resolution work at the same private mapper used by settlement.
@@ -252,7 +254,7 @@ fn resolution_visits(functions: usize, pending: bool) -> usize {
                 visits += 1;
                 Ok(match reference {
                     NodeRef::Pending(_) => NodeRef::Admitted(
-                        root.node_key()
+                        graph.node_key(root)
                             .expect("the source supplied its real key")
                             .clone(),
                     ),

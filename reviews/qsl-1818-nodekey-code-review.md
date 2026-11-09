@@ -163,3 +163,56 @@ No Cargo, test rerun, matrix/coverage probe or aggregate gate was performed in t
   "new_findings": []
 }
 ```
+
+## New findings (post-review aggregate gate)
+
+The lead-run full default unit gate reported 887 passed, 1 failed and 1 ignored. Formatting and Clippy passed; the failed test is check::family::checking_tests::check_stage_sources_have_no_global_or_thread_local_state. Its error identifies both the OnceLock import and type in check/ir.rs. The failure is retained in /tmp/l5-nodekey-gate-unit-default.log; no gate was rerun by this reviewer.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | high | The required default unit gate fails because check/ir.rs introduces OnceLock, which the published FR-062-AC-3 census explicitly forbids naming in non-test check/family source. The cache being body-owned does not satisfy this syntactic obligation; a file/type-alias exemption or scanner-only weakening would contradict the current AC. Publish construction-owned immutable keys, or first resolve the owning specification and general census contract without allowing actual global/thread-local state. | qsl-semantics/src/check/ir.rs:18-21; qsl-semantics/src/check/family.rs:3375-3387 |
+
+## Gate-finding assessment
+
+FR-062-AC-3 expressly requires the conservative no-interior-mutable-type source census; its inspection section names OnceLock, and its positive control deliberately includes a function-local OnceLock. The cache is owned by a checked body, not a process static, so this observation does not establish that the implementation actually reads global state. Nevertheless the named-type scan is itself part of the current acceptance contract, not an accidental hidden guard. The per-check Tally allowance is specifically scoped and copied rather than shared by clone; it is not an automatic permission for a shared checked-body OnceLock.
+
+Construction-owned immutable metadata avoids changing this contract. A general guard refinement would instead need the owning specification resolved/reviewed and negative controls for real globals/thread locals and aliasing, not a filename whitelist or moving/renaming the same type past the scan. The typing-context read-only rule must remain respected; an output under construction and already-admitted shared input must not be conflated. No implementation design or specification amendment is performed by this review.
+
+## Current gate verdict
+
+NOT MERGEABLE: FND-001 remains fixed by disposition round 1, while new FND-002 is unresolved. Earlier PASS statements above are preserved review history and do not supersede this newly observed required-gate failure. The gap-analysis file remains byte-identical with its existing computed-audit NOT COMPLETED limitation. No Cargo, matrix/coverage probe, proof, source edit or push was performed in this gate-finding pass.
+
+## Gate Finding Data
+
+```json
+{
+  "clean": false,
+  "scope": [
+    {
+      "id": "FR-062-AC-3",
+      "path": "spec/functional/FR-062-implement-checked-family-contract.md",
+      "role": "examined",
+      "excerpt": "This is a design rule: the held counter is no `static`, starts at zero in each scope and is copied by a clone. The scan enforces only that the scanned source has no `static mut`, `thread_local!` or `lazy_static!` item and names none of the std interior-mutable, lazy and atomic types."
+    }
+  ],
+  "findings": [
+    {
+      "fnd": "FND-002",
+      "severity": "high",
+      "confidence": "high",
+      "method": "code-review",
+      "check": "code-bug",
+      "artifact_id": "qsl-semantics/src/check/ir.rs::NodeKeySlots",
+      "related_ids": [
+        "FR-062-AC-3",
+        "FR-093-AC-62"
+      ],
+      "path": "qsl-semantics/src/check/ir.rs",
+      "lines": "18-21",
+      "excerpt": "use std::sync::{Arc, OnceLock};\n\n/// Immutable producer identities, shared by exact clones of one checked body.\npub(in crate::check) type NodeKeySlots = Arc<OnceLock<Vec<Option<NodeKey>>>>;",
+      "finding": "The required default unit gate fails because check/ir.rs introduces OnceLock, which the published FR-062-AC-3 census explicitly forbids naming in non-test check/family source. The cache being body-owned does not satisfy this syntactic obligation; a file/type-alias exemption or scanner-only weakening would contradict the current AC. Publish construction-owned immutable keys, or first resolve the owning specification and general census contract without allowing actual global/thread-local state."
+    }
+  ],
+  "bindings": []
+}
+```

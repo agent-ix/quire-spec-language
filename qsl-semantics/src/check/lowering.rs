@@ -907,13 +907,19 @@ struct Draft {
     content: NodeContent,
 }
 
-/// One exact checked body's expression-to-node correspondence. The live slot
-/// owner keeps its allocation distinct until all pending graph keys settle.
+/// One exact checked body's expression-to-node correspondence. The live body
+/// token keeps its allocation distinct until all pending graph keys settle.
 struct CheckedBodyKeys {
-    slots: super::ir::NodeKeySlots,
+    owner: std::sync::Arc<()>,
     length: usize,
     location: Location,
     nodes: Vec<(NodeId, Option<NodeRef>)>,
+}
+
+/// A body's immutable expression identities in one admitted graph context.
+pub(crate) struct CheckedNodeKeys {
+    pub(crate) owner: std::sync::Arc<()>,
+    pub(crate) keys: Vec<Option<NodeKey>>,
 }
 
 /// A package's functions that call each other, lowered together: callees
@@ -929,6 +935,7 @@ pub(crate) struct FunctionGroup {
 /// What lowering yields: the graph, its model correspondence and each
 /// function's node key by index.
 pub(crate) struct Lowered {
+    pub(crate) checked_node_keys: BTreeMap<usize, CheckedNodeKeys>,
     pub(crate) graph: SemanticGraph,
     pub(crate) correspondence: ModelCorrespondence,
     pub(crate) functions: Vec<Option<NodeKey>>,
@@ -1110,7 +1117,7 @@ pub(crate) struct Lowering<'a> {
     related_renames: Vec<(Location, String)>,
     /// The protocol whose S4 bodies are being lowered, when any.
     active_protocol: Option<String>,
-    /// Indexed only by the live slot allocation's address, not by a semantic
+    /// Indexed only by the live body token's address, not by a semantic
     /// identity, source location or body-local node index.
     checked_body_keys: BTreeMap<usize, CheckedBodyKeys>,
     /// Only references introduced since the preceding settlement that still
@@ -2152,7 +2159,7 @@ impl<'a> Lowering<'a> {
     /// function's key. Every node that no region denotes gets its one
     /// `generated` occurrence (FR-093), at `root`.
     pub(crate) fn finish(mut self, root: &Location) -> Result<Lowered, CheckRefusal> {
-        self.publish_checked_node_keys()?;
+        let checked_node_keys = self.finish_checked_node_keys()?;
         self.graph.rank();
         let enclosing = enclosing_declarations(&self.graph, self.occurrences);
         for key in self.graph.nodes.keys() {
@@ -2221,6 +2228,7 @@ impl<'a> Lowering<'a> {
             })
             .collect();
         Ok(Lowered {
+            checked_node_keys,
             graph: self.graph,
             correspondence: self.correspondence,
             functions: self
@@ -2244,13 +2252,13 @@ impl<'a> Lowering<'a> {
     /// Preserve lowering's actual result; the arena index identifies a slot
     /// only inside this live body and never participates in its graph key.
     fn retain_checked_node(&mut self, node: CheckedNode<'_>, term: &LeafTerm) {
-        let slots = node.body().node_key_slots();
-        let owner = std::sync::Arc::as_ptr(slots) as usize;
+        let identity = node.body().identity();
+        let owner = std::sync::Arc::as_ptr(identity) as usize;
         let body = self
             .checked_body_keys
             .entry(owner)
             .or_insert_with(|| CheckedBodyKeys {
-                slots: std::sync::Arc::clone(slots),
+                owner: std::sync::Arc::clone(identity),
                 length: node.body().len(),
                 location: node.location().clone(),
                 nodes: Vec::new(),
@@ -2281,11 +2289,12 @@ impl<'a> Lowering<'a> {
         Ok(())
     }
 
-    fn publish_checked_node_keys(&self) -> Result<(), CheckRefusal> {
-        for body in self.checked_body_keys.values() {
+    fn finish_checked_node_keys(&mut self) -> Result<BTreeMap<usize, CheckedNodeKeys>, CheckRefusal> {
+        let mut retained = BTreeMap::new();
+        for (identity, body) in std::mem::take(&mut self.checked_body_keys) {
             let mut keys = vec![None; body.length];
             let mut seen = vec![false; body.length];
-            for (id, reference) in &body.nodes {
+            for (id, reference) in body.nodes {
                 let key = reference
                     .as_ref()
                     .map(|reference| {
@@ -2301,13 +2310,9 @@ impl<'a> Lowering<'a> {
                 seen[id.index()] = true;
                 keys[id.index()] = key;
             }
-            if let Err(keys) = body.slots.set(keys) {
-                if body.slots.get() != Some(&keys) {
-                    return Err(fault(&body.location, KeyFault::ExpressionIdentityConflict));
-                }
-            }
+            retained.insert(identity, CheckedNodeKeys { owner: body.owner, keys });
         }
-        Ok(())
+        Ok(retained)
     }
 
     /// Record an occurrence of `key`: a draft's waits until it is keyed.

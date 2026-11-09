@@ -15,10 +15,7 @@ use std::collections::BTreeSet;
 use std::convert::Infallible;
 use std::fmt;
 use std::ops::ControlFlow;
-use std::sync::{Arc, OnceLock};
-
-/// Immutable producer identities, shared by exact clones of one checked body.
-pub(in crate::check) type NodeKeySlots = Arc<OnceLock<Vec<Option<NodeKey>>>>;
+use std::sync::Arc;
 
 /// A local slot of one function frame or checked expression.
 pub type Slot = usize;
@@ -393,7 +390,7 @@ impl Node {
 pub struct CheckedBody {
     /// Never empty: the root is the last node.
     nodes: Vec<Node>,
-    node_keys: NodeKeySlots,
+    identity: Arc<()>,
 }
 
 impl fmt::Debug for CheckedBody {
@@ -441,7 +438,7 @@ impl CheckedBody {
         });
         Self {
             nodes,
-            node_keys: Arc::default(),
+            identity: Arc::default(),
         }
     }
 
@@ -466,7 +463,7 @@ impl CheckedBody {
     pub fn from_nodes(nodes: Vec<(NodeKind<NodeId>, ValueType)>) -> Self {
         assert!(!nodes.is_empty(), "a body holds its root");
         Self {
-            node_keys: Arc::default(),
+            identity: Arc::default(),
             nodes: nodes
                 .into_iter()
                 .map(|(kind, value_type)| Node {
@@ -482,9 +479,10 @@ impl CheckedBody {
         }
     }
 
-    /// The destination for identities retained by this body's lowering pass.
-    pub(in crate::check) fn node_key_slots(&self) -> &NodeKeySlots {
-        &self.node_keys
+    /// Process-local ownership, preserved by exact body clones. This token
+    /// never participates in a structural graph identity.
+    pub(in crate::check) fn identity(&self) -> &Arc<()> {
+        &self.identity
     }
 
     /// The id of the node at `index` of [`Self::from_nodes`]'s input.
@@ -594,7 +592,7 @@ impl BodyBuilder {
         self.nodes.push(root);
         CheckedBody {
             nodes: self.nodes,
-            node_keys: Arc::default(),
+            identity: Arc::default(),
         }
     }
 }
@@ -636,17 +634,6 @@ impl<'a> CheckedNode<'a> {
     /// The node's source location.
     pub fn location(self) -> &'a Location {
         &self.node().location
-    }
-
-    /// The structural node identity retained by the checker when lowering this
-    /// expression. Equal operations share a key even at different locations.
-    ///
-    /// Local reads name their parameter node. Inline literals and dependency
-    /// references have no standalone node in this graph and return `None`, as
-    /// do bodies that have not been lowered. This accessor never derives an
-    /// identity from the location or the body's arena index.
-    pub fn node_key(self) -> Option<&'a NodeKey> {
-        self.body.node_keys.get()?.get(self.id.0)?.as_ref()
     }
 
     /// Whether the node is a numeric-equality part of a float ordering's
