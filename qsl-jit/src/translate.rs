@@ -114,6 +114,10 @@ pub(crate) enum OpKind {
         value_type: ValueType,
         into: Carried,
     },
+    /// The arena's length, taken before a call whose callee adds handles.
+    Mark,
+    /// Cut the arena back to a mark, keeping the callee's result.
+    Reclaim,
     /// A register `Integer` moved to the arena, to meet a handle.
     Box,
     /// A handle whose value fits a register, moved back to one.
@@ -264,7 +268,9 @@ fn fits(low: i128, high: i128) -> bool {
 
 enum State {
     InProgress,
-    Done(FuncId, Ty, Vec<Option<Ty>>),
+    /// The function, its result, its parameters and whether it (or a callee)
+    /// adds handles to the arena.
+    Done(FuncId, Ty, Vec<Option<Ty>>, bool),
     Unsupported,
 }
 
@@ -292,6 +298,9 @@ struct Emitter<'a, 'b, 'm> {
     meter: &'a mut PrepareMeter<'m>,
     /// A backend invariant a code-generation step could not uphold.
     refused: Option<&'static str>,
+    /// Whether this function adds handles to the call's arena (itself or
+    /// through a callee).
+    allocates: bool,
 }
 
 impl<'a, 'm> Compiler<'a, 'm> {
@@ -374,7 +383,7 @@ impl<'a, 'm> Compiler<'a, 'm> {
     /// Translate the function at `index` (once) after the functions it calls.
     fn function(&mut self, index: usize, depth: usize) -> Result<(FuncId, Ty), Failure> {
         match self.state.get(&index) {
-            Some(State::Done(id, ty, _)) => return Ok((*id, *ty)),
+            Some(State::Done(id, ty, ..)) => return Ok((*id, *ty)),
             Some(State::Unsupported) | Some(State::InProgress) => {
                 return Err(self.placeholder(index));
             }
@@ -426,8 +435,9 @@ impl<'a, 'm> Compiler<'a, 'm> {
             .map(|(_, t)| type_of(t))
             .collect();
         match self.build(index, &parameters, function.body) {
-            Ok((id, ty)) => {
-                self.state.insert(index, State::Done(id, ty, parameters));
+            Ok((id, ty, allocates)) => {
+                self.state
+                    .insert(index, State::Done(id, ty, parameters, allocates));
                 Ok((id, ty))
             }
             Err(failure) => {
@@ -449,7 +459,7 @@ impl<'a, 'm> Compiler<'a, 'm> {
         index: usize,
         parameters: &[Option<Ty>],
         body: CheckedNode<'_>,
-    ) -> Result<(FuncId, Ty), Failure> {
+    ) -> Result<(FuncId, Ty, bool), Failure> {
         let module = &mut *self.module;
         let pointer = module.target_config().pointer_type();
         let mut signature = module.make_signature();
@@ -467,7 +477,7 @@ impl<'a, 'm> Compiler<'a, 'm> {
         let mut context = module.make_context();
         context.func.signature = signature;
         let mut builder_context = FunctionBuilderContext::new();
-        let ty = {
+        let (ty, allocates) = {
             let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
             let entry = builder.create_block();
             builder.append_block_params_for_function_params(entry);
@@ -488,6 +498,7 @@ impl<'a, 'm> Compiler<'a, 'm> {
                 slots: HashMap::new(),
                 meter: &mut *self.meter,
                 refused: None,
+                allocates: false,
             };
             for (position, ty) in parameters.iter().enumerate() {
                 if let Some(ty) = ty {
@@ -511,8 +522,9 @@ impl<'a, 'm> Compiler<'a, 'm> {
             let zero = emitter.builder.ins().iconst(types::I64, 0);
             emitter.builder.ins().return_(&[zero]);
             emitter.builder.seal_all_blocks();
+            let allocates = emitter.allocates;
             emitter.builder.finalize(frontend);
-            ty
+            (ty, allocates)
         };
         module
             .define_function(id, &mut context)
@@ -525,7 +537,7 @@ impl<'a, 'm> Compiler<'a, 'm> {
         };
         module.clear_context(&mut context);
         self.meter.charge_block(code_bytes)?;
-        Ok((id, ty))
+        Ok((id, ty, allocates))
     }
 }
 
@@ -652,9 +664,10 @@ impl Emitter<'_, '_, '_> {
                 if !(left_ty.is_integer() && right_ty.is_integer()) {
                     return Err(self.unsupported(node));
                 }
-                // A remainder with no admitted selection is the interpreter's
-                // invariant stop; it is listed unsupported, not translated.
-                if *operator == IntegerDivisionOperator::Rem && selection.is_none() {
+                // A `div` or `rem` with no admitted selection is the
+                // interpreter's invariant stop; it is listed unsupported, not
+                // translated.
+                if lacks_selection(*operator, selection.as_ref()) {
                     return Err(self.unsupported(node));
                 }
                 // FR-562: a divisor interval that excludes 0 and a result
@@ -943,11 +956,29 @@ impl Emitter<'_, '_, '_> {
                 function,
                 arguments,
             } => {
-                let Some(State::Done(callee, result_ty, parameters)) = self.state.get(function)
+                let Some(State::Done(callee, result_ty, parameters, callee_allocates)) =
+                    self.state.get(function)
                 else {
                     return Err(self.unsupported(node));
                 };
-                let (callee, result_ty, parameters) = (*callee, *result_ty, parameters.clone());
+                let (callee, result_ty, parameters, callee_allocates) =
+                    (*callee, *result_ty, parameters.clone(), *callee_allocates);
+                // A callee that adds handles has them dropped when it returns
+                // (the interpreter drops its intermediates as it goes): the
+                // arena mark is taken before the arguments, and the arena is
+                // cut back to it keeping only the result.
+                let mark = if callee_allocates {
+                    self.allocates = true;
+                    let zero = self.builder.ins().iconst(types::I64, 0);
+                    Some(self.shim_call(
+                        node,
+                        OpKind::Mark,
+                        [(zero, Ty::Boolean), (zero, Ty::Boolean)],
+                        Repr::Register,
+                    ))
+                } else {
+                    None
+                };
                 let mut values = Vec::with_capacity(arguments.len());
                 for (position, argument) in arguments.iter().enumerate() {
                     let emitted = self.emit(node.at(*argument), depth + 1)?;
@@ -991,8 +1022,16 @@ impl Emitter<'_, '_, '_> {
                     .builder
                     .ins()
                     .call(function_ref, &[self.context, address]);
-                let result = self.builder.inst_results(call)[0];
+                let mut result = self.builder.inst_results(call)[0];
                 self.leave_on_failure();
+                if let Some(mark) = mark {
+                    result = self.shim_call(
+                        node,
+                        OpKind::Reclaim,
+                        [(result, result_ty), (mark, Ty::Boolean)],
+                        result_ty.repr(),
+                    );
+                }
                 Ok((result, result_ty))
             }
             _ => Err(self.unsupported(node)),
@@ -1162,6 +1201,7 @@ impl Emitter<'_, '_, '_> {
             self.refused = Some("jit-operation-index");
             return a;
         };
+        self.allocates |= result == Repr::Handle;
         self.ops.push(Op {
             kind,
             location: node.location().clone(),
@@ -1207,6 +1247,17 @@ fn clamp(bound: &Integer, low: i128, high: i128) -> i128 {
     wide.clamp(low, high)
 }
 
+/// Whether `operator` needs an admitted division selection it lacks: `div`
+/// and `rem` run the selected law, and `mod` needs none. Such a node is the
+/// interpreter's invariant stop, so it is listed unsupported at prepare, not
+/// translated.
+fn lacks_selection(
+    operator: IntegerDivisionOperator,
+    selection: Option<&AdmittedIntegerDivision>,
+) -> bool {
+    operator != IntegerDivisionOperator::Mod && selection.is_none()
+}
+
 /// A sound interval for the kernel's `div`, `rem` or `mod` of operands in
 /// the given intervals, whose divisor interval excludes 0.
 ///
@@ -1224,7 +1275,7 @@ fn division_interval(
     (al, ah): (i128, i128),
     (bl, bh): (i128, i128),
 ) -> Option<(i128, i128)> {
-    if operator == IntegerDivisionOperator::Rem && selection.is_none() {
+    if lacks_selection(operator, selection.as_ref()) {
         return None;
     }
     if matches!(
@@ -1307,6 +1358,21 @@ mod tests {
     /// A remainder with no admitted division selection has no interval, so the
     /// entry is listed unsupported at prepare instead of faulting at run time
     /// (`jit-division-selection-missing`); `mod` needs none.
+    #[test]
+    fn a_division_or_remainder_without_a_selection_is_not_translated() {
+        for (operator, lacks) in [
+            (IntegerDivisionOperator::Div, true),
+            (IntegerDivisionOperator::Rem, true),
+            (IntegerDivisionOperator::Mod, false),
+        ] {
+            assert_eq!(lacks_selection(operator, None), lacks, "{operator:?}");
+        }
+        assert_eq!(
+            division_interval(IntegerDivisionOperator::Div, None, (0, 10), (1, 5)),
+            None
+        );
+    }
+
     #[test]
     fn a_remainder_without_a_selection_has_no_interval() {
         assert_eq!(
