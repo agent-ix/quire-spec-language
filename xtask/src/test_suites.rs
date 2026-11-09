@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! QSL#157: `cargo xtask test-suites <lane> [<cargo test args>]` -- runs
 //! `cargo test <args>` and fails when a suite ran no tests without the lane
-//! declaring it empty, or when a declared-empty suite is not empty.
+//! declaring it empty, or when a declared-empty suite hides tests it never
+//! passes.
 //!
 //! A suite that compiles and runs nothing prints the same `test result: ok.`
 //! line as one that ran and passed, so "0 failed" cannot tell a proc-macro
@@ -23,11 +24,12 @@
 //! does not count. This defends against mis-parsing, not against a test
 //! author forging a whole suite.
 //!
-//! **Empty means registers nothing.** A suite a lane declares empty must show
-//! `running 0 tests` and `0 filtered out`; a declared suite that gains a test
-//! of any kind -- passing, `#[ignore]`d, measured, or hidden by a filter --
-//! fails, so a stale declaration cannot hide new tests. Every other suite must
-//! pass at least one test.
+//! **Empty means passes nothing.** A suite a lane declares empty may run no
+//! test; if it passes one the declaration is merely unneeded and the suite is
+//! fine. A declared suite that passes nothing yet registers tests --
+//! `#[ignore]`d, measured, or hidden by a filter -- fails, so a declaration
+//! cannot hide tests that never ran. Every other suite must pass at least one
+//! test.
 //!
 //! **Which suites are expected.** Every built test executable, and unless the
 //! arguments name a target kind (`--lib`, `--tests`, `--bin x`, ...), the
@@ -179,13 +181,10 @@ fn feature_argument(argument: &str) -> FeatureArgument {
 
 const NO_DOC_EXAMPLE: &str = "no executable doc example in the library";
 
-/// The zero-pass suites of the retained `make ci` log of the QSL#670 gate
-/// (its default-feature and all-feature workspace runs listed the same
-/// suites). That log is from an older head; the guard's own first run at a
-/// new head is what checks this list against the tree.
-macro_rules! workspace_empty {
-    ($($extra:expr),*) => {
-        &[
+/// The suites that pass no test in the `make ci` workspace lanes; one list
+/// serves both, because a declared suite that passes tests is not a finding
+/// (the root library's doctests run only under `checked-handoff`).
+const WORKSPACE_EMPTY: &[EmptySuite] = &[
     EmptySuite {
         source: "qsl-bench/src/bin/qsl-bench-probe.rs",
         kind: SuiteKind::Tests,
@@ -281,21 +280,12 @@ macro_rules! workspace_empty {
         kind: SuiteKind::Doctests,
         reason: NO_DOC_EXAMPLE,
     },
-            $($extra),*
-        ]
-    };
-}
-
-/// The default-feature workspace lane. The root library's doc examples sit in
-/// the `checked-handoff` feature, so with default features it has none.
-const WORKSPACE_EMPTY: &[EmptySuite] = workspace_empty!(EmptySuite {
-    source: "src/lib.rs",
-    kind: SuiteKind::Doctests,
-    reason: NO_DOC_EXAMPLE,
-});
-
-/// The all-features workspace lane: the root library registers doctests.
-const ALL_FEATURES_EMPTY: &[EmptySuite] = workspace_empty!();
+    EmptySuite {
+        source: "src/lib.rs",
+        kind: SuiteKind::Doctests,
+        reason: "no doc example without the `checked-handoff` feature",
+    },
+];
 
 /// The `cargo test` invocations of `make ci`, one lane each. The two `-p`
 /// lanes declare nothing: every suite they run has tests.
@@ -314,7 +304,7 @@ pub const LANES: &[Lane] = &[
     },
     Lane {
         name: "all-features-workspace",
-        empty: ALL_FEATURES_EMPTY,
+        empty: WORKSPACE_EMPTY,
     },
 ];
 
@@ -375,8 +365,8 @@ pub enum Finding {
         /// The suite.
         suite: SuiteId,
     },
-    /// A suite the lane declares empty registers tests: it ran some, ignored
-    /// some, measured some, or filtered some out.
+    /// A suite the lane declares empty passes nothing but registers tests: it
+    /// ignored some, measured some, failed some, or filtered some out.
     #[error(
         "{suite}: declared empty, but it registers tests (running {running}: {} passed, {} \
          failed, {} ignored, {} measured, {} filtered out); remove the declaration",
@@ -1090,8 +1080,8 @@ impl<'a> RunParser<'a> {
 }
 
 /// Everything wrong with a run against its lane, in a stable order. A
-/// declared-empty suite must register nothing: no test run, ignored or
-/// measured, and none filtered out. Any other suite must pass a test.
+/// declared-empty suite may pass tests, but may not hide any it does not pass:
+/// none ignored, measured or filtered out. Any other suite must pass a test.
 /// `expected` is every suite the cargo arguments select.
 pub fn evaluate(
     lane: &Lane,
@@ -1115,7 +1105,7 @@ fn evaluate_declared(
     for suite in suites {
         ran.insert(&suite.id);
         if declared.contains(&suite.id) {
-            if suite.running != 0 || suite.counts.filtered != 0 {
+            if suite.counts.passed == 0 && (suite.running != 0 || suite.counts.filtered != 0) {
                 findings.push(Finding::DeclaredButNotEmpty {
                     suite: suite.id.clone(),
                     running: suite.running,
@@ -1929,16 +1919,13 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
     #[test]
     #[trace("TC-950", "NFR-014-AC-5", "NFR-014-AC-7")]
-    fn a_declared_suite_that_gains_a_passing_test_fails() {
+    fn a_declared_suite_that_gains_a_passing_test_is_fine() {
         let log = PRODUCER_LOG.replacen(
             "running 0 tests\n\ntest result: ok. 0 passed",
             "running 1 test\n\ntest result: ok. 1 passed",
             1,
         );
-        assert_eq!(
-            check(&lane(DECLARES_EMPTY), &log),
-            vec![not_empty(EMPTY_UNIT, 1, [1, 0, 0, 0, 0])]
-        );
+        assert_eq!(check(&lane(DECLARES_EMPTY), &log), Vec::<String>::new());
     }
 
     /// The ignored-drift control: `libtest` prints `running 1 test` and
@@ -4103,7 +4090,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             EmptySuite {
                 source: "c/src/lib.rs",
                 kind: SuiteKind::Doctests,
-                reason: "declared wrongly: c has a doc example",
+                reason: "declared although c has a doc example",
             },
         ];
 
@@ -4148,15 +4135,14 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
                 "{workspace}"
             );
 
-            let wrongly_declared =
+            // A declaration of a suite that passes tests is unneeded, not a
+            // finding.
+            let over_declared =
                 run_doc_workspace(&dir, DOC_FIXTURE_E_AND_C_EMPTY, &["-p", "e", "-p", "c"])
-                    .expect_err("c's doc example registers a test");
+                    .expect("c's passing doc example is no finding");
             assert!(
-                findings_of(&wrongly_declared).contains(
-                    "c/src/lib.rs (doctests): declared empty, but it registers tests (running 1: 1 passed, \
-                     0 failed, 0 ignored, 0 measured, 0 filtered out)"
-                ),
-                "{wrongly_declared}"
+                over_declared.contains("1 suites ran tests, 3 declared empty"),
+                "{over_declared}"
             );
 
             write(

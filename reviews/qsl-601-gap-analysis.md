@@ -3,7 +3,7 @@ id: SR-20261108230651
 title: "Gap analysis — qsl-inspect render (JSON, text, DOT) re-land"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; branch l5/p2-render e508a53e1 vs origin/l5/integration; FR-298-AC-1..11; TC-783; qsl-inspect/src/render.rs"
+scope: "agent-ix/quire-spec-language; branch l5/p2-render vs origin/l5/integration; FR-298-AC-1..11; TC-783; qsl-inspect/src/render.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-298

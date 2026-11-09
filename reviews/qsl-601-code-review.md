@@ -3,7 +3,7 @@ id: SR-20261108230650
 title: "Code review — qsl-inspect render (JSON, text, DOT) re-land"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language; branch l5/p2-render e508a53e1 vs origin/l5/integration; FR-298; qsl-inspect/src/render.rs, qsl-inspect/src/lib.rs, qsl-inspect/src/result_views.rs, qsl-inspect/Cargo.toml, qsl-replay/src/outcome.rs, Cargo.lock, README.md"
+scope: "agent-ix/quire-spec-language; branch l5/p2-render vs origin/l5/integration; FR-298; qsl-inspect/src/render.rs, qsl-inspect/src/lib.rs, qsl-inspect/src/result_views.rs, qsl-inspect/Cargo.toml, qsl-replay/src/outcome.rs, Cargo.lock, README.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-298
@@ -13,11 +13,11 @@ relationships:
 ## Summary
 
 Ticket: QSL-601. Code review with the rust-review lane (rust-style loaded) over
-`git diff origin/l5/integration...HEAD` (one commit, e508a53e1). The diff adds
+`git diff origin/l5/integration...HEAD` (one commit). The diff adds
 `qsl-inspect::render` (`render_outcome`, `render_view`, `RenderSources`,
 `Rendered`, `RenderCause`), an `AssignmentView::declaration_order` field, and
 two `OutcomeItem` accessors in `qsl-replay`. Compared with the stale-branch
-commit d95e094d6: dropping `package_id` and the digest fields is forced by the
+the stale-branch commit: dropping `package_id` and the digest fields is forced by the
 current base types (`PackageView`, `OutcomeView` and `DocumentRef` no longer
 carry them; `SourceIdentity` takes authority and identity), and keying
 `RenderSources` on `RawSourceRef` matches FR-298's "source reference
@@ -68,3 +68,5 @@ projection, the DOT refusal guard, the inclusive byte bound arithmetic and the
 | FND-004 | fixed | `Rendered` holds a `String`; both `expect` sites removed; outcome JSON UTF-8 failure maps to a fault (render.rs:152-176, 271-276). |
 | FND-005 | fixed | Items render after diagnostics; test covers a document with both (render.rs:393-407, 1816-1835). |
 | FND-006 | fixed | `render_view_observed` matches `(form, view)` exhaustively; no catch-all (render.rs:317-331). |
+| FND-007 | accepted-no-change | The view JSON is explicit but omits the requirement record's `requirements`, `result_bound`, `conversion_context`, `path_condition` and `references`. Neither FR-297 nor FR-298 defines a view JSON schema, so the omission is documented in docs/inspect-render.md and listed in the PR body; no ticket. |
+| FND-008 | fixed | docs/inspect-render.md no longer carries the PR and branch history, and its limit step reads `used + n`. |
