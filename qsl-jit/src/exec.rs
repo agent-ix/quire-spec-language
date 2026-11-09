@@ -128,7 +128,9 @@ unsafe extern "C" fn shim(frame: *mut c_void, node: i64, a: i64, b: i64) -> i64 
         frame.failed = 1;
         return 0;
     };
-    match kernel::run(op, [a, b], frame.meter, frame.scope, &mut frame.state) {
+    let ran = kernel::run(op, [a, b], frame.meter, frame.scope, &mut frame.state)
+        .and_then(|value| frame.state.settle().map(|()| value));
+    match ran {
         Ok(value) => value,
         Err(KernelHalt::Stop(stop)) => {
             frame.halt = Some(Halt::Stop(stop, op.location.clone()));

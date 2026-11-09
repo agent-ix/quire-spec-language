@@ -2,6 +2,7 @@
 //! `qsl-jit` tests: the JIT against the interpreter over source compiled
 //! through S1 to S4, tagged with the TC and AC ids they back.
 
+mod arena;
 mod clause;
 mod common;
 mod coverage;

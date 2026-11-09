@@ -82,6 +82,9 @@ pub struct PreparedJit<'p> {
     compiled: BTreeMap<QualifiedName, Compiled>,
     ops: Vec<Op>,
     unsupported: Vec<(EntrySelection, UnsupportedEntry)>,
+    /// The most handles the arena held during the last call.
+    #[cfg(feature = "test-support")]
+    arena_peak: std::cell::Cell<usize>,
     // Declared last: it is dropped last, after nothing can call an entry.
     _machine: Machine,
 }
@@ -213,6 +216,8 @@ impl ExecutionBackend for Jit {
             compiled,
             ops,
             unsupported,
+            #[cfg(feature = "test-support")]
+            arena_peak: std::cell::Cell::new(0),
             _machine: machine,
         })
     }
@@ -366,6 +371,14 @@ impl<'p> PreparedJit<'p> {
             .map(|compiled| compiled.entry.recorded().shape())
     }
 
+    /// The most handles the arena held during the last call (a test hook for
+    /// the arena bound).
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn arena_peak_for_test(&self) -> usize {
+        self.arena_peak.get()
+    }
+
     /// [`PreparedEntries::call`] under a caller-owned `meter` and supplied-value
     /// `run`, with the contract of `CheckedPackageEvaluation::call_supplied`:
     /// the meter then shows the charges of the call, which the parity gate
@@ -416,12 +429,14 @@ impl<'p> PreparedJit<'p> {
                 losses: Vec::new(),
             });
         }
-        let mut state = State::default();
+        let mut state = State::bounded(Vec::new(), self.ops.len().saturating_add(arguments.len()));
         let registers = registers(compiled, arguments, &mut state.arena)?;
         let mut frame = EntryFrame::new(meter, &self.ops, graph.scope(), state);
         let status = compiled.entry.call(&mut frame, &registers);
         let value = frame.result();
         let (halt, state) = frame.into_parts();
+        #[cfg(feature = "test-support")]
+        self.arena_peak.set(state.peak);
         let status = status.map_err(|refusal| {
             CallFailure::Fault(InternalFault::new(
                 "FR-568",

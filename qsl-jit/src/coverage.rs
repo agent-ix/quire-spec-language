@@ -8,8 +8,8 @@ use std::sync::OnceLock;
 pub(crate) const FORMS: [&str; 6] = ["literal", "operator", "let", "if", "call", "record"];
 
 const INTEGER_OPERATORS: [&str; 16] = [
-    "+", "-", "*", "negate", "div", "rem", "mod", "/", "<", "<=", ">", ">=", "coerce", "convert", "=",
-    "!=",
+    "+", "-", "*", "negate", "div", "rem", "mod", "/", "<", "<=", ">", ">=", "coerce", "convert",
+    "=", "!=",
 ];
 
 const BOOLEAN_OPERATORS: [&str; 6] = ["and", "or", "implies", "not", "=", "!="];
@@ -30,10 +30,10 @@ const TEXT_OPERATORS: [&str; 6] = ["<", "<=", ">", ">=", "=", "!="];
 /// The constructs this backend translates (FR-560).
 ///
 /// This is the implemented subset of the FR-560 coverage floor: `Boolean`,
-/// bounded and unbounded `Integer`, `Rational`, `Decimal` and `Text`
-/// constructs, with `call` to a translated function. The floor's `record` and
-/// `collection` forms and types are not yet translated, so they are not listed
-/// and an entry holding one is listed unsupported.
+/// bounded and unbounded `Integer`, `Rational`, `Decimal`, `Text` and record
+/// constructs, with `call` to a translated function. The floor's `collection`
+/// form and types are not yet translated, so they are not listed and an entry
+/// holding one is listed unsupported.
 #[must_use]
 pub fn coverage() -> &'static BackendCoverage {
     static COVERAGE: OnceLock<BackendCoverage> = OnceLock::new();

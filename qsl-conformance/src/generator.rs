@@ -9,11 +9,10 @@
 //!
 //! This generator draws the `Boolean` and bounded `Int` subset of FR-295's
 //! types and the `literal`, `operator`, `let`, `if` and `call` forms. About
-//! half the units also carry a few functions over `Rational`, `Decimal` and
-//! `Text` values, drawn from a second generator seeded by the unit's own
+//! half the units also carry a few functions over `Rational`, `Decimal`, `Text`
+//! and record values, drawn from a second generator seeded by the unit's own
 //! text, so adding them left the `Boolean` and `Int` units as they were. The
-//! record and collection types and the `record` and `collection` forms are not
-//! drawn yet.
+//! collection types and the `collection` form are not drawn yet.
 
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;

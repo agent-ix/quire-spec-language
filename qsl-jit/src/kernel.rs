@@ -47,6 +47,38 @@ pub(crate) struct State {
     /// consumes them, innermost last.
     pub(crate) staged: Vec<Value>,
     pub(crate) losses: Vec<LocatedLoss>,
+    /// The most handles the arena held at once, for the tests' bound.
+    pub(crate) peak: usize,
+    /// The most handles the arena may hold (`None`: unbounded, as in a
+    /// state built before `prepare` knows its bound).
+    pub(crate) limit: Option<usize>,
+}
+
+impl State {
+    /// A state whose arena holds the entry's argument handles and may grow
+    /// to `limit` handles.
+    pub(crate) fn bounded(arena: Vec<Value>, limit: usize) -> Self {
+        Self {
+            peak: arena.len(),
+            arena,
+            limit: Some(limit),
+            ..Self::default()
+        }
+    }
+
+    /// Record the arena's size after an operation, and refuse a size over the
+    /// bound. With the callee reclamation of [`OpKind::Reclaim`] every
+    /// operation of a frame adds at most one handle and runs at most once,
+    /// and no function is active twice (recursion is unsupported), so the
+    /// live handles never exceed the operation table plus the arguments;
+    /// reaching the bound is a broken backend invariant.
+    pub(crate) fn settle(&mut self) -> Result<(), Halt> {
+        self.peak = self.peak.max(self.arena.len());
+        match self.limit {
+            Some(limit) if self.arena.len() > limit => Err(Halt::Fault("jit-arena-bound")),
+            _ => Ok(()),
+        }
+    }
 }
 
 fn narrow(value: &Integer) -> Result<i64, Halt> {
@@ -182,8 +214,9 @@ fn decimal_operation(
     Ok(Value::Decimal(result.value().clone()))
 }
 
-/// Run `op` on the operands `raw` under `meter`, reading and writing handles
-/// and loss records in `state`.
+/// Run `op` on the operands `raw` under `meter`, reading and writing handles,
+/// staged operands and loss records in `state`. Every operation kind has its
+/// own arm, so a new kind is a compile error here.
 pub(crate) fn run(
     op: &Op,
     raw: [i64; 2],
@@ -192,34 +225,19 @@ pub(crate) fn run(
     state: &mut State,
 ) -> Result<i64, Halt> {
     let [a, b] = raw;
-    let types = scope.types();
-    if let Some(done) = run_value(op, raw, meter, scope, state) {
-        return done;
-    }
-    let State { arena, .. } = state;
     let [left_repr, right_repr] = op.operands;
-    let (left, right) = match &op.kind {
-        OpKind::Not | OpKind::Retain | OpKind::ChargeCall => {
-            (Integer::from(0_i64), Integer::from(0_i64))
-        }
-        OpKind::Equality {
-            operands_boolean: true,
-            ..
-        } => (Integer::from(a), Integer::from(b)),
-        OpKind::Equality { .. } if left_repr == Repr::Handle && right_repr == Repr::Handle => {
-            (Integer::from(0_i64), Integer::from(0_i64))
-        }
-        _ => (
-            integer(a, left_repr, arena)?,
-            if matches!(op.kind, OpKind::Negate | OpKind::Coerce(_) | OpKind::ConvertScalar(_)) {
-                Integer::from(0_i64)
-            } else {
-                integer(b, right_repr, arena)?
-            },
-        ),
-    };
+    let State {
+        arena,
+        staged,
+        losses,
+        ..
+    } = state;
     match &op.kind {
         OpKind::Arithmetic(operator) => {
+            let (left, right) = (
+                integer(a, left_repr, arena)?,
+                integer(b, right_repr, arena)?,
+            );
             let operation = match operator {
                 Arithmetic::Add => IntegerArithmetic::Add(&left, &right),
                 Arithmetic::Subtract => IntegerArithmetic::Subtract(&left, &right),
@@ -229,8 +247,9 @@ pub(crate) fn run(
             carry(result, op.result, arena)
         }
         OpKind::Negate => {
+            let operand = integer(a, left_repr, arena)?;
             let result = outcome_into_stop(evaluate_integer_arithmetic(
-                IntegerArithmetic::Negate(&left),
+                IntegerArithmetic::Negate(&operand),
                 None,
                 meter,
             ))?;
@@ -240,30 +259,57 @@ pub(crate) fn run(
             operator,
             selection,
         } => {
+            let (left, right) = (
+                integer(a, left_repr, arena)?,
+                integer(b, right_repr, arena)?,
+            );
             let outcome = divide(*operator, selection.as_ref(), &left, &right, meter)
                 .ok_or(Halt::Fault("jit-division-selection-missing"))?;
             carry(outcome_into_stop(outcome)?, op.result, arena)
+        }
+        OpKind::ConvertScalar(operand) => {
+            // The interpreter's own operation, so the meter sees its charges.
+            let types = scope.types();
+            let units = UnitScope::new(types.units());
+            let source = Value::Integer(integer(a, left_repr, arena)?);
+            match operand_value(types, operand, &source, &units, meter)? {
+                Value::Integer(integer) => carry(integer, op.result, arena),
+                _ => Err(Halt::Fault("jit-convert-scalar-integer-expected")),
+            }
+        }
+        OpKind::Coerce(target) => {
+            let operand = integer(a, left_repr, arena)?;
+            if target.contains(&operand) {
+                carry(operand, op.result, arena)
+            } else {
+                Err(Halt::Stop(Stop::Refused(Refusal::IntegerOutOfDomain {
+                    target: Box::new(target.clone()),
+                })))
+            }
         }
         OpKind::Equality {
             checked,
             operands_boolean,
         } => {
-            let value = |raw: i64, repr: Repr, integer: &Integer| -> Result<Value, Halt> {
+            let operand = |raw: i64, repr: Repr| -> Result<Value, Halt> {
                 if *operands_boolean {
                     Ok(Value::Boolean(raw != 0))
                 } else if repr == Repr::Handle {
                     handle(raw, arena).cloned()
                 } else {
-                    Ok(Value::Integer(integer.clone()))
+                    Ok(Value::Integer(Integer::from(raw)))
                 }
             };
             let holds = outcome_into_stop(checked.evaluate(
-                types,
-                &value(a, left_repr, &left)?,
-                &value(b, right_repr, &right)?,
+                scope.types(),
+                &operand(a, left_repr)?,
+                &operand(b, right_repr)?,
                 meter,
             ))?;
             Ok(i64::from(holds))
+        }
+        OpKind::Order(kind) => {
+            order(*kind, [a, b], [left_repr, right_repr], meter, arena).map(i64::from)
         }
         OpKind::Not => {
             let result =
@@ -280,73 +326,18 @@ pub(crate) fn run(
                 .map_err(Stop::Incomplete)?;
             Ok(0)
         }
-        OpKind::ConvertScalar(operand) => {
-            // The interpreter's own operation, so the meter sees its charges.
-            let units = UnitScope::new(types.units());
-            let converted = operand_value(types, operand, &Value::Integer(left), &units, meter)?;
-            match converted {
-                Value::Integer(integer) => carry(integer, op.result, arena),
-                _ => Err(Halt::Fault("jit-convert-scalar-integer-expected")),
-            }
-        }
-        OpKind::Coerce(target) => {
-            if target.contains(&left) {
-                carry(left, op.result, arena)
-            } else {
-                Err(Halt::Stop(Stop::Refused(Refusal::IntegerOutOfDomain {
-                    target: Box::new(target.clone()),
-                })))
-            }
-        }
-        OpKind::Order(..)
-        | OpKind::Literal(_)
-        | OpKind::Box
-        | OpKind::Unbox
-        | OpKind::RationalDivide { .. }
-        | OpKind::Rational { .. }
-        | OpKind::RationalNegate { .. }
-        | OpKind::Decimal { .. }
-        | OpKind::DecimalNegate { .. }
-        | OpKind::ConvertDecimal { .. }
-        | OpKind::Stage { .. }
-        | OpKind::Record { .. }
-        | OpKind::Tuple { .. }
-        | OpKind::Field { .. } => Err(Halt::Fault("jit-operation-dispatch")),
-    }
-}
-
-/// The operations over handles and the orderings, which read their operands
-/// as values; `None` for an operation over `Integer` registers.
-fn run_value(
-    op: &Op,
-    [a, b]: [i64; 2],
-    meter: &mut Meter,
-    scope: &Scope,
-    state: &mut State,
-) -> Option<Result<i64, Halt>> {
-    let State {
-        arena,
-        staged,
-        losses,
-    } = state;
-    let [left_repr, right_repr] = op.operands;
-    let produced: Result<Value, Halt> = match &op.kind {
-        OpKind::Literal(value) => Ok(value.clone()),
-        OpKind::Box | OpKind::Unbox => {
-            return Some(integer(a, left_repr, arena).and_then(|v| carry(v, op.result, arena)))
-        }
+        OpKind::Literal(value) => push(value.clone(), arena),
+        OpKind::Box | OpKind::Unbox => carry(integer(a, left_repr, arena)?, op.result, arena),
         OpKind::Stage { boolean } => {
             let value = if left_repr == Repr::Handle {
-                handle(a, arena).cloned()
+                handle(a, arena)?.clone()
             } else if *boolean {
-                Ok(Value::Boolean(a != 0))
+                Value::Boolean(a != 0)
             } else {
-                Ok(Value::Integer(Integer::from(a)))
+                Value::Integer(Integer::from(a))
             };
-            return Some(value.map(|value| {
-                staged.push(value);
-                0
-            }));
+            staged.push(value);
+            Ok(0)
         }
         OpKind::Field {
             field,
@@ -354,51 +345,45 @@ fn run_value(
             value_type,
             into,
         } => {
-            return Some((|| {
-                let record = handle(a, arena)?.clone();
-                let read = read_field(
-                    scope.types(),
-                    record,
-                    field,
-                    |declaration, field| scope.record_slot(declaration, field),
-                    *optional,
-                    value_type,
-                )
-                .map_err(Halt::Fault)?;
-                match (into, read.value) {
-                    (Carried::Boolean, Value::Boolean(held)) => Ok(i64::from(held)),
-                    (Carried::Register, Value::Integer(value)) => narrow(&value),
-                    (Carried::Handle, value) => push(value, arena),
-                    _ => Err(Halt::Fault("jit-field-kind")),
-                }
-            })());
+            let record = handle(a, arena)?.clone();
+            let read = read_field(
+                scope.types(),
+                record,
+                field,
+                |declaration, field| scope.record_slot(declaration, field),
+                *optional,
+                value_type,
+            )
+            .map_err(Halt::Fault)?;
+            match (into, read.value) {
+                (Carried::Boolean, Value::Boolean(held)) => Ok(i64::from(held)),
+                (Carried::Register, Value::Integer(value)) => narrow(&value),
+                (Carried::Handle, value) => push(value, arena),
+                (Carried::Boolean | Carried::Register, _) => Err(Halt::Fault("jit-field-kind")),
+            }
         }
-        OpKind::Order(kind) => {
-            return Some(order(*kind, [a, b], [left_repr, right_repr], meter, arena).map(i64::from))
-        }
-        OpKind::Record { declaration, slots } => (|| {
+        OpKind::Record { declaration, slots } => {
             let values = take_staged(staged, present_slots(slots))?;
             let value =
                 construct_record(scope.types(), declaration, slots, values).map_err(Halt::Fault)?;
-            Ok(outcome_into_stop(retain_composite(value, meter))?)
-        })(),
-        OpKind::Tuple { declaration, arity } => (|| {
+            push(outcome_into_stop(retain_composite(value, meter))?, arena)
+        }
+        OpKind::Tuple { declaration, arity } => {
             let values = take_staged(staged, *arity)?;
             let value = construct_tuple(scope.types(), declaration, values).map_err(Halt::Fault)?;
-            Ok(outcome_into_stop(retain_composite(value, meter))?)
-        })(),
-        OpKind::RationalDivide { domain } => (|| {
+            push(outcome_into_stop(retain_composite(value, meter))?, arena)
+        }
+        OpKind::RationalDivide { domain } => {
             let left = Rational::from_integer(integer(a, left_repr, arena)?);
             let right = Rational::from_integer(integer(b, right_repr, arena)?);
-            Ok(Value::Rational(outcome_into_stop(
-                evaluate_rational_arithmetic(
-                    RationalArithmetic::Divide(&left, &right),
-                    Some(domain),
-                    meter,
-                ),
-            )?))
-        })(),
-        OpKind::Rational { operator, domain } => (|| {
+            let divided = outcome_into_stop(evaluate_rational_arithmetic(
+                RationalArithmetic::Divide(&left, &right),
+                Some(domain),
+                meter,
+            ))?;
+            push(Value::Rational(divided), arena)
+        }
+        OpKind::Rational { operator, domain } => {
             let (left, right) = (rational(a, arena)?, rational(b, arena)?);
             let operation = match operator {
                 ArithmeticOperator::Add => RationalArithmetic::Add(left, right),
@@ -406,21 +391,20 @@ fn run_value(
                 ArithmeticOperator::Multiply => RationalArithmetic::Multiply(left, right),
                 ArithmeticOperator::Divide => RationalArithmetic::Divide(left, right),
             };
-            Ok(Value::Rational(outcome_into_stop(
-                evaluate_rational_arithmetic(operation, Some(domain), meter),
-            )?))
-        })(),
-        OpKind::RationalNegate { domain } => (|| {
+            let result =
+                outcome_into_stop(evaluate_rational_arithmetic(operation, Some(domain), meter))?;
+            push(Value::Rational(result), arena)
+        }
+        OpKind::RationalNegate { domain } => {
             let operand = rational(a, arena)?;
-            Ok(Value::Rational(outcome_into_stop(
-                evaluate_rational_arithmetic(
-                    RationalArithmetic::Negate(operand),
-                    Some(domain),
-                    meter,
-                ),
-            )?))
-        })(),
-        OpKind::Decimal { operator, target } => (|| {
+            let result = outcome_into_stop(evaluate_rational_arithmetic(
+                RationalArithmetic::Negate(operand),
+                Some(domain),
+                meter,
+            ))?;
+            push(Value::Rational(result), arena)
+        }
+        OpKind::Decimal { operator, target } => {
             let (left, right) = (decimal(a, arena)?, decimal(b, arena)?);
             let operation = match operator {
                 ArithmeticOperator::Add => DecimalOperation::Add(left, right),
@@ -428,30 +412,81 @@ fn run_value(
                 ArithmeticOperator::Multiply => DecimalOperation::Multiply(left, right),
                 ArithmeticOperator::Divide => DecimalOperation::Divide(left, right),
             };
-            decimal_operation(op, operation, target, meter, losses)
-        })(),
-        OpKind::DecimalNegate { target } => (|| {
+            let result = decimal_operation(op, operation, target, meter, losses)?;
+            push(result, arena)
+        }
+        OpKind::DecimalNegate { target } => {
             let operand = decimal(a, arena)?;
-            decimal_operation(op, DecimalOperation::Negate(operand), target, meter, losses)
-        })(),
-        OpKind::ConvertDecimal { target } => (|| match handle(a, arena)? {
-            Value::Decimal(source) => {
-                decimal_operation(op, DecimalOperation::Round(source), target, meter, losses)
+            let result =
+                decimal_operation(op, DecimalOperation::Negate(operand), target, meter, losses)?;
+            push(result, arena)
+        }
+        OpKind::ConvertDecimal { target } => {
+            let result = match handle(a, arena)? {
+                Value::Decimal(source) => {
+                    decimal_operation(op, DecimalOperation::Round(source), target, meter, losses)?
+                }
+                Value::Rational(source) => {
+                    let numerator = Decimal::new(source.numerator().clone(), 0);
+                    let denominator = Decimal::new(source.denominator().clone(), 0);
+                    decimal_operation(
+                        op,
+                        DecimalOperation::Divide(&numerator, &denominator),
+                        target,
+                        meter,
+                        losses,
+                    )?
+                }
+                _ => return Err(Halt::Fault("jit-decimal-conversion-operand-invalid")),
+            };
+            push(result, arena)
+        }
+        OpKind::Mark => i64::try_from(arena.len()).map_err(|_| Halt::Fault("jit-arena-index")),
+        OpKind::Reclaim => {
+            let mark = usize::try_from(b).map_err(|_| Halt::Fault("jit-arena-mark"))?;
+            if mark > arena.len() {
+                return Err(Halt::Fault("jit-arena-mark"));
             }
-            Value::Rational(source) => {
-                let numerator = Decimal::new(source.numerator().clone(), 0);
-                let denominator = Decimal::new(source.denominator().clone(), 0);
-                decimal_operation(
-                    op,
-                    DecimalOperation::Divide(&numerator, &denominator),
-                    target,
-                    meter,
-                    losses,
-                )
+            let result = usize::try_from(a).map_err(|_| Halt::Fault("jit-handle-unbound"));
+            match (left_repr, result) {
+                // The callee returned a handle from above the mark: its value
+                // moves down to the mark. A handle below the mark is the
+                // caller's own (an argument passed through) and stays.
+                (Repr::Handle, Ok(index)) if index >= mark => {
+                    let kept = std::mem::replace(
+                        arena
+                            .get_mut(index)
+                            .ok_or(Halt::Fault("jit-handle-unbound"))?,
+                        Value::Boolean(false),
+                    );
+                    arena.truncate(mark);
+                    push(kept, arena)
+                }
+                (Repr::Handle, Err(fault)) => Err(fault),
+                (Repr::Handle | Repr::Register, _) => {
+                    arena.truncate(mark);
+                    Ok(a)
+                }
             }
-            _ => Err(Halt::Fault("jit-decimal-conversion-operand-invalid")),
-        })(),
-        _ => return None,
-    };
-    Some(produced.and_then(|value| push(value, arena)))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An arena over its bound is a backend fault, not unbounded growth.
+    #[test]
+    fn an_arena_over_its_bound_is_a_fault() {
+        let mut state = State::bounded(Vec::new(), 1);
+        state.arena.push(Value::Boolean(true));
+        assert!(state.settle().is_ok());
+        state.arena.push(Value::Boolean(false));
+        assert!(matches!(
+            state.settle(),
+            Err(Halt::Fault("jit-arena-bound"))
+        ));
+        assert_eq!(state.peak, 2);
+    }
 }

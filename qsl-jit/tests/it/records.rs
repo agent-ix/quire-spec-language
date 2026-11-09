@@ -28,7 +28,7 @@ const SOURCE: &str = "\
  function optional using v(a: Integer): Boolean pure { W { a: a } = W { a: a } }\n\
  function nested using v(a: Int[0, 9], b: Boolean): Boolean pure { (P { x: (P { x: a, y: b }).x, y: (P { x: a, y: b }).y }).y }\n";
 
-const FUNCTIONS: [&str; 13] = [
+const FUNCTIONS: [&str; 12] = [
     "mk",
     "getx",
     "gety",
@@ -41,7 +41,6 @@ const FUNCTIONS: [&str; 13] = [
     "bigfield",
     "optional",
     "nested",
-    "getx",
 ];
 
 /// The record `mk(a, b)` evaluates to, taken from the interpreter.
