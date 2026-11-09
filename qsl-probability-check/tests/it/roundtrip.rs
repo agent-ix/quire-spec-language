@@ -34,8 +34,7 @@ fn proof_request(claim: &str) -> Value {
     proof_request_with(claim, |_, _, _, _, _| {})
 }
 
-fn proof_request_with(claim: &str, inspect: impl FnOnce(&ModelSystem<'_>, &[qsl_semantics::check::CheckedProbabilisticClaim], &ObligationIdentity, &[u8], ProbabilityDocumentLimits)) -> Value {
-    let source = format!("{SOURCE}{claim}");
+fn compile_source(source: &str) -> (spine::CheckedUnit, qsl_semantics::model::intake::PackageInput) {
     let identity = SourceIdentity::new("test", "certificate-source");
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
@@ -64,6 +63,15 @@ fn proof_request_with(claim: &str, inspect: impl FnOnce(&ModelSystem<'_>, &[qsl_
     )
     .unwrap()
     .into_value();
+    (checked, packages)
+}
+
+fn proof_request_with(claim: &str, inspect: impl FnOnce(&ModelSystem<'_>, &[qsl_semantics::check::CheckedProbabilisticClaim], &ObligationIdentity, &[u8], ProbabilityDocumentLimits)) -> Value {
+    let source = format!("{SOURCE}{claim}");
+    let identity = SourceIdentity::new("test", "certificate-source");
+    let limits = SpineLimits::default();
+    let cancel = Cancel::new();
+    let (checked, packages) = compile_source(&source);
     let package = checked.package();
     let claim = package
         .graph()
@@ -241,6 +249,63 @@ fn alter_keys(document: &mut Value, change: impl Fn(&mut Value)) {
     for target in document["objective"]["targets"].as_array_mut().unwrap() {
         alter(target);
     }
+}
+
+fn replace_checked_source(request: &mut Value, source: &str) {
+    let (checked, _) = compile_source(source);
+    let claim = checked.package().graph().probabilistic_model().claim("Likely").unwrap();
+    let node = qsl_foundation::node_wire::node_key_to_json(claim.occurrence().unwrap().node()).unwrap();
+    request["source"]["content"] = json!(source);
+    request["byte_provision"][0][2] = json!(source.as_bytes());
+    request["item"]["node_id"] = node.clone();
+    change_certificate(request, |document| { document["identity"]["node_id"] = node; });
+}
+
+#[trace("TC-764", "FR-201-AC-11", "FR-282-AC-11")]
+#[test]
+fn attained_minimum_and_maximum_thresholds_pass_and_stronger_bounds_fail() {
+    for (operator, attained, beyond, numerator, denominator) in [(">=", "0.96", "0.97", "24", "25"), ("<=", "0.99", "0.98", "99", "100")] {
+        let claim = format!("probabilistic Likely using inf on M over (m: M::Msg) under every scheduler on origin {{ probability {operator} {attained} [ eventually holds(m.delivered) ] }}\n");
+        let mut request = proof_request(&claim);
+        let (code, result) = run(&request, &[]);
+        assert_eq!(code, 0, "{operator} {attained}: {result}");
+        assert_eq!(result["value"], json!({"numerator":numerator, "denominator":denominator}));
+        let source = request["source"]["content"].as_str().unwrap().replace(attained, beyond);
+        replace_checked_source(&mut request, &source);
+        let (code, result) = run(&request, &[]);
+        assert_eq!(code, 1, "{operator} {beyond}: {result}");
+        assert_eq!(result["rule"], "threshold-missed");
+        assert!(result["at"].get("product_key").is_some());
+    }
+}
+
+#[trace("TC-764", "FR-201-AC-11", "FR-282-AC-11")]
+#[test]
+fn unsupported_claim_shapes_and_document_profiles_never_produce_acceptance() {
+    let original = proof_request(CLAIM);
+    for body in ["always holds(m.delivered)", "eventually[0,2] holds(m.delivered)"] {
+        let mut request = original.clone();
+        let source = request["source"]["content"].as_str().unwrap().replace("eventually holds(m.delivered)", body);
+        replace_checked_source(&mut request, &source);
+        let (code, result) = run(&request, &[]);
+        assert_eq!(code, 2, "{body}: {result}");
+        assert_eq!(result["status"], "unsupported", "{body}: {result}");
+    }
+    for (member, value) in [("kind", "lower"), ("profile", "quire.probability-objective/reachability/v2")] {
+        let mut request = original.clone();
+        change_certificate(&mut request, |document| {
+            if member == "kind" { document[member] = json!(value); } else { document["objective"][member] = json!(value); }
+        });
+        let (code, result) = run(&request, &[]);
+        assert_eq!(code, 2, "{result}");
+        assert_eq!(result["status"], "unsupported");
+    }
+    let mut request = original;
+    let initial = request["initial"][0].clone();
+    request["initial"].as_array_mut().unwrap().push(initial);
+    let (code, result) = run(&request, &[]);
+    assert_eq!(code, 2, "{result}");
+    assert_eq!(result["status"], "unsupported");
 }
 
 #[trace("TC-764", "FR-282-AC-1", "FR-282-AC-11", "FR-201-AC-9", "FR-201-AC-11")]
