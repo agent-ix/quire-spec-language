@@ -1089,6 +1089,9 @@ impl<'a> Definedness<'a> {
             NodeKind::Coerce(operand, _) => argument.at(*operand),
             _ => argument,
         };
+        // QSL-1824: a call argument widened to the parameter's integer type is
+        // a `ConvertScalar`; it is exact, so it denotes its integer operand.
+        let argument = Self::through_conversion(argument);
         let parameter = |node: CheckedNode<'_>| match node.kind() {
             NodeKind::Local(slot) if *slot < self.parameters => Some(*slot),
             _ => None,

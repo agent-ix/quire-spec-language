@@ -502,6 +502,15 @@ impl<'r> Callee<'r> {
         }
     }
 
+    /// The declared parameter type at `index` of a function or imported
+    /// call, the only calls whose argument type node FR-347 compares.
+    fn call_parameter(&self, index: usize) -> Option<ValueType> {
+        match self {
+            Self::Value(application) => application.call_parameter(index),
+            Self::Union(_) => None,
+        }
+    }
+
     /// The expected type of an IEEE intrinsic's next argument.
     fn intrinsic_hint(&self, siblings: &[ValueType]) -> Option<Option<ValueType>> {
         match self {
@@ -521,6 +530,16 @@ impl<'r> Callee<'r> {
             Self::Value(application) => application.finish(arguments, argument_types, location),
             Self::Union(member) => Ok(member.finish(arguments, location)),
         }
+    }
+}
+
+/// Whether an integer of type `source` is admitted where `target` is declared
+/// by widening: a different integer type that contains it.
+fn integer_widens(source: &ValueType, target: &ValueType) -> bool {
+    match (source, target) {
+        (ValueType::Integer | ValueType::Int(_), ValueType::Integer) => source != target,
+        (ValueType::Int(from), ValueType::Int(to)) => from != to && to.lower() <= from.lower() && from.upper() <= to.upper(),
+        _ => false,
     }
 }
 
@@ -2468,6 +2487,22 @@ impl<'a> Typer<'a> {
                 )
                 .map(Step::Typed),
             Frame::Application(mut frame) => {
+                // FR-347 "Function-call arguments" (QSL-1824): an integer
+                // argument whose type differs from a declared function
+                // parameter's is made explicit as the exact integer
+                // conversion, so the argument's type node is the
+                // parameter's.
+                let typed = match frame
+                    .order
+                    .get(frame.typed.len())
+                    .and_then(|index| frame.application.call_parameter(*index))
+                {
+                    Some(parameter) if integer_widens(&typed.value_type, &parameter) => {
+                        let location = typed.location.clone();
+                        self.convert(&parameter, typed, &location)?
+                    }
+                    _ => typed,
+                };
                 frame.argument_types.push(typed.value_type.clone());
                 frame.typed.push(self.push(typed));
                 Self::application(frame, frames)
