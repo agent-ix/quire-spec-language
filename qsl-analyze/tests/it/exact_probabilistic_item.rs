@@ -4,14 +4,9 @@
 //! adapter, which builds the product, solves it exactly, has the core's
 //! checker accept the certificate and only then settles `proved`.
 //!
-//! Not reachable: `refuted`. FR-203 settles it only after FR-202's replay of a
-//! counterexample, which is not implemented, so a missed bound settles
-//! `unsupported` (see the last test) and no test constructs a refutation.
-
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze_items, exact_probabilistic_item, exact_probabilistic_item_tampered, DispositionKind,
-    Engines, Settlement,
+    analyze_items, exact_probabilistic_item, exact_probabilistic_item_tampered, Engines,
 };
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_eval::simulation::Limits;
@@ -202,18 +197,14 @@ fn cancelling_after_the_solver_finishes_is_observed_by_the_independent_checker()
     }
 }
 
-/// The exact value 24/25 misses `>= 0.97`. `refuted` needs FR-202's replay,
-/// which does not exist, so the item is `unsupported` and never `proved`.
 #[trace("TC-762", "FR-281-AC-1")]
 #[test]
-fn a_missed_bound_is_not_proved_and_not_yet_refuted() {
+fn a_missed_bound_is_refuted_only_with_replayed_nonreach_evidence() {
     let world = World::new(&prob_world::link(CLAIMS));
     let record = settle(&world, "Unlikely", ModelCheckLimits::default());
     assert!(record.exact_probabilistic.is_none());
-    let Settlement::Disposed(disposed) = &record.settlement else {
-        panic!("expected a disposition, got {:?}", record.settlement);
-    };
-    assert_eq!(disposed.kind, DispositionKind::Unsupported);
+    assert_eq!(record.terminal().unwrap().value(), &TerminalValue::Refuted);
+    assert!(record.probabilistic_counterexample.is_some());
 }
 
 /// Altering one terminal value retains the checker's rejection and full locus.

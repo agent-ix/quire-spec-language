@@ -90,8 +90,8 @@ mod hyper_letters;
 pub use hyper_letters::CheckedHyperLetters;
 pub use letters::{ClauseLetters, LettersRefusal};
 pub use probabilistic::{
-    same_rewards, same_values, Action, Draw, NotMarkov, ScheduledIdentity, TransitionId, UndecidedSuccessor,
-    Unsteppable, WeightedStep,
+    same_rewards, same_values, Action, Draw, NotMarkov, ScheduledIdentity, TransitionId,
+    UndecidedSuccessor, Unsteppable, WeightedStep,
 };
 pub use refine::{RowReading, StateObservation};
 pub use state_predicate::PredicateReading;

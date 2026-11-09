@@ -373,6 +373,7 @@ pub enum ExactProbabilityGraphError {
 /// This adapter intentionally refuses draws with multiple post-states and
 /// stops at explicit limits. It is a bounded exact-check foundation, not a
 /// complete probabilistic product implementation.
+#[allow(clippy::too_many_arguments)]
 fn enumerate_model_graph<P: StatePredicate>(
     system: &ModelSystem<'_>,
     target: &P,
@@ -380,6 +381,9 @@ fn enumerate_model_graph<P: StatePredicate>(
     max_states: usize,
     max_edges: usize,
     cancel: &Cancel,
+    stop_at_target: bool,
+    visit: &mut impl FnMut(&ProbabilityProductKey, &ModelSimState),
+    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
 ) -> Result<CheckerGraph, ExactProbabilityGraphError> {
     poll_cancel(cancel)?;
     let initial = system.initial();
@@ -406,29 +410,43 @@ fn enumerate_model_graph<P: StatePredicate>(
         if states.len() == max_states {
             return Err(ExactProbabilityGraphError::LimitReached);
         }
+        visit(&key, &state);
         let reading = system
             .state_predicates(&state, &[(target, binding)])
-            .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
+            .map_err(|stop| {
+                failure(crate::ExactProbBuildIssue::Expansion(stop));
+                ExactProbabilityGraphError::ExpansionRefused
+            })?
             .into_iter()
             .next()
             .ok_or(ExactProbabilityGraphError::ExpansionRefused)?;
         let terminal = match reading {
             qsl_eval::simulation::model::PredicateReading::True => Some(true),
             qsl_eval::simulation::model::PredicateReading::False => None,
+            qsl_eval::simulation::model::PredicateReading::Refused(outcome) => {
+                failure(crate::ExactProbBuildIssue::Predicate(outcome));
+                return Err(ExactProbabilityGraphError::ExpansionRefused);
+            }
             _ => return Err(ExactProbabilityGraphError::ExpansionRefused),
         };
-        let choices = if terminal.is_some() {
+        let choices = if terminal.is_some() && stop_at_target {
             Vec::new()
         } else {
             let actions = system
                 .actions(&state)
-                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
-                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+                .map_err(|stop| {
+                    failure(crate::ExactProbBuildIssue::Expansion(stop));
+                    ExactProbabilityGraphError::ExpansionRefused
+                })?
+                .map_err(|_| {
+                    failure(crate::ExactProbBuildIssue::UndecidedSuccessor);
+                    ExactProbabilityGraphError::ExpansionRefused
+                })?;
             if actions.is_empty() {
                 states.insert(
                     key,
                     CheckerState {
-                        terminal: Some(false),
+                        terminal: terminal.or(Some(false)),
                         choices: Vec::new(),
                     },
                 );
@@ -524,7 +542,17 @@ pub(crate) fn check_model_exact_reachability<P: StatePredicate>(
     (max_states, max_edges): (usize, usize),
     cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificateCheck, ExactProbabilityGraphError> {
-    let graph = enumerate_model_graph(system, target, binding, max_states, max_edges, cancel)?;
+    let graph = enumerate_model_graph(
+        system,
+        target,
+        binding,
+        max_states,
+        max_edges,
+        cancel,
+        true,
+        &mut |_, _| {},
+        &mut |_| {},
+    )?;
     check_exact_reachability(&graph, certificate, objective, bound, cancel)
 }
 
@@ -567,7 +595,11 @@ pub fn check_claim_exact_reachability(
     )
 }
 
-fn bind_claim<'a>(claims: &'a [CheckedProbabilisticClaim], item: &ObligationIdentity, cancel: &Cancel) -> Result<&'a CheckedProbabilisticClaim, ExactProbabilityGraphError> {
+fn bind_claim<'a>(
+    claims: &'a [CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    cancel: &Cancel,
+) -> Result<&'a CheckedProbabilisticClaim, ExactProbabilityGraphError> {
     poll_cancel(cancel)?;
     let mut bound_claim = None;
     for claim in claims {

@@ -1632,9 +1632,11 @@ impl TerminalRecord {
     pub fn refuted_by_probability_witness(
         request_index: RequestIndex,
         backend: BackendId,
-        _reproduced: &crate::ReproducedProbabilityWitness,
-    ) -> Self {
-        Self::with_backend(request_index, backend, TerminalValue::Refuted)
+        item: &crate::ObligationIdentity,
+        reproduced: &crate::ReproducedProbabilityWitness,
+    ) -> Option<Self> {
+        (item == &reproduced.evidence().item)
+            .then(|| Self::with_backend(request_index, backend, TerminalValue::Refuted))
     }
 
     /// QSpec FR-483: a `refuted` record whose `contract-counterexample` the

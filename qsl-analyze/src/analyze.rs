@@ -63,9 +63,9 @@ use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 pub use crate::contract_check::contract_item;
 pub use crate::value_check::value_item;
 pub use clause_item::{ClauseItemRefusal, ClauseLimits, ClauseSubject, CLAUSE_TRANSCRIPT};
-#[cfg(feature = "test-support")]
-pub use exact::exact_probabilistic_item_tampered;
 pub use exact::{exact_probabilistic_item, ExactProbabilityEvidence};
+#[cfg(feature = "test-support")]
+pub use exact::{exact_probabilistic_item_tampered, exact_probabilistic_item_witness_tampered};
 pub use items::{
     derived_model_item, derived_protocol_item, derived_zone_item, hyper_form_item, model_item,
     protocol_item, statistical_item, timed_refinement_item, zone_item, DerivedItemMismatch,
@@ -769,7 +769,7 @@ pub struct AnalyzeRecord {
     /// (FR-281-AC-1).
     pub exact_probabilistic: Option<Box<ExactProbabilityEvidence>>,
     /// The independently replayed EN-5 probabilistic counterexample.
-    pub probabilistic_counterexample: Option<Box<qsl_replay::ProbabilisticCounterexample>>,
+    pub probabilistic_counterexample: Option<Box<qsl_replay::ReproducedProbabilityWitness>>,
 }
 
 /// How an item settled.
@@ -1203,7 +1203,7 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
         value_check: None,
         contract_check: None,
         exact_probabilistic: None,
-            probabilistic_counterexample: None,
+        probabilistic_counterexample: None,
     };
     let disposed = |kind, diagnostic| {
         record(Settlement::Disposed(Disposed {
@@ -1292,7 +1292,7 @@ fn settle(
         value_check: None,
         contract_check: None,
         exact_probabilistic: None,
-            probabilistic_counterexample: None,
+        probabilistic_counterexample: None,
     };
     let disposed = |kind, diagnostic: Diagnostic, backend| {
         record(

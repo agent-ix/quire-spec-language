@@ -870,10 +870,10 @@ impl<'a> Graph<'a> {
                     continue;
                 }
                 if groups.last().is_some_and(|group| {
-                    group
-                        .edges
-                        .first()
-                        .is_some_and(|first| same_action(&first.choice, &edge.choice))
+                    group.edges.first().is_some_and(|first| {
+                        product.kind == ProductKind::Dtmc
+                            || same_action(&first.choice, &edge.choice)
+                    })
                 }) {
                     if let Some(group) = groups.last_mut() {
                         group.edges.push(edge);
