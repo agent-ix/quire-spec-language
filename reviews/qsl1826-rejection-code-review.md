@@ -4,7 +4,7 @@ title: QSL-1826 probability rejection code-review
 type: SpecReview
 analysis: code-review
 scope: agent-ix/quire-spec-language; QSL-1826; qsl-analyze/src/analyze/exact.rs, qsl-analyze/tests/it/exact_probabilistic_item.rs,
-  qsl-replay/src/certificate.rs
+  qsl-replay/src/certificate.rs, qsl-analyze/tests/it/exact_probabilistic_zero_binding.rs, qsl-analyze/tests/it/main.rs
 review_set: subset
 relationships:
 - target: ix://agent-ix/quire-spec-language/FR-201
@@ -58,11 +58,19 @@ scope:
     `certified`. This clause is observed at `analyze` over an engine set holding EN-1:
     the reduced item is an EN-1 item whose request selects partial-order reduction
     (FR-159), so EN-1 reports `HoldsReduc'
+- id: qsl-analyze/tests/it/exact_probabilistic_zero_binding.rs
+  path: qsl-analyze/tests/it/exact_probabilistic_zero_binding.rs
+  role: examined
+  excerpt: assert_eq!(disposed.kind, DispositionKind::Unsupported);
+- id: claim_binding
+  path: qsl-replay/src/probability_certificate.rs
+  role: context_only
+  excerpt: not an object reference or has no instance or several (this slice checks
 ```
 
 ## Coverage
 
-Reviewed frozen df76c1c4e39b95b18ba897cb28ac93b272c27234 against origin/main 7e0fbcdf9e94f3f9e19bc4537eb3fe94960dbe0c. Rust lane checked API, implementation, safety, wire and testing rules; repository AGENTS/CLAUDE/README/CONTRIBUTING, workspace lints and deny configuration examined. No CI, dependency or gate changes. No applicable AssuranceProfile found.
+Reviewed final frozen 7e56c1e0df4e8ff3d60847d2382231c03d1b972d against origin/main 7e0fbcdf9e94f3f9e19bc4537eb3fe94960dbe0c. Rust lane checked API, implementation, safety, wire and testing rules; repository AGENTS/CLAUDE/README/CONTRIBUTING, workspace lints and deny configuration examined. No CI, dependency or gate changes. No applicable AssuranceProfile found.
 
 Three production behaviors inventoried: typed inequality/threshold mapping, inconclusive settlement without evidence, and full-key base64url serialization. All have FR-201/FR-203/FR-281 ownership; zero introduced unowned behaviors or source/test stubs found in this slice. Runtime reconstruction failures retain failed. Malformed remains failed and explicitly tested; it is a tracked pre-existing deviation, not fulfillment of all rejection obligations.
 
@@ -98,3 +106,7 @@ bindings:
   ac_id: FR-203-AC-3
   trace: correct
 ```
+
+## Final-head supplemental review
+
+Supplemental final-head review at 7e56c1e0df4e8ff3d60847d2382231c03d1b972d: since df76c1c4 only the zero-instance integration module, its main.rs registration and verbatim review artifacts were added. Production is unchanged. The real admitted reference population is asserted empty before claim_binding and public checker return UnsupportedBinding. The EN-5 test requires exactly one unsupported en-5 disposition and no terminal verdict, probability evidence or counterexample. Its empty certificate cannot conceal a certificate rejection: the assertion requires the exact binding error. Both tests run actual production entry points and use the existing World fixture; no substitute engine/checker. Bare FR tags are statement context, not criterion tags, so no extra AC matrix discharge is claimed. Focused log shows 2 passed; targeted Clippy completed and formatting was reported exit 0. Reviewer diff whitespace check passed; no rerun justified and no broad matrix attempted. Code-review PASS and scoped gap-analysis CONDITIONAL remain. This final slice is mergeable under the AGENTS incomplete-assurance policy; malformed rejection, replay, wider forms and codecs remain open.
