@@ -692,6 +692,30 @@ fn certificate_of(
     Ok(ExactProbabilityCertificate { values: entries })
 }
 
+fn witness_charge(
+    meter: &mut quire_exact::Meter,
+    storage: &mut u64,
+    bytes: usize,
+    limits: &crate::exact_probabilistic::ExactProbLimits,
+) -> Result<(), ExactProbBuildIssue> {
+    *storage = storage.saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
+    if *storage > limits.document.storage_bytes {
+        return Err(ExactProbBuildIssue::Limit {
+            limit: ModelCheckLimit::CertificateMaxWorkingBytes,
+            value: limits.document.storage_bytes,
+        });
+    }
+    meter
+        .charge(quire_exact::Charge::new(
+            quire_exact::ChargePoint::CollectionVisit,
+        ))
+        .map_err(|incomplete| {
+            ExactProbBuildIssue::Predicate(qsl_eval::simulation::model::ClauseOutcome::Incomplete(
+                incomplete,
+            ))
+        })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn replay_refutation(
     system: &ModelSystem<'_>,
@@ -828,6 +852,22 @@ fn replay_refutation(
     let stopped = state_outcomes
         .as_ref()
         .map(|outcomes| outcomes.iter().map(Option::is_some).collect::<Vec<_>>());
+    let mut producer_issue = None;
+    let mut producer_meter =
+        quire_exact::Meter::new(system.meter_limits()).with_cancel(cancel.clone());
+    let mut producer_storage = 0u64;
+    let mut control = || {
+        witness_charge(
+            &mut producer_meter,
+            &mut producer_storage,
+            std::mem::size_of::<crate::exact_probabilistic::ProducedStep>(),
+            limits,
+        )
+        .map_err(|issue| {
+            producer_issue = Some(issue);
+            crate::exact_probabilistic::WitnessError::InvalidState
+        })
+    };
     let produced = if let Some(stopped) = stopped.as_deref() {
         crate::exact_probabilistic::produce_witness_stopping(
             product,
@@ -838,6 +878,7 @@ fn replay_refutation(
             Some(stopped),
             &past,
             limits,
+            &mut control,
         )
     } else {
         produce_witness(product, policy, scope, initial, &accepting, &past, limits)
@@ -846,6 +887,9 @@ fn replay_refutation(
         if let Some(cause) = cancel.tripped() {
             return settled(&ExactProbBuildIssue::Cancelled(cause), subject);
         }
+    }
+    if let Some(issue) = producer_issue {
+        return settled(&issue, subject);
     }
     let produced = match produced {
         Ok(Some(witness)) => witness,
@@ -866,8 +910,12 @@ fn replay_refutation(
         if let Some(monitor) = monitor {
             bounded_product_key(state, binding, monitor, limits.document, cancel)
         } else {
-            ProbabilityProductKey::for_model_state(binding, &state.model)
-                .map_err(ProbabilityDocumentError::from)
+            ProbabilityProductKey::for_model_state_with_limits(
+                binding,
+                &state.model,
+                limits.document,
+                cancel,
+            )
         }
     };
     let Some(initial_state) = product.states.get(initial.index()) else {
@@ -898,6 +946,7 @@ fn replay_refutation(
     }
     scheduler.sort_by(|a, b| a.0.cmp(&b.0));
     let mut paths = Vec::new();
+    let mut conversion_work = 0usize;
     for path in produced.paths {
         let mut partials = vec![(first.clone(), Vec::new())];
         for step in path.steps {
@@ -923,6 +972,25 @@ fn replay_refutation(
             };
             let mut next = Vec::new();
             for (state, steps) in partials {
+                conversion_work = conversion_work.saturating_add(1);
+                if conversion_work > limits.model.limits.max_transitions {
+                    return settled(
+                        &ExactProbBuildIssue::Limit {
+                            limit: ModelCheckLimit::ExactProbMaxTransitions,
+                            value: u64::try_from(limits.model.limits.max_transitions)
+                                .unwrap_or(u64::MAX),
+                        },
+                        subject,
+                    );
+                }
+                if let Err(issue) = witness_charge(
+                    &mut producer_meter,
+                    &mut producer_storage,
+                    std::mem::size_of::<ProbabilityWitnessStep>(),
+                    limits,
+                ) {
+                    return settled(&issue, subject);
+                }
                 let Ok(Ok(actions)) = system.actions(&state) else {
                     return broken();
                 };
@@ -941,6 +1009,23 @@ fn replay_refutation(
                             if system.state_key(&post).ok().map(|key| key.0).as_ref()
                                 == Some(&to.model)
                             {
+                                if let Err(issue) = witness_charge(
+                                    &mut producer_meter,
+                                    &mut producer_storage,
+                                    post_key.as_bytes().len().saturating_mul(2),
+                                    limits,
+                                ) {
+                                    return settled(&issue, subject);
+                                }
+                                if candidates.try_reserve(1).is_err() {
+                                    return settled(
+                                        &ExactProbBuildIssue::Limit {
+                                            limit: ModelCheckLimit::CertificateMaxWorkingBytes,
+                                            value: limits.document.storage_bytes,
+                                        },
+                                        subject,
+                                    );
+                                }
                                 candidates.push(ProbabilityWitnessStep {
                                     action: identity.clone(),
                                     transition,
@@ -968,7 +1053,38 @@ fn replay_refutation(
                             subject,
                         );
                     }
-                    let mut extended = steps.clone();
+                    if let Err(issue) = witness_charge(
+                        &mut producer_meter,
+                        &mut producer_storage,
+                        steps
+                            .len()
+                            .saturating_add(1)
+                            .saturating_mul(std::mem::size_of::<ProbabilityWitnessStep>())
+                            .saturating_add(post_key.as_bytes().len()),
+                        limits,
+                    ) {
+                        return settled(&issue, subject);
+                    }
+                    if next.try_reserve(1).is_err() {
+                        return settled(
+                            &ExactProbBuildIssue::Limit {
+                                limit: ModelCheckLimit::CertificateMaxWorkingBytes,
+                                value: limits.document.storage_bytes,
+                            },
+                            subject,
+                        );
+                    }
+                    let mut extended = Vec::new();
+                    if extended.try_reserve(steps.len().saturating_add(1)).is_err() {
+                        return settled(
+                            &ExactProbBuildIssue::Limit {
+                                limit: ModelCheckLimit::CertificateMaxWorkingBytes,
+                                value: limits.document.storage_bytes,
+                            },
+                            subject,
+                        );
+                    }
+                    extended.extend(steps.iter().cloned());
                     let post = candidate.post.clone();
                     extended.push(candidate);
                     next.push((post, extended));

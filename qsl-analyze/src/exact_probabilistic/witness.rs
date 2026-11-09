@@ -430,10 +430,12 @@ fn induce(
     initial: ProbStateId,
     accepting: &[bool],
     stopped: Option<&[bool]>,
+    control: &mut impl FnMut() -> Result<(), WitnessError>,
 ) -> Result<Induced, WitnessError> {
     let mut induced = Induced::new();
     let mut queue = VecDeque::from([initial]);
     while let Some(state) = queue.pop_front() {
+        control()?;
         let accepts = accepting
             .get(state.index())
             .copied()
@@ -458,12 +460,18 @@ fn induce(
 
 /// The states of the induced chain from which an accepting state is
 /// reachable: one reverse breadth-first search from the accepting states.
-fn reaching(induced: &Induced, accepting: &[bool]) -> BTreeSet<ProbStateId> {
+fn reaching(
+    induced: &Induced,
+    accepting: &[bool],
+    control: &mut impl FnMut() -> Result<(), WitnessError>,
+) -> Result<BTreeSet<ProbStateId>, WitnessError> {
     let mut predecessors: BTreeMap<ProbStateId, Vec<ProbStateId>> = BTreeMap::new();
     let mut queue = VecDeque::new();
     let mut reaching: BTreeSet<ProbStateId> = BTreeSet::new();
     for (state, (_, steps)) in induced {
+        control()?;
         for step in steps {
+            control()?;
             predecessors.entry(step.to).or_default().push(*state);
             if accepting.get(step.to.index()).copied().unwrap_or(false) && reaching.insert(*state) {
                 queue.push_back(*state);
@@ -471,13 +479,14 @@ fn reaching(induced: &Induced, accepting: &[bool]) -> BTreeSet<ProbStateId> {
         }
     }
     while let Some(state) = queue.pop_front() {
+        control()?;
         for predecessor in predecessors.get(&state).into_iter().flatten() {
             if reaching.insert(*predecessor) {
                 queue.push_back(*predecessor);
             }
         }
     }
-    reaching
+    Ok(reaching)
 }
 
 /// Produce FR-202's path-set witness on the chain `policy` induces from
@@ -505,7 +514,15 @@ pub fn produce_witness(
     limits: &ExactProbLimits,
 ) -> Result<Option<ProducedWitness>, WitnessError> {
     produce_witness_stopping(
-        product, policy, scope, initial, accepting, None, past, limits,
+        product,
+        policy,
+        scope,
+        initial,
+        accepting,
+        None,
+        past,
+        limits,
+        &mut || Ok(()),
     )
 }
 
@@ -520,6 +537,7 @@ pub(crate) fn produce_witness_stopping(
     stopped: Option<&[bool]>,
     past: &Rational,
     limits: &ExactProbLimits,
+    control: &mut impl FnMut() -> Result<(), WitnessError>,
 ) -> Result<Option<ProducedWitness>, WitnessError> {
     if accepting.len() != product.states.len() || initial.index() >= product.states.len() {
         return Err(WitnessError::InvalidState);
@@ -527,8 +545,8 @@ pub(crate) fn produce_witness_stopping(
     if stopped.is_some_and(|stopped| stopped.len() != product.states.len()) {
         return Err(WitnessError::InvalidState);
     }
-    let induced = induce(product, policy, initial, accepting, stopped)?;
-    let reaching = reaching(&induced, accepting);
+    let induced = induce(product, policy, initial, accepting, stopped, control)?;
+    let reaching = reaching(&induced, accepting, control)?;
     let accepts = |state: ProbStateId| accepting.get(state.index()).copied().unwrap_or(false);
     let transition_limit = || WitnessError::Limit {
         limit: qsl_replay::ModelCheckLimit::ExactProbMaxTransitions,
@@ -556,6 +574,7 @@ pub(crate) fn produce_witness_stopping(
     let mut paths: Vec<ProducedPath> = Vec::new();
     let mut sum = rational(0);
     while let Some(partial) = frontier.pop() {
+        control()?;
         if accepts(partial.state) {
             if u64::try_from(paths.len()).map_or(true, |count| count >= limits.max_witness_paths) {
                 return Err(WitnessError::Limit {
@@ -587,6 +606,7 @@ pub(crate) fn produce_witness_stopping(
             return Err(transition_limit());
         }
         for (index, step) in steps.iter().enumerate() {
+            control()?;
             if !accepts(step.to) && !reaching.contains(&step.to) {
                 continue;
             }

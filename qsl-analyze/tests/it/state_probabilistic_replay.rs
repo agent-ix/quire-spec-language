@@ -4,6 +4,7 @@ use crate::prob_world::{self, Operation, World};
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{analyze_items, exact_probabilistic_item, Engines};
 use qsl_eval::simulation::model::ModelSystem;
+use qsl_eval::simulation::TransitionSystem;
 use qsl_foundation::RequestIndex;
 use qsl_replay::{
     replay_probabilistic_witness, ExactProbLimits, ModelCheckLimits, ProbabilisticCounterexample,
@@ -14,7 +15,7 @@ use quire_exact::{Cancel, Integer, Rational};
 fn ratio(a: i64, b: i64) -> Rational {
     Rational::new(Integer::from(a), Integer::from(b)).unwrap()
 }
-fn world(event: &str, scheduler: &str, operator: &str, threshold: &str) -> World {
+fn model(event: &str, scheduler: &str, operator: &str, threshold: &str) -> prob_world::Model {
     let claims = format!("probabilistic Claim using inf on M over (m: M::Msg) under {scheduler} on origin {{ probability {operator} {threshold} [ {event} ] }}");
     let mut model = prob_world::link(&claims);
     model.body = model
@@ -34,7 +35,10 @@ fn world(event: &str, scheduler: &str, operator: &str, threshold: &str) -> World
         "weight Msg::send_b = 1;",
         "weight Msg::send_b = 1; weight Msg::recover = 1;",
     );
-    World::new(&model)
+    model
+}
+fn world(event: &str, scheduler: &str, operator: &str, threshold: &str) -> World {
+    World::new(&model(event, scheduler, operator, threshold))
 }
 fn evidence(world: &World) -> ProbabilisticCounterexample {
     let mut records = analyze_items(
@@ -181,5 +185,135 @@ fn cancellation_and_caller_storage_arithmetic_limits_return_no_token() {
         let mut limits = ExactProbLimits::default();
         limits.max_rational_bits = 1;
         assert!(replay(&world, &witness, &limits, &Cancel::new()).is_err());
+    }
+}
+
+fn empty(world: &World) -> ProbabilisticCounterexample {
+    let system = ModelSystem::new(world.subject().simulation).unwrap();
+    let binding = qsl_replay::claim_binding(&system, world.claim("Claim")).unwrap();
+    let reference = binding.as_ref().map(|binding| binding.reference.clone());
+    let initial = system.initial().remove(0);
+    let bytes = system.state_key(&initial).unwrap().0;
+    ProbabilisticCounterexample {
+        item: qsl_replay::probabilistic_claim_identity(world.claim("Claim")).unwrap(),
+        binding: reference.clone(),
+        initial_key: qsl_replay::ProbabilityProductKey::for_model_state(reference.as_ref(), &bytes)
+            .unwrap(),
+        initial,
+        scheduler: vec![],
+        paths: vec![ProbabilityWitnessPath { steps: vec![] }],
+    }
+}
+
+#[trace("TC-637", "FR-202-AC-19", "FR-202-AC-20")]
+#[test]
+fn terminal_stutter_is_evaluated_without_fabricating_a_model_step() {
+    for (event, operator, delivered) in [
+        ("holds(true) until holds(m.delivered)", ">=", false),
+        ("always holds(true)", "<=", false),
+    ] {
+        let mut model = model(event, "every scheduler", operator, "0.5");
+        model.initial =
+            serde_json::json!({"delivered": {"boolean": delivered}, "attempts": {"integer": "2"}});
+        let world = World::new(&model);
+        let witness = evidence(&world);
+        assert!(witness.paths[0].steps.is_empty());
+        assert_eq!(mass(&world, &witness), ratio(1, 1));
+        assert_eq!(mass(&world, &empty(&world)), ratio(1, 1));
+        let mut changed = witness;
+        changed.item = qsl_replay::probabilistic_claim_identity(world.claim("Claim")).unwrap();
+        changed.initial_key = qsl_replay::ProbabilityProductKey::from_canonical_bytes(vec![]);
+        no_token(&world, &changed);
+    }
+}
+
+#[trace("TC-637", "FR-202-AC-20")]
+#[test]
+fn equality_source_identity_and_opposite_verdicts_do_not_reproduce() {
+    for event in [UNTIL, ALWAYS] {
+        let original = world(event, "every scheduler", ">=", "0.5");
+        let witness = evidence(&original);
+        let equal = world(event, "every scheduler", ">=", "0.25");
+        no_token(&equal, &witness);
+        let mut rebound = witness.clone();
+        rebound.item = qsl_replay::probabilistic_claim_identity(equal.claim("Claim")).unwrap();
+        assert!(matches!(
+            replay(
+                &equal,
+                &rebound,
+                &ExactProbLimits::default(),
+                &Cancel::new()
+            ),
+            Ok(ProbabilityWitnessReplay::Parity)
+        ));
+        let opposite = world(event, "every scheduler", "<=", "0.5");
+        rebound.item = qsl_replay::probabilistic_claim_identity(opposite.claim("Claim")).unwrap();
+        no_token(&opposite, &rebound);
+    }
+}
+
+#[trace("TC-637", "FR-202-AC-21")]
+#[test]
+fn original_cycles_are_rejected_even_beyond_initial_state_boundaries() {
+    for event in ["holds(false) until holds(true)", "always holds(false)"] {
+        let mut cyclic = model(event, "every scheduler", "<=", "0.5");
+        cyclic.body = cyclic.body.replace(
+            "self.attempts - pre(self.attempts) = 1",
+            "self.attempts = pre(self.attempts)",
+        );
+        let world = World::new(&cyclic);
+        let witness = empty(&world);
+        assert!(matches!(
+            replay(
+                &world,
+                &witness,
+                &ExactProbLimits::default(),
+                &Cancel::new()
+            ),
+            Err(ProbabilityWitnessError::Graph(
+                qsl_replay::ExactProbabilityGraphError::Cycle
+            ))
+        ));
+    }
+}
+
+#[trace("TC-637", "FR-202-AC-22")]
+#[test]
+fn cancellation_at_the_final_acceptance_poll_cannot_release_a_token() {
+    use std::sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc, OnceLock,
+    };
+    for event in [UNTIL, ALWAYS] {
+        let world = world(event, "every scheduler", ">=", "0.5");
+        let witness = evidence(&world);
+        let live = Cancel::new();
+        let _count = live.count_charges();
+        assert!(matches!(
+            replay(&world, &witness, &ExactProbLimits::default(), &live),
+            Ok(ProbabilityWitnessReplay::Reproduced(_))
+        ));
+        let final_poll = live.charges();
+        let slot = Arc::new(OnceLock::<Cancel>::new());
+        let weak = Arc::downgrade(&slot);
+        let count = Arc::new(AtomicU32::new(0));
+        let observed = Arc::clone(&count);
+        let cancel = Cancel::observing(move || {
+            if observed.fetch_add(1, Ordering::Relaxed) + 1 == final_poll {
+                weak.upgrade()
+                    .unwrap()
+                    .get()
+                    .unwrap()
+                    .cancel(quire_exact::CancelCause::Requested);
+            }
+        });
+        slot.set(cancel.clone()).unwrap();
+        assert!(matches!(
+            replay(&world, &witness, &ExactProbLimits::default(), &cancel),
+            Err(ProbabilityWitnessError::Graph(
+                qsl_replay::ExactProbabilityGraphError::Cancelled(_)
+            ))
+        ));
+        assert_eq!(count.load(Ordering::Relaxed), final_poll);
     }
 }
