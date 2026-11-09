@@ -378,7 +378,8 @@ SMT engines are IR's backend and run through the driver's `prove` (RU-3).
 - **EN-5 checked-subject path replay (proposed amendment, QSL-1826).**
   FR-202 adds a qualified-core entry over the checked package and admitted
   subject for its narrow untimed acyclic unbounded reachability and bounded
-  origin eventually[0,h] holds(P) path-set slices, alongside
+  origin eventually[0,h] holds(P) path-set slices, and FR-201's untimed acyclic
+  infinite-trace state-predicate until/always admission, alongside
   the wire/recompile facade. As with FR-201's checked-subject certificate
   route, this avoids requiring an emitted package that FR-185 refuses. The
   core rebinds the claim and replays actual semantic steps independently;
@@ -388,7 +389,19 @@ SMT engines are IR's backend and run through the driver's `prove` (RU-3).
   cannot yield that token. The bounded slice reuses qualified monitor keys,
   actual S3 binding and terminal closure, independently checks sufficient
   exact path mass, and permits raw cycles only through the finite monitor
-  product. The existing wire obligation and broader replay
+  product. The until/always slice instead uses full binding-bearing model-only
+  keys and independently evaluates state predicates: B precedes A for until,
+  failure prefixes cannot recover, terminal A-and-not-B rejects until and
+  terminal P accepts always under infinite stutter. Original-graph acyclicity
+  is established before absorption, even beyond an already decided initial
+  state. Only exact-result path emission and independently reproduced strict
+  sufficient masses authorize its token: rejection mass R greater than
+  1-theta for minimum AtLeast, acceptance mass A greater than theta for
+  maximum AtMost, and the respective rule for either workload side. These
+  bound the direct event; they do not assert whole-event exact mass or reuse
+  a reachability classifier. Prefix-free draw cylinders and policy consistency
+  are replay obligations. Bounds, budgets, cancellation and certificate
+  acceptance alone cannot produce the token. The existing wire obligation and broader replay
   scope remain; the wire facade is blocked on the shared QSpec FR-413 closed
   bound/choice/semantic-step contract. This amendment adds no wire keys or
   codec. The certificate
