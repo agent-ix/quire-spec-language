@@ -17,7 +17,7 @@ Ticket: QSL-1826. PR: quire-spec-language#2612. Frozen head: 10f32396946499dd47a
 
 ## Verdict
 
-**FAIL** — Not mergeable until the identity and resource findings are resolved in this PR.
+**PASS** — Disposition pass 1 at 536232f43c4c4b70eb6dcc11c6b3bd7344cf3299 fixes all three original findings. No open or new source findings remain; this checked-subject slice is mergeable. The original review verdict was FAIL; original findings remain unchanged below.
 
 ## Findings
 
@@ -72,3 +72,46 @@ scope:
 Clippy independently passed: cargo clippy --locked -p qsl-replay -p qsl-eval --all-targets --all-features -- -D warnings (exit 0, 33.13s after lock). Mandatory flock/nice/ionice/toolchain/jobs/threads/debug/incremental/wrapper/target settings were used. Coder evidence /tmp/qsl1826-check-summary.md records passing fmt, qsl-analyze Clippy, 11 new replay integration tests, 10 existing EN-5 tests, 18 solver tests, 7 checker tests and one token compile-fail doctest. No broad rerun, make ci, Kani, metadata child tests, or gate changes. Findings are established by direct control/data-flow inspection, not runtime reproduction; a scratch rustc probe could not link a consistent cached feature set and supplied no behavioral evidence.
 
 Wire/recompile replay, codecs, broader forms and remaining malformed-certificate scope remain open. The unrelated merged FR-201/282 objective profile does not change this typed path review. The reviewer changed no source and did not push or merge.
+
+## Dispositions
+
+Round 1; frozen head 536232f43c4c4b70eb6dcc11c6b3bd7344cf3299, commits 259754fd0, f64bc0fa4 and 536232f43. All original findings were open before this round.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Full identity now derives from the checked occurrence through the mapping shared with ItemKey::identity; model/ordinal/both poisoned copies refuse. The actual nonzero ordinal is retained and an unrepresentable ordinal refuses. Both analyzer proof and refutation paths call the qualified helper. |
+| FND-002 | fixed | All producer path, frontier/expansion and rational-bit stop sites now return typed Limit, including sum arithmetic. The adapter preserves limit/value into incomplete; None is reserved for insufficient mathematical evidence. Direct controls build and solve with ample limits before narrowing only producer budgets. |
+| FND-003 | fixed | Zero capacity stops before root queue construction. Each unseen successor checks the discovered set (queued plus processed) before insertion. Real fanout with state/edge ceilings of one stops at state admission rather than a later edge limit. |
+
+### Round 1 fixed excerpts
+
+FND-001:
+
+```rust
+            && (&probabilistic_claim_identity(claim)? != item
+                || bound_claim.replace(claim).is_some())
+```
+
+FND-002:
+
+```rust
+        Err(crate::exact_probabilistic::WitnessError::Limit { limit, value }) => {
+            return settled(&ExactProbBuildIssue::Limit { limit, value }, subject);
+        }
+```
+
+FND-003:
+
+```rust
+                    if !seen.contains(&target_key) {
+                        if seen.len() >= max_states {
+                            return Err(ExactProbabilityGraphError::LimitReached);
+                        }
+                        seen.insert(target_key.clone());
+                        pending.push_back((target_key, successor));
+                    }
+```
+
+### Round 1 scope and evidence
+
+Rechecked the entire fix diff, including qsl-replay identity.rs, planner/key.rs, probability_certificate.rs and lib.rs; qsl-analyze analyze/exact.rs, exact_probabilistic/witness.rs, probabilistic_replay.rs and free_delays.rs. New code keeps the qualified core independent of analyzer-local types; no wire or codec contract changes. All three original regressions were observed failing in /tmp/qsl1826-fix1-red.log; source fixes and actual passing logs were inspected. /tmp/qsl1826-fix1-summary.md records 15 replay tests, two producer tests, ten existing EN-5 tests, seven checker tests, nonzero identity, Detour and loop controls, formatting and touched qsl-analyze/qsl-replay all-target Clippy passing. qsl-eval is unchanged since the reviewer independently passed its all-target/all-feature Clippy. No redundant cargo rerun, aggregate gate or matrix computation was performed in this disposition pass. No new finding was identified. The conditional matrix/remaining-assurance scope in SR-20261109172912000019 remains open and does not block this engineering slice under the repository owner rule.
