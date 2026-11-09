@@ -2,8 +2,22 @@
 //! FR-202 finite event-position witness replay, independent of solver products.
 
 use super::*;
-use qsl_eval::automaton::{BoundedState, QualifiedBoundedMonitor, StateId};
+use qsl_eval::automaton::{AutomatonError, BoundedState, QualifiedBoundedError, QualifiedBoundedMonitor, StateId};
 use qsl_semantics::check::Event;
+
+struct CylinderStep {
+    action: ScheduledIdentity,
+    transition: ModelTransition,
+    draw: Vec<SemanticValue>,
+    post_key: ProbabilityProductKey,
+}
+
+impl CylinderStep {
+    fn same(&self, other: &Self) -> bool {
+        self.action == other.action && self.transition == other.transition
+            && same_values(&self.draw, &other.draw) && self.post_key == other.post_key
+    }
+}
 
 pub(super) fn replay(
     system: &ModelSystem<'_>,
@@ -24,6 +38,9 @@ pub(super) fn replay(
     else {
         return Err(ExactProbabilityGraphError::UnsupportedClaimForm.into());
     };
+    match bound {
+        Bound::AtLeast(threshold) | Bound::AtMost(threshold) => check_bits(threshold, limits.max_rational_bits)?,
+    }
     if !claim.fairness.is_empty()
         || !matches!(
             TimedSystem::new(system, &claim.subject.alias),
@@ -43,15 +60,7 @@ pub(super) fn replay(
         &context,
         limits.model.max_automaton_states,
     )
-    .map_err(|error| match error {
-        qsl_eval::automaton::QualifiedBoundedError::Translation(_) => {
-            ProbabilityWitnessError::Graph(ExactProbabilityGraphError::UnsupportedClaimForm)
-        }
-        _ => ProbabilityWitnessError::Limit {
-            limit: ModelCheckLimit::ExactProbMaxAutomatonStates,
-            value: limits.model.max_automaton_states,
-        },
-    })?;
+    .map_err(monitor_error)?;
     let predicate = formula
         .condition(monitor.atom().index())
         .ok_or(ExactProbabilityGraphError::UnsupportedClaimForm)?;
@@ -81,14 +90,14 @@ pub(super) fn replay(
     };
     let root = monitor
         .start(observes(system, predicate, reference, initial)?)
-        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+        .map_err(monitor_error)?;
     let key_of = |state: &ModelSimState, control: StateId, monitor: &QualifiedBoundedMonitor| {
         let (bytes, _) = system
             .state_key(state)
             .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
         let monitor_key = monitor
             .key(control)
-            .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+            .map_err(monitor_error)?;
         ProbabilityProductKey::for_formula_state(
             reference,
             &bytes,
@@ -114,14 +123,7 @@ pub(super) fn replay(
     let mut mass = rational(0);
     // A cylinder includes its semantic choice and draw, even when several
     // disjoint draws produce exactly the same model and monitor state.
-    let mut cylinders: Vec<
-        Vec<(
-            ScheduledIdentity,
-            ModelTransition,
-            Vec<SemanticValue>,
-            ProbabilityProductKey,
-        )>,
-    > = Vec::new();
+    let mut cylinders: Vec<Vec<CylinderStep>> = Vec::new();
     for path in &witness.paths {
         poll_cancel(cancel)?;
         let mut state = initial.clone();
@@ -135,7 +137,7 @@ pub(super) fn replay(
             if !matches!(
                 monitor
                     .state(control)
-                    .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?,
+                    .map_err(monitor_error)?,
                 BoundedState::Open { .. }
             ) {
                 return Ok(ProbabilityWitnessReplay::Parity);
@@ -197,7 +199,7 @@ pub(super) fn replay(
                 poll_cancel(cancel)?;
                 let next = monitor
                     .step(control, observes(system, predicate, reference, &post)?)
-                    .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+                    .map_err(monitor_error)?;
                 let post_key = key_of(&post, next, &monitor)?;
                 if post_key == step.post_key
                     && key_of(&step.post, next, &monitor)? == post_key
@@ -229,12 +231,12 @@ pub(super) fn replay(
                 cancel,
             )?;
             check_bits(&probability, limits.max_rational_bits)?;
-            cylinder.push((
-                step.action.clone(),
-                step.transition.clone(),
-                step.draw.clone(),
-                post_key.clone(),
-            ));
+            cylinder.push(CylinderStep {
+                action: step.action.clone(),
+                transition: step.transition.clone(),
+                draw: step.draw.clone(),
+                post_key: post_key.clone(),
+            });
             state = post;
             control = next;
             key = post_key;
@@ -242,7 +244,7 @@ pub(super) fn replay(
         admit_state(&key, &mut seen, &mut storage, limits)?;
         let mut verdict = monitor
             .state(control)
-            .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+            .map_err(monitor_error)?;
         if matches!(verdict, BoundedState::Open { .. }) {
             let mut issue = None;
             let distributions =
@@ -259,7 +261,7 @@ pub(super) fn replay(
             }
             verdict = monitor
                 .terminal(control)
-                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+                .map_err(monitor_error)?;
         }
         if !matches!(
             (bound, verdict),
@@ -272,7 +274,7 @@ pub(super) fn replay(
             if previous
                 .iter()
                 .zip(&cylinder)
-                .all(|(a, b)| a.0 == b.0 && a.1 == b.1 && same_values(&a.2, &b.2) && a.3 == b.3)
+                .all(|(a, b)| a.same(b))
             {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
@@ -360,5 +362,16 @@ fn document_error(error: ProbabilityDocumentError) -> ProbabilityWitnessError {
         ProbabilityDocumentError::Graph(error) => ProbabilityWitnessError::Graph(error),
         ProbabilityDocumentError::Build(issue) => ProbabilityWitnessError::Build(issue),
         _ => ProbabilityWitnessError::Refused,
+    }
+}
+
+fn monitor_error(error: QualifiedBoundedError) -> ProbabilityWitnessError {
+    match error {
+        QualifiedBoundedError::Translation(_) => ExactProbabilityGraphError::UnsupportedClaimForm.into(),
+        QualifiedBoundedError::Automaton(AutomatonError::StateLimit { limit }) => ProbabilityWitnessError::Limit {
+            limit: ModelCheckLimit::ExactProbMaxAutomatonStates,
+            value: limit,
+        },
+        QualifiedBoundedError::Automaton(_) | QualifiedBoundedError::Key(_) => ExactProbabilityGraphError::ExpansionRefused.into(),
     }
 }

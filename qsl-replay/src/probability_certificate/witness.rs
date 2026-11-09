@@ -116,6 +116,9 @@ impl From<ExactProbabilityGraphError> for ProbabilityWitnessError {
 /// Replay a typed path set against the exact package and admitted system.
 /// The claim, binding, predicates, probabilities and terminal leaves are all
 /// independently derived. This entry accepts no analyzer graph or wire data.
+/// It admits acyclic unbounded reachability and origin event-position
+/// `eventually[0,h] holds(P)`. The latter uses qualified monitor keys and
+/// terminal false extension and permits raw model cycles within its horizon.
 #[allow(clippy::too_many_arguments)]
 pub fn replay_probabilistic_witness(
     package: &CheckedPackage,
