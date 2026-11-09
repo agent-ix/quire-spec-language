@@ -66,3 +66,6 @@ CHANGES REQUESTED. The confined unsafe module is sound as currently wired (frame
 | FND-009 | fixed | Each fallback now refuses (unsupported, or a fault recorded in Emitter::refused and returned from build). |
 | FND-010 | fixed | Entries are named qsl_entry_{index}. |
 | FND-011 | fixed | Comment, Ctx reference, dead kernel field, dead top parameter, EmptyComparison cap, cast and Makefile block all corrected. |
+| FND-006 | fixed | Round 2 (c94254923): both JIT parity tests are untagged; the 200-unit test is renamed parity_smoke_over_the_first_200_generated_units and documented as not the gate; the 300-unit test is ignored with QSL-1825 (Backlog, QSL V1 Architecture Spine) as its blocker; make parity stays red. |
+| FND-012 | fixed | Round 2 (c94254923): division_interval returns None for Rem without a selection, so the node is listed unsupported at prepare; unit test a_remainder_without_a_selection_has_no_interval. |
+| FND-013 | deferred | Spec-text divergence only, code is sound; the FR-568/FR-561 amendment is routed to the terra spec lane and is out of scope for this code change. |
