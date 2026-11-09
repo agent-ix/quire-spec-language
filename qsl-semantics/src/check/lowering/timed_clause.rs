@@ -21,14 +21,14 @@ use quire_checked::node::{CheckedLiteral, NodeKind};
 use quire_exact::{EffectiveId, Identifier, NodeKey, Value, ValueType};
 use quire_semantic_value::location::ExpressionLocation as Location;
 
-use super::{Binder, Binders, Lowering, PlaceStep};
+use super::{refuse, require_admitted, Binder, Binders, Lowering, PlaceStep};
 use crate::check::family::OccurrenceRole;
 
 use crate::check::node_key::{
     Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LeafTerm, LiteralValue, MemberTerm,
     NodeTag, Operation, Operator, TupleMember, TupleTerm,
 };
-use crate::check::refusal::{CheckRefusal, KeyFault};
+use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault};
 use crate::check::state_clause::ClauseOperation;
 use crate::check::timed_model::{
     CheckedTimedPredicate, ClockConstraint, ClockField, ClockId, ConstraintNodes,
@@ -574,6 +574,56 @@ impl Lowering<'_> {
                 })
     }
 
+    /// For each step of `clock`'s path, the key type of the map it selects an
+    /// entry of (a map slot step), read from the declared type of the field
+    /// holding the place and followed down the path; `None` for any other
+    /// step.
+    fn map_key_types(&self, clock: &ClockField) -> Vec<Option<ValueType>> {
+        let types = self.scope.types();
+        let mut keys = vec![None; clock.path().len()];
+        let Some(PlaceStep::Field(field)) = clock.path().first() else {
+            return keys;
+        };
+        let Some(mut current) = types.object_type(clock.owner()).and_then(|object| {
+            object
+                .attributes()
+                .iter()
+                .find(|attribute| attribute.name() == field)
+                .map(|attribute| attribute.value_type().clone())
+        }) else {
+            return keys;
+        };
+        for (index, step) in clock.path().iter().enumerate().skip(1) {
+            while let ValueType::Option(payload) = &current {
+                let payload = (**payload).clone();
+                current = payload;
+            }
+            let next = match (step, &current) {
+                (PlaceStep::Slot(shape), ValueType::Map(map)) if shape.map => {
+                    keys[index] = Some(map.key().clone());
+                    map.values().clone()
+                }
+                (PlaceStep::Slot(_), ValueType::Collection(collection)) => {
+                    collection.element().clone()
+                }
+                (PlaceStep::Field(name), ValueType::Composite(handle)) => {
+                    let Some(quire_semantic_value::declaration::CompositeShape::Record(fields)) =
+                        types.composite(handle.clone()).map(|c| c.shape())
+                    else {
+                        return keys;
+                    };
+                    let Some(found) = fields.iter().find(|f| f.name() == name) else {
+                        return keys;
+                    };
+                    found.value_type().clone()
+                }
+                _ => return keys,
+            };
+            current = next;
+        }
+        keys
+    }
+
     /// The `clock_place` template node of every clock of `clocks`, the
     /// clocks of the timed model whose model node is `model_node`, located
     /// at the model's time declaration `location` (QSpec FR-322
@@ -603,7 +653,8 @@ impl Lowering<'_> {
         let mut nodes = Vec::with_capacity(clocks.len());
         for clock in clocks {
             let mut path = Vec::with_capacity(clock.path().len());
-            for step in clock.path() {
+            let keys = self.map_key_types(clock);
+            for (index, step) in clock.path().iter().enumerate() {
                 let members = match step {
                     PlaceStep::Field(name) => vec![
                         ("kind", self.text_literal("field", location)?),
@@ -619,7 +670,28 @@ impl Lowering<'_> {
                             "collection",
                             self.text_literal(super::collection_kind(*shape), location)?,
                         ),
-                        ("selector", LeafTerm::reference(integer.clone())),
+                        (
+                            "selector",
+                            // A map slot is selected by the entry's key: the
+                            // node of the map's key type, never the
+                            // position's `Integer` (FR-230 "Clock
+                            // collections", AC-62).
+                            match (shape.map, keys.get(index).and_then(Option::as_ref)) {
+                                (true, Some(key)) => {
+                                    let node = self.map_key_node(key, location)?;
+                                    LeafTerm::reference(require_admitted(node, location)?)
+                                }
+                                (true, None) => {
+                                    return Err(refuse(
+                                        location,
+                                        CheckCause::InternalFault(Box::new(
+                                            KeyFault::UnknownDeclaration(clock.field().clone()),
+                                        )),
+                                    ))
+                                }
+                                (false, _) => LeafTerm::reference(integer.clone()),
+                            },
+                        ),
                         ("minimum", count(shape.min)),
                         (
                             "maximum",

@@ -1359,6 +1359,7 @@ fn deep_source_generator_keeps_format_identity(label: &str) {
     limits.checking = quire_semantic_value::checking::CheckingLimits::new(u64::MAX)
         .with_input_bytes(u64::MAX)
         .with_work_budget(u64::MAX);
+    limits.package = limits.package.with_output_bytes(u64::MAX);
     if label == "sum" {
         let parsed = qsl_cst::parse(
             SourceIdentity::new("a", "u"),

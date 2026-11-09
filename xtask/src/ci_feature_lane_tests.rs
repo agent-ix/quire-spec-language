@@ -601,7 +601,7 @@ fn clean_and_core_tooling_retain_their_own_target_and_features() {
                     "--lib",
                     "--no-default-features",
                     "--features",
-                    "handoff-writer",
+                    "checked-handoff",
                     "--target-dir",
                     "caller target/clean"
                 ],

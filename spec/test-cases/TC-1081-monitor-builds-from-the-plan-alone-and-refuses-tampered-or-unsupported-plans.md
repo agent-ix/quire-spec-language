@@ -12,7 +12,7 @@ relationships:
 
 Verify that the executable monitor plan of FR-251 is self-sufficient, that admission refuses any plan not derived from the selected clause and target, that built monitors do not share state, that executing the plan agrees with QSL's reference evaluator, and that every build, admission and execution fault is a typed non-verdict result.
 
-Scope: FR-251-AC-4 to FR-251-AC-12, FR-251-AC-14, FR-251-AC-15, FR-251-AC-17, FR-251-AC-19, FR-251-AC-21, FR-251-AC-23 to FR-251-AC-25, FR-251-AC-27 to FR-251-AC-30, FR-251-AC-32 to FR-251-AC-39, FR-251-AC-41, FR-251-AC-42, FR-251-AC-43 through FR-251-AC-50.
+Scope: FR-251-AC-4 to FR-251-AC-12, FR-251-AC-14, FR-251-AC-15, FR-251-AC-17, FR-251-AC-19, FR-251-AC-21, FR-251-AC-23 to FR-251-AC-25, FR-251-AC-27 to FR-251-AC-30, FR-251-AC-32 to FR-251-AC-39, FR-251-AC-41, FR-251-AC-42, FR-251-AC-43 through FR-251-AC-51.
 
 ## Test Procedure
 

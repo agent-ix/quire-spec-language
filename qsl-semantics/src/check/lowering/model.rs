@@ -74,6 +74,9 @@ pub struct CollectionShape {
     pub min: u64,
     /// The most elements it holds; `None` when no maximum is declared.
     pub max: Option<u64>,
+    /// Whether the collection is a `Map`, whose instance a slot step selects
+    /// by the entry's key and not by position (FR-230 "Clock collections").
+    pub map: bool,
 }
 
 /// One clock place of an object type of the package (FR-230 "Places",
@@ -136,6 +139,9 @@ pub struct PlaceRow {
 
 /// The wire name of a collection of `shape` (QSpec FR-322 `slot` step).
 pub fn collection_kind(shape: CollectionShape) -> &'static str {
+    if shape.map {
+        return "map";
+    }
     match (shape.ordered, shape.unique) {
         (true, false) => "sequence",
         (false, true) => "set",
@@ -195,6 +201,10 @@ impl PackagePlace {
                     previous.unwrap_or_else(|| self.declaring.clone()),
                     identity.unwrap_or_default(),
                 ),
+                PlaceStep::Slot(shape) if shape.map => {
+                    let parent = previous.unwrap_or_default();
+                    (parent.clone(), format!("{parent}[key]"))
+                }
                 PlaceStep::Slot(_) => {
                     let parent = previous.unwrap_or_default();
                     (element_type(&parent).to_owned(), format!("{parent}[slot]"))
@@ -233,6 +243,7 @@ impl PackagePlace {
             .iter()
             .map(|step| match step {
                 PlaceStep::Field(name) | PlaceStep::Union(name) => name.as_str(),
+                PlaceStep::Slot(shape) if shape.map => "[key]",
                 PlaceStep::Slot(_) => "[slot]",
             })
             .collect::<Vec<_>>()
@@ -1471,7 +1482,6 @@ impl AdmittedModel {
         visiting: &mut Vec<&'m DeclarationKey>,
         places: &mut Vec<PackagePlace>,
     ) {
-        use crate::model::domain_package::ValueTypeRef;
         // The field step's row: the member's declared type, its collection
         // or `Option` around the type it holds.
         let declared = self.rendered(&field.value_type);
@@ -1490,6 +1500,7 @@ impl AdmittedModel {
                     unique: field.multiplicity.unique,
                     min: field.multiplicity.lower,
                     max: field.multiplicity.upper,
+                    map: false,
                 },
                 &element,
             )
@@ -1507,6 +1518,7 @@ impl AdmittedModel {
                 unique: field.multiplicity.unique,
                 min: field.multiplicity.lower,
                 max: field.multiplicity.upper,
+                map: false,
             }));
             reached = element_type(&reached).to_owned();
             at.members.push((reached.clone(), None));
@@ -1514,16 +1526,35 @@ impl AdmittedModel {
         let above = at.optional;
         let own = matches!(field.presence, quire_exact::Presence::Optional);
         at.optional |= own;
+        self.places_below(&field.value_type, at, reached, above, own, visiting, places);
+    }
+
+    /// The places a value of type `value_ref` holds below `at`, which already
+    /// names the member holding it. `reached` is the rendered type `at` ends
+    /// at, `above` whether an optional member is above the member and `own`
+    /// whether the member itself is optional.
+    #[allow(clippy::too_many_arguments)]
+    fn places_below<'m>(
+        &'m self,
+        value_ref: &'m crate::model::domain_package::ValueTypeRef,
+        mut at: PackagePlace,
+        mut reached: String,
+        above: bool,
+        own: bool,
+        visiting: &mut Vec<&'m DeclarationKey>,
+        places: &mut Vec<PackagePlace>,
+    ) {
+        use crate::model::domain_package::ValueTypeRef;
         // A package sequence type is a slot of an unbounded sequence of its
         // items (QSpec FR-154), a chain of them one slot each, and a package
         // alias the type it aliases.
         let Some((value_type, sequences)) =
-            crate::model::domain_package::unaliased(&field.value_type, |key| self.records.get(key))
+            crate::model::domain_package::unaliased(value_ref, |key| self.records.get(key))
         else {
             return;
         };
         // Every alias on the way to the clock.
-        let mut named = &field.value_type;
+        let mut named = value_ref;
         let mut steps = 0_usize;
         while let ValueTypeRef::Package(key) = named {
             steps += 1;
@@ -1547,6 +1578,7 @@ impl AdmittedModel {
                 unique: false,
                 min: 0,
                 max: None,
+                map: false,
             }));
             reached = element_type(&reached).to_owned();
             at.members.push((reached.clone(), None));
@@ -1604,6 +1636,24 @@ impl AdmittedModel {
                     below.path.push(PlaceStep::Field(name.to_owned()));
                     self.places_of(inner, below, visiting, places);
                 }
+                visiting.pop();
+            }
+            // A package map type: each entry the map holds is a slot selected
+            // by its key (FR-230 "Clock collections"), the clocks of its value
+            // type below it. The key is never a position and a key place has
+            // no place id.
+            Some(DomainPackageRecord::MapType(map)) if !visiting.contains(&key) => {
+                visiting.push(key);
+                at.path.push(PlaceStep::Slot(CollectionShape {
+                    ordered: false,
+                    unique: true,
+                    min: map.lower,
+                    max: map.upper,
+                    map: true,
+                }));
+                let values = self.rendered(&map.values);
+                at.members.push((values.clone(), None));
+                self.places_below(&map.values, at, values, above, false, visiting, places);
                 visiting.pop();
             }
             _ => {}
@@ -2642,6 +2692,7 @@ impl<'a> Lowering<'a> {
                         None
                     }
                     DomainPackageRecord::MapType(map) => {
+                        references.push(&map.keys);
                         references.push(&map.values);
                         None
                     }

@@ -638,7 +638,7 @@ pub(super) fn contradiction_wire(refusal: &ProgressRefusal) -> (TemporalWire, Ou
 // ---------------------------------------------------------------- reader
 
 /// The strict reader's typed `disposition.temporal` member (FR-267). Its
-/// wire form is a closed object tagged by `kind`; [`decode`] reads it with
+/// wire form is a closed object tagged by `kind`; `decode` reads it with
 /// every failing member's path.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]

@@ -1157,7 +1157,10 @@ mod quantities {
             .records
             .push(DomainPackageRecord::MapType(MapTypeRecord {
                 key: key("UnusedMap"),
+                keys: ValueTypeRef::Native(crate::model::domain_package::NativeValueType::String),
                 values: ValueTypeRef::Unit("metre".to_owned()),
+                lower: 0,
+                upper: None,
             }));
         assert_normalized_model_unit_root(package);
     }

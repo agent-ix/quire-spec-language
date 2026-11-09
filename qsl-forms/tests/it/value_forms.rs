@@ -212,6 +212,7 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Indexed { trace, .. } => format!("Indexed[{trace}]"),
         ExprNode::StepLabel { trace, label } => format!("StepLabel[{trace},{label:?}]"),
         ExprNode::Stutter => "Stutter".into(),
+        ExprNode::Ref(_) => "Ref".into(),
     };
     if children.is_empty() {
         head

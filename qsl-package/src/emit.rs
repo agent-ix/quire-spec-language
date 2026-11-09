@@ -204,6 +204,15 @@ pub enum EmitRefusal {
     /// (QSpec FR-487).
     #[error("the tick-monitor plan cannot be written: {0}")]
     MonitorPlanInvariant(&'static str),
+    /// The strict reader refused the base package the plan root is written
+    /// over (FR-251 "Fault boundary", QSL-1822), so no plan root exists for
+    /// it. The refusal is the reader's, not a broken producer invariant. For
+    /// instance, Contract IR FR-347 "Function-call arguments" admits a helper
+    /// call only when each argument's type node is the parameter's own, so a
+    /// bounded model field passed to an `Integer` parameter is refused. The
+    /// reader's refusal is carried whole; its code is this refusal's code.
+    #[error("the tick-monitor plan cannot be written: the base package is refused ({0})")]
+    MonitorBaseRefused(#[source] Box<crate::checked_v2::V2ReadRefusal>),
     /// The plan-root writer found a name or selection declared more than
     /// once and refuses to bind the first (QSpec FR-487).
     #[error("the tick-monitor plan cannot be written: {name} is declared more than once")]
@@ -418,6 +427,7 @@ impl EmitRefusal {
                 Code::UnsupportedConstruct
             }
             Self::MonitorPlanAmbiguous { .. } => Code::InvalidProjectionCorrespondence,
+            Self::MonitorBaseRefused(read) => read.code(),
             Self::TimedModelNodeSetMismatch
             | Self::UnkeyedProbabilisticClaim { .. }
             | Self::TimedOrder(_) => Code::RuntimeInvariant,
@@ -444,6 +454,7 @@ impl EmitRefusal {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::StaleProtocolReference { .. } => Some("missing-name"),
+            Self::MonitorBaseRefused(_) => None,
             Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
                 Some("not-yet-implemented")
             }

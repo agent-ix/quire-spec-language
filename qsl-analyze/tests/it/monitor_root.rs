@@ -1437,3 +1437,46 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
     assert!(budget.consumed().work > prefix.work);
     assert!(budget.consumed().storage > prefix.storage);
 }
+
+/// FR-251 "Plan root" / QSL-1824: an atom that calls a helper with a bounded
+/// model field where the helper's parameter is the unbounded `Integer` writes
+/// a plan root the strict reader admits. The checker makes the widening
+/// explicit as an exact integer conversion, so the argument's type node is the
+/// parameter's (Contract IR FR-347 "Function-call arguments"); before QSL-1824
+/// the base package was refused `ill_typed`.
+#[trace("TC-1081", "FR-251-AC-51")]
+#[test]
+fn an_atom_calling_a_helper_with_a_wider_parameter_writes_a_plan_root() {
+    let narrow = unit_source(
+        "always holds(f(c.versionNumber))",
+        "function f using v(x: Int[0, 1000]): Boolean pure { x >= 0 }",
+        true,
+        "on origin",
+    );
+    let root = root_of(&narrow, "C", &target()).expect("the field's own type is admitted");
+    assert_eq!(admitted(&root).monitor_plans().len(), 1);
+
+    let wide = unit_source(
+        "always holds(g(c.versionNumber))",
+        "function g using v(a: Integer): Boolean pure { a >= 0 }",
+        true,
+        "on origin",
+    );
+    let root = root_of(&wide, "C", &target()).expect("the widened argument is admitted");
+    assert_eq!(admitted(&root).monitor_plans().len(), 1);
+}
+
+/// FR-065 call-argument widening (QSL-1824): a bounded integer argument reaches
+/// a parameter of a wider bound through the same exact conversion.
+#[trace("TC-376", "FR-065-AC-9")]
+#[test]
+fn an_atom_calling_a_helper_with_a_wider_bounded_parameter_writes_a_plan_root() {
+    let wider = unit_source(
+        "always holds(h(c.versionNumber))",
+        "function h using v(a: Int[0, 2000]): Boolean pure { a >= 0 }",
+        true,
+        "on origin",
+    );
+    let root = root_of(&wider, "C", &target()).expect("the widened argument is admitted");
+    assert_eq!(admitted(&root).monitor_plans().len(), 1);
+}

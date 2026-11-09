@@ -241,6 +241,10 @@ enum Frame<'e, 'r> {
     /// field's name, the union case, and the `present` node's location;
     /// admits the typed owner `r` (FR-230 "Presence is derived").
     PlacePresence(&'e str, Option<&'e str>, Location),
+    /// `ref(r.f...)` of a clock place: the field path below the owner `r` and
+    /// the `ref` node's location; admits the typed owner `r` (FR-230 "Clock
+    /// references").
+    ClockRef(Vec<&'e str>, Location),
     /// `forall(e in r.q: present(e))` (`true`) or `exists(..)` over a
     /// `Sequence<Option<Clock>>` place: the field, the quantifier and the
     /// query's location; admits the typed owner `r` (FR-415-AC-20).
@@ -498,6 +502,15 @@ impl<'r> Callee<'r> {
         }
     }
 
+    /// The declared parameter type at `index` of a function or imported
+    /// call, the only calls whose argument type node FR-347 compares.
+    fn call_parameter(&self, index: usize) -> Option<ValueType> {
+        match self {
+            Self::Value(application) => application.call_parameter(index),
+            Self::Union(_) => None,
+        }
+    }
+
     /// The expected type of an IEEE intrinsic's next argument.
     fn intrinsic_hint(&self, siblings: &[ValueType]) -> Option<Option<ValueType>> {
         match self {
@@ -517,6 +530,16 @@ impl<'r> Callee<'r> {
             Self::Value(application) => application.finish(arguments, argument_types, location),
             Self::Union(member) => Ok(member.finish(arguments, location)),
         }
+    }
+}
+
+/// Whether an integer of type `source` is admitted where `target` is declared
+/// by widening: a different integer type that contains it.
+fn integer_widens(source: &ValueType, target: &ValueType) -> bool {
+    match (source, target) {
+        (ValueType::Integer | ValueType::Int(_), ValueType::Integer) => source != target,
+        (ValueType::Int(from), ValueType::Int(to)) => from != to && to.lower() <= from.lower() && from.upper() <= to.upper(),
+        _ => false,
     }
 }
 
@@ -1409,6 +1432,22 @@ impl<'a> Typer<'a> {
                 // Only `deref(r).f` is a value.
                 let goal = Goal::Infer(expression.at(*operand), None, location.child(0));
                 return Ok(Self::unary(Unary::Deref, goal, location, frames));
+            }
+            ExprNode::Ref(operand) => {
+                // `ref(p)`: `p` is a field path below a typed owner.
+                let mut path = Vec::new();
+                let mut base = expression.at(*operand);
+                while let ExprNode::Field { operand, field } = base.node() {
+                    path.push(field.as_str());
+                    base = base.at(*operand);
+                }
+                path.reverse();
+                if path.is_empty() {
+                    return Err(mismatch(&location));
+                }
+                let owner_location = (0..path.len()).fold(location.child(0), |at, _| at.child(0));
+                frames.push(Frame::ClockRef(path, location));
+                return Ok(Step::Descend(Goal::Infer(base, None, owner_location)));
             }
             ExprNode::Pre(operand) => {
                 let operand = expression.at(*operand);
@@ -2412,6 +2451,9 @@ impl<'a> Typer<'a> {
             Frame::SlotPresence(field, all, location) => self
                 .slot_presence(typed, field, all, &location)
                 .map(Step::Typed),
+            Frame::ClockRef(path, location) => {
+                self.clock_ref(typed, &path, &location).map(Step::Typed)
+            }
             Frame::PlacePresence(field, case, location) => self
                 .place_presence(typed, field, case, &location)
                 .map(Step::Typed),
@@ -2445,6 +2487,22 @@ impl<'a> Typer<'a> {
                 )
                 .map(Step::Typed),
             Frame::Application(mut frame) => {
+                // FR-347 "Function-call arguments" (QSL-1824): an integer
+                // argument whose type differs from a declared function
+                // parameter's is made explicit as the exact integer
+                // conversion, so the argument's type node is the
+                // parameter's.
+                let typed = match frame
+                    .order
+                    .get(frame.typed.len())
+                    .and_then(|index| frame.application.call_parameter(*index))
+                {
+                    Some(parameter) if integer_widens(&typed.value_type, &parameter) => {
+                        let location = typed.location.clone();
+                        self.convert(&parameter, typed, &location)?
+                    }
+                    _ => typed,
+                };
                 frame.argument_types.push(typed.value_type.clone());
                 frame.typed.push(self.push(typed));
                 Self::application(frame, frames)

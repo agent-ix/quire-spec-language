@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The checked-package handoff writer (FR-517, FR-518): [`write`] compiles a
+//! The checked-package handoff writer (FR-517, FR-518): [`write()`] compiles a
 //! complete-V1 unit in process through [`crate::emit_checked_v2`], reads the
 //! emitted package back through Contract IR's reader, and writes a new
 //! directory holding the package, the exact input bytes, the selection
@@ -16,7 +16,7 @@
 
 //! # A downstream consumer
 //!
-//! A crate that enables only the `checked-handoff` feature compiles [`write`]
+//! A crate that enables only the `checked-handoff` feature compiles [`write()`]
 //! and [`Selection::check`] against this public surface alone:
 //!
 //! ```no_run
@@ -81,7 +81,7 @@ pub enum Corpus {
     Standard,
 }
 
-/// What [`write`] compiles and writes.
+/// What [`write()`] compiles and writes.
 #[derive(Debug)]
 pub struct CheckedHandoffRequest {
     /// The unit, its libraries, its domain package documents, the package
@@ -282,7 +282,7 @@ pub fn write(request: &CheckedHandoffRequest, directory: &Path) -> Result<(), Er
     write_with(request, directory, &RealEnvironment)
 }
 
-/// [`write`] over `environment`, which a test replaces to inject a refusal or
+/// [`write()`] over `environment`, which a test replaces to inject a refusal or
 /// a failure.
 pub fn write_with(
     request: &CheckedHandoffRequest,

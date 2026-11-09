@@ -297,6 +297,20 @@ impl World {
         world
     }
 
+    /// The binding `analyze` takes over this world's subject, with the
+    /// universe `keys` of its population.
+    pub(crate) fn binding(&self, keys: &[&str]) -> qsl_analyze::analyze::SubjectBinding<'_> {
+        qsl_analyze::analyze::SubjectBinding {
+            packages: &self.packages,
+            snapshots: &self.snapshots,
+            initial: self.initial.clone(),
+            universes: vec![PopulationUniverse {
+                population: self.domain.key(self.domain.population),
+                keys: keys.iter().map(|key| (*key).to_owned()).collect(),
+            }],
+        }
+    }
+
     /// The bytes of each provisioned snapshot, by label.
     pub(crate) fn snapshot_bytes(
         &self,

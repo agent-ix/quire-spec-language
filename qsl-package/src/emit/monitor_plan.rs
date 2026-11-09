@@ -349,7 +349,21 @@ pub fn emit_monitor_plan_over(
         limits,
         evidence,
     )
-    .map_err(|_| invariant("the base package does not read back"))?;
+    .map_err(|failure| {
+        use qsl_foundation::diagnostic::StageFailure;
+        match failure {
+            // The reader's own refusal of the producer's base package
+            // (QSL-1822): a typed refusal, not a broken invariant.
+            StageFailure::Refused(read) => EmitRefusal::MonitorBaseRefused(Box::new(read)),
+            StageFailure::RefusedWithPayload(read, ()) => EmitRefusal::MonitorBaseRefused(read),
+            StageFailure::Limit(limit) | StageFailure::LimitWithPayload(limit, ()) => {
+                EmitRefusal::OutputLimit(limit)
+            }
+            StageFailure::Cancelled(cause) => EmitRefusal::Cancelled { cause },
+            // The reader's own internal fault is a broken invariant.
+            StageFailure::Fault(_) => invariant("the base package does not read back"),
+        }
+    })?;
     let base = read.into_value().admitted;
     let mut emission = emit_monitor_plan(&base, retained, plan, emit)?;
     let mut evidence = evidence.clone();

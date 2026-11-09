@@ -16,7 +16,7 @@
 //!   fields and `type` aliases of those crates' types;
 //! - the S3 input, the receiver of [`S3_CONSTRUCTOR`];
 //! - every type of `quire-contract-model`: any type path rooted at that
-//!   crate, bar its [`ADDRESSING_TYPES`].
+//!   crate, bar its `ADDRESSING_TYPES`.
 //!
 //! A fieldless enum (closed vocabulary such as `StateClauseKind`) is outside
 //! the set, and so is configuration: a type a `pub` free function of those

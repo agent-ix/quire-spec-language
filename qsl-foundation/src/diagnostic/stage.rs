@@ -224,7 +224,8 @@ impl core::fmt::Display for LimitExceeded {
 #[cfg(test)]
 mod tests {
     use alloc::{
-        borrow::ToOwned, collections::BTreeMap, string::String, string::ToString, vec::Vec,
+        borrow::ToOwned, boxed::Box, collections::BTreeMap, string::String, string::ToString, vec,
+        vec::Vec,
     };
     use ix_trace_rs::trace;
 

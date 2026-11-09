@@ -2726,10 +2726,7 @@ impl<'a> Lowering<'a> {
                 // A String key, the only key a package map has (FR-357), is
                 // the bare Text scalar node: Contract IR reads a map row's
                 // key node as that scalar (QSpec FR-322).
-                let key = match map.key() {
-                    ValueType::String => NodeRef::from(self.scalar("text", location)?),
-                    other => self.build_type_node(other, location)?,
-                };
+                let key = self.map_key_node(map.key(), location)?;
                 frames.push(TypeFrame::Map(map, key));
                 return Ok(TypeStep::Descend(map.values()));
             }
@@ -2863,6 +2860,23 @@ impl<'a> Lowering<'a> {
             ValueType::Timestamp => self.scalar("timestamp", location).map(NodeRef::from),
         }?;
         Ok(TypeStep::Built(key))
+    }
+
+    /// The node of a map's key type `key`: the one node a map's `key` binding
+    /// and a map slot's selector (FR-230 "Clock collections", AC-62) both
+    /// name. A String key is the bare Text scalar node.
+    pub(crate) fn map_key_node<'v>(
+        &mut self,
+        key: &'v ValueType,
+        location: &Location,
+    ) -> Result<NodeRef, CheckRefusal>
+    where
+        'a: 'v,
+    {
+        match key {
+            ValueType::String => Ok(NodeRef::from(self.scalar("text", location)?)),
+            other => self.build_type_node(other, location),
+        }
     }
 
     /// The `option` node over the payload node `payload`.

@@ -199,3 +199,19 @@ fn a_removal_filter_under_a_membership_fact_decreases_a_cardinality_measure() {
         MeasureObligation::MeasureKind
     );
 }
+
+/// QSL-1824: a pass-through argument widened to a wider integer parameter is
+/// an exact `ConvertScalar` of the caller's parameter. It is still the equal
+/// element of a lexicographic measure, so the second element's decrease
+/// proves the cycle (FR-065-AC-9).
+#[trace("TC-376", "FR-065-AC-9")]
+#[test]
+fn a_widened_pass_through_argument_is_still_an_equal_measure_element() {
+    let declarations = "\
+        function f using v(a: Int[0, 9], n: Int[0, 9]): Integer pure decreases(M(a, n)) \
+        { if n > 0 then h(a, n - 1) else 0 }\n\
+        function h using v(x: Int[0, 100], n: Int[0, 9]): Integer pure decreases(M(x, n)) \
+        { if x <= 9 and n > 0 then f(x, n - 1) else 0 }\n\
+        function g using v(): Integer pure { f(3, 3) }";
+    assert_eq!(evaluate(declarations), Integer::from(0_i64));
+}

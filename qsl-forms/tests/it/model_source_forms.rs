@@ -312,3 +312,32 @@ fn named_calls_stay_distinct_from_member_calls_and_type_arguments_survive() {
         matches!(nested.body.root().children()[1].node(), ExprNode::Dispatch { member, arguments, .. } if member == "query" && arguments.is_empty())
     );
 }
+
+/// `ref(p)` is a place term with the one operand `p`, built like `deref(r)`.
+/// Only the form is checked here; FR-230-AC-24's checking is not met yet.
+#[trace("TC-456")]
+#[test]
+fn a_ref_term_wraps_its_place_operand() {
+    let body = "ref(self.x) = ref(other.x)";
+    let (_, parsed) = parse(&format!("pre Ready using m on M::T::op {{ {body} }}"));
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let unit = build_unit(&parsed).expect("S2 clause mapping");
+    let DeclarationForm::StateClause(clause) = unit.forms()[0].form() else {
+        panic!("expected precondition");
+    };
+    let children = clause.body.root().children();
+    assert_eq!(children.len(), 2);
+    for child in &children {
+        assert!(matches!(child.node(), ExprNode::Ref(_)));
+        let field = child.children()[0];
+        assert!(matches!(field.node(), ExprNode::Field { field, .. } if field == "x"));
+    }
+    assert_eq!(
+        children[0].children()[0].children()[0].node(),
+        &ExprNode::SelfRef
+    );
+    assert_eq!(
+        children[1].children()[0].children()[0].node(),
+        &ExprNode::Name("other".into())
+    );
+}

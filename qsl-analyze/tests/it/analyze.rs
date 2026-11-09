@@ -4,15 +4,11 @@
 //! EN-4. Every verdict comes from the engine's own run, certificate checker
 //! and counterexample replay; no test hands `analyze` a verdict.
 //!
-//! Open: FR-281-AC-2 for an invariant one transition breaks. The authored
-//! clause's counterexample now replays (`replay_model_trace` reproduces an
-//! authored clause's counterexample, QSL-1096), but no test here builds that
-//! item over a real clause yet. The deadlock case here is TC-762 step 2's
-//! refuted item, not AC-2's clause.
+//! FR-281-AC-2 and AC-6 over a real authored clause are in `clause_item.rs`.
+//! The deadlock case here is TC-762 step 2's refuted item.
 //!
-//! Not covered, because EN-5 has no solver or certificate checker yet
-//! (QSL-574, QSL-575): FR-281-AC-1's EN-5 item, and so the EN-5 half of
-//! FR-281-AC-3 and of FR-281-AC-6 (EN-1 runs those here). Not covered:
+//! EN-5's FR-281-AC-1 and AC-6 items are in `exact_probabilistic_item.rs`.
+//! Not covered: the EN-5 half of FR-281-AC-3 (EN-1 runs it here). Not covered:
 //! FR-281-AC-7's replay of the undefined value through a real authored
 //! clause (the replay exists, QSL-1096, but the test supplies the replay
 //! result by hand); its settlement from a replay result that reproduces the

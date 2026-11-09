@@ -2386,6 +2386,7 @@ fn check_match(
                 | ExprNode::Let { .. }
                 | ExprNode::Field { .. }
                 | ExprNode::Deref(_)
+                | ExprNode::Ref(_)
                 | ExprNode::Record { .. }
                 | ExprNode::Collection { .. }
                 | ExprNode::Convert { .. }
@@ -2839,6 +2840,7 @@ fn is_opaque(node: &ExprNode) -> bool {
         | ExprNode::Present(_)
         | ExprNode::Value(_)
         | ExprNode::Deref(_)
+        | ExprNode::Ref(_)
         | ExprNode::Call { .. }
         | ExprNode::Size(_)
         | ExprNode::Contains { .. }
@@ -3027,6 +3029,7 @@ fn leaf_payload(node: &ExprNode, swap: Swap<'_>) -> (Vec<u8>, Vec<u8>) {
         ExprNode::Present(_) => (b"present".to_vec(), Vec::new()),
         ExprNode::Value(_) => (b"value".to_vec(), Vec::new()),
         ExprNode::Deref(_) => (b"deref".to_vec(), Vec::new()),
+        ExprNode::Ref(_) => (b"ref".to_vec(), Vec::new()),
         ExprNode::Pre(_) => (b"pre".to_vec(), Vec::new()),
         ExprNode::Size(_) => (b"size".to_vec(), Vec::new()),
         ExprNode::Contains { .. } => (b"contains".to_vec(), Vec::new()),
@@ -3536,6 +3539,7 @@ pub fn check_hyper_clauses(
     .with_integer_division(package.integer_division)
     .with_complete_value(complete_value)
     .with_known_populations(super::refinement::population_names(&package.models))
+    .with_clock_places(&package.models)
     .with_complete_model(!package.models.is_empty())
     .with_model_spellings(package.model_spellings.clone())
     .with_source_owners(package.source_owners.clone())

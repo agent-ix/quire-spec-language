@@ -4,6 +4,7 @@
 mod analyze;
 mod bounded_closure;
 mod claim_family;
+mod clause_item;
 mod closure_certificate;
 mod component_certificate;
 mod config_lasso_fairness;
@@ -13,6 +14,7 @@ mod dense_route;
 mod derived_request;
 mod digital_clocks;
 mod exact_probabilistic;
+mod exact_probabilistic_item;
 mod example_units;
 mod fill;
 mod fixture_ids;

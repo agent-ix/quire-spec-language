@@ -581,6 +581,7 @@ fn a_record_collection_holds_one_clock_place_per_slot() {
                     unique,
                     min: 0,
                     max: upper,
+                    map: false,
                 }),
                 PlaceStep::Field("x".to_owned()),
             ]
@@ -1205,6 +1206,7 @@ fn a_package_sequence_type_is_an_unbounded_clock_collection() {
         unique: false,
         min: 0,
         max: None,
+        map: false,
     });
     let q = model
         .clocks()
@@ -1288,7 +1290,7 @@ fn a_clock_collection_field_parameter_and_result_check_with_their_bounds() {
             let mut map = wire_type(
                 &package("TickMap"),
                 "unused",
-                json!({"values": "ix://quire/native/Clock"}),
+                json!({"keys": "ix://quire/native/Text", "values": "ix://quire/native/Clock", "bound": {"lower": 0}}),
             );
             map["kind"] = json!("map");
             types.push(map);
@@ -1343,6 +1345,7 @@ fn a_clock_collection_field_parameter_and_result_check_with_their_bounds() {
                     unique: false,
                     min: 0,
                     max: Some(maximum),
+                    map: false,
                 }),
             ]
         );
@@ -2845,4 +2848,97 @@ fn a_clock_parameter_reset_ranging_over_the_place_writes_it() {
         .collect();
     names.sort_unstable();
     assert_eq!(names, ["v", "x"]);
+}
+
+/// The `ref` term's typing, interim: `ref(p)` takes a clock place of the
+/// owner it names, so a field that is no place refuses
+/// `ill_typed`/`type-mismatch` at the `ref`. A `ref` of a clock place, or of a
+/// longer path that may pass through a reference field (`ref(self.r.x)`),
+/// needs a checked node for a place id that `quire-checked` does not have
+/// yet, and is refused `unsupported-feature` at the `ref` until it does.
+/// FR-230-AC-24 and FR-230-AC-62 are not met by this slice and are not tagged.
+#[trace("TC-685")]
+#[test]
+fn a_ref_names_a_clock_place_of_its_owner() {
+    use qsl_semantics::check::CheckCause;
+    let document = rpc_document_with(&["x"], false);
+    let refusal = |term: &str| {
+        let body = format!(
+            "{UNITS}{DENSE}pre Named using v on Config::Call::reply {{ {term} = {term} }}\n"
+        );
+        let refusals = check(&document, &body).expect_err("the ref is refused");
+        let [refusal] = refusals.as_slice() else {
+            panic!("one refusal expected: {refusals:?}");
+        };
+        refusal.clone()
+    };
+    // The comparison is the clause body's root, and the left `ref` its first
+    // operand: the refusal is located at the `ref`.
+    let at_ref = |refusal: &qsl_semantics::check::CheckRefusal| {
+        assert_eq!(refusal.location.path(), vec![0], "{refusal:?}");
+    };
+    let missing = refusal("ref(self.nothing)");
+    assert!(
+        matches!(
+            &missing.cause,
+            CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+        ),
+        "{missing:?}"
+    );
+    at_ref(&missing);
+    for term in ["ref(self.x)", "ref(self.nothing.x)"] {
+        let named = refusal(term);
+        assert!(
+            matches!(&named.cause, CheckCause::UnsupportedFeature { .. }),
+            "{term}: {named:?}"
+        );
+        at_ref(&named);
+    }
+}
+
+/// `Reference<Clock>` has no lowering or IR type yet. The source type form
+/// does not resolve it: `Clock` as a `Reference` argument is an unresolved
+/// type name in every position, a refusal and no internal fault.
+#[trace("TC-685")]
+#[test]
+fn a_reference_to_clock_is_refused_in_every_type_position() {
+    let document = rpc_document_with(&["x"], false);
+    for (position, declaration) in [
+        (
+            "parameter",
+            "function f using v(r: Reference<Clock>): Boolean pure { true }",
+        ),
+        (
+            "result",
+            "function f using v(b: Boolean): Reference<Clock> pure { b }",
+        ),
+        ("tuple component", "tuple Pair(Reference<Clock>, Boolean);"),
+        (
+            "union payload",
+            "union Holder { Empty, Has(Reference<Clock>) }",
+        ),
+        (
+            "optional",
+            "function f using v(r: Option<Reference<Clock>>): Boolean pure { true }",
+        ),
+    ] {
+        let body = format!("{UNITS}{DENSE}{declaration}\n");
+        let refused = match crate::model_operations::admit_and_assemble_with_profiles(
+            &document,
+            crate::timed_model::TEMPORAL,
+            &body,
+        ) {
+            Err(error) => format!("{error:?}"),
+            Ok(declarations) => format!(
+                "{:?}",
+                declarations
+                    .check(quire_semantic_value::checking::CheckingLimits::default())
+                    .expect_err("Reference<Clock> is refused")
+            ),
+        };
+        assert!(
+            refused.contains("UnresolvedTypeName"),
+            "{position}: {refused}"
+        );
+    }
 }

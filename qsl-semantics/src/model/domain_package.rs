@@ -460,14 +460,22 @@ pub struct OptionTypeRecord {
     pub inner: ValueTypeRef,
 }
 
-/// A package map type (QSpec FR-154): string keys and values of one declared
-/// value type. The key type is fixed by the kernel `Map<Text, T>` algebra.
+/// A package map type (QSpec FR-154 "Map types"): `Map<keys, values>[lower,
+/// upper]`. It declares its key type, its value type and its entry-count bound,
+/// each required; intake assumes no default key and no default bound.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MapTypeRecord {
     /// This type's own original declaration key.
     pub key: DeclarationKey,
+    /// The key type: a scalar key type of the package (FR-154 "Map types").
+    pub keys: ValueTypeRef,
     /// The value type held by each map entry.
     pub values: ValueTypeRef,
+    /// The least number of entries the map holds.
+    pub lower: u64,
+    /// The most entries the map holds; `None` when it has no maximum (and
+    /// then `lower` is `0`).
+    pub upper: Option<u64>,
 }
 
 /// A package `alias` of a clock, a unit, or an `Option<T>` value type (FCD's

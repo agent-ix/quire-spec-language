@@ -219,6 +219,16 @@ impl Capability {
             | Capability::Composition => &[Protocol],
             Capability::ProbabilisticSatisfaction => &[Probabilistic],
             Capability::Schedulability => &[RealTime],
+            // Downstream crates (`qsl-route`, `qsl-eval`, `qsl-replay`, the
+            // root crate) have their own seams over `Capability`, probed in
+            // the `--cfg seam_probe_downstream` builds. This arm exists only
+            // so this match keeps compiling there and rustc reaches those
+            // crates' own `E0004`s -- the same "arm under downstream, none
+            // under seam_probe alone" shape `FamilyKind::catalog_code_prefix`
+            // uses. `__SeamProbe` is never constructed outside the probe
+            // build, so the arm is never reached.
+            #[cfg(seam_probe_downstream)]
+            Capability::__SeamProbe => &[],
         };
         families.contains(&family)
     }
