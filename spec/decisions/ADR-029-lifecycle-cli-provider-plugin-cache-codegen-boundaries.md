@@ -375,6 +375,20 @@ SMT engines are IR's backend and run through the driver's `prove` (RU-3).
   certificate check, the replay of a counterexample and the certification. CG
   keeps the C-09 map that settles a Kani outcome with its E9 replay result
   (ADR-013 C-09), and the orchestrating driver runs it (ADR-011 T-13).
+- **EN-5 checked-subject path replay (proposed amendment, QSL-1826).**
+  FR-202 adds a qualified-core entry over the checked package and admitted
+  subject for its narrow untimed acyclic reachability path-set slice, alongside
+  the wire/recompile facade. As with FR-201's checked-subject certificate
+  route, this avoids requiring an emitted package that FR-185 refuses. The
+  core rebinds the claim and replays actual semantic steps independently;
+  it imports no engine product graph or optimizer. Only its opaque,
+  item-bound reproduced-witness token permits an EN-5 `refuted` terminal
+  record, which retains the probabilistic evidence. Limits and cancellation
+  cannot yield that token. The existing wire obligation and broader replay
+  scope remain; this amendment adds no wire keys or codec. The certificate
+  route alone did not specify this witness entry or token contract. This
+  amendment makes that internal replay interface explicit within OP-2's
+  existing independent-replay requirement.
 - **One certification per proof.** Every `proved` carries exactly one
   certification (ADR-018 PC-1). A native-engine proof is `certified` once
   its core checker accepts, or `uncertified` when no core checker exists
