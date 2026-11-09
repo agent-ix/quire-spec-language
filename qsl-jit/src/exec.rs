@@ -26,7 +26,7 @@ use quire_semantic_value::stop::Stop;
 
 use crate::kernel::{self, Halt as KernelHalt, State};
 use crate::translate::Op;
-use quire_semantic_value::declaration::TypeEnvironment;
+use qsl_semantics::check::Scope;
 
 /// Why the backend stopped a run.
 pub(crate) enum Halt {
@@ -63,7 +63,7 @@ pub(crate) struct EntryFrame<'a> {
     result: i64,
     meter: &'a mut Meter,
     ops: &'a [Op],
-    types: &'a TypeEnvironment,
+    scope: &'a Scope,
     /// The values behind the handles generated code passes (QSL-1825): owned
     /// by the call, so a handle is an index valid until the call returns.
     state: State,
@@ -80,19 +80,14 @@ pub(crate) const RESULT_OFFSET: i32 = std::mem::offset_of!(EntryFrame<'static>, 
 
 impl<'a> EntryFrame<'a> {
     /// A frame with nothing failed, metering into `meter`.
-    pub(crate) fn new(
-        meter: &'a mut Meter,
-        ops: &'a [Op],
-        types: &'a TypeEnvironment,
-        state: State,
-    ) -> Self {
+    pub(crate) fn new(meter: &'a mut Meter, ops: &'a [Op], scope: &'a Scope, state: State) -> Self {
         Self {
             failed: 0,
             arguments: std::ptr::null(),
             result: 0,
             meter,
             ops,
-            types,
+            scope,
             state,
             halt: None,
         }
@@ -133,7 +128,7 @@ unsafe extern "C" fn shim(frame: *mut c_void, node: i64, a: i64, b: i64) -> i64 
         frame.failed = 1;
         return 0;
     };
-    match kernel::run(op, [a, b], frame.meter, frame.types, &mut frame.state) {
+    match kernel::run(op, [a, b], frame.meter, frame.scope, &mut frame.state) {
         Ok(value) => value,
         Err(KernelHalt::Stop(stop)) => {
             frame.halt = Some(Halt::Stop(stop, op.location.clone()));

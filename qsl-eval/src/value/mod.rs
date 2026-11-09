@@ -10,6 +10,7 @@
 //! `qsl_package::CheckedPackage` (X-7), re-exported by none of this
 //! crate.
 
+pub mod composite;
 mod expression;
 
 // `CheckedPackageEvaluation` is the trait that carries `call` and `evaluate`

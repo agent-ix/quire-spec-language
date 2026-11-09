@@ -6,19 +6,20 @@
 //! charges at the same points. A fast-path operation replaces no arithmetic
 //! here: the kernel computes, and the register only carries the result.
 
+use qsl_eval::value::composite::{construct_record, construct_tuple, present_slots, read_field};
+use qsl_semantics::check::Scope;
 use quire_checked::node::{Arithmetic, OrderedKind};
 use quire_exact::{
     compare_text, evaluate_boolean, evaluate_decimal, evaluate_integer_arithmetic,
-    evaluate_rational_arithmetic, order_numbers, retain_boolean, ArithmeticOperator,
-    BooleanConnective, Charge, ChargePoint, ComparisonOperator, Decimal, DecimalOperation, Integer,
-    IntegerArithmetic, Meter, OrderedOperands, OrderingOperator, Rational, RationalArithmetic,
-    Refusal, Value,
+    evaluate_rational_arithmetic, order_numbers, retain_boolean, retain_composite,
+    ArithmeticOperator, BooleanConnective, Charge, ChargePoint, ComparisonOperator, Decimal,
+    DecimalOperation, Integer, IntegerArithmetic, Meter, OrderedOperands, OrderingOperator,
+    Rational, RationalArithmetic, Refusal, Value,
 };
-use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 use quire_semantic_value::stop::{outcome_into_stop, Stop};
 
-use crate::translate::{divide, integer_to_i64, Op, OpKind, Repr};
+use crate::translate::{divide, integer_to_i64, Carried, Op, OpKind, Repr};
 
 /// Why a kernel operation did not return a value.
 pub(crate) enum Halt {
@@ -40,6 +41,9 @@ impl From<Stop> for Halt {
 #[derive(Default)]
 pub(crate) struct State {
     pub(crate) arena: Vec<Value>,
+    /// Operand values staged for the record or tuple construction that
+    /// consumes them, innermost last.
+    pub(crate) staged: Vec<Value>,
     pub(crate) losses: Vec<LocatedLoss>,
 }
 
@@ -79,6 +83,15 @@ fn decimal(raw: i64, arena: &[Value]) -> Result<&Decimal, Halt> {
         Value::Decimal(value) => Ok(value),
         _ => Err(Halt::Fault("jit-handle-not-a-decimal")),
     }
+}
+
+/// The last `count` staged operand values, in order.
+fn take_staged(staged: &mut Vec<Value>, count: usize) -> Result<Vec<Value>, Halt> {
+    let start = staged
+        .len()
+        .checked_sub(count)
+        .ok_or(Halt::Fault("jit-staged-operands-missing"))?;
+    Ok(staged.split_off(start))
 }
 
 /// A new arena entry holding `value`, and its handle.
@@ -173,14 +186,15 @@ pub(crate) fn run(
     op: &Op,
     raw: [i64; 2],
     meter: &mut Meter,
-    types: &TypeEnvironment,
+    scope: &Scope,
     state: &mut State,
 ) -> Result<i64, Halt> {
     let [a, b] = raw;
-    let State { arena, losses } = state;
-    if let Some(done) = run_value(op, raw, meter, arena, losses) {
+    let types = scope.types();
+    if let Some(done) = run_value(op, raw, meter, scope, state) {
         return done;
     }
+    let State { arena, .. } = state;
     let [left_repr, right_repr] = op.operands;
     let (left, right) = match &op.kind {
         OpKind::Not | OpKind::Retain | OpKind::ChargeCall => {
@@ -282,7 +296,11 @@ pub(crate) fn run(
         | OpKind::RationalNegate { .. }
         | OpKind::Decimal { .. }
         | OpKind::DecimalNegate { .. }
-        | OpKind::ConvertDecimal { .. } => Err(Halt::Fault("jit-operation-dispatch")),
+        | OpKind::ConvertDecimal { .. }
+        | OpKind::Stage { .. }
+        | OpKind::Record { .. }
+        | OpKind::Tuple { .. }
+        | OpKind::Field { .. } => Err(Halt::Fault("jit-operation-dispatch")),
     }
 }
 
@@ -292,18 +310,72 @@ fn run_value(
     op: &Op,
     [a, b]: [i64; 2],
     meter: &mut Meter,
-    arena: &mut Vec<Value>,
-    losses: &mut Vec<LocatedLoss>,
+    scope: &Scope,
+    state: &mut State,
 ) -> Option<Result<i64, Halt>> {
+    let State {
+        arena,
+        staged,
+        losses,
+    } = state;
     let [left_repr, right_repr] = op.operands;
     let produced: Result<Value, Halt> = match &op.kind {
         OpKind::Literal(value) => Ok(value.clone()),
         OpKind::Box | OpKind::Unbox => {
             return Some(integer(a, left_repr, arena).and_then(|v| carry(v, op.result, arena)))
         }
+        OpKind::Stage { boolean } => {
+            let value = if left_repr == Repr::Handle {
+                handle(a, arena).cloned()
+            } else if *boolean {
+                Ok(Value::Boolean(a != 0))
+            } else {
+                Ok(Value::Integer(Integer::from(a)))
+            };
+            return Some(value.map(|value| {
+                staged.push(value);
+                0
+            }));
+        }
+        OpKind::Field {
+            field,
+            optional,
+            value_type,
+            into,
+        } => {
+            return Some((|| {
+                let record = handle(a, arena)?.clone();
+                let read = read_field(
+                    scope.types(),
+                    record,
+                    field,
+                    |declaration, field| scope.record_slot(declaration, field),
+                    *optional,
+                    value_type,
+                )
+                .map_err(Halt::Fault)?;
+                match (into, read.value) {
+                    (Carried::Boolean, Value::Boolean(held)) => Ok(i64::from(held)),
+                    (Carried::Register, Value::Integer(value)) => narrow(&value),
+                    (Carried::Handle, value) => push(value, arena),
+                    _ => Err(Halt::Fault("jit-field-kind")),
+                }
+            })());
+        }
         OpKind::Order(kind) => {
             return Some(order(*kind, [a, b], [left_repr, right_repr], meter, arena).map(i64::from))
         }
+        OpKind::Record { declaration, slots } => (|| {
+            let values = take_staged(staged, present_slots(slots))?;
+            let value =
+                construct_record(scope.types(), declaration, slots, values).map_err(Halt::Fault)?;
+            Ok(outcome_into_stop(retain_composite(value, meter))?)
+        })(),
+        OpKind::Tuple { declaration, arity } => (|| {
+            let values = take_staged(staged, *arity)?;
+            let value = construct_tuple(scope.types(), declaration, values).map_err(Halt::Fault)?;
+            Ok(outcome_into_stop(retain_composite(value, meter))?)
+        })(),
         OpKind::RationalDivide { domain } => (|| {
             let left = Rational::from_integer(integer(a, left_repr, arena)?);
             let right = Rational::from_integer(integer(b, right_repr, arena)?);

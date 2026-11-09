@@ -418,7 +418,7 @@ impl<'p> PreparedJit<'p> {
         }
         let mut state = State::default();
         let registers = registers(compiled, arguments, &mut state.arena)?;
-        let mut frame = EntryFrame::new(meter, &self.ops, graph.scope().types(), state);
+        let mut frame = EntryFrame::new(meter, &self.ops, graph.scope(), state);
         let status = compiled.entry.call(&mut frame, &registers);
         let value = frame.result();
         let (halt, state) = frame.into_parts();
