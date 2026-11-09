@@ -213,6 +213,7 @@ pub(crate) struct World {
     pub(crate) initial: Vec<DocumentRef>,
     /// The native unit the package was checked from.
     pub(crate) unit: Vec<u8>,
+    pub(crate) provision: qsl_analyze::analyze::SourceProvision,
 }
 
 impl World {
@@ -284,6 +285,10 @@ impl World {
             .collect();
         assert_eq!(checked.len(), clauses.len(), "{declared}");
         let mut world = Self {
+            provision: qsl_analyze::analyze::SourceProvision::single(
+                graph.source(),
+                unit.as_bytes(),
+            ),
             domain,
             package: CheckedPackage::link(graph),
             clauses: checked,

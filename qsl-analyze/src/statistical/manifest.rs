@@ -5,7 +5,7 @@
 //! engine's manifest.
 //!
 //! EN-4 settles one (kind, mode) pair, `probabilistic-satisfaction` over a
-//! `bounded` domain, with the evidence kind `statistical` and no other
+//! `unbounded` extent, with the evidence kind `statistical` and no other
 //! (ADR-024 SV-9). Its `domains` are the boundable domains its sampler draws
 //! over: `population` and `integer`. Every label is spelled by the type that
 //! owns it, so this module restates no wire string.
@@ -27,7 +27,7 @@ pub const BACKEND_ID: &str = "en-4";
 /// The (kind, mode) pairs EN-4 advertises: exactly one.
 pub const ADVERTISED: [(Option<&str>, Option<&str>); 1] = [(
     Some(Capability::ProbabilisticSatisfaction.to_wire()),
-    Some(Mode::Bounded.to_wire()),
+    Some(Mode::Unbounded.to_wire()),
 )];
 
 /// The boundable domain kinds EN-4's sampler draws over.

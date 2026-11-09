@@ -35,13 +35,17 @@
 mod clause_item;
 mod exact;
 mod items;
+mod request;
+pub(crate) use request::analyze_bound;
 
-use qsl_eval::model_subject::ModelSubject;
-use qsl_eval::simulation::model::{
-    ExpansionLimits, ModelSimulationRequest, ModelSystem, PopulationUniverse,
+pub use request::{
+    analyze, ClaimItem, ClaimRefusal, HybridItem, ItemForm, ItemOptions, NegotiatedItem,
+    ProbabilisticItem, ProbabilisticLimits, ProvisionRefusal, SourceProvision, TemporalItem,
 };
+
+use qsl_eval::simulation::model::PopulationUniverse;
 use qsl_eval::simulation::protocol::ProtocolTransition;
-use qsl_foundation::diagnostic::{Code, StageFailure, Staged};
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
 use qsl_replay::statistical::StatisticalRecord;
@@ -57,8 +61,8 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{
     AdmissionFailure, DocumentProvision, DocumentRef, ObservationLimits,
 };
-use quire_exact::{Cancel, CancelCause, ScalarLimits};
-use quire_semantic_value::catalog::{CatalogCode, InternalFault};
+use quire_exact::{Cancel, ScalarLimits};
+use quire_semantic_value::catalog::CatalogCode;
 
 pub use crate::contract_check::contract_item;
 pub use crate::value_check::value_item;
@@ -73,7 +77,6 @@ pub use items::{
 };
 
 use crate::external_provider::{ExternalProvider, NotUnbounded, ProviderReport};
-use crate::statistical::StatisticalRequest;
 use crate::zone_check::ZoneCheckRecord;
 use crate::{contract_check, external_provider, model_check, statistical, value_check, zone_check};
 
@@ -272,7 +275,7 @@ pub struct Engines {
 /// FR-120's caller-supplied subject members other than the checked package.
 ///
 /// The provider and analyze operations combine this value with the package
-/// and [`AnalyzeLimits`] to admit one `ModelSystem` before running any item.
+/// and [`AnalyzeLimits`] to admit one model system before running any item.
 #[derive(Clone)]
 pub struct SubjectBinding<'a> {
     /// FR-056's domain package input.
@@ -287,6 +290,21 @@ pub struct SubjectBinding<'a> {
 
 /// The caller's shared accounting, observation, normalization and deadline
 /// limits for one analyze request (FR-277, FR-281).
+///
+/// The deadline must be stated explicitly; there is no implicit default.
+/// ```compile_fail,E0277
+/// use qsl_analyze::analyze::{AnalyzeLimits, DeadlineSupply};
+/// let limits = AnalyzeLimits { ..Default::default() };
+/// ```
+///
+/// ```
+/// use qsl_analyze::analyze::{AnalyzeLimits, DeadlineSupply};
+/// let limits = AnalyzeLimits {
+///     deadline: DeadlineSupply::Unbounded,
+///     ..AnalyzeLimits::unbounded()
+/// };
+/// assert_eq!(limits.deadline, DeadlineSupply::Unbounded);
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AnalyzeLimits {
     /// The scalar evaluation budget.
@@ -296,14 +314,15 @@ pub struct AnalyzeLimits {
     /// The model normalization budgets.
     pub normalization: ModelNormalizationLimits,
     /// The operation deadline in milliseconds, if one was supplied.
-    pub deadline_ms: Option<u64>,
+    pub deadline: DeadlineSupply,
     /// The ceiling on the canonical bytes of each package emission the
     /// analysis makes (`emit.output_bytes`, FR-264 Behavior 5).
     pub emit: qsl_package::EmitLimits,
 }
 
-impl Default for AnalyzeLimits {
-    fn default() -> Self {
+impl AnalyzeLimits {
+    /// Published default budgets with an explicitly unbounded deadline.
+    pub fn unbounded() -> Self {
         Self {
             accounting: ScalarLimits {
                 integer_bits: u64::MAX,
@@ -319,7 +338,7 @@ impl Default for AnalyzeLimits {
             },
             observation: ObservationLimits::default(),
             normalization: ModelNormalizationLimits::default(),
-            deadline_ms: None,
+            deadline: DeadlineSupply::Unbounded,
             emit: qsl_package::EmitLimits::new(qsl_replay::spine::EMIT_OUTPUT_BYTES_DEFAULT),
         }
     }
@@ -329,15 +348,15 @@ impl Default for AnalyzeLimits {
 /// items. Each item is already typed by its layer-A adapter and carries the
 /// disposition established by the caller's negotiation.
 ///
-/// `W` is the item type: [`crate::provider::RoutedItem`] (EN-4) or [`crate::provider::RoutedWork`],
-/// which also carries EN-1 authored-clause and EN-5 exact probabilistic items. The default type parameter
-/// is `RoutedItem`, so a caller that builds a request of EN-4 items is
-/// unchanged.
-pub struct AnalyzeRequest<'a, W = crate::provider::RoutedItem<'a>> {
+/// Each claim is resolved in this package; no request member carries an
+/// independently constructed model subject or replay request.
+pub struct AnalyzeRequest<'a> {
     /// The shared subject binding.
     pub binding: SubjectBinding<'a>,
     /// The negotiated items, in request order.
-    pub items: Vec<W>,
+    pub items: Vec<NegotiatedItem>,
+    /// Source bytes under every label the checked package names.
+    pub provision: SourceProvision,
 }
 
 /// The outcome of analyzing a request, preserving the typed result for each
@@ -346,6 +365,8 @@ pub struct AnalyzeRequest<'a, W = crate::provider::RoutedItem<'a>> {
 pub struct AnalyzeOutcome {
     /// The per-item outcomes.
     pub records: Vec<TerminalRecord>,
+    /// Exactly the counterexamples whose native replay reproduced a refutation.
+    pub counterexamples: Vec<ItemCounterexample>,
     /// Aggregate availability joined from the settled records to the
     /// request's required indices (FR-507-AC-5); a gap when the request
     /// repeats an index.
@@ -358,62 +379,44 @@ pub enum AnalyzeRefusal {
     /// FR-120 did not admit the subject binding.
     #[error("the analyze subject binding did not admit: {0:?}")]
     Binding(AdmissionFailure),
+    /// Source bytes named by the package were not provided.
+    #[error("the analyze source provision did not admit: {0}")]
+    Provision(ProvisionRefusal),
 }
 
-/// Cancels an analyze request when its wall-clock deadline elapses.
-struct DeadlineGuard {
-    finished: std::sync::mpsc::Sender<()>,
-    worker: Option<std::thread::JoinHandle<()>>,
+/// The deadline stated by the frontend, which owns its timer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeadlineSupply {
+    /// No wall-clock deadline was requested.
+    Unbounded,
+    /// The frontend cancels the shared handle when these milliseconds elapse.
+    Milliseconds(u64),
 }
 
-impl DeadlineGuard {
-    fn start(cancel: &Cancel, deadline_ms: Option<u64>) -> Result<Option<Self>, std::io::Error> {
-        let Some(deadline_ms) = deadline_ms else {
-            return Ok(None);
-        };
-        if deadline_ms == 0 {
-            cancel.cancel(CancelCause::Deadline);
-            return Ok(None);
-        }
-
-        let (finished, wait_for_finish) = std::sync::mpsc::channel();
-        let cancel = cancel.clone();
-        let worker = std::thread::Builder::new()
-            .name("qsl-analyze-deadline".to_owned())
-            .spawn(move || {
-                wait_for_deadline(
-                    &cancel,
-                    wait_for_finish,
-                    std::time::Duration::from_millis(deadline_ms),
-                );
-            })?;
-        Ok(Some(Self {
-            finished,
-            worker: Some(worker),
-        }))
-    }
+/// One replayed counterexample, associated with its original request item.
+#[derive(Debug)]
+pub struct ItemCounterexample {
+    /// The item's request index.
+    pub request_index: RequestIndex,
+    /// The engine whose candidate was reproduced.
+    pub backend: BackendId,
+    /// The reproduced counterexample payload.
+    pub counterexample: Counterexample,
 }
 
-fn wait_for_deadline(
-    cancel: &Cancel,
-    wait_for_finish: std::sync::mpsc::Receiver<()>,
-    timeout: std::time::Duration,
-) {
-    if matches!(
-        wait_for_finish.recv_timeout(timeout),
-        Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-    ) {
-        cancel.cancel(CancelCause::Deadline);
-    }
-}
-
-impl Drop for DeadlineGuard {
-    fn drop(&mut self) {
-        let _ = self.finished.send(());
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
-        }
-    }
+/// The native counterexample families delivered by the operation.
+#[derive(Debug)]
+pub enum Counterexample {
+    /// A temporal trace over a model subject.
+    Temporal(Box<TemporalCounterexample>),
+    /// A temporal trace over a protocol subject.
+    Protocol(Box<TemporalCounterexample<ProtocolTransition>>),
+    /// A value-validity assignment reproduced by the evaluator.
+    Assignments(Box<value_check::ValueCounterexample>),
+    /// A contract counterexample reproduced by the evaluator.
+    Contract(Box<qsl_replay::contract_check::ContractCounterexample>),
+    /// A probabilistic path set independently reproduced by the qualified core.
+    Probabilistic(Box<qsl_replay::ReproducedProbabilityWitness>),
 }
 
 impl Engines {
@@ -964,192 +967,6 @@ pub fn aggregate(
 
 /// Analyze the negotiated items over one admitted checked-package subject
 /// (FR-281). The binding is admitted before any engine item runs.
-pub fn analyze<'r, W>(
-    package: &CheckedPackage,
-    request: AnalyzeRequest<'r, W>,
-    engines: &Engines,
-    limits: &AnalyzeLimits,
-    cancel: &Cancel,
-) -> Result<Staged<AnalyzeOutcome>, StageFailure<AnalyzeRefusal>>
-where
-    W: Into<crate::provider::RoutedWork<'r>>,
-{
-    let _deadline = DeadlineGuard::start(cancel, limits.deadline_ms).map_err(|_| {
-        StageFailure::Fault(InternalFault::new("analyze", "deadline-timer-unavailable"))
-    })?;
-
-    let simulation = ModelSimulationRequest {
-        package,
-        packages: request.binding.packages,
-        normalization: limits.normalization,
-        snapshots: request.binding.snapshots,
-        initial: request.binding.initial.clone(),
-        universes: request.binding.universes.clone(),
-        observation: limits.observation,
-        // Admission does not expand successors. The engine item carries its
-        // own caller-selected expansion budget when it later runs.
-        expansion: ExpansionLimits {
-            max_candidates: u64::MAX,
-        },
-        meter: limits.accounting,
-        emit: limits.emit,
-    };
-    ModelSystem::new(simulation)
-        .map_err(|failure| StageFailure::Refused(AnalyzeRefusal::Binding(failure)))?;
-
-    let work: Vec<crate::provider::RoutedWork<'_>> =
-        request.items.into_iter().map(Into::into).collect();
-    let items: Vec<_> = work
-        .iter()
-        .map(|routed| match routed {
-            crate::provider::RoutedWork::Claim(routed) => {
-                statistical_work(package, &request.binding, routed, limits)
-            }
-            crate::provider::RoutedWork::Clause(routed) => {
-                clause_work(package, &request.binding, routed, limits)
-            }
-            crate::provider::RoutedWork::Exact(routed) => {
-                exact_work(package, &request.binding, routed, limits)
-            }
-        })
-        .collect();
-    let requirements: Vec<_> = items.iter().map(AnalyzeItem::requirement).collect();
-    let settled = analyze_items(engines, items, cancel);
-    let aggregate = aggregate(&requirements, &settled);
-    let records = terminal_records(settled);
-    Ok(Staged::new(AnalyzeOutcome { records, aggregate }))
-}
-
-/// Build EN-5 work over the operation's admitted subject. A different
-/// negotiated backend cannot reinterpret this member as a sampling request.
-fn exact_work<'a>(
-    package: &'a CheckedPackage,
-    binding: &SubjectBinding<'a>,
-    routed: &crate::provider::RoutedExact<'a>,
-    limits: &AnalyzeLimits,
-) -> AnalyzeItem<'a> {
-    let item = &routed.item;
-    let built = exact_probabilistic_item(
-        item.request_index,
-        crate::exact_probabilistic::ProductRequest {
-            subject: ModelSubject {
-                simulation: ModelSimulationRequest {
-                    package,
-                    packages: binding.packages,
-                    normalization: limits.normalization,
-                    snapshots: binding.snapshots,
-                    initial: binding.initial.clone(),
-                    universes: binding.universes.clone(),
-                    observation: limits.observation,
-                    expansion: ExpansionLimits {
-                        max_candidates: u64::MAX,
-                    },
-                    meter: limits.accounting,
-                    emit: limits.emit,
-                },
-                proof_bounds: Vec::new(),
-            },
-            claim: item.claim,
-            limits: item.limits,
-        },
-    )
-    .required(item.required);
-    if routed.backend.as_str() == crate::exact_probabilistic::manifest::BACKEND_ID {
-        built
-    } else {
-        built.disposed(
-            Disposition::Unsupported,
-            Some(unsupported_kind(Capability::ProbabilisticSatisfaction)),
-        )
-    }
-}
-
-/// The EN-1 item of a routed authored clause, over the request's own package,
-/// binding and limits. A clause the package does not hold, or one no replay
-/// can name, is no claim of a family temporal-satisfaction applies to, so the
-/// item settles `invalid-request` (`inapplicable-kind`) without an engine
-/// run; a backend other than EN-1 settles it `unsupported`.
-fn clause_work<'a>(
-    package: &'a CheckedPackage,
-    binding: &SubjectBinding<'a>,
-    routed: &crate::provider::RoutedClause<'a>,
-    limits: &AnalyzeLimits,
-) -> AnalyzeItem<'a> {
-    let item = &routed.item;
-    // Intentional fold: every `ClauseItemRefusal` (unknown clause, multi-unit
-    // package, unnamed clause) means the request names no clause this
-    // package can run, which FR-281 settles `invalid-request` with
-    // `inapplicable-kind`. FR-272's vocabulary has no cause per refusal, and
-    // adding one is a catalog change outside this item.
-    let Ok(subject) = ClauseSubject::new(
-        package,
-        binding.clone(),
-        *limits,
-        item.unit,
-        &item.clause,
-        item.run,
-    ) else {
-        return AnalyzeItem::unadapted(item.request_index, Capability::TemporalSatisfaction, None)
-            .required(item.required);
-    };
-    let built = subject.item(item.request_index).required(item.required);
-    if routed.backend.as_str() == model_check::manifest::BACKEND_ID {
-        built
-    } else {
-        built.disposed(
-            Disposition::Unsupported,
-            Some(unsupported_kind(Capability::TemporalSatisfaction)),
-        )
-    }
-}
-
-fn statistical_work<'a>(
-    package: &'a CheckedPackage,
-    binding: &SubjectBinding<'a>,
-    routed: &'a crate::provider::RoutedItem<'a>,
-    limits: &AnalyzeLimits,
-) -> AnalyzeItem<'a> {
-    let item = &routed.item;
-    statistical_item(
-        item.request_index,
-        StatisticalRequest {
-            subject: ModelSubject {
-                simulation: ModelSimulationRequest {
-                    package,
-                    packages: binding.packages,
-                    normalization: limits.normalization,
-                    snapshots: binding.snapshots,
-                    initial: binding.initial.clone(),
-                    universes: binding.universes.clone(),
-                    observation: limits.observation,
-                    // Admission does not expand successors. The engine item
-                    // carries its caller-selected expansion budget when it
-                    // later runs.
-                    expansion: ExpansionLimits {
-                        max_candidates: u64::MAX,
-                    },
-                    meter: limits.accounting,
-                    emit: limits.emit,
-                },
-                proof_bounds: Vec::new(),
-            },
-            claim: item.claim,
-            method: item.method,
-            seed: item.seed,
-            sampler: item.sampler.clone(),
-            limits: item.limits,
-            max_witnesses: item.max_witnesses,
-            symmetry: item.symmetry.clone(),
-            timed_sampling: item.timed_sampling,
-        },
-    )
-    .disposed(
-        Disposition::Supported(Candidate::new(routed.backend.clone())),
-        None,
-    )
-    .required(item.required)
-}
-
 pub(crate) fn terminal_records(records: Vec<AnalyzeRecord>) -> Vec<TerminalRecord> {
     records
         .into_iter()
@@ -1421,29 +1238,6 @@ mod tests {
     use qsl_route::descriptor_from_manifest;
 
     use super::*;
-
-    #[trace("TC-763", "FR-281-AC-12")]
-    #[test]
-    fn deadline_guard_cancels_when_its_wait_times_out() {
-        let cancel = Cancel::new();
-        let (_finished, wait_for_finish) = std::sync::mpsc::channel();
-
-        wait_for_deadline(&cancel, wait_for_finish, std::time::Duration::ZERO);
-
-        assert_eq!(cancel.cause(), Some(CancelCause::Deadline));
-    }
-
-    #[trace("TC-763", "FR-281-AC-12")]
-    #[test]
-    fn deadline_guard_does_not_cancel_when_analysis_finishes_before_timeout() {
-        let cancel = Cancel::new();
-        let (finished, wait_for_finish) = std::sync::mpsc::channel();
-        finished.send(()).expect("the request finished");
-
-        wait_for_deadline(&cancel, wait_for_finish, std::time::Duration::from_secs(1));
-
-        assert_eq!(cancel.cause(), None);
-    }
 
     fn engine(id: &str, kind: Capability) -> Engine {
         Engine::new(

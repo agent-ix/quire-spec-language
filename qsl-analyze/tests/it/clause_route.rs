@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-281-AC-2 and AC-11 through the real byte-driven entries (QSL-1819 PR B):
-//! an authored-clause item is a request member (`RoutedClause`) carrying only
-//! the clause's occurrence key, the unit's bytes and the budgets, and
+//! an authored-clause item carries the clause's occurrence and budgets, and
+//! its operation owns the complete source provision, so
 //! `analyze` / `provider::run` build the EN-1 item over their own package and
 //! binding. Packages, units and snapshots are bytes; no closure, letters or
 //! verdict is supplied.
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze, AnalyzeLimits, AnalyzeRequest, ClauseLimits, Engines, SubjectBinding,
+    analyze, AnalyzeLimits, AnalyzeRequest, ClaimItem, ClauseLimits, Engines, ItemForm,
+    ItemOptions, NegotiatedItem, SubjectBinding, TemporalItem,
 };
-use qsl_analyze::provider::{self, ClauseClaimItem, RoutedClause, RoutedWork};
+use qsl_analyze::provider;
 use qsl_eval::simulation::Limits;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -19,6 +20,8 @@ use qsl_replay::{
     DeclineCode, IncompleteCause, ModelCheckLimit, ProofRefusalCause, TerminalRecord,
     TerminalValue, UnavailabilityCause,
 };
+use qsl_route::{request::ExtentClassification, routing::Disposition, Candidate};
+use qsl_semantics::check::Capability;
 use quire_exact::{Cancel, Origin, Role};
 use quire_semantic_value::catalog::{CatalogCode, Category};
 use serde_json::json;
@@ -39,30 +42,47 @@ fn world(domain: Domain) -> World {
     )
 }
 
-fn work<'a>(world: &'a World, backend: &str, run: ClauseLimits) -> RoutedWork<'a> {
+fn work(world: &World, backend: &str, run: ClauseLimits) -> NegotiatedItem {
     let node = &world.package.graph().temporal_clauses()[0];
-    RoutedWork::Clause(RoutedClause {
-        item: ClauseClaimItem {
+    let candidate = Candidate::new(BackendId::new(backend));
+    NegotiatedItem {
+        item: ClaimItem {
             request_index: RequestIndex::new(0),
-            clause: OccurrenceKey::new(node.identity(), node.claim().clone()),
-            unit: &world.unit,
-            run,
-            required: true,
+            claim: OccurrenceKey::new(node.identity(), node.claim().clone()),
+            kind: Capability::TemporalSatisfaction,
+            extent: ExtentClassification::Bounded,
+            backend: Some(BackendId::new(backend)),
+            candidates: vec![candidate.clone()],
+            options: ItemOptions {
+                required: true,
+                ..ItemOptions::default()
+            },
+            form: Some(ItemForm::Temporal(TemporalItem {
+                limits: qsl_replay::ModelCheckLimits {
+                    limits: run.limits,
+                    ..qsl_replay::ModelCheckLimits::default()
+                },
+                max_depth: run.max_depth,
+                max_candidates: run.max_candidates,
+                ..TemporalItem::default()
+            })),
         },
-        backend: BackendId::new(backend),
-    })
+        disposition: Disposition::Supported(candidate),
+        diagnostic: None,
+    }
 }
 
-fn through_analyze(world: &World, item: RoutedWork<'_>) -> TerminalRecord {
+fn through_analyze(world: &World, item: NegotiatedItem) -> TerminalRecord {
     let binding: SubjectBinding<'_> = world.binding(&["c"]);
     let outcome = analyze(
         &world.package,
-        AnalyzeRequest {
+        &AnalyzeRequest {
             binding,
+            provision: world.provision.clone(),
             items: vec![item],
         },
         &Engines::qsl().expect("the layer-A manifests register"),
-        &AnalyzeLimits::default(),
+        &AnalyzeLimits::unbounded(),
         &Cancel::new(),
     )
     .expect("the binding is admitted")
@@ -71,15 +91,17 @@ fn through_analyze(world: &World, item: RoutedWork<'_>) -> TerminalRecord {
     outcome.records.into_iter().next().expect("one record")
 }
 
-fn through_run(world: &World, item: RoutedWork<'_>) -> TerminalRecord {
+fn through_run(world: &World, item: NegotiatedItem) -> TerminalRecord {
     let mut records = provider::run(
         &world.package,
         &world.binding(&["c"]),
+        &world.provision,
         &[item],
         &Engines::qsl().expect("the layer-A manifests register"),
-        &AnalyzeLimits::default(),
+        &AnalyzeLimits::unbounded(),
         &Cancel::new(),
-    );
+    )
+    .records;
     assert_eq!(records.len(), 1);
     records.remove(0)
 }
@@ -158,26 +180,39 @@ fn an_unbounded_extent_clause_settles_unsupported_through_the_provider_entry() {
     }
 }
 
-/// A clause negotiated to a backend other than EN-1 is not run: it settles
-/// `unsupported`, and a clause the package does not hold settles
+/// A clause negotiated to EN-4 is not run: EN-4 does not advertise its
+/// temporal kind/mode, so the ordered consistency check refuses it before
+/// engine work. A clause the package does not hold settles
 /// `invalid-request` without an engine run.
 #[test]
 fn a_clause_routed_off_en1_or_absent_from_the_package_is_not_run() {
     let world = world(model_world::counter());
     let off = through_analyze(&world, work(&world, "en-4", ClauseLimits::default()));
     assert!(
-        matches!(off.value(), TerminalValue::Unsupported(_)),
+        matches!(
+            off.value(),
+            TerminalValue::Declined {
+                cause: ProofRefusalCause::InvalidInput,
+                code: DeclineCode::Qsl(Code::InvalidRequest)
+            }
+        ),
         "{off:?}"
     );
+    assert_eq!(
+        off.diagnostic(),
+        Some(CatalogCode::new(
+            "invalid_capability",
+            "inconsistent-candidates"
+        ))
+    );
+    assert!(off.backend().is_none());
 
-    let RoutedWork::Clause(mut absent) = work(&world, "en-1", ClauseLimits::default()) else {
-        unreachable!()
-    };
-    absent.item.clause = OccurrenceKey::new(
+    let mut absent = work(&world, "en-1", ClauseLimits::default());
+    absent.item.claim = OccurrenceKey::new(
         world.package.graph().temporal_clauses()[0].identity(),
         Origin::new(Role::new("claim"), 99),
     );
-    let record = through_analyze(&world, RoutedWork::Clause(absent));
+    let record = through_analyze(&world, absent);
     assert_eq!(
         record.value(),
         &TerminalValue::Declined {
@@ -189,4 +224,34 @@ fn a_clause_routed_off_en1_or_absent_from_the_package_is_not_run() {
         record.diagnostic(),
         Some(CatalogCode::new("invalid_capability", "inapplicable-kind"))
     );
+}
+
+/// EN-6 advertises bounded temporal satisfaction, so its supported route
+/// passes the manifest-pair check. It still cannot run the EN-1 authored
+/// clause adapter, and the item is settled unsupported without a producer.
+#[test]
+fn a_non_en1_backend_advertising_the_temporal_pair_never_runs_the_clause_adapter() {
+    let world = World::new(
+        model_world::counter(),
+        CONTRACT,
+        model_world::BOUNDED,
+        &[Clause {
+            activation: "on each (q: M::Counter)",
+            formula: "always[0,1] holds(c.value <= 1)",
+        }],
+        &[("c", json!({"value": {"integer": "0"}}))],
+    );
+    let record = through_analyze(&world, work(&world, "en-6", ClauseLimits::default()));
+    assert!(
+        matches!(record.value(), TerminalValue::Unsupported(_)),
+        "{record:?}"
+    );
+    assert_eq!(
+        record.diagnostic(),
+        Some(CatalogCode::new(
+            "unsupported_projection",
+            "unsupported-requested-capability"
+        ))
+    );
+    assert!(record.backend().is_none());
 }

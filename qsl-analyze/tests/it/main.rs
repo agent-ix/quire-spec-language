@@ -64,6 +64,8 @@ mod protocol_counted_steps;
 mod protocol_footprints;
 mod protocol_roles;
 mod protocol_system;
+mod provider_external_contract;
+mod provision_contract;
 mod quotient;
 mod race_freedom;
 mod rc11_oracle;

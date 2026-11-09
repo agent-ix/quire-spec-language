@@ -364,6 +364,10 @@ fn marked_scalar_key(package: &CheckedPackage, model: &Json) -> OccurrenceKey {
 // ---- compiling and running ----
 
 pub(crate) fn package_of(declarations: &str) -> CheckedPackage {
+    package_with_source(declarations).0
+}
+
+pub(crate) fn package_with_source(declarations: &str) -> (CheckedPackage, Vec<u8>) {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n{declarations}\n"
@@ -392,11 +396,12 @@ pub(crate) fn package_of(declarations: &str) -> CheckedPackage {
         )
         .expect("Euclidean division is admitted"),
     );
-    CheckedPackage::link(
+    let package = CheckedPackage::link(
         declarations
             .check(CheckingLimits::default())
             .unwrap_or_else(|e| panic!("the package checks: {e:?}\n{text}")),
-    )
+    );
+    (package, text.into_bytes())
 }
 
 fn wire_of(package: &CheckedPackage, function: &str) -> quire_exact::NodeKey {
