@@ -30,6 +30,7 @@ mod depth;
 mod dimension_equivalence;
 mod expression_depth;
 mod leaves;
+mod node_keys;
 mod rows;
 pub(crate) mod view;
 mod wide_integers;
