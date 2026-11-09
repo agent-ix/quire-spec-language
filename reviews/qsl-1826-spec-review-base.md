@@ -169,3 +169,23 @@ Quire validation of the two edited artifacts exits 0, with pre-existing module-r
 ## Verdict
 
 FAIL: one medium structural defect. Acceptance obligations are otherwise concrete and falsifiable. Not mergeable until the table structure is fixed and revalidated. Broader replay implementation and QSL-1826 follow-ups remain open.
+
+## Disposition pass 1
+
+Independently checked actual head be677aea077b13d4eeb9db432678eeaa53a22d62. The only specification change since review is removal of the blank line before AC-9; the other changes preserve the five review artifacts verbatim. Quire validation recognizes eleven criteria, and extracted Acceptance Criteria contains AC-1 through AC-11. No semantic change or new finding.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The table is contiguous; all eleven acceptance criteria are recognized. |
+
+After excerpt (FR-202-AC-9, verbatim):
+
+```text
+| FR-202-AC-9 | A checked-subject acyclic reachability fixture replays a target-first-hit path set of mass `2/3` against `AtMost 1/2` and a terminal-nonreach path set of mass `2/3` against `AtLeast 1/2`; each produces a token permitting only its matching EN-5 refuted record, with the accepted evidence retained. Repeating replay gives equal semantic outcomes. Neither replay needs an emitted package or analyzer graph types. | Test |
+```
+
+## Current verdict
+
+PASS and mergeable for this specification-only delta. Both base/integrity findings are fixed; failure-domain, scope-boundary and EARS remain clean. No whole-matrix or implementation assurance claim.

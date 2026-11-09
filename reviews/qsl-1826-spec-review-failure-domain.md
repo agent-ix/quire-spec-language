@@ -169,3 +169,11 @@ Quire validation of the two edited artifacts exits 0, with pre-existing module-r
 ## Verdict
 
 PASS: independent enabledness, exact mass, full-key/policy consistency, first-hit/terminal checks, identity binding, cancellation and limits are explicit. This method introduces no merge blocker; the overall review retains the base/integrity table defect. Broader replay implementation and QSL-1826 follow-ups remain open.
+
+## Disposition pass 1
+
+Independently checked actual head be677aea077b13d4eeb9db432678eeaa53a22d62. The only specification change since review is removal of the blank line before AC-9; the other changes preserve the five review artifacts verbatim. Quire validation recognizes eleven criteria, and extracted Acceptance Criteria contains AC-1 through AC-11. No semantic change or new finding.
+
+## Current verdict
+
+PASS and mergeable for this specification-only delta. Both base/integrity findings are fixed; failure-domain, scope-boundary and EARS remain clean. No whole-matrix or implementation assurance claim.
