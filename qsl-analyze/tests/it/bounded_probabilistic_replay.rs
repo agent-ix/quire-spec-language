@@ -184,6 +184,7 @@ fn zero_horizon_and_terminal_false_extension_need_no_model_steps() {
     fixture
         .body
         .push_str("terminal Stop using v on M when { true };\n");
+    fixture.body = fixture.body.replace("not self.delivered", "false");
     let world = World::new(&fixture);
     let witness = evidence(&world, "Leaf");
     assert!(witness.paths[0].steps.is_empty());
@@ -482,6 +483,7 @@ fn adapter_exhaustion_preserves_incomplete_without_accepted_evidence() {
             &Cancel::new(),
         )
         .remove(0);
+        assert!(record.terminal().is_some(), "{budget}: {record:?}");
         assert!(
             matches!(
                 record.terminal().unwrap().value(),
@@ -527,7 +529,7 @@ fn a_decided_initial_path_cannot_continue_and_policy_keys_keep_horizons_distinct
         .unwrap()
         .unwrap()
         .into_iter()
-        .find(|action| action.identity.operation.ends_with("fast"))
+        .find(|action| action.identity != witness.paths[0].steps[1].action)
         .unwrap();
     let draw = action
         .draws
