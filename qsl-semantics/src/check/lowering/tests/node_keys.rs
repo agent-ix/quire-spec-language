@@ -186,9 +186,14 @@ fn a_cloned_body_cannot_silently_reuse_keys_from_another_package() {
         &mut meter,
         "different-package",
     );
-    lowering
+    let changed = lowering
         .expression(body.root(), &mut Binders::new(&[], &[]))
         .expect("the closed Boolean expression lowers under the other owner");
+    assert_ne!(
+        changed.key().as_ref(),
+        Some(&original),
+        "the second package really assigns a different authoritative key"
+    );
     let Err(refusal) = lowering.finish(body.root().location()) else {
         panic!("the body already belongs to its original graph")
     };
