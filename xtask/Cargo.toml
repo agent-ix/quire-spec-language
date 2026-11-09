@@ -16,6 +16,10 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main"
 qsl-foundation = { path = "../qsl-foundation" }
 qsl-analyze = { path = "../qsl-analyze" }
 qsl-cst = { path = "../qsl-cst" }
+# FR-563: `cargo xtask parity` links the JIT and the parity runner.
+qsl-conformance = { path = "../qsl-conformance" }
+qsl-jit = { path = "../qsl-jit" }
+quire-eval = { workspace = true }
 logos = "0.16.1"
 qsl-route = { path = "../qsl-route" }
 qsl-replay = { path = "../qsl-replay" }

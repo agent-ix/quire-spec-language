@@ -1,0 +1,54 @@
+[package]
+name = "qsl-jit"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "ADR-029 EB-1, ADR-035: the Cranelift JIT backend behind the QSL execution-backend seam."
+
+# Layer X, above the core (tools/arch-lint `QSL_ABOVE_CORE`): no core crate
+# depends on this one. Cranelift is pinned here and in Cargo.lock only
+# (ADR-035); the build is Rust-only, with no C or C++ toolchain.
+[dependencies]
+qsl-eval = { path = "../qsl-eval" }
+qsl-foundation = { path = "../qsl-foundation" }
+qsl-package = { path = "../qsl-package" }
+qsl-semantics = { path = "../qsl-semantics" }
+quire-checked = { workspace = true }
+quire-eval = { workspace = true }
+quire-exact = { workspace = true }
+quire-semantic-value = { workspace = true }
+cranelift-codegen = "0.137.1"
+cranelift-frontend = "0.137.1"
+cranelift-jit = "0.137.1"
+cranelift-module = "0.137.1"
+cranelift-native = "0.137.1"
+
+[features]
+# The FR-568 test hooks of `PreparedJit`; no shipped build has them.
+test-support = []
+
+[dev-dependencies]
+qsl-jit = { path = ".", features = ["test-support"] }
+qsl-conformance = { path = "../qsl-conformance" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
+qsl-cst = { path = "../qsl-cst" }
+qsl-forms = { path = "../qsl-forms" }
+qsl-package = { path = "../qsl-package", features = ["test-support"] }
+qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
+quire-checked = { workspace = true, features = ["test-support"] }
+quire-exact = { workspace = true, features = ["test-support"] }
+quire-semantic-value = { workspace = true, features = ["test-support"] }
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[lints.rust]
+# FR-568: `unsafe` is confined to `exec`, which alone allows it.
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"

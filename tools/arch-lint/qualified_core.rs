@@ -93,6 +93,7 @@ pub(crate) const QSL_ABOVE_CORE: &[&str] = &[
     "qsl-analyze",
     "qsl-inspect",
     "qsl-jit",
+    "qsl-conformance",
 ];
 
 /// The driver repository's crates: the driver library and the crates above
