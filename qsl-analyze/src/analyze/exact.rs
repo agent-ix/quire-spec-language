@@ -594,9 +594,12 @@ fn bounded_product_key(
     use crate::exact_probabilistic::{FormulaState, MonitorState, MonitorVerdict};
     let key = match state.monitor {
         Some(MonitorState::Formula(FormulaState::Running(state))) => monitor.key(state),
-        Some(MonitorState::Formula(FormulaState::Decided(verdict))) => monitor.decision_key(verdict == MonitorVerdict::Accept),
+        Some(MonitorState::Formula(FormulaState::Decided(verdict))) => {
+            monitor.decision_key(verdict == MonitorVerdict::Accept)
+        }
         _ => return Err(ExactProbabilityGraphError::UnsupportedClaimForm.into()),
-    }.map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+    }
+    .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
     ProbabilityProductKey::for_formula_state(binding, &state.model, &key, io, cancel)
 }
 
