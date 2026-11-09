@@ -145,7 +145,6 @@ fn call(function: &str, arguments: Vec<CallArgument>) -> Call {
         accounting: default_accounting(1_000_000),
         supplied: Default::default(),
         backend: quire_eval::ExecutionBackendChoice::Interpreter,
-        prepare: qsl_eval::execution::PrepareLimits::default(),
     }
 }
 

@@ -41,7 +41,6 @@ fn a_members_item_bounds_build_a_request_that_replays() {
         accounting: default_accounting(1_000_000),
         supplied: SuppliedLimits::default(),
         backend: quire_eval::ExecutionBackendChoice::Interpreter,
-        prepare: qsl_eval::execution::PrepareLimits::default(),
     };
     let result = run_with_replay_context(
         SourceIdentity::new("a", "u"),

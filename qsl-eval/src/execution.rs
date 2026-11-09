@@ -159,22 +159,41 @@ impl SettingLimits for PrepareLimits {
     }
 }
 
+/// What kind of entry an [`EntrySelection`] names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EntryKind {
+    /// A checked function.
+    Function,
+    /// A checked state clause.
+    Clause,
+}
+
 /// One entry to prepare: a checked function or a checked state clause, by
 /// name.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum EntrySelection {
-    /// A checked function, by name.
-    Function(QualifiedName),
-    /// A checked state clause, by name.
-    Clause(QualifiedName),
+pub struct EntrySelection {
+    /// Whether `name` is a function or a clause.
+    pub kind: EntryKind,
+    /// The entry's name.
+    pub name: QualifiedName,
 }
 
 impl EntrySelection {
-    /// The selected entry's name.
+    /// The checked function `name`.
     #[must_use]
-    pub const fn name(&self) -> &QualifiedName {
-        match self {
-            Self::Function(name) | Self::Clause(name) => name,
+    pub const fn function(name: QualifiedName) -> Self {
+        Self {
+            kind: EntryKind::Function,
+            name,
+        }
+    }
+
+    /// The checked state clause `name`.
+    #[must_use]
+    pub const fn clause(name: QualifiedName) -> Self {
+        Self {
+            kind: EntryKind::Clause,
+            name,
         }
     }
 }
@@ -532,8 +551,8 @@ pub fn execute(
     cancel: &Cancel,
 ) -> Result<Evaluation, CallFailure> {
     let entry = match &request.selection {
-        ExecuteSelection::Function { name, .. } => EntrySelection::Function(name.clone()),
-        ExecuteSelection::Clause { clause, .. } => EntrySelection::Clause(clause.clone()),
+        ExecuteSelection::Function { name, .. } => EntrySelection::function(name.clone()),
+        ExecuteSelection::Clause { clause, .. } => EntrySelection::clause(clause.clone()),
     };
     let interpreter = Interpreter;
     let chosen: &dyn SuppliedBackend = backends

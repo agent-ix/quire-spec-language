@@ -2,6 +2,7 @@
 //! FR-279, FR-294, FR-296 (TC-760, TC-778, TC-781): the execution-backend
 //! seam over the spine-run fixture, function path.
 use super::*;
+use crate::backends::run_with_backends;
 use crate::outcome::OutcomeDocument;
 use crate::spine::DependencyInput;
 use ix_trace_rs::trace;
@@ -158,7 +159,7 @@ impl ExecutionBackend for Stub {
         let unsupported = entries
             .iter()
             .filter_map(|entry| {
-                let function = entry.name();
+                let function = &entry.name;
                 self.unsupported
                     .iter()
                     .find(|(listed, _)| listed == function)
@@ -197,7 +198,7 @@ impl PreparedEntries for StubPrepared<'_> {
         if let Some((_, unsupported)) = self
             .unsupported
             .iter()
-            .find(|(listed, _)| listed.name() == entry)
+            .find(|(listed, _)| &listed.name == entry)
         {
             return Err(CallFailure::Unsupported(unsupported.clone()));
         }
@@ -216,7 +217,7 @@ impl PreparedEntries for StubPrepared<'_> {
         if let Some((_, unsupported)) = self
             .unsupported
             .iter()
-            .find(|(listed, _)| listed.name() == clause)
+            .find(|(listed, _)| &listed.name == clause)
         {
             return Err(CallFailure::Unsupported(unsupported.clone()));
         }
@@ -550,7 +551,7 @@ fn supplied_limits_reach_the_function_call() {
 fn selected(functions: &[&str]) -> Vec<EntrySelection> {
     functions
         .iter()
-        .map(|function| EntrySelection::Function(name(function)))
+        .map(|function| EntrySelection::function(name(function)))
         .collect()
 }
 
@@ -586,7 +587,7 @@ fn an_untranslatable_entry_is_listed_and_the_others_run() {
     );
     let call = |entry: &EntrySelection, arguments: &[Value]| {
         prepared.call(
-            entry.name(),
+            &entry.name,
             arguments,
             &ObjectEnvironment::default(),
             &CallLimits {
@@ -636,7 +637,7 @@ fn a_cancelled_handle_stops_prepare_and_call() {
         )
         .expect("prepares");
     let called = prepared.call(
-        entries[0].name(),
+        &entries[0].name,
         &[],
         &ObjectEnvironment::default(),
         &CallLimits {
@@ -817,7 +818,7 @@ impl ExecutionBackend for Translator {
         let mut meter = PrepareMeter::new(limits, cancel);
         let mut unsupported = Vec::new();
         for entry in entries {
-            let function = entry.name();
+            let function = &entry.name;
             let fault =
                 |invariant| PrepareFailure::Fault(InternalFault::new("translator", invariant));
             let identity = graph
@@ -1112,7 +1113,6 @@ fn the_calls_prepare_limits_reach_the_supplied_backend() {
             Default::default(),
         );
         call.backend = ExecutionBackendChoice::Jit;
-        call.prepare = prepare;
         run_with_backends(
             SourceIdentity::new("agent-ix", "execution-seam"),
             "fixture".to_owned(),
@@ -1124,6 +1124,7 @@ fn the_calls_prepare_limits_reach_the_supplied_backend() {
             &call,
             &ObjectEnvironment::default(),
             &backends,
+            &prepare,
             &Cancel::new(),
         )
     };
@@ -1429,6 +1430,7 @@ fn only_the_chosen_supplied_backend_prepares() {
         &call,
         &ObjectEnvironment::default(),
         &backends,
+        &PrepareLimits::default(),
         &Cancel::new(),
     )
     .expect("completes on the stand-in");

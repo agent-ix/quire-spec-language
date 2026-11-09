@@ -45,6 +45,7 @@
 
 mod admitted;
 mod application;
+pub mod backends;
 mod bounds;
 mod call_replay_context;
 mod call_requirements;

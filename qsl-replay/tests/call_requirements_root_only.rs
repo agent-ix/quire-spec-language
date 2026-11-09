@@ -44,7 +44,6 @@ fn run(source: &str, cancel: &Cancel) -> Result<qsl_replay::RunWithRequirements,
         accounting: accounting(),
         supplied: SuppliedLimits::default(),
         backend: quire_eval::ExecutionBackendChoice::Interpreter,
-        prepare: qsl_eval::execution::PrepareLimits::default(),
     };
     run_with_requirements(
         SourceIdentity::new("a", "u"),

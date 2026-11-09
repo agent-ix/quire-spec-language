@@ -166,6 +166,7 @@ pub fn run_with_replay_context(
         call,
         objects,
         &qsl_eval::execution::SuppliedBackends::default(),
+        &qsl_eval::execution::PrepareLimits::default(),
         cancel,
         |checked, emitted, models| {
             let graph = checked.package().graph();
@@ -222,7 +223,6 @@ mod tests {
             accounting: default_accounting(1_000_000),
             supplied: quire_semantic_value::supplied_stop::SuppliedLimits::default(),
             backend: quire_eval::ExecutionBackendChoice::Interpreter,
-            prepare: qsl_eval::execution::PrepareLimits::default(),
         };
         run_with_replay_context(
             SourceIdentity::new("a", "u"),
@@ -369,7 +369,6 @@ mod tests {
             accounting: default_accounting(1_000_000),
             supplied: quire_semantic_value::supplied_stop::SuppliedLimits::default(),
             backend: quire_eval::ExecutionBackendChoice::Interpreter,
-            prepare: qsl_eval::execution::PrepareLimits::default(),
         };
         let result = run_with_replay_context(
             SourceIdentity::new("a", "u"),

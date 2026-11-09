@@ -35,7 +35,6 @@ fn call(function: &str, arguments: Vec<CallArgument>) -> Call {
         accounting: default_accounting(1_000_000),
         supplied: Default::default(),
         backend: quire_eval::ExecutionBackendChoice::Interpreter,
-        prepare: qsl_eval::execution::PrepareLimits::default(),
     }
 }
 
@@ -256,7 +255,6 @@ fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
                 accounting: default_accounting(1_000_000),
                 supplied: Default::default(),
                 backend: quire_eval::ExecutionBackendChoice::Interpreter,
-                prepare: qsl_eval::execution::PrepareLimits::default(),
             },
             &objects,
             &Cancel::new(),
@@ -310,7 +308,6 @@ fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
             accounting: default_accounting(1_000_000),
             supplied: Default::default(),
             backend: quire_eval::ExecutionBackendChoice::Interpreter,
-            prepare: qsl_eval::execution::PrepareLimits::default(),
         },
         &objects,
         &Cancel::new(),
@@ -345,7 +342,6 @@ fn tc_792_source_driver_binding_precedence_precedes_value_admission() {
             accounting: default_accounting(1_000_000),
             supplied: Default::default(),
             backend: quire_eval::ExecutionBackendChoice::Interpreter,
-            prepare: qsl_eval::execution::PrepareLimits::default(),
         },
         &objects,
         &Cancel::new(),
@@ -387,7 +383,6 @@ fn tc_792_source_driver_cancellation_returns_no_lookup_result() {
             accounting: default_accounting(1_000_000),
             supplied: Default::default(),
             backend: quire_eval::ExecutionBackendChoice::Interpreter,
-            prepare: qsl_eval::execution::PrepareLimits::default(),
         },
         &objects,
         &cancel,
@@ -418,7 +413,6 @@ fn tc_792_typed_call_contract_is_not_an_integer_only_facade() {
         accounting: default_accounting(1_000_000),
         supplied: Default::default(),
         backend: quire_eval::ExecutionBackendChoice::Interpreter,
-        prepare: qsl_eval::execution::PrepareLimits::default(),
     };
     let result = run(
         source(),
@@ -2299,7 +2293,6 @@ fn run_admission_spends_one_cumulative_budget_and_denies_before_the_call() {
     let with = |admission: u64| Call {
         supplied: SuppliedLimits::default().with_admission_work_units(admission),
         backend: quire_eval::ExecutionBackendChoice::Interpreter,
-        prepare: qsl_eval::execution::PrepareLimits::default(),
         ..call("lesser", vec![arg("x", 1), arg("y", 2)])
     };
     let outcome = run_fixture(SUPPLIED_UNIT, &with(2)).expect("two visits admit");

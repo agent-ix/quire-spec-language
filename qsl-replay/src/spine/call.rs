@@ -96,9 +96,6 @@ pub struct Call {
     /// default. A backend the caller did not supply refuses; no other
     /// backend runs in its place.
     pub backend: quire_eval::ExecutionBackendChoice,
-    /// FR-279, FR-294: the `prepare.compile_work_units` and
-    /// `prepare.code_bytes` bounds the chosen backend's `prepare` runs under.
-    pub prepare: PrepareLimits,
 }
 
 impl Call {
@@ -116,7 +113,6 @@ impl Call {
             accounting,
             supplied,
             backend: quire_eval::ExecutionBackendChoice::default(),
-            prepare: PrepareLimits::DEFAULT,
         }
     }
 }
@@ -498,41 +494,6 @@ pub fn run(
     objects: &ObjectEnvironment,
     cancel: &Cancel,
 ) -> Result<CallOutcome, Box<RunRefusal>> {
-    run_with_backends(
-        source,
-        package_name,
-        path,
-        bytes,
-        packages,
-        dependencies,
-        limits,
-        call,
-        objects,
-        &SuppliedBackends::default(),
-        cancel,
-    )
-}
-
-/// [`run`] with the execution backends the caller supplies (FR-296): the
-/// call's `backend` names which one runs it. A backend that is not supplied
-/// refuses before any stage as [`RunRefusal::Unsupported`].
-#[allow(
-    clippy::too_many_arguments,
-    reason = "run's signature (FR-100) plus the caller's backends"
-)]
-pub fn run_with_backends(
-    source: SourceIdentity,
-    package_name: String,
-    path: &str,
-    bytes: &[u8],
-    packages: &qsl_semantics::model::intake::PackageInput,
-    dependencies: &DependencyInput,
-    limits: SpineLimits,
-    call: &Call,
-    objects: &ObjectEnvironment,
-    backends: &SuppliedBackends<'_>,
-    cancel: &Cancel,
-) -> Result<CallOutcome, Box<RunRefusal>> {
     run_reading(
         source,
         package_name,
@@ -543,7 +504,8 @@ pub fn run_with_backends(
         limits,
         call,
         objects,
-        backends,
+        &SuppliedBackends::default(),
+        &PrepareLimits::default(),
         cancel,
         |_, _, _| Ok(()),
     )
@@ -570,6 +532,7 @@ pub(crate) fn run_reading<T>(
     call: &Call,
     objects: &ObjectEnvironment,
     backends: &SuppliedBackends<'_>,
+    prepare: &PrepareLimits,
     cancel: &Cancel,
     read: impl FnOnce(&CheckedUnit, &EmittedUnit, &AdmittedModels) -> Result<T, Box<RunRefusal>>,
 ) -> Result<(CallOutcome, T), Box<RunRefusal>> {
@@ -628,7 +591,7 @@ pub(crate) fn run_reading<T>(
         &ExecuteLimits {
             accounting: call.accounting,
             supplied: call.supplied,
-            prepare: call.prepare,
+            prepare: *prepare,
         },
         cancel,
     )

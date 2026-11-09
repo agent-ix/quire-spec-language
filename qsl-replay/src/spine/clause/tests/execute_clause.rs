@@ -141,8 +141,8 @@ fn execute_a_clause_returns_what_evaluate_clause_returns() {
 fn the_interpreter_evaluates_a_prepared_clause() {
     let compiled = compiled();
     let entries = [
-        EntrySelection::Clause(name("ParentOrder")),
-        EntrySelection::Clause(name("NoCycle")),
+        EntrySelection::clause(name("ParentOrder")),
+        EntrySelection::clause(name("NoCycle")),
     ];
     let prepared = Interpreter
         .prepare(
@@ -187,7 +187,7 @@ fn the_interpreter_evaluates_a_prepared_clause() {
 fn a_cancelled_handle_stops_evaluate() {
     let compiled = compiled();
     let input = admitted(&compiled, "ParentOrder", 1, 2);
-    let entries = [EntrySelection::Clause(name("ParentOrder"))];
+    let entries = [EntrySelection::clause(name("ParentOrder"))];
     let prepared = Interpreter
         .prepare(
             &compiled.package,
@@ -283,7 +283,7 @@ impl PreparedEntries for RefusesPrepared {
         let entry = self
             .0
             .iter()
-            .find(|(listed, _)| listed.name() == clause)
+            .find(|(listed, _)| &listed.name == clause)
             .expect("the clause was selected");
         Err(CallFailure::Unsupported(entry.1.clone()))
     }
