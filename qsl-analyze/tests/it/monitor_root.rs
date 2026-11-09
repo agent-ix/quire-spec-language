@@ -1438,16 +1438,15 @@ fn budgeted_converted_model_enum_shapes_are_joined_by_the_native_monitor_closure
     assert!(budget.consumed().storage > prefix.storage);
 }
 
-/// FR-251 "Plan root" / QSL-1822: an atom that calls a helper with a bounded
+/// FR-251 "Plan root" / QSL-1824: an atom that calls a helper with a bounded
 /// model field where the helper's parameter is the unbounded `Integer` writes
-/// no plan root, and the refusal is the strict reader's own typed refusal of
-/// the base package (Contract IR FR-347 "Function-call arguments": the
-/// argument's type node must be the parameter's), never the
-/// `MonitorPlanInvariant` of a broken producer. A helper whose parameter is
-/// the field's own type still writes a plan root the reader admits.
+/// a plan root the strict reader admits. The checker makes the widening
+/// explicit as an exact integer conversion, so the argument's type node is the
+/// parameter's (Contract IR FR-347 "Function-call arguments"); before QSL-1824
+/// the base package was refused `ill_typed`.
 #[trace("TC-1081", "FR-251-AC-51")]
 #[test]
-fn an_atom_calling_a_helper_with_a_wider_parameter_is_refused_typed_not_as_an_invariant() {
+fn an_atom_calling_a_helper_with_a_wider_parameter_writes_a_plan_root() {
     let narrow = unit_source(
         "always holds(f(c.versionNumber))",
         "function f using v(x: Int[0, 1000]): Boolean pure { x >= 0 }",
@@ -1463,20 +1462,21 @@ fn an_atom_calling_a_helper_with_a_wider_parameter_is_refused_typed_not_as_an_in
         true,
         "on origin",
     );
-    let refusal = root_of(&wide, "C", &target()).unwrap_err();
-    let PlanRootRefusal::Write(write) = refusal else {
-        panic!("a write refusal: {refusal:?}");
-    };
-    let qsl_package::EmitRefusal::MonitorBaseRefused(read) = &write else {
-        panic!("a typed base-package refusal, not an invariant: {write:?}");
-    };
-    assert!(
-        matches!(
-            **read,
-            qsl_package::V2ReadRefusal::Envelope { ref refusal, .. }
-                if refusal.code == quire_contract_model::CheckedPackageRefusalCode::IllTyped
-        ),
-        "{read:?}"
+    let root = root_of(&wide, "C", &target()).expect("the widened argument is admitted");
+    assert_eq!(admitted(&root).monitor_plans().len(), 1);
+}
+
+/// FR-065 call-argument widening (QSL-1824): a bounded integer argument reaches
+/// a parameter of a wider bound through the same exact conversion.
+#[trace("TC-376", "FR-065-AC-9")]
+#[test]
+fn an_atom_calling_a_helper_with_a_wider_bounded_parameter_writes_a_plan_root() {
+    let wider = unit_source(
+        "always holds(h(c.versionNumber))",
+        "function h using v(a: Int[0, 2000]): Boolean pure { a >= 0 }",
+        true,
+        "on origin",
     );
-    assert_eq!(write.code(), qsl_foundation::Code::IllTyped);
+    let root = root_of(&wider, "C", &target()).expect("the widened argument is admitted");
+    assert_eq!(admitted(&root).monitor_plans().len(), 1);
 }

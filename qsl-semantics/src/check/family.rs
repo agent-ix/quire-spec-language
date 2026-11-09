@@ -1297,6 +1297,15 @@ impl<'a> Application<'a> {
         }
     }
 
+    /// The declared parameter type at `index` when this is a call of a
+    /// declared function (local or imported).
+    pub(crate) fn call_parameter(&self, index: usize) -> Option<ValueType> {
+        match self {
+            Self::Function { .. } | Self::Imported { .. } => self.parameter(index),
+            Self::Tuple { .. } | Self::Ieee { .. } => None,
+        }
+    }
+
     /// For an IEEE intrinsic, the expected type of the next argument
     /// (FR-397 "Float constants"): the type of its sibling when that is a
     /// float, else the expected type of the whole call when that is a

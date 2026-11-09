@@ -105,6 +105,14 @@ When the S3 typer checks a call `name(arguments)`:
   `Application` SHALL refuse the call as `ill_typed`/`type-mismatch`.
 - `Application` SHALL supply each argument's expected type from that
   function's declared parameter types.
+- If an integer argument's type (`Integer` or `Int[..]`) differs from the
+  declared parameter's type and widens to it (`Int[..]` to `Integer`, or
+  `Int[..]` to an `Int[..]` containing it), the typer SHALL make the widening
+  explicit as the exact integer conversion to the parameter's type, so that the
+  argument's type node is the parameter's type node (Contract IR FR-347
+  "Function-call arguments"); FR-093 lowers that conversion to
+  `quire.op.numeric.convert`. An argument whose type is already the
+  parameter's takes no conversion.
 - `Application` SHALL build the call node with that function's declared
   result type.
 - If `name` names a declared tuple type, `Application` SHALL resolve the call
@@ -238,6 +246,7 @@ for the function family.
 | FR-065-AC-6 | The layer-6 `replay` facade's executor entry, given a replay request naming a function, resolves the function by a typed `QualifiedName` against the recompiled package's declarations; a test that attempts to call the entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a request naming an unresolvable `QualifiedName` returns a typed refusal rather than matching by display-name equality. | Test (TC-166) |
 | FR-065-AC-7 | Checking the declaration `g() -> Boolean = 1` (an `Integer` body against a declared `Boolean` result) through the `Value` family's contract `check` hook returns `StageFailure::Refused` whose cause is `ill_typed` / `type-mismatch`, and the diagnostic sink holds no entry afterwards. Checking the well-typed declaration `f() -> Boolean = true` through the same hook admits it. `PackageDeclarations::check` keys `f` once every declaration is typed, and under source owner (`a`, `u`) its checked identity is FR-092 vector F1, the `quire.structural-node/v1` key of its function node. | Test (TC-380) |
 | FR-065-AC-8 | Under source owner (`a`, `u`), the checked identity of `function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }` is FR-092 vector F2, a `quire.structural-node/v1` key whose preimage carries that owner, and the checked identity of the call `both(a, true)` in `function nb using v(a: Boolean): Boolean pure { both(a, true) }` is FR-092 vector E2, a `quire.application-node/v1` key whose preimage has no `owner` member. QSL's application-node key builder returns the published expected key for every operation-node vector in QSpec FR-322. | Test (TC-163) |
+| FR-065-AC-9 | Given a declared function `g using v(a: Integer)`, checking the call `g(x)` for `x` of type `Int[0, 1000]` yields a call node whose argument is an exact integer conversion to `Integer`; the call `g(n)` for `n` of type `Integer` yields none; and the checked package of a unit calling `g` with a bounded field reads back through the strict reader. A helper whose parameter is `Int[0, 2000]` called with an `Int[0, 1000]` argument does the same (QSL-1824). | Test (TC-376) |
 
 ## Dependencies
 
