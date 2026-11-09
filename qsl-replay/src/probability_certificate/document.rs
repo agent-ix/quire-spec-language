@@ -638,7 +638,7 @@ fn subject_graph(
             {
                 return Err(ProbabilityDocumentError::Unsupported);
             }
-            let (event, graph, derived_failures) = super::state_predicate::enumerate(
+            let enumerated = super::state_predicate::enumerate(
                 system,
                 target,
                 reference,
@@ -648,10 +648,13 @@ fn subject_graph(
                 &mut |failure| {
                     issue = Some(failure);
                 },
-            )?;
-            state_event = Some(event);
-            failures = derived_failures;
-            (bound, Ok((graph, None)))
+            )
+            .map(|(event, graph, derived_failures)| {
+                state_event = Some(event);
+                failures = derived_failures;
+                (graph, None)
+            });
+            (bound, enumerated)
         }
         ProbForm::Reach {
             bound,

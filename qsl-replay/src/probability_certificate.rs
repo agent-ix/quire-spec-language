@@ -442,6 +442,47 @@ fn enumerate_model_graph<P: StatePredicate>(
     visit: &mut impl FnMut(&ProbabilityProductKey, &ModelSimState),
     failure: &mut impl FnMut(crate::ExactProbBuildIssue),
 ) -> Result<CheckerGraph, ExactProbabilityGraphError> {
+    let key_of = |state: &ModelSimState| {
+        let (model_bytes, _) = system
+            .state_key(state)
+            .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+        product_key(binding, &model_bytes)
+    };
+    enumerate_model_graph_with_keys(
+        system,
+        target,
+        binding,
+        workload,
+        max_states,
+        max_edges,
+        cancel,
+        stop_at_target,
+        &key_of,
+        &mut |key, state| {
+            visit(key, state);
+            Ok(())
+        },
+        failure,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn enumerate_model_graph_with_keys<P: StatePredicate>(
+    system: &ModelSystem<'_>,
+    target: &P,
+    binding: Option<&ObjectReference>,
+    workload: Option<&Workload>,
+    max_states: usize,
+    max_edges: usize,
+    cancel: &Cancel,
+    stop_at_target: bool,
+    key_of: &impl Fn(&ModelSimState) -> Result<ProbabilityProductKey, ExactProbabilityGraphError>,
+    visit: &mut impl FnMut(
+        &ProbabilityProductKey,
+        &ModelSimState,
+    ) -> Result<(), ExactProbabilityGraphError>,
+    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
+) -> Result<CheckerGraph, ExactProbabilityGraphError> {
     poll_cancel(cancel)?;
     let initial = system.initial();
     if initial.len() != 1 {
@@ -450,12 +491,6 @@ fn enumerate_model_graph<P: StatePredicate>(
     if max_states == 0 {
         return Err(ExactProbabilityGraphError::LimitReached);
     }
-    let key_of = |state: &ModelSimState| {
-        let (model_bytes, _) = system
-            .state_key(state)
-            .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-        product_key(binding, &model_bytes)
-    };
     let first = initial
         .into_iter()
         .next()
@@ -467,7 +502,7 @@ fn enumerate_model_graph<P: StatePredicate>(
     let mut edge_count = 0usize;
     while let Some((key, state)) = pending.pop_front() {
         poll_cancel(cancel)?;
-        visit(&key, &state);
+        visit(&key, &state)?;
         let reading = system
             .state_predicates(&state, &[(target, binding)])
             .map_err(|stop| {

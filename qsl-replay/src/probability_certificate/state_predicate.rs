@@ -28,7 +28,26 @@ pub(super) fn enumerate(
     };
     let mut from_labels = BTreeMap::new();
     let mut predicate_error = None;
-    let mut graph = enumerate_model_graph(
+    let key_error = std::cell::RefCell::new(None);
+    let key_of = |state: &ModelSimState| {
+        let (bytes, _) = system
+            .state_key(state)
+            .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+        ProbabilityProductKey::for_model_state_with_limits(
+            binding,
+            &bytes,
+            ProbabilityDocumentIoLimits {
+                bytes: limits.bytes,
+                storage_bytes: limits.storage_bytes,
+            },
+            cancel,
+        )
+        .map_err(|error| {
+            *key_error.borrow_mut() = Some(error);
+            ExactProbabilityGraphError::ExpansionRefused
+        })
+    };
+    let mut graph = enumerate_model_graph_with_keys(
         system,
         predicate,
         binding,
@@ -37,6 +56,7 @@ pub(super) fn enumerate(
         limits.edges,
         cancel,
         false,
+        &key_of,
         &mut |key, state| {
             if let Some(from) = from {
                 let reading = system
@@ -56,15 +76,35 @@ pub(super) fn enumerate(
                     }
                     Err(error) => {
                         predicate_error = Some(error);
+                        return Err(ExactProbabilityGraphError::ExpansionRefused);
                     }
                 }
             }
+            Ok(())
         },
         failure,
-    )?;
-    if let Some(error) = predicate_error {
-        return Err(ProbabilityDocumentError::Build(Box::new(error)));
-    }
+    )
+    .map_err(|error| {
+        if let Some(error) = key_error.borrow_mut().take() {
+            return error;
+        }
+        if let Some(error) = predicate_error.take() {
+            return ProbabilityDocumentError::Build(Box::new(error));
+        }
+        match error {
+            ExactProbabilityGraphError::LimitReached => ProbabilityDocumentError::Limit {
+                limit: ProbabilityDocumentLimit::States,
+                bound: limits.states as u64,
+                actual: (limits.states as u64).saturating_add(1),
+            },
+            ExactProbabilityGraphError::EdgeLimitReached => ProbabilityDocumentError::Limit {
+                limit: ProbabilityDocumentLimit::Edges,
+                bound: limits.edges as u64,
+                actual: (limits.edges as u64).saturating_add(1),
+            },
+            other => other.into(),
+        }
+    })?;
     // Admission is about the original graph, even beyond an initial boundary.
     topological_order(&graph, cancel)?;
     let mut pending = VecDeque::from([graph.initial.clone()]);
