@@ -2,7 +2,9 @@
 //! FR-202 finite event-position witness replay, independent of solver products.
 
 use super::*;
-use qsl_eval::automaton::{AutomatonError, BoundedState, QualifiedBoundedError, QualifiedBoundedMonitor, StateId};
+use qsl_eval::automaton::{
+    AutomatonError, BoundedState, QualifiedBoundedError, QualifiedBoundedMonitor, StateId,
+};
 use qsl_semantics::check::Event;
 
 struct CylinderStep {
@@ -14,8 +16,10 @@ struct CylinderStep {
 
 impl CylinderStep {
     fn same(&self, other: &Self) -> bool {
-        self.action == other.action && self.transition == other.transition
-            && same_values(&self.draw, &other.draw) && self.post_key == other.post_key
+        self.action == other.action
+            && self.transition == other.transition
+            && same_values(&self.draw, &other.draw)
+            && self.post_key == other.post_key
     }
 }
 
@@ -39,7 +43,9 @@ pub(super) fn replay(
         return Err(ExactProbabilityGraphError::UnsupportedClaimForm.into());
     };
     match bound {
-        Bound::AtLeast(threshold) | Bound::AtMost(threshold) => check_bits(threshold, limits.max_rational_bits)?,
+        Bound::AtLeast(threshold) | Bound::AtMost(threshold) => {
+            check_bits(threshold, limits.max_rational_bits)?
+        }
     }
     if !claim.fairness.is_empty()
         || !matches!(
@@ -95,9 +101,7 @@ pub(super) fn replay(
         let (bytes, _) = system
             .state_key(state)
             .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-        let monitor_key = monitor
-            .key(control)
-            .map_err(monitor_error)?;
+        let monitor_key = monitor.key(control).map_err(monitor_error)?;
         ProbabilityProductKey::for_formula_state(
             reference,
             &bytes,
@@ -135,9 +139,7 @@ pub(super) fn replay(
             poll_cancel(cancel)?;
             admit_state(&key, &mut seen, &mut storage, limits)?;
             if !matches!(
-                monitor
-                    .state(control)
-                    .map_err(monitor_error)?,
+                monitor.state(control).map_err(monitor_error)?,
                 BoundedState::Open { .. }
             ) {
                 return Ok(ProbabilityWitnessReplay::Parity);
@@ -242,9 +244,7 @@ pub(super) fn replay(
             key = post_key;
         }
         admit_state(&key, &mut seen, &mut storage, limits)?;
-        let mut verdict = monitor
-            .state(control)
-            .map_err(monitor_error)?;
+        let mut verdict = monitor.state(control).map_err(monitor_error)?;
         if matches!(verdict, BoundedState::Open { .. }) {
             let mut issue = None;
             let distributions =
@@ -259,9 +259,7 @@ pub(super) fn replay(
             if !distributions.is_empty() {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
-            verdict = monitor
-                .terminal(control)
-                .map_err(monitor_error)?;
+            verdict = monitor.terminal(control).map_err(monitor_error)?;
         }
         if !matches!(
             (bound, verdict),
@@ -271,11 +269,7 @@ pub(super) fn replay(
         }
         for previous in &cylinders {
             poll_cancel(cancel)?;
-            if previous
-                .iter()
-                .zip(&cylinder)
-                .all(|(a, b)| a.same(b))
-            {
+            if previous.iter().zip(&cylinder).all(|(a, b)| a.same(b)) {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
         }
@@ -367,11 +361,17 @@ fn document_error(error: ProbabilityDocumentError) -> ProbabilityWitnessError {
 
 fn monitor_error(error: QualifiedBoundedError) -> ProbabilityWitnessError {
     match error {
-        QualifiedBoundedError::Translation(_) => ExactProbabilityGraphError::UnsupportedClaimForm.into(),
-        QualifiedBoundedError::Automaton(AutomatonError::StateLimit { limit }) => ProbabilityWitnessError::Limit {
-            limit: ModelCheckLimit::ExactProbMaxAutomatonStates,
-            value: limit,
-        },
-        QualifiedBoundedError::Automaton(_) | QualifiedBoundedError::Key(_) => ExactProbabilityGraphError::ExpansionRefused.into(),
+        QualifiedBoundedError::Translation(_) => {
+            ExactProbabilityGraphError::UnsupportedClaimForm.into()
+        }
+        QualifiedBoundedError::Automaton(AutomatonError::StateLimit { limit }) => {
+            ProbabilityWitnessError::Limit {
+                limit: ModelCheckLimit::ExactProbMaxAutomatonStates,
+                value: limit,
+            }
+        }
+        QualifiedBoundedError::Automaton(_) | QualifiedBoundedError::Key(_) => {
+            ExactProbabilityGraphError::ExpansionRefused.into()
+        }
     }
 }

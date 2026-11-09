@@ -196,45 +196,92 @@ fn insufficient_missing_and_equal_mass_are_parity_not_refutations() {
     let world = World::new(&model(CLAIMS));
     let mut witness = evidence(&world, "Max");
     witness.paths.truncate(1);
-    assert!(matches!(replay(&world,&witness,&ExactProbLimits::default(),&Cancel::new()),Ok(ProbabilityWitnessReplay::Parity) | Err(ProbabilityWitnessError::Refused)));
+    assert!(matches!(
+        replay(
+            &world,
+            &witness,
+            &ExactProbLimits::default(),
+            &Cancel::new()
+        ),
+        Ok(ProbabilityWitnessReplay::Parity) | Err(ProbabilityWitnessError::Refused)
+    ));
     // Keep a consistent policy while removing every represented cylinder.
     witness.paths.clear();
     witness.scheduler.clear();
-    assert!(matches!(replay(&world,&witness,&ExactProbLimits::default(),&Cancel::new()),Ok(ProbabilityWitnessReplay::Parity)));
-    let min = evidence(&world,"Min");
+    assert!(matches!(
+        replay(
+            &world,
+            &witness,
+            &ExactProbLimits::default(),
+            &Cancel::new()
+        ),
+        Ok(ProbabilityWitnessReplay::Parity)
+    ));
+    let min = evidence(&world, "Min");
     let equal_world = World::new(&model(&CLAIMS.replace(">= 0.8", ">= 0.75")));
     let mut equal = min;
     equal.item = qsl_replay::probabilistic_claim_identity(equal_world.claim("Min")).unwrap();
     // Keys include package and occurrence identity, so derive fresh keys by
     // replaying the same real semantic actions against the new checked item.
-    rekey(&equal_world,"Min",&mut equal);
-    assert!(matches!(replay(&equal_world,&equal,&ExactProbLimits::default(),&Cancel::new()),Ok(ProbabilityWitnessReplay::Parity)));
+    rekey(&equal_world, "Min", &mut equal);
+    assert!(matches!(
+        replay(
+            &equal_world,
+            &equal,
+            &ExactProbLimits::default(),
+            &Cancel::new()
+        ),
+        Ok(ProbabilityWitnessReplay::Parity)
+    ));
 }
 
 fn rekey(world: &World, name: &str, witness: &mut ProbabilisticCounterexample) {
     use qsl_eval::automaton::QualifiedBoundedMonitor;
-    use qsl_semantics::check::{ProbForm,Event};
+    use qsl_semantics::check::{Event, ProbForm};
     let system = ModelSystem::new(world.subject().simulation).unwrap();
     let claim = world.claim(name);
-    let binding = qsl_replay::claim_binding(&system,claim).unwrap();
+    let binding = qsl_replay::claim_binding(&system, claim).unwrap();
     let reference = binding.as_ref().map(|binding| &binding.reference);
-    let ProbForm::Probability {event:Event::Formula {formula,..},..} = &claim.form else {panic!("formula")};
-    let context = qsl_replay::probabilistic_formula_monitor_context(claim,reference).unwrap();
-    let mut monitor = QualifiedBoundedMonitor::new(formula.formula(),&context,1000).unwrap();
+    let ProbForm::Probability {
+        event: Event::Formula { formula, .. },
+        ..
+    } = &claim.form
+    else {
+        panic!("formula")
+    };
+    let context = qsl_replay::probabilistic_formula_monitor_context(claim, reference).unwrap();
+    let mut monitor = QualifiedBoundedMonitor::new(formula.formula(), &context, 1000).unwrap();
     let predicate = formula.condition(monitor.atom().index()).unwrap();
-    let read = |state| matches!(system.state_predicates(state,&[(predicate,reference)]).unwrap().first(),Some(qsl_eval::simulation::model::PredicateReading::True));
-    let key = |state,control,monitor:&QualifiedBoundedMonitor| ProbabilityProductKey::for_formula_state(reference,&system.state_key(state).unwrap().0,&monitor.key(control).unwrap(),ExactProbLimits::default().document,&Cancel::new()).unwrap();
+    let read = |state| {
+        matches!(
+            system
+                .state_predicates(state, &[(predicate, reference)])
+                .unwrap()
+                .first(),
+            Some(qsl_eval::simulation::model::PredicateReading::True)
+        )
+    };
+    let key = |state, control, monitor: &QualifiedBoundedMonitor| {
+        ProbabilityProductKey::for_formula_state(
+            reference,
+            &system.state_key(state).unwrap().0,
+            &monitor.key(control).unwrap(),
+            ExactProbLimits::default().document,
+            &Cancel::new(),
+        )
+        .unwrap()
+    };
     witness.binding = reference.cloned();
     witness.scheduler.clear();
     let mut scheduler = std::collections::BTreeMap::new();
     for path in &mut witness.paths {
         let mut control = monitor.start(read(&witness.initial)).unwrap();
-        let mut previous = key(&witness.initial,control,&monitor);
+        let mut previous = key(&witness.initial, control, &monitor);
         witness.initial_key = previous.clone();
         for step in &mut path.steps {
-            scheduler.insert(previous,step.action.clone());
-            control = monitor.step(control,read(&step.post)).unwrap();
-            step.post_key = key(&step.post,control,&monitor);
+            scheduler.insert(previous, step.action.clone());
+            control = monitor.step(control, read(&step.post)).unwrap();
+            step.post_key = key(&step.post, control, &monitor);
             previous = step.post_key.clone();
         }
     }
@@ -244,82 +291,164 @@ fn rekey(world: &World, name: &str, witness: &mut ProbabilisticCounterexample) {
 #[trace("TC-637", "FR-202-AC-16")]
 #[test]
 fn cancellation_and_configured_native_limits_never_return_a_token() {
-    use qsl_replay::{ExactProbabilityGraphError,ModelCheckLimit};
+    use qsl_replay::{ExactProbabilityGraphError, ModelCheckLimit};
     use quire_exact::CancelCause;
     let world = World::new(&model(CLAIMS));
-    let witness = evidence(&world,"Min");
+    let witness = evidence(&world, "Min");
     let cancel = Cancel::new();
     cancel.cancel(CancelCause::Requested);
-    assert!(matches!(replay(&world,&witness,&ExactProbLimits::default(),&cancel),Err(ProbabilityWitnessError::Graph(ExactProbabilityGraphError::Cancelled(CancelCause::Requested)))));
+    assert!(matches!(
+        replay(&world, &witness, &ExactProbLimits::default(), &cancel),
+        Err(ProbabilityWitnessError::Graph(
+            ExactProbabilityGraphError::Cancelled(CancelCause::Requested)
+        ))
+    ));
     let mut limits = ExactProbLimits::default();
     limits.model.limits.max_states = 0;
-    assert!(matches!(replay(&world,&witness,&limits,&Cancel::new()),Err(ProbabilityWitnessError::Graph(ExactProbabilityGraphError::LimitReached))));
+    assert!(matches!(
+        replay(&world, &witness, &limits, &Cancel::new()),
+        Err(ProbabilityWitnessError::Graph(
+            ExactProbabilityGraphError::LimitReached
+        ))
+    ));
     let mut limits = ExactProbLimits::default();
     limits.model.limits.max_transitions = 0;
-    assert!(matches!(replay(&world,&witness,&limits,&Cancel::new()),Err(ProbabilityWitnessError::Graph(ExactProbabilityGraphError::EdgeLimitReached))));
+    assert!(matches!(
+        replay(&world, &witness, &limits, &Cancel::new()),
+        Err(ProbabilityWitnessError::Graph(
+            ExactProbabilityGraphError::EdgeLimitReached
+        ))
+    ));
     let mut limits = ExactProbLimits::default();
     limits.document.storage_bytes = 0;
-    assert!(matches!(replay(&world,&witness,&limits,&Cancel::new()),Err(ProbabilityWitnessError::Limit {limit: ModelCheckLimit::CertificateMaxWorkingBytes,..})));
-    let limits = ExactProbLimits {max_rational_bits:1,..ExactProbLimits::default()};
-    assert!(matches!(replay(&world,&witness,&limits,&Cancel::new()),Err(ProbabilityWitnessError::Limit {limit: ModelCheckLimit::ExactProbMaxRationalBits,..})));
+    assert!(matches!(
+        replay(&world, &witness, &limits, &Cancel::new()),
+        Err(ProbabilityWitnessError::Limit {
+            limit: ModelCheckLimit::CertificateMaxWorkingBytes,
+            ..
+        })
+    ));
+    let limits = ExactProbLimits {
+        max_rational_bits: 1,
+        ..ExactProbLimits::default()
+    };
+    assert!(matches!(
+        replay(&world, &witness, &limits, &Cancel::new()),
+        Err(ProbabilityWitnessError::Limit {
+            limit: ModelCheckLimit::ExactProbMaxRationalBits,
+            ..
+        })
+    ));
 }
 
 #[trace("TC-637", "FR-202-AC-16")]
 #[test]
 fn final_acceptance_cancellation_has_no_truth_or_evidence() {
-    use std::sync::{Arc,OnceLock};
-    use std::sync::atomic::{AtomicU32,Ordering};
     use quire_exact::CancelCause;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{Arc, OnceLock};
     let world = World::new(&model(CLAIMS));
-    let witness = evidence(&world,"Min");
+    let witness = evidence(&world, "Min");
     let live = Cancel::new();
     let _count = live.count_charges();
-    assert!(matches!(replay(&world,&witness,&ExactProbLimits::default(),&live),Ok(ProbabilityWitnessReplay::Reproduced(_))));
+    assert!(matches!(
+        replay(&world, &witness, &ExactProbLimits::default(), &live),
+        Ok(ProbabilityWitnessReplay::Reproduced(_))
+    ));
     let final_poll = live.charges();
     let slot = Arc::new(OnceLock::<Cancel>::new());
     let weak = Arc::downgrade(&slot);
     let count = Arc::new(AtomicU32::new(0));
     let seen = Arc::clone(&count);
     let cancel = Cancel::observing(move || {
-        if seen.fetch_add(1,Ordering::Relaxed)+1 == final_poll { weak.upgrade().unwrap().get().unwrap().cancel(CancelCause::Requested); }
+        if seen.fetch_add(1, Ordering::Relaxed) + 1 == final_poll {
+            weak.upgrade()
+                .unwrap()
+                .get()
+                .unwrap()
+                .cancel(CancelCause::Requested);
+        }
     });
     slot.set(cancel.clone()).unwrap();
-    assert!(matches!(replay(&world,&witness,&ExactProbLimits::default(),&cancel),Err(ProbabilityWitnessError::Graph(qsl_replay::ExactProbabilityGraphError::Cancelled(CancelCause::Requested)))));
-    assert_eq!(count.load(Ordering::Relaxed),final_poll);
+    assert!(matches!(
+        replay(&world, &witness, &ExactProbLimits::default(), &cancel),
+        Err(ProbabilityWitnessError::Graph(
+            qsl_replay::ExactProbabilityGraphError::Cancelled(CancelCause::Requested)
+        ))
+    ));
+    assert_eq!(count.load(Ordering::Relaxed), final_poll);
 }
 
 #[trace("TC-637", "FR-202-AC-12", "FR-202-AC-15")]
 #[test]
 fn all_workload_first_hit_cylinders_have_exact_mass_fifty_five_over_sixty_four() {
     let world = World::new(&model(CLAIMS));
-    let failures = evidence(&world,"WorkMin");
-    assert_eq!(mass(&world,&failures),ratio(9,64));
-    assert_eq!(failures.paths.len(),4);
+    let failures = evidence(&world, "WorkMin");
+    assert_eq!(mass(&world, &failures), ratio(9, 64));
+    assert_eq!(failures.paths.len(), 4);
     let system = ModelSystem::new(world.subject().simulation).unwrap();
     let mut accepting = failures.clone();
     accepting.item = qsl_replay::probabilistic_claim_identity(world.claim("WorkMax")).unwrap();
     accepting.paths.clear();
     for path in &failures.paths {
         for length in 0..path.steps.len() {
-            let state = if length == 0 { &failures.initial } else { &path.steps[length-1].post };
+            let state = if length == 0 {
+                &failures.initial
+            } else {
+                &path.steps[length - 1].post
+            };
             let identity = &path.steps[length].action;
-            let action = system.actions(state).unwrap().unwrap().into_iter().find(|action| &action.identity == identity).unwrap();
-            let draw = action.draws.into_iter().find(|draw| matches!(draw.random.as_slice(),[Value::Boolean(false)])).unwrap();
-            let (transition,post) = draw.successors.into_iter().next().unwrap();
+            let action = system
+                .actions(state)
+                .unwrap()
+                .unwrap()
+                .into_iter()
+                .find(|action| &action.identity == identity)
+                .unwrap();
+            let draw = action
+                .draws
+                .into_iter()
+                .find(|draw| matches!(draw.random.as_slice(), [Value::Boolean(false)]))
+                .unwrap();
+            let (transition, post) = draw.successors.into_iter().next().unwrap();
             let mut steps = path.steps[..length].to_vec();
-            steps.push(qsl_replay::ProbabilityWitnessStep {action:identity.clone(),transition,draw:draw.random,post,post_key:failures.initial_key.clone(),elapsed:ratio(0,1)});
-            if !accepting.paths.iter().any(|previous| previous.steps.len() == steps.len() && previous.steps.iter().zip(&steps).all(|(a,b)| a.action == b.action && a.transition == b.transition && qsl_eval::simulation::model::same_values(&a.draw,&b.draw))) {
-                accepting.paths.push(qsl_replay::ProbabilityWitnessPath {steps});
+            steps.push(qsl_replay::ProbabilityWitnessStep {
+                action: identity.clone(),
+                transition,
+                draw: draw.random,
+                post,
+                post_key: failures.initial_key.clone(),
+                elapsed: ratio(0, 1),
+            });
+            if !accepting.paths.iter().any(|previous| {
+                previous.steps.len() == steps.len()
+                    && previous.steps.iter().zip(&steps).all(|(a, b)| {
+                        a.action == b.action
+                            && a.transition == b.transition
+                            && qsl_eval::simulation::model::same_values(&a.draw, &b.draw)
+                    })
+            }) {
+                accepting
+                    .paths
+                    .push(qsl_replay::ProbabilityWitnessPath { steps });
             }
         }
     }
-    rekey(&world,"WorkMax",&mut accepting);
+    rekey(&world, "WorkMax", &mut accepting);
     accepting.scheduler.clear();
-    assert_eq!(accepting.paths.len(),6);
-    assert_eq!(mass(&world,&accepting),ratio(55,64));
+    assert_eq!(accepting.paths.len(), 6);
+    assert_eq!(mass(&world, &accepting), ratio(55, 64));
     let mut duplicated = accepting.clone();
     duplicated.paths.push(duplicated.paths[0].clone());
-    assert!(matches!(replay(&world,&duplicated,&ExactProbLimits::default(),&Cancel::new()),Ok(ProbabilityWitnessReplay::Parity)));
+    assert!(matches!(
+        replay(
+            &world,
+            &duplicated,
+            &ExactProbLimits::default(),
+            &Cancel::new()
+        ),
+        Ok(ProbabilityWitnessReplay::Parity)
+    ));
 }
 
 #[trace("TC-637", "FR-202-AC-16")]
@@ -327,8 +456,16 @@ fn all_workload_first_hit_cylinders_have_exact_mass_fifty_five_over_sixty_four()
 fn adapter_exhaustion_preserves_incomplete_without_accepted_evidence() {
     use qsl_replay::IncompleteCause;
     let world = World::new(&model(CLAIMS));
-    for budget in ["paths","states","transitions","arithmetic","work","storage","expansion"] {
-        let mut request = world.request("Min",ModelCheckLimits::default());
+    for budget in [
+        "paths",
+        "states",
+        "transitions",
+        "arithmetic",
+        "work",
+        "storage",
+        "expansion",
+    ] {
+        let mut request = world.request("Min", ModelCheckLimits::default());
         match budget {
             "paths" => request.limits.max_witness_paths = 0,
             "states" => request.limits.model.limits.max_states = 0,
@@ -339,10 +476,22 @@ fn adapter_exhaustion_preserves_incomplete_without_accepted_evidence() {
             "expansion" => request.subject.simulation.expansion.max_candidates = 0,
             _ => unreachable!(),
         }
-        let record = analyze_items(&Engines::qsl().unwrap(),vec![exact_probabilistic_item(RequestIndex::new(0),request)],&Cancel::new()).remove(0);
-        assert!(matches!(record.terminal().unwrap().value(),TerminalValue::Incomplete(IncompleteCause::LimitReached {..})),"{budget}: {:?}",record.terminal().unwrap().value());
-        assert!(record.probabilistic_counterexample.is_none(),"{budget}");
-        assert!(record.exact_probabilistic.is_none(),"{budget}");
+        let record = analyze_items(
+            &Engines::qsl().unwrap(),
+            vec![exact_probabilistic_item(RequestIndex::new(0), request)],
+            &Cancel::new(),
+        )
+        .remove(0);
+        assert!(
+            matches!(
+                record.terminal().unwrap().value(),
+                TerminalValue::Incomplete(IncompleteCause::LimitReached { .. })
+            ),
+            "{budget}: {:?}",
+            record.terminal().unwrap().value()
+        );
+        assert!(record.probabilistic_counterexample.is_none(), "{budget}");
+        assert!(record.exact_probabilistic.is_none(), "{budget}");
     }
 }
 
@@ -350,29 +499,49 @@ fn adapter_exhaustion_preserves_incomplete_without_accepted_evidence() {
 #[test]
 fn a_decided_initial_path_cannot_continue_and_policy_keys_keep_horizons_distinct() {
     let world = World::new(&model(CLAIMS));
-    let failure = evidence(&world,"Min");
+    let failure = evidence(&world, "Min");
     let zero_source = "probabilistic Zero using inf on M over (m: M::Msg) under every scheduler on origin { probability <= 0 [ eventually[0,0] holds(m.delivered) ] }";
     let mut fixture = model(zero_source);
     fixture.initial["delivered"] = serde_json::json!({"boolean":true});
     let zero = World::new(&fixture);
-    let mut extended = evidence(&zero,"Zero");
-    extended.paths[0].steps.push(failure.paths[0].steps[0].clone());
-    assert!(matches!(replay(&zero,&extended,&ExactProbLimits::default(),&Cancel::new()),Ok(ProbabilityWitnessReplay::Parity)));
-    let source = CLAIMS.replace(">= 0.8",">= 0.9");
+    let mut extended = evidence(&zero, "Zero");
+    extended.paths[0]
+        .steps
+        .push(failure.paths[0].steps[0].clone());
+    assert!(matches!(
+        replay(
+            &zero,
+            &extended,
+            &ExactProbLimits::default(),
+            &Cancel::new()
+        ),
+        Ok(ProbabilityWitnessReplay::Parity)
+    ));
+    let source = CLAIMS.replace(">= 0.8", ">= 0.9");
     let varying = World::new(&model(&source));
-    let mut witness = evidence(&varying,"Min");
+    let mut witness = evidence(&varying, "Min");
     let system = ModelSystem::new(varying.subject().simulation).unwrap();
     let state = &witness.paths[0].steps[0].post;
-    let action = system.actions(state).unwrap().unwrap().into_iter().find(|action| action.identity.operation.ends_with("fast")).unwrap();
-    let draw = action.draws.into_iter().find(|draw| matches!(draw.random.as_slice(),[Value::Boolean(true)])).unwrap();
-    let (transition,post) = draw.successors.into_iter().next().unwrap();
+    let action = system
+        .actions(state)
+        .unwrap()
+        .unwrap()
+        .into_iter()
+        .find(|action| action.identity.operation.ends_with("fast"))
+        .unwrap();
+    let draw = action
+        .draws
+        .into_iter()
+        .find(|draw| matches!(draw.random.as_slice(), [Value::Boolean(true)]))
+        .unwrap();
+    let (transition, post) = draw.successors.into_iter().next().unwrap();
     let step = &mut witness.paths[0].steps[1];
     step.action = action.identity;
     step.draw = draw.random;
     step.transition = transition;
     step.post = post;
-    rekey(&varying,"Min",&mut witness);
-    assert_eq!(witness.scheduler.len(),2);
-    assert_ne!(witness.scheduler[0].1,witness.scheduler[1].1);
-    assert_eq!(mass(&varying,&witness),ratio(1,8));
+    rekey(&varying, "Min", &mut witness);
+    assert_eq!(witness.scheduler.len(), 2);
+    assert_ne!(witness.scheduler[0].1, witness.scheduler[1].1);
+    assert_eq!(mass(&varying, &witness), ratio(1, 8));
 }
