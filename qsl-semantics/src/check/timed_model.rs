@@ -2479,6 +2479,11 @@ impl<'f> Located<'f> {
             }) {
                 continue;
             }
+            // FR-230 "Clock references": `ref(p)` names the place `p` and reads
+            // no clock, so its operand is no clock read.
+            if matches!(node.node(), ExprNode::Ref(_)) {
+                continue;
+            }
             // A clock read through another path is a read, though no
             // constraint can take it.
             if clocks.foreign(form, id, context, &parents) {

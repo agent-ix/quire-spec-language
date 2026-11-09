@@ -1083,7 +1083,13 @@ fn expressions(g: &mut Grammar) {
             r(P::TupleValue),
             r(P::EnumValue),
             s(vec![
-                c(vec![x("present"), x("value"), x("deref"), x("pre")]),
+                c(vec![
+                    x("present"),
+                    x("value"),
+                    x("deref"),
+                    x("ref"),
+                    x("pre"),
+                ]),
                 x("("),
                 r(P::Expression),
                 x(")"),

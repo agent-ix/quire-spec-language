@@ -159,7 +159,7 @@ vocabulary! {
     Current => "current", Pre => "pre", Post => "post", Let => "let", In => "in", If => "if",
     Then => "then", Else => "else", Implies => "implies", Or => "or", And => "and", Not => "not",
     Div => "div", Rem => "rem", SelfValue => "self", ResultValue => "result", True => "true",
-    False => "false", Present => "present", Value => "value", Deref => "deref", Size => "size",
+    False => "false", Present => "present", Value => "value", Deref => "deref", Ref => "ref", Size => "size",
     Forall => "forall", Exists => "exists", Reaches => "reaches",
     Using => "using", Predicate => "predicate", BooleanType => "Boolean",
     Contains => "contains", Filter => "filter", Map => "map", Count => "count", Sum => "sum",
@@ -359,6 +359,7 @@ impl Kind {
             | Self::Present
             | Self::Value
             | Self::Deref
+            | Self::Ref
             | Self::Size
             | Self::Forall
             | Self::Exists

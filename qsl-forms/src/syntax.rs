@@ -673,6 +673,8 @@ pub enum ExprNode {
     Value(ExprId),
     /// `deref(r)`; only an attribute projection `deref(r).f` is a value.
     Deref(ExprId),
+    /// `ref(p)`; the place id of the clock place `p` (FR-230 "Clock references").
+    Ref(ExprId),
     /// A call of a qualified name: a function, tuple constructor, or another
     /// declaration or undeclared name that the checker refuses.
     Call {
@@ -950,6 +952,7 @@ impl ExprNode {
             | Self::Present(operand)
             | Self::Value(operand)
             | Self::Deref(operand)
+            | Self::Ref(operand)
             | Self::Flatten(operand)
             | Self::DropFirst(operand)
             | Self::Size(operand)
@@ -1056,6 +1059,7 @@ impl ExprNode {
             | Self::Present(_)
             | Self::Value(_)
             | Self::Deref(_)
+            | Self::Ref(_)
             | Self::Flatten(_)
             | Self::DropFirst(_)
             | Self::Size(_)
@@ -1134,6 +1138,7 @@ impl ExprNode {
             | Self::Present(_)
             | Self::Value(_)
             | Self::Deref(_)
+            | Self::Ref(_)
             | Self::Flatten(_)
             | Self::DropFirst(_)
             | Self::Size(_)
@@ -1191,6 +1196,7 @@ impl ExprNode {
             | Self::Present(operand)
             | Self::Value(operand)
             | Self::Deref(operand)
+            | Self::Ref(operand)
             | Self::Flatten(operand)
             | Self::DropFirst(operand)
             | Self::Size(operand)
@@ -1535,6 +1541,11 @@ impl Expression {
     /// `deref(operand)`.
     pub fn deref(operand: Self) -> Self {
         Self::compose([operand], |[operand]| ExprNode::Deref(operand))
+    }
+
+    /// `ref(operand)`.
+    pub fn place_ref(operand: Self) -> Self {
+        Self::compose([operand], |[operand]| ExprNode::Ref(operand))
     }
 
     /// `pre(operand)`.
