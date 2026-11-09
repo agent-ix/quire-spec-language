@@ -33,3 +33,21 @@ Changes requested on FND-001 and FND-002; FND-003 should be fixed now or recorde
 - FR-230-AC-24: examined (FND-002, FND-003).
 - FR-230-AC-44: examined (FND-001, FND-002).
 - FR-230-AC-62: examined; the `Map` refusal of `ref` holds through `named_by`.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | `clock_ref` refuses every multi-step path that names no place `unsupported-feature`, including one that can never be a place: a misspelled field (`ref(self.nothing.x)`, which the test asserts) or a data record field (`ref(self.t.n)`). The author is told the construct is unsupported rather than that the field does not exist or is not a place. This is acceptable as an interim, but the follow-up must type the path so these refuse as `type-mismatch` or an unresolved field | qsl-semantics/src/check/check.rs:4419-4422, qsl-semantics/tests/it/clock_places.rs:2889 |
+
+## Dispositions
+
+Round 1, reviewed at 077d1a663e67bfe455f71600e5d84e14bc3e667b (fix commit 077d1a663, parent ff7916a3c).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 077d1a663 removes the `Reference<Clock>` type-form branch and `clock_type_id`, so no `ValueType::Reference` to the Clock id is produced anywhere. Verified unreachable from source: a `Reference<Q>` argument is parsed as a `QualifiedName` (qsl-forms/src/value.rs:605-643), so `Clock` there is `Name("Clock")`, and `check_names` refuses it `UnresolvedTypeName` at assembly (assemble.rs:2921-2938). `a_reference_to_clock_is_refused_in_every_type_position` passes for parameter, result, tuple, union payload and `Option`. The alias and state-field positions are untested, but they go through the same `check_names`. Nothing AC-44 needs is lost, because the removed branch was dead from source. The QSL-1818 remainder must add `Clock` as a `Reference` argument in the type grammar and resolver, and the package reader path (`ix://quire/native/Clock` targets are still `Unmapped::Broken`, as on main). |
+| FND-002 | fixed | 077d1a663 retags the typing tests to TC-685 (FR-230's S3 check test case) and the forms test to TC-456, removes the AC-44 unit test, and states in the doc comments that AC-24 and AC-62 are not met. No FR-230-AC-24/44 tag remains on this slice. The AC-62 tags left in place_rows.rs predate this branch. |
+| FND-003 | fixed | 077d1a663: a path longer than one step that names no place of the owner now refuses `unsupported-feature` (check.rs:4419-4422), so `ref(self.r.x)` is no longer called "not a place". The over-breadth this introduces is recorded as FND-006. |
+| FND-004 | fixed | 077d1a663 adds `Scope::clock_places`, filled by `with_clock_places` from every admitted model's package places (lowering/model.rs:1406). It is set on the package scope (mod.rs:2366) and the hyper-clause scope (hyper_clause.rs:3542), so every typer sees the places regardless of clause kind. The timed-model `presence_places` change is reverted to main's narrow rule. |
+| FND-005 | fixed | 077d1a663: `at_ref` asserts `location.path() == [0]`, the left `ref` operand of the comparison root, for the `type-mismatch` and both `unsupported-feature` cases. |
