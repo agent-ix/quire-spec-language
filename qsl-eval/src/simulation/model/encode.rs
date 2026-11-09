@@ -1620,6 +1620,7 @@ mod tests {
         assert_eq!(parse_reference(&text), Some(reference));
     }
 
+    #[trace("FR-196-AC-6")]
     #[test]
     fn borrowed_reference_encoding_preserves_the_owner_schema() {
         let reference = ObjectReference::new(
