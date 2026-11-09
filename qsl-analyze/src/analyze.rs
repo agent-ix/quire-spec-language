@@ -400,6 +400,8 @@ pub enum Counterexample {
     Assignments(Box<value_check::ValueCounterexample>),
     /// A contract counterexample reproduced by the evaluator.
     Contract(Box<qsl_replay::contract_check::ContractCounterexample>),
+    /// A probabilistic path set independently reproduced by the qualified core.
+    Probabilistic(Box<qsl_replay::ReproducedProbabilityWitness>),
 }
 
 impl Engines {

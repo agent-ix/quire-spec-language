@@ -557,7 +557,13 @@ fn counterexamples(records: &mut [super::AnalyzeRecord]) -> Vec<super::ItemCount
                     .map(Counterexample::Protocol)
             })
             .or_else(|| record.value_check.take().map(Counterexample::Assignments))
-            .or_else(|| record.contract_check.take().map(Counterexample::Contract));
+            .or_else(|| record.contract_check.take().map(Counterexample::Contract))
+            .or_else(|| {
+                record
+                    .probabilistic_counterexample
+                    .take()
+                    .map(Counterexample::Probabilistic)
+            });
         if let Some(counterexample) = counterexample {
             result.push(ItemCounterexample {
                 request_index: record.request_index,

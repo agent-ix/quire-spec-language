@@ -690,7 +690,7 @@ pub fn exact_probabilistic_item_witness_tampered<'a>(
         index,
         Capability::ProbabilisticSatisfaction,
         Some(DeclarationFamily::Probabilistic),
-        Mode::Bounded,
+        Mode::Unbounded,
         en5::BACKEND_ID,
         move |cancel| run(request, cancel, None, Some(&tamper)),
     )

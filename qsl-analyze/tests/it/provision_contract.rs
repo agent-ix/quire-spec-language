@@ -575,3 +575,70 @@ fn registered_candidate(
     };
     candidate.clone()
 }
+
+#[trace(
+    "TC-762",
+    "FR-281-AC-1",
+    "TC-761",
+    "FR-280-AC-8",
+    "TC-637",
+    "FR-202-AC-9"
+)]
+#[test]
+fn exact_refutation_retains_the_reproduced_path_set_through_both_entries() {
+    let source = LIKELY.replace("0.95", "0.97");
+    let world = prob_world::World::new(&prob_world::link(&source));
+    let request = AnalyzeRequest {
+        binding: world.binding(),
+        provision: world.provision.clone(),
+        items: vec![exact(&world, ExactProbLimits::default())],
+    };
+    let engines = Engines::qsl().expect("the manifests register");
+    let limits = AnalyzeLimits::unbounded();
+    let outcome = analyze(&world.package, &request, &engines, &limits, &Cancel::new())
+        .expect("the request admits")
+        .into_value();
+    let served = provider::run(
+        &world.package,
+        &request.binding,
+        &request.provision,
+        &request.items,
+        &engines,
+        &limits,
+        &Cancel::new(),
+    );
+    assert_eq!(outcome.records, served.records);
+    assert_eq!(outcome.records[0].value(), &TerminalValue::Refuted);
+    assert!(outcome.records[0].exact_certificate().is_none());
+    let system = qsl_eval::simulation::model::ModelSystem::new(world.subject().simulation)
+        .expect("the checked subject admits");
+    let expected_mass = quire_exact::Rational::new(
+        quire_exact::Integer::from(1),
+        quire_exact::Integer::from(25),
+    )
+    .unwrap();
+    for counterexamples in [&outcome.counterexamples, &served.counterexamples] {
+        assert_eq!(counterexamples.len(), 1);
+        assert_eq!(counterexamples[0].request_index, RequestIndex::new(0));
+        assert_eq!(counterexamples[0].backend.as_str(), "en-5");
+        let Counterexample::Probabilistic(token) = &counterexamples[0].counterexample else {
+            panic!("the exact refutation retains its typed reproduced token")
+        };
+        assert_eq!(token.mass(), &expected_mass);
+        let evidence = token.evidence();
+        assert_eq!(&evidence.item, world.claim("Likely"));
+        let replay = qsl_replay::replay_probabilistic_witness(
+            &world.package,
+            &system,
+            &evidence.item,
+            evidence,
+            &ExactProbLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("the retained witness replays on the operation's checked subject");
+        let qsl_replay::ProbabilityWitnessReplay::Reproduced(replayed) = replay else {
+            panic!("the retained witness must independently reproduce the same refutation")
+        };
+        assert_eq!(replayed.mass(), token.mass());
+    }
+}
