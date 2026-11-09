@@ -216,8 +216,7 @@ fn a_missed_bound_is_not_proved_and_not_yet_refuted() {
     assert_eq!(disposed.kind, DispositionKind::Unsupported);
 }
 
-/// A certificate the checker rejects never settles `proved`: the solver's
-/// certificate is altered at its initial value before the core checks it.
+/// Altering one terminal value retains the checker's rejection and full locus.
 #[trace("TC-762", "FR-281-AC-4", "FR-203-AC-3", "FR-201-AC-6")]
 #[test]
 fn a_rejected_certificate_never_settles_proved() {
@@ -227,11 +226,12 @@ fn a_rejected_certificate_never_settles_proved() {
         RequestIndex::new(0),
         world.request("Likely", ModelCheckLimits::default()),
         |certificate| {
-            for entry in &mut certificate.values {
-                if entry.value == ratio(0, 1) {
-                    entry.value = ratio(1, 1);
-                }
-            }
+            certificate
+                .values
+                .iter_mut()
+                .find(|entry| entry.value == ratio(0, 1))
+                .expect("the two-loss state")
+                .value = ratio(1, 1);
         },
     );
     let record = analyze_items(&engines, vec![item], &Cancel::new()).remove(0);
@@ -277,6 +277,24 @@ fn a_rejected_certificate_never_settles_proved() {
     assert!(String::from_utf8(expected.as_bytes().to_vec())
         .unwrap()
         .contains(&binding.instance.key));
+}
+
+#[trace("TC-762", "FR-281-AC-4")]
+#[test]
+fn a_malformed_probability_certificate_retains_the_existing_failure() {
+    let world = World::new(&prob_world::link(CLAIMS));
+    let engines = Engines::qsl().expect("the linked engines are admitted");
+    let item = exact_probabilistic_item_tampered(
+        RequestIndex::new(0),
+        world.request("Likely", ModelCheckLimits::default()),
+        |certificate| certificate.values.clear(),
+    );
+    let record = analyze_items(&engines, vec![item], &Cancel::new()).remove(0);
+    assert_eq!(
+        record.terminal().expect("a terminal record").value(),
+        &TerminalValue::Failed
+    );
+    assert!(record.exact_probabilistic.is_none());
 }
 
 #[test]
