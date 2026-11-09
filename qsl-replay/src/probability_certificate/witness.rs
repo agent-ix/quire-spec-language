@@ -141,13 +141,15 @@ pub fn replay_probabilistic_witness(
     if matches!(claim.form, ProbForm::Probability { .. }) {
         return bounded::replay(system, claim, witness, limits, cancel);
     }
-    let ProbForm::Reach {
-        bound,
-        target: ReachTarget::Eventually(predicate),
-    } = &claim.form
-    else {
+    let ProbForm::Reach { bound, target } = &claim.form else {
         return Err(ExactProbabilityGraphError::UnsupportedClaimForm.into());
     };
+    if !matches!(target, ReachTarget::Eventually(_))
+        && qsl_semantics::check::TemporalProfile::from_identity(claim.profile.identity())
+            != Some(qsl_semantics::check::TemporalProfile::InfiniteTrace)
+    {
+        return Err(ExactProbabilityGraphError::UnsupportedClaimForm.into());
+    }
     match bound {
         Bound::AtLeast(threshold) | Bound::AtMost(threshold) => {
             check_bits(threshold, limits.max_rational_bits)?
@@ -168,17 +170,19 @@ pub fn replay_probabilistic_witness(
     }
     let mut model_states = BTreeMap::new();
     let mut issue = None;
-    let graph = enumerate_model_graph(
+    let graph = enumerate_model_graph_with_keys(
         system,
-        predicate,
+        None::<&qsl_semantics::check::CheckedPredicate>,
         reference,
         None,
         limits.model.limits.max_states,
         limits.model.limits.max_transitions,
         cancel,
         false,
+        &|state| key_of(system, reference, state),
         &mut |key, state| {
             model_states.insert(key.clone(), state.clone());
+            Ok(())
         },
         &mut |failure| {
             issue = Some(failure);
@@ -245,7 +249,8 @@ pub fn replay_probabilistic_witness(
     }
     let mut transitions = 0usize;
     let mut mass = rational(0);
-    let mut replayed: Vec<Vec<(ModelTransition, ProbabilityProductKey)>> = Vec::new();
+    let mut replayed: Vec<Vec<(ModelTransition, ProbabilityProductKey, Vec<SemanticValue>)>> =
+        Vec::new();
     for path in &witness.paths {
         poll_cancel(cancel)?;
         let mut state = initial.clone();
@@ -259,7 +264,7 @@ pub fn replay_probabilistic_witness(
             if transitions > limits.model.limits.max_transitions {
                 return Err(ExactProbabilityGraphError::EdgeLimitReached.into());
             }
-            if observes(system, predicate, reference, &state)? {
+            if outcome(system, target, reference, &state)?.is_some() {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
             let key = key_of(system, reference, &state)?;
@@ -326,27 +331,27 @@ pub fn replay_probabilistic_witness(
             check_bits(&step_mass, limits.max_rational_bits)?;
             probability = probability.mul(&step_mass);
             check_bits(&probability, limits.max_rational_bits)?;
-            signature.push((step.transition.clone(), step.post_key.clone()));
+            signature.push((
+                step.transition.clone(),
+                step.post_key.clone(),
+                step.draw.clone(),
+            ));
             state = post;
         }
-        let target = observes(system, predicate, reference, &state)?;
-        let accepting = match bound {
-            Bound::AtMost(_) => target,
-            Bound::AtLeast(_) => {
-                !target
-                    && system
-                        .actions(&state)
-                        .map_err(expansion)?
-                        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
-                        .is_empty()
-            }
+        let accepting = match (bound, outcome(system, target, reference, &state)?) {
+            (Bound::AtMost(_), Some(true)) | (Bound::AtLeast(_), Some(false)) => true,
+            _ => false,
         };
         if !accepting {
             return Ok(ProbabilityWitnessReplay::Parity);
         }
         for previous in &replayed {
             poll_cancel(cancel)?;
-            if previous.iter().zip(&signature).all(|(a, b)| a == b) {
+            if previous
+                .iter()
+                .zip(&signature)
+                .all(|(a, b)| a.0 == b.0 && a.1 == b.1 && same_values(&a.2, &b.2))
+            {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
         }
@@ -366,6 +371,38 @@ pub fn replay_probabilistic_witness(
     Ok(ProbabilityWitnessReplay::Reproduced(Box::new(
         ReproducedProbabilityWitness { evidence, mass },
     )))
+}
+
+/// First decisive state under infinite stutter at a genuine terminal state.
+fn outcome(
+    system: &ModelSystem<'_>,
+    target: &ReachTarget,
+    binding: Option<&ObjectReference>,
+    state: &ModelSimState,
+) -> Result<Option<bool>, ProbabilityWitnessError> {
+    match target {
+        ReachTarget::Eventually(predicate) if observes(system, predicate, binding, state)? => {
+            return Ok(Some(true))
+        }
+        ReachTarget::Until(from, predicate) => {
+            if observes(system, predicate, binding, state)? {
+                return Ok(Some(true));
+            }
+            if !observes(system, from, binding, state)? {
+                return Ok(Some(false));
+            }
+        }
+        ReachTarget::Always(predicate) if !observes(system, predicate, binding, state)? => {
+            return Ok(Some(false))
+        }
+        ReachTarget::Eventually(_) | ReachTarget::Always(_) => {}
+    }
+    let terminal = system
+        .actions(state)
+        .map_err(expansion)?
+        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
+        .is_empty();
+    Ok(terminal.then_some(matches!(target, ReachTarget::Always(_))))
 }
 
 fn key_of(

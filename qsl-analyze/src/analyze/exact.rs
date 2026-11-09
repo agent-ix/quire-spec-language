@@ -382,9 +382,6 @@ fn run(
     };
     let reference = binding.as_ref().map(|bound| &bound.reference);
     if !holds {
-        if state_predicate {
-            return not_yet();
-        }
         let bounded_monitor = match (bounded_formula, monitor) {
             (Some(formula), Some(monitor)) => {
                 let context =
@@ -713,7 +710,73 @@ fn replay_refutation(
     use crate::exact_probabilistic::{
         produce_witness, FormulaState, MonitorState, MonitorVerdict, ProductAction, WitnessScope,
     };
+    // Direct state-predicate boundaries stop the evidence search at the first
+    // decisive state. Replay independently derives these outcomes from source.
+    let mut boundary_product = None;
+    let state_outcomes = match &claim.form {
+        ProbForm::Reach {
+            target: ReachTarget::Until(..) | ReachTarget::Always(_),
+            ..
+        } => {
+            let outcomes = product
+                .labels
+                .iter()
+                .enumerate()
+                .map(|(index, labels)| {
+                    let terminal = product
+                        .edges
+                        .iter()
+                        .filter(|edge| edge.from.index() == index)
+                        .all(|edge| matches!(edge.choice, ProductAction::TerminalStutter));
+                    let first = labels.first().copied().unwrap_or(false);
+                    match &claim.form {
+                        ProbForm::Reach {
+                            target: ReachTarget::Until(..),
+                            ..
+                        } => {
+                            if labels.get(1).copied().unwrap_or(false) {
+                                Some(true)
+                            } else if !first || terminal {
+                                Some(false)
+                            } else {
+                                None
+                            }
+                        }
+                        _ => {
+                            if !first {
+                                Some(false)
+                            } else if terminal {
+                                Some(true)
+                            } else {
+                                None
+                            }
+                        }
+                    }
+                })
+                .collect::<Vec<_>>();
+            let mut stopped = product.clone();
+            stopped
+                .edges
+                .retain(|edge| outcomes.get(edge.from.index()).is_some_and(Option::is_none));
+            boundary_product = Some(stopped);
+            Some(outcomes)
+        }
+        _ => None,
+    };
+    let product = boundary_product.as_ref().unwrap_or(product);
     let (accepting, past) = match &claim.form {
+        ProbForm::Reach { bound, .. } if state_outcomes.is_some() => (
+            state_outcomes
+                .as_ref()
+                .expect("state outcomes were selected")
+                .iter()
+                .map(|outcome| *outcome == Some(matches!(bound, Bound::AtMost(_))))
+                .collect(),
+            match bound {
+                Bound::AtMost(threshold) => threshold.clone(),
+                Bound::AtLeast(threshold) => Rational::from_integer(1_i64.into()).sub(threshold),
+            },
+        ),
         ProbForm::Probability { bound, .. } if monitor.is_some() => (
             product
                 .states
