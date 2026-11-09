@@ -1098,7 +1098,7 @@ mod tests {
         let certificate =
             certificate(Rational::new(Integer::from(4_i64), Integer::from(5_i64)).unwrap());
         let bound = Bound::AtLeast(rational(0));
-        let run = |cancel| {
+        let run = |cancel: &Cancel| {
             check_exact_reachability(
                 &graph,
                 &certificate,
