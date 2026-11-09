@@ -28,7 +28,7 @@ use crate::model_world::{self, Clause, World, INFINITE};
 
 /// The Counter world with `always holds(c.value <= 1)`: `inc` breaks it at
 /// value 2.
-fn world() -> World {
+pub(crate) fn world() -> World {
     World::new(
         model_world::counter(),
         CONTRACT,
@@ -41,7 +41,7 @@ fn world() -> World {
     )
 }
 
-fn subject(world: &World, limits: ClauseLimits) -> ClauseSubject<'_> {
+pub(crate) fn subject(world: &World, limits: ClauseLimits) -> ClauseSubject<'_> {
     let node = &world.package.graph().temporal_clauses()[0];
     let key = OccurrenceKey::new(node.identity(), node.claim().clone());
     ClauseSubject::new(
