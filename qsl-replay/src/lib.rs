@@ -329,6 +329,8 @@ pub use planner::{
     PlannerResult, PremiseItem, PremiseResult, ResultEntry, SettlementRequest,
 };
 pub use probability_certificate::{
+    check_probability_certificate_source, ProbabilitySourceError, ProbabilitySourceLimits,
+    ProbabilitySourceRequest,
     check_probability_certificate_document, probability_certificate_document,
     read_probability_certificate, write_probability_certificate, ProbabilityCertificateDocument,
     ProbabilityDocumentError, ProbabilityDocumentLimits,

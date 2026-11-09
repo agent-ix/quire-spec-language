@@ -20,6 +20,8 @@ use serde_json::{json, Value};
 use crate::identity::ObligationIdentity;
 
 mod document;
+mod source;
+pub use source::*;
 pub use document::*;
 mod witness;
 pub use witness::*;

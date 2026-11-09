@@ -127,7 +127,8 @@ fn poll(cancel: &Cancel) -> Result<(), ProbabilityDocumentError> {
 }
 
 fn canonical<T: Serialize>(value: &T, bytes: u64) -> Result<Vec<u8>, ProbabilityDocumentError> {
-    quire_canonical::to_vec(value, quire_canonical::Limits::new(bytes))
+    let value = serde_json::to_value(value).map_err(|_| ProbabilityDocumentError::Malformed)?;
+    quire_canonical::to_vec(&value, quire_canonical::Limits::new(bytes))
         .map_err(|_| ProbabilityDocumentError::Limit("certificate.bytes"))
 }
 
