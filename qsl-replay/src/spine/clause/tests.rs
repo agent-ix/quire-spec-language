@@ -4916,3 +4916,39 @@ mod state_clause_replay;
 mod temporal;
 mod witness;
 mod witness_member;
+
+/// FR-286-AC-7 (TC-792): a Reference completion is never a clause truth. The
+/// `/2` result writer reports an internal failure with no truth and no
+/// completed outcome for a clause that completes a Reference.
+#[trace("TC-792", "FR-286-AC-7")]
+#[test]
+fn tc_792_a_reference_completion_is_not_a_clause_truth() {
+    let (request, _) = no_cycle_request(&[("a", Some("b")), ("b", None)]);
+    let mut report = run_clause(request).expect("the fixture compiles");
+    report.basis = crate::proof_result::SettlementBasis::Unavailable;
+    report.disposition = ClauseDisposition::Evaluate(super::CallOutcome::Completed(
+        super::CallValue::Reference(quire_exact::ObjectReference::new(
+            crate::spine::fixture_ids::universe(1),
+            crate::spine::fixture_ids::effective(2),
+            quire_exact::ObjectId::new("o").unwrap(),
+        )),
+    ));
+    assert_eq!(
+        report.disposition.category(),
+        quire_semantic_value::catalog::Category::InternalFailure
+    );
+    assert_eq!(report.disposition.truth(), None);
+
+    let bytes = crate::spine::write_clause_run_result(&report).unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let disposition = &value["disposition"];
+    assert_eq!(disposition["category"], "internal-failure");
+    assert_eq!(
+        disposition["internal_fault"]["invariant"],
+        "clause-completes-reference"
+    );
+    assert!(disposition
+        .get("truth")
+        .is_none_or(serde_json::Value::is_null));
+    assert!(disposition.get("outcome").is_none());
+}

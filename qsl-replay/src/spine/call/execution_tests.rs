@@ -404,6 +404,41 @@ fn the_run_outcome_is_the_rendering_of_executes_result() {
     }
 }
 
+/// FR-285-AC-6: a supplied `aot` stand-in whose `prepare` reaches
+/// `prepare.compile_work_units` yields `CallFailure::Limit` naming that
+/// setting, category incomplete, exit 22.
+#[trace("TC-769", "FR-285-AC-6")]
+#[test]
+fn a_compile_work_units_stop_exits_22() {
+    let unit = checked();
+    let mut aot = Stub::new();
+    aot.refuse = Some(PrepareFailure::Limit(LimitExceeded::new(
+        Setting::PrepareCompileWorkUnits,
+        1,
+        2,
+    )));
+    let backends = SuppliedBackends {
+        aot: Some(&aot),
+        jit: None,
+    };
+    let failure = qsl_eval::execution::execute(
+        unit.package(),
+        &request("seven", vec![], ExecutionBackendChoice::Aot),
+        &backends,
+        &limits(),
+        &Cancel::new(),
+    )
+    .expect_err("prepare reached its limit");
+    match &failure {
+        CallFailure::Limit(reached) => {
+            assert_eq!(reached.setting.name(), "prepare.compile_work_units");
+        }
+        other => panic!("expected Limit, got {other:?}"),
+    }
+    assert_eq!(failure.category(), Category::Incomplete);
+    assert_eq!(failure.category().exit_code(), 22);
+}
+
 /// FR-279-AC-4: a supplied `aot` stand-in whose `prepare` reaches
 /// `prepare.code_bytes` yields `CallFailure::Limit` with the leaf's record,
 /// category incomplete (exit 22); a `Fault` keeps its `InternalFault`.
@@ -1283,6 +1318,7 @@ fn the_interpreter_runs_seven_by_default() {
 /// FR-296-AC-2: choosing `jit` with `SuppliedBackends::default()` returns
 /// `Unsupported` `NotSupplied`, category unsupported (exit 21); the spine
 /// refuses before any stage with `unimplemented_capability`.
+#[trace("TC-769", "FR-285-AC-6")]
 #[trace("TC-781", "FR-296-AC-2")]
 #[test]
 fn an_unsupplied_backend_refuses_as_unsupported() {
@@ -1339,6 +1375,7 @@ fn an_unsupplied_backend_refuses_as_unsupported() {
 /// FR-296-AC-3: a `jit` stand-in that lists one entry unsupported makes
 /// `execute` return that `UnsupportedEntry`, exit 21, with the interpreter
 /// never called.
+#[trace("TC-769", "FR-285-AC-6")]
 #[trace("TC-781", "FR-296-AC-3")]
 #[test]
 fn an_entry_the_chosen_backend_lists_unsupported_is_returned() {
