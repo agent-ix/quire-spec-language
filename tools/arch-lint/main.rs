@@ -13,6 +13,7 @@ mod api_surface;
 mod error;
 mod metadata;
 mod qualified_core;
+mod unsafe_confinement;
 
 use arch_lint::graph;
 
@@ -30,7 +31,8 @@ fn usage() -> Error {
         Code::Usage,
         "arch-lint direction --qsl <path> --ir <path> --rt <path> --cg <path>\n\
          arch-lint api-surface --qsl <path> [--cg <path> | --qsl-only]\n\
-         arch-lint qualified-core --qsl <path>",
+         arch-lint qualified-core --qsl <path>\n\
+         arch-lint unsafe-confinement --qsl <path>",
     )
 }
 
@@ -256,6 +258,14 @@ fn run_qualified_core(mut args: Vec<String>) -> Result<(String, bool)> {
     Ok(qualified_core::report(&qsl, &direction, &ambient))
 }
 
+fn run_unsafe_confinement(mut args: Vec<String>) -> Result<(String, bool)> {
+    let qsl = require(&mut args, "--qsl")?;
+    if !args.is_empty() {
+        return Err(usage());
+    }
+    unsafe_confinement::report(&qsl)
+}
+
 fn run(arguments: &[OsString]) -> Result<(String, bool)> {
     let mut args: Vec<String> = arguments
         .iter()
@@ -270,6 +280,7 @@ fn run(arguments: &[OsString]) -> Result<(String, bool)> {
         "direction" => run_direction(args),
         "api-surface" => run_api_surface(args),
         "qualified-core" => run_qualified_core(args),
+        "unsafe-confinement" => run_unsafe_confinement(args),
         _ => Err(usage()),
     }
 }

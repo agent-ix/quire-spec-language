@@ -131,7 +131,7 @@ fn a_selected_state_clause_is_listed_unsupported_with_its_first_outside_construc
     let prepared = Jit
         .prepare(
             &package,
-            &[selection.clone()],
+            std::slice::from_ref(&selection),
             &PrepareLimits::default(),
             &Cancel::new(),
         )

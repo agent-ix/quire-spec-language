@@ -329,7 +329,7 @@ fuzz-deep-input:
 # Each aggregate prerequisite depends on validation, rather than racing it as
 # a sibling under -j (or continuing past it under -k). Standalone lane commands
 # retain their existing behavior; this ordering belongs to the aggregate gate.
-CI_CHECKS := conformance check-no-committed-binaries ci-default-features ci-all-features test-deep-format ci-clean-build seam-probe string-edge route-lint checked-input canonical-types refinement-versioning cargo-deny-bans ci-docs arch-lint-api-surface-qsl arch-lint-qualified-core build-no-std
+CI_CHECKS := conformance check-no-committed-binaries ci-default-features ci-all-features test-deep-format ci-clean-build seam-probe string-edge route-lint checked-input canonical-types refinement-versioning cargo-deny-bans ci-docs arch-lint-api-surface-qsl arch-lint-qualified-core arch-lint-unsafe build-no-std
 CI_TARGETS := $(CI_CHECKS)
 # The public aggregate validates the native documents before the xtask wrapper
 # canonicalizes QSPEC_DIR for every child lane.
@@ -389,7 +389,7 @@ IR_CLONE ?=
 RT_CLONE ?=
 CG_CLONE ?=
 
-.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-api-surface-qsl arch-lint arch-lint-qualified-core
+.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-api-surface-qsl arch-lint arch-lint-qualified-core arch-lint-unsafe
 
 arch-lint-direction:
 	cargo run --locked -p arch-lint -- direction \
@@ -414,7 +414,12 @@ arch-lint-qualified-core:
 # Runs the two checks that need only this repository.
 # `arch-lint-direction` needs IR_CLONE/RT_CLONE/CG_CLONE, and
 # `arch-lint-api-surface` needs CG_CLONE (see above); each runs separately.
-arch-lint: arch-lint-api-surface-qsl arch-lint-qualified-core
+# FR-568 (ADR-035 CG-4): `unsafe` code lives in `qsl_jit::exec` and nowhere
+# else; every other package keeps `unsafe_code` forbidden.
+arch-lint-unsafe:
+	cargo run --locked -p arch-lint -- unsafe-confinement --qsl .
+
+arch-lint: arch-lint-api-surface-qsl arch-lint-qualified-core arch-lint-unsafe
 
 
 # The committed performance benchmarks (`qsl-bench/`), one
