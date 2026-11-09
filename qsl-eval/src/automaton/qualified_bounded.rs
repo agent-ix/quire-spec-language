@@ -35,6 +35,38 @@ pub struct QualifiedBoundedMonitor {
 }
 
 impl QualifiedBoundedMonitor {
+    /// Retain a producer's already reached monitor without copying its
+    /// cache. Its complete translation identity must match the checked
+    /// formula before any local handle can be projected into a key.
+    pub fn from_monitor(
+        formula: &CheckedFormula,
+        context: &StateContext,
+        mut monitor: Monitor<PropertyAutomaton>,
+        max_states: u64,
+    ) -> Result<Self, QualifiedBoundedError> {
+        let mut expected = Self::new(formula, context, max_states)?;
+        let initial = monitor.viable_initial()?.ok_or(AutomatonError::Invariant {
+            invariant: "qualified-eventually-viable-root",
+        })?;
+        let root = expected
+            .monitor
+            .viable_initial()?
+            .ok_or(AutomatonError::Invariant {
+                invariant: "qualified-eventually-viable-root",
+            })?;
+        let bytes = qsl_foundation::IdentityLimits::default().input_bytes;
+        if monitor.automaton().state_key(initial, bytes)?
+            != expected.monitor.automaton().state_key(root, bytes)?
+        {
+            return Err(AutomatonError::Invariant {
+                invariant: "qualified-eventually-matching-translation",
+            }
+            .into());
+        }
+        expected.monitor = monitor;
+        Ok(expected)
+    }
+
     /// Build the actual formula monitor and its FR-338 context. Other
     /// profiles, operators and activations are explicitly refused.
     pub fn new(

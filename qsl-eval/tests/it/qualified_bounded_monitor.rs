@@ -153,3 +153,44 @@ fn qualified_bounded_monitor_preserves_context_and_refuses_other_forms() {
     )
     .is_err());
 }
+
+#[trace("TC-636", "FR-201-AC-13", "FR-201-AC-14")]
+#[test]
+fn qualified_bounded_monitor_retains_the_producers_reached_handles() {
+    let fixture = fixture(
+        EVENT,
+        "c: Counter",
+        "on origin",
+        "eventually[0,2] holds(true)",
+    );
+    let automaton =
+        translate_body(fixture.clause.formula(), fixture.clause.profile(), 100).unwrap();
+    let mut monitor = Monitor::bad_prefix(automaton, 100).unwrap();
+    let initial = monitor.initial().unwrap();
+    let origin = monitor.step(initial, Letter::default()).unwrap();
+    let loss = monitor.step(origin, Letter::default()).unwrap();
+    let qualified = QualifiedBoundedMonitor::from_monitor(
+        fixture.clause.formula(),
+        &context(&fixture.clause, 0),
+        monitor,
+        100,
+    )
+    .unwrap();
+    assert_eq!(qualified.rank(origin).unwrap(), 2);
+    assert_eq!(qualified.rank(loss).unwrap(), 1);
+    assert_ne!(qualified.key(origin).unwrap(), qualified.key(loss).unwrap());
+    let other = crate::temporal_trace::fixture(
+        EVENT,
+        "c: Counter",
+        "on origin",
+        "eventually[0,3] holds(true)",
+    );
+    let automaton = translate_body(other.clause.formula(), other.clause.profile(), 100).unwrap();
+    assert!(QualifiedBoundedMonitor::from_monitor(
+        fixture.clause.formula(),
+        &context(&fixture.clause, 0),
+        Monitor::bad_prefix(automaton, 100).unwrap(),
+        100,
+    )
+    .is_err());
+}
