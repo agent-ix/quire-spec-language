@@ -21,7 +21,7 @@ use crate::identity::ObligationIdentity;
 
 mod bounded;
 mod document;
-pub use bounded::{bounded_probability_product_key, probabilistic_formula_monitor_context};
+pub use bounded::probabilistic_formula_monitor_context;
 mod source;
 pub use document::*;
 pub use source::*;

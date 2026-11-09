@@ -121,9 +121,17 @@ impl PropertyAutomaton {
     /// Every generated state of this exact shape has a satisfying suffix:
     /// the next observed atom discharges its one deadline (or the state is
     /// already settled). No horizon-sized cycle search is needed.
-    pub(super) fn bounded_eventually_viability(&self, state: StateId) -> Result<Option<bool>, AutomatonError> {
-        if !self.is_origin_bounded_eventually()? { return Ok(None); }
-        let config = self.reached.key(state).ok_or(AutomatonError::UnknownState { state })?;
+    pub(super) fn bounded_eventually_viability(
+        &self,
+        state: StateId,
+    ) -> Result<Option<bool>, AutomatonError> {
+        if !self.is_origin_bounded_eventually()? {
+            return Ok(None);
+        }
+        let config = self
+            .reached
+            .key(state)
+            .ok_or(AutomatonError::UnknownState { state })?;
         if config != &self.initial && !self.is_settled(state)? {
             return Ok(Some(self.bounded_deadline(state)? > 0));
         }

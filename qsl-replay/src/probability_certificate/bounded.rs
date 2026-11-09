@@ -39,38 +39,6 @@ pub fn probabilistic_formula_monitor_context(
     })
 }
 
-/// Encode FR-196's complete formula-bearing product identity. Model and
-/// monitor keys are embedded as parsed canonical values, never local IDs.
-pub fn bounded_probability_product_key(
-    binding: Option<&ObjectReference>,
-    model: &[u8],
-    monitor: &AutomatonStateKey,
-) -> Result<ProbabilityProductKey, ExactProbabilityGraphError> {
-    let model: Value =
-        serde_json::from_slice(model).map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-    let monitor: Value = serde_json::from_slice(monitor.as_bytes())
-        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-    let binding = binding
-        .map(|reference| {
-            qsl_eval::simulation::model::reference_canonical_text(reference)
-                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)
-                .and_then(|text| {
-                    serde_json::from_str::<Value>(&text)
-                        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)
-                })
-        })
-        .transpose()?;
-    canonical_json(&json!([
-        "quire.probability-product-key/v1",
-        binding,
-        ["quire.simulation.state-key/v1", model],
-        ["formula", monitor],
-        null,
-        null
-    ]))
-    .map(ProbabilityProductKey)
-}
-
 #[derive(Clone, Copy)]
 enum Control {
     Running(StateId),
@@ -120,14 +88,13 @@ pub(super) fn enumerate(
     context: &StateContext,
     binding: Option<&ObjectReference>,
     workload: Option<&Workload>,
-    max_states: usize,
-    max_edges: usize,
+    limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
     failure: &mut impl FnMut(crate::ExactProbBuildIssue),
-) -> Result<(CheckerGraph, BTreeMap<ProbabilityProductKey, u64>), ExactProbabilityGraphError> {
+) -> Result<(CheckerGraph, BTreeMap<ProbabilityProductKey, u64>), ProbabilityDocumentError> {
     poll_cancel(cancel)?;
-    if max_states == 0 {
-        return Err(ExactProbabilityGraphError::LimitReached);
+    if limits.states == 0 {
+        return Err(state_limit(0, 1));
     }
     let mut monitor = QualifiedBoundedMonitor::new(
         // The document ceiling counts product states, not internal NFA
@@ -163,7 +130,7 @@ pub(super) fn enumerate(
     };
     let initial = system.initial();
     let [first] = initial.as_slice() else {
-        return Err(ExactProbabilityGraphError::UnsupportedInitial);
+        return Err(ExactProbabilityGraphError::UnsupportedInitial.into());
     };
     let first_control = monitor
         .start(read(first, failure)?)
@@ -173,7 +140,9 @@ pub(super) fn enumerate(
         let (bytes, _) = system
             .state_key(model)
             .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-        bounded_probability_product_key(binding, &bytes, &control.key(monitor)?)
+        ProbabilityProductKey::for_formula_state(binding, &bytes, &control.key(monitor)?, ProbabilityDocumentIoLimits {
+            bytes: limits.bytes, storage_bytes: limits.storage_bytes,
+        }, cancel)
     };
     let root = key_of(first, first_control, &monitor)?;
     let mut queue = VecDeque::from([(root.clone(), first.clone(), first_control)]);
@@ -195,7 +164,7 @@ pub(super) fn enumerate(
             continue;
         }
         let Control::Running(running) = control else {
-            return Err(ExactProbabilityGraphError::ExpansionRefused);
+            return Err(ExactProbabilityGraphError::ExpansionRefused.into());
         };
         let distributions = model_distributions(system, &model, workload, cancel, failure)?;
         let mut choices = Vec::new();
@@ -208,7 +177,7 @@ pub(super) fn enumerate(
                 BoundedState::Accept => true,
                 BoundedState::Reject => false,
                 BoundedState::Open { .. } => {
-                    return Err(ExactProbabilityGraphError::ExpansionRefused)
+                    return Err(ExactProbabilityGraphError::ExpansionRefused.into())
                 }
             };
             successors.push(vec![(rational(1), model, Control::Decided(closed))]);
@@ -236,12 +205,16 @@ pub(super) fn enumerate(
                 edge_count = edge_count
                     .checked_add(1)
                     .ok_or(ExactProbabilityGraphError::TooManyEdges)?;
-                if edge_count > max_edges {
-                    return Err(ExactProbabilityGraphError::EdgeLimitReached);
+                if edge_count > limits.edges {
+                    return Err(ProbabilityDocumentError::Limit {
+                        limit: ProbabilityDocumentLimit::Edges,
+                        bound: u64::try_from(limits.edges).unwrap_or(u64::MAX),
+                        actual: u64::try_from(edge_count).unwrap_or(u64::MAX),
+                    });
                 }
                 if !seen.contains(&target) {
-                    if seen.len() >= max_states {
-                        return Err(ExactProbabilityGraphError::LimitReached);
+                    if seen.len() >= limits.states {
+                        return Err(state_limit(limits.states, seen.len().saturating_add(1)));
                     }
                     seen.insert(target.clone());
                     queue.push_back((target.clone(), post, control));
@@ -268,4 +241,12 @@ pub(super) fn enumerate(
         },
         ranks,
     ))
+}
+
+fn state_limit(bound: usize, actual: usize) -> ProbabilityDocumentError {
+    ProbabilityDocumentError::Limit {
+        limit: ProbabilityDocumentLimit::States,
+        bound: u64::try_from(bound).unwrap_or(u64::MAX),
+        actual: u64::try_from(actual).unwrap_or(u64::MAX),
+    }
 }

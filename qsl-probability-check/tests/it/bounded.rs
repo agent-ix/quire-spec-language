@@ -160,18 +160,24 @@ fn proof(source: &str, snapshot: &[u8]) -> Value {
 }
 
 fn run(request: &Value) -> (i32, Value) {
+    run_with(request, &[])
+}
+
+fn run_with(request: &Value, arguments: &[&str]) -> (i32, Value) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_qsl-probability-check"))
+        .args(arguments)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child
+    if let Err(error) = child
         .stdin
         .take()
         .unwrap()
-        .write_all(&serde_json::to_vec(request).unwrap())
-        .unwrap();
+        .write_all(&serde_json::to_vec(request).unwrap()) {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+    }
     let output = child.wait_with_output().unwrap();
     let value = serde_json::from_slice(&output.stdout)
         .unwrap_or_else(|_| panic!("child output: {output:?}"));
@@ -372,7 +378,8 @@ fn bounded_zero_horizon_reads_position_zero_and_terminal_closes_by_false_extensi
         snapshot["populations"][0]["objects"][0]["fields"]["delivered"]["boolean"] =
             json!(delivered);
         let source = cyclic_source(0, if delivered { "1" } else { "0" });
-        let request = proof(&source, &serde_json::to_vec(&snapshot).unwrap());
+        let mut request = proof(&source, &serde_json::to_vec(&snapshot).unwrap());
+        request["limits"]["states"] = json!(1);
         let (code, result) = run(&request);
         assert_eq!(code, 0, "{result}");
         assert_eq!(
@@ -385,6 +392,39 @@ fn bounded_zero_horizon_reads_position_zero_and_terminal_closes_by_false_extensi
     let (code, result) = run(&request);
     assert_eq!(code, 0, "{result}");
     assert_eq!(result["value"], json!({"numerator":"0","denominator":"1"}));
+}
+
+#[trace("TC-636", "FR-201-AC-13", "FR-201-AC-14", "FR-282-AC-12", "FR-282-AC-13")]
+#[test]
+fn bounded_graph_and_document_budget_stops_retain_limits_without_truth_or_evidence() {
+    let original = proof(&cyclic_source(2, "0.75"), SNAPSHOT);
+    for name in ["bytes", "storage_bytes", "states", "edges", "scalar_bits", "expansion"] {
+        let mut request = original.clone();
+        request["limits"][name] = json!(0);
+        let (code, result) = run(&request);
+        assert_ne!(code, 0, "{name}: {result}");
+        assert!(result.get("value").is_none(), "{name}: {result}");
+    }
+    let count = document(&original)["values"].as_array().unwrap().len();
+    let mut exact = original.clone();
+    exact["limits"]["states"] = json!(count);
+    let (code, result) = run(&exact);
+    assert_eq!(code, 0, "the exact product state ceiling suffices: {result}");
+    let mut limited = mutate(&original, |document| {
+        document["values"].as_array_mut().unwrap().pop();
+        document["ranking"].as_array_mut().unwrap().pop();
+    });
+    limited["limits"]["states"] = json!(count - 1);
+    let (code, result) = run(&limited);
+    assert_ne!(code, 0, "{result}");
+    assert_eq!(result["limit"]["setting"], "exact_prob.max_states");
+    assert_eq!(result["limit"]["bound"], json!(count - 1));
+    assert_eq!(result["limit"]["actual"], json!(count));
+    for arguments in [vec!["--cancel"], vec!["--max-input-bytes", "1"]] {
+        let (code, result) = run_with(&original, &arguments);
+        assert_ne!(code, 0, "{result}");
+        assert!(result.get("value").is_none(), "{result}");
+    }
 }
 
 #[trace("TC-636", "FR-201-AC-14", "FR-282-AC-13")]
@@ -425,6 +465,9 @@ fn bounded_altered_horizon_binding_and_rank_never_certify_the_original_claim() {
 #[trace("TC-636", "FR-201-AC-14", "FR-282-AC-13")]
 #[test]
 fn bounded_wrong_source_and_nonexact_rows_never_produce_an_accepted_document() {
+    let (evidence, missed) = request(&cyclic_source(2, "1"), SNAPSHOT, ExactProbLimits::default());
+    assert!(evidence.is_none(), "bounded misses have no unbounded witness-replay certificate");
+    assert!(matches!(missed, qsl_replay::TerminalValue::Unsupported(_)), "{missed:?}");
     let mut original = proof(&cyclic_source(2, "0.75"), SNAPSHOT);
     original["package_name"] = json!("another-source-package");
     let (code, result) = run(&original);

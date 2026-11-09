@@ -600,7 +600,8 @@ fn subject_graph(
                     issue = Some(failure);
                 },
             )
-            .map(|graph| (graph, None)),
+            .map(|graph| (graph, None))
+            .map_err(ProbabilityDocumentError::from),
         ),
         ProbForm::Probability {
             bound,
@@ -620,8 +621,7 @@ fn subject_graph(
                     &context,
                     reference,
                     workload,
-                    limits.states,
-                    limits.edges,
+                    limits,
                     cancel,
                     &mut |failure| {
                         issue = Some(failure);
@@ -635,7 +635,7 @@ fn subject_graph(
     let (graph, bounded_ranks) = enumerated.map_err(|error| match issue {
         Some(issue) => ProbabilityDocumentError::Build(Box::new(issue)),
         None => match error {
-            ExactProbabilityGraphError::LimitReached => {
+            ProbabilityDocumentError::Graph(ExactProbabilityGraphError::LimitReached) => {
                 let bound = u64::try_from(limits.states).unwrap_or(u64::MAX);
                 exceeded(
                     ProbabilityDocumentLimit::States,
@@ -643,7 +643,7 @@ fn subject_graph(
                     bound.saturating_add(1),
                 )
             }
-            ExactProbabilityGraphError::EdgeLimitReached => {
+            ProbabilityDocumentError::Graph(ExactProbabilityGraphError::EdgeLimitReached) => {
                 let bound = u64::try_from(limits.edges).unwrap_or(u64::MAX);
                 exceeded(
                     ProbabilityDocumentLimit::Edges,
@@ -651,7 +651,7 @@ fn subject_graph(
                     bound.saturating_add(1),
                 )
             }
-            other => other.into(),
+            other => other,
         },
     })?;
     topological_order(&graph, cancel)?;
@@ -686,6 +686,14 @@ pub fn probability_certificate_document(
         subject_graph(system, claims, item, limits, cancel)?;
     let bounded = bounded_ranks.is_some();
     let mut ranks = bounded_ranks.unwrap_or_default();
+    if bounded {
+        for rank in ranks.values() {
+            poll(cancel)?;
+            if *rank > MAX_COUNT {
+                return Err(exceeded(ProbabilityDocumentLimit::Rank, MAX_COUNT, *rank));
+            }
+        }
+    }
     if !bounded {
         for key in topological_order(&graph, cancel)?.into_iter().rev() {
             poll(cancel)?;
