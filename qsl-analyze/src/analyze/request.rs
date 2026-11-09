@@ -335,6 +335,21 @@ fn work<'a>(
         Some(ItemForm::Probabilistic(_) | ItemForm::Hybrid(_)) | None => ItemKind::Formula,
     };
     let family = crate::claim_family::claim_family(package, temporal_kind, &item.claim);
+    let wrong_occurrence = package
+        .graph()
+        .temporal_clauses()
+        .iter()
+        .find(|clause| clause.identity() == *item.claim.node())
+        .is_some_and(|clause| clause.claim() != item.claim.origin())
+        || package
+            .graph()
+            .probabilistic_model()
+            .claims()
+            .iter()
+            .filter_map(|claim| claim.occurrence())
+            .find(|claim| claim.node() == item.claim.node())
+            .is_some_and(|claim| claim != &item.claim);
+    let family = if wrong_occurrence { None } else { family };
     let absent = || AnalyzeItem::unadapted(item.request_index, item.kind, family);
     let mut built =
         match &item.form {
