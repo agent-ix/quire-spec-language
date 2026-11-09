@@ -382,7 +382,60 @@ fn a_value_claim_returns_its_native_replayed_assignment() {
         .node(function)
         .and_then(|node| node.function_body())
         .expect("the checked Boolean body");
-    let claim = OccurrenceKey::declaration(body);
+    let mut claims = package.graph().occurrences().filter(|(node, origin, _)| {
+        *node == body
+            && qsl_package::occurrence_role(origin.role().as_str())
+                == Some(qsl_package::CheckedOccurrenceRole::Claim)
+    });
+    let (claim_node, claim_origin, _) = claims
+        .next()
+        .expect("the producer recorded the Boolean body's claim");
+    assert!(
+        claims.next().is_none(),
+        "one claim occurrence for this Boolean body"
+    );
+    let claim = OccurrenceKey::new(claim_node, claim_origin);
+    let target = qsl_replay::value_check::ValueTarget::select(&package, "Goal", &claim)
+        .expect("the native selector accepts the producer's Boolean-body occurrence");
+    let native_request = qsl_analyze::value_check::ValueRequest {
+        target,
+        max_cases: None,
+        reported: None,
+    };
+    let native = qsl_analyze::value_check::check_value(
+        &native_request,
+        qsl_analyze::value_check::manifest::DEFAULT_MAX_CASES,
+        &Cancel::new(),
+    )
+    .expect("native value check");
+    assert!(
+        matches!(native, qsl_analyze::value_check::ValueOutcome::Refuted(_)),
+        "{native:?}"
+    );
+    let direct = qsl_analyze::analyze::analyze_items(
+        &Engines::qsl().expect("the manifests register"),
+        vec![qsl_analyze::analyze::value_item(
+            RequestIndex::new(0),
+            &package,
+            &claim,
+            Ok(native_request),
+        )],
+        &Cancel::new(),
+    );
+    assert!(
+        matches!(
+            direct[0].terminal().map(|record| record.value()),
+            Some(TerminalValue::Refuted)
+        ),
+        "native adapter settlement: {:?}; family: {:?}; node: {:?}",
+        direct[0],
+        qsl_analyze::claim_family::claim_family(
+            &package,
+            qsl_route::request::ItemKind::Formula,
+            &claim
+        ),
+        package.graph().semantic_graph().node(claim.node().clone())
+    );
     let provision = SourceProvision::single(package.graph().source(), &source);
     let result = provider::run(
         &package,
@@ -397,7 +450,12 @@ fn a_value_claim_returns_its_native_replayed_assignment() {
         &AnalyzeLimits::unbounded(),
         &Cancel::new(),
     );
-    assert_eq!(result.records[0].value(), &TerminalValue::Refuted);
+    assert_eq!(
+        result.records[0].value(),
+        &TerminalValue::Refuted,
+        "{:?}",
+        result.records[0]
+    );
     assert_eq!(
         result.records[0].backend().map(BackendId::as_str),
         Some(qsl_analyze::value_check::manifest::BACKEND_ID)
