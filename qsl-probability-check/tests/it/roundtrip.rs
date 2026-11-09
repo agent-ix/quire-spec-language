@@ -375,10 +375,16 @@ fn a_real_resolved_workload_uses_checked_weights_and_refuses_authored_zero_weigh
     assert_eq!(result["rule"], "inequality-fails");
 
     let mut ambiguous = original.clone();
-    let source = ambiguous["source"]["content"].as_str().unwrap().replace(" and self.delivered = (not lost)", "");
+    let source = ambiguous["source"]["content"]
+        .as_str()
+        .unwrap()
+        .replace(" and self.delivered = (not lost)", "");
     replace_checked_source(&mut ambiguous, &source);
     let (code, result) = run(&ambiguous, &[]);
-    assert_eq!(code, 2, "a workload draw with several post-states is outside this profile: {result}");
+    assert_eq!(
+        code, 2,
+        "a workload draw with several post-states is outside this profile: {result}"
+    );
     assert_eq!(result["status"], "unsupported");
 
     let mut zero = original;
