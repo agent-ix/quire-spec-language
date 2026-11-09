@@ -91,7 +91,79 @@ product state form `{product_key}` and the second as `{member}`.
   interval a `Lower` and an `Upper` certificate; from a long-run result a
   `LongRun` certificate with the gain–bias pairs of FR-199.
 
-### Checking
+### Closed reachability document profile
+
+For the untimed, acyclic, unbounded `eventually` reachability slice, the
+document codec SHALL implement the following QSL-owned profile of QSpec
+FR-412's open, nonempty `objective` object. This profile does not narrow the
+other objective obligations above and below; unsupported forms SHALL remain
+explicitly unsupported rather than be encoded as this profile.
+
+- The objective SHALL have exactly `profile`, `targets`, `optimization` and
+  `fairness`. `profile` SHALL be
+  `"quire.probability-objective/reachability/v1"`; `targets` SHALL be the
+  complete set of reachable target product keys, transported using QSpec
+  FR-331's `ProbabilityProductKey`; `optimization` SHALL be `"minimum"`,
+  `"maximum"` or `"workload"`; `fairness` SHALL be the empty array. An empty
+  target set is valid. Targets are extensional evidence, not an expression
+  encoding or a trusted qualitative set: the checker SHALL independently
+  evaluate the checked claim's target over its own reachable product and
+  compare the exact set before acceptance. It SHALL rederive optimization
+  from the checked claim, not from certificate values.
+- Admission SHALL require one subject initial state, at most one admitted
+  claim binding, no clocks, reward, authored fairness, horizon or other
+  temporal form, and an acyclic continuation graph apart from implicit
+  terminal stutter. Workload admission SHALL require a single resolved
+  distribution at each live state. Unsupported shape, profile version,
+  optimization or certificate kind SHALL give an explicit unsupported
+  result with no accepted certificate.
+- The document SHALL have exactly `identity`, `objective`, `kind`, `values`
+  and `ranking`, with `kind` equal to `"exact"`. Identity SHALL use the
+  existing structural `{node_id, model, ordinal}` contract. Values SHALL
+  use QSpec's existing `{state, value}` rows and `Rational` representation
+  `{numerator, denominator}`, both canonical decimal integer strings with
+  a positive denominator (zero is `"0"/"1"`);
+  ranking SHALL be required and use its existing `{state, rank}` rows and
+  `Count` (JSON integer 0 through 9007199254740991). No new top-level
+  discriminator, package identity or field is introduced. Lower, upper,
+  long-run, policy and component documents are outside this codec profile.
+- The writer SHALL use RFC 8785 UTF-8 canonical JSON. The reader SHALL
+  reject malformed UTF-8/JSON, duplicate or unknown members, missing
+  members, noncanonical bytes, nonreduced rationals, nonpositive
+  denominators and noncanonical integer strings rather than normalize
+  them into accepted evidence. It SHALL use QSpec's existing unpadded
+  canonical base64url transport for state keys. `targets`, `values` and
+  `ranking` SHALL each be strictly ascending by decoded complete canonical
+  key octets, with no duplicate keys. Values and ranking SHALL cover
+  exactly the checker-rebuilt reachable states, including terminal states;
+  probabilities SHALL lie in [0,1].
+- Keys SHALL use FR-196's authoritative complete six-component basis,
+  including the actual `binding`, through the shared
+  `ProbabilityProductKey::for_model_state` helper for this slice. The stale
+  five-component illustrative tuple in QSpec FR-412/schema documentation
+  SHALL NOT cause binding to be dropped. Actual absent monitor,
+  accumulator and pending components remain null. The reader SHALL admit
+  keys against the checked subject and compare complete canonical octets;
+  a model-only key, foreign binding or altered component is not an alias.
+- The checker SHALL check Bellman equality for the independently selected
+  operator at every live state, target value 1 and non-target terminal
+  value 0, and CE-3's positive-value rank progress as well as threshold
+  satisfaction. It MAY emit checker-verified acyclic height ranks, with
+  terminal height 0 and live height one plus the maximum successor height;
+  target ranks can be 0. Rank overflow SHALL stop under a named limit.
+  Equality alone SHALL NOT discharge the required ranking condition.
+  Every-scheduler `AtLeast` selects minimum and `AtMost` selects maximum;
+  workload uses its resolved average. Exact evidence in these proof cases
+  needs no crossing-bound policy. A case needing an upper-on-minimum or
+  lower-on-maximum policy SHALL NOT fabricate or silently omit that policy.
+- Identity mismatch SHALL refuse as conflicting identity before product
+  enumeration. Objective mismatch SHALL refuse as invalid runtime input
+  before acceptance; an internally consistent certificate for another
+  target or optimization SHALL never establish this claim. Graph,
+  arithmetic, parsing and source admission SHALL obey caller limits and
+  `&Cancel`, preserving stopped/cancelled outcomes without truth values.
+
+### General checking conditions
 
 - Digital timed certificate objectives SHALL select ADR-028 §13a from the
   checked subject/claim, independently of the authored fairness vector.
@@ -201,6 +273,9 @@ product state form `{product_key}` and the second as `{member}`.
 | FR-201-AC-7 | Given a `ReplayRequestWire` whose measured encoded size is `B`, when the checker receives caller-configured `ReplayLimits` with `input_bytes = B - 1`, it returns `ReplayRefusal::Request(ReplayRequestRefusal::BoundExceeded(BoundExceeded { bound: B - 1, actual: B }))` before byte-provision lookup or recompile. | Test |
 | FR-201-AC-6 | Rejection rules and loci: AC-1's certificate with `4/5` replaced by `9/10` is rejected `InequalityFails` at the `ProbabilisticProductState` of that first state; AC-2's `LongRun` certificate with the changed bias, `InequalityFails` at the `down` state; AC-3's `Lower` certificate with its ranking omitted, `Malformed` at `CertificateMember("ranking")` before any re-enumeration; AC-2's `Lower` certificate with one named non-target state's rank removed, `RankMissing` at it, and with that rank raised to the rank of its only positive successor, `RankBroken` at it; AC-1's accepted certificate offered for a `>=` threshold above its initial state's value, `ThresholdMissed` at the initial state; AC-5's rejected variant, `InequalityFails` at the activated state after `go`. Each rejection is written with QSpec FR-331's rule spelling at its `{product_key}` or `{member}` form. | Test (TC-1197) |
 | FR-201-AC-8 | Over each of those ACs' own model, the checked-subject form gives the verdict, rule and locus that AC states: AC-1's certificate over §15.4's `Link`, including the `4/5` replaced by `9/10` rejection; AC-2's `LongRun` certificate over §15.3's model and its dyadic `Lower` certificate over §15.1's; AC-3's `FairTerminates` certificates over §15.6's `Coin` model, the fairness-removed one rejected; and AC-5's tight-action cases over its `Opt` model. | Test (TC-636) |
+| FR-201-AC-9 | For an admitted acyclic eventual claim, writing and reading the closed profile preserves identity, exact rational values, complete keys, targets and required ranks byte for byte. Duplicate/out-of-order rows, unreduced 2/4, denominator 0, missing ranking, extra fields, padded base64url and a model-only key are rejected. | Test |
+| FR-201-AC-10 | A valid document offered for another identity refuses before enumeration; replacing its targets or optimization while retaining valid Bellman rows refuses objective mismatch. A same-model key with a different binding is rejected rather than merged. Altering a value fails equality; removing or breaking positive-value rank progress fails ranking even when equalities hold. | Test |
+| FR-201-AC-11 | Minimum AtLeast, maximum AtMost and resolved-workload exact proofs pass the profile checker at an attained threshold; a threshold strictly beyond the certified initial value fails. Cyclic, timed, bounded, reward, fair, multi-initial and multi-binding cases and non-exact kinds return explicit unsupported with no accepted certificate. Pre-cancelled input and exhausted byte/state/edge/arithmetic budgets stop without a truth value. | Test |
 
 ## Dependencies
 

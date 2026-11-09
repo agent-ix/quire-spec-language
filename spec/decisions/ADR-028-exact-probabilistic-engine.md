@@ -689,6 +689,21 @@ translator, exact provider or strict-reader qualification.
 
 ## Consequences
 
+FR-201's closed reachability document profile owns the QSL specialization
+inside QSpec FR-412's existing open `objective` object. Its versioned
+`profile` selects extensional complete target keys, independently checked
+against the claim, the existing minimum/maximum/workload optimization and
+an explicitly empty fairness array. Extensional targets avoid inventing a
+second semantic expression language. The discriminator versions this closed
+member contract without adding a top-level certificate field. FR-196's
+complete binding-bearing key basis remains authoritative despite QSpec's
+older five-component illustration. Required exact ranks and Bellman
+equalities both remain CE-3 obligations. This first codec slice is untimed,
+acyclic, unbounded eventual reachability with one initial state and at most
+one binding; unsupported forms retain all broader CE obligations and are
+not coerced into this profile. FR-282 defines the independent checked-source
+S1 to S3 facade so S4's emission refusal cannot prevent fresh checking.
+
 - Claims over every scheduler, rare-event bounds, thresholds close to the
   true value and long-run availability get proofs and refutations, not
   measurements.
