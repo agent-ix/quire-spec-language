@@ -1028,7 +1028,7 @@ mod tests {
             ]),
         };
         let values = BTreeMap::from([(root, rational(1)), (target, rational(1))]);
-        let check = |limits| {
+        let check = |limits: ProbabilityDocumentLimits| {
             let cancel = Cancel::new();
             let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
             check_document_equalities(

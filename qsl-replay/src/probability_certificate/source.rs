@@ -196,12 +196,7 @@ pub fn check_probability_certificate_source(
     .map_err(ProbabilitySourceError::Compile)?
     .into_value();
     let claims = checked.package().graph().probabilistic_model().claims();
-    let claim =
-        super::bind_claim(claims, request.item, cancel).map_err(ProbabilityDocumentError::from)?;
-    if request.item != &super::probabilistic_claim_identity(claim).map_err(ProbabilityDocumentError::from)?
-    {
-        return Err(ProbabilityDocumentError::IdentityMismatch.into());
-    }
+    super::bind_claim(claims, request.item, cancel).map_err(ProbabilityDocumentError::from)?;
     let snapshots = request.provision.snapshots();
     let simulation = ModelSimulationRequest {
         package: checked.package(),
@@ -215,7 +210,7 @@ pub fn check_probability_certificate_source(
         meter: limits.scalar,
         emit: limits.spine.package.emit(),
     };
-    let system = ModelSystem::over_model(simulation, &claim.subject.package.identity)
+    let system = ModelSystem::new(simulation)
         .map_err(ProbabilitySourceError::Subject)?;
     check_probability_certificate_document(
         &system,
