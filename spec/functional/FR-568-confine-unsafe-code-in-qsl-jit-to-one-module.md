@@ -33,6 +33,12 @@ contract. This requirement makes the ruling checkable.
   its crate roots.
 - `exec` SHALL do only what ADR-035 CG-4's safety contract lists, and the
   safe wrapper `PreparedJit` SHALL uphold the contract's invariants.
+- The `extern "C"` trampolines and shims that generated code calls (the
+  entries of FR-561's `KernelTable` and the helpers that adapt them) SHALL
+  be defined inside `qsl_jit::exec`. The frame the generated code runs over
+  is a typed structure of `exec`, not an opaque handle passed across the
+  module boundary. No `unsafe` item, and no `extern "C"` function that
+  generated code calls, exists outside `exec`.
 - `tools/arch-lint` SHALL provide the check `unsafe-confinement`, run as
   `make arch-lint-unsafe` and as part of `make arch-lint` and `make ci`. It
   holds the allowed module list, exactly one entry `(qsl-jit, exec)`, and
@@ -45,7 +51,9 @@ contract. This requirement makes the ruling checkable.
     attribute appears anywhere except on `mod exec` in `qsl-jit`;
   - an `unsafe` block, `unsafe fn`, `unsafe impl` or `unsafe trait` appears
     outside the files of `qsl_jit::exec`, in any workspace package, including
-    files a crate reaches through `#[path]` or `include!`.
+    files a crate reaches through `#[path]` or `include!`;
+  - an `extern "C"` function defined outside the files of `qsl_jit::exec`
+    is a call target of generated code (it is named in a `KernelTable`).
 
 ## Inputs
 
@@ -75,10 +83,10 @@ and item; `PreparedJit` and its calls.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-568-AC-1 | `make arch-lint-unsafe` passes on the workspace, and its allowed module list is exactly `(qsl-jit, exec)`. Over fixture workspaces it fails, naming package, file and item, for each of: an `unsafe` block in another `qsl-jit` module; an `unsafe fn` in `qsl-eval`; an `unsafe impl` in a file reached through `#[path]`; an `unsafe` block in a file brought in with `include!`; `#[allow(unsafe_code)]` on a second `qsl-jit` module; `qsl-jit` declaring `forbid`; and a package other than `qsl-jit` declaring `deny` instead of `forbid`; a fixture package that forbids `unsafe_code` only by `#![forbid(unsafe_code)]` at its crate root passes. `make arch-lint` and `make ci` list `arch-lint-unsafe` as a prerequisite. | Test (TC-1400) |
+| FR-568-AC-1 | `make arch-lint-unsafe` passes on the workspace, and its allowed module list is exactly `(qsl-jit, exec)`. Over fixture workspaces it fails, naming package, file and item, for each of: an `unsafe` block in another `qsl-jit` module; an `unsafe fn` in `qsl-eval`; an `unsafe impl` in a file reached through `#[path]`; an `unsafe` block in a file brought in with `include!`; `#[allow(unsafe_code)]` on a second `qsl-jit` module; `qsl-jit` declaring `forbid`; and a package other than `qsl-jit` declaring `deny` instead of `forbid`; an `extern "C"` shim in a `qsl-jit` module other than `exec` that the fixture's table names; a fixture package that forbids `unsafe_code` only by `#![forbid(unsafe_code)]` at its crate root passes. `make arch-lint` and `make ci` list `arch-lint-unsafe` as a prerequisite. | Test (TC-1400) |
 | FR-568-AC-2 | A `compile_fail` doctest that keeps a callable entry of a `PreparedJit` past the `PreparedJit`'s drop fails to compile, with a compiling control that calls within the borrow. | Test (TC-1400) |
 | FR-568-AC-3 | `PreparedJit` refuses, with `Fault` and without calling, an entry whose recorded signature is not the entry signature (a test hook records one wrongly); a test entry that returns a status outside the closed status type yields `Fault` and no value. | Test (TC-1400) |
-| FR-568-AC-4 | The FR-561-AC-3 call-target check and the FR-563 parity gate pass for the Cranelift JIT over the default generated units, with every call entering generated code through `qsl_jit::exec`. | Test (TC-1400) |
+| FR-568-AC-4 | The FR-561-AC-3 call-target check and the FR-563 parity gate pass for the Cranelift JIT over the default generated units, with every call entering generated code through `qsl_jit::exec` and every `extern "C"` call target of the generated blocks defined in `qsl_jit::exec`. | Test (TC-1400) |
 
 ## Dependencies
 

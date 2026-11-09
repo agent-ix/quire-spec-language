@@ -150,6 +150,10 @@ module list, which holds that one entry (FR-568).
 It allocates no other memory, makes no system call of its own and touches no
 global state.
 
+The `extern "C"` trampolines and shims that generated code calls are defined
+inside `exec`, and the frame is the typed `EntryFrame`, not an opaque handle.
+No unsafe item exists outside `exec`.
+
 The safe wrapper, `PreparedJit`, upholds these invariants on every path into
 `exec`:
 
