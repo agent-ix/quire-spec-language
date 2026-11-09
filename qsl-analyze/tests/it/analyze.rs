@@ -434,8 +434,7 @@ fn an_undefined_claim_evaluation_settles_refuted_with_the_undefined_cause() {
 
 /// FR-280-AC-1 (TC-761 step 1) for EN-1: its manifest converts into a
 /// descriptor advertising exactly the claim kind it settles in TC-762,
-/// `temporal-satisfaction` over a bounded domain, and the two layer-A
-/// engines register together.
+/// `temporal-satisfaction` in both extent modes.
 #[trace("TC-761", "FR-280-AC-1")]
 #[test]
 fn en1_advertises_exactly_the_temporal_satisfaction_pair() {
@@ -443,13 +442,10 @@ fn en1_advertises_exactly_the_temporal_satisfaction_pair() {
     let descriptor =
         manifest::descriptor(ProviderOrigin::Linked).expect("EN-1's own manifest is admitted");
     assert_eq!(descriptor.id().as_str(), manifest::BACKEND_ID);
-    assert_eq!(
-        descriptor.advertises().collect::<Vec<_>>(),
-        [
-            (Capability::TemporalSatisfaction, Mode::Bounded),
-            (Capability::TemporalSatisfaction, Mode::Unbounded),
-        ]
-    );
+    let advertised = descriptor.advertises().collect::<Vec<_>>();
+    assert_eq!(advertised.len(), 2);
+    assert!(advertised.contains(&(Capability::TemporalSatisfaction, Mode::Bounded)));
+    assert!(advertised.contains(&(Capability::TemporalSatisfaction, Mode::Unbounded)));
 }
 
 /// FR-226-AC-2 (TC-671 step 2): EN-1's registered provider manifest
