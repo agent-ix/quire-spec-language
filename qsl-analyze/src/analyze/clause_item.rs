@@ -33,7 +33,7 @@ use qsl_semantics::check::{Capability, TemporalClauseNode};
 use quire_exact::Identifier;
 use quire_semantic_value::catalog::InternalFault;
 
-use super::items::{settle_model_item, ModelItem, BROKEN, CLAUSE_FAMILY};
+use super::items::{admission, settle_model_item, ModelItem, BROKEN, CLAUSE_FAMILY};
 use super::{AnalyzeItem, AnalyzeLimits, EngineReport, Refusal, SubjectBinding};
 use crate::model_check::{manifest as en1, ModelCheckRequest};
 
@@ -41,6 +41,12 @@ use crate::model_check::{manifest as en1, ModelCheckRequest};
 /// witness transcript with no values, since the clause's lasso is the
 /// envelope's payload (FR-128).
 pub const CLAUSE_TRANSCRIPT: &str = "<<<assertion|model_check|clause|>>>";
+
+/// The default ceiling on the successor candidates one expansion enumerates:
+/// the bound the crate's own EN-1 fixtures run under. `analyze` admission
+/// itself is unbounded because it expands nothing; a run that expands states
+/// takes a finite default, and a caller with a larger subject raises it.
+pub const DEFAULT_MAX_CANDIDATES: u64 = 1_000_000;
 
 /// The budgets of one authored-clause run.
 #[derive(Clone, Copy, Debug)]
@@ -58,7 +64,7 @@ impl Default for ClauseLimits {
         Self {
             limits: Limits::default(),
             max_depth: None,
-            max_candidates: u64::MAX,
+            max_candidates: DEFAULT_MAX_CANDIDATES,
         }
     }
 }
@@ -70,6 +76,10 @@ pub enum ClauseItemRefusal {
     /// occurrence).
     #[error("the package holds no temporal clause at the given occurrence")]
     UnknownClause,
+    /// The package is assembled from other than one source unit, so one
+    /// `unit` byte string cannot be the source its replay recompiles.
+    #[error("the package is not assembled from exactly one source unit")]
+    MultiUnit,
     /// The clause's declared name is no identifier, so no `state_clause`
     /// target can name it.
     #[error("the clause's declared name is not an identifier")]
@@ -90,11 +100,15 @@ pub struct ClauseSubject<'a> {
 impl<'a> ClauseSubject<'a> {
     /// The subject of the clause at `key` (its node and `claim` occurrence)
     /// of `package`. `unit` is the source bytes `package` was checked from,
-    /// which the replay recompiles.
+    /// which the replay recompiles. A source reference carries no digest, so
+    /// `unit` is not compared with the package here: bytes of another unit
+    /// make the replay of a counterexample refuse (never settle `refuted`),
+    /// not the construction.
     ///
     /// # Errors
     ///
-    /// [`ClauseItemRefusal`] when the package holds no such clause.
+    /// [`ClauseItemRefusal`] when the package is not assembled from exactly
+    /// one source unit or holds no such clause.
     pub fn new(
         package: &'a CheckedPackage,
         binding: SubjectBinding<'a>,
@@ -103,6 +117,9 @@ impl<'a> ClauseSubject<'a> {
         key: &OccurrenceKey,
         run: ClauseLimits,
     ) -> Result<Self, ClauseItemRefusal> {
+        if package.graph().sources().len() != 1 {
+            return Err(ClauseItemRefusal::MultiUnit);
+        }
         let node = package
             .graph()
             .temporal_clauses()
@@ -132,8 +149,9 @@ impl<'a> ClauseSubject<'a> {
             Mode::Bounded,
             en1::BACKEND_ID,
             move |cancel| {
-                let Ok(system) = ModelSystem::new(subject.simulation()) else {
-                    return EngineReport::Refused(Refusal::Failed(BROKEN));
+                let system = match ModelSystem::new(subject.simulation()) {
+                    Ok(system) => system,
+                    Err(failure) => return EngineReport::Refused(admission(&failure)),
                 };
                 let Ok(letters) = system.clause_letters(subject.node) else {
                     return EngineReport::Refused(Refusal::Failed(BROKEN));
