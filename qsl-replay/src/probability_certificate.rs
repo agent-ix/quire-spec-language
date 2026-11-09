@@ -975,7 +975,7 @@ fn certificate_values(
             return Ok(CertificateValues::Rejected(
                 ProbabilityCertificateRejection {
                     rule: ProbabilityCertificateRule::Malformed,
-                    at: ProbabilityCertificateLocus::ProductState(entry.state.clone()),
+                    at: ProbabilityCertificateLocus::Member("values"),
                 },
             ));
         }
@@ -988,24 +988,17 @@ fn certificate_values(
             return Ok(CertificateValues::Rejected(
                 ProbabilityCertificateRejection {
                     rule: ProbabilityCertificateRule::Malformed,
-                    at: ProbabilityCertificateLocus::ProductState(entry.state.clone()),
+                    at: ProbabilityCertificateLocus::Member("values"),
                 },
             ));
         }
     }
     if values.len() != graph.states.len() {
-        let mut missing = graph.initial.clone();
-        for key in graph.states.keys() {
-            poll_cancel(cancel)?;
-            if !values.contains_key(key) {
-                missing = key.clone();
-                break;
-            }
-        }
+        poll_cancel(cancel)?;
         return Ok(CertificateValues::Rejected(
             ProbabilityCertificateRejection {
                 rule: ProbabilityCertificateRule::Malformed,
-                at: ProbabilityCertificateLocus::ProductState(missing),
+                at: ProbabilityCertificateLocus::Member("values"),
             },
         ));
     }
