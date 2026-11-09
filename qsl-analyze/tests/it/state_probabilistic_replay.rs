@@ -184,8 +184,10 @@ fn cancellation_and_caller_storage_arithmetic_limits_return_no_token() {
         let mut limits = ExactProbLimits::default();
         limits.document.storage_bytes = 1;
         assert!(replay(&world, &witness, &limits, &Cancel::new()).is_err());
-        let mut limits = ExactProbLimits::default();
-        limits.max_rational_bits = 1;
+        let limits = ExactProbLimits {
+            max_rational_bits: 1,
+            ..ExactProbLimits::default()
+        };
         assert!(replay(&world, &witness, &limits, &Cancel::new()).is_err());
     }
 }

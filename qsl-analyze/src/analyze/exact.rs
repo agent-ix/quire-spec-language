@@ -697,7 +697,13 @@ fn witness_charge(
     storage: &mut u64,
     bytes: usize,
     limits: &crate::exact_probabilistic::ExactProbLimits,
+    cancel: &Cancel,
 ) -> Result<(), Box<ExactProbBuildIssue>> {
+    if cancel.poll() {
+        if let Some(cause) = cancel.tripped() {
+            return Err(Box::new(ExactProbBuildIssue::Cancelled(cause)));
+        }
+    }
     *storage = storage.saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
     if *storage > limits.document.storage_bytes {
         return Err(Box::new(ExactProbBuildIssue::Limit {
@@ -710,6 +716,9 @@ fn witness_charge(
             quire_exact::ChargePoint::CollectionVisit,
         ))
         .map_err(|incomplete| {
+            if let Some(cause) = cancel.tripped() {
+                return Box::new(ExactProbBuildIssue::Cancelled(cause));
+            }
             Box::new(ExactProbBuildIssue::Predicate(
                 qsl_eval::simulation::model::ClauseOutcome::Incomplete(incomplete),
             ))
@@ -734,49 +743,95 @@ fn replay_refutation(
     use crate::exact_probabilistic::{
         produce_witness, FormulaState, MonitorState, MonitorVerdict, ProductAction, WitnessScope,
     };
-    // Direct state-predicate boundaries stop the evidence search at the first
-    // decisive state. Replay independently derives these outcomes from source.
+    let mut producer_meter =
+        quire_exact::Meter::new(system.meter_limits()).with_cancel(cancel.clone());
+    let mut producer_storage = 0u64;
+    // Classify direct state boundaries in one pass over the source-labelled
+    // product. The replay core independently derives the same outcomes.
     let state_outcomes = match &claim.form {
         ProbForm::Reach {
-            target: ReachTarget::Until(..) | ReachTarget::Always(_),
+            target: target @ (ReachTarget::Until(..) | ReachTarget::Always(_)),
             ..
         } => {
-            let outcomes = product
-                .labels
-                .iter()
-                .enumerate()
-                .map(|(index, labels)| {
-                    let terminal = product
-                        .edges
-                        .iter()
-                        .filter(|edge| edge.from.index() == index)
-                        .all(|edge| matches!(edge.choice, ProductAction::TerminalStutter));
-                    let first = labels.first().copied().unwrap_or(false);
-                    match &claim.form {
-                        ProbForm::Reach {
-                            target: ReachTarget::Until(..),
-                            ..
-                        } => {
-                            if labels.get(1).copied().unwrap_or(false) {
-                                Some(true)
-                            } else if !first || terminal {
-                                Some(false)
-                            } else {
-                                None
-                            }
-                        }
-                        _ => {
-                            if !first {
-                                Some(false)
-                            } else if terminal {
-                                Some(true)
-                            } else {
-                                None
-                            }
+            if let Err(issue) = witness_charge(
+                &mut producer_meter,
+                &mut producer_storage,
+                product.states.len().saturating_mul(
+                    std::mem::size_of::<bool>() + std::mem::size_of::<Option<bool>>(),
+                ),
+                limits,
+                cancel,
+            ) {
+                return settled(&issue, subject);
+            }
+            let mut terminal = Vec::new();
+            let mut outcomes = Vec::new();
+            if terminal.try_reserve(product.states.len()).is_err()
+                || outcomes.try_reserve(product.states.len()).is_err()
+            {
+                return settled(
+                    &ExactProbBuildIssue::Limit {
+                        limit: ModelCheckLimit::CertificateMaxWorkingBytes,
+                        value: limits.document.storage_bytes,
+                    },
+                    subject,
+                );
+            }
+            terminal.resize(product.states.len(), true);
+            for edge in &product.edges {
+                if let Err(issue) = witness_charge(
+                    &mut producer_meter,
+                    &mut producer_storage,
+                    0,
+                    limits,
+                    cancel,
+                ) {
+                    return settled(&issue, subject);
+                }
+                if !matches!(edge.choice, ProductAction::TerminalStutter) {
+                    let Some(terminal) = terminal.get_mut(edge.from.index()) else {
+                        return broken();
+                    };
+                    *terminal = false;
+                }
+            }
+            for (index, labels) in product.labels.iter().enumerate() {
+                if let Err(issue) = witness_charge(
+                    &mut producer_meter,
+                    &mut producer_storage,
+                    0,
+                    limits,
+                    cancel,
+                ) {
+                    return settled(&issue, subject);
+                }
+                let Some(terminal) = terminal.get(index).copied() else {
+                    return broken();
+                };
+                let first = labels.first().copied().unwrap_or(false);
+                let verdict = match target {
+                    ReachTarget::Until(..) => {
+                        if labels.get(1).copied().unwrap_or(false) {
+                            Some(true)
+                        } else if !first || terminal {
+                            Some(false)
+                        } else {
+                            None
                         }
                     }
-                })
-                .collect::<Vec<_>>();
+                    ReachTarget::Always(_) => {
+                        if !first {
+                            Some(false)
+                        } else if terminal {
+                            Some(true)
+                        } else {
+                            None
+                        }
+                    }
+                    ReachTarget::Eventually(_) => return broken(),
+                };
+                outcomes.push(verdict);
+            }
             Some(outcomes)
         }
         _ => None,
@@ -853,15 +908,13 @@ fn replay_refutation(
         .as_ref()
         .map(|outcomes| outcomes.iter().map(Option::is_some).collect::<Vec<_>>());
     let mut producer_issue = None;
-    let mut producer_meter =
-        quire_exact::Meter::new(system.meter_limits()).with_cancel(cancel.clone());
-    let mut producer_storage = 0u64;
     let mut control = || {
         witness_charge(
             &mut producer_meter,
             &mut producer_storage,
             std::mem::size_of::<crate::exact_probabilistic::ProducedStep>(),
             limits,
+            cancel,
         )
         .map_err(|issue| {
             producer_issue = Some(issue);
@@ -988,6 +1041,7 @@ fn replay_refutation(
                     &mut producer_storage,
                     std::mem::size_of::<ProbabilityWitnessStep>(),
                     limits,
+                    cancel,
                 ) {
                     return settled(&issue, subject);
                 }
@@ -1014,6 +1068,7 @@ fn replay_refutation(
                                     &mut producer_storage,
                                     post_key.as_bytes().len().saturating_mul(2),
                                     limits,
+                                    cancel,
                                 ) {
                                     return settled(&issue, subject);
                                 }
@@ -1062,6 +1117,7 @@ fn replay_refutation(
                             .saturating_mul(std::mem::size_of::<ProbabilityWitnessStep>())
                             .saturating_add(post_key.as_bytes().len()),
                         limits,
+                        cancel,
                     ) {
                         return settled(&issue, subject);
                     }
