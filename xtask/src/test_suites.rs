@@ -183,7 +183,9 @@ const NO_DOC_EXAMPLE: &str = "no executable doc example in the library";
 /// (its default-feature and all-feature workspace runs listed the same
 /// suites). That log is from an older head; the guard's own first run at a
 /// new head is what checks this list against the tree.
-const WORKSPACE_EMPTY: &[EmptySuite] = &[
+macro_rules! workspace_empty {
+    ($($extra:expr),*) => {
+        &[
     EmptySuite {
         source: "qsl-bench/src/bin/qsl-bench-probe.rs",
         kind: SuiteKind::Tests,
@@ -245,11 +247,6 @@ const WORKSPACE_EMPTY: &[EmptySuite] = &[
         reason: NO_DOC_EXAMPLE,
     },
     EmptySuite {
-        source: "src/lib.rs",
-        kind: SuiteKind::Doctests,
-        reason: NO_DOC_EXAMPLE,
-    },
-    EmptySuite {
         source: "qsl-route/src/lib.rs",
         kind: SuiteKind::Doctests,
         reason: NO_DOC_EXAMPLE,
@@ -284,7 +281,21 @@ const WORKSPACE_EMPTY: &[EmptySuite] = &[
         kind: SuiteKind::Doctests,
         reason: NO_DOC_EXAMPLE,
     },
-];
+            $($extra),*
+        ]
+    };
+}
+
+/// The default-feature workspace lane. The root library's doc examples sit in
+/// the `checked-handoff` feature, so with default features it has none.
+const WORKSPACE_EMPTY: &[EmptySuite] = workspace_empty!(EmptySuite {
+    source: "src/lib.rs",
+    kind: SuiteKind::Doctests,
+    reason: NO_DOC_EXAMPLE,
+});
+
+/// The all-features workspace lane: the root library registers doctests.
+const ALL_FEATURES_EMPTY: &[EmptySuite] = workspace_empty!();
 
 /// The `cargo test` invocations of `make ci`, one lane each. The two `-p`
 /// lanes declare nothing: every suite they run has tests.
@@ -303,7 +314,7 @@ pub const LANES: &[Lane] = &[
     },
     Lane {
         name: "all-features-workspace",
-        empty: WORKSPACE_EMPTY,
+        empty: ALL_FEATURES_EMPTY,
     },
 ];
 
