@@ -30,6 +30,7 @@
 //! A cancelled [`Cancel`] settles every item that would run `incomplete`,
 //! with the cancellation cause kept.
 
+mod clause_item;
 mod exact;
 mod items;
 
@@ -59,6 +60,7 @@ use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 
 pub use crate::contract_check::contract_item;
 pub use crate::value_check::value_item;
+pub use clause_item::{ClauseItemRefusal, ClauseLimits, ClauseSubject, CLAUSE_TRANSCRIPT};
 #[cfg(feature = "test-support")]
 pub use exact::exact_probabilistic_item_tampered;
 pub use exact::{exact_probabilistic_item, ExactProbabilityEvidence};
