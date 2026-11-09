@@ -14,9 +14,11 @@
 //! Settlement is the engine's own layer-6 map, never `analyze`'s opinion of
 //! an engine's evidence: EN-1's results settle through `settle_model_check`
 //! (its certificate checker and counterexample replay), EN-4's through
-//! `check_statistical` and FR-192's map, the two calls the FR-280 provider
-//! entry makes, so `analyze` and the entry write one record for one item. The
-//! item adapters ([`model_item`], [`statistical_item`]) are the only
+//! `check_statistical` and FR-192's map, and EN-5's through its solver,
+//! qualified certificate checker and FR-203's map. The FR-280 provider
+//! entry uses these same adapters, so `analyze` and the entry write one
+//! record for one item. The item adapters ([`model_item`],
+//! [`statistical_item`], [`exact_probabilistic_item`]) are the only
 //! constructors of an engine's work, so no caller can hand `analyze` a
 //! pre-built verdict, a checker or a replay outcome.
 //!
@@ -328,7 +330,7 @@ impl Default for AnalyzeLimits {
 /// disposition established by the caller's negotiation.
 ///
 /// `W` is the item type: [`crate::provider::RoutedItem`] (EN-4) or [`crate::provider::RoutedWork`],
-/// which also carries EN-1 authored-clause items. The default type parameter
+/// which also carries EN-1 authored-clause and EN-5 exact probabilistic items. The default type parameter
 /// is `RoutedItem`, so a caller that builds a request of EN-4 items is
 /// unchanged.
 pub struct AnalyzeRequest<'a, W = crate::provider::RoutedItem<'a>> {
@@ -1004,6 +1006,9 @@ where
             crate::provider::RoutedWork::Clause(routed) => {
                 clause_work(package, &request.binding, routed, limits)
             }
+            crate::provider::RoutedWork::Exact(routed) => {
+                exact_work(package, &request.binding, routed, limits)
+            }
         })
         .collect();
     let requirements: Vec<_> = items.iter().map(AnalyzeItem::requirement).collect();
@@ -1011,6 +1016,50 @@ where
     let aggregate = aggregate(&requirements, &settled);
     let records = terminal_records(settled);
     Ok(Staged::new(AnalyzeOutcome { records, aggregate }))
+}
+
+/// Build EN-5 work over the operation's admitted subject. A different
+/// negotiated backend cannot reinterpret this member as a sampling request.
+fn exact_work<'a>(
+    package: &'a CheckedPackage,
+    binding: &SubjectBinding<'a>,
+    routed: &crate::provider::RoutedExact<'a>,
+    limits: &AnalyzeLimits,
+) -> AnalyzeItem<'a> {
+    let item = &routed.item;
+    let built = exact_probabilistic_item(
+        item.request_index,
+        crate::exact_probabilistic::ProductRequest {
+            subject: ModelSubject {
+                simulation: ModelSimulationRequest {
+                    package,
+                    packages: binding.packages,
+                    normalization: limits.normalization,
+                    snapshots: binding.snapshots,
+                    initial: binding.initial.clone(),
+                    universes: binding.universes.clone(),
+                    observation: limits.observation,
+                    expansion: ExpansionLimits {
+                        max_candidates: u64::MAX,
+                    },
+                    meter: limits.accounting,
+                    emit: limits.emit,
+                },
+                proof_bounds: Vec::new(),
+            },
+            claim: item.claim,
+            limits: item.limits,
+        },
+    )
+    .required(item.required);
+    if routed.backend.as_str() == crate::exact_probabilistic::manifest::BACKEND_ID {
+        built
+    } else {
+        built.disposed(
+            Disposition::Unsupported,
+            Some(unsupported_kind(Capability::ProbabilisticSatisfaction)),
+        )
+    }
 }
 
 /// The EN-1 item of a routed authored clause, over the request's own package,
