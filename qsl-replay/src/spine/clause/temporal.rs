@@ -1447,9 +1447,11 @@ fn decisive_record(
             meter,
         )
         .map_err(|failure| {
-            Box::new(match *convert_call_failure(failure) {
-                RunRefusal::Fault(internal) => ClauseDisposition::EvaluateFault(internal),
-                other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
+            let refusal = *convert_call_failure(failure);
+            Box::new(if let RunRefusal::Fault(internal) = refusal {
+                ClauseDisposition::EvaluateFault(internal)
+            } else {
+                ClauseDisposition::ArgumentRefusal(Box::new(refusal))
             })
         })?;
     match &evaluation.evaluation.outcome {
