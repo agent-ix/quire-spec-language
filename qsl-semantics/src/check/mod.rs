@@ -2363,6 +2363,7 @@ impl PackageDeclarations {
         .with_complete_value(complete_value)
         .with_decimal_literal_limits(self.decimal_literal_limits)
         .with_known_populations(refinement::population_names(&self.models))
+        .with_clock_places(&self.models)
         .with_clock_reading(
             self.clock_reading
                 .iter()

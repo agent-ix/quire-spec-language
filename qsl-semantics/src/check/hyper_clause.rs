@@ -3539,6 +3539,7 @@ pub fn check_hyper_clauses(
     .with_integer_division(package.integer_division)
     .with_complete_value(complete_value)
     .with_known_populations(super::refinement::population_names(&package.models))
+    .with_clock_places(&package.models)
     .with_complete_model(!package.models.is_empty())
     .with_model_spellings(package.model_spellings.clone())
     .with_source_owners(package.source_owners.clone())

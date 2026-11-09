@@ -403,16 +403,6 @@ enum Step<'f> {
     },
 }
 
-/// The effective id of the native `Clock` type that a `Reference<Clock>`
-/// targets (FR-230 "Clock references"). The native type names no node of a
-/// package, so its id is the one `ix://quire/native/Clock` names.
-pub(crate) fn clock_type_id() -> quire_exact::EffectiveId {
-    quire_exact::EffectiveId::new(
-        None,
-        quire_exact::OriginalDeclarationKey::new("quire", "ix://quire/native/Clock"),
-    )
-}
-
 fn resolve_builtin<'f>(
     names: &impl TypeNames,
     builtin: BuiltinType,
@@ -463,11 +453,6 @@ fn resolve_builtin<'f>(
         BuiltinType::Clock => Err(fault(form, TypeFormFault::ClockNotChecked)),
         BuiltinType::Reference => {
             let target = only_argument(form)?;
-            // FR-230 "Clock references": `Reference<Clock>` names a clock
-            // place, not an object.
-            if matches!(target.head, TypeFormHead::Builtin(BuiltinType::Clock)) {
-                return Ok(Step::Leaf(ValueType::Reference(clock_type_id())));
-            }
             let TypeFormHead::Name(name) = &target.head else {
                 return Err(malformed(form));
             };
@@ -1299,20 +1284,6 @@ mod tests {
         assert_mismatch(&TypeForm::builtin(BuiltinType::Reference, SPAN));
         assert_mismatch(
             &TypeForm::builtin(BuiltinType::Reference, SPAN).with_arguments(vec![integer()]),
-        );
-    }
-
-    /// FR-230 "Clock references": `Reference<Clock>` is the reference to the
-    /// native clock type, which no object type conforms to.
-    #[ix_trace_rs::trace("FR-230-AC-44")]
-    #[test]
-    fn a_reference_to_clock_names_the_native_clock_type() {
-        let form = TypeForm::builtin(BuiltinType::Reference, SPAN)
-            .with_arguments(vec![TypeForm::builtin(BuiltinType::Clock, SPAN)]);
-        let scope = scope_with(object_type("M::A"), Vec::new());
-        assert_eq!(
-            resolve_in(&scope, &form).expect("Reference<Clock> resolves"),
-            ValueType::Reference(clock_type_id())
         );
     }
 

@@ -1028,6 +1028,9 @@ pub struct Scope {
     /// refuse `unsupported_construct`/`expression-form` where no refinement
     /// reads them (FR-139).
     pub(crate) known_populations: Vec<String>,
+    /// The object type and path of every clock place of the unit's timed
+    /// models, which `ref(p)` names (FR-230 "Clock references").
+    clock_places: Vec<(EffectiveId, Vec<super::lowering::PlaceStep>)>,
     /// The names of the unit's clock-reading declarations (FR-230): a call
     /// of one that reaches the value checker is outside every place that
     /// admits it.
@@ -1064,7 +1067,7 @@ pub struct Scope {
     imports: BTreeMap<String, super::AdmittedImport>,
 }
 
-qsl_foundation::debug_with_struct!(Scope, "Scope" { types: plain, model_records: with, relationships: plain, enums: plain, variant_types: with, operations: plain, ieee_profile: plain, ieee_operation: plain, integer_division: plain, complete_value: plain, known_populations: plain, clock_reading: plain, history_names: plain, complete_model: plain, dispatch_operations: plain, symmetric_objects: plain, index: plain, imports: values });
+qsl_foundation::debug_with_struct!(Scope, "Scope" { types: plain, model_records: with, relationships: plain, enums: plain, variant_types: with, operations: plain, ieee_profile: plain, ieee_operation: plain, integer_division: plain, complete_value: plain, known_populations: plain, clock_places: plain, clock_reading: plain, history_names: plain, complete_model: plain, dispatch_operations: plain, symmetric_objects: plain, index: plain, imports: values });
 
 /// Drops the chain of imported checked graphs over an explicit stack
 /// (ADR-030): each import holds its library's graph, whose scope holds that
@@ -1411,6 +1414,7 @@ impl Scope {
             integer_division: None,
             complete_value: false,
             known_populations: Vec::new(),
+            clock_places: Vec::new(),
             clock_reading: BTreeSet::new(),
             history_names: Vec::new(),
             complete_model: false,
@@ -1524,6 +1528,17 @@ impl Scope {
     /// (FR-230), which has no function node.
     pub(crate) fn is_clock_reading(&self, name: &str) -> bool {
         self.clock_reading.contains(name)
+    }
+
+    /// The clock places of `models`, which `ref(p)` may name.
+    #[must_use]
+    pub(crate) fn with_clock_places(mut self, models: &[super::AdmittedModel]) -> Self {
+        self.clock_places = models
+            .iter()
+            .flat_map(|model| super::AdmittedModel::clock_places(model).iter())
+            .map(|place| (place.owner.clone(), place.path.clone()))
+            .collect();
+        self
     }
 
     pub(crate) fn with_known_populations(mut self, names: Vec<String>) -> Self {
@@ -4211,7 +4226,7 @@ impl<'a> Typer<'a> {
         &self,
         operand: qsl_forms::ExprRef<'e>,
     ) -> Option<(qsl_forms::ExprRef<'e>, &'e str, Option<&'e str>, usize)> {
-        if self.presence_places.iter().all(|place| !place.presence) {
+        if self.presence_places.is_empty() {
             return None;
         }
         let qsl_forms::ExprNode::Field {
@@ -4222,12 +4237,9 @@ impl<'a> Typer<'a> {
             return None;
         };
         let names = |field: &str, case: Option<&str>| {
-            self.presence_places.iter().any(|place| {
-                place.presence
-                    && !place.slot
-                    && place.field == field
-                    && place.case.as_deref() == case
-            })
+            self.presence_places
+                .iter()
+                .any(|place| !place.slot && place.field == field && place.case.as_deref() == case)
         };
         if names(field, None) {
             return Some((operand.at(*owner), field.as_str(), None, 1));
@@ -4260,7 +4272,7 @@ impl<'a> Typer<'a> {
         };
         self.presence_places
             .iter()
-            .any(|place| place.presence && place.slot && place.field == *field)
+            .any(|place| place.slot && place.field == *field)
             .then(|| (source.at(*operand), field.as_str(), all))
     }
 
@@ -4282,8 +4294,7 @@ impl<'a> Typer<'a> {
             .presence_places
             .iter()
             .find(|place| {
-                place.presence
-                    && place.slot
+                place.slot
                     && place.field == field
                     && self
                         .scope
@@ -4319,8 +4330,7 @@ impl<'a> Typer<'a> {
                 .presence_places
                 .iter()
                 .find(|place| {
-                    place.presence
-                        && !place.slot
+                    !place.slot
                         && place.field == field
                         && place.case.as_deref() == case
                         && self
@@ -4371,39 +4381,45 @@ impl<'a> Typer<'a> {
 
     /// `ref(r.f...)` over the typed owner `owner` and the field `path` below
     /// it (FR-230 "Clock references"): the place id of one clock place, a
-    /// `Reference<Clock>`. An owner or path that names no clock place refuses
-    /// `ill_typed`/`type-mismatch` at the `ref`. A place under a `Map` value
-    /// is reached through a slot step, which a field path never names, so it
-    /// has no place id here (FR-230-AC-62); the source has no index form
-    /// (`self.m["a"].x`) to write it with yet.
+    /// `Reference<Clock>`. A single name that is no clock place of the owner
+    /// refuses `ill_typed`/`type-mismatch` at the `ref`. A place under a
+    /// `Map` value is reached through a slot step, which a field path never
+    /// names, so it has no place id here (FR-230-AC-62); the source has no
+    /// index form (`self.m["a"].x`) to write it with yet.
     ///
     /// The checked node that carries a place id is not in `quire-checked`
     /// yet, so a `ref` of a place that has an id is refused
-    /// `unknown_required_feature`/`unsupported-feature` at the `ref`.
+    /// `unknown_required_feature`/`unsupported-feature` at the `ref`. So is a
+    /// longer path that names no place of the owner: an intermediate field
+    /// may be a reference to another object (`ref(self.r.x)`, the place
+    /// `Call.x` of `self.r`), which needs the dereference semantics.
     pub(super) fn clock_ref(
         &mut self,
         owner: Node,
         path: &[&str],
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
+        let unsupported = || {
+            refuse(
+                location,
+                CheckCause::UnsupportedFeature {
+                    loci: vec![location.clone()],
+                },
+            )
+        };
         let ValueType::Reference(object) = &owner.value_type else {
             return Err(mismatch(location));
         };
-        self.presence_places
-            .iter()
-            .find(|place| {
-                self.scope
-                    .types
-                    .conforms(object.clone(), place.owner.clone())
-                    && named_by(&place.path, path)
-            })
-            .ok_or_else(|| mismatch(location))?;
-        Err(refuse(
-            location,
-            CheckCause::UnsupportedFeature {
-                loci: vec![location.clone()],
-            },
-        ))
+        let named = self.scope.clock_places.iter().any(|(place_owner, steps)| {
+            self.scope
+                .types
+                .conforms(object.clone(), place_owner.clone())
+                && named_by(steps, path)
+        });
+        if named || path.len() > 1 {
+            return Err(unsupported());
+        }
+        Err(mismatch(location))
     }
 
     pub(crate) fn is_model_receiver(&self, value_type: &ValueType, name: &str) -> bool {

@@ -313,9 +313,9 @@ fn named_calls_stay_distinct_from_member_calls_and_type_arguments_survive() {
     );
 }
 
-/// FR-230-AC-24: `ref(p)` is a place term with the one operand `p`, built
-/// like `deref(r)`.
-#[trace("FR-230-AC-24")]
+/// `ref(p)` is a place term with the one operand `p`, built like `deref(r)`.
+/// Only the form is checked here; FR-230-AC-24's checking is not met yet.
+#[trace("TC-456")]
 #[test]
 fn a_ref_term_wraps_its_place_operand() {
     let body = "ref(self.x) = ref(other.x)";
