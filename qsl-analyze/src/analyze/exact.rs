@@ -118,7 +118,7 @@ pub fn exact_probabilistic_item<'a>(
 pub fn exact_probabilistic_item_tampered<'a>(
     index: RequestIndex,
     request: ProductRequest<'a>,
-    tamper: fn(&mut ExactProbabilityCertificate),
+    tamper: impl Fn(&mut ExactProbabilityCertificate) + 'a,
 ) -> AnalyzeItem<'a> {
     AnalyzeItem::new(
         index,
@@ -126,7 +126,7 @@ pub fn exact_probabilistic_item_tampered<'a>(
         Some(DeclarationFamily::Probabilistic),
         Mode::Bounded,
         en5::BACKEND_ID,
-        move |cancel| run(request, cancel, Some(tamper)),
+        move |cancel| run(request, cancel, Some(&tamper)),
     )
 }
 
@@ -147,7 +147,7 @@ fn settled(issue: &ExactProbBuildIssue, subject: SubjectLimits<'_>) -> EngineRep
 fn run(
     request: ProductRequest<'_>,
     cancel: &Cancel,
-    tamper: Option<fn(&mut ExactProbabilityCertificate)>,
+    tamper: Option<&dyn Fn(&mut ExactProbabilityCertificate)>,
 ) -> EngineReport {
     let claim = request.claim;
     let simulation = request.subject.simulation.clone();
@@ -250,15 +250,16 @@ fn run(
         &certificate,
         limits.model.limits.max_states,
         limits.model.limits.max_transitions,
+        cancel,
     );
     let count = |limit: usize| u64::try_from(limit).unwrap_or(u64::MAX);
     match checked {
         Ok(check) => match &check {
-            ExactProbabilityCertificateCheck::Accepted { value, side } => {
+            ExactProbabilityCertificateCheck::Accepted(accepted) => {
                 let evidence = Box::new(ExactProbabilityEvidence {
                     certificate,
-                    value: value.clone(),
-                    side: *side,
+                    value: accepted.value().clone(),
+                    side: accepted.side(),
                 });
                 let binding = binding.map(|bound| ExactBinding {
                     population: bound.instance.population.node,
@@ -280,6 +281,9 @@ fn run(
             // (an engine fault). It never settles `proved`.
             ExactProbabilityCertificateCheck::Rejected(_) => broken(),
         },
+        Err(ExactProbabilityGraphError::Cancelled(cause)) => {
+            settled(&ExactProbBuildIssue::Cancelled(cause), subject)
+        }
         Err(ExactProbabilityGraphError::LimitReached) => settled(
             &ExactProbBuildIssue::Limit {
                 limit: ModelCheckLimit::ExactProbMaxStates,
