@@ -7,9 +7,11 @@
 //! here: the kernel computes, and the register only carries the result.
 
 use quire_exact::{
-    evaluate_integer_arithmetic, order_numbers, Integer, IntegerArithmetic, Meter, OrderedOperands,
-    Refusal,
+    evaluate_boolean, evaluate_integer_arithmetic, order_numbers, retain_boolean,
+    BooleanConnective, Charge, ChargePoint, Integer, IntegerArithmetic, Meter, OrderedOperands,
+    Refusal, Value,
 };
+use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::stop::{outcome_into_stop, Stop};
 
 use crate::translate::{divide, integer_to_i64, Op, OpKind};
@@ -35,7 +37,13 @@ fn narrow(value: &Integer) -> Result<i64, Halt> {
 }
 
 /// Run `op` on the operands `a` and `b` under `meter`.
-pub(crate) fn run(op: &Op, a: i64, b: i64, meter: &mut Meter) -> Result<i64, Halt> {
+pub(crate) fn run(
+    op: &Op,
+    a: i64,
+    b: i64,
+    meter: &mut Meter,
+    types: &TypeEnvironment,
+) -> Result<i64, Halt> {
     let (left, right) = (Integer::from(a), Integer::from(b));
     match &op.kind {
         OpKind::Arithmetic(operator) => {
@@ -70,6 +78,40 @@ pub(crate) fn run(op: &Op, a: i64, b: i64, meter: &mut Meter) -> Result<i64, Hal
                 meter,
             ))?;
             Ok(i64::from(holds))
+        }
+        OpKind::Equality {
+            checked,
+            operands_boolean,
+        } => {
+            let value = |register: i64, integer: &Integer| {
+                if *operands_boolean {
+                    Value::Boolean(register != 0)
+                } else {
+                    Value::Integer(integer.clone())
+                }
+            };
+            let holds = outcome_into_stop(checked.evaluate(
+                types,
+                &value(a, &left),
+                &value(b, &right),
+                meter,
+            ))?;
+            Ok(i64::from(holds))
+        }
+        OpKind::Not => {
+            let result =
+                outcome_into_stop(evaluate_boolean(BooleanConnective::Not(a != 0), meter))?;
+            Ok(i64::from(result))
+        }
+        OpKind::Retain => {
+            let result = retain_boolean(a != 0, meter).map_err(Stop::Incomplete)?;
+            Ok(i64::from(result))
+        }
+        OpKind::ChargeCall => {
+            meter
+                .charge(Charge::new(ChargePoint::FunctionCall))
+                .map_err(Stop::Incomplete)?;
+            Ok(0)
         }
         OpKind::Coerce(target) => {
             if target.contains(&left) {

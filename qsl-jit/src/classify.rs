@@ -4,9 +4,12 @@
 
 use qsl_eval::execution::{BackendCoverage, CoverageOperation, CoverageType};
 use qsl_semantics::check::CheckedNode;
-use quire_checked::node::{Arithmetic, IntegerDivisionOperator, NodeKind, OrderedKind, Visit};
+use quire_checked::node::{
+    Arithmetic, Connective, IntegerDivisionOperator, NodeKind, OrderedKind, Visit,
+};
 use quire_eval::UntranslatableConstruct;
 use quire_exact::{OrderingOperator, ValueType};
+use quire_semantic_value::declaration::EqualityOperator;
 use quire_semantic_value::location::ExpressionLocation;
 
 /// A construct outside the coverage and where it is.
@@ -165,16 +168,23 @@ fn operation_of(node: CheckedNode<'_>, children: &[CheckedNode<'_>]) -> Option<C
             OrderingOperator::GreaterOrEqual => ">=",
         },
         NodeKind::Coerce(..) => "coerce",
+        NodeKind::Equality(operator, ..) => match operator {
+            EqualityOperator::Equal => "=",
+            EqualityOperator::NotEqual => "!=",
+        },
+        NodeKind::Connective(connective, ..) => match connective {
+            Connective::And => "and",
+            Connective::Or => "or",
+            Connective::Implies => "implies",
+        },
+        NodeKind::Not(_) => "not",
         NodeKind::Divide { .. }
         | NodeKind::Rational { .. }
         | NodeKind::RationalNegate(..)
         | NodeKind::Decimal { .. }
         | NodeKind::DecimalNegate(..)
         | NodeKind::ConvertDecimal(..)
-        | NodeKind::Order(..)
-        | NodeKind::Equality(..)
-        | NodeKind::Connective(..)
-        | NodeKind::Not(_) => "other",
+        | NodeKind::Order(..) => "other",
         _ => return None,
     };
     let operand = children

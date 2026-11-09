@@ -31,6 +31,7 @@ qsl-cst = { path = "../qsl-cst" }
 qsl-forms = { path = "../qsl-forms" }
 qsl-package = { path = "../qsl-package", features = ["test-support"] }
 qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
+quire-checked = { workspace = true, features = ["test-support"] }
 quire-exact = { workspace = true, features = ["test-support"] }
 quire-semantic-value = { workspace = true, features = ["test-support"] }
 

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-294, FR-560, FR-561: the [`Jit`] backend and what it prepared.
+//! FR-294, FR-560, FR-561, FR-568: the [`Jit`] backend and [`PreparedJit`],
+//! the safe wrapper that upholds the contract of the `exec` module.
 
 use std::collections::BTreeMap;
 
@@ -24,10 +25,10 @@ use quire_semantic_value::location::ExpressionLocation;
 use quire_semantic_value::stop::{outcome_from_stop, Stop};
 use quire_semantic_value::supplied_stop::SuppliedRun;
 
-use crate::classify::first_outside;
+use crate::classify::{first_outside, Outside};
 use crate::coverage::coverage;
-use crate::exec::{Ctx, Entry, Halt, Machine};
-use crate::translate::{integer_to_i64, translate, Failure, Op};
+use crate::exec::{Entry, EntryFrame, EntryRefusal, Halt, Machine, Signature, Status};
+use crate::translate::{integer_to_i64, Compiler, Failure, Op};
 
 /// The just-in-time backend (ADR-029 EB-1): it translates the entries inside
 /// [`coverage`] and lists every other selected entry unsupported.
@@ -37,7 +38,6 @@ pub struct Jit;
 /// One translated function.
 struct Compiled {
     entry: Entry,
-    ops: Vec<Op>,
     /// Per parameter: `Some(true)` for a `Boolean`, `Some(false)` for an
     /// `Integer` carried in a register, `None` for a parameter the function
     /// body does not read through a register.
@@ -49,12 +49,73 @@ struct Compiled {
 
 /// What [`Jit`] prepared: the translated functions and the unsupported
 /// entries, with the executable memory behind the former.
-pub struct JitPrepared<'p> {
+///
+/// A callable entry borrows the value that holds its code:
+///
+/// ```compile_fail,E0505
+/// use qsl_eval::value::QualifiedName;
+/// use qsl_jit::PreparedJit;
+/// fn held(prepared: PreparedJit<'_>, name: &QualifiedName) {
+///     let entry = prepared.entry(name).expect("an entry");
+///     drop(prepared);
+///     let _ = entry.name();
+/// }
+/// ```
+///
+/// The control uses the entry within the borrow:
+///
+/// ```
+/// use qsl_eval::value::QualifiedName;
+/// use qsl_jit::PreparedJit;
+/// fn within(prepared: PreparedJit<'_>, name: &QualifiedName) {
+///     let entry = prepared.entry(name).expect("an entry");
+///     let _ = entry.name();
+///     drop(prepared);
+/// }
+/// ```
+///
+/// The frame type is private to `exec`:
+///
+/// ```compile_fail
+/// use qsl_jit::exec::EntryFrame;
+/// ```
+pub struct PreparedJit<'p> {
     package: &'p CheckedPackage,
     compiled: BTreeMap<QualifiedName, Compiled>,
+    ops: Vec<Op>,
     unsupported: Vec<(EntrySelection, UnsupportedEntry)>,
     // Declared last: it is dropped last, after nothing can call an entry.
     _machine: Machine,
+}
+
+/// A callable entry of a [`PreparedJit`], valid while the value is borrowed.
+pub struct CallableEntry<'a> {
+    prepared: &'a PreparedJit<'a>,
+    name: &'a QualifiedName,
+}
+
+impl<'a> CallableEntry<'a> {
+    /// The entry's function name.
+    #[must_use]
+    pub fn name(&self) -> &QualifiedName {
+        self.name
+    }
+
+    /// Call the entry as [`PreparedJit::call_metered`] does.
+    ///
+    /// # Errors
+    /// As [`PreparedEntries::call`].
+    pub fn call(
+        &self,
+        arguments: &[Value],
+        environment: &ObjectEnvironment,
+        meter: &mut Meter,
+        run: &mut SuppliedRun,
+        cancel: &Cancel,
+    ) -> Result<Evaluation, CallFailure> {
+        self.prepared
+            .call_metered(self.name, arguments, environment, meter, run, cancel)
+    }
 }
 
 fn fault(invariant: &'static str) -> PrepareFailure {
@@ -62,7 +123,7 @@ fn fault(invariant: &'static str) -> PrepareFailure {
 }
 
 impl ExecutionBackend for Jit {
-    type Prepared<'p> = JitPrepared<'p>;
+    type Prepared<'p> = PreparedJit<'p>;
 
     fn prepare<'p>(
         &self,
@@ -70,7 +131,7 @@ impl ExecutionBackend for Jit {
         entries: &[EntrySelection],
         limits: &PrepareLimits,
         cancel: &Cancel,
-    ) -> Result<JitPrepared<'p>, PrepareFailure> {
+    ) -> Result<PreparedJit<'p>, PrepareFailure> {
         if let Some(cause) = cancel.cause() {
             return Err(PrepareFailure::Cancelled(cause));
         }
@@ -79,69 +140,68 @@ impl ExecutionBackend for Jit {
         // (`EnvironmentRefused` is not in `quire-eval`), so it is a fault.
         let (mut machine, shim) =
             Machine::new().map_err(|_| fault("jit-host-refused-code-generator"))?;
-        let mut compiled = BTreeMap::new();
+        let mut ops = Vec::new();
         let mut unsupported = Vec::new();
-        let mut finalized = Vec::new();
-        let mut seen = std::collections::BTreeSet::new();
-        for selection in entries {
-            if !seen.insert((selection.kind == EntryKind::Clause, selection.name.clone())) {
-                continue;
-            }
-            if selection.kind == EntryKind::Clause {
-                // Clause entries need forall/exists, deref, `self` and the
-                // FR-265 witness reproduction; none is translated yet, and
-                // their body is not reachable through the function accessors.
-                return Err(fault("jit-clause-entries-not-implemented"));
-            }
-            let graph = package.graph();
-            let Some(callable) = graph.callable(&selection.name.to_string()) else {
-                // The interpreter accepts any selection and refuses an
-                // unknown name at the call; so does this backend.
-                continue;
-            };
-            let Some(function) = graph.function_by_identity(callable.identity.clone()) else {
-                return Err(fault("jit-callable-without-body"));
-            };
-            if let Some(outside) = first_outside(callable.parameters, function.body, coverage()) {
-                unsupported.push((selection.clone(), untranslatable(outside)));
-                continue;
-            }
-            let result = translate(
+        let mut translated = Vec::new();
+        let graph = package.graph();
+        {
+            let mut compiler = Compiler::new(
                 machine.module(),
                 &shim,
-                &selection.name.to_string().replace("::", "_"),
-                callable.parameters,
-                function.body,
+                graph,
+                coverage(),
+                &mut ops,
                 &mut meter,
             );
-            match result {
-                Ok(translated) => {
-                    finalized.push((selection.name.clone(), translated, callable.parameters));
+            let mut seen = std::collections::BTreeSet::new();
+            for selection in entries {
+                if !seen.insert((selection.kind == EntryKind::Clause, selection.name.clone())) {
+                    continue;
                 }
-                Err(Failure::Unsupported(outside)) => {
+                let name = selection.name.to_string();
+                if selection.kind == EntryKind::Clause {
+                    // The interpreter refuses an unknown clause at the call;
+                    // so does this backend.
+                    let Some(clause) = graph.state_clause(&name) else {
+                        continue;
+                    };
+                    let outside = first_outside(clause.parameters(), clause.body(), coverage())
+                        .unwrap_or_else(|| clause_outside(clause.body()));
                     unsupported.push((selection.clone(), untranslatable(outside)));
+                    continue;
                 }
-                Err(Failure::Prepare(failure)) => return Err(failure),
+                let Some(callable) = graph.callable(&name) else {
+                    continue;
+                };
+                let Some(index) = compiler.index_of(&callable.identity) else {
+                    return Err(fault("jit-callable-without-index"));
+                };
+                match compiler.entry(index, &name.replace("::", "_")) {
+                    Ok(entry) => translated.push((selection.name.clone(), index, entry)),
+                    Err(Failure::Unsupported(outside)) => {
+                        unsupported.push((selection.clone(), untranslatable(outside)));
+                    }
+                    Err(Failure::Prepare(failure)) => return Err(failure),
+                }
             }
         }
         machine
             .finalize()
             .map_err(|_| fault("jit-finalize-definitions"))?;
-        for (name, translated, parameters) in finalized {
-            let graph = package.graph();
-            let Some(callable) = graph.callable(&name.to_string()) else {
+        let mut compiled = BTreeMap::new();
+        for (name, index, entry) in translated {
+            let (Some(function), Some(callable)) = (
+                graph.function_state(index),
+                graph.callable(&name.to_string()),
+            ) else {
                 return Err(fault("jit-callable-vanished"));
             };
-            let Some(function) = graph.function_by_identity(callable.identity.clone()) else {
-                return Err(fault("jit-callable-without-body"));
-            };
-            let entry = machine.entry(translated.id, parameters.len());
             compiled.insert(
                 name,
                 Compiled {
-                    entry,
-                    ops: translated.ops,
-                    parameters: parameters
+                    entry: machine.entry(entry.id, callable.parameters.len()),
+                    parameters: callable
+                        .parameters
                         .iter()
                         .map(|(_, ty)| match ty {
                             ValueType::Boolean => Some(true),
@@ -149,21 +209,34 @@ impl ExecutionBackend for Jit {
                             _ => None,
                         })
                         .collect(),
-                    result_is_boolean: translated.result_is_boolean,
+                    result_is_boolean: entry.result_is_boolean,
                     site: function.body.location().clone(),
                 },
             );
         }
-        Ok(JitPrepared {
+        Ok(PreparedJit {
             package,
             compiled,
+            ops,
             unsupported,
             _machine: machine,
         })
     }
 }
 
-fn untranslatable(outside: crate::classify::Outside) -> UnsupportedEntry {
+/// A state clause none of whose constructs lies outside the coverage still
+/// needs the FR-265 trail and receiver path, which this backend does not
+/// reproduce, so it is listed at the clause's body as its `self` (FR-560:
+/// the v1 coverage lists no `ProtocolClause`-family construct). Spec gap: the
+/// location of that cause is not stated.
+fn clause_outside(body: qsl_semantics::check::CheckedNode<'_>) -> Outside {
+    Outside {
+        construct: quire_eval::UntranslatableConstruct::ExpressionForm("self".to_owned()),
+        location: body.location().clone(),
+    }
+}
+
+fn untranslatable(outside: Outside) -> UnsupportedEntry {
     UnsupportedEntry {
         backend: ExecutionBackendChoice::Jit,
         cause: UnsupportedCause::Untranslatable {
@@ -189,7 +262,7 @@ fn stopped(stop: Stop, location: Option<ExpressionLocation>) -> Result<Evaluatio
     })
 }
 
-impl PreparedEntries for JitPrepared<'_> {
+impl PreparedEntries for PreparedJit<'_> {
     fn unsupported(&self) -> &[(EntrySelection, UnsupportedEntry)] {
         &self.unsupported
     }
@@ -220,20 +293,75 @@ impl PreparedEntries for JitPrepared<'_> {
 
     fn evaluate(
         &self,
-        _clause: &QualifiedName,
+        clause: &QualifiedName,
         _input: &AdmittedObservations,
         _accounting: &ScalarLimits,
-        _cancel: &Cancel,
+        cancel: &Cancel,
     ) -> Result<Evaluation, CallFailure> {
-        // `prepare` refuses clause selections, so no clause is prepared.
-        Err(CallFailure::Fault(InternalFault::new(
-            "FR-294",
-            "jit-clause-entry-not-prepared",
-        )))
+        if let Some(cause) = cancel.cause() {
+            return Err(CallFailure::Cancelled(cause));
+        }
+        if let Some((_, reason)) = self
+            .unsupported
+            .iter()
+            .find(|(selection, _)| selection.kind == EntryKind::Clause && selection.name == *clause)
+        {
+            return Err(CallFailure::Unsupported(reason.clone()));
+        }
+        // Every selected clause is listed unsupported; an unselected or
+        // unknown clause is the interpreter's refusal.
+        Err(InputRefusal::UnknownClause(clause.to_string()).into())
     }
 }
 
-impl JitPrepared<'_> {
+impl<'p> PreparedJit<'p> {
+    /// The callable entry of the translated function `name`, borrowed from
+    /// this value: the code it enters is freed when the value drops.
+    #[must_use]
+    pub fn entry<'a>(&'a self, name: &'a QualifiedName) -> Option<CallableEntry<'a>>
+    where
+        'p: 'a,
+    {
+        // SAFETY-free: the borrow of `self` ties the entry to the memory.
+        self.compiled.contains_key(name).then(|| CallableEntry {
+            prepared: self.shrink(),
+            name,
+        })
+    }
+
+    fn shrink<'a>(&'a self) -> &'a PreparedJit<'a>
+    where
+        'p: 'a,
+    {
+        self
+    }
+
+    /// Record `parameters` and `returns_u32` as the signature of the entry
+    /// `name` in place of the real one (a test hook for FR-568-AC-3): a call
+    /// on it then returns `Fault` without entering the code.
+    #[doc(hidden)]
+    pub fn record_signature_for_test(
+        &mut self,
+        name: &QualifiedName,
+        parameters: u8,
+        returns_u32: bool,
+    ) {
+        if let Some(compiled) = self.compiled.get_mut(name) {
+            compiled.entry = compiled
+                .entry
+                .with_recorded_signature(Signature::new(parameters, returns_u32));
+        }
+    }
+
+    /// Replace the entry `name` with one returning a status outside the
+    /// closed status type (a test hook for FR-568-AC-3).
+    #[doc(hidden)]
+    pub fn return_out_of_range_status_for_test(&mut self, name: &QualifiedName) {
+        if let Some(compiled) = self.compiled.get_mut(name) {
+            compiled.entry = compiled.entry.returning_out_of_range_status();
+        }
+    }
+
     /// [`PreparedEntries::call`] under a caller-owned `meter` and supplied-value
     /// `run`, with the contract of `CheckedPackageEvaluation::call_supplied`:
     /// the meter then shows the charges of the call, which the parity gate
@@ -284,16 +412,25 @@ impl JitPrepared<'_> {
             });
         }
         let registers = registers(compiled, arguments)?;
-        let mut ctx = Ctx::new(meter, &compiled.ops);
-        let value = compiled.entry.call(&mut ctx, &registers).ok_or_else(|| {
-            CallFailure::Fault(InternalFault::new("FR-560", "jit-argument-count"))
+        let mut frame = EntryFrame::new(meter, &self.ops, graph.scope().types());
+        let status = compiled.entry.call(&mut frame, &registers);
+        let value = frame.result();
+        let halt = frame.into_halt();
+        let status = status.map_err(|refusal| {
+            CallFailure::Fault(InternalFault::new(
+                "FR-568",
+                match refusal {
+                    EntryRefusal::Signature => "jit-entry-signature-mismatch",
+                    EntryRefusal::Status => "jit-entry-status-out-of-range",
+                    EntryRefusal::Arity => "jit-argument-count",
+                },
+            ))
         })?;
-        let halt = ctx.into_halt();
         if let Some(cause) = cancel.tripped() {
             return Err(CallFailure::Cancelled(cause));
         }
-        match halt {
-            None => Ok(Evaluation {
+        match (status, halt) {
+            (Status::Completed, None) => Ok(Evaluation {
                 outcome: FamilyOutcome::Evaluated(Outcome::Completed(
                     if compiled.result_is_boolean {
                         Value::Boolean(value != 0)
@@ -304,10 +441,14 @@ impl JitPrepared<'_> {
                 location: None,
                 losses: Vec::new(),
             }),
-            Some(Halt::Stop(stop, location)) => stopped(stop, Some(location)),
-            Some(Halt::Fault(invariant)) => {
+            (Status::Stopped, Some(Halt::Stop(stop, location))) => stopped(stop, Some(location)),
+            (_, Some(Halt::Fault(invariant))) => {
                 Err(CallFailure::Fault(InternalFault::new("FR-560", invariant)))
             }
+            _ => Err(CallFailure::Fault(InternalFault::new(
+                "FR-568",
+                "jit-status-halt-disagree",
+            ))),
         }
     }
 }

@@ -13,8 +13,6 @@
 //! ([`crate::kernel`]) are safe code. Generated code reads `Ctx::failed`, the
 //! first field, and leaves the function when a shim set it.
 
-#![allow(unsafe_code)]
-
 use std::ffi::c_void;
 
 use cranelift_codegen::ir::{types, AbiParam};
@@ -27,6 +25,7 @@ use quire_semantic_value::stop::Stop;
 
 use crate::kernel::{self, Halt as KernelHalt};
 use crate::translate::Op;
+use quire_semantic_value::declaration::TypeEnvironment;
 
 /// Why the backend stopped a run.
 pub(crate) enum Halt {
@@ -36,23 +35,47 @@ pub(crate) enum Halt {
     Fault(&'static str),
 }
 
-/// The state generated code and its shim share for one call. `failed` is
-/// first and `repr(C)` so generated code reads it at offset 0.
+/// FR-561: the fixed set of kernel entry points generated code may call.
+/// This backend's table has one entry, the shim, which dispatches on the
+/// operation table by index.
+#[derive(Clone, Copy)]
+pub(crate) struct KernelTable {
+    shim: extern "C" fn(*mut c_void, i64, i64, i64) -> i64,
+}
+
+impl KernelTable {
+    /// The shim this table lists.
+    pub(crate) fn shim(self) -> extern "C" fn(*mut c_void, i64, i64, i64) -> i64 {
+        self.shim
+    }
+}
+
+/// FR-568: the frame generated code runs over. Generated code reads
+/// `failed`, `arguments` and `result` at their `repr(C)` offsets (0, 8, 16);
+/// every other field is read only by `exec`.
 #[repr(C)]
-pub(crate) struct Ctx<'a> {
+pub(crate) struct EntryFrame<'a> {
     failed: u64,
+    arguments: *const i64,
+    result: i64,
+    kernel: KernelTable,
     meter: &'a mut Meter,
     ops: &'a [Op],
+    types: &'a TypeEnvironment,
     halt: Option<Halt>,
 }
 
-impl<'a> Ctx<'a> {
-    /// A context with nothing failed, metering into `meter`.
-    pub(crate) fn new(meter: &'a mut Meter, ops: &'a [Op]) -> Self {
+impl<'a> EntryFrame<'a> {
+    /// A frame with nothing failed, metering into `meter`.
+    pub(crate) fn new(meter: &'a mut Meter, ops: &'a [Op], types: &'a TypeEnvironment) -> Self {
         Self {
             failed: 0,
+            arguments: std::ptr::null(),
+            result: 0,
+            kernel: KernelTable { shim },
             meter,
             ops,
+            types,
             halt: None,
         }
     }
@@ -61,36 +84,41 @@ impl<'a> Ctx<'a> {
     pub(crate) fn into_halt(self) -> Option<Halt> {
         self.halt
     }
+
+    /// The value the entry returned.
+    pub(crate) fn result(&self) -> i64 {
+        self.result
+    }
 }
 
-/// The kernel shim every generated operation calls: `(ctx, op index,
+/// The kernel shim every generated operation calls: `(frame, op index,
 /// left, right) -> value`. On a stop it records the stop and the node's
-/// location in the context, sets `failed`, and returns 0; the generated code
+/// location in the frame, sets `failed`, and returns 0; the generated code
 /// then returns without another call.
-extern "C" fn shim(ctx: *mut c_void, node: i64, a: i64, b: i64) -> i64 {
-    // SAFETY: `ctx` is the `&mut Ctx` that `Entry::call` passed to the
-    // generated function, which passes it back unchanged to every shim call;
-    // the context outlives the call and nothing else aliases it while the
+extern "C" fn shim(frame: *mut c_void, node: i64, a: i64, b: i64) -> i64 {
+    // SAFETY: `frame` is the `&mut EntryFrame` that `Entry::call` passed to
+    // the generated function, which passes it back unchanged to every shim
+    // call; the frame outlives the call and nothing else aliases it while the
     // generated function runs.
-    let ctx = unsafe { &mut *ctx.cast::<Ctx<'_>>() };
+    let frame = unsafe { &mut *frame.cast::<EntryFrame<'_>>() };
     let Some(op) = usize::try_from(node)
         .ok()
-        .and_then(|index| ctx.ops.get(index))
+        .and_then(|index| frame.ops.get(index))
     else {
-        ctx.halt = Some(Halt::Fault("jit-shim-operation-index"));
-        ctx.failed = 1;
+        frame.halt = Some(Halt::Fault("jit-shim-operation-index"));
+        frame.failed = 1;
         return 0;
     };
-    match kernel::run(op, a, b, ctx.meter) {
+    match kernel::run(op, a, b, frame.meter, frame.types) {
         Ok(value) => value,
         Err(KernelHalt::Stop(stop)) => {
-            ctx.halt = Some(Halt::Stop(stop, op.location.clone()));
-            ctx.failed = 1;
+            frame.halt = Some(Halt::Stop(stop, op.location.clone()));
+            frame.failed = 1;
             0
         }
         Err(KernelHalt::Fault(invariant)) => {
-            ctx.halt = Some(Halt::Fault(invariant));
-            ctx.failed = 1;
+            frame.halt = Some(Halt::Fault(invariant));
+            frame.failed = 1;
             0
         }
     }
@@ -127,7 +155,7 @@ impl Machine {
             .finish(settings::Flags::new(flags))
             .map_err(|_| Refused)?;
         let mut builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
-        builder.symbol("qsl_jit_shim", shim as *const u8);
+        builder.symbol("qsl_jit_shim", KernelTable { shim }.shim() as *const u8);
         let mut module = JITModule::new(builder);
         let pointer = module.target_config().pointer_type();
         let mut signature = module.make_signature();
@@ -159,10 +187,14 @@ impl Machine {
     }
 
     /// The callable entry of the finalized function `id`, taking `arity`
-    /// arguments of 64 bits.
+    /// arguments of 64 bits, with the signature the translator recorded for it.
     pub(crate) fn entry(&mut self, id: FuncId, arity: usize) -> Entry {
         let address = self.module().get_finalized_function(id);
-        Entry { address, arity }
+        Entry {
+            address,
+            arity,
+            signature: ENTRY_SIGNATURE,
+        }
     }
 }
 
@@ -177,28 +209,106 @@ impl Drop for Machine {
     }
 }
 
-/// A finalized generated function `(ctx, arguments) -> value`.
+/// The signature of an entry as recorded at generation: parameter count and
+/// whether the result is a `u32`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Signature {
+    parameters: u8,
+    returns_u32: bool,
+}
+
+/// The one entry signature, `extern "C" fn(*const EntryFrame) -> u32`.
+pub(crate) const ENTRY_SIGNATURE: Signature = Signature {
+    parameters: 1,
+    returns_u32: true,
+};
+
+impl Signature {
+    /// A signature with `parameters` parameters returning a `u32` or not.
+    pub(crate) const fn new(parameters: u8, returns_u32: bool) -> Self {
+        Self {
+            parameters,
+            returns_u32,
+        }
+    }
+}
+
+/// How an entry stopped, in the closed status type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Status {
+    /// The body ran to its result.
+    Completed,
+    /// A kernel call recorded a stop in the frame.
+    Stopped,
+}
+
+/// Why `PreparedJit` refused to enter or accept an entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EntryRefusal {
+    /// The recorded signature is not the entry signature; nothing was called.
+    Signature,
+    /// The function returned a status outside the closed status type.
+    Status,
+    /// Fewer arguments than the function reads.
+    Arity,
+}
+
+/// A finalized generated function `(frame) -> status`.
 #[derive(Clone, Copy)]
 pub(crate) struct Entry {
     address: *const u8,
     arity: usize,
+    signature: Signature,
+}
+
+extern "C" fn out_of_range_status(_frame: *const c_void) -> u32 {
+    u32::MAX
 }
 
 impl Entry {
-    /// Call the function with `arguments`, one 64-bit slot per parameter.
-    /// `None` when `arguments` is shorter than the function reads.
-    pub(crate) fn call(self, ctx: &mut Ctx<'_>, arguments: &[i64]) -> Option<i64> {
-        if arguments.len() < self.arity {
-            return None;
+    /// The same entry with `signature` recorded in place of the real one
+    /// (a test hook for FR-568-AC-3).
+    pub(crate) fn with_recorded_signature(self, signature: Signature) -> Self {
+        Self { signature, ..self }
+    }
+
+    /// An entry that returns a status outside the closed status type
+    /// (a test hook for FR-568-AC-3).
+    pub(crate) fn returning_out_of_range_status(self) -> Self {
+        Self {
+            address: out_of_range_status as *const u8,
+            ..self
         }
+    }
+
+    /// Call the function over `frame` with `arguments`, one 64-bit slot per
+    /// parameter.
+    pub(crate) fn call(
+        self,
+        frame: &mut EntryFrame<'_>,
+        arguments: &[i64],
+    ) -> Result<Status, EntryRefusal> {
+        if self.signature != ENTRY_SIGNATURE {
+            return Err(EntryRefusal::Signature);
+        }
+        if arguments.len() < self.arity {
+            return Err(EntryRefusal::Arity);
+        }
+        frame.arguments = arguments.as_ptr();
         // SAFETY: `address` is the finalized code of a function the
-        // translator built with exactly this signature (a context pointer and
-        // an argument pointer, returning an `i64`); it reads at most `arity`
-        // slots of `arguments`, checked above; `ctx` is valid and unaliased
-        // for the call; the module that owns the code is alive (see `Drop for
+        // translator built with exactly the entry signature (checked above
+        // against the signature recorded at generation): one pointer
+        // parameter and a `u32` result. It reads at most `arity` slots of
+        // `arguments`, checked above; `frame` is valid and unaliased for the
+        // call; the module that owns the code is alive (see `Drop for
         // Machine`).
-        let function: extern "C" fn(*mut c_void, *const i64) -> i64 =
+        let function: extern "C" fn(*const c_void) -> u32 =
             unsafe { std::mem::transmute(self.address) };
-        Some(function(std::ptr::from_mut(ctx).cast(), arguments.as_ptr()))
+        let status = function(std::ptr::from_mut(frame).cast_const().cast());
+        match status {
+            0 => Ok(Status::Completed),
+            1 => Ok(Status::Stopped),
+            _ => Err(EntryRefusal::Status),
+        }
     }
 }
