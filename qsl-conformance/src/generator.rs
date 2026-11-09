@@ -11,14 +11,19 @@
 //! types and the `literal`, `operator`, `let`, `if` and `call` forms. About
 //! half the units also carry a few functions over `Rational`, `Decimal`, `Text`
 //! and record values, drawn from a second generator seeded by the unit's own
-//! text, so adding them left the `Boolean` and `Int` units as they were. The
-//! collection types and the `collection` form are not drawn yet.
+//! text, so adding them left the `Boolean` and `Int` units as they were. About
+//! half the units carry a few functions over sequences, bags and sets (the
+//! literal, `size`, `contains`, the queries, folds, conversions and removal),
+//! drawn from a third generator seeded by the same text. The binder queries
+//! `forall` and `exists` and `seq` are not drawn: the first two are outside
+//! FR-560's coverage, and the checker admits `seq` only in a refinement row.
 
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use quire_exact::{
-    admit_text, Decimal, Integer, Meter, Rational, ScalarLimits, TextPayload, TextProfile,
-    TextType, Value,
+    admit_text, form, CardinalityBound, CollectionKind, CollectionType, Decimal, Integer,
+    IntegerInterval, Meter, Outcome, Rational, ScalarLimits, TextPayload, TextProfile, TextType,
+    Value, ValueType,
 };
 use quire_semantic_value::checking::CheckingLimits;
 
@@ -417,6 +422,257 @@ fn extras(source: &str) -> (String, Vec<Functions>) {
     (text, functions)
 }
 
+/// The aliases the functions of [`collections`] use.
+const COLLECTION_TYPES: &str = "\
+type GN = Integer;\n\
+type GF = Boolean;\n";
+
+/// Which collection a template's parameter takes.
+#[derive(Clone, Copy)]
+enum Pool {
+    Flag,
+    Digit,
+    Digits,
+    Wide,
+    WideNonEmpty,
+    Flags,
+    Nested,
+    Bag,
+}
+
+/// Functions over collections: the declaration and the kinds of its
+/// parameters.
+const COLLECTION_FUNCTIONS: [(&str, &[Pool]); 24] = [
+    ("(s: Sequence<Int[0, 9]>[0, 6]): GN pure { size(s) }", &[Pool::Digits]),
+    (
+        "(s: Sequence<Int[0, 9]>[0, 6], x: Int[0, 9]): Boolean pure { contains(s, x) }",
+        &[Pool::Digits, Pool::Digit],
+    ),
+    (
+        "(b: Bag<Int[0, 9]>[0, 6], x: Int[0, 9]): Boolean pure { contains(b, x) }",
+        &[Pool::Bag, Pool::Digit],
+    ),
+    (
+        "(s: Sequence<Int[0, 9]>[0, 6]): Sequence<Integer>[0, 6] pure { map(x in s: x * x) }",
+        &[Pool::Digits],
+    ),
+    (
+        "(s: Sequence<Int[0, 9]>[0, 6], t: Int[0, 9]): Sequence<Int[0, 9]>[0, 6] pure { filter(x in s: x > t) }",
+        &[Pool::Digits, Pool::Digit],
+    ),
+    (
+        "(s: Sequence<Int[0, 9]>[0, 6], t: Int[0, 9]): GN pure { count<GN>(x in s: x >= t) }",
+        &[Pool::Digits, Pool::Digit],
+    ),
+    (
+        "(s: Sequence<Int[0, 9]>[0, 6]): GN pure { sum<GN>(x in s: x * x) }",
+        &[Pool::Digits],
+    ),
+    (
+        "(s: Sequence<Integer>[0, 6]): GN pure { sum<GN>(x in s: x) }",
+        &[Pool::Wide],
+    ),
+    (
+        "(s: Sequence<Integer>[0, 6]): GN pure { fold<GN>(acc, x in s: acc * x + 1, identity: 1) }",
+        &[Pool::Wide],
+    ),
+    (
+        "(s: Sequence<Integer>[1, 6]): GN pure { reduce<GN>(acc, x in s: acc + x) }",
+        &[Pool::WideNonEmpty],
+    ),
+    (
+        "(s: Sequence<Boolean>[0, 6]): GF pure { fold<GF>(acc, x in s: acc and x, identity: true) }",
+        &[Pool::Flags],
+    ),
+    (
+        "(s: Sequence<Boolean>[0, 6]): GN pure { count<GN>(x in s: x) }",
+        &[Pool::Flags],
+    ),
+    (
+        "(s: Sequence<Sequence<Int[0, 9]>[0, 3]>[0, 3]): Sequence<Int[0, 9]>[0, 9] pure { flatten(s) }",
+        &[Pool::Nested],
+    ),
+    (
+        "(s: Sequence<Int[0, 9]>[0, 6]): Set<Int[0, 9]>[0, 6] pure { convert<Set<Int[0, 9]>[0, 6]>(s) }",
+        &[Pool::Digits],
+    ),
+    (
+        "(s: Sequence<Int[0, 9]>[0, 6]): Bag<Int[0, 9]>[0, 6] pure { convert<Bag<Int[0, 9]>[0, 6]>(s) }",
+        &[Pool::Digits],
+    ),
+    (
+        "(s: Sequence<Int[0, 9]>[0, 6]): Sequence<Int[0, 9]>[0, 5] pure { dropFirst(s) }",
+        &[Pool::Digits],
+    ),
+    (
+        "(s: Sequence<Int[0, 9]>[0, 6], x: Int[0, 9]): Sequence<Int[0, 9]>[0, 6] pure { removeOne(s, x) }",
+        &[Pool::Digits, Pool::Digit],
+    ),
+    (
+        "(s: Sequence<Int[0, 9]>[0, 6], t: Sequence<Int[0, 9]>[0, 6]): Boolean pure { s = t }",
+        &[Pool::Digits, Pool::Digits],
+    ),
+    (
+        "(c: Boolean, s: Sequence<Int[0, 9]>[0, 6], t: Sequence<Int[0, 9]>[0, 6]): Sequence<Int[0, 9]>[0, 6] pure { if c then s else t }",
+        &[Pool::Flag, Pool::Digits, Pool::Digits],
+    ),
+    (
+        "(s: Sequence<Int[0, 9]>[0, 6]): Sequence<Integer>[0, 6] pure { map(x in s: sum<GN>(y in s: x * y)) }",
+        &[Pool::Digits],
+    ),
+    (
+        "(a: Int[0, 9], b: Int[0, 9]): Sequence<Int[0, 9]>[0, 4] pure { sequence[a, b, a] }",
+        &[Pool::Digit, Pool::Digit],
+    ),
+    (
+        "(a: Int[0, 9]): Set<Int[0, 9]>[0, 4] pure { set[a, 1, a] }",
+        &[Pool::Digit],
+    ),
+    (
+        "(s: Sequence<Int[0, 9]>[0, 6]): GN pure { size(map(x in dropFirst(s): x + 1)) }",
+        &[Pool::Digits],
+    ),
+    (
+        "(s: Sequence<Integer>[0, 6]): Sequence<Integer>[0, 6] pure { map(x in s: x * x) }",
+        &[Pool::Wide],
+    ),
+];
+
+/// A collection of `kind` over `element` bounded by `[0, maximum]` (or
+/// `[minimum, maximum]`), formed from `elements`.
+fn collection_value(
+    kind: CollectionKind,
+    element: ValueType,
+    bound: (u64, u64),
+    elements: Vec<Value>,
+) -> Option<Value> {
+    let bound = CardinalityBound::new(bound.0, bound.1).ok()?;
+    let collection = CollectionType::new(kind, element, Some(bound));
+    let mut meter = Meter::new(ScalarLimits {
+        integer_bits: u64::MAX,
+        decimal_digits: u64::MAX,
+        scale_expansion: u64::MAX,
+        text_input_bytes: u64::MAX,
+        text_scalars: u64::MAX,
+        normalized_scalars: u64::MAX,
+        unit_edges: u64::MAX,
+        value_occurrences: u64::MAX,
+        work_units: u64::MAX,
+        result_units: u64::MAX,
+    });
+    match form(&collection, elements, &mut meter) {
+        Outcome::Completed(value) => Some(value),
+        _ => None,
+    }
+}
+
+fn digit_type() -> Option<ValueType> {
+    Some(ValueType::Int(
+        IntegerInterval::new(Integer::from(0_i64), Integer::from(9_i64)).ok()?,
+    ))
+}
+
+/// A value of the parameter kind `pool` takes.
+fn pool_value(rng: &mut Rng, pool: Pool) -> Option<Value> {
+    let digit = |rng: &mut Rng| Value::Integer(Integer::from(rng.below(10) as i64));
+    let wide = |rng: &mut Rng| {
+        let magnitude = match rng.below(3) {
+            0 => i128::from(rng.below(10) as i64),
+            1 => i128::from(rng.below(2001) as i64) - 1000,
+            _ => (1_i128 << 70) + i128::from(rng.below(1000) as i64),
+        };
+        Value::Integer(Integer::from(magnitude))
+    };
+    match pool {
+        Pool::Flag => Some(Value::Boolean(rng.below(2) == 0)),
+        Pool::Digit => Some(digit(rng)),
+        Pool::Digits => {
+            let elements = (0..rng.below(7)).map(|_| digit(rng)).collect();
+            collection_value(CollectionKind::Sequence, digit_type()?, (0, 6), elements)
+        }
+        Pool::Bag => {
+            let elements = (0..rng.below(7)).map(|_| digit(rng)).collect();
+            collection_value(CollectionKind::Bag, digit_type()?, (0, 6), elements)
+        }
+        Pool::Wide => {
+            let elements = (0..rng.below(7)).map(|_| wide(rng)).collect();
+            collection_value(
+                CollectionKind::Sequence,
+                ValueType::Integer,
+                (0, 6),
+                elements,
+            )
+        }
+        Pool::WideNonEmpty => {
+            let elements = (0..1 + rng.below(6)).map(|_| wide(rng)).collect();
+            collection_value(
+                CollectionKind::Sequence,
+                ValueType::Integer,
+                (1, 6),
+                elements,
+            )
+        }
+        Pool::Flags => {
+            let elements = (0..rng.below(7))
+                .map(|_| Value::Boolean(rng.below(2) == 0))
+                .collect();
+            collection_value(
+                CollectionKind::Sequence,
+                ValueType::Boolean,
+                (0, 6),
+                elements,
+            )
+        }
+        Pool::Nested => {
+            let mut inners = Vec::new();
+            for _ in 0..rng.below(4) {
+                let elements = (0..rng.below(4)).map(|_| digit(rng)).collect();
+                inners.push(collection_value(
+                    CollectionKind::Sequence,
+                    digit_type()?,
+                    (0, 3),
+                    elements,
+                )?);
+            }
+            let inner = ValueType::Collection(std::sync::Arc::new(CollectionType::new(
+                CollectionKind::Sequence,
+                digit_type()?,
+                Some(CardinalityBound::at_most(3)),
+            )));
+            collection_value(CollectionKind::Sequence, inner, (0, 3), inners)
+        }
+    }
+}
+
+/// The functions over collections a unit with source `source` carries (none
+/// for about half the units), as source text and argument tuples. The draw
+/// reads only `source`, never the unit stream.
+fn collections(source: &str) -> (String, Vec<Functions>) {
+    let mut rng = Rng(text_seed(source) ^ 0x434F_4C4C_4543_5431);
+    if rng.below(2) == 0 {
+        return (String::new(), Vec::new());
+    }
+    let mut text = COLLECTION_TYPES.to_owned();
+    let mut functions = Vec::new();
+    for index in 0..1 + rng.below(3) as usize {
+        let (declaration, pools) =
+            COLLECTION_FUNCTIONS[rng.below(COLLECTION_FUNCTIONS.len() as u64) as usize];
+        let name = format!("c{index}");
+        text.push_str(&format!("function {name} using v{declaration}\n"));
+        let tuples = (0..4)
+            .filter_map(|_| {
+                let mut tuple = Vec::new();
+                for pool in pools {
+                    tuple.push(pool_value(&mut rng, *pool)?);
+                }
+                Some(tuple)
+            })
+            .collect();
+        functions.push((name, tuples));
+    }
+    (text, functions)
+}
+
 fn tuples(rng: &mut Rng, parameters: &[Kind]) -> Vec<Vec<Value>> {
     let integer = |v: i64| Value::Integer(Integer::from(v));
     let pick = |rng: &mut Rng, k: Kind, mode: u8| match (k, mode) {
@@ -509,8 +765,11 @@ pub fn generate(seed: u64, count: u64) -> (Vec<(GeneratedUnit, CheckedPackage)>,
             .map(|(name, parameters)| (name.clone(), tuples(&mut rng, parameters)))
             .collect();
         let (extra_source, extra_functions) = extras(&source);
+        let (collection_source, collection_functions) = collections(&source);
         source.push_str(&extra_source);
+        source.push_str(&collection_source);
         functions.extend(extra_functions);
+        functions.extend(collection_functions);
         match compile(&source) {
             Some(package) => admitted.push((
                 GeneratedUnit {
