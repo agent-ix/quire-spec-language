@@ -463,9 +463,13 @@ fn run(
             &product,
             reference,
             &values,
-            qsl_replay::ProbabilityDocumentIoLimits {
-                bytes: document_limits.bytes,
-                storage_bytes: document_limits.storage_bytes,
+            if state_predicate {
+                qsl_replay::ProbabilityDocumentIoLimits {
+                    bytes: document_limits.bytes,
+                    storage_bytes: document_limits.storage_bytes,
+                }
+            } else {
+                qsl_replay::ProbabilityDocumentIoLimits::default()
             },
             cancel,
         ),
