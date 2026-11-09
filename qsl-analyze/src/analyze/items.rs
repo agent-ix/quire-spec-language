@@ -27,6 +27,8 @@ use qsl_semantics::family::UnsupportedItem;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_semantic_value::catalog::CatalogCode;
 
+use quire_exact::Cancel;
+
 use super::{AnalyzeItem, EngineReport, Refusal};
 use crate::claim_family::claim_family;
 use crate::model_check::{
@@ -76,7 +78,7 @@ pub fn hyper_form_item(
 /// `temporal_clause` node, whose row of QSpec FR-290's table is
 /// `temporal-trace`, whatever the subject it runs over. A caller that holds
 /// the claim's occurrence replaces it with [`AnalyzeItem::at_claim`].
-const CLAUSE_FAMILY: Option<DeclarationFamily> = Some(DeclarationFamily::TemporalTrace);
+pub(super) const CLAUSE_FAMILY: Option<DeclarationFamily> = Some(DeclarationFamily::TemporalTrace);
 
 /// `runtime_invariant`/`established-invariant-broken`: the diagnostic of a
 /// refusal whose own type names no code.
@@ -139,25 +141,28 @@ fn run_model_item(
         family,
         Mode::Bounded,
         en1::BACKEND_ID,
-        move |cancel| {
-            let ModelItem {
-                request,
-                certificate,
-                replay,
-            } = item;
-            let limits = request.limits;
-            match check_model(request, cancel) {
-                Ok(outcome) => EngineReport::Model(Box::new(qsl_replay::settle_model_check(
-                    &outcome,
-                    &limits,
-                    &certificate,
-                    cancel,
-                    replay,
-                ))),
-                Err(refusal) => EngineReport::Refused(model_refusal(&refusal)),
-            }
-        },
+        move |cancel| settle_model_item(item, cancel),
     )
+}
+
+/// The EN-1 run of `item` and its layer-6 settlement (FR-127).
+pub(super) fn settle_model_item(item: ModelItem<'_>, cancel: &Cancel) -> EngineReport {
+    let ModelItem {
+        request,
+        certificate,
+        replay,
+    } = item;
+    let limits = request.limits;
+    match check_model(request, cancel) {
+        Ok(outcome) => EngineReport::Model(Box::new(qsl_replay::settle_model_check(
+            &outcome,
+            &limits,
+            &certificate,
+            cancel,
+            replay,
+        ))),
+        Err(refusal) => EngineReport::Refused(model_refusal(&refusal)),
+    }
 }
 
 /// An EN-1 item over a protocol subject (FR-215): the run, the certificate

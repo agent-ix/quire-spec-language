@@ -4,6 +4,7 @@
 mod analyze;
 mod bounded_closure;
 mod claim_family;
+mod clause_item;
 mod closure_certificate;
 mod component_certificate;
 mod config_lasso_fairness;

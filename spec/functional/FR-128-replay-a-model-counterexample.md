@@ -95,6 +95,15 @@ member of its own.
   keys, or FR-364's `terminal-stutter` step), `over_binding`,
   `fairness`, `interval` and `trace_position` (ADR-018 CX-2). The envelope names the clause, or the
   deadlock-freedom item, by its clause node and occurrence key (FR-070).
+  The envelope's remaining identity members, and the request's, are fixed
+  for an authored clause as follows (EN-1, FR-281): `replay_target` is the
+  `state_clause` member naming the clause by its declared name, as one
+  identifier segment; `obligation_identity` is the clause node's with no
+  model identity and ordinal 0; `occurrence_key` is the clause node and its
+  `claim` occurrence; `backend` is EN-1's identity; and `source` is the
+  witness transcript `<<<assertion|model_check|clause|>>>`, which carries no
+  values because the payload is the lasso. The replay reads none of these
+  but the clause node, the occurrence key and the fairness set.
 - `TemporalCounterexample` implements `FamilyPayload` (FR-070-AC-5).
 - For a task-derived `model` trace, the recompiled task-set inputs and release
   declarations; the derived-step identity shape remains QSpec FR-364's.
