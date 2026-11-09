@@ -353,12 +353,16 @@ fn run(
     if !holds {
         let bounded_monitor = match (bounded_formula, monitor) {
             (Some(formula), Some(monitor)) => {
-                let context = match qsl_replay::probabilistic_formula_monitor_context(claim, reference) {
-                    Ok(context) => context,
-                    Err(_) => return not_yet(),
-                };
+                let context =
+                    match qsl_replay::probabilistic_formula_monitor_context(claim, reference) {
+                        Ok(context) => context,
+                        Err(_) => return not_yet(),
+                    };
                 match qsl_eval::automaton::QualifiedBoundedMonitor::from_monitor(
-                    formula.formula(), &context, monitor, limits.model.max_automaton_states,
+                    formula.formula(),
+                    &context,
+                    monitor,
+                    limits.model.max_automaton_states,
                 ) {
                     Ok(monitor) => Some(monitor),
                     Err(_) => return not_yet(),
@@ -649,14 +653,31 @@ fn replay_refutation(
     subject: SubjectLimits<'_>,
     tamper: Option<&dyn Fn(&mut ProbabilisticCounterexample)>,
 ) -> EngineReport {
-    use crate::exact_probabilistic::{produce_witness, FormulaState, MonitorState, MonitorVerdict, ProductAction, WitnessScope};
+    use crate::exact_probabilistic::{
+        produce_witness, FormulaState, MonitorState, MonitorVerdict, ProductAction, WitnessScope,
+    };
     let (accepting, past) = match &claim.form {
         ProbForm::Probability { bound, .. } if monitor.is_some() => (
-            product.states.iter().map(|state| matches!(
-                (bound, state.monitor),
-                (Bound::AtMost(_), Some(MonitorState::Formula(FormulaState::Decided(MonitorVerdict::Accept))))
-                    | (Bound::AtLeast(_), Some(MonitorState::Formula(FormulaState::Decided(MonitorVerdict::Reject))))
-            )).collect(),
+            product
+                .states
+                .iter()
+                .map(|state| {
+                    matches!(
+                        (bound, state.monitor),
+                        (
+                            Bound::AtMost(_),
+                            Some(MonitorState::Formula(FormulaState::Decided(
+                                MonitorVerdict::Accept
+                            )))
+                        ) | (
+                            Bound::AtLeast(_),
+                            Some(MonitorState::Formula(FormulaState::Decided(
+                                MonitorVerdict::Reject
+                            )))
+                        )
+                    )
+                })
+                .collect(),
             match bound {
                 Bound::AtMost(threshold) => threshold.clone(),
                 Bound::AtLeast(threshold) => Rational::from_integer(1_i64.into()).sub(threshold),
@@ -716,15 +737,27 @@ fn replay_refutation(
         if let Some(monitor) = monitor {
             let key = match state.monitor {
                 Some(MonitorState::Formula(FormulaState::Running(state))) => monitor.key(state),
-                Some(MonitorState::Formula(FormulaState::Decided(verdict))) => monitor.decision_key(verdict == MonitorVerdict::Accept),
+                Some(MonitorState::Formula(FormulaState::Decided(verdict))) => {
+                    monitor.decision_key(verdict == MonitorVerdict::Accept)
+                }
                 _ => return Err(ProbabilityDocumentError::Unsupported),
-            }.map_err(|_| ProbabilityDocumentError::Unsupported)?;
-            ProbabilityProductKey::for_formula_state(binding, &state.model, &key, limits.document, cancel)
+            }
+            .map_err(|_| ProbabilityDocumentError::Unsupported)?;
+            ProbabilityProductKey::for_formula_state(
+                binding,
+                &state.model,
+                &key,
+                limits.document,
+                cancel,
+            )
         } else {
-            ProbabilityProductKey::for_model_state(binding, &state.model).map_err(ProbabilityDocumentError::from)
+            ProbabilityProductKey::for_model_state(binding, &state.model)
+                .map_err(ProbabilityDocumentError::from)
         }
     };
-    let Some(initial_state) = product.states.get(initial.index()) else { return broken(); };
+    let Some(initial_state) = product.states.get(initial.index()) else {
+        return broken();
+    };
     let initial_key = match key_of(initial_state) {
         Ok(key) => key,
         Err(error) => return document_failure(error, subject),
@@ -790,7 +823,9 @@ fn replay_refutation(
                             continue;
                         }
                         for (transition, post) in draw.successors {
-                            if system.state_key(&post).ok().map(|key| key.0).as_ref() == Some(&to.model) {
+                            if system.state_key(&post).ok().map(|key| key.0).as_ref()
+                                == Some(&to.model)
+                            {
                                 candidates.push(ProbabilityWitnessStep {
                                     action: identity.clone(),
                                     transition,

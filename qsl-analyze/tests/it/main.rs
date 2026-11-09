@@ -3,6 +3,7 @@
 
 mod analyze;
 mod bounded_closure;
+mod bounded_probabilistic_replay;
 mod claim_family;
 mod clause_item;
 mod clause_route;
@@ -56,7 +57,6 @@ mod partial_order;
 mod por_world;
 mod prob_world;
 mod probabilistic_replay;
-mod bounded_probabilistic_replay;
 mod probabilistic_request_items;
 mod protocol_bounded_lasso;
 mod protocol_compensation;

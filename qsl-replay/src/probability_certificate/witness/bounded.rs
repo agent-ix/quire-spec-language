@@ -14,12 +14,21 @@ pub(super) fn replay(
 ) -> Result<ProbabilityWitnessReplay, ProbabilityWitnessError> {
     let ProbForm::Probability {
         bound,
-        event: Event::Formula { formula, timed_horizon: None, .. },
-    } = &claim.form else {
+        event:
+            Event::Formula {
+                formula,
+                timed_horizon: None,
+                ..
+            },
+    } = &claim.form
+    else {
         return Err(ExactProbabilityGraphError::UnsupportedClaimForm.into());
     };
     if !claim.fairness.is_empty()
-        || !matches!(TimedSystem::new(system, &claim.subject.alias), Err(TimedSubjectRefusal::NoTimedModel { .. }))
+        || !matches!(
+            TimedSystem::new(system, &claim.subject.alias),
+            Err(TimedSubjectRefusal::NoTimedModel { .. })
+        )
     {
         return Err(ExactProbabilityGraphError::UnsupportedClaimForm.into());
     }
@@ -29,18 +38,32 @@ pub(super) fn replay(
         return Err(ProbabilityWitnessError::Refused);
     }
     let context = probabilistic_formula_monitor_context(claim, reference)?;
-    let mut monitor = QualifiedBoundedMonitor::new(formula.formula(), &context, limits.model.max_automaton_states)
-        .map_err(|error| match error {
-            qsl_eval::automaton::QualifiedBoundedError::Translation(_) => ProbabilityWitnessError::Graph(ExactProbabilityGraphError::UnsupportedClaimForm),
-            _ => ProbabilityWitnessError::Limit { limit: ModelCheckLimit::ExactProbMaxAutomatonStates, value: limits.model.max_automaton_states },
-        })?;
-    let predicate = formula.condition(monitor.atom().index()).ok_or(ExactProbabilityGraphError::UnsupportedClaimForm)?;
+    let mut monitor = QualifiedBoundedMonitor::new(
+        formula.formula(),
+        &context,
+        limits.model.max_automaton_states,
+    )
+    .map_err(|error| match error {
+        qsl_eval::automaton::QualifiedBoundedError::Translation(_) => {
+            ProbabilityWitnessError::Graph(ExactProbabilityGraphError::UnsupportedClaimForm)
+        }
+        _ => ProbabilityWitnessError::Limit {
+            limit: ModelCheckLimit::ExactProbMaxAutomatonStates,
+            value: limits.model.max_automaton_states,
+        },
+    })?;
+    let predicate = formula
+        .condition(monitor.atom().index())
+        .ok_or(ExactProbabilityGraphError::UnsupportedClaimForm)?;
     let workload = claim_workload(system, claim)?;
     if workload.is_some() && !witness.scheduler.is_empty() {
         return Err(ProbabilityWitnessError::Refused);
     }
     if u64::try_from(witness.paths.len()).unwrap_or(u64::MAX) > limits.max_witness_paths {
-        return Err(ProbabilityWitnessError::Limit { limit: ModelCheckLimit::ExactProbMaxWitnessPaths, value: limits.max_witness_paths });
+        return Err(ProbabilityWitnessError::Limit {
+            limit: ModelCheckLimit::ExactProbMaxWitnessPaths,
+            value: limits.max_witness_paths,
+        });
     }
     let mut scheduler = BTreeMap::new();
     let mut previous = None;
@@ -56,15 +79,30 @@ pub(super) fn replay(
     let [initial] = initial.as_slice() else {
         return Err(ExactProbabilityGraphError::UnsupportedInitial.into());
     };
-    let root = monitor.start(observes(system, predicate, reference, initial)?).map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+    let root = monitor
+        .start(observes(system, predicate, reference, initial)?)
+        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
     let key_of = |state: &ModelSimState, control: StateId, monitor: &QualifiedBoundedMonitor| {
-        let (bytes, _) = system.state_key(state).map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-        let monitor_key = monitor.key(control).map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-        ProbabilityProductKey::for_formula_state(reference, &bytes, &monitor_key, limits.document, cancel).map_err(document_error)
+        let (bytes, _) = system
+            .state_key(state)
+            .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+        let monitor_key = monitor
+            .key(control)
+            .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+        ProbabilityProductKey::for_formula_state(
+            reference,
+            &bytes,
+            &monitor_key,
+            limits.document,
+            cancel,
+        )
+        .map_err(document_error)
     };
     let root_key = key_of(initial, root, &monitor)?;
-    if root_key != witness.initial_key || key_of(&witness.initial, root, &monitor)? != root_key
-        || initial.anchor() != witness.initial.anchor() || initial.reached_by() != witness.initial.reached_by()
+    if root_key != witness.initial_key
+        || key_of(&witness.initial, root, &monitor)? != root_key
+        || initial.anchor() != witness.initial.anchor()
+        || initial.reached_by() != witness.initial.reached_by()
     {
         return Err(ProbabilityWitnessError::Refused);
     }
@@ -76,7 +114,14 @@ pub(super) fn replay(
     let mut mass = rational(0);
     // A cylinder includes its semantic choice and draw, even when several
     // disjoint draws produce exactly the same model and monitor state.
-    let mut cylinders: Vec<Vec<(ScheduledIdentity, ModelTransition, Vec<SemanticValue>, ProbabilityProductKey)>> = Vec::new();
+    let mut cylinders: Vec<
+        Vec<(
+            ScheduledIdentity,
+            ModelTransition,
+            Vec<SemanticValue>,
+            ProbabilityProductKey,
+        )>,
+    > = Vec::new();
     for path in &witness.paths {
         poll_cancel(cancel)?;
         let mut state = initial.clone();
@@ -87,21 +132,38 @@ pub(super) fn replay(
         for step in &path.steps {
             poll_cancel(cancel)?;
             admit_state(&key, &mut seen, &mut storage, limits)?;
-            if !matches!(monitor.state(control).map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?, BoundedState::Open { .. }) {
+            if !matches!(
+                monitor
+                    .state(control)
+                    .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?,
+                BoundedState::Open { .. }
+            ) {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
-            if step.elapsed != rational(0) || workload.is_none() && scheduler.get(&key).copied() != Some(&step.action) {
+            if step.elapsed != rational(0)
+                || workload.is_none() && scheduler.get(&key).copied() != Some(&step.action)
+            {
                 return Err(ProbabilityWitnessError::Refused);
             }
             visited_choices.insert(key.clone());
             // Validate all successors against the admitted Markov restriction,
             // including unrepresented draws and residual choices.
             let mut issue = None;
-            model_distributions(system, &state, workload, cancel, &mut |failure| issue = Some(failure))
-                .map_err(|error| issue.map_or(ProbabilityWitnessError::Graph(error), |issue| ProbabilityWitnessError::Build(Box::new(issue))))?;
+            model_distributions(system, &state, workload, cancel, &mut |failure| {
+                issue = Some(failure)
+            })
+            .map_err(|error| {
+                issue.map_or(ProbabilityWitnessError::Graph(error), |issue| {
+                    ProbabilityWitnessError::Build(Box::new(issue))
+                })
+            })?;
             let mut candidates = Vec::new();
             if let Some(workload) = workload {
-                for candidate in system.weighted_steps(&state, workload).map_err(expansion)?.map_err(|_| ExactProbabilityGraphError::UnsupportedDraw)? {
+                for candidate in system
+                    .weighted_steps(&state, workload)
+                    .map_err(expansion)?
+                    .map_err(|_| ExactProbabilityGraphError::UnsupportedDraw)?
+                {
                     if candidate.identity.as_ref() == Some(&step.action)
                         && candidate.transition == TransitionId::Operation(step.transition.clone())
                         && same_values(&candidate.random, &step.draw)
@@ -110,12 +172,22 @@ pub(super) fn replay(
                     }
                 }
             } else {
-                for action in system.actions(&state).map_err(expansion)?.map_err(|_| ExactProbabilityGraphError::ExpansionRefused)? {
-                    if action.identity != step.action { continue; }
+                for action in system
+                    .actions(&state)
+                    .map_err(expansion)?
+                    .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
+                {
+                    if action.identity != step.action {
+                        continue;
+                    }
                     for draw in action.draws {
-                        if !same_values(&draw.random, &step.draw) { continue; }
+                        if !same_values(&draw.random, &step.draw) {
+                            continue;
+                        }
                         for (transition, post) in draw.successors {
-                            if transition == step.transition { candidates.push((draw.probability.clone(), post)); }
+                            if transition == step.transition {
+                                candidates.push((draw.probability.clone(), post));
+                            }
                         }
                     }
                 }
@@ -123,84 +195,168 @@ pub(super) fn replay(
             let mut matched = None;
             for (step_mass, post) in candidates {
                 poll_cancel(cancel)?;
-                let next = monitor.step(control, observes(system, predicate, reference, &post)?).map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+                let next = monitor
+                    .step(control, observes(system, predicate, reference, &post)?)
+                    .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
                 let post_key = key_of(&post, next, &monitor)?;
-                if post_key == step.post_key && key_of(&step.post, next, &monitor)? == post_key
-                    && post.anchor() == step.post.anchor() && post.reached_by() == step.post.reached_by()
+                if post_key == step.post_key
+                    && key_of(&step.post, next, &monitor)? == post_key
+                    && post.anchor() == step.post.anchor()
+                    && post.reached_by() == step.post.reached_by()
                 {
-                    if matched.is_some() { return Err(ExactProbabilityGraphError::UnsupportedDraw.into()); }
+                    if matched.is_some() {
+                        return Err(ExactProbabilityGraphError::UnsupportedDraw.into());
+                    }
                     matched = Some((step_mass, post, next, post_key));
                 }
             }
-            let Some((step_mass, post, next, post_key)) = matched else { return Err(ProbabilityWitnessError::Refused); };
-            if step_mass <= rational(0) { return Err(ProbabilityWitnessError::Refused); }
-            transition_count = transition_count.checked_add(1).ok_or(ExactProbabilityGraphError::TooManyEdges)?;
-            if transition_count > limits.model.limits.max_transitions { return Err(ExactProbabilityGraphError::EdgeLimitReached.into()); }
+            let Some((step_mass, post, next, post_key)) = matched else {
+                return Err(ProbabilityWitnessError::Refused);
+            };
+            if step_mass <= rational(0) {
+                return Err(ProbabilityWitnessError::Refused);
+            }
+            transition_count = transition_count
+                .checked_add(1)
+                .ok_or(ExactProbabilityGraphError::TooManyEdges)?;
+            if transition_count > limits.model.limits.max_transitions {
+                return Err(ExactProbabilityGraphError::EdgeLimitReached.into());
+            }
             check_bits(&step_mass, limits.max_rational_bits)?;
-            probability = arithmetic(quire_exact::RationalArithmetic::Multiply(&probability, &step_mass), &mut meter, cancel)?;
+            probability = arithmetic(
+                quire_exact::RationalArithmetic::Multiply(&probability, &step_mass),
+                &mut meter,
+                cancel,
+            )?;
             check_bits(&probability, limits.max_rational_bits)?;
-            cylinder.push((step.action.clone(), step.transition.clone(), step.draw.clone(), post_key.clone()));
+            cylinder.push((
+                step.action.clone(),
+                step.transition.clone(),
+                step.draw.clone(),
+                post_key.clone(),
+            ));
             state = post;
             control = next;
             key = post_key;
         }
         admit_state(&key, &mut seen, &mut storage, limits)?;
-        let mut verdict = monitor.state(control).map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+        let mut verdict = monitor
+            .state(control)
+            .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
         if matches!(verdict, BoundedState::Open { .. }) {
             let mut issue = None;
-            let distributions = model_distributions(system, &state, workload, cancel, &mut |failure| issue = Some(failure))
-                .map_err(|error| issue.map_or(ProbabilityWitnessError::Graph(error), |issue| ProbabilityWitnessError::Build(Box::new(issue))))?;
-            if !distributions.is_empty() { return Ok(ProbabilityWitnessReplay::Parity); }
-            verdict = monitor.terminal(control).map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+            let distributions =
+                model_distributions(system, &state, workload, cancel, &mut |failure| {
+                    issue = Some(failure)
+                })
+                .map_err(|error| {
+                    issue.map_or(ProbabilityWitnessError::Graph(error), |issue| {
+                        ProbabilityWitnessError::Build(Box::new(issue))
+                    })
+                })?;
+            if !distributions.is_empty() {
+                return Ok(ProbabilityWitnessReplay::Parity);
+            }
+            verdict = monitor
+                .terminal(control)
+                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
         }
-        if !matches!((bound, verdict), (Bound::AtMost(_), BoundedState::Accept) | (Bound::AtLeast(_), BoundedState::Reject)) {
+        if !matches!(
+            (bound, verdict),
+            (Bound::AtMost(_), BoundedState::Accept) | (Bound::AtLeast(_), BoundedState::Reject)
+        ) {
             return Ok(ProbabilityWitnessReplay::Parity);
         }
         for previous in &cylinders {
             poll_cancel(cancel)?;
-            if previous.iter().zip(&cylinder).all(|(a,b)| a.0 == b.0 && a.1 == b.1 && same_values(&a.2, &b.2) && a.3 == b.3) {
+            if previous
+                .iter()
+                .zip(&cylinder)
+                .all(|(a, b)| a.0 == b.0 && a.1 == b.1 && same_values(&a.2, &b.2) && a.3 == b.3)
+            {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
         }
         cylinders.push(cylinder);
-        mass = arithmetic(quire_exact::RationalArithmetic::Add(&mass, &probability), &mut meter, cancel)?;
+        mass = arithmetic(
+            quire_exact::RationalArithmetic::Add(&mass, &probability),
+            &mut meter,
+            cancel,
+        )?;
         check_bits(&mass, limits.max_rational_bits)?;
     }
-    if scheduler.keys().any(|key| !visited_choices.contains(*key)) { return Err(ProbabilityWitnessError::Refused); }
+    if scheduler.keys().any(|key| !visited_choices.contains(*key)) {
+        return Err(ProbabilityWitnessError::Refused);
+    }
     let threshold = match bound {
         Bound::AtMost(threshold) => threshold.clone(),
-        Bound::AtLeast(threshold) => arithmetic(quire_exact::RationalArithmetic::Subtract(&rational(1), threshold), &mut meter, cancel)?,
+        Bound::AtLeast(threshold) => arithmetic(
+            quire_exact::RationalArithmetic::Subtract(&rational(1), threshold),
+            &mut meter,
+            cancel,
+        )?,
     };
     check_bits(&threshold, limits.max_rational_bits)?;
-    if mass <= threshold { return Ok(ProbabilityWitnessReplay::Parity); }
+    if mass <= threshold {
+        return Ok(ProbabilityWitnessReplay::Parity);
+    }
     let evidence = witness.clone();
     poll_cancel(cancel)?;
-    Ok(ProbabilityWitnessReplay::Reproduced(Box::new(ReproducedProbabilityWitness { evidence, mass })))
+    Ok(ProbabilityWitnessReplay::Reproduced(Box::new(
+        ReproducedProbabilityWitness { evidence, mass },
+    )))
 }
 
-fn admit_state(key: &ProbabilityProductKey, seen: &mut BTreeSet<ProbabilityProductKey>, storage: &mut u64, limits: &ExactProbLimits) -> Result<(), ProbabilityWitnessError> {
-    if seen.contains(key) { return Ok(()); }
-    if seen.len() >= limits.model.limits.max_states { return Err(ExactProbabilityGraphError::LimitReached.into()); }
+fn admit_state(
+    key: &ProbabilityProductKey,
+    seen: &mut BTreeSet<ProbabilityProductKey>,
+    storage: &mut u64,
+    limits: &ExactProbLimits,
+) -> Result<(), ProbabilityWitnessError> {
+    if seen.contains(key) {
+        return Ok(());
+    }
+    if seen.len() >= limits.model.limits.max_states {
+        return Err(ExactProbabilityGraphError::LimitReached.into());
+    }
     *storage = storage.saturating_add(u64::try_from(key.as_bytes().len()).unwrap_or(u64::MAX));
-    if *storage > limits.document.storage_bytes { return Err(ProbabilityWitnessError::Limit { limit: ModelCheckLimit::CertificateMaxWorkingBytes, value: limits.document.storage_bytes }); }
+    if *storage > limits.document.storage_bytes {
+        return Err(ProbabilityWitnessError::Limit {
+            limit: ModelCheckLimit::CertificateMaxWorkingBytes,
+            value: limits.document.storage_bytes,
+        });
+    }
     seen.insert(key.clone());
     Ok(())
 }
-fn arithmetic(operation: quire_exact::RationalArithmetic<'_>, meter: &mut quire_exact::Meter, cancel: &Cancel) -> Result<Rational, ProbabilityWitnessError> {
+fn arithmetic(
+    operation: quire_exact::RationalArithmetic<'_>,
+    meter: &mut quire_exact::Meter,
+    cancel: &Cancel,
+) -> Result<Rational, ProbabilityWitnessError> {
     poll_cancel(cancel)?;
     match quire_exact::evaluate_rational_arithmetic(operation, None, meter) {
         quire_exact::Outcome::Completed(value) => Ok(value),
         quire_exact::Outcome::Incomplete(incomplete) => {
             poll_cancel(cancel)?;
-            Err(ProbabilityWitnessError::Build(Box::new(crate::ExactProbBuildIssue::Predicate(qsl_eval::simulation::model::ClauseOutcome::Incomplete(incomplete)))))
+            Err(ProbabilityWitnessError::Build(Box::new(
+                crate::ExactProbBuildIssue::Predicate(
+                    qsl_eval::simulation::model::ClauseOutcome::Incomplete(incomplete),
+                ),
+            )))
         }
         _ => Err(ProbabilityWitnessError::Refused),
     }
 }
 fn document_error(error: ProbabilityDocumentError) -> ProbabilityWitnessError {
     match error {
-        ProbabilityDocumentError::Limit { limit, bound, .. } => ProbabilityWitnessError::Limit { limit: limit.model_limit(), value: bound },
-        ProbabilityDocumentError::Cancelled(cause) => ProbabilityWitnessError::Graph(ExactProbabilityGraphError::Cancelled(cause)),
+        ProbabilityDocumentError::Limit { limit, bound, .. } => ProbabilityWitnessError::Limit {
+            limit: limit.model_limit(),
+            value: bound,
+        },
+        ProbabilityDocumentError::Cancelled(cause) => {
+            ProbabilityWitnessError::Graph(ExactProbabilityGraphError::Cancelled(cause))
+        }
         ProbabilityDocumentError::Graph(error) => ProbabilityWitnessError::Graph(error),
         ProbabilityDocumentError::Build(issue) => ProbabilityWitnessError::Build(issue),
         _ => ProbabilityWitnessError::Refused,
