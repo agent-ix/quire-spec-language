@@ -213,6 +213,7 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::StepLabel { trace, label } => format!("StepLabel[{trace},{label:?}]"),
         ExprNode::Stutter => "Stutter".into(),
         ExprNode::Ref(_) => "Ref".into(),
+        ExprNode::Select { .. } => "Select".into(),
     };
     if children.is_empty() {
         head
@@ -1732,4 +1733,39 @@ fn compound_quantity_type_products_remain_subject_to_the_existing_syntax_node_ce
     assert!(
         matches!(&alias.target.arguments[0].head, TypeFormHead::UnitExpression(terms) if terms.len() == 64)
     );
+}
+
+/// FR-091-AC-7 (second half) and FR-230 "Selection": the selectors of a clock
+/// place expression build as `Select` nodes, and the same unit with the
+/// function body `xs[0]` added refuses naming that `xs[0]` only.
+#[trace("FR-091-AC-7")]
+#[test]
+fn a_selector_of_a_clock_place_expression_builds() {
+    let clauses = "post A using v on M::Call::bump { self.ts[1].x = 0 ms }\n\
+         post B using v on M::Call::bump { self.m[k].x = 0 ms }\n\
+         post C using v on M::Call::bump { self.m[k] = Timer { x: 0 ms, n: 1 } }\n\
+         pre D using v on M::Call::bump { ref(self.q[0]) = ref(self.q[1]) }\n";
+    let (_, parsed) = admissible(clauses);
+    let unit = build_unit(&parsed).expect("S2 builds the three place expressions");
+    let selects = unit
+        .forms()
+        .iter()
+        .filter_map(|declaration| match declaration.form() {
+            DeclarationForm::StateClause(clause) => Some(clause),
+            _ => None,
+        })
+        .flat_map(|clause| clause.body.iter().collect::<Vec<_>>())
+        .filter(|node| matches!(node.node(), ExprNode::Select { .. }))
+        .count();
+    assert_eq!(selects, 5);
+
+    let with_function = format!("{clauses}function f using v(): Boolean pure {{ xs[0] }}\n");
+    let (text, cause, span) = refusal(&with_function);
+    assert_eq!(
+        cause,
+        FormsCause::UnrepresentedConstruct {
+            production: Production::Postfix
+        }
+    );
+    assert_eq!(span, Some(span_of(&text, "xs[0]")));
 }

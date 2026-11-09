@@ -2942,3 +2942,71 @@ fn a_reference_to_clock_is_refused_in_every_type_position() {
         );
     }
 }
+
+/// A `Call` with `ts: Sequence<Timer>[0, 3]` and `m`, a package map type from
+/// `Text` to `Timer`.
+fn timer_sequence_and_map() -> Vec<u8> {
+    timer_document(|document: &mut Value| {
+        let types = document["types"].as_array_mut().expect("types");
+        let mut map = wire_type(
+            &package("TimerMap"),
+            "unused",
+            json!({"keys": "ix://quire/native/Text", "values": package("Timer"), "bound": {"lower": 0}}),
+        );
+        map["kind"] = json!("map");
+        types.push(map);
+        let mut ts = field("ts", &package("Timer"));
+        ts["multiplicity"] = json!({"lower": 0, "upper": 3, "ordered": true, "unique": false});
+        let fields = types[1]["fields"].as_array_mut().expect("Call fields");
+        fields.push(ts);
+        fields.push(field("m", &package("TimerMap")));
+    })
+}
+
+/// The selectors of a `ref`'s place (FR-230 "Selection"): a `Sequence` slot
+/// takes an `Integer` index, so `ref(self.ts[0].x)` is a place whose id the
+/// checker cannot carry yet (`unsupported-feature` at the `ref`) and a `Text`
+/// index is `type-mismatch` at the selector; a place under a `Map` value has no
+/// place id, so `ref(self.m["a"].x)` is `type-mismatch` at the `ref`
+/// (FR-230-AC-62's `ref` half; the snapshot half and the other halves of
+/// AC-24 and AC-43 are not met, so none is tagged).
+#[trace("TC-685")]
+#[test]
+fn a_ref_selects_a_slot_by_index_and_no_map_place_has_an_id() {
+    use qsl_semantics::check::CheckCause;
+    use quire_exact::IllTypedCause;
+    let document = timer_sequence_and_map();
+    let refusal = |term: &str| {
+        let body = format!(
+            "{UNITS}{DENSE}pre Named using v on Config::Call::reply {{ {term} = {term} }}\n"
+        );
+        let refusals = check(&document, &body).expect_err("the ref is refused");
+        let [refusal] = refusals.as_slice() else {
+            panic!("one refusal expected: {refusals:?}");
+        };
+        refusal.clone()
+    };
+    let slot = refusal("ref(self.ts[0].x)");
+    assert!(
+        matches!(&slot.cause, CheckCause::UnsupportedFeature { .. }),
+        "{slot:?}"
+    );
+    assert_eq!(slot.location.path(), vec![0]);
+    let text_index = refusal("ref(self.ts[\"a\"].x)");
+    assert_eq!(
+        text_index.cause,
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
+    assert_eq!(text_index.location.path(), vec![0, 0, 0, 1]);
+    let keyed = refusal("ref(self.m[\"a\"].x)");
+    assert_eq!(
+        keyed.cause,
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
+    assert_eq!(keyed.location.path(), vec![0]);
+    let whole = refusal("ref(self.ts[0])");
+    assert_eq!(
+        whole.cause,
+        CheckCause::IllTyped(IllTypedCause::TypeMismatch)
+    );
+}

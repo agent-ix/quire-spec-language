@@ -2489,16 +2489,26 @@ fn mismatch(location: &Location) -> CheckRefusal {
     CheckRefusal::ill_typed(location, IllTypedCause::TypeMismatch)
 }
 
-/// Whether the field names `path` read the clock place whose steps are
-/// `steps`: a union case is the field read after its union field, and a slot
-/// step has no field name.
-fn named_by(steps: &[super::lowering::PlaceStep], path: &[&str]) -> bool {
+/// Whether the steps `path` read the clock place whose steps are `steps`: a
+/// union case is the field read after its union field, and a selector is a
+/// slot step. Each selector's index in `path` comes back, in order.
+fn named_by(
+    steps: &[super::lowering::PlaceStep],
+    path: &[(Option<&str>, Option<Location>)],
+) -> Option<Vec<usize>> {
     use super::lowering::PlaceStep;
-    let mut names = path.iter();
-    steps.iter().all(|step| match step {
-        PlaceStep::Field(name) | PlaceStep::Union(name) => names.next() == Some(&name.as_str()),
-        PlaceStep::Slot(_) => false,
-    }) && names.next().is_none()
+    if steps.len() != path.len() {
+        return None;
+    }
+    let mut slots = Vec::new();
+    for (index, (step, read)) in steps.iter().zip(path).enumerate() {
+        match (step, read) {
+            (PlaceStep::Field(name) | PlaceStep::Union(name), (Some(read), _)) if name == read => {}
+            (PlaceStep::Slot(_), (None, Some(_))) => slots.push(index),
+            _ => return None,
+        }
+    }
+    Some(slots)
 }
 
 fn quantity_unit(value_type: &ValueType) -> Option<&quire_exact::UnitId> {
@@ -4379,24 +4389,26 @@ impl<'a> Typer<'a> {
         ))
     }
 
-    /// `ref(r.f...)` over the typed owner `owner` and the field `path` below
-    /// it (FR-230 "Clock references"): the place id of one clock place, a
-    /// `Reference<Clock>`. A single name that is no clock place of the owner
-    /// refuses `ill_typed`/`type-mismatch` at the `ref`. A place under a
-    /// `Map` value is reached through a slot step, which a field path never
-    /// names, so it has no place id here (FR-230-AC-62); the source has no
-    /// index form (`self.m["a"].x`) to write it with yet.
+    /// `ref(r.f[s]...)` over the typed owner `owner`, the `path` of fields
+    /// and selectors below it and the types of the selectors (FR-230 "Clock
+    /// references", "Selection"): the place id of one clock place, a
+    /// `Reference<Clock>`. A name or selector that is no place of the owner
+    /// refuses `ill_typed`/`type-mismatch` at the `ref`; so does a place
+    /// under a `Map` value, which has no place id (FR-230-AC-62), and a
+    /// selector that is no `Integer` index of a `Sequence` or `OrderedSet`,
+    /// at the selector.
     ///
     /// The checked node that carries a place id is not in `quire-checked`
     /// yet, so a `ref` of a place that has an id is refused
     /// `unknown_required_feature`/`unsupported-feature` at the `ref`. So is a
-    /// longer path that names no place of the owner: an intermediate field
-    /// may be a reference to another object (`ref(self.r.x)`, the place
-    /// `Call.x` of `self.r`), which needs the dereference semantics.
+    /// longer path of fields that names no place of the owner: an
+    /// intermediate field may be a reference to another object
+    /// (`ref(self.r.x)`), which needs the dereference semantics.
     pub(super) fn clock_ref(
         &mut self,
         owner: Node,
-        path: &[&str],
+        path: &[(Option<&str>, Option<Location>)],
+        selectors: &[ValueType],
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
         let unsupported = || {
@@ -4410,16 +4422,42 @@ impl<'a> Typer<'a> {
         let ValueType::Reference(object) = &owner.value_type else {
             return Err(mismatch(location));
         };
-        let named = self.scope.clock_places.iter().any(|(place_owner, steps)| {
-            self.scope
-                .types
-                .conforms(object.clone(), place_owner.clone())
-                && named_by(steps, path)
-        });
-        if named || path.len() > 1 {
-            return Err(unsupported());
+        let place = self
+            .scope
+            .clock_places
+            .iter()
+            .find_map(|(place_owner, steps)| {
+                self.scope
+                    .types
+                    .conforms(object.clone(), place_owner.clone())
+                    .then(|| named_by(steps, path).map(|slots| (steps, slots)))
+                    .flatten()
+            });
+        let Some((steps, slots)) = place else {
+            return Err(if path.len() > 1 && selectors.is_empty() {
+                unsupported()
+            } else {
+                mismatch(location)
+            });
+        };
+        let mut selected = selectors.iter().zip(slots);
+        for step in steps {
+            let super::lowering::PlaceStep::Slot(shape) = step else {
+                continue;
+            };
+            // A place under a `Map` value is selected by key, which has no
+            // decimal slot index to put in a place id.
+            if shape.map {
+                return Err(mismatch(location));
+            }
+            let Some((selector, index)) = selected.next() else {
+                return Err(mismatch(location));
+            };
+            if !matches!(selector, ValueType::Integer | ValueType::Int(_)) {
+                return Err(mismatch(path[index].1.as_ref().unwrap_or(location)));
+            }
         }
-        Err(mismatch(location))
+        Err(unsupported())
     }
 
     pub(crate) fn is_model_receiver(&self, value_type: &ValueType, name: &str) -> bool {

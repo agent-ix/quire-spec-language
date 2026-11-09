@@ -222,6 +222,25 @@ enum Step<'e, 'r> {
     Typed(Node),
 }
 
+/// A `ref(p)` waiting on the owner of its place and the selectors on the way.
+struct ClockRefFrame<'e> {
+    /// The steps below the owner, outermost last.
+    path: Vec<RefStep<'e>>,
+    /// The `ref` node's location.
+    location: Location,
+    /// The typed owner, once seen.
+    owner: Option<Node>,
+    /// The types of the selectors typed so far.
+    selectors: Vec<ValueType>,
+}
+
+/// One step of the place `ref` names: a field, or a selector `[s]` with the
+/// expression it holds and its location.
+enum RefStep<'e> {
+    Field(&'e str),
+    Select(ExprRef<'e>, Location),
+}
+
 /// A form waiting on the node of one of its operands.
 enum Frame<'e, 'r> {
     /// Admit the typed node where this type is expected ([`coerce`]).
@@ -241,10 +260,10 @@ enum Frame<'e, 'r> {
     /// field's name, the union case, and the `present` node's location;
     /// admits the typed owner `r` (FR-230 "Presence is derived").
     PlacePresence(&'e str, Option<&'e str>, Location),
-    /// `ref(r.f...)` of a clock place: the field path below the owner `r` and
-    /// the `ref` node's location; admits the typed owner `r` (FR-230 "Clock
-    /// references").
-    ClockRef(Vec<&'e str>, Location),
+    /// `ref(r.f[s]...)` of a clock place: the path below the owner `r`, then
+    /// each selector as typed; admits the typed owner and selectors in turn
+    /// (FR-230 "Clock references", "Selection").
+    ClockRef(Box<ClockRefFrame<'e>>),
     /// `forall(e in r.q: present(e))` (`true`) or `exists(..)` over a
     /// `Sequence<Option<Clock>>` place: the field, the quantifier and the
     /// query's location; admits the typed owner `r` (FR-415-AC-20).
@@ -538,7 +557,9 @@ impl<'r> Callee<'r> {
 fn integer_widens(source: &ValueType, target: &ValueType) -> bool {
     match (source, target) {
         (ValueType::Integer | ValueType::Int(_), ValueType::Integer) => source != target,
-        (ValueType::Int(from), ValueType::Int(to)) => from != to && to.lower() <= from.lower() && from.upper() <= to.upper(),
+        (ValueType::Int(from), ValueType::Int(to)) => {
+            from != to && to.lower() <= from.lower() && from.upper() <= to.upper()
+        }
         _ => false,
     }
 }
@@ -1069,6 +1090,43 @@ impl<'a> Typer<'a> {
     }
 
     /// Start a form over one operand, `goal`.
+    /// Type the next selector of a `ref`'s place, or the `ref` itself once
+    /// every selector is typed.
+    fn next_selector<'e, 'r>(
+        &mut self,
+        frame: Box<ClockRefFrame<'e>>,
+        frames: &mut Vec<Frame<'e, 'r>>,
+    ) -> Result<Step<'e, 'r>, CheckRefusal> {
+        let next = frame
+            .path
+            .iter()
+            .filter_map(|step| match step {
+                RefStep::Select(selector, at) => Some((*selector, at.clone())),
+                RefStep::Field(_) => None,
+            })
+            .nth(frame.selectors.len());
+        if let Some((selector, at)) = next {
+            frames.push(Frame::ClockRef(frame));
+            return Ok(Step::Descend(Goal::Infer(selector, None, at)));
+        }
+        let ClockRefFrame {
+            path,
+            location,
+            owner,
+            selectors,
+        } = *frame;
+        let owner = owner.ok_or_else(|| mismatch(&location))?;
+        let steps: Vec<_> = path
+            .iter()
+            .map(|step| match step {
+                RefStep::Field(name) => (Some(*name), None),
+                RefStep::Select(_, at) => (None, Some(at.clone())),
+            })
+            .collect();
+        self.clock_ref(owner, &steps, &selectors, &location)
+            .map(Step::Typed)
+    }
+
     fn unary<'e, 'r>(
         form: Unary<'r>,
         goal: Goal<'e, 'r>,
@@ -1434,20 +1492,39 @@ impl<'a> Typer<'a> {
                 return Ok(Self::unary(Unary::Deref, goal, location, frames));
             }
             ExprNode::Ref(operand) => {
-                // `ref(p)`: `p` is a field path below a typed owner.
+                // `ref(p)`: `p` is a path of fields and selectors below a
+                // typed owner.
                 let mut path = Vec::new();
                 let mut base = expression.at(*operand);
-                while let ExprNode::Field { operand, field } = base.node() {
-                    path.push(field.as_str());
-                    base = base.at(*operand);
+                let mut at = location.child(0);
+                loop {
+                    if let ExprNode::Field { operand, field } = base.node() {
+                        path.push(RefStep::Field(field.as_str()));
+                        base = base.at(*operand);
+                    } else if let ExprNode::Select { place, selector } = base.node() {
+                        path.push(RefStep::Select(base.at(*selector), at.child(1)));
+                        base = base.at(*place);
+                    } else {
+                        break;
+                    }
+                    at = at.child(0);
                 }
                 path.reverse();
                 if path.is_empty() {
                     return Err(mismatch(&location));
                 }
-                let owner_location = (0..path.len()).fold(location.child(0), |at, _| at.child(0));
-                frames.push(Frame::ClockRef(path, location));
-                return Ok(Step::Descend(Goal::Infer(base, None, owner_location)));
+                frames.push(Frame::ClockRef(Box::new(ClockRefFrame {
+                    path,
+                    location,
+                    owner: None,
+                    selectors: Vec::new(),
+                })));
+                return Ok(Step::Descend(Goal::Infer(base, None, at)));
+            }
+            ExprNode::Select { .. } => {
+                // A selector is part of a clock place expression (FR-230
+                // "Selection"), which `ref` takes.
+                return Err(mismatch(&location));
             }
             ExprNode::Pre(operand) => {
                 let operand = expression.at(*operand);
@@ -2451,8 +2528,14 @@ impl<'a> Typer<'a> {
             Frame::SlotPresence(field, all, location) => self
                 .slot_presence(typed, field, all, &location)
                 .map(Step::Typed),
-            Frame::ClockRef(path, location) => {
-                self.clock_ref(typed, &path, &location).map(Step::Typed)
+            Frame::ClockRef(mut frame) => {
+                let Some(owner) = frame.owner.take() else {
+                    frame.owner = Some(typed);
+                    return self.next_selector(frame, frames);
+                };
+                frame.owner = Some(owner);
+                frame.selectors.push(typed.value_type);
+                self.next_selector(frame, frames)
             }
             Frame::PlacePresence(field, case, location) => self
                 .place_presence(typed, field, case, &location)
