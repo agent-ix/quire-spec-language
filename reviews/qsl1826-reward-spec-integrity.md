@@ -128,3 +128,17 @@ scope:
   role: context_only
   excerpt: Check exact-only forms and route exact evidence
 ```
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1: inspected cbe77f4d75f4ac5a83f91ba3c0813c53722f1694; AC-20 accepts value-preserving 2/6 reassociation and rejects changed expectations 5 or 1 against the certified 4. |
+
+## Disposition round 1
+
+**PASS; mergeable within this specification scope.** The original finding remains above as historical review evidence. The corrected AC-20 agrees with AC-21 and FR-282-AC-16: independent Bellman recomputation, rather than source-change provenance, decides acceptance. Swapping equally probable 2/6 rewards leaves 4; 2/8 yields 5 and unit-step yields 1, so both invalidate the old value 4. Inspected the complete fix diff: no cost rows, provenance, objective schema, new identity or wire changes were added. No new finding. Matrix/advisor limitations remain unchanged and no implementation qualification is claimed.
+
+Fixed text of FR-201-AC-20:
+
+> Swapping costs 2 and 6 between those equally probable draws preserves the value 4; the same certificate SHALL accept after independent recomputation when every equation, target, identity and rank remains valid.
