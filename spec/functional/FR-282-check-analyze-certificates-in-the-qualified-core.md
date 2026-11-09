@@ -45,7 +45,7 @@ byte provision, as `replay` does, and checks the certificate with its own
 code. It reads nothing from the engine's search but the certificate. The EN-5
 checker has two forms with one set of conditions (FR-201 "Checking"). Over a
 package S4 emits, its wire form recompiles from the byte provision. Over a
-package S4 refuses to emit (FR-185), which is every EN-5 subject, its
+package S4 refuses to emit (FR-185), its
 checked-subject form runs over the `CheckedPackage` that `analyze` holds; a
 separate frontend gets that package by re-checking the provision's source
 bytes (S1 to S3, in the qualified core) into a `CheckedPackage`, admitting

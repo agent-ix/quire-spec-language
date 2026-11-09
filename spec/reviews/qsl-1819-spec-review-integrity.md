@@ -72,3 +72,31 @@ Not mergeable. Verified clean: the ADR-029 line now names SourceProvision and Ne
 - TC-1394 (examined)
 - FR-185 (context_only)
 - FR-200-AC-4 (context_only)
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-013 | medium | FR-280 says EN-1's manifest lists 'exactly one (kind, mode) pair, (temporal-satisfaction, unbounded)'. ADR-018 §3 (line 308), FR-134 (line 28) and FR-126 Dependencies (line 565) still say EN-1 advertises both (temporal-satisfaction, bounded) and (temporal-satisfaction, unbounded). The two statements conflict. Under QSpec FR-290's table, an unbounded-only candidate already takes a bounded extent through its own arm, so 'unbounded only' is sufficient. Update ADR-018, FR-134 and FR-126 to the single unbounded pair (or have FR-280 list both), and check FR-134's TC-535 vectors. | FR-280:149-156; ADR-018:307-309; FR-134:27-29; FR-126:564-566 |
+| FND-014 | low | FR-280 Outputs ('the ItemCounterexample of each refuted record whose engine reports one') and the Behavior bullet ('with the counterexample of each refuted record that has one') still imply that a refuted record may have no counterexample. FR-281 now requires exactly one ItemCounterexample per refuted record, and FR-286 makes a missing one Err(MissingCounterexample). Say 'exactly one ItemCounterexample for each refuted record' in both places. | FR-280:130-133, 178 |
+| FND-015 | medium | The new Counter fixture is 'a fixture this requirement defines, with its own bytes', but it reuses the domain package identity test/counter. The matrix's check and monitor cells already ship test/counter 1.0.0 (counter-package.json on origin/l5/p3-matrix), whose inc has no pre or post. One case set would then hold two different packages under the same identity and version, and FR-565-AC-2 checks source identities. Give the fixture its own package identity (for example test/counter-step), or state that the shared counter package gains inc's pre and post and that the existing check and monitor cells still give their kinds over it. | FR-564:100-112; qsl-conformance/cases/counter-package.json (origin/l5/p3-matrix) |
+| FND-016 | low | FR-282 ('a package S4 refuses to emit, which is every EN-5 subject') and FR-201 ('and every EN-5 subject has one') state as fact that every EN-5 subject has a random parameter, workload or reward. A probabilistic claim over a model with only nondeterministic choice and no random declaration is an EN-5 subject that S4 emits, and FR-282 keeps the wire form for exactly that case. Drop the 'every EN-5 subject' clauses. The routing rule ('analyze runs the checked-subject form for every EN-5 item') can stand on its own. | FR-282:47-49; FR-201:142-143 |
+
+## Dispositions
+
+Round 1, head b8ff9646e.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | Passable: the fresh process re-checks the provision bytes (S1-S3) into a CheckedPackage, admits the ModelSystem with the binding, and runs the checked-subject form; FR-282 Inputs now take the binding. |
+| FND-003 | still-open | Fixed for EN-1 and EN-5, which now advertise unbounded; that matches QSpec FR-368 (infinite-trace classifies unbounded) and FR-290-AC-6. EN-4 is still bounded-only (FR-280:145, FR-280-AC-4, TC-761 step 3), yet FR-195 records every probabilistic claim, the Steady quantile included, as extent Unbounded. The batch's new FR-281 bullet says such an item on a bounded-only candidate reaches analyze as requires-bound or unsupported. FR-280:82 defines Supported(candidate) as negotiation's output. FR-280-AC-5 (Service), FR-281-AC-12 and FR-564's analyze timeout and cancellation cells all use Supported(en-4), which negotiation never gives. Fix in this batch: EN-4 advertises (probabilistic-satisfaction, unbounded) with {statistical}, updating FR-280:145, FR-280-AC-4 and TC-761 step 3. EN-6 is consistent: FR-239 already lists both modes. |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | FR-281 and FR-286 now agree. FR-280 still has a residual, filed as new FND-014. |
+| FND-007 | fixed | - |
+| FND-008 | fixed | - |
+| FND-009 | fixed | Maximum and inc postcondition pinned. The package identity collides with the existing conformance package, filed as new FND-015. |
+| FND-010 | fixed | - |
+| FND-011 | fixed | - |
+| FND-012 | still-open | The Unsupported* wildcard is gone (AC-8 rewritten, FR-201 applies every condition). FR-201-AC-8 still sits between AC-7 and AC-6 (FR-201:203-204). Move it after AC-7. |

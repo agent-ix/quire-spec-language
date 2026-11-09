@@ -29,3 +29,11 @@ Mergeable on boundary grounds. The allocation is sound: analyze owns request con
 - FR-286 (examined)
 - FR-564 (examined)
 - FR-281-AC-11 (examined)
+
+## Dispositions
+
+Round 1, head b8ff9646e.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The cell assignment moved to FR-564 (the analyze and prove unsupported cells are named apart), and AC-11's provider::run tail was dropped. |

@@ -51,3 +51,21 @@ Not mergeable until FND-001 and FND-002 are fixed. Clean: FR-280-AC-8 (descripto
 - TC-1391 (examined)
 - TC-1393 (examined)
 - TC-1394 (examined)
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-201-AC-8 runs 'over §15.4's Link model' every certificate of AC-1 to AC-5. Only AC-1's certificate is a Link certificate: AC-2's LongRun is §15.3's, AC-3's FairTerminates is §15.6's Coin, AC-2's dyadic Lower is §15.1's and AC-5's is the Opt model. As written, the AC cannot be built for those. It also asks for 'the verdict that AC gives the wire form', but none of those models emits, so no wire-form verdict exists to compare against. Reword: 'over each AC's own model, the checked-subject form gives the verdict, rule and locus that AC states'. | FR-201:197-203 |
+| FND-006 | low | The rewritten FR-567-AC-6 (an analyze/violation case expecting exit 0 gives not-qualified) is the same mechanism as AC-2 (a check/refusal case expecting exit 21), applied to another cell. TC-1396's scope is AC-1 to AC-5 and it has no step for AC-6, so AC-6 is untested. Delete AC-6, since AC-2 covers the rule, or add it to TC-1396's scope with a step. | FR-567:103, 107; TC-1396:16 |
+
+## Dispositions
+
+Round 1, head b8ff9646e.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Dagger and PendingEngine removed from FR-564, FR-565 and FR-567. AC-4, AC-6 and FR-565-AC-1 are unconditional. TC-1391, TC-1393 and TC-1394 match, and no PendingEngine or dagger is left in spec/. The p3-matrix code still has PendingEngine and must follow. |
+| FND-002 | fixed | UnnamedClause dropped. That is acceptable: the lexer admits only ASCII identifiers (qsl-cst/src/cst.rs:25), so the case cannot be built. ClauseItemRefusal::UnnamedClause on main (qsl-analyze/src/analyze/clause_item.rs:86) becomes unreachable and the coder should remove it. |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |

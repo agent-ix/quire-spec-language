@@ -98,9 +98,9 @@ provision". No closure, hand-built replay request or hand-made record supplies
 a verdict.
 
 - **Counter subject.** A fixture this requirement defines, with its own
-  bytes. A unit declaring `model M = "test/counter"` and the temporal clause
+  bytes. A unit declaring `model M = "test/counter-step"` and the temporal clause
   `P using t0 over (c: M::Counter) clock "model-steps" on origin { always
-  holds(c.value < 2) }`; the domain package `test/counter`, whose object type
+  holds(c.value < 2) }`; the domain package `test/counter-step` (an identity of its own, distinct from every other fixture package), whose object type
   `Counter` has a field `value` of the bounded integer type `Level` with
   minimum 0 and maximum 3, and an operation `inc` with the precondition
   `self.value < 3` and the postcondition `self.value = pre(self.value) + 1`;

@@ -29,3 +29,12 @@ Mergeable on EARS grounds once FND-001 is fixed. Clean: FR-280's new EN-5 manife
 - FR-281 (examined)
 - FR-286 (examined)
 - FR-201 (examined)
+
+## Dispositions
+
+Round 1, head b8ff9646e.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Behavior bullet added (FR-280:186-188); AC-10 and TC-761 step 9 check it. |
+| FND-002 | fixed | The negative bullet and AC-2's procedure sentence are removed; the build-the-request bullet covers it. |

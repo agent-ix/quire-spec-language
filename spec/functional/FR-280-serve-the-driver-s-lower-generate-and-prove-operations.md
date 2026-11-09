@@ -128,8 +128,7 @@ providers"), and the sources' bytes are the entry's own `provision` input.
 ## Outputs
 
 `ProviderResults`: one terminal record per item, in `items`
-order, and the `ItemCounterexample` of each `refuted` record whose engine
-reports one, which the driver's adapter writes as FR-331 results and
+order, and exactly one `ItemCounterexample` for each `refuted` record, which the driver's adapter writes as FR-331 results and
 `counterexamples` entries.
 
 ## Behavior
@@ -142,15 +141,16 @@ reports one, which the driver's adapter writes as FR-331 results and
   conversion and no engine's manifest.
 - An engine that settles `probabilistic-satisfaction` items shall list the
   evidence kinds it settles (FR-057, FR-075).
-- EN-4's manifest shall list (`probabilistic-satisfaction`, `bounded`) with
+- EN-4's manifest shall list (`probabilistic-satisfaction`, `unbounded`) with
   the evidence kind `statistical` and no other, and with the `domains`
-  `population` and `integer`, the boundable domains its sampler draws over
-  (FR-057 refuses a `bounded` pair without `domains`).
-- EN-1's manifest shall list exactly one (kind, mode) pair,
-  (`temporal-satisfaction`, `unbounded`), the item's extent being the trace
-  extent QSpec FR-368 classifies `unbounded` for an infinite-trace clause, so
-  that negotiation settles such an item `supported` on EN-1 (QSpec FR-290-AC-6);
-  the reachable-invariant, bounded,
+  `population` and `integer`, the boundable domains its sampler draws over,
+  so that negotiation settles a `statistical` probabilistic item whose extent
+  is `unbounded` `supported` on EN-4 (QSpec FR-290-AC-6).
+- EN-1's manifest shall list exactly two (kind, mode) pairs,
+  (`temporal-satisfaction`, `bounded`) for an event-position item and
+  (`temporal-satisfaction`, `unbounded`) for an infinite-trace item, the extent
+  QSpec FR-368 classifies each as, so that negotiation settles either
+  `supported` on EN-1 (QSpec FR-290-AC-6); the reachable-invariant, bounded,
   liveness and deadlock-freedom items its explicit-state search decides over
   a finite subject (FR-126); the `domains` `population` and `integer`, the
   boundable domains the subject's universes and declared ranges bound; the
@@ -175,7 +175,7 @@ reports one, which the driver's adapter writes as FR-331 results and
 - When the driver passes routed items of an FR-331 provider request to
   `qsl_analyze::provider::run`, the provider entry shall run each item on its
   routed engine through `analyze` over the `CheckedPackage` it is given and
-  return one terminal record per item, in `items` order, with the counterexample of each `refuted` record that has one.
+  return one terminal record per item, in `items` order, with exactly one `ItemCounterexample` for each `refuted` record.
 - The provider entry shall read the checked package and take no
   `EmittedPackage`, so it serves an item over a checked package that S4
   refuses to emit (FR-185) as it serves an item over one that S4 emits.
@@ -209,10 +209,10 @@ reports one, which the driver's adapter writes as FR-331 results and
 | FR-280-AC-1 | Each QSL engine's provider manifest is read by the FR-331 manifest reader and converted by FR-288's conversion into a `BackendDescriptor` whose advertised (kind, mode) pairs equal the claim kinds the engine settles in TC-762. | Test (TC-761) |
 | FR-280-AC-2 | For each TC-762 item, that item settled `Supported` on its QSL engine as a `NegotiatedItem`, passed to `qsl_analyze::provider::run` with the `CheckedPackage`, `SubjectBinding`, `SourceProvision` and `AnalyzeLimits` of the same run, returns a terminal record, and the counterexample where there is one, equal to the ones `analyze` returns, over `Engines::qsl()`, for that item settled `Supported` on the same backend. | Test (TC-761) |
 | FR-280-AC-3 | The `cargo tree` of every QSL crate lists no CG, RT or driver crate; an IR crate ADR-011 §6.1 sanctions (`quire-contract-model`) is allowed (FR-284's direction check). | Test (TC-767) |
-| FR-280-AC-4 | EN-4's manifest is read by the FR-331 manifest reader and converted by FR-288's conversion into a `BackendDescriptor` that `descriptor_from_manifest` accepts, advertising exactly (`probabilistic-satisfaction`, `bounded`) with the evidence-kind set `{statistical}` and the `domains` `{population, integer}`. A registry holding it and a descriptor advertising the same pair with `{exact}` gives a `statistical` probabilistic item the EN-4 `BackendId` alone, and an `exact` item the other alone. | Test (TC-761) |
+| FR-280-AC-4 | EN-4's manifest is read by the FR-331 manifest reader and converted by FR-288's conversion into a `BackendDescriptor` that `descriptor_from_manifest` accepts, advertising exactly (`probabilistic-satisfaction`, `unbounded`) with the evidence-kind set `{statistical}` and the `domains` `{population, integer}`. A registry holding it and a descriptor advertising the same pair with `{exact}` gives a `statistical` probabilistic item with an `unbounded` extent the EN-4 `BackendId` alone, and an `exact` item the other alone. | Test (TC-761) |
 | FR-280-AC-5 | `Service` (FR-185-AC-7), whose `emit_checked` refuses `unsupported_construct`/`not-yet-implemented`, is passed to the provider entry as its `CheckedPackage`, with its subject binding, the `SourceProvision` of `Service`'s source and the item settled `Supported(en-4)` for the `2 ms` claim of ADR-024 §7.2 over `Service` (the claim of FR-193-AC-1 and FR-193-AC-5) with evidence kind `statistical`, the Okamoto method (FR-189-AC-1), seed 7 and `max_witnesses` 3. The entry returns one record, `measured` with decision `rejected`, equal to the record `analyze` returns for that item over the same checked package, binding and limits; its three sampled witnesses equal `analyze`'s and each replays `Reproduced` through `replay_sampled_witness` over `Service`'s checked subject. No `EmittedPackage` of `Service` exists in the run; `Service`'s `emit_checked` is refused before and after the entry runs. | Test (TC-761) |
 | FR-280-AC-6 | AC-2's request with its items in reverse order returns their records in that reverse order, each equal to AC-2's record for the same item. The same items with a binding whose `universes` name a population the package does not declare return one `declined` record per item, cause `invalid-input`, code `invalid_runtime_input`/`wrong-role-mapping`; with a binding whose `initial` snapshot identity is absent from `snapshots`, one `declined` record per item, cause `incomplete-input`, code `unavailable_observation`/`missing-required-artifact`; in both, no engine runs. `qsl_analyze::provider::run`'s signature names no type from a driver, CG or RT crate (FR-280-AC-3's `cargo tree` check holds with the entry built). | Test (TC-761) |
-| FR-280-AC-7 | EN-1's manifest is read by the FR-331 manifest reader and converted by FR-288's conversion into a `BackendDescriptor` that `descriptor_from_manifest` accepts, advertising exactly (`temporal-satisfaction`, `unbounded`) with the `domains` `{population, integer}`, the fairness kinds `{weak, strong}`, no evidence kinds and no `dynamics`, under a `BackendId` that differs from EN-4's. A registry holding it and a descriptor advertising `temporal-satisfaction` with `dynamics` `["hybrid"]` gives a temporal item that carries no `requirements` the EN-1 `BackendId` alone, and an item carrying `"requirements": ["hybrid-dynamics"]` the other alone; neither settles `ambiguous-backend`. | Test (TC-761) |
+| FR-280-AC-7 | EN-1's manifest is read by the FR-331 manifest reader and converted by FR-288's conversion into a `BackendDescriptor` that `descriptor_from_manifest` accepts, advertising exactly (`temporal-satisfaction`, `bounded`) and (`temporal-satisfaction`, `unbounded`) with the `domains` `{population, integer}`, the fairness kinds `{weak, strong}`, no evidence kinds and no `dynamics`, under a `BackendId` that differs from EN-4's. A registry holding it and a descriptor advertising `temporal-satisfaction` with `dynamics` `["hybrid"]` gives a temporal item that carries no `requirements` the EN-1 `BackendId` alone, and an item carrying `"requirements": ["hybrid-dynamics"]` the other alone; neither settles `ambiguous-backend`. | Test (TC-761) |
 | FR-280-AC-8 | EN-5's manifest is read by the FR-331 manifest reader and converted by FR-288's conversion into a `BackendDescriptor` that `descriptor_from_manifest` accepts, advertising exactly (`probabilistic-satisfaction`, `unbounded`) with the evidence-kind set `{exact}` and the `domains` `{population, integer}`, under the `BackendId` `en-5`, which differs from `en-1` and `en-4`; `Engines::qsl()` holds an engine under `en-5`, and negotiation over a registry of `Engines::qsl()`'s descriptors settles an `exact` probabilistic item with an `unbounded` extent `Supported(en-5)`. | Test (TC-761) |
 | FR-280-AC-9 | Through `qsl_analyze::provider::run` over `Engines::qsl()`, FR-281-AC-1's EN-5 item returns a `proved` record naming `en-5`; FR-281-AC-2's EN-1 item returns a `refuted` record naming `en-1` and its `ItemCounterexample`; FR-281-AC-11's EN-1 item over the model with an `Integer` field returns `unsupported` with `unsupported_projection`/`unbounded-extent`; FR-281-AC-6 (a)'s item returns `incomplete` naming `max_states`; each equals the record `analyze` returns for the same item, and none needs a test-built replay request. | Test (TC-761) |
 | FR-280-AC-10 | Through `qsl_analyze::provider::run`, AC-2's items with a `SourceProvision` that omits the source the package names return one `declined` record per item, cause `incomplete-input`, code `missing_import`/`missing-selection`, and no engine runs; the same items with the provision complete return AC-2's records. | Test (TC-761) |

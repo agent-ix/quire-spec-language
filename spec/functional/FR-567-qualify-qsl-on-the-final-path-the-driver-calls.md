@@ -104,7 +104,6 @@ The FR-352 report with the three parts and the verdict; the exit code.
 | FR-567-AC-3 | Through `xtask::qualify::run` under `test-support`, the AC-1 run with FR-295-AC-1's rounding backend supplied in place of the delegating one reports `not-qualified`, naming `parity/jit` and the finding, and exits 1. | Test (TC-1396) |
 | FR-567-AC-4 | The AC-1 run with no non-interpreter backend linked reports the `parity` part `no-backend` and `complete-v1: qualified`, exit 0; the AC-1 run whose parity reference (substituted under `test-support`) returns `Fault` reports `not-qualified`, naming `parity/jit` with a `reference-fault` finding, exit 1. | Test (TC-1396) |
 | FR-567-AC-5 | The AC-1 report's QSL version is the quire-spec-language crate version (the root package's version, not the `xtask` crate's) and equals `env!("CARGO_PKG_VERSION")` evaluated in the `quire-spec-language` crate of the same build; built from a scratch copy whose `quire-spec-language` package version is changed to `9.9.9`, the report names `9.9.9`. | Test (TC-1396) |
-| FR-567-AC-6 | Through `xtask::qualify::run` under `test-support`, the AC-1 run with the matrix case set replaced by one whose `analyze`/`violation` case expects exit 0 reports `not-qualified`, naming `lifecycle-matrix/analyze/violation`, and exits 1, although the `corpus` part passes. | Test (TC-1396) |
 
 ## Dependencies
 
