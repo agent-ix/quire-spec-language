@@ -160,7 +160,36 @@ The current origin/main contract was checked directly, not inferred from a draft
 | --- | --- | --- |
 | FND-001 | fixed | Frozen da445108 replaces retained wire vectors/tree with borrowed canonical events; key and bounded decimal transport reserve bytes/storage before allocation, and structural node traversal reserves before stack growth. Output sink growth is also admitted. Original finding text is preserved. |
 | FND-002 | still-open | Confirmed at frozen da445108: component 2 is encoded_model String and decoder requires String; the specified parsed model array is rejected. Coder is correcting this shared representation in the same PR. |
+| FND-002 | fixed | Frozen dbd876c uses one parsed model_form under the FR-196 state-key wrapper and structural null/formula monitor admission; the former inner base64 form is refused. Real Link/source and Counter/BoundedTranslation vectors check component shape independently of roundtrip agreement. |
+| FND-003 | still-open | The added owner-reference encoder test remains untagged at this frozen head. No repository exception applies; coder is adding its actual owning TC/AC attribute in this same PR. |
 
 ## Disposition pass 1 verdict
 
 **FAIL — not mergeable while FND-002 remains open.** FND-001 is fixed; its original finding is unchanged. Round inspected the writer/source diff, including bounded foundation node encoder and normal dependency delta. Inspected passing confined/final fix logs: core 16, analyzer 11, fresh process 9 and provider 1, all-target Clippy, format and normal dependency tree. No tests/matrix/aggregate gate were rerun. Reused the coder's standalone production-linked budget probe: bytes=0 and storage=0 each stop before row-text construction, with roughly 0.1–0.3 MiB measurement overhead rather than the original ~40 MiB; positive insufficient byte/storage controls stop before the large key transport. Review confirms reserve-before-growth calls and explicit cancellation independently of the memory observation. Broader assurance limits remain as originally recorded.
+
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The new borrowed_reference_encoding_preserves_the_owner_schema test has no #[trace] or /// Trace binding. Its real owner-schema and byte-boundary evidence is therefore absent from computed requirement traceability, contrary to the Rust testing rule requiring each new test in a traced repository to carry its criterion. Add the actual owning TC/AC trace attribute. | qsl-eval/src/simulation/model/encode.rs:1623 |
+
+Additional examined scope:
+
+```yaml
+- id: FR-196-AC-6
+  path: spec/functional/FR-196-build-the-probabilistic-product.md
+  role: examined
+  excerpt: Every worked vector produces the specified canonical component and full
+    P octets; changing any present component changes identity where specified, and
+    reversing discovery order changes none. Certificate values, ranks, policy, bias
+    and rejection retain the same complete representation.
+```
+
+## Disposition pass 2 verdict
+
+**CONDITIONAL; not mergeable until FND-003 has an explicit closing disposition.** Both semantic/resource findings FND-001 and FND-002 are fixed. The sole remaining finding is a low trace-tag omission. No other new defect found in the reviewed fix delta.
+
+Reviewed the explicit-limits model/formula constructors, documented finite 1 GiB defaults on the retained helper API, shared cumulative temporary-parse/canonical-validation/encoding/destination reservation, typed byte/storage exhaustion and cancellation, owner reference event encoding, parsed complete model wrapper exactly once, and structural complete FR-338 formula envelope. Syntactic admission grants no membership: the document checker still rederives actual keys, binding, target and operator through ModelSystem. The unbounded source profile has no new bounded acceptance claim. No compatibility fallback admits the former nonconforming inner base64 key; conforming unbounded meaning is preserved.
+
+FND-001's preallocation fix remains intact under the extracted shared reservation helper. Retained legacy graph/witness construction uses documented finite constructor defaults; document quotas remain transport admission rather than a new classification of existing graph budgets. Inspected exact/one-less byte/storage constructor controls, noncanonical/bad/wrapped-input refusals, pre-cancellation, real formula-key construction, and borrowed-reference encoding equality/undersized boundary. Inspected supplied focused evidence: core17, reference1, analyzer11, fresh10, provider11, formula1, legacy5, witness15, plus final fmt/Clippy/normal tree. The actual model-shape public probe fails on the old representation and passes on the new one. No tests, matrix or aggregate gates were rerun. Broader/wire replay/malformed and bounded product obligations remain outside this delivered slice; scoped gap-analysis remains CONDITIONAL for unavailable computed matrix evidence.
