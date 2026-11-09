@@ -762,6 +762,11 @@ pub struct PresencePlace {
     /// Whether the place is the element of a `Sequence<Option<Clock>>`
     /// field, whose presences `forall(e in r.f: present(e))` reads.
     pub(crate) slot: bool,
+    /// Whether `present(r.f)` reads the place: only a guarded place has a
+    /// presence. Every clock place of the model is listed, for `ref(p)`.
+    pub(crate) presence: bool,
+    /// The path from the object to the clock, the object's field first.
+    pub(crate) path: Vec<PlaceStep>,
 }
 
 /// `forall(e in c: present(e))` or `exists(e in c: present(e))` at
@@ -810,27 +815,30 @@ fn bit_path(path: &[PlaceStep]) -> bool {
 fn presence_places(clocks: &[ClockField]) -> Vec<PresencePlace> {
     clocks
         .iter()
-        .filter(|clock| clock.guarded)
-        .filter_map(|clock| match clock.path.as_slice() {
-            [PlaceStep::Field(field)] => Some(PresencePlace {
+        .filter_map(|clock| {
+            let named = |field: &String, case: Option<&String>, slot: bool| PresencePlace {
                 owner: clock.owner.clone(),
                 field: field.clone(),
-                case: None,
-                slot: false,
-            }),
-            [PlaceStep::Field(field), PlaceStep::Union(case)] => Some(PresencePlace {
-                owner: clock.owner.clone(),
-                field: field.clone(),
-                case: Some(case.clone()),
-                slot: false,
-            }),
-            [PlaceStep::Field(field), PlaceStep::Slot(_)] if clock.bit => Some(PresencePlace {
-                owner: clock.owner.clone(),
-                field: field.clone(),
-                case: None,
-                slot: true,
-            }),
-            _ => None,
+                case: case.cloned(),
+                slot,
+                presence: clock.guarded,
+                path: clock.path.clone(),
+            };
+            match clock.path.as_slice() {
+                [PlaceStep::Field(field)] if clock.guarded => Some(named(field, None, false)),
+                [PlaceStep::Field(field), PlaceStep::Union(case)] if clock.guarded => {
+                    Some(named(field, Some(case), false))
+                }
+                [PlaceStep::Field(field), PlaceStep::Slot(_)] if clock.guarded && clock.bit => {
+                    Some(named(field, None, true))
+                }
+                [PlaceStep::Field(field), ..] => {
+                    let mut place = named(field, None, false);
+                    place.presence = false;
+                    Some(place)
+                }
+                _ => None,
+            }
         })
         .collect()
 }
@@ -2479,6 +2487,11 @@ impl<'f> Located<'f> {
             }) {
                 continue;
             }
+            // FR-230 "Clock references": `ref(p)` names the place `p` and reads
+            // no clock, so its operand is no clock read.
+            if matches!(node.node(), ExprNode::Ref(_)) {
+                continue;
+            }
             // A clock read through another path is a read, though no
             // constraint can take it.
             if clocks.foreign(form, id, context, &parents) {
@@ -3784,6 +3797,10 @@ fn read_clause(
     parameters: Vec<ClockParameter>,
     budget: &mut PartBudget,
 ) -> Result<ClauseClocks, CheckCause> {
+    // The places the body's `present(r.f)` (a postcondition's presence
+    // requirement stays in its body, QSpec FR-322 `CW-05`) and `ref(p)` (FR-230
+    // "Clock references") name.
+    clause.presence_places = presence_places(&clocks.fields);
     let form = ExpressionForm {
         expression: clause.body.clone(),
         spans: clause.spans.body.clone(),
@@ -3864,11 +3881,6 @@ fn read_clause(
         .ok_or_else(|| timed(located.outside(root)))?;
     clause.body = rewritten.expression;
     clause.spans.body = rewritten.spans;
-    // A postcondition's presence requirement stays in its body, read
-    // through its place (QSpec FR-322 `CW-05`).
-    if matches!(&read, ClauseClocks::Resets(cut) if cut.requires.len() > cut.compared.len()) {
-        clause.presence_places = presence_places(&clocks.fields);
-    }
     Ok(read)
 }
 

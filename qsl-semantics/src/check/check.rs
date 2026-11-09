@@ -2474,6 +2474,18 @@ fn mismatch(location: &Location) -> CheckRefusal {
     CheckRefusal::ill_typed(location, IllTypedCause::TypeMismatch)
 }
 
+/// Whether the field names `path` read the clock place whose steps are
+/// `steps`: a union case is the field read after its union field, and a slot
+/// step has no field name.
+fn named_by(steps: &[super::lowering::PlaceStep], path: &[&str]) -> bool {
+    use super::lowering::PlaceStep;
+    let mut names = path.iter();
+    steps.iter().all(|step| match step {
+        PlaceStep::Field(name) | PlaceStep::Union(name) => names.next() == Some(&name.as_str()),
+        PlaceStep::Slot(_) => false,
+    }) && names.next().is_none()
+}
+
 fn quantity_unit(value_type: &ValueType) -> Option<&quire_exact::UnitId> {
     match value_type {
         ValueType::Quantity(unit) => Some(unit),
@@ -4199,7 +4211,7 @@ impl<'a> Typer<'a> {
         &self,
         operand: qsl_forms::ExprRef<'e>,
     ) -> Option<(qsl_forms::ExprRef<'e>, &'e str, Option<&'e str>, usize)> {
-        if self.presence_places.is_empty() {
+        if self.presence_places.iter().all(|place| !place.presence) {
             return None;
         }
         let qsl_forms::ExprNode::Field {
@@ -4210,9 +4222,12 @@ impl<'a> Typer<'a> {
             return None;
         };
         let names = |field: &str, case: Option<&str>| {
-            self.presence_places
-                .iter()
-                .any(|place| !place.slot && place.field == field && place.case.as_deref() == case)
+            self.presence_places.iter().any(|place| {
+                place.presence
+                    && !place.slot
+                    && place.field == field
+                    && place.case.as_deref() == case
+            })
         };
         if names(field, None) {
             return Some((operand.at(*owner), field.as_str(), None, 1));
@@ -4245,7 +4260,7 @@ impl<'a> Typer<'a> {
         };
         self.presence_places
             .iter()
-            .any(|place| place.slot && place.field == *field)
+            .any(|place| place.presence && place.slot && place.field == *field)
             .then(|| (source.at(*operand), field.as_str(), all))
     }
 
@@ -4267,7 +4282,8 @@ impl<'a> Typer<'a> {
             .presence_places
             .iter()
             .find(|place| {
-                place.slot
+                place.presence
+                    && place.slot
                     && place.field == field
                     && self
                         .scope
@@ -4303,7 +4319,8 @@ impl<'a> Typer<'a> {
                 .presence_places
                 .iter()
                 .find(|place| {
-                    !place.slot
+                    place.presence
+                        && !place.slot
                         && place.field == field
                         && place.case.as_deref() == case
                         && self
@@ -4349,6 +4366,43 @@ impl<'a> Typer<'a> {
             },
             ValueType::Boolean,
             location,
+        ))
+    }
+
+    /// `ref(r.f...)` over the typed owner `owner` and the field `path` below
+    /// it (FR-230 "Clock references"): the place id of one clock place, a
+    /// `Reference<Clock>`. An owner or path that names no clock place refuses
+    /// `ill_typed`/`type-mismatch` at the `ref`. A place under a `Map` value
+    /// is reached through a slot step, which a field path never names, so it
+    /// has no place id here (FR-230-AC-62); the source has no index form
+    /// (`self.m["a"].x`) to write it with yet.
+    ///
+    /// The checked node that carries a place id is not in `quire-checked`
+    /// yet, so a `ref` of a place that has an id is refused
+    /// `unknown_required_feature`/`unsupported-feature` at the `ref`.
+    pub(super) fn clock_ref(
+        &mut self,
+        owner: Node,
+        path: &[&str],
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        let ValueType::Reference(object) = &owner.value_type else {
+            return Err(mismatch(location));
+        };
+        self.presence_places
+            .iter()
+            .find(|place| {
+                self.scope
+                    .types
+                    .conforms(object.clone(), place.owner.clone())
+                    && named_by(&place.path, path)
+            })
+            .ok_or_else(|| mismatch(location))?;
+        Err(refuse(
+            location,
+            CheckCause::UnsupportedFeature {
+                loci: vec![location.clone()],
+            },
         ))
     }
 

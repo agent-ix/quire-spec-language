@@ -2849,3 +2849,40 @@ fn a_clock_parameter_reset_ranging_over_the_place_writes_it() {
     names.sort_unstable();
     assert_eq!(names, ["v", "x"]);
 }
+
+/// FR-230-AC-24 and FR-230-AC-62, the `ref` term's typing: `ref(p)` takes a
+/// clock place of the owner it names, so a field that is no place refuses
+/// `ill_typed`/`type-mismatch` at the `ref`. A `ref` of a clock place needs a
+/// checked node for a place id that `quire-checked` does not have yet, and
+/// is refused `unsupported-feature` at the `ref` until it does.
+#[trace("FR-230-AC-24", "FR-230-AC-62")]
+#[test]
+fn a_ref_names_a_clock_place_of_its_owner() {
+    let document = rpc_document_with(&["x"], false);
+    let refusal = |term: &str| {
+        let body = format!(
+            "{UNITS}{DENSE}pre Named using v on Config::Call::reply {{ {term} = {term} }}\n"
+        );
+        let refusals = check(&document, &body).expect_err("the ref is refused");
+        let [refusal] = refusals.as_slice() else {
+            panic!("one refusal expected: {refusals:?}");
+        };
+        refusal.clone()
+    };
+    let missing = refusal("ref(self.nothing)");
+    assert!(
+        matches!(
+            &missing.cause,
+            qsl_semantics::check::CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+        ),
+        "{missing:?}"
+    );
+    let named = refusal("ref(self.x)");
+    assert!(
+        matches!(
+            &named.cause,
+            qsl_semantics::check::CheckCause::UnsupportedFeature { .. }
+        ),
+        "{named:?}"
+    );
+}

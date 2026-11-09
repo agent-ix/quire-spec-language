@@ -577,6 +577,10 @@ fn encode_expression(
                 out.write_str("deref");
                 pending.push(expr.at(*operand));
             }
+            ExprNode::Ref(operand) => {
+                out.write_str("ref");
+                pending.push(expr.at(*operand));
+            }
             ExprNode::Call { name, arguments } => {
                 out.write_str("call");
                 out.write_str(&name.name);

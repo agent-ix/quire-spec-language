@@ -788,6 +788,7 @@ enum Shape {
     Present,
     Value,
     Deref,
+    Ref,
     Pre,
     Call(NameForm),
     /// Field names in source order, each with whether its value is `null`.
@@ -985,6 +986,10 @@ impl Shape {
             Self::Deref => {
                 arity(1)?;
                 ExprNode::Deref(operands.next()?)
+            }
+            Self::Ref => {
+                arity(1)?;
+                ExprNode::Ref(operands.next()?)
             }
             Self::Pre => {
                 arity(1)?;
@@ -1880,6 +1885,7 @@ impl<'c> Mapping<'c> {
             b"present" => self.with_children(Shape::Present, &task, one(&operands)?),
             b"value" => self.with_children(Shape::Value, &task, one(&operands)?),
             b"deref" => self.with_children(Shape::Deref, &task, one(&operands)?),
+            b"ref" => self.with_children(Shape::Ref, &task, one(&operands)?),
             b"pre" => self.with_children(Shape::Pre, &task, one(&operands)?),
             b"reaches" => {
                 if operands.len() != 2 {
