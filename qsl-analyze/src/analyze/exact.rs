@@ -497,7 +497,9 @@ fn replay_refutation(
     };
     let produced = produce_witness(product, policy, scope, initial, &accepting, &past, limits);
     if cancel.poll() {
-        if let Some(cause) = cancel.tripped() { return settled(&ExactProbBuildIssue::Cancelled(cause),subject); }
+        if let Some(cause) = cancel.tripped() {
+            return settled(&ExactProbBuildIssue::Cancelled(cause), subject);
+        }
     }
     let produced = match produced {
         Ok(Some(witness)) => witness,

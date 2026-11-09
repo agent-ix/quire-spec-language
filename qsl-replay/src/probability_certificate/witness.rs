@@ -140,7 +140,11 @@ pub fn replay_probabilistic_witness(
     else {
         return Err(ExactProbabilityGraphError::UnsupportedClaimForm.into());
     };
-    match bound { Bound::AtLeast(threshold) | Bound::AtMost(threshold) => check_bits(threshold,limits.max_rational_bits)?, }
+    match bound {
+        Bound::AtLeast(threshold) | Bound::AtMost(threshold) => {
+            check_bits(threshold, limits.max_rational_bits)?
+        }
+    }
     if !claim.fairness.is_empty()
         || !matches!(
             TimedSystem::new(system, &claim.subject.alias),

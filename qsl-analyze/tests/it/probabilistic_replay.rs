@@ -469,14 +469,14 @@ fn graph_arithmetic_limits_and_cyclic_models_cannot_reproduce() {
         ))
     ));
     let limits = ExactProbLimits {
-        max_rational_bits: 1,
+        max_rational_bits: 3,
         ..ExactProbLimits::default()
     };
     assert!(matches!(
         replay(&world, &witness, &limits, &Cancel::new()),
         Err(ProbabilityWitnessError::Limit {
             limit: ModelCheckLimit::ExactProbMaxRationalBits,
-            value: 1
+            value: 3
         })
     ));
     let mut model = prob_world::link(CLAIMS);
@@ -503,10 +503,35 @@ fn graph_arithmetic_limits_and_cyclic_models_cannot_reproduce() {
         ))
     ));
     model.initial["delivered"] = serde_json::json!({"boolean": true});
-    model.body = model.body.replace("not self.delivered and ", "").replace("self.delivered or ", "");
+    model.body = model
+        .body
+        .replace("not self.delivered and ", "")
+        .replace("self.delivered or ", "");
     let target_cycle = World::new(&model);
-    changed.item = qsl_replay::ObligationIdentity::new(target_cycle.claim("TooMuch").occurrence().unwrap().node().clone(), None, 0);
-    assert!(matches!(replay(&target_cycle,&changed,&ExactProbLimits::default(),&Cancel::new()),Err(ProbabilityWitnessError::Graph(ExactProbabilityGraphError::Cycle))),"an initial target cannot conceal its reachable continuation cycle");
+    changed.item = qsl_replay::ObligationIdentity::new(
+        target_cycle
+            .claim("TooMuch")
+            .occurrence()
+            .unwrap()
+            .node()
+            .clone(),
+        None,
+        0,
+    );
+    assert!(
+        matches!(
+            replay(
+                &target_cycle,
+                &changed,
+                &ExactProbLimits::default(),
+                &Cancel::new()
+            ),
+            Err(ProbabilityWitnessError::Graph(
+                ExactProbabilityGraphError::Cycle
+            ))
+        ),
+        "an initial target cannot conceal its reachable continuation cycle"
+    );
 }
 
 #[trace("TC-637", "FR-202-AC-11")]
