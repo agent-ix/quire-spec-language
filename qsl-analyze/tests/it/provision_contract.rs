@@ -362,8 +362,7 @@ fn plain(claim: OccurrenceKey, kind: Capability, backend: &str) -> NegotiatedIte
 #[test]
 fn a_value_claim_returns_its_native_replayed_assignment() {
     let declaration = "function Goal using v(): Boolean pure { false }";
-    let package = crate::value_validity::package_of(declaration);
-    let source = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n{declaration}\n");
+    let (package, source) = crate::value_validity::package_with_source(declaration);
     let packages = qsl_semantics::model::intake::package_input(std::iter::empty::<&[u8]>())
         .expect("empty package input");
     let snapshots = qsl_semantics::model::observation::DocumentProvision::default();
@@ -384,7 +383,7 @@ fn a_value_claim_returns_its_native_replayed_assignment() {
         .and_then(|node| node.function_body())
         .expect("the checked Boolean body");
     let claim = OccurrenceKey::declaration(body);
-    let provision = SourceProvision::single(package.graph().source(), source.as_bytes());
+    let provision = SourceProvision::single(package.graph().source(), &source);
     let result = provider::run(
         &package,
         &binding,
