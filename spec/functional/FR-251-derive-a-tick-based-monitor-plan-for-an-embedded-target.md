@@ -375,14 +375,16 @@ verdict. An invalid package/clause selection, unresolved or foreign program
 reference, inconsistent interval/buffer association or altered target field
 SHALL fail driver/IR admission before build as an invalid plan, without
 executing initialization. A backend capability refusal remains `Unsupported`.
-When the strict reader refuses the base package the plan root is written over
-(for example Contract IR FR-347 "Function-call arguments", which admits a
+When the strict reader refuses the base package the plan root is written
+over (for example Contract IR FR-347 "Function-call arguments", which admits a
 helper call only when each argument's type node is the parameter's own type
 node, so a bounded model field passed to an `Integer` parameter is refused),
-the producer SHALL return `EmitRefusal::MonitorBaseRefused` carrying the
-reader's own refusal, its code (`ill_typed` for that case) and its pointer, and
-SHALL NOT report it as the `MonitorPlanInvariant` of a broken producer; no plan
-root is written.
+the producer SHALL return a typed refusal that carries the reader's own refusal
+and takes its catalog code (`ill_typed` for that case); it SHALL NOT report it
+as the invariant failure of a broken producer. A reader refusal that carries
+retained results is the same refusal; a resource limit of the reader is the
+output-limit refusal, and a cancelled reader is the cancellation refusal. No
+plan root is written in any of these cases.
 RT resource failure during allocation or initialization SHALL return a build
 failure and expose no usable partial monitor. These are build/admission
 results, not truth values or observed property violations.
@@ -700,7 +702,7 @@ may repair such a disagreement by inventing another evaluation rule.
 | FR-251-AC-48 | A genuine dense model-time monitor root yields the complete specified canonical model-step value, with the actual checked model/unit/dimension identities. A digital source retains its exact period and checked tick-operation anchor. Changed source kind, unit or period changes the value. Exact-byte-ceiling encoding succeeds and one byte less returns Encoding with the original native canonical limit and no partial order value. | Test |
 | FR-251-AC-49 | The authority handoff and order materialization receive the caller's one mutable NativeJoinBudget, precharge every specified selection/materialization work and logical-storage step, and preserve previous consumption when used before row adaptation and native closure preparation. Measure genuine dense and tick handoffs at ample allowance: exact combined work and storage succeed; one short independently preserves the first unpaid native kind, full amount, original bound and non-owning locus without a context. Precharge part of the same budget before entry, then demonstrate that two individually affordable handoffs can exhaust their combined allowance without resetting counters. Package clones yield equal values and charges; zero storage denies before owned allocation, later charges preserve the first refusal within a phase, and overflow cannot wrap. Owner read/canonical ceilings do not act as a second preparation allowance. | Test, Inspection |
 | FR-251-AC-50 | A genuine dense authority returns its original checked ModelTimeSource by borrow and no IR tick period; a genuine tick authority returns its original checked source and an actual borrowed IR CheckedRational with the exact same checked numerator/denominator. The source borrow names the same element of the immutable retained checked-unit source slice. The IR period comes from the selected same-package clock's validated canonical period components, compared against the checked association and copied once under the original shared budget; exact storage for the actual IR container and two component payloads succeeds and one short refuses before copying. Repeated getters return those original values without lookup, cloning, formatting or allocation. QSL TimeSourceKind::Tick retains quire_exact::Rational and is never claimed to be an IR type alias. | Test, Inspection |
-| FR-251-AC-51 | A tick-monitor unit whose atom is `holds(f(c.versionNumber))` for a helper `f` whose parameter is the field's own type writes a plan root the strict reader admits. The same unit with a helper `g` whose parameter is the unbounded `Integer` writes no plan root and returns `EmitRefusal::MonitorBaseRefused` carrying the strict reader's `ill_typed` refusal of the call argument (Contract IR FR-347), with catalog code `ill_typed`; it is never `MonitorPlanInvariant` (QSL-1822). | Test (TC-1081) |
+| FR-251-AC-51 | The plan root of a tick-monitor unit with atom `holds(f(c.versionNumber))`, for a helper `f` whose parameter is the field's own type, is written and admitted by the strict reader; the plan root of the same unit with a helper `g` whose parameter is the unbounded `Integer` is refused with the typed base-package refusal carrying the strict reader's `ill_typed` refusal of the call argument (Contract IR FR-347) and catalog code `ill_typed`, and is never reported as a producer invariant failure (QSL-1822). | Test (TC-1081) |
 
 ## Dependencies
 
