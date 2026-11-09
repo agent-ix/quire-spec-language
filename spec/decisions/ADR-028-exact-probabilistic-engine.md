@@ -709,8 +709,17 @@ The qualified checker independently builds the bounded monitor product using
 qsl-eval-owned canonical key and terminal false-extension operations, with
 ranks matching real monitor horizon/debts rather than unbounded model height.
 A cyclic model is admitted when its bounded undecided product terminates.
-Dyadic lower/upper codec support and bounded FR-202 refutation replay remain
-outstanding; no interval becomes an exact document. Unsupported forms retain
+FR-202 separately extends native checked-subject path-set replay to this same
+bounded eventually subset, using independently replayed rejecting mass R to
+establish event probability at most 1-R for a failed minimum AtLeast, or
+accepting mass A to establish event probability at least A for a failed maximum
+AtMost; a workload uses the same strict comparisons. It reuses qualified
+formula keys, actual S3 binding context and terminal false-extension closure,
+with finite remaining debts rather than raw unbounded graph height. This is
+exact-only native behavior, not QSpec FR-413 wire completion: closed bound,
+scheduler-choice and semantic step action/key transport remain shared-owner
+blockers. Dyadic lower/upper codec support remains outstanding; no interval
+becomes an exact document. Unsupported forms retain
 all broader CE obligations and are not coerced into this profile.
 FR-282 defines the independent checked-source
 S1 to S3 facade so S4's emission refusal cannot prevent fresh checking.
