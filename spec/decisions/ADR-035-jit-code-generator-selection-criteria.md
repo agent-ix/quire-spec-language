@@ -142,7 +142,9 @@ module list, which holds that one entry (FR-568).
    the prepared value that owns the module;
 2. convert that address to the one entry signature `qsl-jit` generates for
    every entry (`extern "C" fn(*const EntryFrame) -> u32`, the frame holding
-   the argument handles, the `KernelTable`, the meter and `&Cancel`);
+   the argument handles, the meter (which holds the cancellation handle) and the result record; the frame
+   holds no `KernelTable` and no function pointer, because each shim is a
+   module symbol fixed at link time);
 3. call it once per `call` or `evaluate`, with a frame the safe wrapper
    built;
 4. release the code memory when the prepared value is dropped.

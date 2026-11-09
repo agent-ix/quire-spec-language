@@ -12,18 +12,20 @@ relationships:
 
 Verify the adverse and uncertified settlements of `analyze`, using test engines registered in layer A under `cfg(test)` and EN-1 under reduction.
 
-Scope: FR-281-AC-4 to FR-281-AC-7, FR-281-AC-11 and FR-281-AC-12.
+Scope: FR-281-AC-4 to FR-281-AC-7, FR-281-AC-11, FR-281-AC-12, FR-281-AC-20 and FR-281-AC-22.
 
 ## Test Procedure
 
 1. Run TC-762 step 1 with a test hook that alters one member of the certificate before the checker runs.
 2. Run `analyze` over an engine set holding EN-1 with an EN-1 `temporal-satisfaction` invariant item (TP-1; for example `always holds(c.value <= 3)`) over a finite model whose `ModelSystem` offers partial-order reduction and sets no `max_depth` horizon, with the request selecting partial-order reduction, then the same item unreduced. No test engine or seam is used.
 3. Run `analyze` with a test engine that reports a counterexample whose replay evaluates the claim true, then with one whose counterexample names a parameter the function lacks.
-4. Run TC-762 step 1 with the engine's state budget set to 1.
+4. Run TC-762 step 2's item with `limits.max_states` 1, and TC-762 step 1's item with `exact_prob.max_states` 1.
 5. Over a finite model with one reachable state at which `x` is 0, run `analyze` with an EN-1 item claiming the invariant `100 / x > 0`, replay the record's counterexample, and map the outcome's category through FR-285.
 6. Run `analyze` with six items, each settled `Supported` on a test engine that refuses it: with a refused `Admission`, `RequiresBound` from an engine advertising (`value-validity`, `bounded`), `Symmetry`, `NotStatistical`, a refusal carrying `unsupported_construct`/`not-yet-implemented`, and a refusal carrying `invalid_runtime_input`/`wrong-value-kind`. Then run a seventh request of one item whose test engine reports an incomplete `Admission`.
 7. Over a model one of whose operations `modifies` a field of type `Integer`, run `analyze` over `Engines::qsl()` with one EN-1 item settled `Supported` on EN-1.
 8. Build the `compile_fail` doctest that omits `AnalyzeLimits.deadline` and its control. Run a three-item request with `deadline` `Milliseconds(1)` and an uncancelled handle. Run it again with the handle cancelled `CancelCause::Deadline` from a second thread once the first item has settled and the other two remain open. Separately run a request where caller cancellation happens first and one where an engine or accounting limit happens first. Do not use wall-clock sleeps.
+9. Run TC-762 step 2's request with its provision omitting the source the package names, then with the provision holding, under that label, the Counter unit with `P`'s bound changed from `< 2` to `< 5`.
+10. Over step 7's model, run an EN-1 item with an `integer-range` `ProofBound` for the `Integer` field in `temporal.proof_bounds`, then the same item with empty `proof_bounds`.
 
 Tag the tests `#[trace("TC-763", "<AC id>")]`.
 
@@ -32,8 +34,10 @@ Tag the tests `#[trace("TC-763", "<AC id>")]`.
 - Step 1: the item settles `inconclusive` with cause `CertificateRejected`.
 - Step 2: the reduced item settles `proved`, category success, proof basis `reduced`, with the certification `uncertified` naming EN-1; the unreduced item settles `proved`, `certified`.
 - Step 3: the first settles `inconclusive` with cause `replay_parity`; the second `inconclusive` with cause `replay_refused` and the refusal's catalog code.
-- Step 4: the item settles `incomplete` with the state-budget cause.
+- Step 4: the EN-1 item settles `incomplete` with `LimitReached{max_states}` and returns no `ItemCounterexample`; the EN-5 item settles `incomplete` with `LimitReached{ExactProbMaxStates}` naming `exact_prob.max_states`.
 - Step 5: the item settles `refuted`, category violation, with cause `UndefinedEvaluation` whose `where` names the state with `x` 0 and whose `cause` is `division-by-zero`; replay reproduces the undefined value; the record carries no `undefined` label; the exit code is 10.
 - Step 6: six records in `request_index` order, each naming its engine: `declined`, `invalid-input`, with the admission diagnostic; `unsupported`, `unsupported_projection`/`unbounded-extent` whose payload names `value-validity`, the engine's `BackendId` and `bounded`; `declined`, `invalid-input`, `invalid_runtime_input`/`invalid-value`; `invalid-request`, `invalid_capability`/`not-statistical`, no result; `unsupported` with `unsupported_construct`/`not-yet-implemented`; `failed` with `invalid_runtime_input`/`wrong-value-kind`. The seventh request returns one `declined`, `incomplete-input` record with the admission diagnostic.
-- Step 7: one record naming EN-1, `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names `temporal-satisfaction`, EN-1's `BackendId` and `bounded`; no state is explored.
+- Step 7: one record naming EN-1, `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names `temporal-satisfaction`, EN-1's `BackendId` and its advertised modes `bounded` and `unbounded`; no state is explored.
 - Step 8: the doctest fails to compile and the control compiles; the uncancelled run settles all three items by their own results; both deadline-ended open items are `incomplete` with `cancelled{source: deadline}` and the earlier settled record is unchanged; caller cancellation first yields `cancelled{source: requested}`; the engine or accounting limit reached first retains its own typed limit result; binding admission refusal remains a whole-request `StageFailure::Refused` before items run.
+- Step 9: the first request fails with `StageFailure::Refused(AnalyzeRefusal::Provision)` naming the label, no record, no engine run; the second settles the item `inconclusive` with `replay_parity` and returns no `ItemCounterexample`.
+- Step 10: the item with `temporal.proof_bounds` settles a verdict; the unbounded one settles `unsupported` with `unsupported_projection`/`unbounded-extent` and explores no state.

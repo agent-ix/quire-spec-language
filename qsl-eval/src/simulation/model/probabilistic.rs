@@ -176,8 +176,8 @@ pub(crate) fn same_value(left: &Value, right: &Value) -> bool {
     }
 }
 
-/// [`same_value`] over two lists, pairwise.
-pub(crate) fn same_values(left: &[Value], right: &[Value]) -> bool {
+/// Compare two lists by typed canonical value equality, including quantities.
+pub fn same_values(left: &[Value], right: &[Value]) -> bool {
     left.len() == right.len()
         && left
             .iter()

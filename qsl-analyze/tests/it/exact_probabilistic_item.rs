@@ -4,25 +4,24 @@
 //! adapter, which builds the product, solves it exactly, has the core's
 //! checker accept the certificate and only then settles `proved`.
 //!
-//! Not reachable: `refuted`. FR-203 settles it only after FR-202's replay of a
-//! counterexample, which is not implemented, so a missed bound settles
-//! `unsupported` (see the last test) and no test constructs a refutation.
-
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze_items, exact_probabilistic_item, exact_probabilistic_item_tampered, DispositionKind,
-    Engines, Settlement,
+    analyze_items, exact_probabilistic_item, exact_probabilistic_item_tampered, Engines,
 };
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_eval::simulation::Limits;
 use qsl_foundation::RequestIndex;
+use qsl_replay::InconclusiveCause;
 use qsl_replay::{
     claim_binding, Certification, ExactOrBounds, ExactProbabilityCertificateCheck,
     ExactProbabilityGraphError, Extremum, IncompleteCause, ModelCheckLimit, ModelCheckLimits,
     ProbabilityBoundSide, ProbabilityCertificateLocus, ProbabilityCertificateRejection,
     ProbabilityCertificateRule, ProbabilityProductKey, ProofBasis, TerminalRecord, TerminalValue,
 };
-use quire_exact::{Cancel, Integer, Rational};
+use qsl_replay::{CertificateLocus, CertificateRule};
+use quire_exact::{Cancel, CancelCause, Integer, Rational};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use crate::prob_world::{self, World};
 
@@ -114,23 +113,102 @@ fn a_state_budget_of_one_settles_incomplete() {
     assert!(record.exact_probabilistic.is_none());
 }
 
-/// The exact value 24/25 misses `>= 0.97`. `refuted` needs FR-202's replay,
-/// which does not exist, so the item is `unsupported` and never `proved`.
+#[trace("TC-763", "FR-201", "FR-203", "FR-282")]
+#[test]
+fn cancellation_at_the_checker_acceptance_boundary_settles_incomplete_without_evidence() {
+    let world = World::new(&prob_world::link(CLAIMS));
+    let engines = Engines::qsl().expect("the linked engines are admitted");
+    let run = |cancel: &Cancel| {
+        let item = exact_probabilistic_item(
+            RequestIndex::new(0),
+            world.request("Likely", ModelCheckLimits::default()),
+        );
+        analyze_items(&engines, vec![item], cancel).remove(0)
+    };
+    let live = Cancel::new();
+    let _counting = live.count_charges();
+    let completed = run(&live);
+    assert!(
+        completed.exact_probabilistic.is_some(),
+        "the positive control must prove the claim"
+    );
+    let final_poll = live.charges();
+    assert!(final_poll > 0);
+    for cause in [CancelCause::Requested, CancelCause::Deadline] {
+        let slot = Arc::new(OnceLock::<Cancel>::new());
+        let weak = Arc::downgrade(&slot);
+        let polls = Arc::new(AtomicU32::new(0));
+        let seen = Arc::clone(&polls);
+        let cancel = Cancel::observing(move || {
+            if seen.fetch_add(1, Ordering::Relaxed) + 1 == final_poll {
+                weak.upgrade()
+                    .expect("the run owns the slot")
+                    .get()
+                    .expect("the slot is initialized")
+                    .cancel(cause);
+            }
+        });
+        slot.set(cancel.clone())
+            .expect("the slot is initialized once");
+        let record = run(&cancel);
+        assert_eq!(polls.load(Ordering::Relaxed), final_poll);
+        assert_eq!(
+            record.terminal().expect("a terminal record").value(),
+            &TerminalValue::Incomplete(IncompleteCause::Cancelled { source: cause })
+        );
+        assert!(
+            record.exact_probabilistic.is_none(),
+            "a cancelled checker cannot provide proof evidence"
+        );
+    }
+}
+
+#[trace("TC-763", "FR-201", "FR-203", "FR-282")]
+#[test]
+fn cancelling_after_the_solver_finishes_is_observed_by_the_independent_checker() {
+    use std::cell::Cell;
+
+    let world = World::new(&prob_world::link(CLAIMS));
+    let engines = Engines::qsl().expect("the linked engines are admitted");
+    for source in [CancelCause::Requested, CancelCause::Deadline] {
+        let cancel = Cancel::new();
+        let reached_checker = Cell::new(false);
+        let item = exact_probabilistic_item_tampered(
+            RequestIndex::new(0),
+            world.request("Likely", ModelCheckLimits::default()),
+            |_| {
+                reached_checker.set(true);
+                cancel.cancel(source);
+            },
+        );
+        let record = analyze_items(&engines, vec![item], &cancel).remove(0);
+        assert!(
+            reached_checker.get(),
+            "the solver must finish before cancellation"
+        );
+        assert_eq!(
+            record.terminal().expect("a terminal record").value(),
+            &TerminalValue::Incomplete(IncompleteCause::Cancelled { source })
+        );
+        assert!(
+            record.exact_probabilistic.is_none(),
+            "checker cancellation cannot certify the solver output"
+        );
+    }
+}
+
 #[trace("TC-762", "FR-281-AC-1")]
 #[test]
-fn a_missed_bound_is_not_proved_and_not_yet_refuted() {
+fn a_missed_bound_is_refuted_only_with_replayed_nonreach_evidence() {
     let world = World::new(&prob_world::link(CLAIMS));
     let record = settle(&world, "Unlikely", ModelCheckLimits::default());
     assert!(record.exact_probabilistic.is_none());
-    let Settlement::Disposed(disposed) = &record.settlement else {
-        panic!("expected a disposition, got {:?}", record.settlement);
-    };
-    assert_eq!(disposed.kind, DispositionKind::Unsupported);
+    assert_eq!(record.terminal().unwrap().value(), &TerminalValue::Refuted);
+    assert!(record.probabilistic_counterexample.is_some());
 }
 
-/// A certificate the checker rejects never settles `proved`: the solver's
-/// certificate is altered at its initial value before the core checks it.
-#[trace("TC-762", "FR-281-AC-4")]
+/// Altering one terminal value retains the checker's rejection and full locus.
+#[trace("TC-763", "FR-281-AC-4", "FR-203-AC-3", "FR-201-AC-6")]
 #[test]
 fn a_rejected_certificate_never_settles_proved() {
     let world = World::new(&prob_world::link(CLAIMS));
@@ -139,16 +217,75 @@ fn a_rejected_certificate_never_settles_proved() {
         RequestIndex::new(0),
         world.request("Likely", ModelCheckLimits::default()),
         |certificate| {
-            for entry in &mut certificate.values {
-                entry.value = ratio(1, 1);
-            }
+            certificate
+                .values
+                .iter_mut()
+                .find(|entry| entry.value == ratio(0, 1))
+                .expect("the two-loss state")
+                .value = ratio(1, 1);
         },
     );
     let record = analyze_items(&engines, vec![item], &Cancel::new()).remove(0);
     assert!(record.exact_probabilistic.is_none());
     let terminal = record.terminal().expect("a terminal record");
-    // DEVIATION (see `exact.rs`): `failed`, not FR-203's `CertificateRejected`.
-    assert_eq!(terminal.value(), &TerminalValue::Failed);
+    let system = ModelSystem::new(world.subject().simulation).expect("the model admits");
+    let binding = claim_binding(&system, world.claim("Likely"))
+        .unwrap()
+        .unwrap();
+    let accepted = settle(&world, "Likely", ModelCheckLimits::default());
+    let certificate = &accepted.exact_probabilistic.as_ref().unwrap().certificate;
+    // The altered terminal non-target state has true delivery value zero.
+    let expected = certificate
+        .values
+        .iter()
+        .find(|entry| entry.value == ratio(0, 1))
+        .expect("the two-loss state")
+        .state
+        .clone();
+    assert_eq!(
+        terminal.value(),
+        &TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+            rule: CertificateRule::InequalityFails,
+            at: CertificateLocus::ProbabilityProductState(expected.clone()),
+        })
+    );
+    let locus = CertificateLocus::ProbabilityProductState(expected.clone());
+    let wire = serde_json::to_value(&locus).unwrap();
+    // Encode the complete canonical octets independently of the locus serializer.
+    let expected_wire = serde_json::to_value(qsl_replay::CertificateLocus::ModelKey(
+        qsl_eval::simulation::StateKey::from_canonical_bytes(expected.as_bytes().to_vec()),
+    ))
+    .unwrap();
+    assert_eq!(wire, serde_json::json!({"product_key": expected_wire}));
+    let outcome = serde_json::to_value(qsl_replay::OutcomeItem::from_terminal(terminal)).unwrap();
+    assert_eq!(outcome["result"], "inconclusive");
+    assert_eq!(
+        outcome["cause"],
+        serde_json::json!({
+            "kind": "certificate-rejected", "rule": "inequality-fails", "at": wire
+        })
+    );
+    assert!(String::from_utf8(expected.as_bytes().to_vec())
+        .unwrap()
+        .contains(&binding.instance.key));
+}
+
+#[trace("TC-763", "FR-281-AC-4")]
+#[test]
+fn a_malformed_probability_certificate_retains_the_existing_failure() {
+    let world = World::new(&prob_world::link(CLAIMS));
+    let engines = Engines::qsl().expect("the linked engines are admitted");
+    let item = exact_probabilistic_item_tampered(
+        RequestIndex::new(0),
+        world.request("Likely", ModelCheckLimits::default()),
+        |certificate| certificate.values.clear(),
+    );
+    let record = analyze_items(&engines, vec![item], &Cancel::new()).remove(0);
+    assert_eq!(
+        record.terminal().expect("a terminal record").value(),
+        &TerminalValue::Failed
+    );
+    assert!(record.exact_probabilistic.is_none());
 }
 
 #[test]

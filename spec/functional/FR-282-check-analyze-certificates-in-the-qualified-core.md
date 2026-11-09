@@ -42,7 +42,16 @@ the native engine's terminal record there (ADR-029 OP-2). A proof from a
 native engine with none of these checkers settles `proved`, labelled `uncertified`
 (FR-281, FR-290). A checker recompiles the package from its
 byte provision, as `replay` does, and checks the certificate with its own
-code. It reads nothing from the engine's search but the certificate.
+code. It reads nothing from the engine's search but the certificate. The EN-5
+checker has two forms with one set of conditions (FR-201 "Checking"). Over a
+package S4 emits, its wire form recompiles from the byte provision. Over a
+package S4 refuses to emit (FR-185), its
+checked-subject form runs over the `CheckedPackage` that `analyze` holds; a
+separate frontend gets that package by re-checking the provision's source
+bytes (S1 to S3, in the qualified core) into a `CheckedPackage`, admitting
+the `ModelSystem` from it and the subject binding, and running the same form.
+No emitted package and no engine code is involved, and the conditions are the
+same.
 
 A certificate is a document `analyze` writes. A checker accepts or rejects
 it in the run that produced it, and equally in a later run of a separate
@@ -52,7 +61,8 @@ CB-3 item 4).
 ## Inputs
 
 - The certificate document.
-- The package's byte provision (ADR-013 O-26), as `replay` takes it.
+- The package's byte provision (ADR-013 O-26), as `replay` takes it, and for
+  an EN-5 certificate the subject binding (FR-281) that admits its `ModelSystem`.
 - The claim item's occurrence key.
 - The checker's limits and `&Cancel`.
 
@@ -72,12 +82,35 @@ cause; or a `StageFailure` when the package cannot be recompiled.
   failing obligation.
 - A certificate checker shall return the same verdict for the same
   certificate bytes and byte provision whichever run or frontend calls it.
+- For FR-201's closed reachability profile, the fresh-process facade SHALL
+  admit the bounded source `ByteProvision`, re-check S1 to S3 into a
+  `CheckedPackage`, admit the `ModelSystem` and selected claim binding,
+  read the certificate document through that profile's strict reader and
+  invoke the independent core checker with the caller's limits and
+  `&Cancel`. It SHALL extract/reuse the source completeness and provision
+  identity admission in `qsl-replay/src/request.rs`, together with existing
+  content-hash validation wherever required by the provision's source
+  contracts; it SHALL NOT duplicate those semantics or invent a new hash
+  identity. Source and document byte ceilings SHALL be
+  enforced before unbounded allocation or source lookup. The facade SHALL
+  observe cancellation throughout admission, parsing and checking.
+- That facade SHALL expose the checked-source path independently of S4
+  emission. `compile_package` runs S4 and therefore SHALL NOT be required
+  to obtain this package: random/workload packages refused by FR-185 still
+  reach the checker through qualified S1 to S3. The facade SHALL NOT require
+  a fake emitted package or fabricated `ReplayRequestWire` for this path. The existing
+  replay-wire entry retains its own decode/recompile obligations.
+- The fresh checker executable SHALL link no provider or `qsl-analyze`
+  dependency and SHALL use only the certificate document, provision,
+  checked subject/claim binding and caller controls as evidence. It SHALL
+  enforce FR-201's identity and independently rederived objective comparison
+  before accepting the document.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-282-AC-1 | The EN-5 certificate from FR-281-AC-1, written to bytes by `analyze` and passed with the byte provision to the EN-5 checker in a fresh process that links only qualified-core crates, is accepted. | Test (TC-764) |
+| FR-282-AC-1 | The EN-5 certificate from FR-281-AC-1, written to bytes by `analyze` and passed with the byte provision and the subject binding to the EN-5 checker in a fresh process that links only qualified-core crates, is accepted: the process re-checks the provision's sources into a `CheckedPackage`, admits the `ModelSystem` and runs the checked-subject form. | Test (TC-764) |
 | FR-282-AC-2 | The same certificate with one probability bound changed is rejected with a cause naming the failing obligation. | Test (TC-764) |
 | FR-282-AC-3 | A zone certificate from an ADR-026 zone-search run over a dense-time model is accepted by the zone checker, and the same certificate with one zone removed is rejected. | Test (TC-764) |
 | FR-282-AC-5 | The EN-1 closure certificate of an invariant proved over a finite model is accepted by the EN-1 closure checker; the same certificate with one reachable product state removed is rejected with a cause naming the successor it no longer contains. | Test (TC-764) |
@@ -86,6 +119,9 @@ cause; or a `StageFailure` when the package cannot be recompiled.
 | FR-282-AC-8 | The product-closure certificate of a two-copy hyperproperty proved over a finite model is accepted by the product-closure checker; the same certificate with one product-state key removed is rejected with a cause naming the successor it no longer contains. | Test (TC-764) |
 | FR-282-AC-9 | **RETIRED (staleness check withdrawn).** The certificate `package_id` check is deleted. | Test (TC-1141), retired |
 | FR-282-AC-10 | **RETIRED (staleness check withdrawn).** The certificate `package_id` check is deleted. | Test (TC-1141), retired |
+| FR-282-AC-11 | An exact acyclic eventual certificate from a random/workload source package that S4 refuses is written, then accepted in a fresh executable linking only qualified-core crates after bounded source admission and S1 to S3 checking. No emitted-package bytes or fabricated replay request are supplied. The same executable rejects changed values, refuses mismatched identity/objective, and preserves typed source/hash failures. | Test |
+| FR-282-AC-12 | With a source provision or certificate document one byte above its caller ceiling, the fresh checker stops/refuses before reading beyond that ceiling; pre-cancellation and cancellation during graph expansion stop without acceptance or a truth value. Exhausted state, edge and arithmetic budgets retain the actual named setting and consumption. | Test |
+| FR-282-AC-13 | A real FR-197 Exact bounded event-position certificate for FR-201-AC-13 is written by analyze and accepted from its canonical document bytes in a fresh qualified-core-only process using the source provision and actual subject/claim binding. The process independently reconstructs formula-monitor keys and terminal closure through qsl-eval, without qsl-analyze or provider linkage. Changing a running monitor horizon, binding or bounded rank prevents acceptance. | Test |
 
 ## Dependencies
 

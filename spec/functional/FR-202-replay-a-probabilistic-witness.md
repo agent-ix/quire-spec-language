@@ -132,6 +132,55 @@ race gives that post-key and elapsed amount.
 
 ### Replay
 
+#### Checked-subject path-set entry
+
+In addition to the wire facade below, layer 6 SHALL expose a checked-subject
+path-set replay entry for untimed acyclic reachability claims, with no fairness,
+one initial state, at most one bound instance, and a deterministic memoryless
+witness scheduler (or the bound workload). It SHALL take the `CheckedPackage`,
+its admitted `ModelSystem`, the claim occurrence and binding, typed path-set
+evidence, caller-configured expansion/work/storage limits and `&Cancel`.
+This entry decodes no wire and recompiles nothing, as the checked-subject
+certificate entry in FR-201 does. It SHALL bind the claim from the package,
+rather than accept an engine-supplied predicate or threshold.
+
+Typed evidence SHALL retain actual semantic action identities, resolved
+`ModelTransition` content and draws, initial and post-state content, and complete
+canonical product keys. The entry SHALL reuse the qualified semantic types
+(`ScheduledIdentity` and `ModelTransition`) without importing `qsl-analyze`
+product/action types or treating local state/action numbers as identities.
+The core SHALL independently re-enumerate enabled transitions, evaluate target
+predicates, check the scheduler, and recompute exact path mass and prefix freedom
+under the Replay rules below. An asserted transition probability, target label,
+terminal marker or optimizer result SHALL NOT establish replay agreement.
+
+For an `AtMost` bound `Pr(E) <= theta`, accepted paths SHALL end at their first
+target hit and their mass SHALL exceed `theta`. For an `AtLeast` bound
+`Pr(E) >= theta`, accepted paths SHALL avoid the target and end at leaves where
+the core independently confirms no enabled continuation; their mass SHALL
+exceed `1 - theta`. An initial target is a first hit with an empty path; a live
+non-target prefix is not a terminal nonreach leaf. These are sufficient
+refutations under the bound workload or a consistent deterministic witness
+policy; an engine's assertion that a policy is optimal is not replay evidence.
+
+The entry SHALL produce an opaque reproduced-witness token only after all
+checks and a final cancellation poll. The token SHALL bind the package, claim
+occurrence, subject binding and accepted evidence. Layer-6 EN-5 terminal
+construction SHALL require the matching token to settle `refuted` and retain
+the probabilistic counterexample evidence in the analyze record. A caller
+SHALL NOT construct the token or turn a bare engine verdict into `refuted`.
+Replay disagreement/refusal SHALL retain OP-2's `replay_parity`/`replay_refused`
+settlement; exhaustion and cancellation SHALL remain `incomplete` without a
+token. Claim, package or binding mismatch SHALL refuse before acceptance.
+
+This entry SHALL report unsupported for cyclic subjects, subsystem evidence,
+randomized schedulers, fairness, multiple initial states/instances, timed or
+other claim forms outside this slice. It SHALL NOT project them onto this
+slice. This additional entry does not change the wire facade obligation, the
+broader replay rules, or any public JSON key or witness codec.
+
+#### Wire facade and shared evidence checks
+
 - `replay_probabilistic_witness` SHALL decode `wire` through FR-098's
   canonical `ByteProvision` and recompile path, passing `replay_limits` to
   `ReplayRequest::decode` so the encoded request is bounded by
@@ -196,6 +245,9 @@ race gives that post-key and elapsed amount.
 | FR-202-AC-6 | Over the two-point model (`M` 1 or 3, probability 1/2 each), the path to `M = 1` (`V = 1/2`, `N = 0`) replays `refuted` for `quantile 0.5 of (M) >= 3` (`M` is a placeholder for the claim's parenthesised measure) (equality refutes), and settles `inconclusive`, `ReplayParity` for `quantile 0.9 of (M) >= 3`, which holds. Over its variant that activates with probability 1/2 (`M` 1 or 3 with probability 1/4 each), the path set of the `M = 1` path and the not-activated path (`V = 1/4`, `N = 1/2`) replays `refuted` for `quantile 0.5 of (M) >= 3`, and the `M = 1` path alone settles `inconclusive`, `ReplayParity`. | Test (TC-637) |
 | FR-202-AC-8 | FR-204-AC-10's `Detour` maximum witness (`FreeDelays` rows given `[1]` to `B` delay 2 and given `[3]` to `B` delay 1, path set `A` at 1 ms and `B` at 1 ms followed by `G` at 2 ms) replays `refuted` with `3/4 > 7/10`, the first step's merged probability `1/2` recomputed from row `[1]` and the `B` step's `1/2` from row `[3]`. The same witness with its rows swapped in order, with the row given `[3]` removed, with `B` delay 4 (outside `[1, 3]`), or as a `Choice` naming `WorkloadResolve{B, 1}` at that state refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-637) |
 | FR-202-AC-5 | FR-196-AC-5's `Undefined` evidence (`drop` with `b = 0`, `UndefinedEvaluation{where: 1, cause: absent-key}`) replays `refuted`; the same evidence with `where` set to 0 settles `inconclusive`, `ReplayParity`. | Test (TC-641) |
+| FR-202-AC-9 | A checked-subject acyclic reachability fixture replays a target-first-hit path set of mass `2/3` against `AtMost 1/2` and a terminal-nonreach path set of mass `2/3` against `AtLeast 1/2`; each produces a token permitting only its matching EN-5 refuted record, with the accepted evidence retained. Repeating replay gives equal semantic outcomes. Neither replay needs an emitted package or analyzer graph types. | Test |
+| FR-202-AC-10 | In AC-9, altering the claim occurrence, package or binding refuses; altering an action, draw, post-state or full key cannot produce a token. Duplicate/prefix-overlapping paths, inconsistent scheduler choices, an earlier target on a first-hit path, and a live non-target leaf cannot reproduce a refutation. Mass equal to the relevant threshold yields replay parity. | Test |
+| FR-202-AC-11 | A pre-cancelled call, cancellation at the final acceptance poll, or exhaustion of each configured expansion/work/storage limit returns incomplete without a token or a refuted record. Cyclic, subsystem, randomized-policy, fairness, multiple-initial/instance and timed inputs report unsupported without a token. A caller cannot construct a reproduced token or settle EN-5 refuted from a bare engine result. | Test |
 
 ## Dependencies
 

@@ -168,6 +168,33 @@ land (ADR-029 CB-1).
 The serialization lives with the outcome types in the core; it is the one
 renderer a core crate may hold (FR-284).
 
+## Analyze items and their counterexamples
+
+An `analyze` or `prove` item is built from one terminal record and, for a
+`refuted` record, its one `ItemCounterexample` (FR-281, FR-280):
+`OutcomeItem::from_analyze(record, counterexample) -> Result<OutcomeItem,
+OutcomeItemError>`. The item carries the record's label, cause and, for a
+disposition, `diagnostic` as above. A `refuted` item carries `counterexample`
+in the wire spelling of the member of QSpec FR-331's `counterexamples` entry
+that the `Counterexample` variant is:
+
+| Variant | Spelling |
+| --- | --- |
+| `Temporal` | QSpec FR-364's `TemporalCounterexample`: `trace`, `kind` (`formula`, `deadlock`, `undefined-evaluation`, `race`, `time-lock` with its `final_delay`, or a refinement's `refinement_failure`), `initial_state`, `prefix`, `loop` (`[]` for a finite trace), `over_binding`, `fairness`, `interval` and `trace_position`; the monitor `Violated` row's `counterexample` (FR-283) is the same record |
+| `Probabilistic` | QSpec FR-413's `ProbabilisticCounterexample` (FR-202's witness scheduler and path set) |
+| `Hybrid` | QSpec FR-193's `HybridCounterexample`: `type` `hybrid-counterexample`, its `kind` and `HybridTrace` |
+| `Hyper` | QSpec FR-400's `HyperCounterexample` |
+| `Graph` | QSpec FR-393's `GraphEvidence` |
+| `Assignments` | QSpec FR-197's canonical assignments `{type: "assignments", values}`, one FR-181 typed value per parameter node |
+| `Contract` | QSpec FR-485's `contract-counterexample` `{type, obligation, violated, bound, executions}` |
+
+An item has none of `position`, `decisive` and `witness`, which belong to a
+clause run. An item of any result but `refuted` carries no `counterexample`.
+`from_analyze` given a `refuted` record and no counterexample returns
+`Err(OutcomeItemError::MissingCounterexample)` and builds no item. One
+spelling serves the document `analyze` writes and the item `prove` writes, so
+the same item through either gives the same bytes.
+
 ## Inputs
 
 A lifecycle operation's outcome value.
@@ -219,6 +246,7 @@ The outcome document's bytes.
   holds a record, and shall write none otherwise.
 - `OutcomeItem::from_clause_run` shall write no `counterexample` on an item
   whose report holds none.
+- `OutcomeItem::from_analyze` shall write `counterexample`, in the spelling of "Analyze items and their counterexamples", on each `refuted` item, none of `position`, `decisive` or `witness`, and a `counterexample` on no other item.
 - `OutcomeDocument::from_clause_runs` shall build a `monitor` document with
   one item per clause run, the item's category read from
   `ClauseRunReport::category()` and its label and cause as the "Monitor
@@ -249,6 +277,7 @@ The outcome document's bytes.
 | FR-286-AC-11 | Over FR-283-AC-5's clause run, `from_clause_run` gives an item with `result` `refuted`, category violation, `position` 1, a `counterexample` with `trace_position` 1, cause `undefined-evaluation{where, cause}` with `cause` `division-by-zero`, no `witness` and no `undefined` label. | Test (TC-770) |
 | FR-286-AC-12 | Over FR-283-AC-11's clause run, `from_clause_run` gives an item with `result` `undefined`, category undefined, cause `insufficient-data`, `position` 0, `count` 1 and `min_count` 2, and neither `counterexample` nor `witness`; its document exits 10. | Test (TC-770) |
 | FR-286-AC-13 | Each `MonitorRecord` the FR-283 `monitor` operation returns for the clause runs of AC-8 to AC-12 (the pending run, FR-501-AC-4's indeterminate run, and the violated, undefined-evaluation and insufficient-data runs of FR-283-AC-1, AC-5 and AC-11) renders through `OutcomeItem::from_clause_run`, and the document built from the records equals `from_clause_runs`'s document for the same runs, byte for byte. | Test (TC-770) |
+| FR-286-AC-14 | Over FR-281-AC-2's record and `ItemCounterexample`, `from_analyze` gives an item with `result` `refuted`, category violation, naming `en-1`, a `counterexample` of kind `formula` with a non-empty `prefix`, a `loop`, an `initial_state` and a `trace_position`, and no `position`, `decisive` or `witness`; the same record with no counterexample returns `Err(OutcomeItemError::MissingCounterexample)`, and FR-281-AC-1's `proved` record gives an item with no `counterexample`. For each other `Counterexample` variant, a `refuted` record with that variant gives an item whose `counterexample` has the variant's spelling in the table, and a `time-lock` `Temporal` one carries its `final_delay`. The item `provider::run` gives for the same two records serializes to equal bytes. | Test (TC-770) |
 
 ## Status
 

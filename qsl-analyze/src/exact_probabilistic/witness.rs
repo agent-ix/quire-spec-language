@@ -101,6 +101,14 @@ pub struct ProducedWitness {
 /// Why no witness could be read from the product and policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum WitnessError {
+    /// The producer exhausted a caller-configured resource budget.
+    #[error("witness production exhausted {limit:?} at its configured bound {value}")]
+    Limit {
+        /// The exact exhausted setting.
+        limit: qsl_replay::ModelCheckLimit,
+        /// The configured bound of that setting.
+        value: u64,
+    },
     /// The initial state or the accepting vector does not fit the product.
     #[error("the witness inputs do not fit the product")]
     InvalidState,
@@ -473,10 +481,10 @@ fn reaching(induced: &Induced, accepting: &[bool]) -> BTreeSet<ProbStateId> {
 /// each state they leave that `scope` resolves. A partial path at a state
 /// from which no accepting state is reachable is not extended.
 ///
-/// `Ok(None)` when no such path set exists within `limits.max_witness_paths`
-/// paths, `max_transitions` expansions and frontier pushes, and
-/// `max_rational_bits` per path probability: the claim then needs subsystem
-/// evidence instead.
+/// `Ok(None)` only when the induced chain's finite paths do not have enough
+/// mass to cross `past`. Resource exhaustion is `WitnessError::Limit`, naming
+/// the actual path, transition-work or rational-bit setting; it is never
+/// mathematical insufficiency.
 ///
 /// # Errors
 ///
@@ -497,6 +505,20 @@ pub fn produce_witness(
     let induced = induce(product, policy, initial, accepting)?;
     let reaching = reaching(&induced, accepting);
     let accepts = |state: ProbStateId| accepting.get(state.index()).copied().unwrap_or(false);
+    let transition_limit = || WitnessError::Limit {
+        limit: qsl_replay::ModelCheckLimit::ExactProbMaxTransitions,
+        value: u64::try_from(limits.model.limits.max_transitions).unwrap_or(u64::MAX),
+    };
+    let rational_limit = || WitnessError::Limit {
+        limit: qsl_replay::ModelCheckLimit::ExactProbMaxRationalBits,
+        value: limits.max_rational_bits,
+    };
+    if limits.model.limits.max_transitions == 0 {
+        return Err(transition_limit());
+    }
+    if !rational_fits(&rational(1), limits.max_rational_bits) {
+        return Err(rational_limit());
+    }
     let mut frontier = BinaryHeap::from([Partial {
         probability: rational(1),
         sequence: 0,
@@ -511,9 +533,15 @@ pub fn produce_witness(
     while let Some(partial) = frontier.pop() {
         if accepts(partial.state) {
             if u64::try_from(paths.len()).map_or(true, |count| count >= limits.max_witness_paths) {
-                return Ok(None);
+                return Err(WitnessError::Limit {
+                    limit: qsl_replay::ModelCheckLimit::ExactProbMaxWitnessPaths,
+                    value: limits.max_witness_paths,
+                });
             }
             sum = sum.add(&partial.probability);
+            if !rational_fits(&sum, limits.max_rational_bits) {
+                return Err(rational_limit());
+            }
             paths.push(ProducedPath {
                 steps: partial.steps(&induced),
                 probability: partial.probability,
@@ -531,7 +559,7 @@ pub fn produce_witness(
         };
         expansions += 1;
         if expansions > limits.model.limits.max_transitions {
-            return Ok(None);
+            return Err(transition_limit());
         }
         for (index, step) in steps.iter().enumerate() {
             if !accepts(step.to) && !reaching.contains(&step.to) {
@@ -539,11 +567,11 @@ pub fn produce_witness(
             }
             pushes += 1;
             if pushes > limits.model.limits.max_transitions {
-                return Ok(None);
+                return Err(transition_limit());
             }
             let probability = partial.probability.mul(&step.probability);
             if !rational_fits(&probability, limits.max_rational_bits) {
-                return Ok(None);
+                return Err(rational_limit());
             }
             sequence += 1;
             frontier.push(Partial {
@@ -592,4 +620,93 @@ fn resolves(scope: WitnessScope, action: &ProductAction) -> bool {
 
 fn rational(value: i64) -> Rational {
     Rational::from_integer(Integer::from(value))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{ProbEdge, ProbKey};
+    use super::*;
+    use ix_trace_rs::trace;
+    use qsl_replay::ModelCheckLimit;
+
+    fn terminal_product() -> ProbProduct {
+        let state = ProbStateId(0);
+        ProbProduct {
+            states: vec![ProbKey {
+                binding: None,
+                model: vec![0],
+                monitor: None,
+                accumulator: None,
+                pending: None,
+            }],
+            kind: ProductKind::Dtmc,
+            edges: vec![ProbEdge {
+                from: state,
+                choice: ProductAction::TerminalStutter,
+                action: None,
+                draw: None,
+                to: state,
+                probability: rational(1),
+                rewards: Vec::new(),
+            }],
+            initial: vec![(0, None, state)],
+            decided: Vec::new(),
+            labels: vec![vec![false]],
+            fairness_operations: Vec::new(),
+            fairness: Vec::new(),
+        }
+    }
+
+    #[trace("TC-637", "FR-202-AC-11")]
+    #[test]
+    fn zero_producer_budgets_return_the_actual_setting_before_evidence() {
+        let product = terminal_product();
+        let paths = ExactProbLimits {
+            max_witness_paths: 0,
+            ..ExactProbLimits::default()
+        };
+        let mut frontier = ExactProbLimits::default();
+        frontier.model.limits.max_transitions = 0;
+        let arithmetic = ExactProbLimits {
+            max_rational_bits: 0,
+            ..ExactProbLimits::default()
+        };
+        for (limits, expected) in [
+            (paths, ModelCheckLimit::ExactProbMaxWitnessPaths),
+            (frontier, ModelCheckLimit::ExactProbMaxTransitions),
+            (arithmetic, ModelCheckLimit::ExactProbMaxRationalBits),
+        ] {
+            assert!(
+                matches!(produce_witness(&product,&[Some(0)],WitnessScope::EveryScheduler,ProbStateId(0),&[true],&rational(0),&limits),Err(WitnessError::Limit { limit, value: 0 }) if limit == expected)
+            );
+        }
+    }
+
+    #[trace("TC-637", "FR-202-AC-11")]
+    #[test]
+    fn mathematical_insufficiency_is_distinct_from_a_producer_stop() {
+        let product = terminal_product();
+        assert!(produce_witness(
+            &product,
+            &[Some(0)],
+            WitnessScope::EveryScheduler,
+            ProbStateId(0),
+            &[false],
+            &rational(0),
+            &ExactProbLimits::default()
+        )
+        .expect("the chain is well formed and no budget is exhausted")
+        .is_none());
+        assert!(produce_witness(
+            &product,
+            &[Some(0)],
+            WitnessScope::EveryScheduler,
+            ProbStateId(0),
+            &[true],
+            &rational(0),
+            &ExactProbLimits::default()
+        )
+        .expect("the initial target has unit mass")
+        .is_some());
+    }
 }

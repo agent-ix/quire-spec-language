@@ -4,7 +4,7 @@
 //! graph through `qsl-eval::ModelSystem`; it does not consume analyzer output.
 
 use qsl_semantics::check::Bound;
-use quire_exact::{Integer, Rational};
+use quire_exact::{Cancel, CancelCause, Integer, Rational};
 use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -18,6 +18,9 @@ use quire_exact::ObjectReference;
 use serde_json::{json, Value};
 
 use crate::identity::ObligationIdentity;
+
+mod witness;
+pub use witness::*;
 
 /// A complete canonical product-state key, encoded by the checker.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -281,17 +284,49 @@ pub enum ProbabilityCertificateLocus {
     Member(&'static str),
 }
 
+/// Evidence produced only by the independent exact certificate checker.
+/// Its checked value cannot be constructed or changed by downstream callers.
+///
+/// ```compile_fail,E0451
+/// use qsl_replay::{ExactProbabilityAcceptance, ProbabilityBoundSide};
+/// use quire_exact::{Integer, Rational};
+/// let forged = ExactProbabilityAcceptance {
+///     value: Rational::from_integer(Integer::from(1_i64)),
+///     side: ProbabilityBoundSide::AtLeast,
+/// };
+/// ```
+///
+/// ```compile_fail,E0594
+/// use qsl_replay::ExactProbabilityAcceptance;
+/// use quire_exact::{Integer, Rational};
+/// fn alter(accepted: &mut ExactProbabilityAcceptance) {
+///     *accepted.value() = Rational::from_integer(Integer::from(1_i64));
+/// }
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExactProbabilityAcceptance {
+    value: Rational,
+    side: ProbabilityBoundSide,
+}
+
+impl ExactProbabilityAcceptance {
+    /// The independently checked initial value.
+    pub fn value(&self) -> &Rational {
+        &self.value
+    }
+
+    /// The authored bound side checked against that value.
+    pub fn side(&self) -> ProbabilityBoundSide {
+        self.side
+    }
+}
+
 /// The result of checking an exact-value certificate against a graph.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExactProbabilityCertificateCheck {
     /// Every value matches the independently evaluated graph and the initial
     /// value satisfies the claim bound.
-    Accepted {
-        /// The checked initial value.
-        value: Rational,
-        /// The authored bound side that was checked.
-        side: ProbabilityBoundSide,
-    },
+    Accepted(ExactProbabilityAcceptance),
     /// The certificate fails a checked condition.
     Rejected(ProbabilityCertificateRejection),
 }
@@ -299,6 +334,8 @@ pub enum ExactProbabilityCertificateCheck {
 /// Why the exact Bellman-check core could not check a graph.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExactProbabilityGraphError {
+    /// The caller cancelled the check, retaining its original cause.
+    Cancelled(CancelCause),
     /// A listed successor has no state in the checker graph.
     MissingSuccessor,
     /// The graph's edge count exceeds the representable in-memory state count.
@@ -321,8 +358,7 @@ pub enum ExactProbabilityGraphError {
     /// The claim's `over` parameter has not exactly one instance in the
     /// subject; this slice checks one binding.
     UnsupportedBinding,
-    /// No checked claim has the requested obligation's node as its checked
-    /// package identity, or more than one does.
+    /// No unique checked claim has the requested complete obligation identity.
     ClaimNotBound,
     /// The bound claim is not an unbounded `eventually` reachability claim,
     /// the only form this bounded slice checks.
@@ -336,16 +372,25 @@ pub enum ExactProbabilityGraphError {
 /// This adapter intentionally refuses draws with multiple post-states and
 /// stops at explicit limits. It is a bounded exact-check foundation, not a
 /// complete probabilistic product implementation.
+#[allow(clippy::too_many_arguments)]
 fn enumerate_model_graph<P: StatePredicate>(
     system: &ModelSystem<'_>,
     target: &P,
     binding: Option<&ObjectReference>,
     max_states: usize,
     max_edges: usize,
+    cancel: &Cancel,
+    stop_at_target: bool,
+    visit: &mut impl FnMut(&ProbabilityProductKey, &ModelSimState),
+    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
 ) -> Result<CheckerGraph, ExactProbabilityGraphError> {
+    poll_cancel(cancel)?;
     let initial = system.initial();
     if initial.len() != 1 {
         return Err(ExactProbabilityGraphError::UnsupportedInitial);
+    }
+    if max_states == 0 {
+        return Err(ExactProbabilityGraphError::LimitReached);
     }
     let key_of = |state: &ModelSimState| {
         let (model_bytes, _) = system
@@ -363,32 +408,44 @@ fn enumerate_model_graph<P: StatePredicate>(
     let mut seen = BTreeSet::from([root.clone()]);
     let mut edge_count = 0usize;
     while let Some((key, state)) = pending.pop_front() {
-        if states.len() == max_states {
-            return Err(ExactProbabilityGraphError::LimitReached);
-        }
+        poll_cancel(cancel)?;
+        visit(&key, &state);
         let reading = system
             .state_predicates(&state, &[(target, binding)])
-            .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
+            .map_err(|stop| {
+                failure(crate::ExactProbBuildIssue::Expansion(stop));
+                ExactProbabilityGraphError::ExpansionRefused
+            })?
             .into_iter()
             .next()
             .ok_or(ExactProbabilityGraphError::ExpansionRefused)?;
         let terminal = match reading {
             qsl_eval::simulation::model::PredicateReading::True => Some(true),
             qsl_eval::simulation::model::PredicateReading::False => None,
+            qsl_eval::simulation::model::PredicateReading::Refused(outcome) => {
+                failure(crate::ExactProbBuildIssue::Predicate(outcome));
+                return Err(ExactProbabilityGraphError::ExpansionRefused);
+            }
             _ => return Err(ExactProbabilityGraphError::ExpansionRefused),
         };
-        let choices = if terminal.is_some() {
+        let choices = if terminal.is_some() && stop_at_target {
             Vec::new()
         } else {
             let actions = system
                 .actions(&state)
-                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
-                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+                .map_err(|stop| {
+                    failure(crate::ExactProbBuildIssue::Expansion(stop));
+                    ExactProbabilityGraphError::ExpansionRefused
+                })?
+                .map_err(|_| {
+                    failure(crate::ExactProbBuildIssue::UndecidedSuccessor);
+                    ExactProbabilityGraphError::ExpansionRefused
+                })?;
             if actions.is_empty() {
                 states.insert(
                     key,
                     CheckerState {
-                        terminal: Some(false),
+                        terminal: terminal.or(Some(false)),
                         choices: Vec::new(),
                     },
                 );
@@ -396,8 +453,10 @@ fn enumerate_model_graph<P: StatePredicate>(
             }
             let mut choices = Vec::with_capacity(actions.len());
             for action in actions {
+                poll_cancel(cancel)?;
                 let mut choice = Vec::new();
                 for draw in action.draws {
+                    poll_cancel(cancel)?;
                     if draw.probability == rational(0) {
                         continue;
                     }
@@ -420,7 +479,11 @@ fn enumerate_model_graph<P: StatePredicate>(
                         target: target_key.clone(),
                         probability: draw.probability,
                     });
-                    if seen.insert(target_key.clone()) {
+                    if !seen.contains(&target_key) {
+                        if seen.len() >= max_states {
+                            return Err(ExactProbabilityGraphError::LimitReached);
+                        }
+                        seen.insert(target_key.clone());
                         pending.push_back((target_key, successor));
                     }
                 }
@@ -471,6 +534,7 @@ fn product_key(
 /// supplies the checked claim predicate. The certificate cannot supply graph
 /// states or transitions. This slice handles one initial state and exact
 /// draws with one successor each; unsupported shapes return an error.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn check_model_exact_reachability<P: StatePredicate>(
     system: &ModelSystem<'_>,
     target: &P,
@@ -479,17 +543,30 @@ pub(crate) fn check_model_exact_reachability<P: StatePredicate>(
     objective: ProbabilityObjective,
     bound: &Bound,
     (max_states, max_edges): (usize, usize),
+    cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificateCheck, ExactProbabilityGraphError> {
-    let graph = enumerate_model_graph(system, target, binding, max_states, max_edges)?;
-    check_exact_reachability(&graph, certificate, objective, bound)
+    let graph = enumerate_model_graph(
+        system,
+        target,
+        binding,
+        max_states,
+        max_edges,
+        cancel,
+        true,
+        &mut |_, _| {},
+        &mut |_| {},
+    )?;
+    check_exact_reachability(&graph, certificate, objective, bound, cancel)
 }
 
-/// Bind `item` to its checked claim by checked node identity, then check the
+/// Bind `item` to its checked claim by complete obligation identity, then check the
 /// certificate over that claim's target predicate and bound (FR-498).
 ///
 /// The claim is the one whose `occurrence().node()` equals the obligation's
 /// node; name, span and source order never select it. A claim without a
 /// package identity is never bound.
+/// Cancellation is polled while binding, enumerating and validating the
+/// certificate; a stop retains the caller's cause and yields no acceptance.
 pub fn check_claim_exact_reachability(
     system: &ModelSystem<'_>,
     claims: &[CheckedProbabilisticClaim],
@@ -497,18 +574,9 @@ pub fn check_claim_exact_reachability(
     certificate: &ExactProbabilityCertificate,
     max_states: usize,
     max_edges: usize,
+    cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificateCheck, ExactProbabilityGraphError> {
-    let mut bound = claims.iter().filter(|claim| {
-        claim
-            .occurrence()
-            .is_some_and(|key| key.node() == item.node())
-    });
-    let claim = bound
-        .next()
-        .ok_or(ExactProbabilityGraphError::ClaimNotBound)?;
-    if bound.next().is_some() {
-        return Err(ExactProbabilityGraphError::ClaimNotBound);
-    }
+    let claim = bind_claim(claims, item, cancel)?;
     let ProbForm::Reach {
         bound,
         target: ReachTarget::Eventually(predicate),
@@ -526,7 +594,48 @@ pub fn check_claim_exact_reachability(
         objective,
         bound,
         (max_states, max_edges),
+        cancel,
     )
+}
+
+/// Derive the complete request-item identity from the checked claim's own
+/// occurrence using the qualified planner's claim identity contract. The
+/// subject carries the owning model; the actual occurrence ordinal is retained.
+///
+/// # Errors
+///
+/// Returns `ClaimNotBound` for an unassembled claim or an unrepresentable ordinal.
+pub fn probabilistic_claim_identity(
+    claim: &CheckedProbabilisticClaim,
+) -> Result<ObligationIdentity, ExactProbabilityGraphError> {
+    let occurrence = claim
+        .occurrence()
+        .ok_or(ExactProbabilityGraphError::ClaimNotBound)?;
+    if u32::try_from(occurrence.origin().ordinal()).is_err() {
+        return Err(ExactProbabilityGraphError::ClaimNotBound);
+    }
+    Ok(ObligationIdentity::from_claim_occurrence(occurrence))
+}
+
+fn bind_claim<'a>(
+    claims: &'a [CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    cancel: &Cancel,
+) -> Result<&'a CheckedProbabilisticClaim, ExactProbabilityGraphError> {
+    poll_cancel(cancel)?;
+    let mut bound_claim = None;
+    for claim in claims {
+        poll_cancel(cancel)?;
+        if claim
+            .occurrence()
+            .is_some_and(|key| key.node() == item.node())
+            && (&probabilistic_claim_identity(claim)? != item
+                || bound_claim.replace(claim).is_some())
+        {
+            return Err(ExactProbabilityGraphError::ClaimNotBound);
+        }
+    }
+    bound_claim.ok_or(ExactProbabilityGraphError::ClaimNotBound)
 }
 
 /// The one `over` instance of a claim and the reference its predicates read.
@@ -619,17 +728,22 @@ fn check_exact_reachability(
     certificate: &ExactProbabilityCertificate,
     objective: ProbabilityObjective,
     bound: &Bound,
+    cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificateCheck, ExactProbabilityGraphError> {
-    let values = match certificate_values(graph, certificate) {
-        Ok(values) => values,
-        Err(rejection) => return Ok(ExactProbabilityCertificateCheck::Rejected(rejection)),
+    poll_cancel(cancel)?;
+    let values = match certificate_values(graph, certificate, cancel)? {
+        CertificateValues::Complete(values) => values,
+        CertificateValues::Rejected(rejection) => {
+            return Ok(ExactProbabilityCertificateCheck::Rejected(rejection))
+        }
     };
-    let order = topological_order(graph)?;
+    let order = topological_order(graph, cancel)?;
 
     let zero = rational(0);
     let one = rational(1);
     let mut computed = BTreeMap::new();
     for key in order.into_iter().rev() {
+        poll_cancel(cancel)?;
         let Some(state) = graph.states.get(&key) else {
             return Ok(rejected(ProbabilityCertificateRule::InequalityFails, key));
         };
@@ -647,9 +761,11 @@ fn check_exact_reachability(
             }
             let mut choice_values = Vec::with_capacity(state.choices.len());
             for choice in &state.choices {
+                poll_cancel(cancel)?;
                 let mut mass = zero.clone();
                 let mut value = zero.clone();
                 for edge in choice {
+                    poll_cancel(cancel)?;
                     if edge.probability < zero {
                         return Ok(rejected(
                             ProbabilityCertificateRule::InequalityFails,
@@ -708,27 +824,39 @@ fn check_exact_reachability(
             graph.initial.clone(),
         ));
     }
-    Ok(ExactProbabilityCertificateCheck::Accepted {
-        value: initial.clone(),
-        side: match bound {
-            Bound::AtLeast(_) => ProbabilityBoundSide::AtLeast,
-            Bound::AtMost(_) => ProbabilityBoundSide::AtMost,
+    poll_cancel(cancel)?;
+    Ok(ExactProbabilityCertificateCheck::Accepted(
+        ExactProbabilityAcceptance {
+            value: initial.clone(),
+            side: match bound {
+                Bound::AtLeast(_) => ProbabilityBoundSide::AtLeast,
+                Bound::AtMost(_) => ProbabilityBoundSide::AtMost,
+            },
         },
-    })
+    ))
+}
+
+enum CertificateValues {
+    Complete(BTreeMap<ProbabilityProductKey, Rational>),
+    Rejected(ProbabilityCertificateRejection),
 }
 
 fn certificate_values(
     graph: &CheckerGraph,
     certificate: &ExactProbabilityCertificate,
-) -> Result<BTreeMap<ProbabilityProductKey, Rational>, ProbabilityCertificateRejection> {
+    cancel: &Cancel,
+) -> Result<CertificateValues, ExactProbabilityGraphError> {
     let mut values = BTreeMap::new();
     let mut previous = None;
     for entry in &certificate.values {
+        poll_cancel(cancel)?;
         if previous.as_ref().is_some_and(|key| key >= &entry.state) {
-            return Err(ProbabilityCertificateRejection {
-                rule: ProbabilityCertificateRule::Malformed,
-                at: ProbabilityCertificateLocus::ProductState(entry.state.clone()),
-            });
+            return Ok(CertificateValues::Rejected(
+                ProbabilityCertificateRejection {
+                    rule: ProbabilityCertificateRule::Malformed,
+                    at: ProbabilityCertificateLocus::ProductState(entry.state.clone()),
+                },
+            ));
         }
         previous = Some(entry.state.clone());
         if values
@@ -736,39 +864,46 @@ fn certificate_values(
             .is_some()
             || !graph.states.contains_key(&entry.state)
         {
-            return Err(ProbabilityCertificateRejection {
-                rule: ProbabilityCertificateRule::Malformed,
-                at: ProbabilityCertificateLocus::ProductState(entry.state.clone()),
-            });
+            return Ok(CertificateValues::Rejected(
+                ProbabilityCertificateRejection {
+                    rule: ProbabilityCertificateRule::Malformed,
+                    at: ProbabilityCertificateLocus::ProductState(entry.state.clone()),
+                },
+            ));
         }
     }
     if values.len() != graph.states.len() {
-        let missing = graph
-            .states
-            .keys()
-            .find(|key| !values.contains_key(*key))
-            .cloned()
-            .unwrap_or_else(|| graph.initial.clone());
-        return Err(ProbabilityCertificateRejection {
-            rule: ProbabilityCertificateRule::Malformed,
-            at: ProbabilityCertificateLocus::ProductState(missing),
-        });
+        let mut missing = graph.initial.clone();
+        for key in graph.states.keys() {
+            poll_cancel(cancel)?;
+            if !values.contains_key(key) {
+                missing = key.clone();
+                break;
+            }
+        }
+        return Ok(CertificateValues::Rejected(
+            ProbabilityCertificateRejection {
+                rule: ProbabilityCertificateRule::Malformed,
+                at: ProbabilityCertificateLocus::ProductState(missing),
+            },
+        ));
     }
-    Ok(values)
+    Ok(CertificateValues::Complete(values))
 }
 
 fn topological_order(
     graph: &CheckerGraph,
+    cancel: &Cancel,
 ) -> Result<Vec<ProbabilityProductKey>, ExactProbabilityGraphError> {
     let zero = rational(0);
-    let mut indegree = graph
-        .states
-        .keys()
-        .cloned()
-        .map(|key| (key, 0_usize))
-        .collect::<BTreeMap<_, _>>();
+    let mut indegree = BTreeMap::new();
+    for key in graph.states.keys() {
+        poll_cancel(cancel)?;
+        indegree.insert(key.clone(), 0_usize);
+    }
     for state in graph.states.values() {
         for edge in state.choices.iter().flatten() {
+            poll_cancel(cancel)?;
             if edge.probability == zero {
                 continue;
             }
@@ -780,17 +915,22 @@ fn topological_order(
                 .ok_or(ExactProbabilityGraphError::TooManyEdges)?;
         }
     }
-    let mut ready = indegree
-        .iter()
-        .filter_map(|(key, degree)| (*degree == 0).then_some(key.clone()))
-        .collect::<BTreeSet<_>>();
+    let mut ready = BTreeSet::new();
+    for (key, degree) in &indegree {
+        poll_cancel(cancel)?;
+        if *degree == 0 {
+            ready.insert(key.clone());
+        }
+    }
     let mut order = Vec::with_capacity(graph.states.len());
     while let Some(key) = ready.pop_first() {
+        poll_cancel(cancel)?;
         order.push(key.clone());
         let Some(state) = graph.states.get(&key) else {
             return Err(ExactProbabilityGraphError::MissingSuccessor);
         };
         for edge in state.choices.iter().flatten() {
+            poll_cancel(cancel)?;
             if edge.probability == zero {
                 continue;
             }
@@ -811,6 +951,15 @@ fn topological_order(
     } else {
         Err(ExactProbabilityGraphError::Cycle)
     }
+}
+
+fn poll_cancel(cancel: &Cancel) -> Result<(), ExactProbabilityGraphError> {
+    if cancel.poll() {
+        if let Some(cause) = cancel.tripped() {
+            return Err(ExactProbabilityGraphError::Cancelled(cause));
+        }
+    }
+    Ok(())
 }
 
 fn rejected(
@@ -943,14 +1092,15 @@ mod tests {
             &certificate(Rational::new(Integer::from(4_i64), Integer::from(5_i64)).unwrap()),
             ProbabilityObjective::Minimum,
             &Bound::AtLeast(Rational::new(Integer::from(3_i64), Integer::from(4_i64)).unwrap()),
+            &Cancel::new(),
         )
         .expect("the checker graph is acyclic and closed");
         assert_eq!(
             result,
-            ExactProbabilityCertificateCheck::Accepted {
+            ExactProbabilityCertificateCheck::Accepted(ExactProbabilityAcceptance {
                 value: Rational::new(Integer::from(4_i64), Integer::from(5_i64)).unwrap(),
                 side: ProbabilityBoundSide::AtLeast,
-            }
+            })
         );
 
         let rejected_result = check_exact_reachability(
@@ -958,6 +1108,7 @@ mod tests {
             &certificate(Rational::new(Integer::from(9_i64), Integer::from(10_i64)).unwrap()),
             ProbabilityObjective::Minimum,
             &Bound::AtLeast(Rational::new(Integer::from(3_i64), Integer::from(4_i64)).unwrap()),
+            &Cancel::new(),
         )
         .expect("the checker graph is acyclic and closed");
         assert_eq!(
@@ -975,6 +1126,7 @@ mod tests {
             &certificate(Rational::new(Integer::from(4_i64), Integer::from(5_i64)).unwrap()),
             ProbabilityObjective::Minimum,
             &Bound::AtLeast(Rational::new(Integer::from(9_i64), Integer::from(10_i64)).unwrap()),
+            &Cancel::new(),
         )
         .expect("the checker graph is acyclic and closed");
         assert_eq!(
@@ -992,9 +1144,64 @@ mod tests {
                 &certificate(Rational::new(Integer::from(4_i64), Integer::from(5_i64)).unwrap()),
                 ProbabilityObjective::Workload,
                 &Bound::AtLeast(rational(0)),
+                &Cancel::new(),
             ),
             Err(ExactProbabilityGraphError::Cycle)
         );
+    }
+
+    #[trace("TC-636", "FR-201", "FR-282")]
+    #[test]
+    fn cancellation_stops_every_observed_graph_validation_poll() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::{Arc, OnceLock};
+
+        let graph = graph();
+        let certificate =
+            certificate(Rational::new(Integer::from(4_i64), Integer::from(5_i64)).unwrap());
+        let bound = Bound::AtLeast(rational(0));
+        let run = |cancel: &Cancel| {
+            check_exact_reachability(
+                &graph,
+                &certificate,
+                ProbabilityObjective::Minimum,
+                &bound,
+                cancel,
+            )
+        };
+        let live = Cancel::new();
+        let _counting = live.count_charges();
+        assert!(matches!(
+            run(&live),
+            Ok(ExactProbabilityCertificateCheck::Accepted(_))
+        ));
+        let total = live.charges();
+        assert!(total > 0);
+        for cause in [CancelCause::Requested, CancelCause::Deadline] {
+            for at in 1..=total {
+                let slot = Arc::new(OnceLock::<Cancel>::new());
+                let weak = Arc::downgrade(&slot);
+                let seen = Arc::new(AtomicU32::new(0));
+                let count = Arc::clone(&seen);
+                let cancel = Cancel::observing(move || {
+                    if count.fetch_add(1, Ordering::Relaxed) + 1 == at {
+                        weak.upgrade()
+                            .expect("the run owns the slot")
+                            .get()
+                            .expect("the slot is initialized")
+                            .cancel(cause);
+                    }
+                });
+                slot.set(cancel.clone())
+                    .expect("the slot is initialized once");
+                assert_eq!(
+                    run(&cancel),
+                    Err(ExactProbabilityGraphError::Cancelled(cause)),
+                    "validation poll {at}/{total} must stop instead of accepting"
+                );
+                assert_eq!(seen.load(Ordering::Relaxed), at);
+            }
+        }
     }
 
     #[trace("FR-196-AC-6")]

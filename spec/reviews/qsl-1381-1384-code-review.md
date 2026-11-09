@@ -39,7 +39,7 @@ Reviewed the checked temporal evaluator, its strict `/2` source-locus adapter, p
 | --- | --- | --- | --- |
 | FND-001 | medium | [QSL-1381/1384] `evaluate_checked_with_progress_v2` records only `Progress` under authenticated selection and calls `run_checked(..., None)`. For checked `on each` clauses with captures, the authenticated route therefore does not retain instances/captures across calls; capture initializers can be reevaluated and restoration/replay semantics are lost. The test exercises only origin activation. | src/temporal.rs:208-223, tests/it/compiled_protocol_v2.rs:656-671 |
 | FND-002 | medium | [QSL-1384] Authenticated ledger keys omit checked clause/source identity. Two checked packages at declaration index 0 with the same admitted definition/revision and clock configuration map to the same `AuthenticatedBinding`; sharing a `Ledger` can make one clause's watermark/closure reject or settle another clause. | src/temporal/progress.rs:23-41, src/temporal.rs:208-223, src/temporal.rs:482-547 |
-| FND-003 | medium | [QSL-1382/1384] Focused Clippy with `-D warnings` fails because `mapping_support_checked_v2` applies the identity mapping `.map_err(|error| error)?`; remove the redundant conversion so the changed crates pass their focused Rust gate. | src/temporal.rs:255-256 |
+| FND-003 | medium | [QSL-1382/1384] Focused Clippy with `-D warnings` fails because `mapping_support_checked_v2` applies the identity mapping `.map_err(\|error\| error)?`; remove the redundant conversion so the changed crates pass their focused Rust gate. | src/temporal.rs:255-256 |
 
 ## Dispositions
 

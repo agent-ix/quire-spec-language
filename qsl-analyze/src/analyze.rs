@@ -14,9 +14,11 @@
 //! Settlement is the engine's own layer-6 map, never `analyze`'s opinion of
 //! an engine's evidence: EN-1's results settle through `settle_model_check`
 //! (its certificate checker and counterexample replay), EN-4's through
-//! `check_statistical` and FR-192's map, the two calls the FR-280 provider
-//! entry makes, so `analyze` and the entry write one record for one item. The
-//! item adapters ([`model_item`], [`statistical_item`]) are the only
+//! `check_statistical` and FR-192's map, and EN-5's through its solver,
+//! qualified certificate checker and FR-203's map. The FR-280 provider
+//! entry uses these same adapters, so `analyze` and the entry write one
+//! record for one item. The item adapters ([`model_item`],
+//! [`statistical_item`], [`exact_probabilistic_item`]) are the only
 //! constructors of an engine's work, so no caller can hand `analyze` a
 //! pre-built verdict, a checker or a replay outcome.
 //!
@@ -61,9 +63,9 @@ use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 pub use crate::contract_check::contract_item;
 pub use crate::value_check::value_item;
 pub use clause_item::{ClauseItemRefusal, ClauseLimits, ClauseSubject, CLAUSE_TRANSCRIPT};
-#[cfg(feature = "test-support")]
-pub use exact::exact_probabilistic_item_tampered;
 pub use exact::{exact_probabilistic_item, ExactProbabilityEvidence};
+#[cfg(feature = "test-support")]
+pub use exact::{exact_probabilistic_item_tampered, exact_probabilistic_item_witness_tampered};
 pub use items::{
     derived_model_item, derived_protocol_item, derived_zone_item, hyper_form_item, model_item,
     protocol_item, statistical_item, timed_refinement_item, zone_item, DerivedItemMismatch,
@@ -326,11 +328,16 @@ impl Default for AnalyzeLimits {
 /// An admitted-for-execution request: one subject binding and its negotiated
 /// items. Each item is already typed by its layer-A adapter and carries the
 /// disposition established by the caller's negotiation.
-pub struct AnalyzeRequest<'a> {
+///
+/// `W` is the item type: [`crate::provider::RoutedItem`] (EN-4) or [`crate::provider::RoutedWork`],
+/// which also carries EN-1 authored-clause and EN-5 exact probabilistic items. The default type parameter
+/// is `RoutedItem`, so a caller that builds a request of EN-4 items is
+/// unchanged.
+pub struct AnalyzeRequest<'a, W = crate::provider::RoutedItem<'a>> {
     /// The shared subject binding.
     pub binding: SubjectBinding<'a>,
     /// The negotiated items, in request order.
-    pub items: Vec<crate::provider::RoutedItem<'a>>,
+    pub items: Vec<W>,
 }
 
 /// The outcome of analyzing a request, preserving the typed result for each
@@ -761,6 +768,8 @@ pub struct AnalyzeRecord {
     /// The certificate EN-5's checker accepted, carried by a `proved` item
     /// (FR-281-AC-1).
     pub exact_probabilistic: Option<Box<ExactProbabilityEvidence>>,
+    /// The independently replayed EN-5 probabilistic counterexample.
+    pub probabilistic_counterexample: Option<Box<qsl_replay::ReproducedProbabilityWitness>>,
 }
 
 /// How an item settled.
@@ -955,13 +964,16 @@ pub fn aggregate(
 
 /// Analyze the negotiated items over one admitted checked-package subject
 /// (FR-281). The binding is admitted before any engine item runs.
-pub fn analyze(
+pub fn analyze<'r, W>(
     package: &CheckedPackage,
-    request: AnalyzeRequest<'_>,
+    request: AnalyzeRequest<'r, W>,
     engines: &Engines,
     limits: &AnalyzeLimits,
     cancel: &Cancel,
-) -> Result<Staged<AnalyzeOutcome>, StageFailure<AnalyzeRefusal>> {
+) -> Result<Staged<AnalyzeOutcome>, StageFailure<AnalyzeRefusal>>
+where
+    W: Into<crate::provider::RoutedWork<'r>>,
+{
     let _deadline = DeadlineGuard::start(cancel, limits.deadline_ms).map_err(|_| {
         StageFailure::Fault(InternalFault::new("analyze", "deadline-timer-unavailable"))
     })?;
@@ -985,16 +997,110 @@ pub fn analyze(
     ModelSystem::new(simulation)
         .map_err(|failure| StageFailure::Refused(AnalyzeRefusal::Binding(failure)))?;
 
-    let items: Vec<_> = request
-        .items
+    let work: Vec<crate::provider::RoutedWork<'_>> =
+        request.items.into_iter().map(Into::into).collect();
+    let items: Vec<_> = work
         .iter()
-        .map(|routed| statistical_work(package, &request.binding, routed, limits))
+        .map(|routed| match routed {
+            crate::provider::RoutedWork::Claim(routed) => {
+                statistical_work(package, &request.binding, routed, limits)
+            }
+            crate::provider::RoutedWork::Clause(routed) => {
+                clause_work(package, &request.binding, routed, limits)
+            }
+            crate::provider::RoutedWork::Exact(routed) => {
+                exact_work(package, &request.binding, routed, limits)
+            }
+        })
         .collect();
     let requirements: Vec<_> = items.iter().map(AnalyzeItem::requirement).collect();
     let settled = analyze_items(engines, items, cancel);
     let aggregate = aggregate(&requirements, &settled);
     let records = terminal_records(settled);
     Ok(Staged::new(AnalyzeOutcome { records, aggregate }))
+}
+
+/// Build EN-5 work over the operation's admitted subject. A different
+/// negotiated backend cannot reinterpret this member as a sampling request.
+fn exact_work<'a>(
+    package: &'a CheckedPackage,
+    binding: &SubjectBinding<'a>,
+    routed: &crate::provider::RoutedExact<'a>,
+    limits: &AnalyzeLimits,
+) -> AnalyzeItem<'a> {
+    let item = &routed.item;
+    let built = exact_probabilistic_item(
+        item.request_index,
+        crate::exact_probabilistic::ProductRequest {
+            subject: ModelSubject {
+                simulation: ModelSimulationRequest {
+                    package,
+                    packages: binding.packages,
+                    normalization: limits.normalization,
+                    snapshots: binding.snapshots,
+                    initial: binding.initial.clone(),
+                    universes: binding.universes.clone(),
+                    observation: limits.observation,
+                    expansion: ExpansionLimits {
+                        max_candidates: u64::MAX,
+                    },
+                    meter: limits.accounting,
+                    emit: limits.emit,
+                },
+                proof_bounds: Vec::new(),
+            },
+            claim: item.claim,
+            limits: item.limits,
+        },
+    )
+    .required(item.required);
+    if routed.backend.as_str() == crate::exact_probabilistic::manifest::BACKEND_ID {
+        built
+    } else {
+        built.disposed(
+            Disposition::Unsupported,
+            Some(unsupported_kind(Capability::ProbabilisticSatisfaction)),
+        )
+    }
+}
+
+/// The EN-1 item of a routed authored clause, over the request's own package,
+/// binding and limits. A clause the package does not hold, or one no replay
+/// can name, is no claim of a family temporal-satisfaction applies to, so the
+/// item settles `invalid-request` (`inapplicable-kind`) without an engine
+/// run; a backend other than EN-1 settles it `unsupported`.
+fn clause_work<'a>(
+    package: &'a CheckedPackage,
+    binding: &SubjectBinding<'a>,
+    routed: &crate::provider::RoutedClause<'a>,
+    limits: &AnalyzeLimits,
+) -> AnalyzeItem<'a> {
+    let item = &routed.item;
+    // Intentional fold: every `ClauseItemRefusal` (unknown clause, multi-unit
+    // package, unnamed clause) means the request names no clause this
+    // package can run, which FR-281 settles `invalid-request` with
+    // `inapplicable-kind`. FR-272's vocabulary has no cause per refusal, and
+    // adding one is a catalog change outside this item.
+    let Ok(subject) = ClauseSubject::new(
+        package,
+        binding.clone(),
+        *limits,
+        item.unit,
+        &item.clause,
+        item.run,
+    ) else {
+        return AnalyzeItem::unadapted(item.request_index, Capability::TemporalSatisfaction, None)
+            .required(item.required);
+    };
+    let built = subject.item(item.request_index).required(item.required);
+    if routed.backend.as_str() == model_check::manifest::BACKEND_ID {
+        built
+    } else {
+        built.disposed(
+            Disposition::Unsupported,
+            Some(unsupported_kind(Capability::TemporalSatisfaction)),
+        )
+    }
 }
 
 fn statistical_work<'a>(
@@ -1097,6 +1203,7 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
         value_check: None,
         contract_check: None,
         exact_probabilistic: None,
+        probabilistic_counterexample: None,
     };
     let disposed = |kind, diagnostic| {
         record(Settlement::Disposed(Disposed {
@@ -1197,6 +1304,7 @@ fn settle(
         value_check: None,
         contract_check: None,
         exact_probabilistic: None,
+        probabilistic_counterexample: None,
     };
     let disposed = |kind, diagnostic: Diagnostic, backend| {
         record(
@@ -1253,14 +1361,16 @@ fn settle(
             value_check: None,
             contract_check: None,
             exact_probabilistic: None,
+            probabilistic_counterexample: None,
         },
         EngineReport::Statistical(statistical) => {
             record(terminal(statistical.into_terminal(index, backend)), None)
         }
         EngineReport::Exact(exact) => {
-            let (settled_record, evidence) = exact.settle(index, backend);
+            let (settled_record, evidence, counterexample) = exact.settle(index, backend);
             let mut settled = record(terminal(settled_record), None);
             settled.exact_probabilistic = evidence;
+            settled.probabilistic_counterexample = counterexample;
             settled
         }
         EngineReport::Zone(zone) => AnalyzeRecord {
@@ -1282,6 +1392,7 @@ fn settle(
             value_check: None,
             contract_check: None,
             exact_probabilistic: None,
+            probabilistic_counterexample: None,
         },
         EngineReport::Refused(Refusal::Declined(cause, code, diagnostic)) => record(
             terminal(TerminalRecord::declined_with(

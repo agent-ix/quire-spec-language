@@ -56,6 +56,10 @@ impl Serialize for QueryPart {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CertificateRule {
+    /// A probability value fails its recomputed Bellman condition (FR-201).
+    InequalityFails,
+    /// The probability at the initial state misses the claim bound (FR-201).
+    ThresholdMissed,
     /// An initial product state is missing.
     InitialMissing,
     /// A reached successor is missing.
@@ -112,6 +116,9 @@ pub enum CertificateRule {
 #[non_exhaustive]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CertificateLocus {
+    /// The complete probabilistic product identity at which a rule failed
+    /// (FR-201), transported as base64url canonical octets.
+    ProbabilityProductState(crate::ProbabilityProductKey),
     /// The product state of a closure certificate at which a rule failed.
     ProductState(ProductStateRef),
     /// The query whose encoding or certificate shape failed.
@@ -169,6 +176,13 @@ pub enum CertificateLocus {
 impl Serialize for CertificateLocus {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
+            Self::ProbabilityProductState(state) => {
+                use base64::Engine as _;
+                let mut object = serializer.serialize_struct("CertificateLocus", 1)?;
+                let key = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(state.as_bytes());
+                object.serialize_field("product_key", &key)?;
+                object.end()
+            }
             Self::ProductState(state) => state.serialize(serializer),
             Self::ModelState(state) => {
                 use base64::Engine as _;

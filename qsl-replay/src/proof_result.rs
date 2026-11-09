@@ -1557,14 +1557,12 @@ impl TerminalRecord {
         extremum: Option<Extremum>,
         binding: Option<ExactBinding>,
     ) -> Option<Self> {
-        let crate::probability_certificate::ExactProbabilityCertificateCheck::Accepted {
-            value,
-            ..
-        } = check
+        let crate::probability_certificate::ExactProbabilityCertificateCheck::Accepted(accepted) =
+            check
         else {
             return None;
         };
-        let value = ExactRational::new(value.clone());
+        let value = ExactRational::new(accepted.value().clone());
         Some(Self::with_backend(
             request_index,
             backend,
@@ -1627,6 +1625,18 @@ impl TerminalRecord {
         _reproduced: &crate::value_check::ReproducedViolation,
     ) -> Self {
         Self::with_backend(request_index, backend, TerminalValue::Refuted)
+    }
+
+    /// FR-202: settle only a probabilistic refutation reproduced by the core.
+    /// The token owns its matching checked claim, binding and evidence.
+    pub fn refuted_by_probability_witness(
+        request_index: RequestIndex,
+        backend: BackendId,
+        item: &crate::ObligationIdentity,
+        reproduced: &crate::ReproducedProbabilityWitness,
+    ) -> Option<Self> {
+        (item == &reproduced.evidence().item)
+            .then(|| Self::with_backend(request_index, backend, TerminalValue::Refuted))
     }
 
     /// QSpec FR-483: a `refuted` record whose `contract-counterexample` the

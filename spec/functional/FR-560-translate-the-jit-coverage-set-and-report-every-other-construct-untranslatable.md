@@ -13,6 +13,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-295
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-093
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-035
     type: references
   - target: "ix://agent-ix/quire-specification/FR-306"
@@ -40,17 +42,37 @@ listed.
 
 The coverage SHALL list at least:
 
-- **Forms.** The ADR-012 `Value` family parsing forms `literal`, `operator`,
-  `let`, `if`, `call`, `record` and `collection`. A function declaration is
+- **Forms.** The ADR-012 `Value` family parsing forms `literal`, `name`,
+  `operator`, `let`, `if`, `call`, `record` and `collection`. `name` is the
+  read of a parameter or of a `let` binding, the checked syntax's `Name`
+  variant, named by the lower-casing rule below. A function declaration is
   an entry, not a translated form.
 - **Value types.** `Boolean`; `Integer`, both bounded (`Int[lo, hi]`) and
   unbounded; `Rational`; `Decimal` under the selected profile; `Text`; and
-  records and collections whose members are of these types.
+  records and collections whose members are of these types. A union type
+  is not a record: the coverage lists it only if the JIT translates the
+  union's construction and `case` (the `SumCase` family), and v1 does not, so
+  a construct with a union operand, result or binding is outside the
+  coverage. A representation of coverage value types that groups several
+  checked type kinds under one name (a `Record` entry that also covers a
+  union as a composite) lists a union only when the JIT translates it.
 - **Operations.** Every `Value`-family operator over the listed value types, except `present`, which the coverage does not list. The `record` form includes a record's field read (`e.f` over a record value); the `collection` form excludes the binder queries `forall` and `exists`, which the coverage does not list.
 
 The JIT may list more. Every construct it lists is held to the interpreter by
 the parity gate (FR-563), and an entry whose constructs all lie in the
 coverage is never listed unsupported.
+
+### Clause entries and the records beside the evaluation
+
+A clause entry's seam result is the `Evaluation` (FR-294), which the JIT
+compares with the interpreter's; the trail and receiver path FR-265 and
+FR-107 record beside the evaluation are not part of that result. A clause
+whose constructs all lie in the coverage is translated, and the JIT never
+lists it unsupported, and never reports a `Location` or a cause, because the
+trail or receiver path is not reproduced: the closed `UnsupportedCause` set
+(FR-294) has no such member, and the parity gate (FR-563) compares no such
+record. A clause that reads `self` is outside the coverage by the `self` row
+below.
 
 ### The cause of an untranslatable entry
 
@@ -65,6 +87,11 @@ and its source `Location`:
 | a construct of a listed form with an operand, result or binding whose value type the coverage does not list | `ValueType(t)`, `t` that value type |
 | a listed form and types, but an operation the coverage does not list | `Operation(k)`, `k` the operation's node key |
 | a `call` to a function the JIT lists unsupported | `Operation(k)`, `k` the node key of the `call` |
+
+The node key `k` of a checked operation is the `NodeKey` of the FR-322 node
+that FR-093 lowers the operation to, which `check` exposes on the checked
+operation (FR-093 "One node per checked expression"); the `Location` is the
+operation's own site.
 
 The v1 coverage lists no construct of the `StateModel`, `ProtocolClause` or
 `SumCase` family, and none of the `Value` constructs named below. The first
@@ -97,7 +124,11 @@ An entry the JIT cannot prepare because the operating system refuses
 executable memory (a `PROT_EXEC` `mmap` or `mprotect` denied, as on a
 hardened Linux) is listed unsupported with
 `UnsupportedCause::EnvironmentRefused(ExecutableMemoryRefused)` (FR-294), for
-every selected entry, and `prepare` returns `Ok`. The refusal is not a
+every selected entry, and `prepare` returns `Ok`. This cause belongs to QSL's
+seam type `UnsupportedCause`; it is not a result cause of QSpec's FR-331
+provider envelope, whose `unsupported` causes are a closed set that holds no
+executable-memory member. QSL reports it only as an `UnsupportedEntry`
+(FR-294) and exit 21 (FR-285), and emits no FR-331 cause for it. The refusal is not a
 `PrepareFailure::Fault`, and a `call` on such an entry returns
 `CallFailure::Unsupported` with that entry (FR-294), which the driver
 reports as unsupported, exit 21 (FR-285).
@@ -143,12 +174,14 @@ A checked package and the selected entries (FR-294).
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-560-AC-1 | `qsl_jit::coverage()` lists the seven floor forms, the floor value types (`Boolean`, bounded and unbounded `Integer`, `Rational`, `Decimal`, `Text`, and records and collections of them) and every `Value`-family operator over them. | Test (TC-1380) |
+| FR-560-AC-1 | `qsl_jit::coverage()` lists the floor forms, the floor value types (`Boolean`, bounded and unbounded `Integer`, `Rational`, `Decimal`, `Text`, and records and collections of them) and every `Value`-family operator over them. | Test (TC-1380) |
 | FR-560-AC-2 | The JIT prepared over each of the 10,000 units the FR-295 parity program generator yields at the default seed, every function selected, lists unsupported only entries whose first outside construct is one the table names, and lists no entry whose constructs all lie in the coverage; prepared over `add(a: Integer, b: Integer): Integer { a + b }`, `half(a: Rational): Rational { a / 2 }` and `name(t: Text): Text { t }`, it lists none of the three unsupported. | Test (TC-1380) |
 | FR-560-AC-3 | For a form and a value type that `coverage()` does not list (the test takes the `SumCase` form `case` and the type `Timestamp` when unlisted, and otherwise the first unlisted ADR-012 form and K2 value type), an entry whose first outside construct is that form is listed with `ExpressionForm(<its name>)`, one whose first outside construct is a parameter of that type with `ValueType(<that type>)`, each with that construct's `Location`; an entry that calls the first entry is listed with `Operation(k)`, `k` the node key of the `call`, while the first entry keeps its own cause; and the other selected entries are prepared. | Test (TC-1381) |
 | FR-560-AC-4 | Over a property-generated set of entries built from the listed forms and types, the JIT lists none unsupported, and over the same entries with one construct replaced by an unlisted form, each is listed with that form's `ExpressionForm` cause. | Test (TC-1381) |
 | FR-560-AC-5 | Over one entry each for `forall`, `exists`, `present`, `deref`, a field read on an object value, `reaches`, `self` and `case`, `prepare` lists each entry unsupported with `Untranslatable { construct: ExpressionForm(<its name from the table>), location }`, `location` that construct's, and `unsupported` holds no other entry; the FR-563 runner over the same entries reports each with its `UnsupportedEntry` and records no `coverage-gap`. | Test (TC-1381) |
 | FR-560-AC-6 | With a test executable-memory provider that denies every request (standing in for a `PROT_EXEC` refusal), `prepare` over three selected entries returns `Ok`, `unsupported` lists all three with `UnsupportedCause::EnvironmentRefused(ExecutableMemoryRefused)`, `PrepareFailure` is not returned, `call` on each returns `CallFailure::Unsupported` with that entry, and the exit code of the resulting outcome is 21; with the provider allowing the request, the same entries are translated. | Test (TC-1381) |
+| FR-560-AC-7 | A selected state clause whose constructs all lie in the coverage (no `self`) is translated and not listed unsupported, and its `evaluate` returns an `Evaluation` equal to the interpreter's, loss records included; the FR-563 runner over it reports no `difference` and no `coverage-gap`, although the interpreter's `ClauseEvaluation` also records a trail and receiver path the JIT does not. | Test (TC-1381) |
+| FR-560-AC-8 | An entry whose parameter is of a union type, with no `case` in it, is listed `Untranslatable { construct: ValueType(<the union type>), location }` with that parameter's `Location`, while `coverage()` lists no union type; `coverage()` lists the form `name`, and `add(a: Integer, b: Integer): Integer { a + b }` reads two names and is translated. | Test (TC-1381) |
 
 ## Dependencies
 
@@ -156,6 +189,7 @@ A checked package and the selected entries (FR-294).
   entries.
 - ADR-012: the family form names.
 - [FR-294](FR-294-run-every-execution-backend-behind-one-seam.md): `UnsupportedEntry`, `UntranslatableConstruct` and clause-node order.
+- [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md): the node key of a checked operation.
 - [FR-295](FR-295-return-interpreter-outcomes-from-jit-and-aot.md): the parity program generator.
 - [FR-563](FR-563-run-the-parity-gate-and-fail-on-any-difference-from-the-interpreter.md): the gate that fails on a coverage gap.
 - QSpec FR-306: an entry a backend cannot translate settles unsupported for
