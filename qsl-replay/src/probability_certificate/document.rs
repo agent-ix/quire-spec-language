@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use super::*;
 
+mod writer;
+
 const PROFILE: &str = "quire.probability-objective/reachability/v1";
 const MAX_COUNT: u64 = 9_007_199_254_740_991;
 
@@ -551,59 +553,7 @@ pub fn write_probability_certificate(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<Vec<u8>, ProbabilityDocumentError> {
-    poll(cancel)?;
-    let wire = WireDocument {
-        identity: WireIdentity {
-            node_id: serde_json::value::RawValue::from_string(
-                qsl_foundation::node_wire::node_key_to_text(document.identity.node())
-                    .map_err(|_| ProbabilityDocumentError::Malformed)?,
-            )
-            .map_err(|_| ProbabilityDocumentError::Malformed)?,
-            model: document
-                .identity
-                .model()
-                .map(|model| model.as_str().to_owned()),
-            ordinal: document.identity.ordinal(),
-        },
-        objective: WireObjective {
-            profile: PROFILE.to_owned(),
-            targets: document
-                .targets
-                .iter()
-                .map(|key| URL_SAFE_NO_PAD.encode(key.as_bytes()))
-                .collect(),
-            optimization: match document.optimization {
-                ProbabilityObjective::Minimum => "minimum",
-                ProbabilityObjective::Maximum => "maximum",
-                ProbabilityObjective::Workload => "workload",
-            }
-            .to_owned(),
-            fairness: Vec::new(),
-        },
-        kind: "exact".to_owned(),
-        values: document
-            .values
-            .iter()
-            .map(|row| WireValue {
-                state: URL_SAFE_NO_PAD.encode(row.state.as_bytes()),
-                value: WireRational {
-                    numerator: row.value.numerator().to_string(),
-                    denominator: row.value.denominator().to_string(),
-                },
-            })
-            .collect(),
-        ranking: document
-            .ranking
-            .iter()
-            .map(|(state, rank)| WireRank {
-                state: URL_SAFE_NO_PAD.encode(state.as_bytes()),
-                rank: *rank,
-            })
-            .collect(),
-    };
-    let bytes = canonical(&wire, limits.bytes)?;
-    read_probability_certificate(&bytes, limits, cancel)?;
-    Ok(bytes)
+    writer::write(document, limits, cancel)
 }
 
 fn subject_graph(
