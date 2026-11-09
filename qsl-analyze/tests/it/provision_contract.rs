@@ -465,12 +465,10 @@ fn a_value_claim_returns_its_native_replayed_assignment() {
         panic!("native value assignment")
     };
     assert_eq!(assignment.parameters.len(), 1);
-    assert_eq!(
-        assignment.reproduced.assignment(),
-        &[quire_exact::Value::Integer(quire_exact::Integer::from(
-            3_i64
-        ))]
-    );
+    let [quire_exact::Value::Integer(value)] = assignment.reproduced.assignment() else {
+        panic!("one native integer assignment")
+    };
+    assert_eq!(value, &quire_exact::Integer::from(3_i64));
 }
 
 #[trace("TC-761", "FR-280-AC-2")]
