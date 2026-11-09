@@ -161,6 +161,30 @@ pub struct Monitor<A> {
 }
 
 impl<A: SafetyAutomaton> Monitor<A> {
+    /// Whether the all-false extension of `from` rejects. Reading stops at
+    /// rejection or a repeated monitor state; no model transitions are
+    /// enumerated. This is the bounded profile's terminal closure operation.
+    ///
+    /// # Errors
+    ///
+    /// A state lookup or resource limit failure from the real monitor.
+    pub fn false_extension_rejects(&mut self, from: StateId) -> Result<bool, AutomatonError> {
+        if self.is_rejecting(from)? {
+            return Ok(true);
+        }
+        let mut state = from;
+        let mut seen = BTreeSet::from([state]);
+        loop {
+            state = self.step(state, Letter::default())?;
+            if self.is_rejecting(state)? {
+                return Ok(true);
+            }
+            if !seen.insert(state) {
+                return Ok(false);
+            }
+        }
+    }
+
     /// The monitor of `automaton`, numbering at most `max_states` monitor
     /// states. Nothing of the automaton is read yet.
     ///

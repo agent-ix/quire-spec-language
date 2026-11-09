@@ -118,6 +118,26 @@ pub struct AtomSymmetry<'a> {
 }
 
 impl PropertyAutomaton {
+    /// The actual pending deadline of a single-interval eventuality after
+    /// reading a position. Only the qualified monitor's checked constructor
+    /// calls this projection.
+    pub(super) fn bounded_deadline(&self, state: StateId) -> Result<u64, AutomatonError> {
+        let config = self
+            .reached
+            .key(state)
+            .ok_or(AutomatonError::UnknownState { state })?;
+        if !config.must.is_empty()
+            || !config.shifts.is_empty()
+            || !config.memory.is_empty()
+            || config.counters.len() != 1
+        {
+            return Err(invariant("qualified-eventually-single-deadline"));
+        }
+        match config.counters.values().next() {
+            Some(Counter::Deadline(counter)) if counter.is_pending() => Ok(counter.remaining()),
+            _ => Err(invariant("qualified-eventually-pending-deadline")),
+        }
+    }
     /// Which representation the property got.
     pub fn kind(&self) -> AutomatonKind {
         self.kind

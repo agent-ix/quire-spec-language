@@ -56,6 +56,7 @@ mod letter;
 mod monitor;
 mod numbering;
 mod past;
+mod qualified_bounded;
 mod state;
 mod timed_claim;
 mod timed_window;
@@ -81,6 +82,7 @@ pub use key_state::{
 pub use letter::{Atom, Guard, Letter, MAX_ATOMS};
 pub use monitor::{Monitor, SafetyAutomaton};
 pub use numbering::{Interned, Numbering};
+pub use qualified_bounded::{QualifiedBoundedError, QualifiedBoundedMonitor};
 pub use state::StateId;
 pub use timed_claim::{
     has_timed_interval, position_automaton, ClockedEdge, PositionAutomaton, TimedClaim,

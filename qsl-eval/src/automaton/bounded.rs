@@ -25,7 +25,8 @@
 use qsl_foundation::bound::TemporalUpper;
 use qsl_foundation::IdentityLimits;
 use qsl_semantics::check::{
-    Activation, CheckedInterval, CheckedTemporalClause, FormulaNode, FormulaNodeId, UnaryTemporal,
+    Activation, CheckedFormula, CheckedInterval, CheckedTemporalClause, FormulaNode, FormulaNodeId,
+    UnaryTemporal,
 };
 use quire_canonical::{Node, NodeRef};
 
@@ -90,23 +91,16 @@ pub struct BoundedTranslation {
 }
 
 impl BoundedTranslation {
-    /// The translation of `clause` under `context`.
-    ///
-    /// # Errors
-    ///
-    /// [`TranslationRefusal::NotTranslated`] when the clause is not
-    /// `eventually[0,u] holds(A)` or `always[0,u] holds(A)` on origin under
-    /// a step-measured bounded profile, or `context` is not its own;
-    /// [`TranslationRefusal::Key`] when the context does not encode.
-    pub fn clause(
-        clause: &CheckedTemporalClause,
+    /// Translate an origin-activated bounded formula under its checked
+    /// item context. Probabilistic events supply a formula rather than a
+    /// temporal clause; the context owns their occurrence and binding.
+    pub(super) fn formula(
+        formula: &CheckedFormula,
         context: &StateContext,
     ) -> Result<Self, TranslationRefusal> {
-        let (kind, upper, atom) =
-            bounded_shape(clause).ok_or(TranslationRefusal::NotTranslated(NotTranslated))?;
-        if context.profile != clause.profile()
-            || !matches!(context.activation, ContextActivation::Origin)
-        {
+        let (kind, upper, atom) = bounded_formula_shape(formula)
+            .ok_or(TranslationRefusal::NotTranslated(NotTranslated))?;
+        if !context.profile.is_bounded() || context.activation != ContextActivation::Origin {
             return Err(TranslationRefusal::NotTranslated(NotTranslated));
         }
         let max_bytes = IdentityLimits::default().input_bytes;
@@ -121,6 +115,26 @@ impl BoundedTranslation {
             context_octets,
             max_bytes,
         })
+    }
+    /// The translation of `clause` under `context`.
+    ///
+    /// # Errors
+    ///
+    /// [`TranslationRefusal::NotTranslated`] when the clause is not
+    /// `eventually[0,u] holds(A)` or `always[0,u] holds(A)` on origin under
+    /// a step-measured bounded profile, or `context` is not its own;
+    /// [`TranslationRefusal::Key`] when the context does not encode.
+    pub fn clause(
+        clause: &CheckedTemporalClause,
+        context: &StateContext,
+    ) -> Result<Self, TranslationRefusal> {
+        bounded_shape(clause).ok_or(TranslationRefusal::NotTranslated(NotTranslated))?;
+        if context.profile != clause.profile()
+            || !matches!(context.activation, ContextActivation::Origin)
+        {
+            return Err(TranslationRefusal::NotTranslated(NotTranslated));
+        }
+        Self::formula(clause.formula(), context)
     }
 
     /// The clause's `holds` atom.
@@ -388,7 +402,10 @@ pub fn bounded_shape(clause: &CheckedTemporalClause) -> Option<(BoundedKind, u64
     if !clause.profile().is_bounded() || !matches!(clause.activation(), Activation::Origin) {
         return None;
     }
-    let formula = clause.formula();
+    bounded_formula_shape(clause.formula())
+}
+
+fn bounded_formula_shape(formula: &CheckedFormula) -> Option<(BoundedKind, u64, FormulaNodeId)> {
     let FormulaNode::Unary {
         operator,
         interval: Some(CheckedInterval::Steps(interval)),
