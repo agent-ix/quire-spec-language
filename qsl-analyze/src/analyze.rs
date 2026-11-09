@@ -30,6 +30,7 @@
 //! A cancelled [`Cancel`] settles every item that would run `incomplete`,
 //! with the cancellation cause kept.
 
+mod exact;
 mod items;
 
 use qsl_eval::model_subject::ModelSubject;
@@ -58,6 +59,7 @@ use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 
 pub use crate::contract_check::contract_item;
 pub use crate::value_check::value_item;
+pub use exact::{exact_probabilistic_item, ExactProbabilityEvidence};
 pub use items::{
     derived_model_item, derived_protocol_item, derived_zone_item, hyper_form_item, model_item,
     protocol_item, statistical_item, timed_refinement_item, zone_item, DerivedItemMismatch,
@@ -178,6 +180,15 @@ impl Engine {
     /// Only if the registry's admission rules refuse EN-4's own manifest.
     pub fn statistical() -> Result<Self, RegistrationRefusal> {
         statistical::manifest::descriptor(ProviderOrigin::Linked).map(Self::new)
+    }
+
+    /// EN-5, the exact probabilistic engine.
+    ///
+    /// # Errors
+    ///
+    /// Only if the registry's admission rules refuse EN-5's own manifest.
+    pub fn exact_probabilistic() -> Result<Self, RegistrationRefusal> {
+        crate::exact_probabilistic::manifest::descriptor(ProviderOrigin::Linked).map(Self::new)
     }
 
     /// The value-validity check arm (QSpec FR-483, FR-484).
@@ -395,8 +406,8 @@ impl Drop for DeadlineGuard {
 }
 
 impl Engines {
-    /// The layer-A engines `analyze` has an item adapter for: EN-1, EN-4 and
-    /// EN-6.
+    /// The layer-A engines `analyze` has an item adapter for: EN-1, EN-4, EN-5
+    /// and EN-6.
     ///
     /// # Errors
     ///
@@ -407,6 +418,7 @@ impl Engines {
             engines: vec![
                 Engine::model_check()?,
                 Engine::statistical()?,
+                Engine::exact_probabilistic()?,
                 Engine::zone_check()?,
                 Engine::value_check()?,
                 Engine::contract_check()?,
@@ -545,6 +557,8 @@ pub(crate) enum EngineReport {
     /// EN-6's record, settled by FR-235's map, or a timed refinement's by
     /// FR-144's rows over EN-6's causes.
     Zone(Box<ZoneCheckRecord>),
+    /// EN-5's report, settled by FR-203 and the exact certificate check.
+    Exact(Box<exact::ExactReport>),
     /// The engine refused the item, and its settlement map gives the refusal
     /// no terminal record.
     Refused(Refusal),
@@ -740,6 +754,9 @@ pub struct AnalyzeRecord {
     /// The operation-contract arm's counterexample, carried by a `refuted`
     /// item.
     pub contract_check: Option<Box<qsl_replay::contract_check::ContractCounterexample>>,
+    /// The certificate EN-5's checker accepted, carried by a `proved` item
+    /// (FR-281-AC-1).
+    pub exact_probabilistic: Option<Box<ExactProbabilityEvidence>>,
 }
 
 /// How an item settled.
@@ -1075,6 +1092,7 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
         zone_check: None,
         value_check: None,
         contract_check: None,
+        exact_probabilistic: None,
     };
     let disposed = |kind, diagnostic| {
         record(Settlement::Disposed(Disposed {
@@ -1162,6 +1180,7 @@ fn settle(
         zone_check: None,
         value_check: None,
         contract_check: None,
+        exact_probabilistic: None,
     };
     let disposed = |kind, diagnostic: Diagnostic, backend| {
         record(
@@ -1217,9 +1236,16 @@ fn settle(
             zone_check: None,
             value_check: None,
             contract_check: None,
+            exact_probabilistic: None,
         },
         EngineReport::Statistical(statistical) => {
             record(terminal(statistical.into_terminal(index, backend)), None)
+        }
+        EngineReport::Exact(exact) => {
+            let (settled_record, evidence) = exact.settle(index, backend);
+            let mut settled = record(terminal(settled_record), None);
+            settled.exact_probabilistic = evidence;
+            settled
         }
         EngineReport::Zone(zone) => AnalyzeRecord {
             request_index: index,
@@ -1239,6 +1265,7 @@ fn settle(
             zone_check: Some(zone),
             value_check: None,
             contract_check: None,
+            exact_probabilistic: None,
         },
         EngineReport::Refused(Refusal::Declined(cause, code, diagnostic)) => record(
             terminal(TerminalRecord::declined_with(
@@ -1773,8 +1800,8 @@ mod tests {
         }
     }
 
-    /// FR-489-AC-5: linked registrations are borrowed from the EN-1, EN-4 and
-    /// EN-6 engines and retain each engine's own identity and advertised kind.
+    /// FR-489-AC-5: linked registrations are borrowed from the EN-1, EN-4, EN-5
+    /// and EN-6 engines and retain each engine's own identity and advertised kind.
     #[trace("TC-1272", "FR-489-AC-5")]
     #[test]
     fn linked_engine_registrations_expose_the_owned_descriptors() {
@@ -1786,10 +1813,17 @@ mod tests {
                 .iter()
                 .map(|descriptor| descriptor.id().as_str())
                 .collect::<Vec<_>>(),
-            ["en-1", "en-4", "en-6", "value-checker", "contract-checker"]
+            [
+                "en-1",
+                "en-4",
+                "en-5",
+                "en-6",
+                "value-checker",
+                "contract-checker"
+            ]
         );
-        let [en1, en4, _en6, value, contract] = registrations.as_slice() else {
-            panic!("the linked engine set contains EN-1, EN-4, EN-6 and the two check arms");
+        let [en1, en4, en5, _en6, value, contract] = registrations.as_slice() else {
+            panic!("the linked engine set contains EN-1, EN-4, EN-5, EN-6 and the two check arms");
         };
         assert!(registrations
             .iter()
@@ -1798,6 +1832,9 @@ mod tests {
             .advertises()
             .any(|(kind, _)| kind == Capability::TemporalSatisfaction));
         assert!(en4
+            .advertises()
+            .any(|(kind, _)| kind == Capability::ProbabilisticSatisfaction));
+        assert!(en5
             .advertises()
             .any(|(kind, _)| kind == Capability::ProbabilisticSatisfaction));
         assert!(value

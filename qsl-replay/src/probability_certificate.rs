@@ -8,11 +8,13 @@ use quire_exact::{Integer, Rational};
 use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet};
 
+use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_semantics::check::{
     CheckedProbabilisticClaim, ProbForm, ProbScheduler, ReachTarget, StatePredicate,
 };
+use quire_exact::ObjectReference;
 use serde_json::{json, Value};
 
 use crate::identity::ObligationIdentity;
@@ -30,6 +32,24 @@ impl ProbabilityProductKey {
     /// The canonical product-state encoding.
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
+    }
+
+    /// The key of an untimed model state whose claim control is absent: an
+    /// unbounded reachability form, which has no monitor, accumulator or
+    /// pending draw (FR-196). `binding` is the claim's `over` instance and
+    /// `model_bytes` the state's complete `quire.simulation.state-key/v1`
+    /// encoding. This is the key the checker enumerates for the same state,
+    /// so a certificate built with it names the checker's states.
+    ///
+    /// # Errors
+    ///
+    /// [`ExactProbabilityGraphError::ExpansionRefused`] if the key cannot be
+    /// encoded.
+    pub fn for_model_state(
+        binding: Option<&ModelInstance>,
+        model_bytes: &[u8],
+    ) -> Result<Self, ExactProbabilityGraphError> {
+        product_key(binding, model_bytes)
     }
 }
 
@@ -295,6 +315,9 @@ pub enum ExactProbabilityGraphError {
     InvalidDigitalKey,
     /// The model has no single initial state; this slice checks exactly one.
     UnsupportedInitial,
+    /// The claim's `over` parameter has not exactly one instance in the
+    /// subject; this slice checks one binding.
+    UnsupportedBinding,
     /// No checked claim has the requested obligation's node as its checked
     /// package identity, or more than one does.
     ClaimNotBound,
@@ -313,6 +336,7 @@ pub enum ExactProbabilityGraphError {
 fn enumerate_model_graph<P: StatePredicate>(
     system: &ModelSystem<'_>,
     target: &P,
+    binding: Option<(&ModelInstance, &ObjectReference)>,
     max_states: usize,
     max_edges: usize,
 ) -> Result<CheckerGraph, ExactProbabilityGraphError> {
@@ -324,7 +348,7 @@ fn enumerate_model_graph<P: StatePredicate>(
         let (model_bytes, _) = system
             .state_key(state)
             .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-        product_key(&model_bytes)
+        product_key(binding.map(|(instance, _)| instance), &model_bytes)
     };
     let first = initial
         .into_iter()
@@ -340,7 +364,7 @@ fn enumerate_model_graph<P: StatePredicate>(
             return Err(ExactProbabilityGraphError::LimitReached);
         }
         let reading = system
-            .state_predicates(&state, &[(target, None)])
+            .state_predicates(&state, &[(target, binding.map(|(_, reference)| reference))])
             .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
             .into_iter()
             .next()
@@ -409,14 +433,26 @@ fn enumerate_model_graph<P: StatePredicate>(
     })
 }
 
-fn product_key(model_bytes: &[u8]) -> Result<ProbabilityProductKey, ExactProbabilityGraphError> {
+fn product_key(
+    binding: Option<&ModelInstance>,
+    model_bytes: &[u8],
+) -> Result<ProbabilityProductKey, ExactProbabilityGraphError> {
+    let binding = binding.map_or(Value::Null, |instance| {
+        json!({
+            "population": {
+                "node": instance.population.node,
+                "package": instance.population.package,
+            },
+            "key": instance.key,
+        })
+    });
     let encoded_model = base64::Engine::encode(
         &base64::engine::general_purpose::URL_SAFE_NO_PAD,
         model_bytes,
     );
     let bytes = serde_json::to_vec(&serde_json::json!([
         "quire.probability-product-key/v1",
-        null,
+        binding,
         encoded_model,
         null,
         null,
@@ -436,13 +472,13 @@ fn product_key(model_bytes: &[u8]) -> Result<ProbabilityProductKey, ExactProbabi
 pub(crate) fn check_model_exact_reachability<P: StatePredicate>(
     system: &ModelSystem<'_>,
     target: &P,
+    binding: Option<(&ModelInstance, &ObjectReference)>,
     certificate: &ExactProbabilityCertificate,
     objective: ProbabilityObjective,
     bound: &Bound,
-    max_states: usize,
-    max_edges: usize,
+    (max_states, max_edges): (usize, usize),
 ) -> Result<ExactProbabilityCertificateCheck, ExactProbabilityGraphError> {
-    let graph = enumerate_model_graph(system, target, max_states, max_edges)?;
+    let graph = enumerate_model_graph(system, target, binding, max_states, max_edges)?;
     check_exact_reachability(&graph, certificate, objective, bound)
 }
 
@@ -479,14 +515,34 @@ pub fn check_claim_exact_reachability(
         return Err(ExactProbabilityGraphError::UnsupportedClaimForm);
     };
     let objective = claim_objective(&claim.scheduler, bound);
+    let instance = match &claim.over {
+        None => None,
+        Some(over) => {
+            let quire_exact::ValueType::Reference(object) = &over.value_type else {
+                return Err(ExactProbabilityGraphError::UnsupportedBinding);
+            };
+            let mut instances = system
+                .instances(&over.value_type)
+                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+            let (Some(instance), None) = (instances.pop(), instances.pop()) else {
+                return Err(ExactProbabilityGraphError::UnsupportedBinding);
+            };
+            let reference = system
+                .bound_reference(object.clone(), &instance)
+                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+            Some((instance, reference))
+        }
+    };
     check_model_exact_reachability(
         system,
         predicate,
+        instance
+            .as_ref()
+            .map(|(instance, reference)| (instance, reference)),
         certificate,
         objective,
         bound,
-        max_states,
-        max_edges,
+        (max_states, max_edges),
     )
 }
 
@@ -836,7 +892,7 @@ mod tests {
     #[trace("TC-636")]
     #[test]
     fn bounded_model_product_key_uses_the_complete_fr196_v1_tuple() {
-        let key = product_key(b"model-state-key").expect("the fixed key encodes");
+        let key = product_key(None, b"model-state-key").expect("the fixed key encodes");
         let actual: serde_json::Value =
             serde_json::from_slice(key.as_bytes()).expect("the key is JSON");
         assert_eq!(
