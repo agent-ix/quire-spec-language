@@ -58,7 +58,12 @@ fn work(world: &World, backend: &str, run: ClauseLimits) -> NegotiatedItem {
                 ..ItemOptions::default()
             },
             form: Some(ItemForm::Temporal(TemporalItem {
-                run,
+                limits: qsl_replay::ModelCheckLimits {
+                    limits: run.limits,
+                    ..qsl_replay::ModelCheckLimits::default()
+                },
+                max_depth: run.max_depth,
+                max_candidates: run.max_candidates,
                 ..TemporalItem::default()
             })),
         },

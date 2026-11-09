@@ -393,13 +393,13 @@ pub struct ItemCounterexample {
 #[derive(Debug)]
 pub enum Counterexample {
     /// A temporal trace over a model subject.
-    Temporal(TemporalCounterexample),
+    Temporal(Box<TemporalCounterexample>),
     /// A temporal trace over a protocol subject.
-    Protocol(TemporalCounterexample<ProtocolTransition>),
+    Protocol(Box<TemporalCounterexample<ProtocolTransition>>),
     /// A value-validity assignment reproduced by the evaluator.
-    Assignments(value_check::ValueCounterexample),
+    Assignments(Box<value_check::ValueCounterexample>),
     /// A contract counterexample reproduced by the evaluator.
-    Contract(qsl_replay::contract_check::ContractCounterexample),
+    Contract(Box<qsl_replay::contract_check::ContractCounterexample>),
 }
 
 impl Engines {

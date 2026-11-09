@@ -521,12 +521,14 @@ fn counterexamples(records: &mut [super::AnalyzeRecord]) -> Vec<super::ItemCount
             .model_check
             .as_mut()
             .and_then(|model| model.counterexample.take())
+            .map(Box::new)
             .map(Counterexample::Temporal)
             .or_else(|| {
                 record
                     .zone_check
                     .as_mut()
                     .and_then(|zone| zone.counterexample.take())
+                    .map(Box::new)
                     .map(Counterexample::Temporal)
             })
             .or_else(|| {
@@ -534,20 +536,11 @@ fn counterexamples(records: &mut [super::AnalyzeRecord]) -> Vec<super::ItemCount
                     .protocol_check
                     .as_mut()
                     .and_then(|protocol| protocol.counterexample.take())
+                    .map(Box::new)
                     .map(Counterexample::Protocol)
             })
-            .or_else(|| {
-                record
-                    .value_check
-                    .take()
-                    .map(|value| Counterexample::Assignments(*value))
-            })
-            .or_else(|| {
-                record
-                    .contract_check
-                    .take()
-                    .map(|contract| Counterexample::Contract(*contract))
-            });
+            .or_else(|| record.value_check.take().map(Counterexample::Assignments))
+            .or_else(|| record.contract_check.take().map(Counterexample::Contract));
         if let Some(counterexample) = counterexample {
             result.push(ItemCounterexample {
                 request_index: record.request_index,

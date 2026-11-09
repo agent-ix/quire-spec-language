@@ -307,13 +307,13 @@ fn changed_source_bytes_never_promote_an_unreproduced_candidate_to_refuted() {
 #[trace("TC-763", "FR-281-AC-20")]
 #[test]
 fn source_completeness_is_checked_even_when_the_package_cannot_emit() {
-    let world = prob_world::World::new(&prob_world::link(LIKELY));
+    let world = prob_world::World::new(&prob_world::service(""));
     qsl_package::emit_checked(&world.package, qsl_package::EmitLimits::fixture())
         .expect_err("probabilistic model refuses S4 emission");
     let request = AnalyzeRequest {
         binding: world.binding(),
         provision: SourceProvision::default(),
-        items: vec![exact(&world, ExactProbLimits::default())],
+        items: Vec::new(),
     };
     let failure = analyze(
         &world.package,
