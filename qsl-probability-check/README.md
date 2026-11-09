@@ -30,6 +30,15 @@ minimum, maximum or resolved-workload operator, verifies complete key/value/rank
 coverage, positive-value rank progress, Bellman equality and the threshold.
 Unsupported configurations produce no acceptance token.
 
+The analyzer's additive `ExactProbLimits.document` API carries independent
+`bytes` and `storage_bytes` ceilings, each defaulting to 1073741824 bytes.
+The former stops as `certificate_check.max_certificate_bytes`; canonical-reader
+working storage stops as `certificate_check.max_working_bytes`. Source callers
+configure the corresponding `ProbabilityDocumentLimits` fields directly.
+Graph/rational limits and the subject's scalar accounting also apply. Decimal
+text is checked before large integer construction, and normalization and
+Bellman arithmetic use the kernel's metered exact-rational operations.
+
 The Link domain/source/snapshot fixtures are exported data from the existing
 `qsl-analyze/tests/it/prob_world.rs` Link fixture; tests compile those bytes with
 the production spine rather than importing that test fixture's `World` adapter.

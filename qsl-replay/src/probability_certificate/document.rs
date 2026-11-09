@@ -314,16 +314,17 @@ fn ordered(
     Ok(result)
 }
 
-fn ratio(wire: WireRational, bits: u64) -> Result<Rational, ProbabilityDocumentError> {
+fn ratio(wire: WireRational, bits: u64, meter: &mut quire_exact::Meter, cancel: &Cancel) -> Result<Rational, ProbabilityDocumentError> {
     for text in [&wire.numerator, &wire.denominator] {
         if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit())
             || text.len() > 1 && text.starts_with('0') {
             return Err(ProbabilityDocumentError::Malformed);
         }
         let digits = u64::try_from(text.len()).unwrap_or(u64::MAX);
-        // 10^(d-1) >= 2^(d-1), so d decimal digits require at least d bits.
+        // 10^(d-1) >= 8^(d-1), so d digits require at least 3(d-1)+1 bits.
         // Single digits use the kernel's inline parser without large storage.
-        if digits > bits && digits > 1 {
+        let minimum_bits = digits.saturating_sub(1).saturating_mul(3).saturating_add(1);
+        if minimum_bits > bits && digits > 1 {
             return Err(ProbabilityDocumentError::IntegerText { bit_bound: bits, decimal_digits: digits });
         }
     }
@@ -348,8 +349,8 @@ fn ratio(wire: WireRational, bits: u64) -> Result<Rational, ProbabilityDocumentE
             numerator.magnitude_bits().max(denominator.magnitude_bits()),
         ));
     }
-    let value =
-        Rational::new(numerator, denominator).map_err(|_| ProbabilityDocumentError::Malformed)?;
+    let value = arithmetic(quire_exact::RationalArithmetic::Divide(
+        &Rational::from_integer(numerator), &Rational::from_integer(denominator)), meter, cancel)?;
     if value.numerator().to_string() != wire.numerator
         || value.denominator().to_string() != wire.denominator
         || value < rational(0)
@@ -386,6 +387,15 @@ pub fn read_probability_certificate(
     if parsed.root().get("ranking").is_none() {
         return Err(ProbabilityDocumentError::MissingMember("ranking"));
     }
+    let root = parsed.root();
+    let rows = [root.get("values"), root.get("ranking"), root.get("objective").and_then(|objective| objective.get("targets"))]
+        .into_iter().filter_map(|node| match node?.node() {
+            quire_canonical::Node::Array(items) => Some(items.count()),
+            _ => None,
+        }).max().unwrap_or(0);
+    if rows > limits.states {
+        return Err(exceeded(ProbabilityDocumentLimit::States, u64::try_from(limits.states).unwrap_or(u64::MAX), u64::try_from(rows).unwrap_or(u64::MAX)));
+    }
     drop(parsed);
     let wire: WireDocument =
         serde_json::from_slice(bytes).map_err(|_| ProbabilityDocumentError::Malformed)?;
@@ -404,22 +414,6 @@ pub fn read_probability_certificate(
         "workload" => ProbabilityObjective::Workload,
         _ => return Err(ProbabilityDocumentError::Unsupported),
     };
-    if wire.values.len() > limits.states
-        || wire.ranking.len() > limits.states
-        || wire.objective.targets.len() > limits.states
-    {
-        return Err(exceeded(
-            ProbabilityDocumentLimit::States,
-            u64::try_from(limits.states).unwrap_or(u64::MAX),
-            u64::try_from(
-                wire.values
-                    .len()
-                    .max(wire.ranking.len())
-                    .max(wire.objective.targets.len()),
-            )
-            .unwrap_or(u64::MAX),
-        ));
-    }
     let node = qsl_foundation::node_wire::node_key_from_text(wire.identity.node_id.get())
         .map_err(|_| ProbabilityDocumentError::Malformed)?;
     let identity = ObligationIdentity::new(
@@ -435,11 +429,12 @@ pub fn read_probability_certificate(
             .collect::<Result<Vec<_>, _>>()?,
     )?;
     let mut values = Vec::new();
+    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
     for row in wire.values {
         poll(cancel)?;
         values.push(ExactProbabilityValue {
             state: decode_key(&row.state)?,
-            value: ratio(row.value, limits.scalar_bits)?,
+            value: ratio(row.value, limits.scalar_bits, &mut meter, cancel)?,
         });
     }
     ordered(values.iter().map(|row| row.state.clone()))?;
@@ -939,6 +934,21 @@ mod tests {
             read_probability_certificate(&bytes, limits(), &Cancel::new()).unwrap(),
             document
         );
+    }
+
+    #[trace("FR-201-AC-11", "FR-282-AC-12")]
+    #[test]
+    fn storage_and_rational_text_are_admitted_before_rows_or_large_integers() {
+        let bytes = bytes();
+        let bound = u64::try_from(bytes.len()).unwrap();
+        let error = read_probability_certificate(&bytes, ProbabilityDocumentLimits { storage_bytes: bound, ..limits() }, &Cancel::new()).unwrap_err();
+        let ProbabilityDocumentError::Limit { limit, bound: actual_bound, actual } = error else { panic!("the bounded canonical reader must refuse its working allocation"); };
+        assert_eq!(limit, ProbabilityDocumentLimit::StorageBytes);
+        assert_eq!(actual_bound, bound);
+        assert!(actual > bound);
+        let text = format!("1{}", "0".repeat(100_000));
+        let offered = mutate(|value| { value["values"][0]["value"]["numerator"] = json!(text); });
+        assert_eq!(read_probability_certificate(&offered, ProbabilityDocumentLimits { scalar_bits: 16, ..limits() }, &Cancel::new()), Err(ProbabilityDocumentError::IntegerText { bit_bound: 16, decimal_digits: 100_001 }));
     }
 
     #[trace("FR-201-AC-9")]
