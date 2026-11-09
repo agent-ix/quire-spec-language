@@ -1168,6 +1168,16 @@ impl OutcomeItem {
     pub fn result(&self) -> ItemLabel {
         self.result
     }
+
+    /// The zero-based index of the request this item settles.
+    pub fn request_index(&self) -> usize {
+        self.request_index
+    }
+
+    /// Who stands behind a `proved` result; `None` on every other label.
+    pub fn certification(&self) -> Option<Certification> {
+        self.certification
+    }
 }
 
 /// The cause an item built from `report` carries: the table's `cause`

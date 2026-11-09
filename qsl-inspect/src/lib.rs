@@ -192,6 +192,9 @@ pub use result_views::{
     StateGraphView, TracePositionView, TraceView,
 };
 
+mod render;
+pub use render::{render_outcome, render_view, RenderCause, RenderForm, RenderSources, Rendered};
+
 /// Inspect a checked package, using the package's typed emission metadata.
 pub fn inspect_package<'a>(
     package: &'a CheckedPackage,
@@ -386,7 +389,7 @@ fn id_names_key(id: &CheckedNodeId, key: &NodeKey) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::{
         inspect_node, inspect_outcome, inspect_package, EntryBudget, InspectCause, InspectLimits,
         NodeSelector, View,
@@ -406,7 +409,7 @@ mod tests {
         .expect("a fixture node key is well formed")
     }
 
-    fn emitted_spine_package() -> (qsl_package::CheckedPackage, qsl_package::Emission) {
+    pub(crate) fn emitted_spine_package() -> (qsl_package::CheckedPackage, qsl_package::Emission) {
         const FIXTURE: &[u8] = include_bytes!("../../tests/fixtures/spine-compile.native");
         let parsed = qsl_cst::parse(
             qsl_foundation::SourceIdentity::new("agent-ix", "test:inspect"),
