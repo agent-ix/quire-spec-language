@@ -196,6 +196,8 @@ fn check(request: Request, cancel: &Cancel) -> Result<Value, String> {
 fn source_failure(error: ProbabilitySourceError) -> Value {
     use ProbabilityDocumentError as Document;
     let status = match &error {
+        ProbabilitySourceError::Document(Document::Build(issue))
+            if matches!(issue.as_ref(), qsl_replay::ExactProbBuildIssue::NotMarkov | qsl_replay::ExactProbBuildIssue::Unsupported(_)) => "unsupported",
         ProbabilitySourceError::Compile(
             qsl_foundation::diagnostic::StageFailure::Refused(_)
             | qsl_foundation::diagnostic::StageFailure::RefusedWithPayload(_, _),
