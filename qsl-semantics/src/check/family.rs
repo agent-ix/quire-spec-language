@@ -2725,6 +2725,98 @@ pub(crate) mod checking_tests {
         ));
     }
 
+    /// The signatures of the QSL-1824 widening tests: `src() -> Int[0, 1000]`
+    /// and one-parameter helpers over `Integer`, `Int[0, 2000]`,
+    /// `Int[0, 1000]` and `Int[0, 10]`.
+    fn widening_signatures() -> Signatures {
+        use quire_exact::{Integer, IntegerInterval};
+        let bounded = |upper: i64| {
+            ValueType::Int(
+                IntegerInterval::new(Integer::from(0_i64), Integer::from(upper)).unwrap(),
+            )
+        };
+        let helper = |name: &str, parameter: ValueType| Signature {
+            name: name.to_owned(),
+            parameters: vec![("p".to_owned(), parameter)],
+            result: ValueType::Boolean,
+            callable_by_name: true,
+        };
+        Signatures::from(vec![
+            Signature {
+                name: "src".to_owned(),
+                parameters: Vec::new(),
+                result: bounded(1000),
+                callable_by_name: true,
+            },
+            helper("wide", ValueType::Integer),
+            helper("mid", bounded(2000)),
+            helper("same", bounded(1000)),
+            helper("narrow", bounded(10)),
+        ])
+    }
+
+    /// Whether the one argument of `callee(arguments)` is a conversion, a
+    /// `Coerce`, and its type.
+    fn argument_of(callee: &str, arguments: &[Expression]) -> (bool, bool, ValueType) {
+        let scope = empty_scope();
+        let signatures = widening_signatures();
+        let mut nodes = 0_u64;
+        let mut typer = Typer::new(
+            &scope,
+            &signatures,
+            CheckingLimits::default(),
+            &mut nodes,
+            ClauseKind::Body,
+        );
+        let checked = check_application(&mut typer, callee, arguments, &root_location())
+            .expect("the call is admitted");
+        let super::NodeKind::Call {
+            arguments: ids, ..
+        } = checked.root().kind()
+        else {
+            panic!("a call node");
+        };
+        let argument = checked.root().at(ids[0]);
+        (
+            matches!(argument.kind(), super::NodeKind::ConvertScalar(..)),
+            matches!(argument.kind(), super::NodeKind::Coerce(..)),
+            argument.value_type().clone(),
+        )
+    }
+
+    /// TC-376/FR-065-AC-9 (QSL-1824): a bounded integer argument of a wider
+    /// parameter carries an exact conversion to the parameter's type, an
+    /// identical type none, and a narrowing keeps its range-obligated
+    /// `Coerce`.
+    #[trace("TC-376", "FR-065-AC-9")]
+    #[test]
+    fn check_application_makes_integer_widening_explicit() {
+        let source = Expression::call("src".to_owned(), Vec::new());
+        let (converts, _, value_type) = argument_of("wide", std::slice::from_ref(&source));
+        assert!(converts, "Int[0, 1000] into Integer converts");
+        assert_eq!(value_type, ValueType::Integer);
+        let (converts, _, value_type) = argument_of("mid", std::slice::from_ref(&source));
+        assert!(converts, "Int[0, 1000] into Int[0, 2000] converts");
+        assert!(matches!(
+            value_type,
+            ValueType::Int(ref bound) if bound.upper() == &quire_exact::Integer::from(2000_i64)
+        ));
+        let (converts, coerces, _) = argument_of("same", std::slice::from_ref(&source));
+        assert!(!converts && !coerces, "an identical type takes no node");
+        let (converts, coerces, _) = argument_of("narrow", std::slice::from_ref(&source));
+        assert!(!converts && coerces, "a narrowing is a Coerce, not a conversion");
+    }
+
+    /// TC-376/FR-065-AC-9: a literal argument is typed from its parameter, so
+    /// it takes no redundant conversion.
+    #[trace("TC-376", "FR-065-AC-9")]
+    #[test]
+    fn check_application_converts_no_literal_argument() {
+        let five = [Expression::integer(5_i64)];
+        assert!(!argument_of("wide", &five).0);
+        assert!(!argument_of("mid", &five).0);
+    }
+
     /// TC-377/FR-065's checking-decision half: `check_declaration_body`
     /// admits a well-typed declaration whose body calls another declared
     /// function, and reports that call in `calls` -- the same `CallSite`
